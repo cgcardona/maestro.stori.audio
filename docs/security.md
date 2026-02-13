@@ -1,6 +1,6 @@
 # Security audit
 
-**Environment:** stage.stori.audio  
+**Environment:** Production/staging (set your own domain via `STORI_DOMAIN`, CORS, Nginx).  
 **Stack:** FastAPI, Nginx, Docker Compose, Ubuntu, JWT, UUID-based asset access  
 **Scope:** Defensive, production-grade review.
 
@@ -8,7 +8,7 @@
 
 ## Summary
 
-The stack is in good shape for stage: SSH hardening, fail2ban, UFW, non-root containers, TLS and security headers, JWT with revocation, asset access gated by UUID + rate limits. No critical misconfigurations. Items below are targeted fixes before production.
+The stack is in good shape when properly configured: SSH hardening, fail2ban, UFW, non-root containers, TLS and security headers, JWT with revocation, asset access gated by UUID + rate limits. No critical misconfigurations. Items below are targeted fixes before production.
 
 **Key recommendations (done where noted):** Add CPU/memory limits in docker-compose; do not use `get_user_id_from_token` for auth (use claims from `require_valid_token` only); fail closed on token-revocation DB failure (503); no default DB password in prod; stricter nginx rate limit for auth paths; CORS not wildcard in prod.
 
