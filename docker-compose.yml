@@ -143,6 +143,9 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      # Gradio Client needs HF token for Space GPU quota; use same key as Composer
+      HF_TOKEN: ${STORI_HF_API_KEY:-}
     networks:
       - composer-stori-net
     healthcheck:

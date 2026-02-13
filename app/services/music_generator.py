@@ -172,6 +172,7 @@ class MusicGenerator:
                 logger.warning(f"Requested backend not available: {preferred_backend}")
         
         # Try backends in priority order
+        last_failure: Optional[GenerationResult] = None
         for backend_type in self.priority:
             backend = self.backend_map.get(backend_type)
             if not backend:
@@ -193,10 +194,22 @@ class MusicGenerator:
                 logger.info(f"✓ Generated {len(result.notes)} notes via {backend_type.value}")
                 return result
             else:
+                last_failure = result
                 logger.warning(f"✗ Backend {backend_type.value} failed: {result.error}")
                 # Continue to next backend
         
-        # Orpheus (required for composing) is unavailable
+        # No backend succeeded; surface the real error if we have one
+        if last_failure and last_failure.error:
+            error_msg = last_failure.error
+            logger.error(f"❌ {error_msg}")
+            return GenerationResult(
+                success=False,
+                notes=[],
+                backend_used=last_failure.backend_used,
+                metadata=last_failure.metadata or {},
+                error=error_msg,
+            )
+        # No backend was reachable (all failed availability)
         error_msg = (
             "Music generation (Orpheus) is currently unavailable. "
             "Ensure the Orpheus service is running (port 10002) and reachable. "
@@ -335,23 +348,22 @@ class MusicGenerator:
         logger.info(f"Captured rhythm spine: {len(rhythm_spine.kick_onsets)} kicks, {len(rhythm_spine.snare_onsets)} snares")
     
     async def _is_backend_available(self, backend: MusicGeneratorBackend) -> bool:
-        """Check backend availability with caching."""
+        """Check backend availability with caching.
+        Only cache positive results so we re-check after Orpheus restarts or brief outages.
+        """
         backend_type = backend.backend_type
-        
-        # Check cache (could add TTL for production)
         cache_key = backend_type.value
-        if cache_key in self._availability_cache:
-            return self._availability_cache[cache_key]
-        
-        # Check availability
+
+        if cache_key in self._availability_cache and self._availability_cache[cache_key]:
+            return True
+
         available = await backend.is_available()
-        self._availability_cache[cache_key] = available
-        
         if available:
+            self._availability_cache[cache_key] = True
             logger.info(f"Backend {backend_type.value} is available ✓")
         else:
+            # Do not cache False so next request will retry (e.g. Orpheus was starting)
             logger.debug(f"Backend {backend_type.value} is not available")
-        
         return available
     
     def clear_cache(self):

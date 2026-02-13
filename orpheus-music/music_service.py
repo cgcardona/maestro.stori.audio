@@ -44,9 +44,12 @@ gradio_client = None
 def get_client():
     global gradio_client
     if gradio_client is None:
-        # HuggingFace token is read from HF_TOKEN environment variable automatically
-        # No need to pass it explicitly - gradio_client will use it
-        gradio_client = Client("asigalov61/Orpheus-Music-Transformer")
+        # Pass HF token so the Space attributes GPU usage to our account (required for quota).
+        # Composer sends token in Authorization header; Orpheus uses env so the Gradio client has it.
+        hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
+        if not hf_token:
+            logger.warning("No HF_TOKEN or STORI_HF_API_KEY set; Gradio Space may return GPU quota errors")
+        gradio_client = Client("asigalov61/Orpheus-Music-Transformer", hf_token=hf_token)
     return gradio_client
 
 

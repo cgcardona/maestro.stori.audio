@@ -42,10 +42,19 @@ Composer: `http://localhost:10001`. Tests: `docker compose exec composer pytest 
 | **Auth** | `STORI_ACCESS_TOKEN_SECRET` — `openssl rand -hex 32`; required for protected endpoints |
 | **LLM** | `STORI_LLM_PROVIDER=openrouter`, `STORI_OPENROUTER_API_KEY`, `STORI_LLM_MODEL` |
 | **DB** | `STORI_DB_PASSWORD` or `STORI_DATABASE_URL`. Reset: see **Reset database (Postgres)** below. |
-| **Music** | `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`), `STORI_HF_API_KEY`. **Docker:** `docker-compose.yml` overrides to `http://orpheus:10002` so the composer container can reach Orpheus. |
+| **Music** | `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`), `STORI_HF_API_KEY`. **Docker:** `docker-compose.yml` overrides to `http://orpheus:10002` so the composer container can reach Orpheus. See **HuggingFace token (Orpheus)** below. |
 | **S3** | `STORI_AWS_S3_ASSET_BUCKET`, `STORI_AWS_REGION`, plus AWS keys for presigned URLs |
 
 Local: `NGINX_CONF_DIR=conf.d-local`. Full list: `.env.example`.
+
+### HuggingFace token (Orpheus)
+
+Orpheus (when backed by a Hugging Face Gradio Space) needs a Hugging Face API token so the Space can attribute GPU usage to your account. Composer reads `STORI_HF_API_KEY` and sends it as `Authorization: Bearer <token>` on every request to Orpheus; the Orpheus service forwards it to the Space.
+
+- **Set the token:** In `.env`, set `STORI_HF_API_KEY` to your token (no quotes). With Docker Compose, the composer service loads `.env`, so restart the stack after changing it.
+- **Verify it’s sent:** With `STORI_DEBUG=true`, Composer logs at debug level whether an HF token is present for each Orpheus request (value is never logged).
+- **“GPU quota (0s left)” after a new token:** If you see this right after switching to a new token, (1) confirm the new token is in `.env` and the composer container was restarted; (2) try a token with **Write** scope—read-only tokens may not receive GPU quota for Space API calls. Create the token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
+- **Revoked tokens:** If HF revokes a token (e.g. after it was exposed), replace it with a new token and update `STORI_HF_API_KEY`; no code change is required.
 
 ---
 

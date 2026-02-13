@@ -114,6 +114,10 @@ class OrpheusClient:
         logger.info(f"Generating {instruments} in {genre} style at {tempo} BPM")
         if musical_goals:
             logger.info(f"  Musical goals: {musical_goals}")
+        if not self.hf_token:
+            logger.warning("Orpheus request without HF token; Gradio Space may return GPU quota errors")
+        else:
+            logger.debug("Orpheus request: HF token present")
         
         try:
             response = await self.client.post(
@@ -123,12 +127,15 @@ class OrpheusClient:
             response.raise_for_status()
             data = response.json()
             
-            return {
+            out = {
                 "success": data.get("success", False),
                 "notes": data.get("notes", []),
                 "tool_calls": data.get("tool_calls", []),
                 "metadata": data.get("metadata", {}),
             }
+            if not out["success"] and data.get("error"):
+                out["error"] = data["error"]
+            return out
             
         except httpx.HTTPStatusError as e:
             logger.error(f"Orpheus HTTP error: {e.response.status_code}")
