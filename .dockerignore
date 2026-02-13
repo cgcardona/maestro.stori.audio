@@ -1,0 +1,22 @@
+# Reduce build context; only app/, scripts/, alembic/, alembic.ini, requirements.txt are copied in Dockerfile
+.git
+.env
+.env.*
+!.env.example
+docs/
+orpheus-music/
+deploy/
+assets/
+composer-service/
+node_modules/
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+.venv/
+venv/
+*.md
+docker-compose*.yml
+.pytest_cache/
+QUICK_TEST_PROMPTS.txt
+generate_test_token.py
+LICENSE

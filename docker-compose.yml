@@ -1,0 +1,227 @@
+# Stori Composer - Docker Compose Configuration
+#
+# Usage:
+#   Development: docker compose up
+#   Production:  Same file with production .env (see docs/setup.md for required env vars).
+#
+# First-time SSL setup:
+#   1. Set DOMAIN and EMAIL in .env
+#   2. Run: ./deploy/init-ssl.sh
+#   3. Then: docker compose up -d
+
+services:
+  # ==========================================================================
+  # PostgreSQL Database
+  # ==========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: composer-stori-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stori
+      POSTGRES_USER: stori
+      # REQUIRED: Set STORI_DB_PASSWORD in .env (e.g. openssl rand -hex 16). No default for security.
+      POSTGRES_PASSWORD: ${STORI_DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - composer-stori-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stori -d stori"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:5432:5432"
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    read_only: false  # Postgres needs write access
+    tmpfs:
+      - /tmp
+      - /run
+
+  # ==========================================================================
+  # Qdrant Vector Database (for RAG)
+  # ==========================================================================
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: composer-stori-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"  # REST API
+      - "127.0.0.1:6334:6334"  # gRPC API
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - composer-stori-net
+    # Note: Qdrant image doesn't have curl/wget, so healthcheck is disabled
+    # The service starts quickly and is reliable
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          memory: 128M
+
+  # ==========================================================================
+  # Stori Composer API
+  # ==========================================================================
+  composer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: composer-stori-app
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:10001:10001"  # Stori macOS app (ApiBaseURL http://localhost:10001) and host curl
+    env_file:
+      - .env
+    environment:
+      # REQUIRED: Set STORI_DB_PASSWORD in .env. Same value as postgres service.
+      STORI_DATABASE_URL: "postgresql+asyncpg://stori:${STORI_DB_PASSWORD}@postgres:5432/stori"
+      # Orpheus: from inside the container use service name (not localhost)
+      STORI_ORPHEUS_BASE_URL: "http://orpheus:10002"
+      # S3 asset delivery: set in .env (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, STORI_AWS_S3_ASSET_BUCKET, STORI_AWS_REGION)
+      # Pass-through so container has them; boto3 reads AWS_*, app reads STORI_AWS_*
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      STORI_AWS_S3_ASSET_BUCKET: ${STORI_AWS_S3_ASSET_BUCKET:-}
+      STORI_AWS_REGION: ${STORI_AWS_REGION:-eu-west-1}
+    volumes:
+      - composer_data:/data
+    networks:
+      - composer-stori-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      orpheus:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:10001/api/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: false  # Needs write for temp files
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          memory: 256M
+
+  # ==========================================================================
+  # Orpheus Music Service
+  # ==========================================================================
+  orpheus:
+    build:
+      context: ./orpheus-music
+      dockerfile: Dockerfile
+    container_name: composer-stori-orpheus
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - composer-stori-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: false  # Needs write for temp MIDI files
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # ==========================================================================
+  # Nginx Reverse Proxy with SSL
+  # ==========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: composer-stori-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/${NGINX_CONF_DIR:-conf.d}:/etc/nginx/conf.d:ro
+      - ./deploy/nginx/ssl:/etc/nginx/ssl:ro
+      - certbot_webroot:/var/www/certbot:ro
+      - certbot_certs:/etc/letsencrypt:ro
+    depends_on:
+      - composer
+    networks:
+      - composer-stori-net
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+
+  # ==========================================================================
+  # Certbot for Let's Encrypt SSL
+  # ==========================================================================
+  certbot:
+    image: certbot/certbot
+    container_name: composer-stori-certbot
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - certbot_webroot:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - composer-stori-net
+
+volumes:
+  postgres_data:
+    name: composer-stori-postgres-data
+  qdrant_data:
+    name: composer-stori-qdrant-data
+  composer_data:
+    name: composer-stori-data
+  certbot_webroot:
+    name: composer-stori-certbot-webroot
+  certbot_certs:
+    name: composer-stori-certbot-certs
+
+networks:
+  composer-stori-net:
+    name: composer-stori-network
+    driver: bridge

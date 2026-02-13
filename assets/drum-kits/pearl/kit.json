@@ -1,0 +1,32 @@
+{
+  "name": "Pearl Master Studio",
+  "author": "enoe / Sampled Project",
+  "license": "CC BY 3.0",
+  "version": "1.0",
+  "sounds": {
+    "kick": "kick.wav",
+    "snare": "snare.wav",
+    "clap": "snare.wav",
+    "hihat_closed": "hihat_closed.wav",
+    "hihat_open": "hihat_open.wav",
+    "tom_low": "tom_low.wav",
+    "tom_mid": "tom_mid.wav",
+    "tom_high": "tom_high.wav",
+    "crash": "crash.wav",
+    "ride": "ride.wav",
+    "rim": "hihat_closed.wav"
+  },
+  "display_names": {
+    "kick": "Bass Drum",
+    "snare": "Snare Drum",
+    "clap": "Snare Hit",
+    "hihat_closed": "Hi-Hat Closed",
+    "hihat_open": "Hi-Hat Open",
+    "tom_low": "Floor Tom",
+    "tom_mid": "Mid Tom",
+    "tom_high": "High Tom",
+    "crash": "Crash Cymbal",
+    "ride": "Ride Cymbal",
+    "rim": "Stick Click"
+  }
+}

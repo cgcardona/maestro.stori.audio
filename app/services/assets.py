@@ -1,0 +1,253 @@
+"""
+On-demand asset delivery service (drum kits, GM soundfont).
+
+Uses S3 presigned URLs only; no file bytes stream through the app.
+Assets are stored under:
+  - assets/drum-kits/{kit_id}.zip (one zip per kit)
+  - assets/drum-kits/manifest.json (list of kits with name, version, etc.)
+  - assets/soundfonts/{filename}.sf2
+  - assets/soundfonts/manifest.json (list of soundfonts)
+"""
+import json
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError, BotoCoreError, NoCredentialsError
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+# Use Signature Version 4 for presigned URLs. SigV2 (legacy) can cause 403 from S3.
+S3_CONFIG = Config(signature_version="s3v4")
+
+
+class AssetServiceUnavailableError(Exception):
+    """Raised when S3/credentials are unavailable; map to HTTP 503."""
+    pass
+
+# S3 key prefixes
+DRUM_KITS_PREFIX = "assets/drum-kits/"
+DRUM_KITS_MANIFEST_KEY = "assets/drum-kits/manifest.json"
+SOUNDFONTS_PREFIX = "assets/soundfonts/"
+SOUNDFONTS_MANIFEST_KEY = "assets/soundfonts/manifest.json"
+BUNDLE_KEY = "assets/bundle/all-assets.zip"
+
+# Default manifest when S3 manifest is missing (so app can still list)
+DEFAULT_DRUM_KITS_MANIFEST = {
+    "kits": [
+        {"id": "cr78", "name": "CR-78", "version": "1.0"},
+        {"id": "linndrum", "name": "LinnDrum", "version": "1.0"},
+        {"id": "pearl", "name": "Pearl", "version": "1.0"},
+        {"id": "tr505", "name": "TR-505", "version": "1.0"},
+        {"id": "tr909", "name": "TR-909", "version": "1.0"},
+        {"id": "template", "name": "Template Kit", "version": "1.0"},
+    ]
+}
+DEFAULT_SOUNDFONTS_MANIFEST = {
+    "soundfonts": [
+        {"id": "fluidr3_gm", "name": "Fluid R3 GM", "filename": "FluidR3_GM.sf2"},
+    ]
+}
+
+
+def _s3_client():
+    """
+    Create S3 client with SigV4 and regional endpoint.
+    Using the regional endpoint (e.g. s3.us-east-1.amazonaws.com) avoids redirects from the
+    global endpoint that can cause 400 Bad Request when the client follows redirects and
+    the signature no longer matches.
+    """
+    region = settings.aws_region
+    endpoint_url = f"https://s3.{region}.amazonaws.com"
+    return boto3.client(
+        "s3",
+        region_name=region,
+        endpoint_url=endpoint_url,
+        config=S3_CONFIG,
+    )
+
+
+def _bucket() -> str:
+    if not settings.aws_s3_asset_bucket:
+        raise ValueError("STORI_AWS_S3_ASSET_BUCKET is not set")
+    return settings.aws_s3_asset_bucket
+
+
+def _get_object_json(key: str) -> Optional[dict[str, Any]]:
+    """Fetch a JSON object from S3. Returns None if missing or on error."""
+    try:
+        client = _s3_client()
+        resp = client.get_object(Bucket=_bucket(), Key=key)
+        body = resp["Body"].read().decode("utf-8")
+        return json.loads(body)
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            logger.debug("Manifest not found: %s", key)
+            return None
+        logger.warning("S3 get_object failed for %s: %s", key, e)
+        return None
+    except Exception as e:
+        logger.warning("Failed to load manifest %s: %s", key, e)
+        return None
+
+
+def list_drum_kits() -> list[dict[str, Any]]:
+    """
+    Return list of available drum kits.
+    Uses manifest.json if present; otherwise returns default list (no size hints).
+    """
+    if not settings.aws_s3_asset_bucket:
+        return []
+    data = _get_object_json(DRUM_KITS_MANIFEST_KEY)
+    if data and "kits" in data:
+        return data["kits"]
+    return DEFAULT_DRUM_KITS_MANIFEST["kits"]
+
+
+def list_soundfonts() -> list[dict[str, Any]]:
+    """
+    Return list of available soundfonts.
+    Uses manifest.json if present; otherwise returns default list.
+    """
+    if not settings.aws_s3_asset_bucket:
+        return []
+    data = _get_object_json(SOUNDFONTS_MANIFEST_KEY)
+    if data and "soundfonts" in data:
+        return data["soundfonts"]
+    return DEFAULT_SOUNDFONTS_MANIFEST["soundfonts"]
+
+
+def get_drum_kit_download_url(
+    kit_id: str,
+    expires_in: Optional[int] = None,
+) -> tuple[str, datetime]:
+    """
+    Generate presigned URL for a drum kit zip.
+    Key: assets/drum-kits/{kit_id}.zip
+    Returns (url, expires_at).
+    Uses the same source of truth as list_drum_kits(): if kit_id is in that list, we return a URL.
+    No S3 head_object check — list and download-url stay in sync. If the object is missing in S3,
+    the client GET on the presigned URL will get 404; upload the zip to fix step 2.
+    Raises KeyError if kit_id not in list; AssetServiceUnavailableError on S3/credential failure.
+    """
+    # Single source of truth: same list as list_drum_kits(). If list says kit exists, we accept it.
+    known = {k.get("id") for k in list_drum_kits() if k.get("id")}
+    if kit_id not in known:
+        raise KeyError(f"Drum kit not found: {kit_id}")
+
+    expires_in = expires_in or settings.presign_expiry_seconds
+    key = f"{DRUM_KITS_PREFIX.rstrip('/')}/{kit_id}.zip"
+    bucket = _bucket()
+    try:
+        client = _s3_client()
+        url = client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=expires_in,
+        )
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        return url, expires_at
+    except NoCredentialsError as e:
+        logger.warning("AWS credentials not configured: %s", e)
+        raise AssetServiceUnavailableError("AWS credentials not configured") from e
+    except BotoCoreError as e:
+        logger.warning("S3 unreachable for drum kit %s: %s", kit_id, e)
+        raise AssetServiceUnavailableError("Unable to reach asset storage") from e
+    except ClientError as e:
+        logger.error("S3 error for drum kit %s: %s", kit_id, e)
+        raise AssetServiceUnavailableError("Unable to generate download URL") from e
+
+
+def get_soundfont_download_url(
+    soundfont_id: str,
+    expires_in: Optional[int] = None,
+) -> tuple[str, datetime]:
+    """
+    Generate presigned URL for a soundfont file.
+    Resolves soundfont_id to filename via manifest; key is assets/soundfonts/{filename}.
+    Returns (url, expires_at).
+    """
+    expires_in = expires_in or settings.presign_expiry_seconds
+    soundfonts = list_soundfonts()
+    filename = None
+    for sf in soundfonts:
+        if sf.get("id") == soundfont_id:
+            filename = sf.get("filename") or f"{soundfont_id}.sf2"
+            break
+    if not filename:
+        raise KeyError(f"SoundFont not found: {soundfont_id}")
+    key = f"{SOUNDFONTS_PREFIX}{filename}"
+    bucket = _bucket()
+    try:
+        client = _s3_client()
+        client.head_object(Bucket=bucket, Key=key)
+        url = client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=expires_in,
+        )
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        return url, expires_at
+    except NoCredentialsError as e:
+        logger.warning("AWS credentials not configured: %s", e)
+        raise AssetServiceUnavailableError("AWS credentials not configured") from e
+    except BotoCoreError as e:
+        logger.warning("S3 unreachable for soundfont %s: %s", soundfont_id, e)
+        raise AssetServiceUnavailableError("Unable to reach asset storage") from e
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("404", "NoSuchKey", "403"):
+            raise KeyError(f"SoundFont not found: {soundfont_id}") from e
+        logger.error("S3 error for soundfont %s: %s", soundfont_id, e)
+        raise AssetServiceUnavailableError("Unable to generate download URL") from e
+
+
+def get_bundle_download_url(
+    expires_in: Optional[int] = None,
+) -> tuple[str, datetime]:
+    """
+    Generate presigned URL for the full bundle zip (all drum kits + GM soundfont).
+    Key: assets/bundle/all-assets.zip
+    Returns (url, expires_at). Raises if bundle not present.
+    """
+    expires_in = expires_in or settings.presign_expiry_seconds
+    bucket = _bucket()
+    try:
+        client = _s3_client()
+        client.head_object(Bucket=bucket, Key=BUNDLE_KEY)
+        url = client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": BUNDLE_KEY},
+            ExpiresIn=expires_in,
+        )
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        return url, expires_at
+    except NoCredentialsError as e:
+        logger.warning("AWS credentials not configured: %s", e)
+        raise AssetServiceUnavailableError("AWS credentials not configured") from e
+    except BotoCoreError as e:
+        logger.warning("S3 unreachable for bundle: %s", e)
+        raise AssetServiceUnavailableError("Unable to reach asset storage") from e
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("404", "NoSuchKey", "403"):
+            raise KeyError("Bundle not found") from e
+        logger.error("S3 error for bundle: %s", e)
+        raise AssetServiceUnavailableError("Unable to generate download URL") from e
+
+
+def check_s3_reachable() -> bool:
+    """Verify we can reach S3 (e.g. head bucket or get manifest). Returns True if OK."""
+    if not settings.aws_s3_asset_bucket:
+        return False
+    try:
+        client = _s3_client()
+        client.head_bucket(Bucket=_bucket())
+        return True
+    except Exception as e:
+        logger.debug("S3 health check failed: %s", e)
+        return False

@@ -1,0 +1,101 @@
+# Setup & run
+
+One place for: local run, cloud deploy, config, and day-to-day ops. All paths and commands are from **repo root** unless noted.
+
+---
+
+## Quick start (Docker)
+
+```bash
+cp .env.example .env
+# Edit .env: STORI_OPENROUTER_API_KEY, STORI_DB_PASSWORD (required; e.g. openssl rand -hex 16 for local), STORI_ACCESS_TOKEN_SECRET (openssl rand -hex 32).
+docker compose up -d
+```
+
+Composer: `http://localhost:10001`. Tests: `docker compose exec composer pytest tests/ -v`.
+
+---
+
+## Local (macOS)
+
+- Use **Docker Desktop**; same stack as production.
+- **Stori macOS app:** Composer publishes port 10001 to the host (`127.0.0.1:10001`). Set `ApiBaseURL = http://localhost:10001` in the app; health, validate-token, register, compose/stream, and the MCP WebSocket (`ws://localhost:10001/api/v1/mcp/daw?token=...`) are then reachable from the Mac.
+- Copy `.env` from server if you have one. To hit the API via nginx: set `NGINX_CONF_DIR=conf.d-local` in `.env`, then `docker compose up -d`; use **`http://localhost`** (nginx proxies to composer). Direct to Composer: **`http://localhost:10001`** (no nginx needed for the Stori app).
+- Port 5432 in use: `brew services stop postgresql@15` or change Postgres port in `docker-compose.yml`.
+- Logs: `docker compose logs -f composer`. Restart: `docker compose restart composer`.
+
+---
+
+## Cloud (Ubuntu + Docker)
+
+**API keys:** OpenRouter (https://openrouter.ai/keys), HuggingFace Pro for Orpheus. Put keys in `.env` on the server.
+
+**Deploy:** On Ubuntu: clone or rsync repo, `cp .env.example .env`, edit `.env`, then `docker compose up -d`. Production uses the same `docker-compose.yml` with a production `.env` (see **Configuration** below for required vars). Start on boot: systemd unit from `scripts/deploy/install.sh` (runs `docker compose up -d`). See **New instance** below for a fresh EC2.
+
+---
+
+## Configuration (env)
+
+| Area | Key vars |
+|------|----------|
+| **Domain / CORS** | `STORI_DOMAIN`; `STORI_CORS_ORIGINS` (JSON array, required—no default; set exact origins in production) |
+| **Auth** | `STORI_ACCESS_TOKEN_SECRET` — `openssl rand -hex 32`; required for protected endpoints |
+| **LLM** | `STORI_LLM_PROVIDER=openrouter`, `STORI_OPENROUTER_API_KEY`, `STORI_LLM_MODEL` |
+| **DB** | `STORI_DB_PASSWORD` or `STORI_DATABASE_URL`. Reset: see **Reset database (Postgres)** below. |
+| **Music** | `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`), `STORI_HF_API_KEY`. **Docker:** `docker-compose.yml` overrides to `http://orpheus:10002` so the composer container can reach Orpheus. |
+| **S3** | `STORI_AWS_S3_ASSET_BUCKET`, `STORI_AWS_REGION`, plus AWS keys for presigned URLs |
+
+Local: `NGINX_CONF_DIR=conf.d-local`. Full list: `.env.example`.
+
+---
+
+## Reset database (Postgres)
+
+**All data is deleted.** Use when you want a clean schema (e.g. no users yet, or after a bad migration). From repo root:
+
+1. **Stop the app** so it releases DB connections:
+   ```bash
+   docker compose stop composer
+   ```
+2. **Drop and recreate the database:**
+   ```bash
+   docker compose exec -T postgres psql -U stori -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'stori' AND pid <> pg_backend_pid();"
+   docker compose exec -T postgres psql -U stori -d postgres -c "DROP DATABASE IF EXISTS stori;"
+   docker compose exec -T postgres psql -U stori -d postgres -c "CREATE DATABASE stori;"
+   ```
+3. **Run migrations** in a one-off container (so the app does not create tables on startup first). Migrations require `STORI_DATABASE_URL` or `STORI_DB_PASSWORD` (with Docker Postgres); see `.env.example`.
+   ```bash
+   docker compose run --rm composer alembic upgrade head
+   ```
+4. **Start the app:**
+   ```bash
+   docker compose up -d composer
+   ```
+
+For SQLite: delete the DB file (e.g. `/data/stori.db` in the container or your local path), then run `alembic upgrade head` before or after starting the app.
+
+---
+
+## Deploy (day-to-day)
+
+- **Restart:** `ssh stage.stori.audio 'cd ~/composer.stori.audio && docker compose restart composer'`
+- **Sync code:** `rsync -avz --exclude '.git' --exclude '__pycache__' --exclude '.env' ./ stage.stori.audio:~/composer.stori.audio/`
+- **Recreate (pick up .env):** `docker compose up -d --force-recreate composer`
+- **S3 assets:** Run `scripts/deploy/setup-s3-assets.sh` with AWS credentials; add printed vars to `.env`. Upload assets via `scripts/upload_assets_to_s3.py` (e.g. inside container).
+- **Uninstall:** `docker compose down`; disable systemd: `sudo systemctl disable composer-stori && sudo systemctl stop composer-stori`.
+
+---
+
+## New instance (e.g. stage.stori.audio)
+
+1. **EC2:** Ubuntu 22.04, t3.medium, SSH + HTTP + HTTPS; note public IP.
+2. **DNS:** A record for your domain → instance IP; wait for propagation.
+3. **Code:** rsync repo (exclude `.git`, `.env`) to `ubuntu@IP:~/composer.stori.audio/`.
+4. **On server:** `cd ~/composer.stori.audio`, `cp .env.example .env`, edit (OpenRouter, DB password, domain, CORS). Run `sudo ./scripts/deploy/setup-instance.sh --domain stage.stori.audio` (or your domain) for Docker, nginx, SSL, systemd.
+5. **CORS / security:** Run `bash scripts/deploy/update-env-security.sh` so CORS is not wildcard.
+
+---
+
+## AWS credentials
+
+For S3 asset setup: create IAM user + access key in AWS Console (or use existing key). Run `scripts/deploy/setup-s3-assets.sh` with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`. Script can create a limited `stori-assets-app` user; put the **printed** env vars into server `.env`.

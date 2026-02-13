@@ -1,0 +1,28 @@
+{
+  "name": "LinnDrum",
+  "author": "Linn / Drumkito",
+  "license": "Royalty-Free",
+  "version": "1.0",
+  "sounds": {
+    "kick": "kick.wav",
+    "snare": "snare.wav",
+    "clap": "clap.wav",
+    "hihat_closed": "hihat_closed.wav",
+    "hihat_open": "hihat_closed.wav",
+    "tom_low": "tom_low.wav",
+    "tom_mid": "tom_mid.wav",
+    "tom_high": "tom_high.wav",
+    "crash": "crash.wav",
+    "ride": "ride.wav",
+    "rim": "cowbell.wav",
+    "cowbell": "cowbell.wav",
+    "conga_low": "conga_low.wav",
+    "conga_high": "conga_high.wav",
+    "shaker": "shaker.wav"
+  },
+  "display_names": {
+    "clap": "Hand Clap",
+    "hihat_open": "Hi-Hat",
+    "rim": "Cowbell"
+  }
+}

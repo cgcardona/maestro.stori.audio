@@ -1,0 +1,30 @@
+{
+  "name": "CR-78",
+  "author": "Roland / Sampled Project",
+  "license": "Public Domain",
+  "version": "1.0",
+  "sounds": {
+    "kick": "kick.wav",
+    "snare": "snare.wav",
+    "clap": "snare_accent.wav",
+    "hihat_closed": "hihat_closed.wav",
+    "hihat_open": "kick_accent.wav",
+    "tom_low": "bongo_low.wav",
+    "tom_mid": "bongo_high.wav",
+    "tom_high": "bongo_high.wav",
+    "crash": "cymbal.wav",
+    "rim": "rim.wav",
+    "cowbell": "cowbell.wav",
+    "conga_low": "conga_low.wav"
+  },
+  "display_names": {
+    "clap": "Metal Beat",
+    "hihat_open": "Accent",
+    "crash": "Cymbal",
+    "rim": "Rim Shot",
+    "tom_low": "Low Bongo",
+    "tom_mid": "High Bongo",
+    "tom_high": "High Bongo",
+    "conga_low": "Low Conga"
+  }
+}

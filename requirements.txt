@@ -1,0 +1,38 @@
+# Core dependencies
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+httpx>=0.26.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+websockets>=12.0
+PyJWT>=2.8.0
+
+# Database dependencies
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.29.0  # PostgreSQL async driver
+aiosqlite>=0.19.0  # SQLite async driver (for development)
+alembic>=1.13.0  # Database migrations
+psycopg2-binary>=2.9.9  # PostgreSQL driver (for Alembic)
+
+# Security dependencies
+slowapi>=0.1.9  # Rate limiting
+
+# AWS S3 for on-demand asset delivery (drum kits, soundfonts)
+boto3>=1.34.0
+
+# RAG and Vector Search dependencies
+qdrant-client>=1.7.0  # Vector database client
+beautifulsoup4>=4.12.0  # HTML parsing for docs
+lxml>=5.1.0  # Fast HTML parser for BS4
+openai>=1.10.0  # Embeddings API
+
+# Neural MIDI generation
+gradio-client>=1.4.0  # HuggingFace Spaces API client
+mido>=1.3.0  # MIDI file parsing
+
+# Development dependencies
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+coverage>=7.0.0
+anyio>=4.2.0

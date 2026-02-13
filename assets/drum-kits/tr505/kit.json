@@ -1,0 +1,27 @@
+{
+  "name": "TR-505",
+  "author": "Roland / Sampled Project",
+  "license": "Public Domain",
+  "version": "1.0",
+  "sounds": {
+    "kick": "kick.wav",
+    "snare": "snare.wav",
+    "clap": "clap.wav",
+    "hihat_closed": "hihat_closed.wav",
+    "hihat_open": "hihat_open.wav",
+    "tom_low": "tom_low.wav",
+    "tom_mid": "tom_mid.wav",
+    "tom_high": "tom_high.wav",
+    "crash": "crash.wav",
+    "ride": "ride.wav",
+    "rim": "rim.wav",
+    "cowbell": "cowbell.wav",
+    "conga_low": "tom_low.wav",
+    "conga_high": "tom_high.wav"
+  },
+  "display_names": {
+    "rim": "Rim Shot",
+    "conga_low": "Low Tom",
+    "conga_high": "High Tom"
+  }
+}
