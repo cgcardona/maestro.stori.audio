@@ -34,8 +34,8 @@ def _layer_for_note(note: dict) -> str:
 def _salience_at_beat(notes: list[dict], beat: float, salience_weight: dict) -> float:
     total = 0.0
     for n in notes:
-        start = n["startBeat"]
-        dur = n.get("duration", 0.25)
+        start = n["start_beat"]
+        dur = n.get("duration_beats", 0.25)
         if start <= beat < start + dur:
             total += salience_weight.get(_layer_for_note(n), 0.5)
     return total
@@ -56,8 +56,8 @@ def _apply_salience_cap(notes: list[dict], drum_spec: DrumSpec) -> list[dict]:
     beat_res = 0.25
     beats_to_check = set()
     for n in notes:
-        start = n["startBeat"]
-        dur = n.get("duration", 0.25)
+        start = n["start_beat"]
+        dur = n.get("duration_beats", 0.25)
         b = start
         while b < start + dur:
             beats_to_check.add(round(b / beat_res) * beat_res)
@@ -75,7 +75,7 @@ def _apply_salience_cap(notes: list[dict], drum_spec: DrumSpec) -> list[dict]:
             break
         candidates = [
             n for n in out
-            if n["startBeat"] <= worst_beat < n["startBeat"] + n.get("duration", 0.25)
+            if n["start_beat"] <= worst_beat < n["start_beat"] + n.get("duration_beats", 0.25)
         ]
         if not candidates:
             break
@@ -113,8 +113,8 @@ def apply_drum_repair(
                     if _can_add_at_beat(out, beat, "ghost_layer", max_sal, salience_weight):
                         out.append({
                             "pitch": rng.choice(ghost_pitches),
-                            "startBeat": beat,
-                            "duration": 0.25,
+                            "start_beat": beat,
+                            "duration_beats": 0.25,
                             "velocity": rng.randint(40, 70),
                         })
             continue
@@ -132,8 +132,8 @@ def apply_drum_repair(
                     if _can_add_at_beat(out, beat, "fills", max_sal, salience_weight):
                         out.append({
                             "pitch": rng.choice(fill_pitches),
-                            "startBeat": round(beat * 4) / 4,
-                            "duration": 0.25,
+                            "start_beat": round(beat * 4) / 4,
+                            "duration_beats": 0.25,
                             "velocity": rng.randint(70, 95),
                         })
             continue
@@ -144,15 +144,15 @@ def apply_drum_repair(
                 if _can_add_at_beat(out, beat, "timekeepers", max_sal, salience_weight):
                     out.append({
                         "pitch": 46,
-                        "startBeat": beat,
-                        "duration": 0.5,
+                        "start_beat": beat,
+                        "duration_beats": 0.5,
                         "velocity": rng.randint(70, 90),
                     })
             continue
         # velocity_flat: accent beat 1 and 3, reduce on upbeats
         if "velocity_flat" in instr_lower:
             for n in out:
-                b = n["startBeat"]
+                b = n["start_beat"]
                 beat_in_bar = (b % 4)
                 if abs(beat_in_bar - 0.0) < 0.2 or abs(beat_in_bar - 2.0) < 0.2:
                     n["velocity"] = min(127, int(n.get("velocity", 80) * 1.15))
@@ -161,7 +161,7 @@ def apply_drum_repair(
             continue
 
     out = _apply_salience_cap(out, drum_spec)
-    out.sort(key=lambda n: (n["startBeat"], n["pitch"]))
+    out.sort(key=lambda n: (n["start_beat"], n["pitch"]))
     logger.info(f"Drum repair: {len(notes)} -> {len(out)} notes, applied {len(repair_instructions)} instructions")
     return out
 

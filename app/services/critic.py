@@ -65,7 +65,7 @@ def _offbeat_ratio(notes: list[dict], beat_resolution: float = 0.25) -> float:
     """Fraction of onsets that are offbeat (not on quarter)."""
     if not notes:
         return 0.0
-    off = sum(1 for n in notes if (n.get("startBeat", 0) * 4) % 4 != 0)
+    off = sum(1 for n in notes if (n.get("start_beat", 0) * 4) % 4 != 0)
     return off / len(notes)
 
 
@@ -120,8 +120,8 @@ def _score_groove_pocket(
         
         if kicks and snares:
             # Calculate average timing offset from grid for each
-            kick_offsets = [(n["startBeat"] % 0.25) for n in kicks]
-            snare_offsets = [(n["startBeat"] % 0.25) for n in snares]
+            kick_offsets = [(n["start_beat"] % 0.25) for n in kicks]
+            snare_offsets = [(n["start_beat"] % 0.25) for n in snares]
             
             avg_kick = sum(kick_offsets) / len(kick_offsets) if kick_offsets else 0
             avg_snare = sum(snare_offsets) / len(snare_offsets) if snare_offsets else 0
@@ -138,7 +138,7 @@ def _score_groove_pocket(
     # Timekeepers: hats should have consistent timing pattern
     hat_notes = by_layer.get("timekeepers", [])
     if hat_notes:
-        offsets = [(n["startBeat"] % 0.5) for n in hat_notes]
+        offsets = [(n["start_beat"] % 0.5) for n in hat_notes]
         if offsets:
             variance = sum((o - sum(offsets)/len(offsets))**2 for o in offsets) / len(offsets)
             # Low variance = consistent timing = good
@@ -148,7 +148,7 @@ def _score_groove_pocket(
     # Ghost layer: should be late (positive offset)
     ghost_notes = by_layer.get("ghost_layer", [])
     if ghost_notes:
-        ghost_offsets = [(n["startBeat"] % 0.25) for n in ghost_notes]
+        ghost_offsets = [(n["start_beat"] % 0.25) for n in ghost_notes]
         avg_ghost = sum(ghost_offsets) / len(ghost_offsets) if ghost_offsets else 0
         # Ghosts should be late (offset > 0.05)
         if avg_ghost > 0.03:
@@ -209,7 +209,7 @@ def _score_hat_articulation(
     for b in range(bars):
         bar_start = b * 4.0
         bar_end = bar_start + 4.0
-        bar_hats = [n for n in hat_notes if bar_start <= n.get("startBeat", 0) < bar_end]
+        bar_hats = [n for n in hat_notes if bar_start <= n.get("start_beat", 0) < bar_end]
         if len(bar_hats) >= 4:
             vels = [n.get("velocity", 80) for n in bar_hats]
             bar_vel_ranges.append(max(vels) - min(vels))
@@ -230,8 +230,8 @@ def _score_hat_articulation(
     for b in range(bars):
         bar_start = b * 4.0
         bar_end = bar_start + 4.0
-        bar_hats = [n for n in hat_notes if bar_start <= n.get("startBeat", 0) < bar_end]
-        pattern = tuple(sorted(round((n["startBeat"] - bar_start) * 4) / 4 for n in bar_hats))
+        bar_hats = [n for n in hat_notes if bar_start <= n.get("start_beat", 0) < bar_end]
+        pattern = tuple(sorted(round((n["start_beat"] - bar_start) * 4) / 4 for n in bar_hats))
         bar_patterns.append(pattern)
     
     if len(bar_patterns) >= 2:
@@ -284,7 +284,7 @@ def _score_fill_localization(
     # 1. What percentage of fill notes are in fill bars?
     in_fill_bars = 0
     for n in fill_notes:
-        bar_idx = int(n.get("startBeat", 0) // 4)
+        bar_idx = int(n.get("start_beat", 0) // 4)
         if bar_idx in fill_bars:
             in_fill_bars += 1
     
@@ -300,9 +300,9 @@ def _score_fill_localization(
         repair.append("fills_misplaced: fills should be in bars " + str(fill_bars))
     
     # 2. Fill bars should have more activity than regular bars
-    fill_bar_hits = sum(1 for n in notes if int(n.get("startBeat", 0) // 4) in fill_bars)
+    fill_bar_hits = sum(1 for n in notes if int(n.get("start_beat", 0) // 4) in fill_bars)
     non_fill_bars = [b for b in range(bars) if b not in fill_bars]
-    non_fill_hits = sum(1 for n in notes if int(n.get("startBeat", 0) // 4) in non_fill_bars)
+    non_fill_hits = sum(1 for n in notes if int(n.get("start_beat", 0) // 4) in non_fill_bars)
     
     if len(fill_bars) > 0 and len(non_fill_bars) > 0:
         fill_density = fill_bar_hits / len(fill_bars)
@@ -358,7 +358,7 @@ def _score_ghost_plausibility(
     # 2. Position check: near backbeats (beats 1, 2, 3, 4 ± 0.5)
     near_backbeat = 0
     for n in ghost_notes:
-        beat_in_bar = n.get("startBeat", 0) % 4
+        beat_in_bar = n.get("start_beat", 0) % 4
         # Check if within 0.5 beats of backbeat (1 or 3)
         if abs(beat_in_bar - 1.0) < 0.6 or abs(beat_in_bar - 3.0) < 0.6:
             near_backbeat += 1
@@ -465,9 +465,9 @@ def _score_repetition_structure(
         bar_start = b * 4.0
         bar_end = bar_start + 4.0
         onsets = tuple(sorted(
-            round((n["startBeat"] - bar_start) * 4) / 4
+            round((n["start_beat"] - bar_start) * 4) / 4
             for n in notes
-            if bar_start <= n.get("startBeat", 0) < bar_end
+            if bar_start <= n.get("start_beat", 0) < bar_end
         ))
         bar_rhythms.append(onsets)
     
@@ -528,7 +528,7 @@ def _score_velocity_dynamics(
     # 1. Beat-position velocity correlation (backbeats should be louder)
     beat_vels = {0: [], 1: [], 2: [], 3: []}
     for n in notes:
-        beat_in_bar = int(n.get("startBeat", 0) % 4)
+        beat_in_bar = int(n.get("start_beat", 0) % 4)
         beat_vels[beat_in_bar].append(n.get("velocity", 80))
     
     avg_vels = {b: sum(v) / len(v) if v else 80 for b, v in beat_vels.items()}
@@ -657,7 +657,7 @@ def score_bass_notes(
         anticipated = 0
         
         for n in notes:
-            start = n.get("startBeat", 0)
+            start = n.get("start_beat", 0)
             
             # Check direct alignment
             for k in kick_set:
@@ -685,7 +685,7 @@ def score_bass_notes(
         scores.append(0.7)  # no kick info: assume ok
     
     # Note density check
-    bars = max(1, int(max(n.get("startBeat", 0) for n in notes) / 4) + 1)
+    bars = max(1, int(max(n.get("start_beat", 0) for n in notes) / 4) + 1)
     notes_per_bar = len(notes) / bars
     if 2 <= notes_per_bar <= 8:
         scores.append(1.0)

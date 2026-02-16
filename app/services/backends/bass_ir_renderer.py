@@ -235,8 +235,8 @@ def render_bass_spec(
             
             notes.append({
                 "pitch": int(pitch),
-                "startBeat": round(b * 4) / 4,
-                "duration": duration,
+                "start_beat": round(b * 4) / 4,
+                "duration_beats": duration,
                 "velocity": vel,
             })
 
@@ -251,9 +251,9 @@ def render_bass_spec(
             offset_range = profile.role_offset_ms.get("kick", (-5, 5))
             offset_ms = rng.randint(offset_range[0], offset_range[1])
             offset_beats = offset_ms / ms_per_beat
-            n["startBeat"] = max(0.0, round((n["startBeat"] + offset_beats) * 8) / 8)
+            n["start_beat"] = max(0.0, round((n["start_beat"] + offset_beats) * 8) / 8)
 
-    notes.sort(key=lambda x: (x["startBeat"], x["pitch"]))
+    notes.sort(key=lambda x: (x["start_beat"], x["pitch"]))
     
     # Calculate alignment ratio
     kick_alignment_ratio = kick_aligned_count / total_notes if total_notes > 0 else 0.0

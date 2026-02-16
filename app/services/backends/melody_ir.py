@@ -58,7 +58,7 @@ class MelodySpecBackend(MusicGeneratorBackend):
                 melody_spec = default_melody_spec(bars=bars)
             notes = render_melody_spec(melody_spec, global_spec, harmonic_spec)
             out = [
-                {"pitch": n["pitch"], "startBeat": n["startBeat"], "duration": n["duration"], "velocity": n["velocity"]}
+                {"pitch": n["pitch"], "start_beat": n["start_beat"], "duration_beats": n["duration_beats"], "velocity": n["velocity"]}
                 for n in notes
             ]
             logger.info(f"MelodySpecBackend: {len(out)} notes")

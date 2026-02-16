@@ -156,7 +156,7 @@ data: {
         "note_id": "nc-uuid",
         "change_type": "added",
         "before": null,
-        "after": { "pitch": 43, "start": 16.0, "duration": 1.0, "velocity": 90, "channel": 0 }
+        "after": { "pitch": 43, "start_beat": 16.0, "duration_beats": 1.0, "velocity": 90, "channel": 0 }
       }
     ],
     "controller_changes": []
@@ -293,9 +293,21 @@ Apply accepted phrases to canonical state. Loads variation from backend store (n
   "new_state_id": "43",
   "applied_phrase_ids": ["phrase-1", "phrase-3"],
   "undo_label": "Accept Variation: add a jazz bass line",
-  "updated_regions": []
+  "updated_regions": [
+    {
+      "region_id": "uuid",
+      "track_id": "uuid",
+      "notes": [
+        { "pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100, "channel": 0 }
+      ]
+    }
+  ]
 }
 ```
+
+`updated_regions` contains the **full** materialized note state for every region
+affected by the accepted phrases.  The frontend should replace its local region
+notes with this data — no need to re-read project state or apply diffs locally.
 
 ### Errors
 

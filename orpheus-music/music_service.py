@@ -336,8 +336,8 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
                 
                 channels[ch].append({
                     "pitch": msg.note,
-                    "startBeat": round(beat, 3),
-                    "duration": 0.5,  # Will be updated by note_off
+                    "start_beat": round(beat, 3),
+                    "duration_beats": 0.5,  # Will be updated by note_off
                     "velocity": msg.velocity
                 })
             elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
@@ -346,8 +346,8 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
                     # Find the matching note and update duration
                     beat = time / ticks_per_beat
                     for note in reversed(channels[ch]):
-                        if note["pitch"] == msg.note and note.get("duration") == 0.5:
-                            note["duration"] = round(beat - note["startBeat"], 3)
+                        if note["pitch"] == msg.note and note.get("duration_beats") == 0.5:
+                            note["duration_beats"] = round(beat - note["start_beat"], 3)
                             break
     
     return channels
@@ -456,7 +456,7 @@ def generate_tool_calls(channels: dict, tempo: int, instruments: List[str]) -> L
         # 3. Add region for this track
         # Calculate region length (round up to nearest 4 bars)
         if notes:
-            max_beat = max(n["startBeat"] + n["duration"] for n in notes)
+            max_beat = max(n["start_beat"] + n["duration_beats"] for n in notes)
             bars = int((max_beat / 4) + 1)
             bars = ((bars + 3) // 4) * 4  # Round to 4
         else:
@@ -722,7 +722,7 @@ async def generate(request: GenerateRequest):
         max_beat = request.bars * 4
         filtered_channels = {}
         for ch, notes in channels.items():
-            filtered_notes = [n for n in notes if n["startBeat"] < max_beat]
+            filtered_notes = [n for n in notes if n["start_beat"] < max_beat]
             if filtered_notes:
                 filtered_channels[ch] = filtered_notes
 

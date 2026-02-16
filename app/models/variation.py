@@ -33,24 +33,22 @@ class MidiNoteSnapshot(BaseModel):
     def from_note_dict(cls, note: dict) -> "MidiNoteSnapshot":
         """Create a snapshot from a note dictionary.
 
-        Accepts canonical ``start_beat`` / ``duration_beats`` keys as well as
-        legacy ``startBeat`` / ``durationBeats`` / ``start`` / ``duration`` for
-        backward compatibility with DAW tool payloads.
+        Expects snake_case keys: ``start_beat``, ``duration_beats``.
         """
         return cls(
             pitch=note.get("pitch", 60),
-            start_beat=note.get("start_beat", note.get("startBeat", note.get("start", 0))),
-            duration_beats=note.get("duration_beats", note.get("durationBeats", note.get("duration", 0.5))),
+            start_beat=note.get("start_beat", 0),
+            duration_beats=note.get("duration_beats", 0.5),
             velocity=note.get("velocity", 100),
             channel=note.get("channel", 0),
         )
     
     def to_note_dict(self) -> dict:
-        """Convert to a note dictionary (camelCase wire format for frontend/DAW)."""
+        """Convert to a note dictionary (snake_case — matches model_dump format)."""
         return {
             "pitch": self.pitch,
-            "startBeat": self.start_beat,
-            "durationBeats": self.duration_beats,
+            "start_beat": self.start_beat,
+            "duration_beats": self.duration_beats,
             "velocity": self.velocity,
             "channel": self.channel,
         }
@@ -302,8 +300,7 @@ class CommitVariationResponse(BaseModel):
     updated_regions: list[dict] = Field(
         default_factory=list,
         description=(
-            "Updated regions with full MIDI data after commit. "
-            "Currently empty in v1 — frontend should apply accepted "
-            "phrase diffs locally or re-read project state."
+            "Full MIDI state for each affected region after commit. "
+            "Each entry: {region_id, track_id, notes: [{pitch, start_beat, duration_beats, velocity, channel}]}."
         ),
     )

@@ -120,8 +120,8 @@ class MelodyNeuralBackend(MusicGeneratorBackend):
             out = [
                 {
                     "pitch": n["pitch"],
-                    "startBeat": n["startBeat"],
-                    "duration": n["duration"],
+                    "start_beat": n["start_beat"],
+                    "duration_beats": n["duration_beats"],
                     "velocity": n["velocity"],
                 }
                 for n in result.notes

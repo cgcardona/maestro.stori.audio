@@ -81,7 +81,7 @@ class TestMusicGenerator:
 
         fake_result = MagicMock()
         fake_result.success = True
-        fake_result.notes = [{"pitch": 36, "startBeats": 0, "durationBeats": 0.25, "velocity": 100}]
+        fake_result.notes = [{"pitch": 36, "start_beat": 0, "duration_beats": 0.25, "velocity": 100}]
         fake_result.backend_used = MagicMock()
         fake_result.metadata = {}
 

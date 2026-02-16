@@ -459,7 +459,7 @@ async def commit_variation(
                 new_state_id=new_state_id,
                 applied_phrase_ids=result.applied_phrase_ids,
                 undo_label=f"Accept Variation: {record.intent[:50]}",
-                updated_regions=[],
+                updated_regions=result.updated_regions,
             )
 
     except HTTPException:
@@ -808,7 +808,7 @@ async def _commit_from_variation_data(
         new_state_id=project_store.get_state_id(),
         applied_phrase_ids=result.applied_phrase_ids,
         undo_label=f"Accept Variation: {variation.intent[:50]}",
-        updated_regions=[],
+        updated_regions=result.updated_regions,
     )
 
 

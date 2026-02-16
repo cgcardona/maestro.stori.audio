@@ -44,7 +44,7 @@ class MelodyGenerationRequest:
 @dataclass
 class MelodyGenerationResult:
     """Result of melody generation."""
-    notes: list[dict]  # {pitch, startBeat, duration, velocity}
+    notes: list[dict]  # {pitch, start_beat, duration_beats, velocity}
     success: bool
     model_used: str
     metadata: dict
@@ -186,8 +186,8 @@ class MockNeuralMelodyBackend(MelodyModelBackend):
                 
                 notes.append({
                     "pitch": int(pitch),
-                    "startBeat": round(bar_start + beat, 3),
-                    "duration": round(duration, 3),
+                    "start_beat": round(bar_start + beat, 3),
+                    "duration_beats": round(duration, 3),
                     "velocity": velocity,
                 })
                 

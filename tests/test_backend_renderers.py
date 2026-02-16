@@ -79,8 +79,8 @@ class TestDrumSpecBackend:
         if result.notes:
             note = result.notes[0]
             assert "pitch" in note
-            assert "startBeat" in note
-            assert "duration" in note
+            assert "start_beat" in note
+            assert "duration_beats" in note
             assert "velocity" in note
 
 
@@ -227,7 +227,7 @@ class TestGenerationResult:
     def test_success_result(self):
         result = GenerationResult(
             success=True,
-            notes=[{"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 100}],
+            notes=[{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
             backend_used=GeneratorBackend.DRUM_IR,
             metadata={"source": "test"},
         )

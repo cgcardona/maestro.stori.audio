@@ -107,8 +107,8 @@ def render_melody_spec(
         dur = 0.25 + rng.random() * 0.5  # 8th to quarter
         notes.append({
             "pitch": int(pitch),
-            "startBeat": round(beat * 4) / 4,
-            "duration": round(dur * 4) / 4,
+            "start_beat": round(beat * 4) / 4,
+            "duration_beats": round(dur * 4) / 4,
             "velocity": vel,
         })
         beat += 0.5 + rng.random() * 0.5  # advance 0.5–1 beat
@@ -118,8 +118,8 @@ def render_melody_spec(
         ms_per_beat = 60_000 / global_spec.tempo
         for n in notes:
             jitter_ms = rng.randint(j_lo, j_hi) if j_hi > j_lo else 0
-            n["startBeat"] = round((n["startBeat"] + jitter_ms / ms_per_beat) * 4) / 4
+            n["start_beat"] = round((n["start_beat"] + jitter_ms / ms_per_beat) * 4) / 4
 
-    notes.sort(key=lambda x: (x["startBeat"], x["pitch"]))
+    notes.sort(key=lambda x: (x["start_beat"], x["pitch"]))
     logger.info(f"Melody IR render: {len(notes)} notes")
     return notes

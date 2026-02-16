@@ -36,7 +36,7 @@ class TestMusicGenerator:
         assert result.backend_used == GeneratorBackend.DRUM_IR
         assert len(result.notes) > 0
         for note in result.notes:
-            assert "pitch" in note and "startBeat" in note and "duration" in note and "velocity" in note
+            assert "pitch" in note and "start_beat" in note and "duration_beats" in note and "velocity" in note
         distinct = len(set(n["pitch"] for n in result.notes))
         assert distinct >= 8, f"Expected diverse kit, got {distinct} distinct pitches"
 
@@ -48,7 +48,7 @@ class TestGenerationResult:
         """Test successful result."""
         result = GenerationResult(
             success=True,
-            notes=[{"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 100}],
+            notes=[{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
             backend_used=GeneratorBackend.ORPHEUS,
             metadata={"source": "orpheus"},
         )

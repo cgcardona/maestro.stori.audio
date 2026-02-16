@@ -40,10 +40,10 @@ def variation_service():
 def simple_notes():
     """Simple test notes for basic matching."""
     return [
-        {"pitch": 60, "startBeat": 0.0, "duration": 1.0, "velocity": 100},
-        {"pitch": 62, "startBeat": 1.0, "duration": 1.0, "velocity": 100},
-        {"pitch": 64, "startBeat": 2.0, "duration": 1.0, "velocity": 100},
-        {"pitch": 65, "startBeat": 3.0, "duration": 1.0, "velocity": 100},
+        {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100},
+        {"pitch": 62, "start_beat": 1.0, "duration_beats": 1.0, "velocity": 100},
+        {"pitch": 64, "start_beat": 2.0, "duration_beats": 1.0, "velocity": 100},
+        {"pitch": 65, "start_beat": 3.0, "duration_beats": 1.0, "velocity": 100},
     ]
 
 
@@ -52,16 +52,16 @@ def drum_pattern():
     """A simple drum pattern for testing."""
     return [
         # Kick
-        {"pitch": 36, "startBeat": 0.0, "duration": 0.5, "velocity": 100},
-        {"pitch": 36, "startBeat": 2.0, "duration": 0.5, "velocity": 100},
+        {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.5, "velocity": 100},
+        {"pitch": 36, "start_beat": 2.0, "duration_beats": 0.5, "velocity": 100},
         # Snare
-        {"pitch": 38, "startBeat": 1.0, "duration": 0.5, "velocity": 90},
-        {"pitch": 38, "startBeat": 3.0, "duration": 0.5, "velocity": 90},
+        {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.5, "velocity": 90},
+        {"pitch": 38, "start_beat": 3.0, "duration_beats": 0.5, "velocity": 90},
         # Hi-hat
-        {"pitch": 42, "startBeat": 0.0, "duration": 0.25, "velocity": 70},
-        {"pitch": 42, "startBeat": 0.5, "duration": 0.25, "velocity": 60},
-        {"pitch": 42, "startBeat": 1.0, "duration": 0.25, "velocity": 70},
-        {"pitch": 42, "startBeat": 1.5, "duration": 0.25, "velocity": 60},
+        {"pitch": 42, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 70},
+        {"pitch": 42, "start_beat": 0.5, "duration_beats": 0.25, "velocity": 60},
+        {"pitch": 42, "start_beat": 1.0, "duration_beats": 0.25, "velocity": 70},
+        {"pitch": 42, "start_beat": 1.5, "duration_beats": 0.25, "velocity": 60},
     ]
 
 
@@ -73,8 +73,8 @@ class TestMidiNoteSnapshot:
     """Tests for MidiNoteSnapshot model."""
     
     def test_from_note_dict_standard_fields(self):
-        """Test creating snapshot from standard note dict (legacy startBeat/duration)."""
-        note = {"pitch": 60, "startBeat": 2.0, "duration": 0.5, "velocity": 80}
+        """Test creating snapshot from standard note dict (start_beat/duration_beats)."""
+        note = {"pitch": 60, "start_beat": 2.0, "duration_beats": 0.5, "velocity": 80}
         snapshot = MidiNoteSnapshot.from_note_dict(note)
         
         assert snapshot.pitch == 60
@@ -104,8 +104,8 @@ class TestMidiNoteSnapshot:
         note = snapshot.to_note_dict()
         
         assert note["pitch"] == 62
-        assert note["startBeat"] == 3.0
-        assert note["durationBeats"] == 1.0
+        assert note["start_beat"] == 3.0
+        assert note["duration_beats"] == 1.0
         assert note["velocity"] == 100
         assert note["channel"] == 1
 
@@ -205,7 +205,7 @@ class TestNoteMatching:
     def test_added_notes_detected(self, simple_notes):
         """New notes in proposed should be detected as added."""
         proposed = simple_notes.copy()
-        new_note = {"pitch": 67, "startBeat": 4.0, "duration": 1.0, "velocity": 100}
+        new_note = {"pitch": 67, "start_beat": 4.0, "duration_beats": 1.0, "velocity": 100}
         proposed.append(new_note)
         
         matches = match_notes(simple_notes, proposed)
@@ -263,8 +263,8 @@ class TestVariationService:
     def test_empty_to_notes_all_added(self, variation_service):
         """Adding notes to empty region = all added."""
         notes = [
-            {"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 100},
-            {"pitch": 62, "startBeat": 1, "duration": 1, "velocity": 100},
+            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
+            {"pitch": 62, "start_beat": 1, "duration_beats": 1, "velocity": 100},
         ]
         
         variation = variation_service.compute_variation(
@@ -312,12 +312,12 @@ class TestVariationService:
         # With bars_per_phrase=4 and beats_per_bar=4, each phrase covers 16 beats
         # So we need notes at beat 0 (phrase 0) and beat 16 (phrase 1)
         base_notes = [
-            {"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 100},   # Phrase 0 (beats 0-16)
-            {"pitch": 62, "startBeat": 16, "duration": 1, "velocity": 100},  # Phrase 1 (beats 16-32)
+            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},   # Phrase 0 (beats 0-16)
+            {"pitch": 62, "start_beat": 16, "duration_beats": 1, "velocity": 100},  # Phrase 1 (beats 16-32)
         ]
         proposed_notes = [
-            {"pitch": 61, "startBeat": 0, "duration": 1, "velocity": 100},   # Phrase 0 - changed
-            {"pitch": 63, "startBeat": 16, "duration": 1, "velocity": 100},  # Phrase 1 - changed
+            {"pitch": 61, "start_beat": 0, "duration_beats": 1, "velocity": 100},   # Phrase 0 - changed
+            {"pitch": 63, "start_beat": 16, "duration_beats": 1, "velocity": 100},  # Phrase 1 - changed
         ]
         
         variation = variation_service.compute_variation(
@@ -334,7 +334,7 @@ class TestVariationService:
     def test_phrase_labels_generated(self, variation_service):
         """Phrases should have human-readable labels."""
         notes = [
-            {"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 100},
+            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
         ]
         
         variation = variation_service.compute_variation(
@@ -352,10 +352,10 @@ class TestVariationService:
         """Appropriate tags should be detected for changes."""
         # Velocity change is detected as "modified" since pitch+timing match
         base_notes = [
-            {"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 100},
+            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
         ]
         proposed_notes = [
-            {"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 50},  # Velocity changed
+            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 50},  # Velocity changed
         ]
         
         variation = variation_service.compute_variation(
@@ -375,10 +375,10 @@ class TestVariationService:
         # Note: Pitch changes don't match (different pitch = different note)
         # So they become remove+add pairs, tagged as densityChange
         base_notes = [
-            {"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 100},
+            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
         ]
         proposed_notes = [
-            {"pitch": 59, "startBeat": 0, "duration": 1, "velocity": 100},  # Pitch lowered
+            {"pitch": 59, "start_beat": 0, "duration_beats": 1, "velocity": 100},  # Pitch lowered
         ]
         
         variation = variation_service.compute_variation(
@@ -503,8 +503,8 @@ class TestVariation:
     
     def test_serialization_round_trip(self, variation_service):
         """Variation should serialize and deserialize correctly."""
-        base = [{"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 100}]
-        proposed = [{"pitch": 63, "startBeat": 0, "duration": 1, "velocity": 80}]
+        base = [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}]
+        proposed = [{"pitch": 63, "start_beat": 0, "duration_beats": 1, "velocity": 80}]
         
         original = variation_service.compute_variation(
             base_notes=base,
@@ -534,12 +534,12 @@ class TestMultiRegionVariation:
     def test_multi_region_variation(self, variation_service):
         """Should handle changes across multiple regions."""
         base_regions = {
-            "region-1": [{"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 100}],
-            "region-2": [{"pitch": 64, "startBeat": 0, "duration": 1, "velocity": 100}],
+            "region-1": [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
+            "region-2": [{"pitch": 64, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
         }
         proposed_regions = {
-            "region-1": [{"pitch": 61, "startBeat": 0, "duration": 1, "velocity": 100}],
-            "region-2": [{"pitch": 65, "startBeat": 0, "duration": 1, "velocity": 100}],
+            "region-1": [{"pitch": 61, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
+            "region-2": [{"pitch": 65, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
         }
         
         variation = variation_service.compute_multi_region_variation(
@@ -589,8 +589,8 @@ class TestSSEVariationEvents:
     
     def test_variation_meta_event_structure(self, variation_service):
         """meta event should have correct structure."""
-        base = [{"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 100}]
-        proposed = [{"pitch": 63, "startBeat": 0, "duration": 1, "velocity": 80}]
+        base = [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}]
+        proposed = [{"pitch": 63, "start_beat": 0, "duration_beats": 1, "velocity": 80}]
         
         variation = variation_service.compute_variation(
             base_notes=base,
@@ -643,13 +643,13 @@ class TestSSEVariationEvents:
     def test_variation_hunk_serialization(self, variation_service):
         """Hunks should serialize correctly for SSE."""
         base = [
-            {"pitch": 60, "startBeat": 0, "duration": 1, "velocity": 100},
-            {"pitch": 62, "startBeat": 1, "duration": 1, "velocity": 100},
+            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
+            {"pitch": 62, "start_beat": 1, "duration_beats": 1, "velocity": 100},
         ]
         proposed = [
-            {"pitch": 63, "startBeat": 0, "duration": 1, "velocity": 80},  # Modified
+            {"pitch": 63, "start_beat": 0, "duration_beats": 1, "velocity": 80},  # Modified
             # Note removed
-            {"pitch": 65, "startBeat": 2, "duration": 1, "velocity": 90},  # Added
+            {"pitch": 65, "start_beat": 2, "duration_beats": 1, "velocity": 90},  # Added
         ]
         
         variation = variation_service.compute_variation(

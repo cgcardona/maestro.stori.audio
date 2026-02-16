@@ -108,6 +108,21 @@ class StateSnapshot:
     project_metadata: dict[str, Any]
 
 
+def _notes_match(existing: dict[str, Any], criteria: dict[str, Any]) -> bool:
+    """Check if an existing note matches removal criteria.
+
+    Matching on pitch + start_beat + duration_beats (snake_case only).
+    """
+    _TOL = 1e-6
+    if existing.get("pitch") != criteria.get("pitch"):
+        return False
+    if abs(existing.get("start_beat", 0) - criteria.get("start_beat", 0)) > _TOL:
+        return False
+    if abs(existing.get("duration_beats", 0) - criteria.get("duration_beats", 0)) > _TOL:
+        return False
+    return True
+
+
 class StateStore:
     """
     Persistent, versioned state store for a project/conversation.
@@ -149,6 +164,10 @@ class StateStore:
         self._events: list[StateEvent] = []
         self._snapshots: list[StateSnapshot] = []
         self._active_transaction: Optional[Transaction] = None
+        
+        # Materialized note store: region_id -> list of note dicts
+        # Maintained by add_notes/remove_notes; queryable after commit
+        self._region_notes: dict[str, list[dict[str, Any]]] = {}
         
         # Project metadata
         self._tempo: int = 120
@@ -392,7 +411,11 @@ class StateStore:
         notes: list[dict[str, Any]],
         transaction: Optional[Transaction] = None,
     ) -> None:
-        """Record notes added to a region."""
+        """Add notes to a region (event + materialized view)."""
+        if region_id not in self._region_notes:
+            self._region_notes[region_id] = []
+        self._region_notes[region_id].extend(deepcopy(notes))
+        
         self._append_event(
             event_type=EventType.NOTES_ADDED,
             entity_type=EntityType.REGION,
@@ -408,12 +431,18 @@ class StateStore:
         transaction: Optional[Transaction] = None,
     ) -> None:
         """
-        Record notes removed from a region.
+        Remove notes from a region (event + materialized view).
 
         note_criteria is a list of dicts identifying notes to remove.
-        Each dict should contain matching fields (pitch, start, duration, etc.)
-        to identify the note in the region.
+        Matching uses pitch + start_beat + duration_beats.
         """
+        if region_id in self._region_notes:
+            for criteria in note_criteria:
+                self._region_notes[region_id] = [
+                    n for n in self._region_notes[region_id]
+                    if not _notes_match(n, criteria)
+                ]
+        
         self._append_event(
             event_type=EventType.NOTES_REMOVED,
             entity_type=EntityType.REGION,
@@ -438,6 +467,19 @@ class StateStore:
         )
     
     # =========================================================================
+    # Region Note Queries
+    # =========================================================================
+    
+    def get_region_notes(self, region_id: str) -> list[dict[str, Any]]:
+        """Return the current materialized note list for a region."""
+        return deepcopy(self._region_notes.get(region_id, []))
+    
+    def get_region_track_id(self, region_id: str) -> Optional[str]:
+        """Return the parent track ID for a region (from registry)."""
+        entity = self._registry.get_region(region_id)
+        return entity.parent_id if entity else None
+    
+    # =========================================================================
     # Synchronization
     # =========================================================================
     
@@ -446,8 +488,17 @@ class StateStore:
         Sync with client-reported project state.
         
         This updates the registry without creating events (client is source of truth).
+        Also initializes the materialized region note store from client data.
         """
         self._registry.sync_from_project_state(project_state)
+        
+        # Initialize region notes from client-reported state
+        for track in project_state.get("tracks", []):
+            for region in track.get("regions", []):
+                region_id = region.get("id") or region.get("regionId")
+                notes = region.get("notes", [])
+                if region_id and notes:
+                    self._region_notes[region_id] = deepcopy(notes)
         
         # Update project metadata
         if "tempo" in project_state:
@@ -492,7 +543,7 @@ class StateStore:
         return event
     
     def _take_snapshot(self) -> StateSnapshot:
-        """Take a snapshot of current state."""
+        """Take a snapshot of current state (including region notes)."""
         snapshot = StateSnapshot(
             version=self._version,
             timestamp=datetime.now(timezone.utc),
@@ -501,6 +552,7 @@ class StateStore:
                 "tempo": self._tempo,
                 "key": self._key,
                 "time_signature": self._time_signature,
+                "_region_notes": deepcopy(self._region_notes),
             },
         )
         self._snapshots.append(snapshot)
@@ -512,11 +564,12 @@ class StateStore:
         return snapshot
     
     def _restore_snapshot(self, snapshot: StateSnapshot) -> None:
-        """Restore state from a snapshot."""
+        """Restore state from a snapshot (including region notes)."""
         self._registry = EntityRegistry.from_dict(snapshot.registry_data)
         self._tempo = snapshot.project_metadata.get("tempo", 120)
         self._key = snapshot.project_metadata.get("key", "C")
         self._time_signature = tuple(snapshot.project_metadata.get("time_signature", (4, 4)))
+        self._region_notes = deepcopy(snapshot.project_metadata.get("_region_notes", {}))
         # Note: version is NOT restored - we continue incrementing
         
         logger.info(f"📸 Restored to snapshot v{snapshot.version}")

@@ -80,3 +80,4 @@ Do **not** use these words in Stori code or docs:
 | reject | Discard Variation |
 | seconds / milliseconds (in Muse data) | beats |
 | tool_calls (in variation response) | updated_regions or phrases |
+| `start` / `duration` / `startBeat` / `durationBeats` (on notes) | `start_beat` / `duration_beats` — snake_case everywhere (Python model AND wire JSON) |

@@ -245,7 +245,13 @@ Backend must reject commits if `base_state_id` mismatches (optimistic concurrenc
   "applied_phrase_ids": ["uuid","uuid"],
   "undo_label": "Accept Variation: make that minor",
   "updated_regions": [
-    { "region_id": "uuid", "track_id": "uuid", "midi": "..." }
+    {
+      "region_id": "uuid",
+      "track_id": "uuid",
+      "notes": [
+        { "pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100, "channel": 0 }
+      ]
+    }
   ]
 }
 ```

@@ -182,7 +182,7 @@ class MidiTokenizer:
         Encode a list of notes to REMI token IDs.
         
         Args:
-            notes: List of {pitch, startBeat, duration, velocity}
+            notes: List of {pitch, start_beat, duration_beats, velocity}
             bars: Number of bars in the sequence
             add_special_tokens: Whether to add BOS/EOS tokens
             
@@ -195,7 +195,7 @@ class MidiTokenizer:
             tokens.append(self.config.bos_token)
         
         # Sort notes by start time
-        sorted_notes = sorted(notes, key=lambda n: (n["startBeat"], n["pitch"]))
+        sorted_notes = sorted(notes, key=lambda n: (n["start_beat"], n["pitch"]))
         
         # Group notes by bar
         for bar_idx in range(bars):
@@ -208,15 +208,15 @@ class MidiTokenizer:
             # Get notes in this bar
             bar_notes = [
                 n for n in sorted_notes
-                if bar_start <= n["startBeat"] < bar_end
+                if bar_start <= n["start_beat"] < bar_end
             ]
             
             # Sort by position within bar
-            bar_notes.sort(key=lambda n: n["startBeat"])
+            bar_notes.sort(key=lambda n: n["start_beat"])
             
             for note in bar_notes:
                 # Position within bar (0 to positions_per_bar - 1)
-                beat_in_bar = note["startBeat"] - bar_start
+                beat_in_bar = note["start_beat"] - bar_start
                 position = int(beat_in_bar * (self.config.positions_per_bar / 4))
                 position = min(position, self.config.positions_per_bar - 1)
                 
@@ -228,7 +228,7 @@ class MidiTokenizer:
                 tokens.append(f"PITCH_{pitch}")
                 
                 # Duration
-                duration = self._quantize_duration(note.get("duration", 0.5))
+                duration = self._quantize_duration(note.get("duration_beats", 0.5))
                 tokens.append(f"DUR_{duration}")
                 
                 # Velocity
@@ -256,7 +256,7 @@ class MidiTokenizer:
             tempo: Tempo for timing conversion
             
         Returns:
-            List of {pitch, startBeat, duration, velocity}
+            List of {pitch, start_beat, duration_beats, velocity}
         """
         notes: list[dict] = []
         
@@ -300,8 +300,8 @@ class MidiTokenizer:
                     
                     notes.append({
                         "pitch": current_pitch,
-                        "startBeat": start_beat,
-                        "duration": duration_beats,
+                        "start_beat": start_beat,
+                        "duration_beats": duration_beats,
                         "velocity": current_velocity,
                     })
                     

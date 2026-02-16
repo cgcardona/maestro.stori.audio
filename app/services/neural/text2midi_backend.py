@@ -367,7 +367,7 @@ class Text2MidiBackend:
         """
         Parse a MIDI file into our note format.
         
-        Returns list of notes with pitch, startBeat, duration, velocity.
+        Returns list of notes with pitch, start_beat, duration_beats, velocity.
         """
         try:
             # Try using mido library
@@ -407,13 +407,13 @@ class Text2MidiBackend:
                             
                             notes.append({
                                 "pitch": msg.note,
-                                "startBeat": round(start_beat, 3),
-                                "duration": max(0.125, round(duration, 3)),
+                                "start_beat": round(start_beat, 3),
+                                "duration_beats": max(0.125, round(duration, 3)),
                                 "velocity": velocity,
                             })
             
             # Sort by start time
-            notes.sort(key=lambda n: n["startBeat"])
+            notes.sort(key=lambda n: n["start_beat"])
             
             logger.info(f"[text2midi] Parsed {len(notes)} notes from MIDI")
             return notes

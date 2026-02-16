@@ -65,28 +65,28 @@ class TestMidiNote:
     
     def test_valid_note(self):
         """Test creating a valid note."""
-        note = MidiNote(pitch=60, startBeat=0, duration=1.0, velocity=100)
+        note = MidiNote(pitch=60, start_beat=0, duration_beats=1.0, velocity=100)
         assert note.pitch == 60
         assert note.velocity == 100
     
     def test_pitch_range(self):
         """Test pitch validation."""
-        MidiNote(pitch=0, startBeat=0, duration=1.0)  # Lowest
-        MidiNote(pitch=127, startBeat=0, duration=1.0)  # Highest
+        MidiNote(pitch=0, start_beat=0, duration_beats=1.0)  # Lowest
+        MidiNote(pitch=127, start_beat=0, duration_beats=1.0)  # Highest
         
         with pytest.raises(ValidationError):
-            MidiNote(pitch=128, startBeat=0, duration=1.0)
+            MidiNote(pitch=128, start_beat=0, duration_beats=1.0)
         
         with pytest.raises(ValidationError):
-            MidiNote(pitch=-1, startBeat=0, duration=1.0)
+            MidiNote(pitch=-1, start_beat=0, duration_beats=1.0)
     
     def test_velocity_range(self):
         """Test velocity validation."""
-        MidiNote(pitch=60, startBeat=0, duration=1.0, velocity=0)
-        MidiNote(pitch=60, startBeat=0, duration=1.0, velocity=127)
+        MidiNote(pitch=60, start_beat=0, duration_beats=1.0, velocity=0)
+        MidiNote(pitch=60, start_beat=0, duration_beats=1.0, velocity=127)
         
         with pytest.raises(ValidationError):
-            MidiNote(pitch=60, startBeat=0, duration=1.0, velocity=128)
+            MidiNote(pitch=60, start_beat=0, duration_beats=1.0, velocity=128)
 
 
 class TestAutomationPoint:

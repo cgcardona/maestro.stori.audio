@@ -36,6 +36,28 @@ from app.services.music_generator import get_music_generator
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Note normalization — MCP tool payloads may use camelCase field names.
+# Canonical format is snake_case: start_beat, duration_beats.
+# ---------------------------------------------------------------------------
+
+_NOTE_KEY_MAP = {
+    "startBeat": "start_beat",
+    "startBeats": "start_beat",
+    "start": "start_beat",
+    "durationBeats": "duration_beats",
+    "duration": "duration_beats",
+}
+
+
+def _normalize_note(note: dict) -> dict:
+    """Return a copy of *note* with canonical snake_case field names."""
+    out: dict[str, Any] = {}
+    for k, v in note.items():
+        out[_NOTE_KEY_MAP.get(k, k)] = v
+    return out
+
+
 @dataclass
 class ExecutionResult:
     """Result of a single tool execution."""
@@ -588,12 +610,12 @@ class VariationContext:
     def capture_base_notes(self, region_id: str, track_id: str, notes: list[dict]) -> None:
         """Capture base notes for a region before transformation."""
         if region_id not in self.base_notes:
-            self.base_notes[region_id] = notes.copy()
+            self.base_notes[region_id] = [_normalize_note(n) for n in notes]
             self.track_regions[region_id] = track_id
     
     def record_proposed_notes(self, region_id: str, notes: list[dict]) -> None:
         """Record proposed notes for a region after transformation."""
-        self.proposed_notes[region_id] = notes.copy()
+        self.proposed_notes[region_id] = [_normalize_note(n) for n in notes]
 
 
 async def execute_plan_variation(
@@ -803,6 +825,7 @@ class VariationApplyResult:
     notes_added: int
     notes_removed: int
     notes_modified: int
+    updated_regions: list[dict[str, Any]] = field(default_factory=list)
     error: Optional[str] = None
 
 
@@ -894,6 +917,17 @@ async def apply_variation_phrases(
 
             store.commit(tx)
 
+            # Build updated_regions: full note state for every affected region
+            affected_region_ids = set(region_adds.keys()) | set(region_removals.keys())
+            updated_regions: list[dict[str, Any]] = []
+            for rid in sorted(affected_region_ids):
+                track_id = store.get_region_track_id(rid)
+                updated_regions.append({
+                    "region_id": rid,
+                    "track_id": track_id or "",
+                    "notes": store.get_region_notes(rid),
+                })
+
             logger.info(
                 "Applied variation phrases",
                 extra={
@@ -901,6 +935,7 @@ async def apply_variation_phrases(
                     "notes_added": notes_added,
                     "notes_removed": notes_removed,
                     "notes_modified": notes_modified,
+                    "updated_region_count": len(updated_regions),
                 },
             )
 
@@ -910,6 +945,7 @@ async def apply_variation_phrases(
                 notes_added=notes_added,
                 notes_removed=notes_removed,
                 notes_modified=notes_modified,
+                updated_regions=updated_regions,
             )
             
         except Exception as e:

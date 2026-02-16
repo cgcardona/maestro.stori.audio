@@ -213,6 +213,150 @@ class TestStateStoreSerialization:
         assert store.key == "Am"
 
 
+class TestRegionNotes:
+    """Test the materialized region note store."""
+
+    def test_add_notes_creates_materialized_view(self):
+        """Adding notes should populate the materialized note list."""
+        store = StateStore()
+        track_id = store.create_track("Drums")
+        region_id = store.create_region("Pattern", track_id)
+
+        notes = [
+            {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.5, "velocity": 100, "channel": 9},
+            {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.5, "velocity": 90, "channel": 9},
+        ]
+        store.add_notes(region_id, notes)
+
+        result = store.get_region_notes(region_id)
+        assert len(result) == 2
+        assert result[0]["pitch"] == 36
+        assert result[1]["pitch"] == 38
+
+    def test_get_region_notes_returns_copy(self):
+        """get_region_notes should return a deep copy (no mutation leaks)."""
+        store = StateStore()
+        track_id = store.create_track("Bass")
+        region_id = store.create_region("Line", track_id)
+
+        store.add_notes(region_id, [{"pitch": 40, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80}])
+
+        copy = store.get_region_notes(region_id)
+        copy.append({"pitch": 99})
+
+        assert len(store.get_region_notes(region_id)) == 1
+
+    def test_remove_notes_by_pitch_and_start(self):
+        """Removing notes should match on pitch + start_beat + duration_beats."""
+        store = StateStore()
+        track_id = store.create_track("Keys")
+        region_id = store.create_region("Chords", track_id)
+
+        store.add_notes(region_id, [
+            {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100},
+            {"pitch": 64, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100},
+            {"pitch": 67, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100},
+        ])
+
+        # Remove middle note
+        store.remove_notes(region_id, [
+            {"pitch": 64, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100},
+        ])
+
+        result = store.get_region_notes(region_id)
+        assert len(result) == 2
+        pitches = [n["pitch"] for n in result]
+        assert 64 not in pitches
+        assert 60 in pitches
+        assert 67 in pitches
+
+    def test_remove_then_add_modified_note(self):
+        """Simulates a 'modified' note: remove old, add new."""
+        store = StateStore()
+        track_id = store.create_track("Lead")
+        region_id = store.create_region("Melody", track_id)
+
+        store.add_notes(region_id, [
+            {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80},
+        ])
+
+        store.remove_notes(region_id, [
+            {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80},
+        ])
+        store.add_notes(region_id, [
+            {"pitch": 63, "start_beat": 0.0, "duration_beats": 1.5, "velocity": 90},
+        ])
+
+        result = store.get_region_notes(region_id)
+        assert len(result) == 1
+        assert result[0]["pitch"] == 63
+        assert result[0]["duration_beats"] == 1.5
+
+    def test_sync_initializes_region_notes(self):
+        """sync_from_client should populate region notes from project state."""
+        store = StateStore()
+
+        state = {
+            "tracks": [{
+                "id": "t1",
+                "name": "Piano",
+                "regions": [{
+                    "id": "r1",
+                    "name": "Intro",
+                    "notes": [
+                        {"pitch": 60, "start_beat": 0.0, "duration_beats": 2.0, "velocity": 100},
+                        {"pitch": 64, "start_beat": 2.0, "duration_beats": 2.0, "velocity": 90},
+                    ],
+                }],
+            }],
+        }
+        store.sync_from_client(state)
+
+        result = store.get_region_notes("r1")
+        assert len(result) == 2
+        assert result[0]["pitch"] == 60
+
+    def test_empty_region_returns_empty_list(self):
+        """Querying an unknown region returns []."""
+        store = StateStore()
+        assert store.get_region_notes("nonexistent") == []
+
+    def test_get_region_track_id(self):
+        """get_region_track_id should return the parent track."""
+        store = StateStore()
+        track_id = store.create_track("Drums")
+        region_id = store.create_region("Pattern", track_id)
+
+        assert store.get_region_track_id(region_id) == track_id
+        assert store.get_region_track_id("nonexistent") is None
+
+    def test_rollback_restores_region_notes(self):
+        """Rolling back a transaction should restore region notes to pre-tx state."""
+        store = StateStore()
+        track_id = store.create_track("Bass")
+        region_id = store.create_region("Line", track_id)
+
+        # Pre-transaction: add a note
+        store.add_notes(region_id, [
+            {"pitch": 40, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80},
+        ])
+
+        # Start transaction, add more notes
+        tx = store.begin_transaction("test add")
+        store.add_notes(region_id, [
+            {"pitch": 42, "start_beat": 1.0, "duration_beats": 1.0, "velocity": 80},
+        ], transaction=tx)
+
+        assert len(store.get_region_notes(region_id)) == 2
+
+        # Rollback
+        store.rollback(tx)
+
+        # Should be back to 1 note
+        assert len(store.get_region_notes(region_id)) == 1
+        assert store.get_region_notes(region_id)[0]["pitch"] == 40
+
+
 class TestStoreRegistry:
     """Test store registry (conversation -> store mapping)."""
 

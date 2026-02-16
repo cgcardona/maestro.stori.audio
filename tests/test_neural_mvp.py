@@ -204,9 +204,9 @@ class TestMidiTokenizer:
         tokenizer = MidiTokenizer()
         
         original_notes = [
-            {"pitch": 60, "startBeat": 0.0, "duration": 1.0, "velocity": 80},
-            {"pitch": 64, "startBeat": 1.0, "duration": 0.5, "velocity": 90},
-            {"pitch": 67, "startBeat": 2.0, "duration": 1.5, "velocity": 70},
+            {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80},
+            {"pitch": 64, "start_beat": 1.0, "duration_beats": 0.5, "velocity": 90},
+            {"pitch": 67, "start_beat": 2.0, "duration_beats": 1.5, "velocity": 70},
         ]
         
         # Encode
@@ -229,9 +229,9 @@ class TestMidiTokenizer:
         tokenizer = MidiTokenizer()
         
         notes = [
-            {"pitch": 60, "startBeat": 0.0, "duration": 1.0, "velocity": 80},  # Bar 0
-            {"pitch": 62, "startBeat": 4.0, "duration": 1.0, "velocity": 80},  # Bar 1
-            {"pitch": 64, "startBeat": 8.0, "duration": 1.0, "velocity": 80},  # Bar 2
+            {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80},  # Bar 0
+            {"pitch": 62, "start_beat": 4.0, "duration_beats": 1.0, "velocity": 80},  # Bar 1
+            {"pitch": 64, "start_beat": 8.0, "duration_beats": 1.0, "velocity": 80},  # Bar 2
         ]
         
         token_ids = tokenizer.encode(notes, bars=3)
@@ -240,15 +240,15 @@ class TestMidiTokenizer:
         assert len(decoded) == 3
         
         # Check bar assignment
-        assert decoded[0]["startBeat"] < 4
-        assert 4 <= decoded[1]["startBeat"] < 8
-        assert decoded[2]["startBeat"] >= 8
+        assert decoded[0]["start_beat"] < 4
+        assert 4 <= decoded[1]["start_beat"] < 8
+        assert decoded[2]["start_beat"] >= 8
     
     def test_encode_to_tokens_readable(self):
         """Should produce readable token strings."""
         tokenizer = MidiTokenizer()
         
-        notes = [{"pitch": 60, "startBeat": 0.0, "duration": 1.0, "velocity": 80}]
+        notes = [{"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80}]
         tokens = tokenizer.encode_to_tokens(notes, bars=1)
         
         assert "BAR" in tokens
@@ -463,8 +463,8 @@ class TestHuggingFaceBackend:
         backend = HuggingFaceMelodyBackend(api_key=None)
         
         notes = [
-            {"pitch": 72, "startBeat": 0, "duration": 1, "velocity": 80},
-            {"pitch": 74, "startBeat": 1, "duration": 1, "velocity": 90},
+            {"pitch": 72, "start_beat": 0, "duration_beats": 1, "velocity": 80},
+            {"pitch": 74, "start_beat": 1, "duration_beats": 1, "velocity": 90},
         ]
         
         # Low energy emotion should lower velocity

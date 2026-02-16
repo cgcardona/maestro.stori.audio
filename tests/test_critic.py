@@ -48,22 +48,22 @@ def make_drum_notes(
         # Kick on 1 and 3
         if include_kicks:
             notes.append({
-                "pitch": 36, "startBeat": bar_start + 0.0, "duration": 0.25,
+                "pitch": 36, "start_beat": bar_start + 0.0, "duration_beats": 0.25,
                 "velocity": 100, "layer": "core"
             })
             notes.append({
-                "pitch": 36, "startBeat": bar_start + 2.0, "duration": 0.25,
+                "pitch": 36, "start_beat": bar_start + 2.0, "duration_beats": 0.25,
                 "velocity": 100, "layer": "core"
             })
         
         # Snare on 2 and 4
         if include_snares:
             notes.append({
-                "pitch": 38, "startBeat": bar_start + 1.0, "duration": 0.25,
+                "pitch": 38, "start_beat": bar_start + 1.0, "duration_beats": 0.25,
                 "velocity": 95, "layer": "core"
             })
             notes.append({
-                "pitch": 38, "startBeat": bar_start + 3.0, "duration": 0.25,
+                "pitch": 38, "start_beat": bar_start + 3.0, "duration_beats": 0.25,
                 "velocity": 95, "layer": "core"
             })
         
@@ -73,7 +73,7 @@ def make_drum_notes(
                 pitch = 42 if i % 4 != 3 else 46  # Open hat on 4th 8th
                 vel = 80 - (i % 2) * 10  # Accent pattern
                 notes.append({
-                    "pitch": pitch, "startBeat": bar_start + i * 0.5, "duration": 0.25,
+                    "pitch": pitch, "start_beat": bar_start + i * 0.5, "duration_beats": 0.25,
                     "velocity": vel, "layer": "timekeepers"
                 })
         
@@ -81,18 +81,18 @@ def make_drum_notes(
         if include_fills and bar in fill_bars:
             for i in range(4):
                 notes.append({
-                    "pitch": 43 + i, "startBeat": bar_start + 3.0 + i * 0.25, "duration": 0.25,
+                    "pitch": 43 + i, "start_beat": bar_start + 3.0 + i * 0.25, "duration_beats": 0.25,
                     "velocity": 90, "layer": "fills"
                 })
         
         # Ghost notes near backbeats
         if include_ghosts:
             notes.append({
-                "pitch": 37, "startBeat": bar_start + 0.75, "duration": 0.25,
+                "pitch": 37, "start_beat": bar_start + 0.75, "duration_beats": 0.25,
                 "velocity": 50, "layer": "ghost_layer"
             })
             notes.append({
-                "pitch": 37, "startBeat": bar_start + 2.75, "duration": 0.25,
+                "pitch": 37, "start_beat": bar_start + 2.75, "duration_beats": 0.25,
                 "velocity": 45, "layer": "ghost_layer"
             })
     
@@ -136,7 +136,7 @@ class TestHatArticulationScoring:
     def test_monotone_hats_score_low(self):
         """All closed hats should score lower."""
         notes = [
-            {"pitch": 42, "startBeat": i * 0.5, "duration": 0.25, "velocity": 80, "layer": "timekeepers"}
+            {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80, "layer": "timekeepers"}
             for i in range(32)  # 4 bars of closed hats only
         ]
         score, repairs = _score_hat_articulation(notes, bars=4)
@@ -168,8 +168,8 @@ class TestFillLocalizationScoring:
             # Put fills in every bar
             for i in range(4):
                 notes.append({
-                    "pitch": 43 + i, "startBeat": bar_start + 3.0 + i * 0.25, 
-                    "duration": 0.25, "velocity": 90, "layer": "fills"
+                    "pitch": 43 + i, "start_beat": bar_start + 3.0 + i * 0.25, 
+                    "duration_beats": 0.25, "velocity": 90, "layer": "fills"
                 })
         
         score, repairs = _score_fill_localization(notes, fill_bars=[3], bars=4)
@@ -190,9 +190,9 @@ class TestGhostPlausibilityScoring:
         """Properly placed quiet ghosts should score high."""
         notes = [
             # Ghost before beat 2 (near backbeat)
-            {"pitch": 37, "startBeat": 0.75, "duration": 0.25, "velocity": 50, "layer": "ghost_layer"},
+            {"pitch": 37, "start_beat": 0.75, "duration_beats": 0.25, "velocity": 50, "layer": "ghost_layer"},
             # Ghost before beat 4 (near backbeat)
-            {"pitch": 37, "startBeat": 2.75, "duration": 0.25, "velocity": 45, "layer": "ghost_layer"},
+            {"pitch": 37, "start_beat": 2.75, "duration_beats": 0.25, "velocity": 45, "layer": "ghost_layer"},
         ]
         score, repairs = _score_ghost_plausibility(notes)
         assert score >= 0.7
@@ -200,8 +200,8 @@ class TestGhostPlausibilityScoring:
     def test_loud_ghosts_score_lower(self):
         """Loud ghosts should score lower."""
         notes = [
-            {"pitch": 37, "startBeat": 0.75, "duration": 0.25, "velocity": 100, "layer": "ghost_layer"},
-            {"pitch": 37, "startBeat": 2.75, "duration": 0.25, "velocity": 110, "layer": "ghost_layer"},
+            {"pitch": 37, "start_beat": 0.75, "duration_beats": 0.25, "velocity": 100, "layer": "ghost_layer"},
+            {"pitch": 37, "start_beat": 2.75, "duration_beats": 0.25, "velocity": 110, "layer": "ghost_layer"},
         ]
         score, repairs = _score_ghost_plausibility(notes)
         assert score < 0.8
@@ -254,7 +254,7 @@ class TestRepetitionStructureScoring:
             bar_start = bar * 4.0
             for beat in [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]:
                 notes.append({
-                    "pitch": 42, "startBeat": bar_start + beat, "duration": 0.25,
+                    "pitch": 42, "start_beat": bar_start + beat, "duration_beats": 0.25,
                     "velocity": 80, "layer": "timekeepers"
                 })
         
@@ -275,7 +275,7 @@ class TestVelocityDynamicsScoring:
     def test_flat_velocity_scores_lower(self):
         """All same velocity should score lower."""
         notes = [
-            {"pitch": 42, "startBeat": i * 0.5, "duration": 0.25, "velocity": 80}
+            {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80}
             for i in range(32)
         ]
         score, repairs = _score_velocity_dynamics(notes, bars=4)
@@ -313,8 +313,8 @@ class TestBassScoring:
     def test_kick_aligned_bass_scores_high(self):
         """Bass aligned to kicks should score high."""
         bass_notes = [
-            {"pitch": 36, "startBeat": 0.0, "duration": 0.5, "velocity": 100},
-            {"pitch": 36, "startBeat": 2.0, "duration": 0.5, "velocity": 100},
+            {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.5, "velocity": 100},
+            {"pitch": 36, "start_beat": 2.0, "duration_beats": 0.5, "velocity": 100},
         ]
         kick_beats = [0.0, 2.0]
         
@@ -324,8 +324,8 @@ class TestBassScoring:
     def test_unaligned_bass_scores_lower(self):
         """Bass not aligned to kicks should score lower."""
         bass_notes = [
-            {"pitch": 36, "startBeat": 0.5, "duration": 0.5, "velocity": 100},
-            {"pitch": 36, "startBeat": 2.5, "duration": 0.5, "velocity": 100},
+            {"pitch": 36, "start_beat": 0.5, "duration_beats": 0.5, "velocity": 100},
+            {"pitch": 36, "start_beat": 2.5, "duration_beats": 0.5, "velocity": 100},
         ]
         kick_beats = [0.0, 2.0]
         
@@ -336,7 +336,7 @@ class TestBassScoring:
         """Anticipation notes should contribute to score."""
         bass_notes = [
             # Anticipation: 1/8 before kick
-            {"pitch": 36, "startBeat": 1.875, "duration": 0.5, "velocity": 100},
+            {"pitch": 36, "start_beat": 1.875, "duration_beats": 0.5, "velocity": 100},
         ]
         kick_beats = [0.0, 2.0]
         
@@ -363,7 +363,7 @@ class TestRejectionSampling:
         def generate_fn():
             nonlocal call_count
             call_count += 1
-            notes = [{"pitch": 36, "startBeat": 0.0, "velocity": 100}]
+            notes = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
             return {"notes": notes}, notes
         
         def scorer_fn(notes):
@@ -386,7 +386,7 @@ class TestRejectionSampling:
         def generate_fn():
             nonlocal call_count
             call_count += 1
-            notes = [{"pitch": 36, "startBeat": 0.0, "velocity": 100}]
+            notes = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
             return {"notes": notes}, notes
         
         def scorer_fn(notes):
@@ -409,7 +409,7 @@ class TestRejectionSampling:
         def generate_fn():
             nonlocal attempt
             attempt += 1
-            notes = [{"pitch": 36, "startBeat": 0.0, "velocity": 100}]
+            notes = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
             return {"attempt": attempt, "notes": notes}, notes
         
         scores = [0.5, 0.7, 0.6, 0.65]

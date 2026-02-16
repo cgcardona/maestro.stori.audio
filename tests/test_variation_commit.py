@@ -117,6 +117,9 @@ def _mock_store():
     store.remove_notes = MagicMock()
     store.commit = MagicMock()
     store.sync_from_client = MagicMock()
+    # Region note queries used by updated_regions
+    store.get_region_notes = MagicMock(return_value=[])
+    store.get_region_track_id = MagicMock(return_value="track-1")
     return store
 
 
@@ -181,7 +184,7 @@ class TestApplyVariationPhrases:
         assert region_id == "region-1"
         assert len(criteria) == 1
         assert criteria[0]["pitch"] == 55
-        assert criteria[0]["startBeat"] == 4.0
+        assert criteria[0]["start_beat"] == 4.0
 
     @pytest.mark.anyio
     async def test_modified_notes_remove_old_add_new(self, mock_store):
@@ -210,7 +213,7 @@ class TestApplyVariationPhrases:
         add_notes = mock_store.add_notes.call_args[0][1]
         assert len(add_notes) == 1
         assert add_notes[0]["pitch"] == 68
-        assert add_notes[0]["durationBeats"] == 1.5
+        assert add_notes[0]["duration_beats"] == 1.5
 
     @pytest.mark.anyio
     async def test_partial_acceptance_subset(self, mock_store):
@@ -364,3 +367,123 @@ class TestApplyVariationPhrases:
         # remove_notes called for region-B
         rm_call = mock_store.remove_notes.call_args
         assert rm_call[0][0] == "region-B"
+
+
+class TestUpdatedRegions:
+    """Test that updated_regions returns full note state after commit."""
+
+    @pytest.mark.anyio
+    async def test_updated_regions_returned_with_notes(self):
+        """Commit should return updated_regions with full note data for affected regions."""
+        from app.core.state_store import StateStore, clear_all_stores
+
+        clear_all_stores()
+        store = StateStore(conversation_id="test-updated-regions")
+
+        # Set up a track + region with pre-existing notes
+        track_id = store.create_track("Bass", track_id="track-bass")
+        region_id = store.create_region("Line", track_id, region_id="region-bass")
+        store.add_notes(region_id, [
+            {"pitch": 40, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80, "channel": 0},
+            {"pitch": 43, "start_beat": 1.0, "duration_beats": 1.0, "velocity": 80, "channel": 0},
+        ])
+
+        # Variation that adds one note
+        variation = Variation(
+            variation_id=str(uuid.uuid4()),
+            intent="add a note",
+            beat_range=(2.0, 3.0),
+            phrases=[
+                Phrase(
+                    phrase_id="p-add",
+                    track_id="track-bass",
+                    region_id="region-bass",
+                    start_beat=2.0,
+                    end_beat=3.0,
+                    label="Bar 1",
+                    note_changes=[
+                        NoteChange(
+                            note_id="nc-1",
+                            change_type="added",
+                            after=MidiNoteSnapshot(pitch=45, start_beat=2.0, duration_beats=1.0, velocity=90),
+                        ),
+                    ],
+                ),
+            ],
+        )
+
+        with patch("app.core.executor.get_or_create_store", return_value=store):
+            result = await apply_variation_phrases(
+                variation=variation,
+                accepted_phrase_ids=["p-add"],
+                project_state={},
+                conversation_id="test-updated-regions",
+            )
+
+        assert result.success is True
+        assert len(result.updated_regions) == 1
+
+        region_data = result.updated_regions[0]
+        assert region_data["region_id"] == "region-bass"
+        assert region_data["track_id"] == "track-bass"
+        assert len(region_data["notes"]) == 3  # 2 original + 1 added
+        pitches = {n["pitch"] for n in region_data["notes"]}
+        assert pitches == {40, 43, 45}
+
+        clear_all_stores()
+
+    @pytest.mark.anyio
+    async def test_updated_regions_after_removal(self):
+        """Commit with removals should return updated_regions minus removed notes."""
+        from app.core.state_store import StateStore, clear_all_stores
+
+        clear_all_stores()
+        store = StateStore(conversation_id="test-removal-regions")
+        track_id = store.create_track("Keys", track_id="track-keys")
+        region_id = store.create_region("Chords", track_id, region_id="region-keys")
+        store.add_notes(region_id, [
+            {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100, "channel": 0},
+            {"pitch": 64, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100, "channel": 0},
+            {"pitch": 67, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100, "channel": 0},
+        ])
+
+        # Variation that removes one note
+        variation = Variation(
+            variation_id=str(uuid.uuid4()),
+            intent="remove E",
+            beat_range=(0.0, 1.0),
+            phrases=[
+                Phrase(
+                    phrase_id="p-rm",
+                    track_id="track-keys",
+                    region_id="region-keys",
+                    start_beat=0.0,
+                    end_beat=1.0,
+                    label="Beat 1",
+                    note_changes=[
+                        NoteChange(
+                            note_id="nc-rm",
+                            change_type="removed",
+                            before=MidiNoteSnapshot(pitch=64, start_beat=0.0, duration_beats=1.0, velocity=100),
+                        ),
+                    ],
+                ),
+            ],
+        )
+
+        with patch("app.core.executor.get_or_create_store", return_value=store):
+            result = await apply_variation_phrases(
+                variation=variation,
+                accepted_phrase_ids=["p-rm"],
+                project_state={},
+                conversation_id="test-removal-regions",
+            )
+
+        assert result.success is True
+        assert len(result.updated_regions) == 1
+        notes = result.updated_regions[0]["notes"]
+        assert len(notes) == 2
+        pitches = {n["pitch"] for n in notes}
+        assert pitches == {60, 67}
+
+        clear_all_stores()

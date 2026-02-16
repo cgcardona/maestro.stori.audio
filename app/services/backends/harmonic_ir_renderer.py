@@ -64,8 +64,8 @@ def render_harmonic_spec(
             vel = rng.randint(vel_lo, vel_hi)
             notes.append({
                 "pitch": p,
-                "startBeat": bar_start,
-                "duration": duration,
+                "start_beat": bar_start,
+                "duration_beats": duration,
                 "velocity": vel,
             })
 
@@ -74,8 +74,8 @@ def render_harmonic_spec(
         ms_per_beat = 60_000 / global_spec.tempo
         for n in notes:
             jitter_ms = rng.randint(j_lo, j_hi) if j_hi > j_lo else 0
-            n["startBeat"] = round((n["startBeat"] + jitter_ms / ms_per_beat) * 4) / 4
+            n["start_beat"] = round((n["start_beat"] + jitter_ms / ms_per_beat) * 4) / 4
 
-    notes.sort(key=lambda x: (x["startBeat"], x["pitch"]))
+    notes.sort(key=lambda x: (x["start_beat"], x["pitch"]))
     logger.info(f"Harmonic IR render: {len(notes)} chord notes")
     return notes

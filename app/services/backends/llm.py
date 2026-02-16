@@ -17,8 +17,8 @@ LLM_GENERATION_PROMPT = """You are a music generation AI. Generate MIDI note dat
 
 Output ONLY a JSON array of notes. Each note has:
 - pitch: MIDI note number (0-127, where 60 = Middle C)
-- startBeat: Position in beats (0 = start of pattern)
-- duration: Length in beats
+- start_beat: Position in beats (0 = start of pattern)
+- duration_beats: Length in beats
 - velocity: Dynamics (0-127, typically 70-110)
 
 {instrument_guidance}
@@ -182,12 +182,12 @@ class LLMGeneratorBackend(MusicGeneratorBackend):
                 try:
                     valid_note = {
                         "pitch": int(note.get("pitch", 60)),
-                        "startBeat": float(note.get("startBeat", 0)),
-                        "duration": float(note.get("duration", 0.5)),
+                        "start_beat": float(note.get("start_beat", 0)),
+                        "duration_beats": float(note.get("duration_beats", 0.5)),
                         "velocity": int(note.get("velocity", 100)),
                     }
                     # Basic validation
-                    if 0 <= valid_note["pitch"] <= 127 and valid_note["duration"] > 0:
+                    if 0 <= valid_note["pitch"] <= 127 and valid_note["duration_beats"] > 0:
                         valid_notes.append(valid_note)
                 except (ValueError, TypeError):
                     continue

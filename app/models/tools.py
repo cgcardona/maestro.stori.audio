@@ -6,8 +6,8 @@ from typing import Optional, Any
 class MidiNote(BaseModel):
     """A single MIDI note."""
     pitch: int = Field(..., ge=0, le=127, description="MIDI note number (0-127)")
-    startBeat: float = Field(..., ge=0, description="Start position in beats")
-    duration: float = Field(..., gt=0, description="Duration in beats")
+    start_beat: float = Field(..., ge=0, description="Start position in beats")
+    duration_beats: float = Field(..., gt=0, description="Duration in beats")
     velocity: int = Field(default=100, ge=0, le=127, description="Note velocity (0-127)")
     channel: int = Field(default=0, ge=0, le=15, description="MIDI channel (0-15)")
 

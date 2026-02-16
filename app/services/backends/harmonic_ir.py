@@ -56,7 +56,7 @@ class HarmonicSpecBackend(MusicGeneratorBackend):
                 harmonic_spec = default_harmonic_spec(key=key or "C", bars=bars, chords=chords)
             notes = render_harmonic_spec(harmonic_spec, global_spec)
             out = [
-                {"pitch": n["pitch"], "startBeat": n["startBeat"], "duration": n["duration"], "velocity": n["velocity"]}
+                {"pitch": n["pitch"], "start_beat": n["start_beat"], "duration_beats": n["duration_beats"], "velocity": n["velocity"]}
                 for n in notes
             ]
             logger.info(f"HarmonicSpecBackend: {len(out)} chord notes")

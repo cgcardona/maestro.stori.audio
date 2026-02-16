@@ -18,10 +18,10 @@ def _basic_kick_snare_hats(bars=4):
     notes = []
     for bar in range(bars):
         base = bar * 4.0
-        notes.append({"pitch": 36, "startBeat": base, "duration": 0.25, "velocity": 100})
-        notes.append({"pitch": 38, "startBeat": base + 2.0, "duration": 0.25, "velocity": 100})
+        notes.append({"pitch": 36, "start_beat": base, "duration_beats": 0.25, "velocity": 100})
+        notes.append({"pitch": 38, "start_beat": base + 2.0, "duration_beats": 0.25, "velocity": 100})
         for i in range(8):
-            notes.append({"pitch": 42, "startBeat": base + i * 0.5, "duration": 0.25, "velocity": 80})
+            notes.append({"pitch": 42, "start_beat": base + i * 0.5, "duration_beats": 0.25, "velocity": 80})
     return notes
 
 
@@ -76,7 +76,7 @@ class TestApplyDrumRepair:
             rng=random.Random(42),
         )
         # Beat 1 kick should have higher velocity
-        kick_on_beat1 = [n for n in repaired if n["pitch"] == 36 and abs(n["startBeat"] % 4) < 0.2]
+        kick_on_beat1 = [n for n in repaired if n["pitch"] == 36 and abs(n["start_beat"] % 4) < 0.2]
         assert any(n["velocity"] > 100 for n in kick_on_beat1)
 
     def test_empty_instructions_no_change(self):
@@ -97,7 +97,7 @@ class TestApplyDrumRepair:
         )
         for i in range(len(repaired) - 1):
             a, b = repaired[i], repaired[i + 1]
-            assert (a["startBeat"], a["pitch"]) <= (b["startBeat"], b["pitch"])
+            assert (a["start_beat"], a["pitch"]) <= (b["start_beat"], b["pitch"])
 
 
 class TestRepairDrumIfNeeded:

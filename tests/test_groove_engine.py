@@ -152,8 +152,8 @@ class TestGrooveApplication:
     def test_applies_timing_offsets(self):
         """Notes should have timing offsets applied."""
         notes = [
-            {"pitch": 36, "startBeat": 0.0, "duration": 0.25, "velocity": 100},
-            {"pitch": 38, "startBeat": 1.0, "duration": 0.25, "velocity": 100},
+            {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
+            {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.25, "velocity": 100},
         ]
         
         rng = random.Random(42)  # Deterministic
@@ -164,13 +164,13 @@ class TestGrooveApplication:
         
         # Timing should be modified (within reasonable range)
         for n in result:
-            assert n["startBeat"] >= -0.1  # Not too early
-            assert n["startBeat"] <= 2.0  # Not too late
+            assert n["start_beat"] >= -0.1  # Not too early
+            assert n["start_beat"] <= 2.0  # Not too late
     
     def test_applies_velocity_shaping(self):
         """Velocity should be shaped by accent map."""
         notes = [
-            {"pitch": 42, "startBeat": i * 0.5, "duration": 0.25, "velocity": 80}
+            {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80}
             for i in range(8)
         ]
         
@@ -186,7 +186,7 @@ class TestGrooveApplication:
         """Hat notes should have velocity arc applied."""
         # Create hats at different positions in bar
         notes = [
-            {"pitch": 42, "startBeat": i * 0.5, "duration": 0.25, "velocity": 100, "layer": "timekeepers"}
+            {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 100, "layer": "timekeepers"}
             for i in range(8)
         ]
         
@@ -201,8 +201,8 @@ class TestGrooveApplication:
     def test_deterministic_with_seed(self):
         """Same seed should produce same result."""
         notes = [
-            {"pitch": 36, "startBeat": 0.0, "duration": 0.25, "velocity": 100},
-            {"pitch": 38, "startBeat": 1.0, "duration": 0.25, "velocity": 100},
+            {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
+            {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.25, "velocity": 100},
         ]
         
         rng1 = random.Random(42)
@@ -212,7 +212,7 @@ class TestGrooveApplication:
         result2 = apply_groove_map(notes.copy(), tempo=120, style="trap", rng=rng2)
         
         for n1, n2 in zip(result1, result2):
-            assert n1["startBeat"] == n2["startBeat"]
+            assert n1["start_beat"] == n2["start_beat"]
             assert n1["velocity"] == n2["velocity"]
     
     def test_empty_notes(self):
@@ -227,10 +227,10 @@ class TestOnsetExtraction:
     def test_extract_kick_onsets(self):
         """Should extract kick onset times."""
         notes = [
-            {"pitch": 36, "startBeat": 0.0, "duration": 0.25, "velocity": 100},
-            {"pitch": 42, "startBeat": 0.5, "duration": 0.25, "velocity": 80},
-            {"pitch": 36, "startBeat": 2.0, "duration": 0.25, "velocity": 100},
-            {"pitch": 38, "startBeat": 1.0, "duration": 0.25, "velocity": 100},
+            {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
+            {"pitch": 42, "start_beat": 0.5, "duration_beats": 0.25, "velocity": 80},
+            {"pitch": 36, "start_beat": 2.0, "duration_beats": 0.25, "velocity": 100},
+            {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.25, "velocity": 100},
         ]
         
         kicks = extract_kick_onsets(notes)
@@ -239,9 +239,9 @@ class TestOnsetExtraction:
     def test_extract_snare_onsets(self):
         """Should extract snare onset times."""
         notes = [
-            {"pitch": 36, "startBeat": 0.0, "duration": 0.25, "velocity": 100},
-            {"pitch": 38, "startBeat": 1.0, "duration": 0.25, "velocity": 100},
-            {"pitch": 39, "startBeat": 3.0, "duration": 0.25, "velocity": 100},
+            {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
+            {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.25, "velocity": 100},
+            {"pitch": 39, "start_beat": 3.0, "duration_beats": 0.25, "velocity": 100},
         ]
         
         snares = extract_snare_onsets(notes)
@@ -250,7 +250,7 @@ class TestOnsetExtraction:
     def test_extract_hat_grid(self):
         """Should extract hat onset times."""
         notes = [
-            {"pitch": 42, "startBeat": i * 0.5, "duration": 0.25, "velocity": 80}
+            {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80}
             for i in range(8)
         ]
         
@@ -266,12 +266,12 @@ class TestRhythmSpine:
     def test_create_from_drum_notes(self):
         """Should create rhythm spine from drum notes."""
         notes = [
-            {"pitch": 36, "startBeat": 0.0, "duration": 0.25, "velocity": 100},
-            {"pitch": 36, "startBeat": 2.0, "duration": 0.25, "velocity": 100},
-            {"pitch": 38, "startBeat": 1.0, "duration": 0.25, "velocity": 100},
-            {"pitch": 38, "startBeat": 3.0, "duration": 0.25, "velocity": 100},
-            {"pitch": 42, "startBeat": 0.0, "duration": 0.25, "velocity": 80},
-            {"pitch": 42, "startBeat": 0.5, "duration": 0.25, "velocity": 80},
+            {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
+            {"pitch": 36, "start_beat": 2.0, "duration_beats": 0.25, "velocity": 100},
+            {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.25, "velocity": 100},
+            {"pitch": 38, "start_beat": 3.0, "duration_beats": 0.25, "velocity": 100},
+            {"pitch": 42, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 80},
+            {"pitch": 42, "start_beat": 0.5, "duration_beats": 0.25, "velocity": 80},
         ]
         
         spine = RhythmSpine.from_drum_notes(notes, tempo=120, bars=1, style="trap")

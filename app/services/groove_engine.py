@@ -385,7 +385,7 @@ def apply_groove_map(
     with instrument-role-aware timing and velocity curves.
     
     Args:
-        notes: List of {pitch, startBeat, duration, velocity, ...}
+        notes: List of {pitch, start_beat, duration_beats, velocity, ...}
         tempo: BPM
         style: Music style (e.g., "boom_bap", "trap", "house")
         humanize_profile: Optional feel override ("tight", "laid_back", "pushed")
@@ -407,7 +407,7 @@ def apply_groove_map(
         nn = dict(n)
         pitch = nn.get("pitch", 36)
         velocity = nn.get("velocity", 80)
-        start = nn.get("startBeat", 0.0)
+        start = nn.get("start_beat", 0.0)
         
         # Get layer from layer_map or note metadata
         layer = None
@@ -436,7 +436,7 @@ def apply_groove_map(
         
         # Quantize to 1/32 grid for stability (0.125 beats = 32nd note)
         new_start = round(new_start * 32) / 32
-        nn["startBeat"] = max(0.0, new_start)
+        nn["start_beat"] = max(0.0, new_start)
         
         # 3. Apply velocity shaping
         # a. Beat accent
@@ -461,8 +461,8 @@ def apply_groove_map(
         
         out.append(nn)
     
-    # Sort by startBeat for stable output
-    out.sort(key=lambda x: (x["startBeat"], x["pitch"]))
+    # Sort by start_beat for stable output
+    out.sort(key=lambda x: (x["start_beat"], x["pitch"]))
     logger.debug(f"Groove Engine: applied {profile.name} profile to {len(out)} notes")
     return out
 
@@ -482,7 +482,7 @@ def extract_onsets(notes: list[dict], pitch_set: set) -> list[float]:
     
     Used to get kick/snare/hat onsets for bass coupling.
     """
-    return sorted({round(n["startBeat"], 4) for n in notes if n.get("pitch") in pitch_set})
+    return sorted({round(n["start_beat"], 4) for n in notes if n.get("pitch") in pitch_set})
 
 
 def extract_kick_onsets(notes: list[dict]) -> list[float]:

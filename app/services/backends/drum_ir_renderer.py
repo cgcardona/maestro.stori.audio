@@ -1,7 +1,7 @@
 """
 Drum Spec IR → MIDI notes renderer.
 
-Renders DrumSpec + GlobalSpec to a list of {pitch, startBeat, duration, velocity, layer}
+Renders DrumSpec + GlobalSpec to a list of {pitch, start_beat, duration_beats, velocity, layer}
 with groove templates, layers, salience cap, fill bars, and variation.
 Includes layer labels in output for critic scoring.
 """
@@ -33,7 +33,7 @@ class DrumRenderResult:
     Result of drum rendering with notes and metadata.
     
     Attributes:
-        notes: List of {pitch, startBeat, duration, velocity, layer}
+        notes: List of {pitch, start_beat, duration_beats, velocity, layer}
         layer_map: Dict mapping note index → layer name
         rhythm_spine: RhythmSpine for bass/melody coupling
         metadata: Additional render metadata
@@ -99,8 +99,8 @@ def _salience_at_beat(pairs: list[tuple[dict, str]], beat: float, salience_weigh
     """Sum salience of all notes overlapping beat (by layer)."""
     total = 0.0
     for n, layer in pairs:
-        start = n["startBeat"]
-        dur = n.get("duration", 0.25)
+        start = n["start_beat"]
+        dur = n.get("duration_beats", 0.25)
         if start <= beat < start + dur:
             total += salience_weight.get(layer, 0.5)
     return total
@@ -119,8 +119,8 @@ def _apply_salience_cap(
     pairs: list[tuple[dict, str]] = [(n, layer_of.get(id(n), "timekeepers")) for n in notes]
     beats_to_check = set()
     for n in notes:
-        start = n["startBeat"]
-        dur = n.get("duration", 0.25)
+        start = n["start_beat"]
+        dur = n.get("duration_beats", 0.25)
         b = start
         while b < start + dur:
             beats_to_check.add(round(b / beat_resolution) * beat_resolution)
@@ -138,7 +138,7 @@ def _apply_salience_cap(
         candidates = [
             (i, n, layer)
             for i, (n, layer) in enumerate(pairs)
-            if n["startBeat"] <= worst_beat < n["startBeat"] + n.get("duration", 0.25)
+            if n["start_beat"] <= worst_beat < n["start_beat"] + n.get("duration_beats", 0.25)
         ]
         if not candidates:
             break
@@ -172,16 +172,16 @@ def _render_core(
         beat = bar_start + b
         notes.append({
             "pitch": 36,
-            "startBeat": round(beat, 3),
-            "duration": 0.4,
+            "start_beat": round(beat, 3),
+            "duration_beats": 0.4,
             "velocity": random.randint(v_lo, v_hi),
         })
     for b in snare_beats:
         beat = bar_start + b
         notes.append({
             "pitch": 38 if random.random() > 0.3 else 39,
-            "startBeat": round(beat, 3),
-            "duration": 0.35,
+            "start_beat": round(beat, 3),
+            "duration_beats": 0.35,
             "velocity": random.randint(v_lo, v_hi),
         })
     return notes
@@ -213,8 +213,8 @@ def _render_timekeepers(
             pitch = 46
         notes.append({
             "pitch": pitch,
-            "startBeat": round(beat, 3),
-            "duration": 0.5 / sub,
+            "start_beat": round(beat, 3),
+            "duration_beats": 0.5 / sub,
             "velocity": vel,
         })
     return notes
@@ -241,8 +241,8 @@ def _render_fills(
         pitch = random.choice(layer.instruments)
         notes.append({
             "pitch": pitch,
-            "startBeat": round(beat, 3),
-            "duration": 0.25,
+            "start_beat": round(beat, 3),
+            "duration_beats": 0.25,
             "velocity": random.randint(70, 100),
         })
     return notes
@@ -270,8 +270,8 @@ def _render_ghost(
         pitch = random.choice(layer.instruments)
         notes.append({
             "pitch": pitch,
-            "startBeat": round(beat, 3),
-            "duration": 0.2,
+            "start_beat": round(beat, 3),
+            "duration_beats": 0.2,
             "velocity": random.randint(v_lo, v_hi),
         })
     return notes
@@ -296,8 +296,8 @@ def _render_cymbal_punctuation(
     pitch = 49 if bar_index % 4 == 0 else 51
     notes.append({
         "pitch": pitch,
-        "startBeat": round(beat, 3),
-        "duration": 0.5,
+        "start_beat": round(beat, 3),
+        "duration_beats": 0.5,
         "velocity": random.randint(75, 95),
     })
     return notes
@@ -317,8 +317,8 @@ def _render_ear_candy(
     beat_in_bar = random.choice([0.5, 1.5, 2.5, 3.5])
     notes.append({
         "pitch": random.choice(layer.instruments),
-        "startBeat": round(bar_start + beat_in_bar, 3),
-        "duration": 0.25,
+        "start_beat": round(bar_start + beat_in_bar, 3),
+        "duration_beats": 0.25,
         "velocity": random.randint(50, 75),
     })
     return notes
@@ -339,7 +339,7 @@ def render_drum_spec(
     """
     Render DrumSpec + GlobalSpec to MIDI note list.
 
-    Returns list of {pitch, startBeat, duration, velocity, layer} with
+    Returns list of {pitch, start_beat, duration_beats, velocity, layer} with
     groove template, layers, fill bars, variation, and optional salience cap.
     
     Uses Groove Engine for humanization (style-specific microtiming).
@@ -420,8 +420,8 @@ def render_drum_spec(
             layer_map=layer_map,
         )
 
-    # Sort by startBeat for stable output
-    notes.sort(key=lambda n: (n["startBeat"], n["pitch"]))
+    # Sort by start_beat for stable output
+    notes.sort(key=lambda n: (n["start_beat"], n["pitch"]))
     
     logger.info(f"Drum IR render: {len(notes)} notes, {len(set(n['pitch'] for n in notes))} distinct pitches")
     

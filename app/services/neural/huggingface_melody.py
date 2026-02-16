@@ -336,8 +336,8 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
                 
                 notes.append({
                     "pitch": pitch,
-                    "startBeat": round(current_beat, 3),
-                    "duration": round(duration, 3),
+                    "start_beat": round(current_beat, 3),
+                    "duration_beats": round(duration, 3),
                     "velocity": velocity,
                 })
                 

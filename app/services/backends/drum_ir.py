@@ -96,13 +96,13 @@ class DrumSpecBackend(MusicGeneratorBackend):
                 notes, drum_spec, score, repair_instructions, accept_threshold=ACCEPT_THRESHOLD_DRUM
             )
             
-            # Output format: startBeat, duration, velocity, pitch, layer
+            # Output format: start_beat, duration_beats, velocity, pitch, layer
             # Layer is included for downstream use (e.g., coupled generation scoring)
             out_notes = [
                 {
                     "pitch": n["pitch"],
-                    "startBeat": n["startBeat"],
-                    "duration": n["duration"],
+                    "start_beat": n["start_beat"],
+                    "duration_beats": n["duration_beats"],
                     "velocity": n["velocity"],
                     "layer": n.get("layer", "unknown"),  # Include layer for coupling
                 }

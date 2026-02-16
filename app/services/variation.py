@@ -73,13 +73,13 @@ class NoteMatch:
         if base_pitch != proposed_pitch:
             return True
         
-        base_start = self.base_note.get("startBeat", self.base_note.get("start", 0))
-        proposed_start = self.proposed_note.get("startBeat", self.proposed_note.get("start", 0))
+        base_start = self.base_note.get("start_beat", 0)
+        proposed_start = self.proposed_note.get("start_beat", 0)
         if abs(base_start - proposed_start) > TIMING_TOLERANCE_BEATS:
             return True
         
-        base_duration = self.base_note.get("duration", self.base_note.get("durationBeats", 0.5))
-        proposed_duration = self.proposed_note.get("duration", self.proposed_note.get("durationBeats", 0.5))
+        base_duration = self.base_note.get("duration_beats", 0.5)
+        proposed_duration = self.proposed_note.get("duration_beats", 0.5)
         if abs(base_duration - proposed_duration) > TIMING_TOLERANCE_BEATS:
             return True
         
@@ -92,9 +92,9 @@ class NoteMatch:
 
 
 def _get_note_key(note: dict) -> tuple[int, float]:
-    """Get matching key for a note (pitch, startBeat)."""
+    """Get matching key for a note (pitch, start_beat)."""
     pitch = note.get("pitch", 60)
-    start = note.get("startBeat", note.get("start", 0))
+    start = note.get("start_beat", 0)
     return (pitch, start)
 
 
@@ -106,8 +106,8 @@ def _notes_match(base_note: dict, proposed_note: dict) -> bool:
     if abs(base_pitch - proposed_pitch) > PITCH_TOLERANCE:
         return False
     
-    base_start = base_note.get("startBeat", base_note.get("start", 0))
-    proposed_start = proposed_note.get("startBeat", proposed_note.get("start", 0))
+    base_start = base_note.get("start_beat", 0)
+    proposed_start = proposed_note.get("start_beat", 0)
     
     if abs(base_start - proposed_start) > TIMING_TOLERANCE_BEATS:
         return False
@@ -318,10 +318,10 @@ class VariationService:
         for match in changes:
             note = match.base_note or match.proposed_note
             if note:
-                start = note.get("startBeat", note.get("start", 0))
-                duration = note.get("duration", note.get("durationBeats", 0.5))
+                start = note.get("start_beat", 0)
+                dur = note.get("duration_beats", 0.5)
                 min_beat = min(min_beat, start)
-                max_beat = max(max_beat, start + duration)
+                max_beat = max(max_beat, start + dur)
         
         if min_beat == float("inf"):
             min_beat = 0.0
@@ -367,7 +367,7 @@ class VariationService:
         for match in changes:
             note = match.base_note or match.proposed_note
             if note:
-                start = note.get("startBeat", note.get("start", 0))
+                start = note.get("start_beat", 0)
                 phrase_index = int(start // beats_per_phrase)
                 
                 if phrase_index not in phrase_groups:
@@ -482,10 +482,10 @@ class VariationService:
                 for match in changes:
                     note = match.base_note or match.proposed_note
                     if note:
-                        start = note.get("startBeat", note.get("start", 0))
-                        duration = note.get("duration", note.get("durationBeats", 0.5))
+                        start = note.get("start_beat", 0)
+                        dur = note.get("duration_beats", 0.5)
                         min_beat = min(min_beat, start)
-                        max_beat = max(max_beat, start + duration)
+                        max_beat = max(max_beat, start + dur)
                 
                 # Create phrases for this region
                 phrases = self._group_into_phrases(

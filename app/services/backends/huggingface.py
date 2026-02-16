@@ -254,8 +254,8 @@ class HuggingFaceBackend(MusicGeneratorBackend):
             
             notes.append({
                 "pitch": pitch,
-                "startBeat": start_beat,
-                "duration": 0.5,
+                "start_beat": start_beat,
+                "duration_beats": 0.5,
                 "velocity": 90,
             })
         
