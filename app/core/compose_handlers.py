@@ -398,64 +398,132 @@ async def _handle_composing(
         # Variation Mode: Generate proposal without mutation
         # =====================================================================
         if execution_mode == "variation":
-            with trace_span(trace, "variation_generation", {"steps": len(output.plan.tool_calls)}):
-                from app.core.executor import execute_plan_variation
-                
-                variation = await execute_plan_variation(
-                    tool_calls=output.plan.tool_calls,
-                    project_state=project_context,
-                    intent=prompt,
-                    conversation_id=conversation_id,
-                    explanation=output.plan.llm_response_text,
-                )
-                
-                # Emit meta event (overall summary per spec)
-                note_counts = variation.note_counts
-                yield await sse_event({
-                    "type": "meta",
-                    "variation_id": variation.variation_id,
-                    "intent": variation.intent,
-                    "ai_explanation": variation.ai_explanation,
-                    "affected_tracks": variation.affected_tracks,
-                    "affected_regions": variation.affected_regions,
-                    "note_counts": note_counts,
-                })
-                
-                # Emit individual phrase events (per spec)
-                for phrase in variation.phrases:
+            try:
+                import asyncio as _asyncio
+
+                with trace_span(trace, "variation_generation", {"steps": len(output.plan.tool_calls)}):
+                    from app.core.executor import execute_plan_variation
+
+                    logger.info(
+                        f"[{trace.trace_id[:8]}] Starting variation generation: "
+                        f"{len(output.plan.tool_calls)} tool calls"
+                    )
+
+                    # Timeout: prevent infinite hangs from backend calls
+                    _VARIATION_TIMEOUT = 90  # seconds
+                    try:
+                        variation = await _asyncio.wait_for(
+                            execute_plan_variation(
+                                tool_calls=output.plan.tool_calls,
+                                project_state=project_context,
+                                intent=prompt,
+                                conversation_id=conversation_id,
+                                explanation=output.plan.llm_response_text,
+                            ),
+                            timeout=_VARIATION_TIMEOUT,
+                        )
+                    except _asyncio.TimeoutError:
+                        logger.error(
+                            f"[{trace.trace_id[:8]}] Variation generation timed out "
+                            f"after {_VARIATION_TIMEOUT}s"
+                        )
+                        yield await sse_event({
+                            "type": "error",
+                            "message": f"Generation timed out after {_VARIATION_TIMEOUT}s",
+                            "trace_id": trace.trace_id,
+                        })
+                        yield await sse_event({
+                            "type": "done",
+                            "variation_id": "",
+                            "phrase_count": 0,
+                            "status": "failed",
+                        })
+                        yield await sse_event({
+                            "type": "complete",
+                            "success": False,
+                            "error": "timeout",
+                            "trace_id": trace.trace_id,
+                        })
+                        return
+
+                    logger.info(
+                        f"[{trace.trace_id[:8]}] Variation computed: "
+                        f"{variation.total_changes} changes, {len(variation.phrases)} phrases"
+                    )
+
+                    # Emit meta event
+                    note_counts = variation.note_counts
                     yield await sse_event({
-                        "type": "phrase",
-                        "phrase_id": phrase.phrase_id,
-                        "track_id": phrase.track_id,
-                        "region_id": phrase.region_id,
-                        "start_beat": phrase.start_beat,
-                        "end_beat": phrase.end_beat,
-                        "label": phrase.label,
-                        "tags": phrase.tags,
-                        "explanation": phrase.explanation,
-                        "note_changes": [nc.model_dump() for nc in phrase.note_changes],
-                        "controller_changes": phrase.controller_changes,
+                        "type": "meta",
+                        "variation_id": variation.variation_id,
+                        "intent": variation.intent,
+                        "ai_explanation": variation.ai_explanation,
+                        "affected_tracks": variation.affected_tracks,
+                        "affected_regions": variation.affected_regions,
+                        "note_counts": note_counts,
                     })
-                
-                # Emit done event (per spec — includes phrase_count)
+
+                    # Emit individual phrase events
+                    for i, phrase in enumerate(variation.phrases):
+                        logger.debug(
+                            f"[{trace.trace_id[:8]}] Emitting phrase {i + 1}/{len(variation.phrases)}: "
+                            f"{len(phrase.note_changes)} note changes"
+                        )
+                        yield await sse_event({
+                            "type": "phrase",
+                            "phrase_id": phrase.phrase_id,
+                            "track_id": phrase.track_id,
+                            "region_id": phrase.region_id,
+                            "start_beat": phrase.start_beat,
+                            "end_beat": phrase.end_beat,
+                            "label": phrase.label,
+                            "tags": phrase.tags,
+                            "explanation": phrase.explanation,
+                            "note_changes": [nc.model_dump() for nc in phrase.note_changes],
+                            "controller_changes": phrase.controller_changes,
+                        })
+
+                    # Emit done event
+                    yield await sse_event({
+                        "type": "done",
+                        "variation_id": variation.variation_id,
+                        "phrase_count": len(variation.phrases),
+                    })
+
+                    logger.info(
+                        f"[{trace.trace_id[:8]}] Variation streamed: "
+                        f"{variation.total_changes} changes in {len(variation.phrases)} phrases"
+                    )
+
+                    # Complete event
+                    yield await sse_event({
+                        "type": "complete",
+                        "success": True,
+                        "variation_id": variation.variation_id,
+                        "total_changes": variation.total_changes,
+                        "phrase_count": len(variation.phrases),
+                        "trace_id": trace.trace_id,
+                    })
+
+            except Exception as e:
+                logger.exception(
+                    f"[{trace.trace_id[:8]}] Variation generation failed: {e}"
+                )
+                yield await sse_event({
+                    "type": "error",
+                    "message": f"Generation failed: {e}",
+                    "trace_id": trace.trace_id,
+                })
                 yield await sse_event({
                     "type": "done",
-                    "variation_id": variation.variation_id,
-                    "phrase_count": len(variation.phrases),
+                    "variation_id": "",
+                    "phrase_count": 0,
+                    "status": "failed",
                 })
-                
-                logger.info(
-                    f"[{trace.trace_id[:8]}] Variation streamed: "
-                    f"{variation.total_changes} changes in {len(variation.phrases)} phrases"
-                )
-                
-                # Complete event
                 yield await sse_event({
                     "type": "complete",
-                    "success": True,
-                    "variation_id": variation.variation_id,
-                    "total_changes": variation.total_changes,
-                    "phrase_count": len(variation.phrases),
+                    "success": False,
+                    "error": str(e),
                     "trace_id": trace.trace_id,
                 })
             return

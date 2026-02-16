@@ -687,8 +687,17 @@ async def execute_plan_variation(
         _extract_notes_from_project(project_state, var_ctx)
         
         # Process tool calls to collect proposed notes
-        for call in tool_calls:
+        for i, call in enumerate(tool_calls):
+            logger.info(f"🔧 Processing call {i + 1}/{len(tool_calls)}: {call.name}")
             await _process_call_for_variation(call, var_ctx)
+        
+        # Log what we captured
+        total_base = sum(len(n) for n in var_ctx.base_notes.values())
+        total_proposed = sum(len(n) for n in var_ctx.proposed_notes.values())
+        logger.info(
+            f"📊 Variation context: {len(var_ctx.base_notes)} base regions ({total_base} notes), "
+            f"{len(var_ctx.proposed_notes)} proposed regions ({total_proposed} notes)"
+        )
         
         # Compute variation using variation service
         variation_service = get_variation_service()
@@ -773,13 +782,18 @@ async def _process_call_for_variation(
         track_id = params.get("trackId", "")
         notes = params.get("notes", [])
         
-        if region_id:
-            # Make sure we have base notes captured
+        if region_id and notes:
             if region_id not in var_ctx.base_notes:
                 var_ctx.capture_base_notes(region_id, track_id, [])
             
-            # Record proposed notes (this replaces or adds to region)
             var_ctx.record_proposed_notes(region_id, notes)
+            logger.info(
+                f"📝 stori_add_notes: {len(notes)} notes for region={region_id[:8]}"
+            )
+        elif not region_id:
+            logger.warning(
+                f"⚠️ stori_add_notes: missing regionId, dropping {len(notes)} notes"
+            )
     
     # Handle generators - they produce notes that go to a region
     meta = get_tool_meta(call.name)
@@ -800,6 +814,9 @@ async def _process_call_for_variation(
             result = await mg.generate(**gen_params)
             
             if result.success and result.notes:
+                logger.info(
+                    f"🎵 Generator {call.name} produced {len(result.notes)} notes"
+                )
                 # Find target region
                 track_name = params.get("trackName", gen_params["instrument"].capitalize())
                 track_id = var_ctx.store.registry.resolve_track(track_name) or params.get("trackId", "")
@@ -812,9 +829,29 @@ async def _process_call_for_variation(
                             var_ctx.capture_base_notes(region_id, track_id, [])
                         
                         var_ctx.record_proposed_notes(region_id, result.notes)
+                        logger.info(
+                            f"📝 Recorded {len(result.notes)} proposed notes for "
+                            f"region={region_id[:8]} track={track_id[:8]}"
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ No region found for track={track_id[:8]}, "
+                            f"dropping {len(result.notes)} generated notes"
+                        )
+                else:
+                    logger.warning(
+                        f"⚠️ Could not resolve track '{track_name}', "
+                        f"dropping {len(result.notes)} generated notes"
+                    )
+            elif not result.success:
+                logger.warning(
+                    f"⚠️ Generator {call.name} failed: {result.error}"
+                )
                         
         except Exception as e:
-            logger.warning(f"⚠️ Generator simulation failed: {e}")
+            logger.exception(
+                f"⚠️ Generator simulation failed for {call.name}: {e}"
+            )
 
 
 @dataclass
