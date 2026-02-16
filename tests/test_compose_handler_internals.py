@@ -238,7 +238,7 @@ class TestHandleComposing:
                         NoteChange(
                             note_id="nc-1",
                             change_type="added",
-                            after=MidiNoteSnapshot(pitch=60, velocity=100, start=0.0, duration=1.0),
+                            after=MidiNoteSnapshot(pitch=60, velocity=100, start_beat=0.0, duration_beats=1.0),
                         )
                     ],
                 )

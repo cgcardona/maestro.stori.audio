@@ -213,10 +213,10 @@ def _detect_change_tags(note_changes: list[NoteChange]) -> list[str]:
                     elif interval in (3, 4):  # Minor/major third
                         tags.add("harmonyChange")
                 
-                if abs(nc.before.start - nc.after.start) > TIMING_TOLERANCE_BEATS:
+                if abs(nc.before.start_beat - nc.after.start_beat) > TIMING_TOLERANCE_BEATS:
                     tags.add("rhythmChange")
                 
-                if abs(nc.before.duration - nc.after.duration) > TIMING_TOLERANCE_BEATS:
+                if abs(nc.before.duration_beats - nc.after.duration_beats) > TIMING_TOLERANCE_BEATS:
                     tags.add("articulationChange")
                 
                 if nc.before.velocity != nc.after.velocity:

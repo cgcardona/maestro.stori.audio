@@ -70,7 +70,7 @@ def _note_add(pitch=60, start=0.0, dur=1.0, vel=100) -> NoteChange:
     return NoteChange(
         note_id=f"nc-add-{pitch}-{start}",
         change_type="added",
-        after=MidiNoteSnapshot(pitch=pitch, start=start, duration=dur, velocity=vel),
+        after=MidiNoteSnapshot(pitch=pitch, start_beat=start, duration_beats=dur, velocity=vel),
     )
 
 
@@ -78,7 +78,7 @@ def _note_remove(pitch=60, start=0.0, dur=1.0, vel=100) -> NoteChange:
     return NoteChange(
         note_id=f"nc-rm-{pitch}-{start}",
         change_type="removed",
-        before=MidiNoteSnapshot(pitch=pitch, start=start, duration=dur, velocity=vel),
+        before=MidiNoteSnapshot(pitch=pitch, start_beat=start, duration_beats=dur, velocity=vel),
     )
 
 
@@ -86,8 +86,8 @@ def _note_modify(old_pitch=60, new_pitch=63, start=0.0, dur=1.0) -> NoteChange:
     return NoteChange(
         note_id=f"nc-mod-{old_pitch}-{new_pitch}",
         change_type="modified",
-        before=MidiNoteSnapshot(pitch=old_pitch, start=start, duration=dur, velocity=100),
-        after=MidiNoteSnapshot(pitch=new_pitch, start=start, duration=dur, velocity=100),
+        before=MidiNoteSnapshot(pitch=old_pitch, start_beat=start, duration_beats=dur, velocity=100),
+        after=MidiNoteSnapshot(pitch=new_pitch, start_beat=start, duration_beats=dur, velocity=100),
     )
 
 

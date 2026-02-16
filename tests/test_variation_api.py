@@ -72,13 +72,13 @@ def sample_variation():
             NoteChange(
                 note_id="note-1",
                 change_type="added",
-                after=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
+                after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
             ),
             NoteChange(
                 note_id="note-2",
                 change_type="modified",
-                before=MidiNoteSnapshot(pitch=62, start=1, duration=1, velocity=100),
-                after=MidiNoteSnapshot(pitch=63, start=1, duration=1, velocity=80),
+                before=MidiNoteSnapshot(pitch=62, start_beat=1, duration_beats=1, velocity=100),
+                after=MidiNoteSnapshot(pitch=63, start_beat=1, duration_beats=1, velocity=80),
             ),
         ],
         tags=["pitchChange"],

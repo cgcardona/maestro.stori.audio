@@ -73,31 +73,31 @@ class TestMidiNoteSnapshot:
     """Tests for MidiNoteSnapshot model."""
     
     def test_from_note_dict_standard_fields(self):
-        """Test creating snapshot from standard note dict."""
+        """Test creating snapshot from standard note dict (legacy startBeat/duration)."""
         note = {"pitch": 60, "startBeat": 2.0, "duration": 0.5, "velocity": 80}
         snapshot = MidiNoteSnapshot.from_note_dict(note)
         
         assert snapshot.pitch == 60
-        assert snapshot.start == 2.0
-        assert snapshot.duration == 0.5
+        assert snapshot.start_beat == 2.0
+        assert snapshot.duration_beats == 0.5
         assert snapshot.velocity == 80
     
     def test_from_note_dict_alternate_fields(self):
-        """Test creating snapshot with alternate field names."""
-        note = {"pitch": 64, "start": 1.0, "durationBeats": 0.75, "velocity": 90}
+        """Test creating snapshot with canonical field names."""
+        note = {"pitch": 64, "start_beat": 1.0, "duration_beats": 0.75, "velocity": 90}
         snapshot = MidiNoteSnapshot.from_note_dict(note)
         
         assert snapshot.pitch == 64
-        assert snapshot.start == 1.0
-        assert snapshot.duration == 0.75
+        assert snapshot.start_beat == 1.0
+        assert snapshot.duration_beats == 0.75
         assert snapshot.velocity == 90
     
     def test_to_note_dict(self):
         """Test converting snapshot back to dict."""
         snapshot = MidiNoteSnapshot(
             pitch=62,
-            start=3.0,
-            duration=1.0,
+            start_beat=3.0,
+            duration_beats=1.0,
             velocity=100,
             channel=1,
         )
@@ -105,7 +105,7 @@ class TestMidiNoteSnapshot:
         
         assert note["pitch"] == 62
         assert note["startBeat"] == 3.0
-        assert note["duration"] == 1.0
+        assert note["durationBeats"] == 1.0
         assert note["velocity"] == 100
         assert note["channel"] == 1
 
@@ -123,7 +123,7 @@ class TestNoteChange:
             note_id="test-1",
             change_type="added",
             before=None,
-            after=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
+            after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
         )
         assert nv.change_type == "added"
         assert nv.before is None
@@ -135,8 +135,8 @@ class TestNoteChange:
             NoteChange(
                 note_id="test-1",
                 change_type="added",
-                before=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
-                after=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
+                before=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
+                after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
             )
     
     def test_removed_note_valid(self):
@@ -144,7 +144,7 @@ class TestNoteChange:
         nv = NoteChange(
             note_id="test-1",
             change_type="removed",
-            before=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
+            before=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
             after=None,
         )
         assert nv.change_type == "removed"
@@ -157,8 +157,8 @@ class TestNoteChange:
             NoteChange(
                 note_id="test-1",
                 change_type="removed",
-                before=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
-                after=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
+                before=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
+                after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
             )
     
     def test_modified_note_valid(self):
@@ -166,8 +166,8 @@ class TestNoteChange:
         nv = NoteChange(
             note_id="test-1",
             change_type="modified",
-            before=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
-            after=MidiNoteSnapshot(pitch=63, start=0, duration=1, velocity=100),
+            before=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
+            after=MidiNoteSnapshot(pitch=63, start_beat=0, duration_beats=1, velocity=100),
         )
         assert nv.change_type == "modified"
         assert nv.before is not None
@@ -180,7 +180,7 @@ class TestNoteChange:
                 note_id="test-1",
                 change_type="modified",
                 before=None,
-                after=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
+                after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
             )
 
 
@@ -469,7 +469,7 @@ class TestVariation:
                 NoteChange(
                     note_id="n1",
                     change_type="added",
-                    after=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
+                    after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
                 ),
             ],
         )
@@ -484,7 +484,7 @@ class TestVariation:
                 NoteChange(
                     note_id="n2",
                     change_type="added",
-                    after=MidiNoteSnapshot(pitch=62, start=4, duration=1, velocity=100),
+                    after=MidiNoteSnapshot(pitch=62, start_beat=4, duration_beats=1, velocity=100),
                 ),
             ],
         )
@@ -717,12 +717,12 @@ class TestNoteExtraction:
                 NoteChange(
                     note_id="n1",
                     change_type="added",
-                    after=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
+                    after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
                 ),
                 NoteChange(
                     note_id="n2",
                     change_type="added",
-                    after=MidiNoteSnapshot(pitch=62, start=1, duration=1, velocity=100),
+                    after=MidiNoteSnapshot(pitch=62, start_beat=1, duration_beats=1, velocity=100),
                 ),
             ],
         )
@@ -753,7 +753,7 @@ class TestNoteExtraction:
                 NoteChange(
                     note_id="n1",
                     change_type="removed",
-                    before=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
+                    before=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
                 ),
             ],
         )
@@ -783,8 +783,8 @@ class TestNoteExtraction:
                 NoteChange(
                     note_id="n1",
                     change_type="modified",
-                    before=MidiNoteSnapshot(pitch=60, start=0, duration=1, velocity=100),
-                    after=MidiNoteSnapshot(pitch=63, start=0, duration=1, velocity=80),
+                    before=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
+                    after=MidiNoteSnapshot(pitch=63, start_beat=0, duration_beats=1, velocity=80),
                 ),
             ],
         )

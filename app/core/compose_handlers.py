@@ -437,10 +437,11 @@ async def _handle_composing(
                         "controller_changes": phrase.controller_changes,
                     })
                 
-                # Emit done event (per spec)
+                # Emit done event (per spec — includes phrase_count)
                 yield await sse_event({
                     "type": "done",
                     "variation_id": variation.variation_id,
+                    "phrase_count": len(variation.phrases),
                 })
                 
                 logger.info(
@@ -852,10 +853,11 @@ async def _handle_editing(
                 "controller_changes": phrase.controller_changes,
             })
         
-        # Emit done event (per spec)
+        # Emit done event (per spec — includes phrase_count)
         yield await sse_event({
             "type": "done",
             "variation_id": variation.variation_id,
+            "phrase_count": len(variation.phrases),
         })
         
         logger.info(

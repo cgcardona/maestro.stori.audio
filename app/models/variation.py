@@ -24,28 +24,33 @@ class MidiNoteSnapshot(BaseModel):
     Used in NoteVariation to capture before/after state.
     """
     pitch: int = Field(..., ge=0, le=127, description="MIDI note number (0-127)")
-    start: float = Field(..., ge=0, description="Start position in beats")
-    duration: float = Field(..., gt=0, description="Duration in beats")
+    start_beat: float = Field(..., ge=0, description="Start position in beats")
+    duration_beats: float = Field(..., gt=0, description="Duration in beats")
     velocity: int = Field(default=100, ge=0, le=127, description="Note velocity (0-127)")
     channel: int = Field(default=0, ge=0, le=15, description="MIDI channel (0-15)")
     
     @classmethod
     def from_note_dict(cls, note: dict) -> "MidiNoteSnapshot":
-        """Create a snapshot from a note dictionary."""
+        """Create a snapshot from a note dictionary.
+
+        Accepts canonical ``start_beat`` / ``duration_beats`` keys as well as
+        legacy ``startBeat`` / ``durationBeats`` / ``start`` / ``duration`` for
+        backward compatibility with DAW tool payloads.
+        """
         return cls(
             pitch=note.get("pitch", 60),
-            start=note.get("startBeat", note.get("start", 0)),
-            duration=note.get("duration", note.get("durationBeats", 0.5)),
+            start_beat=note.get("start_beat", note.get("startBeat", note.get("start", 0))),
+            duration_beats=note.get("duration_beats", note.get("durationBeats", note.get("duration", 0.5))),
             velocity=note.get("velocity", 100),
             channel=note.get("channel", 0),
         )
     
     def to_note_dict(self) -> dict:
-        """Convert back to a note dictionary format."""
+        """Convert to a note dictionary (camelCase wire format for frontend/DAW)."""
         return {
             "pitch": self.pitch,
-            "startBeat": self.start,
-            "duration": self.duration,
+            "startBeat": self.start_beat,
+            "durationBeats": self.duration_beats,
             "velocity": self.velocity,
             "channel": self.channel,
         }
@@ -296,5 +301,9 @@ class CommitVariationResponse(BaseModel):
     )
     updated_regions: list[dict] = Field(
         default_factory=list,
-        description="List of updated regions with new MIDI data"
+        description=(
+            "Updated regions with full MIDI data after commit. "
+            "Currently empty in v1 — frontend should apply accepted "
+            "phrase diffs locally or re-read project state."
+        ),
     )

@@ -44,13 +44,13 @@ def _make_test_variation(
                     note_id="nc-add-1",
                     change_type="added",
                     before=None,
-                    after=MidiNoteSnapshot(pitch=60, start=0.0, duration=1.0, velocity=100),
+                    after=MidiNoteSnapshot(pitch=60, start_beat=0.0, duration_beats=1.0, velocity=100),
                 ),
                 NoteChange(
                     note_id="nc-add-2",
                     change_type="added",
                     before=None,
-                    after=MidiNoteSnapshot(pitch=64, start=1.0, duration=1.0, velocity=90),
+                    after=MidiNoteSnapshot(pitch=64, start_beat=1.0, duration_beats=1.0, velocity=90),
                 ),
             ],
         ))
@@ -67,7 +67,7 @@ def _make_test_variation(
                 NoteChange(
                     note_id="nc-rm-1",
                     change_type="removed",
-                    before=MidiNoteSnapshot(pitch=55, start=4.0, duration=2.0, velocity=80),
+                    before=MidiNoteSnapshot(pitch=55, start_beat=4.0, duration_beats=2.0, velocity=80),
                     after=None,
                 ),
             ],
@@ -85,8 +85,8 @@ def _make_test_variation(
                 NoteChange(
                     note_id="nc-mod-1",
                     change_type="modified",
-                    before=MidiNoteSnapshot(pitch=67, start=8.0, duration=1.0, velocity=70),
-                    after=MidiNoteSnapshot(pitch=68, start=8.0, duration=1.5, velocity=85),
+                    before=MidiNoteSnapshot(pitch=67, start_beat=8.0, duration_beats=1.0, velocity=70),
+                    after=MidiNoteSnapshot(pitch=68, start_beat=8.0, duration_beats=1.5, velocity=85),
                 ),
             ],
         ))
@@ -210,7 +210,7 @@ class TestApplyVariationPhrases:
         add_notes = mock_store.add_notes.call_args[0][1]
         assert len(add_notes) == 1
         assert add_notes[0]["pitch"] == 68
-        assert add_notes[0]["duration"] == 1.5
+        assert add_notes[0]["durationBeats"] == 1.5
 
     @pytest.mark.anyio
     async def test_partial_acceptance_subset(self, mock_store):
@@ -322,7 +322,7 @@ class TestApplyVariationPhrases:
                             note_id="nc-a1",
                             change_type="added",
                             before=None,
-                            after=MidiNoteSnapshot(pitch=60, start=0.0, duration=1.0),
+                            after=MidiNoteSnapshot(pitch=60, start_beat=0.0, duration_beats=1.0),
                         ),
                     ],
                 ),
@@ -337,7 +337,7 @@ class TestApplyVariationPhrases:
                         NoteChange(
                             note_id="nc-b1",
                             change_type="removed",
-                            before=MidiNoteSnapshot(pitch=72, start=4.0, duration=2.0),
+                            before=MidiNoteSnapshot(pitch=72, start_beat=4.0, duration_beats=2.0),
                             after=None,
                         ),
                     ],
