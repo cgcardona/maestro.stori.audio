@@ -14,7 +14,7 @@ Local run, cloud deploy, config (env), deploy (systemd, S3), new instance, self-
 
 ## 2. [integrate.md](integrate.md)
 
-API base URL, auth (JWT), access codes, frontend (Swift, assets), MCP (Cursor/Claude, WebSocket). Everything needed to connect an app or an agent. **Swift auth parity:** [frontend-auth-parity-prompt.md](frontend-auth-parity-prompt.md) — prompt for a Swift agent to implement single-identifier (device UUID) auth and asset headers.
+API base URL, auth (JWT), access codes, frontend (Swift, assets), MCP (Cursor/Claude, WebSocket). Everything needed to connect an app or an agent.
 
 ---
 
@@ -42,11 +42,13 @@ Drum kits and soundfonts; upload to S3.
 
 ---
 
-## 7. Specs (deep dives)
+## 7. Specs & Variation Protocol
 
 | Doc | Description |
 |-----|-------------|
-| [muse-variation-spec.md](muse-variation-spec.md) | Muse / Variation: reviewable, audible AI changes (spec). |
+| [muse-variation-spec.md](muse-variation-spec.md) | Muse / Variation: end-to-end UX + technical contract. |
+| [variation_api_v1.md](variation_api_v1.md) | **Variation API v1:** wire contract, endpoints, SSE events, error codes. |
+| [TERMINOLOGY.md](TERMINOLOGY.md) | Canonical vocabulary for Muse/Variations (normative). |
 | [neural-midi-roadmap.md](neural-midi-roadmap.md) | Neural MIDI generation roadmap and status. |
 
 ---

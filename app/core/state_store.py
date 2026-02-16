@@ -43,6 +43,7 @@ class EventType(str, Enum):
     TRACK_MODIFIED = "track.modified"
     REGION_MODIFIED = "region.modified"
     NOTES_ADDED = "notes.added"
+    NOTES_REMOVED = "notes.removed"
     EFFECT_ADDED = "effect.added"
     
     # Entity deletion
@@ -400,6 +401,27 @@ class StateStore:
             transaction=transaction or self._active_transaction,
         )
     
+    def remove_notes(
+        self,
+        region_id: str,
+        note_criteria: list[dict[str, Any]],
+        transaction: Optional[Transaction] = None,
+    ) -> None:
+        """
+        Record notes removed from a region.
+
+        note_criteria is a list of dicts identifying notes to remove.
+        Each dict should contain matching fields (pitch, start, duration, etc.)
+        to identify the note in the region.
+        """
+        self._append_event(
+            event_type=EventType.NOTES_REMOVED,
+            entity_type=EntityType.REGION,
+            entity_id=region_id,
+            data={"notes_count": len(note_criteria), "notes": note_criteria},
+            transaction=transaction or self._active_transaction,
+        )
+
     def add_effect(
         self,
         track_id: str,

@@ -48,8 +48,9 @@ class OrpheusBackend(MusicGeneratorBackend):
         )
         
         if result.get("success"):
-            # Extract notes from Orpheus tool_calls response
-            # Orpheus returns: {"success": true, "tool_calls": [{tool: "addNotes", params: {notes: [...]}}]}
+            # Extract notes from Orpheus tool_calls response. We request one instrument per call
+            # (instruments=[instrument]); Orpheus filters to that instrument's channel so we get
+            # only that role's notes, not the full mix repeated on every track.
             notes = []
             tool_calls = result.get("tool_calls", [])
             

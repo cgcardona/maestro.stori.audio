@@ -7,6 +7,11 @@
 
 > **Canonical Time Unit:** All Muse and Variation data structures use **beats** as the canonical time unit. Seconds are a derived, playback-only representation. Muse reasons musically, not in wall-clock time.
 
+> **Canonical Backend References:**
+> For backend wire contract, state machine, and terminology, these docs are authoritative:
+> - [`variation_api_v1.md`](variation_api_v1.md) — Wire contract, endpoints, SSE events, error codes
+> - [`TERMINOLOGY.md`](TERMINOLOGY.md) — Canonical vocabulary (normative)
+
 ---
 
 ## What Is Muse?
@@ -455,9 +460,11 @@ Score view diff + controller diffs can come after the demo.
 
 ## 11) Appendix: Implementation Checklist
 
-### Backend (✅ Complete & Deployed)
+### Backend
+
+**Core (Implemented & Tested — 924 tests pass):**
 - [x] `POST /variation/propose` returns `variation_id` + `stream_url`
-- [x] `POST /variation/commit` accepts `accepted_phrase_ids` 
+- [x] `POST /variation/commit` accepts `accepted_phrase_ids`
 - [x] `POST /variation/discard` returns `{"ok": true}`
 - [x] SSE stream emits `meta`, `phrase*`, `done` (via `/compose/stream`)
 - [x] Phrase grouping by bars (4 bars per phrase default)
@@ -465,16 +472,32 @@ Score view diff + controller diffs can come after the demo.
 - [x] No mutation in variation mode
 - [x] All data uses beats as canonical unit (not seconds/milliseconds)
 - [x] Optimistic concurrency via `base_state_id` checks
-- [x] Zero Git terminology - pristine musical language
+- [x] Zero Git terminology — pristine musical language
 - [x] `VariationService` computes variations (not "diffs")
 - [x] `Phrase` model for independently reviewable changes
 - [x] `NoteChange` model for note transformations
 - [x] Beat-based fields: `start_beat`, `duration_beats`, `beat_range`
 
-**Deployment Status:**
-- ✅ Deployed to `stage.stori.audio`
-- ✅ All endpoints tested and working
-- ✅ Comprehensive test script: `test_muse_comprehensive.sh`
+**v1 Infrastructure (New — State Machine + Envelope + Store):**
+- [x] `VariationStatus` enum: CREATED → STREAMING → READY → COMMITTED/DISCARDED/FAILED/EXPIRED
+- [x] `assert_transition()` enforces valid state machine transitions
+- [x] `EventEnvelope` with type, sequence, variation_id, project_id, base_state_id, payload
+- [x] `SequenceCounter` for per-variation monotonic sequence numbers
+- [x] `VariationStore` (in-memory) for variation records + phrase storage
+- [x] `SSEBroadcaster` with publish, subscribe, replay, late-join support
+- [x] Builder helpers: `build_meta_envelope`, `build_phrase_envelope`, `build_done_envelope`, `build_error_envelope`
+- [x] 109 new tests for state machine, envelope, store, and broadcaster
+
+**v1 Supercharge (Complete — see [VARIATION_BACKEND_SUPERCHARGE_REPORT.md](VARIATION_BACKEND_SUPERCHARGE_REPORT.md)):**
+- [x] Wired infrastructure into endpoints (propose/commit/discard)
+- [x] `GET /variation/stream` — real SSE with envelopes, replay, heartbeat
+- [x] `GET /variation/{variation_id}` — status polling + reconnect
+- [x] Note removals implemented in commit engine
+- [x] Background generation task (async propose via `asyncio.create_task`)
+- [x] Discard cancels in-flight generation
+- [x] `stream_router.py` — single publish entry point (WS-ready)
+- [x] `variation_data` deprecated on commit (loaded from store)
+- [x] 963 tests passing (146 variation-specific)
 
 ### Frontend (Not Yet Started)
 - [ ] Variation Review Mode overlay chrome

@@ -353,6 +353,55 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
     return channels
 
 
+# Map requested instrument (from Composer) to melodic channel index.
+# Seed MIDI has: ch9=drums, ch0=first melodic (bass), ch1=second (piano/melody), etc.
+MELODIC_INDEX_BY_INSTRUMENT = {
+    "bass": 0,
+    "electric_bass": 0,
+    "synth_bass": 0,
+    "piano": 1,
+    "chords": 1,
+    "electric_piano": 1,
+    "keys": 1,
+    "melody": 2,
+    "lead": 2,
+    "guitar": 2,
+    "arp": 2,
+    "pads": 2,
+    "fx": 2,
+}
+
+
+def filter_channels_for_instruments(channels: dict, instruments: List[str]) -> dict:
+    """
+    Keep only channels that correspond to the requested instruments.
+
+    Composer calls Orpheus once per instrument (e.g. instruments=["drums"], then ["bass"]).
+    Orpheus always returns multi-channel MIDI (drums + melodic). If we return all channels,
+    Composer merges them and assigns the same combined notes to every track, so every
+    track gets the same pattern. Filter to the single channel (or channels) for this
+    request so each Composer track gets only its instrument's notes.
+    """
+    if not instruments:
+        return channels
+    requested = [i.lower().strip() for i in instruments]
+    keep = set()
+    # Drums = channel 9 (GM)
+    if any(i in requested for i in ("drums",)):
+        keep.add(9)
+    # Melodic channels (non-9), in deterministic order
+    melodic_channels = sorted(c for c in channels if c != 9)
+    for inst in requested:
+        if inst in ("drums",):
+            continue
+        idx = MELODIC_INDEX_BY_INSTRUMENT.get(inst, 0)
+        if idx < len(melodic_channels):
+            keep.add(melodic_channels[idx])
+    if not keep:
+        return channels
+    return {ch: channels[ch] for ch in channels if ch in keep}
+
+
 def generate_tool_calls(channels: dict, tempo: int, instruments: List[str]) -> List[dict]:
     """Convert parsed MIDI channels to Stori tool calls"""
     tool_calls = []
@@ -676,7 +725,13 @@ async def generate(request: GenerateRequest):
             filtered_notes = [n for n in notes if n["startBeat"] < max_beat]
             if filtered_notes:
                 filtered_channels[ch] = filtered_notes
-        
+
+        # Return only the channel(s) for the requested instrument(s). Composer calls
+        # once per track (e.g. instruments=["drums"], then ["bass"]). Without this,
+        # we would return all channels and Composer would merge them, putting the
+        # same combined notes on every track.
+        filtered_channels = filter_channels_for_instruments(filtered_channels, request.instruments)
+
         # Generate tool calls
         tool_calls = generate_tool_calls(filtered_channels, request.tempo, request.instruments)
         

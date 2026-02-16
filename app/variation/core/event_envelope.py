@@ -1,0 +1,208 @@
+"""
+Transport-Agnostic Event Envelope (v1 Canonical).
+
+All Muse/Variation events are produced through build_envelope(),
+then routed to SSE and/or WebSocket broadcasters.
+
+This guarantees frontend and agents receive identical data regardless
+of transport.
+
+Envelope fields:
+    type          — meta | phrase | done | error | heartbeat
+    sequence      — strictly increasing integer (per variation)
+    variation_id  — UUID of the variation
+    project_id    — UUID of the project
+    base_state_id — baseline version at proposal time
+    payload       — event-specific JSON
+
+Ordering rules:
+    1. meta must be sequence = 1
+    2. phrase must be sequence = 2..N
+    3. done must be last, unless error occurs
+    4. If error occurs: emit error, then done (status=failed) if possible
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+from dataclasses import dataclass, field
+from typing import Any, Literal
+
+logger = logging.getLogger(__name__)
+
+
+EventType = Literal["meta", "phrase", "done", "error", "heartbeat"]
+
+
+@dataclass(frozen=True)
+class EventEnvelope:
+    """An immutable, transport-agnostic event envelope."""
+
+    type: EventType
+    sequence: int
+    variation_id: str
+    project_id: str
+    base_state_id: str
+    payload: dict[str, Any]
+    timestamp_ms: int = field(default_factory=lambda: int(time.time() * 1000))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict for JSON transport."""
+        return {
+            "type": self.type,
+            "sequence": self.sequence,
+            "variation_id": self.variation_id,
+            "project_id": self.project_id,
+            "base_state_id": self.base_state_id,
+            "payload": self.payload,
+            "timestamp_ms": self.timestamp_ms,
+        }
+
+    def to_json(self) -> str:
+        """Serialize to JSON string."""
+        return json.dumps(self.to_dict())
+
+    def to_sse(self) -> str:
+        """Format as a Server-Sent Event string."""
+        return f"event: {self.type}\ndata: {self.to_json()}\n\n"
+
+
+class SequenceCounter:
+    """
+    Monotonic sequence counter for a single variation's event stream.
+
+    Sequence starts at 1 (for meta) and strictly increases.
+    Thread-safe is not required — variations are single-writer.
+    """
+
+    def __init__(self) -> None:
+        self._value: int = 0
+
+    @property
+    def current(self) -> int:
+        return self._value
+
+    def next(self) -> int:
+        """Get the next sequence number."""
+        self._value += 1
+        return self._value
+
+    def reset(self) -> None:
+        """Reset counter (only for testing)."""
+        self._value = 0
+
+
+def build_envelope(
+    event_type: EventType,
+    payload: dict[str, Any],
+    sequence: int,
+    variation_id: str,
+    project_id: str = "",
+    base_state_id: str = "",
+) -> EventEnvelope:
+    """
+    Build a transport-agnostic event envelope.
+
+    This is the single entry point for creating events.
+    All broadcasters consume EventEnvelope objects.
+    """
+    return EventEnvelope(
+        type=event_type,
+        sequence=sequence,
+        variation_id=variation_id,
+        project_id=project_id,
+        base_state_id=base_state_id,
+        payload=payload,
+    )
+
+
+def build_meta_envelope(
+    variation_id: str,
+    project_id: str,
+    base_state_id: str,
+    intent: str,
+    ai_explanation: str | None,
+    affected_tracks: list[str],
+    affected_regions: list[str],
+    note_counts: dict[str, int],
+    sequence: int = 1,
+) -> EventEnvelope:
+    """Build a meta envelope (always sequence=1)."""
+    return build_envelope(
+        event_type="meta",
+        payload={
+            "intent": intent,
+            "ai_explanation": ai_explanation,
+            "affected_tracks": affected_tracks,
+            "affected_regions": affected_regions,
+            "note_counts": note_counts,
+        },
+        sequence=sequence,
+        variation_id=variation_id,
+        project_id=project_id,
+        base_state_id=base_state_id,
+    )
+
+
+def build_phrase_envelope(
+    variation_id: str,
+    project_id: str,
+    base_state_id: str,
+    sequence: int,
+    phrase_data: dict[str, Any],
+) -> EventEnvelope:
+    """Build a phrase envelope."""
+    return build_envelope(
+        event_type="phrase",
+        payload=phrase_data,
+        sequence=sequence,
+        variation_id=variation_id,
+        project_id=project_id,
+        base_state_id=base_state_id,
+    )
+
+
+def build_done_envelope(
+    variation_id: str,
+    project_id: str,
+    base_state_id: str,
+    sequence: int,
+    status: str = "ready",
+    phrase_count: int = 0,
+) -> EventEnvelope:
+    """Build a done envelope (always last in sequence)."""
+    return build_envelope(
+        event_type="done",
+        payload={
+            "status": status,
+            "phrase_count": phrase_count,
+        },
+        sequence=sequence,
+        variation_id=variation_id,
+        project_id=project_id,
+        base_state_id=base_state_id,
+    )
+
+
+def build_error_envelope(
+    variation_id: str,
+    project_id: str,
+    base_state_id: str,
+    sequence: int,
+    error_message: str,
+    error_code: str | None = None,
+) -> EventEnvelope:
+    """Build an error envelope."""
+    return build_envelope(
+        event_type="error",
+        payload={
+            "message": error_message,
+            "code": error_code,
+        },
+        sequence=sequence,
+        variation_id=variation_id,
+        project_id=project_id,
+        base_state_id=base_state_id,
+    )

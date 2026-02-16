@@ -845,58 +845,69 @@ async def apply_variation_phrases(
             notes_removed = 0
             notes_modified = 0
             applied_phrases = []
-            
-            # Group notes by region for efficient application
-            region_notes: dict[str, list[dict]] = {}
-            region_track_map: dict[str, str] = {}
-            
+
+            # Group adds and removals by region
+            region_adds: dict[str, list[dict]] = {}
+            region_removals: dict[str, list[dict]] = {}
+
+            # Process phrases in sequence order (accepted_phrase_ids order)
             for phrase_id in accepted_phrase_ids:
                 phrase = variation.get_phrase(phrase_id)
                 if not phrase:
-                    logger.warning(f"⚠️ Phrase {phrase_id[:8]} not found in variation")
+                    logger.warning(f"Phrase {phrase_id[:8]} not found in variation")
                     continue
-                
+
                 region_id = phrase.region_id
-                track_id = phrase.track_id
-                region_track_map[region_id] = track_id
-                
-                if region_id not in region_notes:
-                    region_notes[region_id] = []
-                
+
+                if region_id not in region_adds:
+                    region_adds[region_id] = []
+                if region_id not in region_removals:
+                    region_removals[region_id] = []
+
                 for nc in phrase.note_changes:
                     if nc.change_type == "added":
                         notes_added += 1
                         if nc.after:
-                            region_notes[region_id].append(nc.after.to_note_dict())
-                    
+                            region_adds[region_id].append(nc.after.to_note_dict())
+
                     elif nc.change_type == "removed":
                         notes_removed += 1
-                        # Note: Removal not yet implemented in StateStore
-                    
+                        if nc.before:
+                            region_removals[region_id].append(nc.before.to_note_dict())
+
                     elif nc.change_type == "modified":
                         notes_modified += 1
-                        # Modified = remove old + add new
-                        # For now, just add the new version
+                        # Modified = remove old note + add new note
+                        if nc.before:
+                            region_removals[region_id].append(nc.before.to_note_dict())
                         if nc.after:
-                            region_notes[region_id].append(nc.after.to_note_dict())
-                
+                            region_adds[region_id].append(nc.after.to_note_dict())
+
                 applied_phrases.append(phrase_id)
-            
-            # Apply changes server-side with transaction
+
+            # Apply changes in a single transaction: removals first, then adds
             tx = store.begin_transaction(f"Accept Variation: {len(accepted_phrase_ids)} phrases")
-            
-            for region_id, notes in region_notes.items():
+
+            for region_id, criteria in region_removals.items():
+                if criteria:
+                    store.remove_notes(region_id, criteria, transaction=tx)
+
+            for region_id, notes in region_adds.items():
                 if notes:
                     store.add_notes(region_id, notes, transaction=tx)
-            
-            # Commit transaction
+
             store.commit(tx)
-            
+
             logger.info(
-                f"✅ Applied {len(applied_phrases)} phrases: "
-                f"+{notes_added} -{notes_removed} ~{notes_modified}"
+                "Applied variation phrases",
+                extra={
+                    "phrase_count": len(applied_phrases),
+                    "notes_added": notes_added,
+                    "notes_removed": notes_removed,
+                    "notes_modified": notes_modified,
+                },
             )
-            
+
             return VariationApplyResult(
                 success=True,
                 applied_phrase_ids=applied_phrases,

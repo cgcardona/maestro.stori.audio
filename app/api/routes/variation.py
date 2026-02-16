@@ -1,27 +1,31 @@
 """
-Stori Composer API - Variation Endpoints (Muse Specification Compliant)
+Stori Composer API — Variation Endpoints (v1 Canonical)
 
-This module implements the Muse/Variation specification endpoints:
-- POST /variation/propose - Create a variation proposal from Muse
-- GET /variation/stream - Stream variation phrases via SSE
-- POST /variation/commit - Apply accepted phrases to canonical state
-- POST /variation/discard - Discard a variation without applying
+Implements the Muse/Variation protocol as a first-class backend subsystem:
+- POST /variation/propose  — create record, launch background generation
+- GET  /variation/stream   — real SSE stream with envelopes + replay
+- GET  /variation/{id}     — poll status + phrases (reconnect support)
+- POST /variation/commit   — apply accepted phrases from store
+- POST /variation/discard  — cancel generation, transition to DISCARDED
 
-Key principles:
-1. Variations are **ephemeral** - not persisted on backend
-2. Frontend maintains variation state and sends it back on commit
-3. Streaming-first UX - phrases are emitted incrementally
-4. Optimistic concurrency via base_state_id
-5. Non-destructive - changes are reviewable before application
+Key principles (v1 canonical):
+1. Variations are persisted in VariationStore (backend owns lifecycle)
+2. State machine enforces CREATED→STREAMING→READY→COMMITTED|DISCARDED|FAILED
+3. All SSE events use transport-agnostic EventEnvelope with strict sequencing
+4. No mutation of canonical state during proposal
+5. base_state_id validated at both propose and commit
 """
 
+from __future__ import annotations
+
+import asyncio
 import json
 import logging
 import time
 import uuid
-from typing import AsyncIterator, Optional, Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
@@ -35,6 +39,7 @@ from app.models.requests import (
 )
 from app.models.variation import (
     Variation,
+    Phrase,
     ProposeVariationResponse,
     CommitVariationResponse,
 )
@@ -52,23 +57,44 @@ from app.auth.dependencies import require_valid_token
 from app.db import get_db
 from app.services.budget import (
     check_budget,
-    deduct_budget,
-    calculate_cost_cents,
     get_model_or_default,
     InsufficientBudgetError,
     BudgetError,
 )
+from app.variation.core.state_machine import (
+    VariationStatus,
+    InvalidTransitionError,
+    can_commit,
+    can_discard,
+    is_terminal,
+)
+from app.variation.core.event_envelope import (
+    EventEnvelope,
+    build_meta_envelope,
+    build_phrase_envelope,
+    build_done_envelope,
+    build_error_envelope,
+)
+from app.variation.storage.variation_store import (
+    VariationRecord,
+    PhraseRecord,
+    get_variation_store,
+)
+from app.variation.streaming.stream_router import publish_event, close_variation_stream
+from app.variation.streaming.sse_broadcaster import get_sse_broadcaster
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 limiter = Limiter(key_func=get_remote_address)
 
+# Background generation tasks keyed by variation_id (for cancellation)
+_generation_tasks: dict[str, asyncio.Task] = {}
 
-async def sse_event(data: dict[str, Any]) -> str:
-    """Format data as an SSE event."""
-    return f"data: {json.dumps(data)}\n\n"
 
+# =============================================================================
+# POST /variation/propose
+# =============================================================================
 
 @router.post("/variation/propose", response_model=ProposeVariationResponse)
 @limiter.limit("20/minute")
@@ -79,180 +105,226 @@ async def propose_variation(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Propose a variation (Muse Specification endpoint).
-    
-    Creates a variation proposal and returns metadata immediately.
-    If streaming is requested, client should connect to stream_url
-    to receive phrases incrementally.
-    
-    Flow:
-    1. Validate project state matches base_state_id
-    2. Run intent classification + planning
-    3. Execute in variation mode (no mutation)
-    4. Return variation_id + stream_url
-    
-    Args:
-        propose_request: Variation proposal parameters from spec
-        
-    Returns:
-        ProposeVariationResponse with variation_id and stream_url
+    Propose a variation — create record, launch background generation.
+
+    1. Validate base_state_id (optimistic concurrency)
+    2. Create VariationRecord in CREATED state
+    3. Launch async generation task (CREATED → STREAMING → READY)
+    4. Return variation_id + stream_url immediately
     """
     user_id = token_claims.get("sub")
-    
-    # Budget check
+
     if user_id:
         try:
             await check_budget(db, user_id)
         except InsufficientBudgetError as e:
-            raise HTTPException(
-                status_code=402,
-                detail={
-                    "error": "Insufficient budget",
-                    "budget_remaining": e.budget_remaining,
-                }
-            )
+            raise HTTPException(status_code=402, detail={
+                "error": "Insufficient budget",
+                "budget_remaining": e.budget_remaining,
+            })
         except BudgetError:
             pass
-    
+
     trace = create_trace_context(
         conversation_id=propose_request.project_id,
         user_id=user_id,
     )
-    
+
     try:
         with trace_span(trace, "propose_variation"):
-            # Get or create StateStore for this project
             store = get_or_create_store(
                 conversation_id=propose_request.project_id,
                 project_id=propose_request.project_id,
             )
-            
-            # Optimistic concurrency check
+
             if not store.check_state_id(propose_request.base_state_id):
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "error": "State conflict",
-                        "message": (
-                            f"Project state has changed. "
-                            f"Expected state_id={propose_request.base_state_id}, "
-                            f"but current is {store.get_state_id()}"
-                        ),
-                        "current_state_id": store.get_state_id(),
-                    }
-                )
-            
-            # Generate variation_id
+                raise HTTPException(status_code=409, detail={
+                    "error": "State conflict",
+                    "message": (
+                        f"Project state has changed. "
+                        f"Expected state_id={propose_request.base_state_id}, "
+                        f"but current is {store.get_state_id()}"
+                    ),
+                    "current_state_id": store.get_state_id(),
+                })
+
             variation_id = str(uuid.uuid4())
-            
-            # For MVP, we compute the variation synchronously
-            # Future: Support async streaming via GET /variation/stream
-            selected_model = get_model_or_default(propose_request.model)
-            llm = LLMClient(model=selected_model)
-            
-            try:
-                # Get intent classification
-                route = await get_intent_result_with_llm(
-                    propose_request.intent,
-                    {},  # project_context - we'll use StateStore
-                    llm
+            vstore = get_variation_store()
+            record = vstore.create(
+                project_id=propose_request.project_id,
+                base_state_id=propose_request.base_state_id,
+                intent=propose_request.intent,
+                variation_id=variation_id,
+            )
+
+            logger.info(
+                "Variation proposed",
+                extra={
+                    "variation_id": variation_id,
+                    "project_id": propose_request.project_id,
+                    "base_state_id": propose_request.base_state_id,
+                    "intent": propose_request.intent[:80],
+                },
+            )
+
+            task = asyncio.create_task(
+                _run_generation(
+                    record=record,
+                    propose_request=propose_request,
+                    project_context={},
                 )
-                
-                # Only COMPOSING intents can generate variations
-                if route.sse_state != SSEState.COMPOSING:
-                    raise HTTPException(
-                        status_code=400,
-                        detail={
-                            "error": "Invalid intent",
-                            "message": f"Variations only supported for COMPOSING mode (got {route.sse_state.value})",
-                        }
-                    )
-                
-                # Run the planner to get tool calls
-                output = await run_pipeline(
-                    propose_request.intent,
-                    {},  # project_context
-                    llm
-                )
-                
-                if not output.plan or not output.plan.tool_calls:
-                    raise HTTPException(
-                        status_code=400,
-                        detail={
-                            "error": "No plan generated",
-                            "message": "Could not generate a plan - please be more specific",
-                        }
-                    )
-                
-                # For now, return immediate response with variation computed
-                # Future: Make this truly async with streaming
-                logger.info(
-                    f"[{trace.trace_id[:8]}] Variation {variation_id[:8]} proposed: "
-                    f"{len(output.plan.tool_calls)} tool calls"
-                )
-                
-                return ProposeVariationResponse(
-                    variation_id=variation_id,
-                    project_id=propose_request.project_id,
-                    base_state_id=propose_request.base_state_id,
-                    intent=propose_request.intent,
-                    ai_explanation=output.plan.llm_response_text,
-                    stream_url=f"/variation/stream?variation_id={variation_id}",
-                )
-                
-            finally:
-                await llm.close()
-                
+            )
+            _generation_tasks[variation_id] = task
+            task.add_done_callback(lambda t: _generation_tasks.pop(variation_id, None))
+
+            return ProposeVariationResponse(
+                variation_id=variation_id,
+                project_id=propose_request.project_id,
+                base_state_id=propose_request.base_state_id,
+                intent=propose_request.intent,
+                ai_explanation=None,
+                stream_url=f"/api/v1/variation/stream?variation_id={variation_id}",
+            )
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"[{trace.trace_id[:8]}] Propose variation failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "Internal error",
-                "message": str(e),
-                "trace_id": trace.trace_id,
-            }
-        )
+        logger.exception(f"Propose variation failed: {e}")
+        raise HTTPException(status_code=500, detail={
+            "error": "Internal error",
+            "message": str(e),
+            "trace_id": trace.trace_id,
+        })
     finally:
         clear_trace_context()
 
 
+# =============================================================================
+# GET /variation/stream — real SSE with envelopes + replay
+# =============================================================================
+
 @router.get("/variation/stream")
 async def stream_variation(
+    variation_id: str,
+    from_sequence: int = Query(default=0, ge=0, description="Resume from sequence"),
+    token_claims: dict = Depends(require_valid_token),
+):
+    """
+    Stream variation events via SSE with transport-agnostic envelopes.
+
+    Emits EventEnvelope objects as SSE events:
+      event: meta|phrase|done|error
+      data: {type, sequence, variation_id, project_id, base_state_id, payload, timestamp_ms}
+
+    Supports late-join replay via ?from_sequence=N.
+    """
+    vstore = get_variation_store()
+    record = vstore.get(variation_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "Variation not found",
+            "variation_id": variation_id,
+        })
+
+    if is_terminal(record.status):
+        # Stream stored history for completed variations
+        async def replay_stream():
+            broadcaster = get_sse_broadcaster()
+            for envelope in broadcaster.get_history(variation_id, from_sequence):
+                yield envelope.to_sse()
+
+        return StreamingResponse(
+            replay_stream(),
+            media_type="text/event-stream",
+            headers=_sse_headers(),
+        )
+
+    broadcaster = get_sse_broadcaster()
+    queue = broadcaster.subscribe(variation_id, from_sequence=from_sequence)
+
+    async def live_stream():
+        try:
+            while True:
+                try:
+                    envelope = await asyncio.wait_for(queue.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    yield f"event: heartbeat\ndata: {{}}\n\n"
+                    continue
+
+                if envelope is None:
+                    break
+                yield envelope.to_sse()
+
+                if envelope.type == "done":
+                    break
+        finally:
+            broadcaster.unsubscribe(variation_id, queue)
+
+    return StreamingResponse(
+        live_stream(),
+        media_type="text/event-stream",
+        headers=_sse_headers(),
+    )
+
+
+# =============================================================================
+# GET /variation/{variation_id} — poll status + phrases
+# =============================================================================
+
+@router.get("/variation/{variation_id}")
+async def get_variation(
     variation_id: str,
     token_claims: dict = Depends(require_valid_token),
 ):
     """
-    Stream variation phrases via SSE (Muse Specification endpoint).
-    
-    Emits:
-    - meta: Overall variation summary + counts
-    - phrase: Individual musical phrase (can be multiple)
-    - progress: Optional progress updates
-    - done: Completion signal
-    - error: Terminal error
-    
-    Note: For MVP, variations are computed synchronously in /variation/propose.
-    This endpoint is a placeholder for future streaming support.
-    """
-    async def stream():
-        yield await sse_event({
-            "type": "error",
-            "message": "Streaming not yet implemented - use /variation/propose for synchronous generation"
-        })
-    
-    return StreamingResponse(
-        stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
-    )
+    Poll variation status and phrases (for reconnect / non-streaming clients).
 
+    Returns current status, phrases generated so far, and last sequence number.
+    """
+    vstore = get_variation_store()
+    record = vstore.get(variation_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "Variation not found",
+            "variation_id": variation_id,
+        })
+
+    phrases_data = []
+    for p in sorted(record.phrases, key=lambda pr: pr.sequence):
+        phrases_data.append({
+            "phrase_id": p.phrase_id,
+            "sequence": p.sequence,
+            "track_id": p.track_id,
+            "region_id": p.region_id,
+            "beat_start": p.beat_start,
+            "beat_end": p.beat_end,
+            "label": p.label,
+            "tags": p.tags,
+            "ai_explanation": p.ai_explanation,
+            "diff": p.diff_json,
+        })
+
+    return {
+        "variation_id": record.variation_id,
+        "project_id": record.project_id,
+        "base_state_id": record.base_state_id,
+        "intent": record.intent,
+        "status": record.status.value,
+        "ai_explanation": record.ai_explanation,
+        "affected_tracks": record.affected_tracks,
+        "affected_regions": record.affected_regions,
+        "phrases": phrases_data,
+        "phrase_count": len(record.phrases),
+        "last_sequence": record.last_sequence,
+        "created_at": record.created_at.isoformat(),
+        "updated_at": record.updated_at.isoformat(),
+        "error_message": record.error_message,
+    }
+
+
+# =============================================================================
+# POST /variation/commit
+# =============================================================================
 
 @router.post("/variation/commit", response_model=CommitVariationResponse)
 @limiter.limit("30/minute")
@@ -263,138 +335,149 @@ async def commit_variation(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Commit (accept) selected phrases from a variation (Muse Specification endpoint).
-    
-    This is the "Accept Variation" phase - only accepted phrases are applied to canonical state.
-    Creates a single undo boundary for all applied changes.
-    
-    Flow:
-    1. Validate base_state_id (optimistic concurrency)
-    2. Reconstruct Variation from variation_data
-    3. Apply accepted phrases via StateStore transaction
-    4. Return new_state_id + updated regions
-    
-    Args:
-        commit_request: Commit parameters from spec
-        
-    Returns:
-        CommitVariationResponse with new_state_id and updated regions
+    Commit accepted phrases from a variation (loads from VariationStore).
+
+    1. Load variation from store (no client-provided variation_data needed)
+    2. Validate status == READY
+    3. Validate base_state_id matches
+    4. Apply accepted phrases in sequence order (adds + removals)
+    5. Transition to COMMITTED
     """
     user_id = token_claims.get("sub")
     trace = create_trace_context(
         conversation_id=commit_request.project_id,
         user_id=user_id,
     )
-    
+
     try:
         with trace_span(trace, "commit_variation", {"phrase_count": len(commit_request.accepted_phrase_ids)}):
-            # Get StateStore for this project
-            store = get_or_create_store(
+            # --- Load from VariationStore ---
+            vstore = get_variation_store()
+            record = vstore.get(commit_request.variation_id)
+
+            if record is None:
+                # Fall back to variation_data for backward compatibility
+                if commit_request.variation_data:
+                    return await _commit_from_variation_data(commit_request, trace)
+                raise HTTPException(status_code=404, detail={
+                    "error": "Variation not found",
+                    "variation_id": commit_request.variation_id,
+                })
+
+            # --- Validate status ---
+            if record.status == VariationStatus.COMMITTED:
+                raise HTTPException(status_code=409, detail={
+                    "error": "Already committed",
+                    "message": f"Variation {commit_request.variation_id} is already committed",
+                })
+
+            if not can_commit(record.status):
+                raise HTTPException(status_code=409, detail={
+                    "error": "Invalid state for commit",
+                    "message": (
+                        f"Cannot commit variation in state '{record.status.value}'. "
+                        f"Commit is only allowed from READY state."
+                    ),
+                    "current_status": record.status.value,
+                })
+
+            # --- Validate baseline ---
+            project_store = get_or_create_store(
                 conversation_id=commit_request.project_id,
                 project_id=commit_request.project_id,
             )
-            
-            # Optimistic concurrency check
-            if not store.check_state_id(commit_request.base_state_id):
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "error": "State conflict",
-                        "message": (
-                            f"Project state has changed since variation was proposed. "
-                            f"Expected state_id={commit_request.base_state_id}, "
-                            f"but current is {store.get_state_id()}"
-                        ),
-                        "current_state_id": store.get_state_id(),
-                    }
-                )
-            
-            # Reconstruct Variation from provided data
-            try:
-                variation = Variation.model_validate(commit_request.variation_data)
-            except Exception as e:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error": "Invalid variation_data",
-                        "message": str(e),
-                    }
-                )
-            
-            # Validate variation_id matches
-            if variation.variation_id != commit_request.variation_id:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error": "Variation ID mismatch",
-                        "message": "variation_id in request does not match variation_data",
-                    }
-                )
-            
-            # Validate all requested phrases exist
-            available_phrase_ids = {p.phrase_id for p in variation.phrases}
-            invalid_phrases = [p for p in commit_request.accepted_phrase_ids if p not in available_phrase_ids]
-            if invalid_phrases:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error": "Invalid phrase IDs",
-                        "message": f"Phrases not found: {invalid_phrases[:3]}{'...' if len(invalid_phrases) > 3 else ''}",
-                    }
-                )
-            
-            # Apply the accepted phrases
+
+            if not project_store.check_state_id(commit_request.base_state_id):
+                raise HTTPException(status_code=409, detail={
+                    "error": "State conflict",
+                    "message": (
+                        f"Project state has changed since variation was proposed. "
+                        f"Expected state_id={commit_request.base_state_id}, "
+                        f"but current is {project_store.get_state_id()}"
+                    ),
+                    "current_state_id": project_store.get_state_id(),
+                })
+
+            # Verify base_state_id also matches what was recorded at creation
+            if record.base_state_id != commit_request.base_state_id:
+                raise HTTPException(status_code=409, detail={
+                    "error": "Baseline mismatch",
+                    "message": (
+                        f"Variation was proposed against state_id={record.base_state_id}, "
+                        f"but commit requests state_id={commit_request.base_state_id}"
+                    ),
+                })
+
+            # --- Validate phrase IDs ---
+            available_ids = {p.phrase_id for p in record.phrases}
+            invalid_ids = [pid for pid in commit_request.accepted_phrase_ids if pid not in available_ids]
+            if invalid_ids:
+                raise HTTPException(status_code=400, detail={
+                    "error": "Invalid phrase IDs",
+                    "message": f"Phrases not found: {invalid_ids[:3]}{'...' if len(invalid_ids) > 3 else ''}",
+                })
+
+            # --- Build Variation model from store record for apply ---
+            variation = _record_to_variation(record)
+
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=commit_request.accepted_phrase_ids,
-                project_state={},  # StateStore is source of truth
+                project_state={},
                 conversation_id=commit_request.project_id,
             )
-            
+
             if not result.success:
-                raise HTTPException(
-                    status_code=500,
-                    detail={
-                        "error": "Application failed",
-                        "message": result.error or "Unknown error during application",
-                    }
-                )
-            
-            # Get new state ID after commit
-            new_state_id = store.get_state_id()
-            
-            # Generate undo label
-            undo_label = f"Accept Variation: {variation.intent[:50]}"
-            
+                try:
+                    record.transition_to(VariationStatus.FAILED)
+                    record.error_message = result.error
+                except InvalidTransitionError:
+                    pass
+                raise HTTPException(status_code=500, detail={
+                    "error": "Application failed",
+                    "message": result.error or "Unknown error",
+                })
+
+            # --- Transition to COMMITTED ---
+            record.transition_to(VariationStatus.COMMITTED)
+            new_state_id = project_store.get_state_id()
+
             logger.info(
-                f"[{trace.trace_id[:8]}] Committed variation {commit_request.variation_id[:8]}: "
-                f"{len(result.applied_phrase_ids)} phrases, "
-                f"+{result.notes_added} -{result.notes_removed} ~{result.notes_modified}"
+                "Variation committed",
+                extra={
+                    "variation_id": commit_request.variation_id,
+                    "project_id": commit_request.project_id,
+                    "phrases_applied": len(result.applied_phrase_ids),
+                    "notes_added": result.notes_added,
+                    "notes_removed": result.notes_removed,
+                    "notes_modified": result.notes_modified,
+                },
             )
-            
+
             return CommitVariationResponse(
                 project_id=commit_request.project_id,
                 new_state_id=new_state_id,
                 applied_phrase_ids=result.applied_phrase_ids,
-                undo_label=undo_label,
-                updated_regions=[],  # TODO: Extract from result (backlog)
+                undo_label=f"Accept Variation: {record.intent[:50]}",
+                updated_regions=[],
             )
-            
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"[{trace.trace_id[:8]}] Commit variation failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "Internal error",
-                "message": str(e),
-                "trace_id": trace.trace_id,
-            }
-        )
+        logger.exception(f"Commit variation failed: {e}")
+        raise HTTPException(status_code=500, detail={
+            "error": "Internal error",
+            "message": str(e),
+            "trace_id": trace.trace_id,
+        })
     finally:
         clear_trace_context()
 
+
+# =============================================================================
+# POST /variation/discard
+# =============================================================================
 
 @router.post("/variation/discard")
 @limiter.limit("30/minute")
@@ -404,21 +487,378 @@ async def discard_variation(
     token_claims: dict = Depends(require_valid_token),
 ):
     """
-    Discard a variation without applying (Muse Specification endpoint).
-    
-    Since variations are stateless and ephemeral on the backend,
-    this is effectively a no-op. However, we return success to
-    confirm the client's intent to discard.
-    
-    Args:
-        discard_request: Discard parameters from spec
-        
-    Returns:
-        Simple success response
+    Discard a variation — cancel generation if streaming, transition to DISCARDED.
     """
+    vstore = get_variation_store()
+    record = vstore.get(discard_request.variation_id)
+
+    if record is None:
+        # Stateless discard for backward compatibility — still safe
+        logger.info(
+            "Variation discarded (not in store)",
+            extra={"variation_id": discard_request.variation_id},
+        )
+        return {"ok": True}
+
+    if is_terminal(record.status):
+        if record.status == VariationStatus.DISCARDED:
+            return {"ok": True}
+        raise HTTPException(status_code=409, detail={
+            "error": "Invalid state for discard",
+            "message": f"Variation is in terminal state '{record.status.value}'",
+            "current_status": record.status.value,
+        })
+
+    if not can_discard(record.status):
+        raise HTTPException(status_code=409, detail={
+            "error": "Invalid state for discard",
+            "current_status": record.status.value,
+        })
+
+    # Cancel background generation if running
+    was_streaming = record.status == VariationStatus.STREAMING
+    task = _generation_tasks.pop(discard_request.variation_id, None)
+    if task is not None and not task.done():
+        task.cancel()
+        logger.info(
+            "Cancelled generation task",
+            extra={"variation_id": discard_request.variation_id},
+        )
+
+    # Transition to DISCARDED
+    record.transition_to(VariationStatus.DISCARDED)
+
+    # Emit terminal done event so streaming clients close cleanly
+    if was_streaming:
+        done_env = build_done_envelope(
+            variation_id=record.variation_id,
+            project_id=record.project_id,
+            base_state_id=record.base_state_id,
+            sequence=record.next_sequence(),
+            status="discarded",
+            phrase_count=len(record.phrases),
+        )
+        await publish_event(done_env)
+        await close_variation_stream(record.variation_id)
+
     logger.info(
-        f"Variation {discard_request.variation_id[:8]} discarded "
-        f"for project {discard_request.project_id[:8]}"
+        "Variation discarded",
+        extra={
+            "variation_id": discard_request.variation_id,
+            "project_id": discard_request.project_id,
+            "was_streaming": was_streaming,
+        },
     )
-    
+
     return {"ok": True}
+
+
+# =============================================================================
+# Background Generation Task
+# =============================================================================
+
+async def _run_generation(
+    record: VariationRecord,
+    propose_request: ProposeVariationRequest,
+    project_context: dict[str, Any],
+) -> None:
+    """
+    Background task: intent → plan → variation → emit envelopes.
+
+    State transitions:
+      CREATED → STREAMING → (emit meta/phrases/done) → READY
+      CREATED → STREAMING → (error) → FAILED
+    """
+    variation_id = record.variation_id
+    try:
+        # --- CREATED → STREAMING ---
+        record.transition_to(VariationStatus.STREAMING)
+
+        selected_model = get_model_or_default(propose_request.model)
+        llm = LLMClient(model=selected_model)
+
+        try:
+            route = await get_intent_result_with_llm(
+                propose_request.intent, project_context, llm
+            )
+
+            if route.sse_state not in (SSEState.COMPOSING, SSEState.EDITING):
+                raise ValueError(
+                    f"Variations require COMPOSING or EDITING intent (got {route.sse_state.value})"
+                )
+
+            output = await run_pipeline(propose_request.intent, project_context, llm)
+
+            if not output.plan or not output.plan.tool_calls:
+                raise ValueError("Could not generate a plan — be more specific")
+
+            # Check cancellation before heavy work
+            if record.status != VariationStatus.STREAMING:
+                return
+
+            variation = await execute_plan_variation(
+                tool_calls=output.plan.tool_calls,
+                project_state=project_context,
+                intent=propose_request.intent,
+                conversation_id=propose_request.project_id,
+                explanation=output.plan.llm_response_text,
+            )
+
+            if record.status != VariationStatus.STREAMING:
+                return
+
+            # Populate record metadata
+            record.ai_explanation = variation.ai_explanation
+            record.affected_tracks = variation.affected_tracks
+            record.affected_regions = variation.affected_regions
+
+            # --- Emit meta envelope (seq=1) ---
+            meta_env = build_meta_envelope(
+                variation_id=variation_id,
+                project_id=record.project_id,
+                base_state_id=record.base_state_id,
+                intent=record.intent,
+                ai_explanation=variation.ai_explanation,
+                affected_tracks=variation.affected_tracks,
+                affected_regions=variation.affected_regions,
+                note_counts=variation.note_counts,
+                sequence=record.next_sequence(),
+            )
+            await publish_event(meta_env)
+
+            # --- Emit phrase envelopes (seq=2..N) ---
+            for phrase in variation.phrases:
+                if record.status != VariationStatus.STREAMING:
+                    return
+
+                seq = record.next_sequence()
+                phrase_data = {
+                    "phrase_id": phrase.phrase_id,
+                    "track_id": phrase.track_id,
+                    "region_id": phrase.region_id,
+                    "start_beat": phrase.start_beat,
+                    "end_beat": phrase.end_beat,
+                    "label": phrase.label,
+                    "tags": phrase.tags,
+                    "explanation": phrase.explanation,
+                    "note_changes": [nc.model_dump() for nc in phrase.note_changes],
+                    "controller_changes": phrase.controller_changes,
+                }
+
+                phrase_env = build_phrase_envelope(
+                    variation_id=variation_id,
+                    project_id=record.project_id,
+                    base_state_id=record.base_state_id,
+                    sequence=seq,
+                    phrase_data=phrase_data,
+                )
+                await publish_event(phrase_env)
+
+                # Store phrase in record
+                record.add_phrase(PhraseRecord(
+                    phrase_id=phrase.phrase_id,
+                    variation_id=variation_id,
+                    sequence=seq,
+                    track_id=phrase.track_id,
+                    region_id=phrase.region_id,
+                    beat_start=phrase.start_beat,
+                    beat_end=phrase.end_beat,
+                    label=phrase.label,
+                    diff_json=phrase_data,
+                    ai_explanation=phrase.explanation,
+                    tags=phrase.tags,
+                ))
+
+            if record.status != VariationStatus.STREAMING:
+                return
+
+            # --- Emit done envelope ---
+            done_env = build_done_envelope(
+                variation_id=variation_id,
+                project_id=record.project_id,
+                base_state_id=record.base_state_id,
+                sequence=record.next_sequence(),
+                status="ready",
+                phrase_count=len(record.phrases),
+            )
+            await publish_event(done_env)
+
+            # --- STREAMING → READY ---
+            record.transition_to(VariationStatus.READY)
+
+            logger.info(
+                "Variation generation complete",
+                extra={
+                    "variation_id": variation_id,
+                    "phrase_count": len(record.phrases),
+                    "status": "ready",
+                },
+            )
+
+        finally:
+            await llm.close()
+
+    except asyncio.CancelledError:
+        logger.info(f"Generation cancelled for variation {variation_id[:8]}")
+        if record.status == VariationStatus.STREAMING:
+            try:
+                record.transition_to(VariationStatus.DISCARDED)
+            except InvalidTransitionError:
+                pass
+
+    except Exception as e:
+        logger.exception(
+            f"Generation failed for variation {variation_id[:8]}: {e}"
+        )
+        record.error_message = str(e)
+
+        # Emit error + done(failed)
+        try:
+            error_env = build_error_envelope(
+                variation_id=variation_id,
+                project_id=record.project_id,
+                base_state_id=record.base_state_id,
+                sequence=record.next_sequence(),
+                error_message=str(e),
+            )
+            await publish_event(error_env)
+
+            done_env = build_done_envelope(
+                variation_id=variation_id,
+                project_id=record.project_id,
+                base_state_id=record.base_state_id,
+                sequence=record.next_sequence(),
+                status="failed",
+                phrase_count=len(record.phrases),
+            )
+            await publish_event(done_env)
+        except Exception:
+            logger.exception("Failed to emit error envelopes")
+
+        try:
+            record.transition_to(VariationStatus.FAILED)
+        except InvalidTransitionError:
+            pass
+
+    finally:
+        await close_variation_stream(variation_id)
+
+
+# =============================================================================
+# Backward-compatible commit (client sends variation_data)
+# =============================================================================
+
+async def _commit_from_variation_data(
+    commit_request: CommitVariationRequest,
+    trace,
+) -> CommitVariationResponse:
+    """Backward-compatible commit path when variation is not in store."""
+    project_store = get_or_create_store(
+        conversation_id=commit_request.project_id,
+        project_id=commit_request.project_id,
+    )
+
+    if not project_store.check_state_id(commit_request.base_state_id):
+        raise HTTPException(status_code=409, detail={
+            "error": "State conflict",
+            "message": (
+                f"Project state has changed. "
+                f"Expected={commit_request.base_state_id}, "
+                f"current={project_store.get_state_id()}"
+            ),
+            "current_state_id": project_store.get_state_id(),
+        })
+
+    try:
+        variation = Variation.model_validate(commit_request.variation_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail={
+            "error": "Invalid variation_data",
+            "message": str(e),
+        })
+
+    if variation.variation_id != commit_request.variation_id:
+        raise HTTPException(status_code=400, detail={
+            "error": "Variation ID mismatch",
+        })
+
+    available = {p.phrase_id for p in variation.phrases}
+    invalid = [pid for pid in commit_request.accepted_phrase_ids if pid not in available]
+    if invalid:
+        raise HTTPException(status_code=400, detail={
+            "error": "Invalid phrase IDs",
+            "message": f"Not found: {invalid[:3]}",
+        })
+
+    result = await apply_variation_phrases(
+        variation=variation,
+        accepted_phrase_ids=commit_request.accepted_phrase_ids,
+        project_state={},
+        conversation_id=commit_request.project_id,
+    )
+
+    if not result.success:
+        raise HTTPException(status_code=500, detail={
+            "error": "Application failed",
+            "message": result.error or "Unknown error",
+        })
+
+    return CommitVariationResponse(
+        project_id=commit_request.project_id,
+        new_state_id=project_store.get_state_id(),
+        applied_phrase_ids=result.applied_phrase_ids,
+        undo_label=f"Accept Variation: {variation.intent[:50]}",
+        updated_regions=[],
+    )
+
+
+# =============================================================================
+# Helpers
+# =============================================================================
+
+def _record_to_variation(record: VariationRecord) -> Variation:
+    """Convert a VariationRecord back to a Variation model for apply."""
+    phrases = []
+    for pr in sorted(record.phrases, key=lambda p: p.sequence):
+        phrase_data = pr.diff_json
+        note_changes_raw = phrase_data.get("note_changes", [])
+        from app.models.variation import NoteChange, MidiNoteSnapshot
+
+        note_changes = []
+        for nc_raw in note_changes_raw:
+            note_changes.append(NoteChange.model_validate(nc_raw))
+
+        phrases.append(Phrase(
+            phrase_id=pr.phrase_id,
+            track_id=pr.track_id,
+            region_id=pr.region_id,
+            start_beat=pr.beat_start,
+            end_beat=pr.beat_end,
+            label=pr.label,
+            note_changes=note_changes,
+            controller_changes=phrase_data.get("controller_changes", []),
+            explanation=pr.ai_explanation,
+            tags=pr.tags,
+        ))
+
+    beat_starts = [p.start_beat for p in phrases] if phrases else [0.0]
+    beat_ends = [p.end_beat for p in phrases] if phrases else [0.0]
+
+    return Variation(
+        variation_id=record.variation_id,
+        intent=record.intent,
+        ai_explanation=record.ai_explanation,
+        affected_tracks=record.affected_tracks,
+        affected_regions=record.affected_regions,
+        beat_range=(min(beat_starts), max(beat_ends)),
+        phrases=phrases,
+    )
+
+
+def _sse_headers() -> dict[str, str]:
+    """Standard SSE response headers."""
+    return {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }

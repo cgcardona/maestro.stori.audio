@@ -71,7 +71,7 @@ curl -X POST https://<your-api>/api/v1/users/register -H "Content-Type: applicat
 
 ## Frontend (Swift)
 
-**Auth & identity parity:** See [frontend-auth-parity-prompt.md](frontend-auth-parity-prompt.md) for a single prompt you can give a Swift agent so the app matches this backend (single identifier = device UUID, register, JWT for compose/MCP, X-Device-ID only for assets).
+**Auth & identity parity:** The app should use the backend's single-identifier architecture (device UUID). Register, get JWT for compose/MCP, use X-Device-ID only for assets.
 
 - **Assets:** Asset endpoints use **X-Device-ID only** (no JWT). Send header `X-Device-ID: <device-uuid>` (the app’s per-install UUID). List drum kits: `GET /api/v1/assets/drum-kits`. Download URL: `GET /api/v1/assets/drum-kits/{id}/download-url` → response has `url` (presigned S3, use within 30 min) and `expires_at`.
 - **CORS:** Backend allows origins in `STORI_CORS_ORIGINS` (e.g. `https://stage.stori.audio`, `stori://`). No wildcard in prod.

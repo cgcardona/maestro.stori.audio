@@ -117,52 +117,24 @@ class TestProposeVariation:
         sample_variation,
         mock_auth_token,
     ):
-        """Test successful variation proposal."""
+        """Test successful variation proposal returns 200 with variation_id and stream_url."""
         with patch("app.api.routes.variation.check_budget", new_callable=AsyncMock), \
              patch("app.api.routes.variation.get_or_create_store") as mock_store, \
-             patch("app.api.routes.variation.LLMClient") as mock_llm_class, \
-             patch("app.api.routes.variation.get_intent_result_with_llm", new_callable=AsyncMock) as mock_intent, \
-             patch("app.api.routes.variation.run_pipeline", new_callable=AsyncMock) as mock_pipeline:
-            
+             patch("app.api.routes.variation.get_variation_store") as mock_vstore:
+
             # Setup mocks
             mock_store_instance = MagicMock()
             mock_store_instance.check_state_id.return_value = True
             mock_store_instance.get_state_id.return_value = mock_state_id
             mock_store.return_value = mock_store_instance
-            
-            mock_llm_instance = MagicMock()
-            mock_llm_instance.close = AsyncMock()
-            mock_llm_class.return_value = mock_llm_instance
-            
-            # Mock intent result
-            from app.core.intent import IntentResult, Intent, SSEState
-            mock_intent.return_value = IntentResult(
-                intent=Intent.GENERATE_MUSIC,
-                sse_state=SSEState.COMPOSING,
-                confidence=0.9,
-                slots={},
-                tools=[],
-                allowed_tool_names=set(),
-                tool_choice="auto",
-                force_stop_after=False,
-                requires_planner=True,
-                reasons=(),
-            )
-            
-            # Mock pipeline result (PipelineOutput and ExecutionPlan from pipeline/planner)
-            from app.core.pipeline import PipelineOutput
-            from app.core.planner import ExecutionPlan
-            from app.core.expansion import ToolCall
-            mock_plan = ExecutionPlan(
-                tool_calls=[ToolCall(name="stori_generate_drums", params={})],
-                llm_response_text="Generate a beat",
-            )
-            mock_pipeline.return_value = PipelineOutput(
-                route=mock_intent.return_value,
-                llm_response=None,
-                plan=mock_plan,
-            )
-            
+
+            # VariationStore mock
+            mock_vstore_instance = MagicMock()
+            mock_record = MagicMock()
+            mock_record.variation_id = "var-test-456"
+            mock_vstore_instance.create.return_value = mock_record
+            mock_vstore.return_value = mock_vstore_instance
+
             # Make request
             request_data = {
                 "project_id": mock_project_id,
@@ -172,15 +144,15 @@ class TestProposeVariation:
                 "options": {"phrase_grouping": "bars", "bar_size": 4, "stream": True},
                 "request_id": None,
             }
-            
+
             response = await variation_client.post(
                 "/api/v1/variation/propose",
                 json=request_data,
             )
-            
+
             assert response.status_code == 200
             data = response.json()
-            
+
             # Verify response structure
             assert "variation_id" in data
             assert data["project_id"] == mock_project_id
@@ -231,22 +203,34 @@ class TestProposeVariation:
         mock_project_id,
         mock_state_id,
     ):
-        """Test variation proposal with non-COMPOSING intent."""
+        """Test variation proposal with non-COMPOSING intent returns 200.
+
+        Since v1 supercharge, propose returns 200 immediately and launches
+        background generation. Invalid intent errors surface via the SSE
+        stream (error + done(status=failed)), not the propose response.
+        """
         with \
              patch("app.api.routes.variation.check_budget", new_callable=AsyncMock), \
              patch("app.api.routes.variation.get_or_create_store") as mock_store, \
              patch("app.api.routes.variation.LLMClient") as mock_llm_class, \
-             patch("app.api.routes.variation.get_intent_result_with_llm", new_callable=AsyncMock) as mock_intent:
-            
+             patch("app.api.routes.variation.get_intent_result_with_llm", new_callable=AsyncMock) as mock_intent, \
+             patch("app.api.routes.variation.get_variation_store") as mock_vstore:
+
             # Setup mocks
             mock_store_instance = MagicMock()
             mock_store_instance.check_state_id.return_value = True
             mock_store.return_value = mock_store_instance
-            
+
+            mock_vstore_instance = MagicMock()
+            mock_record = MagicMock()
+            mock_record.variation_id = "var-test-123"
+            mock_vstore_instance.create.return_value = mock_record
+            mock_vstore.return_value = mock_vstore_instance
+
             mock_llm_instance = MagicMock()
             mock_llm_instance.close = AsyncMock()
             mock_llm_class.return_value = mock_llm_instance
-            
+
             # Mock REASONING intent (not COMPOSING)
             from app.core.intent import IntentResult, Intent, SSEState
             mock_intent.return_value = IntentResult(
@@ -261,22 +245,24 @@ class TestProposeVariation:
                 requires_planner=False,
                 reasons=(),
             )
-            
+
             # Make request
             request_data = {
                 "project_id": mock_project_id,
                 "base_state_id": mock_state_id,
                 "intent": "what's in my project?",
             }
-            
+
             response = await variation_client.post(
                 "/api/v1/variation/propose",
                 json=request_data,
             )
-            
-            assert response.status_code == 400
+
+            # Propose returns 200 immediately; errors surface in stream
+            assert response.status_code == 200
             data = response.json()
-            assert "Invalid intent" in data["detail"]["error"]
+            assert "variation_id" in data
+            assert "stream_url" in data
 
 
 # =============================================================================
@@ -294,16 +280,22 @@ class TestCommitVariation:
         mock_state_id,
         sample_variation,
     ):
-        """Test successful variation commit."""
+        """Test successful variation commit (backward compat with variation_data)."""
         with patch("app.api.routes.variation.get_or_create_store") as mock_store, \
+             patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
              patch("app.api.routes.variation.apply_variation_phrases", new_callable=AsyncMock) as mock_apply:
-            
+
+            # VariationStore returns None → falls back to variation_data path
+            mock_vstore_instance = MagicMock()
+            mock_vstore_instance.get.return_value = None
+            mock_vstore.return_value = mock_vstore_instance
+
             # Setup mocks
             mock_store_instance = MagicMock()
             mock_store_instance.check_state_id.return_value = True
-            mock_store_instance.get_state_id.return_value = "43"  # New state after commit
+            mock_store_instance.get_state_id.return_value = "43"
             mock_store.return_value = mock_store_instance
-            
+
             # Mock apply result
             from app.core.executor import VariationApplyResult
             mock_apply.return_value = VariationApplyResult(
@@ -313,7 +305,7 @@ class TestCommitVariation:
                 notes_removed=0,
                 notes_modified=1,
             )
-            
+
             # Make request
             request_data = {
                 "project_id": mock_project_id,
@@ -323,16 +315,15 @@ class TestCommitVariation:
                 "request_id": None,
                 "variation_data": sample_variation.model_dump(),
             }
-            
+
             response = await variation_client.post(
                 "/api/v1/variation/commit",
                 json=request_data,
             )
-            
+
             assert response.status_code == 200
             data = response.json()
-            
-            # Verify response structure
+
             assert data["project_id"] == mock_project_id
             assert data["new_state_id"] == "43"
             assert data["applied_phrase_ids"] == ["phrase-1"]
@@ -346,17 +337,20 @@ class TestCommitVariation:
         mock_project_id,
         sample_variation,
     ):
-        """Test commit with state conflict."""
+        """Test commit with state conflict (backward compat path)."""
         with \
+             patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
              patch("app.api.routes.variation.get_or_create_store") as mock_store:
-            
-            # Setup mock store with mismatched state
+
+            mock_vstore_instance = MagicMock()
+            mock_vstore_instance.get.return_value = None
+            mock_vstore.return_value = mock_vstore_instance
+
             mock_store_instance = MagicMock()
             mock_store_instance.check_state_id.return_value = False
             mock_store_instance.get_state_id.return_value = "100"
             mock_store.return_value = mock_store_instance
-            
-            # Make request
+
             request_data = {
                 "project_id": mock_project_id,
                 "base_state_id": "42",
@@ -364,12 +358,12 @@ class TestCommitVariation:
                 "accepted_phrase_ids": ["phrase-1"],
                 "variation_data": sample_variation.model_dump(),
             }
-            
+
             response = await variation_client.post(
                 "/api/v1/variation/commit",
                 json=request_data,
             )
-            
+
             assert response.status_code == 409
             data = response.json()
             assert "State conflict" in data["detail"]["error"]
@@ -382,28 +376,31 @@ class TestCommitVariation:
         mock_state_id,
         sample_variation,
     ):
-        """Test commit with variation ID mismatch."""
-        with patch("app.api.routes.variation.get_or_create_store") as mock_store:
-            
-            # Setup mocks
+        """Test commit with variation ID mismatch (backward compat path)."""
+        with patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
+             patch("app.api.routes.variation.get_or_create_store") as mock_store:
+
+            mock_vstore_instance = MagicMock()
+            mock_vstore_instance.get.return_value = None
+            mock_vstore.return_value = mock_vstore_instance
+
             mock_store_instance = MagicMock()
             mock_store_instance.check_state_id.return_value = True
             mock_store.return_value = mock_store_instance
-            
-            # Make request with mismatched variation_id
+
             request_data = {
                 "project_id": mock_project_id,
                 "base_state_id": mock_state_id,
-                "variation_id": "wrong-var-id",  # Doesn't match sample_variation
+                "variation_id": "wrong-var-id",
                 "accepted_phrase_ids": ["phrase-1"],
                 "variation_data": sample_variation.model_dump(),
             }
-            
+
             response = await variation_client.post(
                 "/api/v1/variation/commit",
                 json=request_data,
             )
-            
+
             assert response.status_code == 400
             data = response.json()
             assert "Variation ID mismatch" in data["detail"]["error"]
@@ -416,15 +413,18 @@ class TestCommitVariation:
         mock_state_id,
         sample_variation,
     ):
-        """Test commit with invalid phrase IDs."""
-        with patch("app.api.routes.variation.get_or_create_store") as mock_store:
-            
-            # Setup mocks
+        """Test commit with invalid phrase IDs (backward compat path)."""
+        with patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
+             patch("app.api.routes.variation.get_or_create_store") as mock_store:
+
+            mock_vstore_instance = MagicMock()
+            mock_vstore_instance.get.return_value = None
+            mock_vstore.return_value = mock_vstore_instance
+
             mock_store_instance = MagicMock()
             mock_store_instance.check_state_id.return_value = True
             mock_store.return_value = mock_store_instance
-            
-            # Make request with non-existent phrase IDs
+
             request_data = {
                 "project_id": mock_project_id,
                 "base_state_id": mock_state_id,
@@ -432,12 +432,12 @@ class TestCommitVariation:
                 "accepted_phrase_ids": ["nonexistent-phrase"],
                 "variation_data": sample_variation.model_dump(),
             }
-            
+
             response = await variation_client.post(
                 "/api/v1/variation/commit",
                 json=request_data,
             )
-            
+
             assert response.status_code == 400
             data = response.json()
             assert "Invalid phrase IDs" in data["detail"]["error"]
@@ -479,19 +479,20 @@ class TestDiscardVariation:
 
 class TestStreamVariation:
     """Tests for GET /variation/stream endpoint."""
-    
+
     @pytest.mark.asyncio
-    async def test_stream_variation_not_implemented(
+    async def test_stream_variation_not_found(
         self,
         variation_client,
     ):
-        """Test that streaming returns not implemented message."""
+        """Test streaming returns 404 for unknown variation_id."""
         response = await variation_client.get(
             "/api/v1/variation/stream?variation_id=var-123",
         )
-        
-        assert response.status_code == 200
-        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+        assert response.status_code == 404
+        data = response.json()
+        assert data["detail"]["error"] == "Variation not found"
 
 
 # =============================================================================

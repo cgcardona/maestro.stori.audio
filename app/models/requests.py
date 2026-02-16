@@ -178,12 +178,12 @@ class CommitVariationRequest(BaseModel):
         default=None,
         description="Idempotency key for the request"
     )
-    variation_data: dict[str, Any] = Field(
-        ...,
+    variation_data: Optional[dict[str, Any]] = Field(
+        default=None,
         description=(
-            "The full variation data. Required for stateless operation "
-            "since the backend does not persist variations."
-        )
+            "Deprecated: variation data is now loaded from VariationStore. "
+            "Retained for backward compatibility with older clients."
+        ),
     )
     
     model_config = ConfigDict(
