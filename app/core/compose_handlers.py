@@ -76,7 +76,6 @@ async def orchestrate(
     conversation_id: Optional[str] = None,
     user_id: Optional[str] = None,
     conversation_history: Optional[list[dict[str, Any]]] = None,
-    execution_mode: str = "apply",
 ) -> AsyncIterator[str]:
     """
     Main orchestration using Cursor-of-DAWs architecture.
@@ -84,12 +83,10 @@ async def orchestrate(
     Flow:
     1. Create trace context for request
     2. Intent Router classifies prompt → route + allowlist
-    3. LLM fallback for UNKNOWN intents
-    4. Route to THINKING / EDITING / COMPOSING
+    3. Backend determines execution_mode from intent:
+       COMPOSING → variation (human review), EDITING → apply (immediate)
+    4. Route to REASONING / EDITING / COMPOSING
     5. Execute with strict tool gating + entity validation
-    
-    Args:
-        execution_mode: "apply" for immediate mutation, "variation" for proposal mode
     """
     project_context = project_context or {}
     conversation_history = conversation_history or []
@@ -120,12 +117,16 @@ async def orchestrate(
             with trace_span(trace, "intent_classification"):
                 route = await get_intent_result_with_llm(prompt, project_context, llm, conversation_history)
                 
-                # Force execution_mode to "apply" for EDITING state
-                # Structural operations (add/delete tracks, regions, etc.) should execute directly
-                # NOT go through variation mode which is for transformative MIDI edits
-                if route.sse_state == SSEState.EDITING:
+                # Backend-owned execution mode policy:
+                # COMPOSING → variation (all music generation requires human review)
+                # EDITING   → apply (structural ops execute directly)
+                # REASONING → n/a (no tools)
+                if route.sse_state == SSEState.COMPOSING:
+                    execution_mode = "variation"
+                    logger.info(f"Intent {route.intent.value} → COMPOSING, execution_mode='variation'")
+                else:
                     execution_mode = "apply"
-                    logger.info(f"Intent {route.intent.value} → EDITING state, forcing execution_mode='apply'")
+                    logger.info(f"Intent {route.intent.value} → {route.sse_state.value}, execution_mode='apply'")
                 
                 log_intent(
                     trace.trace_id,
@@ -368,12 +369,16 @@ async def _handle_composing(
     trace,
     usage_tracker: Optional[UsageTracker],
     conversation_id: Optional[str],
-    execution_mode: str = "apply",
+    execution_mode: str = "variation",
 ) -> AsyncIterator[str]:
     """Handle COMPOSING state - generate music via planner.
     
+    All COMPOSING intents produce a Variation for human review (the backend
+    forces execution_mode='variation' in orchestrate). The 'apply' path is
+    retained only as a fallback / testing escape hatch.
+    
     Args:
-        execution_mode: "apply" for immediate mutation, "variation" for proposal mode
+        execution_mode: "variation" for proposal mode (default), "apply" for immediate mutation
     """
     status_msg = "Composing..." if execution_mode == "apply" else "Generating variation..."
     yield await sse_event({"type": "status", "message": status_msg})

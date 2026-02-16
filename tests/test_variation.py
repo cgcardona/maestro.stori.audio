@@ -686,33 +686,15 @@ class TestSSEVariationEvents:
 # Execution Mode Tests
 # =============================================================================
 
-class TestExecutionMode:
-    """Tests for execution_mode parameter handling."""
+class TestExecutionModeRemoved:
+    """Verify execution_mode is no longer on ComposeRequest (backend-owned)."""
     
-    def test_execution_mode_literal_values(self):
-        """ExecutionMode should accept valid values."""
-        from app.models.requests import ExecutionMode, ComposeRequest
-        
-        # Test apply mode
-        request_apply = ComposeRequest(
-            prompt="test",
-            execution_mode="apply",
-        )
-        assert request_apply.execution_mode == "apply"
-        
-        # Test variation mode
-        request_variation = ComposeRequest(
-            prompt="test",
-            execution_mode="variation",
-        )
-        assert request_variation.execution_mode == "variation"
-    
-    def test_default_execution_mode_is_apply(self):
-        """Default execution_mode should be 'apply' for backward compatibility."""
+    def test_compose_request_has_no_execution_mode(self):
+        """ComposeRequest should not have an execution_mode field."""
         from app.models.requests import ComposeRequest
         
         request = ComposeRequest(prompt="test")
-        assert request.execution_mode == "apply"
+        assert not hasattr(request, "execution_mode")
 
 
 # =============================================================================

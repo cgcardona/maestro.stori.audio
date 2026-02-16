@@ -510,6 +510,7 @@ def format_conversation_history(conversation: Conversation) -> list[dict]:
             if message.tool_calls:
                 # Convert from flat storage format to nested OpenAI format for LLM
                 openai_tool_calls = []
+                seen_ids: set[str] = set()
                 for tc in message.tool_calls:
                     # Storage format: {id, type, name, arguments}
                     # LLM expects: {id, type, function: {name, arguments as JSON string}}
@@ -517,8 +518,12 @@ def format_conversation_history(conversation: Conversation) -> list[dict]:
                     tool_name = tc.get("name", "")
                     tool_args = tc.get("arguments", {})
                     
-                    # Sanitize ID as safety net (should already be sanitized when saved)
-                    tool_call_id = _sanitize_tool_call_id(tool_call_id) if tool_call_id else "unknown"
+                    # Sanitize ID, then ensure uniqueness — Anthropic rejects duplicates
+                    tool_call_id = _sanitize_tool_call_id(tool_call_id) if tool_call_id else ""
+                    if not tool_call_id or tool_call_id in seen_ids:
+                        import uuid as _uuid
+                        tool_call_id = f"call_{_uuid.uuid4().hex[:12]}"
+                    seen_ids.add(tool_call_id)
                     
                     # OpenAI requires arguments as JSON string, not dict
                     arguments_str = json.dumps(tool_args) if isinstance(tool_args, dict) else str(tool_args)
@@ -649,8 +654,15 @@ def _format_single_message(message: ConversationMessage) -> list[dict]:
         
         if message.tool_calls:
             openai_tool_calls = []
+            seen_ids: set[str] = set()
             for tc in message.tool_calls:
-                tool_call_id = _sanitize_tool_call_id(tc.get("id", "")) or "unknown"
+                tool_call_id = _sanitize_tool_call_id(tc.get("id", "")) or ""
+                # Ensure uniqueness — Anthropic rejects duplicate tool_use IDs
+                if not tool_call_id or tool_call_id in seen_ids:
+                    import uuid as _uuid
+                    tool_call_id = f"call_{_uuid.uuid4().hex[:12]}"
+                seen_ids.add(tool_call_id)
+
                 openai_format = {
                     "id": tool_call_id,
                     "type": "function",

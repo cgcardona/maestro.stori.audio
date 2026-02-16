@@ -7,6 +7,7 @@ import json
 import logging
 import re
 from typing import Optional, Any
+import uuid
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
@@ -592,7 +593,6 @@ async def add_message_to_conversation(
                 model=compose_request.model,
                 usage_tracker=usage_tracker,
                 conversation_history=conversation_history,
-                execution_mode=compose_request.execution_mode,
             ):
                 # Parse SSE event
                 if event.startswith("data: "):
@@ -618,8 +618,13 @@ async def add_message_to_conversation(
                         arguments = event_data.get("params", {})
                         
                         # Sanitize tool_call_id for Bedrock compatibility (alphanumeric, underscore, hyphen only)
+                        # CRITICAL: fallback IDs must be unique — duplicate tool_use IDs
+                        # cause Anthropic to reject the request on conversation replay.
                         tool_call_id = event_data.get("id", "")
-                        sanitized_id = re.sub(r'[^a-zA-Z0-9_-]', '_', tool_call_id) if tool_call_id else f"call_{event_data.get('name', 'unknown')}"
+                        if tool_call_id:
+                            sanitized_id = re.sub(r'[^a-zA-Z0-9_-]', '_', tool_call_id)
+                        else:
+                            sanitized_id = f"call_{uuid.uuid4().hex[:12]}"
                         
                         # Store in FLAT format that works for both ToolCallInfo (API) and LLM replay
                         # We'll convert to nested OpenAI format when replaying to LLM
@@ -820,13 +825,16 @@ def build_conversation_history_for_llm(messages: list) -> list[dict[str, Any]]:
             
             # Add tool calls if present (convert from flat storage to OpenAI nested format)
             if msg.tool_calls:
-                # Convert from flat storage format to OpenAI nested format
-                # Storage: {id, type, name, arguments}
-                # OpenAI: {id, type, function: {name, arguments}}
                 openai_tool_calls = []
+                seen_ids: set[str] = set()
                 for tc in msg.tool_calls:
+                    tc_id = tc.get("id", "")
+                    # Ensure uniqueness — Anthropic rejects duplicate tool_use IDs
+                    if not tc_id or tc_id in seen_ids:
+                        tc_id = f"call_{uuid.uuid4().hex[:12]}"
+                    seen_ids.add(tc_id)
                     openai_tool_calls.append({
-                        "id": tc.get("id", ""),
+                        "id": tc_id,
                         "type": tc.get("type", "function"),
                         "function": {
                             "name": tc.get("name", ""),
@@ -837,21 +845,17 @@ def build_conversation_history_for_llm(messages: list) -> list[dict[str, Any]]:
             
             history.append(assistant_msg)
             
-            # Add tool results as separate messages
-            # The LLM needs to see that tools were executed successfully
-            if msg.tool_calls:
-                for tc in msg.tool_calls:
-                    # Simulate tool result (success response)
-                    # In a real system, we'd store actual tool results
-                    tool_result = {
+            # Add tool results matched to the deduplicated IDs above
+            if msg.tool_calls and openai_tool_calls:
+                for otc in openai_tool_calls:
+                    history.append({
                         "role": "tool",
-                        "tool_call_id": tc.get("id", ""),
+                        "tool_call_id": otc["id"],
                         "content": json.dumps({
                             "success": True,
-                            "message": f"Tool {tc.get('name')} executed successfully"
+                            "message": f"Tool {otc['function']['name']} executed successfully"
                         })
-                    }
-                    history.append(tool_result)
+                    })
     
     return history
 

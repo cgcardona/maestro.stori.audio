@@ -8,24 +8,48 @@ Streaming (SSE), event types, models, and the full MCP tool set in one place. To
 
 **Endpoint:** `POST /api/v1/compose/stream`  
 **Auth:** `Authorization: Bearer <token>`  
-**Body:** JSON with `prompt`, optional `project` (app state), `conversation_id`, `execution_mode`, `model`.  
+**Body:** JSON with `prompt`, optional `project` (app state), `conversation_id`, `model`.  
 **Response:** SSE stream of JSON objects; each has a `type` field.
+
+The backend determines execution mode from intent classification: COMPOSING -> variation (human review), EDITING -> apply (immediate). See [architecture.md](architecture.md).
 
 ---
 
 ## SSE event types
 
+### Common events (all modes)
+
 | type | Description |
 |------|-------------|
+| `state` | Intent classification result: `"composing"`, `"editing"`, or `"reasoning"`. **First meaningful event.** Frontend switches UI mode based on this. |
 | `status` | Human-readable status |
-| `reasoning` | LLM reasoning chunk (CoT) |
-| `tool_start` | Tool execution starting |
-| `tool_call` | Tool name + params (client applies in EDITING) |
-| `tool_complete` | Tool finished (success flag) |
-| `complete` | Stream done; may include `tool_calls` |
 | `error` | Error message |
 
-**Complete:** In EDITING, server may send full `tool_calls` list. In COMPOSING, server runs tools and may send `tool_calls: []`; use progress/state for client. Handle both.
+### EDITING mode events
+
+| type | Description |
+|------|-------------|
+| `tool_call` | Tool name + params (client applies immediately) |
+| `complete` | Stream done |
+
+### COMPOSING mode events (Variation protocol)
+
+| type | Description |
+|------|-------------|
+| `meta` | Variation summary: `variation_id`, intent, explanation, affected tracks/regions, note counts |
+| `phrase` | One musical phrase: `phrase_id`, region, beat range, note changes |
+| `done` | End of variation stream. Frontend enables Accept/Discard. |
+| `complete` | Stream done (after `done`) |
+
+### REASONING mode events
+
+| type | Description |
+|------|-------------|
+| `reasoning` | LLM reasoning chunk (CoT) |
+| `content` | User-facing text response |
+| `complete` | Stream done |
+
+**Key:** The `state` event tells the frontend which set of events to expect. For COMPOSING, the frontend enters Variation Review Mode and accumulates `meta` + `phrase` events until `done`. For EDITING, the frontend applies `tool_call` events directly.
 
 **Variable refs:** Params can use `$N.field` (e.g. `$0.trackId`, `$1.regionId`). Backend resolves to concrete IDs.
 

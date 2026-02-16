@@ -57,6 +57,17 @@ Terminal states: COMMITTED, DISCARDED, FAILED, EXPIRED.
 
 ---
 
+## Execution Mode Policy
+
+| Term | Definition |
+|------|------------|
+| **COMPOSING** | Intent state for music generation. Backend forces `execution_mode="variation"`. All tool calls produce a Variation for human review. |
+| **EDITING** | Intent state for structural ops. Backend forces `execution_mode="apply"`. Tool calls apply directly. |
+| **REASONING** | Intent state for questions/chat. No tools executed. |
+The backend owns this decision. The frontend reacts to the `state` SSE event.
+
+---
+
 ## Banned Terminology
 
 Do **not** use these words in Stori code or docs:

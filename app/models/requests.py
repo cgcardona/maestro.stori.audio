@@ -1,14 +1,14 @@
 """Request models for the Stori Composer API."""
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Literal, Optional, Any
-
-
-# Execution mode types
-ExecutionMode = Literal["apply", "variation"]
+from typing import Optional, Any
 
 
 class ComposeRequest(BaseModel):
-    """Request to compose or modify music."""
+    """Request to compose or modify music.
+    
+    The backend determines execution mode from intent classification:
+    COMPOSING -> variation (human review), EDITING -> apply (immediate).
+    """
     
     prompt: str = Field(
         ...,
@@ -18,13 +18,6 @@ class ComposeRequest(BaseModel):
     mode: str = Field(
         default="generate",
         description="Composition mode: 'generate' for new, 'edit' for modifications"
-    )
-    execution_mode: ExecutionMode = Field(
-        default="apply",
-        description=(
-            "Execution mode: 'apply' mutates state immediately, "
-            "'variation' returns reviewable proposed changes without mutation"
-        )
     )
     project: Optional[dict[str, Any]] = Field(
         default=None,
@@ -48,7 +41,6 @@ class ComposeRequest(BaseModel):
             "example": {
                 "prompt": "Create a chill lo-fi beat at 85 BPM in A minor",
                 "mode": "generate",
-                "execution_mode": "apply",
                 "project": None,
                 "model": None,
                 "store_prompt": True,

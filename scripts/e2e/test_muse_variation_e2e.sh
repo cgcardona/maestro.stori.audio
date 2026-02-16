@@ -24,7 +24,7 @@ echo ""
 
 # Test 1: Streaming Variation via /compose/stream
 echo "📝 Test 1: Generate variation via streaming endpoint"
-echo "   (execution_mode=variation)"
+echo "   (COMPOSING intent -> backend forces variation mode)"
 echo ""
 
 PROJECT_STATE='{
@@ -60,7 +60,6 @@ curl -k -N -X POST "${API_URL}/compose/stream" \
   -H "Content-Type: application/json" \
   -d "{
     \"prompt\": \"Make it minor and darker\",
-    \"execution_mode\": \"variation\",
     \"project\": ${PROJECT_STATE},
     \"conversation_id\": \"test-variation-001\"
   }" 2>/dev/null | tee "$TEMP_FILE"

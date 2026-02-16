@@ -47,8 +47,8 @@ Drum kits and soundfonts; upload to S3.
 | Doc | Description |
 |-----|-------------|
 | [muse-variation-spec.md](muse-variation-spec.md) | Muse / Variation: end-to-end UX + technical contract. |
-| [variation_api_v1.md](variation_api_v1.md) | **Variation API v1:** wire contract, endpoints, SSE events, error codes. |
-| [TERMINOLOGY.md](TERMINOLOGY.md) | Canonical vocabulary for Muse/Variations (normative). |
+| [protocol/variation_api_v1.md](protocol/variation_api_v1.md) | **Variation API v1:** wire contract, endpoints, SSE events, error codes. |
+| [protocol/TERMINOLOGY.md](protocol/TERMINOLOGY.md) | Canonical vocabulary for Muse/Variations (normative). |
 | [neural-midi-roadmap.md](neural-midi-roadmap.md) | Neural MIDI generation roadmap and status. |
 
 ---

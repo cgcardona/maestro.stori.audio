@@ -5,6 +5,28 @@
 
 ---
 
+## Execution Mode Policy (Backend-Owned)
+
+The backend determines execution mode from intent classification. The frontend does not choose.
+
+| Intent state | `execution_mode` | Behavior |
+|---|---|---|
+| **COMPOSING** | `variation` (forced) | All tool calls produce a Variation for human review |
+| **EDITING** | `apply` (forced) | Structural ops apply immediately (tool_call events) |
+| **REASONING** | n/a | Chat only, no tools |
+
+**Every COMPOSING request produces a Variation** — including purely additive ones (first-time MIDI generation, "create a new song").
+
+The frontend knows which mode is active from the `state` SSE event (`"composing"` / `"editing"` / `"reasoning"`) emitted at the start of every compose stream.
+
+**Compose stream path (primary):** When the user sends a prompt via `POST /api/v1/compose/stream`, the backend classifies the intent and either:
+- Streams `tool_call` events directly (EDITING), or
+- Streams `meta` / `phrase*` / `done` Variation events (COMPOSING)
+
+**Variation endpoints (secondary):** The dedicated `/variation/propose`, `/variation/stream`, `/variation/commit`, `/variation/discard` endpoints are available for explicit programmatic variation management.
+
+---
+
 ## Endpoints
 
 | Method | Path | Description |

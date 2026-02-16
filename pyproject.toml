@@ -37,8 +37,8 @@ branch = true
 omit = ["app/__init__.py", "*/tests/*"]
 
 [tool.coverage.report]
-# Current ~64%; target 80%. Gate at current so we don’t regress; raise as gaps are covered.
-fail_under = 64
+# Coverage gate: raised from 64% to 80% after test supercharge (Feb 2026).
+fail_under = 80
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

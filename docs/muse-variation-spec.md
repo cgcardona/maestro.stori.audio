@@ -3,20 +3,20 @@
 > **Status:** Implementation Specification (v1)  
 > **Date:** February 2026  
 > **Target:** Stori DAW (Swift/SwiftUI) + Composer/Intent Engine (Python)  
-> **Goal:** Ship a *demo-grade* implementation inside Stori that proves the “Cursor of DAWs” paradigm: **reviewable, audible, non-destructive AI changes**.
+> **Goal:** Ship a *demo-grade* implementation inside Stori that proves the "Cursor of DAWs" paradigm: **reviewable, audible, non-destructive AI changes**.
 
 > **Canonical Time Unit:** All Muse and Variation data structures use **beats** as the canonical time unit. Seconds are a derived, playback-only representation. Muse reasons musically, not in wall-clock time.
 
 > **Canonical Backend References:**
 > For backend wire contract, state machine, and terminology, these docs are authoritative:
-> - [`variation_api_v1.md`](variation_api_v1.md) — Wire contract, endpoints, SSE events, error codes
-> - [`TERMINOLOGY.md`](TERMINOLOGY.md) — Canonical vocabulary (normative)
+> - [`protocol/variation_api_v1.md`](protocol/variation_api_v1.md) — Wire contract, endpoints, SSE events, error codes
+> - [`protocol/TERMINOLOGY.md`](protocol/TERMINOLOGY.md) — Canonical vocabulary (normative)
 
 ---
 
 ## What Is Muse?
 
-**Muse** is Stori’s change-proposal system for music.
+**Muse** is Stori's change-proposal system for music.
 
 Just as Git is a system for proposing, reviewing, and applying changes to source code, Muse is a system for proposing, reviewing, and applying changes to musical material.
 
@@ -26,7 +26,7 @@ Muse computes **Variations** — structured, reviewable descriptions of how one 
 
 ---
 
-### Muse’s Role in the System
+### Muse's Role in the System
 
 Muse sits between **intent** and **mutation**.
 
@@ -51,69 +51,64 @@ This vocabulary is **normative**. Use these exact words in code, UI, docs, and a
 
 ---
 
-## 1) When Variations Appear (UX Policy)
+## 1) When Variations Appear (Execution Mode Policy)
 
-Variations must feel *musical* and *trust-building*, not interruptive.
+The backend enforces execution mode based on intent classification. The frontend does not choose the mode — it reacts to the `state` SSE event emitted at the start of every compose stream.
 
-### 1.1 Default Rule
-Show a **Variation Review UI** whenever Muse proposes a change that **modifies or removes** existing musical material that the user can reasonably consider “already there.”
+### 1.1 Core Rule — COMPOSING Always Produces a Variation
 
-**Examples (show Variation UI):**
-- “Make that minor” (transforms pitches)
-- “Quantize tighter” (timing modifications)
-- “Add swing” (timing modifications)
-- “Simplify the melody” (removals/modifications)
-- “Change the bassline to be more syncopated” (re-writes notes)
-- “Make the chorus hit harder” (multiple edits across regions)
+| Intent state | `execution_mode` | Behavior |
+|---|---|---|
+| **COMPOSING** | `variation` (forced by backend) | All tool calls produce a Variation for human review |
+| **EDITING** | `apply` (forced by backend) | Structural ops (add track, set tempo, mute, etc.) apply immediately |
+| **REASONING** | n/a | Chat only, no tools |
 
-### 1.2 Additive vs Transformative
-For actions that are **purely additive** and do not overwrite existing user-authored material, you have two options:
+**Every COMPOSING request produces a Variation** — including purely additive ones (first-time MIDI generation, creating a new song from scratch). This mirrors the "Cursor of DAWs" paradigm: AI-generated musical content always requires human approval before becoming canonical state.
 
-**Option A (recommended for MVP):**  
-Auto-apply additive changes *during project creation*, but show a lightweight **Generation Summary** (not Variation UI).
+**Examples (Variation Review UI — COMPOSING):**
+- "Create a new song in the style of Phish" — additive, but COMPOSING -> Variation
+- "Make a chill lo-fi beat at 85 BPM" — additive, COMPOSING -> Variation
+- "Make that minor" (transforms pitches) — COMPOSING -> Variation
+- "Simplify the melody" (removals/modifications) — COMPOSING -> Variation
+- "Change the bassline to be more syncopated" (re-writes notes) — COMPOSING -> Variation
 
-**Option B:**  
-Always represent new content as a Variation even when additive. This is powerful but can slow down first-run UX.
+**Examples (direct apply, no Variation — EDITING):**
+- "Add a drum track" — structural, EDITING -> apply
+- "Set the tempo to 120 BPM" — structural, EDITING -> apply
+- "Mute the bass" — structural, EDITING -> apply
 
-**MVP Recommendation:**  
-- **Project creation**: auto-apply additive ops; avoid forcing Variation review for every track creation step.  
-- **After creation**: any transformation/edit of existing notes uses Variation review.
+### 1.2 "Create a new song in the style of ..." (Multi-step Tool Flow)
 
-### 1.3 “Create a new song in the style of …” (Multi-step Tool Flow)
-During an agent “create song” flow (create tracks → rename → instruments → regions → notes → FX), the Variation UI should **not pop up repeatedly**.
+When the user asks to create a song from scratch, the backend classifies this as COMPOSING and the entire plan (tracks + regions + notes + FX) is proposed as a **single Variation** for review.
 
-**MVP Behavior (Strongly Recommended):**
-1. Treat the entire build as **Generation Mode** (temporary staging).  
-2. Show a single **Build Progress UI** (already exists / easy to extend).  
-3. When generation completes, show a **Generation Summary** with:
-   - Track list created
-   - Regions added
-   - Notes generated
-   - FX inserted
-   - A “Review Changes” button that optionally opens a **Variation-like review** for the whole build (stretch).
-4. Once the user hits **“Keep This”** (or simply interacts), the project becomes canonical.
+**Behavior:**
+1. The planner generates a full plan (create tracks -> add regions -> generate MIDI -> add FX).
+2. The executor simulates the plan without mutation and computes a Variation with Phrases.
+3. The SSE stream emits `meta` -> `phrase*` -> `done` events.
+4. The frontend enters **Variation Review Mode** showing the proposed changes.
+5. The user reviews, auditions (A/B), and accepts or discards.
 
-**When to show real Variations in this flow:**
-- Only if the agent tries to **rewrite** something already generated and “locked in” (e.g., user already auditioned/edited), or if it performs destructive actions (delete/replace regions).
-- If the user interrupts mid-generation with a transform request (“make the piano darker”), handle that transform as a **Variation** against the current canonical.
+This ensures the user always has agency over AI-generated content, even during initial creation. The UX is a single review step at the end of generation — not repeated pop-ups per tool call.
 
-### 1.4 User Trust Overrides
+### 1.3 User Trust Overrides
 Always show Variation UI when:
 - The change is **destructive** (deletes/overwrites notes/regions)
-- The target material is **user-edited** (has `userTouched=true`) or “pinned/locked”
+- The target material is **user-edited** (has `userTouched=true`) or "pinned/locked"
 - The change is **large-scope** (multi-track rewrite)
-- The model’s confidence is low OR the engine produced a best-effort fallback
+- The model's confidence is low OR the engine produced a best-effort fallback
 
-### 1.5 Quick Setting
+### 1.4 Quick Setting (future)
 Add a user preference (later):
 - **Muse Review Mode:** `Always` | `Smart (default)` | `Never (power users)`
+
+When implemented, this preference will be stored server-side and consulted in `orchestrate()`. Even in `Never` mode, destructive changes should warn.
 
 ---
 
 ## 2) System Model
 
 ### 2.1 Canonical vs Proposed State
-- **Canonical State**: the DAW’s real project state (undoable, playable, saved).
+- **Canonical State**: the DAW's real project state (undoable, playable, saved).
 - **Proposed State**: an ephemeral, derived state computed by backend to propose a Variation.
 
 **Important:** The backend does **not** mutate canonical state during proposal.
@@ -121,14 +116,14 @@ Add a user preference (later):
 ### 2.2 Variation Lifecycle
 
 1. **Propose**: Muse generates a Variation from intent.
-2. **Stream**: Phrases (hunks) stream to the frontend as soon as they’re computed.
+2. **Stream**: Phrases (hunks) stream to the frontend as soon as they're computed.
 3. **Review**: FE enters Variation Review Mode (overlay + A/B audition).
 4. **Accept**: FE sends accepted phrase IDs; BE applies them transactionally.
 5. **Discard**: FE discards; no mutation.
 
 ---
 
-## 3) API Contract (Backend ⇄ Frontend)
+## 3) API Contract (Backend <-> Frontend)
 
 This spec assumes HTTP + **SSE** (server-sent events) for streaming. WebSockets also acceptable; SSE is simpler for v1.
 
@@ -208,7 +203,7 @@ Backend must reject commits if `base_state_id` mismatches (optimistic concurrenc
   "region_id": "uuid",
   "start_beat": 4.0,
   "end_beat": 8.0,
-  "label": "Bars 5–8",
+  "label": "Bars 5-8",
   "tags": ["harmonyChange","scaleChange"],
   "explanation": "Converted major 3rds to minor 3rds",
   "note_changes": [
@@ -293,7 +288,7 @@ Returns `{ "ok": true }`.
   "region_id": "uuid",
   "start_beat": 0.0,
   "end_beat": 4.0,
-  "label": "Bars 1–4",
+  "label": "Bars 1-4",
   "tags": [],
   "explanation": "string|null",
   "note_changes": [],
@@ -312,20 +307,24 @@ Returns `{ "ok": true }`.
 ```
 
 Rules:
-- `added` → `before` may be null
-- `removed` → `after` may be null
-- `modified` → both present
+- `added` -> `before` may be null
+- `removed` -> `after` may be null
+- `modified` -> both present
 - All positions in **beats** (not seconds)
 
 ---
 
-## 5) Backend Implementation Guidance (Minimal Churn)
+## 5) Backend Implementation Guidance
 
-### 5.1 Add Execution Mode Flag
-Keep existing behavior intact.
+### 5.1 Execution Mode Policy (Backend-Owned)
 
-- `mode="apply"` → current mutation path
-- `mode="variation"` → run transforms on a **temporary clone** and diff vs base
+The backend determines `execution_mode` based on intent classification. The frontend's `execution_mode` field is deprecated and ignored.
+
+- **COMPOSING** -> `execution_mode="variation"` -> Variation proposal (no mutation)
+- **EDITING** -> `execution_mode="apply"` -> Immediate tool call execution
+- **REASONING** -> no tools
+
+This is enforced in `orchestrate()` (`app/core/compose_handlers.py`). The frontend knows which mode is active from the `state` SSE event (`"composing"` / `"editing"` / `"reasoning"`) emitted at the start of every stream.
 
 ### 5.2 Proposed State Construction
 Avoid copying whole projects:
@@ -346,19 +345,23 @@ Start simple:
 ### 5.5 Streaming
 Compute hunks incrementally and stream as soon as available:
 - `meta` ASAP
-- then `hunk` events
+- then `phrase` events
 - progress optional
 
-Streaming is what makes the UI feel “alive” and Cursor-like.
+Streaming is what makes the UI feel alive and Cursor-like.
 
 ---
 
 ## 6) Frontend UX Spec (Variation Review Mode)
 
 ### 6.1 Entry
-Variation Review Mode enters when:
-- A Variation stream begins (`meta` received), or
-- FE receives a non-streamed full Variation
+Variation Review Mode enters when the compose stream emits a `state` event with `state: "composing"`, followed by `meta` and `phrase` events. The frontend must:
+1. Detect `state: "composing"` -> prepare for Variation Review Mode
+2. Receive `meta` event -> show banner with intent, explanation, counts
+3. Receive `phrase` events -> accumulate phrases for review
+4. Receive `done` event -> enable Accept/Discard controls
+
+For `state: "editing"`, the frontend applies `tool_call` events directly as before.
 
 ### 6.2 Chrome (always visible while reviewing)
 Banner containing:
@@ -382,59 +385,39 @@ Required:
 
 MVP audio strategy:
 - Rebuild MIDI regions in-memory for audition modes and switch at beat boundary.
-- If switching causes glitches, pause → swap → resume at same transport time (acceptable for MVP).
+- If switching causes glitches, pause -> swap -> resume at same transport time (acceptable for MVP).
 
 ### 6.5 Partial Acceptance
-In the “Review Phrases” sheet/list:
+In the "Review Phrases" sheet/list:
 - Each phrase row shows summary `+ / - / ~`
 - Accept / reject per phrase
-- “Apply Selected” commits accepted phrase IDs
+- "Apply Selected" commits accepted phrase IDs
 
 ### 6.6 Exit
-- Accept → applies to project, pushes one undo group, exits review mode
-- Discard → exits review mode without changes
+- Accept -> applies to project, pushes one undo group, exits review mode
+- Discard -> exits review mode without changes
 
 ---
 
-## 7) Variation vs “Generation Summary” (Two UX Layers)
+## 7) Failure Modes & UX Rules
 
-You will have two related but distinct UIs:
-
-### 7.1 Generation Summary (Project Creation)
-Shown at the end of a multi-tool “create song” flow:
-- What was created
-- Quick audition buttons
-- Optional “Make a Variation…” CTA (e.g., “Create a darker variation”)
-
-### 7.2 Variation Review (Transformations)
-Shown when something that exists is being transformed:
-- Visual diff
-- A/B + Delta Solo
-- Accept / Discard / Partial accept
-
-> This prevents the UX from being spammy during initial build, while still delivering the “Cursor of DAWs” magic where it matters most.
-
----
-
-## 8) Failure Modes & UX Rules
-
-### 8.1 If streaming fails mid-way
+### 7.1 If streaming fails mid-way
 - Keep received hunks
-- Show a “Retry stream” button
+- Show a "Retry stream" button
 - Allow Discard
 
-### 8.2 If commit fails due to `base_state_id` mismatch
-- Offer: “Rebase Variation” (future)
-- MVP: show message: “Project changed while reviewing; regenerate variation.”
+### 7.2 If commit fails due to `base_state_id` mismatch
+- Offer: "Rebase Variation" (future)
+- MVP: show message: "Project changed while reviewing; regenerate variation."
 
-### 8.3 If the user edits while reviewing
+### 7.3 If the user edits while reviewing
 MVP rule:
 - Block destructive edits to affected regions, or
 - Allow edits but invalidate Variation (recommended: invalidate with clear toast)
 
 ---
 
-## 9) MVP Cut (What to Ship First)
+## 8) MVP Cut (What to Ship First)
 
 1. **Variation propose + stream hunks (SSE)**
 2. **Piano roll overlay rendering**
@@ -446,23 +429,23 @@ Score view diff + controller diffs can come after the demo.
 
 ---
 
-## 10) Demo Script (Suggested)
+## 9) Demo Script (Suggested)
 
 1. Generate a major piano riff.
-2. Ask: “Make that minor and more mysterious.”
+2. Ask: "Make that minor and more mysterious."
 3. Variation Review appears:
    - green/red note overlay
    - A/B toggle + Delta Solo
-4. Accept only bars 5–8, discard rest.
-5. Undo to prove it’s safe.
+4. Accept only bars 5-8, discard rest.
+5. Undo to prove it's safe.
 
 ---
 
-## 11) Appendix: Implementation Checklist
+## 10) Appendix: Implementation Checklist
 
 ### Backend
 
-**Core (Implemented & Tested — 924 tests pass):**
+**Core (Implemented & Tested):**
 - [x] `POST /variation/propose` returns `variation_id` + `stream_url`
 - [x] `POST /variation/commit` accepts `accepted_phrase_ids`
 - [x] `POST /variation/discard` returns `{"ok": true}`
@@ -478,17 +461,16 @@ Score view diff + controller diffs can come after the demo.
 - [x] `NoteChange` model for note transformations
 - [x] Beat-based fields: `start_beat`, `duration_beats`, `beat_range`
 
-**v1 Infrastructure (New — State Machine + Envelope + Store):**
-- [x] `VariationStatus` enum: CREATED → STREAMING → READY → COMMITTED/DISCARDED/FAILED/EXPIRED
+**v1 Infrastructure (State Machine + Envelope + Store):**
+- [x] `VariationStatus` enum: CREATED -> STREAMING -> READY -> COMMITTED/DISCARDED/FAILED/EXPIRED
 - [x] `assert_transition()` enforces valid state machine transitions
 - [x] `EventEnvelope` with type, sequence, variation_id, project_id, base_state_id, payload
 - [x] `SequenceCounter` for per-variation monotonic sequence numbers
 - [x] `VariationStore` (in-memory) for variation records + phrase storage
 - [x] `SSEBroadcaster` with publish, subscribe, replay, late-join support
 - [x] Builder helpers: `build_meta_envelope`, `build_phrase_envelope`, `build_done_envelope`, `build_error_envelope`
-- [x] 109 new tests for state machine, envelope, store, and broadcaster
 
-**v1 Supercharge (Complete — see [VARIATION_BACKEND_SUPERCHARGE_REPORT.md](VARIATION_BACKEND_SUPERCHARGE_REPORT.md)):**
+**v1 Supercharge (Complete):**
 - [x] Wired infrastructure into endpoints (propose/commit/discard)
 - [x] `GET /variation/stream` — real SSE with envelopes, replay, heartbeat
 - [x] `GET /variation/{variation_id}` — status polling + reconnect
@@ -497,11 +479,18 @@ Score view diff + controller diffs can come after the demo.
 - [x] Discard cancels in-flight generation
 - [x] `stream_router.py` — single publish entry point (WS-ready)
 - [x] `variation_data` deprecated on commit (loaded from store)
-- [x] 963 tests passing (146 variation-specific)
+
+**Execution Mode Policy (New):**
+- [x] Backend forces `execution_mode="variation"` for all COMPOSING intents
+- [x] Backend forces `execution_mode="apply"` for all EDITING intents
+- [x] Frontend reacts to `state` SSE event; backend determines mode from intent
 
 ### Frontend (Not Yet Started)
-- [ ] Variation Review Mode overlay chrome
-- [ ] Render note states (added/removed/modified)
+- [ ] Detect `state: "composing"` SSE event and enter Variation Review Mode
+- [ ] Detect `state: "editing"` SSE event and apply tool calls directly (existing behavior)
+- [ ] Parse and accumulate `meta`, `phrase`, `done` events during COMPOSING
+- [ ] Variation Review Mode overlay chrome (banner, counts, intent)
+- [ ] Render note states (added/removed/modified) in piano roll
 - [ ] Phrase list UI with accept/reject per phrase
 - [ ] A/B + Delta Solo audition
 - [ ] Commit/discard flows with state-id checks

@@ -572,12 +572,8 @@ async def execute_plan_streaming(
 # Variation Mode Execution
 # =============================================================================
 
-from typing import Literal
 from app.models.variation import Variation
 from app.services.variation import get_variation_service
-
-
-IntentExecutionMode = Literal["apply", "variation"]
 
 
 @dataclass

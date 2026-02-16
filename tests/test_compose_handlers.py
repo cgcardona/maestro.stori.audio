@@ -109,7 +109,7 @@ class TestOrchestrateStream:
                 m_llm_cls.return_value = mock_llm
 
                 events = []
-                async for event in orchestrate("What is 2+2?", execution_mode="apply"):
+                async for event in orchestrate("What is 2+2?"):
                     events.append(event)
 
                 # Should have at least: state, status, content, complete
@@ -156,7 +156,7 @@ class TestOrchestrateStream:
                     m_llm_cls.return_value = mock_llm
 
                     events = []
-                    async for event in orchestrate("make something vague", execution_mode="apply"):
+                    async for event in orchestrate("make something vague"):
                         events.append(event)
 
                     import json
@@ -177,7 +177,7 @@ class TestOrchestrateStream:
                 mock_llm.close = AsyncMock()
                 m_llm_cls.return_value = mock_llm
                 events = []
-                async for event in orchestrate("hello", execution_mode="apply"):
+                async for event in orchestrate("hello"):
                     events.append(event)
                 # Should have state (from intent attempt) then error
                 assert len(events) >= 1
@@ -218,7 +218,7 @@ class TestOrchestrateStream:
                     m_llm_cls.return_value = mock_llm
 
                     events = []
-                    async for event in orchestrate("How do I add a track in Stori?", execution_mode="apply"):
+                    async for event in orchestrate("How do I add a track in Stori?"):
                         events.append(event)
 
                     import json
@@ -263,7 +263,7 @@ class TestOrchestrateStream:
                 m_llm_cls.return_value = mock_llm
 
                 events = []
-                async for event in orchestrate("What is 2+2?", execution_mode="apply"):
+                async for event in orchestrate("What is 2+2?"):
                     events.append(event)
 
                 import json
@@ -306,7 +306,7 @@ class TestOrchestrateStream:
                     m_llm_cls.return_value = mock_llm
 
                     events = []
-                    async for event in orchestrate("make a beat", execution_mode="apply"):
+                    async for event in orchestrate("make a beat"):
                         events.append(event)
 
                     import json
@@ -355,7 +355,7 @@ class TestOrchestrateStream:
                     m_llm_cls.return_value = mock_llm
 
                     events = []
-                    async for event in orchestrate("add drums", execution_mode="apply"):
+                    async for event in orchestrate("add drums"):
                         events.append(event)
 
                     import json
