@@ -38,7 +38,7 @@ The backend owns the execution mode decision.
 
 This enforces the "Cursor of DAWs" paradigm: all AI-generated musical content (COMPOSING) requires human review before becoming canonical state. Structural operations (EDITING) apply immediately because they are low-risk and reversible.
 
-See [`muse-variation-spec.md`](muse-variation-spec.md) for the full Variation protocol.
+See [muse-variation-spec.md](../protocol/muse-variation-spec.md) for the full Variation protocol.
 
 ---
 
@@ -50,4 +50,4 @@ Classify first, then execute. **REASONING** = questions, no tools. **EDITING** =
 
 ## Music generation
 
-**Orpheus required** for composing. No pattern fallback; if Orpheus is down, generation fails with a clear error. Config: `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`). Full health requires Orpheus. See [setup.md](setup.md) for config.
+**Orpheus required** for composing. No pattern fallback; if Orpheus is down, generation fails with a clear error. Config: `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`). Full health requires Orpheus. See [setup.md](../guides/setup.md) for config.

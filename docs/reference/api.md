@@ -204,4 +204,4 @@ These run in Composer and call the music model; they do not require a connected 
 
 **Total: 41** MCP tools. Generation tools run server-side; the rest are forwarded to the DAW when connected.
 
-See also: [integrate.md](integrate.md) for MCP setup (stdio, Cursor, WebSocket DAW connection).
+See also: [integrate.md](../guides/integrate.md) for MCP setup (stdio, Cursor, WebSocket DAW connection).

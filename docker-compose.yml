@@ -2,7 +2,7 @@
 #
 # Usage:
 #   Development: docker compose up
-#   Production:  Same file with production .env (see docs/setup.md for required env vars).
+#   Production:  Same file with production .env (see docs/guides/setup.md for required env vars).
 #
 # First-time SSL setup:
 #   1. Set DOMAIN and EMAIL in .env

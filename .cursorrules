@@ -27,15 +27,15 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 - **Typing:** Use type hints for all public functions and module boundaries. Use `list[...]`, `dict[...]` (Python 3.9+ style). Mark optional with `Optional[...]` or `X | None` where appropriate.
 - **Async:** Use `async def` and `await` for I/O (DB, HTTP, Orpheus, LLM). Use `@pytest.mark.anyio` or `asyncio_mode = "auto"` for async tests; prefer `anyio` where fixtures are async.
 - **Imports:** Group stdlib, third-party, then `app.*`. Prefer explicit imports; avoid `*` except for re-exports in `__init__.py`.
-- **Config:** Read from `app.config.settings` (Pydantic Settings). No hardcoded secrets; no committing `.env` or keys. Use `STORI_*` env vars as documented in `docs/setup.md`.
+- **Config:** Read from `app.config.settings` (Pydantic Settings). No hardcoded secrets; no committing `.env` or keys. Use `STORI_*` env vars as documented in `docs/guides/setup.md`.
 - **Errors:** Prefer clear, user-facing messages for API errors. Log with `logging` at appropriate levels; avoid printing secrets or full tracebacks to responses.
-- **Security:** Keep security headers (see `SecurityHeadersMiddleware` in `main.py`). Validate and sanitize inputs; use auth dependencies for protected routes. See `docs/security.md` for go-live checklist.
+- **Security:** Keep security headers (see `SecurityHeadersMiddleware` in `main.py`). Validate and sanitize inputs; use auth dependencies for protected routes. See `docs/guides/security.md` for go-live checklist.
 
 ---
 
 ## Tests
 
-- **Runner:** From repo root with stack running: `docker compose exec composer pytest tests/ -v`. **Coverage (canonical, from container):** `docker compose exec composer sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=64 --show-missing"`. Threshold is in `pyproject.toml` ([tool.coverage.report] fail_under). See `docs/testing.md` (rebuild image if `coverage` is missing).
+- **Runner:** From repo root with stack running: `docker compose exec composer pytest tests/ -v`. **Coverage (canonical, from container):** `docker compose exec composer sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=64 --show-missing"`. Threshold is in `pyproject.toml` ([tool.coverage.report] fail_under). See `docs/guides/testing.md` (rebuild image if `coverage` is missing).
 - **Layout:** One test module per app area (e.g. `test_health.py`, `test_intent.py`, `test_rag.py`). Use `tests/conftest.py` for shared fixtures (`client`, `db_session`). Do not commit tests that depend on live external APIs (Orpheus, OpenRouter, S3) unless skipped or gated (e.g. `@pytest.mark.skip`, `skipif` with env).
 - **Naming:** `test_<behavior>_<scenario>` or `test_<module>_<behavior>`. Docstrings: one line describing what is being tested.
 - **Fixtures:** Prefer `db_session` and `client` from conftest for API tests so auth and DB use the in-memory DB. Override dependencies via `app.dependency_overrides` in fixtures, and restore in `finally`.
@@ -48,7 +48,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 ## Documentation
 
 - **Index:** `docs/README.md` is the entry point. Point users and contributors there.
-- **Where to document:** Setup/config/deploy → `docs/setup.md`. Frontend/MCP/JWT → `docs/integrate.md`. Streaming, models, tools → `docs/api.md`. Request flow, intent, human/agent → `docs/architecture.md`. Running tests, intent QA → `docs/testing.md`. Assets (kits, soundfonts) → `docs/assets.md`. Security and go-live → `docs/security.md`. Specs → `docs/specs.md`.
+- **Where to document:** Setup/config/deploy → `docs/guides/setup.md`. Frontend/MCP/JWT → `docs/guides/integrate.md`. Streaming, models, tools → `docs/reference/api.md`. Request flow, intent, human/agent → `docs/reference/architecture.md`. Running tests, intent QA → `docs/guides/testing.md`. Assets (kits, soundfonts) → `docs/guides/assets.md`. Security and go-live → `docs/guides/security.md`. Specs (Muse/Variation) → `docs/protocol/`.
 - **When editing:** If you change behavior, config, or API, update the relevant doc. Prefer short, concrete sentences. Keep README and docs in sync (e.g. service table, env list).
 - **Code comments:** Use docstrings for public modules, classes, and functions. Prefer "why" over "what" where non-obvious. Do not comment out code; remove or guard behind a feature flag.
 
@@ -57,9 +57,9 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 ## Before go-live / open source
 
 - Run full test suite and fix any new failures or flakiness.
-- Ensure no secrets or internal URLs in code or committed config; use env and `docs/setup.md` for required vars.
+- Ensure no secrets or internal URLs in code or committed config; use env and `docs/guides/setup.md` for required vars.
 - Confirm health endpoint exposes `tagline` and full health checks Orpheus (and optionally LLM/S3) as documented.
-- Review `docs/security.md` and apply the checklist (headers, rate limits, auth, logging).
+- Review `docs/guides/security.md` and apply the checklist (headers, rate limits, auth, logging).
 - Keep README and docs accurate: service table, ports (10001–10099 block), and "Stream first, then MCP" messaging.
 - When adding dependencies, update `pyproject.toml` and any Docker/CI that installs them.
 

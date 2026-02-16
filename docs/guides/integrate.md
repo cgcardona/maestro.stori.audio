@@ -1,6 +1,6 @@
 # Integrate: Frontend, MCP, access
 
-API base URL, auth, Swift/DAW integration, and MCP (Cursor/Claude) in one place. **Full MCP tool list and parameters:** [api.md](api.md).
+API base URL, auth, Swift/DAW integration, and MCP (Cursor/Claude) in one place. **Full MCP tool list and parameters:** [api.md](../reference/api.md).
 
 ---
 
@@ -108,7 +108,7 @@ Stori Composer is an MCP server. Cursor, Claude Desktop, or any MCP client can l
 
 **SSE (alternative to WebSocket):** Obtain a server-issued connection ID with `POST /api/v1/mcp/connection` (Bearer). Then connect to `GET /api/v1/mcp/stream/{connection_id}` for the event stream and post tool results to `POST /api/v1/mcp/response/{connection_id}`. Connection IDs expire after 5 minutes.
 
-Tool list and parameters: see [api.md](api.md#tools).
+Tool list and parameters: see [api.md](../reference/api.md#tools).
 
 ---
 
@@ -173,7 +173,7 @@ So an LLM client can list and call tools.
   ```
   Requires a venv (or env) with the app installed and deps (e.g. `pip install -e .`).
 
-- Restart Cursor (or **Developer: Reload Window**) so it starts the server. If you see **"Found 0 tools"** after changing config, do a full window reload (not just resaving `mcp.json`). To verify the server returns tools from the container: run `tools/list` via stdio (see [api.md](api.md)); from repo root you can pipe `initialize` + `tools/list` JSON lines into `docker compose exec -T composer python -m app.mcp.stdio_server` and check the last line has `"result":{"tools":[...]}` with 41 tools.
+- Restart Cursor (or **Developer: Reload Window**) so it starts the server. If you see **"Found 0 tools"** after changing config, do a full window reload (not just resaving `mcp.json`). To verify the server returns tools from the container: run `tools/list` via stdio (see [api.md](../reference/api.md)); from repo root you can pipe `initialize` + `tools/list` JSON lines into `docker compose exec -T composer python -m app.mcp.stdio_server` and check the last line has `"result":{"tools":[...]}` with 41 tools.
 
 **2c. Test in Cursor**
 

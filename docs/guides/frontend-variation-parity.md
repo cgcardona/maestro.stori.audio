@@ -190,8 +190,8 @@ Response: `{ "ok": true }`. Exit Variation Review Mode. No mutation.
 
 ## Reference Docs
 
-- [`docs/muse-variation-spec.md`](muse-variation-spec.md) — Full UX + technical contract
-- [`docs/protocol/variation_api_v1.md`](protocol/variation_api_v1.md) — Wire contract, endpoints, SSE events
-- [`docs/protocol/TERMINOLOGY.md`](protocol/TERMINOLOGY.md) — Canonical vocabulary
-- [`docs/api.md`](api.md) — SSE event types reference
-- [`docs/architecture.md`](architecture.md) — Request flow and execution mode policy
+- [protocol/muse-variation-spec.md](../protocol/muse-variation-spec.md) — Full UX + technical contract
+- [protocol/variation_api_v1.md](../protocol/variation_api_v1.md) — Wire contract, endpoints, SSE events
+- [protocol/TERMINOLOGY.md](../protocol/TERMINOLOGY.md) — Canonical vocabulary
+- [api.md](../reference/api.md) — SSE event types reference
+- [architecture.md](../reference/architecture.md) — Request flow and execution mode policy

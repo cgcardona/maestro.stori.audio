@@ -9,8 +9,8 @@
 
 > **Canonical Backend References:**
 > For backend wire contract, state machine, and terminology, these docs are authoritative:
-> - [`protocol/variation_api_v1.md`](protocol/variation_api_v1.md) — Wire contract, endpoints, SSE events, error codes
-> - [`protocol/TERMINOLOGY.md`](protocol/TERMINOLOGY.md) — Canonical vocabulary (normative)
+> - [variation_api_v1.md](variation_api_v1.md) — Wire contract, endpoints, SSE events, error codes
+> - [TERMINOLOGY.md](TERMINOLOGY.md) — Canonical vocabulary (normative)
 
 ---
 

@@ -25,7 +25,7 @@ docker compose exec composer sh -c "export COVERAGE_FILE=/tmp/.coverage && pytho
 - If you see `No module named coverage`, rebuild: `docker compose build composer` then `docker compose up -d`.
 - If you see `unable to open database file` for `.coverage`, the container user can’t write to `/app`; the command uses `COVERAGE_FILE=/tmp/.coverage` so the data file lives in `/tmp`.
 
-When CI is enabled, run the same coverage command so the build fails if coverage drops below the threshold in `pyproject.toml`. Also add secret scanning (e.g. Gitleaks) and optionally a dependency audit (e.g. `pip-audit`); see `docs/security.md`.
+When CI is enabled, run the same coverage command so the build fails if coverage drops below the threshold in `pyproject.toml`. Also add secret scanning (e.g. Gitleaks) and optionally a dependency audit (e.g. `pip-audit`); see [security.md](security.md).
 
 **Coverage target:** We aim for 80% over time. The report shows where to add tests: biggest gaps are often `compose_handlers`, `executor`, `llm_client`, route handlers (compose, conversations, MCP), and optional backends (Orpheus, HuggingFace, renderers). Raising coverage lets you bump `fail_under` in `pyproject.toml`.
 
