@@ -213,6 +213,56 @@ class TestStateStoreSerialization:
         assert store.tempo == 90
         assert store.key == "Am"
 
+    def test_sync_clears_stale_entities(self):
+        """sync_from_client replaces old entities — no stale tracks survive."""
+        store = StateStore()
+
+        # Sync with Project A (3 tracks)
+        store.sync_from_client({
+            "tracks": [
+                {"id": "old-1", "name": "Pink Floyd Bass"},
+                {"id": "old-2", "name": "Spacey Piano"},
+                {"id": "old-3", "name": "Reggae Funk Bass"},
+            ],
+            "tempo": 85,
+            "key": "Dm",
+        })
+        assert store.registry.exists_track("old-1")
+        assert store.registry.exists_track("old-3")
+
+        # Sync with Project B (empty — new project)
+        store.sync_from_client({
+            "tracks": [],
+            "tempo": 120,
+            "key": "C",
+        })
+
+        # Old tracks must be gone
+        assert not store.registry.exists_track("old-1")
+        assert not store.registry.exists_track("old-2")
+        assert not store.registry.exists_track("old-3")
+        assert len(store.registry.list_tracks()) == 0
+        assert store.tempo == 120
+        assert store.key == "C"
+
+    def test_sync_handles_snake_case_time_signature_string(self):
+        """time_signature as a string like '3/4' is parsed correctly."""
+        store = StateStore()
+        store.sync_from_client({
+            "tracks": [],
+            "time_signature": "3/4",
+        })
+        assert store.time_signature == (3, 4)
+
+    def test_sync_handles_camel_case_time_signature_dict(self):
+        """timeSignature as dict {numerator, denominator} is parsed correctly."""
+        store = StateStore()
+        store.sync_from_client({
+            "tracks": [],
+            "timeSignature": {"numerator": 6, "denominator": 8},
+        })
+        assert store.time_signature == (6, 8)
+
 
 class TestRegionNotes:
     """Test the materialized region note store."""

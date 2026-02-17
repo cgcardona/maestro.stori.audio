@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator, Optional, cast
 
 from app.config import settings
-from app.core.entity_context import build_entity_context_for_llm
+from app.core.entity_context import build_entity_context_for_llm, format_project_context
 from app.core.expansion import ToolCall
 from app.core.intent import (
     Intent,
@@ -383,13 +383,10 @@ async def _handle_reasoning(
     # General question → LLM without tools
     with trace_span(trace, "llm_thinking"):
         messages = [{"role": "system", "content": system_prompt_base()}]
-        
+
         if project_context:
-            messages.append({
-                "role": "system",
-                "content": f"Project state:\n{json.dumps(project_context, indent=2)}"
-            })
-        
+            messages.append({"role": "system", "content": format_project_context(project_context)})
+
         if conversation_history:
             messages.extend(conversation_history)
         
@@ -796,14 +793,14 @@ async def _handle_editing(
     allowed_tools = [t for t in ALL_TOOLS if t["function"]["name"] in route.allowed_tool_names]
     
     messages: list[dict[str, Any]] = [{"role": "system", "content": sys_prompt}]
-    messages.append({"role": "system", "content": build_entity_context_for_llm(store)})
-    
+
+    # Inject project context — prefer the request-body snapshot (authoritative),
+    # fall back to the entity registry for sessions that don't send project.
     if project_context:
-        messages.append({
-            "role": "system",
-            "content": f"Project state:\n{json.dumps(project_context, indent=2)}"
-        })
-    
+        messages.append({"role": "system", "content": format_project_context(project_context)})
+    else:
+        messages.append({"role": "system", "content": build_entity_context_for_llm(store)})
+
     if conversation_history:
         messages.extend(conversation_history)
     

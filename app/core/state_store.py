@@ -193,7 +193,11 @@ class StateStore:
     @property
     def key(self) -> str:
         return self._key
-    
+
+    @property
+    def time_signature(self) -> tuple[int, int]:
+        return self._time_signature
+
     # =========================================================================
     # Transaction Management
     # =========================================================================
@@ -492,12 +496,17 @@ class StateStore:
     def sync_from_client(self, project_state: dict[str, Any]) -> None:
         """
         Sync with client-reported project state.
-        
-        This updates the registry without creating events (client is source of truth).
-        Also initializes the materialized region note store from client data.
+
+        REPLACES the registry and note store with the client's snapshot so
+        that no stale entities survive across project switches or deletions.
+        The client ``project`` field is the sole source of truth.
         """
+        # Clear stale state before rebuilding
+        self._registry.clear()
+        self._region_notes.clear()
+
         self._registry.sync_from_project_state(project_state)
-        
+
         # Initialize region notes from client-reported state
         for track in project_state.get("tracks", []):
             for region in track.get("regions", []):
@@ -505,15 +514,24 @@ class StateStore:
                 notes = region.get("notes", [])
                 if region_id and notes:
                     self._region_notes[region_id] = deepcopy(notes)
-        
-        # Update project metadata
+
+        # Update project metadata (accept both camelCase and snake_case)
         if "tempo" in project_state:
             self._tempo = project_state["tempo"]
         if "key" in project_state:
             self._key = project_state["key"]
-        if "timeSignature" in project_state:
-            ts = project_state["timeSignature"]
-            self._time_signature = (ts.get("numerator", 4), ts.get("denominator", 4))
+        ts_raw = project_state.get("timeSignature") or project_state.get("time_signature")
+        if ts_raw:
+            if isinstance(ts_raw, str):
+                # "4/4" → (4, 4)
+                parts = ts_raw.split("/")
+                if len(parts) == 2:
+                    self._time_signature = (int(parts[0]), int(parts[1]))
+            elif isinstance(ts_raw, dict):
+                self._time_signature = (
+                    ts_raw.get("numerator", 4),
+                    ts_raw.get("denominator", 4),
+                )
     
     # =========================================================================
     # Event & Snapshot Management

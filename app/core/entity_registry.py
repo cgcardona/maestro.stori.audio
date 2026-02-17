@@ -106,6 +106,25 @@ class EntityRegistry:
         logger.debug(f"🏗️ EntityRegistry initialized for project {self.project_id[:8]}")
     
     # =========================================================================
+    # Registry Management
+    # =========================================================================
+
+    def clear(self) -> None:
+        """Remove all entities from the registry.
+
+        Called before ``sync_from_project_state`` to ensure the registry
+        reflects exactly the current project — no stale tracks or regions
+        from a previous project or deleted entities.
+        """
+        self._tracks.clear()
+        self._regions.clear()
+        self._buses.clear()
+        self._track_names.clear()
+        self._region_names.clear()
+        self._bus_names.clear()
+        self._track_regions.clear()
+
+    # =========================================================================
     # Entity Creation
     # =========================================================================
     
