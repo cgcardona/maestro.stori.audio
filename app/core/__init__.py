@@ -33,7 +33,7 @@ from app.core.llm_client import LLMClient, LLMResponse, ToolCallData, enforce_si
 from app.core.intent import get_intent_result, get_intent_result_with_llm, SSEState, Intent, IntentResult, Slots
 from app.core.pipeline import run_pipeline, PipelineOutput
 from app.core.planner import build_execution_plan, ExecutionPlan
-from app.core.executor import execute_plan, execute_plan_streaming, ExecutionContext
+from app.core.executor import ExecutionContext
 from app.core.expansion import ToolCall, dedupe_tool_calls
 from app.core.macro_engine import expand_macro, MACROS
 from app.core.entity_registry import EntityRegistry, create_registry_from_context
@@ -76,8 +76,6 @@ __all__ = [
     "ExecutionPlanSchema",
     "validate_plan_json",
     # Executor
-    "execute_plan",
-    "execute_plan_streaming",
     "ExecutionContext",
     # Entity Registry
     "EntityRegistry",

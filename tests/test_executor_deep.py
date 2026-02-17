@@ -3,14 +3,11 @@
 Supplements test_executor.py with:
 - execute_plan_variation edge cases
 - apply_variation_phrases with removals, modifications, partial accept
-- execute_plan_streaming error paths
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.executor import (
-    execute_plan,
-    execute_plan_streaming,
     execute_plan_variation,
     apply_variation_phrases,
     ExecutionContext,
@@ -277,60 +274,6 @@ class TestApplyVariationPhrases:
 
         assert result.success is True
         assert result.notes_added == 0
-
-
-# ---------------------------------------------------------------------------
-# execute_plan_streaming
-# ---------------------------------------------------------------------------
-
-
-class TestExecutePlanStreaming:
-
-    @pytest.mark.anyio
-    async def test_streaming_yields_progress_and_complete(self):
-        """Streaming execution yields progress events then plan_complete."""
-        calls = [
-            ToolCall("stori_set_tempo", {"tempo": 120}),
-            ToolCall("stori_play", {}),
-        ]
-
-        events = []
-        async for e in execute_plan_streaming(calls, {}):
-            events.append(e)
-
-        types = [e["type"] for e in events]
-        assert "plan_progress" in types
-        assert "plan_complete" in types
-        complete = next(e for e in events if e["type"] == "plan_complete")
-        assert complete["success"] is True
-
-    @pytest.mark.anyio
-    async def test_streaming_emits_tool_call_events(self):
-        """Tool calls are emitted as tool_call events."""
-        calls = [ToolCall("stori_set_tempo", {"tempo": 120})]
-
-        events = []
-        async for e in execute_plan_streaming(calls, {}):
-            events.append(e)
-
-        tc_events = [e for e in events if e["type"] == "tool_call"]
-        assert len(tc_events) >= 1
-        assert tc_events[0]["name"] == "stori_set_tempo"
-
-    @pytest.mark.anyio
-    async def test_streaming_deduplicates(self):
-        """Duplicate calls are deduplicated."""
-        calls = [
-            ToolCall("stori_play", {}),
-            ToolCall("stori_play", {}),
-        ]
-
-        events = []
-        async for e in execute_plan_streaming(calls, {}):
-            events.append(e)
-
-        tc_events = [e for e in events if e["type"] == "tool_call"]
-        assert len(tc_events) == 1
 
 
 # ---------------------------------------------------------------------------

@@ -1,17 +1,19 @@
 """
 Executor for Stori Composer (Cursor-of-DAWs).
 
-Executes validated tool call plans against the DAW state with:
-- Transaction semantics (atomic execution with rollback)
-- StateStore integration (persistent, versioned state)
-- Event sourcing (all mutations captured)
-- Streaming execution (incremental feedback)
+Provides two main execution paths:
 
-Execution Flow:
-1. Begin transaction on StateStore
-2. Execute each tool call in sequence
-3. On success: commit transaction, return events
-4. On failure: rollback transaction, return partial events with error
+1. **Variation mode** (``execute_plan_variation``):
+   Simulates tool calls without mutating canonical state, captures
+   base/proposed notes, and computes a Variation (musical diff) for
+   human review.
+
+2. **Phrase application** (``apply_variation_phrases``):
+   Applies accepted variation phrases to canonical state after human
+   approval.
+
+Internal helpers (``_execute_single_call``, ``_execute_generator``)
+handle entity creation, name resolution, and music generation.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Optional
+from typing import Any, Optional
 
 from app.core.state_store import StateStore, Transaction, get_or_create_store
 from app.core.expansion import ToolCall, dedupe_tool_calls
@@ -29,7 +31,6 @@ from app.core.tracing import (
     get_trace_context,
     trace_span,
     log_tool_call,
-    log_plan_execution,
 )
 from app.services.music_generator import get_music_generator
 
@@ -120,113 +121,6 @@ class ExecutionContext:
             if r.entity_created
         }
 
-
-async def execute_plan(
-    tool_calls: list[ToolCall],
-    project_state: dict[str, Any],
-    conversation_id: Optional[str] = None,
-    store: Optional[StateStore] = None,
-) -> list[dict[str, Any]]:
-    """
-    Execute a plan (list of tool calls) with transaction semantics.
-    
-    All calls succeed together or fail together with rollback.
-    
-    Args:
-        tool_calls: List of ToolCalls to execute
-        project_state: Current project state from client
-        conversation_id: Conversation ID for StateStore lookup
-        store: Optional pre-initialized StateStore
-        
-    Returns:
-        List of events to send to the client
-    """
-    trace = get_trace_context()
-    start_time = time.time()
-    
-    with trace_span(trace, "execute_plan", {"tool_count": len(tool_calls)}):
-        # Get or create StateStore
-        if store is None:
-            store = get_or_create_store(
-                conversation_id=conversation_id or "default",
-                project_id=project_state.get("projectId"),
-            )
-        
-        # Sync with client state
-        store.sync_from_client(project_state)
-        
-        # Deduplicate tool calls
-        tool_calls = dedupe_tool_calls(tool_calls)
-        
-        if not tool_calls:
-            return []
-        
-        # Begin transaction
-        tx = store.begin_transaction(f"Execute {len(tool_calls)} tools")
-        
-        # Create execution context
-        ctx = ExecutionContext(
-            store=store,
-            transaction=tx,
-            trace=trace,
-        )
-        
-        try:
-            logger.info(f"🎬 Executing plan: {len(tool_calls)} tool calls")
-            
-            # Execute each tool call
-            for call in tool_calls:
-                await _execute_single_call(call, ctx)
-                
-                # Check for critical failures that should abort
-                if ctx.results and not ctx.results[-1].success:
-                    meta = get_tool_meta(call.name)
-                    if meta and meta.creates_entity:
-                        # Entity creation failure is critical - abort
-                        logger.error(f"❌ Critical failure in {call.name}, aborting")
-                        raise ExecutionError(f"Failed to create entity: {ctx.results[-1].error}")
-            
-            # All succeeded - commit
-            store.commit(tx)
-            
-            duration_ms = (time.time() - start_time) * 1000
-            log_plan_execution(
-                trace.trace_id,
-                len(tool_calls),
-                len([r for r in ctx.results if r.success]),
-                len([r for r in ctx.results if not r.success]),
-                duration_ms,
-            )
-            
-            logger.info(f"✅ Plan executed: {len(ctx.results)} tools, {len(ctx.events)} events")
-            return ctx.events
-            
-        except Exception as e:
-            # Rollback on any failure
-            logger.error(f"❌ Plan execution failed: {e}")
-            store.rollback(tx)
-            
-            duration_ms = (time.time() - start_time) * 1000
-            log_plan_execution(
-                trace.trace_id,
-                len(tool_calls),
-                len([r for r in ctx.results if r.success]),
-                len([r for r in ctx.results if not r.success]) + 1,
-                duration_ms,
-            )
-            
-            # Return partial events with error marker
-            ctx.events.append({
-                "type": "error",
-                "tool": ctx.failed_tools[-1] if ctx.failed_tools else "unknown",
-                "error": str(e),
-            })
-            return ctx.events
-
-
-class ExecutionError(Exception):
-    """Raised when execution fails critically."""
-    pass
 
 
 async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
@@ -473,121 +367,6 @@ async def _execute_generator(name: str, params: dict[str, Any], ctx: ExecutionCo
     except Exception as e:
         logger.exception(f"❌ Generator error: {e}")
         ctx.add_result(name, False, {}, str(e))
-
-
-# =============================================================================
-# Streaming Execution
-# =============================================================================
-
-async def execute_plan_streaming(
-    tool_calls: list[ToolCall],
-    project_state: dict[str, Any],
-    conversation_id: Optional[str] = None,
-    store: Optional[StateStore] = None,
-) -> AsyncIterator[dict[str, Any]]:
-    """
-    Execute a plan and yield events as they're generated.
-    
-    Provides incremental feedback for SSE streaming.
-    
-    Yields:
-        dict: Events to send to client
-    """
-    trace = get_trace_context()
-    start_time = time.time()
-    
-    # Get or create StateStore
-    if store is None:
-        store = get_or_create_store(
-            conversation_id=conversation_id or "default",
-            project_id=project_state.get("projectId"),
-        )
-    
-    store.sync_from_client(project_state)
-    tool_calls = dedupe_tool_calls(tool_calls)
-    
-    if not tool_calls:
-        yield {"type": "plan_complete", "success": True, "total_events": 0}
-        return
-    
-    # Begin transaction
-    tx = store.begin_transaction(f"Stream {len(tool_calls)} tools")
-    
-    ctx = ExecutionContext(
-        store=store,
-        transaction=tx,
-        trace=trace,
-    )
-    
-    logger.info(f"🎬 Streaming execution: {len(tool_calls)} tool calls")
-    
-    try:
-        for i, call in enumerate(tool_calls):
-            # Yield progress
-            yield {
-                "type": "plan_progress",
-                "step": i + 1,
-                "total": len(tool_calls),
-                "tool": call.name,
-            }
-            
-            # Execute and collect events
-            events_before = len(ctx.events)
-            await _execute_single_call(call, ctx)
-            
-            # Yield new events
-            for event in ctx.events[events_before:]:
-                yield {
-                    "type": "tool_call",
-                    "name": event.get("tool"),
-                    "params": event.get("params", {}),
-                }
-            
-            # Check for failure
-            if ctx.results and not ctx.results[-1].success:
-                error = ctx.results[-1].error
-                yield {
-                    "type": "tool_error",
-                    "name": call.name,
-                    "error": error,
-                }
-                
-                # For entity creation failures, abort
-                meta = get_tool_meta(call.name)
-                if meta and meta.creates_entity:
-                    raise ExecutionError(error)
-        
-        # Commit transaction
-        store.commit(tx)
-        
-        duration_ms = (time.time() - start_time) * 1000
-        log_plan_execution(
-            trace.trace_id,
-            len(tool_calls),
-            len([r for r in ctx.results if r.success]),
-            len(ctx.failed_tools),
-            duration_ms,
-        )
-        
-        yield {
-            "type": "plan_complete",
-            "success": ctx.all_successful,
-            "total_events": len(ctx.events),
-            "failed_tools": ctx.failed_tools,
-            "state_version": store.version,
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Streaming execution failed: {e}")
-        store.rollback(tx)
-        
-        yield {
-            "type": "plan_complete",
-            "success": False,
-            "total_events": len(ctx.events),
-            "failed_tools": ctx.failed_tools,
-            "error": str(e),
-        }
 
 
 # =============================================================================

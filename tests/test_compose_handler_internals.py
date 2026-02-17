@@ -250,7 +250,7 @@ class TestHandleComposing:
             patch("app.core.executor.execute_plan_variation", new_callable=AsyncMock, return_value=fake_variation),
         ):
             events = []
-            async for e in _handle_composing("make a beat", {}, route, llm, store, trace, None, None, "variation"):
+            async for e in _handle_composing("make a beat", {}, route, llm, store, trace, None, None):
                 events.append(e)
 
         payloads = _parse_events(events)
@@ -265,43 +265,6 @@ class TestHandleComposing:
         assert meta["variation_id"] == "var-123"
         phrase = next(p for p in payloads if p["type"] == "phrase")
         assert phrase["phrase_id"] == "p1"
-
-    @pytest.mark.anyio
-    async def test_apply_mode_streams_plan_execution(self):
-        """COMPOSING in apply mode executes plan with streaming progress."""
-        from app.core.pipeline import PipelineOutput
-        from app.core.planner import ExecutionPlan
-        from app.core.expansion import ToolCall
-
-        route = _make_route(SSEState.COMPOSING, Intent.GENERATE_MUSIC, requires_planner=True)
-        llm = _make_llm_mock()
-        store = MagicMock(spec=StateStore)
-        trace = _make_trace()
-
-        plan = ExecutionPlan(
-            tool_calls=[ToolCall("stori_set_tempo", {"tempo": 120})],
-            safety_validated=True,
-        )
-        fake_output = PipelineOutput(route=route, plan=plan)
-
-        async def fake_streaming(*args, **kwargs):
-            yield {"type": "plan_progress", "step": 1, "total": 1, "tool": "stori_set_tempo"}
-            yield {"type": "tool_call", "tool": "stori_set_tempo", "params": {"tempo": 120}}
-            yield {"type": "plan_complete", "success": True, "failed_tools": [], "state_version": 1}
-
-        with (
-            patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output),
-            patch("app.core.compose_handlers.execute_plan_streaming", side_effect=fake_streaming),
-        ):
-            events = []
-            async for e in _handle_composing("set tempo", {}, route, llm, store, trace, None, None, "apply"):
-                events.append(e)
-
-        payloads = _parse_events(events)
-        types = [p["type"] for p in payloads]
-        assert "plan_summary" in types
-        assert "progress" in types
-        assert "complete" in types
 
     @pytest.mark.anyio
     async def test_empty_plan_asks_for_clarification(self):
@@ -319,7 +282,7 @@ class TestHandleComposing:
 
         with patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
             events = []
-            async for e in _handle_composing("do something", {}, route, llm, store, trace, None, None, "variation"):
+            async for e in _handle_composing("do something", {}, route, llm, store, trace, None, None):
                 events.append(e)
 
         payloads = _parse_events(events)
@@ -345,7 +308,7 @@ class TestHandleComposing:
 
         with patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
             events = []
-            async for e in _handle_composing("", {}, route, llm, store, trace, None, None, "variation"):
+            async for e in _handle_composing("", {}, route, llm, store, trace, None, None):
                 events.append(e)
 
         payloads = _parse_events(events)
@@ -648,7 +611,7 @@ class TestRetryComposingAsEditing:
         trace = _make_trace()
 
         events = []
-        async for e in _retry_composing_as_editing("add drums", {}, route, llm, store, trace, None, "apply"):
+        async for e in _retry_composing_as_editing("add drums", {}, route, llm, store, trace, None):
             events.append(e)
 
         payloads = _parse_events(events)
