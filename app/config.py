@@ -130,8 +130,8 @@ class Settings(BaseSettings):
     llm_top_p: float = 0.95
 
     # Orchestration (EDITING loop and tool-calling)
-    orchestration_max_iterations: int = 10  # Max LLM turns per request in EDITING
-    composition_max_iterations: int = 25    # Higher iteration limit for composition (1-2 tools per turn with reasoning models)
+    orchestration_max_iterations: int = 5   # Max LLM turns per request in EDITING (non-composition)
+    composition_max_iterations: int = 15    # Higher iteration limit for composition (1-2 tools per turn with reasoning models)
     orchestration_temperature: float = 0.1   # Low temp for deterministic tool selection
     composition_max_tokens: int = 32768      # Higher token budget for GENERATE_MUSIC in EDITING mode
     composition_reasoning_fraction: float = 0.4  # Reasoning share for composition (tool calls need more tokens than thinking)

@@ -163,6 +163,7 @@ async def stream_compose(
                 conversation_id=compose_request.conversation_id,
                 user_id=user_id,
                 conversation_history=conversation_history,
+                is_cancelled=request.is_disconnected,
             ):
                 yield event
 

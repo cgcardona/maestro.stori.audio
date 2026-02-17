@@ -593,6 +593,7 @@ async def add_message_to_conversation(
                 model=compose_request.model,
                 usage_tracker=usage_tracker,
                 conversation_history=conversation_history,
+                is_cancelled=request.is_disconnected,
             ):
                 # Parse SSE event
                 if event.startswith("data: "):

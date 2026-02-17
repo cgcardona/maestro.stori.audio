@@ -13,7 +13,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Optional, cast
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional, cast
 
 from app.config import settings
 from app.core.entity_context import build_entity_context_for_llm, format_project_context
@@ -216,6 +216,7 @@ async def orchestrate(
     conversation_id: Optional[str] = None,
     user_id: Optional[str] = None,
     conversation_history: Optional[list[dict[str, Any]]] = None,
+    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
 ) -> AsyncIterator[str]:
     """
     Main orchestration using Cursor-of-DAWs architecture.
@@ -331,7 +332,8 @@ async def orchestrate(
             
             async for event in _handle_editing(
                 prompt, project_context, route, llm, store, trace,
-                usage_tracker, conversation_history, execution_mode
+                usage_tracker, conversation_history, execution_mode,
+                is_cancelled=is_cancelled,
             ):
                 yield event
     
@@ -773,11 +775,13 @@ async def _handle_editing(
     usage_tracker: Optional[UsageTracker],
     conversation_history: list[dict[str, Any]],
     execution_mode: str = "apply",
+    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
 ) -> AsyncIterator[str]:
     """Handle EDITING state - LLM tool calls with allowlist + validation.
     
     Args:
         execution_mode: "apply" for immediate mutation, "variation" for proposal mode
+        is_cancelled: async callback returning True if the client disconnected
     """
     status_msg = "Processing..." if execution_mode == "apply" else "Generating variation..."
     yield await sse_event({"type": "status", "message": status_msg})
@@ -820,7 +824,24 @@ async def _handle_editing(
     
     while iteration < max_iterations:
         iteration += 1
-        
+
+        # Check for client disconnect before each LLM call
+        if is_cancelled:
+            try:
+                if await is_cancelled():
+                    logger.info(
+                        f"[{trace.trace_id[:8]}] 🛑 Client disconnected, "
+                        f"stopping at iteration {iteration}"
+                    )
+                    break
+            except Exception:
+                pass  # Swallow errors from disconnect check
+
+        logger.info(
+            f"[{trace.trace_id[:8]}] 🔄 Editing iteration {iteration}/{max_iterations} "
+            f"(composition={is_composition})"
+        )
+
         with trace_span(trace, f"llm_iteration_{iteration}"):
             start_time = time.time()
             
@@ -1101,9 +1122,19 @@ async def _handle_editing(
                 )
                 break
 
-        # ── Non-composition: stop when LLM signals done ──
-        _done = response is not None and response.finish_reason in ("stop", "end_turn")
-        if _done:
+        # ── Non-composition: stop after executing tool calls ──
+        # For non-composition editing, the LLM should batch everything it
+        # needs in one response.  Don't re-prompt — that causes runaway loops
+        # where the LLM keeps adding notes indefinitely.
+        # Only continue if there were NO tool calls (content-only response).
+        if not is_composition:
+            if response is not None and response.has_tool_calls:
+                logger.info(
+                    f"[{trace.trace_id[:8]}] ✅ Non-composition: executed "
+                    f"{len(response.tool_calls)} tool(s), stopping after iteration {iteration}"
+                )
+                break
+            # No tool calls — LLM is done (emitted content-only response)
             break
     
     # =========================================================================
