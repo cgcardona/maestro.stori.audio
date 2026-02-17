@@ -59,7 +59,7 @@ class OrpheusClient:
         self,
         genre: str = "boom_bap",
         tempo: int = 90,
-        instruments: list[str] = None,
+        instruments: Optional[list[str]] = None,
         bars: int = 4,
         key: Optional[str] = None,
         # Intent vector fields (from LLM classification)

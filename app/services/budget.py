@@ -4,7 +4,7 @@ Budget management service.
 Handles budget checking, cost calculation, and usage logging.
 """
 import logging
-from typing import Optional
+from typing import Optional, cast
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -56,8 +56,8 @@ def calculate_cost_cents(
         })
     
     # Costs are per 1M tokens, convert to per-token cost
-    input_cost_per_token = model_info["input_cost"] / 1_000_000
-    output_cost_per_token = model_info["output_cost"] / 1_000_000
+    input_cost_per_token = float(cast(float, model_info.get("input_cost", 0) or 0)) / 1_000_000
+    output_cost_per_token = float(cast(float, model_info.get("output_cost", 0) or 0)) / 1_000_000
     
     # Calculate total cost in dollars
     total_cost = (

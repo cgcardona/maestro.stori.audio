@@ -9,7 +9,7 @@ from app.core.planner import (
     preview_plan,
 )
 from app.core.expansion import ToolCall
-from app.core.intent import IntentResult, Intent, SSEState
+from app.core.intent import IntentResult, Intent, Slots, SSEState
 
 
 class TestExecutionPlan:
@@ -80,7 +80,7 @@ class TestBuildExecutionPlan:
             intent=Intent.GENERATE_MUSIC,
             sse_state=SSEState.COMPOSING,
             confidence=0.9,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",
@@ -117,7 +117,7 @@ class TestBuildExecutionPlan:
             intent=Intent.GENERATE_MUSIC,
             sse_state=SSEState.COMPOSING,
             confidence=0.9,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",
@@ -156,7 +156,7 @@ class TestPreviewPlan:
             intent=Intent.GENERATE_MUSIC,
             sse_state=SSEState.COMPOSING,
             confidence=0.9,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",

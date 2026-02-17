@@ -236,7 +236,7 @@ def _validate_schema(
 
 def _validate_type(field: str, value: Any, expected_type: str) -> Optional[ValidationError]:
     """Validate a value against expected JSON Schema type."""
-    type_map = {
+    type_map: dict[str, type | tuple[type, ...]] = {
         "string": str,
         "integer": int,
         "number": (int, float),
@@ -246,7 +246,7 @@ def _validate_type(field: str, value: Any, expected_type: str) -> Optional[Valid
     }
     
     expected = type_map.get(expected_type)
-    if expected and not isinstance(value, expected):
+    if expected is not None and not isinstance(value, expected):
         return ValidationError(
             field=field,
             message=f"Expected {expected_type}, got {type(value).__name__}",

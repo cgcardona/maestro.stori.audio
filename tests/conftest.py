@@ -25,6 +25,14 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def _reset_variation_store():
+    """Reset the singleton VariationStore between tests to prevent cross-test pollution."""
+    yield
+    from app.variation.storage.variation_store import reset_variation_store
+    reset_variation_store()
+
+
 @pytest_asyncio.fixture
 async def db_session():
     """Create an in-memory test database session."""

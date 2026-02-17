@@ -526,7 +526,7 @@ def _score_velocity_dynamics(
     scores = []
     
     # 1. Beat-position velocity correlation (backbeats should be louder)
-    beat_vels = {0: [], 1: [], 2: [], 3: []}
+    beat_vels: dict[int, list[int]] = {0: [], 1: [], 2: [], 3: []}
     for n in notes:
         beat_in_bar = int(n.get("start_beat", 0) % 4)
         beat_vels[beat_in_bar].append(n.get("velocity", 80))

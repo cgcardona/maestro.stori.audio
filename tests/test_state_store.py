@@ -90,6 +90,7 @@ class TestStateStoreVersioning:
         assert store.version == 1
         
         track_id = store.registry.resolve_track("Drums")
+        assert track_id is not None
         store.create_region("Pattern", track_id)
         assert store.version == 2
 

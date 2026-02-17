@@ -13,12 +13,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _app_version_from_package() -> str:
-    """Read version from package metadata (pyproject.toml) when installed; else fallback."""
+    """Read version from pyproject.toml — the single source of truth."""
     try:
         from importlib.metadata import version
         return version("composer-stori")
     except Exception:
-        return "0.1.2"
+        pass
+    # Fallback: parse pyproject.toml directly (dev / non-installed mode)
+    try:
+        from pathlib import Path
+        import re
+        pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(), re.MULTILINE)
+        if match:
+            return match.group(1)
+    except Exception:
+        pass
+    return "0.0.0-unknown"
 
 
 # Approved models with pricing (cost per 1M tokens in dollars)

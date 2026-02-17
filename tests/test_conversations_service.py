@@ -271,7 +271,9 @@ class TestFormatConversationHistory:
     async def test_format_empty_messages(self, db_session):
         conv = await create_conversation(db_session, USER_ID, title="Empty")
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         history = format_conversation_history(conv)
         assert history == []
 
@@ -282,7 +284,9 @@ class TestFormatConversationHistory:
         await add_message(db_session, conv.id, "user", "Hello")
         await add_message(db_session, conv.id, "assistant", "Hi there")
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         history = format_conversation_history(conv)
         assert len(history) == 2
         assert history[0]["role"] == "user"
@@ -298,6 +302,8 @@ class TestFormatConversationHistory:
             tool_calls=[{"name": "stori_set_tempo", "params": {"tempo": 120}, "id": "tc-1"}],
         )
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         history = format_conversation_history(conv)
         assert len(history) >= 1

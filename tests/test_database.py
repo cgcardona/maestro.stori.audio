@@ -85,7 +85,7 @@ async def test_conversation_creation(db_session):
     assert conversation.id is not None
     assert conversation.user_id == user.id
     assert conversation.title == "Test Conv"
-    assert conversation.project_context["tempo"] == 120
+    assert conversation.project_context is not None and conversation.project_context["tempo"] == 120
     assert conversation.is_archived is False
 
 
@@ -168,10 +168,11 @@ async def test_message_with_tokens_and_tools(db_session):
     await db_session.refresh(message)
     
     assert message.model_used == "anthropic/claude-3.5-sonnet"
+    assert message.tokens_used is not None
     assert message.tokens_used["prompt"] == 100
     assert message.tokens_used["completion"] == 50
-    assert len(message.tool_calls) == 2
-    assert message.extra_metadata["user_feedback"] == "good"
+    assert message.tool_calls is not None and len(message.tool_calls) == 2
+    assert message.extra_metadata is not None and message.extra_metadata["user_feedback"] == "good"
 
 
 @pytest.mark.asyncio
@@ -237,7 +238,7 @@ async def test_action_creation(db_session):
     assert action.message_id == message.id
     assert action.action_type == "track_added"
     assert action.success is True
-    assert action.extra_metadata["track_id"] == "123"
+    assert action.extra_metadata is not None and action.extra_metadata["track_id"] == "123"
 
 
 @pytest.mark.asyncio

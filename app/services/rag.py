@@ -10,7 +10,7 @@ This service powers the "thinking" state by:
 import logging
 import httpx
 from dataclasses import dataclass
-from typing import AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Optional, cast
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter
@@ -64,10 +64,10 @@ class RAGService:
             check_compatibility=False,  # Skip version check
         )
         self.llm_client = llm_client
-        self._hf_api_key = None
+        self._hf_api_key: Optional[str] = None
         
     @property
-    def hf_api_key(self):
+    def hf_api_key(self) -> Optional[str]:
         """Get HuggingFace API key."""
         if self._hf_api_key is None:
             settings = get_settings()
@@ -98,14 +98,14 @@ class RAGService:
                 logger.error(f"HuggingFace API error: {response.status_code}")
                 raise Exception(f"Embedding API error: {response.status_code}")
             
-            embedding = response.json()
-            
+            raw = response.json()
             # HF returns nested array for sentence-transformers, take mean pooling
-            if isinstance(embedding[0], list):
+            if isinstance(raw, list) and len(raw) > 0 and isinstance(raw[0], list):
                 import numpy as np
-                embedding = np.mean(embedding, axis=0).tolist()
-            
-            return embedding
+                embedding = np.mean(raw, axis=0).tolist()
+            else:
+                embedding = raw if isinstance(raw, list) else []
+            return cast(list[float], embedding)
     
     async def search(
         self,
@@ -273,15 +273,15 @@ Please provide a clear, helpful answer. Use the documentation context when it's 
         except Exception:
             return False
     
-    def get_collection_info(self) -> dict:
+    def get_collection_info(self) -> dict[str, Any]:
         """Get information about the docs collection."""
         try:
             info = self.qdrant.get_collection(self.COLLECTION_NAME)
             return {
                 "name": self.COLLECTION_NAME,
-                "vectors_count": info.vectors_count,
+                "vectors_count": getattr(info, "vectors_count", getattr(info, "indexed_vectors_count", 0)),
                 "points_count": info.points_count,
-                "status": info.status.value,
+                "status": getattr(info.status, "value", str(info.status)),
             }
         except Exception as e:
             return {"error": str(e)}

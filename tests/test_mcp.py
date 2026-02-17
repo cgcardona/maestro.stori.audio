@@ -1,4 +1,6 @@
 """Tests for MCP server functionality."""
+from typing import Any
+
 import pytest
 import pytest_asyncio
 from app.main import app
@@ -7,25 +9,37 @@ from app.mcp.server import StoriMCPServer, ToolCallResult
 from app.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, DAW_TOOLS, TOOL_CATEGORIES
 
 
+def _tool_dict(tool: Any) -> dict[str, Any]:
+    """Ensure we have a dict for a single tool (MCP_TOOLS is list of dicts)."""
+    if isinstance(tool, dict):
+        return tool
+    return {}
+
+
 class TestMCPTools:
     """Tests for MCP tool definitions."""
-    
+
     def test_all_tools_have_required_fields(self):
         """Verify all tools have name, description, and inputSchema."""
         for tool in MCP_TOOLS:
-            assert "name" in tool, f"Tool missing name: {tool}"
-            assert "description" in tool, f"Tool {tool.get('name')} missing description"
-            assert "inputSchema" in tool, f"Tool {tool.get('name')} missing inputSchema"
-    
+            t = _tool_dict(tool)
+            assert "name" in t, f"Tool missing name: {tool}"
+            assert "description" in t, f"Tool {t.get('name')} missing description"
+            assert "inputSchema" in t, f"Tool {t.get('name')} missing inputSchema"
+
     def test_tool_names_are_prefixed(self):
         """All MCP tools should be prefixed with 'stori_'."""
         for tool in MCP_TOOLS:
-            assert tool["name"].startswith("stori_"), f"Tool {tool['name']} should start with 'stori_'"
-    
+            t = _tool_dict(tool)
+            name = str(t.get("name", ""))
+            assert name.startswith("stori_"), f"Tool {name} should start with 'stori_'"
+
     def test_tool_categories_complete(self):
         """Every tool should be in a category."""
         for tool in MCP_TOOLS:
-            assert tool["name"] in TOOL_CATEGORIES, f"Tool {tool['name']} not in TOOL_CATEGORIES"
+            t = _tool_dict(tool)
+            name = str(t.get("name", ""))
+            assert name in TOOL_CATEGORIES, f"Tool {name} not in TOOL_CATEGORIES"
     
     def test_server_side_and_daw_tools_disjoint(self):
         """Server-side and DAW tools should not overlap."""

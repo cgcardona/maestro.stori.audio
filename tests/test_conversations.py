@@ -327,12 +327,13 @@ async def test_add_assistant_message_with_metadata(db_session, test_conversation
     await db_session.commit()
     
     assert message.model_used == "anthropic/claude-3.5-sonnet"
+    assert message.tokens_used is not None
     assert message.tokens_used["prompt"] == 200
     assert message.tokens_used["completion"] == 100
     assert message.cost_cents == 25
     assert message.cost == 0.25
-    assert len(message.tool_calls) == 2
-    assert message.extra_metadata["user_rating"] == 5
+    assert message.tool_calls is not None and len(message.tool_calls) == 2
+    assert message.extra_metadata is not None and message.extra_metadata["user_rating"] == 5
 
 
 @pytest.mark.asyncio
@@ -359,6 +360,7 @@ async def test_add_message_updates_conversation_timestamp(
         select(Conversation).where(Conversation.id == test_conversation.id)
     )
     conversation = result.scalar_one()
+    assert conversation is not None
     reloaded_at = conversation.updated_at
     if reloaded_at.tzinfo is None:
         reloaded_at = reloaded_at.replace(tzinfo=timezone.utc)
@@ -396,7 +398,7 @@ async def test_add_action(db_session, test_conversation):
     assert action.message_id == message.id
     assert action.action_type == "track_added"
     assert action.success is True
-    assert action.extra_metadata["track_id"] == "track-456"
+    assert action.extra_metadata is not None and action.extra_metadata["track_id"] == "track-456"
 
 
 @pytest.mark.asyncio
@@ -613,8 +615,8 @@ async def test_full_conversation_flow(db_session, test_user):
         conversation_id=conversation.id,
         user_id=test_user.id,
     )
-    
-    assert len(loaded.messages) == 2
+    assert loaded is not None
+    assert loaded.messages is not None and len(loaded.messages) == 2
     assert loaded.messages[0].content == "Create a beat"
     assert loaded.messages[1].content == "I've created a beat for you."
     assert len(loaded.messages[1].actions) == 2

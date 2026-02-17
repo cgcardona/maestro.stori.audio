@@ -24,7 +24,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 ## Coding standards
 
 - **Style:** Black-compatible formatting. Prefer short, readable names; avoid abbreviations unless standard (e.g. `id`, `db`, `api`).
-- **Typing:** Use type hints for all public functions and module boundaries. Use `list[...]`, `dict[...]` (Python 3.9+ style). Mark optional with `Optional[...]` or `X | None` where appropriate.
+- **Typing:** Use type hints for all public functions and module boundaries. Use `list[...]`, `dict[...]` (Python 3.9+ style). Mark optional with `Optional[...]` or `X | None` where appropriate. Run **mypy** before committing: `mypy app/ tests/` (or in Docker: `docker compose exec composer mypy app/ tests/`). CI runs mypy; do not add `# type: ignore` without a short comment. New code should satisfy mypy with the project config in `pyproject.toml` ([tool.mypy]).
 - **Async:** Use `async def` and `await` for I/O (DB, HTTP, Orpheus, LLM). Use `@pytest.mark.anyio` or `asyncio_mode = "auto"` for async tests; prefer `anyio` where fixtures are async.
 - **Imports:** Group stdlib, third-party, then `app.*`. Prefer explicit imports; avoid `*` except for re-exports in `__init__.py`.
 - **Config:** Read from `app.config.settings` (Pydantic Settings). No hardcoded secrets; no committing `.env` or keys. Use `STORI_*` env vars as documented in `docs/guides/setup.md`.
@@ -79,3 +79,4 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 | Auth       | `app/auth/`            | `tests/test_auth*.py`      |
 | DB         | `app/db/`              | `tests/test_database.py`   |
 | Docs index | —                     | `docs/README.md`           |
+| Mypy       | `pyproject.toml` [tool.mypy] | `mypy app/ tests/` (CI + pre-commit) |

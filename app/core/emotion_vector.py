@@ -90,13 +90,14 @@ class EmotionVector:
     
     def distance(self, other: EmotionVector) -> float:
         """Euclidean distance to another emotion vector."""
-        return (
-            (self.energy - other.energy) ** 2 +
-            (self.valence - other.valence) ** 2 +
-            (self.tension - other.tension) ** 2 +
-            (self.intimacy - other.intimacy) ** 2 +
-            (self.motion - other.motion) ** 2
-        ) ** 0.5
+        d2 = (
+            (self.energy - other.energy) ** 2
+            + (self.valence - other.valence) ** 2
+            + (self.tension - other.tension) ** 2
+            + (self.intimacy - other.intimacy) ** 2
+            + (self.motion - other.motion) ** 2
+        )
+        return float(d2**0.5)
     
     def __repr__(self) -> str:
         return (

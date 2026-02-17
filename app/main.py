@@ -5,6 +5,7 @@ FastAPI application for AI-powered music composition.
 """
 import logging
 from contextlib import asynccontextmanager
+from typing import Any, Callable, cast
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -109,7 +110,10 @@ app = FastAPI(
 
 # Add rate limiter to app state and exception handler
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(
+    RateLimitExceeded,
+    cast(Callable[..., Any], _rate_limit_exceeded_handler),
+)
 
 # Security headers middleware (added first, runs last)
 app.add_middleware(SecurityHeadersMiddleware)

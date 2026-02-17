@@ -15,7 +15,7 @@ import logging
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from app.core.emotion_vector import EmotionVector
 
@@ -29,7 +29,7 @@ class Text2MidiResult:
     success: bool
     midi_path: Optional[str] = None
     model_used: str = "text2midi"
-    metadata: dict = None
+    metadata: Optional[dict] = None
     error: Optional[str] = None
     
     def __post_init__(self):
@@ -438,7 +438,7 @@ class Text2MidiMelodyBackend:
     async def is_available(self) -> bool:
         return await self._backend.is_available()
     
-    async def generate(self, request) -> "MelodyGenerationResult":
+    async def generate(self, request: Any) -> Any:
         """Generate melody using text2midi."""
         from app.services.neural.melody_generator import MelodyGenerationResult
         
@@ -456,5 +456,5 @@ class Text2MidiMelodyBackend:
             notes=result.notes,
             success=result.success,
             model_used=result.model_used,
-            metadata=result.metadata,
+            metadata=result.metadata or {},
         )

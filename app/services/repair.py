@@ -44,7 +44,7 @@ def _salience_at_beat(notes: list[dict], beat: float, salience_weight: dict) -> 
 def _can_add_at_beat(notes: list[dict], beat: float, layer: str, max_salience: float, salience_weight: dict) -> bool:
     current = _salience_at_beat(notes, beat, salience_weight)
     add = salience_weight.get(layer, 0.5)
-    return current + add <= max_salience
+    return bool(current + add <= max_salience)
 
 
 def _apply_salience_cap(notes: list[dict], drum_spec: DrumSpec) -> list[dict]:

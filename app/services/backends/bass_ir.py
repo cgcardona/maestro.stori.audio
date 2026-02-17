@@ -5,7 +5,7 @@ Renders BassSpec + GlobalSpec + HarmonicSpec → MIDI notes. Used for instrument
 Supports coupled generation with RhythmSpine from drum output.
 """
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from app.services.backends.base import (
     MusicGeneratorBackend,
@@ -13,7 +13,7 @@ from app.services.backends.base import (
     GeneratorBackend,
 )
 from app.core.music_spec_ir import MusicSpec, default_bass_spec, default_drum_spec, default_harmonic_spec, GlobalSpec
-from app.services.backends.bass_ir_renderer import render_bass_spec
+from app.services.backends.bass_ir_renderer import BassRenderResult, render_bass_spec
 from app.services.groove_engine import RhythmSpine
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ class BassSpecBackend(MusicGeneratorBackend):
                 coupling_info = f"coupled (explicit: {len(drum_kick_beats)} kicks)"
             
             # Render bass with coupling
-            notes = render_bass_spec(
+            raw_notes = render_bass_spec(
                 bass_spec,
                 global_spec,
                 harmonic_spec,
@@ -86,10 +86,10 @@ class BassSpecBackend(MusicGeneratorBackend):
                 drum_kick_beats=drum_kick_beats,
                 rhythm_spine=rhythm_spine,
             )
-            
+            notes_list: list[dict[str, Any]] = raw_notes.notes if isinstance(raw_notes, BassRenderResult) else raw_notes
             out = [
                 {"pitch": n["pitch"], "start_beat": n["start_beat"], "duration_beats": n["duration_beats"], "velocity": n["velocity"]}
-                for n in notes
+                for n in notes_list
             ]
             
             logger.info(f"BassSpecBackend: {len(out)} notes, {coupling_info}")

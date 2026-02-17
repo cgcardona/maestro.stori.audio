@@ -7,7 +7,7 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import select, func, or_, desc
@@ -476,7 +476,7 @@ def _sanitize_tool_call_id(tool_call_id: str) -> str:
     return sanitized
 
 
-def format_conversation_history(conversation: Conversation) -> list[dict]:
+def format_conversation_history(conversation: Conversation) -> list[dict[str, Any]]:
     """
     Format conversation messages for LLM context.
     
@@ -491,7 +491,7 @@ def format_conversation_history(conversation: Conversation) -> list[dict]:
     Returns:
         List of message dictionaries ready for LLM API
     """
-    formatted_messages = []
+    formatted_messages: list[dict[str, Any]] = []
     
     for message in conversation.messages:
         if message.role == "user":
@@ -501,7 +501,7 @@ def format_conversation_history(conversation: Conversation) -> list[dict]:
             })
         
         elif message.role == "assistant":
-            msg = {
+            msg: dict[str, Any] = {
                 "role": "assistant",
                 "content": message.content or "",
             }
@@ -642,15 +642,15 @@ async def get_optimized_context(
     return formatted, entity_summary
 
 
-def _format_single_message(message: ConversationMessage) -> list[dict]:
+def _format_single_message(message: ConversationMessage) -> list[dict[str, Any]]:
     """Format a single message for LLM context."""
-    formatted = []
+    formatted: list[dict[str, Any]] = []
     
     if message.role == "user":
         formatted.append({"role": "user", "content": message.content})
     
     elif message.role == "assistant":
-        msg = {"role": "assistant", "content": message.content or ""}
+        msg: dict[str, Any] = {"role": "assistant", "content": message.content or ""}
         
         if message.tool_calls:
             openai_tool_calls = []
@@ -769,7 +769,7 @@ def _build_context_summary(messages: list[ConversationMessage]) -> str:
     
     if actions_taken:
         # Deduplicate and count
-        action_counts = {}
+        action_counts: dict[str, int] = {}
         for a in actions_taken:
             action_counts[a] = action_counts.get(a, 0) + 1
         

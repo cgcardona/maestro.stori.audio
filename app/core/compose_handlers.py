@@ -12,7 +12,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional, cast
 
 from app.config import settings
 from app.core.entity_context import build_entity_context_for_llm
@@ -67,6 +67,73 @@ class UsageTracker:
         self.completion_tokens += completion
 
 
+def _store_variation(
+    variation,
+    project_context: dict[str, Any],
+    store: "StateStore",
+) -> None:
+    """Persist a Variation to the VariationStore so commit/discard can find it.
+
+    Called from the compose/stream path after ``execute_plan_variation`` returns.
+    Mirrors the storage logic in the ``/variation/propose`` background task.
+    """
+    from app.variation.storage.variation_store import (
+        get_variation_store,
+        PhraseRecord,
+    )
+    from app.variation.core.state_machine import VariationStatus
+
+    project_id = project_context.get("projectId", "")
+    base_state_id = store.get_state_id()
+
+    vstore = get_variation_store()
+    record = vstore.create(
+        project_id=project_id,
+        base_state_id=base_state_id,
+        intent=variation.intent,
+        variation_id=variation.variation_id,
+    )
+
+    # CREATED → STREAMING → READY (fast-forward since generation is already done)
+    record.transition_to(VariationStatus.STREAMING)
+    record.ai_explanation = variation.ai_explanation
+    record.affected_tracks = variation.affected_tracks
+    record.affected_regions = variation.affected_regions
+
+    for phrase in variation.phrases:
+        seq = record.next_sequence()
+        record.add_phrase(PhraseRecord(
+            phrase_id=phrase.phrase_id,
+            variation_id=variation.variation_id,
+            sequence=seq,
+            track_id=phrase.track_id,
+            region_id=phrase.region_id,
+            beat_start=phrase.start_beat,
+            beat_end=phrase.end_beat,
+            label=phrase.label,
+            diff_json={
+                "phrase_id": phrase.phrase_id,
+                "track_id": phrase.track_id,
+                "region_id": phrase.region_id,
+                "start_beat": phrase.start_beat,
+                "end_beat": phrase.end_beat,
+                "label": phrase.label,
+                "tags": phrase.tags,
+                "explanation": phrase.explanation,
+                "note_changes": [nc.model_dump() for nc in phrase.note_changes],
+                "controller_changes": phrase.controller_changes,
+            },
+            ai_explanation=phrase.explanation,
+            tags=phrase.tags,
+        ))
+
+    record.transition_to(VariationStatus.READY)
+    logger.info(
+        f"Variation stored: {variation.variation_id[:8]} "
+        f"({len(variation.phrases)} phrases, status=READY)"
+    )
+
+
 async def orchestrate(
     prompt: str,
     project_context: Optional[dict[str, Any]] = None,
@@ -99,10 +166,12 @@ async def orchestrate(
     
     llm = LLMClient(model=selected_model)
     
-    # Get or create StateStore for this conversation
+    # Get or create StateStore — use project_id as primary key so the
+    # variation commit endpoint can find the same store instance.
+    _project_id = project_context.get("projectId") or ""
     store = get_or_create_store(
-        conversation_id=conversation_id or "default",
-        project_id=project_context.get("projectId"),
+        conversation_id=_project_id or conversation_id or "default",
+        project_id=_project_id,
     )
     store.sync_from_client(project_context)
     
@@ -249,14 +318,15 @@ async def _handle_reasoning(
         if llm.supports_reasoning():
             logger.info("🌊 Using streaming path for reasoning model")
             response_text = ""
-            async for chunk in llm.chat_completion_stream(
+            async for raw in llm.chat_completion_stream(
                 messages=messages,
                 tools=[],
                 tool_choice="none",
             ):
-                if chunk.get("type") == "reasoning_delta":
+                event = cast(dict[str, Any], raw)
+                if event.get("type") == "reasoning_delta":
                     # Chain of Thought reasoning (extended reasoning from OpenRouter)
-                    reasoning_text = chunk.get("text", "")
+                    reasoning_text = event.get("text", "")
                     if reasoning_text:
                         # Sanitize reasoning to remove internal implementation details
                         sanitized = sanitize_reasoning(reasoning_text)
@@ -265,16 +335,16 @@ async def _handle_reasoning(
                                 "type": "reasoning",
                                 "content": sanitized,
                             })
-                elif chunk.get("type") == "content_delta":
+                elif event.get("type") == "content_delta":
                     # User-facing response
-                    content_text = chunk.get("text", "")
+                    content_text = event.get("text", "")
                     if content_text:
                         response_text += content_text
                         yield await sse_event({"type": "content", "content": content_text})
-                elif chunk.get("type") == "done":
+                elif event.get("type") == "done":
                     response = LLMResponse(
-                        content=response_text or chunk.get("content"),
-                        usage=chunk.get("usage", {})
+                        content=response_text or event.get("content"),
+                        usage=event.get("usage", {})
                     )
             duration_ms = (time.time() - start_time) * 1000
         else:
@@ -443,6 +513,9 @@ async def _handle_composing(
                     f"{variation.total_changes} changes, {len(variation.phrases)} phrases"
                 )
 
+                # Persist to VariationStore so commit/discard can find it
+                _store_variation(variation, project_context, store)
+
                 # Emit meta event
                 note_counts = variation.note_counts
                 yield await sse_event({
@@ -603,7 +676,7 @@ async def _handle_editing(
     # Build allowed tools only (Cursor-style action space shaping)
     allowed_tools = [t for t in ALL_TOOLS if t["function"]["name"] in route.allowed_tool_names]
     
-    messages = [{"role": "system", "content": sys_prompt}]
+    messages: list[dict[str, Any]] = [{"role": "system", "content": sys_prompt}]
     messages.append({"role": "system", "content": build_entity_context_for_llm(store)})
     
     if project_context:
@@ -649,6 +722,8 @@ async def _handle_editing(
             
             duration_ms = (time.time() - start_time) * 1000
             
+            if response is None:
+                break
             if response.usage:
                 log_llm_call(
                     trace.trace_id,
@@ -665,6 +740,8 @@ async def _handle_editing(
                     )
         
         # Enforce single tool for force_stop_after
+        if response is None:
+            break
         if route.force_stop_after:
             response = enforce_single_tool(response)
         
@@ -755,8 +832,8 @@ async def _handle_editing(
                         enriched_params["gmProgram"] = inference.program
             
             elif tc.name == "stori_add_midi_region":
-                track_id = enriched_params.get("trackId")
-                region_name = enriched_params.get("name", "Region")
+                midi_region_track_id: Optional[str] = enriched_params.get("trackId")
+                region_name: str = str(enriched_params.get("name", "Region"))
                 
                 # CRITICAL: Always generate new UUID for entity-creating tools
                 # LLMs sometimes hallucinate duplicate UUIDs, causing frontend crashes
@@ -767,10 +844,10 @@ async def _handle_editing(
                     )
                 
                 # Always generate fresh UUID via StateStore
-                if track_id:
+                if midi_region_track_id:
                     try:
                         region_id = store.create_region(
-                            region_name, track_id,
+                            region_name, midi_region_track_id,
                             metadata={
                                 "startBeat": enriched_params.get("startBeat", 0),
                                 "durationBeats": enriched_params.get("durationBeats", 16),
@@ -830,7 +907,7 @@ async def _handle_editing(
             logger.info(f"[{trace.trace_id[:8]}] ✅ Force stop after {len(tool_calls_collected)} tool(s)")
             break
         
-        if response.finish_reason == "stop":
+        if response is not None and response.finish_reason == "stop":
             break
     
     # =========================================================================
@@ -842,7 +919,7 @@ async def _handle_editing(
         
         # Convert collected tool calls to ToolCall objects
         tool_call_objs = [
-            ToolCall(name=tc["tool"], params=tc["params"])
+            ToolCall(name=cast(str, tc["tool"]), params=cast(dict[str, Any], tc["params"]))
             for tc in tool_calls_collected
         ]
         
@@ -853,7 +930,10 @@ async def _handle_editing(
             conversation_id=None,  # EDITING doesn't use conversation_id here
             explanation=None,
         )
-        
+
+        # Persist to VariationStore so commit/discard can find it
+        _store_variation(variation, project_context, store)
+
         # Emit meta event (overall summary per spec)
         note_counts = variation.note_counts
         yield await sse_event({

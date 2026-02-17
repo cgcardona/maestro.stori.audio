@@ -4,9 +4,10 @@ Async SQLAlchemy database setup.
 Supports PostgreSQL (production) and SQLite (development).
 """
 import logging
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator, Optional
 
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -24,8 +25,8 @@ class Base(DeclarativeBase):
 
 
 # Global engine and session factory (initialized on startup)
-_engine = None
-_async_session_factory = None
+_engine: Optional[AsyncEngine] = None
+_async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 
 
 def get_database_url() -> str:

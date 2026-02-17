@@ -7,7 +7,7 @@ Allows Claude, Cursor, and other MCP clients to control Stori DAW.
 import json
 import logging
 import asyncio
-from typing import Any, Optional, Callable, Awaitable
+from typing import Any, Optional, Callable, Awaitable, cast
 from dataclasses import dataclass, field
 
 from app.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, TOOL_CATEGORIES
@@ -95,7 +95,7 @@ class StoriMCPServer:
         logger.info(f"MCP tool call: {name}")
         logger.debug(f"Arguments: {arguments}")
 
-        allowed_tools = {t["name"] for t in MCP_TOOLS}
+        allowed_tools = cast(set[str], {t["name"] for t in MCP_TOOLS})
         validation = validate_tool_call(name, arguments, allowed_tools, registry=None)
         if not validation.valid:
             logger.warning(f"MCP tool validation failed: {validation.error_message}")

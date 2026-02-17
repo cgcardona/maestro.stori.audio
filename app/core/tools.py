@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 
 # =============================================================================
@@ -538,5 +538,5 @@ def tools_by_kind(kind: ToolKind) -> list[dict[str, Any]]:
 def tool_schema_by_name(name: str) -> Optional[dict[str, Any]]:
     for t in ALL_TOOLS:
         if t["function"]["name"] == name:
-            return t
+            return cast(dict[str, Any], t)
     return None

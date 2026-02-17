@@ -120,7 +120,8 @@ class TestProposeVariation:
         """Test successful variation proposal returns 200 with variation_id and stream_url."""
         with patch("app.api.routes.variation.check_budget", new_callable=AsyncMock), \
              patch("app.api.routes.variation.get_or_create_store") as mock_store, \
-             patch("app.api.routes.variation.get_variation_store") as mock_vstore:
+             patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
+             patch("app.api.routes.variation._run_generation", new_callable=AsyncMock):
 
             # Setup mocks
             mock_store_instance = MagicMock()
@@ -212,9 +213,8 @@ class TestProposeVariation:
         with \
              patch("app.api.routes.variation.check_budget", new_callable=AsyncMock), \
              patch("app.api.routes.variation.get_or_create_store") as mock_store, \
-             patch("app.api.routes.variation.LLMClient") as mock_llm_class, \
-             patch("app.api.routes.variation.get_intent_result_with_llm", new_callable=AsyncMock) as mock_intent, \
-             patch("app.api.routes.variation.get_variation_store") as mock_vstore:
+             patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
+             patch("app.api.routes.variation._run_generation", new_callable=AsyncMock):
 
             # Setup mocks
             mock_store_instance = MagicMock()
@@ -226,25 +226,6 @@ class TestProposeVariation:
             mock_record.variation_id = "var-test-123"
             mock_vstore_instance.create.return_value = mock_record
             mock_vstore.return_value = mock_vstore_instance
-
-            mock_llm_instance = MagicMock()
-            mock_llm_instance.close = AsyncMock()
-            mock_llm_class.return_value = mock_llm_instance
-
-            # Mock REASONING intent (not COMPOSING)
-            from app.core.intent import IntentResult, Intent, SSEState
-            mock_intent.return_value = IntentResult(
-                intent=Intent.ASK_GENERAL,
-                sse_state=SSEState.REASONING,
-                confidence=0.9,
-                slots={},
-                tools=[],
-                allowed_tool_names=set(),
-                tool_choice="none",
-                force_stop_after=False,
-                requires_planner=False,
-                reasons=(),
-            )
 
             # Make request
             request_data = {
@@ -487,7 +468,7 @@ class TestStreamVariation:
     ):
         """Test streaming returns 404 for unknown variation_id."""
         response = await variation_client.get(
-            "/api/v1/variation/stream?variation_id=var-123",
+            "/api/v1/variation/stream?variation_id=nonexistent-999",
         )
 
         assert response.status_code == 404

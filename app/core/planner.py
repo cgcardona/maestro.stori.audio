@@ -122,8 +122,19 @@ async def build_execution_plan(
         )
     
     # Complete the plan (infer missing edits)
+    if validation.plan is None:
+        return ExecutionPlan(
+            notes=["Plan schema missing after validation"],
+            llm_response_text=llm_response_text,
+            validation_result=validation,
+        )
     plan_schema = complete_plan(validation.plan)
-    
+    if plan_schema is None:
+        return ExecutionPlan(
+            notes=["Plan schema could not be completed"],
+            llm_response_text=llm_response_text,
+            validation_result=validation,
+        )
     if plan_schema.is_empty():
         logger.warning("⚠️ Plan is empty after completion")
         return ExecutionPlan(
@@ -335,7 +346,17 @@ def build_plan_from_dict(plan_dict: dict[str, Any]) -> ExecutionPlan:
             validation_result=validation,
         )
     
+    if validation.plan is None:
+        return ExecutionPlan(
+            notes=["Plan schema missing after validation"],
+            validation_result=validation,
+        )
     plan_schema = complete_plan(validation.plan)
+    if plan_schema is None:
+        return ExecutionPlan(
+            notes=["Plan schema could not be completed"],
+            validation_result=validation,
+        )
     tool_calls = _schema_to_tool_calls(plan_schema)
     
     return ExecutionPlan(

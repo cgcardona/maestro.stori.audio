@@ -242,13 +242,13 @@ class TestComposePreviewEndpoint:
     @pytest.mark.anyio
     async def test_preview_composing_returns_plan(self, client, auth_headers, test_user):
         """COMPOSING intent returns preview_available=True with plan."""
-        from app.core.intent import IntentResult, Intent, SSEState
+        from app.core.intent import IntentResult, Intent, Slots, SSEState
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
             sse_state=SSEState.COMPOSING,
             confidence=0.9,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",
@@ -279,13 +279,13 @@ class TestComposePreviewEndpoint:
     @pytest.mark.anyio
     async def test_preview_non_composing_returns_unavailable(self, client, auth_headers, test_user):
         """Non-COMPOSING intent returns preview_available=False."""
-        from app.core.intent import IntentResult, Intent, SSEState
+        from app.core.intent import IntentResult, Intent, Slots, SSEState
 
         fake_route = IntentResult(
             intent=Intent.UNKNOWN,
             sse_state=SSEState.REASONING,
             confidence=0.9,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",

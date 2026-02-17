@@ -5,6 +5,7 @@ Ensures X-Device-ID is required and validated; rate limiting is applied.
 """
 import pytest
 import uuid
+from typing import Any, cast
 from httpx import AsyncClient, ASGITransport
 
 from app.main import app
@@ -79,8 +80,9 @@ async def test_bundle_download_url_valid_uuid(asset_client):
 @pytest.mark.asyncio
 async def test_asset_endpoint_returns_429_when_rate_limited(asset_client):
     """When rate limit is exceeded, asset endpoint returns 429."""
-    from unittest.mock import patch
     from types import SimpleNamespace
+    from unittest.mock import patch
+
     from slowapi.errors import RateLimitExceeded
 
     # RateLimitExceeded(limit) expects a Limit-like object with .error_message and .limit
@@ -88,7 +90,7 @@ async def test_asset_endpoint_returns_429_when_rate_limited(asset_client):
     # Patch the service call used by the route so the handler raises and app returns 429
     with patch(
         "app.services.assets.list_drum_kits",
-        side_effect=RateLimitExceeded(fake_limit),
+        side_effect=RateLimitExceeded(cast(Any, fake_limit)),
     ):
         response = await asset_client.get(
             "/api/v1/assets/drum-kits",

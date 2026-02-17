@@ -17,7 +17,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional, cast
 
 from app.config import settings
 
@@ -107,7 +107,10 @@ class LLMClient:
     
     def _get_api_key(self) -> str:
         if self.provider == LLMProvider.OPENROUTER:
-            return settings.openrouter_api_key
+            key = settings.openrouter_api_key
+            if key is None:
+                raise ValueError("OpenRouter API key not configured")
+            return key
         raise ValueError(f"No API key configured for provider: {self.provider}")
     
     def _get_base_url(self) -> str:
@@ -231,7 +234,7 @@ class LLMClient:
         
         logger.debug(f"LLM request: {len(messages)} messages, {len(tools) if tools else 0} tools")
         
-        last_error = None
+        last_error: Optional[Exception] = None
         for attempt in range(max_retries + 1):
             if attempt > 0:
                 backoff = 2 ** attempt
@@ -260,7 +263,8 @@ class LLMClient:
                 if e.response.status_code == 400:
                     error_body = e.response.text
                     logger.error(f"400 Bad Request: {error_body}")
-                    logger.debug(f"Request payload had {len(payload.get('messages', []))} messages")
+                    msgs = payload.get("messages") or []
+                    logger.debug(f"Request payload had {len(msgs) if isinstance(msgs, list) else 0} messages")
                 if e.response.status_code in (429, 500, 502, 503, 504):
                     continue
                 raise
@@ -331,7 +335,8 @@ class LLMClient:
                     error_str = error_text.decode()[:500]
                     logger.error(f"Stream error {response.status_code}: {error_str}")
                     if response.status_code == 400:
-                        logger.debug(f"Request had {len(payload.get('messages', []))} messages, caching_enabled={bool(cached_tools != tools)}")
+                        msgs = payload.get("messages") or []
+                        logger.debug(f"Request had {len(msgs) if isinstance(msgs, list) else 0} messages, caching_enabled={bool(cached_tools != tools)}")
                     response.raise_for_status()
                 
                 chunk_count = 0

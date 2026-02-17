@@ -34,7 +34,7 @@ class TestChordRootPitchClass:
 
     def test_empty_or_none_defaults_to_c(self):
         assert chord_root_pitch_class("") == 0
-        assert chord_root_pitch_class(None) == 0
+        assert chord_root_pitch_class(None) == 0  # type: ignore[arg-type]
 
     def test_strips_whitespace(self):
         assert chord_root_pitch_class("  G  ") == 7

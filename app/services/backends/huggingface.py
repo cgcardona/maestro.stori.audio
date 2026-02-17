@@ -211,7 +211,7 @@ class HuggingFaceBackend(MusicGeneratorBackend):
             
             # Check if it's already note data
             if isinstance(result, dict) and "notes" in result:
-                return result["notes"]
+                return list(result["notes"]) if isinstance(result["notes"], list) else []
             
             # Check if it's generated text that needs parsing
             if isinstance(result, dict) and "generated_text" in result:

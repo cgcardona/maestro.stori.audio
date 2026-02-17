@@ -21,7 +21,7 @@ class TestComposeRequest:
         project = {"name": "Test", "tempo": 120}
         req = ComposeRequest(prompt="Add drums", mode="edit", project=project)
         assert req.mode == "edit"
-        assert req.project["tempo"] == 120
+        assert req.project is not None and req.project["tempo"] == 120
     
     def test_empty_prompt(self):
         """Test that empty prompt fails validation."""

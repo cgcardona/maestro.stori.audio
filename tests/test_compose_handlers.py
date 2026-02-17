@@ -7,7 +7,7 @@ from app.core.compose_handlers import (
     _create_editing_fallback_route,
     orchestrate,
 )
-from app.core.intent import IntentResult, Intent, SSEState
+from app.core.intent import IntentResult, Intent, Slots, SSEState
 from app.core.intent_config import _PRIMITIVES_REGION, _PRIMITIVES_TRACK
 
 
@@ -38,7 +38,7 @@ class TestCreateEditingFallbackRoute:
             intent=Intent.GENERATE_MUSIC,
             sse_state=SSEState.COMPOSING,
             confidence=0.8,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",
@@ -61,7 +61,7 @@ class TestCreateEditingFallbackRoute:
             intent=Intent.GENERATE_MUSIC,
             sse_state=SSEState.COMPOSING,
             confidence=0.7,
-            slots={"tempo": 90},
+            slots=Slots(extras={"tempo": 90}),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",
@@ -70,7 +70,7 @@ class TestCreateEditingFallbackRoute:
             reasons=(),
         )
         out = _create_editing_fallback_route(route)
-        assert out.slots == {"tempo": 90}
+        assert out.slots.extras.get("tempo") == 90
 
 
 class TestOrchestrateStream:
@@ -83,7 +83,7 @@ class TestOrchestrateStream:
             intent=Intent.UNKNOWN,
             sse_state=SSEState.REASONING,
             confidence=0.9,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",
@@ -138,7 +138,7 @@ class TestOrchestrateStream:
             intent=Intent.GENERATE_MUSIC,
             sse_state=SSEState.COMPOSING,
             confidence=0.9,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",
@@ -195,7 +195,7 @@ class TestOrchestrateStream:
             intent=Intent.ASK_STORI_DOCS,
             sse_state=SSEState.REASONING,
             confidence=0.9,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",
@@ -237,7 +237,7 @@ class TestOrchestrateStream:
             intent=Intent.UNKNOWN,
             sse_state=SSEState.REASONING,
             confidence=0.9,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",
@@ -284,7 +284,7 @@ class TestOrchestrateStream:
             intent=Intent.GENERATE_MUSIC,
             sse_state=SSEState.COMPOSING,
             confidence=0.9,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",
@@ -329,7 +329,7 @@ class TestOrchestrateStream:
             intent=Intent.GENERATE_MUSIC,
             sse_state=SSEState.COMPOSING,
             confidence=0.9,
-            slots={},
+            slots=Slots(),
             tools=[],
             allowed_tool_names=set(),
             tool_choice="none",

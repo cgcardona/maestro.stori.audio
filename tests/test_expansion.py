@@ -45,9 +45,9 @@ class TestToolCall:
         """ToolCall should be immutable (dataclass frozen=True)."""
         tc = ToolCall("stori_play", {"k": "v"})
         with pytest.raises(AttributeError):
-            tc.name = "other"
+            tc.name = "other"  # type: ignore[misc]
         with pytest.raises(AttributeError):
-            tc.params = {}
+            tc.params = {}  # type: ignore[misc]
 
 
 class TestDedupeToolCalls:

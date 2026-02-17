@@ -158,9 +158,9 @@ def _render_core(
     bar_start: float,
     bar_index: int,
     bar_in_phrase: int,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Kick + snare/clap from groove template."""
-    notes = []
+    notes: list[dict[str, Any]] = []
     groove = drum_spec.groove_template
     core = drum_spec.layers.get("core")
     if not core:
@@ -193,9 +193,9 @@ def _render_timekeepers(
     bar_start: float,
     bar_index: int,
     bar_in_phrase: int,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Hi-hats from groove subdivision."""
-    notes = []
+    notes: list[dict[str, Any]] = []
     layer = drum_spec.layers.get("timekeepers")
     if not layer:
         return notes
@@ -225,9 +225,9 @@ def _render_fills(
     global_spec: GlobalSpec,
     bar_start: float,
     bar_index: int,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Toms/snare roll only in fill bars."""
-    notes = []
+    notes: list[dict[str, Any]] = []
     if bar_index not in drum_spec.constraints.fill_bars:
         return notes
     layer = drum_spec.layers.get("fills")
@@ -254,9 +254,9 @@ def _render_ghost(
     bar_start: float,
     bar_index: int,
     bar_in_phrase: int,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Sparse ghost/rim hits on offbeats."""
-    notes = []
+    notes: list[dict[str, Any]] = []
     layer = drum_spec.layers.get("ghost_layer")
     if not layer:
         return notes
@@ -282,9 +282,9 @@ def _render_cymbal_punctuation(
     global_spec: GlobalSpec,
     bar_start: float,
     bar_index: int,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Crash/ride on section starts and end of fill bars."""
-    notes = []
+    notes: list[dict[str, Any]] = []
     if bar_index not in drum_spec.constraints.fill_bars and bar_index % 4 != 0:
         return notes
     layer = drum_spec.layers.get("cymbal_punctuation")
@@ -308,9 +308,9 @@ def _render_ear_candy(
     global_spec: GlobalSpec,
     bar_start: float,
     bar_index: int,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Very sparse perc."""
-    notes = []
+    notes: list[dict[str, Any]] = []
     layer = drum_spec.layers.get("ear_candy")
     if not layer or random.random() > layer.probability:
         return notes
@@ -355,7 +355,7 @@ def render_drum_spec(
     Returns:
         List of notes, or DrumRenderResult if return_result=True
     """
-    notes = []
+    notes: list[dict[str, Any]] = []
     layer_of: dict = {}  # id(note) -> layer_name for salience
     salience_weight = drum_spec.salience_weight
     bars = global_spec.bars

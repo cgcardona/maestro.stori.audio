@@ -22,6 +22,7 @@ def test_flat_int_and_float_to_string():
         "volume": 0.8,
         "enabled": True,
     })
+    assert out is not None
     assert out["gmProgram"] == "38"
     assert out["tempo"] == "140"
     assert out["volume"] == "0.8"
@@ -36,6 +37,7 @@ def test_nested_dict():
         "a": 1,
         "inner": {"b": 2, "c": 0.5},
     })
+    assert out is not None
     assert out["a"] == "1"
     assert out["inner"]["b"] == "2"
     assert out["inner"]["c"] == "0.5"
@@ -47,6 +49,7 @@ def test_list_of_numbers():
         "beats": [0, 4, 8, 12],
         "gains": [0.5, 1.0],
     })
+    assert out is not None
     assert out["beats"] == ["0", "4", "8", "12"]
     assert out["gains"] == ["0.5", "1.0"]
 
@@ -56,6 +59,7 @@ def test_list_of_dicts():
     out = normalize_tool_arguments({
         "items": [{"x": 1}, {"y": 2.0}],
     })
+    assert out is not None
     assert out["items"][0]["x"] == "1"
     assert out["items"][1]["y"] == "2.0"
 
@@ -67,6 +71,7 @@ def test_strings_and_none_unchanged():
         "trackId": "track-1",
         "optional": None,
     })
+    assert out is not None
     assert out["name"] == "Bass"
     assert out["trackId"] == "track-1"
     assert out["optional"] is None
@@ -77,6 +82,7 @@ def test_bool_in_list_unchanged():
     out = normalize_tool_arguments({
         "flags": [True, False, 1, 0],
     })
+    assert out is not None
     assert out["flags"][0] is True
     assert out["flags"][1] is False
     assert out["flags"][2] == "1"

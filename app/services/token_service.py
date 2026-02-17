@@ -157,12 +157,10 @@ async def cleanup_expired_tokens(
     result = await db.execute(
         delete(AccessToken).where(AccessToken.expires_at < now)
     )
-    
-    count = result.rowcount
+    count = getattr(result, "rowcount", 0) or 0
     if count > 0:
         logger.info(f"Cleaned up {count} expired tokens")
-    
-    return count
+    return int(count)
 
 
 async def get_user_active_tokens(

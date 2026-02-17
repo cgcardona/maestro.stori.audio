@@ -142,13 +142,13 @@ class TestValidatePlanJSON:
         assert len(result.errors) > 0
 
     def test_empty_plan_warns(self):
-        raw = {}
+        raw: dict = {}
         result = validate_plan_json(raw)
         assert result.valid is True
         assert len(result.warnings) > 0
 
     def test_multiple_generations(self):
-        raw = {
+        raw: dict = {
             "generations": [
                 {"role": "drums", "style": "trap", "tempo": 120, "bars": 4},
                 {"role": "bass", "style": "trap", "tempo": 120, "bars": 4, "key": "Cm"},
@@ -156,7 +156,7 @@ class TestValidatePlanJSON:
         }
         result = validate_plan_json(raw)
         assert result.valid is True
-        assert len(result.plan.generations) == 2
+        assert result.plan is not None and len(result.plan.generations) == 2
 
 
 # ---------------------------------------------------------------------------

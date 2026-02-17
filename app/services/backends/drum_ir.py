@@ -14,7 +14,7 @@ from app.services.backends.base import (
     GeneratorBackend,
 )
 from app.core.music_spec_ir import MusicSpec, default_drum_spec, GlobalSpec
-from app.services.backends.drum_ir_renderer import render_drum_spec
+from app.services.backends.drum_ir_renderer import DrumRenderResult, render_drum_spec
 from app.services.critic import score_drum_notes, ACCEPT_THRESHOLD_DRUM
 from app.services.repair import repair_drum_if_needed
 
@@ -72,12 +72,13 @@ class DrumSpecBackend(MusicGeneratorBackend):
             
             # Render drums with Groove Engine (apply_groove=True)
             # This handles layer labels, salience cap, and style-specific microtiming
-            notes = render_drum_spec(
+            raw_notes = render_drum_spec(
                 drum_spec,
                 global_spec,
                 apply_salience_cap=True,
                 apply_groove=True,  # Groove Engine v2
             )
+            notes: list[dict[str, Any]] = raw_notes.notes if isinstance(raw_notes, DrumRenderResult) else raw_notes
             
             # Build layer map for critic
             layer_map = {i: n.get("layer", "unknown") for i, n in enumerate(notes)}

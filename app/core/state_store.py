@@ -232,7 +232,10 @@ class StateStore:
     
     def commit(self, transaction: Transaction) -> None:
         """Commit a transaction, making all changes permanent."""
-        if transaction.id != self._active_transaction.id:
+        active = self._active_transaction
+        if active is None:
+            raise ValueError("No active transaction")
+        if transaction.id != active.id:
             raise ValueError("Cannot commit a transaction that is not active")
         
         if not transaction.is_active:
@@ -254,7 +257,10 @@ class StateStore:
     
     def rollback(self, transaction: Transaction) -> None:
         """Rollback a transaction, reverting all changes."""
-        if transaction.id != self._active_transaction.id:
+        active = self._active_transaction
+        if active is None:
+            raise ValueError("No active transaction")
+        if transaction.id != active.id:
             raise ValueError("Cannot rollback a transaction that is not active")
         
         if not transaction.is_active:

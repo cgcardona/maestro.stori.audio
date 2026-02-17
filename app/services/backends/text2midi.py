@@ -167,7 +167,7 @@ class Text2MidiGeneratorBackend(MusicGeneratorBackend):
                         "emotion_vector": emotion_vector.to_dict(),
                         "style": style,
                         "instrument": mapped_instrument,
-                        **result.metadata,
+                        **(result.metadata or {}),
                     },
                 )
             else:

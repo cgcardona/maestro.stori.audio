@@ -68,7 +68,7 @@ def generate_access_code(
     secret = _get_secret()
     
     # Calculate total duration
-    total_hours = 0
+    total_hours: float = 0.0
     if duration_hours:
         total_hours += duration_hours
     if duration_days:

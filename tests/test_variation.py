@@ -212,7 +212,8 @@ class TestNoteMatching:
         
         added = [m for m in matches if m.is_added]
         assert len(added) == 1
-        assert added[0].proposed_note["pitch"] == 67
+        pn = added[0].proposed_note
+        assert pn is not None and pn["pitch"] == 67
     
     def test_removed_notes_detected(self, simple_notes):
         """Missing notes in proposed should be detected as removed."""
@@ -222,7 +223,8 @@ class TestNoteMatching:
         
         removed = [m for m in matches if m.is_removed]
         assert len(removed) == 1
-        assert removed[0].base_note["pitch"] == 65  # Last note was F
+        bn = removed[0].base_note
+        assert bn is not None and bn["pitch"] == 65  # Last note was F
     
     def test_modified_notes_detected(self, simple_notes):
         """Changed notes should be detected as modified."""
@@ -233,8 +235,9 @@ class TestNoteMatching:
         
         modified = [m for m in matches if m.is_modified]
         assert len(modified) == 1
-        assert modified[0].base_note["velocity"] == 100
-        assert modified[0].proposed_note["velocity"] == 50
+        m0bn, m0pn = modified[0].base_note, modified[0].proposed_note
+        assert m0bn is not None and m0bn["velocity"] == 100
+        assert m0pn is not None and m0pn["velocity"] == 50
     
     def test_pitch_change_detected(self, simple_notes):
         """Pitch changes should result in remove + add."""
@@ -249,8 +252,10 @@ class TestNoteMatching:
         
         assert len(removed) == 1
         assert len(added) == 1
-        assert removed[0].base_note["pitch"] == 60
-        assert added[0].proposed_note["pitch"] == 61
+        r0bn = removed[0].base_note
+        a0pn = added[0].proposed_note
+        assert r0bn is not None and r0bn["pitch"] == 60
+        assert a0pn is not None and a0pn["pitch"] == 61
 
 
 # =============================================================================
@@ -629,9 +634,10 @@ class TestSSEVariationEvents:
         assert "phrases" in data
         
         # Verify phrases structure
-        assert len(data["phrases"]) > 0
-        phrase = data["phrases"][0]
-        assert "phrase_id" in phrase
+        phrases = data.get("phrases") if isinstance(data, dict) else None
+        assert isinstance(phrases, list) and len(phrases) > 0
+        phrase = phrases[0]
+        assert isinstance(phrase, dict) and "phrase_id" in phrase
         assert "track_id" in phrase
         assert "region_id" in phrase
         assert "start_beat" in phrase

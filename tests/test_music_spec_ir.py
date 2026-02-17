@@ -205,25 +205,31 @@ class TestApplyPolicyToMusicSpec:
 
     def test_high_density(self):
         spec = build_full_music_spec(style="trap", bars=4)
+        assert spec.drum_spec is not None
         original_max = spec.drum_spec.layers["timekeepers"].density_target.max_hits_per_bar
         result = apply_policy_to_music_spec(spec, density=0.9)
+        assert result.drum_spec is not None
         assert result.drum_spec.layers["timekeepers"].density_target.max_hits_per_bar >= original_max
 
     def test_low_density(self):
         spec = build_full_music_spec(style="trap", bars=4)
+        assert spec.drum_spec is not None
         original_min = spec.drum_spec.layers["core"].density_target.min_hits_per_bar
         result = apply_policy_to_music_spec(spec, density=0.1)
+        assert result.drum_spec is not None
         assert result.drum_spec.layers["core"].density_target.min_hits_per_bar <= original_min
 
     def test_complexity(self):
         spec = build_full_music_spec(style="trap", bars=4)
         result = apply_policy_to_music_spec(spec, complexity=0.8)
+        assert result.drum_spec is not None
         for layer in result.drum_spec.layers.values():
             assert layer.variation_rate > 0
 
     def test_groove_override(self):
         spec = build_full_music_spec(style="trap", bars=4)
         result = apply_policy_to_music_spec(spec, groove="boom_bap_swing")
+        assert result.drum_spec is not None
         assert result.drum_spec.groove_template == "boom_bap_swing"
         assert result.global_spec.swing == 0.5
 

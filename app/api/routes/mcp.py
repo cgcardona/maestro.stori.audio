@@ -180,7 +180,11 @@ async def daw_websocket(
             elif message_type == "tool_response":
                 request_id = data.get("request_id")
                 result = data.get("result", {})
-                server.receive_tool_response(connection_id, request_id, result)
+                server.receive_tool_response(
+                    connection_id,
+                    str(request_id) if request_id is not None else "",
+                    result if isinstance(result, dict) else {},
+                )
                 logger.debug(f"Tool response received: {request_id}")
             elif message_type == "ping":
                 await websocket.send_json({"type": "pong"})
@@ -277,5 +281,9 @@ async def post_tool_response(
     server = get_mcp_server()
     request_id = data.get("request_id")
     result = data.get("result", {})
-    server.receive_tool_response(connection_id, request_id, result)
+    server.receive_tool_response(
+        connection_id,
+        str(request_id) if request_id is not None else "",
+        result if isinstance(result, dict) else {},
+    )
     return {"status": "ok"}

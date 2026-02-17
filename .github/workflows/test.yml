@@ -26,6 +26,11 @@ jobs:
           pip install -e ".[dev]"
           pip install aiosqlite  # in-memory SQLite for tests
 
+      - name: Type check (mypy)
+        run: |
+          python -m mypy -p app
+          python -m mypy -p tests
+
       - name: Run tests with coverage
         env:
           STORI_ACCESS_TOKEN_SECRET: "test-secret-min-32-chars-long-for-hs256"

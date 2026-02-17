@@ -40,7 +40,8 @@ class TestEntityRegistryBasics:
         assert track_id is not None
         assert len(track_id) == 36  # UUID format
         assert registry.exists_track(track_id)
-        assert registry.get_track(track_id).name == "Drums"
+        info = registry.get_track(track_id)
+        assert info is not None and info.name == "Drums"
     
     def test_create_track_with_custom_id(self):
         """Should accept custom track ID."""
@@ -62,8 +63,7 @@ class TestEntityRegistryBasics:
         assert registry.exists_region(region_id)
         
         region = registry.get_region(region_id)
-        assert region.name == "Main Pattern"
-        assert region.parent_id == track_id
+        assert region is not None and region.name == "Main Pattern" and region.parent_id == track_id
     
     def test_create_region_without_parent_fails(self):
         """Should fail to create region without valid parent track."""
@@ -80,8 +80,9 @@ class TestEntityRegistryBasics:
         
         assert bus_id is not None
         assert registry.exists_bus(bus_id)
-        assert registry.get_bus(bus_id).name == "Reverb Bus"
-    
+        bus = registry.get_bus(bus_id)
+        assert bus is not None and bus.name == "Reverb Bus"
+
     def test_get_or_create_bus_new(self):
         """Should create bus if it doesn't exist."""
         registry = EntityRegistry()
@@ -89,8 +90,9 @@ class TestEntityRegistryBasics:
         bus_id = registry.get_or_create_bus("Delay Bus")
         
         assert registry.exists_bus(bus_id)
-        assert registry.get_bus(bus_id).name == "Delay Bus"
-    
+        bus = registry.get_bus(bus_id)
+        assert bus is not None and bus.name == "Delay Bus"
+
     def test_get_or_create_bus_existing(self):
         """Should return existing bus if it exists."""
         registry = EntityRegistry()
@@ -294,7 +296,8 @@ class TestProjectStateSync:
         
         assert registry.exists_region("region-1")
         assert registry.exists_region("region-2")
-        assert registry.get_region("region-1").parent_id == "track-1"
+        r1 = registry.get_region("region-1")
+        assert r1 is not None and r1.parent_id == "track-1"
     
     def test_sync_buses_from_project_state(self):
         """Should sync buses from project state."""

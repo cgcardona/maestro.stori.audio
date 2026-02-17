@@ -44,7 +44,9 @@ class TestFormatSingleMessage:
         await db_session.commit()
         await add_message(db_session, conv.id, "user", "hello world")
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         history = format_conversation_history(conv)
         assert len(history) == 1
         assert history[0] == {"role": "user", "content": "hello world"}
@@ -55,7 +57,9 @@ class TestFormatSingleMessage:
         await db_session.commit()
         await add_message(db_session, conv.id, "assistant", "Sure thing")
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         history = format_conversation_history(conv)
         assert len(history) == 1
         assert history[0]["role"] == "assistant"
@@ -74,7 +78,9 @@ class TestFormatSingleMessage:
             ],
         )
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         history = format_conversation_history(conv)
         # assistant message + 2 tool result messages
         assert len(history) == 3
@@ -97,7 +103,9 @@ class TestFormatSingleMessage:
             ],
         )
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         history = format_conversation_history(conv)
         ids = [tc["id"] for tc in history[0]["tool_calls"]]
         assert len(set(ids)) == 2, "Tool call IDs must be unique"
@@ -113,7 +121,9 @@ class TestFormatSingleMessage:
             ],
         )
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         history = format_conversation_history(conv)
         assert history[0]["tool_calls"][0]["id"]
 
@@ -132,7 +142,9 @@ class TestGetOptimizedContext:
         for i in range(5):
             await add_message(db_session, conv.id, "user", f"msg {i}")
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         formatted, entity_summary = await get_optimized_context(
             list(conv.messages), max_messages=20
         )
@@ -147,7 +159,9 @@ class TestGetOptimizedContext:
             role = "user" if i % 2 == 0 else "assistant"
             await add_message(db_session, conv.id, role, f"msg {i}")
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         formatted, entity_summary = await get_optimized_context(
             list(conv.messages), max_messages=5, include_entity_summary=True
         )
@@ -188,7 +202,9 @@ class TestGetOptimizedContext:
                 role = "user" if i % 2 == 0 else "assistant"
                 await add_message(db_session, conv.id, role, f"msg {i}")
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         formatted, entity_summary = await get_optimized_context(
             list(conv.messages), max_messages=5, include_entity_summary=True
         )
@@ -213,7 +229,9 @@ class TestSummarizeConversation:
         await add_message(db_session, conv.id, "user", "Make drums")
         await add_message(db_session, conv.id, "assistant", "Done!")
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
         summary = await summarize_conversation_for_llm(conv, llm=None)
         assert isinstance(summary, str)
 
@@ -229,7 +247,10 @@ class TestSummarizeConversation:
             tool_calls=[{"name": "stori_add_midi_track", "arguments": {"name": "D"}}],
         )
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
+        assert conv is not None
 
         mock_llm = AsyncMock()
         mock_response = MagicMock()
@@ -248,7 +269,10 @@ class TestSummarizeConversation:
         await db_session.commit()
         await add_message(db_session, conv.id, "user", "Make a song")
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
+        assert conv is not None
 
         mock_llm = AsyncMock()
         mock_llm.chat.side_effect = RuntimeError("LLM unavailable")
@@ -293,7 +317,10 @@ class TestGetConversationPreview:
         await db_session.commit()
         await add_message(db_session, conv.id, "user", "Make a funky bass line at 90 BPM")
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
+        assert conv is not None
         preview = await get_conversation_preview(conv)
         assert isinstance(preview, str)
 
@@ -302,6 +329,9 @@ class TestGetConversationPreview:
         from app.services.conversations import get_conversation_preview
         conv = await create_conversation(db_session, USER_ID, title="Empty")
         await db_session.commit()
-        conv = await get_conversation(db_session, conv.id, USER_ID)
+        _loaded = await get_conversation(db_session, conv.id, USER_ID)
+        assert _loaded is not None
+        conv = _loaded
+        assert conv is not None
         preview = await get_conversation_preview(conv)
         assert isinstance(preview, str)

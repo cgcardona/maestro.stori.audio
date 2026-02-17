@@ -11,7 +11,7 @@ Assets are stored under:
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import boto3
 from botocore.config import Config
@@ -83,7 +83,7 @@ def _get_object_json(key: str) -> Optional[dict[str, Any]]:
         client = _s3_client()
         resp = client.get_object(Bucket=_bucket(), Key=key)
         body = resp["Body"].read().decode("utf-8")
-        return json.loads(body)
+        return cast(dict[str, Any], json.loads(body))
     except ClientError as e:
         if e.response["Error"]["Code"] == "NoSuchKey":
             logger.debug("Manifest not found: %s", key)
@@ -104,7 +104,7 @@ def list_drum_kits() -> list[dict[str, Any]]:
         return []
     data = _get_object_json(DRUM_KITS_MANIFEST_KEY)
     if data and "kits" in data:
-        return data["kits"]
+        return cast(list[dict[str, Any]], data["kits"])
     return DEFAULT_DRUM_KITS_MANIFEST["kits"]
 
 
@@ -117,7 +117,7 @@ def list_soundfonts() -> list[dict[str, Any]]:
         return []
     data = _get_object_json(SOUNDFONTS_MANIFEST_KEY)
     if data and "soundfonts" in data:
-        return data["soundfonts"]
+        return cast(list[dict[str, Any]], data["soundfonts"])
     return DEFAULT_SOUNDFONTS_MANIFEST["soundfonts"]
 
 

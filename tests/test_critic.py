@@ -36,7 +36,7 @@ def make_drum_notes(
     include_hats: bool = True,
     include_fills: bool = True,
     include_ghosts: bool = False,
-    fill_bars: list = None,
+    fill_bars: list | None = None,
 ) -> list[dict]:
     """Helper to create drum notes for testing."""
     fill_bars = fill_bars or [3]

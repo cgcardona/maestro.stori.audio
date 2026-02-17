@@ -28,15 +28,18 @@ class TestNormalizeToolArguments:
 
     def test_int_to_string(self):
         result = normalize_tool_arguments({"tempo": 120, "name": "Drums"})
+        assert result is not None
         assert result["tempo"] == "120"
         assert result["name"] == "Drums"
 
     def test_float_to_string(self):
         result = normalize_tool_arguments({"volume": 0.8})
+        assert result is not None
         assert result["volume"] == "0.8"
 
     def test_bool_unchanged(self):
         result = normalize_tool_arguments({"muted": True, "solo": False})
+        assert result is not None
         assert result["muted"] is True
         assert result["solo"] is False
 
@@ -44,6 +47,7 @@ class TestNormalizeToolArguments:
         result = normalize_tool_arguments({
             "track": {"volume": 0.5, "name": "Bass"},
         })
+        assert result is not None
         assert result["track"]["volume"] == "0.5"
         assert result["track"]["name"] == "Bass"
 
@@ -51,6 +55,7 @@ class TestNormalizeToolArguments:
         result = normalize_tool_arguments({
             "notes": [{"pitch": 60, "velocity": 100}],
         })
+        assert result is not None
         assert result["notes"][0]["pitch"] == "60"
         assert result["notes"][0]["velocity"] == "100"
 
@@ -58,6 +63,7 @@ class TestNormalizeToolArguments:
         result = normalize_tool_arguments({
             "items": [42, "hello", 3.14, True],
         })
+        assert result is not None
         assert result["items"] == ["42", "hello", "3.14", True]
 
 

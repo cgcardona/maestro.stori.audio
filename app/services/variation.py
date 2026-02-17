@@ -102,7 +102,8 @@ def _notes_match(base_note: dict, proposed_note: dict) -> bool:
     """Check if two notes should be considered the same note."""
     base_pitch = base_note.get("pitch")
     proposed_pitch = proposed_note.get("pitch")
-    
+    if base_pitch is None or proposed_pitch is None:
+        return False
     if abs(base_pitch - proposed_pitch) > PITCH_TOLERANCE:
         return False
     
@@ -412,21 +413,21 @@ class VariationService:
         """Convert a NoteMatch to a NoteChange."""
         note_id = str(uuid.uuid4())
         
-        if match.is_added:
+        if match.is_added and match.proposed_note is not None:
             return NoteChange(
                 note_id=note_id,
                 change_type="added",
                 before=None,
                 after=MidiNoteSnapshot.from_note_dict(match.proposed_note),
             )
-        elif match.is_removed:
+        elif match.is_removed and match.base_note is not None:
             return NoteChange(
                 note_id=note_id,
                 change_type="removed",
                 before=MidiNoteSnapshot.from_note_dict(match.base_note),
                 after=None,
             )
-        else:
+        elif match.base_note is not None and match.proposed_note is not None:
             # Modified
             return NoteChange(
                 note_id=note_id,
@@ -434,6 +435,7 @@ class VariationService:
                 before=MidiNoteSnapshot.from_note_dict(match.base_note),
                 after=MidiNoteSnapshot.from_note_dict(match.proposed_note),
             )
+        raise ValueError("Malformed NoteMatch: missing base_note or proposed_note")
     
     def compute_multi_region_variation(
         self,

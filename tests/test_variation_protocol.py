@@ -520,7 +520,7 @@ class TestStreamRouter:
 
             assert delivered >= 1
             received = queue.get_nowait()
-            assert received.type == "meta"
+            assert received is not None and received.type == "meta"
         finally:
             reset_sse_broadcaster()
 

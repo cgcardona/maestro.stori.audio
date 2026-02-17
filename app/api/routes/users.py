@@ -5,7 +5,7 @@ Handles user registration, profile info, budget tracking, and model listing.
 """
 import logging
 import uuid
-from typing import Optional
+from typing import Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -189,9 +189,9 @@ async def list_models():
     models = [
         ModelInfo(
             id=model_id,
-            name=info["name"],
-            cost_per_1m_input=info["input_cost"],
-            cost_per_1m_output=info["output_cost"],
+            name=cast(str, info["name"]),
+            cost_per_1m_input=cast(float, info["input_cost"]),
+            cost_per_1m_output=cast(float, info["output_cost"]),
         )
         for model_id, info in APPROVED_MODELS.items()
     ]

@@ -572,8 +572,8 @@ async def add_message_to_conversation(
         try:
             # Build conversation history for LLM context (CRITICAL for entity ID tracking)
             # Load all previous messages EXCEPT the one we just added
-            conversation_history = []
-            entity_summary = None
+            conversation_history: list[dict[str, Any]] = []
+            entity_summary: Optional[str] = None
             if conversation.messages:
                 # Get all messages except the last one (which is the user message we just added)
                 previous_messages = [m for m in conversation.messages if m.id != user_message.id]
@@ -860,16 +860,16 @@ def build_conversation_history_for_llm(messages: list) -> list[dict[str, Any]]:
     return history
 
 
-def normalize_tool_arguments(arguments: dict) -> dict:
+def normalize_tool_arguments(arguments: dict[str, Any] | None) -> dict[str, Any] | None:
     """
     Normalize tool arguments for API responses.
-    
+
     Converts all numeric values (int, float) to strings for Swift/client
     compatibility where argument types are expected as strings.
     """
-    if not arguments:
+    if arguments is None or not arguments:
         return arguments
-    out: dict = {}
+    out: dict[str, Any] = {}
     for k, v in arguments.items():
         if isinstance(v, (int, float)) and not isinstance(v, bool):
             out[k] = str(v)

@@ -168,7 +168,7 @@ class TestParseResponse:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test"
         )
-        data = {"choices": [{}]}
+        data: dict[str, object] = {"choices": [{}]}
         result = client._parse_response(data)
         assert result.content is None
         assert len(result.tool_calls) == 0
