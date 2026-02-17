@@ -772,12 +772,70 @@ async def _process_call_for_variation(
     """
     Process a tool call to extract proposed notes for variation.
     
-    This simulates the tool execution without actually mutating state.
+    Simulates entity creation (tracks, regions) in the state store so that
+    subsequent generator calls can resolve track/region names. Does NOT
+    mutate canonical state — uses the store's registry for name resolution.
     """
     params = call.params.copy()
     
-    # Handle stori_add_notes - this is where notes change
-    if call.name == "stori_add_notes":
+    # -----------------------------------------------------------------
+    # Name resolution: trackName → trackId, regionName → regionId
+    # (mirrors the streaming executor's Step 1)
+    # -----------------------------------------------------------------
+    if "trackName" in params and "trackId" not in params:
+        track_name = params["trackName"]
+        track_id = var_ctx.store.registry.resolve_track(track_name)
+        if track_id:
+            params["trackId"] = track_id
+    
+    if "regionName" in params and "regionId" not in params:
+        region_name = params["regionName"]
+        parent_track = params.get("trackId") or params.get("trackName")
+        region_id = var_ctx.store.registry.resolve_region(region_name, parent_track)
+        if region_id:
+            params["regionId"] = region_id
+    
+    # -----------------------------------------------------------------
+    # Entity creation: register tracks and regions so generators can
+    # resolve names like "Drums" → track_id → latest region.
+    # -----------------------------------------------------------------
+    if call.name in ("stori_add_midi_track", "stori_add_track"):
+        track_name = params.get("name", "Track")
+        existing = var_ctx.store.registry.resolve_track(track_name)
+        if not existing:
+            track_id = var_ctx.store.create_track(track_name, track_id=params.get("trackId"))
+            logger.info(f"🎹 [variation] Registered track: {track_name} → {track_id[:8]}")
+        else:
+            logger.debug(f"🎹 [variation] Track already exists: {track_name} → {existing[:8]}")
+
+    elif call.name in ("stori_add_midi_region", "stori_add_region"):
+        track_id = params.get("trackId", "")
+        if not track_id:
+            track_ref = params.get("trackName") or params.get("name")
+            if track_ref:
+                track_id = var_ctx.store.registry.resolve_track(track_ref) or ""
+        if track_id:
+            region_name = params.get("name", "Region")
+            region_id = var_ctx.store.create_region(
+                name=region_name,
+                parent_track_id=track_id,
+                region_id=params.get("regionId"),
+                metadata={
+                    "startBeat": params.get("startBeat", 0),
+                    "durationBeats": params.get("durationBeats", 16),
+                },
+            )
+            logger.info(
+                f"📎 [variation] Registered region: {region_name} → {region_id[:8]} "
+                f"(track={track_id[:8]})"
+            )
+        else:
+            logger.warning(f"⚠️ [variation] Cannot create region — no track resolved")
+
+    # -----------------------------------------------------------------
+    # Note-affecting tools
+    # -----------------------------------------------------------------
+    elif call.name == "stori_add_notes":
         region_id = params.get("regionId", "")
         track_id = params.get("trackId", "")
         notes = params.get("notes", [])
