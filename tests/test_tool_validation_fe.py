@@ -128,8 +128,8 @@ class TestMidiNoteValidation:
             {
                 "regionId": "test-id",
                 "notes": [
-                    {"pitch": 0, "startBeats": 0, "durationBeats": 1, "velocity": 100},
-                    {"pitch": 127, "startBeats": 1, "durationBeats": 1, "velocity": 100}
+                    {"pitch": 0, "startBeat": 0, "durationBeats": 1, "velocity": 100},
+                    {"pitch": 127, "startBeat": 1, "durationBeats": 1, "velocity": 100}
                 ]
             },
             allowed
@@ -141,7 +141,7 @@ class TestMidiNoteValidation:
             "stori_add_notes",
             {
                 "regionId": "test-id",
-                "notes": [{"pitch": -1, "startBeats": 0, "durationBeats": 1, "velocity": 100}]
+                "notes": [{"pitch": -1, "startBeat": 0, "durationBeats": 1, "velocity": 100}]
             },
             allowed
         )
@@ -152,7 +152,7 @@ class TestMidiNoteValidation:
             "stori_add_notes",
             {
                 "regionId": "test-id",
-                "notes": [{"pitch": 128, "startBeats": 0, "durationBeats": 1, "velocity": 100}]
+                "notes": [{"pitch": 128, "startBeat": 0, "durationBeats": 1, "velocity": 100}]
             },
             allowed
         )
@@ -167,7 +167,7 @@ class TestMidiNoteValidation:
             "stori_add_notes",
             {
                 "regionId": "test-id",
-                "notes": [{"pitch": 60, "startBeats": 0, "durationBeats": 1, "velocity": 1}]
+                "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 1}]
             },
             allowed
         )
@@ -178,7 +178,7 @@ class TestMidiNoteValidation:
             "stori_add_notes",
             {
                 "regionId": "test-id",
-                "notes": [{"pitch": 60, "startBeats": 0, "durationBeats": 1, "velocity": 0}]
+                "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 0}]
             },
             allowed
         )
@@ -189,7 +189,7 @@ class TestMidiNoteValidation:
             "stori_add_notes",
             {
                 "regionId": "test-id",
-                "notes": [{"pitch": 60, "startBeats": 0, "durationBeats": 1, "velocity": 128}]
+                "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 128}]
             },
             allowed
         )
@@ -204,7 +204,7 @@ class TestMidiNoteValidation:
             "stori_add_notes",
             {
                 "regionId": "test-id",
-                "notes": [{"pitch": 60, "startBeats": 0, "durationBeats": 1, "velocity": 100}]
+                "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 100}]
             },
             allowed
         )
@@ -215,7 +215,7 @@ class TestMidiNoteValidation:
             "stori_add_notes",
             {
                 "regionId": "test-id",
-                "notes": [{"pitch": 60, "startBeats": -1, "durationBeats": 1, "velocity": 100}]
+                "notes": [{"pitch": 60, "startBeat": -1, "durationBeats": 1, "velocity": 100}]
             },
             allowed
         )
@@ -230,7 +230,7 @@ class TestMidiNoteValidation:
             "stori_add_notes",
             {
                 "regionId": "test-id",
-                "notes": [{"pitch": 60, "startBeats": 0, "durationBeats": 0.01, "velocity": 100}]
+                "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 0.01, "velocity": 100}]
             },
             allowed
         )
@@ -241,7 +241,7 @@ class TestMidiNoteValidation:
             "stori_add_notes",
             {
                 "regionId": "test-id",
-                "notes": [{"pitch": 60, "startBeats": 0, "durationBeats": 0.001, "velocity": 100}]
+                "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 0.001, "velocity": 100}]
             },
             allowed
         )
@@ -252,7 +252,7 @@ class TestMidiNoteValidation:
             "stori_add_notes",
             {
                 "regionId": "test-id",
-                "notes": [{"pitch": 60, "startBeats": 0, "durationBeats": 1001, "velocity": 100}]
+                "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1001, "velocity": 100}]
             },
             allowed
         )

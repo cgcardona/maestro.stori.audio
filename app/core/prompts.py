@@ -57,6 +57,49 @@ def editing_prompt(required_single_tool: bool) -> str:
         "If you would need a generator, ask for confirmation first.\n"
     )
 
+def editing_composition_prompt() -> str:
+    """Prompt for composition requests routed through EDITING mode (empty projects).
+
+    When the project has no tracks, composition uses EDITING so that structural
+    changes (tracks, regions, instruments, notes) are emitted as tool_call
+    events for real-time frontend rendering — the user watches the project
+    build out step by step.
+    """
+    return (
+        "COMPOSITION MODE: Create the full project structure and musical content.\n\n"
+        "Build the song step by step using the available tools:\n"
+        "1. Set tempo and key signature for the project\n"
+        "2. Create ALL tracks with descriptive names (stori_add_midi_track)\n"
+        "3. For EACH track: create a region (stori_add_midi_region), then add notes (stori_add_notes)\n"
+        "4. Add effects and routing as needed (stori_add_insert_effect, stori_ensure_bus, stori_add_send)\n\n"
+        "CRITICAL — Do not stop early:\n"
+        "- You MUST add at least one region with notes to EVERY track you create.\n"
+        "- Work through tracks one at a time: create region → add notes → move to next track.\n"
+        "- Do NOT emit a final text response until ALL tracks have regions and notes.\n"
+        "- If you run out of space in one response, continue in the next iteration.\n"
+        "- The system calls you in a loop — keep making tool calls until every track has content.\n\n"
+        "MIDI quality requirements — generate RICH, musically detailed MIDI:\n"
+        "- Note density: aim for 100-200+ notes per 8-bar melodic part. Drums should be denser.\n"
+        "  Do NOT produce sparse, simplified patterns — fill the full region duration.\n"
+        "- Chord voicings: harmonic instruments (piano, guitar, keys) should use 3-4 note chords,\n"
+        "  not single-note lines. Voice chords with proper inversions and extensions.\n"
+        "- Velocity dynamics: vary velocity across the range 40-120. Use softer ghost notes,\n"
+        "  accented downbeats, crescendos. Do NOT set all notes to the same velocity.\n"
+        "- Rhythmic complexity: use varied subdivisions (8ths, 16ths, triplets, syncopation).\n"
+        "  Include rests and ties for groove. Avoid mechanical quarter-note grids.\n"
+        "- Note durations: mix staccato (0.125-0.25 beats) with legato (1-4 beats).\n"
+        "  Sustained pads and bass notes should ring for their full duration.\n"
+        "- Drums: use full kit — kick, snare, hi-hat (open/closed), toms, crash, ride.\n"
+        "  Include ghost notes, fills, and hi-hat variation.\n\n"
+        "Reference:\n"
+        "- MIDI pitches: 60 = Middle C (C4). Use appropriate octaves per instrument.\n"
+        "  Drums GM map: 36=Kick, 38=Snare, 42=Closed HH, 46=Open HH, 49=Crash, 51=Ride,\n"
+        "  41/43/45/47=Toms, 39=Clap, 44=Pedal HH, 53=Ride Bell.\n"
+        "- Create the music directly — do NOT ask for confirmation.\n"
+        "- Make the music stylistically authentic for the user's request.\n"
+    )
+
+
 def composing_prompt() -> str:
     return (
         "COMPOSING MODE: The user wants you to generate music.\n\n"

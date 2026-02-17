@@ -76,7 +76,7 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 - **Track pan:** `pan` in range -100 (left) to 100 (right).
 - **Insert effect:** Prefer `stori_add_insert_effect` with param `type` (not `effectType`).
 - **Send:** `stori_add_send` uses `busId` (from `stori_ensure_bus` or DAW).
-- **Notes:** In `stori_add_notes`, each note uses `startBeats`, `durationBeats`, `velocity` (1–127).
+- **Notes:** In `stori_add_notes`, each note uses `startBeat`, `durationBeats`, `velocity` (1–127).
 - **Quantize:** `stori_quantize_notes` uses `grid`: `"1/4"`, `"1/8"`, `"1/16"`, `"1/32"`, `"1/64"`.
 - **Region:** `stori_add_region` / `stori_add_midi_region` use `startBeat`, `durationBeats`.
 
@@ -127,7 +127,7 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
-| `stori_add_notes` | Add MIDI notes to region. | `regionId`, `notes` (array of `pitch`, `startBeats`, `durationBeats`, `velocity` 1–127) |
+| `stori_add_notes` | Add MIDI notes to region. | `regionId`, `notes` (array of `pitch`, `startBeat`, `durationBeats`, `velocity` 1–127) |
 | `stori_clear_notes` | Clear all notes in region. | `regionId` |
 | `stori_quantize_notes` | Quantize to grid. | `regionId`; `grid` (1/4, 1/8, 1/16, 1/32, 1/64); `strength` 0–1 |
 | `stori_apply_swing` | Apply swing. | `regionId`, `amount` (0–1) |

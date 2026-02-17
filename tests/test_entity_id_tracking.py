@@ -224,7 +224,7 @@ def test_build_conversation_history_with_region_ids():
                 "name": "stori_add_notes",
                 "arguments": {
                     "regionId": region_id,  # Must reuse regionId from previous turn
-                    "notes": [{"pitch": 36, "startBeats": 0, "durationBeats": 0.25, "velocity": 100}]
+                    "notes": [{"pitch": 36, "startBeat": 0, "durationBeats": 0.25, "velocity": 100}]
                 }
             }],
         ),

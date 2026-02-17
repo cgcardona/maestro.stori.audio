@@ -284,6 +284,7 @@ class LLMClient:
         tool_choice: Optional[str | dict] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        reasoning_fraction: Optional[float] = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream chat completion with real-time reasoning."""
         logger.info(f"🚀 chat_completion_stream called: model={self.model}, supports_reasoning={self.supports_reasoning()}")
@@ -301,8 +302,10 @@ class LLMClient:
         # https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
         if self.supports_reasoning():
             max_tok = max_tokens or settings.llm_max_tokens
-            # Allocate 80% of max_tokens for reasoning (high effort)
-            reasoning_budget = int(max_tok * 0.8)
+            # Default 80% for reasoning; composition uses a lower fraction
+            # (e.g. 0.4) because tool calls with MIDI data need more tokens
+            fraction = reasoning_fraction if reasoning_fraction is not None else 0.8
+            reasoning_budget = int(max_tok * fraction)
             payload["reasoning"] = {
                 "max_tokens": max(reasoning_budget, 2048),  # Minimum 2K tokens for reasoning
             }

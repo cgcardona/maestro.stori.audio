@@ -1,20 +1,116 @@
 """
 SSE and reasoning-display helpers for Composer (Cursor-of-DAWs).
 
-Centralizes formatting of server-sent events and sanitization of LLM reasoning
-so internal implementation details are not shown to the user.
+Centralizes formatting of server-sent events, sanitization of LLM reasoning,
+and BPE token buffering so the user sees clean, properly-spaced reasoning text.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Optional
 
 
 async def sse_event(data: dict[str, Any]) -> str:
     """Format data as an SSE event (data: {...}\\n\\n)."""
     return f"data: {json.dumps(data)}\n\n"
+
+
+# Maximum buffer size before forced flush (safety limit)
+_REASONING_BUFFER_MAX = 200
+
+
+class ReasoningBuffer:
+    """Buffer raw BPE reasoning tokens and emit sanitized text at word boundaries.
+
+    BPE tokenizers split words into sub-word pieces (e.g. "Trey" → "T" + "rey").
+    Emitting each piece as a separate SSE event causes display artifacts.  This
+    buffer accumulates tokens and flushes at word boundaries — when a new token
+    starts with a space or newline, the previous accumulated text forms complete
+    words and is safe to emit.
+    """
+
+    def __init__(self) -> None:
+        self._buffer: str = ""
+
+    def add(self, text: str) -> Optional[str]:
+        """Add a BPE token.  Returns sanitized text to emit, or None if still buffering."""
+        if not text:
+            return None
+
+        # Word boundary: new token starts with whitespace, or buffer is full
+        if self._buffer and (
+            text[0] in (" ", "\n", "\t") or len(self._buffer) >= _REASONING_BUFFER_MAX
+        ):
+            result = sanitize_reasoning(self._buffer)
+            self._buffer = text
+            return result if result else None
+
+        self._buffer += text
+        return None
+
+    def flush(self) -> Optional[str]:
+        """Flush remaining buffer.  Call at end of reasoning / transition to content."""
+        if self._buffer:
+            result = sanitize_reasoning(self._buffer)
+            self._buffer = ""
+            return result if result else None
+        return None
+
+
+def strip_tool_echoes(text: str) -> str:
+    """Remove leaked tool-call argument syntax from LLM content text.
+
+    When the LLM generates tool calls, it sometimes echoes fragments of the
+    call syntax into the content stream — parenthesized keyword arguments,
+    standalone closing parens, etc.  This function strips those fragments
+    while preserving natural-language text.
+
+    Examples of stripped content::
+
+        (key="G major")
+        (, instrument="Drum Kit")
+        (,, )
+        (, notes=
+         # Many notes here
+        )
+    """
+    if not text:
+        return ""
+    lines = text.split("\n")
+    cleaned: list[str] = []
+    in_tool_echo = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Inside a multi-line tool echo — skip until closing paren
+        if in_tool_echo:
+            if ")" in stripped:
+                in_tool_echo = False
+            continue
+
+        # Single-line tool echo: (key="value"), (, key="value"), (,, )
+        if stripped.startswith("(") and stripped.endswith(")"):
+            if "=" in stripped or re.match(r"^\([,\s]*\)$", stripped):
+                continue
+
+        # Multi-line tool echo opening: (, notes=  or  (key=
+        if stripped.startswith("(") and "=" in stripped and ")" not in stripped:
+            in_tool_echo = True
+            continue
+
+        # Standalone closing paren (tail of multi-line echo)
+        if stripped == ")":
+            continue
+
+        cleaned.append(line)
+
+    result = "\n".join(cleaned)
+    # Collapse runs of 3+ newlines down to 2
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result.strip()
 
 
 def sanitize_reasoning(text: str) -> str:
@@ -43,7 +139,13 @@ def sanitize_reasoning(text: str) -> str:
     # Remove code markers
     text = re.sub(r"```\w*", "", text)
     text = re.sub(r"[{}[\]]", "", text)
-    # Clean whitespace
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"\s*,\s*", ", ", text)
-    return text.strip()
+    # Clean horizontal whitespace only — preserve newlines for structured
+    # reasoning (numbered lists, bullet points, section breaks).
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"[ \t]*,[ \t]*", ", ", text)
+    # Preserve leading space for BPE token boundary concatenation.
+    # Only strip trailing spaces/tabs; keep newlines and leading BPE spaces.
+    text = text.rstrip(" \t")
+    if not text:
+        return ""
+    return text

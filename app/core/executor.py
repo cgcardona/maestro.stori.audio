@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 from app.core.state_store import StateStore, Transaction, get_or_create_store
 from app.core.expansion import ToolCall, dedupe_tool_calls
@@ -44,10 +44,7 @@ logger = logging.getLogger(__name__)
 
 _NOTE_KEY_MAP = {
     "startBeat": "start_beat",
-    "startBeats": "start_beat",
-    "start": "start_beat",
     "durationBeats": "duration_beats",
-    "duration": "duration_beats",
 }
 
 
@@ -403,23 +400,25 @@ async def execute_plan_variation(
     intent: str,
     conversation_id: Optional[str] = None,
     explanation: Optional[str] = None,
+    progress_callback: Optional[Callable[[int, int], Awaitable[None]]] = None,
 ) -> Variation:
     """
     Execute a plan in variation mode - returns proposed changes without mutation.
-    
+
     Instead of committing changes to StateStore, this function:
     1. Captures base state before each note-affecting tool
     2. Simulates Muse's transformations
     3. Computes variation between base and proposed states
     4. Returns a Variation object for frontend review
-    
+
     Args:
         tool_calls: List of ToolCalls to execute
         project_state: Current project state from client
         intent: The user intent that triggered this execution
         conversation_id: Conversation ID for StateStore lookup
         explanation: Optional AI explanation of the variation
-        
+        progress_callback: Optional async callback(current_step, total_steps) after each step.
+
     Returns:
         Variation object with phrases representing proposed changes
     """
@@ -466,10 +465,13 @@ async def execute_plan_variation(
         _extract_notes_from_project(project_state, var_ctx)
         
         # Process tool calls to collect proposed notes
+        total = len(tool_calls)
         for i, call in enumerate(tool_calls):
-            logger.info(f"🔧 Processing call {i + 1}/{len(tool_calls)}: {call.name}")
+            logger.info(f"🔧 Processing call {i + 1}/{total}: {call.name}")
             await _process_call_for_variation(call, var_ctx)
-        
+            if progress_callback:
+                await progress_callback(i + 1, total)
+
         # Log what we captured
         total_base = sum(len(n) for n in var_ctx.base_notes.values())
         total_proposed = sum(len(n) for n in var_ctx.proposed_notes.values())

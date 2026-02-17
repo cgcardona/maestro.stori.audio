@@ -36,4 +36,4 @@ jobs:
           STORI_ACCESS_TOKEN_SECRET: "test-secret-min-32-chars-long-for-hs256"
         run: |
           coverage run -m pytest tests/ -v --tb=short
-          coverage report --fail-under=64 --show-missing
+          coverage report --fail-under=80 --show-missing

@@ -399,16 +399,16 @@ For drums, use standard GM drum map:
                 },
                 "notes": {
                     "type": "array",
-                    "description": "Array of MIDI notes (use startBeats, durationBeats, velocity 1-127)",
+                    "description": "Array of MIDI notes (use startBeat, durationBeats, velocity 1-127)",
                     "items": {
                         "type": "object",
                         "properties": {
                             "pitch": {"type": "integer", "description": "MIDI note 0-127 (60=Middle C)", "minimum": 0, "maximum": 127},
-                            "startBeats": {"type": "number", "description": "Start relative to region (beats)", "minimum": 0},
+                            "startBeat": {"type": "number", "description": "Start relative to region (beats)", "minimum": 0},
                             "durationBeats": {"type": "number", "description": "Duration in beats", "minimum": 0.01},
                             "velocity": {"type": "integer", "description": "Velocity 1-127", "minimum": 1, "maximum": 127, "default": 100}
                         },
-                        "required": ["pitch", "startBeats", "durationBeats", "velocity"]
+                        "required": ["pitch", "startBeat", "durationBeats", "velocity"]
                     }
                 }
             },

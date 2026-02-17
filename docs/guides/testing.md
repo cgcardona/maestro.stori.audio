@@ -27,10 +27,10 @@ docker compose exec composer pytest tests/ -v
 
 ```bash
 docker compose build composer && docker compose up -d
-docker compose exec composer sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=64 --show-missing"
+docker compose exec composer sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"
 ```
 
-- The coverage threshold is **64%** (`--fail-under=64`). The single source of truth is `pyproject.toml` → `[tool.coverage.report]` → `fail_under`. Use the same value when running locally or in CI.
+- The coverage threshold is **80%** (`--fail-under=80`). The single source of truth is `pyproject.toml` → `[tool.coverage.report]` → `fail_under`. Use the same value when running locally or in CI.
 - If you see `No module named coverage`, rebuild: `docker compose build composer` then `docker compose up -d`.
 - If you see `unable to open database file` for `.coverage`, the container user can’t write to `/app`; the command uses `COVERAGE_FILE=/tmp/.coverage` so the data file lives in `/tmp`.
 
@@ -83,7 +83,7 @@ Add your own for smoke tests and demos.
 - **Covered well:** Config, health, auth, DB, intent classification, pipeline, executor, RAG, MCP, tool validation, conversations, variation, assets, plan schemas, critic, groove engine, budget integration, **compose_handlers**, **sse_utils**, **planner** (ExecutionPlan, build_execution_plan, preview_plan), **macro_engine**, **expansion**, **chord_utils**, **entity_context**. Plus **API contract tests** (root, health, health/full, auth 401) and **orchestrate stream** tests (REASONING and COMPOSING-with-empty-plan with mocks).
 - **Supercharge checklist — done:** Gap coverage (handlers, sse_utils, planner, macro, expansion, chord_utils, entity_context); API contract tests for key public/protected routes; E2E-style orchestrate tests (mocked intent/LLM).
 - **Supercharge checklist — remaining:**
-  1. ~~**CI coverage threshold**~~ — **Done.** GitHub Actions runs tests with coverage; `pyproject.toml` sets `fail_under` (currently 64%; target 80%).
+  1. ~~**CI coverage threshold**~~ — **Done.** GitHub Actions runs tests with coverage; `pyproject.toml` sets `fail_under` (currently 80%).
   2. ~~**More API contract tests**~~ — **Done.** `tests/test_api_contracts.py` covers all `/api/v1/*` routes: public (/, health, models), protected 401 (compose, validate-token, conversations, variation, users/me, MCP), and with-auth shape (conversations CRUD, users/register & me, variation/propose, assets with X-Device-ID, MCP tools/info/call). Error contract (401 detail, 422 detail) included.
   3. **Property-based tests (Hypothesis)** — Add for Pydantic models and serialization in `app/core/` and `app/models/` to catch edge cases.
   4. **Pytest markers for slow/integration** — Mark slow or integration tests (e.g. `@pytest.mark.slow`) and run CI with `-m "not slow"` by default so CI stays fast.

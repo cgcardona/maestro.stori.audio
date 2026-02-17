@@ -114,8 +114,8 @@ class TestExecutePlanVariation:
             "regionId": "r1",
             "trackId": "t1",
             "notes": [
-                {"pitch": 60, "startBeats": 0.0, "durationBeats": 1.0, "velocity": 100},
-                {"pitch": 62, "startBeats": 1.0, "durationBeats": 1.0, "velocity": 90},
+                {"pitch": 60, "startBeat": 0.0, "durationBeats": 1.0, "velocity": 100},
+                {"pitch": 62, "startBeat": 1.0, "durationBeats": 1.0, "velocity": 90},
             ],
         })]
 
@@ -143,7 +143,7 @@ class TestExecutePlanVariation:
             "tracks": [{
                 "id": "t1",
                 "name": "Piano",
-                "midiRegions": [{"id": "r1", "notes": [{"pitch": 60, "startBeats": 0, "durationBeats": 1, "velocity": 100}]}],
+                "midiRegions": [{"id": "r1", "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 100}]}],
             }]
         }
         import copy
@@ -152,7 +152,7 @@ class TestExecutePlanVariation:
         calls = [ToolCall("stori_add_notes", {
             "regionId": "r1",
             "trackId": "t1",
-            "notes": [{"pitch": 72, "startBeats": 2.0, "durationBeats": 1.0, "velocity": 100}],
+            "notes": [{"pitch": 72, "startBeat": 2.0, "durationBeats": 1.0, "velocity": 100}],
         })]
 
         await execute_plan_variation(

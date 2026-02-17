@@ -4,11 +4,32 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.compose_handlers import (
     UsageTracker,
+    _create_editing_composition_route,
     _create_editing_fallback_route,
+    _get_incomplete_tracks,
+    _project_needs_structure,
     orchestrate,
 )
 from app.core.intent import IntentResult, Intent, Slots, SSEState
-from app.core.intent_config import _PRIMITIVES_REGION, _PRIMITIVES_TRACK
+from app.core.intent_config import (
+    _PRIMITIVES_FX,
+    _PRIMITIVES_MIXING,
+    _PRIMITIVES_REGION,
+    _PRIMITIVES_TRACK,
+)
+
+# Project context with existing tracks — keeps COMPOSING route active
+# (empty projects override COMPOSING → EDITING).
+_NON_EMPTY_PROJECT = {
+    "projectId": "test-project",
+    "tracks": [
+        {
+            "id": "existing-track-1",
+            "name": "Track 1",
+            "midiRegions": [{"id": "existing-region-1", "name": "Region 1"}],
+        }
+    ],
+}
 
 
 class TestUsageTracker:
@@ -73,6 +94,153 @@ class TestCreateEditingFallbackRoute:
         assert out.slots.extras.get("tempo") == 90
 
 
+class TestProjectNeedsStructure:
+    """Test _project_needs_structure helper."""
+
+    def test_empty_context_needs_structure(self):
+        """Empty project context (no tracks key) needs structure."""
+        assert _project_needs_structure({}) is True
+
+    def test_empty_tracks_needs_structure(self):
+        """Project with empty tracks list needs structure."""
+        assert _project_needs_structure({"tracks": []}) is True
+
+    def test_project_with_tracks_does_not_need_structure(self):
+        """Project with at least one track does not need structure."""
+        ctx = {"tracks": [{"id": "t1", "name": "Drums"}]}
+        assert _project_needs_structure(ctx) is False
+
+    def test_project_with_multiple_tracks(self):
+        """Project with multiple tracks does not need structure."""
+        ctx = {"tracks": [{"id": "t1"}, {"id": "t2"}, {"id": "t3"}]}
+        assert _project_needs_structure(ctx) is False
+
+
+class TestGetIncompleteTracks:
+    """Test _get_incomplete_tracks helper."""
+
+    def _make_store(self):
+        from app.core.state_store import StateStore
+        return StateStore(project_id="test")
+
+    def test_track_without_region_is_incomplete(self):
+        """A track with no regions should be detected as incomplete."""
+        store = self._make_store()
+        store.create_track("Guitar")
+        result = _get_incomplete_tracks(store)
+        assert "Guitar" in result
+
+    def test_track_with_region_but_no_notes_is_incomplete(self):
+        """A track that has a region but no stori_add_notes call is incomplete."""
+        store = self._make_store()
+        tid = store.create_track("Piano")
+        store.create_region("Intro", tid)
+        # No stori_add_notes in tool_calls_collected
+        result = _get_incomplete_tracks(store, tool_calls_collected=[])
+        assert "Piano" in result
+
+    def test_track_with_region_and_notes_is_complete(self):
+        """A track whose region received stori_add_notes is complete."""
+        store = self._make_store()
+        tid = store.create_track("Bass")
+        rid = store.create_region("Groove", tid)
+        tc = [{"tool": "stori_add_notes", "params": {"regionId": rid, "notes": []}}]
+        result = _get_incomplete_tracks(store, tool_calls_collected=tc)
+        assert "Bass" not in result
+
+    def test_mixed_complete_and_incomplete(self):
+        """Only incomplete tracks are returned."""
+        store = self._make_store()
+        tid1 = store.create_track("Guitar")
+        rid1 = store.create_region("Riff", tid1)
+        tid2 = store.create_track("Drums")
+        # Drums has no region at all
+        tc = [{"tool": "stori_add_notes", "params": {"regionId": rid1, "notes": []}}]
+        result = _get_incomplete_tracks(store, tool_calls_collected=tc)
+        assert "Guitar" not in result
+        assert "Drums" in result
+
+    def test_no_tool_calls_treats_all_regions_as_noteless(self):
+        """Without tool_calls_collected, tracks with regions are still incomplete (no notes)."""
+        store = self._make_store()
+        tid = store.create_track("Keys")
+        store.create_region("Pad", tid)
+        result = _get_incomplete_tracks(store)
+        assert "Keys" in result
+
+
+class TestCreateEditingCompositionRoute:
+    """Test _create_editing_composition_route helper."""
+
+    def test_returns_editing_state(self):
+        """Composition route override should produce EDITING state."""
+        route = IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.COMPOSING,
+            confidence=0.85,
+            slots=Slots(),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=True,
+            requires_planner=True,
+            reasons=("generation_phrase",),
+        )
+        out = _create_editing_composition_route(route)
+        assert out.sse_state == SSEState.EDITING
+        assert out.intent == Intent.GENERATE_MUSIC  # preserves original intent
+        assert out.force_stop_after is False
+        assert out.requires_planner is False
+        assert out.tool_choice == "auto"
+        assert "empty_project_override" in out.reasons
+
+    def test_includes_all_structural_tools(self):
+        """Composition route should include track, region, FX, and mixing primitives."""
+        route = IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.COMPOSING,
+            confidence=0.85,
+            slots=Slots(),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=True,
+            requires_planner=True,
+            reasons=(),
+        )
+        out = _create_editing_composition_route(route)
+        # Must include structural primitives
+        assert "stori_add_midi_track" in out.allowed_tool_names
+        assert "stori_set_midi_program" in out.allowed_tool_names
+        assert "stori_add_midi_region" in out.allowed_tool_names
+        assert "stori_add_notes" in out.allowed_tool_names
+        assert "stori_add_insert_effect" in out.allowed_tool_names
+        assert "stori_set_tempo" in out.allowed_tool_names
+        assert "stori_set_key_signature" in out.allowed_tool_names
+        # Should be a superset of track + region primitives
+        assert set(_PRIMITIVES_TRACK).issubset(out.allowed_tool_names)
+        assert set(_PRIMITIVES_REGION).issubset(out.allowed_tool_names)
+        assert set(_PRIMITIVES_FX).issubset(out.allowed_tool_names)
+
+    def test_preserves_slots_and_confidence(self):
+        """Slots and confidence from original route are preserved."""
+        route = IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.COMPOSING,
+            confidence=0.92,
+            slots=Slots(extras={"style": "phish"}),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=True,
+            requires_planner=True,
+            reasons=(),
+        )
+        out = _create_editing_composition_route(route)
+        assert out.confidence == 0.92
+        assert out.slots.extras.get("style") == "phish"
+
+
 class TestOrchestrateStream:
     """Test orchestrate() yields expected SSE events (mocked intent + LLM)."""
 
@@ -130,7 +298,7 @@ class TestOrchestrateStream:
 
     @pytest.mark.anyio
     async def test_yields_state_then_complete_for_composing_with_empty_plan(self):
-        """When intent is COMPOSING and pipeline returns empty plan, we get state then content then complete."""
+        """When intent is COMPOSING on a non-empty project and pipeline returns empty plan, we get state then content then complete."""
         from app.core.pipeline import PipelineOutput
         from app.core.planner import ExecutionPlan
 
@@ -156,7 +324,8 @@ class TestOrchestrateStream:
                     m_llm_cls.return_value = mock_llm
 
                     events = []
-                    async for event in orchestrate("make something vague"):
+                    # Pass non-empty project so COMPOSING route is preserved
+                    async for event in orchestrate("make something vague", project_context=_NON_EMPTY_PROJECT):
                         events.append(event)
 
                     import json
@@ -275,7 +444,7 @@ class TestOrchestrateStream:
 
     @pytest.mark.anyio
     async def test_composing_with_non_empty_plan_apply_mode(self):
-        """When COMPOSING and pipeline returns a plan with tool_calls, we stream plan_summary then progress and complete."""
+        """When COMPOSING on a non-empty project and pipeline returns a plan with tool_calls, we stream plan_summary then progress and complete."""
         from app.core.pipeline import PipelineOutput
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
@@ -306,7 +475,8 @@ class TestOrchestrateStream:
                     m_llm_cls.return_value = mock_llm
 
                     events = []
-                    async for event in orchestrate("make a beat"):
+                    # Pass non-empty project so COMPOSING route is preserved
+                    async for event in orchestrate("make a beat", project_context=_NON_EMPTY_PROJECT):
                         events.append(event)
 
                     import json
@@ -355,7 +525,9 @@ class TestOrchestrateStream:
                     m_llm_cls.return_value = mock_llm
 
                     events = []
-                    async for event in orchestrate("add drums"):
+                    # Pass non-empty project so COMPOSING route is preserved
+                    # (otherwise empty project override would skip the planner entirely)
+                    async for event in orchestrate("add drums", project_context=_NON_EMPTY_PROJECT):
                         events.append(event)
 
                     import json
@@ -364,3 +536,111 @@ class TestOrchestrateStream:
                     assert "state" in types
                     # Should see "Retrying with different approach" status
                     assert any(p.get("type") == "status" and "Retrying" in p.get("message", "") for p in payloads)
+
+    @pytest.mark.anyio
+    async def test_empty_project_overrides_composing_to_editing(self):
+        """When COMPOSING intent hits an empty project, orchestrate overrides to EDITING with tool_call events."""
+        from app.core.llm_client import LLMResponse, ToolCallData
+
+        fake_route = IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.COMPOSING,
+            confidence=0.85,
+            slots=Slots(),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=True,
+            requires_planner=True,
+            reasons=("generation_phrase",),
+        )
+
+        with patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.compose_handlers.LLMClient") as m_llm_cls:
+                mock_llm = MagicMock()
+                mock_llm.supports_reasoning = MagicMock(return_value=False)
+                # LLM returns a tool call to add a track
+                mock_llm.chat_completion = AsyncMock(return_value=LLMResponse(
+                    content="Creating your song!",
+                    tool_calls=[ToolCallData("stori_add_midi_track", {"name": "Drums"}, "tc1")],
+                ))
+                mock_llm.close = AsyncMock()
+                m_llm_cls.return_value = mock_llm
+
+                events = []
+                # Empty project context — no tracks
+                async for event in orchestrate(
+                    "Create a new song in the style of Phish",
+                    project_context={"projectId": "empty-project", "tracks": []},
+                ):
+                    events.append(event)
+
+                import json
+                payloads = [json.loads(e.split("data: ", 1)[1].strip()) for e in events if "data:" in e]
+                types = [p.get("type") for p in payloads]
+
+                # State event should be "editing", not "composing"
+                state_event = next(p for p in payloads if p.get("type") == "state")
+                assert state_event.get("state") == "editing", (
+                    f"Expected 'editing' for empty project, got '{state_event.get('state')}'"
+                )
+                assert state_event.get("intent") == "compose.generate_music"
+
+                # Should have tool_call events (not meta/phrase/done)
+                assert "tool_call" in types, "Expected tool_call events for empty project"
+                assert "meta" not in types, "Should NOT have variation meta events"
+                assert "phrase" not in types, "Should NOT have variation phrase events"
+
+                # Tool call should be stori_add_midi_track
+                tool_calls = [p for p in payloads if p.get("type") == "tool_call"]
+                assert tool_calls[0].get("name") == "stori_add_midi_track"
+
+                # Should end with complete
+                assert "complete" in types
+
+    @pytest.mark.anyio
+    async def test_non_empty_project_stays_on_composing(self):
+        """When COMPOSING intent hits a project with tracks, it stays on COMPOSING path (variation review)."""
+        from app.core.pipeline import PipelineOutput
+        from app.core.planner import ExecutionPlan
+        from app.core.expansion import ToolCall as PlanToolCall
+
+        fake_route = IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.COMPOSING,
+            confidence=0.85,
+            slots=Slots(),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=True,
+            requires_planner=True,
+            reasons=("generation_phrase",),
+        )
+        # Empty plan to keep test simple
+        plan = ExecutionPlan(tool_calls=[], safety_validated=False)
+        fake_output = PipelineOutput(route=fake_route, plan=plan)
+
+        with patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+                with patch("app.core.compose_handlers.LLMClient") as m_llm_cls:
+                    mock_llm = MagicMock()
+                    mock_llm.close = AsyncMock()
+                    m_llm_cls.return_value = mock_llm
+
+                    events = []
+                    # Non-empty project — has tracks, so COMPOSING stays
+                    async for event in orchestrate(
+                        "make the bass line funkier",
+                        project_context=_NON_EMPTY_PROJECT,
+                    ):
+                        events.append(event)
+
+                    import json
+                    payloads = [json.loads(e.split("data: ", 1)[1].strip()) for e in events if "data:" in e]
+
+                    # State should be "composing" for non-empty project
+                    state_event = next(p for p in payloads if p.get("type") == "state")
+                    assert state_event.get("state") == "composing", (
+                        f"Expected 'composing' for non-empty project, got '{state_event.get('state')}'"
+                    )

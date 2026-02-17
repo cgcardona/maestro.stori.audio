@@ -8,6 +8,7 @@ and UsageTracker from here so the route file stays thin.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -23,7 +24,12 @@ from app.core.intent import (
     SSEState,
     get_intent_result_with_llm,
 )
-from app.core.intent_config import _PRIMITIVES_REGION, _PRIMITIVES_TRACK
+from app.core.intent_config import (
+    _PRIMITIVES_FX,
+    _PRIMITIVES_MIXING,
+    _PRIMITIVES_REGION,
+    _PRIMITIVES_TRACK,
+)
 from app.core.llm_client import (
     LLMClient,
     LLMResponse,
@@ -31,8 +37,8 @@ from app.core.llm_client import (
     enforce_single_tool,
 )
 from app.core.pipeline import run_pipeline
-from app.core.prompts import editing_prompt, system_prompt_base
-from app.core.sse_utils import sanitize_reasoning, sse_event
+from app.core.prompts import editing_composition_prompt, editing_prompt, system_prompt_base
+from app.core.sse_utils import ReasoningBuffer, sanitize_reasoning, sse_event, strip_tool_echoes
 from app.core.state_store import StateStore, get_or_create_store
 from app.core.tool_validation import validate_tool_call
 from app.core.tools import ALL_TOOLS
@@ -65,6 +71,74 @@ class UsageTracker:
     def add(self, prompt: int, completion: int):
         self.prompt_tokens += prompt
         self.completion_tokens += completion
+
+
+def _project_needs_structure(project_context: dict[str, Any]) -> bool:
+    """Check if the project is empty and needs structural creation.
+
+    Returns True when the project has no tracks, meaning composition
+    requests should use EDITING mode (tool_call events) rather than
+    COMPOSING mode (variation review) — you can't diff against nothing.
+    """
+    tracks = project_context.get("tracks", [])
+    return len(tracks) == 0
+
+
+def _get_incomplete_tracks(
+    store: "StateStore",
+    tool_calls_collected: list[dict[str, Any]] | None = None,
+) -> list[str]:
+    """Return names of tracks that are missing regions or notes.
+
+    Checks two conditions:
+    1. Track has no regions at all
+    2. Track has regions but none of them received stori_add_notes calls
+
+    Used by the composition continuation loop to detect premature LLM stops.
+    """
+    # Build set of regionIds that received notes
+    regions_with_notes: set[str] = set()
+    if tool_calls_collected:
+        for tc in tool_calls_collected:
+            if tc["tool"] == "stori_add_notes":
+                rid = tc["params"].get("regionId")
+                if rid:
+                    regions_with_notes.add(rid)
+
+    incomplete: list[str] = []
+    for track in store.registry.list_tracks():
+        regions = store.registry.get_track_regions(track.id)
+        if not regions:
+            incomplete.append(track.name)
+        elif not any(r.id in regions_with_notes for r in regions):
+            incomplete.append(track.name)
+    return incomplete
+
+
+def _create_editing_composition_route(route: "IntentResult") -> "IntentResult":
+    """Build an EDITING IntentResult for composition on empty projects.
+
+    When the project has no tracks, composition requests should use EDITING
+    mode so structural changes (tracks, regions, instruments, notes) are
+    emitted as tool_call events for real-time frontend rendering.
+    """
+    all_composition_tools = (
+        set(_PRIMITIVES_TRACK) | set(_PRIMITIVES_REGION)
+        | set(_PRIMITIVES_FX) | set(_PRIMITIVES_MIXING)
+        | {"stori_set_tempo", "stori_set_key_signature"}
+    )
+    return IntentResult(
+        intent=route.intent,
+        sse_state=SSEState.EDITING,
+        confidence=route.confidence,
+        slots=route.slots,
+        tools=ALL_TOOLS,
+        allowed_tool_names=all_composition_tools,
+        tool_choice="auto",
+        force_stop_after=False,
+        requires_planner=False,
+        reasons=route.reasons + ("empty_project_override",),
+    )
 
 
 def _store_variation(
@@ -186,12 +260,23 @@ async def orchestrate(
                 route = await get_intent_result_with_llm(prompt, project_context, llm, conversation_history)
                 
                 # Backend-owned execution mode policy:
-                # COMPOSING → variation (all music generation requires human review)
+                # COMPOSING → variation (music generation requires human review)
+                #   EXCEPT: empty project → override to EDITING (can't diff against nothing)
                 # EDITING   → apply (structural ops execute directly)
                 # REASONING → n/a (no tools)
                 if route.sse_state == SSEState.COMPOSING:
-                    execution_mode = "variation"
-                    logger.info(f"Intent {route.intent.value} → COMPOSING, execution_mode='variation'")
+                    if _project_needs_structure(project_context):
+                        # Empty project: structural changes need tool_call events,
+                        # not variation review — you can't diff against nothing.
+                        route = _create_editing_composition_route(route)
+                        execution_mode = "apply"
+                        logger.info(
+                            f"🔄 Empty project: overriding {route.intent.value} → EDITING "
+                            f"for structural creation with tool_call events"
+                        )
+                    else:
+                        execution_mode = "variation"
+                        logger.info(f"Intent {route.intent.value} → COMPOSING, execution_mode='variation'")
                 else:
                     execution_mode = "apply"
                     logger.info(f"Intent {route.intent.value} → {route.sse_state.value}, execution_mode='apply'")
@@ -461,8 +546,6 @@ async def _handle_composing(
         # Variation Mode: Generate proposal without mutation
         # =====================================================================
         try:
-            import asyncio as _asyncio
-
             with trace_span(trace, "variation_generation", {"steps": len(output.plan.tool_calls)}):
                 from app.core.executor import execute_plan_variation
 
@@ -471,20 +554,52 @@ async def _handle_composing(
                     f"{len(output.plan.tool_calls)} tool calls"
                 )
 
+                # Progress queue so we can emit step_progress SSE while executor runs
+                progress_queue: asyncio.Queue[tuple[int, int]] = asyncio.Queue()
+
+                async def on_progress(current: int, total: int) -> None:
+                    await progress_queue.put((current, total))
+
                 # Timeout: prevent infinite hangs from backend calls
                 _VARIATION_TIMEOUT = 90  # seconds
-                try:
-                    variation = await _asyncio.wait_for(
-                        execute_plan_variation(
-                            tool_calls=output.plan.tool_calls,
-                            project_state=project_context,
-                            intent=prompt,
-                            conversation_id=conversation_id,
-                            explanation=output.plan.llm_response_text,
-                        ),
-                        timeout=_VARIATION_TIMEOUT,
+                task = asyncio.create_task(
+                    execute_plan_variation(
+                        tool_calls=output.plan.tool_calls,
+                        project_state=project_context,
+                        intent=prompt,
+                        conversation_id=conversation_id,
+                        explanation=output.plan.llm_response_text,
+                        progress_callback=on_progress,
                     )
-                except _asyncio.TimeoutError:
+                )
+                # Drain progress queue and yield progress SSE; enforce 90s timeout
+                variation = None
+                start_wall = time.time()
+                try:
+                    while True:
+                        if time.time() - start_wall > _VARIATION_TIMEOUT:
+                            task.cancel()
+                            try:
+                                await task
+                            except asyncio.CancelledError:
+                                pass
+                            raise asyncio.TimeoutError()
+                        try:
+                            current, total = await asyncio.wait_for(
+                                progress_queue.get(), timeout=0.05
+                            )
+                            yield await sse_event({
+                                "type": "progress",
+                                "current_step": current,
+                                "total_steps": total,
+                                "message": f"Step {current}/{total}...",
+                            })
+                        except asyncio.TimeoutError:
+                            if task.done():
+                                break
+                        await asyncio.sleep(0)
+                    variation = await task
+                except asyncio.TimeoutError:
                     logger.error(
                         f"[{trace.trace_id[:8]}] Variation generation timed out "
                         f"after {_VARIATION_TIMEOUT}s"
@@ -670,8 +785,12 @@ async def _handle_editing(
     status_msg = "Processing..." if execution_mode == "apply" else "Generating variation..."
     yield await sse_event({"type": "status", "message": status_msg})
     
-    required_single = bool(route.force_stop_after and route.tool_choice == "required")
-    sys_prompt = system_prompt_base() + "\n" + editing_prompt(required_single)
+    # Use composition-specific prompt when GENERATE_MUSIC was re-routed to EDITING
+    if route.intent == Intent.GENERATE_MUSIC:
+        sys_prompt = system_prompt_base() + "\n" + editing_composition_prompt()
+    else:
+        required_single = bool(route.force_stop_after and route.tool_choice == "required")
+        sys_prompt = system_prompt_base() + "\n" + editing_prompt(required_single)
     
     # Build allowed tools only (Cursor-style action space shaping)
     allowed_tools = [t for t in ALL_TOOLS if t["function"]["name"] in route.allowed_tool_names]
@@ -690,10 +809,19 @@ async def _handle_editing(
     
     messages.append({"role": "user", "content": prompt})
     
-    tool_calls_collected = []
-    iteration = 0
+    # Use higher token budget for composition (multi-track MIDI data is token-heavy)
+    is_composition = route.intent == Intent.GENERATE_MUSIC
+    llm_max_tokens: Optional[int] = settings.composition_max_tokens if is_composition else None
+    reasoning_fraction: Optional[float] = settings.composition_reasoning_fraction if is_composition else None
     
-    while iteration < settings.orchestration_max_iterations:
+    tool_calls_collected: list[dict[str, Any]] = []
+    iteration = 0
+    max_iterations = (
+        settings.composition_max_iterations if is_composition
+        else settings.orchestration_max_iterations
+    )
+    
+    while iteration < max_iterations:
         iteration += 1
         
         with trace_span(trace, f"llm_iteration_{iteration}"):
@@ -705,12 +833,15 @@ async def _handle_editing(
                 async for item in _stream_llm_response(
                     llm, messages, allowed_tools, route.tool_choice,
                     trace, lambda data: sse_event(data),
+                    max_tokens=llm_max_tokens,
+                    reasoning_fraction=reasoning_fraction,
+                    suppress_content=True,
                 ):
                     # Check if this is the final response marker
                     if isinstance(item, StreamFinalResponse):
                         response = item.response
                     else:
-                        # It's an SSE event string, yield it
+                        # Reasoning events — forward to client
                         yield item
             else:
                 response = await llm.chat_completion(
@@ -718,6 +849,7 @@ async def _handle_editing(
                     tools=allowed_tools,
                     tool_choice=route.tool_choice,
                     temperature=settings.orchestration_temperature,
+                    max_tokens=llm_max_tokens,
                 )
             
             duration_ms = (time.time() - start_time) * 1000
@@ -744,12 +876,22 @@ async def _handle_editing(
             break
         if route.force_stop_after:
             response = enforce_single_tool(response)
-        
-        # No more tool calls → done
+
+        # Emit filtered content — strip leaked tool-call syntax
+        # (e.g. "(key=\"G major\")", "(,, )") while keeping
+        # natural-language text the user should see.
+        if response.content:
+            clean_content = strip_tool_echoes(response.content)
+            if clean_content:
+                yield await sse_event({"type": "content", "content": clean_content})
+
+        # No more tool calls — fall through to continuation check
         if not response.has_tool_calls:
-            if response.content:
-                yield await sse_event({"type": "content", "content": response.content})
-            break
+            # For non-composition, no tool calls means we're done
+            if not is_composition:
+                break
+            # For composition, fall through to the unified continuation
+            # check after the tool-call processing block
         
         # Process tool calls with validation
         for tc in response.tool_calls:
@@ -887,13 +1029,27 @@ async def _handle_editing(
                 "params": enriched_params,
             })
             
-            # Add to messages
+            # Add to messages — summarize stori_add_notes to avoid
+            # bloating context with hundreds of note objects
+            if tc.name == "stori_add_notes":
+                notes = enriched_params.get("notes", [])
+                summary_params = {
+                    k: v for k, v in enriched_params.items() if k != "notes"
+                }
+                summary_params["_noteCount"] = len(notes)
+                if notes:
+                    starts = [n["startBeat"] for n in notes]
+                    summary_params["_beatRange"] = [min(starts), max(starts)]
+                msg_arguments = json.dumps(summary_params)
+            else:
+                msg_arguments = json.dumps(enriched_params)
+
             messages.append({
                 "role": "assistant",
                 "tool_calls": [{
                     "id": tc.id,
                     "type": "function",
-                    "function": {"name": tc.name, "arguments": json.dumps(enriched_params)}
+                    "function": {"name": tc.name, "arguments": msg_arguments}
                 }]
             })
             messages.append({
@@ -906,8 +1062,51 @@ async def _handle_editing(
         if route.force_stop_after and tool_calls_collected:
             logger.info(f"[{trace.trace_id[:8]}] ✅ Force stop after {len(tool_calls_collected)} tool(s)")
             break
-        
-        if response is not None and response.finish_reason == "stop":
+
+        # ── Composition continuation: always check after tool calls ──
+        # The LLM may return tool calls every iteration but never finish
+        # all tracks. We must check and re-prompt regardless of whether
+        # tool calls were present or what finish_reason says.
+        if is_composition and iteration < max_iterations:
+            all_tracks = store.registry.list_tracks()
+            incomplete = _get_incomplete_tracks(store, tool_calls_collected)
+
+            if not all_tracks:
+                # No tracks created yet — the composition hasn't started
+                continuation = (
+                    "You haven't created any tracks yet. "
+                    "Use stori_add_midi_track to create the instruments, "
+                    "then stori_add_midi_region and stori_add_notes for each."
+                )
+                messages.append({"role": "user", "content": continuation})
+                logger.info(
+                    f"[{trace.trace_id[:8]}] 🔄 Continuation: no tracks yet "
+                    f"(iteration {iteration})"
+                )
+                continue
+            elif incomplete:
+                continuation = (
+                    f"Continue — these tracks still need regions and notes: "
+                    f"{', '.join(incomplete)}. "
+                    f"Call stori_add_midi_region AND stori_add_notes together for each track. "
+                    f"Use multiple tool calls in one response."
+                )
+                messages.append({"role": "user", "content": continuation})
+                logger.info(
+                    f"[{trace.trace_id[:8]}] 🔄 Continuation: {len(incomplete)} tracks still need content "
+                    f"(iteration {iteration})"
+                )
+                continue
+            else:
+                # All tracks have content — composition is complete
+                logger.info(
+                    f"[{trace.trace_id[:8]}] ✅ All tracks have content after iteration {iteration}"
+                )
+                break
+
+        # ── Non-composition: stop when LLM signals done ──
+        _done = response is not None and response.finish_reason in ("stop", "end_turn")
+        if _done:
             break
     
     # =========================================================================
@@ -1004,43 +1203,78 @@ async def _stream_llm_response(
     tool_choice: str,
     trace,
     emit_sse,
+    max_tokens: Optional[int] = None,
+    reasoning_fraction: Optional[float] = None,
+    suppress_content: bool = False,
 ):
-    """Stream LLM response with thinking deltas. Yields SSE events and final response."""
+    """Stream LLM response with thinking deltas. Yields SSE events and final response.
+
+    Reasoning tokens are buffered via ReasoningBuffer so BPE sub-word pieces
+    are merged into complete words before sanitization and SSE emission.
+
+    Args:
+        suppress_content: When True, content deltas are accumulated on the
+            response but NOT emitted as SSE events.  Used by the EDITING
+            handler because the LLM often interleaves tool-call argument
+            syntax (e.g. ``(key="G major")``) into the content stream,
+            which is meaningless to the user.  The caller decides whether
+            to emit ``response.content`` after the stream ends.
+    """
     response_content = None
-    response_tool_calls = []
-    usage = {}
+    response_tool_calls: list[dict[str, Any]] = []
+    finish_reason: Optional[str] = None
+    usage: dict[str, Any] = {}
+    reasoning_buf = ReasoningBuffer()
     
     async for chunk in llm.chat_completion_stream(
         messages=messages,
         tools=tools,
         tool_choice=tool_choice,
         temperature=settings.orchestration_temperature,
+        max_tokens=max_tokens,
+        reasoning_fraction=reasoning_fraction,
     ):
         if chunk.get("type") == "reasoning_delta":
-            # Emit reasoning blocks to client for real-time CoT display
             reasoning_text = chunk.get("text", "")
-            if reasoning_text and emit_sse:
-                # Sanitize reasoning to remove internal implementation details
-                sanitized = sanitize_reasoning(reasoning_text)
-                if sanitized:  # Only emit if there's content after sanitization
+            if reasoning_text:
+                to_emit = reasoning_buf.add(reasoning_text)
+                if to_emit and emit_sse:
                     yield await emit_sse({
                         "type": "reasoning",
-                        "content": sanitized,
+                        "content": to_emit,
                     })
         elif chunk.get("type") == "content_delta":
-            # Emit content blocks to client for user-facing response
+            # Flush any remaining reasoning before content starts
+            flushed = reasoning_buf.flush()
+            if flushed and emit_sse:
+                yield await emit_sse({
+                    "type": "reasoning",
+                    "content": flushed,
+                })
             content_text = chunk.get("text", "")
-            if content_text and emit_sse:
+            if content_text and emit_sse and not suppress_content:
                 yield await emit_sse({
                     "type": "content",
                     "content": content_text,
                 })
         elif chunk.get("type") == "done":
+            # Flush remaining reasoning buffer
+            flushed = reasoning_buf.flush()
+            if flushed and emit_sse:
+                yield await emit_sse({
+                    "type": "reasoning",
+                    "content": flushed,
+                })
             response_content = chunk.get("content")
             response_tool_calls = chunk.get("tool_calls", [])
+            finish_reason = chunk.get("finish_reason")
             usage = chunk.get("usage", {})
     
-    response = LLMResponse(content=response_content, usage=usage)
+    response = LLMResponse(
+        content=response_content,
+        finish_reason=finish_reason,
+        usage=usage,
+    )
     for tc in response_tool_calls:
         try:
             args = tc.get("function", {}).get("arguments", "{}")

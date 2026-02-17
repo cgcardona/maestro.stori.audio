@@ -152,7 +152,7 @@ class TestEntityResolution:
         # Valid region
         result = validate_tool_call(
             tool_name="stori_add_notes",
-            params={"regionId": region_id, "notes": [{"pitch": 36, "startBeats": 0, "durationBeats": 0.5, "velocity": 100}]},
+            params={"regionId": region_id, "notes": [{"pitch": 36, "startBeat": 0, "durationBeats": 0.5, "velocity": 100}]},
             allowed_tools={"stori_add_notes"},
             registry=registry,
         )
@@ -168,6 +168,55 @@ class TestEntityResolution:
         )
         
         assert not result.valid
+
+    def test_entity_creating_tool_skips_primary_id_validation(self):
+        """stori_add_midi_track should not reject hallucinated trackId."""
+        registry = EntityRegistry()
+        # LLM hallucinated a trackId for a CREATE operation — should not fail
+        result = validate_tool_call(
+            tool_name="stori_add_midi_track",
+            params={"name": "Drums", "trackId": "fake-hallucinated-uuid"},
+            allowed_tools={"stori_add_midi_track"},
+            registry=registry,
+        )
+        # Validation passes — server will replace the ID later
+        assert result.valid
+
+    def test_entity_creating_region_skips_regionid_but_validates_trackid(self):
+        """stori_add_midi_region skips regionId validation but still validates trackId."""
+        registry = EntityRegistry()
+        track_id = registry.create_track("Drums")
+
+        # Hallucinated regionId with valid trackId → should pass
+        result = validate_tool_call(
+            tool_name="stori_add_midi_region",
+            params={
+                "trackId": track_id,
+                "regionId": "fake-region-id",
+                "name": "Pattern",
+                "startBeat": 0,
+                "durationBeats": 16,
+            },
+            allowed_tools={"stori_add_midi_region"},
+            registry=registry,
+        )
+        assert result.valid
+
+        # Hallucinated regionId with INVALID trackId → should fail on trackId
+        result = validate_tool_call(
+            tool_name="stori_add_midi_region",
+            params={
+                "trackId": "nonexistent-track",
+                "regionId": "fake-region-id",
+                "name": "Pattern",
+                "startBeat": 0,
+                "durationBeats": 16,
+            },
+            allowed_tools={"stori_add_midi_region"},
+            registry=registry,
+        )
+        assert not result.valid
+        assert any("trackId" in str(e) for e in result.errors)
 
 
 class TestValueRangeValidation:

@@ -65,6 +65,15 @@ ENTITY_REF_FIELDS = {
     "trackName": "track",  # Will be resolved to trackId
 }
 
+# Entity-creating tools → which ID field to SKIP validation on.
+# The server replaces these IDs with fresh UUIDs after validation,
+# so a hallucinated ID from the LLM should not cause rejection.
+_ENTITY_CREATING_SKIP: dict[str, set[str]] = {
+    "stori_add_midi_track": {"trackId"},
+    "stori_add_midi_region": {"regionId"},
+    "stori_ensure_bus": {"busId"},
+}
+
 # Value range constraints
 VALUE_RANGES = {
     "volumeDb": (-60, 12),
@@ -316,8 +325,9 @@ def _resolve_and_validate_entities(
                 code="ENTITY_NOT_FOUND",
             ))
     
-    # Validate trackId exists
-    if "trackId" in resolved:
+    # Validate trackId exists (skip for entity-creating tools — server replaces the ID)
+    skip_fields = _ENTITY_CREATING_SKIP.get(tool_name, set())
+    if "trackId" in resolved and "trackId" not in skip_fields:
         track_id = resolved["trackId"]
         if not registry.exists_track(track_id):
             # Check if it might be a name
@@ -340,8 +350,8 @@ def _resolve_and_validate_entities(
                     code="ENTITY_NOT_FOUND",
                 ))
     
-    # Validate regionId exists
-    if "regionId" in resolved:
+    # Validate regionId exists (skip for entity-creating tools)
+    if "regionId" in resolved and "regionId" not in skip_fields:
         region_id = resolved["regionId"]
         if not registry.exists_region(region_id):
             resolved_id = registry.resolve_region(region_id)
@@ -364,14 +374,10 @@ def _resolve_and_validate_entities(
                     code="ENTITY_NOT_FOUND",
                 ))
     
-    # Validate or create busId
-    if "busId" in resolved:
+    # Validate or create busId (skip for entity-creating tools)
+    if "busId" in resolved and "busId" not in skip_fields:
         bus_id = resolved["busId"]
-        
-        # For ensure_bus, auto-create is OK
-        if tool_name == "stori_ensure_bus":
-            pass  # Will be created
-        elif not registry.exists_bus(bus_id):
+        if not registry.exists_bus(bus_id):
             resolved_id = registry.resolve_bus(bus_id)
             if resolved_id:
                 resolved["busId"] = resolved_id
@@ -640,11 +646,11 @@ def _validate_tool_specific(tool_name: str, params: dict[str, Any]) -> list[Vali
                         ))
                 
                 # StartBeat validation (>= 0)
-                if "startBeats" in note:
-                    start = note["startBeats"]
+                if "startBeat" in note:
+                    start = note["startBeat"]
                     if not isinstance(start, (int, float)) or start < 0:
                         errors.append(ValidationError(
-                            field=f"notes[{i}].startBeats",
+                            field=f"notes[{i}].startBeat",
                             message=f"StartBeat must be >= 0, got {start}",
                             code="INVALID_START",
                         ))

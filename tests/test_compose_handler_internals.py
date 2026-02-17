@@ -358,6 +358,95 @@ class TestHandleEditing:
         assert tc["params"]["tempo"] == 120
 
     @pytest.mark.anyio
+    async def test_editing_emits_content_alongside_tool_calls(self):
+        """Content events are emitted during editing when LLM produces natural-language text."""
+        from app.core.tools import ALL_TOOLS
+
+        allowed = {"stori_set_tempo"}
+        route = _make_route(
+            SSEState.EDITING,
+            Intent.PROJECT_SET_TEMPO,
+            allowed_tool_names=allowed,
+            tool_choice="auto",
+            tools=[t for t in ALL_TOOLS if t["function"]["name"] in allowed],
+        )
+        # First response: content + tool call
+        response = LLMResponse(
+            content="I'll set the tempo to 120 BPM for you.",
+            usage={"prompt_tokens": 5, "completion_tokens": 5},
+        )
+        response.tool_calls = [ToolCallData(id="tc1", name="stori_set_tempo", arguments={"tempo": 120})]
+
+        # Second response: content only (done)
+        done_response = LLMResponse(
+            content="All set! The tempo is now 120 BPM.",
+            usage={"prompt_tokens": 5, "completion_tokens": 5},
+        )
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=[response, done_response])
+        store = StateStore(conversation_id="test")
+        trace = _make_trace()
+
+        events = []
+        async for e in _handle_editing("set tempo to 120", {}, route, llm, store, trace, None, [], "apply"):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        types = [p["type"] for p in payloads]
+
+        # Both content and tool_call events should be present
+        assert "content" in types
+        assert "tool_call" in types
+
+        content_events = [p for p in payloads if p["type"] == "content"]
+        # Content from first iteration + content from second iteration
+        assert len(content_events) >= 1
+        all_content = " ".join(c["content"] for c in content_events)
+        assert "tempo" in all_content.lower() or "120" in all_content
+
+    @pytest.mark.anyio
+    async def test_editing_strips_tool_echo_from_content(self):
+        """Tool-call syntax in content is filtered out before emission."""
+        from app.core.tools import ALL_TOOLS
+
+        allowed = {"stori_set_tempo"}
+        route = _make_route(
+            SSEState.EDITING,
+            Intent.PROJECT_SET_TEMPO,
+            allowed_tool_names=allowed,
+            tool_choice="auto",
+            tools=[t for t in ALL_TOOLS if t["function"]["name"] in allowed],
+        )
+        # Response with tool-call syntax leaking into content
+        response = LLMResponse(
+            content='Setting the tempo:\n\n(tempo=120)\n\nDone with tempo.',
+            usage={"prompt_tokens": 5, "completion_tokens": 5},
+        )
+        response.tool_calls = [ToolCallData(id="tc1", name="stori_set_tempo", arguments={"tempo": 120})]
+
+        done_response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=[response, done_response])
+        store = StateStore(conversation_id="test")
+        trace = _make_trace()
+
+        events = []
+        async for e in _handle_editing("set tempo to 120", {}, route, llm, store, trace, None, [], "apply"):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        content_events = [p for p in payloads if p["type"] == "content"]
+        assert len(content_events) >= 1
+        all_content = " ".join(c["content"] for c in content_events)
+        # Natural language preserved
+        assert "Setting the tempo" in all_content
+        assert "Done with tempo" in all_content
+        # Tool-call syntax stripped
+        assert "(tempo=120)" not in all_content
+
+    @pytest.mark.anyio
     async def test_editing_variation_mode_emits_variation_events(self):
         """EDITING in variation mode emits meta/phrase/done instead of tool_call."""
         from app.core.tools import ALL_TOOLS
@@ -630,7 +719,7 @@ class TestOrchestrateExecutionModePolicy:
 
     @pytest.mark.anyio
     async def test_composing_forces_variation_mode(self):
-        """COMPOSING intent sets execution_mode='variation' internally."""
+        """COMPOSING intent sets execution_mode='variation' internally (requires non-empty project)."""
         from app.core.pipeline import PipelineOutput
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
@@ -650,6 +739,8 @@ class TestOrchestrateExecutionModePolicy:
             beat_range=(0.0, 0.0),
             phrases=[],
         )
+        # Non-empty project so the empty-project override doesn't kick in
+        project_ctx = {"projectId": "p1", "tracks": [{"id": "t1", "name": "Track 1"}]}
 
         with (
             patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
@@ -659,7 +750,7 @@ class TestOrchestrateExecutionModePolicy:
         ):
             m_cls.return_value = _make_llm_mock()
             events = []
-            async for e in orchestrate("make a beat"):
+            async for e in orchestrate("make a beat", project_context=project_ctx):
                 events.append(e)
 
         payloads = _parse_events(events)
