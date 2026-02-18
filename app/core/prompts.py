@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.core.prompt_parser import ParsedPrompt
+    from app.core.prompt_parser import AfterSpec, ParsedPrompt, PositionSpec
 
 def system_prompt_base() -> str:
     return (
@@ -30,12 +30,16 @@ def system_prompt_base() -> str:
         "- Only call tools whose names are in the allowlist.\n"
         "- CRITICAL: Entity ID handling:\n"
         "  * For NEW entities (creating tracks/regions/buses): NEVER provide trackId/regionId/busId.\n"
-        "    Just provide 'name'. Example: stori_add_midi_track(name=\"Drums\") - the server generates the UUID.\n"
-        "  * For EXISTING entities: You have two options:\n"
-        "    1. Use the ID from the 'Available entities' list (preferred): trackId=\"abc-123\"\n"
-        "    2. Use the name and the server will resolve it: trackName=\"Drums\"\n"
-        "  * The Available entities list shows all tracks/regions/buses with their IDs - USE THESE IDs.\n"
-        "  * NEVER invent or guess UUIDs - always use IDs from the Available entities list.\n"
+        "    Just provide 'name'. Example: stori_add_midi_track(name=\"Drums\") - the server assigns the UUID.\n"
+        "  * After creating an entity the tool result contains the assigned ID AND an 'entities' object\n"
+        "    listing ALL current tracks/regions/buses with their IDs. USE THOSE IDs for all subsequent calls.\n"
+        "    Example result: {\"status\":\"success\",\"trackId\":\"abc-123\",\"entities\":{\"tracks\":[...]}}\n"
+        "  * Within a single response, use $N.field to reference the output of the Nth tool call (0-based).\n"
+        "    E.g. if stori_add_midi_region is your 3rd call (index 2), use regionId=\"$2.regionId\" in stori_add_notes.\n"
+        "    This avoids ID guessing when creating a region and immediately adding notes in the same turn.\n"
+        "  * For EXISTING entities: use the ID from the most recent 'entities' snapshot in your context.\n"
+        "    If no snapshot yet, use the 'Available entities' list at the top, or use trackName for resolution.\n"
+        "  * NEVER invent or guess UUIDs - always use IDs from tool results or the Available entities list.\n"
         "- Keep tool calls minimal: accomplish the request with the fewest state changes.\n"
         "- After tool calls, respond with a short confirmation.\n\n"
         "REASONING GUIDELINES (for models with extended thinking):\n"
@@ -220,4 +224,169 @@ def structured_prompt_context(parsed: "ParsedPrompt") -> str:
     lines.append("Use the above values directly. Do not re-infer them from the Request text.")
     lines.append("")
 
+    return "\n".join(lines)
+
+
+# ─── Sequential arrangement helpers ─────────────────────────────────────────
+
+
+def _tracks_matching(
+    label: Optional[str],
+    tracks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return tracks whose name or any region name contains label."""
+    if not label:
+        return tracks
+    label = label.lower()
+    matching = []
+    for track in tracks:
+        if label in track.get("name", "").lower():
+            matching.append(track)
+        else:
+            for region in track.get("regions", []):
+                if label in region.get("name", "").lower():
+                    matching.append(track)
+                    break
+    return matching
+
+
+def _max_end_beat(tracks: list[dict[str, Any]]) -> float:
+    """Maximum (startBeat + durationBeats) across all regions in tracks."""
+    end = 0.0
+    for track in tracks:
+        for region in track.get("regions", []):
+            end = max(end, region.get("startBeat", 0.0) + region.get("durationBeats", 0.0))
+    return end
+
+
+def _min_start_beat(tracks: list[dict[str, Any]]) -> float:
+    """Minimum startBeat across all regions in tracks."""
+    starts = [
+        region.get("startBeat", 0.0)
+        for track in tracks
+        for region in track.get("regions", [])
+    ]
+    return min(starts) if starts else 0.0
+
+
+def resolve_position(pos: "PositionSpec", project_context: dict[str, Any]) -> float:
+    """Resolve a PositionSpec to a concrete start beat using the project state.
+
+    The LLM never has to do beat-offset math — the server computes the exact
+    insertion point and injects it into the system prompt.
+
+    Relationship semantics:
+      absolute  → beat value, apply offset
+      last      → max end beat across all regions, apply offset
+      after X   → max end beat of X's tracks/regions, apply offset
+      before X  → min start beat of X's tracks/regions, apply offset
+                  (negative offset = pickup into X)
+      alongside X → min start beat of X (parallel entry), apply offset
+      between X Y → max end beat of X (gap start), apply offset
+      within X  → min start beat of X, apply offset
+    """
+    tracks: list[dict[str, Any]] = project_context.get("tracks", [])
+
+    if pos.kind == "absolute":
+        return float((pos.beat or 0.0) + pos.offset)
+
+    if pos.kind == "last":
+        return _max_end_beat(tracks) + pos.offset
+
+    ref_tracks = _tracks_matching(pos.ref, tracks)
+    # Fall back to all tracks if no match found for named section
+    if not ref_tracks and pos.ref:
+        ref_tracks = tracks
+
+    if pos.kind == "after":
+        return _max_end_beat(ref_tracks) + pos.offset
+
+    if pos.kind == "before":
+        return _min_start_beat(ref_tracks) + pos.offset
+
+    if pos.kind == "alongside":
+        return _min_start_beat(ref_tracks) + pos.offset
+
+    if pos.kind == "within":
+        return _min_start_beat(ref_tracks) + pos.offset
+
+    if pos.kind == "between":
+        # Start of the gap: end of ref, adjusted toward ref2
+        end_of_ref = _max_end_beat(ref_tracks)
+        if pos.ref2:
+            ref2_tracks = _tracks_matching(pos.ref2, tracks)
+            start_of_ref2 = _min_start_beat(ref2_tracks) if ref2_tracks else end_of_ref
+            # Place at midpoint of gap by default; offset shifts within the gap
+            gap = (start_of_ref2 - end_of_ref) / 2
+            return end_of_ref + gap + pos.offset
+        return end_of_ref + pos.offset
+
+    return 0.0
+
+
+def resolve_after_beat(after: "AfterSpec", project_context: dict[str, Any]) -> float:
+    """Backwards-compatible wrapper — delegates to resolve_position."""
+    return resolve_position(after, project_context)
+
+
+def sequential_context(
+    start_beat: float,
+    section_name: Optional[str] = None,
+    pos: Optional["PositionSpec"] = None,
+) -> str:
+    """Return an LLM instruction block for arrangement placement.
+
+    Injected into the system prompt whenever a Position: (or After:) field
+    is present. Communicates the resolved beat and the musical intent of the
+    positioning relationship so the agent understands both *where* and *why*.
+    """
+    beat_int = int(start_beat)
+    lines = ["═════════════════════════════════════", "ARRANGEMENT POSITION"]
+
+    # Describe the relationship in musical terms the LLM can act on
+    if pos is not None:
+        kind = pos.kind
+        ref = pos.ref or ""
+        if kind == "absolute":
+            lines.append(f"Absolute placement — start at beat {beat_int}.")
+        elif kind == "last":
+            lines.append(f"Append after all existing content — start at beat {beat_int}.")
+        elif kind == "after":
+            lines.append(f"Sequential — starts after '{ref}' ends, at beat {beat_int}.")
+        elif kind == "before":
+            verb = "pickup" if pos.offset < 0 else "insert"
+            lines.append(f"Anticipatory {verb} — starts before '{ref}' at beat {beat_int}.")
+            if pos.offset < 0:
+                lines.append(
+                    f"This is a {abs(int(pos.offset))}-beat lead-in into '{ref}'. "
+                    "The material should feel like a natural pickup."
+                )
+        elif kind == "alongside":
+            lines.append(
+                f"Parallel layer — starts alongside '{ref}' at beat {beat_int}. "
+                "Add new tracks; do NOT move existing tracks."
+            )
+        elif kind == "between":
+            ref2 = pos.ref2 or "next section"
+            lines.append(
+                f"Transition bridge — fills the gap between '{ref}' and '{ref2}', "
+                f"starting at beat {beat_int}."
+            )
+        elif kind == "within":
+            lines.append(f"Nested placement — starts inside '{ref}' at beat {beat_int}.")
+    else:
+        lines.append(f"Start ALL new regions at beat {beat_int}.")
+
+    lines.append(f"All new regions MUST use startBeat >= {beat_int}.")
+    lines.append("Do not modify or overlap existing regions unless the relationship requires it.")
+
+    if section_name:
+        lines.append(f"This prompt creates the '{section_name}' section.")
+        lines.append(
+            f"Name new tracks and regions to reflect the section "
+            f"(e.g. '{section_name.title()} Drums', '{section_name.title()} Bass')."
+        )
+
+    lines.append("═════════════════════════════════════")
+    lines.append("")
     return "\n".join(lines)

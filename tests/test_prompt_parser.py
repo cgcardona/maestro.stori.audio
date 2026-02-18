@@ -1,9 +1,12 @@
 """Tests for Stori structured prompt parser (app/core/prompt_parser.py)."""
 
 import pytest
+from typing import Optional
 
 from app.core.prompt_parser import (
+    AfterSpec,
     ParsedPrompt,
+    PositionSpec,
     TargetSpec,
     VibeWeight,
     parse_prompt,
@@ -513,3 +516,209 @@ class TestRawPreserved:
         result = parse_prompt(prompt)
         assert result is not None
         assert result.raw == prompt
+
+
+# ─── Section field ───────────────────────────────────────────────────────────
+
+
+class TestSectionField:
+    def test_section_parsed_to_lowercase(self):
+        result = parse_prompt("STORI PROMPT\nMode: compose\nSection: Intro\nRequest: go")
+        assert result is not None
+        assert result.section == "intro"
+
+    def test_section_absent_is_none(self):
+        result = parse_prompt("STORI PROMPT\nMode: compose\nRequest: go")
+        assert result is not None
+        assert result.section is None
+
+    def test_section_verse(self):
+        result = parse_prompt("STORI PROMPT\nMode: compose\nSection: verse\nRequest: go")
+        assert result is not None
+        assert result.section == "verse"
+
+
+# ─── Position: field (canonical) ────────────────────────────────────────────
+
+
+class TestPositionField:
+    """Tests for the full Position: field vocabulary."""
+
+    def _p(self, position_val: str) -> Optional[PositionSpec]:
+        result = parse_prompt(f"STORI PROMPT\nMode: compose\nPosition: {position_val}\nRequest: go")
+        assert result is not None
+        return result.position
+
+    # Absolute
+    def test_absolute_integer(self):
+        pos = self._p("32")
+        assert pos is not None and pos.kind == "absolute" and pos.beat == 32.0
+
+    def test_absolute_beat_keyword(self):
+        pos = self._p("beat 64")
+        assert pos is not None and pos.kind == "absolute" and pos.beat == 64.0
+
+    def test_absolute_at_keyword(self):
+        pos = self._p("at 16")
+        assert pos is not None and pos.kind == "absolute" and pos.beat == 16.0
+
+    def test_absolute_bar(self):
+        pos = self._p("at bar 5")
+        assert pos is not None and pos.kind == "absolute" and pos.beat == 16.0  # (5-1)*4
+
+    # Last
+    def test_last(self):
+        pos = self._p("last")
+        assert pos is not None and pos.kind == "last"
+
+    # After
+    def test_after_section(self):
+        pos = self._p("after intro")
+        assert pos is not None and pos.kind == "after" and pos.ref == "intro"
+
+    def test_after_with_positive_offset(self):
+        pos = self._p("after intro + 2")
+        assert pos is not None and pos.kind == "after" and pos.ref == "intro" and pos.offset == 2.0
+
+    # Before
+    def test_before_section(self):
+        pos = self._p("before chorus")
+        assert pos is not None and pos.kind == "before" and pos.ref == "chorus"
+
+    def test_before_pickup_negative_offset(self):
+        pos = self._p("before chorus - 4")
+        assert pos is not None and pos.kind == "before" and pos.ref == "chorus" and pos.offset == -4.0
+
+    # Alongside
+    def test_alongside_section(self):
+        pos = self._p("alongside verse")
+        assert pos is not None and pos.kind == "alongside" and pos.ref == "verse"
+
+    def test_alongside_with_offset(self):
+        pos = self._p("alongside verse + 8")
+        assert pos is not None and pos.kind == "alongside" and pos.ref == "verse" and pos.offset == 8.0
+
+    # Between
+    def test_between_two_sections(self):
+        pos = self._p("between intro verse")
+        assert pos is not None and pos.kind == "between"
+        assert pos.ref == "intro" and pos.ref2 == "verse"
+
+    # Within
+    def test_within_section(self):
+        pos = self._p("within verse bar 3")
+        assert pos is not None and pos.kind == "within" and pos.ref == "verse"
+        assert pos.offset == 8.0  # (3-1)*4
+
+    # Absent
+    def test_position_absent_is_none(self):
+        result = parse_prompt("STORI PROMPT\nMode: compose\nRequest: go")
+        assert result is not None and result.position is None
+
+    # After: alias still works
+    def test_after_alias_maps_to_after_kind(self):
+        result = parse_prompt("STORI PROMPT\nMode: compose\nAfter: intro\nRequest: go")
+        assert result is not None
+        pos = result.position
+        assert pos is not None and pos.kind == "after" and pos.ref == "intro"
+
+    def test_after_alias_last(self):
+        result = parse_prompt("STORI PROMPT\nMode: compose\nAfter: last\nRequest: go")
+        assert result is not None
+        pos = result.position
+        assert pos is not None and pos.kind == "last"
+
+    def test_position_wins_over_after(self):
+        """Position: takes precedence over After: when both are present."""
+        result = parse_prompt(
+            "STORI PROMPT\nMode: compose\nPosition: alongside verse\nAfter: intro\nRequest: go"
+        )
+        assert result is not None
+        pos = result.position
+        assert pos is not None and pos.kind == "alongside"
+
+    # .after property is backwards-compatible
+    def test_after_property_alias(self):
+        result = parse_prompt("STORI PROMPT\nMode: compose\nPosition: after chorus\nRequest: go")
+        assert result is not None
+        assert result.after is result.position
+
+
+# ─── resolve_position ────────────────────────────────────────────────────────
+
+
+class TestResolvePosition:
+    """Tests for prompts.resolve_position()."""
+
+    _PROJECT = {
+        "tracks": [
+            {"name": "Intro Drums", "regions": [
+                {"startBeat": 0, "durationBeats": 16},
+            ]},
+            {"name": "Intro Bass", "regions": [
+                {"startBeat": 0, "durationBeats": 16},
+                {"startBeat": 16, "durationBeats": 4},   # ends at 20
+            ]},
+            {"name": "Verse Pad", "regions": [
+                {"startBeat": 20, "durationBeats": 16},  # ends at 36
+            ]},
+            {"name": "Chorus Lead", "regions": [
+                {"startBeat": 36, "durationBeats": 16},  # ends at 52
+            ]},
+        ]
+    }
+
+    def _resolve(self, pos: PositionSpec) -> float:
+        from app.core.prompts import resolve_position
+        return resolve_position(pos, self._PROJECT)
+
+    def test_absolute(self):
+        assert self._resolve(PositionSpec(kind="absolute", beat=48.0)) == 48.0
+
+    def test_absolute_with_offset(self):
+        assert self._resolve(PositionSpec(kind="absolute", beat=0.0, offset=4.0)) == 4.0
+
+    def test_last(self):
+        assert self._resolve(PositionSpec(kind="last")) == 52.0
+
+    def test_last_empty_project(self):
+        from app.core.prompts import resolve_position
+        assert resolve_position(PositionSpec(kind="last"), {}) == 0.0
+
+    def test_after_intro(self):
+        # Intro ends at beat 20
+        assert self._resolve(PositionSpec(kind="after", ref="intro")) == 20.0
+
+    def test_after_intro_with_offset(self):
+        assert self._resolve(PositionSpec(kind="after", ref="intro", offset=2.0)) == 22.0
+
+    def test_before_chorus(self):
+        # Chorus starts at beat 36
+        assert self._resolve(PositionSpec(kind="before", ref="chorus")) == 36.0
+
+    def test_before_chorus_pickup(self):
+        # 4-beat pickup into chorus
+        assert self._resolve(PositionSpec(kind="before", ref="chorus", offset=-4.0)) == 32.0
+
+    def test_alongside_verse(self):
+        # Verse starts at beat 20
+        assert self._resolve(PositionSpec(kind="alongside", ref="verse")) == 20.0
+
+    def test_alongside_verse_late_entry(self):
+        assert self._resolve(PositionSpec(kind="alongside", ref="verse", offset=8.0)) == 28.0
+
+    def test_between_intro_verse(self):
+        # Intro ends at 20, Verse starts at 20 → gap is 0, midpoint = 20
+        assert self._resolve(PositionSpec(kind="between", ref="intro", ref2="verse")) == 20.0
+
+    def test_within_verse_bar3(self):
+        # Verse starts at beat 20; bar 3 = +8 beats
+        assert self._resolve(PositionSpec(kind="within", ref="verse", offset=8.0)) == 28.0
+
+    def test_unknown_section_falls_back_to_last(self):
+        assert self._resolve(PositionSpec(kind="after", ref="bridge")) == 52.0
+
+    def test_backwards_compat_resolve_after_beat(self):
+        from app.core.prompts import resolve_after_beat
+        pos = PositionSpec(kind="after", ref="intro")
+        assert resolve_after_beat(pos, self._PROJECT) == 20.0

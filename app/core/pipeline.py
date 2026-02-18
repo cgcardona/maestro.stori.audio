@@ -29,7 +29,7 @@ from app.core.intent import get_intent_result, SSEState, IntentResult, Intent
 from app.core.planner import build_execution_plan, ExecutionPlan
 from app.core.prompt_parser import ParsedPrompt
 from app.core.llm_client import LLMClient, LLMResponse
-from app.core.prompts import system_prompt_base, editing_prompt, composing_prompt, structured_prompt_context
+from app.core.prompts import system_prompt_base, editing_prompt, composing_prompt, resolve_position, sequential_context, structured_prompt_context
 from app.core.tools import ALL_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,9 @@ async def run_pipeline(
 
     if parsed is not None:
         sys += structured_prompt_context(parsed)
+        if parsed.position is not None:
+            start_beat = resolve_position(parsed.position, project_state or {})
+            sys += sequential_context(start_beat, parsed.section, pos=parsed.position)
 
     # You can pass ALL_TOOLS for caching and enforce allowlist server-side, or pass only allowed tools.
     # Cursor-style: pass only allowed tools for this request.

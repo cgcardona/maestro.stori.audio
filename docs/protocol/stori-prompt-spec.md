@@ -50,6 +50,8 @@ Mode overrides fuzzy language detection from `intent.py`.
 
     STORI PROMPT
     Mode:
+    Section:
+    Position:
     Target:
     Style:
     Key:
@@ -74,6 +76,103 @@ Examples:
     Mode: compose
     Mode: edit
     Mode: ask
+
+------------------------------------------------------------------------
+
+## Section
+
+Names the output of this prompt as a labeled section of the arrangement.
+Used so subsequent prompts can reference it with `After:`.
+
+Examples:
+
+    Section: intro
+    Section: verse
+    Section: chorus
+    Section: bridge
+    Section: outro
+
+The label is passed to the agent as context so it names tracks and regions
+accordingly (e.g. "Intro Drums", "Verse Bass"). It also registers the section
+in the arrangement timeline for `After:` resolution.
+
+------------------------------------------------------------------------
+
+## Position
+
+The most expressive field in the spec. Declares **where** new content
+sits in the arrangement timeline using a CSS-pseudo-selector-style
+vocabulary: a relationship keyword, optional section references, and
+an optional beat offset.
+
+The server resolves `Position:` to a concrete beat number and injects
+it into the agent context — no manual beat math required.
+
+### Relationships
+
+| Form | Musical meaning |
+|------|----------------|
+| `last` | Append after everything currently in the project |
+| `after <section>` | Sequential — start after named section ends |
+| `before <section>` | Insert before named section begins |
+| `alongside <section>` | Parallel layer — start at the same beat as section |
+| `between <A> <B>` | Transition bridge — fill the gap between A and B |
+| `within <section> bar N` | Relative — N bars into named section |
+| `at <beat>` / `<N>` | Absolute beat number |
+| `at bar <N>` | Absolute bar reference (bar 1 = beat 0, bar 2 = beat 4, …) |
+
+### Offset operator
+
+Append `+ N` or `- N` (beats) to any relationship:
+
+    Position: before chorus - 4       # 4-beat pickup into chorus
+    Position: after intro + 2         # 2-beat breathing room before verse
+    Position: alongside verse + 8     # enters 8 beats into the verse
+    Position: between intro verse + 2 # 2 beats after the gap midpoint
+
+Negative offsets on `before` express **anticipatory pickups** — a
+fundamental musical gesture (lead-ins, drum fills, cinematic swells).
+
+### Resolution rules (server-side)
+
+- `last` — `max(startBeat + durationBeats)` across all regions.
+- `after X` — max end beat of tracks/regions whose name contains X.
+- `before X` — min start beat of X's tracks/regions.
+- `alongside X` — min start beat of X's tracks/regions.
+- `between X Y` — midpoint of the gap between X end and Y start.
+- `within X bar N` — X's start beat + (N−1)×4 beats.
+- `at N` / `beat N` — literal beat, no scanning.
+- `at bar N` — `(N−1) × 4` beats (assumes 4/4).
+
+If no matching section is found for a named reference, falls back to
+`last` (max end beat).
+
+**Frontend requirement:** Pass the current project state in the `project`
+field of the stream request. An empty `project: {}` resolves everything
+to beat 0.
+
+### Examples
+
+    Position: last                     # append to end
+    Position: after intro              # sequential verse
+    Position: after intro + 2          # verse with 2-beat gap
+    Position: before chorus - 4        # 4-beat pickup into chorus
+    Position: alongside verse          # new parallel layer
+    Position: alongside verse + 8      # late-entry layer
+    Position: between intro verse      # transition bridge
+    Position: within verse bar 3       # starts at bar 3 of verse
+    Position: at 0                     # absolute start
+    Position: at bar 9                 # bar 9 (beat 32 in 4/4)
+    Position: 64                       # absolute beat 64
+
+### Backwards compatibility
+
+`After: <value>` is a shorthand alias — it maps to `Position: after <value>`.
+Both are supported. `Position:` wins if both are present.
+
+    After: intro          # same as: Position: after intro
+    After: last           # same as: Position: last
+    After: 32             # same as: Position: 32
 
 ------------------------------------------------------------------------
 
@@ -247,10 +346,11 @@ When fields are present:
 
 ------------------------------------------------------------------------
 
-## 🎵 Example 1 --- Compose (Advanced)
+## 🎵 Example 1 — Compose (Intro)
 
     STORI PROMPT
     Mode: compose
+    Section: intro
     Target: project
     Style: melodic techno
     Key: F#m
@@ -274,6 +374,113 @@ When fields are present:
 
     Request:
     Build an intro groove that evolves every 4 bars and opens into a club-ready loop.
+
+------------------------------------------------------------------------
+
+## 🎵 Example 1b — Sequential Compose (Verse after Intro)
+
+Send this as a second prompt after Example 1. The backend resolves
+`Position: after intro` from the project state and starts all new
+regions at the correct beat automatically.
+
+    STORI PROMPT
+    Mode: compose
+    Section: verse
+    Position: after intro
+    Style: melodic techno
+    Key: F#m
+    Tempo: 126
+
+    Role:
+    - kick
+    - bass
+    - lead
+
+    Constraints:
+    - bars: 16
+    - density: high
+
+    Vibe:
+    - hypnotic:3
+    - driving:2
+
+    Request:
+    Full verse drop — harder kick, melodic lead riding over the bass.
+
+------------------------------------------------------------------------
+
+## 🎵 Example 1c — Anticipatory Pickup (Before Chorus)
+
+The pickup starts 4 beats before the chorus — a 1-bar drum fill that
+leads into the drop.
+
+    STORI PROMPT
+    Mode: compose
+    Section: pre-chorus fill
+    Position: before chorus - 4
+
+    Role: drums
+
+    Constraints:
+    - bars: 1
+    - density: high
+
+    Vibe:
+    - building:3
+    - tension:2
+
+    Request:
+    1-bar drum fill building into the chorus drop.
+
+------------------------------------------------------------------------
+
+## 🎵 Example 1d — Parallel Layer (Alongside)
+
+Adds a new synth pad layer that runs with the existing verse rather
+than following it.
+
+    STORI PROMPT
+    Mode: compose
+    Section: verse pad layer
+    Position: alongside verse
+
+    Role: pads
+
+    Constraints:
+    - bars: 16
+
+    Vibe:
+    - atmospheric:3
+    - warm:2
+
+    Request:
+    Slow-moving pad chords underneath the verse — don't crowd the
+    existing elements, just add depth.
+
+------------------------------------------------------------------------
+
+## 🎵 Example 1e — Transition Bridge (Between)
+
+Fills the gap between intro and verse with a 4-bar transition.
+
+    STORI PROMPT
+    Mode: compose
+    Section: transition
+    Position: between intro verse
+
+    Role:
+    - drums
+    - bass
+
+    Constraints:
+    - bars: 4
+
+    Vibe:
+    - building:2
+    - momentum:3
+
+    Request:
+    4-bar energy bridge connecting intro to verse — rising energy.
 
 ------------------------------------------------------------------------
 
@@ -345,7 +552,10 @@ All items are implemented.
 | Structured prompt context | Done | `app/core/prompts.py` |
 | Pipeline threading | Done | `app/core/pipeline.py`, `app/core/compose_handlers.py` |
 | Target scope validation | Done | `app/core/tool_validation.py` |
+| `Section` / `Position` fields (6 relationships) | Done | `app/core/prompt_parser.py`, `app/core/prompts.py` |
+| Entity manifest in tool results | Done | `app/core/compose_handlers.py` |
+| Variable reference resolution (`$N.field`) | Done | `app/core/compose_handlers.py` |
 
-**Tests:** `tests/test_prompt_parser.py` (56), `tests/test_intent_structured.py` (26),
+**Tests:** `tests/test_prompt_parser.py` (56+), `tests/test_intent_structured.py` (26),
 `tests/test_structured_prompt_integration.py` (16), `tests/test_tool_validation.py` (6 new).
 All existing tests pass unchanged (zero regression).

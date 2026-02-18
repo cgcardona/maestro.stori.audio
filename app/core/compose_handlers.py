@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional, cast
@@ -38,7 +39,14 @@ from app.core.llm_client import (
 )
 from app.core.pipeline import run_pipeline
 from app.core.prompt_parser import ParsedPrompt
-from app.core.prompts import editing_composition_prompt, editing_prompt, structured_prompt_context, system_prompt_base
+from app.core.prompts import (
+    editing_composition_prompt,
+    editing_prompt,
+    resolve_position,
+    sequential_context,
+    structured_prompt_context,
+    system_prompt_base,
+)
 from app.core.sse_utils import ReasoningBuffer, sanitize_reasoning, sse_event, strip_tool_echoes
 from app.core.state_store import StateStore, get_or_create_store
 from app.core.tool_validation import validate_tool_call
@@ -74,14 +82,74 @@ class UsageTracker:
         self.completion_tokens += completion
 
 
-# Entity ID fields to echo back to the LLM after entity-creating tool calls.
-# The server replaces LLM-provided UUIDs with freshly generated ones; the LLM
-# must receive the real IDs so it can reference them in subsequent calls.
+# Tools that create new entities. The tool result for these always includes
+# the server-assigned ID(s) plus a full entity manifest so the LLM has a
+# current picture of the project after every creation.
+_ENTITY_CREATING_TOOLS: set[str] = {
+    "stori_add_midi_track",
+    "stori_add_track",
+    "stori_add_midi_region",
+    "stori_add_region",
+    "stori_ensure_bus",
+    "stori_duplicate_region",
+}
+
+# Which ID fields to echo back per entity-creating tool.
 _ENTITY_ID_ECHO: dict[str, list[str]] = {
     "stori_add_midi_track": ["trackId"],
+    "stori_add_track":      ["trackId"],
     "stori_add_midi_region": ["regionId", "trackId"],
-    "stori_ensure_bus": ["busId"],
+    "stori_add_region":     ["regionId", "trackId"],
+    "stori_ensure_bus":     ["busId"],
+    "stori_duplicate_region": ["newRegionId", "regionId"],
 }
+
+
+_VAR_REF_RE = re.compile(r"^\$(\d+)\.(\w+)$")
+
+
+def _resolve_variable_refs(
+    params: dict[str, Any],
+    prior_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Resolve $N.field variable references in tool params.
+
+    Lets the LLM reference the output of an earlier tool call in the same
+    batch without guessing IDs. E.g. stori_add_notes(regionId="$1.regionId")
+    uses the regionId returned by the second tool call this turn.
+    """
+    if not prior_results:
+        return params
+    resolved = {}
+    for key, value in params.items():
+        if isinstance(value, str):
+            m = _VAR_REF_RE.match(value)
+            if m:
+                idx, field = int(m.group(1)), m.group(2)
+                if 0 <= idx < len(prior_results):
+                    substituted = prior_results[idx].get(field)
+                    if substituted is not None:
+                        resolved[key] = substituted
+                        continue
+        resolved[key] = value
+    return resolved
+
+
+def _entity_manifest(store: Any) -> dict[str, Any]:
+    """Return a compact entity listing so the LLM always knows current IDs.
+
+    Included in every entity-creating tool result so the LLM never has to
+    guess UUIDs or rely on the (stale) project snapshot from the request.
+    """
+    tracks = []
+    for track in store.registry.list_tracks():
+        regions = [
+            {"name": r.name, "regionId": r.id}
+            for r in store.registry.get_track_regions(track.id)
+        ]
+        tracks.append({"name": track.name, "trackId": track.id, "regions": regions})
+    buses = [{"name": b.name, "busId": b.id} for b in store.registry.list_buses()]
+    return {"tracks": tracks, "buses": buses}
 
 
 def _project_needs_structure(project_context: dict[str, Any]) -> bool:
@@ -810,10 +878,14 @@ async def _handle_editing(
     parsed: Optional[ParsedPrompt] = _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
     if parsed is not None:
         sys_prompt += structured_prompt_context(parsed)
-    
+        # Inject sequential placement context when After: is present
+        if parsed.position is not None:
+            start_beat = resolve_position(parsed.position, project_context or {})
+            sys_prompt += sequential_context(start_beat, parsed.section, pos=parsed.position)
+
     # Build allowed tools only (Cursor-style action space shaping)
     allowed_tools = [t for t in ALL_TOOLS if t["function"]["name"] in route.allowed_tool_names]
-    
+
     messages: list[dict[str, Any]] = [{"role": "system", "content": sys_prompt}]
 
     # Inject project context — prefer the request-body snapshot (authoritative),
@@ -929,11 +1001,19 @@ async def _handle_editing(
             # For composition, fall through to the unified continuation
             # check after the tool-call processing block
         
+        # Accumulates tool results within this iteration so $N.field refs
+        # in later tool calls can reference outputs of earlier ones.
+        iter_tool_results: list[dict[str, Any]] = []
+
         # Process tool calls with validation
         for tc in response.tool_calls:
+            # Resolve $N.fieldName variable references before validation so
+            # the substituted IDs pass entity-existence checks correctly.
+            resolved_args = _resolve_variable_refs(tc.arguments, iter_tool_results)
+
             with trace_span(trace, f"validate:{tc.name}"):
                 validation = validate_tool_call(
-                    tc.name, tc.arguments, route.allowed_tool_names, store.registry
+                    tc.name, resolved_args, route.allowed_tool_names, store.registry
                 )
             
             if not validation.valid:
@@ -956,13 +1036,15 @@ async def _handle_editing(
                     "tool_calls": [{
                         "id": tc.id,
                         "type": "function",
-                        "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)}
+                        "function": {"name": tc.name, "arguments": json.dumps(resolved_args)}
                     }]
                 })
+                error_result = {"error": validation.error_message}
+                iter_tool_results.append(error_result)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": json.dumps({"error": validation.error_message}),
+                    "content": json.dumps(error_result),
                 })
                 continue
             
@@ -1036,6 +1118,58 @@ async def _handle_editing(
                     except ValueError as e:
                         logger.error(f"Failed to create region: {e}")
             
+            elif tc.name == "stori_add_track":
+                # Legacy track creation tool — same server-side ID generation as
+                # stori_add_midi_track, with basic GM inference from name.
+                track_name = enriched_params.get("name", "Track")
+                if "trackId" in enriched_params:
+                    logger.warning(
+                        f"⚠️ LLM provided trackId for stori_add_track '{track_name}'. Ignoring."
+                    )
+                track_id = store.create_track(track_name)
+                enriched_params["trackId"] = track_id
+                logger.debug(f"🔑 Generated trackId: {track_id[:8]} for '{track_name}' (stori_add_track)")
+
+            elif tc.name == "stori_add_region":
+                # Legacy region creation tool — same server-side ID generation as
+                # stori_add_midi_region.
+                add_region_track_id: Optional[str] = enriched_params.get("trackId")
+                add_region_name: str = str(enriched_params.get("name", "Region"))
+                if "regionId" in enriched_params:
+                    logger.warning(
+                        f"⚠️ LLM provided regionId for stori_add_region '{add_region_name}'. Ignoring."
+                    )
+                if add_region_track_id:
+                    try:
+                        region_id = store.create_region(
+                            add_region_name, add_region_track_id,
+                            metadata={
+                                "startBeat": enriched_params.get("startBeat", 0),
+                                "durationBeats": enriched_params.get("durationBeats", 16),
+                            }
+                        )
+                        enriched_params["regionId"] = region_id
+                        logger.debug(f"🔑 Generated regionId: {region_id[:8]} for '{add_region_name}' (stori_add_region)")
+                    except ValueError as e:
+                        logger.error(f"Failed to create region (stori_add_region): {e}")
+
+            elif tc.name == "stori_duplicate_region":
+                # Duplicating a region creates a new entity — register the copy.
+                source_region_id: str = enriched_params.get("regionId", "")
+                source_entity = store.registry.get_region(source_region_id)
+                if source_entity:
+                    copy_name = f"{source_entity.name} (copy)"
+                    parent_track_id = source_entity.parent_id or ""
+                    try:
+                        new_region_id = store.create_region(
+                            copy_name, parent_track_id,
+                            metadata={"startBeat": enriched_params.get("startBeat", 0)},
+                        )
+                        enriched_params["newRegionId"] = new_region_id
+                        logger.debug(f"🔑 Generated newRegionId: {new_region_id[:8]} for duplicate of '{source_entity.name}'")
+                    except ValueError as e:
+                        logger.error(f"Failed to register duplicate region: {e}")
+
             elif tc.name == "stori_ensure_bus":
                 bus_name = enriched_params.get("name", "Bus")
                 
@@ -1088,14 +1222,20 @@ async def _handle_editing(
                     "function": {"name": tc.name, "arguments": msg_arguments}
                 }]
             })
-            # Echo server-assigned entity IDs back to the LLM.
-            # For entity-creating tools the server generates fresh UUIDs and
-            # replaces whatever the LLM provided — the LLM must know the real
-            # IDs so it can reference them correctly in subsequent tool calls.
+            # Build tool result. For entity-creating tools: echo the
+            # server-assigned ID(s) AND include the full current entity
+            # manifest so the LLM always has an up-to-date picture of the
+            # project after every creation — no stale UUIDs, no guessing.
             tool_result: dict = {"status": "success"}
-            for _field in _ENTITY_ID_ECHO.get(tc.name, []):
-                if _field in enriched_params:
-                    tool_result[_field] = enriched_params[_field]
+            if tc.name in _ENTITY_CREATING_TOOLS:
+                for _field in _ENTITY_ID_ECHO.get(tc.name, []):
+                    if _field in enriched_params:
+                        tool_result[_field] = enriched_params[_field]
+                tool_result["entities"] = _entity_manifest(store)
+
+            # Accumulate for $N.field variable reference resolution in
+            # subsequent tool calls within this same iteration.
+            iter_tool_results.append(tool_result)
 
             messages.append({
                 "role": "tool",
