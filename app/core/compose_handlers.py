@@ -74,6 +74,16 @@ class UsageTracker:
         self.completion_tokens += completion
 
 
+# Entity ID fields to echo back to the LLM after entity-creating tool calls.
+# The server replaces LLM-provided UUIDs with freshly generated ones; the LLM
+# must receive the real IDs so it can reference them in subsequent calls.
+_ENTITY_ID_ECHO: dict[str, list[str]] = {
+    "stori_add_midi_track": ["trackId"],
+    "stori_add_midi_region": ["regionId", "trackId"],
+    "stori_ensure_bus": ["busId"],
+}
+
+
 def _project_needs_structure(project_context: dict[str, Any]) -> bool:
     """Check if the project is empty and needs structural creation.
 
@@ -1078,10 +1088,19 @@ async def _handle_editing(
                     "function": {"name": tc.name, "arguments": msg_arguments}
                 }]
             })
+            # Echo server-assigned entity IDs back to the LLM.
+            # For entity-creating tools the server generates fresh UUIDs and
+            # replaces whatever the LLM provided — the LLM must know the real
+            # IDs so it can reference them correctly in subsequent tool calls.
+            tool_result: dict = {"status": "success"}
+            for _field in _ENTITY_ID_ECHO.get(tc.name, []):
+                if _field in enriched_params:
+                    tool_result[_field] = enriched_params[_field]
+
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
-                "content": json.dumps({"status": "success"}),
+                "content": json.dumps(tool_result),
             })
         
         # Force stop after first tool execution
