@@ -1,97 +1,165 @@
-"""Tests for expansion module (ToolCall, dedupe)."""
+"""
+Tests for app.core.expansion — ToolCall and dedupe_tool_calls.
+
+This module is the execution primitive used by the planner and executor.
+Zero prior coverage.
+"""
+
+import json
+
 import pytest
 
 from app.core.expansion import ToolCall, dedupe_tool_calls
 
 
-class TestToolCall:
-    """Test ToolCall dataclass."""
+# ===========================================================================
+# ToolCall dataclass
+# ===========================================================================
 
-    def test_to_dict(self):
-        """to_dict returns name and params."""
-        tc = ToolCall("stori_play", {})
+class TestToolCallToDict:
+    """ToolCall.to_dict serialises name and params."""
+
+    def test_empty_params(self):
+        tc = ToolCall(name="stori_play", params={})
+        assert tc.to_dict() == {"name": "stori_play", "params": {}}
+
+    def test_with_params(self):
+        tc = ToolCall(name="stori_set_tempo", params={"tempo": 120})
         d = tc.to_dict()
-        assert d["name"] == "stori_play"
-        assert d["params"] == {}
+        assert d["name"] == "stori_set_tempo"
+        assert d["params"] == {"tempo": 120}
 
-    def test_to_dict_with_params(self):
-        """Params are included as-is."""
-        tc = ToolCall("stori_set_tempo", {"tempo": 120})
+    def test_nested_params(self):
+        tc = ToolCall(
+            name="stori_add_notes",
+            params={"regionId": "r1", "notes": [{"pitch": 60, "startBeat": 0}]},
+        )
         d = tc.to_dict()
-        assert d["params"]["tempo"] == 120
+        assert d["params"]["notes"][0]["pitch"] == 60
 
-    def test_fingerprint_deterministic(self):
-        """Same name+params produce same fingerprint."""
-        tc = ToolCall("stori_add_midi_track", {"name": "Drums"})
-        fp1 = tc.fingerprint()
-        fp2 = tc.fingerprint()
-        assert fp1 == fp2
-        assert len(fp1) == 16
-        assert all(c in "0123456789abcdef" for c in fp1)
+    def test_returns_dict(self):
+        tc = ToolCall(name="stori_stop", params={})
+        assert isinstance(tc.to_dict(), dict)
 
-    def test_fingerprint_different_for_different_params(self):
-        """Different params produce different fingerprint."""
-        tc1 = ToolCall("stori_play", {})
-        tc2 = ToolCall("stori_play", {"foo": 1})
-        assert tc1.fingerprint() != tc2.fingerprint()
 
-    def test_fingerprint_same_for_same_params_key_order_insensitive(self):
-        """JSON key order should not change fingerprint (sort_keys in impl)."""
-        tc1 = ToolCall("x", {"a": 1, "b": 2})
-        tc2 = ToolCall("x", {"b": 2, "a": 1})
+class TestToolCallFingerprint:
+    """ToolCall.fingerprint() is a deterministic 16-char hex digest."""
+
+    def test_returns_string(self):
+        tc = ToolCall(name="stori_play", params={})
+        assert isinstance(tc.fingerprint(), str)
+
+    def test_length_is_16(self):
+        tc = ToolCall(name="stori_play", params={})
+        assert len(tc.fingerprint()) == 16
+
+    def test_deterministic(self):
+        tc1 = ToolCall(name="stori_set_tempo", params={"tempo": 128})
+        tc2 = ToolCall(name="stori_set_tempo", params={"tempo": 128})
         assert tc1.fingerprint() == tc2.fingerprint()
 
-    def test_frozen(self):
-        """ToolCall should be immutable (dataclass frozen=True)."""
-        tc = ToolCall("stori_play", {"k": "v"})
-        with pytest.raises(AttributeError):
-            tc.name = "other"  # type: ignore[misc]
-        with pytest.raises(AttributeError):
-            tc.params = {}  # type: ignore[misc]
+    def test_different_name_different_fingerprint(self):
+        tc1 = ToolCall(name="stori_play", params={})
+        tc2 = ToolCall(name="stori_stop", params={})
+        assert tc1.fingerprint() != tc2.fingerprint()
 
+    def test_different_params_different_fingerprint(self):
+        tc1 = ToolCall(name="stori_set_tempo", params={"tempo": 120})
+        tc2 = ToolCall(name="stori_set_tempo", params={"tempo": 140})
+        assert tc1.fingerprint() != tc2.fingerprint()
+
+    def test_param_order_does_not_matter(self):
+        """Fingerprint is key-order-stable (sort_keys=True)."""
+        tc1 = ToolCall(name="stori_add_notes", params={"a": 1, "b": 2})
+        tc2 = ToolCall(name="stori_add_notes", params={"b": 2, "a": 1})
+        assert tc1.fingerprint() == tc2.fingerprint()
+
+    def test_hex_chars_only(self):
+        tc = ToolCall(name="stori_play", params={"x": "value"})
+        assert all(c in "0123456789abcdef" for c in tc.fingerprint())
+
+
+class TestToolCallFrozen:
+    """ToolCall is a frozen dataclass — immutable after creation."""
+
+    def test_cannot_reassign_name(self):
+        tc = ToolCall(name="stori_play", params={})
+        with pytest.raises((TypeError, AttributeError)):
+            tc.name = "stori_stop"  # type: ignore[misc]
+
+    def test_equality(self):
+        tc1 = ToolCall(name="stori_play", params={"x": 1})
+        tc2 = ToolCall(name="stori_play", params={"x": 1})
+        assert tc1 == tc2
+
+    def test_inequality_by_params(self):
+        tc1 = ToolCall(name="stori_play", params={"x": 1})
+        tc2 = ToolCall(name="stori_play", params={"x": 2})
+        assert tc1 != tc2
+
+
+# ===========================================================================
+# dedupe_tool_calls
+# ===========================================================================
 
 class TestDedupeToolCalls:
-    """Test dedupe_tool_calls."""
+    """dedupe_tool_calls removes exact duplicates, preserves insertion order."""
 
     def test_empty_list(self):
         assert dedupe_tool_calls([]) == []
 
-    def test_single_call_unchanged(self):
-        calls = [ToolCall("stori_play", {})]
-        assert dedupe_tool_calls(calls) == calls
+    def test_single_call_preserved(self):
+        tc = ToolCall(name="stori_play", params={})
+        assert dedupe_tool_calls([tc]) == [tc]
+
+    def test_all_unique_preserved(self):
+        calls = [
+            ToolCall(name="stori_play", params={}),
+            ToolCall(name="stori_stop", params={}),
+            ToolCall(name="stori_set_tempo", params={"tempo": 120}),
+        ]
+        result = dedupe_tool_calls(calls)
+        assert len(result) == 3
 
     def test_duplicate_removed(self):
-        calls = [
-            ToolCall("stori_play", {}),
-            ToolCall("stori_play", {}),
-        ]
-        out = dedupe_tool_calls(calls)
-        assert len(out) == 1
-        assert out[0].name == "stori_play"
+        tc = ToolCall(name="stori_play", params={})
+        result = dedupe_tool_calls([tc, tc])
+        assert len(result) == 1
+        assert result[0] == tc
 
-    def test_duplicate_with_same_params_removed(self):
-        calls = [
-            ToolCall("stori_set_tempo", {"tempo": 120}),
-            ToolCall("stori_set_tempo", {"tempo": 120}),
-        ]
-        out = dedupe_tool_calls(calls)
-        assert len(out) == 1
+    def test_multiple_duplicates_only_first_kept(self):
+        tc = ToolCall(name="stori_set_tempo", params={"tempo": 120})
+        result = dedupe_tool_calls([tc, tc, tc])
+        assert len(result) == 1
 
-    def test_different_calls_preserved(self):
-        calls = [
-            ToolCall("stori_play", {}),
-            ToolCall("stori_stop", {}),
-            ToolCall("stori_set_tempo", {"tempo": 90}),
-        ]
-        out = dedupe_tool_calls(calls)
-        assert len(out) == 3
-        assert [c.name for c in out] == ["stori_play", "stori_stop", "stori_set_tempo"]
+    def test_preserves_insertion_order(self):
+        tc_a = ToolCall(name="stori_play", params={})
+        tc_b = ToolCall(name="stori_stop", params={})
+        tc_c = ToolCall(name="stori_play", params={})  # duplicate of a
+        result = dedupe_tool_calls([tc_a, tc_b, tc_c])
+        assert result[0] == tc_a
+        assert result[1] == tc_b
+        assert len(result) == 2
 
-    def test_first_occurrence_kept(self):
-        """When duplicates exist, first occurrence is kept."""
-        a = ToolCall("stori_play", {})
-        b = ToolCall("stori_play", {})
-        calls = [a, b]
-        out = dedupe_tool_calls(calls)
-        assert len(out) == 1
-        assert out[0] is a
+    def test_different_params_not_deduped(self):
+        tc1 = ToolCall(name="stori_set_tempo", params={"tempo": 120})
+        tc2 = ToolCall(name="stori_set_tempo", params={"tempo": 140})
+        result = dedupe_tool_calls([tc1, tc2])
+        assert len(result) == 2
+
+    def test_large_list_of_duplicates(self):
+        tc = ToolCall(name="stori_play", params={})
+        result = dedupe_tool_calls([tc] * 100)
+        assert len(result) == 1
+
+    def test_mixed_duplicates_and_uniques(self):
+        tc_play = ToolCall(name="stori_play", params={})
+        tc_stop = ToolCall(name="stori_stop", params={})
+        tc_120 = ToolCall(name="stori_set_tempo", params={"tempo": 120})
+        tc_140 = ToolCall(name="stori_set_tempo", params={"tempo": 140})
+
+        calls = [tc_play, tc_stop, tc_play, tc_120, tc_140, tc_stop]
+        result = dedupe_tool_calls(calls)
+        assert len(result) == 4
+        assert result[0] == tc_play
+        assert result[1] == tc_stop

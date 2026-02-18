@@ -463,8 +463,8 @@ def infer_gm_program_with_context(
     Returns:
         GMInferenceResult with program, name, and confidence
     """
-    # Check for drums first (any source)
-    drum_keywords = {"drums", "drum", "percussion", "beat", "kit"}
+    # Check for drums first (any source) — must match infer_gm_program's keyword set.
+    drum_keywords = {"drums", "drum", "kick", "snare", "hihat", "hi-hat", "percussion", "beat", "kit"}
     all_text = " ".join(filter(None, [track_name, instrument, role])).lower()
     
     for kw in drum_keywords:
