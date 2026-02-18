@@ -304,16 +304,16 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_set_track_volume",
-            "description": "Set track volume in dB.",
-            "parameters": {"type": "object", "properties": {"trackId": {"type": "string"}, "volumeDb": {"type": "number"}}, "required": ["trackId", "volumeDb"]},
+            "description": "Set track volume. Linear scale: 0.0 = silent, 1.0 = unity gain, 1.5 = +50%.",
+            "parameters": {"type": "object", "properties": {"trackId": {"type": "string"}, "volume": {"type": "number", "description": "Linear volume 0.0–1.5 (1.0 = unity)"}}, "required": ["trackId", "volume"]},
         },
     },
     {
         "type": "function",
         "function": {
             "name": "stori_set_track_pan",
-            "description": "Set track pan (-100 left to +100 right).",
-            "parameters": {"type": "object", "properties": {"trackId": {"type": "string"}, "pan": {"type": "number"}}, "required": ["trackId", "pan"]},
+            "description": "Set track pan. 0.0 = hard left, 0.5 = center, 1.0 = hard right.",
+            "parameters": {"type": "object", "properties": {"trackId": {"type": "string"}, "pan": {"type": "number", "description": "Pan position 0.0 (left) to 1.0 (right), 0.5 = center"}}, "required": ["trackId", "pan"]},
         },
     },
     {
@@ -391,8 +391,16 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_quantize_notes",
-            "description": "Quantize notes in selection/region.",
-            "parameters": {"type": "object", "properties": {"grid": {"type": "string", "description": "1/4, 1/8, 1/16, 1/32"}, "strength": {"type": "number"}}},
+            "description": "Quantize notes in a region to a rhythmic grid.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "regionId": {"type": "string", "description": "UUID of the region"},
+                    "gridSize": {"type": "number", "description": "Grid in beats: 0.125=1/32, 0.25=1/16, 0.5=1/8, 1.0=1/4, 2.0=1/2, 4.0=whole"},
+                    "strength": {"type": "number", "description": "Quantize strength 0.0–1.0, default 1.0"},
+                },
+                "required": ["regionId", "gridSize"],
+            },
         },
     },
     {
@@ -400,7 +408,37 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "stori_apply_swing",
             "description": "Apply swing to selection/region.",
-            "parameters": {"type": "object", "properties": {"amount": {"type": "number", "description": "0..1"}}},
+            "parameters": {"type": "object", "properties": {"regionId": {"type": "string"}, "amount": {"type": "number", "description": "0.0–1.0"}}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "stori_transpose_notes",
+            "description": "Transpose all notes in a region by semitones.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "regionId": {"type": "string", "description": "UUID of the region"},
+                    "semitones": {"type": "integer", "description": "Semitones to transpose: positive = up, negative = down"},
+                },
+                "required": ["regionId", "semitones"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "stori_move_region",
+            "description": "Move a region to a new start position.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "regionId": {"type": "string", "description": "UUID of the region to move"},
+                    "startBeat": {"type": "number", "description": "New start position in beats"},
+                },
+                "required": ["regionId", "startBeat"],
+            },
         },
     },
 
@@ -424,8 +462,16 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_add_send",
-            "description": "Add a send from track to a bus.",
-            "parameters": {"type": "object", "properties": {"trackId": {"type": "string"}, "busId": {"type": "string"}, "levelDb": {"type": "number"}}, "required": ["trackId", "busId"]},
+            "description": "Add a send from a track to a bus (for reverb/delay routing).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "trackId": {"type": "string", "description": "UUID of source track"},
+                    "busName": {"type": "string", "description": "Name of destination bus (e.g. 'Reverb', 'Delay')"},
+                    "sendLevel": {"type": "number", "description": "Send level 0.0–1.0, default 0.3"},
+                },
+                "required": ["trackId", "busName"],
+            },
         },
     },
     {
@@ -513,6 +559,9 @@ def build_tool_registry() -> dict[str, ToolMeta]:
     _register(ToolMeta("stori_clear_notes", ToolTier.TIER2, ToolKind.PRIMITIVE))
     _register(ToolMeta("stori_quantize_notes", ToolTier.TIER2, ToolKind.PRIMITIVE))
     _register(ToolMeta("stori_apply_swing", ToolTier.TIER2, ToolKind.PRIMITIVE))
+
+    _register(ToolMeta("stori_transpose_notes", ToolTier.TIER2, ToolKind.PRIMITIVE))
+    _register(ToolMeta("stori_move_region", ToolTier.TIER2, ToolKind.PRIMITIVE))
 
     _register(ToolMeta("stori_add_insert_effect", ToolTier.TIER2, ToolKind.PRIMITIVE))
     _register(ToolMeta("stori_add_send", ToolTier.TIER2, ToolKind.PRIMITIVE))

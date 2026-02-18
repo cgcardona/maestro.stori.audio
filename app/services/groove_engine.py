@@ -381,8 +381,8 @@ def apply_groove_map(
     """
     Apply style-specific groove to notes: microtiming, swing, velocity shaping.
     
-    This is the core Groove Engine v2 function that replaces uniform jitter
-    with instrument-role-aware timing and velocity curves.
+    Core Groove Engine function providing instrument-role-aware timing
+    and velocity curves.
     
     Args:
         notes: List of {pitch, start_beat, duration_beats, velocity, ...}

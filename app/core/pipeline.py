@@ -27,8 +27,9 @@ from typing import Any, Optional
 
 from app.core.intent import get_intent_result, SSEState, IntentResult, Intent
 from app.core.planner import build_execution_plan, ExecutionPlan
+from app.core.prompt_parser import ParsedPrompt
 from app.core.llm_client import LLMClient, LLMResponse
-from app.core.prompts import system_prompt_base, editing_prompt, composing_prompt
+from app.core.prompts import system_prompt_base, editing_prompt, composing_prompt, structured_prompt_context
 from app.core.tools import ALL_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -71,14 +72,26 @@ async def run_pipeline(
         )
         return PipelineOutput(route=route, llm_response=resp)
 
+    # Extract parsed prompt from slots if present (structured prompt fast path)
+    parsed: Optional[ParsedPrompt] = route.slots.extras.get("parsed_prompt")
+
     # COMPOSING: planner path
     if route.sse_state == SSEState.COMPOSING or route.intent == Intent.GENERATE_MUSIC:
-        plan = await build_execution_plan(user_prompt=user_prompt, project_state=project_state, route=route, llm=llm)
+        plan = await build_execution_plan(
+            user_prompt=user_prompt,
+            project_state=project_state,
+            route=route,
+            llm=llm,
+            parsed=parsed,
+        )
         return PipelineOutput(route=route, plan=plan)
 
     # EDITING: tool calling with allowlist
     required_single_tool = bool(route.force_stop_after and route.tool_choice == "required")
     sys = system_prompt_base() + "\n" + editing_prompt(required_single_tool)
+
+    if parsed is not None:
+        sys += structured_prompt_context(parsed)
 
     # You can pass ALL_TOOLS for caching and enforce allowlist server-side, or pass only allowed tools.
     # Cursor-style: pass only allowed tools for this request.

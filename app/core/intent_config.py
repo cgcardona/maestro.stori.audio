@@ -468,12 +468,13 @@ def get_sse_state_for_intent(intent: Intent) -> SSEState:
 
 @dataclass(frozen=True)
 class IdiomMatch:
-    """A matched producer idiom with direction."""
+    """A matched producer idiom with direction and optional weight."""
     intent: Intent
     phrase: str
     direction: str  # "increase", "decrease", "add", "remove"
     target: Optional[str] = None  # e.g., "highs", "lows", "width"
     suggested_tools: FrozenSet[str] = frozenset()
+    weight: int = 1  # 1-5 scale from structured prompt Vibe weights
 
 
 PRODUCER_IDIOMS: dict[str, IdiomMatch] = {
@@ -595,3 +596,34 @@ def match_producer_idiom(text: str) -> Optional[IdiomMatch]:
             return match
     
     return None
+
+
+def match_weighted_vibes(
+    vibes: list[tuple[str, int]],
+) -> list[IdiomMatch]:
+    """
+    Match a list of weighted vibes from a structured prompt against the idiom lexicon.
+
+    Args:
+        vibes: List of (vibe_text, weight) tuples from ParsedPrompt.vibes
+
+    Returns:
+        List of IdiomMatch objects with weights set, sorted by weight descending.
+        Unknown vibes are silently skipped.
+    """
+    matches: list[IdiomMatch] = []
+    for vibe_text, weight in vibes:
+        idiom = match_producer_idiom(vibe_text)
+        if idiom:
+            # Create a new IdiomMatch with the user's weight
+            weighted = IdiomMatch(
+                intent=idiom.intent,
+                phrase=idiom.phrase,
+                direction=idiom.direction,
+                target=idiom.target,
+                suggested_tools=idiom.suggested_tools,
+                weight=weight,
+            )
+            matches.append(weighted)
+    matches.sort(key=lambda m: m.weight, reverse=True)
+    return matches

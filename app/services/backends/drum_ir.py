@@ -76,7 +76,7 @@ class DrumSpecBackend(MusicGeneratorBackend):
                 drum_spec,
                 global_spec,
                 apply_salience_cap=True,
-                apply_groove=True,  # Groove Engine v2
+                apply_groove=True,
             )
             notes: list[dict[str, Any]] = raw_notes.notes if isinstance(raw_notes, DrumRenderResult) else raw_notes
             

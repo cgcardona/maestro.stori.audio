@@ -10,7 +10,7 @@
 
 | Directory | Purpose |
 |-----------|---------|
-| **[guides/](guides/)** | How-to: setup, integrate, testing, assets, security, frontend parity. |
+| **[guides/](guides/)** | How-to: setup, integrate, testing, assets, security. |
 | **[reference/](reference/)** | API and architecture reference. |
 | **[protocol/](protocol/)** | Normative specs: Muse/Variation terminology, wire contract, end-to-end spec. |
 | **[roadmaps/](roadmaps/)** | Roadmaps and future work (e.g. neural MIDI). |
@@ -59,9 +59,10 @@ Drum kits and soundfonts; upload to S3.
 
 | Doc | Description |
 |-----|-------------|
+| [protocol/stori-prompt-spec.md](protocol/stori-prompt-spec.md) | **Stori Structured Prompt:** prompt format for expert-level control. |
 | [protocol/muse-variation-spec.md](protocol/muse-variation-spec.md) | Muse / Variation: end-to-end UX + technical contract. |
-| [protocol/variation_api_v1.md](protocol/variation_api_v1.md) | **Variation API v1:** wire contract, endpoints, SSE events, error codes. |
-| [protocol/TERMINOLOGY.md](protocol/TERMINOLOGY.md) | Canonical vocabulary for Muse/Variations (normative). |
+| [protocol/variation-api.md](protocol/variation-api.md) | **Variation API:** wire contract, endpoints, SSE events, error codes. |
+| [protocol/terminology.md](protocol/terminology.md) | Canonical vocabulary for Muse/Variations (normative). |
 | [roadmaps/neural-midi-roadmap.md](roadmaps/neural-midi-roadmap.md) | Neural MIDI generation roadmap and status. |
 
 ---
@@ -70,8 +71,3 @@ Drum kits and soundfonts; upload to S3.
 
 Security audit summary, go-live checklist, and service exposure (Qdrant, DB, nginx SSL).
 
----
-
-## 9. [guides/frontend-variation-parity.md](guides/frontend-variation-parity.md)
-
-Frontend prompt and checklist for Variation Review Mode parity with the backend.

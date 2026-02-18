@@ -76,8 +76,10 @@ _ENTITY_CREATING_SKIP: dict[str, set[str]] = {
 
 # Value range constraints
 VALUE_RANGES = {
-    "volumeDb": (-60, 12),
-    "pan": (-100, 100),
+    "volume": (0.0, 1.5),     # stori_set_track_volume: linear 0–1.5
+    "pan": (0.0, 1.0),        # stori_set_track_pan: 0.0=left, 0.5=center, 1.0=right
+    "sendLevel": (0.0, 1.0),  # stori_add_send
+    "gridSize": (0.0625, 4.0),# stori_quantize_notes: 1/64 beat to whole note
     "tempo": (30, 300),
     "bars": (1, 64),
     "zoomPercent": (10, 500),
@@ -101,10 +103,13 @@ NAME_LENGTH_LIMITS = {
 TOOL_REQUIRED_FIELDS = {
     "stori_add_notes": ["regionId", "notes"],
     "stori_add_midi_region": ["trackId", "startBeat", "durationBeats"],
-    "stori_set_track_volume": ["trackId", "volumeDb"],
+    "stori_set_track_volume": ["trackId", "volume"],
     "stori_set_track_pan": ["trackId", "pan"],
     "stori_add_insert_effect": ["trackId", "type"],
-    "stori_add_send": ["trackId", "busId"],
+    "stori_add_send": ["trackId", "busName"],
+    "stori_quantize_notes": ["regionId", "gridSize"],
+    "stori_transpose_notes": ["regionId", "semitones"],
+    "stori_move_region": ["regionId", "startBeat"],
 }
 
 
@@ -117,6 +122,7 @@ def validate_tool_call(
     params: dict[str, Any],
     allowed_tools: set[str],
     registry: Optional[EntityRegistry] = None,
+    target_scope: Optional[tuple[str, Optional[str]]] = None,
 ) -> ValidationResult:
     """
     Validate a tool call. Allowlist is the single source of truth: only tools in
@@ -129,6 +135,12 @@ def validate_tool_call(
     3. Schema validation (required params, types)
     4. Value range validation
     5. Tool-specific validation
+    6. Target scope check (advisory warning, never blocks)
+
+    Args:
+        target_scope: Optional (kind, name) from a structured prompt Target field.
+            Example: ("track", "Bass"). When provided, a warning is emitted if
+            the tool call appears to affect a different entity.
     """
     errors: list[ValidationError] = []
     warnings: list[str] = []
@@ -172,6 +184,13 @@ def validate_tool_call(
     # 5. Tool-specific validation
     specific_errors = _validate_tool_specific(tool_name, resolved_params)
     errors.extend(specific_errors)
+
+    # 6. Target scope advisory check (structured prompt)
+    if target_scope is not None:
+        scope_warnings = _check_target_scope(
+            tool_name, resolved_params, target_scope, registry
+        )
+        warnings.extend(scope_warnings)
     
     return ValidationResult(
         valid=len(errors) == 0,
@@ -666,16 +685,76 @@ def _validate_tool_specific(tool_name: str, params: dict[str, Any]) -> list[Vali
                         ))
     
     elif tool_name == "stori_quantize_notes":
-        grid = params.get("grid", "")
-        valid_grids = {"1/4", "1/8", "1/16", "1/32", "1/64"}
-        if grid and grid not in valid_grids:
+        grid_size = params.get("gridSize")
+        valid_grid_sizes = {0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0}
+        if grid_size is not None and grid_size not in valid_grid_sizes:
             errors.append(ValidationError(
-                field="grid",
-                message=f"Invalid grid '{grid}'. Valid: {valid_grids}",
+                field="gridSize",
+                message=f"Invalid gridSize '{grid_size}'. Valid: 0.0625(1/64) 0.125(1/32) 0.25(1/16) 0.5(1/8) 1.0(1/4) 2.0(1/2) 4.0(whole)",
                 code="INVALID_VALUE",
             ))
     
     return errors
+
+
+# =============================================================================
+# Target Scope Check (Structured Prompt)
+# =============================================================================
+
+
+def _check_target_scope(
+    tool_name: str,
+    params: dict[str, Any],
+    target_scope: tuple[str, Optional[str]],
+    registry: Optional[EntityRegistry],
+) -> list[str]:
+    """
+    Advisory check: warn if a tool call operates outside the structured prompt's
+    Target scope. Never blocks execution — warnings only.
+
+    Args:
+        target_scope: (kind, name) e.g. ("track", "Bass")
+    """
+    kind, name = target_scope
+
+    # "project" scope means everything is in scope
+    if kind == "project":
+        return []
+
+    # Only check track/region-scoped targets when we have a name
+    if not name:
+        return []
+
+    warnings: list[str] = []
+
+    if kind == "track":
+        # Check if tool call references a track different from the target
+        track_id = params.get("trackId")
+        track_name = params.get("trackName") or params.get("name")
+
+        if track_name and track_name.lower() != name.lower():
+            warnings.append(
+                f"Target scope is track:{name} but tool call "
+                f"references track '{track_name}'"
+            )
+        elif track_id and registry:
+            # Resolve the target name to an ID and compare
+            target_id = registry.resolve_track(name)
+            if target_id and track_id != target_id:
+                warnings.append(
+                    f"Target scope is track:{name} but tool call "
+                    f"references a different track"
+                )
+
+    elif kind == "region":
+        region_name = params.get("name")
+        if region_name and region_name.lower() != name.lower():
+            warnings.append(
+                f"Target scope is region:{name} but tool call "
+                f"references region '{region_name}'"
+            )
+
+    return warnings
 
 
 # =============================================================================

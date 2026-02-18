@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings, APPROVED_MODELS
+from app.config import settings, APPROVED_MODELS, ALLOWED_MODEL_IDS
+from app.core.llm_client import LLMClient
 from app.db import get_db, User, UsageLog, AccessToken
 from app.auth.dependencies import require_valid_token
 from app.services.token_service import (
@@ -52,6 +53,9 @@ class ModelInfo(BaseModel):
     name: str
     cost_per_1m_input: float = Field(description="Cost per 1M input tokens in dollars")
     cost_per_1m_output: float = Field(description="Cost per 1M output tokens in dollars")
+    supports_reasoning: bool = Field(
+        description="Whether the model supports extended chain-of-thought reasoning"
+    )
 
 
 class ModelsResponse(BaseModel):
@@ -183,25 +187,39 @@ async def get_current_user(
 async def list_models():
     """
     List available models with pricing information.
-    
+
+    Returns only models in ALLOWED_MODEL_IDS, sorted cheapest-first.
+    Falls back to all Claude models in APPROVED_MODELS if the allowlist
+    produces no results (e.g. OpenRouter slug changed before config update).
     No authentication required.
     """
+    allowed = {mid for mid in ALLOWED_MODEL_IDS if mid in APPROVED_MODELS}
+
+    if not allowed:
+        logger.warning(
+            "ALLOWED_MODEL_IDS produced no matches in APPROVED_MODELS — "
+            "falling back to all Claude models. Update ALLOWED_MODEL_IDS in config.py."
+        )
+        allowed = {mid for mid in APPROVED_MODELS if "claude" in mid}
+
     models = [
         ModelInfo(
             id=model_id,
-            name=cast(str, info["name"]),
-            cost_per_1m_input=cast(float, info["input_cost"]),
-            cost_per_1m_output=cast(float, info["output_cost"]),
+            name=cast(str, APPROVED_MODELS[model_id]["name"]),
+            cost_per_1m_input=cast(float, APPROVED_MODELS[model_id]["input_cost"]),
+            cost_per_1m_output=cast(float, APPROVED_MODELS[model_id]["output_cost"]),
+            supports_reasoning=model_id in LLMClient.REASONING_MODELS,
         )
-        for model_id, info in APPROVED_MODELS.items()
+        for model_id in allowed
     ]
-    
-    # Sort by input cost (cheapest first)
+
     models.sort(key=lambda m: m.cost_per_1m_input)
-    
+
+    default_model = models[0].id if models else settings.llm_model
+
     return ModelsResponse(
         models=models,
-        default_model=settings.llm_model,
+        default_model=default_model,
     )
 
 

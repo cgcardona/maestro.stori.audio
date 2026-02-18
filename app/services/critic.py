@@ -570,7 +570,7 @@ def score_drum_notes(
     min_distinct: int = 8,
 ) -> tuple[float, list[str]]:
     """
-    Score drum notes with Critic v2 (layer-aware, groove-aware).
+    Score drum notes (layer-aware, groove-aware).
     
     Returns (score 0–1, repair_instructions).
     

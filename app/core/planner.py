@@ -22,10 +22,12 @@ from typing import Any, Optional
 
 from app.core.expansion import ToolCall
 from app.core.intent import IntentResult, Intent
+from app.core.prompt_parser import ParsedPrompt
 from app.core.tools import build_tool_registry
-from app.core.prompts import composing_prompt, system_prompt_base
+from app.core.prompts import composing_prompt, structured_prompt_context, system_prompt_base
 from app.core.plan_schemas import (
     ExecutionPlanSchema,
+    GenerationStep,
     extract_and_validate_plan,
     complete_plan,
     PlanValidationResult,
@@ -76,27 +78,42 @@ async def build_execution_plan(
     project_state: dict[str, Any],
     route: IntentResult,
     llm,
+    parsed: Optional[ParsedPrompt] = None,
 ) -> ExecutionPlan:
     """
     Ask the LLM for a structured JSON plan for composing.
     
     Flow:
-    1. Send prompt to LLM with composing instructions
-    2. Extract JSON from response
-    3. Validate against schema
-    4. Complete plan (infer missing parts)
-    5. Convert to ToolCalls
+    1. If structured prompt has all fields, build deterministically (skip LLM)
+    2. Otherwise, send prompt to LLM with composing instructions
+    3. Extract JSON from response
+    4. Validate against schema
+    5. Complete plan (infer missing parts)
+    6. Convert to ToolCalls
     
     Args:
         user_prompt: User's request
         project_state: Current DAW state
         route: Intent routing result
         llm: LLM client
+        parsed: Optional parsed structured prompt for deterministic planning
         
     Returns:
         ExecutionPlan ready for executor
     """
+    # Structured prompt fast path: if all key fields are present, build
+    # the plan deterministically without an LLM call.
+    if parsed is not None:
+        deterministic = _try_deterministic_plan(parsed)
+        if deterministic is not None:
+            return deterministic
+
     sys = system_prompt_base() + "\n" + composing_prompt()
+
+    # Inject structured context if available (partial structured prompt
+    # that couldn't be built deterministically)
+    if parsed is not None:
+        sys += structured_prompt_context(parsed)
     
     # Call LLM for plan
     resp = await llm.chat(
@@ -161,6 +178,58 @@ async def build_execution_plan(
         safety_validated=True,
         llm_response_text=llm_response_text,
         validation_result=validation,
+    )
+
+
+def _try_deterministic_plan(parsed: ParsedPrompt) -> Optional[ExecutionPlan]:
+    """
+    Build an execution plan deterministically from a structured prompt.
+
+    Requires: style, tempo, roles, and bars (from constraints).
+    When all are present, we skip the LLM entirely — zero inference overhead.
+    Returns None if any required field is missing (caller falls back to LLM).
+    """
+    if not parsed.style or not parsed.tempo or not parsed.roles:
+        return None
+
+    bars = parsed.constraints.get("bars")
+    if not isinstance(bars, int) or bars < 1:
+        return None
+
+    logger.info(
+        f"⚡ Deterministic plan from structured prompt: "
+        f"{len(parsed.roles)} roles, {parsed.style}, {parsed.tempo} BPM, {bars} bars"
+    )
+
+    generations = [
+        GenerationStep(
+            role=role if role in ("drums", "bass", "chords", "melody", "arp", "pads", "fx", "lead") else "melody",
+            style=parsed.style,
+            tempo=parsed.tempo,
+            bars=bars,
+            key=parsed.key,
+            constraints={
+                k: v for k, v in parsed.constraints.items()
+                if k not in ("bars",)
+            } or None,
+        )
+        for role in parsed.roles
+    ]
+
+    plan_schema = ExecutionPlanSchema(generations=generations)
+    plan_schema = complete_plan(plan_schema)
+    if plan_schema is None:
+        return None
+
+    tool_calls = _schema_to_tool_calls(plan_schema)
+
+    return ExecutionPlan(
+        tool_calls=tool_calls,
+        notes=[
+            f"deterministic_plan: {len(tool_calls)} tool calls from structured prompt",
+            f"style={parsed.style}, tempo={parsed.tempo}, bars={bars}",
+        ],
+        safety_validated=True,
     )
 
 
@@ -307,7 +376,7 @@ def _schema_to_tool_calls(plan: ExecutionPlanSchema) -> list[ToolCall]:
                 name="stori_set_track_volume",
                 params={
                     "trackName": mix.track,
-                    "volumeDb": mix.value,
+                    "volume": mix.value,
                 }
             ))
         elif mix.action == "set_pan" and mix.value is not None:
@@ -376,13 +445,14 @@ async def preview_plan(
     project_state: dict[str, Any],
     route: IntentResult,
     llm,
+    parsed: Optional[ParsedPrompt] = None,
 ) -> dict[str, Any]:
     """
     Generate a plan preview without executing.
     
     Returns a summary of what would happen, for user confirmation.
     """
-    plan = await build_execution_plan(user_prompt, project_state, route, llm)
+    plan = await build_execution_plan(user_prompt, project_state, route, llm, parsed=parsed)
     
     preview = {
         "valid": plan.is_valid,

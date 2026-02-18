@@ -33,6 +33,7 @@ from app.core.intent_config import (
     match_producer_idiom,
     INTENT_CONFIGS,
 )
+from app.core.prompt_parser import ParsedPrompt, parse_prompt
 from app.core.tools import ALL_TOOLS, build_tool_registry, ToolKind
 from app.core.prompts import intent_classification_prompt, INTENT_CLASSIFICATION_SYSTEM
 
@@ -477,6 +478,78 @@ def _clarify(raw: str, reason: str) -> IntentResult:
 
 
 # =============================================================================
+# Structured prompt fast path (additive — never modifies NL behavior)
+# =============================================================================
+
+_MODE_TO_INTENT: dict[str, Intent] = {
+    "compose": Intent.GENERATE_MUSIC,
+    "ask": Intent.ASK_GENERAL,
+}
+
+# Edit-mode intent is inferred from vibes/target; this is the default.
+_EDIT_DEFAULT_INTENT = Intent.MIX_ENERGY
+
+
+def _route_from_parsed_prompt(parsed: ParsedPrompt) -> IntentResult:
+    """
+    Build an IntentResult directly from a parsed structured prompt.
+
+    Mode is a hard routing signal — no pattern matching or LLM classification.
+    """
+    extras: dict[str, Any] = {"parsed_prompt": parsed}
+
+    target_type: Optional[str] = None
+    target_name: Optional[str] = None
+    if parsed.target:
+        target_type = parsed.target.kind
+        target_name = parsed.target.name
+
+    if parsed.mode == "compose":
+        intent = Intent.GENERATE_MUSIC
+    elif parsed.mode == "ask":
+        intent = Intent.ASK_GENERAL
+    else:
+        # edit — try to pick the best edit intent from vibes
+        intent = _infer_edit_intent(parsed)
+
+    slots = Slots(
+        value_str=parsed.request,
+        target_type=target_type,
+        target_name=target_name,
+        extras=extras,
+    )
+
+    return _build_result(
+        intent,
+        confidence=0.99,
+        slots=slots,
+        reasons=("structured_prompt",),
+    )
+
+
+def _infer_edit_intent(parsed: ParsedPrompt) -> Intent:
+    """Pick the most appropriate edit intent from vibes/constraints."""
+    # Match vibes against producer idiom lexicon (highest weight wins)
+    if parsed.vibes:
+        best_match: Optional[IdiomMatch] = None
+        best_weight = 0
+        for vw in parsed.vibes:
+            idiom = match_producer_idiom(vw.vibe)
+            if idiom and vw.weight > best_weight:
+                best_match = idiom
+                best_weight = vw.weight
+        if best_match:
+            return best_match.intent
+
+    # Check constraints for effect keywords
+    effect_keys = {"compressor", "eq", "reverb", "delay", "chorus", "distortion"}
+    if any(k in effect_keys for k in parsed.constraints):
+        return Intent.FX_ADD_INSERT
+
+    return _EDIT_DEFAULT_INTENT
+
+
+# =============================================================================
 # Main Entrypoint (sync - pattern only)
 # =============================================================================
 
@@ -486,6 +559,12 @@ def get_intent_result(prompt: str, project_context: Optional[dict[str, Any]] = N
     
     For comprehensive routing with LLM fallback, use get_intent_result_with_llm().
     """
+    # --- Structured prompt fast path (additive, never modifies NL behavior) ---
+    parsed = parse_prompt(prompt)
+    if parsed is not None:
+        return _route_from_parsed_prompt(parsed)
+    # --- Existing NL pipeline below (unchanged) ---
+
     raw = prompt
     norm = normalize(prompt)
     
@@ -620,11 +699,18 @@ async def get_intent_result_with_llm(
     Comprehensive intent routing with LLM fallback.
     
     Flow:
+    0. Structured prompt fast path (bypass everything)
     1. Check for affirmative responses with conversation context
     2. Try pattern-based routing (fast)
     3. If UNKNOWN with low confidence, use LLM classification
     4. Convert classification to IntentResult
     """
+    # --- Structured prompt fast path (additive, never modifies NL behavior) ---
+    parsed = parse_prompt(prompt)
+    if parsed is not None:
+        return _route_from_parsed_prompt(parsed)
+    # --- Existing NL pipeline below (unchanged) ---
+
     norm = normalize(prompt)
     conversation_history = conversation_history or []
     

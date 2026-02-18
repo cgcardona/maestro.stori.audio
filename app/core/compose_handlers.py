@@ -37,7 +37,8 @@ from app.core.llm_client import (
     enforce_single_tool,
 )
 from app.core.pipeline import run_pipeline
-from app.core.prompts import editing_composition_prompt, editing_prompt, system_prompt_base
+from app.core.prompt_parser import ParsedPrompt
+from app.core.prompts import editing_composition_prompt, editing_prompt, structured_prompt_context, system_prompt_base
 from app.core.sse_utils import ReasoningBuffer, sanitize_reasoning, sse_event, strip_tool_echoes
 from app.core.state_store import StateStore, get_or_create_store
 from app.core.tool_validation import validate_tool_call
@@ -792,6 +793,13 @@ async def _handle_editing(
     else:
         required_single = bool(route.force_stop_after and route.tool_choice == "required")
         sys_prompt = system_prompt_base() + "\n" + editing_prompt(required_single)
+
+    # Inject structured context from structured prompt if present
+    _slots = getattr(route, "slots", None)
+    _extras = getattr(_slots, "extras", None) if _slots is not None else None
+    parsed: Optional[ParsedPrompt] = _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
+    if parsed is not None:
+        sys_prompt += structured_prompt_context(parsed)
     
     # Build allowed tools only (Cursor-style action space shaping)
     allowed_tools = [t for t in ALL_TOOLS if t["function"]["name"] in route.allowed_tool_names]

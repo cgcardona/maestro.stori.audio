@@ -32,14 +32,30 @@ def _app_version_from_package() -> str:
     return "0.0.0-unknown"
 
 
-# Approved models with pricing (cost per 1M tokens in dollars)
-APPROVED_MODELS = {
+# Models shown in the Stori composer model picker.
+# Update this list when new versions ship; slugs must match OpenRouter IDs exactly.
+# Sorted cheapest-first by convention; the endpoint re-sorts by cost anyway.
+ALLOWED_MODEL_IDS: list[str] = [
+    "anthropic/claude-sonnet-4.6",  # Latest Claude Sonnet
+    "anthropic/claude-opus-4.6",    # Latest Claude Opus
+    # Add new versions here as they release
+]
+
+# Pricing catalogue (cost per 1M tokens in dollars, sourced from OpenRouter).
+# Includes models not in ALLOWED_MODEL_IDS so internal LLM routing still works.
+APPROVED_MODELS: dict[str, dict] = {
     # Anthropic Claude models (reasoning enabled via API parameter)
-    "anthropic/claude-3.7-sonnet": {
-        "name": "Claude 3.7 Sonnet",
-        "input_cost": 3.0,  # per 1M tokens
+    "anthropic/claude-sonnet-4.6": {
+        "name": "Claude Sonnet 4.6",
+        "input_cost": 3.0,
         "output_cost": 15.0,
     },
+    "anthropic/claude-opus-4.6": {
+        "name": "Claude Opus 4.6",
+        "input_cost": 5.0,
+        "output_cost": 25.0,
+    },
+    # Kept for internal LLM routing; not exposed in the picker
     "anthropic/claude-sonnet-4.5": {
         "name": "Claude Sonnet 4.5",
         "input_cost": 3.0,
@@ -50,32 +66,10 @@ APPROVED_MODELS = {
         "input_cost": 15.0,
         "output_cost": 75.0,
     },
-    "anthropic/claude-opus-4.1": {
-        "name": "Claude Opus 4.1",
-        "input_cost": 15.0,
-        "output_cost": 75.0,
-    },
-    "anthropic/claude-opus-4": {
-        "name": "Claude Opus 4",
-        "input_cost": 15.0,
-        "output_cost": 75.0,
-    },
-    
-    # OpenAI reasoning models
-    "openai/o1": {
-        "name": "OpenAI o1",
-        "input_cost": 15.0,
-        "output_cost": 60.0,
-    },
-    "openai/o1-preview": {
-        "name": "OpenAI o1 Preview",
-        "input_cost": 15.0,
-        "output_cost": 60.0,
-    },
-    "openai/o1-mini": {
-        "name": "OpenAI o1 Mini",
+    "anthropic/claude-3.7-sonnet": {
+        "name": "Claude 3.7 Sonnet",
         "input_cost": 3.0,
-        "output_cost": 12.0,
+        "output_cost": 15.0,
     },
 }
 
@@ -103,7 +97,7 @@ class Settings(BaseSettings):
     
     # Cloud LLM Configuration (OpenRouter only)
     llm_provider: str = "openrouter"
-    llm_model: str = "anthropic/claude-3.7-sonnet"  # Default model with reasoning enabled via API parameter
+    llm_model: str = "anthropic/claude-sonnet-4.6"  # Default model with reasoning enabled via API parameter
     llm_timeout: int = 120  # seconds
     llm_max_tokens: int = 4096
     

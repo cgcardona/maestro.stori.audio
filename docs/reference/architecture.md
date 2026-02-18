@@ -48,6 +48,37 @@ Classify first, then execute. **REASONING** = questions, no tools. **EDITING** =
 
 ---
 
+## Structured prompts
+
+Power users can bypass NL classification entirely with a structured prompt format. See [stori-prompt-spec.md](../protocol/stori-prompt-spec.md).
+
+```
+User prompt arrives
+        │
+        ▼
+┌──────────────────┐
+│  parse_prompt()  │ ← detect "STORI PROMPT" header
+└────────┬─────────┘
+         │
+    returns ParsedPrompt?
+    ┌─────┴──────┐
+    │ Yes        │ No (returns None)
+    ▼            ▼
+ Hard-route   Existing NL pipeline
+ from Mode    (normalize → patterns → idioms → LLM fallback)
+ field        ← COMPLETELY UNCHANGED
+```
+
+- `Mode: compose` → COMPOSING (planner path). When Style, Tempo, Roles, and Bars are all specified, the planner builds a deterministic plan without an LLM call.
+- `Mode: edit` → EDITING. Vibes are matched against the producer idiom lexicon to pick the most appropriate edit intent.
+- `Mode: ask` → REASONING. No tools.
+
+Parsed fields (Style, Key, Tempo, Roles, Constraints, Vibes, Target) are injected into the LLM system prompt as structured context, reducing inference overhead and increasing determinism.
+
+Implementation: `app/core/prompt_parser.py` (parser), `app/core/intent.py` (routing gate).
+
+---
+
 ## Music generation
 
 **Orpheus required** for composing. No pattern fallback; if Orpheus is down, generation fails with a clear error. Config: `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`). Full health requires Orpheus. See [setup.md](../guides/setup.md) for config.

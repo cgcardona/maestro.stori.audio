@@ -92,7 +92,7 @@ class TestEntityResolution:
         
         result = validate_tool_call(
             tool_name="stori_set_track_volume",
-            params={"trackName": "Drums", "volumeDb": -3.0},
+            params={"trackName": "Drums", "volume": 0.8},
             allowed_tools={"stori_set_track_volume"},
             registry=registry,
         )
@@ -106,7 +106,7 @@ class TestEntityResolution:
         
         result = validate_tool_call(
             tool_name="stori_set_track_volume",
-            params={"trackName": "NonExistent", "volumeDb": -3.0},
+            params={"trackName": "NonExistent", "volume": 0.8},
             allowed_tools={"stori_set_track_volume"},
             registry=registry,
         )
@@ -121,7 +121,7 @@ class TestEntityResolution:
         
         result = validate_tool_call(
             tool_name="stori_set_track_volume",
-            params={"trackId": "fake-id-123", "volumeDb": -3.0},
+            params={"trackId": "fake-id-123", "volume": 0.8},
             allowed_tools={"stori_set_track_volume"},
             registry=registry,
         )
@@ -136,7 +136,7 @@ class TestEntityResolution:
         
         result = validate_tool_call(
             tool_name="stori_set_track_volume",
-            params={"trackId": track_id, "volumeDb": -3.0},
+            params={"trackId": track_id, "volume": 0.8},
             allowed_tools={"stori_set_track_volume"},
             registry=registry,
         )
@@ -223,13 +223,13 @@ class TestValueRangeValidation:
     """Test value range validation."""
     
     def test_volume_in_range(self):
-        """Should accept volume in valid range."""
+        """Should accept volume in valid linear range 0.0–1.5."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
         
         result = validate_tool_call(
             tool_name="stori_set_track_volume",
-            params={"trackId": track_id, "volumeDb": 0.0},
+            params={"trackId": track_id, "volume": 1.0},
             allowed_tools={"stori_set_track_volume"},
             registry=registry,
         )
@@ -237,13 +237,13 @@ class TestValueRangeValidation:
         assert result.valid
     
     def test_volume_out_of_range(self):
-        """Should reject volume outside valid range."""
+        """Should reject volume outside 0.0–1.5."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
         
         result = validate_tool_call(
             tool_name="stori_set_track_volume",
-            params={"trackId": track_id, "volumeDb": 100.0},  # Too high
+            params={"trackId": track_id, "volume": 3.0},  # Too high
             allowed_tools={"stori_set_track_volume"},
             registry=registry,
         )
@@ -252,13 +252,13 @@ class TestValueRangeValidation:
         assert any("out of range" in str(e).lower() for e in result.errors)
     
     def test_pan_in_range(self):
-        """Should accept pan in valid range."""
+        """Should accept pan in valid range 0.0–1.0."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
         
         result = validate_tool_call(
             tool_name="stori_set_track_pan",
-            params={"trackId": track_id, "pan": -50},
+            params={"trackId": track_id, "pan": 0.5},
             allowed_tools={"stori_set_track_pan"},
             registry=registry,
         )
@@ -266,13 +266,13 @@ class TestValueRangeValidation:
         assert result.valid
     
     def test_pan_out_of_range(self):
-        """Should reject pan outside -100 to 100."""
+        """Should reject pan outside 0.0–1.0."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
         
         result = validate_tool_call(
             tool_name="stori_set_track_pan",
-            params={"trackId": track_id, "pan": 200},  # Too high
+            params={"trackId": track_id, "pan": 1.5},  # Too high
             allowed_tools={"stori_set_track_pan"},
             registry=registry,
         )
@@ -313,21 +313,31 @@ class TestToolSpecificValidation:
         assert any("effect" in str(e).lower() for e in result.errors)
     
     def test_valid_quantize_grid(self):
-        """Should accept valid quantize grid."""
+        """Should accept valid quantize gridSize (numeric beats)."""
+        registry = EntityRegistry()
+        track_id = registry.create_track("Drums")
+        region_id = registry.create_region("Pattern", track_id)
+
         result = validate_tool_call(
             tool_name="stori_quantize_notes",
-            params={"grid": "1/16"},
+            params={"regionId": region_id, "gridSize": 0.25},  # 1/16 note
             allowed_tools={"stori_quantize_notes"},
+            registry=registry,
         )
         
         assert result.valid
     
     def test_invalid_quantize_grid(self):
-        """Should reject invalid quantize grid."""
+        """Should reject invalid quantize gridSize."""
+        registry = EntityRegistry()
+        track_id = registry.create_track("Drums")
+        region_id = registry.create_region("Pattern", track_id)
+
         result = validate_tool_call(
             tool_name="stori_quantize_notes",
-            params={"grid": "1/3"},  # Not a valid grid
+            params={"regionId": region_id, "gridSize": 0.3},  # Not a valid grid value
             allowed_tools={"stori_quantize_notes"},
+            registry=registry,
         )
         
         assert not result.valid
@@ -374,7 +384,7 @@ class TestBatchValidation:
         results = validate_tool_calls_batch(
             [
                 ("stori_play", {}),
-                ("stori_set_track_volume", {"trackId": track_id, "volumeDb": 0}),
+                ("stori_set_track_volume", {"trackId": track_id, "volume": 1.0}),
             ],
             allowed_tools={"stori_play", "stori_set_track_volume"},
             registry=registry,
@@ -423,3 +433,73 @@ class TestSimpleValidation:
         
         assert not valid
         assert "not allowed" in error.lower()
+
+
+class TestTargetScopeCheck:
+    """Target scope advisory warnings from structured prompt Target field."""
+
+    def test_project_scope_never_warns(self):
+        """Target: project — everything is in scope."""
+        result = validate_tool_call(
+            "stori_set_track_volume",
+            {"trackId": "abc", "volume": 0.5},
+            {"stori_set_track_volume"},
+            target_scope=("project", None),
+        )
+        assert result.warnings == []
+
+    def test_track_scope_matching_name_no_warning(self):
+        """Tool call matches the target track — no warning."""
+        result = validate_tool_call(
+            "stori_add_insert_effect",
+            {"trackId": "abc", "trackName": "Bass", "type": "compressor"},
+            {"stori_add_insert_effect"},
+            target_scope=("track", "Bass"),
+        )
+        assert result.warnings == []
+
+    def test_track_scope_different_name_warns(self):
+        """Tool call references a different track — advisory warning."""
+        result = validate_tool_call(
+            "stori_add_insert_effect",
+            {"trackId": "abc", "trackName": "Drums", "type": "eq"},
+            {"stori_add_insert_effect"},
+            target_scope=("track", "Bass"),
+        )
+        assert len(result.warnings) == 1
+        assert "track:Bass" in result.warnings[0]
+        assert "Drums" in result.warnings[0]
+        # Warning only — validation still passes
+        assert result.valid
+
+    def test_track_scope_case_insensitive(self):
+        """Track name comparison is case-insensitive."""
+        result = validate_tool_call(
+            "stori_add_insert_effect",
+            {"trackId": "abc", "trackName": "bass", "type": "compressor"},
+            {"stori_add_insert_effect"},
+            target_scope=("track", "Bass"),
+        )
+        assert result.warnings == []
+
+    def test_no_target_scope_no_warnings(self):
+        """Without target_scope, no scope warnings are emitted."""
+        result = validate_tool_call(
+            "stori_set_track_volume",
+            {"trackId": "abc", "volume": 0.5},
+            {"stori_set_track_volume"},
+            target_scope=None,
+        )
+        assert result.warnings == []
+
+    def test_region_scope_different_name_warns(self):
+        """Tool call references a different region name — warning."""
+        result = validate_tool_call(
+            "stori_add_midi_region",
+            {"trackId": "abc", "name": "Chorus", "startBeat": 0, "durationBeats": 16},
+            {"stori_add_midi_region"},
+            target_scope=("region", "Verse A"),
+        )
+        assert len(result.warnings) == 1
+        assert "region:Verse A" in result.warnings[0]
+        assert result.valid

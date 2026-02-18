@@ -71,20 +71,15 @@ class LLMClient:
     - Single-tool enforcement
     """
     
-    # Only reasoning models are supported
     # All models support reasoning via OpenRouter's `reasoning` API parameter
     REASONING_MODELS = {
         # Anthropic Claude models
-        "anthropic/claude-3.7-sonnet",               # Baseline - $3/M in, $15/M out
-        "anthropic/claude-sonnet-4.5",               # Latest Sonnet
-        "anthropic/claude-opus-4.5",                 # Latest Opus (best reasoning)
-        "anthropic/claude-opus-4.1",                 # Opus 4.1
-        "anthropic/claude-opus-4",                   # Opus 4
-        
-        # OpenAI reasoning models
-        "openai/o1",                                 # Latest o1
-        "openai/o1-preview",                         # o1 preview
-        "openai/o1-mini",                            # Faster, cheaper o1
+        "anthropic/claude-sonnet-4.6",               # Latest Sonnet - $3/M in, $15/M out
+        "anthropic/claude-opus-4.6",                 # Latest Opus - $5/M in, $25/M out
+        # Previous generations kept for backward-compat with existing sessions
+        "anthropic/claude-sonnet-4.5",
+        "anthropic/claude-opus-4.5",
+        "anthropic/claude-3.7-sonnet",
     }
     
     def __init__(

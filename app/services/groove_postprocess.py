@@ -31,7 +31,7 @@ def apply_groove_postprocess(
     apply_velocity_curve: bool = True,
 ) -> list[dict]:
     """
-    Apply groove humanization using Groove Engine v2.
+    Apply groove humanization using the Groove Engine.
     
     Uses style-specific microtiming, swing, and velocity shaping instead of
     uniform jitter. Each instrument role gets appropriate timing offsets:

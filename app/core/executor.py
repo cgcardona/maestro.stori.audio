@@ -733,7 +733,11 @@ async def apply_variation_phrases(
             conversation_id=conversation_id or "default",
             project_id=project_state.get("projectId"),
         )
-        store.sync_from_client(project_state)
+        # Only sync from client when a real project snapshot is provided.
+        # Passing an empty dict would wipe server-side state built during the
+        # compose phase, breaking note lookups after commit.
+        if project_state:
+            store.sync_from_client(project_state)
         
         try:
             notes_added = 0
@@ -741,9 +745,11 @@ async def apply_variation_phrases(
             notes_modified = 0
             applied_phrases = []
 
-            # Group adds and removals by region
+            # Group adds and removals by region; track region→track mapping
+            # from phrase data so we don't depend on a registry that may be empty.
             region_adds: dict[str, list[dict]] = {}
             region_removals: dict[str, list[dict]] = {}
+            region_track_map: dict[str, str] = {}
 
             # Process phrases in sequence order (accepted_phrase_ids order)
             for phrase_id in accepted_phrase_ids:
@@ -753,6 +759,7 @@ async def apply_variation_phrases(
                     continue
 
                 region_id = phrase.region_id
+                region_track_map[region_id] = phrase.track_id
 
                 if region_id not in region_adds:
                     region_adds[region_id] = []
@@ -793,14 +800,16 @@ async def apply_variation_phrases(
 
             store.commit(tx)
 
-            # Build updated_regions: full note state for every affected region
+            # Build updated_regions: full note state for every affected region.
+            # Use phrase-derived track_id as the primary source; fall back to
+            # the registry only if somehow a region slipped through without one.
             affected_region_ids = set(region_adds.keys()) | set(region_removals.keys())
             updated_regions: list[dict[str, Any]] = []
             for rid in sorted(affected_region_ids):
-                track_id = store.get_region_track_id(rid)
+                track_id = region_track_map.get(rid) or store.get_region_track_id(rid) or ""
                 updated_regions.append({
                     "region_id": rid,
-                    "track_id": track_id or "",
+                    "track_id": track_id,
                     "notes": store.get_region_notes(rid),
                 })
 

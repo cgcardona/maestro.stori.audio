@@ -178,7 +178,7 @@ Common GM Programs:
     },
     {
         "name": "stori_set_track_volume",
-        "description": "Set the volume of a track (in dB; 0 = unity, negative = attenuation).",
+        "description": "Set the volume of a track. Linear scale: 0.0 = silent, 1.0 = unity gain, 1.5 = +50%.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -186,26 +186,28 @@ Common GM Programs:
                     "type": "string",
                     "description": "Track ID (from stori_read_project or stori_add_track result)"
                 },
-                "volumeDb": {
+                "volume": {
                     "type": "number",
-                    "description": "Volume in dB (0 = unity, e.g. -6 for half, -inf for mute)"
+                    "description": "Linear volume 0.0–1.5 (1.0 = unity gain)",
+                    "minimum": 0.0,
+                    "maximum": 1.5
                 }
             },
-            "required": ["trackId", "volumeDb"]
+            "required": ["trackId", "volume"]
         }
     },
     {
         "name": "stori_set_track_pan",
-        "description": "Set the pan position of a track (-100 = full left, 0 = center, +100 = full right).",
+        "description": "Set the pan position of a track. 0.0 = hard left, 0.5 = center, 1.0 = hard right.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "trackId": {"type": "string", "description": "Track ID"},
                 "pan": {
                     "type": "number",
-                    "description": "Pan (-100 to 100)",
-                    "minimum": -100,
-                    "maximum": 100
+                    "description": "Pan position 0.0 (left) to 1.0 (right), 0.5 = center",
+                    "minimum": 0.0,
+                    "maximum": 1.0
                 }
             },
             "required": ["trackId", "pan"]
@@ -428,26 +430,24 @@ For drums, use standard GM drum map:
     },
     {
         "name": "stori_quantize_notes",
-        "description": "Quantize notes in a region to a grid.",
+        "description": "Quantize notes in a region to a rhythmic grid.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "regionId": {"type": "string", "description": "Region ID"},
-                "grid": {
-                    "type": "string",
-                    "description": "Grid size",
-                    "enum": ["1/4", "1/8", "1/16", "1/32", "1/64"],
-                    "default": "1/16"
+                "gridSize": {
+                    "type": "number",
+                    "description": "Grid in beats: 0.125=1/32, 0.25=1/16, 0.5=1/8, 1.0=1/4, 2.0=1/2, 4.0=whole",
+                    "enum": [0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0]
                 },
                 "strength": {
                     "type": "number",
-                    "description": "Quantize strength (0.0-1.0)",
+                    "description": "Quantize strength (0.0-1.0), default 1.0",
                     "minimum": 0,
-                    "maximum": 1,
-                    "default": 1.0
+                    "maximum": 1
                 }
             },
-            "required": ["regionId"]
+            "required": ["regionId", "gridSize"]
         }
     },
     {
@@ -476,22 +476,6 @@ For drums, use standard GM drum map:
 
 EFFECTS_TOOLS = [
     {
-        "name": "stori_add_effect",
-        "description": "Add an insert effect to a track (alias: use effectType; for core alignment use stori_add_insert_effect with 'type').",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "trackId": {"type": "string", "description": "Track ID"},
-                "effectType": {
-                    "type": "string",
-                    "description": "Effect type",
-                    "enum": ["compressor", "eq", "reverb", "delay", "chorus", "distortion", "filter", "overdrive", "phaser", "flanger", "modulation", "tremolo"]
-                }
-            },
-            "required": ["trackId", "effectType"]
-        }
-    },
-    {
         "name": "stori_add_insert_effect",
         "description": "Add an insert effect to a track. Valid types: reverb, delay, compressor, eq, distortion, filter, chorus, modulation, overdrive, phaser, flanger, tremolo.",
         "inputSchema": {
@@ -509,15 +493,15 @@ EFFECTS_TOOLS = [
     },
     {
         "name": "stori_add_send",
-        "description": "Add a send from a track to a bus (for reverb/delay).",
+        "description": "Add a send from a track to a named bus (for reverb/delay routing).",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "trackId": {"type": "string", "description": "Track ID"},
-                "busId": {"type": "string", "description": "Bus ID (from stori_ensure_bus or DAW)"},
-                "levelDb": {"type": "number", "description": "Send level in dB"}
+                "trackId": {"type": "string", "description": "UUID of source track"},
+                "busName": {"type": "string", "description": "Name of destination bus (e.g. 'Reverb', 'Delay')"},
+                "sendLevel": {"type": "number", "description": "Send level 0.0–1.0, default 0.3"}
             },
-            "required": ["trackId", "busId"]
+            "required": ["trackId", "busName"]
         }
     },
     {

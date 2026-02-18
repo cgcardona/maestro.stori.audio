@@ -1,4 +1,4 @@
-# Variation API v1 — Wire Contract
+# Variation API — Wire Contract
 
 > Canonical backend-first specification for the Muse/Variation protocol.
 > All endpoints are under `/api/v1/`.

@@ -12,7 +12,10 @@ Core principles:
 """
 
 from __future__ import annotations
-from typing import Any
+from typing import Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.core.prompt_parser import ParsedPrompt
 
 def system_prompt_base() -> str:
     return (
@@ -170,3 +173,51 @@ def intent_classification_prompt(user_prompt: str) -> str:
 
 
 INTENT_CLASSIFICATION_SYSTEM = "You are an intent classifier for a DAW. Respond with only the category name."
+
+
+def structured_prompt_context(parsed: "ParsedPrompt") -> str:
+    """
+    Format parsed structured prompt fields for injection into LLM system prompts.
+
+    Only includes fields that have values; the LLM uses these directly
+    instead of re-inferring from the Request text.
+    """
+    lines = ["", "═══ STRUCTURED INPUT (power user) ═══"]
+
+    lines.append(f"Mode: {parsed.mode}")
+
+    if parsed.target:
+        target_str = parsed.target.kind
+        if parsed.target.name:
+            target_str += f":{parsed.target.name}"
+        lines.append(f"Target: {target_str}")
+
+    if parsed.style:
+        lines.append(f"Style: {parsed.style}")
+    if parsed.key:
+        lines.append(f"Key: {parsed.key}")
+    if parsed.tempo:
+        lines.append(f"Tempo: {parsed.tempo} BPM")
+    if parsed.roles:
+        lines.append(f"Roles: {', '.join(parsed.roles)}")
+
+    if parsed.constraints:
+        constraint_parts = [
+            f"{k}={v}" for k, v in parsed.constraints.items()
+        ]
+        lines.append(f"Constraints: {', '.join(constraint_parts)}")
+
+    if parsed.vibes:
+        vibe_parts = []
+        for vw in parsed.vibes:
+            if vw.weight != 1:
+                vibe_parts.append(f"{vw.vibe} (weight {vw.weight})")
+            else:
+                vibe_parts.append(vw.vibe)
+        lines.append(f"Vibes: {', '.join(vibe_parts)}")
+
+    lines.append("═════════════════════════════════════")
+    lines.append("Use the above values directly. Do not re-infer them from the Request text.")
+    lines.append("")
+
+    return "\n".join(lines)

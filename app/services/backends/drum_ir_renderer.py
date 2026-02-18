@@ -349,7 +349,7 @@ def render_drum_spec(
         drum_spec: DrumSpec with layers, groove template, constraints
         global_spec: GlobalSpec with tempo, bars, humanize profile
         apply_salience_cap: Whether to enforce max_salience_per_beat
-        apply_groove: Whether to apply Groove Engine v2 humanization
+        apply_groove: Whether to apply Groove Engine humanization
         return_result: If True, return DrumRenderResult with metadata; else just notes
     
     Returns:
@@ -408,7 +408,7 @@ def render_drum_spec(
             drum_spec.constraints.max_salience_per_beat,
         )
     
-    # Apply Groove Engine v2 (replaces old uniform jitter)
+    # Apply Groove Engine (style-aware humanization)
     if apply_groove:
         # Build layer_map by index for groove engine
         layer_map = {i: n.get("layer", "timekeepers") for i, n in enumerate(notes)}
