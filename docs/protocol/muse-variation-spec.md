@@ -176,17 +176,33 @@ Backend must reject commits if `base_state_id` mismatches (optimistic concurrenc
 #### (B) Stream Variation (phrases/hunks)
 `GET /variation/stream?variation_id=...` (SSE)
 
+All events are wrapped in a transport-agnostic `EventEnvelope`:
+```json
+{
+  "type": "meta|phrase|done|error|heartbeat",
+  "sequence": 1,
+  "variation_id": "uuid",
+  "project_id": "uuid",
+  "base_state_id": "uuid-or-int",
+  "timestamp_ms": 1700000000000,
+  "payload": { }
+}
+```
+`sequence` is strictly increasing per variation (meta=1, then phrases, then done last).
+The event-specific data lives in `payload`; outer fields provide routing and ordering context.
+
 **SSE Events**
 - `meta` — overall summary + UX copy + counts
 - `phrase` — one musical phrase at a time
-- `progress` — optional
 - `done` — end of stream
 - `error` — terminal
+- `heartbeat` — keepalive (no payload significance)
 
-**Example: `meta`**
+> `progress` events are not yet implemented.
+
+**Example: `meta`** (this is the `payload` field inside the `EventEnvelope`; `variation_id`, `project_id`, `base_state_id`, and `sequence` are in the outer envelope)
 ```json
 {
-  "variation_id": "uuid",
   "intent": "make that minor",
   "ai_explanation": "Lowered scale degrees 3 and 7",
   "affected_tracks": ["uuid"],
@@ -219,8 +235,10 @@ Backend must reject commits if `base_state_id` mismatches (optimistic concurrenc
 ```
 
 **Example: `done`**
+
+The `variation_id` is carried in the outer `EventEnvelope` wrapper (not repeated in the payload).
 ```json
-{ "variation_id": "uuid" }
+{ "status": "ready", "phrase_count": 3 }
 ```
 
 #### (C) Commit (Accept Variation)
@@ -256,7 +274,23 @@ Backend must reject commits if `base_state_id` mismatches (optimistic concurrenc
 }
 ```
 
-#### (D) Discard Variation
+#### (D) Poll Variation Status
+`GET /variation/{variation_id}`
+
+Returns the current status and accumulated phrases for a variation. Useful for
+reconnect flows and clients that can't maintain a long-lived SSE connection.
+
+**Response**
+```json
+{
+  "variation_id": "uuid",
+  "status": "ready",
+  "intent": "make that minor",
+  "phrases": []
+}
+```
+
+#### (E) Discard Variation
 `POST /variation/discard`
 
 ```json
@@ -313,9 +347,9 @@ Returns `{ "ok": true }`.
 ```
 
 Rules:
-- `added` -> `before` may be null
-- `removed` -> `after` may be null
-- `modified` -> both present
+- `added` -> `before` must be null (enforced by backend)
+- `removed` -> `after` must be null (enforced by backend)
+- `modified` -> both `before` and `after` must be present
 - All positions in **beats** (not seconds)
 
 ---
