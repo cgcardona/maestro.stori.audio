@@ -313,8 +313,8 @@ def _resolve_and_validate_entities(
     
     def _get_region_suggestions(track_id: str | None = None) -> list[str]:
         if track_id:
-            return [r.name for r in registry.get_track_regions(track_id)]
-        return [r.name for r in registry.list_regions()]
+            return [f"{r.name} (regionId: {r.id})" for r in registry.get_track_regions(track_id)]
+        return [f"{r.name} (regionId: {r.id})" for r in registry.list_regions()]
     
     def _get_bus_suggestions() -> list[str]:
         return [b.name for b in registry.list_buses()]
@@ -378,15 +378,30 @@ def _resolve_and_validate_entities(
                 resolved["regionId"] = resolved_id
             else:
                 track_id = resolved.get("trackId")
-                available = _get_region_suggestions(track_id)
                 suggestion = ""
-                if available:
-                    closest = _find_closest_match(region_id, available)
-                    if closest:
-                        suggestion = f" Did you mean '{closest}'?"
+                # Detect the common hallucination: LLM passed a trackId as regionId
+                if registry.exists_track(region_id):
+                    track_regions = _get_region_suggestions(region_id)
+                    if track_regions:
+                        suggestion = (
+                            f" NOTE: '{region_id[:8]}...' is a trackId, not a regionId."
+                            f" Use the regionId from stori_add_midi_region."
+                            f" Regions on this track: {', '.join(track_regions[:3])}"
+                        )
                     else:
-                        suggestion = f" Available: {', '.join(available[:5])}"
-                
+                        suggestion = (
+                            f" NOTE: '{region_id[:8]}...' is a trackId, not a regionId."
+                            " Call stori_add_midi_region first to create a region."
+                        )
+                else:
+                    available = _get_region_suggestions(track_id)
+                    if available:
+                        closest = _find_closest_match(region_id, available)
+                        if closest:
+                            suggestion = f" Did you mean '{closest}'?"
+                        else:
+                            suggestion = f" Available: {', '.join(available[:5])}"
+
                 errors.append(ValidationError(
                     field="regionId",
                     message=f"Region '{region_id}' not found.{suggestion}",

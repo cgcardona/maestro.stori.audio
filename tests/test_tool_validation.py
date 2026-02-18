@@ -169,6 +169,42 @@ class TestEntityResolution:
         
         assert not result.valid
 
+    def test_track_id_used_as_region_id_gives_targeted_error(self):
+        """When LLM passes a trackId as regionId, error message identifies the mistake."""
+        registry = EntityRegistry()
+        track_id = registry.create_track("Bass")
+        region_id = registry.create_region("Bass Line", track_id)
+
+        result = validate_tool_call(
+            tool_name="stori_add_notes",
+            params={"regionId": track_id, "notes": []},
+            allowed_tools={"stori_add_notes"},
+            registry=registry,
+        )
+
+        assert not result.valid
+        msg = result.errors[0].message
+        assert "trackId" in msg
+        assert "regionId" in msg
+        assert f"Bass Line (regionId: {region_id})" in msg
+
+    def test_region_not_found_includes_id_in_suggestions(self):
+        """Region not-found suggestions include regionId so the LLM can self-correct."""
+        registry = EntityRegistry()
+        track_id = registry.create_track("Drums")
+        region_id = registry.create_region("Beat", track_id)
+
+        result = validate_tool_call(
+            tool_name="stori_add_notes",
+            params={"regionId": "wrong-id", "notes": []},
+            allowed_tools={"stori_add_notes"},
+            registry=registry,
+        )
+
+        assert not result.valid
+        msg = result.errors[0].message
+        assert region_id in msg
+
     def test_entity_creating_tool_skips_primary_id_validation(self):
         """stori_add_midi_track should not reject hallucinated trackId."""
         registry = EntityRegistry()
