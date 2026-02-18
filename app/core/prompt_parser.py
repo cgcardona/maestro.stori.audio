@@ -1,127 +1,122 @@
 """
 Structured prompt parser for Stori Composer.
 
-Detects and extracts structured fields from the Stori Prompt format.
-See docs/protocol/stori-prompt-spec.md for the full specification.
+Format: a sentinel header line followed by a YAML document.
 
-This is a purely additive fast path. If the prompt is not in the structured
-format, parse_prompt() returns None and the existing NL pipeline handles it.
+    STORI PROMPT
+    <YAML body>
+
+The sentinel "STORI PROMPT" (case-insensitive) is the trigger. Everything
+after it must be valid YAML. If YAML parsing fails the prompt is treated as
+natural language and the NL pipeline handles it — no fallback, no guessing.
+
+Routing fields (parsed deterministically by Python):
+    Mode, Section, Position, Target, Style, Key, Tempo, Role, Constraints,
+    Vibe, Request
+
+Maestro dimensions (all other top-level keys):
+    Harmony, Melody, Rhythm, Dynamics, Orchestration, Effects, Expression,
+    Texture, Form, Automation, … and any future fields.
+
+    These land in ParsedPrompt.extensions and are injected verbatim into the
+    Maestro LLM system prompt as YAML. The vocabulary is open — invent new
+    dimensions and they work immediately.
+
+See docs/protocol/stori-prompt-spec.md for the full specification.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
 
-# Known field headers (lowercase) in declaration order.
-# "request" is always last and consumes everything remaining.
-_FIELD_NAMES = (
-    "mode",
-    "section",
-    "position",  # canonical field
-    "after",     # backwards-compatible alias for position
-    "target",
-    "style",
-    "key",
-    "tempo",
-    "role",
-    "constraints",
-    "vibe",
-    "request",
-)
+import yaml
+
+logger = logging.getLogger(__name__)
+
+# ─── Sentinel ────────────────────────────────────────────────────────────────
 
 _HEADER_RE = re.compile(r"^\s*stori\s+prompt\s*$", re.IGNORECASE)
 
-# Matches a field header line: "FieldName:" with optional inline value
-_FIELD_RE = re.compile(
-    r"^(" + "|".join(_FIELD_NAMES) + r")\s*:\s*(.*?)\s*$",
-    re.IGNORECASE,
-)
+# ─── Routing field set (lowercase) ───────────────────────────────────────────
 
-_VALID_MODES = frozenset({"compose", "edit", "ask"})
-_VALID_TARGET_KINDS: set[str] = {"project", "selection", "track", "region"}
+_ROUTING_FIELDS = frozenset({
+    "mode", "section", "position", "after",
+    "target", "style", "key", "tempo", "role", "constraints", "vibe", "request",
+})
+
+# ─── Regexes ─────────────────────────────────────────────────────────────────
 
 _TEMPO_RE = re.compile(r"(\d+)\s*(bpm)?", re.IGNORECASE)
-_VIBE_WEIGHT_RE = re.compile(r"^(.+?)\s*:\s*(\d+)\s*$")
+_VIBE_X_WEIGHT_RE = re.compile(r"^(.+?)\s+x(\d+)\s*$", re.IGNORECASE)
+_VIBE_COLON_WEIGHT_RE = re.compile(r"^(.+?):(\d+)\s*$")
 _LIST_BULLET_RE = re.compile(r"^\s*-\s+")
 
-# Position field parsing regexes
-# "beat 32" or "at 32" or bare integer/float
+# Position parsing
 _POS_ABSOLUTE_RE = re.compile(
-    r"^(?:at\s+)?(?:beat\s+)?(\d+(?:\.\d+)?)\s*$", re.IGNORECASE
+    r"^(?:at\s+)?(?:beat\s+)?(\d+(?:\.\d+)?)\s*$", re.IGNORECASE,
 )
-# "at bar 9" → beat = (9-1)*4 (assumes 4/4; bar calculation is advisory)
 _POS_BAR_RE = re.compile(r"^(?:at\s+)?bar\s+(\d+)\s*$", re.IGNORECASE)
-# Offset suffix: "+ 4" or "- 4" (beats), may include "bars"
-_POS_OFFSET_RE = re.compile(r"([+-])\s*(\d+(?:\.\d+)?)\s*(?:beats?|bars?)?\s*$", re.IGNORECASE)
-# Relationship keywords in order of specificity
+_POS_OFFSET_RE = re.compile(
+    r"([+-])\s*(\d+(?:\.\d+)?)\s*(?:beats?|bars?)?\s*$", re.IGNORECASE,
+)
 _POS_KEYWORDS = ("after", "before", "alongside", "between", "within", "last")
+
+
+# ─── Data classes ─────────────────────────────────────────────────────────────
 
 
 @dataclass
 class TargetSpec:
-    """Parsed Target field."""
     kind: Literal["project", "selection", "track", "region"]
     name: Optional[str] = None
 
 
 @dataclass
 class PositionSpec:
-    """Parsed Position (or After) field — where new content sits in the timeline.
+    """Arrangement placement.
 
-    Inspired by CSS pseudo-selectors: a relationship keyword, optional section
-    references, and an optional beat offset combine to express any arrangement
-    placement a maestro might need.
-
-    Relationships:
-      "after"     → start after reference section ends       (sequential append)
-      "before"    → start before reference section begins    (insert / transition)
-      "alongside" → start at the same beat as reference      (parallel layer)
-      "between"   → fill the gap between two sections        (transition bridge)
-      "within"    → relative offset inside a section         (nested placement)
-      "absolute"  → explicit beat (no project scanning)
-      "last"      → after everything currently in the project
-
-    Offset is applied after reference resolution:
-      positive → shift right (later)
-      negative → shift left (earlier, e.g. pickup into chorus)
-
-    Examples (all parsed from Position: field):
-      Position: after intro           → PositionSpec("after",  "intro")
-      Position: before chorus - 4    → PositionSpec("before", "chorus", offset=-4)
-      Position: alongside verse + 8  → PositionSpec("alongside", "verse", offset=8)
-      Position: between intro verse  → PositionSpec("between", "intro", ref2="verse")
-      Position: within verse bar 3   → PositionSpec("within",  "verse", offset=8)  # bar3→beat8
-      Position: at 32                → PositionSpec("absolute", beat=32)
-      Position: last                 → PositionSpec("last")
+    kind        description
+    ──────────  ────────────────────────────────────────────────────────────
+    after       sequential — start after ref section ends
+    before      insert / pickup — start before ref section begins
+    alongside   parallel layer — same start beat as ref
+    between     transition bridge — fills gap between ref and ref2
+    within      nested — relative offset inside ref
+    absolute    explicit beat number
+    last        after all existing content in the project
     """
     kind: Literal["after", "before", "alongside", "between", "within", "absolute", "last"]
-    ref: Optional[str] = None          # primary section name
-    ref2: Optional[str] = None         # secondary section name (for "between")
-    offset: float = 0.0                # beat offset (+/-)
-    beat: Optional[float] = None       # for kind="absolute"
+    ref: Optional[str] = None
+    ref2: Optional[str] = None
+    offset: float = 0.0
+    beat: Optional[float] = None
 
 
-# Backwards-compatible alias used by earlier tests and existing code
+# Backwards-compatible alias
 AfterSpec = PositionSpec
 
 
 @dataclass
 class VibeWeight:
-    """A single vibe entry with optional weight."""
     vibe: str
     weight: int = 1
 
 
 @dataclass
 class ParsedPrompt:
-    """Result of successfully parsing a Stori structured prompt."""
+    """Parsed Stori Structured Prompt.
+
+    Routing fields are typed attributes. All other top-level YAML keys land in
+    ``extensions`` and are injected verbatim into the Maestro LLM system prompt.
+    """
     raw: str
     mode: Literal["compose", "edit", "ask"]
     request: str
-    section: Optional[str] = None          # Section label for this prompt's output
-    position: Optional[PositionSpec] = None  # Full arrangement positioning (Position: field)
+    section: Optional[str] = None
+    position: Optional[PositionSpec] = None
     target: Optional[TargetSpec] = None
     style: Optional[str] = None
     key: Optional[str] = None
@@ -129,250 +124,261 @@ class ParsedPrompt:
     roles: list[str] = field(default_factory=list)
     constraints: dict[str, Any] = field(default_factory=dict)
     vibes: list[VibeWeight] = field(default_factory=list)
+    extensions: dict[str, Any] = field(default_factory=dict)
 
     @property
     def after(self) -> Optional[PositionSpec]:
         """Backwards-compatible alias for position."""
         return self.position
 
+    @property
+    def has_maestro_fields(self) -> bool:
+        return bool(self.extensions)
 
-# ─── Public API ──────────────────────────────────────────────────────────────
+
+# ─── Public API ───────────────────────────────────────────────────────────────
 
 
 def parse_prompt(text: str) -> Optional[ParsedPrompt]:
-    """
-    Parse a Stori structured prompt from raw text.
+    """Parse a Stori Structured Prompt.
 
-    Returns ParsedPrompt if the text is a valid structured prompt, or None
-    if it is not (allowing the caller to fall through to the NL pipeline).
+    Returns ParsedPrompt on success, None to fall through to the NL pipeline.
 
-    A valid structured prompt must:
-    - Begin with the header line "STORI PROMPT" (case-insensitive)
-    - Contain at least Mode and Request fields
-    - Have a valid Mode value (compose | edit | ask)
+    The body after the sentinel must be valid YAML. Invalid YAML → None.
     """
     if not text or not text.strip():
         return None
 
     lines = text.strip().splitlines()
 
-    # Header detection — must be the first non-empty line
-    first_line = ""
-    first_line_idx = 0
+    # Sentinel must be the first non-empty line
+    header_idx = -1
     for i, line in enumerate(lines):
         if line.strip():
-            first_line = line.strip()
-            first_line_idx = i
+            if _HEADER_RE.match(line.strip()):
+                header_idx = i
             break
 
-    if not _HEADER_RE.match(first_line):
+    if header_idx < 0:
         return None
 
-    # Collect field blocks: {field_name_lower: [content_lines]}
-    field_blocks = _extract_field_blocks(lines[first_line_idx + 1:])
+    body = "\n".join(lines[header_idx + 1:])
 
-    # Mode is required
-    mode_val = _single_value(field_blocks.get("mode"))
-    if mode_val is None:
-        return None
-    mode_val = mode_val.lower()
-    if mode_val not in _VALID_MODES:
+    try:
+        raw_data = yaml.safe_load(body)
+    except yaml.YAMLError as exc:
+        logger.debug("Stori Prompt YAML parse failed — treating as NL: %s", exc)
         return None
 
-    # Request is required
-    request_val = _block_text(field_blocks.get("request"))
+    if not isinstance(raw_data, dict):
+        return None
+
+    # Normalise all top-level keys to lowercase
+    data: dict[str, Any] = {str(k).lower(): v for k, v in raw_data.items()}
+
+    # Required: Mode
+    mode_raw = _str(data.get("mode"))
+    if not mode_raw or mode_raw.lower() not in ("compose", "edit", "ask"):
+        return None
+
+    # Required: Request
+    request_val = _str(data.get("request"))
     if not request_val:
         return None
 
-    # Position: is canonical; After: is a backwards-compatible alias.
-    # If both are present, Position: wins.
+    # Position wins over After when both present
     position = (
-        _parse_position(field_blocks.get("position"))
-        or _parse_position(field_blocks.get("after"), after_alias=True)
+        _parse_position(_str(data.get("position")))
+        or _parse_position(_str(data.get("after")), after_alias=True)
     )
+
+    extensions = {k: v for k, v in data.items() if k not in _ROUTING_FIELDS}
 
     return ParsedPrompt(
         raw=text,
-        mode=mode_val,  # type: ignore[arg-type]
+        mode=mode_raw.lower(),  # type: ignore[arg-type]
         request=request_val,
-        section=_parse_section(field_blocks.get("section")),
+        section=_str(data.get("section"), lower=True),
         position=position,
-        target=_parse_target(field_blocks.get("target")),
-        style=_single_value(field_blocks.get("style")),
-        key=_single_value(field_blocks.get("key")),
-        tempo=_parse_tempo(field_blocks.get("tempo")),
-        roles=_parse_list(field_blocks.get("role")),
-        constraints=_parse_constraints(field_blocks.get("constraints")),
-        vibes=_parse_vibes(field_blocks.get("vibe")),
+        target=_parse_target(_str(data.get("target"))),
+        style=_str(data.get("style")),
+        key=_str(data.get("key")),
+        tempo=_parse_tempo(data.get("tempo")),
+        roles=_parse_roles(data.get("role")),
+        constraints=_parse_constraints(data.get("constraints")),
+        vibes=_parse_vibes(data.get("vibe")),
+        extensions=extensions,
     )
 
 
-# ─── Field block extraction ─────────────────────────────────────────────────
+# ─── Field parsers ────────────────────────────────────────────────────────────
 
 
-def _extract_field_blocks(lines: list[str]) -> dict[str, list[str]]:
-    """
-    Walk lines after the header and group them by field.
-
-    Each field header ("Mode:", "Target:", etc.) starts a new block.
-    Lines before any field header are ignored. "Request:" is special:
-    it captures everything from its header to the end of input.
-    """
-    blocks: dict[str, list[str]] = {}
-    current_field: Optional[str] = None
-    current_lines: list[str] = []
-
-    for line in lines:
-        m = _FIELD_RE.match(line)
-        if m:
-            # Save previous block
-            if current_field is not None:
-                blocks[current_field] = current_lines
-
-            current_field = m.group(1).lower()
-            inline_value = m.group(2)
-            current_lines = [inline_value] if inline_value else []
-
-            # "request" consumes everything remaining, but we still
-            # collect line-by-line so multi-line requests work.
-            if current_field == "request":
-                continue
-        else:
-            if current_field is not None:
-                current_lines.append(line)
-
-    # Save last block
-    if current_field is not None:
-        blocks[current_field] = current_lines
-
-    return blocks
-
-
-# ─── Per-field parsers ───────────────────────────────────────────────────────
-
-
-def _single_value(lines: Optional[list[str]]) -> Optional[str]:
-    """Extract a single-line scalar value, stripping whitespace."""
-    if not lines:
+def _str(v: Any, lower: bool = False) -> Optional[str]:
+    """Coerce a YAML scalar to a stripped string, or None."""
+    if v is None:
         return None
-    combined = " ".join(l.strip() for l in lines if l.strip())
-    return combined if combined else None
+    s = str(v).strip()
+    return (s.lower() if lower else s) or None
 
 
-def _block_text(lines: Optional[list[str]]) -> Optional[str]:
-    """Join lines preserving newlines (for Request field)."""
-    if not lines:
-        return None
-    text = "\n".join(lines).strip()
-    return text if text else None
-
-
-def _parse_target(lines: Optional[list[str]]) -> Optional[TargetSpec]:
-    """Parse Target field: project | selection | track:<name> | region:<name>."""
-    val = _single_value(lines)
+def _parse_target(val: Optional[str]) -> Optional[TargetSpec]:
     if not val:
         return None
-
-    val_lower = val.lower().strip()
-
-    if val_lower == "project":
+    v = val.lower().strip()
+    if v == "project":
         return TargetSpec(kind="project")
-    if val_lower == "selection":
+    if v == "selection":
         return TargetSpec(kind="selection")
-
-    # track:<name> or region:<name>
     for kind in ("track", "region"):
-        prefix = f"{kind}:"
-        if val_lower.startswith(prefix):
-            name = val[len(prefix):].strip()
-            if name:
-                return TargetSpec(kind=kind, name=name)  # type: ignore[arg-type]
-
+        if v.startswith(f"{kind}:"):
+            name = val[len(kind) + 1:].strip()
+            return TargetSpec(kind=kind, name=name or None)  # type: ignore[arg-type]
     return None
 
 
-def _parse_tempo(lines: Optional[list[str]]) -> Optional[int]:
-    """Parse Tempo field: "126", "126 bpm", "126bpm"."""
-    val = _single_value(lines)
-    if not val:
+def _parse_tempo(v: Any) -> Optional[int]:
+    """Accept integer, float, or string like '92 bpm'."""
+    if v is None:
         return None
-    m = _TEMPO_RE.search(val)
-    if m:
-        try:
-            return int(m.group(1))
-        except ValueError:
-            return None
-    return None
+    if isinstance(v, (int, float)):
+        return int(v)
+    m = _TEMPO_RE.search(str(v))
+    return int(m.group(1)) if m else None
 
 
-def _parse_list(lines: Optional[list[str]]) -> list[str]:
+def _parse_roles(v: Any) -> list[str]:
+    """Role: string | list[str]."""
+    if v is None:
+        return []
+    if isinstance(v, list):
+        return [_LIST_BULLET_RE.sub("", str(i)).strip() for i in v if str(i).strip()]
+    # Inline comma-separated string
+    return [p.strip() for p in str(v).split(",") if p.strip()]
+
+
+def _parse_constraints(v: Any) -> dict[str, Any]:
+    """Constraints: dict | list of {k: v} dicts | string."""
+    if v is None:
+        return {}
+    if isinstance(v, dict):
+        return {str(k).lower(): val for k, val in v.items()}
+    if isinstance(v, list):
+        out: dict[str, Any] = {}
+        for item in v:
+            if isinstance(item, dict):
+                for k, val in item.items():
+                    out[str(k).lower()] = val
+            elif isinstance(item, str):
+                s = _LIST_BULLET_RE.sub("", item).strip()
+                if ":" in s:
+                    k, _, val = s.partition(":")
+                    out[k.strip().lower()] = _coerce(val.strip())
+                elif s:
+                    out[s.lower()] = True
+        return out
+    return {}
+
+
+def _parse_vibes(v: Any) -> list[VibeWeight]:
+    """Vibe: string | list[str | {name: weight}].
+
+    Weight syntax (in string items):
+      "dusty x3"    → VibeWeight("dusty", 3)    — readable shorthand
+      "dusty:3"     → VibeWeight("dusty", 3)    — colon, no space
+      {"dusty": 3}  → VibeWeight("dusty", 3)    — YAML dict
     """
-    Parse a list field that supports:
-    - Inline comma-separated: "kick, bass, arp"
-    - YAML-style bullets: "- kick\\n- bass\\n- arp"
-    - Mix of both
-    """
-    if not lines:
+    if v is None:
         return []
 
-    items: list[str] = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
+    raw: list[Any] = []
+    if isinstance(v, list):
+        raw = v
+    elif isinstance(v, str):
+        raw = [p.strip() for p in v.split(",") if p.strip()]
+    else:
+        raw = [v]
+
+    vibes: list[VibeWeight] = []
+    for item in raw:
+        if isinstance(item, dict):
+            # {name: weight} form
+            for name, weight in item.items():
+                vibes.append(VibeWeight(vibe=str(name).strip().lower(), weight=int(weight)))
             continue
-
-        # Remove leading bullet
-        stripped = _LIST_BULLET_RE.sub("", stripped).strip()
-        if not stripped:
+        s = _LIST_BULLET_RE.sub("", str(item)).strip()
+        if not s:
             continue
-
-        # Split by commas
-        parts = [p.strip() for p in stripped.split(",")]
-        items.extend(p for p in parts if p)
-
-    return items
-
-
-def _parse_constraints(lines: Optional[list[str]]) -> dict[str, Any]:
-    """
-    Parse Constraints field into a dict.
-
-    Supports:
-    - "key: value" pairs (YAML-style)
-    - Bare items without colon become flags: {"no reverb": True}
-    """
-    if not lines:
-        return {}
-
-    constraints: dict[str, Any] = {}
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
+        # "dusty x3"
+        m = _VIBE_X_WEIGHT_RE.match(s)
+        if m:
+            vibes.append(VibeWeight(vibe=m.group(1).strip().lower(), weight=int(m.group(2))))
             continue
-
-        # Remove leading bullet
-        stripped = _LIST_BULLET_RE.sub("", stripped).strip()
-        if not stripped:
+        # "dusty:3" (no space around colon)
+        m2 = _VIBE_COLON_WEIGHT_RE.match(s)
+        if m2:
+            vibes.append(VibeWeight(vibe=m2.group(1).strip().lower(), weight=int(m2.group(2))))
             continue
-
-        # Try key: value split (only first colon)
-        if ":" in stripped:
-            k, v = stripped.split(":", 1)
-            k = k.strip().lower()
-            v = v.strip()
-            if k and v:
-                # Try to coerce numeric values
-                constraints[k] = _coerce_value(v)
-                continue
-
-        # Bare item → flag
-        constraints[stripped.lower()] = True
-
-    return constraints
+        vibes.append(VibeWeight(vibe=s.lower()))
+    return vibes
 
 
-def _coerce_value(v: str) -> Any:
-    """Try to coerce a string value to int, float, or leave as string."""
+def _parse_position(val: Optional[str], after_alias: bool = False) -> Optional[PositionSpec]:
+    if not val:
+        return None
+    val = val.strip()
+
+    m = _POS_ABSOLUTE_RE.match(val)
+    if m:
+        return PositionSpec(kind="absolute", beat=float(m.group(1)))
+
+    m = _POS_BAR_RE.match(val)
+    if m:
+        return PositionSpec(kind="absolute", beat=float((int(m.group(1)) - 1) * 4))
+
+    if val.lower() == "last":
+        return PositionSpec(kind="last")
+
+    offset = 0.0
+    rest = val
+    om = _POS_OFFSET_RE.search(rest)
+    if om:
+        offset = (1.0 if om.group(1) == "+" else -1.0) * float(om.group(2))
+        rest = rest[: om.start()].strip()
+
+    rest_lower = rest.lower()
+    for kw in _POS_KEYWORDS:
+        if rest_lower.startswith(kw):
+            remainder = rest[len(kw):].strip()
+            if kw == "last":
+                return PositionSpec(kind="last", offset=offset)
+            if kw == "between":
+                parts = remainder.split()
+                return PositionSpec(
+                    kind="between",
+                    ref=parts[0].lower() if parts else None,
+                    ref2=parts[1].lower() if len(parts) > 1 else None,
+                    offset=offset,
+                )
+            if kw == "within":
+                parts = remainder.split()
+                ref = parts[0].lower() if parts else None
+                bar_off = 0.0
+                if len(parts) >= 3 and parts[1].lower() == "bar":
+                    try:
+                        bar_off = (int(parts[2]) - 1) * 4.0
+                    except ValueError:
+                        pass
+                return PositionSpec(kind="within", ref=ref, offset=offset + bar_off)  # type: ignore[arg-type]
+            kind_val: Literal["after", "before", "alongside", "between", "within", "absolute", "last"] = kw  # type: ignore[assignment]
+            return PositionSpec(kind=kind_val, ref=remainder.lower() or None, offset=offset)
+
+    if after_alias:
+        return PositionSpec(kind="after", ref=val.lower(), offset=offset)
+    return None
+
+
+def _coerce(v: str) -> Any:
     try:
         return int(v)
     except ValueError:
@@ -382,143 +388,3 @@ def _coerce_value(v: str) -> Any:
     except ValueError:
         pass
     return v
-
-
-def _parse_section(lines: Optional[list[str]]) -> Optional[str]:
-    """Parse Section field — returns a lowercase label like 'intro', 'verse'."""
-    val = _single_value(lines)
-    return val.lower().strip() if val else None
-
-
-def _parse_position(
-    lines: Optional[list[str]],
-    after_alias: bool = False,
-) -> Optional[PositionSpec]:
-    """Parse Position: (or After: alias) into a PositionSpec.
-
-    Supports the full arrangement positioning vocabulary:
-
-      last                         → PositionSpec("last")
-      after intro                  → PositionSpec("after", ref="intro")
-      before chorus                → PositionSpec("before", ref="chorus")
-      before chorus - 4            → PositionSpec("before", ref="chorus", offset=-4)
-      after intro + 2              → PositionSpec("after",  ref="intro",  offset=2)
-      alongside verse              → PositionSpec("alongside", ref="verse")
-      alongside verse + 8          → PositionSpec("alongside", ref="verse", offset=8)
-      between intro verse          → PositionSpec("between", ref="intro", ref2="verse")
-      within verse bar 3           → PositionSpec("within",  ref="verse", offset=8)
-      at 32 / beat 32 / 32        → PositionSpec("absolute", beat=32)
-      at bar 9                     → PositionSpec("absolute", beat=32)  # (9-1)*4
-
-    When after_alias=True (parsing the legacy After: field), a bare section
-    name like "intro" maps to kind="after" rather than raising an error.
-    """
-    val = _single_value(lines)
-    if not val:
-        return None
-    val = val.strip()
-
-    # ── absolute: "32", "beat 32", "at 32" ──
-    m = _POS_ABSOLUTE_RE.match(val)
-    if m:
-        return PositionSpec(kind="absolute", beat=float(m.group(1)))
-
-    # ── absolute bar: "at bar 9" ──
-    m = _POS_BAR_RE.match(val)
-    if m:
-        bar = int(m.group(1))
-        return PositionSpec(kind="absolute", beat=float((bar - 1) * 4))
-
-    # ── "last" ──
-    if val.lower() == "last":
-        return PositionSpec(kind="last")
-
-    # Extract trailing offset (e.g. "+ 4", "- 2 bars")
-    offset = 0.0
-    rest = val
-    om = _POS_OFFSET_RE.search(rest)
-    if om:
-        sign = 1.0 if om.group(1) == "+" else -1.0
-        offset = sign * float(om.group(2))
-        rest = rest[: om.start()].strip()
-
-    rest_lower = rest.lower()
-
-    # ── relationship keywords ──
-    for kw in _POS_KEYWORDS:
-        if rest_lower.startswith(kw):
-            remainder = rest[len(kw):].strip()
-
-            if kw == "last":
-                return PositionSpec(kind="last", offset=offset)
-
-            if kw == "between":
-                # "between intro verse" → two section names
-                parts = remainder.split()
-                ref = parts[0].lower() if parts else None
-                ref2 = parts[1].lower() if len(parts) > 1 else None
-                return PositionSpec(kind="between", ref=ref, ref2=ref2, offset=offset)
-
-            if kw == "within":
-                # "within verse bar 3" → ref + optional bar offset
-                parts = remainder.split()
-                ref = parts[0].lower() if parts else None
-                bar_offset = 0.0
-                if len(parts) >= 3 and parts[1].lower() == "bar":
-                    try:
-                        bar_offset = (int(parts[2]) - 1) * 4.0
-                    except ValueError:
-                        pass
-                return PositionSpec(kind="within", ref=ref, offset=offset + bar_offset)
-
-            # after / before / alongside
-            ref = remainder.lower() if remainder else None
-            kind_val: Literal["after", "before", "alongside", "between", "within", "absolute", "last"] = kw  # type: ignore[assignment]
-            return PositionSpec(kind=kind_val, ref=ref, offset=offset)
-
-    # ── Legacy After: alias: bare section name without keyword ──
-    if after_alias:
-        return PositionSpec(kind="after", ref=val.lower(), offset=offset)
-
-    return None
-
-
-def _parse_vibes(lines: Optional[list[str]]) -> list[VibeWeight]:
-    """
-    Parse Vibe field into weighted entries.
-
-    Supports:
-    - "darker" → VibeWeight("darker", 1)
-    - "darker:2" → VibeWeight("darker", 2)
-    - Inline comma-separated or YAML-style lists
-    """
-    if not lines:
-        return []
-
-    vibes: list[VibeWeight] = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-
-        # Remove leading bullet
-        stripped = _LIST_BULLET_RE.sub("", stripped).strip()
-        if not stripped:
-            continue
-
-        # Split by commas for inline lists
-        parts = [p.strip() for p in stripped.split(",")]
-        for part in parts:
-            if not part:
-                continue
-
-            m = _VIBE_WEIGHT_RE.match(part)
-            if m:
-                vibes.append(VibeWeight(
-                    vibe=m.group(1).strip().lower(),
-                    weight=int(m.group(2)),
-                ))
-            else:
-                vibes.append(VibeWeight(vibe=part.strip().lower()))
-
-    return vibes

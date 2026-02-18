@@ -28,23 +28,23 @@ class TestFullParse:
         "Tempo: 126\n"
         "\n"
         "Role:\n"
-        "- kick\n"
-        "- bass\n"
-        "- arp\n"
-        "- pad\n"
+        "  - kick\n"
+        "  - bass\n"
+        "  - arp\n"
+        "  - pad\n"
         "\n"
         "Constraints:\n"
-        "- bars: 16\n"
-        "- density: medium\n"
-        "- instruments: analog kick, sub bass, pluck\n"
+        "  bars: 16\n"
+        "  density: medium\n"
+        "  instruments: analog kick, sub bass, pluck\n"
         "\n"
         "Vibe:\n"
-        "- darker:2\n"
-        "- hypnotic:3\n"
-        "- wider:1\n"
+        "  - darker:2\n"
+        "  - hypnotic:3\n"
+        "  - wider:1\n"
         "\n"
-        "Request:\n"
-        "Build an intro groove that evolves every 4 bars and opens into a club-ready loop."
+        "Request: |\n"
+        "  Build an intro groove that evolves every 4 bars and opens into a club-ready loop.\n"
     )
 
     def test_parses_successfully(self):
@@ -116,15 +116,14 @@ class TestEditTrackParse:
         "Target: track:Bass\n"
         "\n"
         "Vibe:\n"
-        "- punchier:3\n"
-        "- tighter low end:2\n"
+        "  - punchier:3\n"
+        "  - tighter low end:2\n"
         "\n"
         "Constraints:\n"
-        "- compressor: analog\n"
-        "- eq_focus: 200hz cleanup\n"
+        "  compressor: analog\n"
+        "  eq_focus: 200hz cleanup\n"
         "\n"
-        "Request:\n"
-        "Tighten the bass and make it hit harder without increasing loudness."
+        "Request: Tighten the bass and make it hit harder without increasing loudness.\n"
     )
 
     def test_mode_is_edit(self):
@@ -162,8 +161,7 @@ class TestAskParse:
         "Mode: ask\n"
         "Target: project\n"
         "\n"
-        "Request:\n"
-        "Why does my groove feel late when I add long reverb tails?"
+        "Request: Why does my groove feel late when I add long reverb tails?\n"
     )
 
     def test_mode_is_ask(self):
@@ -438,6 +436,17 @@ class TestNonStructuredFallthrough:
         """'STORI PROMPT' appearing mid-text should not trigger parsing."""
         assert parse_prompt("Hey can you explain STORI PROMPT to me?") is None
 
+    def test_invalid_yaml_body_returns_none(self):
+        """Body that is not valid YAML falls through to NL pipeline — no fallback."""
+        bad = (
+            "STORI PROMPT\n"
+            "Mode: compose\n"
+            "Request:\n"
+            "This line: has a colon that breaks YAML parsing mid-key\n"
+            ": and this is clearly wrong\n"
+        )
+        assert parse_prompt(bad) is None
+
 
 # ─── Whitespace tolerance ───────────────────────────────────────────────────
 
@@ -471,14 +480,15 @@ class TestWhitespaceTolerance:
 
 
 class TestMultiLineRequest:
-    def test_multi_line_request_preserved(self):
+    def test_multi_line_request_block_scalar(self):
+        """Multi-line Request uses YAML block scalar (|)."""
         prompt = (
             "STORI PROMPT\n"
             "Mode: compose\n"
-            "Request:\n"
-            "Build an evolving groove.\n"
-            "It should slowly open into a main loop.\n"
-            "Keep the energy building."
+            "Request: |\n"
+            "  Build an evolving groove.\n"
+            "  It should slowly open into a main loop.\n"
+            "  Keep the energy building.\n"
         )
         result = parse_prompt(prompt)
         assert result is not None
@@ -493,12 +503,11 @@ class TestMultiLineRequest:
 class TestMixedStructureAndFreeform:
     """Spec rule: users may mix structure and freeform language."""
 
-    def test_freeform_request_with_inline_hints(self):
+    def test_freeform_request_inline(self):
         prompt = (
             "STORI PROMPT\n"
             "Mode: compose\n"
-            "Request:\n"
-            "give me a darker techno intro at 126 bpm in F#m"
+            "Request: give me a darker techno intro at 126 bpm in F#m\n"
         )
         result = parse_prompt(prompt)
         assert result is not None
@@ -516,6 +525,176 @@ class TestRawPreserved:
         result = parse_prompt(prompt)
         assert result is not None
         assert result.raw == prompt
+
+
+# ─── YAML body parsing ───────────────────────────────────────────────────────
+
+
+class TestYamlBodyParsing:
+    """The body is parsed as YAML; all routing fields work via YAML."""
+
+    def test_yaml_list_for_role(self):
+        prompt = "STORI PROMPT\nMode: compose\nRole:\n  - drums\n  - bass\nRequest: go"
+        result = parse_prompt(prompt)
+        assert result is not None
+        assert result.roles == ["drums", "bass"]
+
+    def test_yaml_inline_list_for_role(self):
+        prompt = "STORI PROMPT\nMode: compose\nRole: [kick, bass, arp]\nRequest: go"
+        result = parse_prompt(prompt)
+        assert result is not None
+        assert result.roles == ["kick", "bass", "arp"]
+
+    def test_yaml_nested_constraints(self):
+        prompt = (
+            "STORI PROMPT\nMode: compose\n"
+            "Constraints:\n  bars: 8\n  density: sparse\nRequest: go"
+        )
+        result = parse_prompt(prompt)
+        assert result is not None
+        assert result.constraints.get("bars") == 8
+        assert result.constraints.get("density") == "sparse"
+
+    def test_yaml_block_scalar_request(self):
+        prompt = (
+            "STORI PROMPT\nMode: compose\n"
+            "Request: |\n  Line one.\n  Line two.\n"
+        )
+        result = parse_prompt(prompt)
+        assert result is not None
+        assert "Line one." in result.request
+        assert "Line two." in result.request
+
+    def test_yaml_tempo_as_integer(self):
+        prompt = "STORI PROMPT\nMode: compose\nTempo: 75\nRequest: go"
+        result = parse_prompt(prompt)
+        assert result is not None
+        assert result.tempo == 75
+
+    def test_yaml_vibe_x_weight_syntax(self):
+        prompt = "STORI PROMPT\nMode: compose\nVibe: [dusty x3, warm x2]\nRequest: go"
+        result = parse_prompt(prompt)
+        assert result is not None
+        assert any(v.vibe == "dusty" and v.weight == 3 for v in result.vibes)
+        assert any(v.vibe == "warm" and v.weight == 2 for v in result.vibes)
+
+
+# ─── Maestro extensions ──────────────────────────────────────────────────────
+
+
+class TestMaestroExtensions:
+    """Unknown top-level fields land in ParsedPrompt.extensions."""
+
+    _PROMPT = (
+        "STORI PROMPT\n"
+        "Mode: compose\n"
+        "Request: verse groove\n"
+        "Harmony:\n"
+        "  progression: [Cm7, Abmaj7]\n"
+        "  voicing: rootless\n"
+        "Melody:\n"
+        "  scale: C dorian\n"
+        "  register: mid\n"
+        "Expression:\n"
+        "  narrative: 3am, empty diner\n"
+        "  arc: melancholic to hopeful\n"
+    )
+
+    def test_extensions_populated(self):
+        result = parse_prompt(self._PROMPT)
+        assert result is not None
+        assert result.extensions
+
+    def test_harmony_in_extensions(self):
+        result = parse_prompt(self._PROMPT)
+        assert result is not None
+        assert "harmony" in result.extensions
+        harmony = result.extensions["harmony"]
+        assert isinstance(harmony, dict)
+        assert "progression" in harmony
+        assert harmony["voicing"] == "rootless"
+
+    def test_melody_in_extensions(self):
+        result = parse_prompt(self._PROMPT)
+        assert result is not None
+        assert "melody" in result.extensions
+        assert result.extensions["melody"]["scale"] == "C dorian"
+
+    def test_expression_in_extensions(self):
+        result = parse_prompt(self._PROMPT)
+        assert result is not None
+        assert "expression" in result.extensions
+        assert "3am" in result.extensions["expression"]["narrative"]
+
+    def test_routing_fields_not_in_extensions(self):
+        result = parse_prompt(self._PROMPT)
+        assert result is not None
+        for routing_field in ("mode", "request", "style", "key", "tempo"):
+            assert routing_field not in result.extensions
+
+    def test_has_maestro_fields_property(self):
+        result = parse_prompt(self._PROMPT)
+        assert result is not None
+        assert result.has_maestro_fields is True
+
+    def test_no_maestro_fields_when_empty(self):
+        result = parse_prompt("STORI PROMPT\nMode: ask\nRequest: help")
+        assert result is not None
+        assert result.has_maestro_fields is False
+
+    def test_full_maestro_prompt_parses(self):
+        """The full Maestro example from the spec must parse cleanly."""
+        prompt = (
+            "STORI PROMPT\n"
+            "Mode: compose\n"
+            "Section: verse\n"
+            "Position: after intro + 2\n"
+            "Style: lofi hip hop\n"
+            "Key: Cm\n"
+            "Tempo: 75\n"
+            "Role: [drums, bass, piano, melody]\n"
+            "Constraints:\n"
+            "  bars: 8\n"
+            "  density: medium-sparse\n"
+            "Vibe: [dusty x3, warm x2, laid back]\n"
+            "Request: Verse groove with lazy boom bap.\n"
+            "Harmony:\n"
+            "  progression: [Cm7, Abmaj7, Ebmaj7, Bb7sus4]\n"
+            "  voicing: rootless close position\n"
+            "Melody:\n"
+            "  scale: C dorian\n"
+            "  register: mid\n"
+            "Rhythm:\n"
+            "  feel: behind the beat\n"
+            "  swing: 55%\n"
+            "Dynamics:\n"
+            "  overall: mp throughout\n"
+            "Orchestration:\n"
+            "  drums:\n"
+            "    kit: boom bap\n"
+            "    kick: slightly late\n"
+            "Effects:\n"
+            "  drums:\n"
+            "    saturation: tape, subtle\n"
+            "Expression:\n"
+            "  arc: resignation to acceptance\n"
+            "  narrative: Late night, alone. At peace with it.\n"
+            "Texture:\n"
+            "  density: medium-sparse\n"
+        )
+        result = parse_prompt(prompt)
+        assert result is not None
+        assert result.mode == "compose"
+        assert result.section == "verse"
+        assert result.tempo == 75
+        assert result.key == "Cm"
+        assert "drums" in result.roles
+        assert result.constraints.get("bars") == 8
+        assert result.position is not None
+        assert result.position.kind == "after"
+        # All Maestro dimensions captured
+        for dim in ("harmony", "melody", "rhythm", "dynamics", "orchestration", "effects", "expression", "texture"):
+            assert dim in result.extensions, f"Missing dimension: {dim}"
 
 
 # ─── Section field ───────────────────────────────────────────────────────────

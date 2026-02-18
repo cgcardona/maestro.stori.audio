@@ -180,15 +180,21 @@ INTENT_CLASSIFICATION_SYSTEM = "You are an intent classifier for a DAW. Respond 
 
 
 def structured_prompt_context(parsed: "ParsedPrompt") -> str:
-    """
-    Format parsed structured prompt fields for injection into LLM system prompts.
+    """Format parsed structured prompt fields for injection into LLM system prompts.
 
-    Only includes fields that have values; the LLM uses these directly
-    instead of re-inferring from the Request text.
+    Routing fields are injected as clean key-value lines. Maestro extension
+    fields (Harmony, Melody, Rhythm, Dynamics, Orchestration, Effects,
+    Expression, Texture, Form, Automation, …) are serialised back as YAML so
+    their full nested structure is preserved and the LLM can act on them.
     """
-    lines = ["", "═══ STRUCTURED INPUT (power user) ═══"]
+    import yaml as _yaml  # local to avoid circular at module import time
+
+    lines: list[str] = ["", "═══ STORI STRUCTURED INPUT ═══"]
 
     lines.append(f"Mode: {parsed.mode}")
+
+    if parsed.section:
+        lines.append(f"Section: {parsed.section}")
 
     if parsed.target:
         target_str = parsed.target.kind
@@ -206,9 +212,7 @@ def structured_prompt_context(parsed: "ParsedPrompt") -> str:
         lines.append(f"Roles: {', '.join(parsed.roles)}")
 
     if parsed.constraints:
-        constraint_parts = [
-            f"{k}={v}" for k, v in parsed.constraints.items()
-        ]
+        constraint_parts = [f"{k}={v}" for k, v in parsed.constraints.items()]
         lines.append(f"Constraints: {', '.join(constraint_parts)}")
 
     if parsed.vibes:
@@ -220,8 +224,29 @@ def structured_prompt_context(parsed: "ParsedPrompt") -> str:
                 vibe_parts.append(vw.vibe)
         lines.append(f"Vibes: {', '.join(vibe_parts)}")
 
+    lines.append("─────────────────────────────────────")
+    lines.append("Use the above values directly. Do not re-infer from the Request text.")
+
+    # Maestro extension fields — injected as structured YAML so the LLM can
+    # use every dimension (Harmony, Melody, Rhythm, Dynamics, etc.) without
+    # any Python parsing. The Maestro LLM knows what to do with them.
+    if parsed.extensions:
+        lines.append("")
+        lines.append("MAESTRO DIMENSIONS (interpret and apply all of the following):")
+        try:
+            ext_yaml = _yaml.dump(
+                parsed.extensions,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            ).rstrip()
+            lines.append(ext_yaml)
+        except Exception:
+            # Fallback: repr if yaml.dump somehow fails
+            for k, v in parsed.extensions.items():
+                lines.append(f"  {k}: {v}")
+
     lines.append("═════════════════════════════════════")
-    lines.append("Use the above values directly. Do not re-infer them from the Request text.")
     lines.append("")
 
     return "\n".join(lines)
