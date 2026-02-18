@@ -38,7 +38,7 @@ ufw allow 80/tcp comment 'HTTP - SSL challenges'
 echo "   - HTTPS (port 443) for API traffic"
 ufw allow 443/tcp comment 'HTTPS - API'
 
-# Composer (10001) stays internal to Docker; do not expose to the internet (use nginx only)
+# Maestro (10001) stays internal to Docker; do not expose to the internet (use nginx only)
 
 # Block all other ports
 echo "   - Blocking all other inbound ports"
@@ -59,7 +59,7 @@ echo ""
 echo "Active rules:"
 echo "  - SSH (22/tcp) - rate limited"
 echo "  - HTTP (80/tcp) - for SSL only"
-echo "  - HTTPS (443/tcp) - API traffic (composer behind nginx)"
+echo "  - HTTPS (443/tcp) - API traffic (maestro behind nginx)"
 echo "  - All other ports: BLOCKED"
 echo ""
 echo "⚠️  Important:"

@@ -1,4 +1,4 @@
-"""Services for the Stori Composer."""
+"""Services for the Stori Maestro."""
 from app.services.orpheus import OrpheusClient
 from app.services.music_generator import (
     MusicGenerator,

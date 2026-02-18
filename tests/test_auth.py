@@ -253,13 +253,13 @@ class TestValidateTokenEndpoint:
 
 
 class TestComposeEndpointAuth:
-    """Tests for authentication on the compose endpoint."""
+    """Tests for authentication on the maestro endpoint."""
     
     @pytest.mark.anyio
-    async def test_compose_requires_auth(self, client):
-        """Should return 401 when accessing compose without token."""
+    async def test_maestro_requires_auth(self, client):
+        """Should return 401 when accessing maestro without token."""
         response = await client.post(
-            "/api/v1/compose/stream",
+            "/api/v1/maestro/stream",
             json={"prompt": "Create a melody", "mode": "create"}
         )
         
@@ -267,10 +267,10 @@ class TestComposeEndpointAuth:
         assert "Access code required" in response.json()["detail"]
     
     @pytest.mark.anyio
-    async def test_compose_with_invalid_token(self, client):
+    async def test_maestro_with_invalid_token(self, client):
         """Should return 401 with invalid token."""
         response = await client.post(
-            "/api/v1/compose/stream",
+            "/api/v1/maestro/stream",
             json={"prompt": "Create a melody", "mode": "create"},
             headers={"Authorization": "Bearer invalid_token"}
         )

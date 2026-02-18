@@ -1,9 +1,13 @@
-"""Request models for the Stori Composer API."""
-from pydantic import BaseModel, ConfigDict, Field
+"""Request models for the Stori Maestro API."""
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, Any
 
+# Generous limit — comfortably fits long STORI PROMPT YAML with Maestro dimensions.
+# The nginx layer guards against large binary payloads; this catches oversized text.
+_MAX_PROMPT_BYTES = 32_768   # 32 KB
 
-class ComposeRequest(BaseModel):
+
+class MaestroRequest(BaseModel):
     """Request to compose or modify music.
     
     The backend determines execution mode from intent classification:
@@ -12,6 +16,8 @@ class ComposeRequest(BaseModel):
     
     prompt: str = Field(
         ...,
+        min_length=1,
+        max_length=_MAX_PROMPT_BYTES,
         description="Natural language description of what to create or modify",
         examples=["Make a chill boom bap beat at 90 BPM with dusty drums"]
     )
@@ -33,8 +39,16 @@ class ComposeRequest(BaseModel):
     )
     conversation_id: Optional[str] = Field(
         default=None,
+        pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
         description="Conversation ID for multi-turn sessions. State persists across requests with same ID."
     )
+
+    @field_validator("prompt")
+    @classmethod
+    def no_null_bytes(cls, v: str) -> str:
+        if "\x00" in v:
+            raise ValueError("Prompt must not contain null bytes")
+        return v
     
     model_config = ConfigDict(
         json_schema_extra={

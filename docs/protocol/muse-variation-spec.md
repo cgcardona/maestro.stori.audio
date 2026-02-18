@@ -2,7 +2,7 @@
 
 > **Status:** Implementation Specification (v1)  
 > **Date:** February 2026  
-> **Target:** Stori DAW (Swift/SwiftUI) + Composer/Intent Engine (Python)  
+> **Target:** Stori DAW (Swift/SwiftUI) + Maestro/Intent Engine (Python)  
 > **Goal:** Ship a *demo-grade* implementation inside Stori that proves the "Cursor of DAWs" paradigm: **reviewable, audible, non-destructive AI changes**.
 
 > **Canonical Time Unit:** All Muse and Variation data structures use **beats** as the canonical time unit. Seconds are a derived, playback-only representation. Muse reasons musically, not in wall-clock time.
@@ -330,7 +330,7 @@ The backend determines `execution_mode` based on intent classification. The fron
 - **EDITING** -> `execution_mode="apply"` -> Immediate tool call execution
 - **REASONING** -> no tools
 
-This is enforced in `orchestrate()` (`app/core/compose_handlers.py`). The frontend knows which mode is active from the `state` SSE event (`"composing"` / `"editing"` / `"reasoning"`) emitted at the start of every stream.
+This is enforced in `orchestrate()` (`app/core/maestro_handlers.py`). The frontend knows which mode is active from the `state` SSE event (`"composing"` / `"editing"` / `"reasoning"`) emitted at the start of every stream.
 
 ### 5.2 Proposed State Construction
 Avoid copying whole projects:
@@ -455,7 +455,7 @@ Score view diff + controller diffs can come after the demo.
 - [x] `POST /variation/propose` returns `variation_id` + `stream_url`
 - [x] `POST /variation/commit` accepts `accepted_phrase_ids`
 - [x] `POST /variation/discard` returns `{"ok": true}`
-- [x] SSE stream emits `meta`, `phrase*`, `done` (via `/compose/stream`)
+- [x] SSE stream emits `meta`, `phrase*`, `done` (via `/maestro/stream`)
 - [x] Phrase grouping by bars (4 bars per phrase default)
 - [x] Commit applies accepted phrases only, returns `new_state_id`
 - [x] No mutation in variation mode

@@ -1,4 +1,4 @@
-"""Tool-related models for the Stori Composer."""
+"""Tool-related models for the Stori Maestro."""
 from pydantic import BaseModel, Field
 from typing import Optional, Any
 

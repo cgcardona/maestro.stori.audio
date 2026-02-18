@@ -722,13 +722,13 @@ Structured fields reduce jailbreak surface area.
 | Weighted vibes | Done | `app/core/intent_config.py` |
 | Deterministic planner | Done | `app/core/planner.py` |
 | Structured prompt context + Maestro injection | Done | `app/core/prompts.py` |
-| Pipeline threading | Done | `app/core/pipeline.py`, `app/core/compose_handlers.py` |
+| Pipeline threading | Done | `app/core/pipeline.py`, `app/core/maestro_handlers.py` |
 | Target scope validation | Done | `app/core/tool_validation.py` |
 | Position: field (6 relationships + offset) | Done | `app/core/prompt_parser.py`, `app/core/prompts.py` |
 | Section: field | Done | `app/core/prompt_parser.py` |
 | Extensions pass-through (all Maestro dims) | Done | `app/core/prompt_parser.py`, `app/core/prompts.py` |
-| Entity manifest in tool results | Done | `app/core/compose_handlers.py` |
-| `$N.field` variable references | Done | `app/core/compose_handlers.py` |
+| Entity manifest in tool results | Done | `app/core/maestro_handlers.py` |
+| `$N.field` variable references | Done | `app/core/maestro_handlers.py` |
 
 **Tests:** `tests/test_prompt_parser.py` (91+), `tests/test_intent_structured.py` (26),
 `tests/test_structured_prompt_integration.py` (16), `tests/test_tool_validation.py` (6+).

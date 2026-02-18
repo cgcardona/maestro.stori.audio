@@ -1,5 +1,5 @@
 """
-Persistent StateStore for Stori Composer (Cursor-of-DAWs).
+Persistent StateStore for Stori Maestro (Cursor-of-DAWs).
 
 This is the **authoritative source of truth** for project state across requests.
 Unlike the per-request EntityRegistry, StateStore persists across the session.

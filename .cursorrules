@@ -1,4 +1,4 @@
-# Stori Composer — Agent Rules
+# Stori Maestro — Agent Rules
 
 Use these rules when editing this codebase. They keep behavior consistent, tests strong, and docs accurate for go-live and open source.
 
@@ -6,8 +6,8 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 
 ## Project identity
 
-- **What it is:** Stori Composer — AI-powered music composition backend for the Stori DAW (FastAPI + MCP). Tagline: "the infinite music machine."
-- **Entry points:** (1) **Stream first:** `POST /api/v1/compose/stream` (human in the app). (2) **MCP:** tools exposed to Cursor/Claude; same engine, same DAW instance. Human stays in the loop.
+- **What it is:** Stori Maestro — AI-powered music composition backend for the Stori DAW (FastAPI + MCP). Tagline: "the infinite music machine."
+- **Entry points:** (1) **Stream first:** `POST /api/v1/maestro/stream` (human in the macOS app). (2) **MCP:** tools exposed to Cursor/Claude; same engine, same DAW instance. Human stays in the loop.
 - **Stack:** Python 3.11+, FastAPI, Pydantic v2, async throughout. Orpheus is **required** for music generation (no pattern fallback). Config: `app/config.py`; env vars prefixed `STORI_*`.
 
 ---
@@ -24,7 +24,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 ## Coding standards
 
 - **Style:** Black-compatible formatting. Prefer short, readable names; avoid abbreviations unless standard (e.g. `id`, `db`, `api`).
-- **Typing:** Use type hints for all public functions and module boundaries. Use `list[...]`, `dict[...]` (Python 3.9+ style). Mark optional with `Optional[...]` or `X | None` where appropriate. Run **mypy** before committing: `mypy app/ tests/` (or in Docker: `docker compose exec composer mypy app/ tests/`). CI runs mypy; do not add `# type: ignore` without a short comment. New code should satisfy mypy with the project config in `pyproject.toml` ([tool.mypy]).
+- **Typing:** Use type hints for all public functions and module boundaries. Use `list[...]`, `dict[...]` (Python 3.9+ style). Mark optional with `Optional[...]` or `X | None` where appropriate. Run **mypy** before committing: `mypy app/ tests/` (or in Docker: `docker compose exec maestro mypy app/ tests/`). CI runs mypy; do not add `# type: ignore` without a short comment. New code should satisfy mypy with the project config in `pyproject.toml` ([tool.mypy]).
 - **Async:** Use `async def` and `await` for I/O (DB, HTTP, Orpheus, LLM). Use `@pytest.mark.anyio` or `asyncio_mode = "auto"` for async tests; prefer `anyio` where fixtures are async.
 - **Imports:** Group stdlib, third-party, then `app.*`. Prefer explicit imports; avoid `*` except for re-exports in `__init__.py`.
 - **Config:** Read from `app.config.settings` (Pydantic Settings). No hardcoded secrets; no committing `.env` or keys. Use `STORI_*` env vars as documented in `docs/guides/setup.md`.
@@ -35,7 +35,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 
 ## Tests
 
-- **Runner:** From repo root with stack running: `docker compose exec composer pytest tests/ -v`. **Coverage (canonical, from container):** `docker compose exec composer sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"`. Threshold is in `pyproject.toml` ([tool.coverage.report] fail_under). See `docs/guides/testing.md` (rebuild image if `coverage` is missing).
+- **Runner:** From repo root with stack running: `docker compose exec maestro pytest tests/ -v`. **Coverage (canonical, from container):** `docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"`. Threshold is in `pyproject.toml` ([tool.coverage.report] fail_under). See `docs/guides/testing.md` (rebuild image if `coverage` is missing).
 - **Layout:** One test module per app area (e.g. `test_health.py`, `test_intent.py`, `test_rag.py`). Use `tests/conftest.py` for shared fixtures (`client`, `db_session`). Do not commit tests that depend on live external APIs (Orpheus, OpenRouter, S3) unless skipped or gated (e.g. `@pytest.mark.skip`, `skipif` with env).
 - **Naming:** `test_<behavior>_<scenario>` or `test_<module>_<behavior>`. Docstrings: one line describing what is being tested.
 - **Fixtures:** Prefer `db_session` and `client` from conftest for API tests so auth and DB use the in-memory DB. Override dependencies via `app.dependency_overrides` in fixtures, and restore in `finally`.
@@ -69,14 +69,15 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 
 | Area        | Location              | Tests / Docs              |
 |------------|------------------------|----------------------------|
-| Config     | `app/config.py`        | `tests/test_config.py`     |
-| Health     | `app/api/routes/health.py` | `tests/test_health.py`  |
-| Intent     | `app/core/intent*.py`  | `tests/test_intent*.py`    |
-| Pipeline   | `app/core/pipeline.py` | `tests/test_pipeline.py`   |
-| Executor   | `app/core/executor.py` | `tests/test_executor.py`   |
-| RAG        | `app/services/rag.py`  | `tests/test_rag.py`        |
-| MCP        | `app/mcp/`, routes     | `tests/test_mcp.py`        |
-| Auth       | `app/auth/`            | `tests/test_auth*.py`      |
-| DB         | `app/db/`              | `tests/test_database.py`   |
-| Docs index | —                     | `docs/README.md`           |
-| Mypy       | `pyproject.toml` [tool.mypy] | `mypy app/ tests/` (CI + pre-commit) |
+| Config     | `app/config.py`                    | `tests/test_config.py`            |
+| Health     | `app/api/routes/health.py`         | `tests/test_health.py`            |
+| Intent     | `app/core/intent*.py`              | `tests/test_intent*.py`           |
+| Pipeline   | `app/core/pipeline.py`             | `tests/test_pipeline.py`          |
+| Maestro    | `app/core/maestro_handlers.py`     | `tests/test_maestro_handlers.py`  |
+| Executor   | `app/core/executor.py`             | `tests/test_executor.py`          |
+| RAG        | `app/services/rag.py`              | `tests/test_rag.py`               |
+| MCP        | `app/mcp/`, routes                 | `tests/test_mcp.py`               |
+| Auth       | `app/auth/`                        | `tests/test_auth*.py`             |
+| DB         | `app/db/`                          | `tests/test_database.py`          |
+| Docs index | —                                  | `docs/README.md`                  |
+| Mypy       | `pyproject.toml` [tool.mypy]       | `mypy app/ tests/` (CI + pre-commit) |

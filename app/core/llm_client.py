@@ -1,5 +1,5 @@
 """
-LLM Client for Stori Composer (Cursor-of-DAWs).
+LLM Client for Stori Maestro (Cursor-of-DAWs).
 
 Provides a clean interface for LLM interactions with:
 - OpenRouter support
@@ -119,7 +119,7 @@ class LLMClient:
             headers = {"Authorization": f"Bearer {self.api_key}"}
             if self.provider == LLMProvider.OPENROUTER:
                 headers["HTTP-Referer"] = "https://stori.ai"
-                headers["X-Title"] = "Stori Composer"
+                headers["X-Title"] = "Stori Maestro"
             self._client = httpx.AsyncClient(timeout=self.timeout, headers=headers)
         return self._client
     

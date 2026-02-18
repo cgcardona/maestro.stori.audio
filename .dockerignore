@@ -7,7 +7,7 @@ docs/
 orpheus-music/
 deploy/
 assets/
-composer-service/
+maestro-service/
 node_modules/
 **/__pycache__/
 **/.pytest_cache/

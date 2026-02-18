@@ -2,16 +2,16 @@
 import pytest
 from pydantic import ValidationError
 
-from app.models.requests import ComposeRequest, GenerateRequest
+from app.models.requests import MaestroRequest, GenerateRequest
 from app.models.tools import MidiNote, AutomationPoint
 
 
-class TestComposeRequest:
-    """Tests for ComposeRequest model."""
+class TestMaestroRequest:
+    """Tests for MaestroRequest model."""
     
     def test_valid_request(self):
         """Test creating a valid request."""
-        req = ComposeRequest(prompt="Make a beat")
+        req = MaestroRequest(prompt="Make a beat")
         assert req.prompt == "Make a beat"
         assert req.mode == "generate"
         assert req.project is None
@@ -19,15 +19,16 @@ class TestComposeRequest:
     def test_with_project(self):
         """Test request with project context."""
         project = {"name": "Test", "tempo": 120}
-        req = ComposeRequest(prompt="Add drums", mode="edit", project=project)
+        req = MaestroRequest(prompt="Add drums", mode="edit", project=project)
         assert req.mode == "edit"
         assert req.project is not None and req.project["tempo"] == 120
     
     def test_empty_prompt(self):
-        """Test that empty prompt fails validation."""
-        # Note: empty string is technically valid, you might want to add min_length
-        req = ComposeRequest(prompt="")
-        assert req.prompt == ""
+        """Empty prompt is rejected — MaestroRequest enforces min_length=1."""
+        import pytest
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError, match="string_too_short"):
+            MaestroRequest(prompt="")
 
 
 class TestGenerateRequest:

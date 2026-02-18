@@ -1,5 +1,5 @@
 """
-Stori Composer API — Variation Endpoints (v1 Canonical)
+Stori Maestro API — Variation Endpoints (v1 Canonical)
 
 Implements the Muse/Variation protocol as a first-class backend subsystem:
 - POST /variation/propose  — create record, launch background generation

@@ -1,8 +1,8 @@
-"""Tests for compose handlers (orchestration, UsageTracker, fallback route)."""
+"""Tests for maestro handlers (orchestration, UsageTracker, fallback route)."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.core.compose_handlers import (
+from app.core.maestro_handlers import (
     UsageTracker,
     _create_editing_composition_route,
     _create_editing_fallback_route,
@@ -266,9 +266,9 @@ class TestOrchestrateStream:
         fake_llm_response.finish_reason = "stop"
         fake_llm_response.tool_calls = []
 
-        with patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
             m_intent.return_value = fake_route
-            with patch("app.core.compose_handlers.LLMClient") as m_llm_cls:
+            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                 mock_llm = MagicMock()
                 mock_llm.chat_completion = AsyncMock(return_value=fake_llm_response)
                 mock_llm.supports_reasoning = MagicMock(return_value=False)
@@ -316,9 +316,9 @@ class TestOrchestrateStream:
         )
         fake_output = PipelineOutput(route=fake_route, plan=ExecutionPlan(tool_calls=[], safety_validated=False))
 
-        with patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
-                with patch("app.core.compose_handlers.LLMClient") as m_llm_cls:
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
@@ -339,9 +339,9 @@ class TestOrchestrateStream:
     @pytest.mark.anyio
     async def test_orchestrate_yields_error_event_on_exception(self):
         """When orchestration raises, we yield an error SSE event then close."""
-        with patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
             m_intent.side_effect = RuntimeError("intent service down")
-            with patch("app.core.compose_handlers.LLMClient") as m_llm_cls:
+            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                 mock_llm = MagicMock()
                 mock_llm.close = AsyncMock()
                 m_llm_cls.return_value = mock_llm
@@ -379,9 +379,9 @@ class TestOrchestrateStream:
             yield "RAG chunk 2"
         mock_rag.answer = fake_answer
 
-        with patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
             with patch("app.services.rag.get_rag_service", return_value=mock_rag):
-                with patch("app.core.compose_handlers.LLMClient") as m_llm_cls:
+                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
@@ -422,8 +422,8 @@ class TestOrchestrateStream:
         def make_stream(*args, **kwargs):
             return stream_chunks(*args, **kwargs)
 
-        with patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.compose_handlers.LLMClient") as m_llm_cls:
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                 mock_llm = MagicMock()
                 mock_llm.supports_reasoning = MagicMock(return_value=True)
                 mock_llm.chat_completion_stream = MagicMock(side_effect=make_stream)
@@ -467,9 +467,9 @@ class TestOrchestrateStream:
         )
         fake_output = PipelineOutput(route=fake_route, plan=plan)
 
-        with patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
-                with patch("app.core.compose_handlers.LLMClient") as m_llm_cls:
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
@@ -511,9 +511,9 @@ class TestOrchestrateStream:
         plan = ExecutionPlan(tool_calls=[], safety_validated=False, llm_response_text="stori_add_midi_track(name='Drums')")
         fake_output = PipelineOutput(route=fake_route, plan=plan, llm_response=LLMResponse(content="stori_add_midi_track(name='Drums')"))
 
-        with patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
-                with patch("app.core.compose_handlers.LLMClient") as m_llm_cls:
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.supports_reasoning = MagicMock(return_value=False)
                     # EDITING path will ask for tool calls; return one then stop
@@ -555,8 +555,8 @@ class TestOrchestrateStream:
             reasons=("generation_phrase",),
         )
 
-        with patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.compose_handlers.LLMClient") as m_llm_cls:
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                 mock_llm = MagicMock()
                 mock_llm.supports_reasoning = MagicMock(return_value=False)
                 # LLM returns a tool call to add a track
@@ -621,9 +621,9 @@ class TestOrchestrateStream:
         plan = ExecutionPlan(tool_calls=[], safety_validated=False)
         fake_output = PipelineOutput(route=fake_route, plan=plan)
 
-        with patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
-                with patch("app.core.compose_handlers.LLMClient") as m_llm_cls:
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm

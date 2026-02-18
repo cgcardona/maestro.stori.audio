@@ -17,8 +17,8 @@ MAGENTA='\033[0;35m'
 NC='\033[0m'
 
 TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzY5OTkyMTUyLCJleHAiOjE3Njk5OTkzNTIsInN1YiI6ImIzNDc1MWI4LTZhMDktNDQ5Ni05OGE1LTZmOTc1NjQ2ZTRhYSJ9.TULKva1Wem_NzZnEp7ZkoK7ItFnHUTf-_GM22tBQSkc"
-COMPOSER_IP="172.18.0.8"
-BASE_URL="http://$COMPOSER_IP:10001/api/v1"
+MAESTRO_IP="172.18.0.8"
+BASE_URL="http://$MAESTRO_IP:10001/api/v1"
 
 success_count=0
 fail_count=0
@@ -38,7 +38,7 @@ test_complex() {
     
     local start_time=$(date +%s)
     
-    local output=$(timeout ${timeout_sec}s curl -s -N -X POST "$BASE_URL/compose/stream" \
+    local output=$(timeout ${timeout_sec}s curl -s -N -X POST "$BASE_URL/maestro/stream" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $TOKEN" \
         -d "{\"prompt\":\"$prompt\",\"project\":{\"projectId\":\"$project_id\",\"tracks\":[]}}" 2>&1)
@@ -102,7 +102,7 @@ test_complex() {
 }
 
 echo -e "${MAGENTA}╔═══════════════════════════════════════════════════╗${NC}"
-echo -e "${MAGENTA}║     STORI COMPOSER - STRESS TEST SUITE           ║${NC}"
+echo -e "${MAGENTA}║     STORI MAESTRO - STRESS TEST SUITE           ║${NC}"
 echo -e "${MAGENTA}║     Testing System Limits & Complex Scenarios    ║${NC}"
 echo -e "${MAGENTA}╚═══════════════════════════════════════════════════╝${NC}"
 

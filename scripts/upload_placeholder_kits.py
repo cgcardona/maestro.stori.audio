@@ -15,7 +15,7 @@ Usage:
   python scripts/upload_placeholder_kits.py --bucket BUCKET --region REGION
 
 Environment:
-  STORI_ASSET_AUTHOR  Optional; default "Stori Composer"
+  STORI_ASSET_AUTHOR  Optional; default "Stori Maestro"
   STORI_ASSET_LICENSE Optional; default "CC0"
 """
 import argparse
@@ -42,7 +42,7 @@ KITS = [
 
 
 def _asset_author() -> str:
-    return os.environ.get("STORI_ASSET_AUTHOR", "Stori Composer")
+    return os.environ.get("STORI_ASSET_AUTHOR", "Stori Maestro")
 
 
 def _asset_license() -> str:

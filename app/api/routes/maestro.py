@@ -1,5 +1,5 @@
 """
-Stori Composer API - Composition Endpoints
+Stori Maestro API - Composition Endpoints
 
 Cursor-of-DAWs Architecture:
 1. Intent Router classifies prompts → SSEState + tool allowlist
@@ -28,8 +28,9 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.config import settings
-from app.models.requests import ComposeRequest
-from app.core.compose_handlers import UsageTracker, orchestrate
+from app.models.requests import MaestroRequest
+from app.core.maestro_handlers import UsageTracker, orchestrate
+from app.core.sanitize import normalise_user_input
 from app.core.intent import get_intent_result_with_llm, SSEState
 from app.core.llm_client import LLMClient
 from app.core.planner import preview_plan
@@ -88,11 +89,11 @@ async def validate_token(
     return response
 
 
-@router.post("/compose/stream")
+@router.post("/maestro/stream")
 @limiter.limit("20/minute")
-async def stream_compose(
+async def stream_maestro(
     request: Request,
-    compose_request: ComposeRequest,
+    maestro_request: MaestroRequest,
     token_claims: dict = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ):
@@ -123,19 +124,34 @@ async def stream_compose(
         except BudgetError:
             pass
 
-    selected_model = get_model_or_default(compose_request.model)
+    selected_model = get_model_or_default(maestro_request.model)
     usage_tracker = UsageTracker()
 
-    # Load conversation history if conversation_id is provided
+    # Normalise the prompt: strip control chars, invisible Unicode, and
+    # normalise line endings. Runs after Pydantic validation (which already
+    # rejected null bytes and enforced max_length) so this is a belt-and-
+    # suspenders pass for anything Pydantic doesn't catch.
+    safe_prompt = normalise_user_input(maestro_request.prompt)
+
+    # Load conversation history if conversation_id is provided.
+    # Ownership check: join through Conversation so we only load messages
+    # that belong to the authenticated user — prevents IDOR where a caller
+    # could supply another user's conversation_id.
     conversation_history: list[dict[str, Any]] = []
-    if compose_request.conversation_id:
+    if maestro_request.conversation_id and user_id:
         try:
-            from app.db.models import ConversationMessage
+            from app.db.models import Conversation, ConversationMessage
             from sqlalchemy import select
 
-            stmt = select(ConversationMessage).where(
-                ConversationMessage.conversation_id == compose_request.conversation_id
-            ).order_by(ConversationMessage.timestamp)
+            stmt = (
+                select(ConversationMessage)
+                .join(Conversation, Conversation.id == ConversationMessage.conversation_id)
+                .where(
+                    ConversationMessage.conversation_id == maestro_request.conversation_id,
+                    Conversation.user_id == user_id,
+                )
+                .order_by(ConversationMessage.timestamp)
+            )
 
             result = await db.execute(stmt)
             messages = result.scalars().all()
@@ -147,7 +163,7 @@ async def stream_compose(
                     "content": msg.content
                 })
 
-            logger.info(f"Loaded {len(conversation_history)} messages for conversation {compose_request.conversation_id}")
+            logger.info(f"Loaded {len(conversation_history)} messages for conversation {maestro_request.conversation_id}")
         except Exception as e:
             logger.warning(f"Failed to load conversation history: {e}")
 
@@ -156,11 +172,11 @@ async def stream_compose(
 
         try:
             async for event in orchestrate(
-                compose_request.prompt,
-                compose_request.project,
+                safe_prompt,
+                maestro_request.project,
                 model=selected_model,
                 usage_tracker=usage_tracker,
-                conversation_id=compose_request.conversation_id,
+                conversation_id=maestro_request.conversation_id,
                 user_id=user_id,
                 conversation_history=conversation_history,
                 is_cancelled=request.is_disconnected,
@@ -178,9 +194,9 @@ async def stream_compose(
 
                     user, _ = await deduct_budget(
                         db, user_id, cost_cents,
-                        compose_request.prompt, selected_model,
+                        safe_prompt, selected_model,
                         usage_tracker.prompt_tokens, usage_tracker.completion_tokens,
-                        store_prompt=compose_request.store_prompt,
+                        store_prompt=maestro_request.store_prompt,
                     )
                     await db.commit()
                     budget_remaining = user.budget_remaining
@@ -213,11 +229,11 @@ async def stream_compose(
     )
 
 
-@router.post("/compose/preview")
+@router.post("/maestro/preview")
 @limiter.limit("30/minute")
-async def preview_compose(
+async def preview_maestro(
     request: Request,
-    compose_request: ComposeRequest,
+    maestro_request: MaestroRequest,
     token_claims: dict = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ):
@@ -226,13 +242,15 @@ async def preview_compose(
 
     Returns the plan that would be generated for user review.
     """
-    selected_model = get_model_or_default(compose_request.model)
+    selected_model = get_model_or_default(maestro_request.model)
     llm = LLMClient(model=selected_model)
+
+    safe_prompt = normalise_user_input(maestro_request.prompt)
 
     try:
         route = await get_intent_result_with_llm(
-            compose_request.prompt,
-            compose_request.project,
+            safe_prompt,
+            maestro_request.project,
             llm
         )
 
@@ -245,8 +263,8 @@ async def preview_compose(
             }
 
         preview_result = await preview_plan(
-            compose_request.prompt,
-            compose_request.project or {},
+            safe_prompt,
+            maestro_request.project or {},
             route,
             llm
         )

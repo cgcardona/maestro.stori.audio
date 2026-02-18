@@ -19,7 +19,7 @@ The backend determines execution mode from intent classification. The frontend d
 
 The frontend knows which mode is active from the `state` SSE event (`"composing"` / `"editing"` / `"reasoning"`) emitted at the start of every compose stream.
 
-**Compose stream path (primary):** When the user sends a prompt via `POST /api/v1/compose/stream`, the backend classifies the intent and either:
+**Compose stream path (primary):** When the user sends a prompt via `POST /api/v1/maestro/stream`, the backend classifies the intent and either:
 - Streams `tool_call` events directly (EDITING), or
 - Streams `meta` / `phrase*` / `done` Variation events (COMPOSING)
 

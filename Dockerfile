@@ -1,4 +1,4 @@
-# Stori Composer API - Production Dockerfile
+# Stori Maestro API - Production Dockerfile
 # Multi-stage build for smaller image size
 # For reproducible builds, pin base image by digest: python:3.11-slim@sha256:<digest>
 # Get digest: docker inspect --format='{{index .RepoDigests 0}}' python:3.11-slim

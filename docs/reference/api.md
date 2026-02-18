@@ -6,7 +6,7 @@ Streaming (SSE), event types, models, and the full MCP tool set in one place. To
 
 ## Compose stream
 
-**Endpoint:** `POST /api/v1/compose/stream`  
+**Endpoint:** `POST /api/v1/maestro/stream`  
 **Auth:** `Authorization: Bearer <token>`  
 **Body:** JSON with `prompt`, optional `project` (app state), `conversation_id`, `model`.  
 **Response:** SSE stream of JSON objects; each has a `type` field.
@@ -67,7 +67,7 @@ All models use OpenRouter's `reasoning` parameter for Chain of Thought. Two even
 
 ## MCP tool routing
 
-- **Server-side (Composer):** Generation tools (`stori_generate_*`) run in the Composer backend and return MIDI/result payloads.
+- **Server-side (Maestro):** Generation tools (`stori_generate_*`) run in the Maestro backend and return MIDI/result payloads.
 - **DAW (Swift):** All other tools are forwarded to the connected Stori app over WebSocket. The DAW executes the action and returns a `tool_response` with `request_id` and `result`.
 
 Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mcp/tools`.
@@ -159,7 +159,7 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 ## Generation (server-side)
 
-These run in Composer and call the music model; they do not require a connected DAW. Orpheus required.
+These run in Maestro and call the music model; they do not require a connected DAW. Orpheus required.
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|

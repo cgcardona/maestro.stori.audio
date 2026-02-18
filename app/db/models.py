@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM models for Stori Composer.
+SQLAlchemy ORM models for Stori Maestro.
 
 Tables:
 - users: User accounts with budget tracking

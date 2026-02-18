@@ -1,5 +1,5 @@
 """
-Music Generation Service for Composer.
+Music Generation Service for Maestro.
 
 Primary backend: Orpheus (required for composing). No pattern fallback;
 other backends (IR, HuggingFace, LLM) can be used when explicitly requested

@@ -215,7 +215,7 @@ The existing rule-based system generates "structured randomness" - notes that fo
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                  COMPOSER LLM (Claude/GPT-4)                    │
+│                  MAESTRO LLM (Claude/GPT-4)                    │
 │  Understands intent, emotion, genre, generates:                 │
 │  • Song structure (sections as generation units)                │
 │  • Emotional vectors per section (energy, valence, tension...)  │
@@ -586,7 +586,7 @@ def validate_section_transition(section_a: Section, section_b: Section) -> bool:
 
 ## Rich Musical Specification (RMS) — Complete Schema
 
-This is the full output schema from the Composer LLM:
+This is the full output schema from the Maestro LLM:
 
 ```json
 {

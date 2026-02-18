@@ -6,7 +6,7 @@ API base URL, auth, Swift/DAW integration, and MCP (Cursor/Claude) in one place.
 
 ## API & auth
 
-- **Base URL:** e.g. `https://stage.stori.audio` or `https://composer.stori.audio` (no trailing slash). Use for health, compose, conversations, assets.
+- **Base URL:** e.g. `https://stage.stori.audio` or `https://maestro.stori.audio` (no trailing slash). Use for health, maestro, conversations, assets.
 - **Auth:** `Authorization: Bearer <access_token>` on every request **except** `GET /api/v1/health` and **except asset endpoints** (see below). 401 → token missing/invalid/expired; re-auth or refresh.
 - **Health:** `GET /api/v1/health` — no auth. Use before authenticated calls.
 
@@ -19,10 +19,10 @@ The app and the backend use **one identifier**: the **device UUID** (generated b
 | Where | How it's sent | Backend use |
 |-------|----------------|-------------|
 | **Registration** | `POST /api/v1/users/register` body: `{ "user_id": "<device-uuid>" }` | Creates or returns user with `id = device UUID`. No JWT required. |
-| **Composer, MCP, validate-token, users/me, conversations** | `Authorization: Bearer <jwt>` (JWT `sub` = device UUID) | Identifies user from JWT; `sub` must be the same device UUID so budget/usage/conversations match. |
+| **Maestro, MCP, validate-token, users/me, conversations** | `Authorization: Bearer <jwt>` (JWT `sub` = device UUID) | Identifies user from JWT; `sub` must be the same device UUID so budget/usage/conversations match. |
 | **Assets** (drum kits, soundfonts, download URLs) | Header `X-Device-ID: <device-uuid>` only (no JWT) | Identifies client by device UUID; rate limited per device. |
 
-**Canonical flow:** (1) App has device UUID. (2) App registers with that UUID. (3) When issuing an access code for that user, use `--user-id <device_uuid>` so the JWT `sub` is the device UUID. (4) App uses that JWT for Composer/MCP/validate-token/users/me and sends the same UUID as `X-Device-ID` on asset requests. One ID everywhere.
+**Canonical flow:** (1) App has device UUID. (2) App registers with that UUID. (3) When issuing an access code for that user, use `--user-id <device_uuid>` so the JWT `sub` is the device UUID. (4) App uses that JWT for Maestro/MCP/validate-token/users/me and sends the same UUID as `X-Device-ID` on asset requests. One ID everywhere.
 
 ---
 
@@ -39,7 +39,7 @@ For the **app flow** (single identifier), the app registers first with its devic
 ```bash
 # 1. App has already registered with its device UUID (or you have it from support).
 # 2. Issue a token with that UUID (replace with the app's device UUID):
-docker compose exec composer python scripts/generate_access_code.py --user-id <device-uuid> --days 7
+docker compose exec maestro python scripts/generate_access_code.py --user-id <device-uuid> --days 7
 ```
 
 Share the printed token with the user; they enter it in the app. The app sends it as `Authorization: Bearer <token>` and uses the same device UUID as `X-Device-ID` on asset requests.
@@ -47,7 +47,7 @@ Share the printed token with the user; they enter it in the app. The app sends i
 **One-off / testing:** To create a new user without an app (e.g. for curl or MCP testing), use `--generate-user-id` and then register that UUID so the user has a budget:
 
 ```bash
-docker compose exec composer python scripts/generate_access_code.py --generate-user-id --days 7
+docker compose exec maestro python scripts/generate_access_code.py --generate-user-id --days 7
 # Register the printed user_id:
 curl -X POST https://<your-api>/api/v1/users/register -H "Content-Type: application/json" -d '{"user_id": "<user_id from script>"}'
 ```
@@ -71,7 +71,7 @@ curl -X POST https://<your-api>/api/v1/users/register -H "Content-Type: applicat
 
 ## Frontend (Swift)
 
-**Auth & identity parity:** The app should use the backend's single-identifier architecture (device UUID). Register, get JWT for compose/MCP, use X-Device-ID only for assets.
+**Auth & identity parity:** The app should use the backend's single-identifier architecture (device UUID). Register, get JWT for maestro/MCP, use X-Device-ID only for assets.
 
 - **Assets:** Asset endpoints use **X-Device-ID only** (no JWT). Send header `X-Device-ID: <device-uuid>` (the app’s per-install UUID). List drum kits: `GET /api/v1/assets/drum-kits`. Download URL: `GET /api/v1/assets/drum-kits/{id}/download-url` → response has `url` (presigned S3, use within 30 min) and `expires_at`.
 - **CORS:** Backend allows origins in `STORI_CORS_ORIGINS` (e.g. `https://stage.stori.audio`, `stori://`). No wildcard in prod.
@@ -81,13 +81,13 @@ curl -X POST https://<your-api>/api/v1/users/register -H "Content-Type: applicat
 
 ## MCP (Cursor / Claude)
 
-Stori Composer is an MCP server. Cursor, Claude Desktop, or any MCP client can list and call tools. Same tool set as the Stori app; DAW tools are forwarded to the Stori instance connected via WebSocket.
+Stori Maestro is an MCP server. Cursor, Claude Desktop, or any MCP client can list and call tools. Same tool set as the Stori app; DAW tools are forwarded to the Stori instance connected via WebSocket.
 
-**WebSocket (DAW):** Stori connects to `ws://<host>:10001/api/v1/mcp/daw` (with `?token=<jwt>`). When an MCP client calls a DAW tool, Composer forwards it to that connected DAW.
+**WebSocket (DAW):** Stori connects to `ws://<host>:10001/api/v1/mcp/daw` (with `?token=<jwt>`). When an MCP client calls a DAW tool, Maestro forwards it to that connected DAW.
 
-**Cursor / Claude (stdio):** Run the stdio server via Docker so it shares the stack; for **DAW tools** (e.g. `stori_read_project`, `stori_play`) to work, set `STORI_COMPOSER_MCP_URL` and `STORI_MCP_TOKEN` so the stdio process proxies those calls to the backend (where the Stori app WebSocket is registered). Without them, DAW tools return "No DAW connected"; generation tools still work.
+**Cursor / Claude (stdio):** Run the stdio server via Docker so it shares the stack; for **DAW tools** (e.g. `stori_read_project`, `stori_play`) to work, set `STORI_MAESTRO_MCP_URL` and `STORI_MCP_TOKEN` so the stdio process proxies those calls to the backend (where the Stori app WebSocket is registered). Without them, DAW tools return "No DAW connected"; generation tools still work.
 
-**Config (one block):** Replace `REPO_ROOT` with the path to the composer repo and `YOUR_JWT` with a valid access token (do not commit the token). Use `-f` so Compose finds the file. With **Docker exec**, the process runs inside the container and does not see Cursor's `env` block, so pass proxy vars with **`-e`** in the args:
+**Config (one block):** Replace `REPO_ROOT` with the path to the maestro repo and `YOUR_JWT` with a valid access token (do not commit the token). Use `-f` so Compose finds the file. With **Docker exec**, the process runs inside the container and does not see Cursor's `env` block, so pass proxy vars with **`-e`** in the args:
 
 ```json
 "stori-daw": {
@@ -95,9 +95,9 @@ Stori Composer is an MCP server. Cursor, Claude Desktop, or any MCP client can l
   "args": [
     "compose", "-f", "REPO_ROOT/docker-compose.yml",
     "exec", "-T",
-    "-e", "STORI_COMPOSER_MCP_URL=http://localhost:10001",
+    "-e", "STORI_MAESTRO_MCP_URL=http://localhost:10001",
     "-e", "STORI_MCP_TOKEN=YOUR_JWT",
-    "composer",
+    "maestro",
     "python", "-m", "app.mcp.stdio_server"
   ],
   "cwd": "REPO_ROOT"
@@ -135,9 +135,9 @@ So an LLM client can list and call tools.
 **2a. Verify the stdio server starts** (from repo root):
 
 - **Option A – Docker** (recommended; uses container env and no local Python deps):  
-  `docker compose exec -T composer python -m app.mcp.stdio_server`  
+  `docker compose exec -T maestro python -m app.mcp.stdio_server`  
   Pipe two JSON-RPC lines to confirm:  
-  `(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'; sleep 0.3) | docker compose exec -T composer python -m app.mcp.stdio_server 2>/dev/null`  
+  `(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'; sleep 0.3) | docker compose exec -T maestro python -m app.mcp.stdio_server 2>/dev/null`  
   You should see two JSON lines on stdout (initialize result + tools list).
 - **Option B – Local Python**: from repo root with a venv that has the app and deps (`pip install -e .`):  
   `python -m app.mcp.stdio_server`  
@@ -155,13 +155,13 @@ So an LLM client can list and call tools.
     "command": "docker",
     "args": [
       "compose", "-f", "REPO_ROOT/docker-compose.yml",
-      "exec", "-T", "composer",
+      "exec", "-T", "maestro",
       "python", "-m", "app.mcp.stdio_server"
     ],
     "cwd": "REPO_ROOT"
   }
   ```
-  Replace `REPO_ROOT` with your repo path (e.g. `/Users/you/composer.stori.audio`). Ensure Docker is running and the stack is up (`docker compose up -d`).
+  Replace `REPO_ROOT` with your repo path (e.g. `/Users/you/maestro.stori.audio`). Ensure Docker is running and the stack is up (`docker compose up -d`).
 
   **Local Python:**
   ```json
@@ -173,7 +173,7 @@ So an LLM client can list and call tools.
   ```
   Requires a venv (or env) with the app installed and deps (e.g. `pip install -e .`).
 
-- Restart Cursor (or **Developer: Reload Window**) so it starts the server. If you see **"Found 0 tools"** after changing config, do a full window reload (not just resaving `mcp.json`). To verify the server returns tools from the container: run `tools/list` via stdio (see [api.md](../reference/api.md)); from repo root you can pipe `initialize` + `tools/list` JSON lines into `docker compose exec -T composer python -m app.mcp.stdio_server` and check the last line has `"result":{"tools":[...]}` with 41 tools.
+- Restart Cursor (or **Developer: Reload Window**) so it starts the server. If you see **"Found 0 tools"** after changing config, do a full window reload (not just resaving `mcp.json`). To verify the server returns tools from the container: run `tools/list` via stdio (see [api.md](../reference/api.md)); from repo root you can pipe `initialize` + `tools/list` JSON lines into `docker compose exec -T maestro python -m app.mcp.stdio_server` and check the last line has `"result":{"tools":[...]}` with 41 tools.
 
 **2c. Test in Cursor**
 
@@ -181,11 +181,11 @@ So an LLM client can list and call tools.
 - If Cursor lists the tools and/or returns a result from `stori_generate_drums`, the stdio MCP path works.
 
 **3. (Optional) Prove DAW forwarding**  
-Requires the Stori app (Swift) running and connected. If you use **Cursor with stdio**, set `STORI_COMPOSER_MCP_URL=http://localhost:10001` and `STORI_MCP_TOKEN=<jwt>` in the environment so the stdio server proxies DAW tools to the backend (where the app’s WebSocket is registered).
+Requires the Stori app (Swift) running and connected. If you use **Cursor with stdio**, set `STORI_MAESTRO_MCP_URL=http://localhost:10001` and `STORI_MCP_TOKEN=<jwt>` in the environment so the stdio server proxies DAW tools to the backend (where the app’s WebSocket is registered).
 
 - Stori app opens a WebSocket to `wss://<host>/api/v1/mcp/daw?token=<jwt>`.
 - From Cursor (or HTTP), call a **DAW** tool (e.g. `stori_play`, `stori_read_project`).  
-  If the DAW responds (e.g. playback starts, or project state is returned), the full MCP → Composer → DAW flow is proven.
+  If the DAW responds (e.g. playback starts, or project state is returned), the full MCP → Maestro → DAW flow is proven.
 
 **Summary**
 

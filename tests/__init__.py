@@ -1,1 +1,1 @@
-"""Tests for the Stori Composer service."""
+"""Tests for the Stori Maestro service."""

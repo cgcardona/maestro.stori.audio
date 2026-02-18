@@ -1,7 +1,7 @@
 """
-Stori Composer Configuration
+Stori Maestro Configuration
 
-Environment-based configuration for the composer service.
+Environment-based configuration for the Maestro service.
 """
 import logging
 import os
@@ -16,7 +16,7 @@ def _app_version_from_package() -> str:
     """Read version from pyproject.toml — the single source of truth."""
     try:
         from importlib.metadata import version
-        return version("composer-stori")
+        return version("maestro-stori")
     except Exception:
         pass
     # Fallback: parse pyproject.toml directly (dev / non-installed mode)
@@ -32,7 +32,7 @@ def _app_version_from_package() -> str:
     return "0.0.0-unknown"
 
 
-# Models shown in the Stori composer model picker.
+# Models shown in the Stori Maestro model picker.
 # Update this list when new versions ship; slugs must match OpenRouter IDs exactly.
 # Sorted cheapest-first by convention; the endpoint re-sorts by cost anyway.
 ALLOWED_MODEL_IDS: list[str] = [
@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     # Service Info (app_version: single source is pyproject.toml when installed; else fallback)
-    app_name: str = "Stori Composer"
+    app_name: str = "Stori Maestro"
     app_version: str = _app_version_from_package()
     debug: bool = False
     
@@ -115,9 +115,9 @@ class Settings(BaseSettings):
     hf_api_key: Optional[str] = None  # HuggingFace API key
     hf_timeout: int = 120  # seconds (HF can be slow on cold starts)
     
-    # Composer Service Configuration
-    composer_host: str = "0.0.0.0"
-    composer_port: int = 10001
+    # Maestro Service Configuration
+    maestro_host: str = "0.0.0.0"
+    maestro_port: int = 10001
     
     # LLM Parameters
     llm_temperature: float = 0.7
@@ -165,9 +165,9 @@ class Settings(BaseSettings):
     asset_rate_limit_per_device: str = "30/minute"
     asset_rate_limit_per_ip: str = "120/minute"
 
-    # Stdio MCP server: proxy DAW tools to Composer backend (so Cursor sees the same DAW as the app)
+    # Stdio MCP server: proxy DAW tools to Maestro backend (so Cursor sees the same DAW as the app)
     # When set, stdio server forwards DAW tool calls to this URL with the token; backend has the WebSocket.
-    composer_mcp_url: Optional[str] = None  # e.g. http://localhost:10001
+    maestro_mcp_url: Optional[str] = None  # e.g. http://localhost:10001
     mcp_token: Optional[str] = None  # JWT for Authorization: Bearer when proxying
 
     model_config = SettingsConfigDict(

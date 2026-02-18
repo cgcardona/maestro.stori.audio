@@ -164,7 +164,7 @@ class TestConversationCompose:
         assert "text/event-stream" in resp.headers.get("content-type", "")
 
     @pytest.mark.anyio
-    async def test_compose_no_auth(self, client, db_session):
+    async def test_maestro_no_auth(self, client, db_session):
         resp = await client.post("/api/v1/conversations/some-id/messages", json={"prompt": "test"})
         assert resp.status_code in (401, 403)
 

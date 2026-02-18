@@ -69,16 +69,16 @@ sleep 10
 
 # Check health
 for i in {1..30}; do
-    if docker exec composer-stori-app curl -sf http://localhost:10001/api/v1/health > /dev/null 2>&1; then
-        echo "✅ Composer healthy"
+    if docker exec maestro-stori-app curl -sf http://localhost:10001/api/v1/health > /dev/null 2>&1; then
+        echo "✅ Maestro healthy"
         break
     fi
-    echo "   Waiting for composer... ($i/30)"
+    echo "   Waiting for maestro... ($i/30)"
     sleep 2
 done
 
 for i in {1..30}; do
-    if docker exec composer-stori-orpheus curl -sf http://localhost:10002/health > /dev/null 2>&1; then
+    if docker exec maestro-stori-orpheus curl -sf http://localhost:10002/health > /dev/null 2>&1; then
         echo "✅ Orpheus healthy"
         break
     fi
@@ -104,9 +104,9 @@ echo "✅ Deployment Complete!"
 echo "=========================================="
 echo ""
 echo "Monitor logs:"
-echo "  docker logs -f composer-stori-app"
-echo "  docker logs -f composer-stori-orpheus"
-echo "  docker logs -f composer-stori-nginx"
+echo "  docker logs -f maestro-stori-app"
+echo "  docker logs -f maestro-stori-orpheus"
+echo "  docker logs -f maestro-stori-nginx"
 echo ""
 echo "Check status:"
 echo "  docker ps"

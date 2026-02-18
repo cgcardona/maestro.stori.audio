@@ -1,12 +1,12 @@
 """
-Centralized Intent Configuration for Stori Composer (Cursor-of-DAWs).
+Centralized Intent Configuration for Stori Maestro (Cursor-of-DAWs).
 
 This is the SINGLE SOURCE OF TRUTH for:
 1. Intent → Allowed Tools mapping
 2. Intent → SSE State routing
 3. Intent → Execution policy (force_stop, tool_choice)
 
-No more scattered mappings across intent.py, compose.py, etc.
+No more scattered mappings across intent.py, maestro.py, etc.
 """
 
 from __future__ import annotations

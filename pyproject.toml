@@ -1,5 +1,5 @@
 [project]
-name = "composer-stori"
+name = "maestro-stori"
 version = "0.1.3"
 description = "AI-powered music composition service for Stori DAW"
 readme = "README.md"

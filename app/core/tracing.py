@@ -1,5 +1,5 @@
 """
-Request Tracing for Stori Composer (Cursor-of-DAWs).
+Request Tracing for Stori Maestro (Cursor-of-DAWs).
 
 Provides correlation IDs and structured logging for debugging production issues.
 

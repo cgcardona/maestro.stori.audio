@@ -5,14 +5,14 @@ Stori MCP Stdio Server
 Standalone MCP server that communicates via stdio.
 This can be registered with Cursor or Claude Desktop.
 
-When STORI_COMPOSER_MCP_URL and STORI_MCP_TOKEN are set, DAW tool calls are
-proxied to the Composer backend (where the Stori app WebSocket is registered).
+When STORI_MAESTRO_MCP_URL and STORI_MCP_TOKEN are set, DAW tool calls are
+proxied to the Maestro backend (where the Stori app WebSocket is registered).
 That way Cursor and the Stori app share the same DAW connection.
 
 Usage:
     python -m app.mcp.stdio_server
     # With proxy (Cursor → backend → Stori WebSocket):
-    STORI_COMPOSER_MCP_URL=http://localhost:10001 STORI_MCP_TOKEN=<jwt> python -m app.mcp.stdio_server
+    STORI_MAESTRO_MCP_URL=http://localhost:10001 STORI_MCP_TOKEN=<jwt> python -m app.mcp.stdio_server
 """
 import sys
 import json
@@ -44,11 +44,11 @@ class StdioMCPServer:
         self.mcp = get_mcp_server()
         self._request_id = 0
         self._server_side_tools = SERVER_SIDE_TOOLS
-        self._composer_url = (settings.composer_mcp_url or "").rstrip("/")
+        self._maestro_url = (settings.maestro_mcp_url or "").rstrip("/")
         self._mcp_token = settings.mcp_token
-        self._proxy_daw = bool(self._composer_url and self._mcp_token)
+        self._proxy_daw = bool(self._maestro_url and self._mcp_token)
         if self._proxy_daw:
-            logger.info("DAW tool calls will be proxied to %s", self._composer_url)
+            logger.info("DAW tool calls will be proxied to %s", self._maestro_url)
     
     async def run(self):
         """Main loop - read from stdin, write to stdout."""
@@ -83,9 +83,9 @@ class StdioMCPServer:
         sys.stdout.flush()
 
     async def _proxy_daw_tool(self, tool_name: str, arguments: dict[str, Any]):
-        """Proxy a DAW tool call to the Composer backend (which has the WebSocket)."""
+        """Proxy a DAW tool call to the Maestro backend (which has the WebSocket)."""
         from app.mcp.server import ToolCallResult
-        url = f"{self._composer_url}/api/v1/mcp/tools/{tool_name}/call"
+        url = f"{self._maestro_url}/api/v1/mcp/tools/{tool_name}/call"
         payload = {"name": tool_name, "arguments": arguments}
         headers = {
             "Content-Type": "application/json",
@@ -155,7 +155,7 @@ class StdioMCPServer:
             tool_name = params.get("name")
             arguments = params.get("arguments", {})
 
-            # DAW tools: proxy to Composer backend if configured (backend has the WebSocket)
+            # DAW tools: proxy to Maestro backend if configured (backend has the WebSocket)
             if (
                 self._proxy_daw
                 and tool_name not in self._server_side_tools

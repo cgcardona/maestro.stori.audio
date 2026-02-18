@@ -1,4 +1,4 @@
--- Stori Composer Database Initialization
+-- Stori Maestro Database Initialization
 -- PostgreSQL 16+
 
 -- Enable UUID extension

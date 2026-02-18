@@ -1,4 +1,4 @@
-"""Response models for the Stori Composer API."""
+"""Response models for the Stori Maestro API."""
 from pydantic import BaseModel, Field
 from typing import Optional, Any, Literal, Union
 from enum import Enum
@@ -86,8 +86,8 @@ SSEMessage = Union[
 ]
 
 
-class ComposeResponse(BaseModel):
-    """Non-streaming compose response."""
+class MaestroResponse(BaseModel):
+    """Non-streaming maestro response."""
     success: bool
     tool_calls: list[dict[str, Any]]
     raw_response: Optional[str] = None

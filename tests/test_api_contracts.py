@@ -98,12 +98,12 @@ class TestModelsEndpoint:
 # =============================================================================
 
 class TestComposeStreamRequiresAuth:
-    """POST /api/v1/compose/stream."""
+    """POST /api/v1/maestro/stream."""
 
     @pytest.mark.anyio
     async def test_no_auth_returns_401(self, client):
         response = await client.post(
-            "/api/v1/compose/stream",
+            "/api/v1/maestro/stream",
             json={"prompt": "play", "project": {}},
         )
         assert response.status_code == 401
@@ -111,7 +111,7 @@ class TestComposeStreamRequiresAuth:
     @pytest.mark.anyio
     async def test_invalid_token_returns_401(self, client):
         response = await client.post(
-            "/api/v1/compose/stream",
+            "/api/v1/maestro/stream",
             headers={"Authorization": "Bearer invalid-token"},
             json={"prompt": "play", "project": {}},
         )
@@ -482,7 +482,7 @@ class TestUnauthorizedResponseShape:
     @pytest.mark.anyio
     async def test_401_has_detail(self, client):
         response = await client.post(
-            "/api/v1/compose/stream",
+            "/api/v1/maestro/stream",
             json={"prompt": "play", "project": {}},
         )
         assert response.status_code == 401

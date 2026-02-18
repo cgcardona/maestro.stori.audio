@@ -25,7 +25,7 @@ req() {
     echo -e "\n${YELLOW}▸ Test: $1${NC}"
     echo -e "  Prompt: \"$2\"\n"
     
-    curl -s -N -X POST "${API_BASE}/compose/stream" \
+    curl -s -N -X POST "${API_BASE}/maestro/stream" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer ${TOKEN}" \
         -d "{\"prompt\": \"$2\", \"conversation_id\": \"${CONV_ID}\"}" \

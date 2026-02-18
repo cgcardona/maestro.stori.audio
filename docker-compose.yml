@@ -1,4 +1,4 @@
-# Stori Composer - Docker Compose Configuration
+# Stori Maestro - Docker Compose Configuration
 #
 # Usage:
 #   Development: docker compose up
@@ -15,7 +15,7 @@ services:
   # ==========================================================================
   postgres:
     image: postgres:16-alpine
-    container_name: composer-stori-postgres
+    container_name: maestro-stori-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: stori
@@ -26,7 +26,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
-      - composer-stori-net
+      - maestro-stori-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U stori -d stori"]
       interval: 10s
@@ -54,7 +54,7 @@ services:
   # ==========================================================================
   qdrant:
     image: qdrant/qdrant:v1.7.4
-    container_name: composer-stori-qdrant
+    container_name: maestro-stori-qdrant
     restart: unless-stopped
     ports:
       - "127.0.0.1:6333:6333"  # REST API
@@ -62,7 +62,7 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
-      - composer-stori-net
+      - maestro-stori-net
     # Note: Qdrant image doesn't have curl/wget, so healthcheck is disabled
     # The service starts quickly and is reliable
     deploy:
@@ -74,13 +74,13 @@ services:
           memory: 128M
 
   # ==========================================================================
-  # Stori Composer API
+  # Stori Maestro API
   # ==========================================================================
-  composer:
+  maestro:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: composer-stori-app
+    container_name: maestro-stori-app
     restart: unless-stopped
     ports:
       - "127.0.0.1:10001:10001"  # Stori macOS app (ApiBaseURL http://localhost:10001) and host curl
@@ -98,9 +98,9 @@ services:
       STORI_AWS_S3_ASSET_BUCKET: ${STORI_AWS_S3_ASSET_BUCKET:-}
       STORI_AWS_REGION: ${STORI_AWS_REGION:-eu-west-1}
     volumes:
-      - composer_data:/data
+      - maestro_data:/data
     networks:
-      - composer-stori-net
+      - maestro-stori-net
     depends_on:
       postgres:
         condition: service_healthy
@@ -139,15 +139,15 @@ services:
     build:
       context: ./orpheus-music
       dockerfile: Dockerfile
-    container_name: composer-stori-orpheus
+    container_name: maestro-stori-orpheus
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      # Gradio Client needs HF token for Space GPU quota; use same key as Composer
+      # Gradio Client needs HF token for Space GPU quota; use same key as Maestro
       HF_TOKEN: ${STORI_HF_API_KEY:-}
     networks:
-      - composer-stori-net
+      - maestro-stori-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:10002/health"]
       interval: 30s
@@ -175,7 +175,7 @@ services:
   # ==========================================================================
   nginx:
     image: nginx:alpine
-    container_name: composer-stori-nginx
+    container_name: maestro-stori-nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -186,9 +186,9 @@ services:
       - certbot_webroot:/var/www/certbot:ro
       - certbot_certs:/etc/letsencrypt:ro
     depends_on:
-      - composer
+      - maestro
     networks:
-      - composer-stori-net
+      - maestro-stori-net
     healthcheck:
       test: ["CMD", "nginx", "-t"]
       interval: 60s
@@ -202,7 +202,7 @@ services:
   # ==========================================================================
   certbot:
     image: certbot/certbot
-    container_name: composer-stori-certbot
+    container_name: maestro-stori-certbot
     security_opt:
       - no-new-privileges:true
     volumes:
@@ -210,21 +210,21 @@ services:
       - certbot_certs:/etc/letsencrypt
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
     networks:
-      - composer-stori-net
+      - maestro-stori-net
 
 volumes:
   postgres_data:
-    name: composer-stori-postgres-data
+    name: maestro-stori-postgres-data
   qdrant_data:
-    name: composer-stori-qdrant-data
-  composer_data:
-    name: composer-stori-data
+    name: maestro-stori-qdrant-data
+  maestro_data:
+    name: maestro-stori-data
   certbot_webroot:
-    name: composer-stori-certbot-webroot
+    name: maestro-stori-certbot-webroot
   certbot_certs:
-    name: composer-stori-certbot-certs
+    name: maestro-stori-certbot-certs
 
 networks:
-  composer-stori-net:
-    name: composer-stori-network
+  maestro-stori-net:
+    name: maestro-stori-network
     driver: bridge

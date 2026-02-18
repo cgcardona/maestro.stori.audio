@@ -1,8 +1,8 @@
-# Composer Stori Audio – Documentation
+# Maestro Stori Audio – Documentation
 
 **Stori — the infinite music machine.** Use these docs in order: read only what you need. Start with [guides/setup.md](guides/setup.md), then [guides/integrate.md](guides/integrate.md). Script paths are from **repo root**.
 
-**Environments:** local, **stage.stori.audio**, **composer.stori.audio**.
+**Environments:** local, **stage.stori.audio**, **maestro.stori.audio**.
 
 ---
 
@@ -33,7 +33,7 @@ API base URL, auth (JWT), access codes, frontend (Swift, assets), MCP (Cursor/Cl
 
 ## 3. [reference/api.md](reference/api.md)
 
-API and MCP tools in one place: compose stream (SSE), event types, variable refs, models (OpenRouter), and the full MCP tool reference (all 41 tools with parameters and routing). Use with Stori app, Cursor/Claude, or HTTP MCP. Programmatic list: `GET /api/v1/mcp/tools` or `app/mcp/tools.py`.
+API and MCP tools in one place: maestro stream (SSE), event types, variable refs, models (OpenRouter), and the full MCP tool reference (all 41 tools with parameters and routing). Use with Stori app, Cursor/Claude, or HTTP MCP. Programmatic list: `GET /api/v1/mcp/tools` or `app/mcp/tools.py`.
 
 ---
 

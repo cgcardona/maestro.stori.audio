@@ -1,5 +1,5 @@
 """
-Tests for the composer pipeline (run_pipeline).
+Tests for the maestro pipeline (run_pipeline).
 
 Ensures REASONING, COMPOSING, and EDITING branches return correct PipelineOutput.
 """

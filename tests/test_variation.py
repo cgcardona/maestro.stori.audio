@@ -693,13 +693,13 @@ class TestSSEVariationEvents:
 # =============================================================================
 
 class TestExecutionModeRemoved:
-    """Verify execution_mode is no longer on ComposeRequest (backend-owned)."""
+    """Verify execution_mode is no longer on MaestroRequest (backend-owned)."""
     
-    def test_compose_request_has_no_execution_mode(self):
-        """ComposeRequest should not have an execution_mode field."""
-        from app.models.requests import ComposeRequest
+    def test_maestro_request_has_no_execution_mode(self):
+        """MaestroRequest should not have an execution_mode field."""
+        from app.models.requests import MaestroRequest
         
-        request = ComposeRequest(prompt="test")
+        request = MaestroRequest(prompt="test")
         assert not hasattr(request, "execution_mode")
 
 

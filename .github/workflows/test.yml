@@ -1,4 +1,4 @@
-# Stori Composer — Test & Coverage
+# Stori Maestro — Test & Coverage
 #
 # Runs the full test suite with coverage. Fails if coverage drops below threshold (pyproject.toml fail_under).
 name: Test & Coverage

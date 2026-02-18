@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Stori Composer - Database Restore Script
+# Stori Maestro - Database Restore Script
 # =============================================================================
 #
 # This script restores the PostgreSQL database from a backup file.
@@ -17,7 +17,7 @@ set -e
 # Run from project root (where docker-compose.yml lives)
 cd "$(cd "$(dirname "$0")/../.." && pwd)"
 
-BACKUP_DIR="/var/backups/composer-stori"
+BACKUP_DIR="/var/backups/maestro-stori"
 
 # Colors
 GREEN='\033[0;32m'
@@ -77,9 +77,9 @@ log_info "Safety backup created: $SAFETY_BACKUP"
 # =============================================================================
 log_info "Restoring database..."
 
-# Stop the composer service to prevent connections
-log_info "Stopping composer service..."
-docker compose stop composer
+# Stop the maestro service to prevent connections
+log_info "Stopping maestro service..."
+docker compose stop maestro
 
 # Drop and recreate database
 log_info "Dropping and recreating database..."
@@ -92,9 +92,9 @@ EOF
 log_info "Restoring from backup file..."
 gunzip < "$BACKUP_FILE" | docker compose exec -T postgres psql -U stori -d stori
 
-# Restart composer service
-log_info "Restarting composer service..."
-docker compose start composer
+# Restart maestro service
+log_info "Restarting maestro service..."
+docker compose start maestro
 
 log_info "Database restore complete!"
 log_info "Safety backup saved at: $SAFETY_BACKUP"

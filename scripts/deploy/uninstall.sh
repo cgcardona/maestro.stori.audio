@@ -1,10 +1,10 @@
 #!/bin/bash
 set -e
 
-# Composer Stori Audio - Remove systemd unit (Docker Compose on boot)
+# Maestro Stori Audio - Remove systemd unit (Docker Compose on boot)
 
 echo "==================================="
-echo "Composer Stori Audio - Uninstall"
+echo "Maestro Stori Audio - Uninstall"
 echo "==================================="
 echo ""
 
@@ -14,8 +14,8 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-echo "This will remove the composer-stori systemd unit (the one that runs 'docker compose up -d' on boot)."
-echo "Your containers will stop if you run 'systemctl stop composer-stori' or after a reboot the stack will no longer start automatically."
+echo "This will remove the maestro-stori systemd unit (the one that runs 'docker compose up -d' on boot)."
+echo "Your containers will stop if you run 'systemctl stop maestro-stori' or after a reboot the stack will no longer start automatically."
 echo "To stop the stack now, run: docker compose down (from the project root)."
 echo ""
 read -p "Remove the systemd unit? [y/N]: " confirm
@@ -27,23 +27,23 @@ fi
 
 echo ""
 
-if [ -f "/etc/systemd/system/composer-stori.service" ]; then
-    echo "🗑️  Removing composer-stori..."
+if [ -f "/etc/systemd/system/maestro-stori.service" ]; then
+    echo "🗑️  Removing maestro-stori..."
 
-    if systemctl is-active --quiet composer-stori 2>/dev/null; then
+    if systemctl is-active --quiet maestro-stori 2>/dev/null; then
         echo "   Stopping..."
-        systemctl stop composer-stori
+        systemctl stop maestro-stori
     fi
 
-    if systemctl is-enabled --quiet composer-stori 2>/dev/null; then
+    if systemctl is-enabled --quiet maestro-stori 2>/dev/null; then
         echo "   Disabling..."
-        systemctl disable composer-stori
+        systemctl disable maestro-stori
     fi
 
-    rm -f "/etc/systemd/system/composer-stori.service"
-    echo "   ✓ composer-stori removed"
+    rm -f "/etc/systemd/system/maestro-stori.service"
+    echo "   ✓ maestro-stori removed"
 else
-    echo "⏭️  composer-stori.service not installed, skipping"
+    echo "⏭️  maestro-stori.service not installed, skipping"
 fi
 
 echo ""

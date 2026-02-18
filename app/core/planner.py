@@ -1,5 +1,5 @@
 """
-Planner for Stori Composer.
+Planner for Stori Maestro.
 
 Converts natural language music requests into validated execution plans.
 
@@ -24,7 +24,7 @@ from app.core.expansion import ToolCall
 from app.core.intent import IntentResult, Intent
 from app.core.prompt_parser import ParsedPrompt
 from app.core.tools import build_tool_registry
-from app.core.prompts import composing_prompt, structured_prompt_context, system_prompt_base
+from app.core.prompts import composing_prompt, resolve_position, sequential_context, structured_prompt_context, system_prompt_base
 from app.core.plan_schemas import (
     ExecutionPlanSchema,
     GenerationStep,
@@ -101,10 +101,20 @@ async def build_execution_plan(
     Returns:
         ExecutionPlan ready for executor
     """
+    # Resolve Position: field once so both the deterministic path and the
+    # LLM fallback path use the same beat offset.
+    start_beat: float = 0.0
+    if parsed is not None and parsed.position is not None:
+        start_beat = resolve_position(parsed.position, project_state)
+        logger.info(
+            f"⏱️ Position '{parsed.position.kind}' resolved to beat {start_beat} "
+            f"(section='{parsed.section}', ref='{parsed.position.ref}')"
+        )
+
     # Structured prompt fast path: if all key fields are present, build
     # the plan deterministically without an LLM call.
     if parsed is not None:
-        deterministic = _try_deterministic_plan(parsed)
+        deterministic = _try_deterministic_plan(parsed, start_beat=start_beat)
         if deterministic is not None:
             return deterministic
 
@@ -114,6 +124,9 @@ async def build_execution_plan(
     # that couldn't be built deterministically)
     if parsed is not None:
         sys += structured_prompt_context(parsed)
+        # Tell the LLM where to place new content in the arrangement
+        if parsed.position is not None:
+            sys += sequential_context(start_beat, parsed.section, pos=parsed.position)
     
     # Call LLM for plan
     resp = await llm.chat(
@@ -181,13 +194,21 @@ async def build_execution_plan(
     )
 
 
-def _try_deterministic_plan(parsed: ParsedPrompt) -> Optional[ExecutionPlan]:
+def _try_deterministic_plan(
+    parsed: ParsedPrompt,
+    start_beat: float = 0.0,
+) -> Optional[ExecutionPlan]:
     """
     Build an execution plan deterministically from a structured prompt.
 
     Requires: style, tempo, roles, and bars (from constraints).
     When all are present, we skip the LLM entirely — zero inference overhead.
     Returns None if any required field is missing (caller falls back to LLM).
+
+    Args:
+        parsed: The parsed structured prompt.
+        start_beat: Beat offset for all new regions, resolved from Position:.
+            0.0 means start of project; 16.0 means after a 4-bar intro, etc.
     """
     if not parsed.style or not parsed.tempo or not parsed.roles:
         return None
@@ -199,6 +220,7 @@ def _try_deterministic_plan(parsed: ParsedPrompt) -> Optional[ExecutionPlan]:
     logger.info(
         f"⚡ Deterministic plan from structured prompt: "
         f"{len(parsed.roles)} roles, {parsed.style}, {parsed.tempo} BPM, {bars} bars"
+        + (f", start_beat={start_beat}" if start_beat else "")
     )
 
     generations = [
@@ -221,13 +243,14 @@ def _try_deterministic_plan(parsed: ParsedPrompt) -> Optional[ExecutionPlan]:
     if plan_schema is None:
         return None
 
-    tool_calls = _schema_to_tool_calls(plan_schema)
+    tool_calls = _schema_to_tool_calls(plan_schema, region_start_offset=start_beat)
 
     return ExecutionPlan(
         tool_calls=tool_calls,
         notes=[
             f"deterministic_plan: {len(tool_calls)} tool calls from structured prompt",
             f"style={parsed.style}, tempo={parsed.tempo}, bars={bars}",
+            *([ f"position_offset: start_beat={start_beat}" ] if start_beat else []),
         ],
         safety_validated=True,
     )
@@ -273,7 +296,10 @@ def _build_role_to_track_map(plan: ExecutionPlanSchema) -> dict[str, str]:
     return role_to_track
 
 
-def _schema_to_tool_calls(plan: ExecutionPlanSchema) -> list[ToolCall]:
+def _schema_to_tool_calls(
+    plan: ExecutionPlanSchema,
+    region_start_offset: float = 0.0,
+) -> list[ToolCall]:
     """
     Convert validated plan schema to ToolCalls.
     
@@ -285,6 +311,10 @@ def _schema_to_tool_calls(plan: ExecutionPlanSchema) -> list[ToolCall]:
     
     Uses role→track mapping to ensure generations target the correct tracks
     when LLM uses descriptive names like "Jam Drums" instead of just "Drums".
+
+    Args:
+        region_start_offset: Beat offset applied to every new region's startBeat.
+            Comes from a resolved Position: field (e.g. 16.0 = after a 4-bar intro).
     """
     tool_calls: list[ToolCall] = []
     
@@ -324,6 +354,8 @@ def _schema_to_tool_calls(plan: ExecutionPlanSchema) -> list[ToolCall]:
         ))
     
     # Step 2: Create regions (convert bars to beats: 4 beats per bar in 4/4 time)
+    # region_start_offset shifts all regions by a resolved Position: beat value
+    # so "after intro" / "before chorus" etc. place content at the right point.
     for edit in plan.edits:
         if edit.action == "add_region" and edit.track and edit.bars:
             bar_start = edit.barStart or 0
@@ -332,7 +364,7 @@ def _schema_to_tool_calls(plan: ExecutionPlanSchema) -> list[ToolCall]:
                 params={
                     "name": edit.track,  # Use track name for region display
                     "trackName": edit.track,  # For resolution
-                    "startBeat": bar_start * 4,
+                    "startBeat": bar_start * 4 + region_start_offset,
                     "durationBeats": edit.bars * 4,
                 }
             ))

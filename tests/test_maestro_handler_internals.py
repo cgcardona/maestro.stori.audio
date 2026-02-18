@@ -1,13 +1,13 @@
-"""Tests for compose handler internal functions (_handle_reasoning, _handle_composing, _handle_editing, _stream_llm_response).
+"""Tests for maestro handler internal functions (_handle_reasoning, _handle_composing, _handle_editing, _stream_llm_response).
 
-Supplements test_compose_handlers.py with deeper coverage of handler internals
+Supplements test_maestro_handlers.py with deeper coverage of maestro handler internals
 and execution mode policy.
 """
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.core.compose_handlers import (
+from app.core.maestro_handlers import (
     UsageTracker,
     StreamFinalResponse,
     _handle_reasoning,
@@ -246,7 +246,7 @@ class TestHandleComposing:
         )
 
         with (
-            patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output),
+            patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output),
             patch("app.core.executor.execute_plan_variation", new_callable=AsyncMock, return_value=fake_variation),
         ):
             events = []
@@ -280,7 +280,7 @@ class TestHandleComposing:
         plan = ExecutionPlan(tool_calls=[], safety_validated=False, llm_response_text="I'm not sure what to do.")
         fake_output = PipelineOutput(route=route, plan=plan)
 
-        with patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+        with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
             events = []
             async for e in _handle_composing("do something", {}, route, llm, store, trace, None, None):
                 events.append(e)
@@ -306,7 +306,7 @@ class TestHandleComposing:
         plan = ExecutionPlan(tool_calls=[], safety_validated=False)
         fake_output = PipelineOutput(route=route, plan=plan)
 
-        with patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+        with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
             events = []
             async for e in _handle_composing("", {}, route, llm, store, trace, None, None):
                 events.append(e)
@@ -743,9 +743,9 @@ class TestOrchestrateExecutionModePolicy:
         project_ctx = {"projectId": "p1", "tracks": [{"id": "t1", "name": "Track 1"}]}
 
         with (
-            patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
-            patch("app.core.compose_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output),
-            patch("app.core.compose_handlers.LLMClient") as m_cls,
+            patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
+            patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output),
+            patch("app.core.maestro_handlers.LLMClient") as m_cls,
             patch("app.core.executor.execute_plan_variation", new_callable=AsyncMock, return_value=fake_variation),
         ):
             m_cls.return_value = _make_llm_mock()
@@ -780,8 +780,8 @@ class TestOrchestrateExecutionModePolicy:
         mock_llm.chat_completion = AsyncMock(side_effect=[response, done_response])
 
         with (
-            patch("app.core.compose_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
-            patch("app.core.compose_handlers.LLMClient") as m_cls,
+            patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
+            patch("app.core.maestro_handlers.LLMClient") as m_cls,
         ):
             m_cls.return_value = mock_llm
             events = []

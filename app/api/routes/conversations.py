@@ -19,8 +19,8 @@ from app.config import settings
 from app.db import get_db
 from app.auth.dependencies import require_valid_token
 from app.services import conversations as conv_service
-from app.models.requests import ComposeRequest
-from app.api.routes.compose import orchestrate, UsageTracker
+from app.models.requests import MaestroRequest
+from app.api.routes.maestro import orchestrate, UsageTracker
 from app.services.budget import (
     check_budget,
     deduct_budget,
@@ -142,7 +142,7 @@ async def create_conversation(
     """
     Create a new conversation.
     
-    Each conversation represents a chat thread with the AI composer.
+    Each conversation represents a chat thread with Maestro.
     """
     user_id = token_claims.get("sub")
     if not user_id:
@@ -501,7 +501,7 @@ async def delete_conversation(
 @router.post("/conversations/{conversation_id}/messages")
 async def add_message_to_conversation(
     conversation_id: str,
-    compose_request: ComposeRequest,
+    maestro_request: MaestroRequest,
     request: Request,
     token_claims: dict = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
@@ -516,7 +516,7 @@ async def add_message_to_conversation(
     4. Auto-generates title if still "New Conversation"
     5. Deducts budget from user
     
-    Streams in the same format as /api/v1/compose/stream.
+    Streams in the same format as /api/v1/maestro/stream.
     """
     user_id = token_claims.get("sub")
     if not user_id:
@@ -548,7 +548,7 @@ async def add_message_to_conversation(
         )
     
     # Save user message (respecting store_prompt flag)
-    user_message_content = compose_request.prompt if compose_request.store_prompt else "[content not stored]"
+    user_message_content = maestro_request.prompt if maestro_request.store_prompt else "[content not stored]"
     user_message = await conv_service.add_message(
         db=db,
         conversation_id=conversation_id,
@@ -588,9 +588,9 @@ async def add_message_to_conversation(
             
             # Stream the orchestration with conversation history
             async for event in orchestrate(
-                prompt=compose_request.prompt,
-                project_context=compose_request.project,
-                model=compose_request.model,
+                prompt=maestro_request.prompt,
+                project_context=maestro_request.project,
+                model=maestro_request.model,
                 usage_tracker=usage_tracker,
                 conversation_history=conversation_history,
                 is_cancelled=request.is_disconnected,
@@ -686,7 +686,7 @@ async def add_message_to_conversation(
             # Calculate cost
             total_tokens = usage_tracker.prompt_tokens + usage_tracker.completion_tokens
             cost_cents = calculate_cost_cents(
-                model=compose_request.model or settings.llm_model,
+                model=maestro_request.model or settings.llm_model,
                 prompt_tokens=usage_tracker.prompt_tokens,
                 completion_tokens=usage_tracker.completion_tokens,
             )
@@ -699,7 +699,7 @@ async def add_message_to_conversation(
                 conversation_id=conversation_id,
                 role="assistant",
                 content=assistant_content,
-                model_used=compose_request.model or settings.llm_model,
+                model_used=maestro_request.model or settings.llm_model,
                 tokens_used={
                     "prompt": usage_tracker.prompt_tokens,
                     "completion": usage_tracker.completion_tokens,
@@ -736,15 +736,15 @@ async def add_message_to_conversation(
                 db=db,
                 user_id=user_id,
                 cost_cents=cost_cents,
-                model=compose_request.model or settings.llm_model,
+                model=maestro_request.model or settings.llm_model,
                 prompt_tokens=usage_tracker.prompt_tokens,
                 completion_tokens=usage_tracker.completion_tokens,
-                prompt=user_message_content if compose_request.store_prompt else None,
+                prompt=user_message_content if maestro_request.store_prompt else None,
             )
             
             # Auto-generate title if needed
-            if conversation.title == "New Conversation" and compose_request.prompt:
-                new_title = conv_service.generate_title_from_prompt(compose_request.prompt)
+            if conversation.title == "New Conversation" and maestro_request.prompt:
+                new_title = conv_service.generate_title_from_prompt(maestro_request.prompt)
                 await conv_service.update_conversation_title(
                     db=db,
                     conversation_id=conversation_id,

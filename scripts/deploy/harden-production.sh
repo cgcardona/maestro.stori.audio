@@ -99,7 +99,7 @@ if [ -f "$BACKUP_SCRIPT" ]; then
     chmod +x "$BACKUP_SCRIPT"
     # Add to crontab (daily at 2 AM) if not already there
     if ! crontab -l 2>/dev/null | grep -q "backup-database.sh"; then
-        (crontab -l 2>/dev/null; echo "0 2 * * * $BACKUP_SCRIPT >> /var/log/composer-stori-backup.log 2>&1") | crontab -
+        (crontab -l 2>/dev/null; echo "0 2 * * * $BACKUP_SCRIPT >> /var/log/maestro-stori-backup.log 2>&1") | crontab -
         echo "   ✅ Daily backup cron job added (2 AM)"
     else
         echo "   ✅ Backup cron job already exists"
@@ -110,7 +110,7 @@ fi
 
 echo ""
 echo "7. Setting kernel security parameters..."
-cat > /etc/sysctl.d/99-composer-stori-security.conf <<'EOF'
+cat > /etc/sysctl.d/99-maestro-stori-security.conf <<'EOF'
 # Prevent SYN flood attacks
 net.ipv4.tcp_syncookies = 1
 net.ipv4.tcp_max_syn_backlog = 2048
@@ -138,7 +138,7 @@ net.ipv4.conf.all.log_martians = 1
 net.ipv4.tcp_rfc1337 = 1
 EOF
 
-sysctl -p /etc/sysctl.d/99-composer-stori-security.conf
+sysctl -p /etc/sysctl.d/99-maestro-stori-security.conf
 
 echo ""
 echo "8. Setting up file integrity monitoring..."
@@ -172,6 +172,6 @@ echo "  4. Set up monitoring alerts"
 echo ""
 echo "Next steps:"
 echo "  - Review: tail -f /var/log/fail2ban.log"
-echo "  - Monitor: docker logs -f composer-stori-app"
+echo "  - Monitor: docker logs -f maestro-stori-app"
 echo "  - Backups: ls -lh /var/backups/stori"
 echo ""

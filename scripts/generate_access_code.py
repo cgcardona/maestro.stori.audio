@@ -2,7 +2,7 @@
 """
 Access Code Generator CLI
 
-Generate time-limited access codes for Stori Composer.
+Generate time-limited access codes for Stori Maestro.
 Codes are cryptographically signed JWTs that expire after the specified duration.
 All tokens must include a user ID (sub claim) for budget tracking.
 
@@ -29,7 +29,7 @@ from app.auth.tokens import generate_access_code, get_token_expiration, AccessCo
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate time-limited access codes for Stori Composer",
+        description="Generate time-limited access codes for Stori Maestro",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -132,9 +132,9 @@ Environment:
             
             print("\n" + "=" * 60)
             if args.admin:
-                print("STORI COMPOSER ADMIN ACCESS CODE")
+                print("STORI MAESTRO ADMIN ACCESS CODE")
             else:
-                print("STORI COMPOSER ACCESS CODE")
+                print("STORI MAESTRO ACCESS CODE")
             print("=" * 60)
             print(f"\nDuration: {duration_str}")
             print(f"Expires:  {expiration.strftime('%Y-%m-%d %H:%M:%S UTC')}")

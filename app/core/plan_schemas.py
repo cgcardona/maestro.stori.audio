@@ -1,5 +1,5 @@
 """
-Plan Schema Validation for Stori Composer (Cursor-of-DAWs).
+Plan Schema Validation for Stori Maestro (Cursor-of-DAWs).
 
 This module defines Pydantic schemas for validating LLM-generated execution plans.
 

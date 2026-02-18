@@ -39,12 +39,12 @@ else
 fi
 
 echo ""
-echo "2. Scanning composer container..."
-$TRIVY_CMD image composerstoriaudio-composer --severity HIGH,CRITICAL
+echo "2. Scanning maestro container..."
+$TRIVY_CMD image maestrostoriaudio-maestro --severity HIGH,CRITICAL
 
 echo ""
 echo "3. Scanning orpheus container..."
-$TRIVY_CMD image composerstoriaudio-orpheus --severity HIGH,CRITICAL
+$TRIVY_CMD image maestrostoriaudio-orpheus --severity HIGH,CRITICAL
 
 echo ""
 echo "4. Scanning postgres container..."

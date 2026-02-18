@@ -1,5 +1,5 @@
 """
-Stori Composer Core - Cursor-of-DAWs Architecture.
+Stori Maestro Core - Cursor-of-DAWs Architecture.
 
 Core orchestration pipeline modules:
 

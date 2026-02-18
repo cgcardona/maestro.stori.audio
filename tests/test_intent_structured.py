@@ -18,7 +18,7 @@ from app.core.intent import (
 # ─── Mode: compose → COMPOSING ──────────────────────────────────────────────
 
 
-class TestComposeRouting:
+class TestMaestroRouting:
     def test_compose_routes_to_composing(self):
         prompt = "STORI PROMPT\nMode: compose\nRequest: make a beat"
         result = get_intent_result(prompt)
@@ -229,8 +229,7 @@ class TestSpecExamples:
             "- hypnotic:3\n"
             "- wider:1\n"
             "\n"
-            "Request:\n"
-            "Build an intro groove that evolves every 4 bars and opens into a club-ready loop."
+            "Request: Build an intro groove that evolves every 4 bars and opens into a club-ready loop."
         )
         result = get_intent_result(prompt)
         assert result.intent == Intent.GENERATE_MUSIC
@@ -257,8 +256,7 @@ class TestSpecExamples:
             "- compressor: analog\n"
             "- eq_focus: 200hz cleanup\n"
             "\n"
-            "Request:\n"
-            "Tighten the bass and make it hit harder without increasing loudness."
+            "Request: Tighten the bass and make it hit harder without increasing loudness."
         )
         result = get_intent_result(prompt)
         assert result.sse_state == SSEState.EDITING
@@ -271,8 +269,7 @@ class TestSpecExamples:
             "Mode: ask\n"
             "Target: project\n"
             "\n"
-            "Request:\n"
-            "Why does my groove feel late when I add long reverb tails?"
+            "Request: Why does my groove feel late when I add long reverb tails?"
         )
         result = get_intent_result(prompt)
         assert result.intent == Intent.ASK_GENERAL

@@ -1,4 +1,4 @@
-"""Alembic environment configuration for Stori Composer."""
+"""Alembic environment configuration for Stori Maestro."""
 import asyncio
 from logging.config import fileConfig
 

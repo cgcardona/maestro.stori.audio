@@ -1,5 +1,5 @@
 """
-Tool definitions + metadata for the Stori Composer.
+Tool definitions + metadata for the Stori Maestro.
 
 This file is intentionally *Cursor-shaped*:
 

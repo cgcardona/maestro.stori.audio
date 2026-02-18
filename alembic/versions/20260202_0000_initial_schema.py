@@ -4,7 +4,7 @@ Revision ID: 20260202_0000
 Revises:
 Create Date: 2026-02-02 00:00:00.000000
 
-Canonical initial migration for Stori Composer. Creates: users (id = device UUID),
+Canonical initial migration for Stori Maestro. Creates: users (id = device UUID),
 usage_logs, access_tokens, conversations, conversation_messages, message_actions.
 
 Fresh install: drop the database (or delete SQLite file), then run:

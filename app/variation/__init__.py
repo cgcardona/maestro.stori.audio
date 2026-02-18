@@ -1,5 +1,5 @@
 """
-Muse / Variations subsystem for Stori Composer.
+Muse / Variations subsystem for Stori Maestro.
 
 This package implements the canonical Variation lifecycle:
 propose → stream → review → commit/discard.

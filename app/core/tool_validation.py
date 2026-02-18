@@ -1,5 +1,5 @@
 """
-Tool Argument Validation for Stori Composer (Cursor-of-DAWs).
+Tool Argument Validation for Stori Maestro (Cursor-of-DAWs).
 
 This module provides comprehensive validation for tool calls:
 1. Schema validation (required params, types)
@@ -126,7 +126,7 @@ def validate_tool_call(
 ) -> ValidationResult:
     """
     Validate a tool call. Allowlist is the single source of truth: only tools in
-    allowed_tools may be called. Compose passes intent-derived allowlists (no
+    allowed_tools may be called. Maestro passes intent-derived allowlists (no
     generators); MCP passes all MCP tool names.
 
     Performs:

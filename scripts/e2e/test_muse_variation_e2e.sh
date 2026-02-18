@@ -22,7 +22,7 @@ echo "🎭 Muse Variation System - End-to-End Test"
 echo "=========================================="
 echo ""
 
-# Test 1: Streaming Variation via /compose/stream
+# Test 1: Streaming Variation via /maestro/stream
 echo "📝 Test 1: Generate variation via streaming endpoint"
 echo "   (COMPOSING intent -> backend forces variation mode)"
 echo ""
@@ -55,7 +55,7 @@ PROJECT_STATE='{
 
 TEMP_FILE=$(mktemp)
 
-curl -k -N -X POST "${API_URL}/compose/stream" \
+curl -k -N -X POST "${API_URL}/maestro/stream" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "{

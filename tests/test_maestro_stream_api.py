@@ -1,8 +1,8 @@
-"""Tests for compose streaming API endpoint (app/api/routes/compose.py).
+"""Tests for maestro streaming API endpoint (app/api/routes/maestro.py).
 
 Covers:
-- POST /api/v1/compose/stream (SSE streaming, budget checks, conversation history)
-- POST /api/v1/compose/preview (plan preview)
+- POST /api/v1/maestro/stream (SSE streaming, budget checks, conversation history)
+- POST /api/v1/maestro/preview (plan preview)
 - GET /api/v1/validate-token (token validation)
 """
 import json
@@ -29,7 +29,7 @@ def parse_sse_events(body: str) -> list[dict]:
     return events
 
 
-def _make_compose_body(**overrides) -> dict:
+def _make_maestro_body(**overrides) -> dict:
     base = {"prompt": "make a beat", "mode": "generate"}
     base.update(overrides)
     return base
@@ -65,27 +65,27 @@ class TestValidateToken:
 
 
 class TestComposeStreamEndpoint:
-    """POST /api/v1/compose/stream"""
+    """POST /api/v1/maestro/stream"""
 
     @pytest.mark.anyio
-    async def test_compose_stream_returns_sse_content_type(self, client, auth_headers, test_user):
+    async def test_maestro_stream_returns_sse_content_type(self, client, auth_headers, test_user):
         """Stream endpoint returns text/event-stream with expected headers."""
         async def fake_orchestrate(*args, **kwargs):
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "composing"})
             yield await sse_event({"type": "complete", "success": True, "tool_calls": []})
 
-        with patch("app.api.routes.compose.orchestrate", side_effect=fake_orchestrate):
+        with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
-                "/api/v1/compose/stream",
-                json=_make_compose_body(),
+                "/api/v1/maestro/stream",
+                json=_make_maestro_body(),
                 headers=auth_headers,
             )
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers.get("content-type", "")
 
     @pytest.mark.anyio
-    async def test_compose_stream_yields_state_and_complete(self, client, auth_headers, test_user):
+    async def test_maestro_stream_yields_state_and_complete(self, client, auth_headers, test_user):
         """Happy-path: orchestrate yields SSE events that are forwarded."""
         async def fake_orchestrate(*args, **kwargs):
             from app.core.sse_utils import sse_event
@@ -93,10 +93,10 @@ class TestComposeStreamEndpoint:
             yield await sse_event({"type": "tool_call", "name": "stori_set_tempo", "params": {"tempo": 120}})
             yield await sse_event({"type": "complete", "success": True, "tool_calls": []})
 
-        with patch("app.api.routes.compose.orchestrate", side_effect=fake_orchestrate):
+        with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
-                "/api/v1/compose/stream",
-                json=_make_compose_body(),
+                "/api/v1/maestro/stream",
+                json=_make_maestro_body(),
                 headers=auth_headers,
             )
         events = parse_sse_events(resp.text)
@@ -106,15 +106,15 @@ class TestComposeStreamEndpoint:
         assert "complete" in types
 
     @pytest.mark.anyio
-    async def test_compose_stream_budget_insufficient_402(self, client, auth_headers, test_user, db_session):
+    async def test_maestro_stream_budget_insufficient_402(self, client, auth_headers, test_user, db_session):
         """When budget is insufficient, return 402."""
         from app.services.budget import InsufficientBudgetError
 
-        with patch("app.api.routes.compose.check_budget", new_callable=AsyncMock) as mock_check:
+        with patch("app.api.routes.maestro.check_budget", new_callable=AsyncMock) as mock_check:
             mock_check.side_effect = InsufficientBudgetError(0, 100)
             resp = await client.post(
-                "/api/v1/compose/stream",
-                json=_make_compose_body(),
+                "/api/v1/maestro/stream",
+                json=_make_maestro_body(),
                 headers=auth_headers,
             )
         assert resp.status_code == 402
@@ -122,9 +122,9 @@ class TestComposeStreamEndpoint:
         assert "Insufficient budget" in data["detail"]["error"]
 
     @pytest.mark.anyio
-    async def test_compose_stream_budget_deduction(self, client, auth_headers, test_user, db_session):
+    async def test_maestro_stream_budget_deduction(self, client, auth_headers, test_user, db_session):
         """Budget is deducted after successful streaming."""
-        from app.core.compose_handlers import UsageTracker
+        from app.core.maestro_handlers import UsageTracker
 
         async def fake_orchestrate(*args, **kwargs):
             # The route handler creates UsageTracker and passes it; simulate usage
@@ -138,12 +138,12 @@ class TestComposeStreamEndpoint:
             return test_user, MagicMock()
 
         with (
-            patch("app.api.routes.compose.orchestrate", side_effect=fake_orchestrate),
-            patch("app.api.routes.compose.deduct_budget", new_callable=AsyncMock, side_effect=fake_deduct),
+            patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate),
+            patch("app.api.routes.maestro.deduct_budget", new_callable=AsyncMock, side_effect=fake_deduct),
         ):
             resp = await client.post(
-                "/api/v1/compose/stream",
-                json=_make_compose_body(),
+                "/api/v1/maestro/stream",
+                json=_make_maestro_body(),
                 headers=auth_headers,
             )
         assert resp.status_code == 200
@@ -153,17 +153,17 @@ class TestComposeStreamEndpoint:
         assert len(budget_events) >= 1
 
     @pytest.mark.anyio
-    async def test_compose_stream_error_yields_error_event(self, client, auth_headers, test_user):
+    async def test_maestro_stream_error_yields_error_event(self, client, auth_headers, test_user):
         """When orchestration raises, the stream yields an error event."""
         async def failing_orchestrate(*args, **kwargs):
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "editing"})
             raise RuntimeError("backend exploded")
 
-        with patch("app.api.routes.compose.orchestrate", side_effect=failing_orchestrate):
+        with patch("app.api.routes.maestro.orchestrate", side_effect=failing_orchestrate):
             resp = await client.post(
-                "/api/v1/compose/stream",
-                json=_make_compose_body(),
+                "/api/v1/maestro/stream",
+                json=_make_maestro_body(),
                 headers=auth_headers,
             )
         events = parse_sse_events(resp.text)
@@ -172,12 +172,13 @@ class TestComposeStreamEndpoint:
         assert "backend exploded" in error_events[0].get("message", "")
 
     @pytest.mark.anyio
-    async def test_compose_stream_loads_conversation_history(self, client, auth_headers, test_user, db_session):
+    async def test_maestro_stream_loads_conversation_history(self, client, auth_headers, test_user, db_session):
         """When conversation_id is provided, loads history from DB."""
         from app.db.models import Conversation, ConversationMessage
 
+        conv_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
         conv = Conversation(
-            id="conv-test-123",
+            id=conv_id,
             user_id=test_user.id,
             title="Test conv",
         )
@@ -185,7 +186,7 @@ class TestComposeStreamEndpoint:
         await db_session.flush()
 
         msg = ConversationMessage(
-            conversation_id="conv-test-123",
+            conversation_id=conv_id,
             role="user",
             content="previous prompt",
         )
@@ -199,10 +200,10 @@ class TestComposeStreamEndpoint:
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "complete", "success": True})
 
-        with patch("app.api.routes.compose.orchestrate", side_effect=spy_orchestrate):
+        with patch("app.api.routes.maestro.orchestrate", side_effect=spy_orchestrate):
             resp = await client.post(
-                "/api/v1/compose/stream",
-                json=_make_compose_body(conversation_id="conv-test-123"),
+                "/api/v1/maestro/stream",
+                json=_make_maestro_body(conversation_id=conv_id),
                 headers=auth_headers,
             )
         assert resp.status_code == 200
@@ -210,21 +211,21 @@ class TestComposeStreamEndpoint:
         assert captured_history["history"][0]["content"] == "previous prompt"
 
     @pytest.mark.anyio
-    async def test_compose_stream_no_auth_401(self, client, db_session):
-        resp = await client.post("/api/v1/compose/stream", json=_make_compose_body())
+    async def test_maestro_stream_no_auth_401(self, client, db_session):
+        resp = await client.post("/api/v1/maestro/stream", json=_make_maestro_body())
         assert resp.status_code in (401, 403)
 
     @pytest.mark.anyio
-    async def test_compose_stream_budget_header(self, client, auth_headers, test_user):
+    async def test_maestro_stream_budget_header(self, client, auth_headers, test_user):
         """X-Budget-Remaining header is set when user has budget."""
         async def fake_orchestrate(*args, **kwargs):
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "complete", "success": True})
 
-        with patch("app.api.routes.compose.orchestrate", side_effect=fake_orchestrate):
+        with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
-                "/api/v1/compose/stream",
-                json=_make_compose_body(),
+                "/api/v1/maestro/stream",
+                json=_make_maestro_body(),
                 headers=auth_headers,
             )
         assert resp.status_code == 200
@@ -237,7 +238,7 @@ class TestComposeStreamEndpoint:
 
 
 class TestComposePreviewEndpoint:
-    """POST /api/v1/compose/preview"""
+    """POST /api/v1/maestro/preview"""
 
     @pytest.mark.anyio
     async def test_preview_composing_returns_plan(self, client, auth_headers, test_user):
@@ -258,17 +259,17 @@ class TestComposePreviewEndpoint:
         )
 
         with (
-            patch("app.api.routes.compose.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
-            patch("app.api.routes.compose.preview_plan", new_callable=AsyncMock, return_value={"steps": []}),
-            patch("app.api.routes.compose.LLMClient") as mock_cls,
+            patch("app.api.routes.maestro.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
+            patch("app.api.routes.maestro.preview_plan", new_callable=AsyncMock, return_value={"steps": []}),
+            patch("app.api.routes.maestro.LLMClient") as mock_cls,
         ):
             mock_llm = MagicMock()
             mock_llm.close = AsyncMock()
             mock_cls.return_value = mock_llm
 
             resp = await client.post(
-                "/api/v1/compose/preview",
-                json=_make_compose_body(),
+                "/api/v1/maestro/preview",
+                json=_make_maestro_body(),
                 headers=auth_headers,
             )
         assert resp.status_code == 200
@@ -295,16 +296,16 @@ class TestComposePreviewEndpoint:
         )
 
         with (
-            patch("app.api.routes.compose.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
-            patch("app.api.routes.compose.LLMClient") as mock_cls,
+            patch("app.api.routes.maestro.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
+            patch("app.api.routes.maestro.LLMClient") as mock_cls,
         ):
             mock_llm = MagicMock()
             mock_llm.close = AsyncMock()
             mock_cls.return_value = mock_llm
 
             resp = await client.post(
-                "/api/v1/compose/preview",
-                json=_make_compose_body(),
+                "/api/v1/maestro/preview",
+                json=_make_maestro_body(),
                 headers=auth_headers,
             )
         assert resp.status_code == 200

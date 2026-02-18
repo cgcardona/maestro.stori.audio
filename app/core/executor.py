@@ -1,5 +1,5 @@
 """
-Executor for Stori Composer (Cursor-of-DAWs).
+Executor for Stori Maestro (Cursor-of-DAWs).
 
 Provides two main execution paths:
 

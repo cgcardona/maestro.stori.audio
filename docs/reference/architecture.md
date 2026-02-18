@@ -6,14 +6,14 @@ How the backend works: one engine, two entry points; request flow; intent; execu
 
 ## One backend, two entry points
 
-- **Stori app:** User types in the DAW -> app POSTs to `POST /api/v1/compose/stream` -> SSE stream -> app reacts based on intent state.
-- **MCP client (Cursor, Claude, etc.):** User or script calls MCP tools -> Composer runs or forwards to the **same** Stori instance (the one connected at `GET /api/v1/mcp/daw`). Same tool set; only the client changes. Human stays in the loop. Later: headless Stori for swarms.
+- **Stori app:** User types in the DAW -> app POSTs to `POST /api/v1/maestro/stream` -> SSE stream -> app reacts based on intent state.
+- **MCP client (Cursor, Claude, etc.):** User or script calls MCP tools -> Maestro runs or forwards to the **same** Stori instance (the one connected at `GET /api/v1/mcp/daw`). Same tool set; only the client changes. Human stays in the loop. Later: headless Stori for swarms.
 
 ---
 
 ## Request flow
 
-1. **Frontend** sends `POST /api/v1/compose/stream` with `prompt`, optional `project` (app state), `conversation_id`.
+1. **Frontend** sends `POST /api/v1/maestro/stream` with `prompt`, optional `project` (app state), `conversation_id`.
 2. **Intent** is classified (pattern + LLM fallback) -> REASONING / EDITING / COMPOSING.
 3. **Backend forces execution mode** based on intent (frontend does not choose):
    - COMPOSING -> `execution_mode="variation"` (Variation proposal, no mutation)

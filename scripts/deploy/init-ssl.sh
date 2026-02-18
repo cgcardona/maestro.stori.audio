@@ -1,8 +1,8 @@
 #!/bin/bash
-# Initialize SSL certificates for Stori Composer
+# Initialize SSL certificates for Stori Maestro
 #
 # Usage: sudo ./scripts/deploy/init-ssl.sh <domain> <email>
-#   domain  Your public domain (e.g. composer.example.com)
+#   domain  Your public domain (e.g. maestro.example.com)
 #   email  Email for Let's Encrypt (e.g. admin@example.com)
 # Run from project root.
 #
@@ -19,12 +19,12 @@ EMAIL="${2:-}"
 
 if [ -z "$DOMAIN" ] || [ -z "$EMAIL" ]; then
     echo "Usage: $0 <domain> <email>"
-    echo "  e.g. $0 composer.example.com admin@example.com"
+    echo "  e.g. $0 maestro.example.com admin@example.com"
     exit 1
 fi
 
 echo "================================================"
-echo "Stori Composer SSL Initialization"
+echo "Stori Maestro SSL Initialization"
 echo "Domain: $DOMAIN"
 echo "Email: $EMAIL"
 echo "================================================"
@@ -58,15 +58,15 @@ server {
     }
 
     location / {
-        return 200 'Stori Composer - SSL setup in progress...';
+        return 200 'Stori Maestro - SSL setup in progress...';
         add_header Content-Type text/plain;
     }
 }
 EOF
 
 # Remove the full SSL config temporarily
-if [ -f deploy/nginx/conf.d/composer-stori.conf ]; then
-    mv deploy/nginx/conf.d/composer-stori.conf deploy/nginx/conf.d/composer-stori.conf.bak
+if [ -f deploy/nginx/conf.d/maestro-stori.conf ]; then
+    mv deploy/nginx/conf.d/maestro-stori.conf deploy/nginx/conf.d/maestro-stori.conf.bak
 fi
 
 # Start nginx and certbot containers
@@ -89,8 +89,8 @@ docker compose run --rm --entrypoint certbot certbot certonly \
 # Restore the full SSL config
 echo "Restoring SSL nginx config..."
 rm deploy/nginx/conf.d/temp-acme.conf
-if [ -f deploy/nginx/conf.d/composer-stori.conf.bak ]; then
-    mv deploy/nginx/conf.d/composer-stori.conf.bak deploy/nginx/conf.d/composer-stori.conf
+if [ -f deploy/nginx/conf.d/maestro-stori.conf.bak ]; then
+    mv deploy/nginx/conf.d/maestro-stori.conf.bak deploy/nginx/conf.d/maestro-stori.conf
 fi
 
 # Restart nginx with SSL config

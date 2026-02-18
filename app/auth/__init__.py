@@ -1,5 +1,5 @@
 """
-Stori Composer Authentication Module
+Stori Maestro Authentication Module
 
 Provides JWT-based access token generation and validation.
 """

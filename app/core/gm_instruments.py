@@ -1,5 +1,5 @@
 """
-General MIDI (GM) Instrument Mapping for Stori Composer.
+General MIDI (GM) Instrument Mapping for Stori Maestro.
 
 This module provides:
 1. Complete GM instrument program numbers (0-127)

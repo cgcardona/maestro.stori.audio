@@ -1,7 +1,7 @@
-"""Pydantic models for the Stori Composer API."""
-from app.models.requests import ComposeRequest, GenerateRequest
+"""Pydantic models for the Stori Maestro API."""
+from app.models.requests import MaestroRequest, GenerateRequest
 from app.models.responses import (
-    ComposeResponse,
+    MaestroResponse,
     SSEMessage,
     SSEStatus,
     SSEReasoning,
@@ -17,9 +17,9 @@ from app.models.tools import (
 )
 
 __all__ = [
-    "ComposeRequest",
+    "MaestroRequest",
     "GenerateRequest",
-    "ComposeResponse",
+    "MaestroResponse",
     "SSEMessage",
     "SSEStatus",
     "SSEReasoning",

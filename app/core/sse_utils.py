@@ -1,5 +1,5 @@
 """
-SSE and reasoning-display helpers for Composer (Cursor-of-DAWs).
+SSE and reasoning-display helpers for Maestro (Cursor-of-DAWs).
 
 Centralizes formatting of server-sent events, sanitization of LLM reasoning,
 and BPE token buffering so the user sees clean, properly-spaced reasoning text.

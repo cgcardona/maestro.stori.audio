@@ -1,5 +1,5 @@
 """
-Variation Service for the Stori Composer.
+Variation Service for the Stori Maestro.
 
 Computes musical variations between base and proposed states,
 producing Variation objects that can be reviewed and selectively applied.

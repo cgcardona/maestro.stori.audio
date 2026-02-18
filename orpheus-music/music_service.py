@@ -45,7 +45,7 @@ def get_client():
     global gradio_client
     if gradio_client is None:
         # Pass HF token so the Space attributes GPU usage to our account (required for quota).
-        # Composer sends token in Authorization header; Orpheus uses env so the Gradio client has it.
+        # Maestro sends token in Authorization header; Orpheus uses env so the Gradio client has it.
         hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
         if not hf_token:
             logger.warning("No HF_TOKEN or STORI_HF_API_KEY set; Gradio Space may return GPU quota errors")
@@ -353,7 +353,7 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
     return channels
 
 
-# Map requested instrument (from Composer) to melodic channel index.
+# Map requested instrument (from Maestro) to melodic channel index.
 # Seed MIDI has: ch9=drums, ch0=first melodic (bass), ch1=second (piano/melody), etc.
 MELODIC_INDEX_BY_INSTRUMENT = {
     "bass": 0,
@@ -376,11 +376,11 @@ def filter_channels_for_instruments(channels: dict, instruments: List[str]) -> d
     """
     Keep only channels that correspond to the requested instruments.
 
-    Composer calls Orpheus once per instrument (e.g. instruments=["drums"], then ["bass"]).
+    Maestro calls Orpheus once per instrument (e.g. instruments=["drums"], then ["bass"]).
     Orpheus always returns multi-channel MIDI (drums + melodic). If we return all channels,
-    Composer merges them and assigns the same combined notes to every track, so every
+    Maestro merges them and assigns the same combined notes to every track, so every
     track gets the same pattern. Filter to the single channel (or channels) for this
-    request so each Composer track gets only its instrument's notes.
+    request so each Maestro track gets only its instrument's notes.
     """
     if not instruments:
         return channels
@@ -726,9 +726,9 @@ async def generate(request: GenerateRequest):
             if filtered_notes:
                 filtered_channels[ch] = filtered_notes
 
-        # Return only the channel(s) for the requested instrument(s). Composer calls
+        # Return only the channel(s) for the requested instrument(s). Maestro calls
         # once per track (e.g. instruments=["drums"], then ["bass"]). Without this,
-        # we would return all channels and Composer would merge them, putting the
+        # we would return all channels and Maestro would merge them, putting the
         # same combined notes on every track.
         filtered_channels = filter_channels_for_instruments(filtered_channels, request.instruments)
 

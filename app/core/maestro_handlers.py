@@ -1,5 +1,5 @@
 """
-Orchestration and request handlers for Composer (Cursor-of-DAWs).
+Orchestration and request handlers for Maestro (Cursor-of-DAWs).
 
 This module contains the main orchestrate() flow and the three handlers
 (REASONING, COMPOSING, EDITING). The API route layer imports orchestrate
@@ -46,6 +46,7 @@ from app.core.prompts import (
     sequential_context,
     structured_prompt_context,
     system_prompt_base,
+    wrap_user_request,
 )
 from app.core.sse_utils import ReasoningBuffer, sanitize_reasoning, sse_event, strip_tool_echoes
 from app.core.state_store import StateStore, get_or_create_store
@@ -227,7 +228,7 @@ def _store_variation(
 ) -> None:
     """Persist a Variation to the VariationStore so commit/discard can find it.
 
-    Called from the compose/stream path after ``execute_plan_variation`` returns.
+    Called from the maestro/stream path after ``execute_plan_variation`` returns.
     Mirrors the storage logic in the ``/variation/propose`` background task.
     """
     from app.variation.storage.variation_store import (
@@ -471,7 +472,7 @@ async def _handle_reasoning(
         if conversation_history:
             messages.extend(conversation_history)
         
-        messages.append({"role": "user", "content": prompt})
+        messages.append({"role": "user", "content": wrap_user_request(prompt)})
         
         start_time = time.time()
         response = None
@@ -552,7 +553,7 @@ def _create_editing_fallback_route(route) -> IntentResult:
 
     The planner is supposed to return JSON; sometimes the LLM returns tool-call syntax instead.
     This creates a one-off EDITING route with primitives so we can still produce tool calls.
-    See docs/COMPOSER_ARCHITECTURE.md.
+    See docs/reference/architecture.md.
     """
     return IntentResult(
         intent=Intent.NOTES_ADD,
@@ -805,7 +806,7 @@ async def _handle_composing(
         
         if looks_like_function_calls:
             # Explicit fallback: planner returned function-call-like text instead of JSON.
-            # Re-route as EDITING with primitives so we still get tool calls. See docs/COMPOSER_ARCHITECTURE.md.
+            # Re-route as EDITING with primitives so we still get tool calls. See docs/reference/architecture.md.
             async for event in _retry_composing_as_editing(
                 prompt, project_context, route, llm, store,
                 trace, usage_tracker,
@@ -898,7 +899,7 @@ async def _handle_editing(
     if conversation_history:
         messages.extend(conversation_history)
     
-    messages.append({"role": "user", "content": prompt})
+    messages.append({"role": "user", "content": wrap_user_request(prompt)})
     
     # Use higher token budget for composition (multi-track MIDI data is token-heavy)
     is_composition = route.intent == Intent.GENERATE_MUSIC

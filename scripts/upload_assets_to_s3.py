@@ -26,7 +26,7 @@ Environment:
   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or IAM role)
   STORI_AWS_S3_ASSET_BUCKET (or --bucket)
   STORI_AWS_REGION (or --region)
-  STORI_ASSET_AUTHOR  Optional; default "Stori Composer" (used when kit.json omits author)
+  STORI_ASSET_AUTHOR  Optional; default "Stori Maestro" (used when kit.json omits author)
   STORI_ASSET_LICENSE Optional; default "CC0" (used when kit.json omits license)
 """
 import argparse
@@ -58,7 +58,7 @@ def normalize_kit_meta(meta: dict, kit_id: str) -> dict:
     """Ensure kit.json has name, author, sounds, license, version (see ASSETS_API.md)."""
     out = dict(meta)
     out.setdefault("name", kit_id)
-    out.setdefault("author", os.environ.get("STORI_ASSET_AUTHOR", "Stori Composer"))
+    out.setdefault("author", os.environ.get("STORI_ASSET_AUTHOR", "Stori Maestro"))
     out.setdefault("license", os.environ.get("STORI_ASSET_LICENSE", "CC0"))
     out.setdefault("version", "1.0")
     out.setdefault("sounds", {})

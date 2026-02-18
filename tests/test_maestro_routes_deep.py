@@ -1,4 +1,4 @@
-"""Deep tests for compose API routes (app/api/routes/compose.py).
+"""Deep tests for maestro API routes (app/api/routes/maestro.py).
 
 Covers: stream endpoint, preview endpoint, validate-token endpoint.
 """
@@ -11,7 +11,7 @@ class TestComposeStreamRoute:
     @pytest.mark.anyio
     async def test_requires_auth(self, client):
         resp = await client.post(
-            "/api/v1/compose/stream",
+            "/api/v1/maestro/stream",
             json={"prompt": "make drums"},
         )
         assert resp.status_code in (401, 403)
@@ -19,7 +19,7 @@ class TestComposeStreamRoute:
     @pytest.mark.anyio
     async def test_empty_prompt(self, client, auth_headers):
         resp = await client.post(
-            "/api/v1/compose/stream",
+            "/api/v1/maestro/stream",
             json={"prompt": ""},
             headers=auth_headers,
         )
@@ -32,7 +32,7 @@ class TestComposePreview:
     @pytest.mark.anyio
     async def test_preview_requires_auth(self, client):
         resp = await client.post(
-            "/api/v1/compose/preview",
+            "/api/v1/maestro/preview",
             json={"prompt": "make drums"},
         )
         assert resp.status_code in (401, 403, 404, 405)
@@ -40,7 +40,7 @@ class TestComposePreview:
     @pytest.mark.anyio
     async def test_preview_endpoint(self, client, auth_headers):
         resp = await client.post(
-            "/api/v1/compose/preview",
+            "/api/v1/maestro/preview",
             json={"prompt": "set tempo to 120"},
             headers=auth_headers,
         )

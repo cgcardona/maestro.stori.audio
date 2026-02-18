@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🗑️  Stori Composer Database Reset Script"
+echo "🗑️  Stori Maestro Database Reset Script"
 echo "========================================"
 echo ""
 

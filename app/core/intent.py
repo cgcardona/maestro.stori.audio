@@ -1,5 +1,5 @@
 """
-Intent routing for Stori Composer.
+Intent routing for Stori Maestro.
 
 Routes user prompts to the appropriate execution path (THINKING/EDITING/COMPOSING).
 

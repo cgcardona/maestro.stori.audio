@@ -148,7 +148,7 @@ class DatabaseMigrator:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Migrate Stori Composer data from SQLite to PostgreSQL"
+        description="Migrate Stori Maestro data from SQLite to PostgreSQL"
     )
     parser.add_argument(
         "--sqlite",

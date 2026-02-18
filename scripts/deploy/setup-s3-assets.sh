@@ -24,7 +24,7 @@
 #   REGION        AWS region (default: us-east-1)
 #   IAM_USER      IAM user name for the app (default: stori-assets-app)
 #
-# Output: env vars to add to your server .env or Docker for the composer service.
+# Output: env vars to add to your server .env or Docker for the maestro service.
 #
 set -euo pipefail
 
@@ -128,10 +128,10 @@ echo ""
 
 echo "============================================================"
 echo "Add these to the project root .env (same dir as docker-compose.yml):"
-echo "Then restart the composer container so it gets the vars."
+echo "Then restart the maestro container so it gets the vars."
 echo "============================================================"
 echo ""
-echo "# AWS S3 Asset Delivery (composer container reads these)"
+echo "# AWS S3 Asset Delivery (maestro container reads these)"
 echo "STORI_AWS_S3_ASSET_BUCKET=$BUCKET_NAME"
 echo "STORI_AWS_REGION=$REGION"
 echo "STORI_PRESIGN_EXPIRY_SECONDS=3600"
@@ -141,8 +141,8 @@ echo "AWS_ACCESS_KEY_ID=$ACCESS_KEY"
 echo "AWS_SECRET_ACCESS_KEY=$SECRET_KEY"
 echo ""
 echo "============================================================"
-echo "Then restart composer so the container gets the new env:"
-echo "  cd ~/composer.stori.audio && docker compose up -d composer"
+echo "Then restart maestro so the container gets the new env:"
+echo "  cd ~/maestro.stori.audio && docker compose up -d maestro"
 echo ""
 echo "Upload assets:"
 echo "  python scripts/upload_assets_to_s3.py /path/to/assets_source --bucket $BUCKET_NAME --region $REGION"
