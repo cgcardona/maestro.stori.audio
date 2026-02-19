@@ -87,10 +87,10 @@ async def test_create_conversation(test_user, auth_headers):
     assert response.status_code == 201
     data = response.json()
     assert data["title"] == "My Beat"
-    assert data["project_context"]["tempo"] == 90
-    assert data["is_archived"] is False
+    assert data["projectContext"]["tempo"] == 90
+    assert data["isArchived"] is False
     assert "id" in data
-    assert "created_at" in data
+    assert "createdAt" in data
 
 
 @pytest.mark.asyncio
@@ -122,8 +122,8 @@ async def test_register_then_create_conversation(db_session):
         
         assert register_response.status_code == 200
         register_data = register_response.json()
-        assert register_data["user_id"] == user_id
-        assert register_data["budget_remaining"] > 0
+        assert register_data["userId"] == user_id
+        assert register_data["budgetRemaining"] > 0
         
         # Step 2: Create auth token
         token = create_access_token(user_id=user_id, expires_hours=1)
@@ -147,7 +147,7 @@ async def test_register_then_create_conversation(db_session):
         conv_data = conv_response.json()
         assert conv_data["title"] == "create a boom bap track at 85 bpm"
         assert "id" in conv_data
-        assert "created_at" in conv_data
+        assert "createdAt" in conv_data
 
 
 @pytest.mark.asyncio
@@ -272,7 +272,7 @@ async def test_get_conversation(test_conversation, auth_headers):
     data = response.json()
     assert data["id"] == test_conversation.id
     assert data["title"] == "Test Conversation"
-    assert data["project_context"]["tempo"] == 120
+    assert data["projectContext"]["tempo"] == 120
     assert "messages" in data
 
 
@@ -335,7 +335,7 @@ async def test_update_conversation_title(test_conversation, auth_headers):
     assert response.status_code == 200
     data = response.json()
     assert data["title"] == "Updated Title"
-    assert "updated_at" in data
+    assert "updatedAt" in data
 
 
 @pytest.mark.asyncio
@@ -575,19 +575,19 @@ async def test_numeric_arguments_string_conversion(db_session, test_user, auth_h
     assert len(data["messages"]) == 4
     
     # Check each tool call
-    tc0 = data["messages"][0]["tool_calls"][0]
+    tc0 = data["messages"][0]["toolCalls"][0]
     assert tc0["arguments"]["gmProgram"] == "38"
     assert isinstance(tc0["arguments"]["gmProgram"], str)
     
-    tc1 = data["messages"][1]["tool_calls"][0]
+    tc1 = data["messages"][1]["toolCalls"][0]
     assert tc1["arguments"]["tempo"] == "140"
     assert isinstance(tc1["arguments"]["tempo"], str)
     
-    tc2 = data["messages"][2]["tool_calls"][0]
+    tc2 = data["messages"][2]["toolCalls"][0]
     assert tc2["arguments"]["volume"] == "0.8"
     assert isinstance(tc2["arguments"]["volume"], str)
     
-    tc3 = data["messages"][3]["tool_calls"][0]
+    tc3 = data["messages"][3]["toolCalls"][0]
     assert tc3["arguments"]["pan"] == "0.5"
     assert isinstance(tc3["arguments"]["pan"], str)
 

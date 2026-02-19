@@ -63,7 +63,7 @@ class TestEnvelopeConstruction:
         """to_dict returns all required fields."""
         envelope = build_envelope(
             event_type="phrase",
-            payload={"phrase_id": "p-1"},
+            payload={"phraseId": "p-1"},
             sequence=3,
             variation_id="var-1",
             project_id="proj-1",
@@ -74,11 +74,11 @@ class TestEnvelopeConstruction:
 
         assert d["type"] == "phrase"
         assert d["sequence"] == 3
-        assert d["variation_id"] == "var-1"
-        assert d["project_id"] == "proj-1"
-        assert d["base_state_id"] == "10"
-        assert d["payload"] == {"phrase_id": "p-1"}
-        assert "timestamp_ms" in d
+        assert d["variationId"] == "var-1"
+        assert d["projectId"] == "proj-1"
+        assert d["baseStateId"] == "10"
+        assert d["payload"] == {"phraseId": "p-1"}
+        assert "timestampMs" in d
 
     def test_envelope_to_json(self):
         """to_json returns valid JSON string."""
@@ -199,20 +199,20 @@ class TestBuilderHelpers:
         assert envelope.type == "meta"
         assert envelope.sequence == 1
         assert envelope.payload["intent"] == "make it minor"
-        assert envelope.payload["ai_explanation"] == "Lowered thirds"
-        assert envelope.payload["affected_tracks"] == ["track-1"]
-        assert envelope.payload["note_counts"]["modified"] == 4
+        assert envelope.payload["aiExplanation"] == "Lowered thirds"
+        assert envelope.payload["affectedTracks"] == ["track-1"]
+        assert envelope.payload["noteCounts"]["modified"] == 4
 
     def test_build_phrase_envelope(self):
         """Phrase envelope has correct structure."""
         phrase_data = {
-            "phrase_id": "p-1",
-            "track_id": "t-1",
-            "region_id": "r-1",
-            "start_beat": 0.0,
-            "end_beat": 4.0,
+            "phraseId": "p-1",
+            "trackId": "t-1",
+            "regionId": "r-1",
+            "startBeat": 0.0,
+            "endBeat": 4.0,
             "label": "Bars 1-4",
-            "note_changes": [],
+            "noteChanges": [],
         }
 
         envelope = build_phrase_envelope(
@@ -225,8 +225,8 @@ class TestBuilderHelpers:
 
         assert envelope.type == "phrase"
         assert envelope.sequence == 2
-        assert envelope.payload["phrase_id"] == "p-1"
-        assert envelope.payload["start_beat"] == 0.0
+        assert envelope.payload["phraseId"] == "p-1"
+        assert envelope.payload["startBeat"] == 0.0
 
     def test_build_done_envelope(self):
         """Done envelope has correct structure."""
@@ -242,7 +242,7 @@ class TestBuilderHelpers:
         assert envelope.type == "done"
         assert envelope.sequence == 5
         assert envelope.payload["status"] == "ready"
-        assert envelope.payload["phrase_count"] == 3
+        assert envelope.payload["phraseCount"] == 3
 
     def test_build_done_envelope_failed(self):
         """Done envelope with failed status."""
@@ -349,7 +349,7 @@ class TestOrderingInvariants:
             events.append(build_phrase_envelope(
                 variation_id=vid, project_id=pid, base_state_id=bsid,
                 sequence=counter.next(),
-                phrase_data={"phrase_id": f"p-{i}"},
+                phrase_data={"phraseId": f"p-{i}"},
             ))
 
         # done (seq 5)

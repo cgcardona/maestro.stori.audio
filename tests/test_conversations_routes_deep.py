@@ -172,7 +172,7 @@ class TestConversationSearchAPI:
     @pytest.mark.anyio
     async def test_search_endpoint(self, client, auth_headers, db_session):
         from app.services.conversations import create_conversation
-        user_id = (await client.get("/api/v1/users/me", headers=auth_headers)).json().get("user_id")
+        user_id = (await client.get("/api/v1/users/me", headers=auth_headers)).json().get("userId")
         if not user_id:
             pytest.skip("No user_id in /me response")
         await create_conversation(db_session, user_id, title="Funky drums session")
@@ -232,7 +232,7 @@ class TestConversationUpdateAPI:
             headers=auth_headers,
         )
         assert resp.status_code == 200
-        assert resp.json()["project_id"] == "proj-123"
+        assert resp.json()["projectId"] == "proj-123"
 
         # Unlink
         resp = await client.patch(
@@ -241,7 +241,7 @@ class TestConversationUpdateAPI:
             headers=auth_headers,
         )
         assert resp.status_code == 200
-        assert resp.json()["project_id"] is None
+        assert resp.json()["projectId"] is None
 
     @pytest.mark.anyio
     async def test_update_nonexistent_404(self, client, auth_headers):
@@ -344,8 +344,8 @@ class TestConversationGetDetail:
         assert len(data["messages"]) >= 1
         # Find the assistant message
         asst_msgs = [m for m in data["messages"] if m["role"] == "assistant"]
-        if asst_msgs and asst_msgs[0].get("tool_calls"):
-            tc = asst_msgs[0]["tool_calls"][0]
+        if asst_msgs and asst_msgs[0].get("toolCalls"):
+            tc = asst_msgs[0]["toolCalls"][0]
             # Numeric args should be converted to strings
             assert tc["arguments"]["tempo"] == "120"
 

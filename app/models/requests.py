@@ -1,13 +1,15 @@
 """Request models for the Stori Maestro API."""
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Any
+
+from app.models.base import CamelModel
 
 # Generous limit — comfortably fits long STORI PROMPT YAML with Maestro dimensions.
 # The nginx layer guards against large binary payloads; this catches oversized text.
 _MAX_PROMPT_BYTES = 32_768   # 32 KB
 
 
-class MaestroRequest(BaseModel):
+class MaestroRequest(CamelModel):
     """Request to compose or modify music.
     
     The backend determines execution mode from intent classification:
@@ -49,19 +51,6 @@ class MaestroRequest(BaseModel):
         if "\x00" in v:
             raise ValueError("Prompt must not contain null bytes")
         return v
-    
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "prompt": "Create a chill lo-fi beat at 85 BPM in A minor",
-                "mode": "generate",
-                "project": None,
-                "model": None,
-                "store_prompt": True,
-                "conversation_id": None
-            }
-        }
-    )
 
 
 class GenerateRequest(BaseModel):
@@ -93,7 +82,7 @@ class GenerateRequest(BaseModel):
     )
 
 
-class ProposeVariationRequest(BaseModel):
+class ProposeVariationRequest(CamelModel):
     """
     Request to propose a variation (spec-compliant endpoint).
     
@@ -116,14 +105,14 @@ class ProposeVariationRequest(BaseModel):
         default=None,
         description=(
             "Optional scope limiting the variation to specific tracks/regions/beat_range. "
-            "Keys: track_ids (list), region_ids (list), beat_range (tuple of floats)"
+            "Keys: trackIds (list), regionIds (list), beatRange (tuple of floats)"
         )
     )
     options: Optional[dict[str, Any]] = Field(
         default=None,
         description=(
             "Optional execution options. "
-            "Keys: phrase_grouping (str), bar_size (int), stream (bool)"
+            "Keys: phraseGrouping (str), barSize (int), stream (bool)"
         )
     )
     request_id: Optional[str] = Field(
@@ -134,30 +123,9 @@ class ProposeVariationRequest(BaseModel):
         default=None,
         description="LLM model to use. Uses default if not specified."
     )
-    
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "project_id": "proj-123",
-                "base_state_id": "state-456",
-                "intent": "make that minor",
-                "scope": {
-                    "track_ids": ["track-1"],
-                    "region_ids": None,
-                    "beat_range": [4.0, 8.0]
-                },
-                "options": {
-                    "phrase_grouping": "bars",
-                    "bar_size": 4,
-                    "stream": True
-                },
-                "request_id": "req-789"
-            }
-        }
-    )
 
 
-class CommitVariationRequest(BaseModel):
+class CommitVariationRequest(CamelModel):
     """
     Request to commit (accept) selected phrases from a variation.
     
@@ -186,27 +154,11 @@ class CommitVariationRequest(BaseModel):
     )
     variation_data: Optional[dict[str, Any]] = Field(
         default=None,
-        description=(
-            "Deprecated: variation data is now loaded from VariationStore. "
-            "Retained for backward compatibility with older clients."
-        ),
-    )
-    
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "project_id": "proj-123",
-                "base_state_id": "state-456",
-                "variation_id": "var-789",
-                "accepted_phrase_ids": ["phrase-1", "phrase-3"],
-                "request_id": "req-abc",
-                "variation_data": {}
-            }
-        }
+        description="Full variation data (fallback for clients without VariationStore)",
     )
 
 
-class DiscardVariationRequest(BaseModel):
+class DiscardVariationRequest(CamelModel):
     """
     Request to discard a variation without applying.
     
@@ -224,14 +176,4 @@ class DiscardVariationRequest(BaseModel):
     request_id: Optional[str] = Field(
         default=None,
         description="Idempotency key for the request"
-    )
-    
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "project_id": "proj-123",
-                "variation_id": "var-789",
-                "request_id": "req-abc"
-            }
-        }
     )

@@ -436,7 +436,7 @@ class EntityRegistry:
         """
         # Sync tracks
         for track in project_state.get("tracks", []):
-            track_id = track.get("id") or track.get("trackId")
+            track_id = track.get("id")
             track_name = track.get("name", "")
             
             if track_id and track_id not in self._tracks:
@@ -448,12 +448,12 @@ class EntityRegistry:
         
         # Sync regions
         for track in project_state.get("tracks", []):
-            track_id = track.get("id") or track.get("trackId")
+            track_id = track.get("id")
             if not track_id:
                 continue
                 
             for region in track.get("regions", []):
-                region_id = region.get("id") or region.get("regionId")
+                region_id = region.get("id")
                 region_name = region.get("name", "")
                 
                 if region_id and region_id not in self._regions:
@@ -469,7 +469,7 @@ class EntityRegistry:
         
         # Sync buses
         for bus in project_state.get("buses", []):
-            bus_id = bus.get("id") or bus.get("busId")
+            bus_id = bus.get("id")
             bus_name = bus.get("name", "")
             
             if bus_id and bus_id not in self._buses:

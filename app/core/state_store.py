@@ -108,6 +108,24 @@ class StateSnapshot:
     project_metadata: dict[str, Any]
 
 
+_CAMEL_TO_SNAKE: dict[str, str] = {
+    "startBeat": "start_beat",
+    "durationBeats": "duration_beats",
+}
+
+
+def _normalize_note(note: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a note dict to internal snake_case keys.
+
+    Tool calls from the LLM use camelCase (startBeat, durationBeats).
+    Internal storage always uses snake_case.
+    """
+    out: dict[str, Any] = {}
+    for k, v in note.items():
+        out[_CAMEL_TO_SNAKE.get(k, k)] = v
+    return out
+
+
 def _notes_match(existing: dict[str, Any], criteria: dict[str, Any]) -> bool:
     """Check if an existing note matches removal criteria.
 
@@ -421,10 +439,15 @@ class StateStore:
         notes: list[dict[str, Any]],
         transaction: Optional[Transaction] = None,
     ) -> None:
-        """Add notes to a region (event + materialized view)."""
+        """Add notes to a region (event + materialized view).
+
+        Notes are normalized to snake_case keys on ingress so internal
+        storage is always consistent regardless of wire format.
+        """
+        normalized = [_normalize_note(n) for n in notes]
         if region_id not in self._region_notes:
             self._region_notes[region_id] = []
-        self._region_notes[region_id].extend(deepcopy(notes))
+        self._region_notes[region_id].extend(deepcopy(normalized))
         
         self._append_event(
             event_type=EventType.NOTES_ADDED,
@@ -503,6 +526,11 @@ class StateStore:
         """
         # Clear stale state before rebuilding
         self._registry.clear()
+
+        # Preserve existing region notes — the client may report regions
+        # without a notes array (only note_count), so we keep what we had
+        # from prior tool calls or syncs.
+        previous_notes = dict(self._region_notes)
         self._region_notes.clear()
 
         self._registry.sync_from_project_state(project_state)
@@ -510,17 +538,21 @@ class StateStore:
         # Initialize region notes from client-reported state
         for track in project_state.get("tracks", []):
             for region in track.get("regions", []):
-                region_id = region.get("id") or region.get("regionId")
-                notes = region.get("notes", [])
-                if region_id and notes:
-                    self._region_notes[region_id] = deepcopy(notes)
+                region_id = region.get("id")
+                if region_id:
+                    if "notes" in region:
+                        # Client explicitly sent notes (even if empty) — use them
+                        self._region_notes[region_id] = deepcopy(region["notes"])
+                    elif region_id in previous_notes:
+                        # Client reported region but omitted notes — keep prior data
+                        self._region_notes[region_id] = previous_notes[region_id]
 
-        # Update project metadata (accept both camelCase and snake_case)
+        # Update project metadata
         if "tempo" in project_state:
             self._tempo = project_state["tempo"]
         if "key" in project_state:
             self._key = project_state["key"]
-        ts_raw = project_state.get("timeSignature") or project_state.get("time_signature")
+        ts_raw = project_state.get("timeSignature")
         if ts_raw:
             if isinstance(ts_raw, str):
                 # "4/4" → (4, 4)

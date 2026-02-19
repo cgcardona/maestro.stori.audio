@@ -18,6 +18,7 @@ handle entity creation, name resolution, and music generation.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -36,6 +37,9 @@ from app.services.music_generator import get_music_generator
 
 logger = logging.getLogger(__name__)
 
+# Per-generator-call timeout (seconds) to prevent one slow call from
+# consuming the entire 90s variation budget.
+_GENERATOR_TIMEOUT = 30
 
 # ---------------------------------------------------------------------------
 # Note normalization — MCP tool payloads may use camelCase field names.
@@ -431,7 +435,7 @@ async def execute_plan_variation(
         # Get StateStore (for context, not mutation)
         store = get_or_create_store(
             conversation_id=conversation_id or "default",
-            project_id=project_state.get("projectId"),
+            project_id=project_state.get("id"),
         )
         store.sync_from_client(project_state)
         
@@ -531,17 +535,23 @@ def _extract_notes_from_project(
     project_state: dict[str, Any],
     var_ctx: VariationContext,
 ) -> None:
-    """Extract existing notes from project state into variation context."""
+    """Extract existing notes from project state into variation context.
+
+    The frontend may omit the ``notes`` array (only ``note_count``).  When
+    notes are absent, fall back to the StateStore so that notes populated by
+    prior tool calls are still available for diffing.
+    """
     tracks = project_state.get("tracks", [])
-    
+
     for track in tracks:
         track_id = track.get("id", "")
-        regions = track.get("midiRegions", [])
-        
+        regions = track.get("regions", [])
+
         for region in regions:
             region_id = region.get("id", "")
             notes = region.get("notes", [])
-            
+            if not notes:
+                notes = var_ctx.store.get_region_notes(region_id)
             if region_id and notes:
                 var_ctx.capture_base_notes(region_id, track_id, notes)
 
@@ -637,7 +647,6 @@ async def _process_call_for_variation(
     # Handle generators - they produce notes that go to a region
     meta = get_tool_meta(call.name)
     if meta and meta.tier == ToolTier.TIER1 and meta.kind == ToolKind.GENERATOR:
-        # Simulate generator execution to get proposed notes
         mg = get_music_generator()
         
         gen_params = {
@@ -650,12 +659,22 @@ async def _process_call_for_variation(
         }
         
         try:
-            result = await mg.generate(**gen_params)
+            gen_start = time.time()
+            logger.info(f"🎵 Starting generator {call.name} with params: {gen_params}")
+
+            result = await asyncio.wait_for(
+                mg.generate(**gen_params),
+                timeout=_GENERATOR_TIMEOUT,
+            )
+
+            gen_duration = time.time() - gen_start
+            logger.info(
+                f"🎵 Generator {call.name} completed in {gen_duration:.1f}s: "
+                f"success={result.success}, "
+                f"notes={len(result.notes) if result.notes else 0}"
+            )
             
             if result.success and result.notes:
-                logger.info(
-                    f"🎵 Generator {call.name} produced {len(result.notes)} notes"
-                )
                 # Find target region
                 track_name = params.get("trackName", gen_params["instrument"].capitalize())
                 track_id = var_ctx.store.registry.resolve_track(track_name) or params.get("trackId", "")
@@ -686,7 +705,11 @@ async def _process_call_for_variation(
                 logger.warning(
                     f"⚠️ Generator {call.name} failed: {result.error}"
                 )
-                        
+
+        except asyncio.TimeoutError:
+            logger.error(
+                f"⏱ Generator {call.name} timed out after {_GENERATOR_TIMEOUT}s"
+            )
         except Exception as e:
             logger.exception(
                 f"⚠️ Generator simulation failed for {call.name}: {e}"
@@ -731,7 +754,7 @@ async def apply_variation_phrases(
     with trace_span(trace, "apply_variation_phrases", {"phrase_count": len(accepted_phrase_ids)}):
         store = get_or_create_store(
             conversation_id=conversation_id or "default",
-            project_id=project_state.get("projectId"),
+            project_id=project_state.get("id"),
         )
         # Only sync from client when a real project snapshot is provided.
         # Passing an empty dict would wipe server-side state built during the

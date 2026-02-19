@@ -67,8 +67,8 @@ async def validate_token(
 
     response = {
         "valid": True,
-        "expires_at": expires_at.isoformat(),
-        "expires_in_seconds": max(0, exp_timestamp - int(datetime.now(timezone.utc).timestamp())),
+        "expiresAt": expires_at.isoformat(),
+        "expiresInSeconds": max(0, exp_timestamp - int(datetime.now(timezone.utc).timestamp())),
     }
 
     user_id = token_claims.get("sub")
@@ -81,8 +81,8 @@ async def validate_token(
             user = result.scalar_one_or_none()
 
             if user:
-                response["budget_remaining"] = user.budget_remaining
-                response["budget_limit"] = user.budget_limit
+                response["budgetRemaining"] = user.budget_remaining
+                response["budgetLimit"] = user.budget_limit
         except Exception as e:
             logger.warning(f"Could not fetch budget: {e}")
 
@@ -118,7 +118,7 @@ async def stream_maestro(
                 status_code=402,
                 detail={
                     "error": "Insufficient budget",
-                    "budget_remaining": e.budget_remaining,
+                    "budgetRemaining": e.budget_remaining,
                 }
             )
         except BudgetError:
@@ -202,8 +202,8 @@ async def stream_maestro(
                     budget_remaining = user.budget_remaining
 
                     yield await sse_event({
-                        "type": "budget_update",
-                        "budget_remaining": budget_remaining,
+                        "type": "budgetUpdate",
+                        "budgetRemaining": budget_remaining,
                         "cost": cost_cents / 100.0,
                     })
                 except Exception as e:
@@ -256,10 +256,10 @@ async def preview_maestro(
 
         if route.sse_state != SSEState.COMPOSING:
             return {
-                "preview_available": False,
+                "previewAvailable": False,
                 "reason": f"Preview only available for COMPOSING mode (got {route.sse_state.value})",
                 "intent": route.intent.value,
-                "sse_state": route.sse_state.value,
+                "sseState": route.sse_state.value,
             }
 
         preview_result = await preview_plan(
@@ -270,10 +270,10 @@ async def preview_maestro(
         )
 
         return {
-            "preview_available": True,
+            "previewAvailable": True,
             "preview": preview_result,
             "intent": route.intent.value,
-            "sse_state": route.sse_state.value,
+            "sseState": route.sse_state.value,
         }
 
     finally:

@@ -8,7 +8,9 @@ import uuid
 from typing import Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from app.models.base import CamelModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +31,7 @@ router = APIRouter()
 
 # Request/Response Models
 
-class UserRegisterRequest(BaseModel):
+class UserRegisterRequest(CamelModel):
     """Request to register a new user (device)."""
     user_id: str = Field(
         ...,
@@ -38,7 +40,7 @@ class UserRegisterRequest(BaseModel):
     )
 
 
-class UserResponse(BaseModel):
+class UserResponse(CamelModel):
     """User profile response."""
     user_id: str
     budget_remaining: float = Field(description="Remaining budget in dollars")
@@ -47,7 +49,7 @@ class UserResponse(BaseModel):
     created_at: Optional[str] = Field(default=None, description="Account creation timestamp")
 
 
-class ModelInfo(BaseModel):
+class ModelInfo(CamelModel):
     """Information about an available model."""
     id: str
     name: str
@@ -58,13 +60,13 @@ class ModelInfo(BaseModel):
     )
 
 
-class ModelsResponse(BaseModel):
+class ModelsResponse(CamelModel):
     """Available models response."""
     models: list[ModelInfo]
     default_model: str
 
 
-class BudgetUpdateRequest(BaseModel):
+class BudgetUpdateRequest(CamelModel):
     """Request to update user budget (admin only)."""
     budget_cents: int = Field(
         ...,
@@ -75,7 +77,7 @@ class BudgetUpdateRequest(BaseModel):
 
 # Endpoints
 
-@router.post("/users/register", response_model=UserResponse)
+@router.post("/users/register", response_model=UserResponse, response_model_by_alias=True)
 async def register_user(
     request: UserRegisterRequest,
     db: AsyncSession = Depends(get_db),
@@ -139,7 +141,7 @@ async def register_user(
     )
 
 
-@router.get("/users/me", response_model=UserResponse)
+@router.get("/users/me", response_model=UserResponse, response_model_by_alias=True)
 async def get_current_user(
     token_claims: dict = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
@@ -183,7 +185,7 @@ async def get_current_user(
     )
 
 
-@router.get("/models", response_model=ModelsResponse)
+@router.get("/models", response_model=ModelsResponse, response_model_by_alias=True)
 async def list_models():
     """
     List available models with pricing information.
@@ -223,7 +225,7 @@ async def list_models():
     )
 
 
-@router.post("/users/{user_id}/budget", response_model=UserResponse)
+@router.post("/users/{user_id}/budget", response_model=UserResponse, response_model_by_alias=True)
 async def update_user_budget(
     user_id: str,
     request: BudgetUpdateRequest,
@@ -289,7 +291,7 @@ async def update_user_budget(
 # Token Revocation Endpoints
 # =============================================================================
 
-class TokenInfo(BaseModel):
+class TokenInfo(CamelModel):
     """Information about an access token."""
     id: str
     expires_at: str
@@ -297,20 +299,20 @@ class TokenInfo(BaseModel):
     created_at: str
 
 
-class TokenListResponse(BaseModel):
+class TokenListResponse(CamelModel):
     """List of active tokens."""
     tokens: list[TokenInfo]
     count: int
 
 
-class RevokeResponse(BaseModel):
+class RevokeResponse(CamelModel):
     """Response from token revocation."""
     success: bool
     message: str
     revoked_count: int = 0
 
 
-@router.get("/users/me/tokens", response_model=TokenListResponse)
+@router.get("/users/me/tokens", response_model=TokenListResponse, response_model_by_alias=True)
 async def list_my_tokens(
     token_claims: dict = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
@@ -343,7 +345,7 @@ async def list_my_tokens(
     )
 
 
-@router.post("/users/me/tokens/revoke-all", response_model=RevokeResponse)
+@router.post("/users/me/tokens/revoke-all", response_model=RevokeResponse, response_model_by_alias=True)
 async def revoke_my_tokens(
     token_claims: dict = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
@@ -370,7 +372,7 @@ async def revoke_my_tokens(
     )
 
 
-@router.post("/users/{user_id}/tokens/revoke-all", response_model=RevokeResponse)
+@router.post("/users/{user_id}/tokens/revoke-all", response_model=RevokeResponse, response_model_by_alias=True)
 async def admin_revoke_user_tokens(
     user_id: str,
     token_claims: dict = Depends(require_valid_token),

@@ -470,7 +470,7 @@ async def test_get_user_budget_info(test_user, auth_headers):
     
     assert response.status_code == 200
     data = response.json()
-    assert "budget_remaining" in data
-    assert "budget_limit" in data
-    assert data["budget_remaining"] == 1.0  # 100 cents = $1.00
-    assert data["budget_limit"] == 5.0  # 500 cents = $5.00
+    assert "budgetRemaining" in data
+    assert "budgetLimit" in data
+    assert data["budgetRemaining"] == 1.0  # 100 cents = $1.00
+    assert data["budgetLimit"] == 5.0  # 500 cents = $5.00

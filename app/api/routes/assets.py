@@ -167,7 +167,7 @@ async def get_drum_kit_download_url(
         return JSONResponse(
             content={
                 "url": url,
-                "expires_at": expires_at.isoformat(),
+                "expiresAt": expires_at.isoformat(),
             },
             headers={"Cache-Control": "no-store"},
         )
@@ -236,7 +236,7 @@ async def get_soundfont_download_url(
         return JSONResponse(
             content={
                 "url": url,
-                "expires_at": expires_at.isoformat(),
+                "expiresAt": expires_at.isoformat(),
             },
             headers={"Cache-Control": "no-store"},
         )
@@ -302,7 +302,7 @@ async def get_bundle_download_url(
         return JSONResponse(
             content={
                 "url": url,
-                "expires_at": expires_at.isoformat(),
+                "expiresAt": expires_at.isoformat(),
             },
             headers={"Cache-Control": "no-store"},
         )

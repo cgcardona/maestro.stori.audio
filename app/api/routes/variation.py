@@ -96,7 +96,7 @@ _generation_tasks: dict[str, asyncio.Task] = {}
 # POST /variation/propose
 # =============================================================================
 
-@router.post("/variation/propose", response_model=ProposeVariationResponse)
+@router.post("/variation/propose", response_model=ProposeVariationResponse, response_model_by_alias=True)
 @limiter.limit("20/minute")
 async def propose_variation(
     request: Request,
@@ -120,7 +120,7 @@ async def propose_variation(
         except InsufficientBudgetError as e:
             raise HTTPException(status_code=402, detail={
                 "error": "Insufficient budget",
-                "budget_remaining": e.budget_remaining,
+                "budgetRemaining": e.budget_remaining,
             })
         except BudgetError:
             pass
@@ -145,7 +145,7 @@ async def propose_variation(
                         f"Expected state_id={propose_request.base_state_id}, "
                         f"but current is {store.get_state_id()}"
                     ),
-                    "current_state_id": store.get_state_id(),
+                    "currentStateId": store.get_state_id(),
                 })
 
             variation_id = str(uuid.uuid4())
@@ -193,7 +193,7 @@ async def propose_variation(
         raise HTTPException(status_code=500, detail={
             "error": "Internal error",
             "message": str(e),
-            "trace_id": trace.trace_id,
+            "traceId": trace.trace_id,
         })
     finally:
         clear_trace_context()
@@ -223,7 +223,7 @@ async def stream_variation(
     if record is None:
         raise HTTPException(status_code=404, detail={
             "error": "Variation not found",
-            "variation_id": variation_id,
+            "variationId": variation_id,
         })
 
     if is_terminal(record.status):
@@ -286,39 +286,39 @@ async def get_variation(
     if record is None:
         raise HTTPException(status_code=404, detail={
             "error": "Variation not found",
-            "variation_id": variation_id,
+            "variationId": variation_id,
         })
 
     phrases_data = []
     for p in sorted(record.phrases, key=lambda pr: pr.sequence):
         phrases_data.append({
-            "phrase_id": p.phrase_id,
+            "phraseId": p.phrase_id,
             "sequence": p.sequence,
-            "track_id": p.track_id,
-            "region_id": p.region_id,
-            "beat_start": p.beat_start,
-            "beat_end": p.beat_end,
+            "trackId": p.track_id,
+            "regionId": p.region_id,
+            "beatStart": p.beat_start,
+            "beatEnd": p.beat_end,
             "label": p.label,
             "tags": p.tags,
-            "ai_explanation": p.ai_explanation,
+            "aiExplanation": p.ai_explanation,
             "diff": p.diff_json,
         })
 
     return {
-        "variation_id": record.variation_id,
-        "project_id": record.project_id,
-        "base_state_id": record.base_state_id,
+        "variationId": record.variation_id,
+        "projectId": record.project_id,
+        "baseStateId": record.base_state_id,
         "intent": record.intent,
         "status": record.status.value,
-        "ai_explanation": record.ai_explanation,
-        "affected_tracks": record.affected_tracks,
-        "affected_regions": record.affected_regions,
+        "aiExplanation": record.ai_explanation,
+        "affectedTracks": record.affected_tracks,
+        "affectedRegions": record.affected_regions,
         "phrases": phrases_data,
-        "phrase_count": len(record.phrases),
-        "last_sequence": record.last_sequence,
-        "created_at": record.created_at.isoformat(),
-        "updated_at": record.updated_at.isoformat(),
-        "error_message": record.error_message,
+        "phraseCount": len(record.phrases),
+        "lastSequence": record.last_sequence,
+        "createdAt": record.created_at.isoformat(),
+        "updatedAt": record.updated_at.isoformat(),
+        "errorMessage": record.error_message,
     }
 
 
@@ -326,7 +326,7 @@ async def get_variation(
 # POST /variation/commit
 # =============================================================================
 
-@router.post("/variation/commit", response_model=CommitVariationResponse)
+@router.post("/variation/commit", response_model=CommitVariationResponse, response_model_by_alias=True)
 @limiter.limit("30/minute")
 async def commit_variation(
     request: Request,
@@ -361,7 +361,7 @@ async def commit_variation(
                     return await _commit_from_variation_data(commit_request, trace)
                 raise HTTPException(status_code=404, detail={
                     "error": "Variation not found",
-                    "variation_id": commit_request.variation_id,
+                    "variationId": commit_request.variation_id,
                 })
 
             # --- Validate status ---
@@ -378,7 +378,7 @@ async def commit_variation(
                         f"Cannot commit variation in state '{record.status.value}'. "
                         f"Commit is only allowed from READY state."
                     ),
-                    "current_status": record.status.value,
+                    "currentStatus": record.status.value,
                 })
 
             # --- Validate baseline ---
@@ -395,7 +395,7 @@ async def commit_variation(
                         f"Expected state_id={commit_request.base_state_id}, "
                         f"but current is {project_store.get_state_id()}"
                     ),
-                    "current_state_id": project_store.get_state_id(),
+                    "currentStateId": project_store.get_state_id(),
                 })
 
             # Verify base_state_id also matches what was recorded at creation
@@ -469,7 +469,7 @@ async def commit_variation(
         raise HTTPException(status_code=500, detail={
             "error": "Internal error",
             "message": str(e),
-            "trace_id": trace.trace_id,
+            "traceId": trace.trace_id,
         })
     finally:
         clear_trace_context()
@@ -506,13 +506,13 @@ async def discard_variation(
         raise HTTPException(status_code=409, detail={
             "error": "Invalid state for discard",
             "message": f"Variation is in terminal state '{record.status.value}'",
-            "current_status": record.status.value,
+            "currentStatus": record.status.value,
         })
 
     if not can_discard(record.status):
         raise HTTPException(status_code=409, detail={
             "error": "Invalid state for discard",
-            "current_status": record.status.value,
+            "currentStatus": record.status.value,
         })
 
     # Cancel background generation if running
@@ -633,16 +633,16 @@ async def _run_generation(
 
                 seq = record.next_sequence()
                 phrase_data = {
-                    "phrase_id": phrase.phrase_id,
-                    "track_id": phrase.track_id,
-                    "region_id": phrase.region_id,
-                    "start_beat": phrase.start_beat,
-                    "end_beat": phrase.end_beat,
+                    "phraseId": phrase.phrase_id,
+                    "trackId": phrase.track_id,
+                    "regionId": phrase.region_id,
+                    "startBeat": phrase.start_beat,
+                    "endBeat": phrase.end_beat,
                     "label": phrase.label,
                     "tags": phrase.tags,
                     "explanation": phrase.explanation,
-                    "note_changes": [nc.model_dump() for nc in phrase.note_changes],
-                    "controller_changes": phrase.controller_changes,
+                    "noteChanges": [nc.model_dump(by_alias=True) for nc in phrase.note_changes],
+                    "controllerChanges": phrase.controller_changes,
                 }
 
                 phrase_env = build_phrase_envelope(
@@ -766,7 +766,7 @@ async def _commit_from_variation_data(
                 f"Expected={commit_request.base_state_id}, "
                 f"current={project_store.get_state_id()}"
             ),
-            "current_state_id": project_store.get_state_id(),
+            "currentStateId": project_store.get_state_id(),
         })
 
     try:
@@ -821,13 +821,14 @@ def _record_to_variation(record: VariationRecord) -> Variation:
     phrases = []
     for pr in sorted(record.phrases, key=lambda p: p.sequence):
         phrase_data = pr.diff_json
-        note_changes_raw = phrase_data.get("note_changes", [])
+        note_changes_raw = phrase_data.get("noteChanges", [])
         from app.models.variation import NoteChange, MidiNoteSnapshot
 
         note_changes = []
         for nc_raw in note_changes_raw:
             note_changes.append(NoteChange.model_validate(nc_raw))
 
+        controller_changes = phrase_data.get("controllerChanges", [])
         phrases.append(Phrase(
             phrase_id=pr.phrase_id,
             track_id=pr.track_id,
@@ -836,7 +837,7 @@ def _record_to_variation(record: VariationRecord) -> Variation:
             end_beat=pr.beat_end,
             label=pr.label,
             note_changes=note_changes,
-            controller_changes=phrase_data.get("controller_changes", []),
+            controller_changes=controller_changes,
             explanation=pr.ai_explanation,
             tags=pr.tags,
         ))

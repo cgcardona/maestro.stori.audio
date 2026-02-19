@@ -327,7 +327,7 @@ class TestFullStreamSimulation:
         assert events[3].type == "done"
         assert events[3].sequence == 4
         assert events[3].payload["status"] == "ready"
-        assert events[3].payload["phrase_count"] == 2
+        assert events[3].payload["phraseCount"] == 2
 
     @pytest.mark.asyncio
     async def test_error_then_done_stream(self, broadcaster):

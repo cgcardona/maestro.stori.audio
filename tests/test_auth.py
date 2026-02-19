@@ -209,9 +209,9 @@ class TestValidateTokenEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["valid"] is True
-        assert "expires_at" in data
-        assert "expires_in_seconds" in data
-        assert data["expires_in_seconds"] > 0
+        assert "expiresAt" in data
+        assert "expiresInSeconds" in data
+        assert data["expiresInSeconds"] > 0
     
     @pytest.mark.anyio
     async def test_validate_token_missing(self, client):

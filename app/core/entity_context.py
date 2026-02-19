@@ -50,7 +50,7 @@ def format_project_context(project: dict[str, Any]) -> str:
     name = project.get("name", "Untitled")
     tempo = project.get("tempo", 120)
     key = project.get("key", "C")
-    time_sig = project.get("time_signature") or project.get("timeSignature") or "4/4"
+    time_sig = project.get("timeSignature") or "4/4"
     if isinstance(time_sig, dict):
         time_sig = f"{time_sig.get('numerator', 4)}/{time_sig.get('denominator', 4)}"
     tracks: list[dict[str, Any]] = project.get("tracks", [])
@@ -70,8 +70,8 @@ def format_project_context(project: dict[str, Any]) -> str:
         for i, track in enumerate(tracks, 1):
             tid = track.get("id", "?")
             tname = track.get("name", "Untitled")
-            drum_kit = track.get("drum_kit_id")
-            gm = track.get("gm_program")
+            drum_kit = track.get("drumKitId")
+            gm = track.get("gmProgram")
 
             if drum_kit:
                 instrument = f"Drums ({drum_kit})"
@@ -86,9 +86,9 @@ def format_project_context(project: dict[str, Any]) -> str:
                 for r in regions:
                     rname = r.get("name", "Untitled")
                     rid = r.get("id", "?")
-                    start = r.get("start_beat", r.get("startBeat", 0))
-                    dur = r.get("duration_beats", r.get("durationBeats", 0))
-                    nc = r.get("note_count", r.get("noteCount", "?"))
+                    start = r.get("startBeat", 0)
+                    dur = r.get("durationBeats", 0)
+                    nc = r.get("noteCount", "?")
                     parts.append(
                         f'"{rname}" [id={rid}] '
                         f"({start}–{start + dur} beats, {nc} notes)"

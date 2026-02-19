@@ -212,6 +212,7 @@ class TestHandleComposing:
         route = _make_route(SSEState.COMPOSING, Intent.GENERATE_MUSIC, requires_planner=True)
         llm = _make_llm_mock()
         store = MagicMock(spec=StateStore)
+        store.get_state_id.return_value = "1"
         trace = _make_trace()
 
         plan = ExecutionPlan(
@@ -262,9 +263,10 @@ class TestHandleComposing:
         assert "complete" in types
 
         meta = next(p for p in payloads if p["type"] == "meta")
-        assert meta["variation_id"] == "var-123"
+        assert meta["variationId"] == "var-123"
+        assert meta["baseStateId"] == "1"
         phrase = next(p for p in payloads if p["type"] == "phrase")
-        assert phrase["phrase_id"] == "p1"
+        assert phrase["phraseId"] == "p1"
 
     @pytest.mark.anyio
     async def test_empty_plan_asks_for_clarification(self):
@@ -352,8 +354,8 @@ class TestHandleEditing:
 
         payloads = _parse_events(events)
         types = [p["type"] for p in payloads]
-        assert "tool_call" in types
-        tc = next(p for p in payloads if p["type"] == "tool_call")
+        assert "toolCall" in types
+        tc = next(p for p in payloads if p["type"] == "toolCall")
         assert tc["name"] == "stori_set_tempo"
         assert tc["params"]["tempo"] == 120
 
@@ -395,9 +397,9 @@ class TestHandleEditing:
         payloads = _parse_events(events)
         types = [p["type"] for p in payloads]
 
-        # Both content and tool_call events should be present
+        # Both content and toolCall events should be present
         assert "content" in types
-        assert "tool_call" in types
+        assert "toolCall" in types
 
         content_events = [p for p in payloads if p["type"] == "content"]
         # Content from first iteration + content from second iteration
@@ -486,8 +488,8 @@ class TestHandleEditing:
 
         payloads = _parse_events(events)
         types = [p["type"] for p in payloads]
-        # In variation mode, should NOT emit raw tool_call events
-        assert "tool_call" not in types
+        # In variation mode, should NOT emit raw toolCall events
+        assert "toolCall" not in types
         assert "meta" in types
         assert "done" in types
 
@@ -522,7 +524,7 @@ class TestHandleEditing:
 
         payloads = _parse_events(events)
         types = [p["type"] for p in payloads]
-        assert "tool_error" in types
+        assert "toolError" in types
 
     @pytest.mark.anyio
     async def test_editing_force_stop_after(self):
@@ -554,7 +556,7 @@ class TestHandleEditing:
             events.append(e)
 
         payloads = _parse_events(events)
-        tc_events = [p for p in payloads if p["type"] == "tool_call"]
+        tc_events = [p for p in payloads if p["type"] == "toolCall"]
         # enforce_single_tool should reduce to 1
         assert len(tc_events) == 1
 
@@ -584,6 +586,93 @@ class TestHandleEditing:
         assert "complete" in types
 
     @pytest.mark.anyio
+    async def test_editing_persists_notes_to_state_store(self):
+        """stori_add_notes in EDITING mode should persist notes in StateStore for COMPOSING handoff."""
+        from app.core.tools import ALL_TOOLS
+
+        allowed = {"stori_add_notes", "stori_add_midi_track", "stori_add_midi_region"}
+        route = _make_route(
+            SSEState.EDITING,
+            Intent.NOTES_ADD,
+            allowed_tool_names=allowed,
+            tool_choice="auto",
+        )
+
+        region_id = "r-test-persist"
+        notes_payload = [
+            {"pitch": 60, "startBeat": 0.0, "durationBeats": 1.0, "velocity": 100},
+            {"pitch": 62, "startBeat": 1.0, "durationBeats": 0.5, "velocity": 90},
+        ]
+        response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
+        response.tool_calls = [
+            ToolCallData(id="tc1", name="stori_add_notes", arguments={
+                "regionId": region_id,
+                "notes": notes_payload,
+            }),
+        ]
+        done_response = LLMResponse(content="Done.", usage={"prompt_tokens": 5, "completion_tokens": 5})
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=[response, done_response])
+        store = StateStore(conversation_id="test-persist")
+        # Pre-register the region so validation passes
+        tid = store.create_track("Piano")
+        store.create_region("Intro", tid, region_id=region_id)
+        trace = _make_trace()
+
+        events = []
+        async for e in _handle_editing("add notes", {}, route, llm, store, trace, None, [], "apply"):
+            events.append(e)
+
+        # Notes should now be in the StateStore
+        stored = store.get_region_notes(region_id)
+        assert len(stored) == 2
+        pitches = {n["pitch"] for n in stored}
+        assert pitches == {60, 62}
+
+    @pytest.mark.anyio
+    async def test_editing_variation_meta_includes_base_state_id(self):
+        """EDITING variation meta event must include base_state_id."""
+        from app.core.tools import ALL_TOOLS
+        from app.models.variation import Variation
+
+        allowed = {"stori_set_tempo"}
+        route = _make_route(
+            SSEState.EDITING,
+            Intent.PROJECT_SET_TEMPO,
+            allowed_tool_names=allowed,
+            tool_choice="auto",
+            tools=[t for t in ALL_TOOLS if t["function"]["name"] in allowed],
+        )
+        response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
+        response.tool_calls = [ToolCallData(id="tc1", name="stori_set_tempo", arguments={"tempo": 120})]
+        done_response = LLMResponse(content="Done!", usage={"prompt_tokens": 5, "completion_tokens": 5})
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=[response, done_response])
+        store = StateStore(conversation_id="test-base-state")
+        trace = _make_trace()
+
+        fake_variation = Variation(
+            variation_id="var-edit-bsid",
+            intent="set tempo",
+            affected_tracks=[],
+            affected_regions=[],
+            beat_range=(0.0, 0.0),
+            phrases=[],
+        )
+
+        with patch("app.core.executor.execute_plan_variation", new_callable=AsyncMock, return_value=fake_variation):
+            events = []
+            async for e in _handle_editing("set tempo to 120", {}, route, llm, store, trace, None, [], "variation"):
+                events.append(e)
+
+        payloads = _parse_events(events)
+        meta = next(p for p in payloads if p["type"] == "meta")
+        assert "baseStateId" in meta
+        assert meta["baseStateId"] == store.get_state_id()
+
+    @pytest.mark.anyio
     async def test_editing_creates_track_entity_with_uuid(self):
         """stori_add_midi_track generates server-side UUID via StateStore."""
         from app.core.tools import ALL_TOOLS
@@ -611,7 +700,7 @@ class TestHandleEditing:
             events.append(e)
 
         payloads = _parse_events(events)
-        tc_events = [p for p in payloads if p["type"] == "tool_call"]
+        tc_events = [p for p in payloads if p["type"] == "toolCall"]
         assert len(tc_events) >= 1
         # trackId should be a valid UUID
         import uuid
@@ -740,7 +829,7 @@ class TestOrchestrateExecutionModePolicy:
             phrases=[],
         )
         # Non-empty project so the empty-project override doesn't kick in
-        project_ctx = {"projectId": "p1", "tracks": [{"id": "t1", "name": "Track 1"}]}
+        project_ctx = {"id": "p1", "tracks": [{"id": "t1", "name": "Track 1"}]}
 
         with (
             patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
@@ -790,7 +879,7 @@ class TestOrchestrateExecutionModePolicy:
 
         payloads = _parse_events(events)
         types = [p["type"] for p in payloads]
-        # Apply mode should emit tool_call events directly
-        assert "tool_call" in types
+        # Apply mode should emit toolCall events directly
+        assert "toolCall" in types
         # Should NOT have variation events
         assert "meta" not in types

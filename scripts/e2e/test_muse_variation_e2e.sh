@@ -35,7 +35,7 @@ PROJECT_STATE='{
     {
       "id": "track-1",
       "name": "Piano",
-      "midiRegions": [
+      "regions": [
         {
           "id": "region-1",
           "name": "Intro",

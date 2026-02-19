@@ -3,14 +3,21 @@
 Supplements test_executor.py with:
 - execute_plan_variation edge cases
 - apply_variation_phrases with removals, modifications, partial accept
+- _extract_notes_from_project with midiRegions
+- Generator timeout handling
 """
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import app.core.executor as executor_module
 from app.core.executor import (
     execute_plan_variation,
     apply_variation_phrases,
+    _extract_notes_from_project,
+    _process_call_for_variation,
     ExecutionContext,
+    VariationContext,
     VariationApplyResult,
 )
 from app.core.expansion import ToolCall
@@ -123,7 +130,7 @@ class TestExecutePlanVariation:
             "tracks": [{
                 "id": "t1",
                 "name": "Piano",
-                "midiRegions": [{"id": "r1", "notes": []}],
+                "regions": [{"id": "r1", "notes": []}],
             }]
         }
 
@@ -143,7 +150,7 @@ class TestExecutePlanVariation:
             "tracks": [{
                 "id": "t1",
                 "name": "Piano",
-                "midiRegions": [{"id": "r1", "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 100}]}],
+                "regions": [{"id": "r1", "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 100}]}],
             }]
         }
         import copy
@@ -325,3 +332,122 @@ class TestExecutionContextExtended:
         ctx = ExecutionContext(store=store, transaction=tx, trace=trace)
         ctx.add_event({"type": "test", "data": 1})
         assert len(ctx.events) == 1
+
+
+# ---------------------------------------------------------------------------
+# _extract_notes_from_project — midiRegions support (Change 5)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractNotesFromProject:
+
+    def test_extracts_from_regions_key(self):
+        """Standard 'regions' key is extracted."""
+        store = StateStore(conversation_id="test-extract")
+        trace = TraceContext(trace_id="test")
+        var_ctx = VariationContext(
+            store=store, trace=trace,
+            base_notes={}, proposed_notes={}, track_regions={},
+        )
+        project = {
+            "tracks": [{
+                "id": "t1",
+                "regions": [{"id": "r1", "notes": [
+                    {"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 100},
+                ]}],
+            }]
+        }
+        _extract_notes_from_project(project, var_ctx)
+        assert "r1" in var_ctx.base_notes
+        assert len(var_ctx.base_notes["r1"]) == 1
+
+    def test_falls_back_to_store_when_no_notes(self):
+        """When region has no notes array, falls back to StateStore."""
+        store = StateStore(conversation_id="test-fallback")
+        store.add_notes("r1", [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}])
+        trace = TraceContext(trace_id="test")
+        var_ctx = VariationContext(
+            store=store, trace=trace,
+            base_notes={}, proposed_notes={}, track_regions={},
+        )
+        project = {
+            "tracks": [{
+                "id": "t1",
+                "regions": [{"id": "r1", "noteCount": 1}],
+            }]
+        }
+        _extract_notes_from_project(project, var_ctx)
+        assert "r1" in var_ctx.base_notes
+        assert len(var_ctx.base_notes["r1"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Generator timeout (Change 4)
+# ---------------------------------------------------------------------------
+
+
+class TestGeneratorTimeout:
+
+    @pytest.mark.anyio
+    async def test_generator_timeout_does_not_crash(self):
+        """A generator that exceeds the 30s timeout should be caught, not crash."""
+        store = StateStore(conversation_id="test-timeout")
+        tid = store.create_track("Drums")
+        store.create_region("Pattern", tid)
+        trace = TraceContext(trace_id="test")
+        var_ctx = VariationContext(
+            store=store, trace=trace,
+            base_notes={}, proposed_notes={}, track_regions={},
+        )
+
+        call = ToolCall("stori_generate_drums", {
+            "role": "drums",
+            "style": "boom_bap",
+            "tempo": 90,
+            "bars": 4,
+        })
+
+        async def slow_generate(**kwargs):
+            await asyncio.sleep(100)
+
+        mock_mg = MagicMock()
+        mock_mg.generate = slow_generate
+
+        original_timeout = executor_module._GENERATOR_TIMEOUT
+        try:
+            executor_module._GENERATOR_TIMEOUT = 0.1
+            with patch("app.core.executor.get_music_generator", return_value=mock_mg):
+                # Should not raise — timeout is caught internally
+                await _process_call_for_variation(call, var_ctx)
+        finally:
+            executor_module._GENERATOR_TIMEOUT = original_timeout
+
+        # No proposed notes since generator timed out
+        assert len(var_ctx.proposed_notes) == 0
+
+    @pytest.mark.anyio
+    async def test_generator_exception_does_not_crash(self):
+        """A generator that raises an exception should be caught gracefully."""
+        store = StateStore(conversation_id="test-gen-err")
+        tid = store.create_track("Bass")
+        store.create_region("Groove", tid)
+        trace = TraceContext(trace_id="test")
+        var_ctx = VariationContext(
+            store=store, trace=trace,
+            base_notes={}, proposed_notes={}, track_regions={},
+        )
+
+        call = ToolCall("stori_generate_bass", {
+            "role": "bass",
+            "style": "funk",
+            "tempo": 100,
+            "bars": 4,
+        })
+
+        mock_mg = MagicMock()
+        mock_mg.generate = AsyncMock(side_effect=RuntimeError("Orpheus down"))
+
+        with patch("app.core.executor.get_music_generator", return_value=mock_mg):
+            await _process_call_for_variation(call, var_ctx)
+
+        assert len(var_ctx.proposed_notes) == 0

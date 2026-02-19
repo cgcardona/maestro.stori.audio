@@ -49,9 +49,9 @@ class TestValidateToken:
         assert resp.status_code == 200
         data = resp.json()
         assert data["valid"] is True
-        assert "expires_at" in data
-        assert "expires_in_seconds" in data
-        assert "budget_remaining" in data
+        assert "expiresAt" in data
+        assert "expiresInSeconds" in data
+        assert "budgetRemaining" in data
 
     @pytest.mark.anyio
     async def test_validate_token_no_auth_401(self, client, db_session):
@@ -73,7 +73,7 @@ class TestComposeStreamEndpoint:
         async def fake_orchestrate(*args, **kwargs):
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "composing"})
-            yield await sse_event({"type": "complete", "success": True, "tool_calls": []})
+            yield await sse_event({"type": "complete", "success": True, "toolCalls": []})
 
         with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
@@ -90,8 +90,8 @@ class TestComposeStreamEndpoint:
         async def fake_orchestrate(*args, **kwargs):
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "editing"})
-            yield await sse_event({"type": "tool_call", "name": "stori_set_tempo", "params": {"tempo": 120}})
-            yield await sse_event({"type": "complete", "success": True, "tool_calls": []})
+            yield await sse_event({"type": "toolCall", "name": "stori_set_tempo", "params": {"tempo": 120}})
+            yield await sse_event({"type": "complete", "success": True, "toolCalls": []})
 
         with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
@@ -102,7 +102,7 @@ class TestComposeStreamEndpoint:
         events = parse_sse_events(resp.text)
         types = [e["type"] for e in events]
         assert "state" in types
-        assert "tool_call" in types
+        assert "toolCall" in types
         assert "complete" in types
 
     @pytest.mark.anyio
@@ -149,7 +149,7 @@ class TestComposeStreamEndpoint:
         assert resp.status_code == 200
         events = parse_sse_events(resp.text)
         # Should have budget_update event
-        budget_events = [e for e in events if e.get("type") == "budget_update"]
+        budget_events = [e for e in events if e.get("type") == "budgetUpdate"]
         assert len(budget_events) >= 1
 
     @pytest.mark.anyio
@@ -274,8 +274,8 @@ class TestComposePreviewEndpoint:
             )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["preview_available"] is True
-        assert data["sse_state"] == "composing"
+        assert data["previewAvailable"] is True
+        assert data["sseState"] == "composing"
 
     @pytest.mark.anyio
     async def test_preview_non_composing_returns_unavailable(self, client, auth_headers, test_user):
@@ -310,4 +310,4 @@ class TestComposePreviewEndpoint:
             )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["preview_available"] is False
+        assert data["previewAvailable"] is False

@@ -227,7 +227,7 @@ class TestValidateAccessCode:
         token = _make_token(duration_hours=1)
         with patch(
             "app.auth.tokens.settings",
-            access_token_secret="different-secret",
+            access_token_secret="different-secret-not-the-real-one",
             access_token_algorithm=_ALGO,
         ):
             with pytest.raises(AccessCodeError):

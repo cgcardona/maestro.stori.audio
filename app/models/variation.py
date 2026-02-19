@@ -13,11 +13,13 @@ Key concepts:
 
 from __future__ import annotations
 
-from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Literal, Optional
+from pydantic import Field
+
+from app.models.base import CamelModel as _CamelModel
 
 
-class MidiNoteSnapshot(BaseModel):
+class MidiNoteSnapshot(_CamelModel):
     """
     Snapshot of a MIDI note's properties at a point in time.
     
@@ -30,11 +32,8 @@ class MidiNoteSnapshot(BaseModel):
     channel: int = Field(default=0, ge=0, le=15, description="MIDI channel (0-15)")
     
     @classmethod
-    def from_note_dict(cls, note: dict) -> "MidiNoteSnapshot":
-        """Create a snapshot from a note dictionary.
-
-        Expects snake_case keys: ``start_beat``, ``duration_beats``.
-        """
+    def from_note_dict(cls, note: dict[str, Any]) -> "MidiNoteSnapshot":
+        """Create a snapshot from an internal note dict (snake_case keys)."""
         return cls(
             pitch=note.get("pitch", 60),
             start_beat=note.get("start_beat", 0),
@@ -43,22 +42,16 @@ class MidiNoteSnapshot(BaseModel):
             channel=note.get("channel", 0),
         )
     
-    def to_note_dict(self) -> dict:
-        """Convert to a note dictionary (snake_case — matches model_dump format)."""
-        return {
-            "pitch": self.pitch,
-            "start_beat": self.start_beat,
-            "duration_beats": self.duration_beats,
-            "velocity": self.velocity,
-            "channel": self.channel,
-        }
+    def to_note_dict(self) -> dict[str, Any]:
+        """Convert to an internal note dict (snake_case keys)."""
+        return self.model_dump()
 
 
 # Change type literals
 ChangeType = Literal["added", "removed", "modified"]
 
 
-class NoteChange(BaseModel):
+class NoteChange(_CamelModel):
     """
     A single note change within a variation.
     
@@ -102,7 +95,7 @@ VariationTag = Literal[
 ]
 
 
-class Phrase(BaseModel):
+class Phrase(_CamelModel):
     """
     A musical phrase representing a group of related note changes.
     
@@ -157,7 +150,7 @@ class Phrase(BaseModel):
         return len(self.note_changes) == 0 and len(self.controller_changes) == 0
 
 
-class Variation(BaseModel):
+class Variation(_CamelModel):
     """
     A complete variation proposal from Muse.
     
@@ -261,7 +254,7 @@ class Variation(BaseModel):
 
 # Response models for API endpoints
 
-class ProposeVariationResponse(BaseModel):
+class ProposeVariationResponse(_CamelModel):
     """
     Immediate response from POST /variation/propose (spec-compliant).
     
@@ -281,7 +274,7 @@ class ProposeVariationResponse(BaseModel):
     )
 
 
-class CommitVariationResponse(BaseModel):
+class CommitVariationResponse(_CamelModel):
     """
     Response from POST /variation/commit (spec-compliant).
     
@@ -301,6 +294,6 @@ class CommitVariationResponse(BaseModel):
         default_factory=list,
         description=(
             "Full MIDI state for each affected region after commit. "
-            "Each entry: {region_id, track_id, notes: [{pitch, start_beat, duration_beats, velocity, channel}]}."
+            "Each entry: {regionId, trackId, notes: [{pitch, startBeat, durationBeats, velocity, channel}]}."
         ),
     )

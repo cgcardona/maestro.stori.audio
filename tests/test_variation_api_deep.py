@@ -88,11 +88,11 @@ class TestGetVariation:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["variation_id"] == "var-test-1"
+        assert data["variationId"] == "var-test-1"
         assert data["status"] == "ready"
-        assert data["phrase_count"] == 1
+        assert data["phraseCount"] == 1
         assert len(data["phrases"]) == 1
-        assert data["phrases"][0]["phrase_id"] == "p1"
+        assert data["phrases"][0]["phraseId"] == "p1"
 
     @pytest.mark.anyio
     async def test_get_variation_not_found_404(self, var_client):
@@ -145,9 +145,9 @@ class TestCommitVariationStoreBased:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["applied_phrase_ids"] == ["p1"]
-        assert data["new_state_id"] == "1"
-        assert "undo_label" in data
+        assert data["appliedPhraseIds"] == ["p1"]
+        assert data["newStateId"] == "1"
+        assert "undoLabel" in data
 
     @pytest.mark.anyio
     async def test_commit_not_ready_409(self, var_client):
@@ -343,8 +343,8 @@ class TestProposeVariation:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert "variation_id" in data
-        assert "stream_url" in data
+        assert "variationId" in data
+        assert "streamUrl" in data
         assert data["intent"] == "make it funky"
 
     @pytest.mark.anyio

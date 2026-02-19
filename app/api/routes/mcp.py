@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from app.models.base import CamelModel
 
 from app.mcp.server import get_mcp_server, StoriMCPServer
 from app.auth.dependencies import require_valid_token
@@ -46,13 +46,13 @@ def _is_valid_connection_id(connection_id: str) -> bool:
     return connection_id in _ISSUED_CONNECTION_IDS
 
 
-class MCPToolCallRequest(BaseModel):
+class MCPToolCallRequest(CamelModel):
     """Request to call an MCP tool."""
     name: str
     arguments: dict[str, Any] = {}
 
 
-class MCPToolCallResponse(BaseModel):
+class MCPToolCallResponse(CamelModel):
     """Response from MCP tool call."""
     success: bool
     content: list[dict[str, Any]]
@@ -157,7 +157,7 @@ async def daw_websocket(
 
     # Send welcome so the Stori app receives at least one message and can mark "connected"
     try:
-        await websocket.send_json({"type": "connected", "connection_id": connection_id})
+        await websocket.send_json({"type": "connected", "connectionId": connection_id})
     except Exception as e:
         logger.warning(f"Failed to send welcome: {e}")
 
@@ -174,11 +174,11 @@ async def daw_websocket(
                 continue
             message_type = data.get("type")
 
-            if message_type == "project_state":
+            if message_type == "projectState":
                 server.update_project_state(connection_id, data.get("state", {}))
                 logger.debug("Project state updated")
-            elif message_type == "tool_response":
-                request_id = data.get("request_id")
+            elif message_type == "toolResponse":
+                request_id = data.get("requestId")
                 result = data.get("result", {})
                 server.receive_tool_response(
                     connection_id,
@@ -212,7 +212,7 @@ async def create_connection(
     ID is valid for 5 minutes. Requires authentication.
     """
     connection_id = _issue_connection_id()
-    return {"connection_id": connection_id}
+    return {"connectionId": connection_id}
 
 
 @router.get("/stream/{connection_id}")
@@ -279,7 +279,7 @@ async def post_tool_response(
             detail="Invalid or expired connection_id. Obtain one from POST /api/v1/mcp/connection first.",
         )
     server = get_mcp_server()
-    request_id = data.get("request_id")
+    request_id = data.get("requestId")
     result = data.get("result", {})
     server.receive_tool_response(
         connection_id,

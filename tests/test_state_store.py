@@ -698,6 +698,24 @@ class TestSyncFromClient:
         })
         assert store.get_region_notes("r1") == []
 
+    def test_sync_preserves_notes_when_key_absent(self):
+        """When the client reports a region without a 'notes' key, keep prior notes."""
+        store = _fresh()
+        store.sync_from_client({
+            "tracks": [{"id": "t1", "name": "Bass",
+                        "regions": [{"id": "r1", "name": "P",
+                                     "notes": [_note(60)]}]}]
+        })
+        assert len(store.get_region_notes("r1")) == 1
+
+        # Re-sync: region present but no "notes" key (frontend sends only noteCount)
+        store.sync_from_client({
+            "tracks": [{"id": "t1", "name": "Bass",
+                        "regions": [{"id": "r1", "name": "P", "noteCount": 1}]}]
+        })
+        assert len(store.get_region_notes("r1")) == 1
+        assert store.get_region_notes("r1")[0]["pitch"] == 60
+
     def test_sync_is_idempotent(self):
         project = self._project()
         store = _fresh()

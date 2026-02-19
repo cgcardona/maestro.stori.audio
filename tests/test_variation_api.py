@@ -154,13 +154,13 @@ class TestProposeVariation:
             assert response.status_code == 200
             data = response.json()
 
-            # Verify response structure
-            assert "variation_id" in data
-            assert data["project_id"] == mock_project_id
-            assert data["base_state_id"] == mock_state_id
+            # Verify response structure (camelCase wire format)
+            assert "variationId" in data
+            assert data["projectId"] == mock_project_id
+            assert data["baseStateId"] == mock_state_id
             assert data["intent"] == "make it darker"
-            assert "stream_url" in data
-            assert "/variation/stream?variation_id=" in data["stream_url"]
+            assert "streamUrl" in data
+            assert "/variation/stream?variation_id=" in data["streamUrl"]
     
     @pytest.mark.asyncio
     async def test_propose_variation_state_conflict(
@@ -195,7 +195,7 @@ class TestProposeVariation:
             data = response.json()
             assert "error" in data["detail"]
             assert "State conflict" in data["detail"]["error"]
-            assert data["detail"]["current_state_id"] == "100"
+            assert data["detail"]["currentStateId"] == "100"
     
     @pytest.mark.asyncio
     async def test_propose_variation_invalid_intent(
@@ -242,8 +242,8 @@ class TestProposeVariation:
             # Propose returns 200 immediately; errors surface in stream
             assert response.status_code == 200
             data = response.json()
-            assert "variation_id" in data
-            assert "stream_url" in data
+            assert "variationId" in data
+            assert "streamUrl" in data
 
 
 # =============================================================================
@@ -305,11 +305,11 @@ class TestCommitVariation:
             assert response.status_code == 200
             data = response.json()
 
-            assert data["project_id"] == mock_project_id
-            assert data["new_state_id"] == "43"
-            assert data["applied_phrase_ids"] == ["phrase-1"]
-            assert "Accept Variation" in data["undo_label"]
-            assert "updated_regions" in data
+            assert data["projectId"] == mock_project_id
+            assert data["newStateId"] == "43"
+            assert data["appliedPhraseIds"] == ["phrase-1"]
+            assert "Accept Variation" in data["undoLabel"]
+            assert "updatedRegions" in data
     
     @pytest.mark.asyncio
     async def test_commit_variation_state_conflict(

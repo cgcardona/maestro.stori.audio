@@ -1,4 +1,5 @@
 """Pytest configuration and fixtures."""
+import logging
 import pytest
 import pytest_asyncio
 
@@ -7,6 +8,12 @@ def pytest_configure(config):
     """Ensure asyncio_mode is auto so async fixtures work (e.g. in Docker when pyproject not in cwd)."""
     if hasattr(config.option, "asyncio_mode") and config.option.asyncio_mode is None:
         config.option.asyncio_mode = "auto"
+    # huggingface_hub registers an atexit handler that closes its httpx
+    # session.  By the time it runs during interpreter shutdown the logging
+    # stream (stderr) is already closed, which produces a noisy but harmless
+    # "ValueError: I/O operation on closed file" traceback.  Silencing the
+    # httpcore logger at CRITICAL avoids the noise.
+    logging.getLogger("httpcore").setLevel(logging.CRITICAL)
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import (
     AsyncSession,

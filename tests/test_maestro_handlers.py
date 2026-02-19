@@ -21,12 +21,12 @@ from app.core.intent_config import (
 # Project context with existing tracks — keeps COMPOSING route active
 # (empty projects override COMPOSING → EDITING).
 _NON_EMPTY_PROJECT = {
-    "projectId": "test-project",
+    "id": "test-project",
     "tracks": [
         {
             "id": "existing-track-1",
             "name": "Track 1",
-            "midiRegions": [{"id": "existing-region-1", "name": "Region 1"}],
+            "regions": [{"id": "existing-region-1", "name": "Region 1"}],
         }
     ],
 }
@@ -294,7 +294,7 @@ class TestOrchestrateStream:
                 last_payload = json.loads(last.split("data: ", 1)[1].strip())
                 assert last_payload.get("type") == "complete"
                 assert last_payload.get("success") is True
-                assert last_payload.get("tool_calls") == []
+                assert last_payload.get("toolCalls") == []
 
     @pytest.mark.anyio
     async def test_yields_state_then_complete_for_composing_with_empty_plan(self):
@@ -483,10 +483,10 @@ class TestOrchestrateStream:
                     payloads = [json.loads(e.split("data: ", 1)[1].strip()) for e in events if "data:" in e]
                     types = [p.get("type") for p in payloads]
                     assert "state" in types
-                    assert "plan_summary" in types
+                    assert "planSummary" in types
                     assert "complete" in types
-                    plan_summary = next(p for p in payloads if p.get("type") == "plan_summary")
-                    assert plan_summary.get("total_steps") == 1
+                    plan_summary = next(p for p in payloads if p.get("type") == "planSummary")
+                    assert plan_summary.get("totalSteps") == 1
 
     @pytest.mark.anyio
     async def test_composing_empty_plan_with_stori_in_response_fallback_to_editing(self):
@@ -571,7 +571,7 @@ class TestOrchestrateStream:
                 # Empty project context — no tracks
                 async for event in orchestrate(
                     "Create a new song in the style of Phish",
-                    project_context={"projectId": "empty-project", "tracks": []},
+                    project_context={"id": "empty-project", "tracks": []},
                 ):
                     events.append(event)
 
@@ -586,13 +586,13 @@ class TestOrchestrateStream:
                 )
                 assert state_event.get("intent") == "compose.generate_music"
 
-                # Should have tool_call events (not meta/phrase/done)
-                assert "tool_call" in types, "Expected tool_call events for empty project"
+                # Should have toolCall events (not meta/phrase/done)
+                assert "toolCall" in types, "Expected toolCall events for empty project"
                 assert "meta" not in types, "Should NOT have variation meta events"
                 assert "phrase" not in types, "Should NOT have variation phrase events"
 
                 # Tool call should be stori_add_midi_track
-                tool_calls = [p for p in payloads if p.get("type") == "tool_call"]
+                tool_calls = [p for p in payloads if p.get("type") == "toolCall"]
                 assert tool_calls[0].get("name") == "stori_add_midi_track"
 
                 # Should end with complete

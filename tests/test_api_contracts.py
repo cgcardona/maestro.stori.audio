@@ -83,14 +83,14 @@ class TestModelsEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "models" in data
-        assert "default_model" in data
+        assert "defaultModel" in data
         assert isinstance(data["models"], list)
         if data["models"]:
             m = data["models"][0]
             assert "id" in m
             assert "name" in m
-            assert "cost_per_1m_input" in m
-            assert "cost_per_1m_output" in m
+            assert "costPer1mInput" in m
+            assert "costPer1mOutput" in m
 
 
 # =============================================================================
@@ -247,9 +247,9 @@ class TestConversationsWithAuth:
         data = response.json()
         assert "id" in data
         assert data["title"] == "Contract Test Conv"
-        assert "created_at" in data
-        assert "updated_at" in data
-        assert "is_archived" in data
+        assert "createdAt" in data
+        assert "updatedAt" in data
+        assert "isArchived" in data
         assert "messages" in data
         assert isinstance(data["messages"], list)
 
@@ -294,8 +294,8 @@ class TestConversationsWithAuth:
         assert data["id"] == cid
         assert "title" in data
         assert "messages" in data
-        assert "created_at" in data
-        assert "updated_at" in data
+        assert "createdAt" in data
+        assert "updatedAt" in data
 
 
 # =============================================================================
@@ -315,11 +315,11 @@ class TestUsersRegister:
         )
         assert response.status_code in (200, 201)
         data = response.json()
-        assert "user_id" in data
-        assert data["user_id"] == uid
-        assert "budget_remaining" in data
-        assert "budget_limit" in data
-        assert "usage_count" in data or "created_at" in data
+        assert "userId" in data
+        assert data["userId"] == uid
+        assert "budgetRemaining" in data
+        assert "budgetLimit" in data
+        assert "usageCount" in data or "createdAt" in data
 
     @pytest.mark.anyio
     async def test_register_invalid_uuid_400(self, client):
@@ -340,10 +340,10 @@ class TestUsersMeWithAuth:
         response = await client.get("/api/v1/users/me", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert "user_id" in data
-        assert "budget_remaining" in data
-        assert "budget_limit" in data
-        assert "usage_count" in data or "created_at" in data
+        assert "userId" in data
+        assert "budgetRemaining" in data
+        assert "budgetLimit" in data
+        assert "usageCount" in data or "createdAt" in data
 
 
 # =============================================================================
@@ -371,8 +371,8 @@ class TestVariationProposeWithAuth:
         assert response.status_code in (200, 402, 409, 500)
         if response.status_code == 200:
             data = response.json()
-            assert "variation_id" in data
-            assert "stream_url" in data or "phrases" in data or "meta" in data
+            assert "variationId" in data
+            assert "streamUrl" in data or "phrases" in data or "meta" in data
         if response.status_code == 409:
             data = response.json()
             assert "detail" in data

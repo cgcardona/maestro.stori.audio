@@ -21,7 +21,7 @@ class TestSseEvent:
     @pytest.mark.anyio
     async def test_handles_nested_structure(self):
         """Nested dicts should be JSON-serialized."""
-        result = await sse_event({"type": "tool_call", "params": {"trackId": "abc-123"}})
+        result = await sse_event({"type": "toolCall", "params": {"trackId": "abc-123"}})
         payload = json.loads(result[6:].strip())
         assert payload["params"]["trackId"] == "abc-123"
 

@@ -257,8 +257,8 @@ class StoriMCPServer:
         try:
             # Send tool call to DAW
             await conn.send_callback({
-                "type": "tool_call",
-                "request_id": request_id,
+                "type": "toolCall",
+                "requestId": request_id,
                 "tool": name,
                 "arguments": arguments,
             })
@@ -295,7 +295,7 @@ class StoriMCPServer:
         summary = {
             "name": state.get("name", "Untitled"),
             "tempo": state.get("tempo", 120),
-            "keySignature": state.get("keySignature", "C"),
+            "key": state.get("key", "C"),
             "timeSignature": state.get("timeSignature", {"numerator": 4, "denominator": 4}),
             "trackCount": len(state.get("tracks", [])),
             "tracks": [],
@@ -313,12 +313,12 @@ class StoriMCPServer:
                 "regions": [],
             }
             
-            for region in track.get("midiRegions", []):
+            for region in track.get("regions", []):
                 region_info = {
                     "id": region.get("id"),
                     "name": region.get("name"),
-                    "startBeat": region.get("startTime", 0),
-                    "durationBeats": region.get("duration", 0),
+                    "startBeat": region.get("startBeat", 0),
+                    "durationBeats": region.get("durationBeats", 0),
                     "noteCount": len(region.get("notes", [])),
                 }
                 

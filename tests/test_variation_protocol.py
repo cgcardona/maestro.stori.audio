@@ -106,23 +106,23 @@ def ready_record(vstore, project_id, base_state_id):
             beat_end=i * 16.0,
             label=label,
             diff_json={
-                "phrase_id": f"phrase-{i}",
-                "track_id": "track-bass",
-                "region_id": "region-bass",
-                "start_beat": (i - 1) * 16.0,
-                "end_beat": i * 16.0,
+                "phraseId": f"phrase-{i}",
+                "trackId": "track-bass",
+                "regionId": "region-bass",
+                "startBeat": (i - 1) * 16.0,
+                "endBeat": i * 16.0,
                 "label": label,
                 "tags": ["pitchChange"],
                 "explanation": f"Bass {label}",
-                "note_changes": [
+                "noteChanges": [
                     {
-                        "note_id": f"nc-{i}-1",
-                        "change_type": "added",
+                        "noteId": f"nc-{i}-1",
+                        "changeType": "added",
                         "before": None,
                         "after": {
                             "pitch": 36 + i,
-                            "start_beat": (i - 1) * 16.0,
-                            "duration_beats": 2.0,
+                            "startBeat": (i - 1) * 16.0,
+                            "durationBeats": 2.0,
                             "velocity": 90,
                             "channel": 0,
                         },
@@ -378,8 +378,8 @@ class TestEventSequencing:
 
         events = [
             build_meta_envelope(vid, "p", "s", "test", None, [], [], {}, counter.next()),
-            build_phrase_envelope(vid, "p", "s", counter.next(), {"phrase_id": "p1"}),
-            build_phrase_envelope(vid, "p", "s", counter.next(), {"phrase_id": "p2"}),
+            build_phrase_envelope(vid, "p", "s", counter.next(), {"phraseId": "p1"}),
+            build_phrase_envelope(vid, "p", "s", counter.next(), {"phraseId": "p2"}),
             build_done_envelope(vid, "p", "s", counter.next(), status="ready", phrase_count=2),
         ]
 
@@ -419,7 +419,7 @@ class TestSSEBroadcasting:
         """Late-join subscriber receives historical events."""
         vid = "v-late"
         env1 = build_meta_envelope(vid, "p", "s", "test", None, [], [], {}, 1)
-        env2 = build_phrase_envelope(vid, "p", "s", 2, {"phrase_id": "p1"})
+        env2 = build_phrase_envelope(vid, "p", "s", 2, {"phraseId": "p1"})
 
         await broadcaster.publish(env1)
         await broadcaster.publish(env2)
@@ -437,7 +437,7 @@ class TestSSEBroadcasting:
         """Replay only sends events after from_sequence."""
         vid = "v-skip"
         for seq in range(1, 6):
-            env = build_phrase_envelope(vid, "p", "s", seq, {"phrase_id": f"p{seq}"})
+            env = build_phrase_envelope(vid, "p", "s", seq, {"phraseId": f"p{seq}"})
             await broadcaster.publish(env)
 
         queue = broadcaster.subscribe(vid, from_sequence=3)
@@ -466,8 +466,8 @@ class TestSSEBroadcasting:
 
         events = [
             build_meta_envelope(vid, "p", "s", "intent", None, [], [], {}, 1),
-            build_phrase_envelope(vid, "p", "s", 2, {"phrase_id": "p1"}),
-            build_phrase_envelope(vid, "p", "s", 3, {"phrase_id": "p2"}),
+            build_phrase_envelope(vid, "p", "s", 2, {"phraseId": "p1"}),
+            build_phrase_envelope(vid, "p", "s", 3, {"phraseId": "p2"}),
             build_done_envelope(vid, "p", "s", 4, status="ready", phrase_count=2),
         ]
 
@@ -517,7 +517,6 @@ class TestStreamRouter:
 
             env = build_meta_envelope(vid, "p", "s", "test", None, [], [], {}, 1)
             delivered = await publish_event(env)
-
             assert delivered >= 1
             received = queue.get_nowait()
             assert received is not None and received.type == "meta"
@@ -650,19 +649,19 @@ class TestEnvelopeSerialization:
         env = build_meta_envelope("v", "p", "s", "test", None, [], [], {}, 1)
         d = env.to_dict()
 
-        required_keys = {"type", "sequence", "variation_id", "project_id",
-                         "base_state_id", "payload", "timestamp_ms"}
+        required_keys = {"type", "sequence", "variationId", "projectId",
+                         "baseStateId", "payload", "timestampMs"}
         assert required_keys.issubset(d.keys())
 
     def test_to_json_roundtrips(self):
         """JSON serialization roundtrips correctly."""
-        env = build_phrase_envelope("v", "p", "s", 5, {"phrase_id": "p1", "notes": []})
+        env = build_phrase_envelope("v", "p", "s", 5, {"phraseId": "p1", "notes": []})
         j = env.to_json()
         parsed = json.loads(j)
 
         assert parsed["type"] == "phrase"
         assert parsed["sequence"] == 5
-        assert parsed["payload"]["phrase_id"] == "p1"
+        assert parsed["payload"]["phraseId"] == "p1"
 
     def test_to_sse_format(self):
         """SSE format has event: and data: lines."""
@@ -677,4 +676,4 @@ class TestEnvelopeSerialization:
         data_line = [l for l in sse.split("\n") if l.startswith("data:")][0]
         data_json = json.loads(data_line[len("data: "):])
         assert data_json["payload"]["status"] == "ready"
-        assert data_json["payload"]["phrase_count"] == 3
+        assert data_json["payload"]["phraseCount"] == 3

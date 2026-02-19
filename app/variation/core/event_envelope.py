@@ -49,15 +49,15 @@ class EventEnvelope:
     timestamp_ms: int = field(default_factory=lambda: int(time.time() * 1000))
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to a plain dict for JSON transport."""
+        """Serialize to a plain dict for JSON transport (camelCase keys)."""
         return {
             "type": self.type,
             "sequence": self.sequence,
-            "variation_id": self.variation_id,
-            "project_id": self.project_id,
-            "base_state_id": self.base_state_id,
+            "variationId": self.variation_id,
+            "projectId": self.project_id,
+            "baseStateId": self.base_state_id,
             "payload": self.payload,
-            "timestamp_ms": self.timestamp_ms,
+            "timestampMs": self.timestamp_ms,
         }
 
     def to_json(self) -> str:
@@ -134,10 +134,10 @@ def build_meta_envelope(
         event_type="meta",
         payload={
             "intent": intent,
-            "ai_explanation": ai_explanation,
-            "affected_tracks": affected_tracks,
-            "affected_regions": affected_regions,
-            "note_counts": note_counts,
+            "aiExplanation": ai_explanation,
+            "affectedTracks": affected_tracks,
+            "affectedRegions": affected_regions,
+            "noteCounts": note_counts,
         },
         sequence=sequence,
         variation_id=variation_id,
@@ -177,7 +177,7 @@ def build_done_envelope(
         event_type="done",
         payload={
             "status": status,
-            "phrase_count": phrase_count,
+            "phraseCount": phrase_count,
         },
         sequence=sequence,
         variation_id=variation_id,

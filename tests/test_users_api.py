@@ -19,8 +19,8 @@ class TestRegisterUser:
         })
         assert resp.status_code == 200
         data = resp.json()
-        assert "user_id" in data
-        assert "budget_remaining" in data
+        assert "userId" in data
+        assert "budgetRemaining" in data
 
     @pytest.mark.anyio
     async def test_register_existing_user_returns_profile(self, client, db_session, test_user):
@@ -30,7 +30,7 @@ class TestRegisterUser:
         })
         assert resp.status_code == 200
         data = resp.json()
-        assert data["user_id"] == test_user.id
+        assert data["userId"] == test_user.id
 
     @pytest.mark.anyio
     async def test_register_invalid_uuid(self, client, db_session):
@@ -48,8 +48,8 @@ class TestGetCurrentUser:
         resp = await client.get("/api/v1/users/me", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
-        assert data["user_id"] == test_user.id
-        assert "budget_remaining" in data
+        assert data["userId"] == test_user.id
+        assert "budgetRemaining" in data
 
     @pytest.mark.anyio
     async def test_get_current_user_no_auth(self, client, db_session):
@@ -66,7 +66,7 @@ class TestListModels:
         assert resp.status_code == 200
         data = resp.json()
         assert "models" in data
-        assert "default_model" in data
+        assert "defaultModel" in data
         assert isinstance(data["models"], list)
         assert len(data["models"]) >= 1
 
@@ -90,7 +90,7 @@ class TestListModels:
     async def test_list_models_sorted_cheapest_first(self, client, db_session):
         """Models are sorted by cost_per_1m_input ascending."""
         resp = await client.get("/api/v1/models")
-        costs = [m["cost_per_1m_input"] for m in resp.json()["models"]]
+        costs = [m["costPer1mInput"] for m in resp.json()["models"]]
         assert costs == sorted(costs)
 
     @pytest.mark.anyio
@@ -98,31 +98,31 @@ class TestListModels:
         """default_model is the cheapest (Sonnet) model."""
         resp = await client.get("/api/v1/models")
         data = resp.json()
-        cheapest_id = min(data["models"], key=lambda m: m["cost_per_1m_input"])["id"]
-        assert data["default_model"] == cheapest_id
+        cheapest_id = min(data["models"], key=lambda m: m["costPer1mInput"])["id"]
+        assert data["defaultModel"] == cheapest_id
 
     @pytest.mark.anyio
     async def test_list_models_have_pricing(self, client, db_session):
         """All returned models have non-zero cost fields."""
         resp = await client.get("/api/v1/models")
         for model in resp.json()["models"]:
-            assert model["cost_per_1m_input"] > 0
-            assert model["cost_per_1m_output"] > 0
+            assert model["costPer1mInput"] > 0
+            assert model["costPer1mOutput"] > 0
 
     @pytest.mark.anyio
     async def test_list_models_supports_reasoning_field_present(self, client, db_session):
         """Every model object includes the supports_reasoning boolean field."""
         resp = await client.get("/api/v1/models")
         for model in resp.json()["models"]:
-            assert "supports_reasoning" in model
-            assert isinstance(model["supports_reasoning"], bool)
+            assert "supportsReasoning" in model
+            assert isinstance(model["supportsReasoning"], bool)
 
     @pytest.mark.anyio
     async def test_list_models_all_support_reasoning(self, client, db_session):
         """All picker models (Sonnet 4.6, Opus 4.6) report supports_reasoning=True."""
         resp = await client.get("/api/v1/models")
         for model in resp.json()["models"]:
-            assert model["supports_reasoning"] is True, (
+            assert model["supportsReasoning"] is True, (
                 f"{model['id']} missing from REASONING_MODELS but is in the picker"
             )
 

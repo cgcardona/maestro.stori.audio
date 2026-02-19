@@ -85,7 +85,7 @@ class TestFormatProjectContext:
             "name": "New Project",
             "tempo": 120,
             "key": "C",
-            "time_signature": "4/4",
+            "timeSignature": "4/4",
             "tracks": [],
         }
         out = format_project_context(project)
@@ -102,28 +102,28 @@ class TestFormatProjectContext:
             "name": "Bluegrass Jam",
             "tempo": 140,
             "key": "G",
-            "time_signature": "4/4",
+            "timeSignature": "4/4",
             "tracks": [
                 {
                     "id": "track-banjo",
                     "name": "Banjo",
-                    "drum_kit_id": None,
-                    "gm_program": 105,
+                    "drumKitId": None,
+                    "gmProgram": 105,
                     "regions": [
                         {
                             "id": "region-intro",
                             "name": "Banjo Intro",
-                            "start_beat": 0,
-                            "duration_beats": 32,
-                            "note_count": 47,
+                            "startBeat": 0,
+                            "durationBeats": 32,
+                            "noteCount": 47,
                         }
                     ],
                 },
                 {
                     "id": "track-drums",
                     "name": "Drums",
-                    "drum_kit_id": "acoustic",
-                    "gm_program": None,
+                    "drumKitId": "acoustic",
+                    "gmProgram": None,
                     "regions": [],
                 },
             ],
@@ -147,7 +147,7 @@ class TestFormatProjectContext:
         assert "Use the track IDs" in out
 
     def test_track_with_gm_program_only(self):
-        """Track with gm_program but no drum_kit shows instrument name."""
+        """Track with gmProgram but no drumKitId shows instrument name."""
         project = {
             "name": "Test",
             "tempo": 90,
@@ -156,8 +156,8 @@ class TestFormatProjectContext:
                 {
                     "id": "t1",
                     "name": "Bass",
-                    "drum_kit_id": None,
-                    "gm_program": 33,
+                    "drumKitId": None,
+                    "gmProgram": 33,
                     "regions": [],
                 }
             ],
@@ -175,8 +175,8 @@ class TestFormatProjectContext:
                 {
                     "id": "t1",
                     "name": "Mystery",
-                    "drum_kit_id": None,
-                    "gm_program": 127,
+                    "drumKitId": None,
+                    "gmProgram": 127,
                     "regions": [],
                 }
             ],
@@ -206,21 +206,21 @@ class TestFormatProjectContext:
                 {
                     "id": "t1",
                     "name": "Piano",
-                    "gm_program": 0,
+                    "gmProgram": 0,
                     "regions": [
                         {
                             "id": "r1",
                             "name": "Verse",
-                            "start_beat": 0,
-                            "duration_beats": 16,
-                            "note_count": 30,
+                            "startBeat": 0,
+                            "durationBeats": 16,
+                            "noteCount": 30,
                         },
                         {
                             "id": "r2",
                             "name": "Chorus",
-                            "start_beat": 16,
-                            "duration_beats": 16,
-                            "note_count": 0,
+                            "startBeat": 16,
+                            "durationBeats": 16,
+                            "noteCount": 0,
                         },
                     ],
                 }
@@ -240,7 +240,7 @@ class TestFormatProjectContext:
             "name": "Test",
             "tempo": 120,
             "key": "C",
-            "tracks": [{"id": "t1", "name": "Bass", "gm_program": 33, "regions": []}],
+            "tracks": [{"id": "t1", "name": "Bass", "gmProgram": 33, "regions": []}],
         }
         out = format_project_context(project)
         # Should not contain JSON syntax

@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.base import CamelModel
 from app.config import settings
 from app.db import get_db
 from app.auth.dependencies import require_valid_token
@@ -41,20 +42,20 @@ router = APIRouter()
 # Request/Response Models
 # =============================================================================
 
-class ConversationCreateRequest(BaseModel):
+class ConversationCreateRequest(CamelModel):
     """Request to create a new conversation."""
     title: str = Field(default="New Conversation", max_length=255)
     project_id: Optional[str] = Field(default=None, description="Project UUID to link conversation to")
     project_context: Optional[dict] = Field(default=None)
 
 
-class ConversationUpdateRequest(BaseModel):
+class ConversationUpdateRequest(CamelModel):
     """Request to update conversation metadata."""
     title: Optional[str] = Field(None, max_length=255)
     project_id: Optional[str] = Field(None, description="Project UUID (set to 'null' string to unlink)")
 
 
-class ToolCallInfo(BaseModel):
+class ToolCallInfo(CamelModel):
     """
     Tool call information in flat format (hybrid of OpenAI + our storage).
     
@@ -67,9 +68,9 @@ class ToolCallInfo(BaseModel):
     arguments: dict  # Tool parameters
 
 
-class MessageInfo(BaseModel):
+class MessageInfo(CamelModel):
     """Message information in conversation responses."""
-    model_config = {"from_attributes": True}  # Allow Pydantic to parse dicts as models
+    model_config = {"from_attributes": True, **CamelModel.model_config}
     
     id: str
     role: str
@@ -83,7 +84,7 @@ class MessageInfo(BaseModel):
     actions: Optional[list[dict]] = None  # Tool execution tracking
 
 
-class ConversationResponse(BaseModel):
+class ConversationResponse(CamelModel):
     """Full conversation with messages."""
     id: str
     title: str
@@ -95,7 +96,7 @@ class ConversationResponse(BaseModel):
     messages: list[MessageInfo] = []
 
 
-class ConversationListItem(BaseModel):
+class ConversationListItem(CamelModel):
     """Conversation list item (without messages)."""
     id: str
     title: str
@@ -107,7 +108,7 @@ class ConversationListItem(BaseModel):
     preview: str
 
 
-class ConversationListResponse(BaseModel):
+class ConversationListResponse(CamelModel):
     """Paginated list of conversations."""
     conversations: list[ConversationListItem]
     total: int
@@ -115,7 +116,7 @@ class ConversationListResponse(BaseModel):
     offset: int
 
 
-class SearchResultItem(BaseModel):
+class SearchResultItem(CamelModel):
     """Search result item."""
     id: str
     title: str
@@ -124,7 +125,7 @@ class SearchResultItem(BaseModel):
     relevance_score: float = 1.0
 
 
-class SearchResponse(BaseModel):
+class SearchResponse(CamelModel):
     """Search results."""
     results: list[SearchResultItem]
 
@@ -133,7 +134,7 @@ class SearchResponse(BaseModel):
 # Endpoints
 # =============================================================================
 
-@router.post("/conversations", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/conversations", response_model=ConversationResponse, response_model_by_alias=True, status_code=status.HTTP_201_CREATED)
 async def create_conversation(
     request: ConversationCreateRequest,
     token_claims: dict = Depends(require_valid_token),
@@ -193,7 +194,7 @@ async def create_conversation(
         )
 
 
-@router.get("/conversations/search", response_model=SearchResponse)
+@router.get("/conversations/search", response_model=SearchResponse, response_model_by_alias=True)
 async def search_conversations(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=20, le=50),
@@ -242,7 +243,7 @@ async def search_conversations(
     return SearchResponse(results=results)
 
 
-@router.get("/conversations", response_model=ConversationListResponse)
+@router.get("/conversations", response_model=ConversationListResponse, response_model_by_alias=True)
 async def list_conversations(
     project_id: Optional[str] = Query(default=None, description="Filter by project UUID, or 'null' for global conversations"),
     include_global: bool = Query(default=False, description="Include global conversations when filtering by project"),
@@ -305,7 +306,7 @@ async def list_conversations(
     )
 
 
-@router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
+@router.get("/conversations/{conversation_id}", response_model=ConversationResponse, response_model_by_alias=True)
 async def get_conversation(
     conversation_id: str,
     token_claims: dict = Depends(require_valid_token),
@@ -341,10 +342,10 @@ async def get_conversation(
         actions = [
             {
                 "id": action.id,
-                "action_type": action.action_type,
+                "actionType": action.action_type,
                 "description": action.description,
                 "success": action.success,
-                "error_message": action.error_message,
+                "errorMessage": action.error_message,
                 "timestamp": action.timestamp.isoformat(),
             }
             for action in msg.actions
@@ -392,7 +393,7 @@ async def get_conversation(
     )
 
 
-@router.patch("/conversations/{conversation_id}", response_model=dict)
+@router.patch("/conversations/{conversation_id}", response_model=dict, response_model_by_alias=True)
 async def update_conversation(
     conversation_id: str,
     request: ConversationUpdateRequest,
@@ -451,8 +452,8 @@ async def update_conversation(
     return {
         "id": conversation.id,
         "title": conversation.title,
-        "project_id": conversation.project_id,
-        "updated_at": conversation.updated_at.isoformat(),
+        "projectId": conversation.project_id,
+        "updatedAt": conversation.updated_at.isoformat(),
     }
 
 
@@ -614,7 +615,7 @@ async def add_message_to_conversation(
                         assistant_content_parts.append(event_data.get("content", ""))
                     
                     # Track tool calls (hybrid format: flat structure + id for both API and LLM replay)
-                    if event_type == "tool_call":
+                    if event_type == "toolCall":
                         # Get arguments from SSE event
                         arguments = event_data.get("params", {})
                         
@@ -639,7 +640,7 @@ async def add_message_to_conversation(
                         logger.info(f"📝 Tracked tool_call: {event_data.get('name')} (ID: {sanitized_id})")
                     
                     # Track tool execution for MessageAction table
-                    if event_type == "tool_start":
+                    if event_type == "toolStart":
                         tool_name = event_data.get("name")
                         # Create pending action (will be updated on complete/error)
                         tool_actions[tool_name] = {
@@ -652,7 +653,7 @@ async def add_message_to_conversation(
                         }
                         logger.debug(f"🔧 Tool started: {tool_name}")
                     
-                    elif event_type == "tool_complete":
+                    elif event_type == "toolComplete":
                         tool_name = event_data.get("name")
                         if tool_name in tool_actions:
                             tool_actions[tool_name].update({
@@ -662,7 +663,7 @@ async def add_message_to_conversation(
                             })
                             logger.debug(f"✅ Tool completed: {tool_name}")
                     
-                    elif event_type == "tool_error":
+                    elif event_type == "toolError":
                         tool_name = event_data.get("name")
                         if tool_name in tool_actions:
                             tool_actions[tool_name].update({
@@ -673,7 +674,7 @@ async def add_message_to_conversation(
                             logger.debug(f"❌ Tool error: {tool_name}")
                     
                     # Track variation proposals (for variation mode)
-                    elif event_type == "variation_proposal":
+                    elif event_type == "variationProposal":
                         variation_data = event_data.get("data", {})
                         logger.info(
                             f"🎭 Variation proposal: {variation_data.get('variation_id', 'unknown')[:8]} "
@@ -757,8 +758,8 @@ async def add_message_to_conversation(
             # Send budget update event
             budget_remaining = await get_user_budget(db, user_id)
             yield await sse_event({
-                "type": "budget_update",
-                "budget_remaining": budget_remaining,
+                "type": "budgetUpdate",
+                "budgetRemaining": budget_remaining,
                 "cost": cost_cents / 100.0,
             })
             

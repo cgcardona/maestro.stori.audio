@@ -237,7 +237,7 @@ def _store_variation(
     )
     from app.variation.core.state_machine import VariationStatus
 
-    project_id = project_context.get("projectId", "")
+    project_id = project_context.get("id", "")
     base_state_id = store.get_state_id()
 
     vstore = get_variation_store()
@@ -266,16 +266,16 @@ def _store_variation(
             beat_end=phrase.end_beat,
             label=phrase.label,
             diff_json={
-                "phrase_id": phrase.phrase_id,
-                "track_id": phrase.track_id,
-                "region_id": phrase.region_id,
-                "start_beat": phrase.start_beat,
-                "end_beat": phrase.end_beat,
+                "phraseId": phrase.phrase_id,
+                "trackId": phrase.track_id,
+                "regionId": phrase.region_id,
+                "startBeat": phrase.start_beat,
+                "endBeat": phrase.end_beat,
                 "label": phrase.label,
                 "tags": phrase.tags,
                 "explanation": phrase.explanation,
-                "note_changes": [nc.model_dump() for nc in phrase.note_changes],
-                "controller_changes": phrase.controller_changes,
+                "noteChanges": [nc.model_dump(by_alias=True) for nc in phrase.note_changes],
+                "controllerChanges": phrase.controller_changes,
             },
             ai_explanation=phrase.explanation,
             tags=phrase.tags,
@@ -323,7 +323,7 @@ async def orchestrate(
     
     # Get or create StateStore — use project_id as primary key so the
     # variation commit endpoint can find the same store instance.
-    _project_id = project_context.get("projectId") or ""
+    _project_id = project_context.get("id") or ""
     store = get_or_create_store(
         conversation_id=_project_id or conversation_id or "default",
         project_id=_project_id,
@@ -377,7 +377,7 @@ async def orchestrate(
                 "state": route.sse_state.value,
                 "intent": route.intent.value,
                 "confidence": route.confidence,
-                "trace_id": trace.trace_id,
+                "traceId": trace.trace_id,
             })
             
             logger.info(f"[{trace.trace_id[:8]}] 🎯 {route.intent.value} → {route.sse_state.value}")
@@ -422,7 +422,7 @@ async def orchestrate(
         yield await sse_event({
             "type": "error",
             "message": str(e),
-            "trace_id": trace.trace_id,
+            "traceId": trace.trace_id,
         })
     
     finally:
@@ -455,8 +455,8 @@ async def _handle_reasoning(
                 yield await sse_event({
                     "type": "complete",
                     "success": True,
-                    "tool_calls": [],
-                    "trace_id": trace.trace_id,
+                    "toolCalls": [],
+                    "traceId": trace.trace_id,
                 })
                 return
         except Exception as e:
@@ -542,8 +542,8 @@ async def _handle_reasoning(
     yield await sse_event({
         "type": "complete",
         "success": True,
-        "tool_calls": [],
-        "trace_id": trace.trace_id,
+        "toolCalls": [],
+        "traceId": trace.trace_id,
     })
 
 
@@ -615,8 +615,8 @@ async def _handle_composing(
     
     if output.plan and output.plan.tool_calls:
         yield await sse_event({
-            "type": "plan_summary",
-            "total_steps": len(output.plan.tool_calls),
+            "type": "planSummary",
+            "totalSteps": len(output.plan.tool_calls),
             "generations": output.plan.generation_count,
             "edits": output.plan.edit_count,
         })
@@ -669,8 +669,8 @@ async def _handle_composing(
                             )
                             yield await sse_event({
                                 "type": "progress",
-                                "current_step": current,
-                                "total_steps": total,
+                                "currentStep": current,
+                                "totalSteps": total,
                                 "message": f"Step {current}/{total}...",
                             })
                         except asyncio.TimeoutError:
@@ -686,19 +686,19 @@ async def _handle_composing(
                     yield await sse_event({
                         "type": "error",
                         "message": f"Generation timed out after {_VARIATION_TIMEOUT}s",
-                        "trace_id": trace.trace_id,
+                        "traceId": trace.trace_id,
                     })
                     yield await sse_event({
                         "type": "done",
-                        "variation_id": "",
-                        "phrase_count": 0,
+                        "variationId": "",
+                        "phraseCount": 0,
                         "status": "failed",
                     })
                     yield await sse_event({
                         "type": "complete",
                         "success": False,
                         "error": "timeout",
-                        "trace_id": trace.trace_id,
+                        "traceId": trace.trace_id,
                     })
                     return
 
@@ -714,12 +714,13 @@ async def _handle_composing(
                 note_counts = variation.note_counts
                 yield await sse_event({
                     "type": "meta",
-                    "variation_id": variation.variation_id,
+                    "variationId": variation.variation_id,
+                    "baseStateId": store.get_state_id(),
                     "intent": variation.intent,
-                    "ai_explanation": variation.ai_explanation,
-                    "affected_tracks": variation.affected_tracks,
-                    "affected_regions": variation.affected_regions,
-                    "note_counts": note_counts,
+                    "aiExplanation": variation.ai_explanation,
+                    "affectedTracks": variation.affected_tracks,
+                    "affectedRegions": variation.affected_regions,
+                    "noteCounts": note_counts,
                 })
 
                 # Emit individual phrase events
@@ -730,23 +731,23 @@ async def _handle_composing(
                     )
                     yield await sse_event({
                         "type": "phrase",
-                        "phrase_id": phrase.phrase_id,
-                        "track_id": phrase.track_id,
-                        "region_id": phrase.region_id,
-                        "start_beat": phrase.start_beat,
-                        "end_beat": phrase.end_beat,
+                        "phraseId": phrase.phrase_id,
+                        "trackId": phrase.track_id,
+                        "regionId": phrase.region_id,
+                        "startBeat": phrase.start_beat,
+                        "endBeat": phrase.end_beat,
                         "label": phrase.label,
                         "tags": phrase.tags,
                         "explanation": phrase.explanation,
-                        "note_changes": [nc.model_dump() for nc in phrase.note_changes],
-                        "controller_changes": phrase.controller_changes,
+                        "noteChanges": [nc.model_dump(by_alias=True) for nc in phrase.note_changes],
+                        "controllerChanges": phrase.controller_changes,
                     })
 
                 # Emit done event
                 yield await sse_event({
                     "type": "done",
-                    "variation_id": variation.variation_id,
-                    "phrase_count": len(variation.phrases),
+                    "variationId": variation.variation_id,
+                    "phraseCount": len(variation.phrases),
                 })
 
                 logger.info(
@@ -758,32 +759,32 @@ async def _handle_composing(
                 yield await sse_event({
                     "type": "complete",
                     "success": True,
-                    "variation_id": variation.variation_id,
-                    "total_changes": variation.total_changes,
-                    "phrase_count": len(variation.phrases),
-                    "trace_id": trace.trace_id,
+                    "variationId": variation.variation_id,
+                    "totalChanges": variation.total_changes,
+                    "phraseCount": len(variation.phrases),
+                    "traceId": trace.trace_id,
                 })
 
-        except Exception as e:
+        except BaseException as e:
             logger.exception(
                 f"[{trace.trace_id[:8]}] Variation generation failed: {e}"
             )
             yield await sse_event({
                 "type": "error",
                 "message": f"Generation failed: {e}",
-                "trace_id": trace.trace_id,
+                "traceId": trace.trace_id,
             })
             yield await sse_event({
                 "type": "done",
-                "variation_id": "",
-                "phrase_count": 0,
+                "variationId": "",
+                "phraseCount": 0,
                 "status": "failed",
             })
             yield await sse_event({
                 "type": "complete",
                 "success": False,
                 "error": str(e),
-                "trace_id": trace.trace_id,
+                "traceId": trace.trace_id,
             })
         return
     else:
@@ -840,8 +841,8 @@ async def _handle_composing(
         yield await sse_event({
             "type": "complete",
             "success": True,
-            "tool_calls": [],
-            "trace_id": trace.trace_id,
+            "toolCalls": [],
+            "traceId": trace.trace_id,
         })
 
 
@@ -1025,7 +1026,7 @@ async def _handle_editing(
                 )
                 
                 yield await sse_event({
-                    "type": "tool_error",
+                    "type": "toolError",
                     "name": tc.name,
                     "error": validation.error_message,
                     "errors": [str(e) for e in validation.errors],
@@ -1187,7 +1188,7 @@ async def _handle_editing(
             # Emit tool call to client (only in apply mode)
             if execution_mode == "apply":
                 yield await sse_event({
-                    "type": "tool_call",
+                    "type": "toolCall",
                     "id": tc.id,
                     "name": tc.name,
                     "params": enriched_params,
@@ -1199,7 +1200,18 @@ async def _handle_editing(
                 "tool": tc.name,
                 "params": enriched_params,
             })
-            
+
+            # Persist notes so the COMPOSING handoff can diff against them
+            if tc.name == "stori_add_notes":
+                _notes = enriched_params.get("notes", [])
+                _rid = enriched_params.get("regionId", "")
+                if _rid and _notes:
+                    store.add_notes(_rid, _notes)
+                    logger.debug(
+                        f"📝 [EDITING] Persisted {len(_notes)} notes for "
+                        f"region {_rid[:8]} in StateStore"
+                    )
+
             # Add to messages — summarize stori_add_notes to avoid
             # bloating context with hundreds of note objects
             if tc.name == "stori_add_notes":
@@ -1333,35 +1345,36 @@ async def _handle_editing(
         note_counts = variation.note_counts
         yield await sse_event({
             "type": "meta",
-            "variation_id": variation.variation_id,
+            "variationId": variation.variation_id,
+            "baseStateId": store.get_state_id(),
             "intent": variation.intent,
-            "ai_explanation": variation.ai_explanation,
-            "affected_tracks": variation.affected_tracks,
-            "affected_regions": variation.affected_regions,
-            "note_counts": note_counts,
+            "aiExplanation": variation.ai_explanation,
+            "affectedTracks": variation.affected_tracks,
+            "affectedRegions": variation.affected_regions,
+            "noteCounts": note_counts,
         })
         
         # Emit individual phrase events (per spec)
         for phrase in variation.phrases:
             yield await sse_event({
                 "type": "phrase",
-                "phrase_id": phrase.phrase_id,
-                "track_id": phrase.track_id,
-                "region_id": phrase.region_id,
-                "start_beat": phrase.start_beat,
-                "end_beat": phrase.end_beat,
+                "phraseId": phrase.phrase_id,
+                "trackId": phrase.track_id,
+                "regionId": phrase.region_id,
+                "startBeat": phrase.start_beat,
+                "endBeat": phrase.end_beat,
                 "label": phrase.label,
                 "tags": phrase.tags,
                 "explanation": phrase.explanation,
-                "note_changes": [nc.model_dump() for nc in phrase.note_changes],
-                "controller_changes": phrase.controller_changes,
+                "noteChanges": [nc.model_dump(by_alias=True) for nc in phrase.note_changes],
+                "controllerChanges": phrase.controller_changes,
             })
         
-        # Emit done event (per spec — includes phrase_count)
+        # Emit done event (per spec)
         yield await sse_event({
             "type": "done",
-            "variation_id": variation.variation_id,
-            "phrase_count": len(variation.phrases),
+            "variationId": variation.variation_id,
+            "phraseCount": len(variation.phrases),
         })
         
         logger.info(
@@ -1373,10 +1386,10 @@ async def _handle_editing(
         yield await sse_event({
             "type": "complete",
             "success": True,
-            "variation_id": variation.variation_id,
-            "total_changes": variation.total_changes,
-            "phrase_count": len(variation.phrases),
-            "trace_id": trace.trace_id,
+            "variationId": variation.variation_id,
+            "totalChanges": variation.total_changes,
+            "phraseCount": len(variation.phrases),
+            "traceId": trace.trace_id,
         })
         return
     
@@ -1386,9 +1399,9 @@ async def _handle_editing(
     yield await sse_event({
         "type": "complete",
         "success": True,
-        "tool_calls": tool_calls_collected,
-        "state_version": store.version,
-        "trace_id": trace.trace_id,
+        "toolCalls": tool_calls_collected,
+        "stateVersion": store.version,
+        "traceId": trace.trace_id,
     })
 
 
