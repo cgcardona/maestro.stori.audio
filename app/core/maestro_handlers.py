@@ -297,17 +297,45 @@ class _PlanTracker:
                 tempo = tc.params.get("tempo")
             elif tc.name in ("stori_set_key", "stori_set_key_signature"):
                 key = tc.params.get("key")
-        title = prompt[:80].rstrip()
-        if len(prompt) > 80:
-            title = (title.rsplit(" ", 1)[0] or title)
+
+        # For structured prompts (STORI PROMPT header), extract Section + Style
+        # instead of dumping the YAML block into the title.
+        base: str
+        if prompt.startswith("STORI PROMPT"):
+            section: Optional[str] = None
+            style: Optional[str] = None
+            request_line: Optional[str] = None
+            for line in prompt.splitlines():
+                stripped = line.strip()
+                if stripped.lower().startswith("section:"):
+                    section = stripped.split(":", 1)[1].strip()
+                elif stripped.lower().startswith("style:"):
+                    style = stripped.split(":", 1)[1].strip()
+                elif stripped.lower().startswith("request: |"):
+                    pass  # next non-empty line is the request text
+                elif request_line is None and section and stripped and not ":" in stripped:
+                    request_line = stripped
+            if section and style:
+                base = f"Create {style} {section}"
+            elif section:
+                base = f"Create {section}"
+            elif style:
+                base = f"Create {style} section"
+            else:
+                base = "Compose"
+        else:
+            base = prompt[:80].rstrip()
+            if len(prompt) > 80:
+                base = (base.rsplit(" ", 1)[0] or base)
+
         params: list[str] = []
         if key:
             params.append(str(key))
         if tempo:
             params.append(f"{tempo} BPM")
         if params:
-            return f"{title} ({', '.join(params)})"
-        return title
+            return f"{base} ({', '.join(params)})"
+        return base
 
     def _group_into_steps(self, tool_calls: list[Any]) -> list[_PlanStep]:
         steps: list[_PlanStep] = []
