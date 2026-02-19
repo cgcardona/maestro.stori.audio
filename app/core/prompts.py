@@ -55,6 +55,11 @@ def system_prompt_base() -> str:
         "- DO NOT show parameter names (like 'startBeat', 'durationBeats', 'trackId')\n"
         "- Instead, describe WHAT you're doing musically: 'I'll add a 4-measure region to the guitar track'\n"
         "- Keep reasoning concise and focused on musical decisions, not implementation details\n"
+        "- NOTE NOTATION: When referencing specific pitches in your reasoning, use standard music notation\n"
+        "  (C3, Eb4, G♯5) — never raw MIDI integers or bare comma-separated tuples like '48,, ,'.\n"
+        "  If you want to convey velocity or duration, use prose or a compact inline form:\n"
+        "  'C3 at medium velocity, held for a quarter note' or 'C3 (vel 80, ¼)'.\n"
+        "  For chords, name the voicing: 'Abmaj9 voicing: Ab3–Eb4–G4–Bb4–C5'.\n"
     )
 
 
@@ -102,7 +107,10 @@ def editing_composition_prompt() -> str:
         "- Work through tracks one at a time: create region → add notes → move to next track.\n"
         "- Do NOT emit a final text response until ALL tracks have regions and notes.\n"
         "- If you run out of space in one response, continue in the next iteration.\n"
-        "- The system calls you in a loop — keep making tool calls until every track has content.\n\n"
+        "- The system calls you in a loop — keep making tool calls until every track has content.\n"
+        "- NEVER call stori_clear_notes during composition. If a region already has notes from a\n"
+        "  prior step, call stori_add_notes to append more — do not clear first. stori_clear_notes\n"
+        "  is only for explicit user requests to erase content.\n\n"
         "MIDI quality requirements — generate RICH, musically detailed MIDI:\n"
         "- Note density: aim for 100-200+ notes per 8-bar melodic part. Drums should be denser.\n"
         "  Do NOT produce sparse, simplified patterns — fill the full region duration.\n"

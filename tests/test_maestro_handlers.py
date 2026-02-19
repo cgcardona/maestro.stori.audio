@@ -168,6 +168,24 @@ class TestGetIncompleteTracks:
         result = _get_incomplete_tracks(store)
         assert "Keys" in result
 
+    def test_notes_from_prior_iteration_count_as_complete(self):
+        """Regression: notes persisted to StateStore in a prior iteration must
+        satisfy the completeness check even when tool_calls_collected is empty.
+        Without this, the continuation prompt falsely tells the model a region
+        still needs notes, causing it to call stori_clear_notes and destroy
+        valid content before re-adding.
+        """
+        store = self._make_store()
+        tid = store.create_track("Pads")
+        rid = store.create_region("Intro Pads", tid)
+        # Simulate notes persisted from iteration 1
+        store.add_notes(rid, [{"pitch": 60, "startBeat": 0, "durationBeats": 4, "velocity": 80}])
+        # Iteration 2: no new stori_add_notes calls in this batch
+        result = _get_incomplete_tracks(store, tool_calls_collected=[])
+        assert "Pads" not in result, (
+            "Track with StateStore notes should not appear in incomplete list"
+        )
+
 
 class TestCreateEditingCompositionRoute:
     """Test _create_editing_composition_route helper."""

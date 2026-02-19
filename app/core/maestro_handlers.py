@@ -172,25 +172,31 @@ def _get_incomplete_tracks(
 
     Checks two conditions:
     1. Track has no regions at all
-    2. Track has regions but none of them received stori_add_notes calls
+    2. Track has regions but none of them have notes — either from the current
+       iteration's tool calls OR persisted in the StateStore from a prior
+       iteration. Checking both sources prevents false "still needs notes"
+       continuations that cause the model to clear and re-add valid content.
 
     Used by the composition continuation loop to detect premature LLM stops.
     """
-    # Build set of regionIds that received notes
-    regions_with_notes: set[str] = set()
+    # Build set of regionIds that received notes in the current iteration
+    regions_with_notes_this_iter: set[str] = set()
     if tool_calls_collected:
         for tc in tool_calls_collected:
             if tc["tool"] == "stori_add_notes":
                 rid = tc["params"].get("regionId")
                 if rid:
-                    regions_with_notes.add(rid)
+                    regions_with_notes_this_iter.add(rid)
 
     incomplete: list[str] = []
     for track in store.registry.list_tracks():
         regions = store.registry.get_track_regions(track.id)
         if not regions:
             incomplete.append(track.name)
-        elif not any(r.id in regions_with_notes for r in regions):
+        elif not any(
+            r.id in regions_with_notes_this_iter or bool(store.get_region_notes(r.id))
+            for r in regions
+        ):
             incomplete.append(track.name)
     return incomplete
 
