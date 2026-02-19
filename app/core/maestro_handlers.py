@@ -775,6 +775,7 @@ async def orchestrate(
     user_id: Optional[str] = None,
     conversation_history: Optional[list[dict[str, Any]]] = None,
     is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
+    quality_preset: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """
     Main orchestration using Cursor-of-DAWs architecture.
@@ -878,8 +879,9 @@ async def orchestrate(
             
             if route.sse_state == SSEState.COMPOSING:
                 async for event in _handle_composing(
-                    prompt, project_context, route, llm, store, trace, 
+                    prompt, project_context, route, llm, store, trace,
                     usage_tracker, conversation_id,
+                    quality_preset=quality_preset,
                 ):
                     yield event
                 return
@@ -892,6 +894,7 @@ async def orchestrate(
                 prompt, project_context, route, llm, store, trace,
                 usage_tracker, conversation_history, execution_mode,
                 is_cancelled=is_cancelled,
+                quality_preset=quality_preset,
             ):
                 yield event
     
@@ -1061,6 +1064,7 @@ async def _retry_composing_as_editing(
     store: StateStore,
     trace,
     usage_tracker: Optional[UsageTracker],
+    quality_preset: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """When planner output looks like function calls instead of JSON, retry as EDITING with primitives."""
     logger.warning(
@@ -1071,7 +1075,8 @@ async def _retry_composing_as_editing(
     editing_route = _create_editing_fallback_route(route)
     async for event in _handle_editing(
         prompt, project_context, editing_route, llm, store,
-        trace, usage_tracker, [], "variation"
+        trace, usage_tracker, [], "variation",
+        quality_preset=quality_preset,
     ):
         yield event
 
@@ -1085,6 +1090,7 @@ async def _handle_composing(
     trace,
     usage_tracker: Optional[UsageTracker],
     conversation_id: Optional[str],
+    quality_preset: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """Handle COMPOSING state - generate music via planner.
     
@@ -1136,6 +1142,7 @@ async def _handle_composing(
                         conversation_id=conversation_id,
                         explanation=output.plan.llm_response_text,
                         progress_callback=on_progress,
+                        quality_preset=quality_preset,
                     )
                 )
                 # Drain progress queue and yield progress SSE; enforce 90s timeout
@@ -1300,6 +1307,7 @@ async def _handle_composing(
             async for event in _retry_composing_as_editing(
                 prompt, project_context, route, llm, store,
                 trace, usage_tracker,
+                quality_preset=quality_preset,
             ):
                 yield event
             return
@@ -1346,6 +1354,7 @@ async def _handle_editing(
     conversation_history: list[dict[str, Any]],
     execution_mode: str = "apply",
     is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
+    quality_preset: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """Handle EDITING state - LLM tool calls with allowlist + validation.
     
@@ -1914,6 +1923,7 @@ async def _handle_editing(
             # and so commit can find the same store later.
             conversation_id=store.conversation_id,
             explanation=None,
+            quality_preset=quality_preset,
         )
 
         # Persist to VariationStore so commit/discard can find it

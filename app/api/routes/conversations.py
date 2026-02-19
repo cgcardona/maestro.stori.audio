@@ -595,6 +595,7 @@ async def add_message_to_conversation(
                 usage_tracker=usage_tracker,
                 conversation_history=conversation_history,
                 is_cancelled=request.is_disconnected,
+                quality_preset=maestro_request.quality_preset,
             ):
                 # Parse SSE event
                 if event.startswith("data: "):

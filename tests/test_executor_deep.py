@@ -451,3 +451,234 @@ class TestGeneratorTimeout:
             await _process_call_for_variation(call, var_ctx)
 
         assert len(var_ctx.proposed_notes) == 0
+
+
+# ---------------------------------------------------------------------------
+# emotion_vector derivation in execute_plan_variation
+# ---------------------------------------------------------------------------
+
+
+class TestEmotionVectorIntegration:
+    """Tests that execute_plan_variation derives and passes emotion_vector to mg.generate."""
+
+    @pytest.mark.anyio
+    async def test_emotion_vector_derived_from_stori_prompt(self):
+        """When explanation contains a STORI PROMPT, emotion_vector is derived and passed."""
+        stori_prompt = (
+            "STORI PROMPT\n"
+            "Section: Verse\n"
+            "Style: Lofi Hip-Hop\n"
+            "Vibe: Melancholic, warm\n"
+            "Energy: Low"
+        )
+
+        captured_kwargs: dict = {}
+
+        async def mock_generate(**kwargs):
+            captured_kwargs.update(kwargs)
+            from app.services.music_generator import GenerationResult
+            from app.services.backends.base import GeneratorBackend
+            return GenerationResult(
+                success=True,
+                notes=[{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 80}],
+                backend_used=GeneratorBackend.ORPHEUS,
+                metadata={},
+            )
+
+        generator_call = ToolCall("stori_generate_midi", {
+            "role": "drums",
+            "style": "lofi",
+            "tempo": 85,
+            "bars": 4,
+        })
+
+        mock_mg = MagicMock()
+        mock_mg.generate = mock_generate
+
+        with patch("app.core.executor.get_music_generator", return_value=mock_mg):
+            with patch("app.core.executor.get_or_create_store") as mock_store_factory:
+                mock_store = MagicMock()
+                mock_store.registry = MagicMock()
+                mock_store.registry.resolve_track = MagicMock(return_value="t1")
+                mock_store.registry.get_latest_region_for_track = MagicMock(return_value="r1")
+                mock_store.registry.get_region = MagicMock(return_value=None)
+                mock_store.sync_from_client = MagicMock()
+                mock_store.conversation_id = "test"
+                mock_store_factory.return_value = mock_store
+
+                with patch("app.core.executor.get_variation_service") as mock_vs:
+                    from app.models.variation import Variation
+                    mock_vs.return_value.compute_variation = MagicMock(
+                        return_value=Variation(
+                            variation_id="v1",
+                            intent="test",
+                            affected_tracks=[],
+                            affected_regions=[],
+                            beat_range=(0.0, 4.0),
+                            phrases=[],
+                        )
+                    )
+                    mock_vs.return_value.compute_multi_region_variation = MagicMock(
+                        return_value=Variation(
+                            variation_id="v1",
+                            intent="test",
+                            affected_tracks=[],
+                            affected_regions=[],
+                            beat_range=(0.0, 4.0),
+                            phrases=[],
+                        )
+                    )
+
+                    await execute_plan_variation(
+                        tool_calls=[generator_call],
+                        project_state={},
+                        intent="compose lofi verse",
+                        explanation=stori_prompt,
+                    )
+
+        # emotion_vector should have been passed to mg.generate
+        assert "emotion_vector" in captured_kwargs
+        ev = captured_kwargs["emotion_vector"]
+        assert ev is not None
+        # A melancholic low-energy prompt should produce low energy and high intimacy
+        assert ev.energy < 0.5
+        assert ev.intimacy > 0.5
+
+    @pytest.mark.anyio
+    async def test_no_explanation_skips_emotion_vector(self):
+        """When explanation is None, emotion_vector is not passed (or is None)."""
+        captured_kwargs: dict = {}
+
+        async def mock_generate(**kwargs):
+            captured_kwargs.update(kwargs)
+            from app.services.music_generator import GenerationResult
+            from app.services.backends.base import GeneratorBackend
+            return GenerationResult(
+                success=True,
+                notes=[],
+                backend_used=GeneratorBackend.ORPHEUS,
+                metadata={},
+            )
+
+        generator_call = ToolCall("stori_generate_midi", {
+            "role": "drums",
+            "style": "trap",
+            "tempo": 140,
+            "bars": 4,
+        })
+
+        mock_mg = MagicMock()
+        mock_mg.generate = mock_generate
+
+        with patch("app.core.executor.get_music_generator", return_value=mock_mg):
+            with patch("app.core.executor.get_or_create_store") as mock_store_factory:
+                mock_store = MagicMock()
+                mock_store.registry = MagicMock()
+                mock_store.registry.resolve_track = MagicMock(return_value="t1")
+                mock_store.registry.get_latest_region_for_track = MagicMock(return_value="r1")
+                mock_store.registry.get_region = MagicMock(return_value=None)
+                mock_store.sync_from_client = MagicMock()
+                mock_store.conversation_id = "test"
+                mock_store_factory.return_value = mock_store
+
+                with patch("app.core.executor.get_variation_service") as mock_vs:
+                    from app.models.variation import Variation
+                    mock_vs.return_value.compute_variation = MagicMock(
+                        return_value=Variation(
+                            variation_id="v1",
+                            intent="test",
+                            affected_tracks=[],
+                            affected_regions=[],
+                            beat_range=(0.0, 4.0),
+                            phrases=[],
+                        )
+                    )
+                    mock_vs.return_value.compute_multi_region_variation = MagicMock(
+                        return_value=Variation(
+                            variation_id="v1",
+                            intent="test",
+                            affected_tracks=[],
+                            affected_regions=[],
+                            beat_range=(0.0, 4.0),
+                            phrases=[],
+                        )
+                    )
+
+                    await execute_plan_variation(
+                        tool_calls=[generator_call],
+                        project_state={},
+                        intent="compose",
+                        explanation=None,
+                    )
+
+        # emotion_vector should be None (no explanation provided)
+        assert captured_kwargs.get("emotion_vector") is None
+
+    @pytest.mark.anyio
+    async def test_quality_preset_forwarded_to_generator(self):
+        """quality_preset passed to execute_plan_variation reaches mg.generate."""
+        captured_kwargs: dict = {}
+
+        async def mock_generate(**kwargs):
+            captured_kwargs.update(kwargs)
+            from app.services.music_generator import GenerationResult
+            from app.services.backends.base import GeneratorBackend
+            return GenerationResult(
+                success=True,
+                notes=[],
+                backend_used=GeneratorBackend.ORPHEUS,
+                metadata={},
+            )
+
+        generator_call = ToolCall("stori_generate_midi", {
+            "role": "drums",
+            "style": "trap",
+            "tempo": 140,
+            "bars": 4,
+        })
+
+        mock_mg = MagicMock()
+        mock_mg.generate = mock_generate
+
+        with patch("app.core.executor.get_music_generator", return_value=mock_mg):
+            with patch("app.core.executor.get_or_create_store") as mock_store_factory:
+                mock_store = MagicMock()
+                mock_store.registry = MagicMock()
+                mock_store.registry.resolve_track = MagicMock(return_value="t1")
+                mock_store.registry.get_latest_region_for_track = MagicMock(return_value="r1")
+                mock_store.registry.get_region = MagicMock(return_value=None)
+                mock_store.sync_from_client = MagicMock()
+                mock_store.conversation_id = "test"
+                mock_store_factory.return_value = mock_store
+
+                with patch("app.core.executor.get_variation_service") as mock_vs:
+                    from app.models.variation import Variation
+                    mock_vs.return_value.compute_variation = MagicMock(
+                        return_value=Variation(
+                            variation_id="v1",
+                            intent="test",
+                            affected_tracks=[],
+                            affected_regions=[],
+                            beat_range=(0.0, 4.0),
+                            phrases=[],
+                        )
+                    )
+                    mock_vs.return_value.compute_multi_region_variation = MagicMock(
+                        return_value=Variation(
+                            variation_id="v1",
+                            intent="test",
+                            affected_tracks=[],
+                            affected_regions=[],
+                            beat_range=(0.0, 4.0),
+                            phrases=[],
+                        )
+                    )
+
+                    await execute_plan_variation(
+                        tool_calls=[generator_call],
+                        project_state={},
+                        intent="compose",
+                        quality_preset="fast",
+                    )
+
+        assert captured_kwargs.get("quality_preset") == "fast"

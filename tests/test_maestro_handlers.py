@@ -671,3 +671,24 @@ class TestOrchestrateStream:
                     assert state_event.get("state") == "composing", (
                         f"Expected 'composing' for non-empty project, got '{state_event.get('state')}'"
                     )
+
+    @pytest.mark.anyio
+    async def test_orchestrate_accepts_quality_preset_param(self):
+        """quality_preset parameter is accepted by orchestrate without TypeError."""
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
+            m_intent.side_effect = RuntimeError("abort early")
+            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+                mock_llm = MagicMock()
+                mock_llm.close = AsyncMock()
+                m_llm_cls.return_value = mock_llm
+                events = []
+                async for event in orchestrate("compose something", quality_preset="fast"):
+                    events.append(event)
+                # We expect an error+complete pair — just confirming no TypeError
+                import json
+                payloads = [
+                    json.loads(e.split("data: ", 1)[1].strip())
+                    for e in events if "data:" in e
+                ]
+                types = [p["type"] for p in payloads]
+                assert "complete" in types

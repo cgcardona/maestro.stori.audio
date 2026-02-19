@@ -24,9 +24,7 @@ The `prompt` field accepts both natural language and the **Stori structured prom
 | `conversationId` | string (UUID) | no | Conversation ID for multi-turn context. Send the same ID for every request in a session. |
 | `model` | string | no | LLM model override (e.g. `anthropic/claude-3.7-sonnet`) |
 | `storePrompt` | bool | no | Whether to store prompt for training data (default `true`) |
-| `humanizeProfile` | string | no | Timing feel: `"tight"` \| `"laid_back"` \| `"pushed"`. Backend chooses default if omitted. |
-| `qualityPreset` | string | no | Inference quality: `"fast"` \| `"balanced"` \| `"quality"`. Default `"balanced"`. |
-| `swing` | float 0–1 | no | Swing amount. Backend chooses based on style if omitted. |
+| `qualityPreset` | string | no | Orpheus generation quality: `"fast"` \| `"balanced"` \| `"quality"`. Default `"quality"`. Use `"fast"` or `"balanced"` only when optimising for iteration speed over output quality. |
 
 ---
 

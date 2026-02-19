@@ -19,6 +19,7 @@ from app.config import settings
 from app.api.routes import maestro, health, users, conversations, assets, variation
 from app.api.routes import mcp as mcp_routes
 from app.db import init_db, close_db
+from app.services.orpheus import get_orpheus_client, close_orpheus_client
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -90,11 +91,16 @@ async def lifespan(app: FastAPI):
                 "Do not use 'changeme123' or leave it unset. Generate with: openssl rand -hex 16"
             )
 
+    # Warm up Orpheus connection pool so the first generation request incurs
+    # no cold-start TCP/TLS handshake cost.
+    await get_orpheus_client().warmup()
+
     yield
-    
+
     # Cleanup
     logger.info("Shutting down...")
     await close_db()
+    await close_orpheus_client()
 
 
 app = FastAPI(

@@ -44,21 +44,10 @@ class MaestroRequest(CamelModel):
         pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
         description="Conversation ID for multi-turn sessions. State persists across requests with same ID."
     )
-    humanize_profile: Optional[str] = Field(
-        default=None,
-        pattern=r'^(tight|laid_back|pushed)$',
-        description="Humanization feel: 'tight', 'laid_back', or 'pushed'. Backend chooses default if omitted.",
-    )
     quality_preset: Optional[str] = Field(
         default=None,
         pattern=r'^(fast|balanced|quality)$',
-        description="Quality preset: 'fast', 'balanced', or 'quality'. Default 'balanced'.",
-    )
-    swing: Optional[float] = Field(
-        default=None,
-        ge=0.0,
-        le=1.0,
-        description="Swing amount (0.0-1.0). Backend chooses based on style if omitted.",
+        description="Orpheus quality preset: 'fast', 'balanced', or 'quality'. Default 'quality'. Use 'fast' or 'balanced' only for rapid iteration.",
     )
 
     @field_validator("prompt")

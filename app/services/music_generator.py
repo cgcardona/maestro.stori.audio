@@ -152,7 +152,7 @@ class MusicGenerator:
             GenerationResult with notes and metadata
         """
         logger.info(f"Generating {bars} bars of {style} {instrument} at {tempo} BPM")
-        quality_preset = kwargs.pop("quality_preset", "balanced")  # "fast" | "balanced" | "quality"
+        quality_preset = kwargs.pop("quality_preset", "quality")  # "fast" | "balanced" | "quality"
         num_candidates = kwargs.pop("num_candidates", None)
         
         # Get preset config

@@ -180,6 +180,7 @@ async def stream_maestro(
                 user_id=user_id,
                 conversation_history=conversation_history,
                 is_cancelled=request.is_disconnected,
+                quality_preset=maestro_request.quality_preset,
             ):
                 yield event
 

@@ -15,6 +15,7 @@ from app.core.emotion_vector import (
     emotion_to_constraints,
     get_emotion_preset,
     get_refinement_delta,
+    emotion_vector_from_stori_prompt,
     EMOTION_PRESETS,
 )
 from app.services.neural.tokenizer import MidiTokenizer, TokenizerConfig
@@ -568,3 +569,152 @@ class TestText2MidiBackend:
         text = emotion_to_text_description(ev, key="C", tempo=120, instrument="guitar")
         
         assert "guitar" in text.lower()
+
+
+# =============================================================================
+# emotion_vector_from_stori_prompt — new function tests
+# =============================================================================
+
+
+class TestEmotionVectorFromStoriPrompt:
+    """Tests for the STORI PROMPT → EmotionVector parser."""
+
+    def test_empty_string_returns_neutral(self):
+        """Empty input returns the neutral preset."""
+        ev = emotion_vector_from_stori_prompt("")
+        neutral = EMOTION_PRESETS["neutral"]
+        assert abs(ev.energy - neutral.energy) < 0.01
+
+    def test_none_equivalent_empty_string(self):
+        """Empty input does not raise and returns a valid EmotionVector."""
+        ev = emotion_vector_from_stori_prompt("")
+        assert 0.0 <= ev.energy <= 1.0
+        assert -1.0 <= ev.valence <= 1.0
+
+    def test_section_verse_lowers_energy(self):
+        """A Verse section preset has lower energy than the Chorus preset."""
+        verse_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nSection: Verse")
+        chorus_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nSection: Chorus")
+        assert verse_ev.energy < chorus_ev.energy
+
+    def test_section_drop_raises_energy_and_motion(self):
+        """Drop section should produce high energy and motion."""
+        ev = emotion_vector_from_stori_prompt("STORI PROMPT\nSection: Drop")
+        assert ev.energy > 0.7
+        assert ev.motion > 0.7
+
+    def test_dark_vibe_lowers_valence(self):
+        """'dark' in Vibe should push valence below neutral."""
+        ev = emotion_vector_from_stori_prompt("STORI PROMPT\nVibe: Dark")
+        assert ev.valence < 0.0
+
+    def test_euphoric_vibe_raises_energy_and_valence(self):
+        """'euphoric' in Vibe should push energy and valence well above neutral."""
+        neutral = emotion_vector_from_stori_prompt("")
+        ev = emotion_vector_from_stori_prompt("STORI PROMPT\nVibe: Euphoric")
+        assert ev.energy > neutral.energy + 0.1
+        assert ev.valence > neutral.valence + 0.2
+
+    def test_energy_low_lowers_energy_axis(self):
+        """'Energy: Low' should produce a lower energy than 'Energy: High'."""
+        low_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nEnergy: Low")
+        high_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nEnergy: High")
+        assert low_ev.energy < high_ev.energy
+        assert low_ev.motion < high_ev.motion
+
+    def test_energy_very_high_exceeds_high(self):
+        """'Energy: Very High' should produce higher energy than 'Energy: High'."""
+        high_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nEnergy: High")
+        very_high_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nEnergy: Very High")
+        assert very_high_ev.energy >= high_ev.energy
+
+    def test_genre_lofi_raises_intimacy(self):
+        """Lofi style should yield higher intimacy than a generic prompt."""
+        lofi_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nStyle: Lofi Hip-Hop")
+        neutral_ev = emotion_vector_from_stori_prompt("")
+        assert lofi_ev.intimacy > neutral_ev.intimacy
+
+    def test_genre_edm_raises_energy(self):
+        """EDM style should yield higher energy than lofi."""
+        edm_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nStyle: EDM")
+        lofi_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nStyle: Lofi")
+        assert edm_ev.energy > lofi_ev.energy
+
+    def test_multiple_vibe_keywords_blend(self):
+        """Multiple vibe keywords should blend — result between individual extremes."""
+        dark_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nVibe: Dark")
+        bright_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nVibe: Bright")
+        blend_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nVibe: Dark, Bright")
+        # Blend should sit between the two extremes
+        lo, hi = sorted([dark_ev.valence, bright_ev.valence])
+        assert lo <= blend_ev.valence <= hi + 0.15  # small tolerance for blending math
+
+    def test_full_stori_prompt_melancholic_verse(self):
+        """A full lofi verse prompt should produce low energy, high intimacy, negative valence."""
+        ev = emotion_vector_from_stori_prompt(
+            "STORI PROMPT\n"
+            "Section: Verse\n"
+            "Style: Lofi Hip-Hop\n"
+            "Vibe: Melancholic, warm, nostalgic\n"
+            "Energy: Low\n"
+            "BPM: 85\n"
+            "Key: Am\n"
+            "Bars: 8"
+        )
+        assert ev.energy < 0.5
+        assert ev.intimacy > 0.5
+        assert ev.valence < 0.2  # warm+nostalgic+melancholic blend is slightly negative
+
+    def test_full_stori_prompt_euphoric_drop(self):
+        """A euphoric EDM drop prompt should produce high energy, high motion, positive valence."""
+        ev = emotion_vector_from_stori_prompt(
+            "STORI PROMPT\n"
+            "Section: Drop\n"
+            "Style: EDM\n"
+            "Vibe: Euphoric, explosive, driving\n"
+            "Energy: Very High"
+        )
+        assert ev.energy > 0.7
+        assert ev.motion > 0.7
+        assert ev.valence > 0.3
+
+    def test_contrasting_prompts_are_distinct(self):
+        """Two opposed prompts must produce clearly different vectors."""
+        melancholic = emotion_vector_from_stori_prompt(
+            "STORI PROMPT\nVibe: Melancholic\nEnergy: Low"
+        )
+        triumphant = emotion_vector_from_stori_prompt(
+            "STORI PROMPT\nVibe: Triumphant\nEnergy: High"
+        )
+        assert melancholic.distance(triumphant) > 0.3
+
+    def test_output_always_in_valid_range(self):
+        """All axes should always be within their valid ranges regardless of input."""
+        prompts = [
+            "STORI PROMPT\nVibe: Explosive, euphoric, driving\nEnergy: Very High",
+            "STORI PROMPT\nVibe: Peaceful, calm, minimal\nEnergy: Very Low",
+            "STORI PROMPT\nSection: Drop\nStyle: Metal\nVibe: Aggressive, intense",
+            "not a stori prompt at all",
+            "",
+        ]
+        for text in prompts:
+            ev = emotion_vector_from_stori_prompt(text)
+            assert 0.0 <= ev.energy <= 1.0, f"energy out of range for: {text!r}"
+            assert -1.0 <= ev.valence <= 1.0, f"valence out of range for: {text!r}"
+            assert 0.0 <= ev.tension <= 1.0, f"tension out of range for: {text!r}"
+            assert 0.0 <= ev.intimacy <= 1.0, f"intimacy out of range for: {text!r}"
+            assert 0.0 <= ev.motion <= 1.0, f"motion out of range for: {text!r}"
+
+    def test_unknown_fields_ignored_gracefully(self):
+        """Unrecognised STORI PROMPT fields do not crash the parser."""
+        ev = emotion_vector_from_stori_prompt(
+            "STORI PROMPT\nBPM: 120\nKey: Cm\nBars: 8\nRequest: |"
+        )
+        assert isinstance(ev, EmotionVector)
+
+    def test_case_insensitive_keys(self):
+        """Field keys are matched case-insensitively."""
+        ev1 = emotion_vector_from_stori_prompt("STORI PROMPT\nVibe: Calm")
+        ev2 = emotion_vector_from_stori_prompt("STORI PROMPT\nvibe: calm")
+        # Both should produce the same result
+        assert abs(ev1.energy - ev2.energy) < 0.01

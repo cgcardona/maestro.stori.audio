@@ -200,6 +200,209 @@ def get_refinement_delta(command: str) -> Optional[dict[str, float]]:
 
 
 # =============================================================================
+# STORI PROMPT → EmotionVector Parser
+# =============================================================================
+
+# Keyword → partial emotion axis overrides derived from STORI PROMPT Vibe field.
+# Values are targets; parsing blends multiple keywords by averaging.
+_VIBE_KEYWORD_MAP: dict[str, dict[str, float]] = {
+    # Valence (dark ↔ bright)
+    "melancholic": {"valence": -0.5, "energy": 0.25, "intimacy": 0.7},
+    "sad": {"valence": -0.6, "energy": 0.3},
+    "dark": {"valence": -0.45, "tension": 0.5},
+    "moody": {"valence": -0.3, "tension": 0.45},
+    "brooding": {"valence": -0.35, "tension": 0.5, "energy": 0.3},
+    "nostalgic": {"valence": -0.2, "intimacy": 0.6},
+    "bittersweet": {"valence": -0.1, "intimacy": 0.6, "tension": 0.35},
+    "happy": {"valence": 0.6, "energy": 0.6},
+    "joyful": {"valence": 0.7, "energy": 0.65},
+    "bright": {"valence": 0.5, "energy": 0.5},
+    "uplifting": {"valence": 0.6, "energy": 0.65},
+    "triumphant": {"valence": 0.7, "energy": 0.85, "tension": 0.4},
+    "euphoric": {"valence": 0.9, "energy": 0.9, "motion": 0.9},
+    # Energy
+    "energetic": {"energy": 0.8, "motion": 0.7},
+    "intense": {"energy": 0.85, "tension": 0.7},
+    "explosive": {"energy": 1.0, "tension": 0.8, "motion": 0.9},
+    "peaceful": {"energy": 0.2, "tension": 0.1},
+    "calm": {"energy": 0.2, "tension": 0.1, "motion": 0.2},
+    "relaxed": {"energy": 0.25, "tension": 0.1, "motion": 0.2},
+    "mellow": {"energy": 0.3, "tension": 0.15, "motion": 0.3},
+    "aggressive": {"energy": 0.9, "tension": 0.8, "motion": 0.8},
+    "laid-back": {"energy": 0.3, "tension": 0.1, "motion": 0.35},
+    # Intimacy / space
+    "intimate": {"intimacy": 0.8, "energy": 0.3},
+    "personal": {"intimacy": 0.75},
+    "warm": {"valence": 0.3, "intimacy": 0.65},
+    "cozy": {"intimacy": 0.7, "energy": 0.2, "valence": 0.2},
+    "epic": {"intimacy": 0.1, "energy": 0.85},
+    "distant": {"intimacy": 0.15},
+    "atmospheric": {"intimacy": 0.5, "tension": 0.3, "energy": 0.2},
+    "cinematic": {"intimacy": 0.3, "tension": 0.5, "energy": 0.6},
+    # Motion / rhythm
+    "driving": {"motion": 0.8, "energy": 0.7},
+    "groovy": {"motion": 0.75, "energy": 0.6},
+    "sparse": {"motion": 0.2, "energy": 0.2},
+    "minimal": {"motion": 0.15, "energy": 0.15},
+    "dense": {"motion": 0.7, "energy": 0.7},
+    "flowing": {"motion": 0.6, "tension": 0.2},
+    "bouncy": {"motion": 0.7, "energy": 0.6, "valence": 0.3},
+    # Tension / harmonic colour
+    "anxious": {"tension": 0.8, "energy": 0.6},
+    "tense": {"tension": 0.75},
+    "resolved": {"tension": 0.1, "valence": 0.2},
+    "dreamy": {"tension": 0.2, "intimacy": 0.7, "energy": 0.2},
+    "mysterious": {"tension": 0.6, "valence": -0.2, "energy": 0.3},
+    "haunting": {"tension": 0.65, "valence": -0.4, "energy": 0.25},
+    "eerie": {"tension": 0.7, "valence": -0.45},
+}
+
+# "Energy: Low/Medium/High" levels map to axis values.
+_ENERGY_LEVEL_MAP: dict[str, dict[str, float]] = {
+    "very low": {"energy": 0.1, "motion": 0.1},
+    "low": {"energy": 0.2, "motion": 0.2},
+    "medium": {"energy": 0.5, "motion": 0.5},
+    "mid": {"energy": 0.5, "motion": 0.5},
+    "high": {"energy": 0.8, "motion": 0.7},
+    "very high": {"energy": 0.95, "motion": 0.9},
+}
+
+# Genre/style hints → closest preset name
+_GENRE_PRESET_MAP: dict[str, str] = {
+    "lofi": "lofi",
+    "lo-fi": "lofi",
+    "hip-hop": "hip_hop",
+    "hip hop": "hip_hop",
+    "trap": "hip_hop",
+    "jazz": "jazz",
+    "ambient": "ambient",
+    "edm": "edm",
+    "electronic": "edm",
+    "metal": "metal",
+    "rock": "metal",
+    "folk": "indie_folk",
+    "indie": "indie_folk",
+    "classical": "classical",
+}
+
+# Add lofi to EMOTION_PRESETS for completeness (not already there)
+EMOTION_PRESETS.setdefault(
+    "lofi",
+    EmotionVector(energy=0.3, valence=-0.1, tension=0.2, intimacy=0.75, motion=0.35),
+)
+
+
+def emotion_vector_from_stori_prompt(text: str) -> EmotionVector:
+    """
+    Derive an EmotionVector from a STORI PROMPT YAML block.
+
+    Parses Vibe, Energy, Section, and Style fields and blends their
+    contributions into a 5-axis emotion vector.  Falls back to the
+    "neutral" preset when no recognisable fields are found.
+
+    This is the bridge between the natural-language creative brief and
+    the numeric conditioning signal sent to Orpheus.
+    """
+    if not text:
+        return EMOTION_PRESETS["neutral"]
+
+    vibe_text = ""
+    energy_text = ""
+    section_text = ""
+    style_text = ""
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or ":" not in stripped:
+            continue
+        key, _, value = stripped.partition(":")
+        key = key.strip().lower()
+        value = value.strip().lower()
+        if key == "vibe":
+            vibe_text = value
+        elif key == "energy":
+            energy_text = value
+        elif key == "section":
+            section_text = value
+        elif key == "style":
+            style_text = value
+
+    # Start from neutral and accumulate contributions as a running average.
+    base = EMOTION_PRESETS["neutral"]
+    acc: dict[str, float] = {
+        "energy": base.energy,
+        "valence": base.valence,
+        "tension": base.tension,
+        "intimacy": base.intimacy,
+        "motion": base.motion,
+    }
+    n = 1  # weight of the neutral baseline
+
+    def _blend(overrides: dict[str, float], weight: float = 1.0) -> None:
+        nonlocal n
+        for axis, target in overrides.items():
+            acc[axis] = (acc[axis] * n + target * weight) / (n + weight)
+        n += weight
+
+    # 1. Section preset (verse/chorus/bridge/etc.) as coarse baseline.
+    if section_text:
+        preset_name = section_text.split()[0]  # "Verse 1" → "verse"
+        preset = EMOTION_PRESETS.get(preset_name)
+        if preset:
+            _blend(
+                {
+                    "energy": preset.energy,
+                    "valence": preset.valence,
+                    "tension": preset.tension,
+                    "intimacy": preset.intimacy,
+                    "motion": preset.motion,
+                },
+                weight=1.5,
+            )
+
+    # 2. Genre/style preset (half weight — less specific than explicit vibe).
+    if style_text:
+        for genre_kw, preset_name in _GENRE_PRESET_MAP.items():
+            if genre_kw in style_text:
+                preset = EMOTION_PRESETS.get(preset_name)
+                if preset:
+                    _blend(
+                        {
+                            "energy": preset.energy,
+                            "valence": preset.valence,
+                            "tension": preset.tension,
+                            "intimacy": preset.intimacy,
+                            "motion": preset.motion,
+                        },
+                        weight=0.5,
+                    )
+                break
+
+    # 3. Explicit vibe keywords (highest specificity; each kw is full weight).
+    vibe_keywords = [
+        kw.strip() for kw in vibe_text.replace(",", " ").split() if kw.strip()
+    ]
+    for kw in vibe_keywords:
+        overrides = _VIBE_KEYWORD_MAP.get(kw)
+        if overrides:
+            _blend(overrides, weight=1.0)
+
+    # 4. Explicit energy level (overrides energy + motion).
+    for level_kw, overrides in _ENERGY_LEVEL_MAP.items():
+        if level_kw in energy_text:
+            _blend(overrides, weight=1.5)
+            break
+
+    return EmotionVector(
+        energy=acc["energy"],
+        valence=acc["valence"],
+        tension=acc["tension"],
+        intimacy=acc["intimacy"],
+        motion=acc["motion"],
+    )
+
+
+# =============================================================================
 # Emotion to Generation Constraints Mapping
 # =============================================================================
 

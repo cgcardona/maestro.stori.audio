@@ -97,3 +97,62 @@ Implementation: `app/core/prompt_parser.py` (parser), `app/core/intent.py` (rout
 ## Music generation
 
 **Orpheus required** for composing. No pattern fallback; if Orpheus is down, generation fails with a clear error. Config: `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`). Full health requires Orpheus. See [setup.md](../guides/setup.md) for config.
+
+### Emotion vector conditioning
+
+Every Orpheus generation call is conditioned by a 5-axis **EmotionVector** derived from the request's creative brief:
+
+| Axis | Range | Musical meaning |
+|---|---|---|
+| `energy` | 0–1 | Stillness → explosive |
+| `valence` | −1 → +1 | Dark/sad → bright/joyful |
+| `tension` | 0–1 | Resolved → unresolved/anxious |
+| `intimacy` | 0–1 | Epic/distant → close/personal |
+| `motion` | 0–1 | Static/sustained → driving/rhythmic |
+
+**Derivation pipeline:**
+
+```
+STORI PROMPT
+    │
+    ▼
+emotion_vector_from_stori_prompt()          ← app/core/emotion_vector.py
+    │  parses: Vibe keywords, Energy level,
+    │          Section preset, Style/genre
+    │  blends contributions by weighted average
+    ▼
+EmotionVector(energy, valence, tension, intimacy, motion)
+    │
+    ▼
+OrpheusBackend.generate()                   ← app/services/backends/orpheus.py
+    │  maps:  valence → tone_brightness
+    │         energy → energy_intensity
+    │         salient axes → musical_goals list
+    ▼
+OrpheusClient.generate()                    ← app/services/orpheus.py
+    │  includes: tone_brightness, energy_intensity,
+    │            musical_goals, quality_preset
+    ▼
+Orpheus HTTP API /generate
+```
+
+For **STORI PROMPTs**: `Vibe`, `Section`, `Style`, and `Energy` fields contribute. Everything in `Expression`, `Dynamics`, `Orchestration`, etc. continues to reach the LLM Maestro context unchanged — those dimensions inform the *plan*, while the EmotionVector conditions the *generator*.
+
+For **natural language** prompts: the EmotionVector is not derived (no structured fields to parse). The LLM's plan and tool parameters carry the full expressive brief.
+
+### Orpheus connection pool
+
+`OrpheusClient` is a process-wide singleton (see `app/services/orpheus.get_orpheus_client()`). The `httpx.AsyncClient` is created once at startup with explicit connection limits and keepalive settings, and `warmup()` is called in the FastAPI lifespan to pre-establish the TCP connection before the first user request.
+
+---
+
+## LLM cost optimisation — prompt caching
+
+For Claude / Anthropic models (via OpenRouter), Maestro applies **Anthropic's prompt cache** breakpoints to:
+
+1. **System prompt** — the full Maestro system prompt (~1,500–2,000 tokens), cached on every request.
+2. **Tools array** — the 22 DAW tool definitions (~3,000–4,000 tokens), cached as a single block by marking the last tool with `cache_control: ephemeral`.
+
+On a **cache hit**, input token cost drops to ~10% of the uncached price (Anthropic charges ~0.1× for cached reads). The cache TTL is 5 minutes, refreshed on each hit during an active session. Cache hits/misses are logged at `INFO` level with `🗃️ Prompt cache:` prefix, making them easy to spot in production logs.
+
+The implementation is in `app/core/llm_client._enable_prompt_caching()`. Non-Anthropic models receive the payload unchanged.

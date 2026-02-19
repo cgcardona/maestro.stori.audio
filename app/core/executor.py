@@ -33,6 +33,7 @@ from app.core.tracing import (
     trace_span,
     log_tool_call,
 )
+from app.core.emotion_vector import EmotionVector, emotion_vector_from_stori_prompt
 from app.services.music_generator import get_music_generator
 
 logger = logging.getLogger(__name__)
@@ -324,7 +325,7 @@ async def _execute_generator(name: str, params: dict[str, Any], ctx: ExecutionCo
     logger.info(f"🎵 Generating MIDI: {gen_params['instrument']} - {gen_params['style']}")
     
     try:
-        result = await mg.generate(**gen_params)
+        result = await mg.generate(**gen_params, quality_preset="quality")
         
         if not result.success:
             logger.error(f"❌ Generation failed: {result.error}")
@@ -405,6 +406,7 @@ async def execute_plan_variation(
     conversation_id: Optional[str] = None,
     explanation: Optional[str] = None,
     progress_callback: Optional[Callable[..., Awaitable[None]]] = None,
+    quality_preset: Optional[str] = None,
 ) -> Variation:
     """
     Execute a plan in variation mode - returns proposed changes without mutation.
@@ -468,11 +470,22 @@ async def execute_plan_variation(
         # Extract existing notes from project state for base comparison
         _extract_notes_from_project(project_state, var_ctx)
         
+        # Derive emotion vector from STORI PROMPT so Orpheus receives expressive context.
+        emotion_vector: Optional[EmotionVector] = None
+        if explanation:
+            emotion_vector = emotion_vector_from_stori_prompt(explanation)
+            logger.info(f"🎭 Emotion vector derived: {emotion_vector}")
+
         # Process tool calls to collect proposed notes
         total = len(tool_calls)
         for i, call in enumerate(tool_calls):
             logger.info(f"🔧 Processing call {i + 1}/{total}: {call.name}")
-            await _process_call_for_variation(call, var_ctx)
+            await _process_call_for_variation(
+                call,
+                var_ctx,
+                quality_preset=quality_preset,
+                emotion_vector=emotion_vector,
+            )
             if progress_callback:
                 await progress_callback(i + 1, total, call.name, call.params)
 
@@ -559,13 +572,18 @@ def _extract_notes_from_project(
 async def _process_call_for_variation(
     call: ToolCall,
     var_ctx: VariationContext,
+    quality_preset: Optional[str] = None,
+    emotion_vector: Optional[EmotionVector] = None,
 ) -> None:
     """
     Process a tool call to extract proposed notes for variation.
-    
+
     Simulates entity creation (tracks, regions) in the state store so that
     subsequent generator calls can resolve track/region names. Does NOT
     mutate canonical state — uses the store's registry for name resolution.
+
+    emotion_vector is derived from the STORI PROMPT explanation and forwarded
+    to Orpheus as expressive conditioning (tone, energy, intimacy, etc.).
     """
     params = call.params.copy()
     
@@ -703,7 +721,11 @@ async def _process_call_for_variation(
             logger.info(f"🎵 Starting generator {call.name} with params: {gen_params}")
 
             result = await asyncio.wait_for(
-                mg.generate(**gen_params),
+                mg.generate(
+                    **gen_params,
+                    quality_preset=quality_preset or "quality",
+                    emotion_vector=emotion_vector,
+                ),
                 timeout=_GENERATOR_TIMEOUT,
             )
 

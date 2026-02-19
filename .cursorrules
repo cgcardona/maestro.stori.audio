@@ -7,6 +7,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 ## Project identity
 
 - **What it is:** Stori Maestro — AI-powered music composition backend for the Stori DAW (FastAPI + MCP). Tagline: "the infinite music machine."
+- **Client:** The Stori DAW is a **macOS app** (Swift/SwiftUI, AppKit). It is NOT an iOS app. Never say "iOS app" — always say "macOS app" or "the app".
 - **Entry points:** (1) **Stream first:** `POST /api/v1/maestro/stream` (human in the macOS app). (2) **MCP:** tools exposed to Cursor/Claude; same engine, same DAW instance. Human stays in the loop.
 - **Stack:** Python 3.11+, FastAPI, Pydantic v2, async throughout. Orpheus is **required** for music generation (no pattern fallback). Config: `app/config.py`; env vars prefixed `STORI_*`.
 

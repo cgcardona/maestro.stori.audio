@@ -729,7 +729,17 @@ Structured fields reduce jailbreak surface area.
 | Extensions pass-through (all Maestro dims) | Done | `app/core/prompt_parser.py`, `app/core/prompts.py` |
 | Entity manifest in tool results | Done | `app/core/maestro_handlers.py` |
 | `$N.field` variable references | Done | `app/core/maestro_handlers.py` |
+| **Vibe/Section/Style/Energy → EmotionVector → Orpheus** | Done | `app/core/emotion_vector.py`, `app/core/executor.py`, `app/services/backends/orpheus.py` |
+
+### Vibe → Orpheus conditioning note
+
+`Vibe`, `Section`, `Style`, and `Energy` fields are **parsed twice**:
+
+1. **LLM context** (existing) — all fields injected into the Maestro system prompt for planning.
+2. **Orpheus conditioning** (new) — `emotion_vector_from_stori_prompt()` blends these fields into a 5-axis EmotionVector (`energy`, `valence`, `tension`, `intimacy`, `motion`) that is forwarded to Orpheus as `tone_brightness`, `energy_intensity`, and `musical_goals`. This means a prompt with `Vibe: Melancholic, sparse` actually generates *different notes* from Orpheus than `Vibe: Euphoric, driving` — the entire Vibe vocabulary now flows all the way to the generator.
+
+The richer Maestro dimensions (`Expression`, `Harmony`, `Dynamics`, `Orchestration`, etc.) reach the LLM planner context but are not currently parsed into the EmotionVector. They condition the *plan and tool selection*; Vibe/Section/Style/Energy condition the *generator directly*.
 
 **Tests:** `tests/test_prompt_parser.py` (91+), `tests/test_intent_structured.py` (26),
-`tests/test_structured_prompt_integration.py` (16), `tests/test_tool_validation.py` (6+).
-All existing tests pass unchanged (zero regression).
+`tests/test_structured_prompt_integration.py` (16), `tests/test_tool_validation.py` (6+),
+`tests/test_neural_mvp.py` (EmotionVector parser, 18 new tests).

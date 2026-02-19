@@ -164,37 +164,65 @@ class LLMClient:
         messages: list[dict[str, Any]],
         tools: Optional[list[dict]] = None
     ) -> tuple[list[dict[str, Any]], Optional[list[dict]]]:
-        """Enable prompt caching for Claude models."""
+        """
+        Enable prompt caching for Claude models via Anthropic's cache_control API.
+
+        Applies cache breakpoints to:
+        1. The system prompt content block (always, for Claude models)
+        2. The last tool definition in the tools array (when tools are present)
+
+        The cache is keyed on the static prefix (system + tools), so it hits on
+        every subsequent request in the same session even when the conversation
+        history contains tool_result messages. This cuts input token cost by ~90%
+        on cache hits — the highest-leverage optimisation for EDITING/COMPOSING.
+
+        Only applied to Claude/Anthropic models; other models receive the payload
+        unchanged. OpenRouter forwards cache_control to Anthropic transparently.
+        """
         if "claude" not in self.model.lower():
             return messages, tools
-        
-        # Disable caching if tools are being used at all
-        # Bedrock/OpenRouter has issues with prompt caching + tools in conversation
-        if tools and len(tools) > 0:
-            logger.debug(f"Disabling prompt caching: {len(tools)} tools present")
-            return messages, tools
-        
-        # Also disable if conversation has tool-related messages
-        has_tool_messages = any(msg.get("role") == "tool" for msg in messages)
-        has_tool_calls = any(msg.get("role") == "assistant" and msg.get("tool_calls") for msg in messages)
-        
-        if has_tool_messages or has_tool_calls:
-            logger.debug("Disabling prompt caching: tool messages in conversation history")
-            return messages, tools
-        
-        # Safe to enable caching (no tools, pure chat)
+
+        # 1. Wrap system messages as content blocks with cache_control.
         cached_messages = []
         for msg in messages:
             if msg.get("role") == "system":
-                cached_messages.append({
-                    "role": "system",
-                    "content": [{"type": "text", "text": msg.get("content", ""), "cache_control": {"type": "ephemeral"}}]
-                })
+                content = msg.get("content", "")
+                # Already a content-block list (e.g. from a previous pass) — just
+                # ensure the last block carries the breakpoint.
+                if isinstance(content, list):
+                    blocks = [dict(b) for b in content]
+                    if blocks:
+                        blocks[-1]["cache_control"] = {"type": "ephemeral"}
+                    cached_messages.append({"role": "system", "content": blocks})
+                else:
+                    cached_messages.append({
+                        "role": "system",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": content,
+                                "cache_control": {"type": "ephemeral"},
+                            }
+                        ],
+                    })
             else:
                 cached_messages.append(msg)
-        
-        logger.debug("Prompt caching enabled for pure chat")
-        return cached_messages, None
+
+        # 2. Add cache_control to the last tool definition so the full tools array
+        #    is cached as a single block. The 22-tool schema never changes between
+        #    calls, so this eliminates its token cost on every subsequent request.
+        cached_tools: Optional[list[dict]] = None
+        if tools:
+            cached_tools = [dict(t) for t in tools]
+            cached_tools[-1] = dict(cached_tools[-1])
+            cached_tools[-1]["cache_control"] = {"type": "ephemeral"}
+
+        n_tools = len(tools) if tools else 0
+        logger.debug(
+            f"Prompt caching enabled: system prompt cached, {n_tools} tools "
+            f"({'last tool marked' if n_tools else 'no tools'})"
+        )
+        return cached_messages, cached_tools
     
     async def chat_completion(
         self,
@@ -241,7 +269,16 @@ class LLMClient:
                 data = response.json()
                 
                 usage = data.get("usage", {})
-                logger.info(f"LLM: {duration:.2f}s, {usage.get('prompt_tokens', 0)} prompt, {usage.get('completion_tokens', 0)} completion tokens")
+                cache_read = usage.get("cache_read_input_tokens", 0)
+                cache_write = usage.get("cache_creation_input_tokens", 0)
+                cache_info = (
+                    f", cache_read={cache_read} cache_write={cache_write}"
+                    if (cache_read or cache_write) else ""
+                )
+                logger.info(
+                    f"LLM: {duration:.2f}s, {usage.get('prompt_tokens', 0)} prompt, "
+                    f"{usage.get('completion_tokens', 0)} completion tokens{cache_info}"
+                )
                 
                 return self._parse_response(data)
                 
@@ -360,13 +397,12 @@ class LLMClient:
                         logger.info(f"🔍 Delta sample: {delta_str}")
                         debug_logged = True
                     
-                    # OpenRouter reasoning format (new API):
-                    # - Reasoning comes in delta.reasoning_details array
-                    # - Regular content comes in delta.content
+                    # OpenRouter reasoning format: delta.reasoning_details array.
+                    # Both delta.reasoning (string) and delta.reasoning_details (array)
+                    # are present in every chunk with identical text — use only the
+                    # structured array to avoid double-emitting.
                     # https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
-                    
                     if "reasoning_details" in delta and delta["reasoning_details"]:
-                        # Extract reasoning text from reasoning_details array
                         for detail in delta["reasoning_details"]:
                             if detail.get("type") == "reasoning.text" and detail.get("text"):
                                 yield {"type": "reasoning_delta", "text": detail["text"]}
@@ -405,7 +441,20 @@ class LLMClient:
         except httpx.HTTPError as e:
             logger.error(f"Stream HTTP error: {e}")
             raise
-        
+
+        # Log cache token stats so we can verify caching is working in prod logs.
+        if usage:
+            cache_read = usage.get("cache_read_input_tokens", 0)
+            cache_write = usage.get("cache_creation_input_tokens", 0)
+            if cache_read or cache_write:
+                logger.info(
+                    f"🗃️ Prompt cache: read={cache_read} tokens "
+                    f"(~${cache_read * 0.0000003:.4f} saved), "
+                    f"write={cache_write} tokens"
+                )
+            else:
+                logger.debug("Prompt cache: no cache tokens in usage (cache miss or non-Claude model)")
+
         yield {
             "type": "done",
             "content": "".join(accumulated_content) if accumulated_content else None,

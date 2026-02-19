@@ -207,17 +207,25 @@ class TestPromptCaching:
         cached_msgs, cached_tools = client._enable_prompt_caching(messages, tools=None)
         assert cached_msgs == messages
 
-    def test_claude_with_tools_disabled(self):
+    def test_claude_with_tools_caching_enabled(self):
+        """Caching is applied to both system prompt and tools array for Claude models."""
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k",
             model="anthropic/claude-3.7-sonnet",
         )
         messages = [{"role": "system", "content": "sys"}]
-        tools = [{"type": "function", "function": {"name": "test"}}]
+        tools = [
+            {"type": "function", "function": {"name": "tool_a"}},
+            {"type": "function", "function": {"name": "tool_b"}},
+        ]
         cached_msgs, cached_tools = client._enable_prompt_caching(messages, tools=tools)
-        # Should not modify messages when tools present
-        assert cached_msgs == messages
-        assert cached_tools == tools
+        # System prompt should be wrapped with cache_control
+        assert isinstance(cached_msgs[0]["content"], list)
+        assert cached_msgs[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+        # Last tool should have cache_control; first tool untouched
+        assert cached_tools is not None
+        assert "cache_control" not in cached_tools[0]
+        assert cached_tools[-1]["cache_control"] == {"type": "ephemeral"}
 
     def test_claude_pure_chat_caching_enabled(self):
         client = LLMClient(
@@ -233,7 +241,12 @@ class TestPromptCaching:
         assert cached_msgs[0]["content"][0]["cache_control"]["type"] == "ephemeral"
         assert cached_tools is None
 
-    def test_claude_with_tool_messages_disabled(self):
+    def test_claude_with_tool_messages_still_caches_system(self):
+        """System prompt is cached even when conversation history contains tool messages.
+
+        The cache breakpoint is on the static prefix (system + tools); tool_result
+        messages in the dynamic part of the conversation do not invalidate it.
+        """
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k",
             model="anthropic/claude-3.7-sonnet",
@@ -243,8 +256,11 @@ class TestPromptCaching:
             {"role": "tool", "content": "result"},
         ]
         cached_msgs, cached_tools = client._enable_prompt_caching(messages, tools=None)
-        # Should NOT enable caching because tool messages are present
-        assert cached_msgs == messages
+        # System prompt is cached; tool message passes through unchanged
+        assert isinstance(cached_msgs[0]["content"], list)
+        assert cached_msgs[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+        assert cached_msgs[1] == {"role": "tool", "content": "result"}
+        assert cached_tools is None
 
 
 # ---------------------------------------------------------------------------

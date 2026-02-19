@@ -11,10 +11,25 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Connection pool settings: kept generous because Orpheus calls are sequential
+# within a session but multiple FastAPI workers may hit it concurrently.
+_CONNECTION_LIMITS = httpx.Limits(
+    max_connections=20,
+    max_keepalive_connections=10,
+    keepalive_expiry=30.0,
+)
+
 
 class OrpheusClient:
-    """Async client for the Orpheus Music Service."""
-    
+    """
+    Async client for the Orpheus Music Service.
+
+    Uses a long-lived httpx.AsyncClient with keepalive connection pooling so
+    the TCP/TLS handshake cost is paid once per worker process rather than on
+    every generation request.  Call warmup() from the FastAPI lifespan to
+    pre-establish the connection before the first user request arrives.
+    """
+
     def __init__(
         self,
         base_url: Optional[str] = None,
@@ -26,20 +41,46 @@ class OrpheusClient:
         # Use HF token if provided (for Gradio Spaces)
         self.hf_token = hf_token or getattr(settings, "hf_api_key", None)
         self._client: Optional[httpx.AsyncClient] = None
-    
+
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
             headers = {}
-            # Add HF authentication if token is available (for Gradio Spaces)
             if self.hf_token:
                 headers["Authorization"] = f"Bearer {self.hf_token}"
             self._client = httpx.AsyncClient(
-                timeout=self.timeout,
+                timeout=httpx.Timeout(
+                    connect=5.0,
+                    read=float(self.timeout),
+                    write=30.0,
+                    pool=5.0,
+                ),
+                limits=_CONNECTION_LIMITS,
                 headers=headers,
             )
         return self._client
-    
+
+    async def warmup(self) -> None:
+        """
+        Pre-establish the connection to Orpheus during application startup.
+
+        A single lightweight health-check opens the keepalive connection so
+        the first real generation request incurs no cold-start latency.
+        """
+        try:
+            healthy = await self.health_check()
+            if healthy:
+                logger.info("Orpheus connection warmed up ✓")
+            else:
+                logger.warning(
+                    "Orpheus warmup: service responded but health check failed — "
+                    "generation requests will retry automatically"
+                )
+        except Exception as exc:
+            # Non-fatal: Orpheus may still be starting; generation will fail
+            # loudly with a clear error if it's still down when needed.
+            logger.warning(f"Orpheus warmup failed (service may not be running): {exc}")
+
     async def close(self):
         """Close the HTTP client."""
         if self._client:
@@ -156,3 +197,27 @@ class OrpheusClient:
                 "success": False,
                 "error": str(e),
             }
+
+
+# ---------------------------------------------------------------------------
+# Module-level singleton — shared across all OrpheusBackend instances so the
+# connection pool is reused rather than recreated per-request.
+# ---------------------------------------------------------------------------
+
+_shared_client: Optional[OrpheusClient] = None
+
+
+def get_orpheus_client() -> OrpheusClient:
+    """Return the process-wide OrpheusClient singleton."""
+    global _shared_client
+    if _shared_client is None:
+        _shared_client = OrpheusClient()
+    return _shared_client
+
+
+async def close_orpheus_client() -> None:
+    """Close the singleton client (call from FastAPI lifespan shutdown)."""
+    global _shared_client
+    if _shared_client is not None:
+        await _shared_client.close()
+        _shared_client = None
