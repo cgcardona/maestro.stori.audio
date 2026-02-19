@@ -8,6 +8,12 @@ Run tests, intent-based QA, and quick prompts in one place.
 
 We run tests **in Docker** so everyone (Mac, Linux, CI) uses the same environment. That keeps results consistent and makes debugging contributor issues straightforward.
 
+> **Always rebuild before testing.** The maestro container copies source code at build time — it does **not** mount a live volume. Any local edits to `app/` or `tests/` are invisible inside the container until you rebuild. Forgetting this is the #1 cause of "my tests aren't collected" or "the fix didn't take effect." **Rebuild first, always.**
+>
+> ```bash
+> docker compose build maestro && docker compose up -d
+> ```
+
 **Type checking (mypy):** Config is in `pyproject.toml` under `[tool.mypy]`. Run against the app and tests from the container (with code and config mounted so you see current code):
 
 ```bash
@@ -17,13 +23,13 @@ docker compose run --no-deps -v "$(pwd)/app:/app/app:ro" -v "$(pwd)/tests:/app/t
 - Subsets: `python -m mypy -p app.models -p app.auth` (single package: `-p app.config`).
 - CI runs `mypy -p app` and `mypy -p tests` before pytest.
 
-**Plain tests:**
+**Plain tests (rebuild + run):**
 ```bash
-docker compose up -d
+docker compose build maestro && docker compose up -d
 docker compose exec maestro pytest tests/ -v
 ```
 
-**Tests with coverage (canonical command):** Run from repo root with the stack up. You must **rebuild** the image first if the container doesn’t have `coverage`:
+**Tests with coverage (canonical command):**
 
 ```bash
 docker compose build maestro && docker compose up -d
@@ -32,7 +38,7 @@ docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python
 
 - The coverage threshold is **80%** (`--fail-under=80`). The single source of truth is `pyproject.toml` → `[tool.coverage.report]` → `fail_under`. Use the same value when running locally or in CI.
 - If you see `No module named coverage`, rebuild: `docker compose build maestro` then `docker compose up -d`.
-- If you see `unable to open database file` for `.coverage`, the container user can’t write to `/app`; the command uses `COVERAGE_FILE=/tmp/.coverage` so the data file lives in `/tmp`.
+- If you see `unable to open database file` for `.coverage`, the container user can't write to `/app`; the command uses `COVERAGE_FILE=/tmp/.coverage` so the data file lives in `/tmp`.
 
 When CI is enabled, run the same coverage command so the build fails if coverage drops below the threshold in `pyproject.toml`. Also add secret scanning (e.g. Gitleaks) and optionally a dependency audit (e.g. `pip-audit`); see [security.md](security.md).
 
@@ -67,12 +73,12 @@ The backend routes prompts by intent; each intent has an allowed tool set. Use t
 
 Use these for smoke tests or demos:
 
-- create a boom bap track at 85 bpm  
-- make a chill lo-fi beat at 75 bpm in A minor  
-- create a trap beat at 140 bpm  
-- add a reverb to the drums  
-- make the bass louder  
-- create a 4-bar drum loop at 95 bpm  
+- create a boom bap track at 85 bpm
+- make a chill lo-fi beat at 75 bpm in A minor
+- create a trap beat at 140 bpm
+- add a reverb to the drums
+- make the bass louder
+- create a 4-bar drum loop at 95 bpm
 
 Add your own for smoke tests and demos.
 

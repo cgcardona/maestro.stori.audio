@@ -35,7 +35,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 
 ## Tests
 
-- **Runner:** From repo root with stack running: `docker compose exec maestro pytest tests/ -v`. **Coverage (canonical, from container):** `docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"`. Threshold is in `pyproject.toml` ([tool.coverage.report] fail_under). See `docs/guides/testing.md` (rebuild image if `coverage` is missing).
+- **Runner:** The container copies code at build time (no live volume mount). **Always rebuild before testing:** `docker compose build maestro && docker compose up -d`, then `docker compose exec maestro pytest tests/ -v`. **Coverage (canonical, from container):** `docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"`. Threshold is in `pyproject.toml` ([tool.coverage.report] fail_under). See `docs/guides/testing.md`.
 - **Layout:** One test module per app area (e.g. `test_health.py`, `test_intent.py`, `test_rag.py`). Use `tests/conftest.py` for shared fixtures (`client`, `db_session`). Do not commit tests that depend on live external APIs (Orpheus, OpenRouter, S3) unless skipped or gated (e.g. `@pytest.mark.skip`, `skipif` with env).
 - **Naming:** `test_<behavior>_<scenario>` or `test_<module>_<behavior>`. Docstrings: one line describing what is being tested.
 - **Fixtures:** Prefer `db_session` and `client` from conftest for API tests so auth and DB use the in-memory DB. Override dependencies via `app.dependency_overrides` in fixtures, and restore in `finally`.

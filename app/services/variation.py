@@ -441,45 +441,50 @@ class VariationService:
         self,
         base_regions: dict[str, list[dict]],  # region_id -> notes
         proposed_regions: dict[str, list[dict]],
-        track_id: str,
+        track_regions: dict[str, str],  # region_id -> track_id (server-assigned)
         intent: str,
         explanation: Optional[str] = None,
     ) -> Variation:
         """
-        Compute a Variation across multiple regions.
-        
-        Useful when Muse's proposed changes affect multiple regions at once.
-        
+        Compute a Variation across multiple regions, each potentially on a different track.
+
         Args:
             base_regions: Mapping of region_id to original notes
             proposed_regions: Mapping of region_id to Muse's proposed notes
-            track_id: ID of the affected track
+            track_regions: Mapping of region_id to its server-assigned track_id.
+                           Every region must have an entry here so phrases carry the
+                           correct trackId (not a single shared value).
             intent: User intent
             explanation: Optional Muse explanation
-            
+
         Returns:
-            A Variation with phrases from all regions
+            A Variation with phrases across all regions, each carrying the right trackId
         """
         variation_id = str(uuid.uuid4())
         all_phrases = []
         affected_regions = []
-        
+        affected_track_set: set[str] = set()
+
         min_beat = float("inf")
         max_beat = float("-inf")
-        
+
         # Process each region
         all_region_ids = set(base_regions.keys()) | set(proposed_regions.keys())
-        
+
         for region_id in all_region_ids:
             base_notes = base_regions.get(region_id, [])
             proposed_notes = proposed_regions.get(region_id, [])
-            
+
             matches = match_notes(base_notes, proposed_notes)
             changes = [m for m in matches if not m.is_unchanged]
-            
+
             if changes:
+                # Each region belongs to exactly one track — look it up from the
+                # server-assigned mapping, never trust a caller-provided default.
+                region_track_id = track_regions.get(region_id, "unknown")
                 affected_regions.append(region_id)
-                
+                affected_track_set.add(region_track_id)
+
                 # Update time range
                 for match in changes:
                     note = match.base_note or match.proposed_note
@@ -488,25 +493,24 @@ class VariationService:
                         dur = note.get("duration_beats", 0.5)
                         min_beat = min(min_beat, start)
                         max_beat = max(max_beat, start + dur)
-                
-                # Create phrases for this region
+
                 phrases = self._group_into_phrases(
                     changes=changes,
                     region_id=region_id,
-                    track_id=track_id,
+                    track_id=region_track_id,
                 )
                 all_phrases.extend(phrases)
-        
+
         if min_beat == float("inf"):
             min_beat = 0.0
         if max_beat == float("-inf"):
             max_beat = 0.0
-        
+
         return Variation(
             variation_id=variation_id,
             intent=intent,
             ai_explanation=explanation,
-            affected_tracks=[track_id],
+            affected_tracks=list(affected_track_set),
             affected_regions=affected_regions,
             beat_range=(min_beat, max_beat),
             phrases=all_phrases,

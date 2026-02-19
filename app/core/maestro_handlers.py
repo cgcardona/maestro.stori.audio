@@ -13,7 +13,8 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass
+import uuid as _uuid_mod
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional, cast
 
 from app.config import settings
@@ -34,7 +35,6 @@ from app.core.intent_config import (
 from app.core.llm_client import (
     LLMClient,
     LLMResponse,
-    ToolCallData,
     enforce_single_tool,
 )
 from app.core.pipeline import run_pipeline
@@ -109,6 +109,71 @@ _ENTITY_ID_ECHO: dict[str, list[str]] = {
 _VAR_REF_RE = re.compile(r"^\$(\d+)\.(\w+)$")
 
 
+def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
+    """Return a short, musician-friendly description of a tool call.
+
+    Used in progress and toolStart SSE events so the frontend can show
+    something like "Writing bass notes (8/15)" instead of "Step 8/15".
+    """
+    match name:
+        case "stori_set_tempo":
+            return f"Setting tempo to {args.get('tempo', '?')} BPM"
+        case "stori_set_key" | "stori_set_key_signature":
+            return f"Setting key to {args.get('key', '?')}"
+        case "stori_add_midi_track" | "stori_add_track":
+            return f"Creating {args.get('name', 'track')} track"
+        case "stori_add_midi_region" | "stori_add_region":
+            return f"Creating region: {args.get('name', 'region')}"
+        case "stori_add_notes":
+            n = len(args.get("notes") or [])
+            return f"Writing {n} notes" if n else "Writing notes"
+        case "stori_clear_notes":
+            return "Clearing notes"
+        case "stori_quantize_notes":
+            return f"Quantizing to {args.get('grid', '1/16')}"
+        case "stori_apply_swing":
+            return "Applying swing"
+        case "stori_generate_midi":
+            role = args.get("role", "part")
+            style = args.get("style", "")
+            bars = args.get("bars", "")
+            return f"Generating {style} {role}{f' ({bars} bars)' if bars else ''}"
+        case "stori_generate_drums":
+            return f"Generating {args.get('style', '')} drums"
+        case "stori_generate_bass":
+            return f"Generating {args.get('style', '')} bass"
+        case "stori_generate_melody":
+            return f"Generating {args.get('style', '')} melody"
+        case "stori_generate_chords":
+            return f"Generating {args.get('style', '')} chords"
+        case "stori_add_insert_effect" | "stori_add_effect":
+            return f"Adding {args.get('type', args.get('effectType', 'effect'))}"
+        case "stori_ensure_bus":
+            return f"Creating {args.get('name', 'bus')} bus"
+        case "stori_add_send":
+            return "Adding send"
+        case "stori_set_track_volume":
+            return "Adjusting volume"
+        case "stori_set_track_pan":
+            return "Adjusting pan"
+        case "stori_mute_track":
+            return "Muting track" if args.get("muted") else "Unmuting track"
+        case "stori_move_region":
+            return "Moving region"
+        case "stori_duplicate_region":
+            return "Duplicating region"
+        case "stori_delete_region":
+            return "Deleting region"
+        case "stori_play":
+            return "Playing"
+        case "stori_stop":
+            return "Stopping"
+        case _:
+            # Fallback: strip stori_ prefix and humanise
+            label = name.removeprefix("stori_").replace("_", " ")
+            return label.capitalize()
+
+
 def _resolve_variable_refs(
     params: dict[str, Any],
     prior_results: list[dict[str, Any]],
@@ -151,6 +216,372 @@ def _entity_manifest(store: Any) -> dict[str, Any]:
         tracks.append({"name": track.name, "trackId": track.id, "regions": regions})
     buses = [{"name": b.name, "busId": b.id} for b in store.registry.list_buses()]
     return {"tracks": tracks, "buses": buses}
+
+
+# =========================================================================
+# Plan Tracker — structured plan events for EDITING sessions
+# =========================================================================
+
+_SETUP_TOOL_NAMES: set[str] = {
+    "stori_set_tempo", "stori_set_key", "stori_set_key_signature",
+}
+_EFFECT_TOOL_NAMES: set[str] = {
+    "stori_add_insert_effect", "stori_add_effect",
+    "stori_ensure_bus", "stori_add_send",
+}
+_MIXING_TOOL_NAMES: set[str] = {
+    "stori_set_track_volume", "stori_set_track_pan",
+    "stori_mute_track", "stori_solo_track",
+    "stori_set_track_color", "stori_set_track_icon",
+    "stori_set_track_name",
+}
+_TRACK_CREATION_NAMES: set[str] = {
+    "stori_add_midi_track", "stori_add_track",
+}
+_CONTENT_TOOL_NAMES: set[str] = {
+    "stori_add_midi_region", "stori_add_region", "stori_add_notes",
+}
+
+
+@dataclass
+class _PlanStep:
+    """Internal state for one plan step."""
+    step_id: str
+    label: str
+    detail: Optional[str] = None
+    status: str = "pending"
+    result: Optional[str] = None
+    track_name: Optional[str] = None
+    tool_indices: list[int] = field(default_factory=list)
+
+
+class _PlanTracker:
+    """Manages the structured plan lifecycle for an EDITING session.
+
+    Builds a plan from the first batch of tool calls, emits plan / planStepUpdate
+    SSE events, and tracks step progress across composition iterations.
+    """
+
+    def __init__(self) -> None:
+        self.plan_id: str = str(_uuid_mod.uuid4())
+        self.title: str = ""
+        self.steps: list[_PlanStep] = []
+        self._active_step_id: Optional[str] = None
+        self._next_id: int = 1
+
+    # -- Build ----------------------------------------------------------------
+
+    def build(
+        self,
+        tool_calls: list[Any],
+        prompt: str,
+        project_context: dict[str, Any],
+        is_composition: bool,
+        store: Any,
+    ) -> None:
+        self.title = self._derive_title(prompt, tool_calls, project_context)
+        self.steps = self._group_into_steps(tool_calls)
+        if is_composition:
+            self._add_anticipatory_steps(store)
+
+    def _derive_title(
+        self,
+        prompt: str,
+        tool_calls: list[Any],
+        project_context: dict[str, Any],
+    ) -> str:
+        tempo = project_context.get("tempo")
+        key = project_context.get("key")
+        for tc in tool_calls:
+            if tc.name == "stori_set_tempo":
+                tempo = tc.params.get("tempo")
+            elif tc.name in ("stori_set_key", "stori_set_key_signature"):
+                key = tc.params.get("key")
+        title = prompt[:80].rstrip()
+        if len(prompt) > 80:
+            title = (title.rsplit(" ", 1)[0] or title)
+        params: list[str] = []
+        if key:
+            params.append(str(key))
+        if tempo:
+            params.append(f"{tempo} BPM")
+        if params:
+            return f"{title} ({', '.join(params)})"
+        return title
+
+    def _group_into_steps(self, tool_calls: list[Any]) -> list[_PlanStep]:
+        steps: list[_PlanStep] = []
+        i, n = 0, len(tool_calls)
+
+        # Leading setup tools
+        setup_indices: list[int] = []
+        while i < n and tool_calls[i].name in _SETUP_TOOL_NAMES:
+            setup_indices.append(i)
+            i += 1
+        if setup_indices:
+            parts: list[str] = []
+            for idx in setup_indices:
+                tc = tool_calls[idx]
+                if tc.name == "stori_set_tempo":
+                    parts.append(f"{tc.params.get('tempo', '?')} BPM")
+                elif tc.name in ("stori_set_key", "stori_set_key_signature"):
+                    parts.append(str(tc.params.get("key", "?")))
+            steps.append(_PlanStep(
+                step_id=str(self._next_id),
+                label="Set tempo and key signature",
+                detail=", ".join(parts) if parts else None,
+                tool_indices=setup_indices,
+            ))
+            self._next_id += 1
+
+        while i < n:
+            tc = tool_calls[i]
+
+            if tc.name in _TRACK_CREATION_NAMES:
+                track_name = tc.params.get("name", "Track")
+                indices = [i]
+                i += 1
+                while i < n and tool_calls[i].name in _CONTENT_TOOL_NAMES:
+                    indices.append(i)
+                    i += 1
+                has_notes = any(
+                    tool_calls[j].name == "stori_add_notes" for j in indices
+                )
+                label = f"Create {track_name} track"
+                if has_notes:
+                    label += " and add content"
+                detail = None
+                gm = tc.params.get("gmProgram")
+                drum_kit = tc.params.get("drumKitId")
+                if gm is not None:
+                    detail = f"GM {gm}"
+                elif drum_kit:
+                    detail = str(drum_kit)
+                steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label=label,
+                    detail=detail,
+                    track_name=track_name,
+                    tool_indices=indices,
+                ))
+                self._next_id += 1
+
+            elif tc.name in _CONTENT_TOOL_NAMES:
+                indices = []
+                while i < n and tool_calls[i].name in _CONTENT_TOOL_NAMES:
+                    indices.append(i)
+                    i += 1
+                steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label="Add musical content",
+                    tool_indices=indices,
+                ))
+                self._next_id += 1
+
+            elif tc.name in _EFFECT_TOOL_NAMES:
+                indices = []
+                detail_parts: list[str] = []
+                while i < n and tool_calls[i].name in _EFFECT_TOOL_NAMES:
+                    etc = tool_calls[i]
+                    indices.append(i)
+                    if etc.name in ("stori_add_insert_effect", "stori_add_effect"):
+                        etype = etc.params.get("type", etc.params.get("effectType", ""))
+                        if etype:
+                            detail_parts.append(etype)
+                    elif etc.name == "stori_ensure_bus":
+                        bname = etc.params.get("name", "")
+                        if bname:
+                            detail_parts.append(f"{bname} bus")
+                    i += 1
+                steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label="Add effects and routing",
+                    detail=", ".join(detail_parts) if detail_parts else None,
+                    tool_indices=indices,
+                ))
+                self._next_id += 1
+
+            elif tc.name in _MIXING_TOOL_NAMES:
+                indices = []
+                while i < n and tool_calls[i].name in _MIXING_TOOL_NAMES:
+                    indices.append(i)
+                    i += 1
+                steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label="Adjust mix",
+                    tool_indices=indices,
+                ))
+                self._next_id += 1
+
+            else:
+                steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label=_human_label_for_tool(tc.name, tc.params),
+                    tool_indices=[i],
+                ))
+                self._next_id += 1
+                i += 1
+
+        return steps
+
+    def _add_anticipatory_steps(self, store: Any) -> None:
+        """For composition mode, add pending steps for tracks still needing content."""
+        names_with_steps = {
+            s.track_name.lower() for s in self.steps if s.track_name
+        }
+        for track in store.registry.list_tracks():
+            if track.name.lower() in names_with_steps:
+                continue
+            regions = store.registry.get_track_regions(track.id)
+            has_notes = any(
+                bool(store.get_region_notes(r.id)) for r in regions
+            ) if regions else False
+            if not has_notes:
+                self.steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label=f"Add content to {track.name}",
+                    track_name=track.name,
+                ))
+                self._next_id += 1
+
+    # -- SSE events -----------------------------------------------------------
+
+    def to_plan_event(self) -> dict[str, Any]:
+        return {
+            "type": "plan",
+            "planId": self.plan_id,
+            "title": self.title,
+            "steps": [
+                {
+                    "stepId": s.step_id,
+                    "label": s.label,
+                    "status": "pending",
+                    **({"detail": s.detail} if s.detail else {}),
+                }
+                for s in self.steps
+            ],
+        }
+
+    def step_for_tool_index(self, index: int) -> Optional[_PlanStep]:
+        """Find the step a tool-call index belongs to (first iteration only)."""
+        for step in self.steps:
+            if index in step.tool_indices:
+                return step
+        return None
+
+    def find_step_for_tool(
+        self,
+        tc_name: str,
+        tc_params: dict[str, Any],
+        store: Any,
+    ) -> Optional[_PlanStep]:
+        """Map a tool call to a plan step by name/context (subsequent iterations)."""
+        if tc_name in _CONTENT_TOOL_NAMES:
+            track_id = tc_params.get("trackId", "")
+            if track_id:
+                for track in store.registry.list_tracks():
+                    if track.id == track_id:
+                        for step in self.steps:
+                            if (
+                                step.track_name
+                                and step.track_name.lower() == track.name.lower()
+                                and step.status != "completed"
+                            ):
+                                return step
+                        break
+        if tc_name in _EFFECT_TOOL_NAMES:
+            for step in self.steps:
+                if "effect" in step.label.lower() and step.status != "completed":
+                    return step
+        if tc_name in _MIXING_TOOL_NAMES:
+            for step in self.steps:
+                if "mix" in step.label.lower() and step.status != "completed":
+                    return step
+        return None
+
+    def get_step(self, step_id: str) -> Optional[_PlanStep]:
+        for step in self.steps:
+            if step.step_id == step_id:
+                return step
+        return None
+
+    def activate_step(self, step_id: str) -> dict[str, Any]:
+        step = self.get_step(step_id)
+        if step:
+            step.status = "active"
+        self._active_step_id = step_id
+        return {"type": "planStepUpdate", "stepId": step_id, "status": "active"}
+
+    def complete_active_step(self) -> Optional[dict[str, Any]]:
+        """Complete the currently-active step; returns event dict or None."""
+        if not self._active_step_id:
+            return None
+        step = self.get_step(self._active_step_id)
+        if not step:
+            return None
+        step.status = "completed"
+        self._active_step_id = None
+        d: dict[str, Any] = {
+            "type": "planStepUpdate",
+            "stepId": step.step_id,
+            "status": "completed",
+        }
+        if step.result:
+            d["result"] = step.result
+        return d
+
+    def complete_step_by_id(
+        self, step_id: str, result: Optional[str] = None,
+    ) -> dict[str, Any]:
+        step = self.get_step(step_id)
+        if step:
+            step.status = "completed"
+            if result:
+                step.result = result
+        if self._active_step_id == step_id:
+            self._active_step_id = None
+        d: dict[str, Any] = {
+            "type": "planStepUpdate",
+            "stepId": step_id,
+            "status": "completed",
+        }
+        if result:
+            d["result"] = result
+        return d
+
+    def progress_context(self) -> str:
+        """Format plan progress for injection into the system prompt."""
+        icons = {
+            "completed": "✅",
+            "active": "🔄",
+            "pending": "⬜",
+            "failed": "❌",
+            "skipped": "⏭",
+        }
+        lines = ["Current plan progress:"]
+        for s in self.steps:
+            icon = icons.get(s.status, "⬜")
+            line = f"{icon} Step {s.step_id}: {s.label}"
+            if s.status == "completed" and s.result:
+                line += f" — done ({s.result})"
+            elif s.status == "active":
+                line += " — active"
+            else:
+                line += " — pending"
+            lines.append(line)
+        return "\n".join(lines)
+
+
+def _build_step_result(
+    tool_name: str,
+    params: dict[str, Any],
+    existing: Optional[str] = None,
+) -> str:
+    """Build a human-readable result string for a plan step."""
+    part = _human_label_for_tool(tool_name, params)
+    if existing:
+        return f"{existing}; {part}"
+    return part
 
 
 def _project_needs_structure(project_context: dict[str, Any]) -> bool:
@@ -252,6 +683,7 @@ def _store_variation(
         base_state_id=base_state_id,
         intent=variation.intent,
         variation_id=variation.variation_id,
+        conversation_id=store.conversation_id,
     )
 
     # CREATED → STREAMING → READY (fast-forward since generation is already done)
@@ -262,6 +694,15 @@ def _store_variation(
 
     for phrase in variation.phrases:
         seq = record.next_sequence()
+
+        # Look up region position from the registry so commit can build
+        # updatedRegions without re-querying the compose-phase store.
+        region_entity = store.registry.get_region(phrase.region_id)
+        region_meta = region_entity.metadata if region_entity else {}
+        region_start_beat = region_meta.get("startBeat")
+        region_duration_beats = region_meta.get("durationBeats")
+        region_name = region_entity.name if region_entity else None
+
         record.add_phrase(PhraseRecord(
             phrase_id=phrase.phrase_id,
             variation_id=variation.variation_id,
@@ -285,6 +726,9 @@ def _store_variation(
             },
             ai_explanation=phrase.explanation,
             tags=phrase.tags,
+            region_start_beat=region_start_beat,
+            region_duration_beats=region_duration_beats,
+            region_name=region_name,
         ))
 
     record.transition_to(VariationStatus.READY)
@@ -428,6 +872,12 @@ async def orchestrate(
         yield await sse_event({
             "type": "error",
             "message": str(e),
+            "traceId": trace.trace_id,
+        })
+        yield await sse_event({
+            "type": "complete",
+            "success": False,
+            "error": str(e),
             "traceId": trace.trace_id,
         })
     
@@ -640,10 +1090,13 @@ async def _handle_composing(
                 )
 
                 # Progress queue so we can emit step_progress SSE while executor runs
-                progress_queue: asyncio.Queue[tuple[int, int]] = asyncio.Queue()
+                progress_queue: asyncio.Queue[tuple[int, int, str, dict]] = asyncio.Queue()
 
-                async def on_progress(current: int, total: int) -> None:
-                    await progress_queue.put((current, total))
+                async def on_progress(
+                    current: int, total: int,
+                    tool_name: str = "", tool_args: dict | None = None,
+                ) -> None:
+                    await progress_queue.put((current, total, tool_name, tool_args or {}))
 
                 # Timeout: prevent infinite hangs from backend calls
                 _VARIATION_TIMEOUT = 90  # seconds
@@ -670,14 +1123,16 @@ async def _handle_composing(
                                 pass
                             raise asyncio.TimeoutError()
                         try:
-                            current, total = await asyncio.wait_for(
+                            current, total, tool_name, tool_args = await asyncio.wait_for(
                                 progress_queue.get(), timeout=0.05
                             )
+                            label = _human_label_for_tool(tool_name, tool_args) if tool_name else f"Step {current}"
                             yield await sse_event({
                                 "type": "progress",
                                 "currentStep": current,
                                 "totalSteps": total,
-                                "message": f"Step {current}/{total}...",
+                                "message": label,
+                                "toolName": tool_name,
                             })
                         except asyncio.TimeoutError:
                             if task.done():
@@ -914,6 +1369,7 @@ async def _handle_editing(
     reasoning_fraction: Optional[float] = settings.composition_reasoning_fraction if is_composition else None
     
     tool_calls_collected: list[dict[str, Any]] = []
+    plan_tracker: Optional[_PlanTracker] = None
     iteration = 0
     max_iterations = (
         settings.composition_max_iterations if is_composition
@@ -1013,11 +1469,53 @@ async def _handle_editing(
         # in later tool calls can reference outputs of earlier ones.
         iter_tool_results: list[dict[str, Any]] = []
 
+        # ── Plan tracking: build plan from first batch of tool calls ──
+        if (
+            plan_tracker is None
+            and response is not None
+            and response.has_tool_calls
+            and execution_mode == "apply"
+        ):
+            plan_tracker = _PlanTracker()
+            plan_tracker.build(
+                response.tool_calls, prompt, project_context,
+                is_composition, store,
+            )
+            yield await sse_event(plan_tracker.to_plan_event())
+        elif (
+            plan_tracker is not None
+            and response is not None
+            and response.has_tool_calls
+            and execution_mode == "apply"
+        ):
+            # Subsequent iterations: activate steps matched by name/context
+            for tc in response.tool_calls:
+                resolved = _resolve_variable_refs(tc.params, iter_tool_results)
+                step = plan_tracker.find_step_for_tool(tc.name, resolved, store)
+                if step and step.status == "pending":
+                    yield await sse_event(plan_tracker.activate_step(step.step_id))
+
         # Process tool calls with validation
-        for tc in response.tool_calls:
+        for tc_idx, tc in enumerate(response.tool_calls):
             # Resolve $N.fieldName variable references before validation so
             # the substituted IDs pass entity-existence checks correctly.
-            resolved_args = _resolve_variable_refs(tc.arguments, iter_tool_results)
+            resolved_args = _resolve_variable_refs(tc.params, iter_tool_results)
+
+            # ── Plan step tracking: activate step for this tool call ──
+            if plan_tracker and execution_mode == "apply":
+                step = plan_tracker.step_for_tool_index(tc_idx)
+                if step is None:
+                    step = plan_tracker.find_step_for_tool(
+                        tc.name, resolved_args, store,
+                    )
+                if step and step.step_id != plan_tracker._active_step_id:
+                    if plan_tracker._active_step_id:
+                        evt = plan_tracker.complete_active_step()
+                        if evt:
+                            yield await sse_event(evt)
+                    yield await sse_event(
+                        plan_tracker.activate_step(step.step_id)
+                    )
 
             with trace_span(trace, f"validate:{tc.name}"):
                 validation = validate_tool_call(
@@ -1191,8 +1689,13 @@ async def _handle_editing(
                 bus_id = store.get_or_create_bus(bus_name)
                 enriched_params["busId"] = bus_id
             
-            # Emit tool call to client (only in apply mode)
+            # Emit tool start + call to client (only in apply mode)
             if execution_mode == "apply":
+                yield await sse_event({
+                    "type": "toolStart",
+                    "name": tc.name,
+                    "label": _human_label_for_tool(tc.name, enriched_params),
+                })
                 yield await sse_event({
                     "type": "toolCall",
                     "id": tc.id,
@@ -1206,6 +1709,17 @@ async def _handle_editing(
                 "tool": tc.name,
                 "params": enriched_params,
             })
+
+            # ── Plan step tracking: accumulate result description ──
+            if plan_tracker and execution_mode == "apply":
+                _step = (
+                    plan_tracker.step_for_tool_index(tc_idx)
+                    or plan_tracker.find_step_for_tool(tc.name, enriched_params, store)
+                )
+                if _step:
+                    _step.result = _build_step_result(
+                        tc.name, enriched_params, _step.result,
+                    )
 
             # Persist notes so the COMPOSING handoff can diff against them
             if tc.name == "stori_add_notes":
@@ -1262,6 +1776,12 @@ async def _handle_editing(
                 "content": json.dumps(tool_result),
             })
         
+        # ── Plan step tracking: complete last active step this iteration ──
+        if plan_tracker and plan_tracker._active_step_id and execution_mode == "apply":
+            evt = plan_tracker.complete_active_step()
+            if evt:
+                yield await sse_event(evt)
+
         # Force stop after first tool execution
         if route.force_stop_after and tool_calls_collected:
             logger.info(f"[{trace.trace_id[:8]}] ✅ Force stop after {len(tool_calls_collected)} tool(s)")
@@ -1289,6 +1809,27 @@ async def _handle_editing(
                 )
                 continue
             elif incomplete:
+                # ── Plan tracking: mark completed track steps ──
+                if plan_tracker and execution_mode == "apply":
+                    incomplete_set = set(incomplete)
+                    for _step in plan_tracker.steps:
+                        if (
+                            _step.track_name
+                            and _step.status in ("active", "pending")
+                            and _step.track_name not in incomplete_set
+                        ):
+                            yield await sse_event(
+                                plan_tracker.complete_step_by_id(
+                                    _step.step_id,
+                                    f"Created {_step.track_name}",
+                                )
+                            )
+                    # Inject plan progress so LLM knows where it is
+                    messages.append({
+                        "role": "system",
+                        "content": plan_tracker.progress_context(),
+                    })
+
                 continuation = (
                     f"Continue — these tracks still need regions and notes: "
                     f"{', '.join(incomplete)}. "
@@ -1340,7 +1881,10 @@ async def _handle_editing(
             tool_calls=tool_call_objs,
             project_state=project_context,
             intent=prompt,
-            conversation_id=None,  # EDITING doesn't use conversation_id here
+            # Use the editing flow's store so region entities created during
+            # execution are visible when _store_variation builds PhraseRecords,
+            # and so commit can find the same store later.
+            conversation_id=store.conversation_id,
             explanation=None,
         )
 
@@ -1495,10 +2039,10 @@ async def _stream_llm_response(
             args = tc.get("function", {}).get("arguments", "{}")
             if isinstance(args, str):
                 args = json.loads(args) if args else {}
-            response.tool_calls.append(ToolCallData(
+            response.tool_calls.append(ToolCall(
                 id=tc.get("id", ""),
                 name=tc.get("function", {}).get("name", ""),
-                arguments=args,
+                params=args,
             ))
         except Exception as e:
             logger.error(f"Error parsing tool call: {e}")

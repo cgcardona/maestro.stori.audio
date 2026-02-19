@@ -33,13 +33,13 @@ API base URL, auth (JWT), access codes, frontend (Swift, assets), MCP (Cursor/Cl
 
 ## 3. [reference/api.md](reference/api.md)
 
-API and MCP tools in one place: maestro stream (SSE), event types, variable refs, models (OpenRouter), and the full MCP tool reference (all 41 tools with parameters and routing). Use with Stori app, Cursor/Claude, or HTTP MCP. Programmatic list: `GET /api/v1/mcp/tools` or `app/mcp/tools.py`.
+API and MCP tools in one place: maestro stream (SSE), all event types (`state`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `toolError`, `reasoning`, `budgetUpdate`, `complete`, and composing events), request body fields (`humanizeProfile`, `qualityPreset`, `swing`), variable refs, models (OpenRouter), and the full MCP tool reference (all 41 tools with parameters and routing). Use with Stori app, Cursor/Claude, or HTTP MCP. Programmatic list: `GET /api/v1/mcp/tools` or `app/mcp/tools.py`.
 
 ---
 
 ## 4. [reference/architecture.md](reference/architecture.md)
 
-One backend, two entry points (Stori app + MCP). Request flow (intent → REASONING / EDITING / COMPOSING). Intent engine. Music generation (Orpheus required).
+One backend, two entry points (Stori app + MCP). Request flow (intent → REASONING / EDITING / COMPOSING). Structured plan events (EDITING). Intent engine. Music generation (Orpheus required).
 
 ---
 
@@ -55,7 +55,13 @@ Drum kits and soundfonts; upload to S3.
 
 ---
 
-## 7. Specs & Variation protocol
+## 7. [guides/fe-project-state-sync.md](guides/fe-project-state-sync.md)
+
+Frontend integration guide for project state serialization: how to build the `project` snapshot sent on every compose request, capture server-assigned entity IDs from `toolCall` events, and handle the `plan` / `planStepUpdate` display events. Includes the critical round-trip example for sequential composition (e.g. `Position: after intro`).
+
+---
+
+## 8. Specs & Variation protocol
 
 | Doc | Description |
 |-----|-------------|
@@ -67,7 +73,7 @@ Drum kits and soundfonts; upload to S3.
 
 ---
 
-## 8. [guides/security.md](guides/security.md)
+## 9. [guides/security.md](guides/security.md)
 
 Security audit summary, go-live checklist, and service exposure (Qdrant, DB, nginx SSL).
 

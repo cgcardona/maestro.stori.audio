@@ -299,15 +299,31 @@ Apply accepted phrases to canonical state. Loads variation from backend store (n
       "track_id": "uuid",
       "notes": [
         { "pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100, "channel": 0 }
-      ]
+      ],
+      "start_beat": 0.0,
+      "duration_beats": 16.0,
+      "name": "Bass Region"
     }
   ]
 }
 ```
 
 `updated_regions` contains the **full** materialized note state for every region
-affected by the accepted phrases.  The frontend should replace its local region
+affected by the accepted phrases. The frontend should replace its local region
 notes with this data — no need to re-read project state or apply diffs locally.
+
+**`updated_regions` field details:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `region_id` | always | Region UUID |
+| `track_id` | always | Parent track UUID |
+| `notes` | always | Full materialized MIDI note array after applying accepted phrases. Frontend replaces entire note array. All timing in **beats**. |
+| `start_beat` | new regions only | Start position in beats. **Present only when the variation creates a new region** — frontend must create the region. |
+| `duration_beats` | new regions only | Duration in beats. Present only for new regions. |
+| `name` | new regions only | Region name. Present only for new regions. |
+
+When `start_beat`/`duration_beats`/`name` are absent, the region already exists in the frontend DAW — update its notes in place.
 
 ### Errors
 

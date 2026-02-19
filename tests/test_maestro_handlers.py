@@ -356,7 +356,7 @@ class TestOrchestrateStream:
 
     @pytest.mark.anyio
     async def test_orchestrate_yields_error_event_on_exception(self):
-        """When orchestration raises, we yield an error SSE event then close."""
+        """When orchestration raises, we yield error then complete(success=false)."""
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
             m_intent.side_effect = RuntimeError("intent service down")
             with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
@@ -366,12 +366,19 @@ class TestOrchestrateStream:
                 events = []
                 async for event in orchestrate("hello"):
                     events.append(event)
-                # Should have state (from intent attempt) then error
-                assert len(events) >= 1
+                assert len(events) >= 2
                 import json
-                last = json.loads(events[-1].split("data: ", 1)[1].strip())
-                assert last.get("type") == "error"
-                assert "intent service down" in last.get("message", "")
+                payloads = [
+                    json.loads(e.split("data: ", 1)[1].strip())
+                    for e in events if "data:" in e
+                ]
+                types = [p["type"] for p in payloads]
+                assert "error" in types
+                err_evt = next(p for p in payloads if p["type"] == "error")
+                assert "intent service down" in err_evt.get("message", "")
+                # complete must be the final event (spec requirement)
+                assert payloads[-1]["type"] == "complete"
+                assert payloads[-1]["success"] is False
 
     @pytest.mark.anyio
     async def test_reasoning_with_rag_ask_stori_docs(self):
@@ -511,7 +518,8 @@ class TestOrchestrateStream:
         """When plan has no tool_calls but llm_response_text contains 'stori_', we retry as EDITING."""
         from app.core.pipeline import PipelineOutput
         from app.core.planner import ExecutionPlan
-        from app.core.llm_client import LLMResponse, ToolCallData
+        from app.core.expansion import ToolCall
+        from app.core.llm_client import LLMResponse
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -537,7 +545,7 @@ class TestOrchestrateStream:
                     # EDITING path will ask for tool calls; return one then stop
                     mock_llm.chat_completion = AsyncMock(return_value=LLMResponse(
                         content="Done.",
-                        tool_calls=[ToolCallData("stori_add_midi_track", {"name": "Drums"}, "tc1")],
+                        tool_calls=[ToolCall("stori_add_midi_track", {"name": "Drums"}, "tc1")],
                     ))
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
@@ -558,7 +566,8 @@ class TestOrchestrateStream:
     @pytest.mark.anyio
     async def test_empty_project_overrides_composing_to_editing(self):
         """When COMPOSING intent hits an empty project, orchestrate overrides to EDITING with tool_call events."""
-        from app.core.llm_client import LLMResponse, ToolCallData
+        from app.core.expansion import ToolCall
+        from app.core.llm_client import LLMResponse
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -580,7 +589,7 @@ class TestOrchestrateStream:
                 # LLM returns a tool call to add a track
                 mock_llm.chat_completion = AsyncMock(return_value=LLMResponse(
                     content="Creating your song!",
-                    tool_calls=[ToolCallData("stori_add_midi_track", {"name": "Drums"}, "tc1")],
+                    tool_calls=[ToolCall("stori_add_midi_track", {"name": "Drums"}, "tc1")],
                 ))
                 mock_llm.close = AsyncMock()
                 m_llm_cls.return_value = mock_llm

@@ -401,7 +401,7 @@ Variation Review Mode enters when the compose stream emits a `state` event with 
 3. Receive `phrase` events -> accumulate phrases for review
 4. Receive `done` event -> enable Accept/Discard controls
 
-For `state: "editing"`, the frontend applies `tool_call` events directly as before.
+For `state: "editing"`, the frontend applies `toolCall` events directly. The backend also emits `plan` and `planStepUpdate` events to render a step-by-step checklist. See [api.md](../reference/api.md) for the full event reference.
 
 ### 6.2 Chrome (always visible while reviewing)
 Banner containing:

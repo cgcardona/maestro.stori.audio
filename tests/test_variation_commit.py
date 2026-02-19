@@ -481,9 +481,17 @@ class TestUpdatedRegions:
 
         assert result.success is True
         assert len(result.updated_regions) == 1
-        notes = result.updated_regions[0]["notes"]
+        region_data = result.updated_regions[0]
+        assert region_data["region_id"] == "region-keys"
+        assert region_data["track_id"] == "track-keys"
+        notes = region_data["notes"]
         assert len(notes) == 2
         pitches = {n["pitch"] for n in notes}
         assert pitches == {60, 67}
+        # Notes are stored snake_case internally; the API layer converts to
+        # camelCase via UpdatedRegionPayload before sending the JSON response.
+        for note in notes:
+            assert "start_beat" in note
+            assert "duration_beats" in note
 
         clear_all_stores()

@@ -8,52 +8,97 @@ Streaming (SSE), event types, models, and the full MCP tool set in one place. To
 
 **Endpoint:** `POST /api/v1/maestro/stream`  
 **Auth:** `Authorization: Bearer <token>`  
-**Body:** JSON with `prompt`, optional `project` (app state), `conversation_id`, `model`.  
+**Body:** JSON with `prompt`, optional `project` (app state), `conversation_id`, `model`, and optional generation hints.  
 **Response:** SSE stream of JSON objects; each has a `type` field.
 
 The backend determines execution mode from intent classification: COMPOSING -> variation (human review), EDITING -> apply (immediate). See [architecture.md](architecture.md).
 
 The `prompt` field accepts both natural language and the **Stori structured prompt** format. When a prompt begins with `STORI PROMPT`, it is parsed as a structured prompt and routed deterministically by the `Mode` field, bypassing NL classification. See [stori-prompt-spec.md](../protocol/stori-prompt-spec.md).
 
+### Request body fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `prompt` | string | yes | Natural language or STORI PROMPT text |
+| `project` | object | no | Full DAW project snapshot (tracks, regions, buses, tempo, key). See [fe-project-state-sync.md](../guides/fe-project-state-sync.md). |
+| `conversationId` | string (UUID) | no | Conversation ID for multi-turn context. Send the same ID for every request in a session. |
+| `model` | string | no | LLM model override (e.g. `anthropic/claude-3.7-sonnet`) |
+| `storePrompt` | bool | no | Whether to store prompt for training data (default `true`) |
+| `humanizeProfile` | string | no | Timing feel: `"tight"` \| `"laid_back"` \| `"pushed"`. Backend chooses default if omitted. |
+| `qualityPreset` | string | no | Inference quality: `"fast"` \| `"balanced"` \| `"quality"`. Default `"balanced"`. |
+| `swing` | float 0–1 | no | Swing amount. Backend chooses based on style if omitted. |
+
 ---
 
 ## SSE event types
 
-### Common events (all modes)
+All events are newline-delimited `data: {json}\n\n` lines. Every event has a `type` field. **Keys are camelCase.**
+
+### Events emitted in all modes
 
 | type | Description |
 |------|-------------|
-| `state` | Intent classification result: `"composing"`, `"editing"`, or `"reasoning"`. **First meaningful event.** Frontend switches UI mode based on this. |
-| `status` | Human-readable status |
-| `error` | Error message |
+| `state` | Intent classification result. **First meaningful event.** `{ "type": "state", "state": "editing" \| "composing" \| "reasoning", "intent": "..." }` |
+| `reasoning` | LLM chain-of-thought chunk (streamed). `{ "type": "reasoning", "content": "..." }` |
+| `content` | Final user-facing text response. `{ "type": "content", "content": "..." }` |
+| `budgetUpdate` | Cost update after LLM call. `{ "type": "budgetUpdate", "budgetRemaining": 4.50, "cost": 0.03 }` |
+| `error` | Error message (non-fatal or fatal). `{ "type": "error", "error": "...", "message": "..." }` |
+| `complete` | **Always the final event**, even on errors. `{ "type": "complete", "success": true \| false, "traceId": "..." }`. On error: `success: false`. |
 
 ### EDITING mode events
 
+Emitted when `state.state == "editing"`. Applied immediately by the frontend.
+
 | type | Description |
 |------|-------------|
-| `tool_call` | Tool name + params (client applies immediately) |
-| `complete` | Stream done |
+| `plan` | Structured plan emitted once after initial reasoning, before the first tool call. `{ "type": "plan", "planId": "uuid", "title": "Creating lo-fi intro (Cm, 72 BPM)", "steps": [{ "stepId": "1", "label": "Set tempo and key", "status": "pending", "detail": "72 BPM, Cm" }, ...] }` |
+| `planStepUpdate` | Step lifecycle update. Emitted twice per step: `active` when starting, `completed` / `failed` / `skipped` when done. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "failed" \| "skipped", "result": "optional summary" }` |
+| `toolStart` | Fires **before** each `toolCall` with a human-readable label. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Creating Drums track" }` |
+| `toolCall` | Resolved tool call for the frontend to apply. `{ "type": "toolCall", "id": "...", "name": "stori_add_midi_track", "params": { "trackId": "uuid", ... } }`. **Critical: key is `"params"` (not `"arguments"`); key is `"name"` (not `"tool"`). All IDs are fully-resolved UUIDs.** |
+| `toolError` | Non-fatal validation error. Stream continues. `{ "type": "toolError", "name": "stori_add_notes", "error": "Region not found", "errors": ["..."] }` |
+| `complete` | Stream done. `{ "type": "complete", "success": true, "traceId": "..." }` |
 
 ### COMPOSING mode events (Variation protocol)
 
+Emitted when `state.state == "composing"`. Frontend enters Variation Review Mode.
+
 | type | Description |
 |------|-------------|
-| `meta` | Variation summary: `variation_id`, intent, explanation, affected tracks/regions, note counts |
-| `phrase` | One musical phrase: `phrase_id`, region, beat range, note changes |
-| `done` | End of variation stream. Frontend enables Accept/Discard. |
-| `complete` | Stream done (after `done`) |
+| `planSummary` | High-level composition plan. `{ "type": "planSummary", "totalSteps": 6, "generations": 2, "edits": 4 }` |
+| `progress` | Per-step progress. `{ "type": "progress", "currentStep": 3, "totalSteps": 6, "message": "Adding chord voicings" }` |
+| `meta` | Variation summary (first composing event). `{ "type": "meta", "variationId": "uuid", "baseStateId": "42", "intent": "...", "aiExplanation": "...", "affectedTracks": [...], "affectedRegions": [...], "noteCounts": { "added": 32, "removed": 0, "modified": 0 } }`. Use `baseStateId: "0"` for first variation after editing. |
+| `phrase` | One musical phrase. `{ "type": "phrase", "phraseId": "uuid", "trackId": "uuid", "regionId": "uuid", "startBeat": 0.0, "endBeat": 16.0, "label": "...", "tags": [...], "explanation": "...", "noteChanges": [...], "controllerChanges": [] }` |
+| `done` | End of variation stream. Frontend enables Accept/Discard. `{ "type": "done", "variationId": "uuid", "phraseCount": 4 }` |
+| `complete` | Stream done. `{ "type": "complete", "success": true, "variationId": "uuid", "phraseCount": 4, "traceId": "..." }` |
 
 ### REASONING mode events
 
+Emitted when `state.state == "reasoning"`. No tools; chat only.
+
 | type | Description |
 |------|-------------|
-| `reasoning` | LLM reasoning chunk (CoT) |
-| `content` | User-facing text response |
+| `reasoning` | Streamed CoT chunks (see above) |
+| `content` | Full user-facing answer |
 | `complete` | Stream done |
 
-**Key:** The `state` event tells the frontend which set of events to expect. For COMPOSING, the frontend enters Variation Review Mode and accumulates `meta` + `phrase` events until `done`. For EDITING, the frontend applies `tool_call` events directly.
+### Event ordering
 
-**Variable refs:** Params can use `$N.field` (e.g. `$0.trackId`, `$1.regionId`). Backend resolves to concrete IDs.
+**EDITING:**
+```
+state → reasoning* → plan → planStepUpdate(active) → toolStart → toolCall → planStepUpdate(completed) → ... → content? → budgetUpdate → complete
+```
+
+**COMPOSING:**
+```
+state → reasoning* → planSummary → progress* → meta → phrase* → done → complete
+```
+
+**REASONING:**
+```
+state → reasoning* → content → complete
+```
+
+`*` = zero or more events. `complete` is always final, even on errors.
 
 ---
 

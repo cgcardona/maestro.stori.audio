@@ -550,7 +550,7 @@ class TestMultiRegionVariation:
         variation = variation_service.compute_multi_region_variation(
             base_regions=base_regions,
             proposed_regions=proposed_regions,
-            track_id="track-1",
+            track_regions={"region-1": "track-1", "region-2": "track-1"},
             intent="transpose up",
         )
         

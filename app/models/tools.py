@@ -35,13 +35,6 @@ class PitchBendEvent(BaseModel):
     channel: int = Field(default=0, ge=0, le=15, description="MIDI channel")
 
 
-class ToolCall(BaseModel):
-    """A tool call from the LLM."""
-    id: str = Field(..., description="Unique tool call ID")
-    name: str = Field(..., description="Tool name")
-    arguments: dict[str, Any] = Field(default_factory=dict, description="Tool arguments")
-
-
 class ToolResult(BaseModel):
     """Result from executing a tool."""
     tool_call_id: str = Field(..., description="ID of the tool call this responds to")

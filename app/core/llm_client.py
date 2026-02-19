@@ -20,6 +20,7 @@ from enum import Enum
 from typing import Any, AsyncIterator, Optional, cast
 
 from app.config import settings
+from app.core.expansion import ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -30,18 +31,10 @@ class LLMProvider(str, Enum):
 
 
 @dataclass
-class ToolCallData:
-    """Represents a parsed tool call from the LLM."""
-    name: str
-    arguments: dict[str, Any]
-    id: str = ""
-
-
-@dataclass
 class LLMResponse:
     """Response from the LLM."""
     content: Optional[str] = None
-    tool_calls: list[ToolCallData] = field(default_factory=list)
+    tool_calls: list[ToolCall] = field(default_factory=list)
     finish_reason: Optional[str] = None
     usage: Optional[dict[str, Any]] = None
 
@@ -437,16 +430,16 @@ class LLMClient:
                 args = tc.get("function", {}).get("arguments", "{}")
                 if isinstance(args, str):
                     args = json.loads(args) if args else {}
-                
-                response.tool_calls.append(ToolCallData(
+
+                response.tool_calls.append(ToolCall(
                     id=tc.get("id", ""),
                     name=tc.get("function", {}).get("name", ""),
-                    arguments=args,
+                    params=args,
                 ))
             except Exception as e:
                 logger.error(f"Error parsing tool call: {e}")
                 continue
-        
+
         return response
 
 

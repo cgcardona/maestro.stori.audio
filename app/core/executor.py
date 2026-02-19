@@ -404,7 +404,7 @@ async def execute_plan_variation(
     intent: str,
     conversation_id: Optional[str] = None,
     explanation: Optional[str] = None,
-    progress_callback: Optional[Callable[[int, int], Awaitable[None]]] = None,
+    progress_callback: Optional[Callable[..., Awaitable[None]]] = None,
 ) -> Variation:
     """
     Execute a plan in variation mode - returns proposed changes without mutation.
@@ -474,7 +474,7 @@ async def execute_plan_variation(
             logger.info(f"🔧 Processing call {i + 1}/{total}: {call.name}")
             await _process_call_for_variation(call, var_ctx)
             if progress_callback:
-                await progress_callback(i + 1, total)
+                await progress_callback(i + 1, total, call.name, call.params)
 
         # Log what we captured
         total_base = sum(len(n) for n in var_ctx.base_notes.values())
@@ -487,14 +487,14 @@ async def execute_plan_variation(
         # Compute variation using variation service
         variation_service = get_variation_service()
         
-        # If we have multiple regions, use multi-region variation
+        # If we have multiple regions, use multi-region variation.
+        # Pass the full track_regions mapping so each phrase carries the
+        # correct server-assigned trackId, not a single shared value.
         if len(var_ctx.proposed_notes) > 1:
-            # Group by track
-            track_id = next(iter(var_ctx.track_regions.values()), "unknown")
             variation = variation_service.compute_multi_region_variation(
                 base_regions=var_ctx.base_notes,
                 proposed_regions=var_ctx.proposed_notes,
-                track_id=track_id,
+                track_regions=var_ctx.track_regions,
                 intent=intent,
                 explanation=explanation,
             )
@@ -607,10 +607,12 @@ async def _process_call_for_variation(
                 track_id = var_ctx.store.registry.resolve_track(track_ref) or ""
         if track_id:
             region_name = params.get("name", "Region")
+            # Never accept an LLM-provided regionId — the server always assigns
+            # the UUID so the registry remains the sole source of truth.
             region_id = var_ctx.store.create_region(
                 name=region_name,
                 parent_track_id=track_id,
-                region_id=params.get("regionId"),
+                region_id=None,
                 metadata={
                     "startBeat": params.get("startBeat", 0),
                     "durationBeats": params.get("durationBeats", 16),
@@ -630,19 +632,57 @@ async def _process_call_for_variation(
         region_id = params.get("regionId", "")
         track_id = params.get("trackId", "")
         notes = params.get("notes", [])
-        
-        if region_id and notes:
-            if region_id not in var_ctx.base_notes:
-                var_ctx.capture_base_notes(region_id, track_id, [])
-            
-            var_ctx.record_proposed_notes(region_id, notes)
-            logger.info(
-                f"📝 stori_add_notes: {len(notes)} notes for region={region_id[:8]}"
-            )
-        elif not region_id:
+
+        if not region_id:
             logger.warning(
                 f"⚠️ stori_add_notes: missing regionId, dropping {len(notes)} notes"
             )
+        elif notes:
+            # Validate the region exists in the registry. The planner never
+            # provides regionIds in its plan (it uses trackName resolution), so
+            # any regionId here should already be registered. If it's not, the
+            # LLM may have hallucinated it — try to recover via the track's
+            # latest region rather than silently drop the notes.
+            registered = var_ctx.store.registry.get_region(region_id)
+            if not registered:
+                # Attempt fallback: resolve track → latest region
+                resolved_track_id = (
+                    var_ctx.store.registry.resolve_track(params.get("trackName", ""))
+                    or track_id
+                )
+                fallback_region_id = (
+                    var_ctx.store.registry.get_latest_region_for_track(resolved_track_id)
+                    if resolved_track_id else None
+                )
+                if fallback_region_id:
+                    logger.warning(
+                        f"⚠️ stori_add_notes: regionId={region_id[:8]} not in registry; "
+                        f"falling back to latest region={fallback_region_id[:8]} "
+                        f"for track={resolved_track_id[:8]}"
+                    )
+                    region_id = fallback_region_id
+                    track_id = resolved_track_id
+                else:
+                    logger.warning(
+                        f"⚠️ stori_add_notes: regionId={region_id[:8]} not in registry "
+                        f"and no fallback found; dropping {len(notes)} notes"
+                    )
+                    region_id = ""
+
+            if region_id:
+                # Derive track_id from registry if not provided or unregistered.
+                if not track_id:
+                    entity = var_ctx.store.registry.get_region(region_id)
+                    track_id = entity.parent_id if entity else ""
+
+                if region_id not in var_ctx.base_notes:
+                    var_ctx.capture_base_notes(region_id, track_id, [])
+
+                var_ctx.record_proposed_notes(region_id, notes)
+                logger.info(
+                    f"📝 stori_add_notes: {len(notes)} notes → "
+                    f"region={region_id[:8]} track={track_id[:8]}"
+                )
     
     # Handle generators - they produce notes that go to a region
     meta = get_tool_meta(call.name)
@@ -823,9 +863,10 @@ async def apply_variation_phrases(
 
             store.commit(tx)
 
-            # Build updated_regions: full note state for every affected region.
-            # Use phrase-derived track_id as the primary source; fall back to
-            # the registry only if somehow a region slipped through without one.
+            # Build updated_regions: full post-commit note state for every
+            # affected region.  Keys are snake_case (Python-idiomatic); the
+            # API layer converts to camelCase via UpdatedRegionPayload before
+            # sending the response.
             affected_region_ids = set(region_adds.keys()) | set(region_removals.keys())
             updated_regions: list[dict[str, Any]] = []
             for rid in sorted(affected_region_ids):
@@ -833,7 +874,7 @@ async def apply_variation_phrases(
                 updated_regions.append({
                     "region_id": rid,
                     "track_id": track_id,
-                    "notes": store.get_region_notes(rid),
+                    "notes": store.get_region_notes(rid),  # snake_case internally
                 })
 
             logger.info(

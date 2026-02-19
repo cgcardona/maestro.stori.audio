@@ -7,11 +7,11 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.core.expansion import ToolCall
 from app.core.llm_client import (
     LLMClient,
     LLMProvider,
     LLMResponse,
-    ToolCallData,
     enforce_single_tool,
     get_llm_client,
 )
@@ -30,15 +30,15 @@ class TestEnforceSingleTool:
         assert len(result.tool_calls) == 0
 
     def test_one_tool_call(self):
-        resp = LLMResponse(tool_calls=[ToolCallData(name="foo", arguments={})])
+        resp = LLMResponse(tool_calls=[ToolCall(name="foo", params={})])
         result = enforce_single_tool(resp)
         assert len(result.tool_calls) == 1
 
     def test_multiple_tool_calls_truncated(self):
         calls = [
-            ToolCallData(name="first", arguments={}),
-            ToolCallData(name="second", arguments={}),
-            ToolCallData(name="third", arguments={}),
+            ToolCall(name="first", params={}),
+            ToolCall(name="second", params={}),
+            ToolCall(name="third", params={}),
         ]
         resp = LLMResponse(tool_calls=calls)
         result = enforce_single_tool(resp)
@@ -54,7 +54,7 @@ class TestEnforceSingleTool:
 class TestLLMResponse:
 
     def test_has_tool_calls_true(self):
-        resp = LLMResponse(tool_calls=[ToolCallData(name="foo", arguments={})])
+        resp = LLMResponse(tool_calls=[ToolCall(name="foo", params={})])
         assert resp.has_tool_calls is True
 
     def test_has_tool_calls_false(self):
@@ -161,7 +161,7 @@ class TestParseResponse:
         result = client._parse_response(data)
         assert len(result.tool_calls) == 1
         assert result.tool_calls[0].name == "stori_set_tempo"
-        assert result.tool_calls[0].arguments == {"tempo": 120}
+        assert result.tool_calls[0].params == {"tempo": 120}
         assert result.tool_calls[0].id == "call_abc"
 
     def test_parse_empty_response(self):

@@ -429,7 +429,7 @@ class TestComputeMultiRegionVariation:
         variation = svc.compute_multi_region_variation(
             base_regions=notes,
             proposed_regions=notes,
-            track_id="t1",
+            track_regions={"r1": "t1", "r2": "t1"},
             intent="test",
         )
         assert variation.is_empty
@@ -440,7 +440,7 @@ class TestComputeMultiRegionVariation:
         variation = svc.compute_multi_region_variation(
             base_regions={"r1": [_note(60)], "r2": [_note(64)]},
             proposed_regions={"r1": [_note(60)], "r2": [_note(67)]},  # r2 changed
-            track_id="t1",
+            track_regions={"r1": "t1", "r2": "t1"},
             intent="raise r2 note",
         )
         assert "r2" in variation.affected_regions
@@ -451,10 +451,27 @@ class TestComputeMultiRegionVariation:
         variation = svc.compute_multi_region_variation(
             base_regions={"r1": [_note(60)], "r2": [_note(64)]},
             proposed_regions={"r1": [_note(62)], "r2": [_note(67)]},
-            track_id="t1",
+            track_regions={"r1": "t1", "r2": "t1"},
             intent="change both",
         )
         assert len(variation.affected_regions) == 2
+
+    def test_per_region_track_id(self):
+        """Each phrase must carry its own region's server-assigned trackId."""
+        svc = _service()
+        variation = svc.compute_multi_region_variation(
+            base_regions={},
+            proposed_regions={
+                "r-drums": [_note(36)],
+                "r-bass": [_note(40)],
+            },
+            track_regions={"r-drums": "t-drums", "r-bass": "t-bass"},
+            intent="verse section",
+        )
+        phrase_track_ids = {p.track_id for p in variation.phrases}
+        assert "t-drums" in phrase_track_ids
+        assert "t-bass" in phrase_track_ids
+        assert len(variation.affected_tracks) == 2
 
     def test_new_region_in_proposed(self):
         """A region only in proposed_regions (all notes added)."""
@@ -462,7 +479,7 @@ class TestComputeMultiRegionVariation:
         variation = svc.compute_multi_region_variation(
             base_regions={},
             proposed_regions={"r-new": [_note(60), _note(62)]},
-            track_id="t1",
+            track_regions={"r-new": "t1"},
             intent="add region",
         )
         assert "r-new" in variation.affected_regions
@@ -474,7 +491,7 @@ class TestComputeMultiRegionVariation:
         variation = svc.compute_multi_region_variation(
             base_regions={"r-del": [_note(60)]},
             proposed_regions={},
-            track_id="t1",
+            track_regions={"r-del": "t1"},
             intent="remove region",
         )
         assert "r-del" in variation.affected_regions
@@ -487,7 +504,7 @@ class TestComputeMultiRegionVariation:
                 "r1": [_note(start=0.0, dur=1.0)],
                 "r2": [_note(start=8.0, dur=2.0)],
             },
-            track_id="t1",
+            track_regions={"r1": "t1", "r2": "t1"},
             intent="test",
         )
         assert variation.beat_range[0] == 0.0
@@ -497,7 +514,7 @@ class TestComputeMultiRegionVariation:
         svc = _service()
         variation = svc.compute_multi_region_variation(
             base_regions={}, proposed_regions={"r1": [_note()]},
-            track_id="t1", intent="the intent"
+            track_regions={"r1": "t1"}, intent="the intent"
         )
         assert variation.intent == "the intent"
 

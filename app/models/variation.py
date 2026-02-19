@@ -274,26 +274,53 @@ class ProposeVariationResponse(_CamelModel):
     )
 
 
+class UpdatedRegionPayload(_CamelModel):
+    """
+    Full post-commit MIDI state for one region.
+
+    Serialises to camelCase on the wire via CamelModel aliases.
+    For regions that are brand-new (unknown to the frontend DAW), start_beat /
+    duration_beats / name are included so the client can create the region.
+    For existing regions the frontend replaces notes in place.
+    """
+
+    region_id: str
+    track_id: str
+    notes: list[MidiNoteSnapshot] = Field(default_factory=list)
+    start_beat: Optional[float] = Field(
+        default=None,
+        description="Region start in beats — present only for new regions",
+    )
+    duration_beats: Optional[float] = Field(
+        default=None,
+        description="Region duration in beats — present only for new regions",
+    )
+    name: Optional[str] = Field(
+        default=None,
+        description="Region display name — present only for new regions",
+    )
+
+
 class CommitVariationResponse(_CamelModel):
     """
     Response from POST /variation/commit (spec-compliant).
-    
+
     Returns details about applied phrases and updated regions.
     """
+
     project_id: str = Field(..., description="UUID of the project")
     new_state_id: str = Field(..., description="New state version after commit")
     applied_phrase_ids: list[str] = Field(
-        ...,
-        description="IDs of phrases that were applied"
+        ..., description="IDs of phrases that were applied"
     )
     undo_label: str = Field(
         ...,
-        description="Label for undo stack (e.g., 'Accept Variation: make that minor')"
+        description="Label for undo stack (e.g., 'Accept Variation: make that minor')",
     )
-    updated_regions: list[dict] = Field(
+    updated_regions: list[UpdatedRegionPayload] = Field(
         default_factory=list,
         description=(
             "Full MIDI state for each affected region after commit. "
-            "Each entry: {regionId, trackId, notes: [{pitch, startBeat, durationBeats, velocity, channel}]}."
+            "new regions include startBeat / durationBeats / name."
         ),
     )

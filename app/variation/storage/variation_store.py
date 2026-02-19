@@ -49,6 +49,11 @@ class PhraseRecord:
     diff_json: dict[str, Any]
     ai_explanation: str | None = None
     tags: list[str] = field(default_factory=list)
+    # Region position — populated at store time so commit can build updatedRegions
+    # without re-querying the compose-phase StateStore.
+    region_start_beat: float | None = None
+    region_duration_beats: float | None = None
+    region_name: str | None = None
 
 
 @dataclass
@@ -72,6 +77,9 @@ class VariationRecord:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     error_message: str | None = None
+    # The StateStore conversation_id from the compose phase. Stored so that commit
+    # can look up the same store (and its notes) rather than creating a fresh one.
+    conversation_id: str = ""
 
     def next_sequence(self) -> int:
         """Get the next sequence number for this variation's event stream."""
@@ -130,6 +138,7 @@ class VariationStore:
         base_state_id: str,
         intent: str,
         variation_id: str | None = None,
+        conversation_id: str = "",
     ) -> VariationRecord:
         """
         Create a new variation record in CREATED state.
@@ -146,6 +155,7 @@ class VariationStore:
             project_id=project_id,
             base_state_id=base_state_id,
             intent=intent,
+            conversation_id=conversation_id,
         )
 
         self._records[variation_id] = record

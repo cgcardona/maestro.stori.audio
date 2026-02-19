@@ -40,8 +40,10 @@ from app.models.requests import (
 from app.models.variation import (
     Variation,
     Phrase,
+    MidiNoteSnapshot,
     ProposeVariationResponse,
     CommitVariationResponse,
+    UpdatedRegionPayload,
 )
 from app.core.llm_client import LLMClient
 from app.core.intent import get_intent_result_with_llm, SSEState
@@ -420,11 +422,16 @@ async def commit_variation(
             # --- Build Variation model from store record for apply ---
             variation = _record_to_variation(record)
 
+            # Use the conversation_id from the compose phase so apply_variation_phrases
+            # operates on the same StateStore that has the generated notes. Fall back
+            # to project_id only if the record pre-dates this field.
+            apply_conversation_id = record.conversation_id or commit_request.project_id
+
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=commit_request.accepted_phrase_ids,
                 project_state={},
-                conversation_id=commit_request.project_id,
+                conversation_id=apply_conversation_id,
             )
 
             if not result.success:
@@ -454,12 +461,38 @@ async def commit_variation(
                 },
             )
 
+            # --- Convert to typed UpdatedRegionPayload at the API boundary ---
+            # result.updated_regions uses snake_case (Python-idiomatic).
+            # PhraseRecords carry region position so brand-new regions can be
+            # created by the frontend without a second round-trip.
+            region_meta: dict[str, dict] = {}
+            for pr in record.phrases:
+                if pr.region_id not in region_meta:
+                    region_meta[pr.region_id] = {
+                        "start_beat": pr.region_start_beat,
+                        "duration_beats": pr.region_duration_beats,
+                        "name": pr.region_name,
+                    }
+
+            updated_region_payloads: list[UpdatedRegionPayload] = []
+            for ur in result.updated_regions:
+                rid = ur["region_id"]
+                meta = region_meta.get(rid, {})
+                updated_region_payloads.append(UpdatedRegionPayload(
+                    region_id=rid,
+                    track_id=ur["track_id"],
+                    notes=[MidiNoteSnapshot.from_note_dict(n) for n in ur["notes"]],
+                    start_beat=meta.get("start_beat"),
+                    duration_beats=meta.get("duration_beats"),
+                    name=meta.get("name"),
+                ))
+
             return CommitVariationResponse(
                 project_id=commit_request.project_id,
                 new_state_id=new_state_id,
                 applied_phrase_ids=result.applied_phrase_ids,
                 undo_label=f"Accept Variation: {record.intent[:50]}",
-                updated_regions=result.updated_regions,
+                updated_regions=updated_region_payloads,
             )
 
     except HTTPException:

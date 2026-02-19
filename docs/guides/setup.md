@@ -12,7 +12,11 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Maestro: `http://localhost:10001`. Tests: `docker compose exec maestro pytest tests/ -v`.
+Maestro: `http://localhost:10001`. Tests: rebuild first (container copies code at build time, no live mount), then run:
+```bash
+docker compose build maestro && docker compose up -d
+docker compose exec maestro pytest tests/ -v
+```
 
 ---
 

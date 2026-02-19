@@ -10,7 +10,6 @@ from app.models.responses import (
     SSEError,
 )
 from app.models.tools import (
-    ToolCall,
     ToolResult,
     MidiNote,
     AutomationPoint,
@@ -26,7 +25,6 @@ __all__ = [
     "SSEToolCall",
     "SSEComplete",
     "SSEError",
-    "ToolCall",
     "ToolResult",
     "MidiNote",
     "AutomationPoint",

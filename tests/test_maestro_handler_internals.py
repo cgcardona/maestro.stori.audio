@@ -15,10 +15,14 @@ from app.core.maestro_handlers import (
     _handle_editing,
     _retry_composing_as_editing,
     _stream_llm_response,
+    _PlanTracker,
+    _PlanStep,
+    _build_step_result,
     orchestrate,
 )
+from app.core.expansion import ToolCall
 from app.core.intent import Intent, IntentResult, SSEState
-from app.core.llm_client import LLMResponse, ToolCallData
+from app.core.llm_client import LLMResponse
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
 
@@ -213,6 +217,9 @@ class TestHandleComposing:
         llm = _make_llm_mock()
         store = MagicMock(spec=StateStore)
         store.get_state_id.return_value = "1"
+        store.conversation_id = "test-conv-id"
+        store.registry = MagicMock()
+        store.registry.get_region.return_value = None
         trace = _make_trace()
 
         plan = ExecutionPlan(
@@ -339,7 +346,7 @@ class TestHandleEditing:
             tools=[t for t in ALL_TOOLS if t["function"]["name"] in allowed],
         )
         response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
-        response.tool_calls = [ToolCallData(id="tc1", name="stori_set_tempo", arguments={"tempo": 120})]
+        response.tool_calls = [ToolCall(id="tc1", name="stori_set_tempo", params={"tempo": 120})]
 
         done_response = LLMResponse(content="Done!", usage={"prompt_tokens": 5, "completion_tokens": 5})
 
@@ -377,7 +384,7 @@ class TestHandleEditing:
             content="I'll set the tempo to 120 BPM for you.",
             usage={"prompt_tokens": 5, "completion_tokens": 5},
         )
-        response.tool_calls = [ToolCallData(id="tc1", name="stori_set_tempo", arguments={"tempo": 120})]
+        response.tool_calls = [ToolCall(id="tc1", name="stori_set_tempo", params={"tempo": 120})]
 
         # Second response: content only (done)
         done_response = LLMResponse(
@@ -425,7 +432,7 @@ class TestHandleEditing:
             content='Setting the tempo:\n\n(tempo=120)\n\nDone with tempo.',
             usage={"prompt_tokens": 5, "completion_tokens": 5},
         )
-        response.tool_calls = [ToolCallData(id="tc1", name="stori_set_tempo", arguments={"tempo": 120})]
+        response.tool_calls = [ToolCall(id="tc1", name="stori_set_tempo", params={"tempo": 120})]
 
         done_response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
 
@@ -463,7 +470,7 @@ class TestHandleEditing:
             tools=[t for t in ALL_TOOLS if t["function"]["name"] in allowed],
         )
         response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
-        response.tool_calls = [ToolCallData(id="tc1", name="stori_set_tempo", arguments={"tempo": 120})]
+        response.tool_calls = [ToolCall(id="tc1", name="stori_set_tempo", params={"tempo": 120})]
 
         done_response = LLMResponse(content="Done!", usage={"prompt_tokens": 5, "completion_tokens": 5})
 
@@ -508,7 +515,7 @@ class TestHandleEditing:
 
         # First response: tool not in allowlist
         bad_response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
-        bad_response.tool_calls = [ToolCallData(id="tc1", name="stori_delete_track", arguments={"trackId": "x"})]
+        bad_response.tool_calls = [ToolCall(id="tc1", name="stori_delete_track", params={"trackId": "x"})]
 
         # Second response: just content
         ok_response = LLMResponse(content="OK, done.", usage={"prompt_tokens": 5, "completion_tokens": 5})
@@ -542,8 +549,8 @@ class TestHandleEditing:
 
         response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
         response.tool_calls = [
-            ToolCallData(id="tc1", name="stori_set_tempo", arguments={"tempo": 120}),
-            ToolCallData(id="tc2", name="stori_set_tempo", arguments={"tempo": 130}),
+            ToolCall(id="tc1", name="stori_set_tempo", params={"tempo": 120}),
+            ToolCall(id="tc2", name="stori_set_tempo", params={"tempo": 130}),
         ]
 
         llm = _make_llm_mock()
@@ -605,7 +612,7 @@ class TestHandleEditing:
         ]
         response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
         response.tool_calls = [
-            ToolCallData(id="tc1", name="stori_add_notes", arguments={
+            ToolCall(id="tc1", name="stori_add_notes", params={
                 "regionId": region_id,
                 "notes": notes_payload,
             }),
@@ -645,7 +652,7 @@ class TestHandleEditing:
             tools=[t for t in ALL_TOOLS if t["function"]["name"] in allowed],
         )
         response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
-        response.tool_calls = [ToolCallData(id="tc1", name="stori_set_tempo", arguments={"tempo": 120})]
+        response.tool_calls = [ToolCall(id="tc1", name="stori_set_tempo", params={"tempo": 120})]
         done_response = LLMResponse(content="Done!", usage={"prompt_tokens": 5, "completion_tokens": 5})
 
         llm = _make_llm_mock()
@@ -686,7 +693,7 @@ class TestHandleEditing:
         )
 
         response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
-        response.tool_calls = [ToolCallData(id="tc1", name="stori_add_midi_track", arguments={"name": "Drums"})]
+        response.tool_calls = [ToolCall(id="tc1", name="stori_add_midi_track", params={"name": "Drums"})]
 
         done_response = LLMResponse(content="Done.", usage={"prompt_tokens": 5, "completion_tokens": 5})
 
@@ -770,7 +777,7 @@ class TestStreamLLMResponse:
         assert isinstance(final, StreamFinalResponse)
         assert len(final.response.tool_calls) == 1
         assert final.response.tool_calls[0].name == "stori_set_tempo"
-        assert final.response.tool_calls[0].arguments == {"tempo": 120}
+        assert final.response.tool_calls[0].params == {"tempo": 120}
 
 
 # ---------------------------------------------------------------------------
@@ -862,7 +869,7 @@ class TestOrchestrateExecutionModePolicy:
         )
 
         response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
-        response.tool_calls = [ToolCallData(id="tc1", name="stori_set_tempo", arguments={"tempo": 120})]
+        response.tool_calls = [ToolCall(id="tc1", name="stori_set_tempo", params={"tempo": 120})]
         done_response = LLMResponse(content="Done.", usage={"prompt_tokens": 5, "completion_tokens": 5})
 
         mock_llm = _make_llm_mock()
@@ -883,3 +890,376 @@ class TestOrchestrateExecutionModePolicy:
         assert "toolCall" in types
         # Should NOT have variation events
         assert "meta" not in types
+
+
+# ---------------------------------------------------------------------------
+# Plan Tracker — unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestPlanTracker:
+
+    def _make_tool_calls(self, specs: list[tuple[str, dict]]) -> list[ToolCall]:
+        return [
+            ToolCall(id=f"tc{i}", name=name, params=params)
+            for i, (name, params) in enumerate(specs)
+        ]
+
+    def test_group_setup_tools_into_single_step(self):
+        """Consecutive setup tools should be grouped into one step."""
+        tcs = self._make_tool_calls([
+            ("stori_set_tempo", {"tempo": 72}),
+            ("stori_set_key", {"key": "Cm"}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Make a lofi beat", {}, False, StateStore(conversation_id="t"))
+        assert len(tracker.steps) == 1
+        assert tracker.steps[0].label == "Set tempo and key signature"
+        assert "72 BPM" in (tracker.steps[0].detail or "")
+        assert "Cm" in (tracker.steps[0].detail or "")
+
+    def test_group_track_with_content(self):
+        """Track creation followed by region+notes = one step."""
+        tcs = self._make_tool_calls([
+            ("stori_add_midi_track", {"name": "Drums", "drumKitId": "TR-808"}),
+            ("stori_add_midi_region", {"trackId": "$0.trackId", "startBeat": 0, "durationBeats": 16}),
+            ("stori_add_notes", {"regionId": "$1.regionId", "notes": []}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Add drums", {}, False, StateStore(conversation_id="t"))
+        assert len(tracker.steps) == 1
+        assert "Drums" in tracker.steps[0].label
+        assert "content" in tracker.steps[0].label
+        assert tracker.steps[0].track_name == "Drums"
+        assert tracker.steps[0].detail == "TR-808"
+
+    def test_group_multiple_tracks(self):
+        """Multiple track creations should produce separate steps."""
+        tcs = self._make_tool_calls([
+            ("stori_set_tempo", {"tempo": 90}),
+            ("stori_add_midi_track", {"name": "Drums", "drumKitId": "TR-808"}),
+            ("stori_add_midi_region", {"trackId": "$1.trackId"}),
+            ("stori_add_notes", {"regionId": "$2.regionId", "notes": []}),
+            ("stori_add_midi_track", {"name": "Bass", "gmProgram": 33}),
+            ("stori_add_midi_region", {"trackId": "$4.trackId"}),
+            ("stori_add_notes", {"regionId": "$5.regionId", "notes": []}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Make a beat", {}, False, StateStore(conversation_id="t"))
+        assert len(tracker.steps) == 3  # setup + drums + bass
+        assert tracker.steps[0].label == "Set tempo and key signature"
+        assert tracker.steps[1].track_name == "Drums"
+        assert tracker.steps[2].track_name == "Bass"
+        assert tracker.steps[2].detail == "GM 33"
+
+    def test_effects_grouped(self):
+        """Effect tools should be grouped together."""
+        tcs = self._make_tool_calls([
+            ("stori_ensure_bus", {"name": "Reverb"}),
+            ("stori_add_insert_effect", {"trackId": "t1", "type": "chorus"}),
+            ("stori_add_send", {"trackId": "t1", "busId": "$0.busId"}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Add effects", {}, False, StateStore(conversation_id="t"))
+        assert len(tracker.steps) == 1
+        assert "effect" in tracker.steps[0].label.lower()
+        assert "Reverb bus" in (tracker.steps[0].detail or "")
+        assert "chorus" in (tracker.steps[0].detail or "")
+
+    def test_plan_event_shape(self):
+        """to_plan_event() must match the SSE wire format."""
+        tcs = self._make_tool_calls([
+            ("stori_set_tempo", {"tempo": 120}),
+            ("stori_add_midi_track", {"name": "Piano", "gmProgram": 0}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Add piano", {}, False, StateStore(conversation_id="t"))
+        event = tracker.to_plan_event()
+        assert event["type"] == "plan"
+        assert "planId" in event
+        assert isinstance(event["steps"], list)
+        assert len(event["steps"]) == 2
+        for step in event["steps"]:
+            assert "stepId" in step
+            assert "label" in step
+            assert step["status"] == "pending"
+
+    def test_title_includes_params(self):
+        """Plan title should incorporate key/tempo from tool calls."""
+        tcs = self._make_tool_calls([
+            ("stori_set_tempo", {"tempo": 72}),
+            ("stori_set_key", {"key": "Cm"}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Create a lofi beat", {}, False, StateStore(conversation_id="t"))
+        assert "Cm" in tracker.title
+        assert "72 BPM" in tracker.title
+
+    def test_title_falls_back_to_project_context(self):
+        """Plan title uses project context when tool calls don't set tempo/key."""
+        tcs = self._make_tool_calls([
+            ("stori_add_midi_track", {"name": "Lead"}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Add lead", {"tempo": 100, "key": "Am"}, False, StateStore(conversation_id="t"))
+        assert "Am" in tracker.title
+        assert "100 BPM" in tracker.title
+
+    def test_step_activation_and_completion(self):
+        """activate_step / complete_active_step produce correct events."""
+        tracker = _PlanTracker()
+        tracker.steps = [
+            _PlanStep(step_id="1", label="Setup"),
+            _PlanStep(step_id="2", label="Track"),
+        ]
+        evt = tracker.activate_step("1")
+        assert evt == {"type": "planStepUpdate", "stepId": "1", "status": "active"}
+        assert tracker._active_step_id == "1"
+        assert tracker.steps[0].status == "active"
+
+        tracker.steps[0].result = "Set 72 BPM"
+        evt = tracker.complete_active_step()
+        assert evt is not None
+        assert evt["status"] == "completed"
+        assert evt["result"] == "Set 72 BPM"
+        assert tracker._active_step_id is None
+        assert tracker.steps[0].status == "completed"
+
+    def test_step_for_tool_index(self):
+        """step_for_tool_index returns correct step."""
+        tracker = _PlanTracker()
+        tracker.steps = [
+            _PlanStep(step_id="1", label="Setup", tool_indices=[0, 1]),
+            _PlanStep(step_id="2", label="Track", tool_indices=[2, 3, 4]),
+        ]
+        assert tracker.step_for_tool_index(0).step_id == "1"  # type: ignore[union-attr]
+        assert tracker.step_for_tool_index(3).step_id == "2"  # type: ignore[union-attr]
+        assert tracker.step_for_tool_index(99) is None
+
+    def test_progress_context_formatting(self):
+        """progress_context() produces a readable summary."""
+        tracker = _PlanTracker()
+        tracker.steps = [
+            _PlanStep(step_id="1", label="Setup", status="completed", result="72 BPM, Cm"),
+            _PlanStep(step_id="2", label="Drums", status="active"),
+            _PlanStep(step_id="3", label="Effects", status="pending"),
+        ]
+        ctx = tracker.progress_context()
+        assert "✅" in ctx
+        assert "🔄" in ctx
+        assert "⬜" in ctx
+        assert "72 BPM, Cm" in ctx
+
+    def test_build_step_result(self):
+        """_build_step_result accumulates descriptions."""
+        r1 = _build_step_result("stori_set_tempo", {"tempo": 120})
+        assert "120" in r1
+        r2 = _build_step_result("stori_set_key", {"key": "Am"}, r1)
+        assert ";" in r2
+        assert "Am" in r2
+
+
+# ---------------------------------------------------------------------------
+# Plan Events in EDITING flow — integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestPlanEventsInEditing:
+
+    @pytest.mark.anyio
+    async def test_plan_and_step_updates_emitted_for_multi_tool_editing(self):
+        """EDITING with multiple tool calls should emit plan + planStepUpdate events."""
+        from app.core.tools import ALL_TOOLS
+
+        allowed = {"stori_set_tempo", "stori_set_key", "stori_add_midi_track", "stori_add_midi_region", "stori_add_notes"}
+        route = _make_route(
+            SSEState.EDITING,
+            Intent.GENERATE_MUSIC,
+            allowed_tool_names=allowed,
+            tool_choice="auto",
+        )
+
+        response = LLMResponse(content=None, usage={"prompt_tokens": 10, "completion_tokens": 20})
+        response.tool_calls = [
+            ToolCall(id="tc0", name="stori_set_tempo", params={"tempo": 72}),
+            ToolCall(id="tc1", name="stori_set_key", params={"key": "Cm"}),
+            ToolCall(id="tc2", name="stori_add_midi_track", params={"name": "Pads", "gmProgram": 89}),
+        ]
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(return_value=response)
+        store = StateStore(conversation_id="test-plan")
+        trace = _make_trace()
+
+        events: list[str] = []
+        async for e in _handle_editing(
+            "Create a pad track", {}, route, llm, store, trace, None, [], "apply",
+        ):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        types = [p["type"] for p in payloads]
+
+        assert "plan" in types, f"Expected 'plan' event, got types: {types}"
+
+        plan_evt = next(p for p in payloads if p["type"] == "plan")
+        assert "planId" in plan_evt
+        assert isinstance(plan_evt["steps"], list)
+        assert len(plan_evt["steps"]) >= 2
+
+        step_updates = [p for p in payloads if p["type"] == "planStepUpdate"]
+        assert len(step_updates) >= 2  # at least active+completed for step 1
+
+        statuses = [su["status"] for su in step_updates]
+        assert "active" in statuses
+        assert "completed" in statuses
+
+    @pytest.mark.anyio
+    async def test_no_plan_for_single_force_stop_tool(self):
+        """force_stop_after with a single tool should still emit a plan (minimal)."""
+        allowed = {"stori_set_tempo"}
+        route = _make_route(
+            SSEState.EDITING,
+            Intent.PROJECT_SET_TEMPO,
+            allowed_tool_names=allowed,
+            tool_choice="required",
+            force_stop_after=True,
+        )
+
+        response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
+        response.tool_calls = [
+            ToolCall(id="tc0", name="stori_set_tempo", params={"tempo": 120}),
+        ]
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(return_value=response)
+        store = StateStore(conversation_id="test")
+        trace = _make_trace()
+
+        events: list[str] = []
+        async for e in _handle_editing(
+            "set tempo 120", {}, route, llm, store, trace, None, [], "apply",
+        ):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        types = [p["type"] for p in payloads]
+        assert "plan" in types
+        assert "toolCall" in types
+        assert "complete" in types
+
+    @pytest.mark.anyio
+    async def test_plan_not_emitted_in_variation_mode(self):
+        """Variation mode should NOT emit plan events (those are for apply only)."""
+        allowed = {"stori_add_midi_track"}
+        route = _make_route(
+            SSEState.EDITING,
+            Intent.GENERATE_MUSIC,
+            allowed_tool_names=allowed,
+            tool_choice="auto",
+        )
+
+        response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
+        response.tool_calls = [
+            ToolCall(id="tc0", name="stori_add_midi_track", params={"name": "Test"}),
+        ]
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(return_value=response)
+        store = StateStore(conversation_id="test")
+        trace = _make_trace()
+
+        events: list[str] = []
+        from app.models.variation import Variation
+        fake_var = Variation(
+            variation_id="v-1",
+            intent="test",
+            total_changes=0,
+            affected_tracks=[],
+            affected_regions=[],
+            beat_range=(0.0, 0.0),
+            phrases=[],
+        )
+        with patch("app.core.executor.execute_plan_variation", new_callable=AsyncMock, return_value=fake_var):
+            async for e in _handle_editing(
+                "generate", {}, route, llm, store, trace, None, [], "variation",
+            ):
+                events.append(e)
+
+        payloads = _parse_events(events)
+        types = [p["type"] for p in payloads]
+        assert "plan" not in types
+
+    @pytest.mark.anyio
+    async def test_step_order_matches_tool_execution(self):
+        """planStepUpdate events should follow the execution order of tool calls."""
+        allowed = {"stori_set_tempo", "stori_add_midi_track"}
+        route = _make_route(
+            SSEState.EDITING,
+            Intent.GENERATE_MUSIC,
+            allowed_tool_names=allowed,
+            tool_choice="auto",
+        )
+
+        response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
+        response.tool_calls = [
+            ToolCall(id="tc0", name="stori_set_tempo", params={"tempo": 90}),
+            ToolCall(id="tc1", name="stori_add_midi_track", params={"name": "Lead"}),
+        ]
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(return_value=response)
+        store = StateStore(conversation_id="test")
+        trace = _make_trace()
+
+        events: list[str] = []
+        async for e in _handle_editing(
+            "Create a lead", {}, route, llm, store, trace, None, [], "apply",
+        ):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        step_updates = [p for p in payloads if p["type"] == "planStepUpdate"]
+
+        # Should be: step1 active, step1 completed, step2 active, step2 completed
+        assert len(step_updates) >= 4
+        assert step_updates[0]["status"] == "active"
+        assert step_updates[1]["status"] == "completed"
+        assert step_updates[2]["status"] == "active"
+        assert step_updates[3]["status"] == "completed"
+
+        # Step IDs should be consistent
+        assert step_updates[0]["stepId"] == step_updates[1]["stepId"]
+        assert step_updates[2]["stepId"] == step_updates[3]["stepId"]
+        assert step_updates[0]["stepId"] != step_updates[2]["stepId"]
+
+
+# ---------------------------------------------------------------------------
+# Parity: complete event on orchestration error
+# ---------------------------------------------------------------------------
+
+
+class TestCompleteEventOnError:
+
+    @pytest.mark.anyio
+    async def test_orchestration_error_emits_complete_with_success_false(self):
+        """When orchestrate() hits an exception, it should emit error + complete events."""
+        with (
+            patch(
+                "app.core.maestro_handlers.get_intent_result_with_llm",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("boom"),
+            ),
+            patch("app.core.maestro_handlers.LLMClient") as m_cls,
+        ):
+            m_cls.return_value = _make_llm_mock()
+            events: list[str] = []
+            async for e in orchestrate("trigger error"):
+                events.append(e)
+
+        payloads = _parse_events(events)
+        types = [p["type"] for p in payloads]
+        assert "error" in types
+        assert "complete" in types
+        complete_evt = next(p for p in payloads if p["type"] == "complete")
+        assert complete_evt["success"] is False

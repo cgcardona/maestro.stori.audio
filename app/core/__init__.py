@@ -29,7 +29,7 @@ Main entrypoint: run_pipeline() from pipeline.py
 from app.core.tools import ALL_TOOLS, TIER1_TOOLS, TIER2_TOOLS, ToolKind, ToolTier, ToolMeta
 from app.core.tools import build_tool_registry, get_tool_meta, tools_by_kind
 from app.core.prompts import system_prompt_base, editing_prompt, composing_prompt
-from app.core.llm_client import LLMClient, LLMResponse, ToolCallData, enforce_single_tool
+from app.core.llm_client import LLMClient, LLMResponse, enforce_single_tool
 from app.core.intent import get_intent_result, get_intent_result_with_llm, SSEState, Intent, IntentResult, Slots
 from app.core.pipeline import run_pipeline, PipelineOutput
 from app.core.planner import build_execution_plan, ExecutionPlan
@@ -58,7 +58,6 @@ __all__ = [
     # LLM Client
     "LLMClient",
     "LLMResponse",
-    "ToolCallData",
     "enforce_single_tool",
     # Intent Router
     "get_intent_result",
