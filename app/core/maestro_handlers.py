@@ -77,10 +77,26 @@ class UsageTracker:
     """Tracks token usage across LLM calls."""
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    
-    def add(self, prompt: int, completion: int):
+    # Full input tokens from the most recent LLM call.  Each call in an agentic
+    # loop sends the entire conversation history, so the last call's input_tokens
+    # is the best proxy for current context-window occupancy.
+    last_input_tokens: int = 0
+
+    def add(self, prompt: int, completion: int) -> None:
         self.prompt_tokens += prompt
         self.completion_tokens += completion
+        self.last_input_tokens = prompt  # snapshot of context window at this call
+
+
+def _context_usage_fields(
+    usage_tracker: Optional["UsageTracker"], model: str
+) -> dict[str, int]:
+    """Return inputTokens / contextWindowTokens for SSE complete events."""
+    from app.config import get_context_window_tokens
+    return {
+        "inputTokens": usage_tracker.last_input_tokens if usage_tracker else 0,
+        "contextWindowTokens": get_context_window_tokens(model),
+    }
 
 
 # Tools that create new entities. The tool result for these always includes
@@ -910,6 +926,7 @@ async def orchestrate(
             "success": False,
             "error": str(e),
             "traceId": trace.trace_id,
+            **_context_usage_fields(usage_tracker, selected_model),
         })
     
     finally:
@@ -944,6 +961,7 @@ async def _handle_reasoning(
                     "success": True,
                     "toolCalls": [],
                     "traceId": trace.trace_id,
+                    **_context_usage_fields(usage_tracker, llm.model),
                 })
                 return
         except Exception as e:
@@ -1031,6 +1049,7 @@ async def _handle_reasoning(
         "success": True,
         "toolCalls": [],
         "traceId": trace.trace_id,
+        **_context_usage_fields(usage_tracker, llm.model),
     })
 
 
@@ -1101,7 +1120,7 @@ async def _handle_composing(
     yield await sse_event({"type": "status", "message": "Generating variation..."})
     
     with trace_span(trace, "planner"):
-        output = await run_pipeline(prompt, project_context, llm)
+        output = await run_pipeline(prompt, project_context, llm, usage_tracker=usage_tracker)
     
     if output.plan and output.plan.tool_calls:
         yield await sse_event({
@@ -1195,6 +1214,7 @@ async def _handle_composing(
                         "success": False,
                         "error": "timeout",
                         "traceId": trace.trace_id,
+                        **_context_usage_fields(usage_tracker, llm.model),
                     })
                     return
 
@@ -1259,6 +1279,7 @@ async def _handle_composing(
                     "totalChanges": variation.total_changes,
                     "phraseCount": len(variation.phrases),
                     "traceId": trace.trace_id,
+                    **_context_usage_fields(usage_tracker, llm.model),
                 })
 
         except BaseException as e:
@@ -1281,6 +1302,7 @@ async def _handle_composing(
                 "success": False,
                 "error": str(e),
                 "traceId": trace.trace_id,
+                **_context_usage_fields(usage_tracker, llm.model),
             })
         return
     else:
@@ -1340,6 +1362,7 @@ async def _handle_composing(
             "success": True,
             "toolCalls": [],
             "traceId": trace.trace_id,
+            **_context_usage_fields(usage_tracker, llm.model),
         })
 
 
@@ -1978,6 +2001,7 @@ async def _handle_editing(
             "totalChanges": variation.total_changes,
             "phraseCount": len(variation.phrases),
             "traceId": trace.trace_id,
+            **_context_usage_fields(usage_tracker, llm.model),
         })
         return
     
@@ -1990,6 +2014,7 @@ async def _handle_editing(
         "toolCalls": tool_calls_collected,
         "stateVersion": store.version,
         "traceId": trace.trace_id,
+        **_context_usage_fields(usage_tracker, llm.model),
     })
 
 

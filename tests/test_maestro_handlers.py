@@ -39,6 +39,7 @@ class TestUsageTracker:
         t = UsageTracker()
         assert t.prompt_tokens == 0
         assert t.completion_tokens == 0
+        assert t.last_input_tokens == 0
 
     def test_add_accumulates(self):
         t = UsageTracker()
@@ -48,6 +49,40 @@ class TestUsageTracker:
         t.add(5, 15)
         assert t.prompt_tokens == 15
         assert t.completion_tokens == 35
+
+    def test_last_input_tokens_tracks_most_recent_call(self):
+        """last_input_tokens is overwritten each call, not accumulated."""
+        t = UsageTracker()
+        t.add(100, 50)
+        assert t.last_input_tokens == 100
+        # Second call (larger context) overwrites the first
+        t.add(250, 80)
+        assert t.last_input_tokens == 250
+        assert t.prompt_tokens == 350  # accumulated, unchanged
+
+    def test_last_input_tokens_reflects_growing_context(self):
+        """Each iteration of an agentic loop sends more context; last call wins."""
+        t = UsageTracker()
+        for tokens in [1000, 1500, 2100]:
+            t.add(tokens, 200)
+        assert t.last_input_tokens == 2100
+
+
+class TestGetContextWindowTokens:
+    """Test get_context_window_tokens helper in config."""
+
+    def test_known_models_return_200k(self):
+        """Both supported Claude models return 200 000."""
+        from app.config import get_context_window_tokens
+        assert get_context_window_tokens("anthropic/claude-sonnet-4.6") == 200_000
+        assert get_context_window_tokens("anthropic/claude-opus-4.6") == 200_000
+
+    def test_unknown_model_returns_zero(self):
+        """Unknown models return 0 so the frontend keeps its previous ring value."""
+        from app.config import get_context_window_tokens
+        assert get_context_window_tokens("openai/gpt-4o") == 0
+        assert get_context_window_tokens("unknown/model") == 0
+        assert get_context_window_tokens("") == 0
 
 
 class TestCreateEditingFallbackRoute:
@@ -313,6 +348,89 @@ class TestOrchestrateStream:
                 assert last_payload.get("type") == "complete"
                 assert last_payload.get("success") is True
                 assert last_payload.get("toolCalls") == []
+
+    @pytest.mark.anyio
+    async def test_complete_event_includes_context_window_fields(self):
+        """complete event always contains inputTokens and contextWindowTokens."""
+        fake_route = IntentResult(
+            intent=Intent.ASK_GENERAL,
+            sse_state=SSEState.REASONING,
+            confidence=0.9,
+            slots=Slots(),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=False,
+            requires_planner=False,
+            reasons=(),
+        )
+        fake_llm_response = MagicMock()
+        fake_llm_response.content = "Four."
+        fake_llm_response.usage = {"prompt_tokens": 42000, "completion_tokens": 10}
+        fake_llm_response.has_tool_calls = False
+        fake_llm_response.finish_reason = "stop"
+        fake_llm_response.tool_calls = []
+
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+                mock_llm = MagicMock()
+                mock_llm.chat_completion = AsyncMock(return_value=fake_llm_response)
+                mock_llm.supports_reasoning = MagicMock(return_value=False)
+                mock_llm.close = AsyncMock()
+                mock_llm.model = "anthropic/claude-sonnet-4.6"
+                m_llm_cls.return_value = mock_llm
+
+                tracker = UsageTracker()
+                events = []
+                async for event in orchestrate("What is 2+2?", usage_tracker=tracker):
+                    events.append(event)
+
+                import json
+                complete = json.loads(events[-1].split("data: ", 1)[1].strip())
+                assert complete["type"] == "complete"
+                assert complete["inputTokens"] == 42000
+                assert complete["contextWindowTokens"] == 200_000
+
+    @pytest.mark.anyio
+    async def test_complete_event_context_window_zero_for_unknown_model(self):
+        """contextWindowTokens is 0 for unrecognised models."""
+        fake_route = IntentResult(
+            intent=Intent.ASK_GENERAL,
+            sse_state=SSEState.REASONING,
+            confidence=0.9,
+            slots=Slots(),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=False,
+            requires_planner=False,
+            reasons=(),
+        )
+        fake_llm_response = MagicMock()
+        fake_llm_response.content = "Four."
+        fake_llm_response.usage = {"prompt_tokens": 5000, "completion_tokens": 10}
+        fake_llm_response.has_tool_calls = False
+        fake_llm_response.finish_reason = "stop"
+        fake_llm_response.tool_calls = []
+
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+                mock_llm = MagicMock()
+                mock_llm.chat_completion = AsyncMock(return_value=fake_llm_response)
+                mock_llm.supports_reasoning = MagicMock(return_value=False)
+                mock_llm.close = AsyncMock()
+                mock_llm.model = "unknown/model-x"
+                m_llm_cls.return_value = mock_llm
+
+                tracker = UsageTracker()
+                events = []
+                async for event in orchestrate("hi", usage_tracker=tracker):
+                    events.append(event)
+
+                import json
+                complete = json.loads(events[-1].split("data: ", 1)[1].strip())
+                assert complete["type"] == "complete"
+                assert complete["contextWindowTokens"] == 0
 
     @pytest.mark.anyio
     async def test_yields_state_then_complete_for_composing_with_empty_plan(self):

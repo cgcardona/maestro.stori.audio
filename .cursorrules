@@ -10,6 +10,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 - **Client:** The Stori DAW is a **macOS app** (Swift/SwiftUI, AppKit). It is NOT an iOS app. Never say "iOS app" — always say "macOS app" or "the app".
 - **Entry points:** (1) **Stream first:** `POST /api/v1/maestro/stream` (human in the macOS app). (2) **MCP:** tools exposed to Cursor/Claude; same engine, same DAW instance. Human stays in the loop.
 - **Stack:** Python 3.11+, FastAPI, Pydantic v2, async throughout. Orpheus is **required** for music generation (no pattern fallback). Config: `app/config.py`; env vars prefixed `STORI_*`.
+- **Supported models (exactly two, no others):** `anthropic/claude-sonnet-4.6` and `anthropic/claude-opus-4.6` via OpenRouter. Do not add support for any other provider, model family, or version. Update both `ALLOWED_MODEL_IDS` and `CONTEXT_WINDOW_TOKENS` in `app/config.py` together when a new Claude generation ships.
 
 ---
 

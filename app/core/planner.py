@@ -18,7 +18,10 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from app.core.maestro_handlers import UsageTracker
 
 from app.core.expansion import ToolCall
 from app.core.intent import IntentResult, Intent
@@ -79,6 +82,7 @@ async def build_execution_plan(
     route: IntentResult,
     llm,
     parsed: Optional[ParsedPrompt] = None,
+    usage_tracker: Optional["UsageTracker"] = None,
 ) -> ExecutionPlan:
     """
     Ask the LLM for a structured JSON plan for composing.
@@ -136,7 +140,13 @@ async def build_execution_plan(
         tool_choice="none",
         context={"project_state": project_state, "route": route.__dict__},
     )
-    
+
+    if usage_tracker and resp.usage:
+        usage_tracker.add(
+            resp.usage.get("prompt_tokens", 0),
+            resp.usage.get("completion_tokens", 0),
+        )
+
     llm_response_text = resp.content or ""
     logger.debug(f"📋 Planner LLM response length: {len(llm_response_text)} chars")
     

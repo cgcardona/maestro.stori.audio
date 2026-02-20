@@ -41,7 +41,7 @@ All events are newline-delimited `data: {json}\n\n` lines. Every event has a `ty
 | `content` | Final user-facing text response. `{ "type": "content", "content": "..." }` |
 | `budgetUpdate` | Cost update after LLM call. `{ "type": "budgetUpdate", "budgetRemaining": 4.50, "cost": 0.03 }` |
 | `error` | Error message (non-fatal or fatal). `{ "type": "error", "error": "...", "message": "..." }` |
-| `complete` | **Always the final event**, even on errors. `{ "type": "complete", "success": true \| false, "traceId": "..." }`. On error: `success: false`. |
+| `complete` | **Always the final event**, even on errors. `{ "type": "complete", "success": true \| false, "traceId": "...", "inputTokens": 42350, "contextWindowTokens": 200000 }`. On error: `success: false`. `inputTokens` = full input tokens sent to the model this turn (from `usage.prompt_tokens`; reflects the entire context window occupied, including history, system prompt, and tools). `contextWindowTokens` = model capacity (200 000 for all supported Claude models). Both are `0` if unavailable — frontend should leave any usage display at its previous value in that case. |
 
 ### EDITING mode events
 
@@ -54,7 +54,7 @@ Emitted when `state.state == "editing"`. Applied immediately by the frontend.
 | `toolStart` | Fires **before** each `toolCall` with a human-readable label. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Creating Drums track" }` |
 | `toolCall` | Resolved tool call for the frontend to apply. `{ "type": "toolCall", "id": "...", "name": "stori_add_midi_track", "params": { "trackId": "uuid", ... } }`. **Critical: key is `"params"` (not `"arguments"`); key is `"name"` (not `"tool"`). All IDs are fully-resolved UUIDs.** |
 | `toolError` | Non-fatal validation error. Stream continues. `{ "type": "toolError", "name": "stori_add_notes", "error": "Region not found", "errors": ["..."] }` |
-| `complete` | Stream done. `{ "type": "complete", "success": true, "traceId": "..." }` |
+| `complete` | Stream done. Includes `inputTokens` and `contextWindowTokens` (see global `complete` row above). |
 
 ### COMPOSING mode events (Variation protocol)
 
@@ -67,7 +67,7 @@ Emitted when `state.state == "composing"`. Frontend enters Variation Review Mode
 | `meta` | Variation summary (first composing event). `{ "type": "meta", "variationId": "uuid", "baseStateId": "42", "intent": "...", "aiExplanation": "...", "affectedTracks": [...], "affectedRegions": [...], "noteCounts": { "added": 32, "removed": 0, "modified": 0 } }`. Use `baseStateId: "0"` for first variation after editing. |
 | `phrase` | One musical phrase. `{ "type": "phrase", "phraseId": "uuid", "trackId": "uuid", "regionId": "uuid", "startBeat": 0.0, "endBeat": 16.0, "label": "...", "tags": [...], "explanation": "...", "noteChanges": [...], "controllerChanges": [] }` |
 | `done` | End of variation stream. Frontend enables Accept/Discard. `{ "type": "done", "variationId": "uuid", "phraseCount": 4 }` |
-| `complete` | Stream done. `{ "type": "complete", "success": true, "variationId": "uuid", "phraseCount": 4, "traceId": "..." }` |
+| `complete` | Stream done. `{ "type": "complete", "success": true, "variationId": "uuid", "phraseCount": 4, "traceId": "..." }`. Includes `inputTokens` and `contextWindowTokens` (see global `complete` row above). |
 
 ### REASONING mode events
 

@@ -74,6 +74,20 @@ APPROVED_MODELS: dict[str, dict] = {
 }
 
 
+# Context window sizes (input token capacity) per supported model.
+# Stori only supports the two models listed in ALLOWED_MODEL_IDS; anything else
+# returns 0 so the frontend leaves the context-usage ring at its previous value.
+CONTEXT_WINDOW_TOKENS: dict[str, int] = {
+    "anthropic/claude-sonnet-4.6": 200_000,
+    "anthropic/claude-opus-4.6":   200_000,
+}
+
+
+def get_context_window_tokens(model: str) -> int:
+    """Return the context window size for a supported model, or 0 if unknown."""
+    return CONTEXT_WINDOW_TOKENS.get(model, 0)
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     

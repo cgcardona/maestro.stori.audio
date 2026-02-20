@@ -23,7 +23,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from app.core.maestro_handlers import UsageTracker
 
 from app.core.intent import get_intent_result, SSEState, IntentResult, Intent
 from app.core.planner import build_execution_plan, ExecutionPlan
@@ -46,6 +49,7 @@ async def run_pipeline(
     user_prompt: str,
     project_state: dict[str, Any],
     llm: LLMClient,
+    usage_tracker: Optional["UsageTracker"] = None,
 ) -> PipelineOutput:
     """
     Main runtime entrypoint.
@@ -83,6 +87,7 @@ async def run_pipeline(
             route=route,
             llm=llm,
             parsed=parsed,
+            usage_tracker=usage_tracker,
         )
         return PipelineOutput(route=route, plan=plan)
 

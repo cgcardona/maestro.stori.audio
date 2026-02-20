@@ -44,7 +44,7 @@ docker compose exec maestro pytest tests/ -v
 |------|----------|
 | **Domain / CORS** | `STORI_DOMAIN`; `STORI_CORS_ORIGINS` (JSON array, required—no default; set exact origins in production) |
 | **Auth** | `STORI_ACCESS_TOKEN_SECRET` — `openssl rand -hex 32`; required for protected endpoints |
-| **LLM** | `STORI_LLM_PROVIDER=openrouter`, `STORI_OPENROUTER_API_KEY`, `STORI_LLM_MODEL` |
+| **LLM** | `STORI_LLM_PROVIDER=openrouter`, `STORI_OPENROUTER_API_KEY`, `STORI_LLM_MODEL` (supported: `anthropic/claude-sonnet-4.6` · `anthropic/claude-opus-4.6` — no other models) |
 | **DB** | `STORI_DB_PASSWORD` or `STORI_DATABASE_URL`. Reset: see **Reset database (Postgres)** below. |
 | **Music** | `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`), `STORI_HF_API_KEY`. **Docker:** `docker-compose.yml` overrides to `http://orpheus:10002` so the maestro container can reach Orpheus. See **HuggingFace token (Orpheus)** below. |
 | **S3** | `STORI_AWS_S3_ASSET_BUCKET`, `STORI_AWS_REGION`, plus AWS keys for presigned URLs |

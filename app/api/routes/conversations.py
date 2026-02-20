@@ -703,7 +703,9 @@ async def add_message_to_conversation(
                 content=assistant_content,
                 model_used=maestro_request.model or settings.llm_model,
                 tokens_used={
-                    "prompt": usage_tracker.prompt_tokens,
+                    # Full input tokens from the last LLM call — represents
+                    # context-window occupancy for the turn, not an accumulated sum.
+                    "prompt": usage_tracker.last_input_tokens,
                     "completion": usage_tracker.completion_tokens,
                 },
                 cost_cents=cost_cents,
