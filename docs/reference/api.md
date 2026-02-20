@@ -60,14 +60,32 @@ Emitted when `state.state == "editing"`. Applied immediately by the frontend.
 
 Emitted when `state.state == "composing"`. Frontend enters Variation Review Mode.
 
+COMPOSING now emits the same `reasoning`, `plan`, `planStepUpdate`, `toolStart`, and `toolCall` events as EDITING — see the unified event ordering below. The variation-specific events (`meta`, `phrase`, `done`) follow after the tool calls complete.
+
 | type | Description |
 |------|-------------|
-| `planSummary` | High-level composition plan. `{ "type": "planSummary", "totalSteps": 6, "generations": 2, "edits": 4 }` |
-| `progress` | Per-step progress. `{ "type": "progress", "currentStep": 3, "totalSteps": 6, "message": "Adding chord voicings" }` |
-| `meta` | Variation summary (first composing event). `{ "type": "meta", "variationId": "uuid", "baseStateId": "42", "intent": "...", "aiExplanation": "...", "affectedTracks": [...], "affectedRegions": [...], "noteCounts": { "added": 32, "removed": 0, "modified": 0 } }`. Use `baseStateId: "0"` for first variation after editing. |
+| `reasoning` | Streamed planner chain-of-thought (same as EDITING/REASONING). Emitted during the LLM planning phase before the plan is ready. Deterministic plans (structured prompts with all fields) skip this. |
+| `plan` | Structured plan (same shape as EDITING). `{ "type": "plan", "planId": "uuid", "title": "...", "steps": [...] }` |
+| `planStepUpdate` | Step lifecycle (same as EDITING). `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" }` |
+| `toolStart` | Fires before each tool call during variation execution. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Creating Drums track" }` |
+| `toolCall` | Proposal tool call. **`proposal: true`** — the frontend renders this for transparency but does NOT apply it to the DAW. `{ "type": "toolCall", "id": "...", "name": "...", "params": {...}, "proposal": true }` |
+| `meta` | Variation summary. `{ "type": "meta", "variationId": "uuid", "baseStateId": "42", "intent": "...", "aiExplanation": "...", "affectedTracks": [...], "affectedRegions": [...], "noteCounts": { "added": 32, "removed": 0, "modified": 0 } }`. Use `baseStateId: "0"` for first variation after editing. |
 | `phrase` | One musical phrase. `{ "type": "phrase", "phraseId": "uuid", "trackId": "uuid", "regionId": "uuid", "startBeat": 0.0, "endBeat": 16.0, "label": "...", "tags": [...], "explanation": "...", "noteChanges": [...], "controllerChanges": [] }` |
 | `done` | End of variation stream. Frontend enables Accept/Discard. `{ "type": "done", "variationId": "uuid", "phraseCount": 4 }` |
 | `complete` | Stream done. `{ "type": "complete", "success": true, "variationId": "uuid", "phraseCount": 4, "traceId": "..." }`. Includes `inputTokens` and `contextWindowTokens` (see global `complete` row above). |
+
+#### Deprecated events (backward compat, will be removed)
+
+| type | Description |
+|------|-------------|
+| `planSummary` | Replaced by `plan`. Still emitted alongside `plan` during transition. `{ "type": "planSummary", "totalSteps": 6, "generations": 2, "edits": 4 }` |
+| `progress` | Replaced by `planStepUpdate` + `toolStart`/`toolCall`. Still emitted during transition. `{ "type": "progress", "currentStep": 3, "totalSteps": 6, "message": "..." }` |
+
+#### `proposal` field on `toolCall`
+
+COMPOSING tool calls carry `"proposal": true`. These are informational — they show what the executor is doing but the frontend must NOT apply them to the DAW. The actual note data comes through `phrase` events, and the user commits via Accept/Discard.
+
+EDITING tool calls have `"proposal": false` (or the field is absent) and are applied immediately.
 
 ### REASONING mode events
 
@@ -86,10 +104,12 @@ Emitted when `state.state == "reasoning"`. No tools; chat only.
 state → reasoning* → plan → planStepUpdate(active) → toolStart → toolCall → planStepUpdate(completed) → ... → content? → budgetUpdate → complete
 ```
 
-**COMPOSING:**
+**COMPOSING (unified):**
 ```
-state → reasoning* → planSummary → progress* → meta → phrase* → done → complete
+state → reasoning* → plan → [planStepUpdate(active) → toolStart → toolCall(proposal:true) → planStepUpdate(completed)]* → meta → phrase* → done → complete
 ```
+
+Deprecated aliases `planSummary` and `progress` are still emitted alongside the new events during the transition period.
 
 **REASONING:**
 ```

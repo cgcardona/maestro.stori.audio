@@ -144,6 +144,29 @@ class TestExecutePlanVariation:
         assert len(variation.phrases) >= 1
 
     @pytest.mark.anyio
+    async def test_tool_event_callback_called_before_processing(self):
+        """tool_event_callback is invoked before each tool call is processed."""
+        captured: list[tuple[str, str, dict]] = []
+
+        async def _on_tool(call_id, name, params):
+            captured.append((call_id, name, params))
+
+        calls = [
+            ToolCall("stori_set_tempo", {"tempo": 120}, id="tc-1"),
+            ToolCall("stori_set_key", {"key": "Am"}, id="tc-2"),
+        ]
+        await execute_plan_variation(
+            tool_calls=calls,
+            project_state={},
+            intent="setup",
+            tool_event_callback=_on_tool,
+        )
+
+        assert len(captured) == 2
+        assert captured[0] == ("tc-1", "stori_set_tempo", {"tempo": 120})
+        assert captured[1] == ("tc-2", "stori_set_key", {"key": "Am"})
+
+    @pytest.mark.anyio
     async def test_no_mutation_of_canonical_state(self):
         """Variation execution must not modify the project_state dict."""
         project_state = {

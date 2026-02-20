@@ -1,4 +1,4 @@
-# FE Agent Prompt — Project State Sync for Sequential Composition
+# Frontend Integration — Project State Sync
 
 ## Context
 
@@ -175,12 +175,16 @@ All other params (`name`, `startBeat`, `durationBeats`, `drumKitId`,
 `gmProgram`, etc.) are also authoritative — use them to populate the
 corresponding DAW entity so the next `project` snapshot is accurate.
 
-#### `plan` and `planStepUpdate` — structured progress checklist (EDITING)
+#### `plan` and `planStepUpdate` — structured progress checklist (EDITING and COMPOSING)
 
-In EDITING mode the backend also emits a structured plan before tool execution. These do not carry state that needs to be fed back in the next request — they are display-only:
+Both EDITING and COMPOSING modes emit a structured plan before tool execution. These do not carry state that needs to be fed back in the next request — they are display-only:
 
 - **`plan`**: `{ "type": "plan", "planId": "uuid", "title": "Creating lo-fi intro (Cm, 72 BPM)", "steps": [{ "stepId": "1", "label": "...", "status": "pending", "detail": "..." }] }` — render as a checklist card.
 - **`planStepUpdate`**: `{ "type": "planStepUpdate", "stepId": "1", "status": "active" | "completed" | "failed" | "skipped", "result": "optional" }` — update the corresponding step's status icon.
+
+#### `toolCall` with `proposal: true` (COMPOSING)
+
+In COMPOSING mode, `toolCall` events carry `"proposal": true`. These are informational — they show what the executor is doing but the frontend must NOT apply them to the DAW state. The actual note data comes through `phrase` events, and the user commits via the Accept/Discard variation UI. Only when `proposal` is `false` (or absent, i.e. EDITING mode) should the frontend apply the tool call immediately.
 
 See [api.md](../reference/api.md) for the full event reference.
 

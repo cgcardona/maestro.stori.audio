@@ -38,6 +38,7 @@ from app.core.llm_client import (
     enforce_single_tool,
 )
 from app.core.pipeline import run_pipeline
+from app.core.planner import build_execution_plan_stream, ExecutionPlan
 from app.core.prompt_parser import ParsedPrompt
 from app.core.prompts import (
     editing_composition_prompt,
@@ -1192,59 +1193,137 @@ async def _handle_composing(
     quality_preset: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """Handle COMPOSING state - generate music via planner.
-    
+
     All COMPOSING intents produce a Variation for human review.
     The planner generates a tool-call plan, the executor simulates it
     in variation mode, and the result is streamed as meta/phrase/done events.
+
+    Phase 1 (Unified SSE UX): reasoning events are streamed during the
+    planner's LLM call so the user sees the agent thinking — same UX as
+    EDITING mode.
     """
-    yield await sse_event({"type": "status", "message": "Generating variation..."})
-    
+    yield await sse_event({"type": "status", "message": "Thinking..."})
+
+    # Extract parsed prompt from route slots (same as _handle_editing)
+    _slots = getattr(route, "slots", None)
+    _extras = getattr(_slots, "extras", None) if _slots is not None else None
+    parsed: Optional[ParsedPrompt] = (
+        _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
+    )
+
+    # ── Streaming planner: yields reasoning SSE events, then the plan ──
+    plan: Optional[ExecutionPlan] = None
     with trace_span(trace, "planner"):
-        output = await run_pipeline(prompt, project_context, llm, usage_tracker=usage_tracker)
-    
-    if output.plan and output.plan.tool_calls:
+        async for item in build_execution_plan_stream(
+            user_prompt=prompt,
+            project_state=project_context,
+            route=route,
+            llm=llm,
+            parsed=parsed,
+            usage_tracker=usage_tracker,
+            emit_sse=lambda data: sse_event(data),
+        ):
+            if isinstance(item, ExecutionPlan):
+                plan = item
+            else:
+                # SSE-formatted reasoning event — forward to client
+                yield item
+
+    if plan and plan.tool_calls:
+        # ── Phase 2 (Unified SSE UX): build plan tracker and emit plan event ──
+        composing_plan_tracker = _PlanTracker()
+        composing_plan_tracker.build(
+            plan.tool_calls, prompt, project_context,
+            is_composition=True, store=store,
+        )
+        if len(composing_plan_tracker.steps) >= 1:
+            yield await sse_event(composing_plan_tracker.to_plan_event())
+
+        # Deprecated — kept for backward compat during transition
         yield await sse_event({
             "type": "planSummary",
-            "totalSteps": len(output.plan.tool_calls),
-            "generations": output.plan.generation_count,
-            "edits": output.plan.edit_count,
+            "totalSteps": len(plan.tool_calls),
+            "generations": plan.generation_count,
+            "edits": plan.edit_count,
         })
         
         # =====================================================================
         # Variation Mode: Generate proposal without mutation
         # =====================================================================
         try:
-            with trace_span(trace, "variation_generation", {"steps": len(output.plan.tool_calls)}):
+            with trace_span(trace, "variation_generation", {"steps": len(plan.tool_calls)}):
                 from app.core.executor import execute_plan_variation
 
                 logger.info(
                     f"[{trace.trace_id[:8]}] Starting variation generation: "
-                    f"{len(output.plan.tool_calls)} tool calls"
+                    f"{len(plan.tool_calls)} tool calls"
                 )
 
-                # Progress queue so we can emit step_progress SSE while executor runs
-                progress_queue: asyncio.Queue[tuple[int, int, str, dict]] = asyncio.Queue()
+                # ── Phase 2+3 unified event queue ──
+                # All executor events (planStepUpdate, toolStart, toolCall,
+                # deprecated progress) are funnelled through a single queue
+                # so the SSE drain loop can emit them in order.
+                _event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-                async def on_progress(
+                async def _on_tool_event(
+                    call_id: str, tool_name: str, params: dict[str, Any],
+                ) -> None:
+                    """Phase 3: emit toolStart + proposal toolCall."""
+                    # ── planStepUpdate: activate matching step ──
+                    step = composing_plan_tracker.find_step_for_tool(
+                        tool_name, params, store,
+                    )
+                    if step and step.step_id != composing_plan_tracker._active_step_id:
+                        if composing_plan_tracker._active_step_id:
+                            completed_evt = composing_plan_tracker.complete_active_step()
+                            if completed_evt:
+                                await _event_queue.put(completed_evt)
+                        await _event_queue.put(
+                            composing_plan_tracker.activate_step(step.step_id)
+                        )
+
+                    label = _human_label_for_tool(tool_name, params)
+                    await _event_queue.put({
+                        "type": "toolStart",
+                        "name": tool_name,
+                        "label": label,
+                    })
+                    await _event_queue.put({
+                        "type": "toolCall",
+                        "id": call_id,
+                        "name": tool_name,
+                        "params": params,
+                        "proposal": True,
+                    })
+
+                async def _on_progress(
                     current: int, total: int,
                     tool_name: str = "", tool_args: dict | None = None,
                 ) -> None:
-                    await progress_queue.put((current, total, tool_name, tool_args or {}))
+                    """Progress callback — deprecated progress event for compat."""
+                    label = _human_label_for_tool(tool_name, tool_args or {}) if tool_name else f"Step {current}"
+                    await _event_queue.put({
+                        "type": "progress",
+                        "currentStep": current,
+                        "totalSteps": total,
+                        "message": label,
+                        "toolName": tool_name,
+                    })
 
-                # Timeout: prevent infinite hangs from backend calls
                 _VARIATION_TIMEOUT = 90  # seconds
                 task = asyncio.create_task(
                     execute_plan_variation(
-                        tool_calls=output.plan.tool_calls,
+                        tool_calls=plan.tool_calls,
                         project_state=project_context,
                         intent=prompt,
                         conversation_id=conversation_id,
-                        explanation=output.plan.llm_response_text,
-                        progress_callback=on_progress,
+                        explanation=plan.llm_response_text,
+                        progress_callback=_on_progress,
+                        tool_event_callback=_on_tool_event,
                         quality_preset=quality_preset,
                     )
                 )
-                # Drain progress queue and yield progress SSE; enforce 90s timeout
+
                 variation = None
                 start_wall = time.time()
                 try:
@@ -1257,22 +1336,27 @@ async def _handle_composing(
                                 pass
                             raise asyncio.TimeoutError()
                         try:
-                            current, total, tool_name, tool_args = await asyncio.wait_for(
-                                progress_queue.get(), timeout=0.05
+                            event_data = await asyncio.wait_for(
+                                _event_queue.get(), timeout=0.05,
                             )
-                            label = _human_label_for_tool(tool_name, tool_args) if tool_name else f"Step {current}"
-                            yield await sse_event({
-                                "type": "progress",
-                                "currentStep": current,
-                                "totalSteps": total,
-                                "message": label,
-                                "toolName": tool_name,
-                            })
+                            yield await sse_event(event_data)
                         except asyncio.TimeoutError:
                             if task.done():
                                 break
                         await asyncio.sleep(0)
+
+                    # Drain any remaining queued events
+                    while not _event_queue.empty():
+                        yield await sse_event(await _event_queue.get())
+
                     variation = await task
+
+                    # Complete remaining active plan step
+                    if composing_plan_tracker._active_step_id:
+                        final_step_evt = composing_plan_tracker.complete_active_step()
+                        if final_step_evt:
+                            yield await sse_event(final_step_evt)
+
                 except asyncio.TimeoutError:
                     logger.error(
                         f"[{trace.trace_id[:8]}] Variation generation timed out "
@@ -1387,12 +1471,7 @@ async def _handle_composing(
         return
     else:
         # Planner couldn't generate a valid JSON plan
-        # Check if the LLM output looks like function calls (common failure mode)
-        response_text = None
-        if output.plan and output.plan.llm_response_text:
-            response_text = output.plan.llm_response_text
-        elif output.llm_response and output.llm_response.content:
-            response_text = output.llm_response.content
+        response_text = plan.llm_response_text if plan else None
         
         # Detect if LLM output looks like function call syntax (not JSON)
         looks_like_function_calls = (
@@ -1617,18 +1696,22 @@ async def _handle_editing(
         iter_tool_results: list[dict[str, Any]] = []
 
         # ── Plan tracking: build plan from first batch of tool calls ──
+        # Only emit a plan when there are 2+ distinct steps — a single-step
+        # plan (e.g. "set tempo") is noise; the toolStart label is sufficient.
         if (
             plan_tracker is None
             and response is not None
             and response.has_tool_calls
             and execution_mode == "apply"
         ):
-            plan_tracker = _PlanTracker()
-            plan_tracker.build(
+            _candidate = _PlanTracker()
+            _candidate.build(
                 response.tool_calls, prompt, project_context,
                 is_composition, store,
             )
-            yield await sse_event(plan_tracker.to_plan_event())
+            if len(_candidate.steps) >= 2:
+                plan_tracker = _candidate
+                yield await sse_event(plan_tracker.to_plan_event())
         elif (
             plan_tracker is not None
             and response is not None

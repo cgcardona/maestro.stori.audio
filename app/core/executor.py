@@ -407,6 +407,7 @@ async def execute_plan_variation(
     explanation: Optional[str] = None,
     progress_callback: Optional[Callable[..., Awaitable[None]]] = None,
     quality_preset: Optional[str] = None,
+    tool_event_callback: Optional[Callable[..., Awaitable[None]]] = None,
 ) -> Variation:
     """
     Execute a plan in variation mode - returns proposed changes without mutation.
@@ -424,6 +425,8 @@ async def execute_plan_variation(
         conversation_id: Conversation ID for StateStore lookup
         explanation: Optional AI explanation of the variation
         progress_callback: Optional async callback(current_step, total_steps) after each step.
+        tool_event_callback: Optional async callback(call_id, tool_name, params) called
+            BEFORE each tool call is processed so the caller can emit toolStart/toolCall SSE.
 
     Returns:
         Variation object with phrases representing proposed changes
@@ -480,6 +483,8 @@ async def execute_plan_variation(
         total = len(tool_calls)
         for i, call in enumerate(tool_calls):
             logger.info(f"🔧 Processing call {i + 1}/{total}: {call.name}")
+            if tool_event_callback:
+                await tool_event_callback(call.id, call.name, call.params)
             await _process_call_for_variation(
                 call,
                 var_ctx,

@@ -36,6 +36,11 @@ def _parse_events(events: list[str]) -> list[dict]:
     return parsed
 
 
+async def _fake_plan_stream(plan):
+    """Async generator yielding a single ExecutionPlan (simulates build_execution_plan_stream)."""
+    yield plan
+
+
 def _make_trace():
     return TraceContext(trace_id="test-trace-id")
 
@@ -208,7 +213,6 @@ class TestHandleComposing:
     @pytest.mark.anyio
     async def test_variation_mode_emits_meta_phrases_done(self):
         """COMPOSING in variation mode emits meta -> phrase(s) -> done -> complete."""
-        from app.core.pipeline import PipelineOutput
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
         from app.models.variation import Variation, Phrase, NoteChange, MidiNoteSnapshot
@@ -226,7 +230,6 @@ class TestHandleComposing:
             tool_calls=[ToolCall("stori_add_notes", {"regionId": "r1", "notes": []})],
             safety_validated=True,
         )
-        fake_output = PipelineOutput(route=route, plan=plan)
         fake_variation = Variation(
             variation_id="var-123",
             intent="make a beat",
@@ -254,7 +257,7 @@ class TestHandleComposing:
         )
 
         with (
-            patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output),
+            patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)),
             patch("app.core.executor.execute_plan_variation", new_callable=AsyncMock, return_value=fake_variation),
         ):
             events = []
@@ -278,7 +281,6 @@ class TestHandleComposing:
     @pytest.mark.anyio
     async def test_empty_plan_asks_for_clarification(self):
         """When planner returns no tool_calls and no function-call text, asks for clarification."""
-        from app.core.pipeline import PipelineOutput
         from app.core.planner import ExecutionPlan
 
         route = _make_route(SSEState.COMPOSING, Intent.GENERATE_MUSIC, requires_planner=True)
@@ -287,9 +289,8 @@ class TestHandleComposing:
         trace = _make_trace()
 
         plan = ExecutionPlan(tool_calls=[], safety_validated=False, llm_response_text="I'm not sure what to do.")
-        fake_output = PipelineOutput(route=route, plan=plan)
 
-        with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+        with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
             events = []
             async for e in _handle_composing("do something", {}, route, llm, store, trace, None, None):
                 events.append(e)
@@ -304,7 +305,6 @@ class TestHandleComposing:
     @pytest.mark.anyio
     async def test_empty_plan_no_response_text(self):
         """When planner returns no tool_calls and no response text, asks for info."""
-        from app.core.pipeline import PipelineOutput
         from app.core.planner import ExecutionPlan
 
         route = _make_route(SSEState.COMPOSING, Intent.GENERATE_MUSIC, requires_planner=True)
@@ -313,9 +313,8 @@ class TestHandleComposing:
         trace = _make_trace()
 
         plan = ExecutionPlan(tool_calls=[], safety_validated=False)
-        fake_output = PipelineOutput(route=route, plan=plan)
 
-        with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+        with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
             events = []
             async for e in _handle_composing("", {}, route, llm, store, trace, None, None):
                 events.append(e)
@@ -888,7 +887,6 @@ class TestOrchestrateExecutionModePolicy:
     @pytest.mark.anyio
     async def test_composing_forces_variation_mode(self):
         """COMPOSING intent sets execution_mode='variation' internally (requires non-empty project)."""
-        from app.core.pipeline import PipelineOutput
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
         from app.models.variation import Variation
@@ -898,7 +896,6 @@ class TestOrchestrateExecutionModePolicy:
             tool_calls=[ToolCall("stori_add_notes", {"regionId": "r1", "notes": []})],
             safety_validated=True,
         )
-        fake_output = PipelineOutput(route=fake_route, plan=plan)
         fake_variation = Variation(
             variation_id="var-policy",
             intent="beat",
@@ -907,12 +904,11 @@ class TestOrchestrateExecutionModePolicy:
             beat_range=(0.0, 0.0),
             phrases=[],
         )
-        # Non-empty project so the empty-project override doesn't kick in
         project_ctx = {"id": "p1", "tracks": [{"id": "t1", "name": "Track 1"}]}
 
         with (
             patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
-            patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output),
+            patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)),
             patch("app.core.maestro_handlers.LLMClient") as m_cls,
             patch("app.core.executor.execute_plan_variation", new_callable=AsyncMock, return_value=fake_variation),
         ):
@@ -923,7 +919,6 @@ class TestOrchestrateExecutionModePolicy:
 
         payloads = _parse_events(events)
         types = [p["type"] for p in payloads]
-        # Variation mode should emit meta + done
         assert "meta" in types
         assert "done" in types
 
@@ -1223,7 +1218,11 @@ class TestPlanEventsInEditing:
 
     @pytest.mark.anyio
     async def test_no_plan_for_single_force_stop_tool(self):
-        """force_stop_after with a single tool should still emit a plan (minimal)."""
+        """Single-tool force_stop_after requests must NOT emit a plan event.
+
+        A one-step plan is noise — the toolStart label is sufficient.
+        Plans are only emitted when there are 2+ distinct steps.
+        """
         allowed = {"stori_set_tempo"}
         route = _make_route(
             SSEState.EDITING,
@@ -1251,7 +1250,7 @@ class TestPlanEventsInEditing:
 
         payloads = _parse_events(events)
         types = [p["type"] for p in payloads]
-        assert "plan" in types
+        assert "plan" not in types, "Single-tool edits must not generate a plan"
         assert "toolCall" in types
         assert "complete" in types
 

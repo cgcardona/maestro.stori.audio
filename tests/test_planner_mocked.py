@@ -19,6 +19,7 @@ from app.core.planner import (
     _try_deterministic_plan,
     _schema_to_tool_calls,
     build_execution_plan,
+    build_execution_plan_stream,
     build_plan_from_dict,
 )
 from app.core.prompt_parser import parse_prompt, ParsedPrompt, PositionSpec
@@ -609,3 +610,122 @@ class TestPositionToBeatRegressionFull:
         for tc in plan.tool_calls:
             if tc.name == "stori_add_midi_region":
                 assert tc.params.get("startBeat", 0) == 0.0
+
+
+# ===========================================================================
+# 7. build_execution_plan_stream
+# ===========================================================================
+
+class TestBuildExecutionPlanStream:
+    """Streaming variant of build_execution_plan."""
+
+    @pytest.mark.asyncio
+    async def test_deterministic_path_yields_plan_no_reasoning(self):
+        """Deterministic fast-path yields an ExecutionPlan with no reasoning SSE."""
+        parsed = _minimal_parsed(roles=["drums", "bass"])
+        route = _make_route()
+        llm = AsyncMock()
+
+        items: list = []
+        async for item in build_execution_plan_stream(
+            "make a beat", {}, route, llm, parsed=parsed,
+        ):
+            items.append(item)
+
+        assert len(items) == 1
+        plan = items[0]
+        assert isinstance(plan, ExecutionPlan)
+        assert plan.is_valid
+        llm.chat_completion_stream.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_llm_path_yields_reasoning_then_plan(self):
+        """LLM path yields reasoning SSE events then the ExecutionPlan."""
+        route = _make_route()
+
+        async def _fake_stream(**kwargs):
+            yield {"type": "reasoning_delta", "text": "Thinking about drums..."}
+            yield {"type": "reasoning_delta", "text": " and bass."}
+            yield {
+                "type": "done",
+                "content": json.dumps(_valid_plan_json()),
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+            }
+
+        llm = AsyncMock()
+        llm.chat_completion_stream = MagicMock(return_value=_fake_stream())
+
+        reasoning_events: list[str] = []
+        plan_result = None
+
+        async def mock_emit_sse(data):
+            if data.get("type") == "reasoning":
+                reasoning_events.append(data["content"])
+            return f"data: {json.dumps(data)}\n\n"
+
+        async for item in build_execution_plan_stream(
+            "make a house beat", {}, route, llm, emit_sse=mock_emit_sse,
+        ):
+            if isinstance(item, ExecutionPlan):
+                plan_result = item
+
+        assert plan_result is not None
+        assert plan_result.is_valid
+        assert len(reasoning_events) >= 1
+
+    @pytest.mark.asyncio
+    async def test_usage_tracker_updated_on_stream(self):
+        """usage_tracker is updated with prompt/completion tokens from the stream."""
+        from app.core.maestro_handlers import UsageTracker
+
+        route = _make_route()
+
+        async def _fake_stream(**kwargs):
+            yield {
+                "type": "done",
+                "content": json.dumps(_valid_plan_json()),
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "usage": {"prompt_tokens": 200, "completion_tokens": 60},
+            }
+
+        llm = AsyncMock()
+        llm.chat_completion_stream = MagicMock(return_value=_fake_stream())
+
+        tracker = UsageTracker()
+        async for _ in build_execution_plan_stream(
+            "make a beat", {}, route, llm, usage_tracker=tracker,
+        ):
+            pass
+
+        assert tracker.prompt_tokens == 200
+        assert tracker.completion_tokens == 60
+        assert tracker.last_input_tokens == 200
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_returns_failed_plan(self):
+        """When LLM returns non-JSON content, streaming path returns a failed plan."""
+        route = _make_route()
+
+        async def _fake_stream(**kwargs):
+            yield {"type": "content_delta", "text": "No JSON here at all."}
+            yield {
+                "type": "done",
+                "content": None,
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "usage": {},
+            }
+
+        llm = AsyncMock()
+        llm.chat_completion_stream = MagicMock(return_value=_fake_stream())
+
+        plans = []
+        async for item in build_execution_plan_stream("bad prompt", {}, route, llm):
+            if isinstance(item, ExecutionPlan):
+                plans.append(item)
+
+        assert len(plans) == 1
+        assert not plans[0].is_valid

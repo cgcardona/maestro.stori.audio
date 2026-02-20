@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from app.core.maestro_handlers import UsageTracker
 
 from app.core.intent import get_intent_result, SSEState, IntentResult, Intent
-from app.core.planner import build_execution_plan, ExecutionPlan
+from app.core.planner import build_execution_plan, build_execution_plan_stream, ExecutionPlan
 from app.core.prompt_parser import ParsedPrompt
 from app.core.llm_client import LLMClient, LLMResponse
 from app.core.prompts import system_prompt_base, editing_prompt, composing_prompt, resolve_position, sequential_context, structured_prompt_context

@@ -18,6 +18,11 @@ from app.core.intent_config import (
     _PRIMITIVES_TRACK,
 )
 
+
+async def _fake_plan_stream(plan):
+    """Async generator yielding a single ExecutionPlan (simulates build_execution_plan_stream)."""
+    yield plan
+
 # Project context with existing tracks — keeps COMPOSING route active
 # (empty projects override COMPOSING → EDITING).
 _NON_EMPTY_PROJECT = {
@@ -435,7 +440,6 @@ class TestOrchestrateStream:
     @pytest.mark.anyio
     async def test_yields_state_then_complete_for_composing_with_empty_plan(self):
         """When intent is COMPOSING on a non-empty project and pipeline returns empty plan, we get state then content then complete."""
-        from app.core.pipeline import PipelineOutput
         from app.core.planner import ExecutionPlan
 
         fake_route = IntentResult(
@@ -450,17 +454,16 @@ class TestOrchestrateStream:
             requires_planner=True,
             reasons=(),
         )
-        fake_output = PipelineOutput(route=fake_route, plan=ExecutionPlan(tool_calls=[], safety_validated=False))
+        empty_plan = ExecutionPlan(tool_calls=[], safety_validated=False)
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+            with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
                 with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
 
                     events = []
-                    # Pass non-empty project so COMPOSING route is preserved
                     async for event in orchestrate("make something vague", project_context=_NON_EMPTY_PROJECT):
                         events.append(event)
 
@@ -587,8 +590,7 @@ class TestOrchestrateStream:
 
     @pytest.mark.anyio
     async def test_composing_with_non_empty_plan_apply_mode(self):
-        """When COMPOSING on a non-empty project and pipeline returns a plan with tool_calls, we stream plan_summary then progress and complete."""
-        from app.core.pipeline import PipelineOutput
+        """When COMPOSING on a non-empty project and pipeline returns a plan with tool_calls, we stream plan + planSummary then complete."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
 
@@ -608,17 +610,15 @@ class TestOrchestrateStream:
             tool_calls=[ToolCall("stori_set_tempo", {"tempo": 120})],
             safety_validated=True,
         )
-        fake_output = PipelineOutput(route=fake_route, plan=plan)
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+            with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
                 with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
 
                     events = []
-                    # Pass non-empty project so COMPOSING route is preserved
                     async for event in orchestrate("make a beat", project_context=_NON_EMPTY_PROJECT):
                         events.append(event)
 
@@ -626,6 +626,7 @@ class TestOrchestrateStream:
                     payloads = [json.loads(e.split("data: ", 1)[1].strip()) for e in events if "data:" in e]
                     types = [p.get("type") for p in payloads]
                     assert "state" in types
+                    assert "plan" in types
                     assert "planSummary" in types
                     assert "complete" in types
                     plan_summary = next(p for p in payloads if p.get("type") == "planSummary")
@@ -634,7 +635,6 @@ class TestOrchestrateStream:
     @pytest.mark.anyio
     async def test_composing_empty_plan_with_stori_in_response_fallback_to_editing(self):
         """When plan has no tool_calls but llm_response_text contains 'stori_', we retry as EDITING."""
-        from app.core.pipeline import PipelineOutput
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
         from app.core.llm_client import LLMResponse
@@ -652,15 +652,16 @@ class TestOrchestrateStream:
             reasons=(),
         )
         # Plan with no tool_calls but LLM-like function call text
-        plan = ExecutionPlan(tool_calls=[], safety_validated=False, llm_response_text="stori_add_midi_track(name='Drums')")
-        fake_output = PipelineOutput(route=fake_route, plan=plan, llm_response=LLMResponse(content="stori_add_midi_track(name='Drums')"))
+        empty_plan = ExecutionPlan(
+            tool_calls=[], safety_validated=False,
+            llm_response_text="stori_add_midi_track(name='Drums')",
+        )
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+            with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
                 with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.supports_reasoning = MagicMock(return_value=False)
-                    # EDITING path will ask for tool calls; return one then stop
                     mock_llm.chat_completion = AsyncMock(return_value=LLMResponse(
                         content="Done.",
                         tool_calls=[ToolCall("stori_add_midi_track", {"name": "Drums"}, "tc1")],
@@ -669,8 +670,6 @@ class TestOrchestrateStream:
                     m_llm_cls.return_value = mock_llm
 
                     events = []
-                    # Pass non-empty project so COMPOSING route is preserved
-                    # (otherwise empty project override would skip the planner entirely)
                     async for event in orchestrate("add drums", project_context=_NON_EMPTY_PROJECT):
                         events.append(event)
 
@@ -678,7 +677,6 @@ class TestOrchestrateStream:
                     payloads = [json.loads(e.split("data: ", 1)[1].strip()) for e in events if "data:" in e]
                     types = [p.get("type") for p in payloads]
                     assert "state" in types
-                    # Should see "Retrying with different approach" status
                     assert any(p.get("type") == "status" and "Retrying" in p.get("message", "") for p in payloads)
 
     @pytest.mark.anyio
@@ -746,9 +744,7 @@ class TestOrchestrateStream:
     @pytest.mark.anyio
     async def test_non_empty_project_stays_on_composing(self):
         """When COMPOSING intent hits a project with tracks, it stays on COMPOSING path (variation review)."""
-        from app.core.pipeline import PipelineOutput
         from app.core.planner import ExecutionPlan
-        from app.core.expansion import ToolCall as PlanToolCall
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -762,19 +758,16 @@ class TestOrchestrateStream:
             requires_planner=True,
             reasons=("generation_phrase",),
         )
-        # Empty plan to keep test simple
-        plan = ExecutionPlan(tool_calls=[], safety_validated=False)
-        fake_output = PipelineOutput(route=fake_route, plan=plan)
+        empty_plan = ExecutionPlan(tool_calls=[], safety_validated=False)
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_handlers.run_pipeline", new_callable=AsyncMock, return_value=fake_output):
+            with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
                 with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
 
                     events = []
-                    # Non-empty project — has tracks, so COMPOSING stays
                     async for event in orchestrate(
                         "make the bass line funkier",
                         project_context=_NON_EMPTY_PROJECT,
@@ -784,7 +777,6 @@ class TestOrchestrateStream:
                     import json
                     payloads = [json.loads(e.split("data: ", 1)[1].strip()) for e in events if "data:" in e]
 
-                    # State should be "composing" for non-empty project
                     state_event = next(p for p in payloads if p.get("type") == "state")
                     assert state_event.get("state") == "composing", (
                         f"Expected 'composing' for non-empty project, got '{state_event.get('state')}'"
@@ -810,3 +802,234 @@ class TestOrchestrateStream:
                 ]
                 types = [p["type"] for p in payloads]
                 assert "complete" in types
+
+
+class TestComposingUnifiedSSE:
+    """Tests for the unified SSE UX across all three phases."""
+
+    @pytest.mark.anyio
+    async def test_composing_emits_reasoning_events(self):
+        """Phase 1: COMPOSING path emits reasoning events from the streaming planner."""
+        from app.core.planner import ExecutionPlan
+        from app.core.expansion import ToolCall
+        from app.core.sse_utils import sse_event
+
+        fake_route = IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.COMPOSING,
+            confidence=0.9,
+            slots=Slots(),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=False,
+            requires_planner=True,
+            reasons=(),
+        )
+        plan = ExecutionPlan(
+            tool_calls=[ToolCall("stori_set_tempo", {"tempo": 120})],
+            safety_validated=True,
+        )
+
+        async def _stream_with_reasoning(*args, **kwargs):
+            yield await sse_event({"type": "reasoning", "content": "Planning the beat..."})
+            yield plan
+
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_stream_with_reasoning()):
+                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+                    mock_llm = MagicMock()
+                    mock_llm.close = AsyncMock()
+                    m_llm_cls.return_value = mock_llm
+
+                    events = []
+                    async for event in orchestrate("make a beat", project_context=_NON_EMPTY_PROJECT):
+                        events.append(event)
+
+                    import json
+                    payloads = [json.loads(e.split("data: ", 1)[1].strip()) for e in events if "data:" in e]
+                    types = [p.get("type") for p in payloads]
+
+                    assert "reasoning" in types, f"Expected 'reasoning' in {types}"
+                    reasoning_ev = next(p for p in payloads if p["type"] == "reasoning")
+                    assert "Planning" in reasoning_ev["content"]
+
+    @pytest.mark.anyio
+    async def test_composing_emits_plan_event(self):
+        """Phase 2: COMPOSING path emits a 'plan' event alongside deprecated 'planSummary'."""
+        from app.core.planner import ExecutionPlan
+        from app.core.expansion import ToolCall
+
+        fake_route = IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.COMPOSING,
+            confidence=0.9,
+            slots=Slots(),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=False,
+            requires_planner=True,
+            reasons=(),
+        )
+        plan = ExecutionPlan(
+            tool_calls=[
+                ToolCall("stori_add_midi_track", {"name": "Drums"}),
+                ToolCall("stori_add_midi_region", {"name": "Drums", "trackName": "Drums", "startBeat": 0, "durationBeats": 16}),
+                ToolCall("stori_generate_midi", {"role": "drums", "style": "house", "tempo": 128, "bars": 4}),
+            ],
+            safety_validated=True,
+        )
+
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+                    mock_llm = MagicMock()
+                    mock_llm.close = AsyncMock()
+                    m_llm_cls.return_value = mock_llm
+
+                    events = []
+                    async for event in orchestrate("make a house beat", project_context=_NON_EMPTY_PROJECT):
+                        events.append(event)
+
+                    import json
+                    payloads = [json.loads(e.split("data: ", 1)[1].strip()) for e in events if "data:" in e]
+                    types = [p.get("type") for p in payloads]
+
+                    assert "plan" in types, f"Expected 'plan' in {types}"
+                    plan_ev = next(p for p in payloads if p["type"] == "plan")
+                    assert "steps" in plan_ev
+                    assert len(plan_ev["steps"]) >= 1
+
+                    assert "planSummary" in types, "Deprecated planSummary should still be emitted"
+
+    @pytest.mark.anyio
+    async def test_composing_emits_proposal_tool_calls(self):
+        """Phase 3: COMPOSING path emits toolStart/toolCall events with proposal:true."""
+        from app.core.planner import ExecutionPlan
+        from app.core.expansion import ToolCall
+
+        fake_route = IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.COMPOSING,
+            confidence=0.9,
+            slots=Slots(),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=False,
+            requires_planner=True,
+            reasons=(),
+        )
+        plan = ExecutionPlan(
+            tool_calls=[ToolCall("stori_set_tempo", {"tempo": 120}, id="tc-1")],
+            safety_validated=True,
+        )
+
+        async def _mock_execute(**kwargs):
+            cb = kwargs.get("tool_event_callback")
+            prog_cb = kwargs.get("progress_callback")
+            if cb:
+                await cb("tc-1", "stori_set_tempo", {"tempo": 120})
+            if prog_cb:
+                await prog_cb(1, 1, "stori_set_tempo", {"tempo": 120})
+            from app.models.variation import Variation
+            return Variation(
+                variation_id="var-1",
+                intent="test",
+                affected_tracks=[],
+                affected_regions=[],
+                beat_range=(0.0, 0.0),
+                phrases=[],
+            )
+
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+                with patch("app.core.executor.execute_plan_variation", side_effect=_mock_execute):
+                    with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+                        mock_llm = MagicMock()
+                        mock_llm.close = AsyncMock()
+                        m_llm_cls.return_value = mock_llm
+
+                        events = []
+                        async for event in orchestrate("set tempo", project_context=_NON_EMPTY_PROJECT):
+                            events.append(event)
+
+                        import json
+                        payloads = [json.loads(e.split("data: ", 1)[1].strip()) for e in events if "data:" in e]
+                        types = [p.get("type") for p in payloads]
+
+                        assert "toolStart" in types, f"Expected 'toolStart' in {types}"
+                        assert "toolCall" in types, f"Expected 'toolCall' in {types}"
+                        tool_call_ev = next(p for p in payloads if p["type"] == "toolCall")
+                        assert tool_call_ev.get("proposal") is True, "toolCall in COMPOSING must have proposal:true"
+
+    @pytest.mark.anyio
+    async def test_composing_plan_step_updates(self):
+        """Phase 2: COMPOSING path emits planStepUpdate activate/complete events."""
+        from app.core.planner import ExecutionPlan
+        from app.core.expansion import ToolCall
+
+        fake_route = IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.COMPOSING,
+            confidence=0.9,
+            slots=Slots(),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=False,
+            requires_planner=True,
+            reasons=(),
+        )
+        plan = ExecutionPlan(
+            tool_calls=[
+                ToolCall("stori_set_tempo", {"tempo": 120}, id="tc-1"),
+                ToolCall("stori_set_key", {"key": "Am"}, id="tc-2"),
+            ],
+            safety_validated=True,
+        )
+
+        call_idx = 0
+
+        async def _mock_execute(**kwargs):
+            nonlocal call_idx
+            cb = kwargs.get("tool_event_callback")
+            prog_cb = kwargs.get("progress_callback")
+            for tc in plan.tool_calls:
+                call_idx += 1
+                if cb:
+                    await cb(tc.id, tc.name, tc.params)
+                if prog_cb:
+                    await prog_cb(call_idx, len(plan.tool_calls), tc.name, tc.params)
+            from app.models.variation import Variation
+            return Variation(
+                variation_id="var-2",
+                intent="test",
+                affected_tracks=[],
+                affected_regions=[],
+                beat_range=(0.0, 0.0),
+                phrases=[],
+            )
+
+        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+                with patch("app.core.executor.execute_plan_variation", side_effect=_mock_execute):
+                    with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+                        mock_llm = MagicMock()
+                        mock_llm.close = AsyncMock()
+                        m_llm_cls.return_value = mock_llm
+
+                        events = []
+                        async for event in orchestrate("set up project", project_context=_NON_EMPTY_PROJECT):
+                            events.append(event)
+
+                        import json
+                        payloads = [json.loads(e.split("data: ", 1)[1].strip()) for e in events if "data:" in e]
+                        types = [p.get("type") for p in payloads]
+
+                        assert "planStepUpdate" in types, f"Expected 'planStepUpdate' in {types}"
+                        step_updates = [p for p in payloads if p["type"] == "planStepUpdate"]
+                        statuses = [u.get("status") for u in step_updates]
+                        assert "active" in statuses
+                        assert "completed" in statuses

@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Optional
 
 if TYPE_CHECKING:
     from app.core.maestro_handlers import UsageTracker
@@ -149,10 +149,124 @@ async def build_execution_plan(
 
     llm_response_text = resp.content or ""
     logger.debug(f"📋 Planner LLM response length: {len(llm_response_text)} chars")
-    
-    # Validate the response
+
+    return _finalise_plan(llm_response_text)
+
+
+async def build_execution_plan_stream(
+    user_prompt: str,
+    project_state: dict[str, Any],
+    route: IntentResult,
+    llm: Any,
+    parsed: Optional[ParsedPrompt] = None,
+    usage_tracker: Optional["UsageTracker"] = None,
+    emit_sse: Optional[Callable[[dict[str, Any]], Awaitable[str]]] = None,
+) -> AsyncIterator[ExecutionPlan | str]:
+    """Streaming variant of build_execution_plan.
+
+    Yields SSE-formatted reasoning events as the LLM thinks, then yields
+    the final ExecutionPlan as the last item.  The caller should iterate
+    the generator, forwarding all ``str`` items to the SSE stream and
+    keeping the final ``ExecutionPlan``.
+
+    When the deterministic fast-path fires (structured prompt with all
+    required fields), no reasoning is emitted — the plan is yielded
+    immediately.
+    """
+    from app.core.sse_utils import ReasoningBuffer
+
+    start_beat: float = 0.0
+    if parsed is not None and parsed.position is not None:
+        start_beat = resolve_position(parsed.position, project_state)
+        logger.info(
+            f"⏱️ Position '{parsed.position.kind}' resolved to beat {start_beat} "
+            f"(section='{parsed.section}', ref='{parsed.position.ref}')"
+        )
+
+    # Deterministic fast-path — no LLM, no reasoning to stream.
+    if parsed is not None:
+        deterministic = _try_deterministic_plan(parsed, start_beat=start_beat)
+        if deterministic is not None:
+            yield deterministic
+            return
+
+    sys = system_prompt_base() + "\n" + composing_prompt()
+
+    if parsed is not None:
+        sys += structured_prompt_context(parsed)
+        if parsed.position is not None:
+            sys += sequential_context(start_beat, parsed.section, pos=parsed.position)
+
+    # Build messages matching llm.chat() format
+    messages: list[dict[str, Any]] = [{"role": "system", "content": sys}]
+    if project_state:
+        messages.append({
+            "role": "system",
+            "content": f"Project state: {json.dumps(project_state, indent=2)}",
+        })
+    messages.append({"role": "user", "content": user_prompt})
+
+    # Stream the LLM response, forwarding reasoning events
+    accumulated_content: list[str] = []
+    usage: dict[str, Any] = {}
+    reasoning_buf = ReasoningBuffer()
+
+    async for chunk in llm.chat_completion_stream(
+        messages=messages,
+        tools=None,
+        tool_choice=None,
+        temperature=0.1,
+    ):
+        if chunk.get("type") == "reasoning_delta":
+            reasoning_text = chunk.get("text", "")
+            if reasoning_text:
+                to_emit = reasoning_buf.add(reasoning_text)
+                if to_emit and emit_sse:
+                    yield await emit_sse({
+                        "type": "reasoning",
+                        "content": to_emit,
+                    })
+
+        elif chunk.get("type") == "content_delta":
+            flushed = reasoning_buf.flush()
+            if flushed and emit_sse:
+                yield await emit_sse({
+                    "type": "reasoning",
+                    "content": flushed,
+                })
+            content_text = chunk.get("text", "")
+            if content_text:
+                accumulated_content.append(content_text)
+
+        elif chunk.get("type") == "done":
+            flushed = reasoning_buf.flush()
+            if flushed and emit_sse:
+                yield await emit_sse({
+                    "type": "reasoning",
+                    "content": flushed,
+                })
+            # Prefer accumulated content; fall back to done payload.
+            if not accumulated_content and chunk.get("content"):
+                accumulated_content.append(chunk["content"])
+            usage = chunk.get("usage", {})
+
+    if usage_tracker and usage:
+        usage_tracker.add(
+            usage.get("prompt_tokens", 0),
+            usage.get("completion_tokens", 0),
+        )
+
+    llm_response_text = "".join(accumulated_content)
+    logger.debug(f"📋 Planner (stream) LLM response length: {len(llm_response_text)} chars")
+
+    # From here the logic is identical to the non-streaming path.
+    yield _finalise_plan(llm_response_text)
+
+
+def _finalise_plan(llm_response_text: str) -> ExecutionPlan:
+    """Shared post-LLM logic: validate, complete, and convert a plan."""
     validation = extract_and_validate_plan(llm_response_text)
-    
+
     if not validation.valid:
         logger.warning(f"⚠️ Plan validation failed: {validation.errors}")
         return ExecutionPlan(
@@ -160,8 +274,7 @@ async def build_execution_plan(
             llm_response_text=llm_response_text,
             validation_result=validation,
         )
-    
-    # Complete the plan (infer missing edits)
+
     if validation.plan is None:
         return ExecutionPlan(
             notes=["Plan schema missing after validation"],
@@ -182,16 +295,15 @@ async def build_execution_plan(
             llm_response_text=llm_response_text,
             validation_result=validation,
         )
-    
-    # Convert schema to ToolCalls
+
     tool_calls = _schema_to_tool_calls(plan_schema)
-    
+
     logger.info(
         f"✅ Planner generated {len(tool_calls)} tool calls "
         f"({plan_schema.generation_count()} generations, "
         f"{len(plan_schema.edits)} edits, {len(plan_schema.mix)} mix)"
     )
-    
+
     return ExecutionPlan(
         tool_calls=tool_calls,
         notes=[
