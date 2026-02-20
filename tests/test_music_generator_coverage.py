@@ -111,3 +111,240 @@ class TestMusicGenerator:
         mg = MusicGenerator()
         backends = await mg.get_available_backends()
         assert isinstance(backends, list)
+
+
+# ---------------------------------------------------------------------------
+# _scorer_for_instrument — instrument-role-based scoring
+# ---------------------------------------------------------------------------
+
+
+class TestScorerForInstrument:
+
+    def _mg(self) -> MusicGenerator:
+        from app.services.backends.base import GeneratorBackend
+        mg = MusicGenerator()
+        mg._generation_context = None
+        return mg
+
+    def test_drums_returns_scorer(self):
+        """Drums role always gets a scorer (enables rejection sampling for Orpheus)."""
+        from app.services.backends.base import GeneratorBackend
+        mg = self._mg()
+        scorer = mg._scorer_for_instrument("drums", GeneratorBackend.ORPHEUS, bars=4, style="trap")
+        assert scorer is not None
+
+    def test_bass_returns_scorer(self):
+        from app.services.backends.base import GeneratorBackend
+        mg = self._mg()
+        scorer = mg._scorer_for_instrument("bass", GeneratorBackend.ORPHEUS, bars=4, style="trap")
+        assert scorer is not None
+
+    def test_organ_returns_scorer(self):
+        """Melodic instruments (organ) also get a scorer — chord scoring."""
+        from app.services.backends.base import GeneratorBackend
+        mg = self._mg()
+        scorer = mg._scorer_for_instrument("organ", GeneratorBackend.ORPHEUS, bars=4, style="ska")
+        assert scorer is not None
+
+    def test_unknown_role_returns_none(self):
+        """Unknown instrument roles return None (no scoring, single generation)."""
+        from app.services.backends.base import GeneratorBackend
+        mg = self._mg()
+        scorer = mg._scorer_for_instrument("theremin", GeneratorBackend.ORPHEUS, bars=4, style="lofi")
+        assert scorer is None
+
+    def test_drum_ir_backend_overrides_role(self):
+        """DRUM_IR backend always uses drum scoring regardless of role name."""
+        from app.services.backends.base import GeneratorBackend
+        mg = self._mg()
+        scorer = mg._scorer_for_instrument("mystery", GeneratorBackend.DRUM_IR, bars=4, style="jazz")
+        assert scorer is not None
+
+
+# ---------------------------------------------------------------------------
+# _candidates_for_role — smarter candidate counts
+# ---------------------------------------------------------------------------
+
+
+class TestCandidatesForRole:
+
+    def _mg(self) -> MusicGenerator:
+        return MusicGenerator()
+
+    def test_drums_keeps_full_candidates(self):
+        """Drums keeps the full quality-preset candidate count."""
+        from app.services.backends.base import GeneratorBackend
+        mg = self._mg()
+        config = QUALITY_PRESETS["quality"]  # num_candidates=6
+        assert mg._candidates_for_role("drums", config, GeneratorBackend.ORPHEUS) == 6
+
+    def test_bass_keeps_full_candidates(self):
+        from app.services.backends.base import GeneratorBackend
+        mg = self._mg()
+        config = QUALITY_PRESETS["quality"]
+        assert mg._candidates_for_role("bass", config, GeneratorBackend.ORPHEUS) == 6
+
+    def test_organ_capped_at_two_for_quality(self):
+        """Melodic instruments are capped at 2 candidates for quality preset."""
+        from app.services.backends.base import GeneratorBackend
+        mg = self._mg()
+        config = QUALITY_PRESETS["quality"]  # num_candidates=6
+        assert mg._candidates_for_role("organ", config, GeneratorBackend.ORPHEUS) == 2
+
+    def test_guitar_capped_at_two_for_quality(self):
+        from app.services.backends.base import GeneratorBackend
+        mg = self._mg()
+        config = QUALITY_PRESETS["quality"]
+        assert mg._candidates_for_role("guitar", config, GeneratorBackend.ORPHEUS) == 2
+
+    def test_non_orpheus_backend_untouched(self):
+        """IR backends are not modified — they have their own scoring logic."""
+        from app.services.backends.base import GeneratorBackend
+        mg = self._mg()
+        config = QUALITY_PRESETS["quality"]
+        assert mg._candidates_for_role("organ", config, GeneratorBackend.HARMONIC_IR) == 6
+
+    def test_balanced_preset_melodic_unchanged(self):
+        """Balanced preset (2 candidates) is not further reduced for melodic tracks."""
+        from app.services.backends.base import GeneratorBackend
+        mg = self._mg()
+        config = QUALITY_PRESETS["balanced"]  # num_candidates=2
+        assert mg._candidates_for_role("organ", config, GeneratorBackend.ORPHEUS) == 2
+
+
+# ---------------------------------------------------------------------------
+# Parallel candidate generation via asyncio.gather
+# ---------------------------------------------------------------------------
+
+
+class TestParallelCandidateGeneration:
+
+    @pytest.mark.anyio
+    async def test_parallel_candidates_dispatched(self):
+        """Quality preset dispatches all candidates concurrently (asyncio.gather)."""
+        import asyncio
+        from app.services.backends.base import GeneratorBackend, GenerationResult
+
+        mg = MusicGenerator()
+        config = QUALITY_PRESETS["quality"]  # 6 candidates
+
+        call_count = [0]
+        call_times: list[float] = []
+
+        async def fake_generate(*args, **kwargs):
+            call_count[0] += 1
+            call_times.append(asyncio.get_event_loop().time())
+            return GenerationResult(
+                success=True,
+                notes=[{"pitch": 36, "start_beat": float(call_count[0] - 1), "duration_beats": 0.25, "velocity": 100}],
+                backend_used=GeneratorBackend.ORPHEUS,
+                metadata={},
+            )
+
+        mock_backend = MagicMock()
+        mock_backend.generate = fake_generate
+        mock_backend.backend_type = GeneratorBackend.ORPHEUS
+
+        result = await mg._generate_with_coupling(
+            backend=mock_backend,
+            backend_type=GeneratorBackend.ORPHEUS,
+            instrument="drums",
+            style="trap",
+            tempo=120,
+            bars=4,
+            key=None,
+            chords=None,
+            preset_config=config,
+            num_candidates=config.num_candidates,
+        )
+
+        # All 6 candidates dispatched in parallel (drums keeps full count)
+        assert call_count[0] == 6
+        assert result.success
+        assert "critic_score" in result.metadata
+        assert "parallel_candidates" in result.metadata
+
+    @pytest.mark.anyio
+    async def test_best_candidate_selected(self):
+        """The candidate with the highest critic score is returned."""
+        import asyncio
+        from app.services.backends.base import GeneratorBackend, GenerationResult
+
+        mg = MusicGenerator()
+        config = QUALITY_PRESETS["balanced"]  # 2 candidates
+
+        scores_assigned = [0.3, 0.8]  # second candidate is better
+        call_idx = [0]
+
+        async def fake_generate(*args, **kwargs):
+            idx = call_idx[0]
+            call_idx[0] += 1
+            # Return notes with a recognisable marker so we can identify which candidate won
+            return GenerationResult(
+                success=True,
+                notes=[{"pitch": 36 + idx, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100}],
+                backend_used=GeneratorBackend.ORPHEUS,
+                metadata={"candidate_idx": idx},
+            )
+
+        mock_backend = MagicMock()
+        mock_backend.generate = fake_generate
+        mock_backend.backend_type = GeneratorBackend.ORPHEUS
+
+        with patch(
+            "app.services.music_generator.MusicGenerator._scorer_for_instrument",
+            return_value=lambda notes: (scores_assigned.pop(0) if scores_assigned else 0.0, None),
+        ):
+            result = await mg._generate_with_coupling(
+                backend=mock_backend,
+                backend_type=GeneratorBackend.ORPHEUS,
+                instrument="drums",
+                style="trap",
+                tempo=120,
+                bars=4,
+                key=None,
+                chords=None,
+                preset_config=config,
+                num_candidates=2,
+            )
+
+        assert result.success
+        assert result.metadata["critic_score"] == pytest.approx(0.8, abs=0.01)
+
+    @pytest.mark.anyio
+    async def test_all_candidates_fail_falls_through(self):
+        """If all parallel candidates fail, falls through to single generation."""
+        from app.services.backends.base import GeneratorBackend, GenerationResult
+
+        mg = MusicGenerator()
+        config = QUALITY_PRESETS["balanced"]
+
+        call_idx = [0]
+
+        async def fake_generate(*args, **kwargs):
+            call_idx[0] += 1
+            if call_idx[0] <= 2:
+                # First two calls (parallel candidates) fail
+                return GenerationResult(success=False, notes=[], backend_used=GeneratorBackend.ORPHEUS, metadata={}, error="fail")
+            # Third call (single fallback) succeeds
+            return GenerationResult(success=True, notes=[{"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100}], backend_used=GeneratorBackend.ORPHEUS, metadata={})
+
+        mock_backend = MagicMock()
+        mock_backend.generate = fake_generate
+        mock_backend.backend_type = GeneratorBackend.ORPHEUS
+
+        result = await mg._generate_with_coupling(
+            backend=mock_backend,
+            backend_type=GeneratorBackend.ORPHEUS,
+            instrument="drums",
+            style="trap",
+            tempo=120,
+            bars=4,
+            key=None,
+            chords=None,
+            preset_config=config,
+            num_candidates=2,
+        )
+
+        # Falls through to single generation (third call)
+        assert result.success

@@ -479,10 +479,45 @@ async def execute_plan_variation(
             emotion_vector = emotion_vector_from_stori_prompt(explanation)
             logger.info(f"🎭 Emotion vector derived: {emotion_vector}")
 
-        # Process tool calls to collect proposed notes
+        # -----------------------------------------------------------------------
+        # Three-phase execution for maximum throughput
+        #
+        # Phase 1 — Setup (sequential): track / region / effect primitives must
+        #   run in order so that entity IDs are registered before generators try
+        #   to resolve them.
+        # Phase 2 — Coupled generators (sequential): drums first (captures the
+        #   rhythm spine), then bass (reads the rhythm spine for locking).
+        # Phase 3 — Independent generators (parallel): organ, guitar, horns,
+        #   etc. have no cross-dependencies and can hit Orpheus concurrently.
+        #   Each fires its tool_event_callback before starting, so the frontend
+        #   sees multiple toolStart / toolCall events arriving simultaneously —
+        #   the natural foundation for a Cursor-style parallel sub-agent card UI.
+        # -----------------------------------------------------------------------
+
+        def _is_gen(call: ToolCall) -> bool:
+            meta = get_tool_meta(call.name)
+            return bool(meta and meta.tier == ToolTier.TIER1 and meta.kind == ToolKind.GENERATOR)
+
+        def _is_coupled_gen(call: ToolCall) -> bool:
+            """Drums and bass must be sequential: bass reads the drum rhythm spine."""
+            role = call.params.get("role", "").lower()
+            return role in ("drums", "bass") or call.name in (
+                "stori_generate_drums", "stori_generate_bass"
+            )
+
+        setup_calls = [c for c in tool_calls if not _is_gen(c)]
+        coupled_calls = sorted(
+            [c for c in tool_calls if _is_gen(c) and _is_coupled_gen(c)],
+            # drums before bass
+            key=lambda c: 0 if (c.params.get("role", "") == "drums" or "drums" in c.name) else 1,
+        )
+        parallel_calls = [c for c in tool_calls if _is_gen(c) and not _is_coupled_gen(c)]
+
         total = len(tool_calls)
-        for i, call in enumerate(tool_calls):
-            logger.info(f"🔧 Processing call {i + 1}/{total}: {call.name}")
+        completed_count = [0]  # mutable counter, safe in single-threaded asyncio
+
+        async def _dispatch(call: ToolCall) -> None:
+            logger.info(f"🔧 Processing: {call.name}")
             if tool_event_callback:
                 await tool_event_callback(call.id, call.name, call.params)
             await _process_call_for_variation(
@@ -491,8 +526,23 @@ async def execute_plan_variation(
                 quality_preset=quality_preset,
                 emotion_vector=emotion_vector,
             )
+            completed_count[0] += 1
             if progress_callback:
-                await progress_callback(i + 1, total, call.name, call.params)
+                await progress_callback(completed_count[0], total, call.name, call.params)
+
+        # Phase 1: setup primitives
+        for call in setup_calls:
+            await _dispatch(call)
+
+        # Phase 2: coupled generators (drums → bass, sequential)
+        for call in coupled_calls:
+            await _dispatch(call)
+
+        # Phase 3: independent generators — parallel Orpheus calls
+        if parallel_calls:
+            logger.info(f"🚀 Launching {len(parallel_calls)} generators in parallel: "
+                        f"{[c.params.get('role', c.name) for c in parallel_calls]}")
+            await asyncio.gather(*[_dispatch(c) for c in parallel_calls])
 
         # Log what we captured
         total_base = sum(len(n) for n in var_ctx.base_notes.values())

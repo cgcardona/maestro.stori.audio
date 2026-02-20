@@ -4,7 +4,16 @@ Music Generation Service for Maestro.
 Primary backend: Orpheus (required for composing). No pattern fallback;
 other backends (IR, HuggingFace, LLM) can be used when explicitly requested
 or configured in priority. Coupled generation: drums first, then bass locked to kick map.
+
+Performance notes:
+- Candidate generation is parallelised with asyncio.gather so all N candidates
+  are dispatched to Orpheus simultaneously instead of sequentially.
+- Rejection-sampling scoring is now instrument-role-based (not backend-type-based),
+  which means Orpheus finally benefits from the quality-preset candidate selection.
+- Melodic/pad instruments get fewer candidates than drums/bass because their
+  output variance is lower and the critic adds less marginal value.
 """
+import asyncio
 import logging
 from typing import Optional, Any
 from dataclasses import dataclass, field
@@ -224,6 +233,66 @@ class MusicGenerator:
             error=error_msg,
         )
     
+    def _scorer_for_instrument(
+        self,
+        instrument: str,
+        backend_type: GeneratorBackend,
+        bars: int,
+        style: str,
+    ):
+        """
+        Return a scorer function for the given instrument role.
+
+        Scoring is now instrument-role-based rather than backend-type-based so
+        that Orpheus (and any other backend) benefits from rejection sampling,
+        not just the IR backends.
+        """
+        from app.services.critic import (
+            score_drum_notes,
+            score_bass_notes,
+            score_melody_notes,
+            score_chord_notes,
+        )
+        role = instrument.lower()
+        if role in ("drums", "percussion") or backend_type == GeneratorBackend.DRUM_IR:
+            fill_bars = [b for b in range(3, bars, 4)]
+            return lambda notes: score_drum_notes(notes, fill_bars=fill_bars, bars=bars, style=style)
+        if role == "bass" or backend_type == GeneratorBackend.BASS_IR:
+            kick_beats = None
+            if self._generation_context and self._generation_context.rhythm_spine:
+                kick_beats = self._generation_context.rhythm_spine.kick_onsets
+            return lambda notes: score_bass_notes(notes, kick_beats=kick_beats)
+        if role in ("lead", "melody", "synth", "vocal") or backend_type == GeneratorBackend.MELODY_IR:
+            return lambda notes: score_melody_notes(notes)
+        if role in ("piano", "chords", "harmony", "keys", "organ", "guitar", "horns", "brass", "strings") or backend_type == GeneratorBackend.HARMONIC_IR:
+            return lambda notes: score_chord_notes(notes)
+        return None  # unknown role — no scoring
+
+    def _candidates_for_role(
+        self,
+        instrument: str,
+        preset_config: QualityPresetConfig,
+        backend_type: GeneratorBackend,
+    ) -> int:
+        """
+        Reduce candidate count for low-variance melodic instruments.
+
+        Drums and bass have high output variance and benefit from many Orpheus
+        candidates; melodic instruments (organ, guitar, strings, etc.) are more
+        consistent across samples so two candidates capture most of the gain.
+        Only applies when the backend is Orpheus — IR backends already handle
+        this at the scorer level.
+        """
+        if backend_type != GeneratorBackend.ORPHEUS:
+            return preset_config.num_candidates
+        role = instrument.lower()
+        if role in ("drums", "bass", "percussion"):
+            return preset_config.num_candidates
+        # Melodic / harmonic tracks: cap at 2 for quality, keep as-is otherwise
+        if preset_config.num_candidates > 2:
+            return 2
+        return preset_config.num_candidates
+
     async def _generate_with_coupling(
         self,
         backend: MusicGeneratorBackend,
@@ -239,100 +308,77 @@ class MusicGenerator:
         **kwargs,
     ) -> GenerationResult:
         """
-        Generate with coupled generation and rejection sampling.
-        
-        For drums: captures rhythm spine for bass coupling
-        For bass: uses rhythm spine if available
+        Generate with coupled generation and parallel rejection sampling.
+
+        For drums: captures rhythm spine for bass coupling.
+        For bass: uses rhythm spine if available.
+        Candidates are dispatched concurrently via asyncio.gather so N Orpheus
+        calls run in parallel rather than sequentially.
         """
-        from app.services.critic import (
-            score_drum_notes,
-            score_bass_notes,
-            score_melody_notes,
-            score_chord_notes,
-        )
-        
-        # Determine if we should use rejection sampling
-        use_rejection = preset_config.use_critic and num_candidates > 1
-        
-        # Get scorer for this instrument
-        scorer = None
-        if use_rejection:
-            if backend_type == GeneratorBackend.DRUM_IR and instrument == "drums":
-                fill_bars = kwargs.get("fill_bars", [b for b in range(3, bars, 4)])
-                scorer = lambda notes: score_drum_notes(
-                    notes,
-                    fill_bars=fill_bars,
-                    bars=bars,
-                    style=style,
-                )
-            elif backend_type == GeneratorBackend.BASS_IR and instrument == "bass":
-                # Get kick beats from context if available
-                kick_beats = None
-                if self._generation_context and self._generation_context.rhythm_spine:
-                    kick_beats = self._generation_context.rhythm_spine.kick_onsets
-                scorer = lambda notes: score_bass_notes(notes, kick_beats=kick_beats)
-            elif backend_type == GeneratorBackend.MELODY_IR and instrument in ("lead", "melody", "synth", "vocal"):
-                scorer = lambda notes: score_melody_notes(notes)
-            elif backend_type == GeneratorBackend.HARMONIC_IR and instrument in ("piano", "chords", "harmony", "keys"):
-                scorer = lambda notes: score_chord_notes(notes)
-        
         # Prepare kwargs for coupled generation
         gen_kwargs = dict(kwargs)
-        
+
         # Bass coupling: pass rhythm spine if available
         if instrument == "bass" and preset_config.use_coupled_generation:
             if self._generation_context and self._generation_context.rhythm_spine:
                 gen_kwargs["rhythm_spine"] = self._generation_context.rhythm_spine
                 gen_kwargs["drum_kick_beats"] = self._generation_context.rhythm_spine.kick_onsets
                 logger.info(f"Bass coupled to rhythm spine ({len(self._generation_context.rhythm_spine.kick_onsets)} kicks)")
-        
-        # Rejection sampling loop
+
+        # Smarter candidate count — melodic instruments cap at 2 for Orpheus
+        effective_candidates = self._candidates_for_role(instrument, preset_config, backend_type)
+
+        use_rejection = preset_config.use_critic and effective_candidates > 1
+        scorer = self._scorer_for_instrument(instrument, backend_type, bars, style) if use_rejection else None
+
         if scorer is not None:
-            best_result = None
+            # Dispatch all candidates concurrently — the bottleneck is GPU inference
+            # time on Orpheus, so parallel dispatch cuts wall-clock time from
+            # N × T_inference to ≈ T_inference + network overhead.
+            tasks = [
+                backend.generate(instrument, style, tempo, bars, key, chords, **gen_kwargs)
+                for _ in range(effective_candidates)
+            ]
+            candidates = await asyncio.gather(*tasks, return_exceptions=True)
+
+            best_result: Optional[GenerationResult] = None
             best_score = -1.0
-            all_scores = []
-            
-            for attempt in range(num_candidates):
-                res = await backend.generate(
-                    instrument, style, tempo, bars, key, chords, **gen_kwargs
-                )
-                if not res.success:
+            all_scores: list[float] = []
+
+            for res in candidates:
+                if isinstance(res, Exception) or not res.success:
+                    if isinstance(res, Exception):
+                        logger.warning(f"Candidate failed: {res}")
                     continue
-                
-                score, repair = scorer(res.notes)
+                score, _ = scorer(res.notes)
                 all_scores.append(score)
-                
                 if score > best_score:
                     best_score = score
                     best_result = res
-                
-                # Early stop if we hit excellent score
-                if score >= preset_config.early_stop_threshold:
-                    logger.info(f"Early stop at attempt {attempt + 1}/{num_candidates}, score {score:.3f}")
-                    break
-            
+
             if best_result is not None:
-                # Capture rhythm spine for drums
                 if instrument == "drums" and preset_config.use_coupled_generation:
                     self._capture_drum_context(best_result.notes, style, tempo, bars)
-                
-                # Add scoring info to metadata
-                best_result.metadata["critic_score"] = best_score
-                best_result.metadata["rejection_attempts"] = len(all_scores)
-                best_result.metadata["all_scores"] = all_scores
-                
-                logger.info(f"✓ Generated via {backend_type.value} (score {best_score:.3f}, {len(all_scores)} attempts)")
+                best_result.metadata.update({
+                    "critic_score": best_score,
+                    "rejection_attempts": len(all_scores),
+                    "all_scores": all_scores,
+                    "parallel_candidates": effective_candidates,
+                })
+                logger.info(
+                    f"✓ Parallel candidates: best score {best_score:.3f} "
+                    f"from {len(all_scores)}/{effective_candidates} valid ({backend_type.value})"
+                )
                 return best_result
-        
-        # Single generation (no rejection sampling)
+
+        # Single generation (no rejection sampling, or all candidates failed)
         result = await backend.generate(
             instrument, style, tempo, bars, key, chords, **gen_kwargs
         )
-        
-        # Capture rhythm spine for drums
+
         if result.success and instrument == "drums" and preset_config.use_coupled_generation:
             self._capture_drum_context(result.notes, style, tempo, bars)
-        
+
         return result
     
     def _capture_drum_context(self, notes: list[dict], style: str, tempo: int, bars: int):

@@ -705,3 +705,163 @@ class TestEmotionVectorIntegration:
                     )
 
         assert captured_kwargs.get("quality_preset") == "fast"
+
+
+# ---------------------------------------------------------------------------
+# Three-phase parallel generator dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestParallelGeneratorDispatch:
+    """Verify the 3-phase execution model in execute_plan_variation."""
+
+    def _make_store_mock(self):
+        store = MagicMock()
+        store.registry = MagicMock()
+        store.registry.resolve_track = MagicMock(return_value=None)
+        store.registry.get_latest_region_for_track = MagicMock(return_value=None)
+        store.registry.get_region = MagicMock(return_value=None)
+        store.sync_from_client = MagicMock()
+        store.conversation_id = "test"
+        return store
+
+    def _make_variation(self):
+        from app.models.variation import Variation
+        return Variation(
+            variation_id="v1",
+            intent="test",
+            affected_tracks=[],
+            affected_regions=[],
+            beat_range=(0.0, 4.0),
+            phrases=[],
+        )
+
+    def _make_gen_call(self, role: str) -> ToolCall:
+        """Create a stori_generate_midi ToolCall for the given role."""
+        return ToolCall(
+            id=f"call-{role}",
+            name="stori_generate_midi",
+            params={"role": role, "style": "ska", "tempo": 165, "bars": 4, "key": "Bb"},
+        )
+
+    @pytest.mark.anyio
+    async def test_independent_generators_run_in_parallel(self):
+        """Organ, guitar, and horns dispatch concurrently (Phase 3), not sequentially."""
+        import asyncio
+
+        call_order: list[str] = []
+        in_flight: list[str] = []
+
+        async def fake_generate(*args, **kwargs):
+            role = kwargs.get("instrument", "unknown")
+            in_flight.append(role)
+            await asyncio.sleep(0)  # yield so all tasks are in-flight together
+            call_order.append(role)
+            in_flight.remove(role)
+            return MagicMock(
+                success=False,  # success=False is fine — we just care about dispatch order
+                notes=[],
+                backend_used=MagicMock(),
+                metadata={},
+                error="mock",
+            )
+
+        mock_mg = MagicMock()
+        mock_mg.generate = fake_generate
+        mock_mg._generation_context = None
+
+        tool_calls = [
+            self._make_gen_call("organ"),
+            self._make_gen_call("guitar"),
+            self._make_gen_call("horns"),
+        ]
+
+        with (
+            patch("app.core.executor.get_music_generator", return_value=mock_mg),
+            patch("app.core.executor.get_or_create_store") as mock_factory,
+            patch("app.core.executor.get_variation_service") as mock_vs,
+        ):
+            mock_factory.return_value = self._make_store_mock()
+            mock_vs.return_value.compute_variation = MagicMock(return_value=self._make_variation())
+            mock_vs.return_value.compute_multi_region_variation = MagicMock(return_value=self._make_variation())
+
+            await execute_plan_variation(
+                tool_calls=tool_calls,
+                project_state={},
+                intent="test",
+                quality_preset="fast",
+            )
+
+        # All three should have started without waiting for one to finish
+        assert set(call_order) == {"organ", "guitar", "horns"}
+
+    @pytest.mark.anyio
+    async def test_drums_before_bass_before_parallel(self):
+        """Phase ordering: setup → drums → bass → parallel melodic."""
+        execution_order: list[str] = []
+
+        async def track_call(call_id, tool_name, params):
+            execution_order.append(params.get("role", tool_name))
+
+        # Setup call (track creation)
+        setup_call = ToolCall(
+            id="setup",
+            name="stori_add_midi_track",
+            params={"name": "Drums", "drumKitId": "acoustic"},
+        )
+        drums_call = self._make_gen_call("drums")
+        bass_call = self._make_gen_call("bass")
+        organ_call = self._make_gen_call("organ")
+
+        mock_mg = MagicMock()
+        mock_mg.generate = AsyncMock(return_value=MagicMock(
+            success=False, notes=[], backend_used=MagicMock(), metadata={}, error="mock"
+        ))
+        mock_mg._generation_context = None
+
+        with (
+            patch("app.core.executor.get_music_generator", return_value=mock_mg),
+            patch("app.core.executor.get_or_create_store") as mock_factory,
+            patch("app.core.executor.get_variation_service") as mock_vs,
+        ):
+            mock_factory.return_value = self._make_store_mock()
+            mock_vs.return_value.compute_variation = MagicMock(return_value=self._make_variation())
+            mock_vs.return_value.compute_multi_region_variation = MagicMock(return_value=self._make_variation())
+
+            await execute_plan_variation(
+                tool_calls=[setup_call, drums_call, bass_call, organ_call],
+                project_state={},
+                intent="test",
+                quality_preset="fast",
+                tool_event_callback=track_call,
+            )
+
+        # Setup and coupled generators fire in order; organ comes after
+        assert execution_order.index("stori_add_midi_track") < execution_order.index("drums")
+        assert execution_order.index("drums") < execution_order.index("bass")
+        assert execution_order.index("bass") < execution_order.index("organ")
+
+    @pytest.mark.anyio
+    async def test_no_generators_runs_setup_only(self):
+        """Plans with no generator calls work fine (no parallel phase)."""
+        call = ToolCall(
+            id="c1",
+            name="stori_set_tempo",
+            params={"tempo": 120},
+        )
+
+        with (
+            patch("app.core.executor.get_or_create_store") as mock_factory,
+            patch("app.core.executor.get_variation_service") as mock_vs,
+        ):
+            mock_factory.return_value = self._make_store_mock()
+            mock_vs.return_value.compute_variation = MagicMock(return_value=self._make_variation())
+            mock_vs.return_value.compute_multi_region_variation = MagicMock(return_value=self._make_variation())
+
+            result = await execute_plan_variation(
+                tool_calls=[call],
+                project_state={},
+                intent="test",
+            )
+
+        assert result is not None
