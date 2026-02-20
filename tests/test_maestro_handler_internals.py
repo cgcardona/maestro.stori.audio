@@ -905,18 +905,19 @@ class TestPlanTracker:
             for i, (name, params) in enumerate(specs)
         ]
 
-    def test_group_setup_tools_into_single_step(self):
-        """Consecutive setup tools should be grouped into one step."""
+    def test_group_setup_tools_into_individual_steps(self):
+        """Each setup tool (tempo, key) becomes its own distinct plan step."""
         tcs = self._make_tool_calls([
             ("stori_set_tempo", {"tempo": 72}),
             ("stori_set_key", {"key": "Cm"}),
         ])
         tracker = _PlanTracker()
         tracker.build(tcs, "Make a lofi beat", {}, False, StateStore(conversation_id="t"))
-        assert len(tracker.steps) == 1
-        assert tracker.steps[0].label == "Set tempo and key signature"
-        assert "72 BPM" in (tracker.steps[0].detail or "")
-        assert "Cm" in (tracker.steps[0].detail or "")
+        assert len(tracker.steps) == 2
+        assert "tempo" in tracker.steps[0].label.lower()
+        assert "72" in tracker.steps[0].label
+        assert "key" in tracker.steps[1].label.lower()
+        assert "Cm" in tracker.steps[1].label
 
     def test_group_track_with_content(self):
         """Track creation followed by region+notes = one step."""
@@ -946,8 +947,8 @@ class TestPlanTracker:
         ])
         tracker = _PlanTracker()
         tracker.build(tcs, "Make a beat", {}, False, StateStore(conversation_id="t"))
-        assert len(tracker.steps) == 3  # setup + drums + bass
-        assert tracker.steps[0].label == "Set tempo and key signature"
+        assert len(tracker.steps) == 3  # tempo step + drums + bass
+        assert "tempo" in tracker.steps[0].label.lower()
         assert tracker.steps[1].track_name == "Drums"
         assert tracker.steps[2].track_name == "Bass"
         assert tracker.steps[2].detail == "GM 33"
@@ -1004,6 +1005,40 @@ class TestPlanTracker:
         tracker.build(tcs, "Add lead", {"tempo": 100, "key": "Am"}, False, StateStore(conversation_id="t"))
         assert "Am" in tracker.title
         assert "100 BPM" in tracker.title
+
+    def test_build_from_prompt_creates_upfront_plan(self):
+        """build_from_prompt() generates one step per routing field and role."""
+        from app.core.prompt_parser import ParsedPrompt
+        parsed = ParsedPrompt(
+            raw="STORI PROMPT\nMode: compose",
+            mode="compose",
+            request="Ska intro",
+            tempo=165,
+            key="Bb",
+            roles=["drums", "bass", "organ"],
+            section="intro",
+            style="third wave ska",
+        )
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "STORI PROMPT\nMode: compose\nSection: intro", {})
+        labels = [s.label for s in tracker.steps]
+        # tempo + key + 3 roles = 5 steps
+        assert len(tracker.steps) == 5
+        assert any("165" in l for l in labels)
+        assert any("Bb" in l for l in labels)
+        assert any("Drums" in l for l in labels)
+        assert any("Bass" in l for l in labels)
+        assert any("Organ" in l for l in labels)
+
+    def test_build_from_prompt_no_roles_adds_placeholder(self):
+        """Without roles, build_from_prompt adds a generic placeholder step."""
+        from app.core.prompt_parser import ParsedPrompt
+        parsed = ParsedPrompt(raw="STORI PROMPT\nMode: compose", mode="compose", request="make something", tempo=120)
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make something", {})
+        labels = [s.label for s in tracker.steps]
+        assert any("tempo" in l.lower() for l in labels)
+        assert any("generate" in l.lower() or "music" in l.lower() for l in labels)
 
     def test_step_activation_and_completion(self):
         """activate_step / complete_active_step produce correct events."""

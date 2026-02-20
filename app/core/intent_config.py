@@ -196,7 +196,7 @@ INTENT_CONFIGS: dict[Intent, IntentConfig] = {
     Intent.PROJECT_SET_KEY: IntentConfig(
         intent=Intent.PROJECT_SET_KEY,
         sse_state=SSEState.EDITING,
-        allowed_tools=frozenset({"stori_set_key_signature"}),
+        allowed_tools=frozenset({"stori_set_key"}),
         force_stop_after=True,
         tool_choice="required",
         description="Set project key",

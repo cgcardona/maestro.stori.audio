@@ -22,7 +22,7 @@ The `prompt` field accepts both natural language and the **Stori structured prom
 | `prompt` | string | yes | Natural language or STORI PROMPT text |
 | `project` | object | no | Full DAW project snapshot (tracks, regions, buses, tempo, key). See [fe-project-state-sync.md](../guides/fe-project-state-sync.md). |
 | `conversationId` | string (UUID) | no | Conversation ID for multi-turn context. Send the same ID for every request in a session. |
-| `model` | string | no | LLM model override (e.g. `anthropic/claude-3.7-sonnet`) |
+| `model` | string | no | LLM model override. Supported: `anthropic/claude-sonnet-4.6` (default), `anthropic/claude-opus-4.6`. |
 | `storePrompt` | bool | no | Whether to store prompt for training data (default `true`) |
 | `qualityPreset` | string | no | Orpheus generation quality: `"fast"` \| `"balanced"` \| `"quality"`. Default `"quality"`. Use `"fast"` or `"balanced"` only when optimising for iteration speed over output quality. |
 
@@ -49,7 +49,7 @@ Emitted when `state.state == "editing"`. Applied immediately by the frontend.
 
 | type | Description |
 |------|-------------|
-| `plan` | Structured plan emitted once after initial reasoning, before the first tool call. `{ "type": "plan", "planId": "uuid", "title": "Creating lo-fi intro (Cm, 72 BPM)", "steps": [{ "stepId": "1", "label": "Set tempo and key", "status": "pending", "detail": "72 BPM, Cm" }, ...] }` |
+| `plan` | Structured plan emitted once after initial reasoning, before the first tool call. `{ "type": "plan", "planId": "uuid", "title": "Creating lo-fi intro (Cm, 72 BPM)", "steps": [{ "stepId": "1", "label": "Set tempo to 72 BPM", "status": "pending" }, { "stepId": "2", "label": "Set key to Cm", "status": "pending" }, { "stepId": "3", "label": "Create Drums track", "status": "pending" }, ...] }` |
 | `planStepUpdate` | Step lifecycle update. Emitted twice per step: `active` when starting, `completed` / `failed` / `skipped` when done. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "failed" \| "skipped", "result": "optional summary" }` |
 | `toolStart` | Fires **before** each `toolCall` with a human-readable label. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Creating Drums track" }` |
 | `toolCall` | Resolved tool call for the frontend to apply. `{ "type": "toolCall", "id": "...", "name": "stori_add_midi_track", "params": { "trackId": "uuid", ... } }`. **Critical: key is `"params"` (not `"arguments"`); key is `"name"` (not `"tool"`). All IDs are fully-resolved UUIDs.** |
@@ -104,7 +104,7 @@ state → reasoning* → content → complete
 
 All models use OpenRouter's `reasoning` parameter for Chain of Thought. Two event types: `reasoning` (CoT) and `content` (user-facing).
 
-**Default:** `anthropic/claude-3.7-sonnet` ($3/$15 per 1M). **Also:** Claude Sonnet/Opus 4.x, `openai/o1`, `openai/o1-preview`, `openai/o1-mini`. Set `STORI_LLM_MODEL` in `.env`.
+**Supported models (exactly two):** `anthropic/claude-sonnet-4.6` (default) · `anthropic/claude-opus-4.6`. Both have a 200 000-token context window. Set `STORI_LLM_MODEL` in `.env` to switch.
 
 ---
 
@@ -119,11 +119,11 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 - **Track volume:** `volumeDb` (dB; 0 = unity). Not 0–1.
 - **Track pan:** `pan` in range -100 (left) to 100 (right).
-- **Insert effect:** Prefer `stori_add_insert_effect` with param `type` (not `effectType`).
+- **Insert effect:** `stori_add_insert_effect` with param `type` (e.g. `"reverb"`, `"compressor"`).
 - **Send:** `stori_add_send` uses `busId` (from `stori_ensure_bus` or DAW).
 - **Notes:** In `stori_add_notes`, each note uses `startBeat`, `durationBeats`, `velocity` (1–127).
 - **Quantize:** `stori_quantize_notes` uses `grid`: `"1/4"`, `"1/8"`, `"1/16"`, `"1/32"`, `"1/64"`.
-- **Region:** `stori_add_region` / `stori_add_midi_region` use `startBeat`, `durationBeats`.
+- **Region:** `stori_add_midi_region` uses `startBeat`, `durationBeats`.
 
 ---
 
@@ -134,8 +134,7 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 | `stori_read_project` | Read current project state (tempo, key, tracks, regions). | `include_notes`, `include_automation` (optional bools) |
 | `stori_create_project` | Create a new project. | `name`, `tempo` (required); `keySignature`, `timeSignature` |
 | `stori_set_tempo` | Set project tempo (BPM). | `tempo` (40–240) |
-| `stori_set_key` | Set key signature (alias). | `key` (e.g. C, Am, F#m) |
-| `stori_set_key_signature` | Set key signature (core name). | `key` |
+| `stori_set_key` | Set key signature. | `key` (e.g. C, Am, F#m) |
 
 ---
 
@@ -143,8 +142,7 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
-| `stori_add_track` | Add MIDI track (drums: `drumKitId`; melodic: `gmProgram`). | `name` (required); `gmProgram` 0–127, `drumKitId`, `color`, `volume`, `pan` |
-| `stori_add_midi_track` | Add MIDI track (alternative; instrument/icon). | `name`, `instrument`, `gmProgram`, `color`, `icon` |
+| `stori_add_midi_track` | Add MIDI track. Drums: set `drumKitId`. Melodic: set `gmProgram`. | `name` (required); `drumKitId`, `gmProgram` 0–127, `instrument`, `color`, `icon` |
 | `stori_set_track_volume` | Set track volume. | `trackId`, `volumeDb` |
 | `stori_set_track_pan` | Set track pan. | `trackId`, `pan` (-100–100) |
 | `stori_set_track_name` | Rename track. | `trackId`, `name` |
@@ -160,8 +158,7 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
-| `stori_add_region` | Add MIDI region to track. | `trackId`, `startBeat`, `durationBeats` (required); `name`, `color` |
-| `stori_add_midi_region` | Same, core param names. | `trackId`, `startBeat`, `durationBeats`; `name` |
+| `stori_add_midi_region` | Add MIDI region to a track. | `trackId`, `startBeat`, `durationBeats` (required); `name` |
 | `stori_delete_region` | Delete a region. | `regionId` |
 | `stori_move_region` | Move region. | `regionId`, `startBeat` |
 | `stori_duplicate_region` | Duplicate region. | `regionId`, `startBeat` |
@@ -183,8 +180,7 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
-| `stori_add_effect` | Add insert effect (alias; uses `effectType`). | `trackId`, `effectType` |
-| `stori_add_insert_effect` | Add insert effect (core; use param `type`). | `trackId`, `type` (reverb, delay, compressor, eq, distortion, filter, chorus, etc.) |
+| `stori_add_insert_effect` | Add insert effect. | `trackId`, `type` (reverb, delay, compressor, eq, distortion, filter, chorus, etc.) |
 | `stori_add_send` | Send track to bus. | `trackId`, `busId`, `levelDb` |
 | `stori_ensure_bus` | Create bus if missing. | `name` |
 

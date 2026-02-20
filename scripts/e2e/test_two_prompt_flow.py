@@ -274,7 +274,7 @@ def build_project_from_editing_events(events: list[dict], tempo: int, key: str) 
         name = ev.get("name", "")
         params = ev.get("params", {})
 
-        if name in ("stori_add_midi_track", "stori_add_track"):
+        if name == "stori_add_midi_track":
             tid = params.get("trackId")
             if tid:
                 tracks[tid] = {
@@ -287,7 +287,7 @@ def build_project_from_editing_events(events: list[dict], tempo: int, key: str) 
                     "regions": [],
                 }
 
-        elif name in ("stori_add_midi_region", "stori_add_region"):
+        elif name == "stori_add_midi_region":
             rid = params.get("regionId")
             tid = params.get("trackId")
             if rid and tid:
@@ -345,8 +345,8 @@ def build_project_from_editing_events(events: list[dict], tempo: int, key: str) 
 
 def summarise_prompt1(events: list[dict]) -> None:
     tool_calls = [e for e in events if e.get("type") == "toolCall"]
-    tracks = [e for e in tool_calls if e.get("name") in ("stori_add_midi_track", "stori_add_track")]
-    regions = [e for e in tool_calls if e.get("name") in ("stori_add_midi_region", "stori_add_region")]
+    tracks = [e for e in tool_calls if e.get("name") == "stori_add_midi_track"]
+    regions = [e for e in tool_calls if e.get("name") == "stori_add_midi_region"]
     notes = [e for e in tool_calls if e.get("name") == "stori_add_notes"]
     total_notes = sum(len(e.get("params", {}).get("notes", [])) for e in notes)
     complete = next((e for e in events if e.get("type") == "complete"), None)

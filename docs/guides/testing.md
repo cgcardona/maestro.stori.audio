@@ -56,7 +56,7 @@ The backend routes prompts by intent; each intent has an allowed tool set. Use t
 |----------------|------------------|
 | "Create a new project 'Test' at 120 BPM" | `stori_create_project` |
 | "Set tempo to 95 BPM" | `stori_set_tempo` |
-| "Add a drum track" | `stori_add_track` |
+| "Add a drum track" | `stori_add_midi_track` |
 | "Mute the drums" | `stori_mute_track` |
 | "Play" / "Stop" | `stori_play` / `stori_stop` |
 
@@ -64,8 +64,8 @@ The backend routes prompts by intent; each intent has an allowed tool set. Use t
 
 | Example prompt | Expected (order) |
 |----------------|------------------|
-| "Generate a boom bap drum pattern, 4 bars at 95 BPM" | `stori_add_track`, `stori_add_region`, `stori_generate_drums`, `stori_add_notes` |
-| "Add reverb to the piano track" | `stori_add_effect` |
+| "Generate a boom bap drum pattern, 4 bars at 95 BPM" | `stori_add_midi_track`, `stori_add_midi_region`, `stori_generate_drums`, `stori_add_notes` |
+| "Add reverb to the piano track" | `stori_add_insert_effect` |
 
 ---
 

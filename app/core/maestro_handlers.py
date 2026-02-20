@@ -104,20 +104,16 @@ def _context_usage_fields(
 # current picture of the project after every creation.
 _ENTITY_CREATING_TOOLS: set[str] = {
     "stori_add_midi_track",
-    "stori_add_track",
     "stori_add_midi_region",
-    "stori_add_region",
     "stori_ensure_bus",
     "stori_duplicate_region",
 }
 
 # Which ID fields to echo back per entity-creating tool.
 _ENTITY_ID_ECHO: dict[str, list[str]] = {
-    "stori_add_midi_track": ["trackId"],
-    "stori_add_track":      ["trackId"],
+    "stori_add_midi_track":  ["trackId"],
     "stori_add_midi_region": ["regionId", "trackId"],
-    "stori_add_region":     ["regionId", "trackId"],
-    "stori_ensure_bus":     ["busId"],
+    "stori_ensure_bus":      ["busId"],
     "stori_duplicate_region": ["newRegionId", "regionId"],
 }
 
@@ -134,11 +130,11 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
     match name:
         case "stori_set_tempo":
             return f"Setting tempo to {args.get('tempo', '?')} BPM"
-        case "stori_set_key" | "stori_set_key_signature":
+        case "stori_set_key":
             return f"Setting key to {args.get('key', '?')}"
-        case "stori_add_midi_track" | "stori_add_track":
+        case "stori_add_midi_track":
             return f"Creating {args.get('name', 'track')} track"
-        case "stori_add_midi_region" | "stori_add_region":
+        case "stori_add_midi_region":
             return f"Creating region: {args.get('name', 'region')}"
         case "stori_add_notes":
             n = len(args.get("notes") or [])
@@ -162,8 +158,8 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
             return f"Generating {args.get('style', '')} melody"
         case "stori_generate_chords":
             return f"Generating {args.get('style', '')} chords"
-        case "stori_add_insert_effect" | "stori_add_effect":
-            return f"Adding {args.get('type', args.get('effectType', 'effect'))}"
+        case "stori_add_insert_effect":
+            return f"Adding {args.get('type', 'effect')}"
         case "stori_ensure_bus":
             return f"Creating {args.get('name', 'bus')} bus"
         case "stori_add_send":
@@ -239,10 +235,10 @@ def _entity_manifest(store: Any) -> dict[str, Any]:
 # =========================================================================
 
 _SETUP_TOOL_NAMES: set[str] = {
-    "stori_set_tempo", "stori_set_key", "stori_set_key_signature",
+    "stori_set_tempo", "stori_set_key",
 }
 _EFFECT_TOOL_NAMES: set[str] = {
-    "stori_add_insert_effect", "stori_add_effect",
+    "stori_add_insert_effect",
     "stori_ensure_bus", "stori_add_send",
 }
 _MIXING_TOOL_NAMES: set[str] = {
@@ -252,10 +248,10 @@ _MIXING_TOOL_NAMES: set[str] = {
     "stori_set_track_name",
 }
 _TRACK_CREATION_NAMES: set[str] = {
-    "stori_add_midi_track", "stori_add_track",
+    "stori_add_midi_track",
 }
 _CONTENT_TOOL_NAMES: set[str] = {
-    "stori_add_midi_region", "stori_add_region", "stori_add_notes",
+    "stori_add_midi_region", "stori_add_notes",
 }
 
 
@@ -311,7 +307,7 @@ class _PlanTracker:
         for tc in tool_calls:
             if tc.name == "stori_set_tempo":
                 tempo = tc.params.get("tempo")
-            elif tc.name in ("stori_set_key", "stori_set_key_signature"):
+            elif tc.name == "stori_set_key":
                 key = tc.params.get("key")
 
         # For structured prompts (STORI PROMPT header), extract Section + Style
@@ -357,26 +353,22 @@ class _PlanTracker:
         steps: list[_PlanStep] = []
         i, n = 0, len(tool_calls)
 
-        # Leading setup tools
-        setup_indices: list[int] = []
+        # Leading setup tools — one step per call for granularity
         while i < n and tool_calls[i].name in _SETUP_TOOL_NAMES:
-            setup_indices.append(i)
-            i += 1
-        if setup_indices:
-            parts: list[str] = []
-            for idx in setup_indices:
-                tc = tool_calls[idx]
-                if tc.name == "stori_set_tempo":
-                    parts.append(f"{tc.params.get('tempo', '?')} BPM")
-                elif tc.name in ("stori_set_key", "stori_set_key_signature"):
-                    parts.append(str(tc.params.get("key", "?")))
+            tc = tool_calls[i]
+            if tc.name == "stori_set_tempo":
+                label = f"Set tempo to {tc.params.get('tempo', '?')} BPM"
+            elif tc.name == "stori_set_key":
+                label = f"Set key to {tc.params.get('key', '?')}"
+            else:
+                label = _human_label_for_tool(tc.name, tc.params)
             steps.append(_PlanStep(
                 step_id=str(self._next_id),
-                label="Set tempo and key signature",
-                detail=", ".join(parts) if parts else None,
-                tool_indices=setup_indices,
+                label=label,
+                tool_indices=[i],
             ))
             self._next_id += 1
+            i += 1
 
         while i < n:
             tc = tool_calls[i]
@@ -428,8 +420,8 @@ class _PlanTracker:
                 while i < n and tool_calls[i].name in _EFFECT_TOOL_NAMES:
                     etc = tool_calls[i]
                     indices.append(i)
-                    if etc.name in ("stori_add_insert_effect", "stori_add_effect"):
-                        etype = etc.params.get("type", etc.params.get("effectType", ""))
+                    if etc.name == "stori_add_insert_effect":
+                        etype = etc.params.get("type", "")
                         if etype:
                             detail_parts.append(etype)
                     elif etc.name == "stori_ensure_bus":
@@ -467,6 +459,66 @@ class _PlanTracker:
                 i += 1
 
         return steps
+
+    def build_from_prompt(
+        self,
+        parsed: Any,  # ParsedPrompt — avoid circular import
+        prompt: str,
+        project_context: dict[str, Any],
+    ) -> None:
+        """Build a skeleton plan from a parsed STORI PROMPT before any LLM call.
+
+        Creates one pending step per expected action derived from the prompt's
+        routing fields (Tempo, Key, Role, Style, Section) so the TODO list
+        appears immediately when the user submits, not after the first LLM
+        response arrives.
+        """
+        self.title = self._derive_title(prompt, [], project_context)
+
+        # Setup steps from routing fields
+        if parsed.tempo:
+            self.steps.append(_PlanStep(
+                step_id=str(self._next_id),
+                label=f"Set tempo to {parsed.tempo} BPM",
+            ))
+            self._next_id += 1
+        if parsed.key:
+            self.steps.append(_PlanStep(
+                step_id=str(self._next_id),
+                label=f"Set key to {parsed.key}",
+            ))
+            self._next_id += 1
+
+        # One step per role — map role names to human-friendly track labels
+        _ROLE_LABELS: dict[str, str] = {
+            "drums": "Drums",
+            "drum": "Drums",
+            "bass": "Bass",
+            "chords": "Chords",
+            "chord": "Chords",
+            "melody": "Melody",
+            "lead": "Lead",
+            "arp": "Arp",
+            "pads": "Pads",
+            "pad": "Pads",
+            "fx": "FX",
+        }
+        for role in parsed.roles:
+            track_label = _ROLE_LABELS.get(role.lower(), role.title())
+            self.steps.append(_PlanStep(
+                step_id=str(self._next_id),
+                label=f"Create {track_label} track and add content",
+                track_name=track_label,
+            ))
+            self._next_id += 1
+
+        # If no roles but it's a composition, add a generic placeholder
+        if not parsed.roles:
+            self.steps.append(_PlanStep(
+                step_id=str(self._next_id),
+                label="Generate music",
+            ))
+            self._next_id += 1
 
     def _add_anticipatory_steps(self, store: Any) -> None:
         """For composition mode, add pending steps for tracks still needing content."""
@@ -519,7 +571,34 @@ class _PlanTracker:
         tc_params: dict[str, Any],
         store: Any,
     ) -> Optional[_PlanStep]:
-        """Map a tool call to a plan step by name/context (subsequent iterations)."""
+        """Map a tool call to a plan step by name/context.
+
+        Used for both subsequent iterations (reactive plan) and upfront-built
+        plans (where tool_indices are empty and steps are matched by label/name).
+        """
+        # Setup tools match steps whose label starts with the action keyword
+        if tc_name == "stori_set_tempo":
+            tempo = tc_params.get("tempo")
+            for step in self.steps:
+                if "tempo" in step.label.lower() and step.status != "completed":
+                    return step
+            _ = tempo  # silence linter
+        if tc_name == "stori_set_key":
+            for step in self.steps:
+                if "key" in step.label.lower() and step.status != "completed":
+                    return step
+
+        # Track creation: match by track name
+        if tc_name in _TRACK_CREATION_NAMES:
+            track_name = tc_params.get("name", "").lower()
+            for step in self.steps:
+                if (
+                    step.track_name
+                    and step.track_name.lower() == track_name
+                    and step.status != "completed"
+                ):
+                    return step
+
         if tc_name in _CONTENT_TOOL_NAMES:
             track_id = tc_params.get("trackId", "")
             if track_id:
@@ -686,7 +765,7 @@ def _create_editing_composition_route(route: "IntentResult") -> "IntentResult":
     all_composition_tools = (
         set(_PRIMITIVES_TRACK) | set(_PRIMITIVES_REGION)
         | set(_PRIMITIVES_FX) | set(_PRIMITIVES_MIXING)
-        | {"stori_set_tempo", "stori_set_key_signature"}
+        | {"stori_set_tempo", "stori_set_key"}
     )
     return IntentResult(
         intent=route.intent,
@@ -1435,6 +1514,13 @@ async def _handle_editing(
         settings.composition_max_iterations if is_composition
         else settings.orchestration_max_iterations
     )
+
+    # For composition with a structured prompt, emit the full TODO list immediately
+    # before any LLM call so the user sees the plan the moment they submit.
+    if is_composition and parsed is not None and execution_mode == "apply":
+        plan_tracker = _PlanTracker()
+        plan_tracker.build_from_prompt(parsed, prompt, project_context or {})
+        yield await sse_event(plan_tracker.to_plan_event())
     
     while iteration < max_iterations:
         iteration += 1
@@ -1684,41 +1770,6 @@ async def _handle_editing(
                     except ValueError as e:
                         logger.error(f"Failed to create region: {e}")
             
-            elif tc.name == "stori_add_track":
-                # Legacy track creation tool — same server-side ID generation as
-                # stori_add_midi_track, with basic GM inference from name.
-                track_name = enriched_params.get("name", "Track")
-                if "trackId" in enriched_params:
-                    logger.warning(
-                        f"⚠️ LLM provided trackId for stori_add_track '{track_name}'. Ignoring."
-                    )
-                track_id = store.create_track(track_name)
-                enriched_params["trackId"] = track_id
-                logger.debug(f"🔑 Generated trackId: {track_id[:8]} for '{track_name}' (stori_add_track)")
-
-            elif tc.name == "stori_add_region":
-                # Legacy region creation tool — same server-side ID generation as
-                # stori_add_midi_region.
-                add_region_track_id: Optional[str] = enriched_params.get("trackId")
-                add_region_name: str = str(enriched_params.get("name", "Region"))
-                if "regionId" in enriched_params:
-                    logger.warning(
-                        f"⚠️ LLM provided regionId for stori_add_region '{add_region_name}'. Ignoring."
-                    )
-                if add_region_track_id:
-                    try:
-                        region_id = store.create_region(
-                            add_region_name, add_region_track_id,
-                            metadata={
-                                "startBeat": enriched_params.get("startBeat", 0),
-                                "durationBeats": enriched_params.get("durationBeats", 16),
-                            }
-                        )
-                        enriched_params["regionId"] = region_id
-                        logger.debug(f"🔑 Generated regionId: {region_id[:8]} for '{add_region_name}' (stori_add_region)")
-                    except ValueError as e:
-                        logger.error(f"Failed to create region (stori_add_region): {e}")
-
             elif tc.name == "stori_duplicate_region":
                 # Duplicating a region creates a new entity — register the copy.
                 source_region_id: str = enriched_params.get("regionId", "")

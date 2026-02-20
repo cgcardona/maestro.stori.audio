@@ -167,9 +167,7 @@ The stream emits newline-delimited `data: {json}\n\n` SSE events. All event type
 | Tool name | ID field to capture | Store on |
 |---|---|---|
 | `stori_add_midi_track` | `params.trackId` | Track object |
-| `stori_add_track` | `params.trackId` | Track object |
 | `stori_add_midi_region` | `params.regionId` | Region object |
-| `stori_add_region` | `params.regionId` | Region object |
 | `stori_duplicate_region` | `params.newRegionId` | New region object |
 | `stori_ensure_bus` | `params.busId` | Bus object |
 
@@ -197,7 +195,7 @@ the next `project` snapshot. Key mutations to track:
 |---|---|
 | `stori_add_notes` | `regions[].noteCount` (increment by notes.length) |
 | `stori_set_tempo` | `project.tempo` |
-| `stori_set_key` / `stori_set_key_signature` | `project.key` |
+| `stori_set_key` | `project.key` |
 | `stori_move_region` | `regions[].startBeat` |
 | `stori_set_track_name` | `tracks[].name` |
 | `stori_delete_region` | remove region from `tracks[].regions` |
@@ -282,12 +280,12 @@ func handleToolCall(_ event: ToolCallEvent) {
 
     // Capture server-assigned entity IDs
     switch event.name {
-    case "stori_add_midi_track", "stori_add_track":
+    case "stori_add_midi_track":
         if let trackId = event.params["trackId"] as? String,
            let name = event.params["name"] as? String {
             entityStore.registerTrack(serverTrackId: trackId, name: name, params: event.params)
         }
-    case "stori_add_midi_region", "stori_add_region":
+    case "stori_add_midi_region":
         if let regionId = event.params["regionId"] as? String,
            let trackId = event.params["trackId"] as? String,
            let name = event.params["name"] as? String {

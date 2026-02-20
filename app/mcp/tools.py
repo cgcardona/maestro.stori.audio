@@ -81,20 +81,6 @@ Use this to understand the current composition before making changes.""",
     },
     {
         "name": "stori_set_key",
-        "description": "Change the project key signature (alias for stori_set_key_signature).",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "key": {
-                    "type": "string",
-                    "description": "Key signature (e.g., 'C', 'Am', 'Bb', 'F#m')"
-                }
-            },
-            "required": ["key"]
-        }
-    },
-    {
-        "name": "stori_set_key_signature",
         "description": "Set the project key signature (e.g. Cm, F# minor).",
         "inputSchema": {
             "type": "object",
@@ -115,56 +101,8 @@ Use this to understand the current composition before making changes.""",
 
 TRACK_TOOLS = [
     {
-        "name": "stori_add_track",
-        "description": """Add a new MIDI track to the project.
-For drums, use drumKitId. For melodic instruments, use gmProgram (General MIDI program number).
-
-Common GM Programs:
-- 0: Piano, 4: Rhodes, 33: Electric Bass, 38: Synth Bass
-- 48: Strings, 80: Square Lead, 81: Saw Lead, 89: Warm Pad""",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Track name"
-                },
-                "gmProgram": {
-                    "type": "integer",
-                    "description": "GM program number (0-127) for melodic instruments",
-                    "minimum": 0,
-                    "maximum": 127
-                },
-                "drumKitId": {
-                    "type": "string",
-                    "description": "Drum kit: 'acoustic', 'TR-909', 'TR-808', 'jazz'"
-                },
-                "color": {
-                    "type": "string",
-                    "description": "Track color",
-                    "enum": ["red", "orange", "yellow", "green", "blue", "purple", "pink", "teal", "indigo"]
-                },
-                "volume": {
-                    "type": "number",
-                    "description": "Initial volume (0.0-1.0)",
-                    "minimum": 0,
-                    "maximum": 1,
-                    "default": 0.8
-                },
-                "pan": {
-                    "type": "number",
-                    "description": "Pan position (0.0=left, 0.5=center, 1.0=right)",
-                    "minimum": 0,
-                    "maximum": 1,
-                    "default": 0.5
-                }
-            },
-            "required": ["name"]
-        }
-    },
-    {
         "name": "stori_add_midi_track",
-        "description": "Add a new MIDI track with optional instrument, GM program, color, and icon (alternative to stori_add_track).",
+        "description": "Add a new MIDI track. DRUMS: set drumKitId ('acoustic', 'TR-909', 'TR-808', 'jazz'). ALL OTHER instruments: set gmProgram (0-127). Never set both.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -184,7 +122,7 @@ Common GM Programs:
             "properties": {
                 "trackId": {
                     "type": "string",
-                    "description": "Track ID (from stori_read_project or stori_add_track result)"
+                    "description": "Track ID (from stori_read_project or stori_add_midi_track result)"
                 },
                 "volume": {
                     "type": "number",
@@ -312,24 +250,8 @@ Common GM Programs:
 
 REGION_TOOLS = [
     {
-        "name": "stori_add_region",
-        "description": """Add a MIDI region to a track.
-Regions are containers for MIDI notes. Position and duration are in beats (quarter notes).""",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "trackId": {"type": "string", "description": "Track ID to add region to"},
-                "name": {"type": "string", "description": "Region name"},
-                "startBeat": {"type": "number", "description": "Start position in beats (0 = beginning)", "minimum": 0},
-                "durationBeats": {"type": "number", "description": "Duration in beats (4 = one bar in 4/4)", "minimum": 0.25},
-                "color": {"type": "string", "description": "Region color (hex e.g. #3B82F6)"}
-            },
-            "required": ["trackId", "startBeat", "durationBeats"]
-        }
-    },
-    {
         "name": "stori_add_midi_region",
-        "description": "Create a MIDI region on a track (same as stori_add_region; param names align with core).",
+        "description": "Add a MIDI region to a track. Regions are containers for MIDI notes. Position and duration are in beats (quarter notes).",
         "inputSchema": {
             "type": "object",
             "properties": {

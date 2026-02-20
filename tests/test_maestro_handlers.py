@@ -269,7 +269,7 @@ class TestCreateEditingCompositionRoute:
         assert "stori_add_notes" in out.allowed_tool_names
         assert "stori_add_insert_effect" in out.allowed_tool_names
         assert "stori_set_tempo" in out.allowed_tool_names
-        assert "stori_set_key_signature" in out.allowed_tool_names
+        assert "stori_set_key" in out.allowed_tool_names
         # Should be a superset of track + region primitives
         assert set(_PRIMITIVES_TRACK).issubset(out.allowed_tool_names)
         assert set(_PRIMITIVES_REGION).issubset(out.allowed_tool_names)

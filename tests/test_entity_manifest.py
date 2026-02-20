@@ -119,14 +119,8 @@ class TestEntityCreatingToolsConstant:
     def test_add_midi_track_in_set(self):
         assert "stori_add_midi_track" in _ENTITY_CREATING_TOOLS
 
-    def test_add_track_in_set(self):
-        assert "stori_add_track" in _ENTITY_CREATING_TOOLS
-
     def test_add_midi_region_in_set(self):
         assert "stori_add_midi_region" in _ENTITY_CREATING_TOOLS
-
-    def test_add_region_in_set(self):
-        assert "stori_add_region" in _ENTITY_CREATING_TOOLS
 
     def test_ensure_bus_in_set(self):
         assert "stori_ensure_bus" in _ENTITY_CREATING_TOOLS
@@ -155,16 +149,8 @@ class TestEntityIdEcho:
     def test_add_midi_track_echoes_track_id(self):
         assert "trackId" in _ENTITY_ID_ECHO["stori_add_midi_track"]
 
-    def test_add_track_echoes_track_id(self):
-        assert "trackId" in _ENTITY_ID_ECHO["stori_add_track"]
-
     def test_add_midi_region_echoes_region_and_track(self):
         fields = _ENTITY_ID_ECHO["stori_add_midi_region"]
-        assert "regionId" in fields
-        assert "trackId" in fields
-
-    def test_add_region_echoes_region_and_track(self):
-        fields = _ENTITY_ID_ECHO["stori_add_region"]
         assert "regionId" in fields
         assert "trackId" in fields
 

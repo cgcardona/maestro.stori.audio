@@ -275,7 +275,7 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
             if tempo:
                 ctx.store.set_tempo(tempo, transaction=ctx.transaction)
         
-        elif call.name == "stori_set_key_signature":
+        elif call.name == "stori_set_key":
             key = params.get("key")
             if key:
                 ctx.store.set_key(key, transaction=ctx.transaction)
@@ -608,7 +608,7 @@ async def _process_call_for_variation(
     # Entity creation: register tracks and regions so generators can
     # resolve names like "Drums" → track_id → latest region.
     # -----------------------------------------------------------------
-    if call.name in ("stori_add_midi_track", "stori_add_track"):
+    if call.name == "stori_add_midi_track":
         track_name = params.get("name", "Track")
         existing = var_ctx.store.registry.resolve_track(track_name)
         if not existing:
@@ -617,7 +617,7 @@ async def _process_call_for_variation(
         else:
             logger.debug(f"🎹 [variation] Track already exists: {track_name} → {existing[:8]}")
 
-    elif call.name in ("stori_add_midi_region", "stori_add_region"):
+    elif call.name == "stori_add_midi_region":
         track_id = params.get("trackId", "")
         if not track_id:
             track_ref = params.get("trackName") or params.get("name")

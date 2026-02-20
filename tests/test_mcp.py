@@ -87,7 +87,7 @@ class TestMCPServer:
     async def test_call_daw_tool_without_connection(self):
         """Test calling DAW tool without connected DAW."""
         server = StoriMCPServer()
-        result = await server.call_tool("stori_add_track", {"name": "Test"})
+        result = await server.call_tool("stori_add_midi_track", {"name": "Test"})
         
         assert result.is_error
         assert "No DAW connected" in result.content[0]["text"]
@@ -153,11 +153,11 @@ class TestMCPEndpoints:
     @pytest.mark.anyio
     async def test_get_specific_tool(self, mcp_client):
         """Test getting a specific tool."""
-        response = await mcp_client.get("/api/v1/mcp/tools/stori_add_track")
+        response = await mcp_client.get("/api/v1/mcp/tools/stori_add_midi_track")
         assert response.status_code == 200
 
         data = response.json()
-        assert data["name"] == "stori_add_track"
+        assert data["name"] == "stori_add_midi_track"
 
     @pytest.mark.anyio
     async def test_get_unknown_tool(self, mcp_client):
@@ -173,8 +173,8 @@ class TestMCPEndpoints:
         """POST /tools/{tool_name}/call invokes tool and returns success/content."""
         # MCPToolCallRequest requires "name" and "arguments"
         response = await mcp_client.post(
-            "/api/v1/mcp/tools/stori_add_track/call",
-            json={"name": "stori_add_track", "arguments": {"name": "Test Track"}},
+            "/api/v1/mcp/tools/stori_add_midi_track/call",
+            json={"name": "stori_add_midi_track", "arguments": {"name": "Test Track"}},
         )
         # DAW not connected so we expect error response but endpoint returns 200 with isError/content
         assert response.status_code == 200

@@ -186,7 +186,7 @@ TIER2_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "stori_set_key_signature",
+            "name": "stori_set_key",
             "description": "Set project key signature (e.g. Cm, F# minor).",
             "parameters": {
                 "type": "object",
@@ -247,15 +247,21 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_add_midi_track",
-            "description": "Add a new MIDI track with optional MIDI voice/program.",
+            "description": (
+                "Add a new MIDI track. "
+                "DRUMS: set drumKitId ('acoustic', 'TR-909', 'TR-808', 'jazz') — do NOT set gmProgram. "
+                "ALL OTHER instruments: set gmProgram (0-127, e.g. 33=Electric Bass, 19=Church Organ, 0=Piano). "
+                "Never set both drumKitId and gmProgram on the same track."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string", "description": "Track name (e.g., 'Acoustic Guitar', 'Bass', 'Piano')"},
-                    "instrument": {"type": "string", "description": "Optional instrument name for voice selection"},
-                    "gmProgram": {"type": "integer", "description": "GM MIDI program number (0-127). Auto-inferred from name/instrument if not specified."},
-                    "color": {"type": "string", "description": "Optional hex color (e.g., '#FF6B6B'). Auto-generated if not specified."},
-                    "icon": {"type": "string", "description": "Optional SF Symbol icon name (e.g., 'pianokeys', 'guitars.fill'). Auto-inferred from name if not specified."},
+                    "name": {"type": "string", "description": "Track name (e.g. 'Drums', 'Bass', 'Organ')"},
+                    "drumKitId": {"type": "string", "description": "Drum kit — ONLY for drum tracks. Options: 'acoustic', 'TR-909', 'TR-808', 'jazz'. Mutually exclusive with gmProgram."},
+                    "instrument": {"type": "string", "description": "Optional instrument name hint for voice selection (melodic tracks only)"},
+                    "gmProgram": {"type": "integer", "description": "GM program 0-127 for melodic/harmonic tracks only. Do NOT use for drums — use drumKitId instead."},
+                    "color": {"type": "string", "description": "Optional hex color (e.g. '#FF6B6B'). Auto-generated if omitted."},
+                    "icon": {"type": "string", "description": "Optional SF Symbol name (e.g. 'pianokeys', 'guitars.fill'). Auto-inferred from name if omitted."},
                 },
             },
         },
@@ -536,7 +542,7 @@ def build_tool_registry() -> dict[str, ToolMeta]:
     # Tier 2 primitives
     _register(ToolMeta("stori_create_project", ToolTier.TIER2, ToolKind.PRIMITIVE, creates_entity="project", id_fields=("projectId",), reversible=False))
     _register(ToolMeta("stori_set_tempo", ToolTier.TIER2, ToolKind.PRIMITIVE))
-    _register(ToolMeta("stori_set_key_signature", ToolTier.TIER2, ToolKind.PRIMITIVE))
+    _register(ToolMeta("stori_set_key", ToolTier.TIER2, ToolKind.PRIMITIVE))
     _register(ToolMeta("stori_play", ToolTier.TIER2, ToolKind.PRIMITIVE))
     _register(ToolMeta("stori_stop", ToolTier.TIER2, ToolKind.PRIMITIVE))
     _register(ToolMeta("stori_set_playhead", ToolTier.TIER2, ToolKind.PRIMITIVE))
