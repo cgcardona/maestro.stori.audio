@@ -73,12 +73,12 @@ class TestLLMClientInit:
     def test_default_init(self, mock_settings):
         mock_settings.llm_provider = "openrouter"
         mock_settings.openrouter_api_key = "sk-test"
-        mock_settings.llm_model = "anthropic/claude-3.7-sonnet"
+        mock_settings.llm_model = "anthropic/claude-sonnet-4.6"
         mock_settings.llm_timeout = 60
         client = LLMClient()
         assert client.provider == "openrouter"
         assert client.api_key == "sk-test"
-        assert client.model == "anthropic/claude-3.7-sonnet"
+        assert client.model == "anthropic/claude-sonnet-4.6"
 
     def test_custom_init(self):
         client = LLMClient(
@@ -92,19 +92,22 @@ class TestLLMClientInit:
         assert client.timeout == 30
 
     def test_supports_reasoning(self):
-        client = LLMClient(
-            provider=LLMProvider.OPENROUTER,
-            api_key="k",
-            model="anthropic/claude-3.7-sonnet",
-        )
-        assert client.supports_reasoning() is True
+        """Only SUPPORTED_MODELS (sonnet-4.6 and opus-4.6) support reasoning."""
+        for model in ("anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.6"):
+            client = LLMClient(
+                provider=LLMProvider.OPENROUTER,
+                api_key="k",
+                model=model,
+            )
+            assert client.supports_reasoning() is True, f"{model} should support reasoning"
 
-        client2 = LLMClient(
-            provider=LLMProvider.OPENROUTER,
-            api_key="k",
-            model="gpt-4o",
-        )
-        assert client2.supports_reasoning() is False
+        for model in ("gpt-4o", "anthropic/claude-3.7-sonnet", "openai/o1-mini"):
+            client = LLMClient(
+                provider=LLMProvider.OPENROUTER,
+                api_key="k",
+                model=model,
+            )
+            assert client.supports_reasoning() is False, f"{model} should not support reasoning"
 
     def test_base_url_openrouter(self):
         client = LLMClient(
@@ -198,69 +201,138 @@ class TestParseResponse:
 
 
 class TestPromptCaching:
+    """Tests for _enable_prompt_caching.
 
-    def test_non_claude_model_unchanged(self):
+    Strategy: tool-schema-only caching via cache_control on the last tool
+    definition. OpenRouter does not forward a top-level system array (Anthropic-
+    native format) to Anthropic, so system messages stay in the messages array
+    unmodified. The function returns a 3-tuple (messages, cached_tools, None).
+    """
+
+    CLAUDE_MODEL = "anthropic/claude-sonnet-4.6"
+
+    def test_returns_three_tuple(self):
+        """_enable_prompt_caching always returns a 3-tuple."""
+        client = LLMClient(
+            provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
+        )
+        result = client._enable_prompt_caching(
+            [{"role": "user", "content": "hi"}], tools=None
+        )
+        assert len(result) == 3
+
+    def test_system_blocks_always_none(self):
+        """Third element (system_blocks) is always None — no top-level system injection."""
+        client = LLMClient(
+            provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
+        )
+        messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]
+        _, _, system_blocks = client._enable_prompt_caching(messages, tools=None)
+        assert system_blocks is None
+
+    def test_non_claude_model_passthrough(self):
+        """Non-caching models return messages and tools unchanged — no cache_control added."""
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="openai/gpt-4o"
         )
         messages = [{"role": "system", "content": "You are helpful"}]
-        cached_msgs, cached_tools = client._enable_prompt_caching(messages, tools=None)
-        assert cached_msgs == messages
-
-    def test_claude_with_tools_caching_enabled(self):
-        """Caching is applied to both system prompt and tools array for Claude models."""
-        client = LLMClient(
-            provider=LLMProvider.OPENROUTER, api_key="k",
-            model="anthropic/claude-3.7-sonnet",
+        tools = [{"type": "function", "function": {"name": "t"}}]
+        returned_msgs, returned_tools, system_blocks = client._enable_prompt_caching(
+            messages, tools=tools
         )
-        messages = [{"role": "system", "content": "sys"}]
-        tools = [
-            {"type": "function", "function": {"name": "tool_a"}},
-            {"type": "function", "function": {"name": "tool_b"}},
-        ]
-        cached_msgs, cached_tools = client._enable_prompt_caching(messages, tools=tools)
-        # System prompt should be wrapped with cache_control
-        assert isinstance(cached_msgs[0]["content"], list)
-        assert cached_msgs[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
-        # Last tool should have cache_control; first tool untouched
-        assert cached_tools is not None
-        assert "cache_control" not in cached_tools[0]
-        assert cached_tools[-1]["cache_control"] == {"type": "ephemeral"}
+        assert returned_msgs == messages
+        # Tools are returned as-is (no cache_control) so the caller can still use them
+        assert returned_tools == tools
+        assert "cache_control" not in returned_tools[0]
+        assert system_blocks is None
 
-    def test_claude_pure_chat_caching_enabled(self):
+    def test_system_messages_unchanged_for_claude(self):
+        """System messages are NOT modified — they stay in the messages array as-is.
+
+        OpenRouter doesn't forward the Anthropic-native top-level system array,
+        so we keep system content in messages where OR handles it correctly.
+        """
         client = LLMClient(
-            provider=LLMProvider.OPENROUTER, api_key="k",
-            model="anthropic/claude-3.7-sonnet",
+            provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
         )
         messages = [
             {"role": "system", "content": "You are a music AI"},
             {"role": "user", "content": "Hello"},
         ]
-        cached_msgs, cached_tools = client._enable_prompt_caching(messages, tools=None)
-        # System message should have cache_control
-        assert cached_msgs[0]["content"][0]["cache_control"]["type"] == "ephemeral"
+        returned_msgs, _, _ = client._enable_prompt_caching(messages, tools=None)
+        # System message is unchanged — no cache_control added, no wrapping
+        assert returned_msgs[0] == {"role": "system", "content": "You are a music AI"}
+        assert returned_msgs[1] == {"role": "user", "content": "Hello"}
+
+    def test_multiple_system_messages_all_preserved(self):
+        """Multiple role:system messages (base + project context + entity context) survive."""
+        client = LLMClient(
+            provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
+        )
+        messages = [
+            {"role": "system", "content": "base instructions"},
+            {"role": "system", "content": "project context"},
+            {"role": "system", "content": "entity context"},
+            {"role": "user", "content": "add a track"},
+        ]
+        returned_msgs, _, _ = client._enable_prompt_caching(messages, tools=None)
+        assert returned_msgs == messages
+
+    def test_last_tool_gets_cache_control(self):
+        """cache_control is placed on the last tool definition only."""
+        client = LLMClient(
+            provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
+        )
+        tools = [
+            {"type": "function", "function": {"name": "tool_a"}},
+            {"type": "function", "function": {"name": "tool_b"}},
+            {"type": "function", "function": {"name": "tool_c"}},
+        ]
+        _, cached_tools, _ = client._enable_prompt_caching(
+            [{"role": "user", "content": "hi"}], tools=tools
+        )
+        assert cached_tools is not None
+        assert "cache_control" not in cached_tools[0]
+        assert "cache_control" not in cached_tools[1]
+        assert cached_tools[2]["cache_control"] == {"type": "ephemeral"}
+
+    def test_no_tools_returns_none_for_cached_tools(self):
+        """When no tools are provided, cached_tools is None."""
+        client = LLMClient(
+            provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
+        )
+        _, cached_tools, _ = client._enable_prompt_caching(
+            [{"role": "user", "content": "hi"}], tools=None
+        )
         assert cached_tools is None
 
-    def test_claude_with_tool_messages_still_caches_system(self):
-        """System prompt is cached even when conversation history contains tool messages.
-
-        The cache breakpoint is on the static prefix (system + tools); tool_result
-        messages in the dynamic part of the conversation do not invalidate it.
-        """
+    def test_original_tools_not_mutated(self):
+        """The original tools list is not mutated — caching returns copies."""
         client = LLMClient(
-            provider=LLMProvider.OPENROUTER, api_key="k",
-            model="anthropic/claude-3.7-sonnet",
+            provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
+        )
+        tools = [{"type": "function", "function": {"name": "tool_a"}}]
+        _, cached_tools, _ = client._enable_prompt_caching(
+            [{"role": "user", "content": "hi"}], tools=tools
+        )
+        # Cached tools have cache_control; originals do not
+        assert "cache_control" not in tools[0]
+        assert cached_tools is not None
+        assert cached_tools[0]["cache_control"] == {"type": "ephemeral"}
+
+    def test_conversation_history_preserved(self):
+        """Tool result messages and conversation history pass through unchanged."""
+        client = LLMClient(
+            provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
         )
         messages = [
             {"role": "system", "content": "sys"},
+            {"role": "user", "content": "do something"},
             {"role": "tool", "content": "result"},
+            {"role": "assistant", "content": "done"},
         ]
-        cached_msgs, cached_tools = client._enable_prompt_caching(messages, tools=None)
-        # System prompt is cached; tool message passes through unchanged
-        assert isinstance(cached_msgs[0]["content"], list)
-        assert cached_msgs[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
-        assert cached_msgs[1] == {"role": "tool", "content": "result"}
-        assert cached_tools is None
+        returned_msgs, _, _ = client._enable_prompt_caching(messages, tools=None)
+        assert returned_msgs == messages
 
 
 # ---------------------------------------------------------------------------

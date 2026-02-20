@@ -43,6 +43,36 @@ class LLMResponse:
         return len(self.tool_calls) > 0
 
 
+def _extract_cache_stats(usage: dict[str, Any]) -> tuple[int, int, float]:
+    """
+    Normalise OpenRouter / Anthropic cache fields into (read_tokens, write_tokens, discount).
+
+    OpenRouter surfaces cache data in at least two ways depending on model and
+    version — check all known field names and return the first non-zero value:
+
+    prompt_tokens_details.cached_tokens      → read hits (OR standard)
+    prompt_tokens_details.cache_write_tokens → write/creation (OR standard)
+    native_tokens_cached                     → confirmed cache hit (OR alt)
+    cache_read_input_tokens                  → Anthropic direct API
+    cache_creation_input_tokens              → Anthropic direct API
+    cache_discount                           → dollar savings (OR)
+    """
+    details = usage.get("prompt_tokens_details", {})
+    read = (
+        details.get("cached_tokens", 0)
+        or usage.get("native_tokens_cached", 0)
+        or usage.get("cache_read_input_tokens", 0)
+        or usage.get("prompt_cache_hit_tokens", 0)
+    )
+    write = (
+        details.get("cache_write_tokens", 0)
+        or usage.get("cache_creation_input_tokens", 0)
+        or usage.get("prompt_cache_miss_tokens", 0)
+    )
+    discount = float(usage.get("cache_discount", 0) or 0)
+    return int(read), int(write), discount
+
+
 def enforce_single_tool(response: LLMResponse) -> LLMResponse:
     """Enforce single tool call for deterministic execution."""
     if len(response.tool_calls) <= 1:
@@ -63,17 +93,27 @@ class LLMClient:
     - Prompt caching for Claude models
     - Single-tool enforcement
     """
-    
-    # All models support reasoning via OpenRouter's `reasoning` API parameter
-    REASONING_MODELS = {
-        # Anthropic Claude models
-        "anthropic/claude-sonnet-4.6",               # Latest Sonnet - $3/M in, $15/M out
-        "anthropic/claude-opus-4.6",                 # Latest Opus - $5/M in, $25/M out
-        # Previous generations kept for backward-compat with existing sessions
-        "anthropic/claude-sonnet-4.5",
-        "anthropic/claude-opus-4.5",
-        "anthropic/claude-3.7-sonnet",
+
+    # Anthropic uses date-stamped beta headers (their versioning scheme, not ours).
+    # Extract to a constant so there's exactly one place to bump it when they release
+    # a new prompt-caching beta.
+    ANTHROPIC_CACHE_BETA = "prompt-caching-2024-07-31"
+
+    # Models we actively use. Update both sets when upgrading.
+    # Sonnet 4.6: everyday driver  — $3/M in, $15/M out
+    # Opus 4.6:   pro / composing  — $5/M in, $25/M out
+    SUPPORTED_MODELS = {
+        "anthropic/claude-sonnet-4.6",
+        "anthropic/claude-opus-4.6",
     }
+
+    # Both models route to direct Anthropic on OpenRouter and support
+    # prompt caching + reasoning. Caching is locked to Anthropic direct
+    # (see _enable_prompt_caching provider lock) so Bedrock/Vertex variants
+    # are excluded — they use different tool-ID prefixes and may not honour
+    # cache_control.
+    CACHE_SUPPORTED_MODELS = SUPPORTED_MODELS
+    REASONING_MODELS = SUPPORTED_MODELS
     
     def __init__(
         self,
@@ -113,6 +153,10 @@ class LLMClient:
             if self.provider == LLMProvider.OPENROUTER:
                 headers["HTTP-Referer"] = "https://stori.ai"
                 headers["X-Title"] = "Stori Maestro"
+                # Do NOT send anthropic-beta as an HTTP header.
+                # For Claude 4.x, prompt caching is stable — no beta header needed.
+                # Cache is activated purely by cache_control blocks in the payload.
+                # Sending the 2024-07-31 beta value causes silent failures on newer models.
             self._client = httpx.AsyncClient(timeout=self.timeout, headers=headers)
         return self._client
     
@@ -159,58 +203,62 @@ class LLMClient:
             temperature=0.1,
         )
     
+    def _supports_caching(self) -> bool:
+        """Return True if the active model supports Anthropic prompt caching via OpenRouter."""
+        return self.model in self.CACHE_SUPPORTED_MODELS
+
     def _enable_prompt_caching(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict]] = None
+        tools: Optional[list[dict]] = None,
     ) -> tuple[list[dict[str, Any]], Optional[list[dict]]]:
         """
-        Enable prompt caching for Claude models via Anthropic's cache_control API.
+        Add Anthropic cache_control breakpoints to the system prompt and tools.
 
-        Applies cache breakpoints to:
-        1. The system prompt content block (always, for Claude models)
-        2. The last tool definition in the tools array (when tools are present)
+        Returns (non_system_messages, cached_tools, system_blocks):
+          - non_system_messages: messages list with the role:system entry removed
+          - cached_tools:        tools with cache_control on the last entry
+          - system_blocks:       Anthropic-native content-block array for the
+                                 top-level ``system`` payload key
 
-        The cache is keyed on the static prefix (system + tools), so it hits on
-        every subsequent request in the same session even when the conversation
-        history contains tool_result messages. This cuts input token cost by ~90%
-        on cache hits — the highest-leverage optimisation for EDITING/COMPOSING.
+        Strategy (per external infra diagnosis, Feb 2026):
+        OpenRouter's OpenAI-compatible message converter flattens role:system
+        messages to a plain string, silently stripping cache_control metadata.
+        Sending the system prompt as a TOP-LEVEL ``system`` array (Anthropic's
+        native Messages-API shape) bypasses that normalization and delivers
+        cache_control to Anthropic intact.
 
-        Only applied to Claude/Anthropic models; other models receive the payload
-        unchanged. OpenRouter forwards cache_control to Anthropic transparently.
+        The beta capability is passed via provider.anthropic.extra_headers in
+        the request body (not as an HTTP header, which OR does not forward).
+
+        The tools array gets cache_control on its last entry so the full
+        schema is also covered as a second prefix breakpoint.
+
+        Only fires for models in CACHE_SUPPORTED_MODELS; others pass through
+        unchanged (system_blocks=None → caller leaves system in messages).
         """
-        if "claude" not in self.model.lower():
-            return messages, tools
+        if not self._supports_caching():
+            if "claude" in self.model.lower():
+                logger.debug(
+                    f"Prompt caching skipped: {self.model} not in CACHE_SUPPORTED_MODELS"
+                )
+            return messages, tools, None
 
-        # 1. Wrap system messages as content blocks with cache_control.
-        cached_messages = []
-        for msg in messages:
-            if msg.get("role") == "system":
-                content = msg.get("content", "")
-                # Already a content-block list (e.g. from a previous pass) — just
-                # ensure the last block carries the breakpoint.
-                if isinstance(content, list):
-                    blocks = [dict(b) for b in content]
-                    if blocks:
-                        blocks[-1]["cache_control"] = {"type": "ephemeral"}
-                    cached_messages.append({"role": "system", "content": blocks})
-                else:
-                    cached_messages.append({
-                        "role": "system",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": content,
-                                "cache_control": {"type": "ephemeral"},
-                            }
-                        ],
-                    })
-            else:
-                cached_messages.append(msg)
+        # OpenRouter's OpenAI-compatible interface does not forward a top-level
+        # `system` array (Anthropic-native format) to Anthropic — it silently
+        # drops it, causing the model to run without any system instructions.
+        # Tool-schema caching (cache_control on the last tool definition) DOES
+        # work because OpenRouter forwards the tools array as-is to Anthropic's
+        # tools API. So we cache only tools here and keep system messages in the
+        # messages array where OR handles them correctly.
+        #
+        # Result: system_blocks is always None (no top-level system injection);
+        # callers see system_blocks=None and leave the messages array untouched.
 
-        # 2. Add cache_control to the last tool definition so the full tools array
-        #    is cached as a single block. The 22-tool schema never changes between
-        #    calls, so this eliminates its token cost on every subsequent request.
+        # Cache the full tools schema by marking the last tool definition.
+        # Anthropic requires the cacheable prefix to be ≥ 1024 tokens.
+        # For COMPOSING (22 tools, ~2500+ tok) this fires reliably.
+        # For EDITING (1 tool, ~200-800 tok) it is below threshold — accepted.
         cached_tools: Optional[list[dict]] = None
         if tools:
             cached_tools = [dict(t) for t in tools]
@@ -219,10 +267,10 @@ class LLMClient:
 
         n_tools = len(tools) if tools else 0
         logger.debug(
-            f"Prompt caching enabled: system prompt cached, {n_tools} tools "
-            f"({'last tool marked' if n_tools else 'no tools'})"
+            f"Prompt caching enabled for {self.model}: {n_tools} tools marked "
+            f"(system stays in messages — OR does not forward top-level system arrays)"
         )
-        return cached_messages, cached_tools
+        return messages, cached_tools, None
     
     async def chat_completion(
         self,
@@ -234,21 +282,21 @@ class LLMClient:
         max_retries: int = 2,
     ) -> LLMResponse:
         """Send a chat completion request with retry logic."""
-        cached_messages, cached_tools = self._enable_prompt_caching(messages, tools)
+        messages, cached_tools, _ = self._enable_prompt_caching(messages, tools)
         
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
-            "messages": cached_messages,
+            "messages": messages,
             "temperature": temperature if temperature is not None else settings.llm_temperature,
             "max_tokens": max_tokens or settings.llm_max_tokens,
             "stream": False,
         }
-        
+
         if cached_tools:
             payload["tools"] = cached_tools
             payload["tool_choice"] = tool_choice if tool_choice is not None else "required"
         
-        logger.debug(f"LLM request: {len(messages)} messages, {len(tools) if tools else 0} tools")
+        logger.debug(f"LLM request: {len(messages)} messages, {len(tools) if tools else 0} tools, caching={self._supports_caching()}")
         
         last_error: Optional[Exception] = None
         for attempt in range(max_retries + 1):
@@ -269,11 +317,11 @@ class LLMClient:
                 data = response.json()
                 
                 usage = data.get("usage", {})
-                cache_read = usage.get("cache_read_input_tokens", 0)
-                cache_write = usage.get("cache_creation_input_tokens", 0)
+                logger.debug(f"Raw LLM usage from OpenRouter (non-stream): {usage}")
+                cache_read, cache_write, cache_discount = _extract_cache_stats(usage)
                 cache_info = (
-                    f", cache_read={cache_read} cache_write={cache_write}"
-                    if (cache_read or cache_write) else ""
+                    f", cache_read={cache_read} cache_write={cache_write} discount=${cache_discount:.4f}"
+                    if (cache_read or cache_write or cache_discount) else ""
                 )
                 logger.info(
                     f"LLM: {duration:.2f}s, {usage.get('prompt_tokens', 0)} prompt, "
@@ -313,16 +361,30 @@ class LLMClient:
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream chat completion with real-time reasoning."""
         logger.info(f"🚀 chat_completion_stream called: model={self.model}, supports_reasoning={self.supports_reasoning()}")
-        cached_messages, cached_tools = self._enable_prompt_caching(messages, tools)
+        # _enable_prompt_caching always returns system_blocks=None (tool-only caching).
+        # Messages (including role:system) are returned unchanged; cached_tools has
+        # cache_control on the last tool definition for COMPOSING-scale caching.
+        messages, cached_tools, _ = self._enable_prompt_caching(messages, tools)
         
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
-            "messages": cached_messages,
+            "messages": messages,
             "temperature": temperature if temperature is not None else settings.llm_temperature,
             "max_tokens": max_tokens or settings.llm_max_tokens,
             "stream": True,
         }
         
+        # Lock to direct Anthropic for both reasoning and caching.
+        # Bedrock/Vertex variants use different tool-ID prefixes and may not
+        # honour cache_control, so we always prefer the direct Anthropic route
+        # when the model is an Anthropic model that supports caching or reasoning.
+        if self._supports_caching() and "anthropic" in self.model:
+            payload["provider"] = {
+                "order": ["anthropic"],
+                "allow_fallbacks": False,
+            }
+            logger.debug("🔒 Routing locked to direct Anthropic")
+
         # Enable reasoning for reasoning models via OpenRouter's reasoning parameter
         # https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
         if self.supports_reasoning():
@@ -334,17 +396,8 @@ class LLMClient:
             payload["reasoning"] = {
                 "max_tokens": max(reasoning_budget, 2048),  # Minimum 2K tokens for reasoning
             }
-            
-            # Prefer Anthropic routing on OpenRouter for Claude (reasoning parameter)
-            if "anthropic" in self.model:
-                payload["provider"] = {
-                    "order": ["anthropic"],
-                    "allow_fallbacks": False,
-                }
-                logger.info(f"🧠 Reasoning enabled: {reasoning_budget} tokens, OpenRouter provider preference: anthropic")
-            else:
-                logger.info(f"🧠 Reasoning enabled: {reasoning_budget} tokens")
-        
+            logger.info(f"🧠 Reasoning enabled: {reasoning_budget} tokens")
+
         if cached_tools:
             payload["tools"] = cached_tools
             payload["tool_choice"] = tool_choice if tool_choice is not None else "required"
@@ -442,18 +495,21 @@ class LLMClient:
             logger.error(f"Stream HTTP error: {e}")
             raise
 
-        # Log cache token stats so we can verify caching is working in prod logs.
+        # Log cache token stats. OpenRouter returns these in several places;
+        # _extract_cache_stats normalises all known field names.
         if usage:
-            cache_read = usage.get("cache_read_input_tokens", 0)
-            cache_write = usage.get("cache_creation_input_tokens", 0)
-            if cache_read or cache_write:
+            logger.debug(f"Raw LLM usage from OpenRouter: {usage}")
+            cache_read, cache_write, cache_discount = _extract_cache_stats(usage)
+            if cache_read or cache_write or cache_discount:
                 logger.info(
-                    f"🗃️ Prompt cache: read={cache_read} tokens "
-                    f"(~${cache_read * 0.0000003:.4f} saved), "
-                    f"write={cache_write} tokens"
+                    f"🗃️ Prompt cache: read={cache_read} tok, "
+                    f"write={cache_write} tok, discount=${cache_discount:.4f}"
                 )
             else:
-                logger.debug("Prompt cache: no cache tokens in usage (cache miss or non-Claude model)")
+                logger.debug(
+                    f"Prompt cache: no cache fields in usage "
+                    f"(keys: {list(usage.keys())})"
+                )
 
         yield {
             "type": "done",

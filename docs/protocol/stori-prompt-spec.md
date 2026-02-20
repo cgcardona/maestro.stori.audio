@@ -523,6 +523,194 @@ Automation:
 
 ------------------------------------------------------------------------
 
+## EmotionVector — 5-Axis Conditioning System
+
+Every STORI PROMPT is automatically translated into a 5-axis **EmotionVector**
+that flows all the way into Orpheus as a numeric conditioning signal. The richer
+your `Vibe`, `Section`, `Style`, and `Energy` fields, the more precisely Orpheus
+generates music that matches your creative intent — not just stylistically, but
+emotionally.
+
+### The Five Axes
+
+| Axis | Range | Low end | High end |
+|------|-------|---------|----------|
+| `energy` | 0.0 → 1.0 | stillness, ambient drift | explosive, full-force |
+| `valence` | −1.0 → +1.0 | dark, sad, heavy | bright, joyful, uplifting |
+| `tension` | 0.0 → 1.0 | resolved, settled | unresolved, anxious, suspended |
+| `intimacy` | 0.0 → 1.0 | distant, epic, wide | close, personal, whispered |
+| `motion` | 0.0 → 1.0 | static, sustained, floating | driving, rhythmic, propulsive |
+
+### How Fields Blend Into the Vector
+
+Fields are blended in priority order (higher priority overrides lower):
+
+| Field | Weight | Effect |
+|-------|--------|--------|
+| `Section:` | 1.5× | Section presets (verse/chorus/bridge/drop) establish the coarse baseline |
+| `Style:` | 0.5× | Genre defaults add light color (jazz, edm, ambient, etc.) |
+| `Vibe:` | 1.0× each keyword | Explicit emotional keywords fine-tune each axis |
+| `Energy:` | 1.5× | Direct energy + motion override |
+
+### Section Presets
+
+| Section | energy | valence | tension | intimacy | motion |
+|---------|--------|---------|---------|----------|--------|
+| `intro` | 0.30 | +0.10 | 0.20 | 0.60 | 0.30 |
+| `verse` | 0.40 | +0.00 | 0.30 | 0.70 | 0.40 |
+| `chorus` | 0.80 | +0.30 | 0.40 | 0.50 | 0.70 |
+| `bridge` | 0.50 | −0.10 | 0.60 | 0.60 | 0.50 |
+| `breakdown` | 0.20 | +0.00 | 0.50 | 0.80 | 0.20 |
+| `buildup` | 0.60 | +0.20 | 0.70 | 0.40 | 0.60 |
+| `drop` | 1.00 | +0.50 | 0.30 | 0.20 | 1.00 |
+| `outro` | 0.25 | +0.20 | 0.10 | 0.70 | 0.20 |
+
+### Energy Level Vocabulary
+
+The `Energy:` field maps directly to energy + motion axes (1.5× weight):
+
+```yaml
+Energy: very low    # energy=0.10, motion=0.10
+Energy: low         # energy=0.20, motion=0.20
+Energy: medium      # energy=0.50, motion=0.50
+Energy: high        # energy=0.80, motion=0.70
+Energy: very high   # energy=0.95, motion=0.90
+```
+
+### Vibe Keyword Vocabulary
+
+All recognized keywords and their primary axis effects. Multiple keywords
+blend by averaging. Unrecognized words are silently ignored (use `Request:`
+for concepts not in the list).
+
+**Valence (dark ↔ bright):**
+
+| Keyword | Primary effect |
+|---------|---------------|
+| `dark` | valence −0.45, tension +0.50 |
+| `moody` | valence −0.30, tension +0.45 |
+| `brooding` | valence −0.35, tension +0.50, energy +0.30 |
+| `melancholic` | valence −0.50, energy +0.25, intimacy +0.70 |
+| `sad` | valence −0.60, energy +0.30 |
+| `nostalgic` | valence −0.20, intimacy +0.60 |
+| `bittersweet` | valence −0.10, intimacy +0.60, tension +0.35 |
+| `haunting` | valence −0.40, tension +0.65, energy +0.25 |
+| `eerie` | valence −0.45, tension +0.70 |
+| `mysterious` | valence −0.20, tension +0.60, energy +0.30 |
+| `warm` | valence +0.30, intimacy +0.65 |
+| `bright` | valence +0.50, energy +0.50 |
+| `happy` | valence +0.60, energy +0.60 |
+| `joyful` | valence +0.70, energy +0.65 |
+| `uplifting` | valence +0.60, energy +0.65 |
+| `triumphant` | valence +0.70, energy +0.85, tension +0.40 |
+| `euphoric` | valence +0.90, energy +0.90, motion +0.90 |
+
+**Energy / Intensity:**
+
+| Keyword | Primary effect |
+|---------|---------------|
+| `calm` | energy +0.20, tension +0.10, motion +0.20 |
+| `peaceful` | energy +0.20, tension +0.10 |
+| `relaxed` | energy +0.25, tension +0.10, motion +0.20 |
+| `mellow` | energy +0.30, tension +0.15, motion +0.30 |
+| `laid-back` | energy +0.30, tension +0.10, motion +0.35 |
+| `energetic` | energy +0.80, motion +0.70 |
+| `intense` | energy +0.85, tension +0.70 |
+| `aggressive` | energy +0.90, tension +0.80, motion +0.80 |
+| `explosive` | energy +1.00, tension +0.80, motion +0.90 |
+
+**Intimacy / Space:**
+
+| Keyword | Primary effect |
+|---------|---------------|
+| `intimate` | intimacy +0.80, energy +0.30 |
+| `personal` | intimacy +0.75 |
+| `cozy` | intimacy +0.70, energy +0.20, valence +0.20 |
+| `atmospheric` | intimacy +0.50, tension +0.30, energy +0.20 |
+| `cinematic` | intimacy +0.30, tension +0.50, energy +0.60 |
+| `epic` | intimacy +0.10, energy +0.85 |
+| `distant` | intimacy +0.15 |
+| `dreamy` | tension +0.20, intimacy +0.70, energy +0.20 |
+
+**Motion / Groove:**
+
+| Keyword | Primary effect |
+|---------|---------------|
+| `sparse` | motion +0.20, energy +0.20 |
+| `minimal` | motion +0.15, energy +0.15 |
+| `flowing` | motion +0.60, tension +0.20 |
+| `bouncy` | motion +0.70, energy +0.60, valence +0.30 |
+| `groovy` | motion +0.75, energy +0.60 |
+| `driving` | motion +0.80, energy +0.70 |
+| `dense` | motion +0.70, energy +0.70 |
+
+**Tension / Harmony:**
+
+| Keyword | Primary effect |
+|---------|---------------|
+| `resolved` | tension +0.10, valence +0.20 |
+| `anxious` | tension +0.80, energy +0.60 |
+| `tense` | tension +0.75 |
+
+### Genre Presets (from Style: field)
+
+| Genre keyword | Preset vector |
+|---------------|--------------|
+| `lofi`, `lo-fi` | energy 0.30, valence −0.10, tension 0.20, intimacy 0.75, motion 0.35 |
+| `hip-hop`, `hip hop`, `trap` | energy 0.70, valence +0.10, tension 0.40, intimacy 0.40, motion 0.75 |
+| `jazz` | energy 0.50, valence +0.20, tension 0.50, intimacy 0.60, motion 0.50 |
+| `ambient` | energy 0.15, valence +0.20, tension 0.20, intimacy 0.70, motion 0.10 |
+| `edm`, `electronic` | energy 0.85, valence +0.40, tension 0.40, intimacy 0.20, motion 0.90 |
+| `metal`, `rock` | energy 0.95, valence −0.30, tension 0.80, intimacy 0.20, motion 0.85 |
+| `folk`, `indie` | energy 0.40, valence +0.10, tension 0.30, intimacy 0.80, motion 0.40 |
+| `classical` | energy 0.50, valence +0.30, tension 0.40, intimacy 0.50, motion 0.40 |
+
+### Orpheus Conditioning Chain
+
+The final EmotionVector maps to three Orpheus intent fields:
+
+```
+valence [-1, +1]  →  tone_brightness [-1.0, +1.0]
+energy [0, 1]     →  energy_intensity = (energy × 2.0) − 1.0  → [-1.0, +1.0]
+thresholds        →  musical_goals (string list):
+                      energy > 0.7  → "energetic"
+                      energy < 0.3  → "sparse"
+                      valence < -0.3 → "dark"
+                      valence > 0.3  → "bright"
+                      tension > 0.6  → "tense"
+                      intimacy > 0.7 → "intimate"
+                      motion > 0.7   → "driving"
+                      motion < 0.25  → "sustained"
+```
+
+This chain means: a prompt with `Vibe: [euphoric x2, driving]` generates
+measurably different Orpheus output than `Vibe: [melancholic, sparse]` —
+the entire vibe vocabulary flows all the way to the neural generator.
+
+### Refinement Language
+
+After generation, these natural-language commands adjust the EmotionVector
+for re-generation:
+
+| Command | Axis delta |
+|---------|-----------|
+| `sadder` | valence −0.30 |
+| `happier` / `brighter` | valence +0.25–0.30 |
+| `darker` | valence −0.25 |
+| `more intense` | energy +0.20, tension +0.15 |
+| `calmer` | energy −0.25, tension −0.20, motion −0.15 |
+| `more energetic` | energy +0.30, motion +0.15 |
+| `more driving` | motion +0.30, energy +0.10 |
+| `more sustained` | motion −0.30 |
+| `more intimate` | intimacy +0.30, energy −0.10 |
+| `more epic` | intimacy −0.30, energy +0.15 |
+| `build up` | tension +0.25, energy +0.15 |
+| `resolve it` | tension −0.40, valence +0.10 |
+| `busier` | motion +0.25, energy +0.10 |
+| `sparser` | motion −0.20, energy −0.10 |
+
+------------------------------------------------------------------------
+
 ## Full Maestro Example
 
 A complete Stori Structured Prompt that leaves nothing to inference:
@@ -729,7 +917,7 @@ Structured fields reduce jailbreak surface area.
 | Extensions pass-through (all Maestro dims) | Done | `app/core/prompt_parser.py`, `app/core/prompts.py` |
 | Entity manifest in tool results | Done | `app/core/maestro_handlers.py` |
 | `$N.field` variable references | Done | `app/core/maestro_handlers.py` |
-| **Vibe/Section/Style/Energy → EmotionVector → Orpheus** | Done | `app/core/emotion_vector.py`, `app/core/executor.py`, `app/services/backends/orpheus.py` |
+| Vibe/Section/Style/Energy → EmotionVector → Orpheus | Done | `app/core/emotion_vector.py`, `app/core/executor.py`, `app/services/backends/orpheus.py` |
 
 ### Vibe → Orpheus conditioning note
 
