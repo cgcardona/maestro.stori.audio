@@ -20,11 +20,13 @@ Coverage:
 import pytest
 
 from app.core.gm_instruments import (
+    DRUM_ICON,
     GM_INSTRUMENTS,
     GMInstrument,
     GMInferenceResult,
     get_instrument_by_program,
     get_instrument_name,
+    icon_for_gm_program,
     infer_gm_program,
     infer_gm_program_with_context,
     get_default_program_for_role,
@@ -529,3 +531,49 @@ class TestInferGMProgramWithContextEdgeCases:
             f"'{track_name}': expected is_drums={expected_is_drums}, "
             f"got is_drums={result.is_drums}"
         )
+
+
+# ===========================================================================
+# icon_for_gm_program
+# ===========================================================================
+
+class TestIconForGMProgram:
+    """icon_for_gm_program maps every GM program to the correct SF Symbol."""
+
+    @pytest.mark.parametrize("program,expected", [
+        # One representative from each of the 16 GM categories
+        (0,   "pianokeys"),               # Piano
+        (8,   "bell.fill"),               # Chromatic Percussion
+        (16,  "music.note.house.fill"),   # Organ
+        (24,  "guitars.fill"),            # Guitar
+        (32,  "waveform.path"),           # Bass
+        (40,  "music.quarternote.3"),     # Strings
+        (48,  "person.3.fill"),           # Ensemble
+        (56,  "horn.fill"),               # Brass
+        (64,  "wind"),                    # Reed
+        (72,  "lungs.fill"),              # Pipe
+        (80,  "waveform"),               # Synth Lead
+        (88,  "waveform.badge.plus"),     # Synth Pad
+        (96,  "sparkles"),               # Synth Effects
+        (104, "globe"),                   # Ethnic
+        (112, "circle.hexagongrid.fill"), # Percussive
+        (120, "speaker.wave.3.fill"),     # Sound Effects
+        # Boundary values
+        (7,   "pianokeys"),
+        (15,  "bell.fill"),
+        (127, "speaker.wave.3.fill"),
+    ])
+    def test_category_boundaries(self, program, expected):
+        assert icon_for_gm_program(program) == expected
+
+    def test_all_128_programs_return_non_empty_string(self):
+        for p in range(128):
+            icon = icon_for_gm_program(p)
+            assert isinstance(icon, str) and icon, f"Program {p} returned empty icon"
+
+    def test_out_of_range_returns_fallback(self):
+        assert icon_for_gm_program(200) == "pianokeys"
+        assert icon_for_gm_program(-1) == "pianokeys"
+
+    def test_drum_icon_constant(self):
+        assert DRUM_ICON == "music.note.list"

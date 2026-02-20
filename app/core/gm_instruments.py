@@ -527,3 +527,41 @@ def infer_gm_program_with_context(
         confidence="none",
         is_drums=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# GM group → SF Symbol icon mapping (mirrors the macOS app's displayIcon)
+# ---------------------------------------------------------------------------
+
+_GM_CATEGORY_ICONS: list[tuple[range, str]] = [
+    (range(0,   8),   "pianokeys"),
+    (range(8,  16),   "bell.fill"),
+    (range(16, 24),   "music.note.house.fill"),
+    (range(24, 32),   "guitars.fill"),
+    (range(32, 40),   "waveform.path"),
+    (range(40, 48),   "music.quarternote.3"),
+    (range(48, 56),   "person.3.fill"),
+    (range(56, 64),   "horn.fill"),
+    (range(64, 72),   "wind"),
+    (range(72, 80),   "lungs.fill"),
+    (range(80, 88),   "waveform"),
+    (range(88, 96),   "waveform.badge.plus"),
+    (range(96, 104),  "sparkles"),
+    (range(104, 112), "globe"),
+    (range(112, 120), "circle.hexagongrid.fill"),
+    (range(120, 128), "speaker.wave.3.fill"),
+]
+
+DRUM_ICON = "music.note.list"
+
+
+def icon_for_gm_program(gm_program: int) -> str:
+    """Return the SF Symbol name for a GM program number (0-127).
+
+    Mirrors the macOS app's ``displayIcon`` property so the persisted track
+    model round-trips with the same icon the frontend would auto-derive.
+    """
+    for r, icon in _GM_CATEGORY_ICONS:
+        if gm_program in r:
+            return icon
+    return "pianokeys"  # fallback for out-of-range values

@@ -49,6 +49,7 @@ from app.core.prompts import (
     wrap_user_request,
 )
 from app.core.sse_utils import ReasoningBuffer, sanitize_reasoning, sse_event, strip_tool_echoes
+from app.core.gm_instruments import DRUM_ICON, icon_for_gm_program
 from app.core.state_store import StateStore, get_or_create_store
 from app.core.tool_validation import validate_tool_call
 from app.core.tools import ALL_TOOLS
@@ -1820,6 +1821,49 @@ async def _handle_editing(
                 "tool": tc.name,
                 "params": enriched_params,
             })
+
+            # ── Synthetic stori_set_track_icon after stori_add_midi_track ──
+            # The icon is derived from the resolved GM program or drumKitId so
+            # it persists in the DAW's track model and round-trips correctly in
+            # stori_read_project snapshots (mirrors the app's displayIcon logic).
+            if tc.name == "stori_add_midi_track" and execution_mode == "apply":
+                _icon_track_id = enriched_params.get("trackId", "")
+                _drum_kit = enriched_params.get("drumKitId")
+                _is_drums = enriched_params.get("_isDrums", False)
+                _gm_program = enriched_params.get("gmProgram")
+
+                if _drum_kit or _is_drums:
+                    _track_icon: Optional[str] = DRUM_ICON
+                elif _gm_program is not None:
+                    _track_icon = icon_for_gm_program(int(_gm_program))
+                else:
+                    _track_icon = None
+
+                if _track_icon and _icon_track_id:
+                    _icon_params: dict[str, Any] = {
+                        "trackId": _icon_track_id,
+                        "icon": _track_icon,
+                    }
+                    yield await sse_event({
+                        "type": "toolStart",
+                        "name": "stori_set_track_icon",
+                        "label": f"Setting icon for {enriched_params.get('name', 'track')}",
+                    })
+                    yield await sse_event({
+                        "type": "toolCall",
+                        "id": f"{tc.id}-icon",
+                        "name": "stori_set_track_icon",
+                        "params": _icon_params,
+                    })
+                    tool_calls_collected.append({
+                        "tool": "stori_set_track_icon",
+                        "params": _icon_params,
+                    })
+                    logger.debug(
+                        f"🎨 Synthetic icon '{_track_icon}' → "
+                        f"trackId {_icon_track_id[:8]} "
+                        f"({'drum kit' if (_drum_kit or _is_drums) else f'GM {_gm_program}'})"
+                    )
 
             # ── Plan step tracking: accumulate result description ──
             if plan_tracker and execution_mode == "apply":

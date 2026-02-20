@@ -714,6 +714,78 @@ class TestHandleEditing:
         track_id = tc_events[0]["params"]["trackId"]
         uuid.UUID(track_id)  # should not raise
 
+    @pytest.mark.anyio
+    async def test_synthetic_set_track_icon_emitted_after_add_track_with_gm_program(self):
+        """stori_set_track_icon is auto-emitted after stori_add_midi_track when gmProgram is set."""
+        allowed = {"stori_add_midi_track"}
+        route = _make_route(
+            SSEState.EDITING,
+            Intent.NOTES_ADD,
+            allowed_tool_names=allowed,
+            tool_choice="auto",
+        )
+
+        response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
+        response.tool_calls = [
+            ToolCall(id="tc1", name="stori_add_midi_track", params={"name": "Bass", "gmProgram": 33})
+        ]
+        done_response = LLMResponse(content="Done.", usage={"prompt_tokens": 5, "completion_tokens": 5})
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=[response, done_response])
+        store = StateStore(conversation_id="test")
+        trace = _make_trace()
+
+        events = []
+        async for e in _handle_editing("add bass", {}, route, llm, store, trace, None, [], "apply"):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        tc_events = [p for p in payloads if p["type"] == "toolCall"]
+        names = [p["name"] for p in tc_events]
+
+        assert "stori_add_midi_track" in names
+        assert "stori_set_track_icon" in names
+        icon_call = next(p for p in tc_events if p["name"] == "stori_set_track_icon")
+        # GM 33 = Electric Bass Guitar → waveform.path
+        assert icon_call["params"]["icon"] == "waveform.path"
+        # trackId must match the generated UUID from stori_add_midi_track
+        track_call = next(p for p in tc_events if p["name"] == "stori_add_midi_track")
+        assert icon_call["params"]["trackId"] == track_call["params"]["trackId"]
+
+    @pytest.mark.anyio
+    async def test_synthetic_set_track_icon_uses_drum_icon_for_drum_kit(self):
+        """stori_set_track_icon uses music.note.list when drumKitId is set."""
+        allowed = {"stori_add_midi_track"}
+        route = _make_route(
+            SSEState.EDITING,
+            Intent.NOTES_ADD,
+            allowed_tool_names=allowed,
+            tool_choice="auto",
+        )
+
+        response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
+        response.tool_calls = [
+            ToolCall(id="tc1", name="stori_add_midi_track", params={"name": "Drums", "drumKitId": "acoustic"})
+        ]
+        done_response = LLMResponse(content="Done.", usage={"prompt_tokens": 5, "completion_tokens": 5})
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=[response, done_response])
+        store = StateStore(conversation_id="test")
+        trace = _make_trace()
+
+        events = []
+        async for e in _handle_editing("add drums", {}, route, llm, store, trace, None, [], "apply"):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        tc_events = [p for p in payloads if p["type"] == "toolCall"]
+        icon_calls = [p for p in tc_events if p["name"] == "stori_set_track_icon"]
+
+        assert len(icon_calls) == 1
+        assert icon_calls[0]["params"]["icon"] == "music.note.list"
+
 
 # ---------------------------------------------------------------------------
 # _stream_llm_response
