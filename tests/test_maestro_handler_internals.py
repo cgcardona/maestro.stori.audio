@@ -2561,3 +2561,599 @@ class TestGroupIntoPhases:
         ]
         _, _, order, _ = _group_into_phases(calls)
         assert order == ["strings", "bass", "drums"]
+
+
+# ---------------------------------------------------------------------------
+# Agent Teams — new tests per the architecture plan
+# ---------------------------------------------------------------------------
+
+
+def _make_parsed_multi(
+    tempo=92,
+    key="Cm",
+    roles=None,
+    style="funk",
+    bars=4,
+):
+    from app.core.prompt_parser import ParsedPrompt
+    return ParsedPrompt(
+        raw="STORI PROMPT",
+        mode="compose",
+        request="make a funk groove",
+        tempo=tempo,
+        key=key,
+        roles=roles if roles is not None else ["drums", "bass"],
+        style=style,
+        extensions={"bars": bars},
+    )
+
+
+class TestAgentTeamRouting:
+    """orchestrate() routes multi-role STORI PROMPT to agent-team handler."""
+
+    def _make_intent_result(self, intent, sse_state, parsed=None):
+        from app.core.intent import IntentResult
+        slots = MagicMock()
+        slots.extras = {"parsed_prompt": parsed} if parsed else {}
+        return IntentResult(
+            intent=intent,
+            sse_state=sse_state,
+            confidence=0.9,
+            slots=slots,
+            tools=[],
+            allowed_tool_names={"stori_set_tempo", "stori_set_key", "stori_add_midi_track"},
+            tool_choice="auto",
+            force_stop_after=False,
+            requires_planner=False,
+            reasons=(),
+        )
+
+    @pytest.mark.anyio
+    async def test_multi_role_routes_to_agent_team(self):
+        """Multi-role STORI PROMPT with GENERATE_MUSIC + apply mode uses agent-team handler."""
+        from app.core.intent import Intent, SSEState
+        from app.core.maestro_handlers import _handle_composition_agent_team
+
+        parsed = _make_parsed_multi(roles=["drums", "bass"])
+        intent_result = self._make_intent_result(Intent.GENERATE_MUSIC, SSEState.EDITING, parsed)
+
+        llm = _make_llm_mock(content="Done")
+        store = StateStore(conversation_id="test-routing")
+        project_context = {}
+
+        agent_team_events = []
+        # Patch the handler so we can detect it was called
+        with patch(
+            "app.core.maestro_handlers._handle_composition_agent_team",
+            return_value=_fake_events_gen(["agent_team_called"]),
+        ) as mock_handler, patch(
+            "app.core.maestro_handlers.get_intent_result_with_llm",
+            return_value=intent_result,
+        ), patch(
+            "app.core.maestro_handlers.get_or_create_store",
+            return_value=store,
+        ):
+            async for e in orchestrate("make funk", project_context, llm, None):
+                agent_team_events.append(e)
+
+        mock_handler.assert_called_once()
+        _, call_kwargs = mock_handler.call_args
+        # parsed is passed as positional arg index 2
+        called_parsed = mock_handler.call_args.args[2]
+        assert called_parsed.roles == ["drums", "bass"]
+
+    @pytest.mark.anyio
+    async def test_single_role_uses_editing_handler(self):
+        """Single-role STORI PROMPT still routes to _handle_editing."""
+        from app.core.intent import Intent, SSEState
+
+        parsed = _make_parsed_multi(roles=["drums"])
+        intent_result = self._make_intent_result(Intent.GENERATE_MUSIC, SSEState.EDITING, parsed)
+
+        llm = _make_llm_mock(content="Done")
+        store = StateStore(conversation_id="test-single")
+        project_context = {}
+
+        with patch(
+            "app.core.maestro_handlers._handle_composition_agent_team",
+        ) as mock_agent_team, patch(
+            "app.core.maestro_handlers._handle_editing",
+            return_value=_fake_events_gen(["editing_called"]),
+        ) as mock_editing, patch(
+            "app.core.maestro_handlers.get_intent_result_with_llm",
+            return_value=intent_result,
+        ), patch(
+            "app.core.maestro_handlers.get_or_create_store",
+            return_value=store,
+        ):
+            async for _ in orchestrate("make a beat", project_context, llm, None):
+                pass
+
+        mock_agent_team.assert_not_called()
+        mock_editing.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_no_parsed_prompt_uses_editing_handler(self):
+        """When no parsed prompt is present, routing falls through to _handle_editing."""
+        from app.core.intent import Intent, SSEState
+
+        intent_result = self._make_intent_result(Intent.GENERATE_MUSIC, SSEState.EDITING, None)
+
+        llm = _make_llm_mock(content="Done")
+        store = StateStore(conversation_id="test-no-parsed")
+        project_context = {}
+
+        with patch(
+            "app.core.maestro_handlers._handle_composition_agent_team",
+        ) as mock_agent_team, patch(
+            "app.core.maestro_handlers._handle_editing",
+            return_value=_fake_events_gen(["editing_called"]),
+        ), patch(
+            "app.core.maestro_handlers.get_intent_result_with_llm",
+            return_value=intent_result,
+        ), patch(
+            "app.core.maestro_handlers.get_or_create_store",
+            return_value=store,
+        ):
+            async for _ in orchestrate("make a beat", project_context, llm, None):
+                pass
+
+        mock_agent_team.assert_not_called()
+
+
+async def _fake_events_gen(events):
+    """Async generator yielding fake SSE event strings."""
+    for e in events:
+        yield f"data: {json.dumps({'type': e})}\n\n"
+
+
+class TestApplySingleToolCall:
+    """_apply_single_tool_call() returns correct outcome for various tool types."""
+
+    @pytest.mark.anyio
+    async def test_valid_tool_returns_not_skipped(self):
+        """A valid tool call returns skipped=False with populated fields."""
+        from app.core.maestro_handlers import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-apply")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-1",
+            tc_name="stori_set_tempo",
+            resolved_args={"tempo": 120},
+            allowed_tool_names={"stori_set_tempo"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        assert not outcome.skipped
+        assert outcome.enriched_params["tempo"] == 120
+        assert any(e["type"] == "toolCall" for e in outcome.sse_events)
+        assert any(e["type"] == "toolStart" for e in outcome.sse_events)
+        assert outcome.msg_call["role"] == "assistant"
+        assert outcome.msg_result["role"] == "tool"
+
+    @pytest.mark.anyio
+    async def test_invalid_tool_returns_skipped_with_error(self):
+        """Invalid tool call (wrong tool name) returns skipped=True with toolError."""
+        from app.core.maestro_handlers import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-apply-invalid")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-2",
+            tc_name="stori_set_tempo",
+            resolved_args={"tempo": 120},
+            allowed_tool_names={"stori_add_midi_track"},  # disallowed
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        assert outcome.skipped
+        assert any(e["type"] == "toolError" for e in outcome.sse_events)
+
+    @pytest.mark.anyio
+    async def test_track_creation_generates_uuid(self):
+        """stori_add_midi_track generates a fresh UUID and registers in store."""
+        from app.core.maestro_handlers import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-apply-track")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-3",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Drums", "drumKitId": "TR-808"},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        assert not outcome.skipped
+        track_id = outcome.enriched_params.get("trackId")
+        assert track_id is not None
+        # Verify UUID was registered in store
+        assert store.registry.get_track(track_id) is not None
+
+    @pytest.mark.anyio
+    async def test_circuit_breaker_fires_at_3_failures(self):
+        """stori_add_notes is rejected when failure count >= 3."""
+        from app.core.maestro_handlers import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-cb")
+        # Register a region first
+        track_id = store.create_track("Piano")
+        region_id = store.create_region("Region", track_id)
+
+        trace = _make_trace()
+        failures = {region_id: 3}  # already at limit
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-4",
+            tc_name="stori_add_notes",
+            resolved_args={"regionId": region_id, "notes": []},
+            allowed_tool_names={"stori_add_notes"},
+            store=store,
+            trace=trace,
+            add_notes_failures=failures,
+            emit_sse=True,
+        )
+        assert outcome.skipped
+        assert any(e["type"] == "toolError" for e in outcome.sse_events)
+
+    @pytest.mark.anyio
+    async def test_emit_sse_false_produces_no_events(self):
+        """emit_sse=False returns empty sse_events for proposal/variation path."""
+        from app.core.maestro_handlers import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-no-sse")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-5",
+            tc_name="stori_set_tempo",
+            resolved_args={"tempo": 90},
+            allowed_tool_names={"stori_set_tempo"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=False,
+        )
+        assert not outcome.skipped
+        assert outcome.sse_events == []
+
+
+class TestRunInstrumentAgent:
+    """_run_instrument_agent() makes one LLM call and pushes events to the queue."""
+
+    def _make_track_response(self, track_name="Drums"):
+        """LLMResponse with stori_add_midi_track + stori_add_midi_region."""
+        response = LLMResponse(content=None, usage={"prompt_tokens": 10, "completion_tokens": 20})
+        response.tool_calls = [
+            ToolCall(id="tc-a", name="stori_add_midi_track", params={"name": track_name, "drumKitId": "TR-808"}),
+            ToolCall(id="tc-b", name="stori_add_midi_region", params={"trackId": "$0.trackId", "startBeat": 0, "durationBeats": 16}),
+        ]
+        return response
+
+    @pytest.mark.anyio
+    async def test_agent_puts_tool_call_events_in_queue(self):
+        """Instrument agent puts toolCall SSE events into the shared queue."""
+        from app.core.maestro_handlers import _run_instrument_agent
+
+        store = StateStore(conversation_id="test-agent")
+        plan_tracker = _PlanTracker()
+        plan_tracker.build_from_prompt(
+            _make_parsed_multi(roles=["drums"]),
+            "make funk",
+            {},
+        )
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(return_value=self._make_track_response("Drums"))
+        trace = _make_trace()
+
+        queue: asyncio.Queue = asyncio.Queue()
+        step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
+
+        await _run_instrument_agent(
+            instrument_name="Drums",
+            role="drums",
+            style="funk",
+            bars=4,
+            tempo=92.0,
+            key="Cm",
+            step_ids=step_ids,
+            plan_tracker=plan_tracker,
+            llm=llm,
+            store=store,
+            allowed_tool_names={"stori_add_midi_track", "stori_add_midi_region"},
+            trace=trace,
+            sse_queue=queue,
+        )
+
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        event_types = [e.get("type") for e in events]
+        assert "toolCall" in event_types
+        assert "toolStart" in event_types
+
+    @pytest.mark.anyio
+    async def test_agent_marks_steps_failed_on_llm_error(self):
+        """When the LLM call raises, all owned plan steps are marked failed."""
+        from app.core.maestro_handlers import _run_instrument_agent
+
+        store = StateStore(conversation_id="test-agent-fail")
+        plan_tracker = _PlanTracker()
+        plan_tracker.build_from_prompt(
+            _make_parsed_multi(roles=["drums"]),
+            "make funk",
+            {},
+        )
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=RuntimeError("LLM down"))
+        trace = _make_trace()
+
+        queue: asyncio.Queue = asyncio.Queue()
+        step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
+
+        await _run_instrument_agent(
+            instrument_name="Drums",
+            role="drums",
+            style="funk",
+            bars=4,
+            tempo=92.0,
+            key="Cm",
+            step_ids=step_ids,
+            plan_tracker=plan_tracker,
+            llm=llm,
+            store=store,
+            allowed_tool_names={"stori_add_midi_track"},
+            trace=trace,
+            sse_queue=queue,
+        )
+
+        # Failed steps should emit planStepUpdate events via queue
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        # Some events for the failed steps should appear
+        step_events = [e for e in events if e.get("type") == "planStepUpdate"]
+        assert any(e.get("status") == "failed" for e in step_events)
+
+    @pytest.mark.anyio
+    async def test_agent_makes_exactly_one_llm_call(self):
+        """Each instrument agent makes exactly one independent LLM call."""
+        from app.core.maestro_handlers import _run_instrument_agent
+
+        store = StateStore(conversation_id="test-agent-count")
+        plan_tracker = _PlanTracker()
+        plan_tracker.build_from_prompt(
+            _make_parsed_multi(roles=["bass"]),
+            "make funk",
+            {},
+        )
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(return_value=self._make_track_response("Bass"))
+        trace = _make_trace()
+        queue: asyncio.Queue = asyncio.Queue()
+        step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
+
+        await _run_instrument_agent(
+            instrument_name="Bass",
+            role="bass",
+            style="funk",
+            bars=4,
+            tempo=92.0,
+            key="Cm",
+            step_ids=step_ids,
+            plan_tracker=plan_tracker,
+            llm=llm,
+            store=store,
+            allowed_tool_names={"stori_add_midi_track", "stori_add_midi_region"},
+            trace=trace,
+            sse_queue=queue,
+        )
+
+        assert llm.chat_completion.call_count == 1
+
+
+class TestAgentTeamPhases:
+    """_handle_composition_agent_team() honours phase ordering."""
+
+    def _make_route_for_team(self):
+        from app.core.intent import Intent, IntentResult, SSEState
+        return IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.EDITING,
+            confidence=0.9,
+            slots=MagicMock(),
+            tools=[],
+            allowed_tool_names={
+                "stori_set_tempo", "stori_set_key",
+                "stori_add_midi_track", "stori_add_midi_region",
+                "stori_add_notes", "stori_add_insert_effect",
+            },
+            tool_choice="auto",
+            force_stop_after=False,
+            requires_planner=False,
+            reasons=(),
+        )
+
+    @pytest.mark.anyio
+    async def test_plan_event_emitted_before_agents(self):
+        """plan event is emitted before any instrument agents start."""
+        from app.core.maestro_handlers import _handle_composition_agent_team
+
+        parsed = _make_parsed_multi(roles=["drums", "bass"])
+        route = self._make_route_for_team()
+        store = StateStore(conversation_id="test-phases")
+        trace = _make_trace()
+
+        llm = _make_llm_mock()
+        # Agents call chat_completion for their own LLM session
+        agent_response = LLMResponse(content=None, usage={})
+        agent_response.tool_calls = [
+            ToolCall(id="x1", name="stori_add_midi_track", params={"name": "Drums", "drumKitId": "TR-808"}),
+        ]
+        llm.chat_completion = AsyncMock(return_value=agent_response)
+
+        events = []
+        async for e in _handle_composition_agent_team(
+            "make funk", {}, parsed, route, llm, store, trace, None
+        ):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        event_types = [p["type"] for p in payloads]
+        # plan must appear before any toolCall events
+        plan_idx = next((i for i, t in enumerate(event_types) if t == "plan"), None)
+        first_tool_idx = next((i for i, t in enumerate(event_types) if t == "toolCall"), None)
+        assert plan_idx is not None, "plan event must be emitted"
+        if first_tool_idx is not None:
+            assert plan_idx < first_tool_idx
+
+    @pytest.mark.anyio
+    async def test_complete_event_emitted_at_end(self):
+        """complete event is emitted once, at the end."""
+        from app.core.maestro_handlers import _handle_composition_agent_team
+
+        parsed = _make_parsed_multi(roles=["drums", "bass"])
+        route = self._make_route_for_team()
+        store = StateStore(conversation_id="test-complete")
+        trace = _make_trace()
+
+        llm = _make_llm_mock()
+        agent_response = LLMResponse(content=None, usage={})
+        agent_response.tool_calls = []
+        llm.chat_completion = AsyncMock(return_value=agent_response)
+
+        events = []
+        async for e in _handle_composition_agent_team(
+            "make funk", {}, parsed, route, llm, store, trace, None
+        ):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        complete_events = [p for p in payloads if p["type"] == "complete"]
+        assert len(complete_events) == 1
+        assert complete_events[0]["success"] is True
+        # complete must be last meaningful event
+        last_event = payloads[-1]
+        assert last_event["type"] == "complete"
+
+    @pytest.mark.anyio
+    async def test_phase1_tempo_applied_before_agents(self):
+        """Phase 1 emits toolCall for stori_set_tempo before instrument agents run."""
+        from app.core.maestro_handlers import _handle_composition_agent_team
+
+        parsed = _make_parsed_multi(tempo=92, roles=["drums", "bass"])
+        route = self._make_route_for_team()
+        store = StateStore(conversation_id="test-phase1")
+        trace = _make_trace()
+
+        llm = _make_llm_mock()
+        agent_response = LLMResponse(content=None, usage={})
+        agent_response.tool_calls = []
+        llm.chat_completion = AsyncMock(return_value=agent_response)
+
+        events = []
+        async for e in _handle_composition_agent_team(
+            "make funk", {"tempo": 80}, parsed, route, llm, store, trace, None
+        ):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        tool_calls = [p for p in payloads if p["type"] == "toolCall"]
+        tempo_calls = [t for t in tool_calls if t.get("name") == "stori_set_tempo"]
+        assert len(tempo_calls) >= 1
+
+
+class TestAgentTeamFailureIsolation:
+    """A failing instrument agent does not cancel sibling agents."""
+
+    def _make_route_for_team(self):
+        from app.core.intent import Intent, IntentResult, SSEState
+        return IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.EDITING,
+            confidence=0.9,
+            slots=MagicMock(),
+            tools=[],
+            allowed_tool_names={
+                "stori_add_midi_track", "stori_add_midi_region",
+                "stori_add_notes", "stori_add_insert_effect",
+                "stori_set_tempo", "stori_set_key",
+            },
+            tool_choice="auto",
+            force_stop_after=False,
+            requires_planner=False,
+            reasons=(),
+        )
+
+    @pytest.mark.anyio
+    async def test_one_failing_agent_does_not_cancel_others(self):
+        """When one instrument agent's LLM call fails, others still complete."""
+        from app.core.maestro_handlers import _handle_composition_agent_team
+
+        parsed = _make_parsed_multi(roles=["drums", "bass"])
+        route = self._make_route_for_team()
+        store = StateStore(conversation_id="test-isolation")
+        trace = _make_trace()
+
+        call_count = 0
+
+        async def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("drums LLM failed")
+            # Bass agent succeeds
+            response = LLMResponse(content=None, usage={})
+            response.tool_calls = [
+                ToolCall(id="b1", name="stori_add_midi_track", params={"name": "Bass"}),
+            ]
+            return response
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=side_effect)
+
+        events = []
+        async for e in _handle_composition_agent_team(
+            "make funk", {}, parsed, route, llm, store, trace, None
+        ):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        # Should still emit complete (handler doesn't abort on agent failures)
+        assert any(p["type"] == "complete" for p in payloads)
+        # Both agents were attempted
+        assert call_count == 2
+
+    @pytest.mark.anyio
+    async def test_complete_event_emitted_even_when_all_agents_fail(self):
+        """complete event fires even if every instrument agent fails."""
+        from app.core.maestro_handlers import _handle_composition_agent_team
+
+        parsed = _make_parsed_multi(roles=["drums", "bass"])
+        route = self._make_route_for_team()
+        store = StateStore(conversation_id="test-all-fail")
+        trace = _make_trace()
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=RuntimeError("all down"))
+
+        events = []
+        async for e in _handle_composition_agent_team(
+            "make funk", {}, parsed, route, llm, store, trace, None
+        ):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        assert any(p["type"] == "complete" for p in payloads)
+
+
+import asyncio

@@ -442,6 +442,34 @@ _TRACK_BOUND_TOOL_NAMES: set[str] = (
     | _EXPRESSIVE_TOOL_NAMES | _GENERATOR_TOOL_NAMES | _MIXING_TOOL_NAMES
 )
 
+# Agent Teams — tools each instrument agent may call (no setup/mixing tools)
+_INSTRUMENT_AGENT_TOOLS: frozenset[str] = frozenset({
+    "stori_add_midi_track",
+    "stori_add_midi_region",
+    "stori_add_notes",
+    "stori_generate_midi",
+    "stori_generate_drums",
+    "stori_generate_bass",
+    "stori_generate_melody",
+    "stori_generate_chords",
+    "stori_add_insert_effect",
+    "stori_add_midi_cc",
+    "stori_add_pitch_bend",
+    "stori_apply_swing",
+    "stori_quantize_notes",
+})
+
+# Agent Teams — tools the Phase 3 mixing coordinator may call
+_AGENT_TEAM_PHASE3_TOOLS: frozenset[str] = frozenset({
+    "stori_ensure_bus",
+    "stori_add_send",
+    "stori_set_track_volume",
+    "stori_set_track_pan",
+    "stori_mute_track",
+    "stori_solo_track",
+    "stori_add_automation",
+})
+
 
 @dataclass
 class _PlanStep:
@@ -455,6 +483,23 @@ class _PlanStep:
     tool_name: Optional[str] = None  # canonical tool name for frontend icon/color rendering
     tool_indices: list[int] = field(default_factory=list)
     parallel_group: Optional[str] = None  # steps sharing a group run concurrently
+
+
+@dataclass
+class _ToolCallOutcome:
+    """Outcome of executing one tool call in editing/agent mode.
+
+    The caller decides what to do with SSE events and message objects —
+    either yield them directly (editing path) or put them into a queue
+    (agent-team path).
+    """
+    enriched_params: dict[str, Any]
+    tool_result: dict[str, Any]
+    sse_events: list[dict[str, Any]]    # in order: toolStart, toolCall OR toolError
+    msg_call: dict[str, Any]            # assistant message containing the tool call
+    msg_result: dict[str, Any]          # tool response message
+    skipped: bool = False               # True when rejected by circuit-breaker or validation
+    extra_tool_calls: list[dict[str, Any]] = field(default_factory=list)  # synthetic calls (icon)
 
 
 class _PlanTracker:
@@ -1745,14 +1790,32 @@ async def orchestrate(
             # =================================================================
             # Step 4: Handle EDITING (LLM tool calls with allowlist)
             # =================================================================
-            
-            async for event in _handle_editing(
-                prompt, project_context, route, llm, store, trace,
-                usage_tracker, conversation_history, execution_mode,
-                is_cancelled=is_cancelled,
-                quality_preset=quality_preset,
+
+            # ── Agent Teams intercept ──
+            # Multi-instrument STORI PROMPT compositions (2+ roles, apply mode)
+            # spawn one independent LLM session per instrument running in
+            # parallel. Single-instrument and non-STORI-PROMPT requests fall
+            # through to the standard _handle_editing path unchanged.
+            if (
+                route.intent == Intent.GENERATE_MUSIC
+                and execution_mode == "apply"
+                and _orch_parsed is not None
+                and getattr(_orch_parsed, "roles", None)
+                and len(_orch_parsed.roles) > 1
             ):
-                yield event
+                async for event in _handle_composition_agent_team(
+                    prompt, project_context, _orch_parsed, route, llm, store,
+                    trace, usage_tracker,
+                ):
+                    yield event
+            else:
+                async for event in _handle_editing(
+                    prompt, project_context, route, llm, store, trace,
+                    usage_tracker, conversation_history, execution_mode,
+                    is_cancelled=is_cancelled,
+                    quality_preset=quality_preset,
+                ):
+                    yield event
     
     except Exception as e:
         logger.exception(f"[{trace.trace_id[:8]}] Orchestration error: {e}")
@@ -2327,6 +2390,325 @@ async def _handle_composing(
         })
 
 
+async def _apply_single_tool_call(
+    tc_id: str,
+    tc_name: str,
+    resolved_args: dict[str, Any],
+    allowed_tool_names: set[str],
+    store: StateStore,
+    trace: Any,
+    add_notes_failures: dict[str, int],
+    emit_sse: bool = True,
+) -> _ToolCallOutcome:
+    """Validate, enrich, persist, and return results for one tool call.
+
+    Handles entity creation (UUIDs), note persistence, icon synthesis, and
+    tool result building. Returns SSE events, LLM message objects, and
+    enriched params without yielding — the caller decides whether to yield
+    events directly (editing path) or put them into an asyncio.Queue
+    (agent-team path).
+
+    Args:
+        tc_id: Tool call ID (from LLM response or synthetic UUID).
+        tc_name: Tool name (e.g. ``"stori_add_midi_track"``).
+        resolved_args: Params after ``$N.field`` variable ref resolution.
+        allowed_tool_names: Tool allowlist for validation.
+        store: StateStore for entity creation and result building.
+        trace: Trace context for logging and spans.
+        add_notes_failures: Mutable circuit-breaker counter (modified in-place).
+        emit_sse: When ``False``, sse_events is empty (variation/proposal mode).
+    """
+    sse_events: list[dict[str, Any]] = []
+
+    # ── Circuit breaker: stori_add_notes infinite-retry guard ──
+    if tc_name == "stori_add_notes":
+        cb_region_id = resolved_args.get("regionId", "__unknown__")
+        cb_failures = add_notes_failures.get(cb_region_id, 0)
+        if cb_failures >= 3:
+            cb_error = (
+                f"stori_add_notes: regionId '{cb_region_id}' has failed {cb_failures} times "
+                f"without valid notes being added. Stop retrying with shorthand params. "
+                f"Provide a real 'notes' array: "
+                f"[{{\"pitch\": 60, \"startBeat\": 0, \"durationBeats\": 1, \"velocity\": 80}}, ...]"
+            )
+            logger.error(f"[{trace.trace_id[:8]}] 🔴 Circuit breaker: {cb_error}")
+            if emit_sse:
+                sse_events.append({"type": "toolError", "name": tc_name, "error": cb_error})
+            msg_call: dict[str, Any] = {
+                "role": "assistant",
+                "tool_calls": [{"id": tc_id, "type": "function",
+                                "function": {"name": tc_name, "arguments": json.dumps(resolved_args)}}],
+            }
+            msg_result: dict[str, Any] = {
+                "role": "tool", "tool_call_id": tc_id,
+                "content": json.dumps({"error": cb_error}),
+            }
+            return _ToolCallOutcome(
+                enriched_params=resolved_args,
+                tool_result={"error": cb_error},
+                sse_events=sse_events,
+                msg_call=msg_call,
+                msg_result=msg_result,
+                skipped=True,
+            )
+
+    # ── Validation ──
+    with trace_span(trace, f"validate:{tc_name}"):
+        validation = validate_tool_call(tc_name, resolved_args, allowed_tool_names, store.registry)
+
+    if not validation.valid:
+        log_validation_error(trace.trace_id, tc_name, [str(e) for e in validation.errors])
+        if tc_name == "stori_add_notes":
+            cb_region_id = resolved_args.get("regionId", "__unknown__")
+            add_notes_failures[cb_region_id] = add_notes_failures.get(cb_region_id, 0) + 1
+        if emit_sse:
+            sse_events.append({
+                "type": "toolError",
+                "name": tc_name,
+                "error": validation.error_message,
+                "errors": [str(e) for e in validation.errors],
+            })
+        error_result = {"error": validation.error_message}
+        msg_call = {
+            "role": "assistant",
+            "tool_calls": [{"id": tc_id, "type": "function",
+                            "function": {"name": tc_name, "arguments": json.dumps(resolved_args)}}],
+        }
+        msg_result = {
+            "role": "tool", "tool_call_id": tc_id,
+            "content": json.dumps(error_result),
+        }
+        return _ToolCallOutcome(
+            enriched_params=resolved_args,
+            tool_result=error_result,
+            sse_events=sse_events,
+            msg_call=msg_call,
+            msg_result=msg_result,
+            skipped=True,
+        )
+
+    enriched_params = validation.resolved_params
+
+    # ── Entity creation ──
+    if tc_name == "stori_add_midi_track":
+        track_name = enriched_params.get("name", "Track")
+        instrument = enriched_params.get("instrument")
+        gm_program = enriched_params.get("gmProgram")
+        if "trackId" in enriched_params:
+            logger.warning(
+                f"⚠️ LLM provided trackId '{enriched_params['trackId']}' for NEW track '{track_name}'. "
+                f"Ignoring and generating fresh UUID to prevent duplicates."
+            )
+        track_id = store.create_track(track_name)
+        enriched_params["trackId"] = track_id
+        logger.debug(f"🔑 Generated trackId: {track_id[:8]} for '{track_name}'")
+        if gm_program is None:
+            from app.core.gm_instruments import infer_gm_program_with_context
+            inference = infer_gm_program_with_context(track_name=track_name, instrument=instrument)
+            enriched_params["_gmInstrumentName"] = inference.instrument_name
+            enriched_params["_isDrums"] = inference.is_drums
+            logger.info(
+                f"🎵 GM inference for '{track_name}': "
+                f"program={inference.program}, instrument={inference.instrument_name}, "
+                f"is_drums={inference.is_drums}"
+            )
+            if inference.needs_program_change:
+                enriched_params["gmProgram"] = inference.program
+
+    elif tc_name == "stori_add_midi_region":
+        midi_region_track_id: Optional[str] = enriched_params.get("trackId")
+        region_name: str = str(enriched_params.get("name", "Region"))
+        if "regionId" in enriched_params:
+            logger.warning(
+                f"⚠️ LLM provided regionId '{enriched_params['regionId']}' for NEW region '{region_name}'. "
+                f"Ignoring and generating fresh UUID to prevent duplicates."
+            )
+        if midi_region_track_id:
+            try:
+                region_id = store.create_region(
+                    region_name, midi_region_track_id,
+                    metadata={
+                        "startBeat": enriched_params.get("startBeat", 0),
+                        "durationBeats": enriched_params.get("durationBeats", 16),
+                    }
+                )
+                enriched_params["regionId"] = region_id
+                logger.debug(f"🔑 Generated regionId: {region_id[:8]} for '{region_name}'")
+            except ValueError as e:
+                logger.error(f"Failed to create region: {e}")
+                error_result = {"success": False, "error": f"Failed to create region: {e}"}
+                msg_call = {
+                    "role": "assistant",
+                    "tool_calls": [{"id": tc_id, "type": "function",
+                                    "function": {"name": tc_name, "arguments": json.dumps(enriched_params)}}],
+                }
+                msg_result = {
+                    "role": "tool", "tool_call_id": tc_id,
+                    "content": json.dumps(error_result),
+                }
+                return _ToolCallOutcome(
+                    enriched_params=enriched_params,
+                    tool_result=error_result,
+                    sse_events=sse_events,
+                    msg_call=msg_call,
+                    msg_result=msg_result,
+                    skipped=True,
+                )
+        else:
+            logger.error(
+                f"⚠️ stori_add_midi_region called without trackId for region '{region_name}'"
+            )
+            error_result = {
+                "success": False,
+                "error": (
+                    f"Cannot create region '{region_name}' — no trackId provided. "
+                    "Use $N.trackId to reference a track created in a prior tool call, "
+                    "or use trackName for name-based resolution."
+                ),
+            }
+            msg_call = {
+                "role": "assistant",
+                "tool_calls": [{"id": tc_id, "type": "function",
+                                "function": {"name": tc_name, "arguments": json.dumps(enriched_params)}}],
+            }
+            msg_result = {
+                "role": "tool", "tool_call_id": tc_id,
+                "content": json.dumps(error_result),
+            }
+            return _ToolCallOutcome(
+                enriched_params=enriched_params,
+                tool_result=error_result,
+                sse_events=sse_events,
+                msg_call=msg_call,
+                msg_result=msg_result,
+                skipped=True,
+            )
+
+    elif tc_name == "stori_duplicate_region":
+        source_region_id: str = enriched_params.get("regionId", "")
+        source_entity = store.registry.get_region(source_region_id)
+        if source_entity:
+            copy_name = f"{source_entity.name} (copy)"
+            parent_track_id = source_entity.parent_id or ""
+            try:
+                new_region_id = store.create_region(
+                    copy_name, parent_track_id,
+                    metadata={"startBeat": enriched_params.get("startBeat", 0)},
+                )
+                enriched_params["newRegionId"] = new_region_id
+                logger.debug(
+                    f"🔑 Generated newRegionId: {new_region_id[:8]} "
+                    f"for duplicate of '{source_entity.name}'"
+                )
+            except ValueError as e:
+                logger.error(f"Failed to register duplicate region: {e}")
+
+    elif tc_name == "stori_ensure_bus":
+        bus_name = enriched_params.get("name", "Bus")
+        if "busId" in enriched_params:
+            logger.warning(
+                f"⚠️ LLM provided busId '{enriched_params['busId']}' for bus '{bus_name}'. "
+                f"Ignoring to prevent duplicates."
+            )
+        bus_id = store.get_or_create_bus(bus_name)
+        enriched_params["busId"] = bus_id
+
+    # ── SSE events (toolStart + toolCall) ──
+    extra_tool_calls: list[dict[str, Any]] = []
+    if emit_sse:
+        emit_params = _enrich_params_with_track_context(enriched_params, store)
+        sse_events.append({
+            "type": "toolStart",
+            "name": tc_name,
+            "label": _human_label_for_tool(tc_name, emit_params),
+        })
+        sse_events.append({
+            "type": "toolCall",
+            "id": tc_id,
+            "name": tc_name,
+            "params": emit_params,
+        })
+
+    log_tool_call(trace.trace_id, tc_name, enriched_params, True)
+
+    # ── Synthetic stori_set_track_icon after stori_add_midi_track ──
+    if tc_name == "stori_add_midi_track" and emit_sse:
+        _icon_track_id = enriched_params.get("trackId", "")
+        _drum_kit = enriched_params.get("drumKitId")
+        _is_drums = enriched_params.get("_isDrums", False)
+        _gm_program = enriched_params.get("gmProgram")
+        if _drum_kit or _is_drums:
+            _track_icon: Optional[str] = DRUM_ICON
+        elif _gm_program is not None:
+            _track_icon = icon_for_gm_program(int(_gm_program))
+        else:
+            _track_icon = None
+        if _track_icon and _icon_track_id:
+            _icon_params: dict[str, Any] = {"trackId": _icon_track_id, "icon": _track_icon}
+            sse_events.append({
+                "type": "toolStart",
+                "name": "stori_set_track_icon",
+                "label": f"Setting icon for {enriched_params.get('name', 'track')}",
+            })
+            sse_events.append({
+                "type": "toolCall",
+                "id": f"{tc_id}-icon",
+                "name": "stori_set_track_icon",
+                "params": _icon_params,
+            })
+            extra_tool_calls.append({"tool": "stori_set_track_icon", "params": _icon_params})
+            logger.debug(
+                f"🎨 Synthetic icon '{_track_icon}' → trackId {_icon_track_id[:8]} "
+                f"({'drum kit' if (_drum_kit or _is_drums) else f'GM {_gm_program}'})"
+            )
+
+    # ── Note persistence ──
+    if tc_name == "stori_add_notes":
+        _notes = enriched_params.get("notes", [])
+        _rid = enriched_params.get("regionId", "")
+        if _rid and _notes:
+            store.add_notes(_rid, _notes)
+            logger.debug(
+                f"📝 Persisted {len(_notes)} notes for region {_rid[:8]} in StateStore"
+            )
+        add_notes_failures.pop(enriched_params.get("regionId", "__unknown__"), None)
+
+    # ── Message objects for LLM conversation history ──
+    if tc_name == "stori_add_notes":
+        notes = enriched_params.get("notes", [])
+        summary_params = {k: v for k, v in enriched_params.items() if k != "notes"}
+        summary_params["_noteCount"] = len(notes)
+        if notes:
+            starts = [n["startBeat"] for n in notes]
+            summary_params["_beatRange"] = [min(starts), max(starts)]
+        msg_arguments = json.dumps(summary_params)
+    else:
+        msg_arguments = json.dumps(enriched_params)
+
+    msg_call = {
+        "role": "assistant",
+        "tool_calls": [{"id": tc_id, "type": "function",
+                        "function": {"name": tc_name, "arguments": msg_arguments}}],
+    }
+
+    # ── Tool result ──
+    tool_result = _build_tool_result(tc_name, enriched_params, store)
+    msg_result = {
+        "role": "tool", "tool_call_id": tc_id,
+        "content": json.dumps(tool_result),
+    }
+
+    return _ToolCallOutcome(
+        enriched_params=enriched_params,
+        tool_result=tool_result,
+        sse_events=sse_events,
+        msg_call=msg_call,
+        msg_result=msg_result,
+        skipped=False,
+        extra_tool_calls=extra_tool_calls,
+    )
+
+
 async def _handle_editing(
     prompt: str,
     project_context: dict[str, Any],
@@ -2552,329 +2934,44 @@ async def _handle_editing(
                         plan_tracker.activate_step(step.step_id)
                     )
 
-            # ── Circuit breaker: stori_add_notes infinite-retry guard ──
-            if tc.name == "stori_add_notes":
-                cb_region_id = resolved_args.get("regionId", "__unknown__")
-                cb_failures = _add_notes_failures.get(cb_region_id, 0)
-                if cb_failures >= 3:
-                    cb_error = (
-                        f"stori_add_notes: regionId '{cb_region_id}' has failed {cb_failures} times "
-                        f"without valid notes being added. Stop retrying with shorthand params. "
-                        f"Provide a real 'notes' array: "
-                        f"[{{\"pitch\": 60, \"startBeat\": 0, \"durationBeats\": 1, \"velocity\": 80}}, ...]"
-                    )
-                    logger.error(
-                        f"[{trace.trace_id[:8]}] 🔴 Circuit breaker: {cb_error}"
-                    )
-                    yield await sse_event({"type": "toolError", "name": tc.name, "error": cb_error})
-                    messages.append({
-                        "role": "assistant",
-                        "tool_calls": [{"id": tc.id, "type": "function",
-                                        "function": {"name": tc.name, "arguments": json.dumps(resolved_args)}}]
-                    })
-                    cb_result = {"error": cb_error}
-                    iter_tool_results.append(cb_result)
-                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(cb_result)})
-                    continue
+            # ── Execute the tool call (validation, entity creation, SSE) ──
+            outcome = await _apply_single_tool_call(
+                tc_id=tc.id,
+                tc_name=tc.name,
+                resolved_args=resolved_args,
+                allowed_tool_names=route.allowed_tool_names,
+                store=store,
+                trace=trace,
+                add_notes_failures=_add_notes_failures,
+                emit_sse=(execution_mode == "apply"),
+            )
 
-            with trace_span(trace, f"validate:{tc.name}"):
-                validation = validate_tool_call(
-                    tc.name, resolved_args, route.allowed_tool_names, store.registry
-                )
-            
-            if not validation.valid:
-                log_validation_error(
-                    trace.trace_id,
-                    tc.name,
-                    [str(e) for e in validation.errors],
-                )
+            # Forward SSE events to client
+            for evt in outcome.sse_events:
+                yield await sse_event(evt)
 
-                # Increment circuit-breaker counter for add_notes failures
-                if tc.name == "stori_add_notes":
-                    cb_region_id = resolved_args.get("regionId", "__unknown__")
-                    _add_notes_failures[cb_region_id] = _add_notes_failures.get(cb_region_id, 0) + 1
-                
-                yield await sse_event({
-                    "type": "toolError",
-                    "name": tc.name,
-                    "error": validation.error_message,
-                    "errors": [str(e) for e in validation.errors],
-                })
-                
-                # Add error to messages so LLM knows
-                messages.append({
-                    "role": "assistant",
-                    "tool_calls": [{
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.name, "arguments": json.dumps(resolved_args)}
-                    }]
-                })
-                error_result = {"error": validation.error_message}
-                iter_tool_results.append(error_result)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": json.dumps(error_result),
-                })
-                continue
-            
-            enriched_params = validation.resolved_params
-            
-            # Register entities for entity-creating tools via StateStore
-            if tc.name == "stori_add_midi_track":
-                track_name = enriched_params.get("name", "Track")
-                instrument = enriched_params.get("instrument")
-                gm_program = enriched_params.get("gmProgram")
-                
-                # CRITICAL: Always generate new UUID for entity-creating tools
-                # LLMs sometimes hallucinate duplicate UUIDs, causing frontend crashes
-                # System prompt instructs LLM NOT to provide IDs for new entities,
-                # but we enforce this server-side as a safety measure
-                if "trackId" in enriched_params:
-                    logger.warning(
-                        f"⚠️ LLM provided trackId '{enriched_params['trackId']}' for NEW track '{track_name}'. "
-                        f"Ignoring and generating fresh UUID to prevent duplicates."
-                    )
-                
-                # Always generate fresh UUID via StateStore
-                track_id = store.create_track(track_name)
-                enriched_params["trackId"] = track_id
-                logger.debug(f"🔑 Generated trackId: {track_id[:8]} for '{track_name}'")
-                
-                # Auto-infer GM program if not specified
-                if gm_program is None:
-                    from app.core.gm_instruments import infer_gm_program_with_context
-                    inference = infer_gm_program_with_context(
-                        track_name=track_name,
-                        instrument=instrument,
-                    )
-                    # Always provide instrument metadata
-                    enriched_params["_gmInstrumentName"] = inference.instrument_name
-                    enriched_params["_isDrums"] = inference.is_drums
-                    
-                    logger.info(
-                        f"🎵 [EDITING] GM inference for '{track_name}': "
-                        f"program={inference.program}, instrument={inference.instrument_name}, is_drums={inference.is_drums}"
-                    )
-                    
-                    # Add GM program if not drums
-                    if inference.needs_program_change:
-                        enriched_params["gmProgram"] = inference.program
-            
-            elif tc.name == "stori_add_midi_region":
-                midi_region_track_id: Optional[str] = enriched_params.get("trackId")
-                region_name: str = str(enriched_params.get("name", "Region"))
-                
-                # CRITICAL: Always generate new UUID for entity-creating tools
-                if "regionId" in enriched_params:
-                    logger.warning(
-                        f"⚠️ LLM provided regionId '{enriched_params['regionId']}' for NEW region '{region_name}'. "
-                        f"Ignoring and generating fresh UUID to prevent duplicates."
-                    )
-                
-                if midi_region_track_id:
-                    try:
-                        region_id = store.create_region(
-                            region_name, midi_region_track_id,
-                            metadata={
-                                "startBeat": enriched_params.get("startBeat", 0),
-                                "durationBeats": enriched_params.get("durationBeats", 16),
-                            }
+            # Accumulate tool calls and plan step results for successful calls
+            if not outcome.skipped:
+                tool_calls_collected.append({"tool": tc.name, "params": outcome.enriched_params})
+                tool_calls_collected.extend(outcome.extra_tool_calls)
+
+                # ── Plan step tracking: accumulate result description ──
+                if plan_tracker and execution_mode == "apply":
+                    _step = (
+                        plan_tracker.step_for_tool_index(tc_idx)
+                        or plan_tracker.find_step_for_tool(
+                            tc.name, outcome.enriched_params, store
                         )
-                        enriched_params["regionId"] = region_id
-                        logger.debug(f"🔑 Generated regionId: {region_id[:8]} for '{region_name}'")
-                    except ValueError as e:
-                        logger.error(f"Failed to create region: {e}")
-                        error_result = {"success": False, "error": f"Failed to create region: {e}"}
-                        iter_tool_results.append(error_result)
-                        messages.append({
-                            "role": "assistant",
-                            "tool_calls": [{"id": tc.id, "type": "function",
-                                            "function": {"name": tc.name, "arguments": json.dumps(enriched_params)}}]
-                        })
-                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(error_result)})
-                        continue
-                else:
-                    logger.error(
-                        f"⚠️ stori_add_midi_region called without trackId for region '{region_name}'"
                     )
-                    error_result = {
-                        "success": False,
-                        "error": f"Cannot create region '{region_name}' — no trackId provided. "
-                                 "Use $N.trackId to reference a track created in a prior tool call, "
-                                 "or use trackName for name-based resolution.",
-                    }
-                    iter_tool_results.append(error_result)
-                    messages.append({
-                        "role": "assistant",
-                        "tool_calls": [{"id": tc.id, "type": "function",
-                                        "function": {"name": tc.name, "arguments": json.dumps(enriched_params)}}]
-                    })
-                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(error_result)})
-                    continue
-            
-            elif tc.name == "stori_duplicate_region":
-                # Duplicating a region creates a new entity — register the copy.
-                source_region_id: str = enriched_params.get("regionId", "")
-                source_entity = store.registry.get_region(source_region_id)
-                if source_entity:
-                    copy_name = f"{source_entity.name} (copy)"
-                    parent_track_id = source_entity.parent_id or ""
-                    try:
-                        new_region_id = store.create_region(
-                            copy_name, parent_track_id,
-                            metadata={"startBeat": enriched_params.get("startBeat", 0)},
+                    if _step:
+                        _step.result = _build_step_result(
+                            tc.name, outcome.enriched_params, _step.result,
                         )
-                        enriched_params["newRegionId"] = new_region_id
-                        logger.debug(f"🔑 Generated newRegionId: {new_region_id[:8]} for duplicate of '{source_entity.name}'")
-                    except ValueError as e:
-                        logger.error(f"Failed to register duplicate region: {e}")
 
-            elif tc.name == "stori_ensure_bus":
-                bus_name = enriched_params.get("name", "Bus")
-                
-                # CRITICAL: Always let server manage bus IDs
-                if "busId" in enriched_params:
-                    logger.warning(
-                        f"⚠️ LLM provided busId '{enriched_params['busId']}' for bus '{bus_name}'. "
-                        f"Ignoring to prevent duplicates."
-                    )
-                
-                bus_id = store.get_or_create_bus(bus_name)
-                enriched_params["busId"] = bus_id
-            
-            # Emit tool start + call to client (only in apply mode)
-            if execution_mode == "apply":
-                emit_params = _enrich_params_with_track_context(enriched_params, store)
-                yield await sse_event({
-                    "type": "toolStart",
-                    "name": tc.name,
-                    "label": _human_label_for_tool(tc.name, emit_params),
-                })
-                yield await sse_event({
-                    "type": "toolCall",
-                    "id": tc.id,
-                    "name": tc.name,
-                    "params": emit_params,
-                })
-            
-            log_tool_call(trace.trace_id, tc.name, enriched_params, True)
-            
-            tool_calls_collected.append({
-                "tool": tc.name,
-                "params": enriched_params,
-            })
-
-            # ── Synthetic stori_set_track_icon after stori_add_midi_track ──
-            # The icon is derived from the resolved GM program or drumKitId so
-            # it persists in the DAW's track model and round-trips correctly in
-            # stori_read_project snapshots (mirrors the app's displayIcon logic).
-            if tc.name == "stori_add_midi_track" and execution_mode == "apply":
-                _icon_track_id = enriched_params.get("trackId", "")
-                _drum_kit = enriched_params.get("drumKitId")
-                _is_drums = enriched_params.get("_isDrums", False)
-                _gm_program = enriched_params.get("gmProgram")
-
-                if _drum_kit or _is_drums:
-                    _track_icon: Optional[str] = DRUM_ICON
-                elif _gm_program is not None:
-                    _track_icon = icon_for_gm_program(int(_gm_program))
-                else:
-                    _track_icon = None
-
-                if _track_icon and _icon_track_id:
-                    _icon_params: dict[str, Any] = {
-                        "trackId": _icon_track_id,
-                        "icon": _track_icon,
-                    }
-                    yield await sse_event({
-                        "type": "toolStart",
-                        "name": "stori_set_track_icon",
-                        "label": f"Setting icon for {enriched_params.get('name', 'track')}",
-                    })
-                    yield await sse_event({
-                        "type": "toolCall",
-                        "id": f"{tc.id}-icon",
-                        "name": "stori_set_track_icon",
-                        "params": _icon_params,
-                    })
-                    tool_calls_collected.append({
-                        "tool": "stori_set_track_icon",
-                        "params": _icon_params,
-                    })
-                    logger.debug(
-                        f"🎨 Synthetic icon '{_track_icon}' → "
-                        f"trackId {_icon_track_id[:8]} "
-                        f"({'drum kit' if (_drum_kit or _is_drums) else f'GM {_gm_program}'})"
-                    )
-
-            # ── Plan step tracking: accumulate result description ──
-            if plan_tracker and execution_mode == "apply":
-                _step = (
-                    plan_tracker.step_for_tool_index(tc_idx)
-                    or plan_tracker.find_step_for_tool(tc.name, enriched_params, store)
-                )
-                if _step:
-                    _step.result = _build_step_result(
-                        tc.name, enriched_params, _step.result,
-                    )
-
-            # Persist notes so the COMPOSING handoff can diff against them
-            if tc.name == "stori_add_notes":
-                _notes = enriched_params.get("notes", [])
-                _rid = enriched_params.get("regionId", "")
-                if _rid and _notes:
-                    store.add_notes(_rid, _notes)
-                    logger.debug(
-                        f"📝 [EDITING] Persisted {len(_notes)} notes for "
-                        f"region {_rid[:8]} in StateStore"
-                    )
-
-            # Add to messages — summarize stori_add_notes to avoid
-            # bloating context with hundreds of note objects
-            if tc.name == "stori_add_notes":
-                notes = enriched_params.get("notes", [])
-                summary_params = {
-                    k: v for k, v in enriched_params.items() if k != "notes"
-                }
-                summary_params["_noteCount"] = len(notes)
-                if notes:
-                    starts = [n["startBeat"] for n in notes]
-                    summary_params["_beatRange"] = [min(starts), max(starts)]
-                msg_arguments = json.dumps(summary_params)
-            else:
-                msg_arguments = json.dumps(enriched_params)
-
-            messages.append({
-                "role": "assistant",
-                "tool_calls": [{
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.name, "arguments": msg_arguments}
-                }]
-            })
-            # Reset circuit-breaker counter on successful stori_add_notes
-            if tc.name == "stori_add_notes":
-                cb_region_id = enriched_params.get("regionId", "__unknown__")
-                _add_notes_failures.pop(cb_region_id, None)
-
-            # Build tool result with rich state feedback.
-            # Every entity-creating tool echoes the server-assigned ID(s)
-            # plus a full entity manifest so the LLM always has current IDs.
-            # stori_add_notes returns notesAdded + totalNotes so the model
-            # knows the call was real and doesn't re-add.
-            tool_result = _build_tool_result(tc.name, enriched_params, store)
-
-            # Accumulate for $N.field variable reference resolution in
-            # subsequent tool calls within this same iteration.
-            iter_tool_results.append(tool_result)
-
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": json.dumps(tool_result),
-            })
+            # Add to LLM conversation history (always — errors need context too)
+            messages.append(outcome.msg_call)
+            iter_tool_results.append(outcome.tool_result)
+            messages.append(outcome.msg_result)
         
         # ── Plan step tracking: complete last active step this iteration ──
         if plan_tracker and plan_tracker._active_step_id and execution_mode == "apply":
@@ -3111,6 +3208,380 @@ async def _handle_editing(
     if plan_tracker:
         for skip_evt in plan_tracker.finalize_pending_as_skipped():
             yield await sse_event(skip_evt)
+
+    yield await sse_event({
+        "type": "complete",
+        "success": True,
+        "toolCalls": tool_calls_collected,
+        "stateVersion": store.version,
+        "traceId": trace.trace_id,
+        **_context_usage_fields(usage_tracker, llm.model),
+    })
+
+
+# =============================================================================
+# Agent Teams — parallel instrument execution
+# =============================================================================
+
+async def _run_instrument_agent(
+    instrument_name: str,
+    role: str,
+    style: str,
+    bars: int,
+    tempo: float,
+    key: str,
+    step_ids: list[str],
+    plan_tracker: _PlanTracker,
+    llm: LLMClient,
+    store: StateStore,
+    allowed_tool_names: set[str],
+    trace: Any,
+    sse_queue: "asyncio.Queue[dict[str, Any]]",
+) -> None:
+    """Independent instrument agent: one dedicated LLM call per instrument.
+
+    Each invocation is a genuinely concurrent HTTP request to the LLM API —
+    running simultaneously with other instrument agents via ``asyncio.gather``.
+    The agent executes the full pipeline for its instrument (create track →
+    add region → add notes → add effect) and writes SSE events into the
+    shared ``sse_queue`` so the coordinator can forward them to the client.
+
+    Failure is isolated: an exception marks only this agent's plan steps as
+    failed and does not propagate to sibling agents.
+    """
+    agent_log = f"[{trace.trace_id[:8]}][{instrument_name}Agent]"
+    logger.info(f"{agent_log} Starting — style={style}, bars={bars}, tempo={tempo}, key={key}")
+
+    system_content = (
+        f"You are an instrument agent. Your only job is to create the **{instrument_name}** "
+        f"track for a {style} composition.\n\n"
+        f"Project context:\n"
+        f"- Tempo: {tempo} BPM\n"
+        f"- Key: {key}\n"
+        f"- Style: {style}\n"
+        f"- Bars: {bars}\n"
+        f"- Your instrument: {instrument_name} (role: {role})\n\n"
+        f"Execute this sequence using tool calls in a SINGLE response batch:\n"
+        f"1. stori_add_midi_track — create the {instrument_name} track\n"
+        f"2. stori_add_midi_region — add a {bars * 4}-beat region starting at beat 0\n"
+        f"3. stori_add_notes (or stori_generate_midi / stori_generate_drums / stori_generate_bass) "
+        f"— add real musical content appropriate for {style}\n"
+        f"4. stori_add_insert_effect — add one appropriate effect\n\n"
+        f"Rules:\n"
+        f"- Do NOT create tracks for other instruments\n"
+        f"- Use $0.trackId to reference the track in step 2, $1.regionId in step 3\n"
+        f"- Batch ALL tool calls in one response — no text, just tool calls"
+    )
+
+    agent_tools = [
+        t for t in ALL_TOOLS
+        if t["function"]["name"] in _INSTRUMENT_AGENT_TOOLS
+    ]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": f"Create the {instrument_name} track now. Use multiple tool calls in a single response."},
+    ]
+
+    # ── Make independent LLM call ──
+    try:
+        response = await llm.chat_completion(
+            messages=messages,
+            tools=agent_tools,
+            tool_choice="required",
+            max_tokens=settings.composition_max_tokens,
+        )
+    except Exception as exc:
+        logger.error(f"{agent_log} LLM call failed: {exc}")
+        for step_id in step_ids:
+            step = next((s for s in plan_tracker.steps if s.step_id == step_id), None)
+            if step and step.status in ("pending", "active"):
+                step.status = "failed"
+                await sse_queue.put({
+                    "type": "planStepUpdate",
+                    "stepId": step_id,
+                    "status": "failed",
+                    "result": f"Failed: {exc}",
+                })
+        return
+
+    logger.info(f"{agent_log} LLM responded with {len(response.tool_calls)} tool call(s)")
+
+    # ── Process tool calls sequentially within this agent ──
+    iter_tool_results: list[dict[str, Any]] = []
+    add_notes_failures: dict[str, int] = {}
+    active_step_id: Optional[str] = None
+
+    for tc in response.tool_calls:
+        resolved_args = _resolve_variable_refs(tc.params, iter_tool_results)
+
+        # Find matching plan step and activate it
+        step = plan_tracker.find_step_for_tool(tc.name, resolved_args, store)
+        if step and step.step_id in step_ids:
+            if step.step_id != active_step_id:
+                if active_step_id:
+                    evt = plan_tracker.complete_step_by_id(active_step_id)
+                    if evt:
+                        await sse_queue.put(evt)
+                activate_evt = plan_tracker.activate_step(step.step_id)
+                await sse_queue.put(activate_evt)
+                active_step_id = step.step_id
+
+        outcome = await _apply_single_tool_call(
+            tc_id=tc.id,
+            tc_name=tc.name,
+            resolved_args=resolved_args,
+            allowed_tool_names=allowed_tool_names,
+            store=store,
+            trace=trace,
+            add_notes_failures=add_notes_failures,
+            emit_sse=True,
+        )
+
+        for evt in outcome.sse_events:
+            await sse_queue.put(evt)
+
+        if not outcome.skipped and step and step.step_id in step_ids:
+            step.result = _build_step_result(tc.name, outcome.enriched_params, step.result)
+
+        iter_tool_results.append(outcome.tool_result)
+        logger.debug(f"{agent_log} {tc.name} executed (skipped={outcome.skipped})")
+
+    # Complete the last active step
+    if active_step_id:
+        evt = plan_tracker.complete_step_by_id(active_step_id)
+        if evt:
+            await sse_queue.put(evt)
+
+    logger.info(f"{agent_log} Complete")
+
+
+async def _handle_composition_agent_team(
+    prompt: str,
+    project_context: dict[str, Any],
+    parsed: Any,  # ParsedPrompt — avoids circular import at module level
+    route: Any,
+    llm: LLMClient,
+    store: StateStore,
+    trace: Any,
+    usage_tracker: Optional["UsageTracker"],
+) -> AsyncIterator[str]:
+    """Agent Teams coordinator for multi-instrument STORI PROMPT compositions.
+
+    Three-phase execution:
+
+    - **Phase 1** (sequential): tempo and key applied deterministically from
+      the parsed prompt — no LLM call needed.
+    - **Phase 2** (parallel): one independent ``_run_instrument_agent`` task
+      per role, all launched simultaneously via ``asyncio.gather``. SSE events
+      from all agents are multiplexed through a shared queue and forwarded to
+      the client as they arrive.
+    - **Phase 3** (sequential): optional mixing coordinator LLM call for
+      shared buses, sends, and volume adjustments.
+    """
+    yield await sse_event({"type": "status", "message": "Preparing composition..."})
+
+    # ── Build plan from parsed prompt (no LLM needed) ──
+    plan_tracker = _PlanTracker()
+    plan_tracker.build_from_prompt(parsed, prompt, project_context or {})
+    if plan_tracker.steps:
+        yield await sse_event(plan_tracker.to_plan_event())
+
+    tool_calls_collected: list[dict[str, Any]] = []
+    add_notes_failures: dict[str, int] = {}
+
+    # ── Phase 1: Deterministic setup ──
+    current_tempo = project_context.get("tempo")
+    current_key = (project_context.get("key") or "").strip().lower()
+
+    if parsed.tempo and parsed.tempo != current_tempo:
+        tempo_step = next(
+            (s for s in plan_tracker.steps if s.tool_name == "stori_set_tempo"), None
+        )
+        if tempo_step:
+            yield await sse_event(plan_tracker.activate_step(tempo_step.step_id))
+
+        outcome = await _apply_single_tool_call(
+            tc_id=str(_uuid_mod.uuid4()),
+            tc_name="stori_set_tempo",
+            resolved_args={"tempo": parsed.tempo},
+            allowed_tool_names=route.allowed_tool_names,
+            store=store,
+            trace=trace,
+            add_notes_failures=add_notes_failures,
+            emit_sse=True,
+        )
+        for evt in outcome.sse_events:
+            yield await sse_event(evt)
+        if not outcome.skipped:
+            tool_calls_collected.append({"tool": "stori_set_tempo", "params": outcome.enriched_params})
+            if tempo_step:
+                yield await sse_event(
+                    plan_tracker.complete_step_by_id(
+                        tempo_step.step_id, f"Set tempo to {parsed.tempo} BPM"
+                    )
+                )
+
+    if parsed.key and parsed.key.strip().lower() != current_key:
+        key_step = next(
+            (s for s in plan_tracker.steps if s.tool_name == "stori_set_key"), None
+        )
+        if key_step:
+            yield await sse_event(plan_tracker.activate_step(key_step.step_id))
+
+        outcome = await _apply_single_tool_call(
+            tc_id=str(_uuid_mod.uuid4()),
+            tc_name="stori_set_key",
+            resolved_args={"key": parsed.key},
+            allowed_tool_names=route.allowed_tool_names,
+            store=store,
+            trace=trace,
+            add_notes_failures=add_notes_failures,
+            emit_sse=True,
+        )
+        for evt in outcome.sse_events:
+            yield await sse_event(evt)
+        if not outcome.skipped:
+            tool_calls_collected.append({"tool": "stori_set_key", "params": outcome.enriched_params})
+            if key_step:
+                yield await sse_event(
+                    plan_tracker.complete_step_by_id(
+                        key_step.step_id, f"Set key to {parsed.key}"
+                    )
+                )
+
+    # ── Phase 2: Spawn instrument agents ──
+    _ROLE_LABELS: dict[str, str] = {
+        "drums": "Drums", "drum": "Drums",
+        "bass": "Bass",
+        "chords": "Chords", "chord": "Chords",
+        "melody": "Melody",
+        "lead": "Lead",
+        "arp": "Arp",
+        "pads": "Pads", "pad": "Pads",
+        "fx": "FX",
+    }
+
+    # Map instrument label → step IDs owned by that agent
+    instrument_step_ids: dict[str, list[str]] = {}
+    for step in plan_tracker.steps:
+        if step.parallel_group == "instruments" and step.track_name:
+            key_label = step.track_name.lower()
+            instrument_step_ids.setdefault(key_label, []).append(step.step_id)
+
+    style = parsed.style or "default"
+    # bars is not a first-class ParsedPrompt field — stored in extensions
+    ext = getattr(parsed, "extensions", {}) or {}
+    bars = int(ext.get("bars") or ext.get("Bars") or 4)
+    tempo = float(parsed.tempo or project_context.get("tempo") or 120)
+    key = parsed.key or project_context.get("key") or "C"
+
+    sse_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    tasks: list[asyncio.Task] = []
+
+    for role in parsed.roles:
+        instrument_name = _ROLE_LABELS.get(role.lower(), role.title())
+        step_ids_for_role = instrument_step_ids.get(instrument_name.lower(), [])
+        task = asyncio.create_task(
+            _run_instrument_agent(
+                instrument_name=instrument_name,
+                role=role,
+                style=style,
+                bars=bars,
+                tempo=tempo,
+                key=key,
+                step_ids=step_ids_for_role,
+                plan_tracker=plan_tracker,
+                llm=llm,
+                store=store,
+                allowed_tool_names=_INSTRUMENT_AGENT_TOOLS,
+                trace=trace,
+                sse_queue=sse_queue,
+            )
+        )
+        tasks.append(task)
+        logger.info(
+            f"[{trace.trace_id[:8]}] 🚀 Spawned {instrument_name} agent "
+            f"(step_ids={step_ids_for_role})"
+        )
+
+    # Drain queue while agents run — forward events to client as they arrive
+    pending: set[asyncio.Task] = set(tasks)
+    while pending:
+        done, pending = await asyncio.wait(pending, timeout=0.05)
+        while not sse_queue.empty():
+            yield await sse_event(sse_queue.get_nowait())
+        for task in done:
+            if not task.cancelled() and task.exception() is not None:
+                logger.error(
+                    f"[{trace.trace_id[:8]}] ❌ Instrument agent failed: {task.exception()}"
+                )
+    # Drain tail events after all tasks finish
+    while not sse_queue.empty():
+        yield await sse_event(sse_queue.get_nowait())
+
+    logger.info(f"[{trace.trace_id[:8]}] ✅ All instrument agents complete")
+
+    # ── Phase 3: Mixing coordinator (optional, one LLM call) ──
+    phase3_steps = [
+        s for s in plan_tracker.steps
+        if s.status == "pending" and s.parallel_group is None
+        and s.tool_name in _AGENT_TEAM_PHASE3_TOOLS
+    ]
+    if phase3_steps:
+        entity_snapshot = _entity_manifest(store)
+        phase3_tools = [
+            t for t in ALL_TOOLS
+            if t["function"]["name"] in _AGENT_TEAM_PHASE3_TOOLS
+        ]
+        mixing_prompt = (
+            "All instrument tracks have been created. Apply final mixing:\n"
+            + "\n".join(f"- {s.label}" for s in phase3_steps)
+            + f"\n\nCurrent entity IDs:\n{json.dumps(entity_snapshot)}\n\n"
+            "Batch ALL mixing tool calls in a single response. No text."
+        )
+        try:
+            phase3_response = await llm.chat_completion(
+                messages=[
+                    {"role": "system", "content": system_prompt_base()},
+                    {"role": "user", "content": mixing_prompt},
+                ],
+                tools=phase3_tools,
+                tool_choice="auto",
+                max_tokens=2000,
+            )
+            phase3_iter_results: list[dict[str, Any]] = []
+            phase3_failures: dict[str, int] = {}
+            for tc in phase3_response.tool_calls:
+                p3_resolved = _resolve_variable_refs(tc.params, phase3_iter_results)
+                p3_step = plan_tracker.find_step_for_tool(tc.name, p3_resolved, store)
+                if p3_step:
+                    yield await sse_event(plan_tracker.activate_step(p3_step.step_id))
+                p3_outcome = await _apply_single_tool_call(
+                    tc_id=tc.id,
+                    tc_name=tc.name,
+                    resolved_args=p3_resolved,
+                    allowed_tool_names=_AGENT_TEAM_PHASE3_TOOLS,
+                    store=store,
+                    trace=trace,
+                    add_notes_failures=phase3_failures,
+                    emit_sse=True,
+                )
+                for evt in p3_outcome.sse_events:
+                    yield await sse_event(evt)
+                if not p3_outcome.skipped:
+                    tool_calls_collected.append({"tool": tc.name, "params": p3_outcome.enriched_params})
+                    tool_calls_collected.extend(p3_outcome.extra_tool_calls)
+                    if p3_step:
+                        yield await sse_event(
+                            plan_tracker.complete_step_by_id(p3_step.step_id)
+                        )
+                phase3_iter_results.append(p3_outcome.tool_result)
+        except Exception as exc:
+            logger.error(f"[{trace.trace_id[:8]}] Phase 3 coordinator failed: {exc}")
+
+    # ── Finalize ──
+    for skip_evt in plan_tracker.finalize_pending_as_skipped():
+        yield await sse_event(skip_evt)
 
     yield await sse_event({
         "type": "complete",

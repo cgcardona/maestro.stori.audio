@@ -145,34 +145,38 @@ Implementation: `app/core/prompts.structured_prompt_context` (translation mandat
 
 ---
 
-## Parallel instrument execution
+## Agent Teams — parallel instrument execution
 
-Multi-instrument compositions (3+ instruments) benefit from parallel execution. The executor groups tool calls into three phases and runs independent instruments concurrently:
+Multi-instrument STORI PROMPT compositions (2+ roles) use **Agent Teams**: one independent LLM session per instrument, all running concurrently. This is genuine parallelism — each agent makes its own HTTP call to the LLM API simultaneously.
 
 ```
-Phase 1 — SETUP (sequential)
-  └── Set tempo, key, time signature
+Phase 1 — SETUP (sequential, coordinator, no LLM)
+  └── Set tempo, key (deterministic from ParsedPrompt)
 
-Phase 2 — INSTRUMENTS (parallel, one pipeline per instrument)
-  ├── Drums    → create track → add region → generate MIDI → add effects → CC
-  ├── Bass     → create track → add region → generate MIDI → add effects → CC
-  ├── Guitar   → create track → add region → generate MIDI → add effects → CC
-  ├── Keys     → create track → add region → generate MIDI → add effects → CC
-  └── Strings  → create track → add region → generate MIDI → add effects → CC
+Phase 2 — INSTRUMENTS (parallel — one independent LLM session per instrument)
+  ├── Drums agent    → LLM call → create track → add region → add notes → add effect
+  ├── Bass agent     → LLM call → create track → add region → add notes → add effect
+  ├── Guitar agent   → LLM call → create track → add region → add notes → add effect
+  ├── Keys agent     → LLM call → create track → add region → add notes → add effect
+  └── Strings agent  → LLM call → create track → add region → add notes → add effect
 
-Phase 3 — MIXING (sequential, after all instruments complete)
-  └── Ensure buses, add sends, volume, pan adjustments
+Phase 3 — MIXING (sequential, one coordinator LLM call, after all agents complete)
+  └── Ensure buses, add sends, volume, pan
 ```
 
-**SSE contract:** Plan steps for instruments carry `parallelGroup: "instruments"`. Steps without `parallelGroup` run sequentially (Phase 1 and Phase 3). Multiple `planStepUpdate(active)` events fire simultaneously during Phase 2; tool calls from different instruments interleave in the SSE stream. The frontend's `ExecutionTimelineView` handles this naturally since it groups by `stepId`.
+**Routing:** `orchestrate()` intercepts `Intent.GENERATE_MUSIC` + `execution_mode="apply"` + multi-role `ParsedPrompt` (2+ roles) before the standard EDITING path. Single-instrument requests and all non-STORI-PROMPT requests fall through to `_handle_editing` unchanged.
 
-**Concurrency:** Bounded by a semaphore (max 5 concurrent instrument pipelines) to avoid overwhelming Orpheus. Within each instrument pipeline, tool calls execute sequentially (you can't generate notes before the region exists).
+**SSE contract:** Plan steps for instruments carry `parallelGroup: "instruments"`. Phase 1 and Phase 3 steps have no `parallelGroup`. Multiple `planStepUpdate(active)` events fire simultaneously during Phase 2 as agents start. Tool calls from different instruments interleave in the SSE stream — the frontend groups by `stepId`, so interleaving is handled naturally.
 
-**Thread safety:** asyncio's single-threaded model ensures no data races in `StateStore` or `EntityRegistry` entity creation. Each instrument creates its own track/region with UUID-based IDs (collision-free).
+**Agent isolation:** Each `_run_instrument_agent()` runs with a focused system prompt that names only its instrument, uses a restricted tool allowlist (`_INSTRUMENT_AGENT_TOOLS`), and makes exactly one `llm.chat_completion()` call. Failures are isolated: a failing agent marks its own steps `"failed"` and does not propagate exceptions to sibling agents.
 
-**Performance:** For a 5-instrument, 15-step composition: `setup_time + max(instrument_times) + mixing_time` instead of `15 × avg_step_time`. Expected speedup: 3–5× for the instrument phase.
+**Event multiplexing:** Agents write SSE event dicts into a shared `asyncio.Queue`. The coordinator drains the queue with a 50ms polling loop (`asyncio.wait(pending, timeout=0.05)`) and forwards events to the client as they arrive, preserving arrival order within each agent while interleaving across agents.
 
-Implementation: `app/core/executor._group_into_phases` (phase splitting), `app/core/executor.execute_plan_variation` (parallel dispatch), `app/core/maestro_handlers._PlanTracker` (parallel step tracking).
+**Thread safety:** asyncio's single-threaded event loop serialises all `StateStore` and `_PlanTracker` mutations — no locks needed. UUID-based entity IDs are collision-free across agents.
+
+**Performance:** Wall-clock time for Phase 2 is `max(per-instrument time)` instead of `sum`. For a 5-instrument composition: `setup_time + max(instrument_times) + mixing_time` vs. the sequential `15 × avg_step_time`. Expected speedup: 3–5× for the instrument phase.
+
+Implementation: `app/core/maestro_handlers._handle_composition_agent_team` (coordinator), `app/core/maestro_handlers._run_instrument_agent` (per-instrument agent), `app/core/maestro_handlers._apply_single_tool_call` (shared tool execution helper), `app/core/maestro_handlers._PlanTracker` (parallel step tracking). The COMPOSING path (`execute_plan_variation`) retains its own `asyncio.gather` for Orpheus HTTP parallelism independently.
 
 ---
 

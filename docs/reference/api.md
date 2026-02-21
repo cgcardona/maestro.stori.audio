@@ -120,32 +120,37 @@ state → reasoning* → content → complete
 
 `*` = zero or more events. `complete` is always final, even on errors.
 
-### Parallel execution
+### Parallel execution (Agent Teams)
 
-When a composition involves multiple instruments, the executor runs them concurrently during Phase 2 (INSTRUMENTS). This changes the event ordering for `planStepUpdate` and `toolCall` events:
+Multi-instrument STORI PROMPT compositions (2+ roles) run each instrument as an independent LLM session — one dedicated HTTP call to the LLM API per instrument, all in-flight simultaneously. This is genuine Agent Teams parallelism, not sequential async task sharing.
+
+**Event interleaving during Phase 2:**
 
 ```
-Phase 1 (sequential):
-  planStepUpdate(stepId=1, active) → toolStart → toolCall → planStepUpdate(stepId=1, completed)
-  planStepUpdate(stepId=2, active) → toolStart → toolCall → planStepUpdate(stepId=2, completed)
+Phase 1 (sequential — deterministic, no LLM):
+  planStepUpdate(stepId=1, active) → toolStart → toolCall(stori_set_tempo) → planStepUpdate(stepId=1, completed)
+  planStepUpdate(stepId=2, active) → toolStart → toolCall(stori_set_key)   → planStepUpdate(stepId=2, completed)
 
-Phase 2 (parallel — events from different instruments interleave):
-  planStepUpdate(stepId=3, active)   ← Drums starts
-  planStepUpdate(stepId=5, active)   ← Bass starts simultaneously
-  toolCall: stori_add_midi_track (Drums)
-  toolCall: stori_add_midi_track (Bass)
-  planStepUpdate(stepId=3, completed)
+Phase 2 (Agent Teams — all instrument agents start simultaneously):
+  planStepUpdate(stepId=3, active)              ← Drums agent starts its LLM call
+  planStepUpdate(stepId=5, active)              ← Bass agent starts its LLM call (simultaneous)
+  toolCall: stori_add_midi_track (Drums)        ← arrives as Drums LLM responds
+  toolCall: stori_add_midi_track (Bass)         ← interleaved with Drums
+  planStepUpdate(stepId=3, completed)           ← Drums first step done
+  toolCall: stori_add_midi_region (Bass)
   toolCall: stori_add_notes (Drums)
   planStepUpdate(stepId=5, completed)
-  ...
+  ...                                           ← arrival order non-deterministic
 
-Phase 3 (sequential, after all instruments complete):
-  planStepUpdate(stepId=9, active) → toolStart → toolCall → planStepUpdate(stepId=9, completed)
+Phase 3 (sequential — one coordinator LLM call after barrier):
+  planStepUpdate(stepId=9, active) → toolStart → toolCall(stori_ensure_bus) → planStepUpdate(stepId=9, completed)
 ```
 
-**Frontend handling:** The frontend already groups `planStepUpdate` events by `stepId`, so interleaved events are handled naturally. Steps with `parallelGroup: "instruments"` may have `status: "active"` simultaneously. The `ExecutionTimelineView` shows all instruments progressing at once.
+**Frontend handling:** Group `planStepUpdate` events by `stepId` — do not assume events for a single step arrive contiguously. Steps with `parallelGroup: "instruments"` may have `status: "active"` simultaneously. `ExecutionTimelineView` renders all instrument timelines progressing at once.
 
-**Backward compatibility:** Single-instrument requests produce no `parallelGroup` annotations and execute sequentially as before.
+**Failure isolation:** If one instrument agent's LLM call fails, that agent emits `planStepUpdate(status: "failed")` for its own steps and exits. Sibling agents continue unaffected. A `complete` event is always emitted at the end regardless of per-agent failures.
+
+**Backward compatibility:** Single-instrument requests and all non-STORI-PROMPT requests produce no `parallelGroup` annotations and execute sequentially via `_handle_editing` as before.
 
 ### Execution Timeline contract
 
