@@ -274,7 +274,7 @@ class TestHandleComposing:
         )
 
         with (
-            patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)),
+            patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)),
             patch("app.core.executor.execute_plan_variation", new_callable=AsyncMock, return_value=fake_variation),
         ):
             events = []
@@ -307,7 +307,7 @@ class TestHandleComposing:
 
         plan = ExecutionPlan(tool_calls=[], safety_validated=False, llm_response_text="I'm not sure what to do.")
 
-        with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+        with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
             events = []
             async for e in _handle_composing("do something", {}, route, llm, store, trace, None, None):
                 events.append(e)
@@ -331,7 +331,7 @@ class TestHandleComposing:
 
         plan = ExecutionPlan(tool_calls=[], safety_validated=False)
 
-        with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+        with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
             events = []
             async for e in _handle_composing("", {}, route, llm, store, trace, None, None):
                 events.append(e)
@@ -925,7 +925,7 @@ class TestOrchestrateExecutionModePolicy:
 
         with (
             patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
-            patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)),
+            patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)),
             patch("app.core.maestro_handlers.LLMClient") as m_cls,
             patch("app.core.executor.execute_plan_variation", new_callable=AsyncMock, return_value=fake_variation),
         ):

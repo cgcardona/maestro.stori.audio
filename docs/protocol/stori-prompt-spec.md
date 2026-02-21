@@ -1158,9 +1158,9 @@ The result: a prompt with `Effects: drums: compression`, `MidiExpressiveness: cc
 | Entity manifest in tool results | Done | `app/core/maestro_handlers.py` |
 | `$N.field` variable references | Done | `app/core/maestro_handlers.py` |
 | Vibe/Section/Style/Energy → EmotionVector → Orpheus | Done | `app/core/emotion_vector.py`, `app/core/executor/`, `app/services/backends/orpheus.py` |
-| CC events extraction + pipeline (all 128 CCs) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation.py` |
-| Pitch bend extraction + pipeline (14-bit) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation.py` |
-| Aftertouch extraction + pipeline (channel + poly) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation.py` |
+| CC events extraction + pipeline (all 128 CCs) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation/` |
+| Pitch bend extraction + pipeline (14-bit) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation/` |
+| Aftertouch extraction + pipeline (channel + poly) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation/` |
 | Expressive data in `updated_regions` (commit response) | Done | `app/core/executor/`, `app/api/routes/variation/` |
 | Routing-only context for planner (reduces verbosity) | Done | `app/core/prompts.py`, `app/core/planner/` |
 | Planner reasoning fraction | Done | `app/core/planner/` |

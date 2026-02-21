@@ -456,7 +456,7 @@ class TestOrchestrateStream:
         empty_plan = ExecutionPlan(tool_calls=[], safety_validated=False)
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
+            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
                 with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
@@ -611,7 +611,7 @@ class TestOrchestrateStream:
         )
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
                 with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
@@ -659,7 +659,7 @@ class TestOrchestrateStream:
         )
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
+            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
                 with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.supports_reasoning = MagicMock(return_value=False)
@@ -762,7 +762,7 @@ class TestOrchestrateStream:
         empty_plan = ExecutionPlan(tool_calls=[], safety_validated=False)
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
+            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
                 with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
@@ -837,7 +837,7 @@ class TestComposingUnifiedSSE:
             yield plan
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_stream_with_reasoning()):
+            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_stream_with_reasoning()):
                 with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
@@ -883,7 +883,7 @@ class TestComposingUnifiedSSE:
         )
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
                 with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
@@ -948,7 +948,7 @@ class TestComposingUnifiedSSE:
             )
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
                 with patch("app.core.executor.execute_plan_variation", side_effect=_mock_execute):
                     with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                         mock_llm = MagicMock()
@@ -1027,7 +1027,7 @@ class TestComposingUnifiedSSE:
             )
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
                 with patch("app.core.executor.execute_plan_variation", side_effect=_mock_execute):
                     with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
                         mock_llm = MagicMock()

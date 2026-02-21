@@ -1,30 +1,20 @@
-"""COMPOSING and REASONING handlers for Maestro.
-
-Handles the COMPOSING SSE state (planner → executor → variation) and the
-REASONING state (question answering without tools). Also owns variation
-storage and the composing-to-editing fallback path.
-"""
+"""COMPOSING handler — generate music via planner → executor → variation."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 import uuid as _uuid_mod
 from typing import Any, AsyncIterator, Optional
 
 from app.core.entity_context import format_project_context
-from app.core.intent import Intent, IntentResult, SSEState
-from app.core.intent_config import _PRIMITIVES_REGION, _PRIMITIVES_TRACK
-from app.core.llm_client import LLMClient, LLMResponse
+from app.core.llm_client import LLMClient
 from app.core.planner import build_execution_plan_stream, ExecutionPlan
 from app.core.prompt_parser import ParsedPrompt
-from app.core.prompts import system_prompt_base, wrap_user_request
-from app.core.sse_utils import sanitize_reasoning, sse_event
+from app.core.sse_utils import sse_event
 from app.core.state_store import StateStore
-from app.core.tools import ALL_TOOLS
-from app.core.tracing import log_llm_call, trace_span
+from app.core.tracing import trace_span
 from app.core.maestro_helpers import (
     UsageTracker,
     _context_usage_fields,
@@ -32,260 +22,11 @@ from app.core.maestro_helpers import (
     _human_label_for_tool,
 )
 from app.core.maestro_plan_tracker import _PlanTracker
+from app.core.maestro_composing.storage import _store_variation
+from app.core.maestro_composing.fallback import _retry_composing_as_editing
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Variation storage
-# ---------------------------------------------------------------------------
-
-def _store_variation(
-    variation: Any,
-    project_context: dict[str, Any],
-    store: "StateStore",
-) -> None:
-    """Persist a Variation to the VariationStore so commit/discard can find it.
-
-    Called from the maestro/stream path after ``execute_plan_variation`` returns.
-    Mirrors the storage logic in the ``/variation/propose`` background task.
-    """
-    from app.variation.storage.variation_store import (
-        get_variation_store,
-        PhraseRecord,
-    )
-    from app.variation.core.state_machine import VariationStatus
-
-    project_id = project_context.get("id", "")
-    base_state_id = store.get_state_id()
-
-    vstore = get_variation_store()
-    record = vstore.create(
-        project_id=project_id,
-        base_state_id=base_state_id,
-        intent=variation.intent,
-        variation_id=variation.variation_id,
-        conversation_id=store.conversation_id,
-    )
-
-    record.transition_to(VariationStatus.STREAMING)
-    record.ai_explanation = variation.ai_explanation
-    record.affected_tracks = variation.affected_tracks
-    record.affected_regions = variation.affected_regions
-
-    for phrase in variation.phrases:
-        seq = record.next_sequence()
-
-        region_entity = store.registry.get_region(phrase.region_id)
-        region_meta = region_entity.metadata if region_entity else {}
-        region_start_beat = region_meta.get("startBeat")
-        region_duration_beats = region_meta.get("durationBeats")
-        region_name = region_entity.name if region_entity else None
-
-        record.add_phrase(PhraseRecord(
-            phrase_id=phrase.phrase_id,
-            variation_id=variation.variation_id,
-            sequence=seq,
-            track_id=phrase.track_id,
-            region_id=phrase.region_id,
-            beat_start=phrase.start_beat,
-            beat_end=phrase.end_beat,
-            label=phrase.label,
-            diff_json={
-                "phraseId": phrase.phrase_id,
-                "trackId": phrase.track_id,
-                "regionId": phrase.region_id,
-                "startBeat": phrase.start_beat,
-                "endBeat": phrase.end_beat,
-                "label": phrase.label,
-                "tags": phrase.tags,
-                "explanation": phrase.explanation,
-                "noteChanges": [nc.model_dump(by_alias=True) for nc in phrase.note_changes],
-                "controllerChanges": phrase.controller_changes,
-            },
-            ai_explanation=phrase.explanation,
-            tags=phrase.tags,
-            region_start_beat=region_start_beat,
-            region_duration_beats=region_duration_beats,
-            region_name=region_name,
-        ))
-
-    record.transition_to(VariationStatus.READY)
-    logger.info(
-        f"Variation stored: {variation.variation_id[:8]} "
-        f"({len(variation.phrases)} phrases, status=READY)"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Composing fallback helpers
-# ---------------------------------------------------------------------------
-
-def _create_editing_fallback_route(route: Any) -> IntentResult:
-    """Build an IntentResult for EDITING when the COMPOSING planner fails.
-
-    The planner is supposed to return JSON; sometimes the LLM returns tool-call
-    syntax instead. This creates a one-off EDITING route with primitives so we
-    can still produce tool calls. See docs/reference/architecture.md.
-    """
-    return IntentResult(
-        intent=Intent.NOTES_ADD,
-        sse_state=SSEState.EDITING,
-        confidence=0.7,
-        slots=route.slots,
-        tools=ALL_TOOLS,
-        allowed_tool_names=set(_PRIMITIVES_REGION) | set(_PRIMITIVES_TRACK),
-        tool_choice="auto",
-        force_stop_after=False,
-        requires_planner=False,
-        reasons=("Fallback from planner failure",),
-    )
-
-
-async def _retry_composing_as_editing(
-    prompt: str,
-    project_context: dict[str, Any],
-    route: Any,
-    llm: LLMClient,
-    store: StateStore,
-    trace: Any,
-    usage_tracker: Optional[UsageTracker],
-    quality_preset: Optional[str] = None,
-) -> AsyncIterator[str]:
-    """When planner output looks like function calls instead of JSON, retry as EDITING."""
-    logger.warning(
-        f"[{trace.trace_id[:8]}] Planner output looks like function calls, "
-        "falling back to EDITING mode with tools"
-    )
-    yield await sse_event({"type": "status", "message": "Retrying with different approach..."})
-    from app.core.maestro_editing import _handle_editing
-    editing_route = _create_editing_fallback_route(route)
-    async for event in _handle_editing(
-        prompt, project_context, editing_route, llm, store,
-        trace, usage_tracker, [], "variation",
-        quality_preset=quality_preset,
-    ):
-        yield event
-
-
-# ---------------------------------------------------------------------------
-# REASONING handler
-# ---------------------------------------------------------------------------
-
-async def _handle_reasoning(
-    prompt: str,
-    project_context: dict[str, Any],
-    route: Any,
-    llm: LLMClient,
-    trace: Any,
-    usage_tracker: Optional[UsageTracker],
-    conversation_history: list[dict[str, Any]],
-) -> AsyncIterator[str]:
-    """Handle REASONING state - answer questions without tools."""
-    yield await sse_event({"type": "status", "message": "Reasoning..."})
-
-    if route.intent == Intent.ASK_STORI_DOCS:
-        try:
-            from app.services.rag import get_rag_service
-            rag = get_rag_service(llm_client=llm)
-
-            if rag.collection_exists():
-                async for chunk in rag.answer(prompt, model=llm.model):
-                    yield await sse_event({"type": "content", "content": chunk})
-
-                yield await sse_event({
-                    "type": "complete",
-                    "success": True,
-                    "toolCalls": [],
-                    "traceId": trace.trace_id,
-                    **_context_usage_fields(usage_tracker, llm.model),
-                })
-                return
-        except Exception as e:
-            logger.warning(f"[{trace.trace_id[:8]}] RAG failed: {e}")
-
-    with trace_span(trace, "llm_thinking"):
-        messages = [{"role": "system", "content": system_prompt_base()}]
-
-        if project_context:
-            messages.append({"role": "system", "content": format_project_context(project_context)})
-
-        if conversation_history:
-            messages.extend(conversation_history)
-
-        messages.append({"role": "user", "content": wrap_user_request(prompt)})
-
-        start_time = time.time()
-        response = None
-
-        logger.info(f"🎯 REASONING handler: supports_reasoning={llm.supports_reasoning()}, model={llm.model}")
-        if llm.supports_reasoning():
-            logger.info("🌊 Using streaming path for reasoning model")
-            response_text = ""
-            async for raw in llm.chat_completion_stream(
-                messages=messages,
-                tools=[],
-                tool_choice="none",
-            ):
-                event = raw
-                if event.get("type") == "reasoning_delta":
-                    reasoning_text = event.get("text", "")
-                    if reasoning_text:
-                        sanitized = sanitize_reasoning(reasoning_text)
-                        if sanitized:
-                            yield await sse_event({
-                                "type": "reasoning",
-                                "content": sanitized,
-                            })
-                elif event.get("type") == "content_delta":
-                    content_text = event.get("text", "")
-                    if content_text:
-                        response_text += content_text
-                        yield await sse_event({"type": "content", "content": content_text})
-                elif event.get("type") == "done":
-                    response = LLMResponse(
-                        content=response_text or event.get("content"),
-                        usage=event.get("usage", {})
-                    )
-            duration_ms = (time.time() - start_time) * 1000
-        else:
-            response = await llm.chat_completion(
-                messages=messages,
-                tools=[],
-                tool_choice="none",
-            )
-            duration_ms = (time.time() - start_time) * 1000
-
-            if response.content:
-                yield await sse_event({"type": "content", "content": response.content})
-
-        if response and response.usage:
-            log_llm_call(
-                trace.trace_id,
-                llm.model,
-                response.usage.get("prompt_tokens", 0),
-                response.usage.get("completion_tokens", 0),
-                duration_ms,
-                False,
-            )
-            if usage_tracker:
-                usage_tracker.add(
-                    response.usage.get("prompt_tokens", 0),
-                    response.usage.get("completion_tokens", 0),
-                )
-
-    yield await sse_event({
-        "type": "complete",
-        "success": True,
-        "toolCalls": [],
-        "traceId": trace.trace_id,
-        **_context_usage_fields(usage_tracker, llm.model),
-    })
-
-
-# ---------------------------------------------------------------------------
-# COMPOSING handler
-# ---------------------------------------------------------------------------
 
 async def _handle_composing(
     prompt: str,
