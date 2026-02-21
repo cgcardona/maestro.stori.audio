@@ -17,6 +17,7 @@ Key safety features:
 - Tool allowlist + argument validation enforced server-side
 """
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -107,12 +108,10 @@ async def stream_maestro(
     - Request tracing with correlation IDs
     """
     user_id = token_claims.get("sub")
-    budget_remaining = None
 
     if user_id:
         try:
-            user = await check_budget(db, user_id)
-            budget_remaining = user.budget_remaining
+            await check_budget(db, user_id)
         except InsufficientBudgetError as e:
             raise HTTPException(
                 status_code=402,
@@ -168,7 +167,20 @@ async def stream_maestro(
             logger.warning(f"Failed to load conversation history: {e}")
 
     async def stream_with_budget():
-        nonlocal budget_remaining
+        _seq = 0
+
+        def _with_seq(event_str: str) -> str:
+            """Inject monotonic seq counter into every SSE event."""
+            nonlocal _seq
+            if not event_str.startswith("data: "):
+                return event_str
+            _seq += 1
+            try:
+                data = json.loads(event_str[6:].strip())
+                data["seq"] = _seq
+                return f"data: {json.dumps(data)}\n\n"
+            except Exception:
+                return event_str
 
         try:
             async for event in orchestrate(
@@ -182,7 +194,7 @@ async def stream_maestro(
                 is_cancelled=request.is_disconnected,
                 quality_preset=maestro_request.quality_preset,
             ):
-                yield event
+                yield _with_seq(event)
 
             # Deduct budget
             if user_id and (usage_tracker.prompt_tokens > 0 or usage_tracker.completion_tokens > 0):
@@ -193,20 +205,13 @@ async def stream_maestro(
                         selected_model,
                     )
 
-                    user, _ = await deduct_budget(
+                    await deduct_budget(
                         db, user_id, cost_cents,
                         safe_prompt, selected_model,
                         usage_tracker.prompt_tokens, usage_tracker.completion_tokens,
                         store_prompt=maestro_request.store_prompt,
                     )
                     await db.commit()
-                    budget_remaining = user.budget_remaining
-
-                    yield await sse_event({
-                        "type": "budgetUpdate",
-                        "budgetRemaining": budget_remaining,
-                        "cost": cost_cents / 100.0,
-                    })
                 except Exception as e:
                     logger.error(f"Budget deduction failed: {e}")
 
@@ -219,9 +224,6 @@ async def stream_maestro(
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
     }
-
-    if budget_remaining is not None:
-        headers["X-Budget-Remaining"] = str(budget_remaining)
 
     return StreamingResponse(
         stream_with_budget(),

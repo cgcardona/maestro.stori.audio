@@ -455,6 +455,15 @@ class TestIconValidation:
         icon_errors = [e for e in errors if e.field == "icon"]
         assert icon_errors == [], f"Expected '{icon}' to be valid"
 
+    @pytest.mark.parametrize("icon", [
+        "horn.fill", "horn", "horn.blast", "horn.blast.fill",
+    ])
+    def test_horn_icons_pass(self, icon):
+        """horn.fill and siblings must pass — used by brass/horns agents."""
+        errors = _validate_tool_specific("stori_set_track_icon", {"icon": icon})
+        icon_errors = [e for e in errors if e.field == "icon"]
+        assert icon_errors == [], f"Expected horn icon '{icon}' to be valid"
+
     def test_empty_icon_no_error(self):
         """Empty string icon skips validation (optional field)."""
         errors = _validate_tool_specific("stori_set_track_icon", {"icon": ""})

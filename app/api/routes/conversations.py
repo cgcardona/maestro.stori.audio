@@ -757,15 +757,7 @@ async def add_message_to_conversation(
                 )
             
             await db.commit()
-            
-            # Send budget update event
-            budget_remaining = await get_user_budget(db, user_id)
-            yield await sse_event({
-                "type": "budgetUpdate",
-                "budgetRemaining": budget_remaining,
-                "cost": cost_cents / 100.0,
-            })
-            
+
             logger.info(
                 f"Conversation {conversation_id[:8]}: "
                 f"tokens={total_tokens} cost=${cost_cents/100:.4f}"
@@ -896,13 +888,3 @@ async def sse_event(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-async def get_user_budget(db: AsyncSession, user_id: str) -> float:
-    """Get user's remaining budget in dollars."""
-    from app.db.models import User
-    from sqlalchemy import select
-    
-    result = await db.execute(
-        select(User).where(User.id == user_id)
-    )
-    user = result.scalar_one_or_none()
-    return user.budget_remaining if user else 0.0

@@ -641,12 +641,14 @@ def _validate_tool_specific(tool_name: str, params: dict[str, Any]) -> list[Vali
             "flame", "flame.fill", "metronome", "star", "star.fill",
             "dial.min", "dial.medium", "dial.max",
             "repeat", "repeat.1", "shuffle",
-            "ear", "ear.badge.waveform"
+            "ear", "ear.badge.waveform",
+            # Brass / wind
+            "horn", "horn.fill", "horn.blast", "horn.blast.fill",
         }
         if icon and icon not in valid_icons:
             errors.append(ValidationError(
                 field="icon",
-                message=f"Invalid icon '{icon}'. Must be from curated SF Symbols list (58 options)",
+                message=f"Invalid icon '{icon}'. Must be from curated SF Symbols list (62 options)",
                 code="INVALID_ICON",
             ))
     

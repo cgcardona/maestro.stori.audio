@@ -123,23 +123,19 @@ class TestComposeStreamEndpoint:
 
     @pytest.mark.anyio
     async def test_maestro_stream_budget_deduction(self, client, auth_headers, test_user, db_session):
-        """Budget is deducted after successful streaming."""
-        from app.core.maestro_handlers import UsageTracker
+        """Budget deduction runs after successful streaming; no budgetUpdate SSE event is emitted."""
+        mock_deduct = AsyncMock(return_value=(test_user, MagicMock()))
 
         async def fake_orchestrate(*args, **kwargs):
-            # The route handler creates UsageTracker and passes it; simulate usage
             usage_tracker = kwargs.get("usage_tracker")
             if usage_tracker:
                 usage_tracker.add(100, 50)
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "complete", "success": True})
 
-        async def fake_deduct(db, user_id, cost, *args, **kwargs):
-            return test_user, MagicMock()
-
         with (
             patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate),
-            patch("app.api.routes.maestro.deduct_budget", new_callable=AsyncMock, side_effect=fake_deduct),
+            patch("app.api.routes.maestro.deduct_budget", mock_deduct),
         ):
             resp = await client.post(
                 "/api/v1/maestro/stream",
@@ -147,10 +143,13 @@ class TestComposeStreamEndpoint:
                 headers=auth_headers,
             )
         assert resp.status_code == 200
+        # Deduction must have run
+        mock_deduct.assert_called_once()
+        # No budgetUpdate event is emitted — frontend polls /budget/status instead
         events = parse_sse_events(resp.text)
-        # Should have budget_update event
-        budget_events = [e for e in events if e.get("type") == "budgetUpdate"]
-        assert len(budget_events) >= 1
+        assert not any(e.get("type") == "budgetUpdate" for e in events)
+        # No X-Budget-Remaining header
+        assert "x-budget-remaining" not in {k.lower() for k in resp.headers}
 
     @pytest.mark.anyio
     async def test_maestro_stream_error_yields_error_event(self, client, auth_headers, test_user):
@@ -216,8 +215,8 @@ class TestComposeStreamEndpoint:
         assert resp.status_code in (401, 403)
 
     @pytest.mark.anyio
-    async def test_maestro_stream_budget_header(self, client, auth_headers, test_user):
-        """X-Budget-Remaining header is set when user has budget."""
+    async def test_maestro_stream_no_budget_header(self, client, auth_headers, test_user):
+        """X-Budget-Remaining header is not emitted; frontend polls /budget/status instead."""
         async def fake_orchestrate(*args, **kwargs):
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "complete", "success": True})
@@ -229,7 +228,7 @@ class TestComposeStreamEndpoint:
                 headers=auth_headers,
             )
         assert resp.status_code == 200
-        assert "x-budget-remaining" in resp.headers
+        assert "x-budget-remaining" not in resp.headers
 
 
 # ---------------------------------------------------------------------------

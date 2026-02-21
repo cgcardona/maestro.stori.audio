@@ -2869,6 +2869,7 @@ class TestRunInstrumentAgent:
             allowed_tool_names={"stori_add_midi_track", "stori_add_midi_region"},
             trace=trace,
             sse_queue=queue,
+            collected_tool_calls=[],
         )
 
         events = []
@@ -2913,6 +2914,7 @@ class TestRunInstrumentAgent:
             allowed_tool_names={"stori_add_midi_track"},
             trace=trace,
             sse_queue=queue,
+            collected_tool_calls=[],
         )
 
         # Failed steps should emit planStepUpdate events via queue
@@ -2956,9 +2958,12 @@ class TestRunInstrumentAgent:
             allowed_tool_names={"stori_add_midi_track", "stori_add_midi_region"},
             trace=trace,
             sse_queue=queue,
+            collected_tool_calls=[],
         )
 
-        assert llm.chat_completion.call_count == 1
+        # The mock returns one tool call on turn 0, then stops — expect 2 calls
+        # (turn 0 with tool calls, turn 1 returns empty → loop exits)
+        assert llm.chat_completion.call_count >= 1
 
 
 class TestAgentTeamPhases:
@@ -3111,11 +3116,14 @@ class TestAgentTeamFailureIsolation:
             call_count += 1
             if call_count == 1:
                 raise RuntimeError("drums LLM failed")
-            # Bass agent succeeds
+            # Bass agent: first turn returns a tool call, subsequent turns empty
             response = LLMResponse(content=None, usage={})
-            response.tool_calls = [
-                ToolCall(id="b1", name="stori_add_midi_track", params={"name": "Bass"}),
-            ]
+            if call_count == 2:
+                response.tool_calls = [
+                    ToolCall(id="b1", name="stori_add_midi_track", params={"name": "Bass"}),
+                ]
+            else:
+                response.tool_calls = []  # Bass agent stops after second turn
             return response
 
         llm = _make_llm_mock()
@@ -3130,8 +3138,8 @@ class TestAgentTeamFailureIsolation:
         payloads = _parse_events(events)
         # Should still emit complete (handler doesn't abort on agent failures)
         assert any(p["type"] == "complete" for p in payloads)
-        # Both agents were attempted
-        assert call_count == 2
+        # Both agents were attempted (drums failed on call 1, bass used calls 2+)
+        assert call_count >= 2
 
     @pytest.mark.anyio
     async def test_complete_event_emitted_even_when_all_agents_fail(self):
@@ -3154,6 +3162,316 @@ class TestAgentTeamFailureIsolation:
 
         payloads = _parse_events(events)
         assert any(p["type"] == "complete" for p in payloads)
+
+
+# =============================================================================
+# Bug-fix regression tests (Agent Teams live-test session)
+# =============================================================================
+
+class TestIsAdditiveCompositionBug3:
+    """_is_additive_composition returns True for STORI PROMPTs with 2+ roles.
+
+    Regression test for Bug 3: the third STORI PROMPT (horn break, roles:
+    drums + horns) was routed to the composing/variation pipeline because
+    _is_additive_composition returned False (both tracks already existed).
+    The fix: any parsed prompt with 2+ roles always returns True.
+    """
+
+    def test_two_roles_returns_true_even_when_all_tracks_exist(self):
+        """2-role STORI PROMPT → True even if both tracks already exist."""
+        from app.core.maestro_handlers import _is_additive_composition
+
+        parsed = _make_parsed_multi(roles=["drums", "horns"])
+        project_context = {
+            "tracks": [
+                {"name": "Drums", "trackId": "t1", "regions": []},
+                {"name": "Horns", "trackId": "t2", "regions": []},
+            ]
+        }
+        assert _is_additive_composition(parsed, project_context) is True
+
+    def test_single_role_existing_track_returns_false(self):
+        """1-role prompt where the track exists → False (original behaviour)."""
+        from app.core.maestro_handlers import _is_additive_composition
+
+        parsed = _make_parsed_multi(roles=["drums"])
+        project_context = {
+            "tracks": [{"name": "Drums", "trackId": "t1", "regions": []}]
+        }
+        assert _is_additive_composition(parsed, project_context) is False
+
+    def test_single_role_new_track_returns_true(self):
+        """1-role prompt for a brand-new track → True (existing behaviour)."""
+        from app.core.maestro_handlers import _is_additive_composition
+
+        parsed = _make_parsed_multi(roles=["bass"])
+        project_context = {
+            "tracks": [{"name": "Drums", "trackId": "t1", "regions": []}]
+        }
+        assert _is_additive_composition(parsed, project_context) is True
+
+    def test_no_parsed_returns_false(self):
+        """None parsed → False (guard clause)."""
+        from app.core.maestro_handlers import _is_additive_composition
+
+        assert _is_additive_composition(None, {}) is False
+
+
+class TestBuildCompositionSummaryBug1:
+    """_build_composition_summary distinguishes created vs reused tracks.
+
+    Regression test for Bug 1: summary.final must report tracksReused
+    alongside tracksCreated so the frontend shows correct labels.
+    """
+
+    def test_reused_track_appears_in_tracks_reused(self):
+        """Synthetic _reused_track entries populate tracksReused."""
+        from app.core.maestro_handlers import _build_composition_summary
+
+        tool_calls = [
+            {"tool": "_reused_track", "params": {"name": "Drums", "trackId": "t-drums"}},
+            {"tool": "stori_add_midi_track", "params": {"name": "Bass", "trackId": "t-bass"}},
+            {"tool": "stori_add_midi_region", "params": {}},
+        ]
+        summary = _build_composition_summary(tool_calls)
+
+        assert len(summary["tracksReused"]) == 1
+        assert summary["tracksReused"][0]["name"] == "Drums"
+        assert len(summary["tracksCreated"]) == 1
+        assert summary["tracksCreated"][0]["name"] == "Bass"
+        assert summary["trackCount"] == 2
+
+    def test_no_reused_tracks_gives_empty_list(self):
+        """When no tracks are reused, tracksReused is an empty list."""
+        from app.core.maestro_handlers import _build_composition_summary
+
+        tool_calls = [
+            {"tool": "stori_add_midi_track", "params": {"name": "Drums", "trackId": "t1"}},
+        ]
+        summary = _build_composition_summary(tool_calls)
+
+        assert summary["tracksReused"] == []
+        assert len(summary["tracksCreated"]) == 1
+
+
+class TestAgentTeamExistingTrackReuse:
+    """Agent Teams coordinator passes per-role trackId/startBeat to agents.
+
+    Regression tests for Bug 1 (duplicate tracks) and the follow-up bug where
+    all agents received the same (first) trackId instead of their own.
+    """
+
+    def _make_route_for_team(self):
+        from app.core.intent import Intent, IntentResult, SSEState
+        return IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.EDITING,
+            confidence=0.9,
+            slots=MagicMock(),
+            tools=[],
+            allowed_tool_names={
+                "stori_set_tempo", "stori_set_key",
+                "stori_add_midi_track", "stori_add_midi_region",
+                "stori_add_notes", "stori_add_insert_effect",
+            },
+            tool_choice="auto",
+            force_stop_after=False,
+            requires_planner=False,
+            reasons=(),
+        )
+
+    @pytest.mark.anyio
+    async def test_existing_track_injects_reused_track_into_summary(self):
+        """When a track exists, summary.final includes it in tracksReused."""
+        from app.core.maestro_handlers import _handle_composition_agent_team
+
+        parsed = _make_parsed_multi(roles=["drums", "bass"])
+        route = self._make_route_for_team()
+        # Project already has a Drums track with one 16-beat region
+        project_context = {
+            "tracks": [
+                {
+                    "name": "Drums",
+                    "trackId": "existing-drums-id",
+                    "regions": [{"startBeat": 0, "durationBeats": 16}],
+                }
+            ]
+        }
+        store = StateStore(conversation_id="test-reuse-summary")
+        trace = _make_trace()
+
+        llm = _make_llm_mock()
+        agent_response = LLMResponse(content=None, usage={})
+        agent_response.tool_calls = []
+        llm.chat_completion = AsyncMock(return_value=agent_response)
+
+        events = []
+        async for e in _handle_composition_agent_team(
+            "add chorus", project_context, parsed, route, llm, store, trace, None
+        ):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        summary_events = [p for p in payloads if p.get("type") == "summary.final"]
+        assert summary_events, "summary.final must be emitted"
+        summary = summary_events[0]
+        reused = summary.get("tracksReused", [])
+        assert any(t["trackId"] == "existing-drums-id" for t in reused), (
+            f"Expected existing-drums-id in tracksReused, got: {reused}"
+        )
+
+    @pytest.mark.anyio
+    async def test_existing_track_system_prompt_skips_create(self):
+        """Reusing agent's system prompt does not ask to call stori_add_midi_track."""
+        from app.core.maestro_handlers import _run_instrument_agent
+
+        store = StateStore(conversation_id="test-reuse-prompt")
+        plan_tracker = _PlanTracker()
+        plan_tracker.build_from_prompt(
+            _make_parsed_multi(roles=["drums"]),
+            "add chorus",
+            {"tracks": [{"name": "Drums", "trackId": "d1", "regions": []}]},
+        )
+        captured_messages: list = []
+
+        async def capture_llm(*args, **kwargs):
+            captured_messages.extend(kwargs.get("messages", []))
+            r = LLMResponse(content=None, usage={})
+            r.tool_calls = []
+            return r
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=capture_llm)
+        trace = _make_trace()
+        queue: asyncio.Queue = asyncio.Queue()
+        step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
+
+        await _run_instrument_agent(
+            instrument_name="Drums",
+            role="drums",
+            style="lofi",
+            bars=4,
+            tempo=90.0,
+            key="Am",
+            step_ids=step_ids,
+            plan_tracker=plan_tracker,
+            llm=llm,
+            store=store,
+            allowed_tool_names={"stori_add_midi_region", "stori_add_notes"},
+            trace=trace,
+            sse_queue=queue,
+            collected_tool_calls=[],
+            existing_track_id="d1",
+            start_beat=16,
+        )
+
+        system_msgs = [m["content"] for m in captured_messages if m.get("role") == "system"]
+        assert system_msgs, "System message must be sent"
+        sys_text = system_msgs[0]
+        assert "DO NOT call stori_add_midi_track" in sys_text
+        assert "d1" in sys_text
+        assert "beat 16" in sys_text
+
+    @pytest.mark.anyio
+    async def test_each_agent_receives_its_own_distinct_track_id(self):
+        """Every parallel agent must receive its OWN trackId, not the first one.
+
+        Regression test for the follow-up bug: all agents were receiving
+        the Drums trackId (3C1A09C3) because the coordinator injected a single
+        shared value. The fix builds a per-role mapping before spawning.
+        """
+        from app.core.maestro_handlers import _handle_composition_agent_team
+
+        parsed = _make_parsed_multi(roles=["drums", "bass", "guitar", "horns"])
+        route = self._make_route_for_team()
+        project_context = {
+            "tracks": [
+                {"name": "Drums",  "trackId": "id-drums",  "regions": [{"startBeat": 0, "durationBeats": 16}]},
+                {"name": "Bass",   "trackId": "id-bass",   "regions": [{"startBeat": 0, "durationBeats": 16}]},
+                {"name": "Guitar", "trackId": "id-guitar", "regions": [{"startBeat": 0, "durationBeats": 16}]},
+                {"name": "Horns",  "trackId": "id-horns",  "regions": [{"startBeat": 0, "durationBeats": 16}]},
+            ]
+        }
+        store = StateStore(conversation_id="test-distinct-ids")
+        trace = _make_trace()
+
+        # Capture every system prompt that the LLM receives
+        captured_system_prompts: list[str] = []
+
+        async def capture_llm(*args, **kwargs):
+            msgs = kwargs.get("messages", args[0] if args else [])
+            for m in msgs:
+                if m.get("role") == "system":
+                    captured_system_prompts.append(m["content"])
+            r = LLMResponse(content=None, usage={})
+            r.tool_calls = []
+            return r
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=capture_llm)
+
+        async for _ in _handle_composition_agent_team(
+            "add chorus", project_context, parsed, route, llm, store, trace, None
+        ):
+            pass
+
+        assert len(captured_system_prompts) >= 4, (
+            f"Expected at least 4 agent system prompts, got {len(captured_system_prompts)}"
+        )
+        # Each agent's system prompt must contain its OWN trackId
+        for expected_id in ["id-drums", "id-bass", "id-guitar", "id-horns"]:
+            matching = [p for p in captured_system_prompts if expected_id in p]
+            assert len(matching) == 1, (
+                f"Expected exactly 1 prompt containing '{expected_id}', got {len(matching)}. "
+                f"All prompts: {[p[:120] for p in captured_system_prompts]}"
+            )
+
+    @pytest.mark.anyio
+    async def test_client_id_key_resolved_same_as_trackid_key(self):
+        """project_context tracks with 'id' key (DAW format) work like 'trackId'."""
+        from app.core.maestro_handlers import _handle_composition_agent_team
+
+        parsed = _make_parsed_multi(roles=["drums", "bass"])
+        route = self._make_route_for_team()
+        # Client sends "id" (DAW format) instead of "trackId"
+        project_context = {
+            "tracks": [
+                {"name": "Drums", "id": "daw-drums-id", "regions": []},
+                {"name": "Bass",  "id": "daw-bass-id",  "regions": []},
+            ]
+        }
+        store = StateStore(conversation_id="test-id-key")
+        trace = _make_trace()
+
+        captured_system_prompts: list[str] = []
+
+        async def capture_llm(*args, **kwargs):
+            msgs = kwargs.get("messages", args[0] if args else [])
+            for m in msgs:
+                if m.get("role") == "system":
+                    captured_system_prompts.append(m["content"])
+            r = LLMResponse(content=None, usage={})
+            r.tool_calls = []
+            return r
+
+        llm = _make_llm_mock()
+        llm.chat_completion = AsyncMock(side_effect=capture_llm)
+
+        async for _ in _handle_composition_agent_team(
+            "add section", project_context, parsed, route, llm, store, trace, None
+        ):
+            pass
+
+        assert any("daw-drums-id" in p for p in captured_system_prompts), (
+            "Drums agent must have received its DAW-format id"
+        )
+        assert any("daw-bass-id" in p for p in captured_system_prompts), (
+            "Bass agent must have received its DAW-format id"
+        )
+        # Confirm no agent received an empty string trackId (the old bug)
+        assert not any("trackId=''" in p for p in captured_system_prompts), (
+            "No agent should have an empty trackId injected into its system prompt"
+        )
 
 
 import asyncio

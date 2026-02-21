@@ -53,6 +53,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 - **Where to document:** Setup/config/deploy → `docs/guides/setup.md`. Frontend/MCP/JWT → `docs/guides/integrate.md`. Streaming, models, tools → `docs/reference/api.md`. Request flow, intent, human/agent → `docs/reference/architecture.md`. Running tests, intent QA → `docs/guides/testing.md`. Assets (kits, soundfonts) → `docs/guides/assets.md`. Security and go-live → `docs/guides/security.md`. Specs (Muse/Variation) → `docs/protocol/`.
 - **When editing:** If you change behavior, config, or API, update the relevant doc. Prefer short, concrete sentences. Keep README and docs in sync (e.g. service table, env list).
 - **Code comments:** Use docstrings for public modules, classes, and functions. Prefer "why" over "what" where non-obvious. Do not comment out code; remove or guard behind a feature flag.
+- **Ephemeral handoff prompts:** Never create `.md` files for one-off FE/BE integration prompts or cross-team handoffs. Deliver them inline in the conversation as a fenced markdown block the user can copy. Only commit docs that are durable reference material (guides, API contracts, architecture).
 
 ---
 

@@ -41,7 +41,6 @@ All events are newline-delimited `data: {json}\n\n` lines. Every event has a `ty
 | `state` | Intent classification result. **First meaningful event.** `{ "type": "state", "state": "editing" \| "composing" \| "reasoning", "intent": "..." }` |
 | `reasoning` | LLM chain-of-thought chunk (streamed). `{ "type": "reasoning", "content": "..." }` |
 | `content` | Final user-facing text response. `{ "type": "content", "content": "..." }` |
-| `budgetUpdate` | Cost update after LLM call. `{ "type": "budgetUpdate", "budgetRemaining": 4.50, "cost": 0.03 }` |
 | `error` | Error message (non-fatal or fatal). `{ "type": "error", "error": "...", "message": "..." }` |
 | `complete` | **Always the final event**, even on errors. `{ "type": "complete", "success": true \| false, "traceId": "...", "inputTokens": 42350, "contextWindowTokens": 200000 }`. On error: `success: false`. `inputTokens` = full input tokens sent to the model this turn (from `usage.prompt_tokens`; reflects the entire context window occupied, including history, system prompt, and tools). `contextWindowTokens` = model capacity (200 000 for all supported Claude models). Both are `0` if unavailable — frontend should leave any usage display at its previous value in that case. |
 
@@ -105,7 +104,7 @@ Emitted when `state.state == "reasoning"`. No tools; chat only.
 
 **EDITING:**
 ```
-state → reasoning* → plan → [planStepUpdate(active) → toolStart → toolCall → planStepUpdate(completed)]* → planStepUpdate(skipped)* → content? → budgetUpdate → complete
+state → reasoning* → plan → [planStepUpdate(active) → toolStart → toolCall → planStepUpdate(completed)]* → planStepUpdate(skipped)* → content? → complete
 ```
 
 Steps are grouped per-track (contiguous) in the `plan` event. During execution, instrument steps with the same `parallelGroup` may interleave (see [Parallel execution](#parallel-execution)). At completion, any steps never activated are emitted as `skipped` before `complete`.
