@@ -1,6 +1,6 @@
 """Pydantic models for the Maestro Default UI endpoints.
 
-Serves prompt chips, template cards, placeholder strings, individual prompt
+Serves prompt inspiration cards, placeholder strings, individual prompt
 templates, and budget status — all consumed by the macOS client's creative
 launchpad view.
 """
@@ -17,51 +17,29 @@ from app.models.base import CamelModel
 # ---------------------------------------------------------------------------
 
 class PromptSection(CamelModel):
-    """One accordion section inside a prompt card or template (STORI PROMPT SPEC v2)."""
+    """One accordion section inside a prompt template (STORI PROMPT SPEC v2)."""
 
     heading: str
     content: str
 
 
 # ---------------------------------------------------------------------------
-# Chips
+# Prompt inspiration cards (GET /maestro/prompts)
 # ---------------------------------------------------------------------------
 
-class PromptChip(CamelModel):
-    """Quick-start genre chip for the flow grid."""
+class PromptItem(CamelModel):
+    """One curated STORI PROMPT example returned in the inspiration carousel."""
 
     id: str
-    title: str
-    icon: str = Field(description="SF Symbol name")
-    prompt_template_id: str = Field(alias="promptTemplateID")
-    full_prompt: str
+    title: str = Field(description="Human label, e.g. 'Lo-fi boom bap · Cm · 75 BPM'")
+    preview: str = Field(description="First 3–4 YAML lines visible in the card")
+    full_prompt: str = Field(description="Complete STORI PROMPT YAML — injected verbatim into the input on tap")
 
 
-class ChipsResponse(CamelModel):
-    """Response for GET /maestro/prompts/chips."""
+class PromptsResponse(CamelModel):
+    """Response for GET /maestro/prompts — 4 randomly sampled items."""
 
-    chips: list[PromptChip]
-
-
-# ---------------------------------------------------------------------------
-# Cards
-# ---------------------------------------------------------------------------
-
-class PromptCard(CamelModel):
-    """Advanced structured template card for the horizontal carousel."""
-
-    id: str
-    title: str
-    description: str
-    preview_tags: list[str] = Field(max_length=3)
-    template_id: str = Field(alias="templateID")
-    sections: list[PromptSection]
-
-
-class CardsResponse(CamelModel):
-    """Response for GET /maestro/prompts/cards."""
-
-    cards: list[PromptCard]
+    prompts: list[PromptItem]
 
 
 # ---------------------------------------------------------------------------

@@ -1,12 +1,12 @@
 """Tests for Maestro Default UI endpoints (app/api/routes/maestro_ui.py).
 
-Covers placeholders, prompt chips, prompt cards, single template lookup,
-budget status derivation, auth requirements, and camelCase serialization.
+Covers placeholders, prompt inspiration cards (random sample), single template
+lookup, budget status derivation, auth requirements, and camelCase serialization.
 """
 
 import pytest
 
-from app.data.maestro_ui import ALL_TEMPLATE_IDS, CHIPS, CARDS, PLACEHOLDERS, TEMPLATES
+from app.data.maestro_ui import ALL_TEMPLATE_IDS, PLACEHOLDERS, PROMPT_POOL, TEMPLATES
 
 
 # ---------------------------------------------------------------------------
@@ -46,140 +46,114 @@ class TestPlaceholders:
 
 
 # ---------------------------------------------------------------------------
-# 2. GET /api/v1/maestro/prompts/chips
+# 2. GET /api/v1/maestro/prompts
 # ---------------------------------------------------------------------------
 
 
-class TestPromptChips:
+class TestPrompts:
 
     @pytest.mark.anyio
-    async def test_returns_chips(self, client, db_session):
-        """Happy path — returns a list of chip objects."""
-        resp = await client.get("/api/v1/maestro/prompts/chips")
+    async def test_returns_prompts(self, client, db_session):
+        """Happy path — returns a list of prompt items."""
+        resp = await client.get("/api/v1/maestro/prompts")
         assert resp.status_code == 200
         data = resp.json()
-        assert "chips" in data
-        assert isinstance(data["chips"], list)
+        assert "prompts" in data
+        assert isinstance(data["prompts"], list)
 
     @pytest.mark.anyio
-    async def test_chip_count_in_sweet_spot(self, client, db_session):
-        """6-10 chips is the sweet spot for the flow layout."""
-        data = (await client.get("/api/v1/maestro/prompts/chips")).json()
-        assert 6 <= len(data["chips"]) <= 10
+    async def test_returns_exactly_four(self, client, db_session):
+        """Endpoint returns exactly 4 items per call."""
+        data = (await client.get("/api/v1/maestro/prompts")).json()
+        assert len(data["prompts"]) == 4
 
     @pytest.mark.anyio
-    async def test_chip_shape(self, client, db_session):
-        """Every chip has the required camelCase fields."""
-        data = (await client.get("/api/v1/maestro/prompts/chips")).json()
-        for chip in data["chips"]:
-            assert "id" in chip
-            assert "title" in chip
-            assert "icon" in chip
-            assert "promptTemplateID" in chip
-            assert "fullPrompt" in chip
+    async def test_prompt_item_shape(self, client, db_session):
+        """Every prompt item has the required camelCase fields."""
+        data = (await client.get("/api/v1/maestro/prompts")).json()
+        for item in data["prompts"]:
+            assert "id" in item
+            assert "title" in item
+            assert "preview" in item
+            assert "fullPrompt" in item
 
     @pytest.mark.anyio
-    async def test_chip_template_ids_are_resolvable(self, client, db_session):
-        """Every chip's promptTemplateID maps to an existing template."""
-        data = (await client.get("/api/v1/maestro/prompts/chips")).json()
-        for chip in data["chips"]:
-            assert chip["promptTemplateID"] in ALL_TEMPLATE_IDS, (
-                f"Chip '{chip['id']}' references unknown template '{chip['promptTemplateID']}'"
+    async def test_full_prompt_starts_with_sentinel(self, client, db_session):
+        """Every fullPrompt must begin with STORI PROMPT."""
+        data = (await client.get("/api/v1/maestro/prompts")).json()
+        for item in data["prompts"]:
+            assert item["fullPrompt"].startswith("STORI PROMPT"), (
+                f"Item '{item['id']}' fullPrompt doesn't start with 'STORI PROMPT'"
             )
+
+    @pytest.mark.anyio
+    async def test_full_prompt_contains_required_fields(self, client, db_session):
+        """Every fullPrompt contains the mandatory STORI PROMPT spec fields."""
+        required_fields = ["Mode:", "Style:", "Key:", "Tempo:", "Role:", "Vibe:", "Request:"]
+        data = (await client.get("/api/v1/maestro/prompts")).json()
+        for item in data["prompts"]:
+            for field in required_fields:
+                assert field in item["fullPrompt"], (
+                    f"Item '{item['id']}' fullPrompt missing '{field}'"
+                )
+
+    @pytest.mark.anyio
+    async def test_full_prompt_contains_maestro_dimensions(self, client, db_session):
+        """Every fullPrompt uses full spec breadth — all Maestro dimensions present."""
+        dimensions = [
+            "Harmony:", "Melody:", "Rhythm:", "Dynamics:",
+            "Orchestration:", "Effects:", "Expression:", "Texture:",
+            "MidiExpressiveness:",
+        ]
+        data = (await client.get("/api/v1/maestro/prompts")).json()
+        for item in data["prompts"]:
+            missing = [d for d in dimensions if d not in item["fullPrompt"]]
+            assert not missing, (
+                f"Item '{item['id']}' missing dimensions: {missing}"
+            )
+
+    @pytest.mark.anyio
+    async def test_ids_are_unique_in_sample(self, client, db_session):
+        """The 4 sampled items have distinct IDs."""
+        data = (await client.get("/api/v1/maestro/prompts")).json()
+        ids = [p["id"] for p in data["prompts"]]
+        assert len(ids) == len(set(ids))
+
+    @pytest.mark.anyio
+    async def test_returns_different_samples(self, client, db_session):
+        """Multiple calls return different results (probabilistic, but pool is large enough)."""
+        results = set()
+        for _ in range(6):
+            data = (await client.get("/api/v1/maestro/prompts")).json()
+            results.add(frozenset(p["id"] for p in data["prompts"]))
+        # With a pool of 22 and sample of 4, it's astronomically unlikely
+        # that 6 calls all return the same set
+        assert len(results) > 1, "All 6 calls returned identical samples — random sampling broken"
+
+    @pytest.mark.anyio
+    async def test_preview_is_nonempty(self, client, db_session):
+        """Every preview string is non-empty."""
+        data = (await client.get("/api/v1/maestro/prompts")).json()
+        for item in data["prompts"]:
+            assert len(item["preview"]) > 10
 
     @pytest.mark.anyio
     async def test_no_auth_required(self, client, db_session):
-        """Chips endpoint is public."""
-        resp = await client.get("/api/v1/maestro/prompts/chips")
+        """Prompts endpoint is public."""
+        resp = await client.get("/api/v1/maestro/prompts")
         assert resp.status_code == 200
 
     @pytest.mark.anyio
-    async def test_full_prompt_is_nonempty(self, client, db_session):
-        """Every chip has a non-empty fullPrompt."""
-        data = (await client.get("/api/v1/maestro/prompts/chips")).json()
-        for chip in data["chips"]:
-            assert len(chip["fullPrompt"]) > 10
+    async def test_camel_case_field_name(self, client, db_session):
+        """Wire format uses fullPrompt (camelCase), not full_prompt."""
+        data = (await client.get("/api/v1/maestro/prompts")).json()
+        item = data["prompts"][0]
+        assert "fullPrompt" in item
+        assert "full_prompt" not in item
 
 
 # ---------------------------------------------------------------------------
-# 3. GET /api/v1/maestro/prompts/cards
-# ---------------------------------------------------------------------------
-
-
-class TestPromptCards:
-
-    @pytest.mark.anyio
-    async def test_returns_cards(self, client, db_session):
-        """Happy path — returns a list of card objects."""
-        resp = await client.get("/api/v1/maestro/prompts/cards")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "cards" in data
-        assert isinstance(data["cards"], list)
-
-    @pytest.mark.anyio
-    async def test_card_count_in_sweet_spot(self, client, db_session):
-        """3-5 cards is the sweet spot for the horizontal scroll."""
-        data = (await client.get("/api/v1/maestro/prompts/cards")).json()
-        assert 3 <= len(data["cards"]) <= 5
-
-    @pytest.mark.anyio
-    async def test_card_shape(self, client, db_session):
-        """Every card has the required camelCase fields."""
-        data = (await client.get("/api/v1/maestro/prompts/cards")).json()
-        for card in data["cards"]:
-            assert "id" in card
-            assert "title" in card
-            assert "description" in card
-            assert "previewTags" in card
-            assert "templateID" in card
-            assert "sections" in card
-
-    @pytest.mark.anyio
-    async def test_cards_have_five_sections(self, client, db_session):
-        """Each card has exactly 5 sections (STORI PROMPT SPEC v2)."""
-        data = (await client.get("/api/v1/maestro/prompts/cards")).json()
-        for card in data["cards"]:
-            assert len(card["sections"]) == 5, (
-                f"Card '{card['id']}' has {len(card['sections'])} sections, expected 5"
-            )
-
-    @pytest.mark.anyio
-    async def test_section_headings_follow_spec(self, client, db_session):
-        """Sections follow STORI PROMPT SPEC v2 headings."""
-        expected = ["Style", "Arrangement", "Instruments", "Production Notes", "Creative Intent"]
-        data = (await client.get("/api/v1/maestro/prompts/cards")).json()
-        for card in data["cards"]:
-            headings = [s["heading"] for s in card["sections"]]
-            assert headings == expected, (
-                f"Card '{card['id']}' headings {headings} != expected {expected}"
-            )
-
-    @pytest.mark.anyio
-    async def test_preview_tags_max_three(self, client, db_session):
-        """previewTags has at most 3 items."""
-        data = (await client.get("/api/v1/maestro/prompts/cards")).json()
-        for card in data["cards"]:
-            assert len(card["previewTags"]) <= 3
-
-    @pytest.mark.anyio
-    async def test_card_template_ids_are_resolvable(self, client, db_session):
-        """Every card's templateID maps to an existing template."""
-        data = (await client.get("/api/v1/maestro/prompts/cards")).json()
-        for card in data["cards"]:
-            assert card["templateID"] in ALL_TEMPLATE_IDS, (
-                f"Card '{card['id']}' references unknown template '{card['templateID']}'"
-            )
-
-    @pytest.mark.anyio
-    async def test_no_auth_required(self, client, db_session):
-        """Cards endpoint is public."""
-        resp = await client.get("/api/v1/maestro/prompts/cards")
-        assert resp.status_code == 200
-
-
-# ---------------------------------------------------------------------------
-# 4. GET /api/v1/maestro/prompts/{template_id}
+# 3. GET /api/v1/maestro/prompts/{template_id}
 # ---------------------------------------------------------------------------
 
 
@@ -205,7 +179,7 @@ class TestPromptTemplate:
 
     @pytest.mark.anyio
     async def test_all_eleven_template_ids_resolvable(self, client, db_session):
-        """All 11 template IDs from chips + cards are resolvable."""
+        """All 11 template IDs are resolvable."""
         expected_ids = {
             "lofi_chill", "dark_trap", "jazz_trio", "synthwave",
             "cinematic", "funk_groove", "ambient", "deep_house",
@@ -226,14 +200,11 @@ class TestPromptTemplate:
             )
 
     @pytest.mark.anyio
-    async def test_template_sections_have_heading_and_content(self, client, db_session):
-        """Each section has heading and content strings."""
-        data = (await client.get("/api/v1/maestro/prompts/dark_trap")).json()
-        for section in data["sections"]:
-            assert "heading" in section
-            assert "content" in section
-            assert isinstance(section["heading"], str)
-            assert isinstance(section["content"], str)
+    async def test_template_camel_case(self, client, db_session):
+        """Template response uses fullPrompt, not full_prompt."""
+        data = (await client.get("/api/v1/maestro/prompts/lofi_chill")).json()
+        assert "fullPrompt" in data
+        assert "full_prompt" not in data
 
     @pytest.mark.anyio
     async def test_no_auth_required(self, client, db_session):
@@ -243,7 +214,7 @@ class TestPromptTemplate:
 
 
 # ---------------------------------------------------------------------------
-# 5. GET /api/v1/maestro/budget/status
+# 4. GET /api/v1/maestro/budget/status
 # ---------------------------------------------------------------------------
 
 
@@ -295,6 +266,15 @@ class TestBudgetStatus:
         resp = await client.get("/api/v1/maestro/budget/status", headers=headers)
         assert resp.status_code == 404
 
+    @pytest.mark.anyio
+    async def test_budget_camel_case(self, client, auth_headers, test_user):
+        """Budget response uses sessionsUsed, not sessions_used."""
+        data = (await client.get(
+            "/api/v1/maestro/budget/status", headers=auth_headers
+        )).json()
+        assert "sessionsUsed" in data
+        assert "sessions_used" not in data
+
 
 # ---------------------------------------------------------------------------
 # Budget state derivation (unit tests)
@@ -308,171 +288,163 @@ class TestBudgetStateDerivation:
     async def test_state_normal(self, client, db_session, test_user):
         """remaining >= 1.0 → normal."""
         from app.auth.tokens import create_access_token
-
-        test_user.budget_cents = 500  # $5.00
+        test_user.budget_cents = 500
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
-        headers = {"Authorization": f"Bearer {token}"}
-        data = (await client.get("/api/v1/maestro/budget/status", headers=headers)).json()
+        data = (await client.get(
+            "/api/v1/maestro/budget/status",
+            headers={"Authorization": f"Bearer {token}"},
+        )).json()
         assert data["state"] == "normal"
 
     @pytest.mark.anyio
     async def test_state_low(self, client, db_session, test_user):
         """0.25 <= remaining < 1.0 → low."""
         from app.auth.tokens import create_access_token
-
-        test_user.budget_cents = 50  # $0.50
+        test_user.budget_cents = 50
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
-        headers = {"Authorization": f"Bearer {token}"}
-        data = (await client.get("/api/v1/maestro/budget/status", headers=headers)).json()
+        data = (await client.get(
+            "/api/v1/maestro/budget/status",
+            headers={"Authorization": f"Bearer {token}"},
+        )).json()
         assert data["state"] == "low"
 
     @pytest.mark.anyio
     async def test_state_critical(self, client, db_session, test_user):
         """0 < remaining < 0.25 → critical."""
         from app.auth.tokens import create_access_token
-
-        test_user.budget_cents = 10  # $0.10
+        test_user.budget_cents = 10
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
-        headers = {"Authorization": f"Bearer {token}"}
-        data = (await client.get("/api/v1/maestro/budget/status", headers=headers)).json()
+        data = (await client.get(
+            "/api/v1/maestro/budget/status",
+            headers={"Authorization": f"Bearer {token}"},
+        )).json()
         assert data["state"] == "critical"
 
     @pytest.mark.anyio
     async def test_state_exhausted_zero(self, client, db_session, test_user):
         """remaining == 0 → exhausted."""
         from app.auth.tokens import create_access_token
-
         test_user.budget_cents = 0
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
-        headers = {"Authorization": f"Bearer {token}"}
-        data = (await client.get("/api/v1/maestro/budget/status", headers=headers)).json()
+        data = (await client.get(
+            "/api/v1/maestro/budget/status",
+            headers={"Authorization": f"Bearer {token}"},
+        )).json()
         assert data["state"] == "exhausted"
 
     @pytest.mark.anyio
     async def test_state_exhausted_negative(self, client, db_session, test_user):
-        """remaining < 0 → exhausted (possible if deduction races)."""
+        """remaining < 0 → exhausted."""
         from app.auth.tokens import create_access_token
-
         test_user.budget_cents = -10
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
-        headers = {"Authorization": f"Bearer {token}"}
-        data = (await client.get("/api/v1/maestro/budget/status", headers=headers)).json()
+        data = (await client.get(
+            "/api/v1/maestro/budget/status",
+            headers={"Authorization": f"Bearer {token}"},
+        )).json()
         assert data["state"] == "exhausted"
 
     @pytest.mark.anyio
     async def test_state_boundary_exactly_025(self, client, db_session, test_user):
-        """remaining == 0.25 → low (not critical, since < 0.25 is critical)."""
+        """remaining == 0.25 → low (< 0.25 is critical, == 0.25 is low)."""
         from app.auth.tokens import create_access_token
-
-        test_user.budget_cents = 25  # $0.25
+        test_user.budget_cents = 25
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
-        headers = {"Authorization": f"Bearer {token}"}
-        data = (await client.get("/api/v1/maestro/budget/status", headers=headers)).json()
+        data = (await client.get(
+            "/api/v1/maestro/budget/status",
+            headers={"Authorization": f"Bearer {token}"},
+        )).json()
         assert data["state"] == "low"
 
     @pytest.mark.anyio
     async def test_state_boundary_exactly_100(self, client, db_session, test_user):
-        """remaining == 1.0 → normal (not low, since < 1.0 is low)."""
+        """remaining == 1.0 → normal (< 1.0 is low, == 1.0 is normal)."""
         from app.auth.tokens import create_access_token
-
-        test_user.budget_cents = 100  # $1.00
+        test_user.budget_cents = 100
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
-        headers = {"Authorization": f"Bearer {token}"}
-        data = (await client.get("/api/v1/maestro/budget/status", headers=headers)).json()
+        data = (await client.get(
+            "/api/v1/maestro/budget/status",
+            headers={"Authorization": f"Bearer {token}"},
+        )).json()
         assert data["state"] == "normal"
 
 
 # ---------------------------------------------------------------------------
-# camelCase serialization
-# ---------------------------------------------------------------------------
-
-
-class TestCamelCaseSerialization:
-    """Verify that wire-format JSON uses camelCase keys as the frontend expects."""
-
-    @pytest.mark.anyio
-    async def test_chips_camel_case(self, client, db_session):
-        """Chip objects use promptTemplateID and fullPrompt, not snake_case."""
-        data = (await client.get("/api/v1/maestro/prompts/chips")).json()
-        chip = data["chips"][0]
-        assert "promptTemplateID" in chip, "Expected promptTemplateID (capital ID)"
-        assert "fullPrompt" in chip
-        assert "prompt_template_id" not in chip
-        assert "full_prompt" not in chip
-
-    @pytest.mark.anyio
-    async def test_cards_camel_case(self, client, db_session):
-        """Card objects use templateID, previewTags, not snake_case."""
-        data = (await client.get("/api/v1/maestro/prompts/cards")).json()
-        card = data["cards"][0]
-        assert "templateID" in card, "Expected templateID (capital ID)"
-        assert "previewTags" in card
-        assert "template_id" not in card
-        assert "preview_tags" not in card
-
-    @pytest.mark.anyio
-    async def test_template_camel_case(self, client, db_session):
-        """Template response uses fullPrompt, not full_prompt."""
-        data = (await client.get("/api/v1/maestro/prompts/lofi_chill")).json()
-        assert "fullPrompt" in data
-        assert "full_prompt" not in data
-
-    @pytest.mark.anyio
-    async def test_budget_camel_case(self, client, auth_headers, test_user):
-        """Budget response uses sessionsUsed, not sessions_used."""
-        data = (await client.get(
-            "/api/v1/maestro/budget/status", headers=auth_headers
-        )).json()
-        assert "sessionsUsed" in data
-        assert "sessions_used" not in data
-
-
-# ---------------------------------------------------------------------------
-# Data integrity
+# Data integrity (unit tests — no HTTP)
 # ---------------------------------------------------------------------------
 
 
 class TestDataIntegrity:
-    """Cross-cutting checks to ensure chips, cards, and templates are consistent."""
+    """Cross-cutting checks on the pool and template data."""
 
-    def test_all_chip_templates_exist(self):
-        """Every chip's prompt_template_id references an existing template."""
-        for chip in CHIPS:
-            assert chip.prompt_template_id in TEMPLATES, (
-                f"Chip '{chip.id}' references missing template '{chip.prompt_template_id}'"
-            )
+    def test_pool_has_at_least_twenty_items(self):
+        """Pool has 20+ curated prompts."""
+        assert len(PROMPT_POOL) >= 20
 
-    def test_all_card_templates_exist(self):
-        """Every card's template_id references an existing template."""
-        for card in CARDS:
-            assert card.template_id in TEMPLATES, (
-                f"Card '{card.id}' references missing template '{card.template_id}'"
-            )
-
-    def test_chip_ids_unique(self):
-        """All chip IDs are unique."""
-        ids = [c.id for c in CHIPS]
+    def test_pool_ids_unique(self):
+        """All pool IDs are unique."""
+        ids = [p.id for p in PROMPT_POOL]
         assert len(ids) == len(set(ids))
 
-    def test_card_ids_unique(self):
-        """All card IDs are unique."""
-        ids = [c.id for c in CARDS]
-        assert len(ids) == len(set(ids))
+    def test_all_prompts_start_with_sentinel(self):
+        """Every fullPrompt in the pool starts with STORI PROMPT."""
+        for p in PROMPT_POOL:
+            assert p.full_prompt.startswith("STORI PROMPT"), (
+                f"Pool item '{p.id}' doesn't start with STORI PROMPT"
+            )
+
+    def test_all_prompts_have_required_routing_fields(self):
+        """Every fullPrompt contains the mandatory routing fields."""
+        required = ["Mode:", "Style:", "Key:", "Tempo:", "Role:", "Vibe:", "Request:"]
+        for p in PROMPT_POOL:
+            for field in required:
+                assert field in p.full_prompt, (
+                    f"Pool item '{p.id}' missing field '{field}'"
+                )
+
+    def test_all_prompts_have_full_spec_breadth(self):
+        """Every fullPrompt contains all Maestro dimension blocks."""
+        dimensions = [
+            "Harmony:", "Melody:", "Rhythm:", "Dynamics:",
+            "Orchestration:", "Effects:", "Expression:", "Texture:",
+            "MidiExpressiveness:",
+        ]
+        for p in PROMPT_POOL:
+            missing = [d for d in dimensions if d not in p.full_prompt]
+            assert not missing, (
+                f"Pool item '{p.id}' missing dimensions: {missing}"
+            )
+
+    def test_all_prompts_have_nonempty_preview(self):
+        """Every pool item has a non-empty preview."""
+        for p in PROMPT_POOL:
+            assert len(p.preview) > 10
+
+    def test_pool_covers_diverse_styles(self):
+        """Pool covers at least 10 distinct genre keywords in titles."""
+        titles_lower = " ".join(p.title.lower() for p in PROMPT_POOL)
+        genres = [
+            "jazz", "trap", "house", "ambient", "funk", "techno",
+            "folk", "classical", "afrobeats", "drum", "bossa",
+            "synthwave", "psytrance", "reggaeton", "flamenco",
+        ]
+        found = [g for g in genres if g in titles_lower]
+        assert len(found) >= 10, f"Only found genres: {found}"
 
     def test_template_ids_unique(self):
-        """All template dict keys match the template's own id field."""
+        """All template dict keys match their template id field."""
         for key, tmpl in TEMPLATES.items():
-            assert key == tmpl.id, f"Key '{key}' != template.id '{tmpl.id}'"
+            assert key == tmpl.id
 
     def test_exactly_eleven_templates(self):
-        """We have exactly 11 templates (8 chip + 3 card)."""
+        """We have exactly 11 named templates (for backward compat)."""
         assert len(TEMPLATES) == 11
 
     def test_placeholder_count(self):

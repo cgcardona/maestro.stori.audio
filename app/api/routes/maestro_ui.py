@@ -2,33 +2,34 @@
 
 Serves the creative launchpad data consumed by the macOS client:
   - Rotating placeholder strings for the hero prompt input
-  - Quick-start genre chips (flow grid)
-  - Advanced structured template cards (horizontal carousel)
+  - 4 randomly sampled STORI PROMPT inspiration cards
   - Individual prompt template lookup
   - Focused budget / Creative Fuel status
 """
 
 import logging
+import random
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_valid_token
-from app.data.maestro_ui import CARDS, CHIPS, PLACEHOLDERS, TEMPLATES
+from app.data.maestro_ui import PLACEHOLDERS, PROMPT_POOL, TEMPLATES
 from app.db import get_db, User, UsageLog
 from app.models.maestro_ui import (
     BudgetState,
     BudgetStatusResponse,
-    CardsResponse,
-    ChipsResponse,
     PlaceholdersResponse,
+    PromptsResponse,
     PromptTemplate,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_PROMPTS_SAMPLE_SIZE = 4
 
 
 # ---------------------------------------------------------------------------
@@ -74,45 +75,34 @@ async def get_placeholders():
 
 
 # ---------------------------------------------------------------------------
-# 2. Chips
+# 2. Prompt inspiration cards (random sample)
 # ---------------------------------------------------------------------------
 
 
 @router.get(
-    "/maestro/prompts/chips",
-    response_model=ChipsResponse,
+    "/maestro/prompts",
+    response_model=PromptsResponse,
     response_model_by_alias=True,
 )
-async def get_prompt_chips():
-    """Quick-start genre chips for the flow grid.
+async def get_prompts():
+    """Return 4 randomly sampled STORI PROMPT inspiration cards.
 
-    No auth required. Each chip contains a fullPrompt string that is injected
-    directly into the hero prompt input when the user taps the chip.
+    Each call returns a different random set drawn from a curated pool of
+    22 full STORI PROMPTs spanning a wide sonic field. No auth required.
+
+    Each item carries:
+      - id         — unique slug
+      - title      — human label (e.g. "Lo-fi boom bap · Cm · 75 BPM")
+      - preview    — first 3–4 YAML lines visible in the card
+      - fullPrompt — complete STORI PROMPT YAML, injected verbatim on tap
     """
-    return ChipsResponse(chips=CHIPS)
+    sample_size = min(_PROMPTS_SAMPLE_SIZE, len(PROMPT_POOL))
+    sampled = random.sample(PROMPT_POOL, sample_size)
+    return PromptsResponse(prompts=sampled)
 
 
 # ---------------------------------------------------------------------------
-# 3. Cards
-# ---------------------------------------------------------------------------
-
-
-@router.get(
-    "/maestro/prompts/cards",
-    response_model=CardsResponse,
-    response_model_by_alias=True,
-)
-async def get_prompt_cards():
-    """Advanced structured template cards for the horizontal carousel.
-
-    No auth required. Each card contains 5 sections following the
-    STORI PROMPT SPEC v2 format.
-    """
-    return CardsResponse(cards=CARDS)
-
-
-# ---------------------------------------------------------------------------
-# 4. Single template lookup
+# 3. Single template lookup
 # ---------------------------------------------------------------------------
 
 
@@ -124,9 +114,9 @@ async def get_prompt_cards():
 async def get_prompt_template(template_id: str):
     """Fetch a single fully-expanded prompt template by ID.
 
-    Template IDs are the same slugs used in chips (promptTemplateID) and cards
-    (templateID): lofi_chill, dark_trap, jazz_trio, synthwave, cinematic,
+    Template IDs: lofi_chill, dark_trap, jazz_trio, synthwave, cinematic,
     funk_groove, ambient, deep_house, full_production, beat_lab, mood_piece.
+    Returns 404 if the ID is unknown.
     """
     template = TEMPLATES.get(template_id)
     if template is None:
@@ -138,7 +128,7 @@ async def get_prompt_template(template_id: str):
 
 
 # ---------------------------------------------------------------------------
-# 5. Budget / Creative Fuel status
+# 4. Budget / Creative Fuel status
 # ---------------------------------------------------------------------------
 
 

@@ -350,43 +350,41 @@ Rotating strings for the hero prompt input. The client cycles through them every
 { "placeholders": ["Describe a groove…", "Build a cinematic swell…", …] }
 ```
 
-### Prompt chips
+### Prompt inspiration cards
 
-**Endpoint:** `GET /api/v1/maestro/prompts/chips`
+**Endpoint:** `GET /api/v1/maestro/prompts`
 **Auth:** none
 
-Quick-start genre chips for the flow grid (6–10 items). Each chip carries a `fullPrompt` string injected into the prompt input on tap, and a `promptTemplateID` referencing a full template.
+Returns 4 randomly sampled STORI PROMPT inspiration cards from a curated pool of 22. Each call returns a different set. Styles span lo-fi boom bap, melodic techno, cinematic orchestral, Afrobeats, ambient drone, jazz reharmonization, dark trap, bossa nova, funk, neo-soul, drum & bass, minimal house, synthwave, post-rock, reggaeton, classical string quartet, psytrance, indie folk, New Orleans brass, Nordic ambient, flamenco fusion, and UK garage.
+
+Every `fullPrompt` is a complete STORI PROMPT YAML using the full spec breadth — injected verbatim into the compose input on tap.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | string | Unique slug |
-| `title` | string | Display label |
-| `icon` | string | SF Symbol name |
-| `promptTemplateID` | string | References a prompt template |
-| `fullPrompt` | string | Complete prompt text |
+| `title` | string | Human label, e.g. `"Lo-fi boom bap · Cm · 75 BPM"` |
+| `preview` | string | First 3–4 YAML lines visible in the card |
+| `fullPrompt` | string | Complete STORI PROMPT YAML |
 
-### Prompt cards
-
-**Endpoint:** `GET /api/v1/maestro/prompts/cards`
-**Auth:** none
-
-Advanced structured template cards for the horizontal carousel (3–5 items). Each card has 5 sections following STORI PROMPT SPEC v2: Style, Arrangement, Instruments, Production Notes, Creative Intent.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Unique slug |
-| `title` | string | Card title |
-| `description` | string | One-liner summary |
-| `previewTags` | string[] | Up to 3 short tags |
-| `templateID` | string | References a prompt template |
-| `sections` | object[] | Array of `{heading, content}` |
+```json
+{
+  "prompts": [
+    {
+      "id": "lofi_boom_bap",
+      "title": "Lo-fi boom bap · Cm · 75 BPM",
+      "preview": "Mode: compose · Section: verse\nStyle: lofi hip hop · Key: Cm · 75 BPM\nRole: drums, bass, piano, melody\nVibe: dusty x3, warm x2, melancholic",
+      "fullPrompt": "STORI PROMPT\nMode: compose\n..."
+    }
+  ]
+}
+```
 
 ### Single template lookup
 
 **Endpoint:** `GET /api/v1/maestro/prompts/{template_id}`
 **Auth:** none
 
-Returns the fully-expanded prompt template with pre-filled section content. Template IDs: `lofi_chill`, `dark_trap`, `jazz_trio`, `synthwave`, `cinematic`, `funk_groove`, `ambient`, `deep_house`, `full_production`, `beat_lab`, `mood_piece`. Returns 404 if the ID is unknown.
+Returns a named prompt template with structured sections. Template IDs: `lofi_chill`, `dark_trap`, `jazz_trio`, `synthwave`, `cinematic`, `funk_groove`, `ambient`, `deep_house`, `full_production`, `beat_lab`, `mood_piece`. Returns 404 if the ID is unknown.
 
 | Field | Type | Description |
 |-------|------|-------------|
