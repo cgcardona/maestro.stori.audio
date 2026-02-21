@@ -93,7 +93,7 @@ User prompt arrives
 
 Parsed fields (Style, Key, Tempo, Roles, Constraints, Vibes, Target) are injected into the LLM system prompt as structured context, reducing inference overhead and increasing determinism.
 
-Implementation: `app/core/prompt_parser.py` (parser), `app/core/intent.py` (routing gate).
+Implementation: `app/core/prompt_parser.py` (parser), `app/core/intent/` (routing gate).
 
 ---
 

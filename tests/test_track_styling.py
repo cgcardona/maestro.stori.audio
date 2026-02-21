@@ -50,67 +50,94 @@ class TestTrackIcons:
     """Test track icon inference."""
     
     def test_drum_track_icon(self):
-        """Drum tracks should get waveform icon."""
-        assert infer_track_icon("Drums") == "waveform.path"
-        assert infer_track_icon("Jam Drums") == "waveform.path"
-        assert infer_track_icon("Kick") == "waveform.path"
-        assert infer_track_icon("Snare") == "waveform.path"
-    
+        """Drum tracks should get instrument.drum icon."""
+        assert infer_track_icon("Drums") == "instrument.drum"
+        assert infer_track_icon("Jam Drums") == "instrument.drum"
+        assert infer_track_icon("Kick") == "instrument.drum"
+        assert infer_track_icon("Snare") == "instrument.drum"
+
     def test_bass_track_icon(self):
-        """Bass tracks should get speaker icon."""
-        assert infer_track_icon("Bass") == "speaker.wave.3"
-        assert infer_track_icon("Funky Bass") == "speaker.wave.3"
-        assert infer_track_icon("Sub Bass") == "speaker.wave.3"
-    
+        """Bass tracks should get waveform.path icon."""
+        assert infer_track_icon("Bass") == "waveform.path"
+        assert infer_track_icon("Funky Bass") == "waveform.path"
+        assert infer_track_icon("Sub Bass") == "waveform.path"
+
     def test_piano_track_icon(self):
         """Piano tracks should get pianokeys icon."""
         assert infer_track_icon("Piano") == "pianokeys"
         assert infer_track_icon("Rhodes Keys") == "pianokeys"
         assert infer_track_icon("Electric Piano") == "pianokeys"
-    
+
     def test_guitar_track_icon(self):
-        """Guitar tracks should get guitars icon."""
+        """Guitar tracks should get guitars.fill icon."""
         assert infer_track_icon("Guitar") == "guitars.fill"
         assert infer_track_icon("Guitar Solo") == "guitars.fill"
-        # "guitar" keyword matches first (before "acoustic")
         assert infer_track_icon("Acoustic Guitar") == "guitars.fill"
-    
+
     def test_vocal_track_icon(self):
-        """Vocal tracks should get mic icon."""
-        assert infer_track_icon("Vocals") == "music.mic.circle.fill"
-        # "vocal" matches first (before "lead")
-        assert infer_track_icon("Lead Vocal") == "music.mic.circle.fill"
-        assert infer_track_icon("Voice") == "music.mic.circle.fill"
-    
+        """Vocal tracks should get music.mic icon."""
+        assert infer_track_icon("Vocals") == "music.mic"
+        assert infer_track_icon("Lead Vocal") == "music.mic"
+        assert infer_track_icon("Voice") == "music.mic"
+
     def test_synth_track_icon(self):
-        """Synth tracks should get waveform icon."""
+        """Synth tracks should get waveform icon; pad alone gets waveform.circle.fill."""
         assert infer_track_icon("Synth") == "waveform"
-        # "synth" matches first (before "lead")
         assert infer_track_icon("Lead Synth") == "waveform"
-        # "synth" matches first (before "pad")
         assert infer_track_icon("Pad Synth") == "waveform"
-        # But "pad" alone should get pad icon
-        assert infer_track_icon("Pads") == "waveform.circle"
-    
+        assert infer_track_icon("Pads") == "waveform.circle.fill"
+
     def test_chord_track_icon(self):
-        """Chord tracks should get music note list icon."""
-        assert infer_track_icon("Chords") == "music.note.list"
+        """Chord tracks should get pianokeys icon (chords → keyboard role)."""
+        assert infer_track_icon("Chords") == "pianokeys"
         assert infer_track_icon("Harmony") == "music.note.list"
-    
+
     def test_fx_track_icon(self):
         """FX tracks should get sparkles icon."""
         assert infer_track_icon("FX") == "sparkles"
-        # "effect" matches first (before "fx")
         assert infer_track_icon("Sound Effects") == "wand.and.rays"
-    
+
+    def test_strings_track_icon(self):
+        """String/orchestral tracks should get instrument.violin icon."""
+        assert infer_track_icon("Strings") == "instrument.violin"
+        assert infer_track_icon("Violin") == "instrument.violin"
+        assert infer_track_icon("Cello Section") == "instrument.violin"
+
+    def test_brass_track_icon(self):
+        """Brass tracks should get instrument.trumpet icon."""
+        assert infer_track_icon("Brass") == "instrument.trumpet"
+        assert infer_track_icon("Trumpet") == "instrument.trumpet"
+        assert infer_track_icon("French Horn") == "instrument.trumpet"
+
+    def test_reed_track_icon(self):
+        """Reed/woodwind tracks should get instrument.saxophone icon."""
+        assert infer_track_icon("Alto Sax") == "instrument.saxophone"
+        assert infer_track_icon("Clarinet") == "instrument.saxophone"
+
+    def test_flute_track_icon(self):
+        """Flute/pipe tracks should get instrument.flute icon."""
+        assert infer_track_icon("Flute") == "instrument.flute"
+        assert infer_track_icon("Recorder") == "instrument.flute"
+
+    def test_mallet_track_icon(self):
+        """Mallet/chromatic percussion tracks should get instrument.xylophone icon."""
+        assert infer_track_icon("Marimba") == "instrument.xylophone"
+        assert infer_track_icon("Xylophone") == "instrument.xylophone"
+        assert infer_track_icon("Bells") == "instrument.xylophone"
+
+    def test_organ_track_icon(self):
+        """Organ tracks should get music.note.house.fill icon."""
+        assert infer_track_icon("Organ") == "music.note.house.fill"
+        assert infer_track_icon("Hammond Organ") == "music.note.house.fill"
+
     def test_default_icon(self):
         """Unknown tracks should get default waveform icon."""
         assert infer_track_icon("Unknown Thing") == "waveform"
         assert infer_track_icon("") == "waveform"
-    
+
     def test_case_insensitive(self):
         """Icon matching should be case insensitive."""
-        assert infer_track_icon("DRUMS") == "waveform.path"
+        assert infer_track_icon("DRUMS") == "instrument.drum"
         assert infer_track_icon("PiAnO") == "pianokeys"
 
 
@@ -120,18 +147,18 @@ class TestTrackStyling:
     def test_get_track_styling(self):
         """Should return both color and icon."""
         styling = get_track_styling("Drums")
-        
+
         assert "color" in styling
         assert "icon" in styling
         assert styling["color"].startswith("#")
-        assert styling["icon"] == "waveform.path"
-    
+        assert styling["icon"] == "instrument.drum"
+
     def test_styling_varies_by_name(self):
         """Different tracks should get appropriate icons."""
         drum_styling = get_track_styling("Drums")
         bass_styling = get_track_styling("Bass")
         piano_styling = get_track_styling("Piano")
-        
-        assert drum_styling["icon"] == "waveform.path"
-        assert bass_styling["icon"] == "speaker.wave.3"
+
+        assert drum_styling["icon"] == "instrument.drum"
+        assert bass_styling["icon"] == "waveform.path"
         assert piano_styling["icon"] == "pianokeys"

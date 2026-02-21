@@ -3,6 +3,8 @@
 # Usage:
 #   Development: docker compose up
 #   Production:  Same file with production .env (see docs/guides/setup.md for required env vars).
+
+name: maestro
 #
 # First-time SSL setup:
 #   1. Set DOMAIN and EMAIL in .env
@@ -215,16 +217,21 @@ services:
 volumes:
   postgres_data:
     name: maestro-stori-postgres-data
+    external: true
   qdrant_data:
     name: maestro-stori-qdrant-data
+    external: true
   maestro_data:
     name: maestro-stori-data
+    external: true
   certbot_webroot:
     name: maestro-stori-certbot-webroot
+    external: true
   certbot_certs:
     name: maestro-stori-certbot-certs
+    external: true
 
 networks:
   maestro-stori-net:
     name: maestro-stori-network
-    driver: bridge
+    external: true

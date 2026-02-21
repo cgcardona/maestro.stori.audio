@@ -1,0 +1,27 @@
+"""UI control MCP tool definitions."""
+
+UI_TOOLS = [
+    {
+        "name": "stori_show_panel",
+        "description": "Show or hide a panel (mixer, inspector, piano_roll, etc.).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "panel": {"type": "string", "description": "Panel: mixer, inspector, piano_roll, etc."},
+                "visible": {"type": "boolean", "description": "True to show, false to hide"}
+            },
+            "required": ["panel", "visible"]
+        }
+    },
+    {
+        "name": "stori_set_zoom",
+        "description": "Set editor zoom (percent).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "zoomPercent": {"type": "number", "description": "Zoom percentage"}
+            },
+            "required": ["zoomPercent"]
+        }
+    },
+]

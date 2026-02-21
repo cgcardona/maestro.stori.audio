@@ -8,6 +8,7 @@ contributors can rely on the contract.
 Uses client and auth_headers from conftest (in-memory DB).
 """
 import pytest
+from unittest.mock import AsyncMock, patch
 
 
 # =============================================================================
@@ -53,16 +54,30 @@ class TestHealthEndpoint:
 
 
 class TestHealthFullEndpoint:
-    """GET /api/v1/health/full — dependencies (Orpheus, LLM, S3)."""
+    """GET /api/v1/health/full — dependencies (Orpheus, LLM, S3).
+
+    Orpheus and S3 are mocked so these contract tests verify shape and status
+    codes without making real network calls (which would hang in CI).
+    """
 
     @pytest.mark.anyio
     async def test_status_200_or_503(self, client):
-        response = await client.get("/api/v1/health/full")
+        with patch(
+            "app.services.orpheus.OrpheusClient.health_check",
+            new_callable=AsyncMock,
+            return_value=False,
+        ):
+            response = await client.get("/api/v1/health/full")
         assert response.status_code in (200, 503)
 
     @pytest.mark.anyio
     async def test_response_has_status_and_dependencies(self, client):
-        response = await client.get("/api/v1/health/full")
+        with patch(
+            "app.services.orpheus.OrpheusClient.health_check",
+            new_callable=AsyncMock,
+            return_value=False,
+        ):
+            response = await client.get("/api/v1/health/full")
         data = response.json()
         assert "status" in data
         assert "dependencies" in data

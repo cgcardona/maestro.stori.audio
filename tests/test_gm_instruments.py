@@ -542,26 +542,26 @@ class TestIconForGMProgram:
 
     @pytest.mark.parametrize("program,expected", [
         # One representative from each of the 16 GM categories
-        (0,   "pianokeys"),               # Piano
-        (8,   "bell.fill"),               # Chromatic Percussion
-        (16,  "music.note.house.fill"),   # Organ
-        (24,  "guitars.fill"),            # Guitar
-        (32,  "waveform.path"),           # Bass
-        (40,  "music.quarternote.3"),     # Strings
-        (48,  "person.3.fill"),           # Ensemble
-        (56,  "horn.fill"),               # Brass
-        (64,  "wind"),                    # Reed
-        (72,  "lungs.fill"),              # Pipe
-        (80,  "waveform"),               # Synth Lead
-        (88,  "waveform.badge.plus"),     # Synth Pad
-        (96,  "sparkles"),               # Synth Effects
-        (104, "globe"),                   # Ethnic
-        (112, "circle.hexagongrid.fill"), # Percussive
-        (120, "speaker.wave.3.fill"),     # Sound Effects
+        (0,   "pianokeys"),                # Piano
+        (8,   "instrument.xylophone"),     # Chromatic Percussion
+        (16,  "music.note.house.fill"),    # Organ
+        (24,  "guitars.fill"),             # Guitar
+        (32,  "waveform.path"),            # Bass
+        (40,  "instrument.violin"),        # Strings
+        (48,  "instrument.violin"),        # Ensemble / Strings
+        (56,  "instrument.trumpet"),       # Brass
+        (64,  "instrument.saxophone"),     # Reed
+        (72,  "instrument.flute"),         # Pipe
+        (80,  "waveform"),                 # Synth Lead
+        (88,  "waveform.circle.fill"),     # Synth Pad
+        (96,  "sparkles"),                 # Synth Effects
+        (104, "globe"),                    # Ethnic
+        (112, "instrument.drum"),          # Percussive
+        (120, "speaker.wave.3"),           # Sound Effects
         # Boundary values
         (7,   "pianokeys"),
-        (15,  "bell.fill"),
-        (127, "speaker.wave.3.fill"),
+        (15,  "instrument.xylophone"),
+        (127, "speaker.wave.3"),
     ])
     def test_category_boundaries(self, program, expected):
         assert icon_for_gm_program(program) == expected
@@ -576,4 +576,4 @@ class TestIconForGMProgram:
         assert icon_for_gm_program(-1) == "pianokeys"
 
     def test_drum_icon_constant(self):
-        assert DRUM_ICON == "music.note.list"
+        assert DRUM_ICON == "instrument.drum"

@@ -19,7 +19,7 @@ Coverage:
 import pytest
 import re
 
-from app.core.maestro_handlers import _resolve_variable_refs, _VAR_REF_RE
+from app.core.maestro_helpers import _resolve_variable_refs, _VAR_REF_RE
 
 
 # ===========================================================================

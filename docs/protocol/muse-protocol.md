@@ -19,12 +19,12 @@ Muse defines WHAT must happen --- not HOW it is implemented.
 
 # 1. DESIGN PRINCIPLES
 
-1.  Non‑destructive by default
-2.  Humans approve musical mutation
-3.  Beat‑based time (never seconds)
-4.  Deterministic streaming order
-5.  Language and platform agnostic
-6.  Canonical state MUST NOT change during review
+1. Non‑destructive by default
+2. Humans approve musical mutation
+3. Beat‑based time (never seconds)
+4. Deterministic streaming order
+5. Language and platform agnostic
+6. Canonical state MUST NOT change during review
 
 ------------------------------------------------------------------------
 
@@ -57,11 +57,11 @@ Frontends MUST NOT override execution mode.
 
 # 4. LIFECYCLE
 
-1.  Variation Proposed
-2.  Meta Event Streamed
-3.  Phrase Events Streamed
-4.  Review Mode Active
-5.  Accept OR Discard
+1. Variation Proposed
+2. Meta Event Streamed
+3. Phrase Events Streamed
+4. Review Mode Active
+5. Accept OR Discard
 
 Canonical mutation occurs ONLY after commit.
 
@@ -71,10 +71,10 @@ Canonical mutation occurs ONLY after commit.
 
 All requests MUST include:
 
--   `projectId`
--   `variationId`
--   `baseStateId`
--   `requestId` (optional but recommended)
+- `projectId`
+- `variationId`
+- `baseStateId`
+- `requestId` (optional but recommended)
 
 `baseStateId` enables optimistic concurrency.
 
@@ -122,14 +122,14 @@ Sent as the `project` field in compose requests. Entities use `"id"` as their se
 
 Rules:
 
--   Project's own ID: `"id"` (not `"projectId"` — that's for cross-references)
--   Entity self-IDs: always `"id"` (never `"trackId"`, `"regionId"`, or `"busId"`)
--   Regions: always `"regions"` (never `"midiRegions"`)
--   Key: always `"key"` (never `"keySignature"`)
--   Time signature: always `"timeSignature"` (never `"time_signature"`)
--   Track instrument: `"drumKitId"` and `"gmProgram"` (camelCase)
--   Region timing: `"startBeat"` and `"durationBeats"` (camelCase)
--   Notes may be omitted (send `"noteCount"` instead); backend preserves prior note data
+- Project's own ID: `"id"` (not `"projectId"` — that's for cross-references)
+- Entity self-IDs: always `"id"` (never `"trackId"`, `"regionId"`, or `"busId"`)
+- Regions: always `"regions"` (never `"midiRegions"`)
+- Key: always `"key"` (never `"keySignature"`)
+- Time signature: always `"timeSignature"` (never `"time_signature"`)
+- Track instrument: `"drumKitId"` and `"gmProgram"` (camelCase)
+- Region timing: `"startBeat"` and `"durationBeats"` (camelCase)
+- Notes may be omitted (send `"noteCount"` instead); backend preserves prior note data
 
 ## Tool Call Events (backend → frontend)
 
@@ -184,9 +184,9 @@ All streaming messages MUST use camelCase keys:
 
 Rules:
 
--   sequence strictly increasing
--   meta MUST be first
--   done MUST be last
+- sequence strictly increasing
+- meta MUST be first
+- done MUST be last
 
 ------------------------------------------------------------------------
 
@@ -247,13 +247,13 @@ modified → both present
 
 Backend MUST:
 
--   classify intent
--   construct proposed state
--   compute phrases
--   stream envelopes
--   enforce ordering
--   validate base_state_id on commit
--   apply accepted phrases atomically
+- classify intent
+- construct proposed state
+- compute phrases
+- stream envelopes
+- enforce ordering
+- validate base_state_id on commit
+- apply accepted phrases atomically
 
 Backend MUST NEVER mutate canonical state during proposal.
 
@@ -263,13 +263,13 @@ Backend MUST NEVER mutate canonical state during proposal.
 
 Frontend MUST:
 
--   render proposed vs canonical state
--   provide audition modes:
-    -   Original
-    -   Variation
-    -   Delta
--   allow partial phrase acceptance
--   send commit/discard requests
+- render proposed vs canonical state
+- provide audition modes:
+  - Original
+  - Variation
+  - Delta
+- allow partial phrase acceptance
+- send commit/discard requests
 
 ------------------------------------------------------------------------
 
@@ -293,9 +293,9 @@ If commit rejected: - frontend MUST regenerate variation
 
 # 13. SAFETY MODEL
 
--   review mode must be isolated
--   destructive edits should be blocked
--   commit is single undo boundary
+- review mode must be isolated
+- destructive edits should be blocked
+- commit is single undo boundary
 
 ------------------------------------------------------------------------
 

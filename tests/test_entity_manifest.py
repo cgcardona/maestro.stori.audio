@@ -20,7 +20,7 @@ from app.core.entity_registry import (
     EntityType,
     create_registry_from_context,
 )
-from app.core.maestro_handlers import (
+from app.core.maestro_helpers import (
     _entity_manifest,
     _ENTITY_CREATING_TOOLS,
     _ENTITY_ID_ECHO,

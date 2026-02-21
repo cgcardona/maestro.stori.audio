@@ -118,10 +118,10 @@ class TestProposeVariation:
         mock_auth_token,
     ):
         """Test successful variation proposal returns 200 with variation_id and stream_url."""
-        with patch("app.api.routes.variation.check_budget", new_callable=AsyncMock), \
-             patch("app.api.routes.variation.get_or_create_store") as mock_store, \
-             patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation._run_generation", new_callable=AsyncMock):
+        with patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock), \
+             patch("app.api.routes.variation.propose.get_or_create_store") as mock_store, \
+             patch("app.api.routes.variation.propose.get_variation_store") as mock_vstore, \
+             patch("app.api.routes.variation.propose._run_generation", new_callable=AsyncMock):
 
             # Setup mocks
             mock_store_instance = MagicMock()
@@ -170,8 +170,8 @@ class TestProposeVariation:
     ):
         """Test variation proposal with state conflict."""
         with \
-             patch("app.api.routes.variation.check_budget", new_callable=AsyncMock), \
-             patch("app.api.routes.variation.get_or_create_store") as mock_store:
+             patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock), \
+             patch("app.api.routes.variation.propose.get_or_create_store") as mock_store:
             
             # Setup mock store with mismatched state
             mock_store_instance = MagicMock()
@@ -211,10 +211,10 @@ class TestProposeVariation:
         stream (error + done(status=failed)), not the propose response.
         """
         with \
-             patch("app.api.routes.variation.check_budget", new_callable=AsyncMock), \
-             patch("app.api.routes.variation.get_or_create_store") as mock_store, \
-             patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation._run_generation", new_callable=AsyncMock):
+             patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock), \
+             patch("app.api.routes.variation.propose.get_or_create_store") as mock_store, \
+             patch("app.api.routes.variation.propose.get_variation_store") as mock_vstore, \
+             patch("app.api.routes.variation.propose._run_generation", new_callable=AsyncMock):
 
             # Setup mocks
             mock_store_instance = MagicMock()
@@ -262,9 +262,9 @@ class TestCommitVariation:
         sample_variation,
     ):
         """Test successful variation commit (backward compat with variation_data)."""
-        with patch("app.api.routes.variation.get_or_create_store") as mock_store, \
-             patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation.apply_variation_phrases", new_callable=AsyncMock) as mock_apply:
+        with patch("app.api.routes.variation.commit.get_or_create_store") as mock_store, \
+             patch("app.api.routes.variation.commit.get_variation_store") as mock_vstore, \
+             patch("app.api.routes.variation.commit.apply_variation_phrases", new_callable=AsyncMock) as mock_apply:
 
             # VariationStore returns None → falls back to variation_data path
             mock_vstore_instance = MagicMock()
@@ -320,8 +320,8 @@ class TestCommitVariation:
     ):
         """Test commit with state conflict (backward compat path)."""
         with \
-             patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation.get_or_create_store") as mock_store:
+             patch("app.api.routes.variation.commit.get_variation_store") as mock_vstore, \
+             patch("app.api.routes.variation.commit.get_or_create_store") as mock_store:
 
             mock_vstore_instance = MagicMock()
             mock_vstore_instance.get.return_value = None
@@ -358,8 +358,8 @@ class TestCommitVariation:
         sample_variation,
     ):
         """Test commit with variation ID mismatch (backward compat path)."""
-        with patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation.get_or_create_store") as mock_store:
+        with patch("app.api.routes.variation.commit.get_variation_store") as mock_vstore, \
+             patch("app.api.routes.variation.commit.get_or_create_store") as mock_store:
 
             mock_vstore_instance = MagicMock()
             mock_vstore_instance.get.return_value = None
@@ -395,8 +395,8 @@ class TestCommitVariation:
         sample_variation,
     ):
         """Test commit with invalid phrase IDs (backward compat path)."""
-        with patch("app.api.routes.variation.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation.get_or_create_store") as mock_store:
+        with patch("app.api.routes.variation.commit.get_variation_store") as mock_vstore, \
+             patch("app.api.routes.variation.commit.get_or_create_store") as mock_store:
 
             mock_vstore_instance = MagicMock()
             mock_vstore_instance.get.return_value = None

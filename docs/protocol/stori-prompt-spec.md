@@ -1146,24 +1146,24 @@ The result: a prompt with `Effects: drums: compression`, `MidiExpressiveness: cc
 | Item | Status | Module |
 |---|---|--------|
 | Prompt parser (YAML-first) | Done | `app/core/prompt_parser.py` |
-| Intent routing gate | Done | `app/core/intent.py` |
+| Intent routing gate | Done | `app/core/intent/` |
 | Weighted vibes | Done | `app/core/intent_config.py` |
-| Deterministic planner | Done | `app/core/planner.py` |
+| Deterministic planner | Done | `app/core/planner/` |
 | Structured prompt context + Maestro injection | Done | `app/core/prompts.py` |
 | Pipeline threading | Done | `app/core/pipeline.py`, `app/core/maestro_handlers.py` |
-| Target scope validation | Done | `app/core/tool_validation.py` |
+| Target scope validation | Done | `app/core/tool_validation/` |
 | Position: field (6 relationships + offset) | Done | `app/core/prompt_parser.py`, `app/core/prompts.py` |
 | Section: field | Done | `app/core/prompt_parser.py` |
 | Extensions pass-through (all Maestro dims) | Done | `app/core/prompt_parser.py`, `app/core/prompts.py` |
 | Entity manifest in tool results | Done | `app/core/maestro_handlers.py` |
 | `$N.field` variable references | Done | `app/core/maestro_handlers.py` |
-| Vibe/Section/Style/Energy → EmotionVector → Orpheus | Done | `app/core/emotion_vector.py`, `app/core/executor.py`, `app/services/backends/orpheus.py` |
-| CC events extraction + pipeline (all 128 CCs) | Done | `app/services/backends/orpheus.py`, `app/core/executor.py`, `app/services/variation.py` |
-| Pitch bend extraction + pipeline (14-bit) | Done | `app/services/backends/orpheus.py`, `app/core/executor.py`, `app/services/variation.py` |
-| Aftertouch extraction + pipeline (channel + poly) | Done | `app/services/backends/orpheus.py`, `app/core/executor.py`, `app/services/variation.py` |
-| Expressive data in `updated_regions` (commit response) | Done | `app/core/executor.py`, `app/api/routes/variation.py` |
-| Routing-only context for planner (reduces verbosity) | Done | `app/core/prompts.py`, `app/core/planner.py` |
-| Planner reasoning fraction | Done | `app/core/planner.py` |
+| Vibe/Section/Style/Energy → EmotionVector → Orpheus | Done | `app/core/emotion_vector.py`, `app/core/executor/`, `app/services/backends/orpheus.py` |
+| CC events extraction + pipeline (all 128 CCs) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation.py` |
+| Pitch bend extraction + pipeline (14-bit) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation.py` |
+| Aftertouch extraction + pipeline (channel + poly) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation.py` |
+| Expressive data in `updated_regions` (commit response) | Done | `app/core/executor/`, `app/api/routes/variation/` |
+| Routing-only context for planner (reduces verbosity) | Done | `app/core/prompts.py`, `app/core/planner/` |
+| Planner reasoning fraction | Done | `app/core/planner/` |
 | **Effects block → stori_add_insert_effect (mandatory translation)** | Done | `app/core/prompts.py`, `app/core/maestro_handlers.py` |
 | **Style/Role → effects inference (deterministic, pre-LLM)** | Done | `app/core/planner._infer_mix_steps` |
 | **MidiExpressiveness.cc_curves → stori_add_midi_cc** | Done | `app/core/prompts.py` (mandate), `app/core/maestro_handlers.py` (plan step) |
@@ -1174,7 +1174,7 @@ The result: a prompt with `Effects: drums: compression`, `MidiExpressiveness: cc
 | **Track role inference from GM program / drum kit** | Done | `app/core/entity_context.infer_track_role` |
 | **New-section track reuse (existing tracks matched by role)** | Done | `app/core/planner._match_roles_to_existing_tracks`, `app/core/entity_context` |
 | **No-op tempo/key step elimination** | Done | `app/core/maestro_handlers._PlanTracker.build_from_prompt` |
-| **stori_add_notes fake-param validation + circuit breaker** | Done | `app/core/tool_validation.py`, `app/core/maestro_handlers._handle_editing` |
+| **stori_add_notes fake-param validation + circuit breaker** | Done | `app/core/tool_validation/`, `app/core/maestro_handlers._handle_editing` |
 | **Bus-before-send ordering guaranteed** | Done | `app/core/planner._schema_to_tool_calls` |
 
 ### How expressive blocks flow through the system

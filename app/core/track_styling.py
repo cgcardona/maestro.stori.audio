@@ -38,61 +38,101 @@ TRACK_COLORS = [
 ]
 
 
-# Icon mapping based on keywords in track name
+# Icon mapping based on keywords in track name.
+# Mirrors the frontend's keyword-based fallback when no GM program is available.
 ICON_KEYWORDS = {
-    # Drums
-    "drum": "waveform.path",
-    "kick": "waveform.path",
-    "snare": "waveform.path",
-    "hat": "waveform.path",
-    "cymbal": "waveform.path",
-    "percussion": "waveform.path",
-    
+    # Drums / Percussion
+    "drum": "instrument.drum",
+    "percuss": "instrument.drum",
+    "kit": "instrument.drum",
+    "timpani": "instrument.drum",
+    "kick": "instrument.drum",
+    "snare": "instrument.drum",
+    "hat": "instrument.drum",
+    "cymbal": "instrument.drum",
+    "percussion": "instrument.drum",
+
     # Bass
-    "bass": "speaker.wave.3",
-    
-    # Piano/Keys
+    "bass": "waveform.path",
+
+    # Organ
+    "organ": "music.note.house.fill",
+
+    # Guitar / Plucked
+    "guitar": "guitars.fill",
+    "banjo": "guitars.fill",
+    "mandolin": "guitars.fill",
+    "acoustic": "guitars.fill",
+
+    # Piano / Keys
     "piano": "pianokeys",
     "key": "pianokeys",
     "keys": "pianokeys",
-    "organ": "pianokeys.inverse",
-    "synth": "waveform",
-    "pad": "waveform.circle",
-    
-    # Guitars
-    "guitar": "guitars.fill",
-    "acoustic": "guitars",
-    
-    # Vocals
-    "vocal": "music.mic.circle.fill",
-    "voice": "music.mic.circle.fill",
-    "mic": "music.mic.circle.fill",
-    "lead": "music.mic",
-    
-    # Strings/Orchestra
-    "string": "music.quarternote.3",
-    "violin": "music.quarternote.3",
-    "cello": "music.quarternote.3",
-    "orchestra": "music.quarternote.3",
-    
+    "rhodes": "pianokeys",
+    "chord": "pianokeys",
+    "clavi": "pianokeys",
+
+    # Harp
+    "harp": "instrument.harp",
+
+    # Strings
+    "string": "instrument.violin",
+    "violin": "instrument.violin",
+    "cello": "instrument.violin",
+    "viola": "instrument.violin",
+    "orchestra": "instrument.violin",
+
     # Brass
-    "brass": "speaker.wave.2",
-    "trumpet": "speaker.wave.2",
-    "sax": "speaker.wave.2",
-    "horn": "speaker.wave.2",
-    
+    "brass": "instrument.trumpet",
+    "trumpet": "instrument.trumpet",
+    "trombone": "instrument.trumpet",
+    "horn": "instrument.trumpet",
+    "tuba": "instrument.trumpet",
+
+    # Reed / Woodwind
+    "sax": "instrument.saxophone",
+    "clarinet": "instrument.saxophone",
+    "oboe": "instrument.saxophone",
+    "reed": "instrument.saxophone",
+
+    # Pipe / Flute
+    "flute": "instrument.flute",
+    "pipe": "instrument.flute",
+    "recorder": "instrument.flute",
+
+    # Vocals
+    "vocal": "music.mic",
+    "voice": "music.mic",
+    "sing": "music.mic",
+    "choir": "music.mic",
+    "aah": "music.mic",
+    "mic": "music.mic",
+
+    # Synth Lead
+    "synth": "waveform",
+    "lead": "waveform",
+
+    # Synth Pad / Ensemble
+    "pad": "waveform.circle.fill",
+    "ensemble": "waveform.circle.fill",
+
+    # Chromatic Percussion / Mallet
+    "bell": "instrument.xylophone",
+    "marimba": "instrument.xylophone",
+    "xylophone": "instrument.xylophone",
+    "vibraphone": "instrument.xylophone",
+    "mallet": "instrument.xylophone",
+    "chrom": "instrument.xylophone",
+
     # Effects
     "fx": "sparkles",
     "effect": "wand.and.rays",
     "atmosphere": "wand.and.stars",
     "ambient": "wand.and.stars.inverse",
-    
-    # Chords/Harmony
-    "chord": "music.note.list",
+
+    # Harmony / Arp / Melody
     "harmony": "music.note.list",
     "arp": "bolt.circle",
-    
-    # Melody
     "melody": "music.note",
     "solo": "star.fill",
 }

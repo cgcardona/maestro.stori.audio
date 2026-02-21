@@ -16,11 +16,16 @@ def client():
 
 @pytest.mark.asyncio
 async def test_health_check_returns_true_when_200(client):
+    import httpx
     client._client = MagicMock()
     client._client.get = AsyncMock(return_value=MagicMock(status_code=200))
     result = await client.health_check()
     assert result is True
-    client._client.get.assert_called_once_with("http://orpheus:10002/health")
+    # health_check uses a short probe timeout, not the default generation timeout
+    client._client.get.assert_called_once_with(
+        "http://orpheus:10002/health",
+        timeout=httpx.Timeout(connect=3.0, read=3.0, write=3.0, pool=3.0),
+    )
 
 
 @pytest.mark.asyncio

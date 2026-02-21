@@ -82,7 +82,7 @@ class TestGetVariation:
         rec = _make_vrecord()
         rec.phrases = [_make_phrase()]
 
-        with patch("app.api.routes.variation.get_variation_store") as mock_vs:
+        with patch("app.api.routes.variation.retrieve.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = rec
             resp = await var_client.get("/api/v1/variation/var-test-1")
 
@@ -96,7 +96,7 @@ class TestGetVariation:
 
     @pytest.mark.anyio
     async def test_get_variation_not_found_404(self, var_client):
-        with patch("app.api.routes.variation.get_variation_store") as mock_vs:
+        with patch("app.api.routes.variation.retrieve.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = None
             resp = await var_client.get("/api/v1/variation/nonexistent")
 
@@ -120,9 +120,9 @@ class TestCommitVariationStoreBased:
         rec.phrases = [_make_phrase()]
 
         with (
-            patch("app.api.routes.variation.get_variation_store") as mock_vs,
-            patch("app.api.routes.variation.get_or_create_store") as mock_ss,
-            patch("app.api.routes.variation.apply_variation_phrases", new_callable=AsyncMock) as mock_apply,
+            patch("app.api.routes.variation.commit.get_variation_store") as mock_vs,
+            patch("app.api.routes.variation.commit.get_or_create_store") as mock_ss,
+            patch("app.api.routes.variation.commit.apply_variation_phrases", new_callable=AsyncMock) as mock_apply,
         ):
             mock_vs.return_value.get.return_value = rec
             mock_vs.return_value.transition = MagicMock()
@@ -154,7 +154,7 @@ class TestCommitVariationStoreBased:
         """Commit when variation is still STREAMING returns 409."""
         rec = _make_vrecord(status=VariationStatus.STREAMING)
 
-        with patch("app.api.routes.variation.get_variation_store") as mock_vs:
+        with patch("app.api.routes.variation.commit.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = rec
 
             resp = await var_client.post("/api/v1/variation/commit", json={
@@ -171,7 +171,7 @@ class TestCommitVariationStoreBased:
         """Double commit returns 409."""
         rec = _make_vrecord(status=VariationStatus.COMMITTED)
 
-        with patch("app.api.routes.variation.get_variation_store") as mock_vs:
+        with patch("app.api.routes.variation.commit.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = rec
 
             resp = await var_client.post("/api/v1/variation/commit", json={
@@ -190,8 +190,8 @@ class TestCommitVariationStoreBased:
         rec.phrases = [_make_phrase()]
 
         with (
-            patch("app.api.routes.variation.get_variation_store") as mock_vs,
-            patch("app.api.routes.variation.get_or_create_store") as mock_ss,
+            patch("app.api.routes.variation.commit.get_variation_store") as mock_vs,
+            patch("app.api.routes.variation.commit.get_or_create_store") as mock_ss,
         ):
             mock_vs.return_value.get.return_value = rec
             mock_ss.return_value.check_state_id.return_value = False
@@ -209,7 +209,7 @@ class TestCommitVariationStoreBased:
     @pytest.mark.anyio
     async def test_commit_not_found_returns_fallback(self, var_client):
         """When variation not in store and no variation_data, returns 400."""
-        with patch("app.api.routes.variation.get_variation_store") as mock_vs:
+        with patch("app.api.routes.variation.commit.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = None
 
             resp = await var_client.post("/api/v1/variation/commit", json={
@@ -235,7 +235,7 @@ class TestDiscardVariation:
         """Discard a READY variation transitions to DISCARDED."""
         rec = _make_vrecord(status=VariationStatus.READY)
 
-        with patch("app.api.routes.variation.get_variation_store") as mock_vs:
+        with patch("app.api.routes.variation.discard.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = rec
             mock_vs.return_value.transition = MagicMock()
 
@@ -252,7 +252,7 @@ class TestDiscardVariation:
         """Cannot discard a committed variation."""
         rec = _make_vrecord(status=VariationStatus.COMMITTED)
 
-        with patch("app.api.routes.variation.get_variation_store") as mock_vs:
+        with patch("app.api.routes.variation.discard.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = rec
 
             resp = await var_client.post("/api/v1/variation/discard", json={
@@ -266,7 +266,7 @@ class TestDiscardVariation:
     @pytest.mark.anyio
     async def test_discard_not_found_ok(self, var_client):
         """Discard of unknown variation returns ok (idempotent)."""
-        with patch("app.api.routes.variation.get_variation_store") as mock_vs:
+        with patch("app.api.routes.variation.discard.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = None
 
             resp = await var_client.post("/api/v1/variation/discard", json={
@@ -286,7 +286,7 @@ class TestStreamVariation:
 
     @pytest.mark.anyio
     async def test_stream_not_found_404(self, var_client):
-        with patch("app.api.routes.variation.get_variation_store") as mock_vs:
+        with patch("app.api.routes.variation.stream.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = None
             resp = await var_client.get("/api/v1/variation/stream?variation_id=nope")
         assert resp.status_code == 404
@@ -304,9 +304,9 @@ class TestStreamVariation:
         )
 
         with (
-            patch("app.api.routes.variation.get_variation_store") as mock_vs,
-            patch("app.api.routes.variation.is_terminal", return_value=True),
-            patch("app.api.routes.variation.get_sse_broadcaster") as mock_bc,
+            patch("app.api.routes.variation.stream.get_variation_store") as mock_vs,
+            patch("app.api.routes.variation.stream.is_terminal", return_value=True),
+            patch("app.api.routes.variation.stream.get_sse_broadcaster") as mock_bc,
         ):
             mock_vs.return_value.get.return_value = rec
             mock_bc.return_value.get_history.return_value = [envelope]
@@ -328,9 +328,9 @@ class TestProposeVariation:
     async def test_propose_returns_variation_id(self, var_client):
         """Propose creates record and returns variation_id + stream_url."""
         with (
-            patch("app.api.routes.variation.check_budget", new_callable=AsyncMock),
-            patch("app.api.routes.variation.get_or_create_store") as mock_ss,
-            patch("app.api.routes.variation.get_variation_store") as mock_vs,
+            patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock),
+            patch("app.api.routes.variation.propose.get_or_create_store") as mock_ss,
+            patch("app.api.routes.variation.propose.get_variation_store") as mock_vs,
         ):
             mock_ss.return_value.check_state_id.return_value = True
             mock_vs.return_value.create.return_value = _make_vrecord()
@@ -350,8 +350,8 @@ class TestProposeVariation:
     @pytest.mark.anyio
     async def test_propose_state_conflict_409(self, var_client):
         with (
-            patch("app.api.routes.variation.check_budget", new_callable=AsyncMock),
-            patch("app.api.routes.variation.get_or_create_store") as mock_ss,
+            patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock),
+            patch("app.api.routes.variation.propose.get_or_create_store") as mock_ss,
         ):
             mock_ss.return_value.check_state_id.return_value = False
             mock_ss.return_value.get_state_id.return_value = "999"

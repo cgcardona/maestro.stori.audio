@@ -447,8 +447,12 @@ class TestIconValidation:
         assert any(e.code == "INVALID_ICON" for e in result.errors)
 
     @pytest.mark.parametrize("icon", [
+        # SF Symbols
         "guitars.fill", "pianokeys", "music.note", "waveform",
         "headphones", "sparkles", "metronome",
+        # Custom instrument icons
+        "instrument.trumpet", "instrument.violin", "instrument.saxophone",
+        "instrument.flute", "instrument.drum", "instrument.harp", "instrument.xylophone",
     ])
     def test_curated_icons_pass(self, icon):
         errors = _validate_tool_specific("stori_set_track_icon", {"icon": icon})
@@ -457,12 +461,14 @@ class TestIconValidation:
 
     @pytest.mark.parametrize("icon", [
         "horn.fill", "horn", "horn.blast", "horn.blast.fill",
+        "wind", "lungs.fill", "bell.fill", "waveform.badge.plus",
+        "person.3.fill", "circle.hexagongrid.fill",
     ])
-    def test_horn_icons_pass(self, icon):
-        """horn.fill and siblings must pass — used by brass/horns agents."""
+    def test_removed_icons_rejected(self, icon):
+        """Icons removed from the frontend allowlist must be rejected."""
         errors = _validate_tool_specific("stori_set_track_icon", {"icon": icon})
         icon_errors = [e for e in errors if e.field == "icon"]
-        assert icon_errors == [], f"Expected horn icon '{icon}' to be valid"
+        assert icon_errors, f"Expected removed icon '{icon}' to be rejected"
 
     def test_empty_icon_no_error(self):
         """Empty string icon skips validation (optional field)."""

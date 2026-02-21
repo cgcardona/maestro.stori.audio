@@ -534,25 +534,25 @@ def infer_gm_program_with_context(
 # ---------------------------------------------------------------------------
 
 _GM_CATEGORY_ICONS: list[tuple[range, str]] = [
-    (range(0,   8),   "pianokeys"),
-    (range(8,  16),   "bell.fill"),
-    (range(16, 24),   "music.note.house.fill"),
-    (range(24, 32),   "guitars.fill"),
-    (range(32, 40),   "waveform.path"),
-    (range(40, 48),   "music.quarternote.3"),
-    (range(48, 56),   "person.3.fill"),
-    (range(56, 64),   "horn.fill"),
-    (range(64, 72),   "wind"),
-    (range(72, 80),   "lungs.fill"),
-    (range(80, 88),   "waveform"),
-    (range(88, 96),   "waveform.badge.plus"),
-    (range(96, 104),  "sparkles"),
-    (range(104, 112), "globe"),
-    (range(112, 120), "circle.hexagongrid.fill"),
-    (range(120, 128), "speaker.wave.3.fill"),
+    (range(0,   8),   "pianokeys"),              # Piano
+    (range(8,  16),   "instrument.xylophone"),   # Chromatic Percussion
+    (range(16, 24),   "music.note.house.fill"),  # Organ
+    (range(24, 32),   "guitars.fill"),            # Guitar
+    (range(32, 40),   "waveform.path"),           # Bass
+    (range(40, 48),   "instrument.violin"),       # Strings
+    (range(48, 56),   "instrument.violin"),       # Ensemble / Strings
+    (range(56, 64),   "instrument.trumpet"),      # Brass
+    (range(64, 72),   "instrument.saxophone"),    # Reed
+    (range(72, 80),   "instrument.flute"),        # Pipe
+    (range(80, 88),   "waveform"),                # Synth Lead
+    (range(88, 96),   "waveform.circle.fill"),    # Synth Pad
+    (range(96, 104),  "sparkles"),                # Synth Effects
+    (range(104, 112), "globe"),                   # Ethnic
+    (range(112, 120), "instrument.drum"),         # Percussive
+    (range(120, 128), "speaker.wave.3"),          # Sound Effects
 ]
 
-DRUM_ICON = "music.note.list"
+DRUM_ICON = "instrument.drum"
 
 
 def icon_for_gm_program(gm_program: int) -> str:

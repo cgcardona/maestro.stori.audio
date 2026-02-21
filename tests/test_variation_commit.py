@@ -136,7 +136,7 @@ class TestApplyVariationPhrases:
         """Added notes call store.add_notes."""
         variation = _make_test_variation(include_adds=True, include_removes=False, include_modifies=False)
 
-        with patch("app.core.executor.get_or_create_store", return_value=mock_store):
+        with patch("app.core.executor.apply.get_or_create_store", return_value=mock_store):
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=["p-adds"],
@@ -164,7 +164,7 @@ class TestApplyVariationPhrases:
         """INVARIANT: Removed notes call store.remove_notes with before snapshot."""
         variation = _make_test_variation(include_adds=False, include_removes=True, include_modifies=False)
 
-        with patch("app.core.executor.get_or_create_store", return_value=mock_store):
+        with patch("app.core.executor.apply.get_or_create_store", return_value=mock_store):
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=["p-removes"],
@@ -191,7 +191,7 @@ class TestApplyVariationPhrases:
         """INVARIANT: Modified notes produce remove(before) + add(after)."""
         variation = _make_test_variation(include_adds=False, include_removes=False, include_modifies=True)
 
-        with patch("app.core.executor.get_or_create_store", return_value=mock_store):
+        with patch("app.core.executor.apply.get_or_create_store", return_value=mock_store):
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=["p-modifies"],
@@ -220,7 +220,7 @@ class TestApplyVariationPhrases:
         """INVARIANT: Only accepted phrases are applied."""
         variation = _make_test_variation(include_adds=True, include_removes=True, include_modifies=True)
 
-        with patch("app.core.executor.get_or_create_store", return_value=mock_store):
+        with patch("app.core.executor.apply.get_or_create_store", return_value=mock_store):
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=["p-adds"],  # Only adds
@@ -242,7 +242,7 @@ class TestApplyVariationPhrases:
         """All three change types applied in one transaction."""
         variation = _make_test_variation()
 
-        with patch("app.core.executor.get_or_create_store", return_value=mock_store):
+        with patch("app.core.executor.apply.get_or_create_store", return_value=mock_store):
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=["p-adds", "p-removes", "p-modifies"],
@@ -273,7 +273,7 @@ class TestApplyVariationPhrases:
         """Empty accepted_phrase_ids applies nothing."""
         variation = _make_test_variation()
 
-        with patch("app.core.executor.get_or_create_store", return_value=mock_store):
+        with patch("app.core.executor.apply.get_or_create_store", return_value=mock_store):
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=[],
@@ -292,7 +292,7 @@ class TestApplyVariationPhrases:
         """Unknown phrase IDs are skipped with warning."""
         variation = _make_test_variation(include_adds=True, include_removes=False, include_modifies=False)
 
-        with patch("app.core.executor.get_or_create_store", return_value=mock_store):
+        with patch("app.core.executor.apply.get_or_create_store", return_value=mock_store):
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=["p-adds", "p-nonexistent"],
@@ -348,7 +348,7 @@ class TestApplyVariationPhrases:
             ],
         )
 
-        with patch("app.core.executor.get_or_create_store", return_value=mock_store):
+        with patch("app.core.executor.apply.get_or_create_store", return_value=mock_store):
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=["p-r1", "p-r2"],
@@ -412,7 +412,7 @@ class TestUpdatedRegions:
             ],
         )
 
-        with patch("app.core.executor.get_or_create_store", return_value=store):
+        with patch("app.core.executor.apply.get_or_create_store", return_value=store):
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=["p-add"],
@@ -471,7 +471,7 @@ class TestUpdatedRegions:
             ],
         )
 
-        with patch("app.core.executor.get_or_create_store", return_value=store):
+        with patch("app.core.executor.apply.get_or_create_store", return_value=store):
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=["p-rm"],

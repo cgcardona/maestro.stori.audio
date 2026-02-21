@@ -7,19 +7,11 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.core.maestro_handlers import (
-    UsageTracker,
-    StreamFinalResponse,
-    _handle_reasoning,
-    _handle_composing,
-    _handle_editing,
-    _retry_composing_as_editing,
-    _stream_llm_response,
-    _PlanTracker,
-    _PlanStep,
-    _build_step_result,
-    orchestrate,
-)
+from app.core.maestro_handlers import UsageTracker, orchestrate
+from app.core.maestro_helpers import StreamFinalResponse, _stream_llm_response
+from app.core.maestro_composing import _handle_reasoning, _handle_composing, _retry_composing_as_editing
+from app.core.maestro_editing import _handle_editing
+from app.core.maestro_plan_tracker import _PlanTracker, _PlanStep, _build_step_result
 from app.core.expansion import ToolCall
 from app.core.intent import Intent, IntentResult, SSEState
 from app.core.llm_client import LLMResponse
@@ -60,6 +52,31 @@ def _make_route(sse_state=SSEState.REASONING, intent=Intent.UNKNOWN, **kwargs):
     )
     defaults.update(kwargs)
     return IntentResult(**defaults)
+
+
+def _response_to_stream(response: LLMResponse):
+    """Convert an LLMResponse to an async iterator matching chat_completion_stream protocol.
+
+    Used to adapt tests that mocked chat_completion to the streaming API
+    used by _run_instrument_agent.
+    """
+    async def _stream(*args, **kwargs):
+        tool_calls_raw = [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {"name": tc.name, "arguments": json.dumps(tc.params)},
+            }
+            for tc in response.tool_calls
+        ]
+        yield {
+            "type": "done",
+            "content": response.content,
+            "tool_calls": tool_calls_raw,
+            "finish_reason": response.finish_reason,
+            "usage": response.usage or {},
+        }
+    return _stream
 
 
 def _make_llm_mock(content="Hello", supports_reasoning=False, tool_calls=None):
@@ -257,7 +274,7 @@ class TestHandleComposing:
         )
 
         with (
-            patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)),
+            patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)),
             patch("app.core.executor.execute_plan_variation", new_callable=AsyncMock, return_value=fake_variation),
         ):
             events = []
@@ -290,7 +307,7 @@ class TestHandleComposing:
 
         plan = ExecutionPlan(tool_calls=[], safety_validated=False, llm_response_text="I'm not sure what to do.")
 
-        with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+        with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
             events = []
             async for e in _handle_composing("do something", {}, route, llm, store, trace, None, None):
                 events.append(e)
@@ -314,7 +331,7 @@ class TestHandleComposing:
 
         plan = ExecutionPlan(tool_calls=[], safety_validated=False)
 
-        with patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+        with patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
             events = []
             async for e in _handle_composing("", {}, route, llm, store, trace, None, None):
                 events.append(e)
@@ -754,7 +771,7 @@ class TestHandleEditing:
 
     @pytest.mark.anyio
     async def test_synthetic_set_track_icon_uses_drum_icon_for_drum_kit(self):
-        """stori_set_track_icon uses music.note.list when drumKitId is set."""
+        """stori_set_track_icon uses instrument.drum when drumKitId is set."""
         allowed = {"stori_add_midi_track"}
         route = _make_route(
             SSEState.EDITING,
@@ -783,7 +800,7 @@ class TestHandleEditing:
         icon_calls = [p for p in tc_events if p["name"] == "stori_set_track_icon"]
 
         assert len(icon_calls) == 1
-        assert icon_calls[0]["params"]["icon"] == "music.note.list"
+        assert icon_calls[0]["params"]["icon"] == "instrument.drum"
 
 
 # ---------------------------------------------------------------------------
@@ -908,7 +925,7 @@ class TestOrchestrateExecutionModePolicy:
 
         with (
             patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
-            patch("app.core.maestro_handlers.build_execution_plan_stream", return_value=_fake_plan_stream(plan)),
+            patch("app.core.maestro_composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)),
             patch("app.core.maestro_handlers.LLMClient") as m_cls,
             patch("app.core.executor.execute_plan_variation", new_callable=AsyncMock, return_value=fake_variation),
         ):
@@ -1683,7 +1700,7 @@ class TestPlanStepToolName:
 
     def _make_tracker_from_prompt(self, roles=None, extensions=None, tempo=None, key=None):
         from app.core.prompt_parser import ParsedPrompt
-        from app.core.maestro_handlers import _PlanTracker
+        from app.core.maestro_plan_tracker import _PlanTracker
         parsed = ParsedPrompt(
             raw="STORI PROMPT",
             mode="compose",
@@ -1773,7 +1790,7 @@ class TestPlanStepToolName:
 
     def test_step_without_tool_name_omits_key(self):
         """Steps where tool_name is None omit toolName so Swift decodes nil."""
-        from app.core.maestro_handlers import _PlanStep, _PlanTracker
+        from app.core.maestro_plan_tracker import _PlanStep, _PlanTracker
         tracker = _PlanTracker()
         tracker.steps = [_PlanStep(step_id="1", label="Do something", tool_name=None)]
         event = tracker.to_plan_event()
@@ -1797,7 +1814,7 @@ class TestGetMissingExpressiveSteps:
         )
 
     def _missing(self, extensions, tool_calls_collected=None):
-        from app.core.maestro_handlers import _get_missing_expressive_steps
+        from app.core.maestro_editing import _get_missing_expressive_steps
         return _get_missing_expressive_steps(
             self._parsed(extensions),
             tool_calls_collected or [],
@@ -1805,7 +1822,7 @@ class TestGetMissingExpressiveSteps:
 
     def test_none_parsed_returns_empty(self):
         """None parsed prompt → no missing steps."""
-        from app.core.maestro_handlers import _get_missing_expressive_steps
+        from app.core.maestro_editing import _get_missing_expressive_steps
         assert _get_missing_expressive_steps(None, []) == []
 
     def test_no_extensions_returns_empty(self):
@@ -1939,7 +1956,7 @@ class TestBuildFromPromptReverbBus:
 
     def test_two_reverb_tracks_adds_bus_step(self):
         """Effects block with reverb on 2+ tracks adds 'Set up shared Reverb bus' step."""
-        from app.core.maestro_handlers import _PlanTracker
+        from app.core.maestro_plan_tracker import _PlanTracker
         parsed = self._make_parsed({
             "effects": {
                 "piano": {"reverb": "medium room"},
@@ -1953,7 +1970,7 @@ class TestBuildFromPromptReverbBus:
 
     def test_two_reverb_tracks_bus_step_has_correct_toolName(self):
         """Reverb bus plan step has toolName=stori_ensure_bus."""
-        from app.core.maestro_handlers import _PlanTracker
+        from app.core.maestro_plan_tracker import _PlanTracker
         parsed = self._make_parsed({
             "effects": {
                 "piano": {"reverb": "medium room"},
@@ -1968,7 +1985,7 @@ class TestBuildFromPromptReverbBus:
 
     def test_one_reverb_track_no_bus_step(self):
         """Only one track with reverb → no shared bus step."""
-        from app.core.maestro_handlers import _PlanTracker
+        from app.core.maestro_plan_tracker import _PlanTracker
         parsed = self._make_parsed({
             "effects": {
                 "piano": {"reverb": "medium room"},
@@ -1999,7 +2016,7 @@ class TestBuildToolResult:
 
     def test_add_midi_track_returns_track_id(self):
         """stori_add_midi_track result MUST include trackId."""
-        from app.core.maestro_handlers import _build_tool_result
+        from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         track_id = store.create_track("Drums")
         params = {"trackId": track_id, "name": "Drums", "drumKitId": "acoustic"}
@@ -2013,7 +2030,7 @@ class TestBuildToolResult:
 
     def test_add_midi_region_returns_region_id_and_metadata(self):
         """stori_add_midi_region result MUST include regionId, trackId, startBeat, durationBeats."""
-        from app.core.maestro_handlers import _build_tool_result
+        from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         track_id = store.create_track("Bass")
         region_id = store.create_region("Verse", track_id, metadata={"startBeat": 0, "durationBeats": 32})
@@ -2035,7 +2052,7 @@ class TestBuildToolResult:
 
     def test_add_notes_returns_confirmation(self):
         """stori_add_notes result MUST include notesAdded and totalNotes."""
-        from app.core.maestro_handlers import _build_tool_result
+        from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         track_id = store.create_track("Drums")
         region_id = store.create_region("Pattern", track_id)
@@ -2051,7 +2068,7 @@ class TestBuildToolResult:
 
     def test_add_notes_second_call_shows_accumulated_total(self):
         """Calling stori_add_notes twice should show accumulated totalNotes."""
-        from app.core.maestro_handlers import _build_tool_result
+        from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         track_id = store.create_track("Drums")
         region_id = store.create_region("Pattern", track_id)
@@ -2068,7 +2085,7 @@ class TestBuildToolResult:
 
     def test_clear_notes_returns_warning(self):
         """stori_clear_notes result MUST include warning about destructive operation."""
-        from app.core.maestro_handlers import _build_tool_result
+        from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         result = _build_tool_result("stori_clear_notes", {"regionId": "r-123"}, store)
 
@@ -2079,7 +2096,7 @@ class TestBuildToolResult:
 
     def test_ensure_bus_returns_bus_id(self):
         """stori_ensure_bus result MUST include busId."""
-        from app.core.maestro_handlers import _build_tool_result
+        from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         bus_id = store.get_or_create_bus("Reverb")
         params = {"busId": bus_id, "name": "Reverb"}
@@ -2091,7 +2108,7 @@ class TestBuildToolResult:
 
     def test_add_insert_effect_returns_track_id(self):
         """stori_add_insert_effect result includes trackId."""
-        from app.core.maestro_handlers import _build_tool_result
+        from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         result = _build_tool_result("stori_add_insert_effect", {"trackId": "t-1", "type": "compressor"}, store)
         assert result["success"] is True
@@ -2100,7 +2117,7 @@ class TestBuildToolResult:
 
     def test_add_midi_cc_returns_event_count(self):
         """stori_add_midi_cc result includes regionId and event count."""
-        from app.core.maestro_handlers import _build_tool_result
+        from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         events = [{"beat": 0, "value": 64}, {"beat": 4, "value": 127}]
         result = _build_tool_result("stori_add_midi_cc", {"regionId": "r-1", "cc": 1, "events": events}, store)
@@ -2119,7 +2136,7 @@ class TestEntityManifest:
 
     def test_manifest_includes_note_count(self):
         """Regions in the manifest must show noteCount so the model doesn't re-add."""
-        from app.core.maestro_handlers import _entity_manifest
+        from app.core.maestro_helpers import _entity_manifest
         store = StateStore(conversation_id="test-manifest")
         track_id = store.create_track("Drums")
         region_id = store.create_region("Pattern", track_id, metadata={"startBeat": 0, "durationBeats": 16})
@@ -2140,7 +2157,7 @@ class TestEntityManifest:
 
     def test_manifest_empty_region_shows_zero_notes(self):
         """A region with no notes must show noteCount: 0."""
-        from app.core.maestro_handlers import _entity_manifest
+        from app.core.maestro_helpers import _entity_manifest
         store = StateStore(conversation_id="test-manifest-empty")
         track_id = store.create_track("Bass")
         region_id = store.create_region("Verse", track_id, metadata={"startBeat": 0, "durationBeats": 32})
@@ -2151,7 +2168,7 @@ class TestEntityManifest:
 
     def test_manifest_includes_buses(self):
         """Buses must appear in the manifest."""
-        from app.core.maestro_handlers import _entity_manifest
+        from app.core.maestro_helpers import _entity_manifest
         store = StateStore(conversation_id="test-manifest-bus")
         bus_id = store.get_or_create_bus("Reverb")
 
@@ -2171,7 +2188,7 @@ class TestPlanStepPhantomCompletion:
 
     def test_nonexistent_track_stays_pending(self):
         """A plan step for 'Soul_Sample' that was never created must NOT be completed."""
-        from app.core.maestro_handlers import _PlanTracker
+        from app.core.maestro_plan_tracker import _PlanTracker
         tracker = _PlanTracker()
         tracker.steps = [
             _PlanStep(step_id="1", label="Create Drums track", track_name="Drums"),
@@ -2186,7 +2203,7 @@ class TestPlanStepPhantomCompletion:
         store.add_notes(region_id, [{"pitch": 36, "startBeat": 0, "durationBeats": 0.5, "velocity": 100}])
 
         existing_track_names = {t.name for t in store.registry.list_tracks()}
-        from app.core.maestro_handlers import _get_incomplete_tracks
+        from app.core.maestro_editing import _get_incomplete_tracks
         incomplete = _get_incomplete_tracks(store)
         incomplete_set = set(incomplete)
 
@@ -2220,7 +2237,7 @@ class TestEnrichParamsWithTrackContext:
 
     def test_injects_track_name_and_id_from_region_id(self):
         """regionId-only params get trackName and trackId appended."""
-        from app.core.maestro_handlers import _enrich_params_with_track_context
+        from app.core.maestro_helpers import _enrich_params_with_track_context
         store, track_id, region_id = self._make_store_with_region()
         params = {"regionId": region_id, "cc": 11, "events": []}
         result = _enrich_params_with_track_context(params, store)
@@ -2231,7 +2248,7 @@ class TestEnrichParamsWithTrackContext:
 
     def test_skips_if_track_name_already_present(self):
         """Params already containing trackName are returned unchanged."""
-        from app.core.maestro_handlers import _enrich_params_with_track_context
+        from app.core.maestro_helpers import _enrich_params_with_track_context
         store, _, region_id = self._make_store_with_region()
         params = {"regionId": region_id, "trackName": "Already Set", "trackId": "existing"}
         result = _enrich_params_with_track_context(params, store)
@@ -2240,7 +2257,7 @@ class TestEnrichParamsWithTrackContext:
 
     def test_skips_if_no_region_id(self):
         """Params without regionId (track-scoped tools) pass through unchanged."""
-        from app.core.maestro_handlers import _enrich_params_with_track_context
+        from app.core.maestro_helpers import _enrich_params_with_track_context
         from app.core.state_store import StateStore
         store = StateStore(conversation_id="enrich-test-2")
         params = {"trackId": "some-track", "volumeDb": -6}
@@ -2249,7 +2266,7 @@ class TestEnrichParamsWithTrackContext:
 
     def test_graceful_fallback_on_unknown_region(self):
         """Unknown regionId returns params unchanged without raising."""
-        from app.core.maestro_handlers import _enrich_params_with_track_context
+        from app.core.maestro_helpers import _enrich_params_with_track_context
         from app.core.state_store import StateStore
         store = StateStore(conversation_id="enrich-test-3")
         params = {"regionId": "nonexistent-region-id", "cc": 64, "events": []}
@@ -2259,7 +2276,7 @@ class TestEnrichParamsWithTrackContext:
 
     def test_original_params_not_mutated(self):
         """The helper returns a new dict; the original is never mutated."""
-        from app.core.maestro_handlers import _enrich_params_with_track_context
+        from app.core.maestro_helpers import _enrich_params_with_track_context
         store, _, region_id = self._make_store_with_region()
         params = {"regionId": region_id, "cc": 1, "events": []}
         original = dict(params)
@@ -2612,7 +2629,7 @@ class TestAgentTeamRouting:
     async def test_multi_role_routes_to_agent_team(self):
         """Multi-role STORI PROMPT with GENERATE_MUSIC + apply mode uses agent-team handler."""
         from app.core.intent import Intent, SSEState
-        from app.core.maestro_handlers import _handle_composition_agent_team
+        from app.core.maestro_agent_teams import _handle_composition_agent_team
 
         parsed = _make_parsed_multi(roles=["drums", "bass"])
         intent_result = self._make_intent_result(Intent.GENERATE_MUSIC, SSEState.EDITING, parsed)
@@ -2713,7 +2730,7 @@ class TestApplySingleToolCall:
     @pytest.mark.anyio
     async def test_valid_tool_returns_not_skipped(self):
         """A valid tool call returns skipped=False with populated fields."""
-        from app.core.maestro_handlers import _apply_single_tool_call
+        from app.core.maestro_editing import _apply_single_tool_call
 
         store = StateStore(conversation_id="test-apply")
         trace = _make_trace()
@@ -2737,7 +2754,7 @@ class TestApplySingleToolCall:
     @pytest.mark.anyio
     async def test_invalid_tool_returns_skipped_with_error(self):
         """Invalid tool call (wrong tool name) returns skipped=True with toolError."""
-        from app.core.maestro_handlers import _apply_single_tool_call
+        from app.core.maestro_editing import _apply_single_tool_call
 
         store = StateStore(conversation_id="test-apply-invalid")
         trace = _make_trace()
@@ -2757,7 +2774,7 @@ class TestApplySingleToolCall:
     @pytest.mark.anyio
     async def test_track_creation_generates_uuid(self):
         """stori_add_midi_track generates a fresh UUID and registers in store."""
-        from app.core.maestro_handlers import _apply_single_tool_call
+        from app.core.maestro_editing import _apply_single_tool_call
 
         store = StateStore(conversation_id="test-apply-track")
         trace = _make_trace()
@@ -2780,7 +2797,7 @@ class TestApplySingleToolCall:
     @pytest.mark.anyio
     async def test_circuit_breaker_fires_at_3_failures(self):
         """stori_add_notes is rejected when failure count >= 3."""
-        from app.core.maestro_handlers import _apply_single_tool_call
+        from app.core.maestro_editing import _apply_single_tool_call
 
         store = StateStore(conversation_id="test-cb")
         # Register a region first
@@ -2805,7 +2822,7 @@ class TestApplySingleToolCall:
     @pytest.mark.anyio
     async def test_emit_sse_false_produces_no_events(self):
         """emit_sse=False returns empty sse_events for proposal/variation path."""
-        from app.core.maestro_handlers import _apply_single_tool_call
+        from app.core.maestro_editing import _apply_single_tool_call
 
         store = StateStore(conversation_id="test-no-sse")
         trace = _make_trace()
@@ -2838,7 +2855,7 @@ class TestRunInstrumentAgent:
     @pytest.mark.anyio
     async def test_agent_puts_tool_call_events_in_queue(self):
         """Instrument agent puts toolCall SSE events into the shared queue."""
-        from app.core.maestro_handlers import _run_instrument_agent
+        from app.core.maestro_agent_teams import _run_instrument_agent
 
         store = StateStore(conversation_id="test-agent")
         plan_tracker = _PlanTracker()
@@ -2849,7 +2866,8 @@ class TestRunInstrumentAgent:
         )
 
         llm = _make_llm_mock()
-        llm.chat_completion = AsyncMock(return_value=self._make_track_response("Drums"))
+        resp = self._make_track_response("Drums")
+        llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
         trace = _make_trace()
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -2883,7 +2901,7 @@ class TestRunInstrumentAgent:
     @pytest.mark.anyio
     async def test_agent_marks_steps_failed_on_llm_error(self):
         """When the LLM call raises, all owned plan steps are marked failed."""
-        from app.core.maestro_handlers import _run_instrument_agent
+        from app.core.maestro_agent_teams import _run_instrument_agent
 
         store = StateStore(conversation_id="test-agent-fail")
         plan_tracker = _PlanTracker()
@@ -2894,7 +2912,10 @@ class TestRunInstrumentAgent:
         )
 
         llm = _make_llm_mock()
-        llm.chat_completion = AsyncMock(side_effect=RuntimeError("LLM down"))
+        async def _failing_stream(*args, **kwargs):
+            raise RuntimeError("LLM down")
+            yield  # noqa: unreachable — makes this an async generator
+        llm.chat_completion_stream = MagicMock(side_effect=_failing_stream)
         trace = _make_trace()
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -2927,8 +2948,8 @@ class TestRunInstrumentAgent:
 
     @pytest.mark.anyio
     async def test_agent_makes_exactly_one_llm_call(self):
-        """Each instrument agent makes exactly one independent LLM call."""
-        from app.core.maestro_handlers import _run_instrument_agent
+        """Each instrument agent makes exactly one independent streaming LLM call."""
+        from app.core.maestro_agent_teams import _run_instrument_agent
 
         store = StateStore(conversation_id="test-agent-count")
         plan_tracker = _PlanTracker()
@@ -2939,7 +2960,8 @@ class TestRunInstrumentAgent:
         )
 
         llm = _make_llm_mock()
-        llm.chat_completion = AsyncMock(return_value=self._make_track_response("Bass"))
+        resp = self._make_track_response("Bass")
+        llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
         trace = _make_trace()
         queue: asyncio.Queue = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
@@ -2961,9 +2983,7 @@ class TestRunInstrumentAgent:
             collected_tool_calls=[],
         )
 
-        # The mock returns one tool call on turn 0, then stops — expect 2 calls
-        # (turn 0 with tool calls, turn 1 returns empty → loop exits)
-        assert llm.chat_completion.call_count >= 1
+        assert llm.chat_completion_stream.call_count >= 1
 
 
 class TestAgentTeamPhases:
@@ -2991,7 +3011,7 @@ class TestAgentTeamPhases:
     @pytest.mark.anyio
     async def test_plan_event_emitted_before_agents(self):
         """plan event is emitted before any instrument agents start."""
-        from app.core.maestro_handlers import _handle_composition_agent_team
+        from app.core.maestro_agent_teams import _handle_composition_agent_team
 
         parsed = _make_parsed_multi(roles=["drums", "bass"])
         route = self._make_route_for_team()
@@ -2999,12 +3019,11 @@ class TestAgentTeamPhases:
         trace = _make_trace()
 
         llm = _make_llm_mock()
-        # Agents call chat_completion for their own LLM session
         agent_response = LLMResponse(content=None, usage={})
         agent_response.tool_calls = [
             ToolCall(id="x1", name="stori_add_midi_track", params={"name": "Drums", "drumKitId": "TR-808"}),
         ]
-        llm.chat_completion = AsyncMock(return_value=agent_response)
+        llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(agent_response))
 
         events = []
         async for e in _handle_composition_agent_team(
@@ -3014,7 +3033,6 @@ class TestAgentTeamPhases:
 
         payloads = _parse_events(events)
         event_types = [p["type"] for p in payloads]
-        # plan must appear before any toolCall events
         plan_idx = next((i for i, t in enumerate(event_types) if t == "plan"), None)
         first_tool_idx = next((i for i, t in enumerate(event_types) if t == "toolCall"), None)
         assert plan_idx is not None, "plan event must be emitted"
@@ -3024,7 +3042,7 @@ class TestAgentTeamPhases:
     @pytest.mark.anyio
     async def test_complete_event_emitted_at_end(self):
         """complete event is emitted once, at the end."""
-        from app.core.maestro_handlers import _handle_composition_agent_team
+        from app.core.maestro_agent_teams import _handle_composition_agent_team
 
         parsed = _make_parsed_multi(roles=["drums", "bass"])
         route = self._make_route_for_team()
@@ -3034,7 +3052,7 @@ class TestAgentTeamPhases:
         llm = _make_llm_mock()
         agent_response = LLMResponse(content=None, usage={})
         agent_response.tool_calls = []
-        llm.chat_completion = AsyncMock(return_value=agent_response)
+        llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(agent_response))
 
         events = []
         async for e in _handle_composition_agent_team(
@@ -3046,14 +3064,13 @@ class TestAgentTeamPhases:
         complete_events = [p for p in payloads if p["type"] == "complete"]
         assert len(complete_events) == 1
         assert complete_events[0]["success"] is True
-        # complete must be last meaningful event
         last_event = payloads[-1]
         assert last_event["type"] == "complete"
 
     @pytest.mark.anyio
     async def test_phase1_tempo_applied_before_agents(self):
         """Phase 1 emits toolCall for stori_set_tempo before instrument agents run."""
-        from app.core.maestro_handlers import _handle_composition_agent_team
+        from app.core.maestro_agent_teams import _handle_composition_agent_team
 
         parsed = _make_parsed_multi(tempo=92, roles=["drums", "bass"])
         route = self._make_route_for_team()
@@ -3063,7 +3080,7 @@ class TestAgentTeamPhases:
         llm = _make_llm_mock()
         agent_response = LLMResponse(content=None, usage={})
         agent_response.tool_calls = []
-        llm.chat_completion = AsyncMock(return_value=agent_response)
+        llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(agent_response))
 
         events = []
         async for e in _handle_composition_agent_team(
@@ -3102,32 +3119,39 @@ class TestAgentTeamFailureIsolation:
     @pytest.mark.anyio
     async def test_one_failing_agent_does_not_cancel_others(self):
         """When one instrument agent's LLM call fails, others still complete."""
-        from app.core.maestro_handlers import _handle_composition_agent_team
+        from app.core.maestro_agent_teams import _handle_composition_agent_team
 
         parsed = _make_parsed_multi(roles=["drums", "bass"])
         route = self._make_route_for_team()
         store = StateStore(conversation_id="test-isolation")
         trace = _make_trace()
 
-        call_count = 0
+        agent_call_count = 0
 
-        async def side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise RuntimeError("drums LLM failed")
-            # Bass agent: first turn returns a tool call, subsequent turns empty
-            response = LLMResponse(content=None, usage={})
-            if call_count == 2:
-                response.tool_calls = [
-                    ToolCall(id="b1", name="stori_add_midi_track", params={"name": "Bass"}),
+        def agent_stream_side_effect(*args, **kwargs):
+            nonlocal agent_call_count
+            agent_call_count += 1
+            current_call = agent_call_count
+
+            async def _stream():
+                if current_call == 1:
+                    raise RuntimeError("drums LLM failed")
+                response = LLMResponse(content=None, usage={})
+                if current_call == 2:
+                    response.tool_calls = [
+                        ToolCall(id="b1", name="stori_add_midi_track", params={"name": "Bass"}),
+                    ]
+                else:
+                    response.tool_calls = []
+                tc_raw = [
+                    {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.params)}}
+                    for tc in response.tool_calls
                 ]
-            else:
-                response.tool_calls = []  # Bass agent stops after second turn
-            return response
+                yield {"type": "done", "content": None, "tool_calls": tc_raw, "finish_reason": "stop", "usage": {}}
+            return _stream()
 
         llm = _make_llm_mock()
-        llm.chat_completion = AsyncMock(side_effect=side_effect)
+        llm.chat_completion_stream = MagicMock(side_effect=agent_stream_side_effect)
 
         events = []
         async for e in _handle_composition_agent_team(
@@ -3136,23 +3160,27 @@ class TestAgentTeamFailureIsolation:
             events.append(e)
 
         payloads = _parse_events(events)
-        # Should still emit complete (handler doesn't abort on agent failures)
         assert any(p["type"] == "complete" for p in payloads)
-        # Both agents were attempted (drums failed on call 1, bass used calls 2+)
-        assert call_count >= 2
+        assert agent_call_count >= 2
 
     @pytest.mark.anyio
     async def test_complete_event_emitted_even_when_all_agents_fail(self):
         """complete event fires even if every instrument agent fails."""
-        from app.core.maestro_handlers import _handle_composition_agent_team
+        from app.core.maestro_agent_teams import _handle_composition_agent_team
 
         parsed = _make_parsed_multi(roles=["drums", "bass"])
         route = self._make_route_for_team()
         store = StateStore(conversation_id="test-all-fail")
         trace = _make_trace()
 
+        def all_fail(*args, **kwargs):
+            async def _fail():
+                raise RuntimeError("all down")
+                yield  # noqa: unreachable
+            return _fail()
+
         llm = _make_llm_mock()
-        llm.chat_completion = AsyncMock(side_effect=RuntimeError("all down"))
+        llm.chat_completion_stream = MagicMock(side_effect=all_fail)
 
         events = []
         async for e in _handle_composition_agent_team(
@@ -3179,7 +3207,7 @@ class TestIsAdditiveCompositionBug3:
 
     def test_two_roles_returns_true_even_when_all_tracks_exist(self):
         """2-role STORI PROMPT → True even if both tracks already exist."""
-        from app.core.maestro_handlers import _is_additive_composition
+        from app.core.maestro_editing import _is_additive_composition
 
         parsed = _make_parsed_multi(roles=["drums", "horns"])
         project_context = {
@@ -3192,7 +3220,7 @@ class TestIsAdditiveCompositionBug3:
 
     def test_single_role_existing_track_returns_false(self):
         """1-role prompt where the track exists → False (original behaviour)."""
-        from app.core.maestro_handlers import _is_additive_composition
+        from app.core.maestro_editing import _is_additive_composition
 
         parsed = _make_parsed_multi(roles=["drums"])
         project_context = {
@@ -3202,7 +3230,7 @@ class TestIsAdditiveCompositionBug3:
 
     def test_single_role_new_track_returns_true(self):
         """1-role prompt for a brand-new track → True (existing behaviour)."""
-        from app.core.maestro_handlers import _is_additive_composition
+        from app.core.maestro_editing import _is_additive_composition
 
         parsed = _make_parsed_multi(roles=["bass"])
         project_context = {
@@ -3212,7 +3240,7 @@ class TestIsAdditiveCompositionBug3:
 
     def test_no_parsed_returns_false(self):
         """None parsed → False (guard clause)."""
-        from app.core.maestro_handlers import _is_additive_composition
+        from app.core.maestro_editing import _is_additive_composition
 
         assert _is_additive_composition(None, {}) is False
 
@@ -3226,7 +3254,7 @@ class TestBuildCompositionSummaryBug1:
 
     def test_reused_track_appears_in_tracks_reused(self):
         """Synthetic _reused_track entries populate tracksReused."""
-        from app.core.maestro_handlers import _build_composition_summary
+        from app.core.maestro_agent_teams import _build_composition_summary
 
         tool_calls = [
             {"tool": "_reused_track", "params": {"name": "Drums", "trackId": "t-drums"}},
@@ -3243,7 +3271,7 @@ class TestBuildCompositionSummaryBug1:
 
     def test_no_reused_tracks_gives_empty_list(self):
         """When no tracks are reused, tracksReused is an empty list."""
-        from app.core.maestro_handlers import _build_composition_summary
+        from app.core.maestro_agent_teams import _build_composition_summary
 
         tool_calls = [
             {"tool": "stori_add_midi_track", "params": {"name": "Drums", "trackId": "t1"}},
@@ -3283,7 +3311,7 @@ class TestAgentTeamExistingTrackReuse:
     @pytest.mark.anyio
     async def test_existing_track_injects_reused_track_into_summary(self):
         """When a track exists, summary.final includes it in tracksReused."""
-        from app.core.maestro_handlers import _handle_composition_agent_team
+        from app.core.maestro_agent_teams import _handle_composition_agent_team
 
         parsed = _make_parsed_multi(roles=["drums", "bass"])
         route = self._make_route_for_team()
@@ -3303,7 +3331,7 @@ class TestAgentTeamExistingTrackReuse:
         llm = _make_llm_mock()
         agent_response = LLMResponse(content=None, usage={})
         agent_response.tool_calls = []
-        llm.chat_completion = AsyncMock(return_value=agent_response)
+        llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(agent_response))
 
         events = []
         async for e in _handle_composition_agent_team(
@@ -3323,7 +3351,7 @@ class TestAgentTeamExistingTrackReuse:
     @pytest.mark.anyio
     async def test_existing_track_system_prompt_skips_create(self):
         """Reusing agent's system prompt does not ask to call stori_add_midi_track."""
-        from app.core.maestro_handlers import _run_instrument_agent
+        from app.core.maestro_agent_teams import _run_instrument_agent
 
         store = StateStore(conversation_id="test-reuse-prompt")
         plan_tracker = _PlanTracker()
@@ -3334,14 +3362,16 @@ class TestAgentTeamExistingTrackReuse:
         )
         captured_messages: list = []
 
-        async def capture_llm(*args, **kwargs):
+        def capture_stream(*args, **kwargs):
             captured_messages.extend(kwargs.get("messages", []))
             r = LLMResponse(content=None, usage={})
             r.tool_calls = []
-            return r
+            async def _stream():
+                yield {"type": "done", "content": None, "tool_calls": [], "finish_reason": "stop", "usage": {}}
+            return _stream()
 
         llm = _make_llm_mock()
-        llm.chat_completion = AsyncMock(side_effect=capture_llm)
+        llm.chat_completion_stream = MagicMock(side_effect=capture_stream)
         trace = _make_trace()
         queue: asyncio.Queue = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
@@ -3380,7 +3410,7 @@ class TestAgentTeamExistingTrackReuse:
         the Drums trackId (3C1A09C3) because the coordinator injected a single
         shared value. The fix builds a per-role mapping before spawning.
         """
-        from app.core.maestro_handlers import _handle_composition_agent_team
+        from app.core.maestro_agent_teams import _handle_composition_agent_team
 
         parsed = _make_parsed_multi(roles=["drums", "bass", "guitar", "horns"])
         route = self._make_route_for_team()
@@ -3395,30 +3425,31 @@ class TestAgentTeamExistingTrackReuse:
         store = StateStore(conversation_id="test-distinct-ids")
         trace = _make_trace()
 
-        # Capture every system prompt that the LLM receives
         captured_system_prompts: list[str] = []
 
-        async def capture_llm(*args, **kwargs):
+        def capture_stream(*args, **kwargs):
             msgs = kwargs.get("messages", args[0] if args else [])
             for m in msgs:
                 if m.get("role") == "system":
                     captured_system_prompts.append(m["content"])
             r = LLMResponse(content=None, usage={})
             r.tool_calls = []
-            return r
+            async def _stream():
+                yield {"type": "done", "content": None, "tool_calls": [], "finish_reason": "stop", "usage": {}}
+            return _stream()
 
         llm = _make_llm_mock()
-        llm.chat_completion = AsyncMock(side_effect=capture_llm)
+        llm.chat_completion_stream = MagicMock(side_effect=capture_stream)
 
         async for _ in _handle_composition_agent_team(
             "add chorus", project_context, parsed, route, llm, store, trace, None
         ):
             pass
 
+        # Each of 4 agents uses 1+ calls (no coordinator reasoning for STORI PROMPTs)
         assert len(captured_system_prompts) >= 4, (
             f"Expected at least 4 agent system prompts, got {len(captured_system_prompts)}"
         )
-        # Each agent's system prompt must contain its OWN trackId
         for expected_id in ["id-drums", "id-bass", "id-guitar", "id-horns"]:
             matching = [p for p in captured_system_prompts if expected_id in p]
             assert len(matching) == 1, (
@@ -3429,7 +3460,7 @@ class TestAgentTeamExistingTrackReuse:
     @pytest.mark.anyio
     async def test_client_id_key_resolved_same_as_trackid_key(self):
         """project_context tracks with 'id' key (DAW format) work like 'trackId'."""
-        from app.core.maestro_handlers import _handle_composition_agent_team
+        from app.core.maestro_agent_teams import _handle_composition_agent_team
 
         parsed = _make_parsed_multi(roles=["drums", "bass"])
         route = self._make_route_for_team()
@@ -3445,17 +3476,19 @@ class TestAgentTeamExistingTrackReuse:
 
         captured_system_prompts: list[str] = []
 
-        async def capture_llm(*args, **kwargs):
+        def capture_stream(*args, **kwargs):
             msgs = kwargs.get("messages", args[0] if args else [])
             for m in msgs:
                 if m.get("role") == "system":
                     captured_system_prompts.append(m["content"])
             r = LLMResponse(content=None, usage={})
             r.tool_calls = []
-            return r
+            async def _stream():
+                yield {"type": "done", "content": None, "tool_calls": [], "finish_reason": "stop", "usage": {}}
+            return _stream()
 
         llm = _make_llm_mock()
-        llm.chat_completion = AsyncMock(side_effect=capture_llm)
+        llm.chat_completion_stream = MagicMock(side_effect=capture_stream)
 
         async for _ in _handle_composition_agent_team(
             "add section", project_context, parsed, route, llm, store, trace, None
@@ -3468,10 +3501,316 @@ class TestAgentTeamExistingTrackReuse:
         assert any("daw-bass-id" in p for p in captured_system_prompts), (
             "Bass agent must have received its DAW-format id"
         )
-        # Confirm no agent received an empty string trackId (the old bug)
         assert not any("trackId=''" in p for p in captured_system_prompts), (
             "No agent should have an empty trackId injected into its system prompt"
         )
 
 
 import asyncio
+
+
+# =============================================================================
+# Frontend parity: suppress coordinator reasoning, icon validation, agentId,
+# summary.final text
+# =============================================================================
+
+
+class TestSuppressCoordinatorReasoningForStoriPrompt:
+    """Coordinator reasoning is suppressed for STORI PROMPT requests."""
+
+    def _make_route_for_team(self):
+        from app.core.intent import Intent, IntentResult, SSEState
+        return IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.EDITING,
+            confidence=0.9,
+            slots=MagicMock(),
+            tools=[],
+            allowed_tool_names={
+                "stori_set_tempo", "stori_set_key",
+                "stori_add_midi_track", "stori_add_midi_region",
+                "stori_add_notes", "stori_add_insert_effect",
+            },
+            tool_choice="auto",
+            force_stop_after=False,
+            requires_planner=False,
+            reasons=(),
+        )
+
+    @pytest.mark.anyio
+    async def test_no_reasoning_events_from_coordinator(self):
+        """STORI PROMPT compositions emit zero reasoning events without agentId."""
+        from app.core.maestro_agent_teams import _handle_composition_agent_team
+
+        parsed = _make_parsed_multi(roles=["drums", "bass"])
+        route = self._make_route_for_team()
+        store = StateStore(conversation_id="test-suppress-reasoning")
+        trace = _make_trace()
+
+        llm = _make_llm_mock()
+        agent_response = LLMResponse(content=None, usage={})
+        agent_response.tool_calls = []
+        llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(agent_response))
+
+        events = []
+        async for e in _handle_composition_agent_team(
+            "STORI PROMPT\nTempo: 92\nKey: Cm", {}, parsed, route, llm, store, trace, None
+        ):
+            events.append(e)
+
+        payloads = _parse_events(events)
+        coord_reasoning = [
+            p for p in payloads
+            if p["type"] == "reasoning" and "agentId" not in p
+        ]
+        assert coord_reasoning == [], (
+            f"Expected zero coordinator reasoning events, got {len(coord_reasoning)}"
+        )
+
+
+class TestIconValidation:
+    """Synthetic stori_set_track_icon is validated against curated SF Symbols list."""
+
+    @pytest.mark.anyio
+    async def test_invalid_icon_is_omitted(self):
+        """An icon not in the curated set is silently dropped."""
+        from app.core.maestro_editing import _apply_single_tool_call
+        from app.core.tool_validation import VALID_SF_SYMBOL_ICONS
+
+        store = StateStore(conversation_id="test-icon-validate")
+        trace = _make_trace()
+        add_notes_failures: dict[str, int] = {}
+
+        with patch("app.core.maestro_editing.icon_for_gm_program", return_value="nonexistent.icon"):
+            outcome = await _apply_single_tool_call(
+                tc_id="tc-icon-test",
+                tc_name="stori_add_midi_track",
+                resolved_args={"name": "Strings", "gmProgram": 48},
+                allowed_tool_names={"stori_add_midi_track"},
+                store=store,
+                trace=trace,
+                add_notes_failures=add_notes_failures,
+                emit_sse=True,
+            )
+
+        icon_events = [
+            e for e in outcome.sse_events
+            if e.get("name") == "stori_set_track_icon"
+        ]
+        assert icon_events == [], (
+            "Invalid icon should not produce stori_set_track_icon events"
+        )
+
+    @pytest.mark.anyio
+    async def test_valid_icon_is_emitted(self):
+        """An icon in the curated set is emitted normally."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-icon-valid")
+        trace = _make_trace()
+        add_notes_failures: dict[str, int] = {}
+
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-icon-valid",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Piano", "gmProgram": 0},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures=add_notes_failures,
+            emit_sse=True,
+        )
+
+        icon_events = [
+            e for e in outcome.sse_events
+            if e.get("name") == "stori_set_track_icon"
+        ]
+        assert len(icon_events) >= 1, "Valid icon should produce stori_set_track_icon events"
+        icon_param = icon_events[-1]["params"]["icon"]
+        assert icon_param == "pianokeys"
+
+
+class TestGmIconsAllValid:
+    """Every icon returned by icon_for_gm_program must be in the curated set."""
+
+    def test_all_gm_icons_in_curated_set(self):
+        """All 128 GM programs map to icons in VALID_SF_SYMBOL_ICONS."""
+        from app.core.gm_instruments import DRUM_ICON, icon_for_gm_program
+        from app.core.tool_validation import VALID_SF_SYMBOL_ICONS
+
+        invalid = []
+        for gm in range(128):
+            icon = icon_for_gm_program(gm)
+            if icon not in VALID_SF_SYMBOL_ICONS:
+                invalid.append((gm, icon))
+
+        assert invalid == [], f"GM programs map to invalid icons: {invalid}"
+        assert DRUM_ICON in VALID_SF_SYMBOL_ICONS, f"DRUM_ICON '{DRUM_ICON}' not in curated set"
+
+
+class TestAgentReasoningEventsCarryAgentId:
+    """Reasoning events from instrument agents include agentId."""
+
+    @pytest.mark.anyio
+    async def test_agent_reasoning_events_have_agent_id(self):
+        """Reasoning deltas from instrument agent stream include agentId."""
+        from app.core.maestro_agent_teams import _run_instrument_agent
+
+        store = StateStore(conversation_id="test-agent-reasoning")
+        plan_tracker = _PlanTracker()
+        plan_tracker.build_from_prompt(
+            _make_parsed_multi(roles=["bass"]),
+            "make funk",
+            {},
+        )
+
+        llm = _make_llm_mock()
+
+        async def _stream_with_reasoning(*args, **kwargs):
+            yield {"type": "reasoning_delta", "text": "Walking bass follows chord roots"}
+            resp = LLMResponse(content=None, usage={})
+            resp.tool_calls = [
+                ToolCall(id="tc-r", name="stori_add_midi_track", params={"name": "Bass"}),
+            ]
+            tc_raw = [
+                {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.params)}}
+                for tc in resp.tool_calls
+            ]
+            yield {"type": "done", "content": None, "tool_calls": tc_raw, "finish_reason": "stop", "usage": {}}
+
+        llm.chat_completion_stream = MagicMock(side_effect=_stream_with_reasoning)
+        trace = _make_trace()
+        queue: asyncio.Queue = asyncio.Queue()
+        step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
+
+        await _run_instrument_agent(
+            instrument_name="Bass",
+            role="bass",
+            style="funk",
+            bars=4,
+            tempo=92.0,
+            key="Cm",
+            step_ids=step_ids,
+            plan_tracker=plan_tracker,
+            llm=llm,
+            store=store,
+            allowed_tool_names={"stori_add_midi_track", "stori_add_midi_region"},
+            trace=trace,
+            sse_queue=queue,
+            collected_tool_calls=[],
+        )
+
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        reasoning_events = [e for e in events if e.get("type") == "reasoning"]
+        assert len(reasoning_events) >= 1, "Expected at least one reasoning event"
+        for re in reasoning_events:
+            assert re.get("agentId") == "bass", (
+                f"Reasoning event missing agentId='bass': {re}"
+            )
+
+    @pytest.mark.anyio
+    async def test_plan_step_updates_carry_agent_id(self):
+        """planStepUpdate events from instrument agents include agentId."""
+        from app.core.maestro_agent_teams import _run_instrument_agent
+
+        store = StateStore(conversation_id="test-step-agent-id")
+        plan_tracker = _PlanTracker()
+        plan_tracker.build_from_prompt(
+            _make_parsed_multi(roles=["drums"]),
+            "make funk",
+            {},
+        )
+
+        llm = _make_llm_mock()
+        resp = LLMResponse(content=None, usage={})
+        resp.tool_calls = [
+            ToolCall(id="tc-d1", name="stori_add_midi_track", params={"name": "Drums", "drumKitId": "TR-808"}),
+        ]
+        llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
+        trace = _make_trace()
+        queue: asyncio.Queue = asyncio.Queue()
+        step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
+
+        await _run_instrument_agent(
+            instrument_name="Drums",
+            role="drums",
+            style="funk",
+            bars=4,
+            tempo=92.0,
+            key="Cm",
+            step_ids=step_ids,
+            plan_tracker=plan_tracker,
+            llm=llm,
+            store=store,
+            allowed_tool_names={"stori_add_midi_track", "stori_add_midi_region"},
+            trace=trace,
+            sse_queue=queue,
+            collected_tool_calls=[],
+        )
+
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        step_events = [e for e in events if e.get("type") == "planStepUpdate"]
+        for se in step_events:
+            assert se.get("agentId") == "drums", (
+                f"planStepUpdate missing agentId='drums': {se}"
+            )
+
+
+class TestSummaryFinalText:
+    """summary.final includes a human-readable text field."""
+
+    def test_text_field_present_in_summary(self):
+        """_build_composition_summary includes text when context is provided."""
+        from app.core.maestro_agent_teams import _build_composition_summary
+
+        tool_calls = [
+            {"tool": "stori_add_midi_track", "params": {"name": "Drums", "trackId": "t1", "drumKitId": "TR-808"}},
+            {"tool": "stori_add_midi_track", "params": {"name": "Bass", "trackId": "t2", "_gmInstrumentName": "Electric Bass"}},
+            {"tool": "stori_add_midi_region", "params": {}},
+            {"tool": "stori_add_midi_region", "params": {}},
+            {"tool": "stori_add_notes", "params": {"notes": [{"pitch": 60}] * 40}},
+            {"tool": "stori_add_notes", "params": {"notes": [{"pitch": 36}] * 53}},
+            {"tool": "stori_add_insert_effect", "params": {"trackId": "t1", "effectType": "reverb"}},
+            {"tool": "stori_add_insert_effect", "params": {"trackId": "t2", "effectType": "reverb"}},
+        ]
+        summary = _build_composition_summary(tool_calls, tempo=88, key="Dm", style="cinematic orchestral")
+
+        assert "text" in summary
+        text = summary["text"]
+        assert "88 BPM" in text
+        assert "Dm" in text
+        assert "cinematic orchestral" in text
+        assert "Drums" in text
+        assert "Bass" in text
+        assert "93 notes" in text
+
+    def test_text_field_present_without_context(self):
+        """_build_composition_summary includes text even without musical context."""
+        from app.core.maestro_agent_teams import _build_composition_summary
+
+        tool_calls = [
+            {"tool": "stori_add_midi_track", "params": {"name": "Piano", "trackId": "t1"}},
+        ]
+        summary = _build_composition_summary(tool_calls)
+
+        assert "text" in summary
+        assert isinstance(summary["text"], str)
+        assert len(summary["text"]) > 0
+
+    def test_extended_composition_uses_verb_extended(self):
+        """When tracks are reused, the summary uses 'Extended' verb."""
+        from app.core.maestro_agent_teams import _build_composition_summary
+
+        tool_calls = [
+            {"tool": "_reused_track", "params": {"name": "Drums", "trackId": "t1"}},
+            {"tool": "stori_add_midi_region", "params": {}},
+        ]
+        summary = _build_composition_summary(tool_calls, tempo=120, key="C", style="funk")
+
+        assert summary["text"].startswith("Extended")

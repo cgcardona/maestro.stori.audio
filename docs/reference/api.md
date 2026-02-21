@@ -1,6 +1,6 @@
 # API & MCP tools reference
 
-Streaming (SSE), event types, models, and the full MCP tool set in one place. Tool definitions live in `app/mcp/tools.py`; validation in `app/core/tool_validation.py`.
+Streaming (SSE), event types, models, and the full MCP tool set in one place. Tool definitions live in `app/mcp/tools.py`; validation in `app/core/tool_validation/`.
 
 ---
 
@@ -208,7 +208,7 @@ All models use OpenRouter's `reasoning` parameter for Chain of Thought. Two even
 
 Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mcp/tools`.
 
-**Parameter alignment** (with `app/core/tool_validation.py`):
+**Parameter alignment** (with `app/core/tool_validation/`):
 
 - **Track volume:** `volumeDb` (dB; 0 = unity). Not 0–1.
 - **Track pan:** `pan` in range -100 (left) to 100 (right).

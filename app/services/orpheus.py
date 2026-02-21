@@ -88,9 +88,16 @@ class OrpheusClient:
             self._client = None
     
     async def health_check(self) -> bool:
-        """Check if Orpheus service is healthy."""
+        """Check if Orpheus service is healthy.
+
+        Uses a short probe timeout (3 s) independent of the generation timeout
+        so health endpoints respond quickly even when the service is unreachable.
+        """
+        probe_timeout = httpx.Timeout(connect=3.0, read=3.0, write=3.0, pool=3.0)
         try:
-            response = await self.client.get(f"{self.base_url}/health")
+            response = await self.client.get(
+                f"{self.base_url}/health", timeout=probe_timeout
+            )
             return response.status_code == 200
         except Exception as e:
             logger.warning(f"Orpheus health check failed: {e}")

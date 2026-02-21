@@ -439,7 +439,7 @@ class TestGeneratorTimeout:
         original_timeout = executor_module._GENERATOR_TIMEOUT
         try:
             executor_module._GENERATOR_TIMEOUT = 0.1
-            with patch("app.core.executor.get_music_generator", return_value=mock_mg):
+            with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
                 # Should not raise — timeout is caught internally
                 await _process_call_for_variation(call, var_ctx)
         finally:
@@ -470,7 +470,7 @@ class TestGeneratorTimeout:
         mock_mg = MagicMock()
         mock_mg.generate = AsyncMock(side_effect=RuntimeError("Orpheus down"))
 
-        with patch("app.core.executor.get_music_generator", return_value=mock_mg):
+        with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
             await _process_call_for_variation(call, var_ctx)
 
         assert len(var_ctx.proposed_notes) == 0
@@ -518,8 +518,8 @@ class TestEmotionVectorIntegration:
         mock_mg = MagicMock()
         mock_mg.generate = mock_generate
 
-        with patch("app.core.executor.get_music_generator", return_value=mock_mg):
-            with patch("app.core.executor.get_or_create_store") as mock_store_factory:
+        with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
+            with patch("app.core.executor.variation.get_or_create_store") as mock_store_factory:
                 mock_store = MagicMock()
                 mock_store.registry = MagicMock()
                 mock_store.registry.resolve_track = MagicMock(return_value="t1")
@@ -529,7 +529,7 @@ class TestEmotionVectorIntegration:
                 mock_store.conversation_id = "test"
                 mock_store_factory.return_value = mock_store
 
-                with patch("app.core.executor.get_variation_service") as mock_vs:
+                with patch("app.core.executor.variation.get_variation_service") as mock_vs:
                     from app.models.variation import Variation
                     mock_vs.return_value.compute_variation = MagicMock(
                         return_value=Variation(
@@ -593,8 +593,8 @@ class TestEmotionVectorIntegration:
         mock_mg = MagicMock()
         mock_mg.generate = mock_generate
 
-        with patch("app.core.executor.get_music_generator", return_value=mock_mg):
-            with patch("app.core.executor.get_or_create_store") as mock_store_factory:
+        with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
+            with patch("app.core.executor.variation.get_or_create_store") as mock_store_factory:
                 mock_store = MagicMock()
                 mock_store.registry = MagicMock()
                 mock_store.registry.resolve_track = MagicMock(return_value="t1")
@@ -604,7 +604,7 @@ class TestEmotionVectorIntegration:
                 mock_store.conversation_id = "test"
                 mock_store_factory.return_value = mock_store
 
-                with patch("app.core.executor.get_variation_service") as mock_vs:
+                with patch("app.core.executor.variation.get_variation_service") as mock_vs:
                     from app.models.variation import Variation
                     mock_vs.return_value.compute_variation = MagicMock(
                         return_value=Variation(
@@ -663,8 +663,8 @@ class TestEmotionVectorIntegration:
         mock_mg = MagicMock()
         mock_mg.generate = mock_generate
 
-        with patch("app.core.executor.get_music_generator", return_value=mock_mg):
-            with patch("app.core.executor.get_or_create_store") as mock_store_factory:
+        with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
+            with patch("app.core.executor.variation.get_or_create_store") as mock_store_factory:
                 mock_store = MagicMock()
                 mock_store.registry = MagicMock()
                 mock_store.registry.resolve_track = MagicMock(return_value="t1")
@@ -674,7 +674,7 @@ class TestEmotionVectorIntegration:
                 mock_store.conversation_id = "test"
                 mock_store_factory.return_value = mock_store
 
-                with patch("app.core.executor.get_variation_service") as mock_vs:
+                with patch("app.core.executor.variation.get_variation_service") as mock_vs:
                     from app.models.variation import Variation
                     mock_vs.return_value.compute_variation = MagicMock(
                         return_value=Variation(
@@ -777,9 +777,9 @@ class TestParallelGeneratorDispatch:
         ]
 
         with (
-            patch("app.core.executor.get_music_generator", return_value=mock_mg),
-            patch("app.core.executor.get_or_create_store") as mock_factory,
-            patch("app.core.executor.get_variation_service") as mock_vs,
+            patch("app.core.executor.variation.get_music_generator", return_value=mock_mg),
+            patch("app.core.executor.variation.get_or_create_store") as mock_factory,
+            patch("app.core.executor.variation.get_variation_service") as mock_vs,
         ):
             mock_factory.return_value = self._make_store_mock()
             mock_vs.return_value.compute_variation = MagicMock(return_value=self._make_variation())
@@ -820,9 +820,9 @@ class TestParallelGeneratorDispatch:
         mock_mg._generation_context = None
 
         with (
-            patch("app.core.executor.get_music_generator", return_value=mock_mg),
-            patch("app.core.executor.get_or_create_store") as mock_factory,
-            patch("app.core.executor.get_variation_service") as mock_vs,
+            patch("app.core.executor.variation.get_music_generator", return_value=mock_mg),
+            patch("app.core.executor.variation.get_or_create_store") as mock_factory,
+            patch("app.core.executor.variation.get_variation_service") as mock_vs,
         ):
             mock_factory.return_value = self._make_store_mock()
             mock_vs.return_value.compute_variation = MagicMock(return_value=self._make_variation())
@@ -851,8 +851,8 @@ class TestParallelGeneratorDispatch:
         )
 
         with (
-            patch("app.core.executor.get_or_create_store") as mock_factory,
-            patch("app.core.executor.get_variation_service") as mock_vs,
+            patch("app.core.executor.variation.get_or_create_store") as mock_factory,
+            patch("app.core.executor.variation.get_variation_service") as mock_vs,
         ):
             mock_factory.return_value = self._make_store_mock()
             mock_vs.return_value.compute_variation = MagicMock(return_value=self._make_variation())
@@ -1019,7 +1019,7 @@ class TestApplyVariationUpdatedRegions:
             variation_id="v1",
         )
 
-        with patch("app.core.executor.get_or_create_store") as mock_factory:
+        with patch("app.core.executor.apply.get_or_create_store") as mock_factory:
             store = StateStore(conversation_id="test", project_id="proj1")
             store.create_track("Track1", track_id="t1")
             store.create_region("Region1", "t1", region_id="r1", metadata={
@@ -1063,7 +1063,7 @@ class TestApplyVariationUpdatedRegions:
         )
         variation = _make_variation(phrases=[phrase])
 
-        with patch("app.core.executor.get_or_create_store") as mock_factory:
+        with patch("app.core.executor.apply.get_or_create_store") as mock_factory:
             store = StateStore(conversation_id="test", project_id="proj1")
             store.create_track("Track1", track_id="t1")
             store.create_region("Verse", "t1", region_id="r1", metadata={
@@ -1107,7 +1107,7 @@ class TestApplyVariationUpdatedRegions:
         )
         variation = _make_variation(phrases=[phrase])
 
-        with patch("app.core.executor.get_or_create_store") as mock_factory:
+        with patch("app.core.executor.apply.get_or_create_store") as mock_factory:
             store = MagicMock()
             store.registry.get_region.return_value = None
             store.get_region_track_id.return_value = "t1"
@@ -1341,7 +1341,7 @@ class TestApplyVariationCC:
         )
         variation = _make_variation(phrases=[phrase])
 
-        with patch("app.core.executor.get_or_create_store") as mock_factory:
+        with patch("app.core.executor.apply.get_or_create_store") as mock_factory:
             store = StateStore(conversation_id="cc-commit", project_id="p")
             store.create_track("Track 1", track_id="t1")
             store.create_region("Region 1", parent_track_id="t1", region_id="r1")
@@ -1611,7 +1611,7 @@ class TestAftertouchPipeline:
         )
         variation = _make_variation(phrases=[phrase])
 
-        with patch("app.core.executor.get_or_create_store") as mock_factory:
+        with patch("app.core.executor.apply.get_or_create_store") as mock_factory:
             store = StateStore(conversation_id="at-commit", project_id="p")
             store.create_track("Track 1", track_id="t1")
             store.create_region("Region 1", parent_track_id="t1", region_id="r1")

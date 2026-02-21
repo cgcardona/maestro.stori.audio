@@ -154,7 +154,7 @@ class TestConversationCompose:
             yield await sse_event({"type": "state", "state": "composing"})
             yield await sse_event({"type": "complete", "success": True, "tool_calls": []})
 
-        with patch("app.api.routes.conversations.orchestrate", side_effect=fake_orchestrate):
+        with patch("app.api.routes.conversations.messages.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
                 f"/api/v1/conversations/{conv_id}/messages",
                 json={"prompt": "make a beat"},
