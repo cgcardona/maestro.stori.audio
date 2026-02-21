@@ -986,8 +986,8 @@ class TestPlanTracker:
         assert "key" in tracker.steps[1].label.lower()
         assert "Cm" in tracker.steps[1].label
 
-    def test_group_track_with_content(self):
-        """Track creation followed by region+notes = one step."""
+    def test_group_track_creation_separate_from_content(self):
+        """Track creation and content are separate steps with canonical labels."""
         tcs = self._make_tool_calls([
             ("stori_add_midi_track", {"name": "Drums", "drumKitId": "TR-808"}),
             ("stori_add_midi_region", {"trackId": "$0.trackId", "startBeat": 0, "durationBeats": 16}),
@@ -995,14 +995,14 @@ class TestPlanTracker:
         ])
         tracker = _PlanTracker()
         tracker.build(tcs, "Add drums", {}, False, StateStore(conversation_id="t"))
-        assert len(tracker.steps) == 1
-        assert "Drums" in tracker.steps[0].label
-        assert "content" in tracker.steps[0].label
+        assert len(tracker.steps) == 2  # "Create Drums track" + "Add content to Drums"
+        assert tracker.steps[0].label == "Create Drums track"
         assert tracker.steps[0].track_name == "Drums"
-        assert tracker.steps[0].detail == "TR-808"
+        assert tracker.steps[1].label == "Add content to Drums"
+        assert tracker.steps[1].track_name == "Drums"
 
-    def test_group_multiple_tracks(self):
-        """Multiple track creations should produce separate steps."""
+    def test_group_multiple_tracks_contiguous(self):
+        """Multiple track creations produce per-track contiguous steps."""
         tcs = self._make_tool_calls([
             ("stori_set_tempo", {"tempo": 90}),
             ("stori_add_midi_track", {"name": "Drums", "drumKitId": "TR-808"}),
@@ -1014,28 +1014,30 @@ class TestPlanTracker:
         ])
         tracker = _PlanTracker()
         tracker.build(tcs, "Make a beat", {}, False, StateStore(conversation_id="t"))
-        assert len(tracker.steps) == 3  # tempo step + drums + bass
+        # tempo + (create drums, add content drums) + (create bass, add content bass) = 5
+        assert len(tracker.steps) == 5
         assert "tempo" in tracker.steps[0].label.lower()
-        assert tracker.steps[1].track_name == "Drums"
-        assert tracker.steps[2].track_name == "Bass"
-        assert tracker.steps[2].detail == "GM 33"
+        assert tracker.steps[1].label == "Create Drums track"
+        assert tracker.steps[2].label == "Add content to Drums"
+        assert tracker.steps[3].label == "Create Bass track"
+        assert tracker.steps[4].label == "Add content to Bass"
 
-    def test_effects_grouped(self):
-        """Effect tools should be grouped together."""
+    def test_effects_grouped_per_track(self):
+        """Bus setup becomes project-level; insert effects are track-targeted."""
         tcs = self._make_tool_calls([
             ("stori_ensure_bus", {"name": "Reverb"}),
-            ("stori_add_insert_effect", {"trackId": "t1", "type": "chorus"}),
-            ("stori_add_send", {"trackId": "t1", "busId": "$0.busId"}),
+            ("stori_add_insert_effect", {"trackName": "Drums", "type": "chorus"}),
+            ("stori_add_send", {"trackName": "Drums", "busId": "$0.busId"}),
         ])
         tracker = _PlanTracker()
         tracker.build(tcs, "Add effects", {}, False, StateStore(conversation_id="t"))
-        assert len(tracker.steps) == 1
-        assert "effect" in tracker.steps[0].label.lower()
-        assert "Reverb bus" in (tracker.steps[0].detail or "")
-        assert "chorus" in (tracker.steps[0].detail or "")
+        # Bus setup is one step, insert effect + send is another
+        labels = [s.label for s in tracker.steps]
+        assert any("Reverb bus" in l for l in labels)
+        assert any("effects to Drums" in l for l in labels)
 
-    def test_plan_event_shape(self):
-        """to_plan_event() must match the SSE wire format."""
+    def test_plan_event_shape_includes_toolName_when_set(self):
+        """to_plan_event() includes toolName when the step has a tool_name."""
         tcs = self._make_tool_calls([
             ("stori_set_tempo", {"tempo": 120}),
             ("stori_add_midi_track", {"name": "Piano", "gmProgram": 0}),
@@ -1046,35 +1048,37 @@ class TestPlanTracker:
         assert event["type"] == "plan"
         assert "planId" in event
         assert isinstance(event["steps"], list)
-        assert len(event["steps"]) == 2
         for step in event["steps"]:
             assert "stepId" in step
             assert "label" in step
             assert step["status"] == "pending"
+            assert "toolName" in step  # present because all steps have real tools
 
-    def test_title_includes_params(self):
-        """Plan title should incorporate key/tempo from tool calls."""
+    def test_title_is_musically_descriptive(self):
+        """Plan title should be musically descriptive, not a raw prompt."""
         tcs = self._make_tool_calls([
             ("stori_set_tempo", {"tempo": 72}),
             ("stori_set_key", {"key": "Cm"}),
         ])
         tracker = _PlanTracker()
         tracker.build(tcs, "Create a lofi beat", {}, False, StateStore(conversation_id="t"))
-        assert "Cm" in tracker.title
-        assert "72 BPM" in tracker.title
+        # Title should be a musical description, not contain raw key/tempo params
+        assert tracker.title
+        assert "Plan" not in tracker.title
+        assert "Executing" not in tracker.title
 
-    def test_title_falls_back_to_project_context(self):
-        """Plan title uses project context when tool calls don't set tempo/key."""
+    def test_title_with_style_from_generators(self):
+        """Plan title extracts style from generator tool calls."""
         tcs = self._make_tool_calls([
-            ("stori_add_midi_track", {"name": "Lead"}),
+            ("stori_add_midi_track", {"name": "Drums"}),
+            ("stori_generate_midi", {"role": "drums", "style": "boom bap", "trackName": "Drums"}),
         ])
         tracker = _PlanTracker()
-        tracker.build(tcs, "Add lead", {"tempo": 100, "key": "Am"}, False, StateStore(conversation_id="t"))
-        assert "Am" in tracker.title
-        assert "100 BPM" in tracker.title
+        tracker.build(tcs, "Make a beat", {}, False, StateStore(conversation_id="t"))
+        assert "Boom Bap" in tracker.title
 
     def test_build_from_prompt_creates_upfront_plan(self):
-        """build_from_prompt() generates one step per routing field and role."""
+        """build_from_prompt() generates per-track steps with canonical labels."""
         from app.core.prompt_parser import ParsedPrompt
         parsed = ParsedPrompt(
             raw="STORI PROMPT\nMode: compose",
@@ -1087,14 +1091,15 @@ class TestPlanTracker:
             style="third wave ska",
         )
         tracker = _PlanTracker()
-        tracker.build_from_prompt(parsed, "STORI PROMPT\nMode: compose\nSection: intro", {})
+        tracker.build_from_prompt(parsed, "STORI PROMPT\nMode: compose\nSection: intro\nStyle: third wave ska", {})
         labels = [s.label for s in tracker.steps]
-        # tempo + key + 3 roles = 5 steps
-        assert len(tracker.steps) == 5
+        # tempo + key + (create+content)*3 roles + effects step = 9 steps
         assert any("165" in l for l in labels)
         assert any("Bb" in l for l in labels)
-        assert any("Drums" in l for l in labels)
-        assert any("Bass" in l for l in labels)
+        assert any("Create Drums track" == l for l in labels)
+        assert any("Add content to Drums" == l for l in labels)
+        assert any("Create Bass track" == l for l in labels)
+        assert any("Add content to Bass" == l for l in labels)
         assert any("Organ" in l for l in labels)
 
     def test_build_from_prompt_no_roles_adds_placeholder(self):
@@ -1369,3 +1374,1190 @@ class TestCompleteEventOnError:
         assert "complete" in types
         complete_evt = next(p for p in payloads if p["type"] == "complete")
         assert complete_evt["success"] is False
+
+
+# ---------------------------------------------------------------------------
+# Bug C — build_from_prompt skips no-op tempo/key steps
+# ---------------------------------------------------------------------------
+
+class TestBuildFromPromptNoOpSkip:
+    """build_from_prompt omits tempo/key steps when project already matches."""
+
+    def _make_parsed(self, tempo=None, key=None, roles=None):
+        from app.core.prompt_parser import ParsedPrompt
+        return ParsedPrompt(
+            raw="STORI PROMPT",
+            mode="compose",
+            request="make a beat",
+            tempo=tempo,
+            key=key,
+            roles=roles or [],
+        )
+
+    def test_tempo_step_skipped_when_already_matching(self):
+        """If project tempo == requested tempo, no 'Set tempo' step is added."""
+        parsed = self._make_parsed(tempo=120, key="Am", roles=["drums"])
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make a beat", {"tempo": 120, "key": "C"})
+        labels = [s.label for s in tracker.steps]
+        assert not any("tempo" in l.lower() for l in labels)
+
+    def test_tempo_step_included_when_different(self):
+        """If project tempo != requested tempo, the Set tempo step is present."""
+        parsed = self._make_parsed(tempo=90, roles=["drums"])
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make a beat", {"tempo": 120})
+        labels = [s.label for s in tracker.steps]
+        assert any("90 BPM" in l for l in labels)
+
+    def test_key_step_skipped_when_already_matching(self):
+        """If project key == requested key (case-insensitive), no Set key step."""
+        parsed = self._make_parsed(tempo=120, key="Am", roles=["drums"])
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make a beat", {"tempo": 120, "key": "Am"})
+        labels = [s.label for s in tracker.steps]
+        assert not any("key" in l.lower() for l in labels)
+
+    def test_key_step_skipped_case_insensitive(self):
+        """Key match is case-insensitive (am == Am == AM)."""
+        parsed = self._make_parsed(key="am", roles=["drums"])
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make a beat", {"key": "Am"})
+        labels = [s.label for s in tracker.steps]
+        assert not any("key" in l.lower() for l in labels)
+
+    def test_key_step_included_when_different(self):
+        """Different key produces a Set key step."""
+        parsed = self._make_parsed(key="F#m", roles=["drums"])
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make a beat", {"key": "Am"})
+        labels = [s.label for s in tracker.steps]
+        assert any("F#m" in l for l in labels)
+
+    def test_both_skipped_leaves_only_role_and_effect_steps(self):
+        """When both tempo and key match, only role steps + effects step remain."""
+        parsed = self._make_parsed(tempo=80, key="Cm", roles=["drums", "bass"])
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make a beat", {"tempo": 80, "key": "Cm"})
+        # (create+content)*2 roles + 1 effects step = 5
+        assert len(tracker.steps) == 5
+        labels = [s.label for s in tracker.steps]
+        assert all("BPM" not in l and "key" not in l.lower() for l in labels)
+
+
+# ---------------------------------------------------------------------------
+# Bug D — _match_roles_to_existing_tracks uses infer_track_role
+# ---------------------------------------------------------------------------
+
+class TestMatchRolesWithInferredRoles:
+    """_match_roles_to_existing_tracks matches via infer_track_role, not just name."""
+
+    def test_drum_kit_track_matched_as_drums(self):
+        """A track with drumKitId is inferred as drums even if named differently."""
+        from app.core.planner import _match_roles_to_existing_tracks
+        project = {
+            "tracks": [
+                {"id": "BEAT-UUID", "name": "The Beat", "drumKitId": "TR-808"},
+            ]
+        }
+        result = _match_roles_to_existing_tracks({"drums"}, project)
+        assert result.get("drums", {}).get("id") == "BEAT-UUID"
+
+    def test_gm_bass_program_matched_as_bass(self):
+        """A track with GM program 33 (Electric Bass) is inferred as bass role."""
+        from app.core.planner import _match_roles_to_existing_tracks
+        project = {
+            "tracks": [
+                {"id": "LOW-UUID", "name": "Low End", "gmProgram": 33},
+            ]
+        }
+        result = _match_roles_to_existing_tracks({"bass"}, project)
+        assert result.get("bass", {}).get("id") == "LOW-UUID"
+
+    def test_synth_lead_matched_as_lead(self):
+        """A track with GM program 80 (Square Lead) is inferred as lead role."""
+        from app.core.planner import _match_roles_to_existing_tracks
+        project = {
+            "tracks": [
+                {"id": "LEAD-UUID", "name": "Synth 1", "gmProgram": 80},
+            ]
+        }
+        result = _match_roles_to_existing_tracks({"lead"}, project)
+        assert result.get("lead", {}).get("id") == "LEAD-UUID"
+
+    def test_organ_pad_matched_as_pads(self):
+        """A 'Cathedral Pad' track (Church Organ GM 19) inferred as pads, matched to pads role."""
+        from app.core.planner import _match_roles_to_existing_tracks
+        project = {
+            "tracks": [
+                {"id": "PAD-UUID", "name": "Cathedral Pad", "gmProgram": 19},
+            ]
+        }
+        result = _match_roles_to_existing_tracks({"pads"}, project)
+        assert result.get("pads", {}).get("id") == "PAD-UUID"
+
+
+# ---------------------------------------------------------------------------
+# build_from_prompt — expressive tool plan steps (Effects / MidiExpressiveness / Automation)
+# ---------------------------------------------------------------------------
+
+class TestBuildFromPromptExpressiveSteps:
+    """build_from_prompt surfaces Effects / MidiExpressiveness / Automation as plan steps."""
+
+    def _make_parsed(self, roles=None, extensions=None):
+        from app.core.prompt_parser import ParsedPrompt
+        return ParsedPrompt(
+            raw="STORI PROMPT",
+            mode="compose",
+            request="make music",
+            tempo=120,
+            roles=roles or [],
+            extensions=extensions or {},
+        )
+
+    def test_effects_block_adds_per_track_step(self):
+        """Each track key in Effects produces its own 'Add effects to X' step."""
+        parsed = self._make_parsed(
+            roles=["drums", "bass"],
+            extensions={"effects": {"drums": {"compression": "VCA"}, "bass": {"eq": True}}},
+        )
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make a beat", {})
+        labels = [s.label for s in tracker.steps]
+        assert any("effects to Drums" in l for l in labels)
+        assert any("effects to Bass" in l for l in labels)
+
+    def test_no_explicit_effects_adds_generic_effects_step(self):
+        """Without an Effects extension, a generic 'Add effects and routing' step appears."""
+        parsed = self._make_parsed(roles=["drums", "bass"])
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make a beat", {})
+        labels = [s.label for s in tracker.steps]
+        assert any("effect" in l.lower() for l in labels)
+
+    def test_cc_curves_adds_midi_cc_step(self):
+        """MidiExpressiveness with cc_curves adds an 'Add MIDI CC curves' step."""
+        parsed = self._make_parsed(
+            roles=["lead"],
+            extensions={"midiexpressiveness": {"cc_curves": [{"cc": 91, "from": 20, "to": 80}]}},
+        )
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make music", {})
+        labels = [s.label for s in tracker.steps]
+        assert any("CC" in l for l in labels)
+
+    def test_pitch_bend_adds_step(self):
+        """MidiExpressiveness with pitch_bend adds an 'Add pitch bend' step."""
+        parsed = self._make_parsed(
+            roles=["bass"],
+            extensions={"midiexpressiveness": {"pitch_bend": {"style": "slides"}}},
+        )
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make music", {})
+        labels = [s.label for s in tracker.steps]
+        assert any("pitch bend" in l.lower() for l in labels)
+
+    def test_sustain_pedal_adds_step(self):
+        """MidiExpressiveness with sustain_pedal adds a MIDI CC step."""
+        parsed = self._make_parsed(
+            roles=["chords"],
+            extensions={"midiexpressiveness": {"sustain_pedal": {"changes_per_bar": 2}}},
+        )
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make music", {})
+        labels = [s.label for s in tracker.steps]
+        # Sustain pedal is now represented as "Add MIDI CC to <Track>"
+        assert any("MIDI CC" in l for l in labels)
+
+    def test_automation_block_adds_step_with_track(self):
+        """Automation block labels include track name when available."""
+        parsed = self._make_parsed(
+            roles=["pads"],
+            extensions={"automation": [
+                {"track": "Pads", "param": "reverb_wet", "events": []},
+                {"track": "Drums", "param": "volume", "events": []},
+            ]},
+        )
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make music", {})
+        labels = [s.label for s in tracker.steps]
+        assert any("automation" in l.lower() for l in labels)
+
+    def test_all_expressive_blocks_together(self):
+        """All three blocks together produce all expected step categories."""
+        parsed = self._make_parsed(
+            roles=["drums"],
+            extensions={
+                "effects": {"drums": {"compression": True}},
+                "midiexpressiveness": {
+                    "cc_curves": [{"cc": 1}],
+                    "pitch_bend": {"style": "slides"},
+                },
+                "automation": [{"track": "Drums", "param": "volume", "events": []}],
+            },
+        )
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make music", {})
+        labels = [s.label for s in tracker.steps]
+        assert any("effect" in l.lower() for l in labels)
+        assert any("CC" in l or "cc" in l.lower() for l in labels)
+        assert any("pitch bend" in l.lower() for l in labels)
+        assert any("automation" in l.lower() for l in labels)
+
+
+# ---------------------------------------------------------------------------
+# structured_prompt_context — EXECUTE translation block
+# ---------------------------------------------------------------------------
+
+class TestStructuredPromptContextTranslation:
+    """structured_prompt_context injects execution requirements for expressive blocks."""
+
+    def _make_parsed(self, extensions):
+        from app.core.prompt_parser import ParsedPrompt
+        return ParsedPrompt(
+            raw="STORI PROMPT",
+            mode="compose",
+            request="make music",
+            extensions=extensions,
+        )
+
+    def test_effects_block_triggers_execute_line(self):
+        """Effects extension adds 'EXECUTE Effects block' to the context string."""
+        from app.core.prompts import structured_prompt_context
+        parsed = self._make_parsed({"effects": {"drums": {"compression": True}}})
+        out = structured_prompt_context(parsed)
+        assert "EXECUTE Effects block" in out
+        assert "stori_add_insert_effect" in out
+
+    def test_midi_expressiveness_triggers_execute_line(self):
+        """MidiExpressiveness extension adds CC/pitch-bend/sustain execution lines."""
+        from app.core.prompts import structured_prompt_context
+        parsed = self._make_parsed({"midiexpressiveness": {
+            "cc_curves": [{"cc": 91}],
+            "pitch_bend": {"style": "slides"},
+        }})
+        out = structured_prompt_context(parsed)
+        assert "EXECUTE MidiExpressiveness block" in out
+        assert "stori_add_midi_cc" in out
+        assert "stori_add_pitch_bend" in out
+
+    def test_automation_triggers_execute_line(self):
+        """Automation extension adds stori_add_automation execution line."""
+        from app.core.prompts import structured_prompt_context
+        parsed = self._make_parsed({"automation": [{"track": "Pads", "param": "reverb_wet"}]})
+        out = structured_prompt_context(parsed)
+        assert "EXECUTE Automation block" in out
+        assert "stori_add_automation" in out
+
+    def test_no_expressive_blocks_no_translate_header(self):
+        """When only Harmony/Melody are present, no EXECUTE requirements block."""
+        from app.core.prompts import structured_prompt_context
+        parsed = self._make_parsed({"harmony": {"progression": ["Am", "G"]}})
+        out = structured_prompt_context(parsed)
+        assert "EXECUTE Effects block" not in out
+        assert "EXECUTE MidiExpressiveness block" not in out
+        assert "EXECUTE Automation block" not in out
+
+    def test_header_changes_to_translate_all_blocks(self):
+        """Header reads 'TRANSLATE ALL BLOCKS INTO TOOL CALLS' not just 'interpret'."""
+        from app.core.prompts import structured_prompt_context
+        parsed = self._make_parsed({"effects": {"bass": {"eq": True}}})
+        out = structured_prompt_context(parsed)
+        assert "TRANSLATE ALL BLOCKS INTO TOOL CALLS" in out
+
+    def test_automation_context_uses_trackId_not_target(self):
+        """Automation execution line must reference trackId, never 'target'."""
+        from app.core.prompts import structured_prompt_context
+        parsed = self._make_parsed({"automation": [{"track": "Pads", "param": "volume"}]})
+        out = structured_prompt_context(parsed)
+        assert "trackId" in out
+        assert "target=TRACK_ID" not in out
+
+
+# ---------------------------------------------------------------------------
+# _PlanStep.tool_name — toolName in plan event
+# ---------------------------------------------------------------------------
+
+class TestPlanStepToolName:
+    """_PlanStep.tool_name is included in the plan SSE event as toolName."""
+
+    def _make_tracker_from_prompt(self, roles=None, extensions=None, tempo=None, key=None):
+        from app.core.prompt_parser import ParsedPrompt
+        from app.core.maestro_handlers import _PlanTracker
+        parsed = ParsedPrompt(
+            raw="STORI PROMPT",
+            mode="compose",
+            request="make music",
+            tempo=tempo or 120,
+            key=key,
+            roles=roles or [],
+            extensions=extensions or {},
+        )
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make music", {})
+        return tracker
+
+    def test_to_plan_event_includes_toolName_when_set(self):
+        """Steps with a tool_name emit toolName in the plan event."""
+        tracker = self._make_tracker_from_prompt(roles=["drums"])
+        event = tracker.to_plan_event()
+        steps = event["steps"]
+        # At least one step should have toolName (the track creation step)
+        tool_names = [s.get("toolName") for s in steps if s.get("toolName")]
+        assert len(tool_names) > 0
+
+    def test_tempo_step_has_stori_set_tempo_toolName(self):
+        """The 'Set tempo' plan step reports toolName=stori_set_tempo."""
+        tracker = self._make_tracker_from_prompt(tempo=90)
+        event = tracker.to_plan_event()
+        tempo_steps = [s for s in event["steps"] if "tempo" in s["label"].lower()]
+        assert len(tempo_steps) == 1
+        assert tempo_steps[0].get("toolName") == "stori_set_tempo"
+
+    def test_key_step_has_stori_set_key_toolName(self):
+        """The 'Set key' plan step reports toolName=stori_set_key."""
+        tracker = self._make_tracker_from_prompt(key="Am")
+        event = tracker.to_plan_event()
+        key_steps = [s for s in event["steps"] if "key" in s["label"].lower()]
+        assert len(key_steps) == 1
+        assert key_steps[0].get("toolName") == "stori_set_key"
+
+    def test_role_step_has_stori_add_midi_track_toolName(self):
+        """Track creation steps report toolName=stori_add_midi_track."""
+        tracker = self._make_tracker_from_prompt(roles=["bass"])
+        event = tracker.to_plan_event()
+        track_steps = [s for s in event["steps"] if "Bass" in s["label"]]
+        assert len(track_steps) >= 1
+        assert track_steps[0].get("toolName") == "stori_add_midi_track"
+
+    def test_effects_step_has_stori_add_insert_effect_toolName(self):
+        """Effects plan steps report toolName=stori_add_insert_effect."""
+        tracker = self._make_tracker_from_prompt(
+            roles=["drums"],
+            extensions={"effects": {"drums": {"compression": "VCA"}}},
+        )
+        event = tracker.to_plan_event()
+        fx_steps = [s for s in event["steps"] if "effect" in s["label"].lower()]
+        assert len(fx_steps) >= 1
+        assert fx_steps[0].get("toolName") == "stori_add_insert_effect"
+
+    def test_cc_step_has_stori_add_midi_cc_toolName(self):
+        """MIDI CC plan steps report toolName=stori_add_midi_cc."""
+        tracker = self._make_tracker_from_prompt(
+            extensions={"midiexpressiveness": {"cc_curves": [{"cc": 91}]}},
+        )
+        event = tracker.to_plan_event()
+        cc_steps = [s for s in event["steps"] if "CC" in s["label"]]
+        assert len(cc_steps) >= 1
+        assert cc_steps[0].get("toolName") == "stori_add_midi_cc"
+
+    def test_pitch_bend_step_has_stori_add_pitch_bend_toolName(self):
+        """Pitch bend plan steps report toolName=stori_add_pitch_bend."""
+        tracker = self._make_tracker_from_prompt(
+            extensions={"midiexpressiveness": {"pitch_bend": {"style": "slides"}}},
+        )
+        event = tracker.to_plan_event()
+        pb_steps = [s for s in event["steps"] if "pitch bend" in s["label"].lower()]
+        assert len(pb_steps) >= 1
+        assert pb_steps[0].get("toolName") == "stori_add_pitch_bend"
+
+    def test_automation_step_has_stori_add_automation_toolName(self):
+        """Automation plan steps report toolName=stori_add_automation."""
+        tracker = self._make_tracker_from_prompt(
+            extensions={"automation": [{"track": "Piano", "param": "Volume"}]},
+        )
+        event = tracker.to_plan_event()
+        auto_steps = [s for s in event["steps"] if "automation" in s["label"].lower()]
+        assert len(auto_steps) >= 1
+        assert auto_steps[0].get("toolName") == "stori_add_automation"
+
+    def test_step_without_tool_name_omits_key(self):
+        """Steps where tool_name is None omit toolName so Swift decodes nil."""
+        from app.core.maestro_handlers import _PlanStep, _PlanTracker
+        tracker = _PlanTracker()
+        tracker.steps = [_PlanStep(step_id="1", label="Do something", tool_name=None)]
+        event = tracker.to_plan_event()
+        assert "toolName" not in event["steps"][0]
+
+
+# ---------------------------------------------------------------------------
+# _get_missing_expressive_steps — lowercase key detection + bus suggestion
+# ---------------------------------------------------------------------------
+
+class TestGetMissingExpressiveSteps:
+    """_get_missing_expressive_steps detects pending expressive tool calls."""
+
+    def _parsed(self, extensions):
+        from app.core.prompt_parser import ParsedPrompt
+        return ParsedPrompt(
+            raw="STORI PROMPT",
+            mode="compose",
+            request="test",
+            extensions=extensions,
+        )
+
+    def _missing(self, extensions, tool_calls_collected=None):
+        from app.core.maestro_handlers import _get_missing_expressive_steps
+        return _get_missing_expressive_steps(
+            self._parsed(extensions),
+            tool_calls_collected or [],
+        )
+
+    def test_none_parsed_returns_empty(self):
+        """None parsed prompt → no missing steps."""
+        from app.core.maestro_handlers import _get_missing_expressive_steps
+        assert _get_missing_expressive_steps(None, []) == []
+
+    def test_no_extensions_returns_empty(self):
+        """ParsedPrompt with no extensions → no missing steps."""
+        assert self._missing({}) == []
+
+    def test_effects_block_present_but_not_called(self):
+        """effects extension without stori_add_insert_effect call → flagged."""
+        result = self._missing({"effects": {"drums": {"compression": True}}})
+        assert len(result) == 1
+        assert "stori_add_insert_effect" in result[0]
+
+    def test_effects_block_already_called_not_flagged(self):
+        """effects extension with stori_add_insert_effect already called → empty."""
+        result = self._missing(
+            {"effects": {"drums": {"compression": True}}},
+            [{"tool": "stori_add_insert_effect", "params": {}}],
+        )
+        assert result == []
+
+    def test_cc_curves_not_called_flagged(self):
+        """cc_curves without stori_add_midi_cc call → flagged."""
+        result = self._missing({"midiexpressiveness": {"cc_curves": [{"cc": 91}]}})
+        assert any("stori_add_midi_cc" in m for m in result)
+
+    def test_cc_curves_already_called_not_flagged(self):
+        """cc_curves with stori_add_midi_cc already called → not flagged."""
+        result = self._missing(
+            {"midiexpressiveness": {"cc_curves": [{"cc": 91}]}},
+            [{"tool": "stori_add_midi_cc", "params": {}}],
+        )
+        assert not any("stori_add_midi_cc" in m for m in result)
+
+    def test_pitch_bend_not_called_flagged(self):
+        """pitch_bend without stori_add_pitch_bend → flagged."""
+        result = self._missing({"midiexpressiveness": {"pitch_bend": {"style": "slides"}}})
+        assert any("stori_add_pitch_bend" in m for m in result)
+
+    def test_sustain_pedal_not_called_flagged(self):
+        """sustain_pedal without stori_add_midi_cc → flagged (CC 64)."""
+        result = self._missing({"midiexpressiveness": {"sustain_pedal": {"changes_per_bar": 2}}})
+        assert any("stori_add_midi_cc" in m for m in result)
+
+    def test_automation_not_called_flagged_with_trackId_hint(self):
+        """automation block without stori_add_automation → flagged, and message says trackId."""
+        result = self._missing({"automation": [{"track": "Piano", "param": "Volume"}]})
+        assert any("stori_add_automation" in m for m in result)
+        # The message should instruct trackId not target
+        assert any("trackId" in m for m in result)
+        assert not any("target=TRACK" in m for m in result)
+
+    def test_automation_already_called_not_flagged(self):
+        """automation block with stori_add_automation already called → empty."""
+        result = self._missing(
+            {"automation": [{"track": "Piano", "param": "Volume"}]},
+            [{"tool": "stori_add_automation", "params": {}}],
+        )
+        assert not any("stori_add_automation" in m for m in result)
+
+    def test_lowercase_keys_detected_correctly(self):
+        """Parser lowercases all YAML keys; detection must use lowercase."""
+        # Simulate what the parser produces: lowercase 'effects', 'midiexpressiveness'
+        result = self._missing({
+            "effects": {"piano": {"reverb": True}},
+            "midiexpressiveness": {"cc_curves": [{"cc": 1}]},
+            "automation": [{"track": "Piano", "param": "Volume"}],
+        })
+        # All three should be flagged since no tools have been called
+        assert any("stori_add_insert_effect" in m for m in result)
+        assert any("stori_add_midi_cc" in m for m in result)
+        assert any("stori_add_automation" in m for m in result)
+
+    def test_all_expressive_called_returns_empty(self):
+        """When all expressive tools have been called, result is empty."""
+        extensions = {
+            "effects": {"drums": {"compression": True}},
+            "midiexpressiveness": {
+                "cc_curves": [{"cc": 91}],
+                "pitch_bend": {"style": "slides"},
+                "sustain_pedal": {"changes_per_bar": 2},
+            },
+            "automation": [{"track": "Drums", "param": "Volume"}],
+        }
+        tool_calls = [
+            {"tool": "stori_add_insert_effect", "params": {}},
+            {"tool": "stori_add_midi_cc", "params": {}},
+            {"tool": "stori_add_pitch_bend", "params": {}},
+            {"tool": "stori_add_automation", "params": {}},
+        ]
+        result = self._missing(extensions, tool_calls)
+        assert result == []
+
+    def test_multi_track_reverb_suggests_bus(self):
+        """Two or more tracks with reverb in Effects → suggests stori_ensure_bus."""
+        result = self._missing({
+            "effects": {
+                "piano": {"reverb": "medium hall"},
+                "lead": {"reverb": "large room"},
+            }
+        })
+        assert any("stori_ensure_bus" in m for m in result)
+
+    def test_single_track_reverb_does_not_suggest_bus(self):
+        """Only one track with reverb → no shared bus suggestion."""
+        result = self._missing({
+            "effects": {
+                "piano": {"reverb": "medium hall"},
+                "bass": {"compression": "optical"},
+            }
+        })
+        # Should flag insert_effect missing, but NOT suggest ensure_bus
+        assert not any("stori_ensure_bus" in m for m in result)
+
+
+# ---------------------------------------------------------------------------
+# build_from_prompt — shared reverb bus plan step
+# ---------------------------------------------------------------------------
+
+class TestBuildFromPromptReverbBus:
+    """build_from_prompt adds a bus setup step when 2+ tracks need reverb."""
+
+    def _make_parsed(self, extensions):
+        from app.core.prompt_parser import ParsedPrompt
+        return ParsedPrompt(
+            raw="STORI PROMPT",
+            mode="compose",
+            request="make music",
+            roles=["piano", "lead"],
+            extensions=extensions,
+        )
+
+    def test_two_reverb_tracks_adds_bus_step(self):
+        """Effects block with reverb on 2+ tracks adds 'Set up shared Reverb bus' step."""
+        from app.core.maestro_handlers import _PlanTracker
+        parsed = self._make_parsed({
+            "effects": {
+                "piano": {"reverb": "medium room"},
+                "lead": {"reverb": "large hall"},
+            }
+        })
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "test", {})
+        labels = [s.label for s in tracker.steps]
+        assert any("Reverb bus" in l for l in labels)
+
+    def test_two_reverb_tracks_bus_step_has_correct_toolName(self):
+        """Reverb bus plan step has toolName=stori_ensure_bus."""
+        from app.core.maestro_handlers import _PlanTracker
+        parsed = self._make_parsed({
+            "effects": {
+                "piano": {"reverb": "medium room"},
+                "lead": {"reverb": "large hall"},
+            }
+        })
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "test", {})
+        bus_steps = [s for s in tracker.steps if "Reverb bus" in s.label]
+        assert len(bus_steps) == 1
+        assert bus_steps[0].tool_name == "stori_ensure_bus"
+
+    def test_one_reverb_track_no_bus_step(self):
+        """Only one track with reverb → no shared bus step."""
+        from app.core.maestro_handlers import _PlanTracker
+        parsed = self._make_parsed({
+            "effects": {
+                "piano": {"reverb": "medium room"},
+                "bass": {"compression": "optical"},
+            }
+        })
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "test", {})
+        labels = [s.label for s in tracker.steps]
+        assert not any("Reverb bus" in l for l in labels)
+
+
+# =============================================================================
+# _build_tool_result — regression tests for entity ID echoing (Bug 1-3)
+# =============================================================================
+
+
+class TestBuildToolResult:
+    """_build_tool_result must always return entity IDs and state feedback.
+
+    These tests are regression guards to prevent the loops described in the
+    Tool Result State Feedback bug report.
+    """
+
+    def _make_store(self):
+        store = StateStore(conversation_id="test-tool-result")
+        return store
+
+    def test_add_midi_track_returns_track_id(self):
+        """stori_add_midi_track result MUST include trackId."""
+        from app.core.maestro_handlers import _build_tool_result
+        store = self._make_store()
+        track_id = store.create_track("Drums")
+        params = {"trackId": track_id, "name": "Drums", "drumKitId": "acoustic"}
+        result = _build_tool_result("stori_add_midi_track", params, store)
+
+        assert result["success"] is True
+        assert result["trackId"] == track_id
+        assert result["name"] == "Drums"
+        assert "entities" in result
+        assert any(t["trackId"] == track_id for t in result["entities"]["tracks"])
+
+    def test_add_midi_region_returns_region_id_and_metadata(self):
+        """stori_add_midi_region result MUST include regionId, trackId, startBeat, durationBeats."""
+        from app.core.maestro_handlers import _build_tool_result
+        store = self._make_store()
+        track_id = store.create_track("Bass")
+        region_id = store.create_region("Verse", track_id, metadata={"startBeat": 0, "durationBeats": 32})
+        params = {
+            "regionId": region_id,
+            "trackId": track_id,
+            "name": "Verse",
+            "startBeat": 0,
+            "durationBeats": 32,
+        }
+        result = _build_tool_result("stori_add_midi_region", params, store)
+
+        assert result["success"] is True
+        assert result["regionId"] == region_id
+        assert result["trackId"] == track_id
+        assert result["startBeat"] == 0
+        assert result["durationBeats"] == 32
+        assert "entities" in result
+
+    def test_add_notes_returns_confirmation(self):
+        """stori_add_notes result MUST include notesAdded and totalNotes."""
+        from app.core.maestro_handlers import _build_tool_result
+        store = self._make_store()
+        track_id = store.create_track("Drums")
+        region_id = store.create_region("Pattern", track_id)
+        notes = [{"pitch": 36, "startBeat": i, "durationBeats": 0.5, "velocity": 100} for i in range(8)]
+        store.add_notes(region_id, notes)
+        params = {"regionId": region_id, "notes": notes}
+        result = _build_tool_result("stori_add_notes", params, store)
+
+        assert result["success"] is True
+        assert result["regionId"] == region_id
+        assert result["notesAdded"] == 8
+        assert result["totalNotes"] == 8
+
+    def test_add_notes_second_call_shows_accumulated_total(self):
+        """Calling stori_add_notes twice should show accumulated totalNotes."""
+        from app.core.maestro_handlers import _build_tool_result
+        store = self._make_store()
+        track_id = store.create_track("Drums")
+        region_id = store.create_region("Pattern", track_id)
+
+        first_notes = [{"pitch": 36, "startBeat": i, "durationBeats": 0.5, "velocity": 100} for i in range(4)]
+        store.add_notes(region_id, first_notes)
+
+        second_notes = [{"pitch": 38, "startBeat": i, "durationBeats": 0.5, "velocity": 90} for i in range(4)]
+        store.add_notes(region_id, second_notes)
+
+        result = _build_tool_result("stori_add_notes", {"regionId": region_id, "notes": second_notes}, store)
+        assert result["notesAdded"] == 4
+        assert result["totalNotes"] == 8
+
+    def test_clear_notes_returns_warning(self):
+        """stori_clear_notes result MUST include warning about destructive operation."""
+        from app.core.maestro_handlers import _build_tool_result
+        store = self._make_store()
+        result = _build_tool_result("stori_clear_notes", {"regionId": "r-123"}, store)
+
+        assert result["success"] is True
+        assert result["regionId"] == "r-123"
+        assert result["totalNotes"] == 0
+        assert "warning" in result
+
+    def test_ensure_bus_returns_bus_id(self):
+        """stori_ensure_bus result MUST include busId."""
+        from app.core.maestro_handlers import _build_tool_result
+        store = self._make_store()
+        bus_id = store.get_or_create_bus("Reverb")
+        params = {"busId": bus_id, "name": "Reverb"}
+        result = _build_tool_result("stori_ensure_bus", params, store)
+
+        assert result["success"] is True
+        assert result["busId"] == bus_id
+        assert "entities" in result
+
+    def test_add_insert_effect_returns_track_id(self):
+        """stori_add_insert_effect result includes trackId."""
+        from app.core.maestro_handlers import _build_tool_result
+        store = self._make_store()
+        result = _build_tool_result("stori_add_insert_effect", {"trackId": "t-1", "type": "compressor"}, store)
+        assert result["success"] is True
+        assert result["trackId"] == "t-1"
+        assert result["effectType"] == "compressor"
+
+    def test_add_midi_cc_returns_event_count(self):
+        """stori_add_midi_cc result includes regionId and event count."""
+        from app.core.maestro_handlers import _build_tool_result
+        store = self._make_store()
+        events = [{"beat": 0, "value": 64}, {"beat": 4, "value": 127}]
+        result = _build_tool_result("stori_add_midi_cc", {"regionId": "r-1", "cc": 1, "events": events}, store)
+        assert result["regionId"] == "r-1"
+        assert result["cc"] == 1
+        assert result["eventCount"] == 2
+
+
+# =============================================================================
+# _entity_manifest — regression tests for entity snapshot completeness
+# =============================================================================
+
+
+class TestEntityManifest:
+    """_entity_manifest must include noteCount and region metadata."""
+
+    def test_manifest_includes_note_count(self):
+        """Regions in the manifest must show noteCount so the model doesn't re-add."""
+        from app.core.maestro_handlers import _entity_manifest
+        store = StateStore(conversation_id="test-manifest")
+        track_id = store.create_track("Drums")
+        region_id = store.create_region("Pattern", track_id, metadata={"startBeat": 0, "durationBeats": 16})
+        notes = [{"pitch": 36, "startBeat": 0, "durationBeats": 0.5, "velocity": 100}]
+        store.add_notes(region_id, notes)
+
+        manifest = _entity_manifest(store)
+
+        assert len(manifest["tracks"]) == 1
+        track = manifest["tracks"][0]
+        assert track["trackId"] == track_id
+        assert len(track["regions"]) == 1
+        region = track["regions"][0]
+        assert region["regionId"] == region_id
+        assert region["noteCount"] == 1
+        assert region["startBeat"] == 0
+        assert region["durationBeats"] == 16
+
+    def test_manifest_empty_region_shows_zero_notes(self):
+        """A region with no notes must show noteCount: 0."""
+        from app.core.maestro_handlers import _entity_manifest
+        store = StateStore(conversation_id="test-manifest-empty")
+        track_id = store.create_track("Bass")
+        region_id = store.create_region("Verse", track_id, metadata={"startBeat": 0, "durationBeats": 32})
+
+        manifest = _entity_manifest(store)
+        region = manifest["tracks"][0]["regions"][0]
+        assert region["noteCount"] == 0
+
+    def test_manifest_includes_buses(self):
+        """Buses must appear in the manifest."""
+        from app.core.maestro_handlers import _entity_manifest
+        store = StateStore(conversation_id="test-manifest-bus")
+        bus_id = store.get_or_create_bus("Reverb")
+
+        manifest = _entity_manifest(store)
+        assert len(manifest["buses"]) == 1
+        assert manifest["buses"][0]["busId"] == bus_id
+        assert manifest["buses"][0]["name"] == "Reverb"
+
+
+# =============================================================================
+# Plan step completion — regression test for Bug 4 (phantom steps)
+# =============================================================================
+
+
+class TestPlanStepPhantomCompletion:
+    """Plan steps must NOT be marked completed for tracks that don't exist."""
+
+    def test_nonexistent_track_stays_pending(self):
+        """A plan step for 'Soul_Sample' that was never created must NOT be completed."""
+        from app.core.maestro_handlers import _PlanTracker
+        tracker = _PlanTracker()
+        tracker.steps = [
+            _PlanStep(step_id="1", label="Create Drums track", track_name="Drums"),
+            _PlanStep(step_id="2", label="Create Soul_Sample track", track_name="Soul_Sample"),
+        ]
+
+        store = StateStore(conversation_id="test-phantom")
+        store.create_track("Drums")
+        track_id = store.registry.resolve_track("Drums")
+        assert track_id is not None
+        region_id = store.create_region("Pattern", track_id)
+        store.add_notes(region_id, [{"pitch": 36, "startBeat": 0, "durationBeats": 0.5, "velocity": 100}])
+
+        existing_track_names = {t.name for t in store.registry.list_tracks()}
+        from app.core.maestro_handlers import _get_incomplete_tracks
+        incomplete = _get_incomplete_tracks(store)
+        incomplete_set = set(incomplete)
+
+        for step in tracker.steps:
+            if (
+                step.track_name
+                and step.status in ("active", "pending")
+                and step.track_name in existing_track_names
+                and step.track_name not in incomplete_set
+            ):
+                step.status = "completed"
+
+        assert tracker.steps[0].status == "completed"
+        assert tracker.steps[1].status == "pending"
+
+
+# ---------------------------------------------------------------------------
+# _enrich_params_with_track_context — SSE toolCall param enrichment
+# ---------------------------------------------------------------------------
+
+class TestEnrichParamsWithTrackContext:
+    """_enrich_params_with_track_context injects trackName/trackId for region-scoped tools."""
+
+    def _make_store_with_region(self):
+        """Return (store, track_id, region_id) with one track and one region."""
+        from app.core.state_store import StateStore
+        store = StateStore(conversation_id="enrich-test")
+        track_id = store.create_track("Guitar Lead")
+        region_id = store.create_region("Region 1", track_id)
+        return store, track_id, region_id
+
+    def test_injects_track_name_and_id_from_region_id(self):
+        """regionId-only params get trackName and trackId appended."""
+        from app.core.maestro_handlers import _enrich_params_with_track_context
+        store, track_id, region_id = self._make_store_with_region()
+        params = {"regionId": region_id, "cc": 11, "events": []}
+        result = _enrich_params_with_track_context(params, store)
+        assert result["trackName"] == "Guitar Lead"
+        assert result["trackId"] == track_id
+        assert result["regionId"] == region_id
+        assert result["cc"] == 11
+
+    def test_skips_if_track_name_already_present(self):
+        """Params already containing trackName are returned unchanged."""
+        from app.core.maestro_handlers import _enrich_params_with_track_context
+        store, _, region_id = self._make_store_with_region()
+        params = {"regionId": region_id, "trackName": "Already Set", "trackId": "existing"}
+        result = _enrich_params_with_track_context(params, store)
+        assert result["trackName"] == "Already Set"
+        assert result["trackId"] == "existing"
+
+    def test_skips_if_no_region_id(self):
+        """Params without regionId (track-scoped tools) pass through unchanged."""
+        from app.core.maestro_handlers import _enrich_params_with_track_context
+        from app.core.state_store import StateStore
+        store = StateStore(conversation_id="enrich-test-2")
+        params = {"trackId": "some-track", "volumeDb": -6}
+        result = _enrich_params_with_track_context(params, store)
+        assert result == params
+
+    def test_graceful_fallback_on_unknown_region(self):
+        """Unknown regionId returns params unchanged without raising."""
+        from app.core.maestro_handlers import _enrich_params_with_track_context
+        from app.core.state_store import StateStore
+        store = StateStore(conversation_id="enrich-test-3")
+        params = {"regionId": "nonexistent-region-id", "cc": 64, "events": []}
+        result = _enrich_params_with_track_context(params, store)
+        assert result == params
+        assert "trackName" not in result
+
+    def test_original_params_not_mutated(self):
+        """The helper returns a new dict; the original is never mutated."""
+        from app.core.maestro_handlers import _enrich_params_with_track_context
+        store, _, region_id = self._make_store_with_region()
+        params = {"regionId": region_id, "cc": 1, "events": []}
+        original = dict(params)
+        _enrich_params_with_track_context(params, store)
+        assert params == original
+
+
+# ---------------------------------------------------------------------------
+# Parallel execution — parallelGroup annotations on plan steps
+# ---------------------------------------------------------------------------
+
+class TestParallelGroup:
+    """parallelGroup is emitted on instrument steps but not setup/mixing steps."""
+
+    def _make_tool_calls(self, specs: list[tuple[str, dict]]) -> list[ToolCall]:
+        return [
+            ToolCall(id=f"tc{i}", name=name, params=params)
+            for i, (name, params) in enumerate(specs)
+        ]
+
+    def test_instrument_steps_have_parallel_group(self):
+        """Track creation and content steps carry parallelGroup='instruments'."""
+        tcs = self._make_tool_calls([
+            ("stori_set_tempo", {"tempo": 92}),
+            ("stori_add_midi_track", {"name": "Drums", "drumKitId": "TR-808"}),
+            ("stori_add_midi_region", {"trackName": "Drums", "startBeat": 0, "durationBeats": 16}),
+            ("stori_generate_midi", {"trackName": "Drums", "role": "drums", "style": "funk", "tempo": 92, "bars": 4}),
+            ("stori_add_midi_track", {"name": "Bass", "gmProgram": 33}),
+            ("stori_add_midi_region", {"trackName": "Bass", "startBeat": 0, "durationBeats": 16}),
+            ("stori_generate_midi", {"trackName": "Bass", "role": "bass", "style": "funk", "tempo": 92, "bars": 4}),
+            ("stori_ensure_bus", {"name": "Reverb"}),
+            ("stori_add_send", {"trackName": "Bass", "busName": "Reverb"}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Make funk", {}, False, StateStore(conversation_id="t"))
+        event = tracker.to_plan_event()
+        steps = event["steps"]
+
+        for s in steps:
+            if "Create" in s["label"] or "Add content" in s["label"]:
+                assert s.get("parallelGroup") == "instruments", f"Step '{s['label']}' should be parallel"
+            elif "tempo" in s["label"].lower() or "bus" in s["label"].lower():
+                assert "parallelGroup" not in s, f"Step '{s['label']}' should NOT be parallel"
+
+    def test_setup_steps_have_no_parallel_group(self):
+        """Setup steps (tempo, key) must NOT have parallelGroup."""
+        tcs = self._make_tool_calls([
+            ("stori_set_tempo", {"tempo": 120}),
+            ("stori_set_key", {"key": "Am"}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Set up", {}, False, StateStore(conversation_id="t"))
+        event = tracker.to_plan_event()
+        for s in event["steps"]:
+            assert "parallelGroup" not in s
+
+    def test_mixing_steps_have_no_parallel_group(self):
+        """Mix adjust steps must NOT have parallelGroup."""
+        tcs = self._make_tool_calls([
+            ("stori_set_track_volume", {"trackName": "Drums", "volume": -3}),
+            ("stori_set_track_pan", {"trackName": "Bass", "pan": -20}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Mix", {}, False, StateStore(conversation_id="t"))
+        event = tracker.to_plan_event()
+        for s in event["steps"]:
+            assert "parallelGroup" not in s
+
+    def test_build_from_prompt_annotates_parallel_group(self):
+        """build_from_prompt tags role steps with parallelGroup='instruments'."""
+        from app.core.prompt_parser import ParsedPrompt
+        parsed = ParsedPrompt(
+            raw="STORI PROMPT",
+            mode="compose",
+            request="make a groove",
+            tempo=90,
+            key="Cm",
+            roles=["drums", "bass", "chords"],
+        )
+        tracker = _PlanTracker()
+        tracker.build_from_prompt(parsed, "make a groove", {"tempo": 80, "key": "C"})
+        event = tracker.to_plan_event()
+        steps = event["steps"]
+
+        for s in steps:
+            if "tempo" in s["label"].lower() or "key" in s["label"].lower():
+                assert "parallelGroup" not in s, f"Setup step '{s['label']}' should NOT be parallel"
+            elif any(kw in s["label"] for kw in ("Create", "Add content", "Add effects")):
+                assert s.get("parallelGroup") == "instruments", f"'{s['label']}' should be parallel"
+
+    def test_effects_within_track_group_have_parallel_group(self):
+        """Insert effects following a track creation share its parallelGroup."""
+        tcs = self._make_tool_calls([
+            ("stori_add_midi_track", {"name": "Drums"}),
+            ("stori_add_midi_region", {"trackName": "Drums", "startBeat": 0, "durationBeats": 16}),
+            ("stori_add_insert_effect", {"trackName": "Drums", "type": "compressor"}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Drums", {}, False, StateStore(conversation_id="t"))
+        for step in tracker.steps:
+            assert step.parallel_group == "instruments"
+
+    def test_single_instrument_still_works(self):
+        """A single instrument request still produces valid steps (no crash)."""
+        tcs = self._make_tool_calls([
+            ("stori_add_midi_track", {"name": "Piano"}),
+            ("stori_add_midi_region", {"trackName": "Piano", "startBeat": 0, "durationBeats": 16}),
+            ("stori_generate_midi", {"trackName": "Piano", "role": "chords", "style": "jazz", "tempo": 120, "bars": 4}),
+        ])
+        tracker = _PlanTracker()
+        tracker.build(tcs, "Piano", {}, False, StateStore(conversation_id="t"))
+        assert len(tracker.steps) == 2
+        assert all(s.parallel_group == "instruments" for s in tracker.steps)
+
+
+# ---------------------------------------------------------------------------
+# Multi-active-step support for parallel execution
+# ---------------------------------------------------------------------------
+
+class TestMultiActiveSteps:
+    """_PlanTracker supports multiple simultaneously active steps."""
+
+    def test_multiple_steps_active_simultaneously(self):
+        """activate_step can activate multiple steps without completing others."""
+        tracker = _PlanTracker()
+        tracker.steps = [
+            _PlanStep(step_id="1", label="Create Drums track", track_name="Drums"),
+            _PlanStep(step_id="2", label="Create Bass track", track_name="Bass"),
+            _PlanStep(step_id="3", label="Create Guitar track", track_name="Guitar"),
+        ]
+        tracker.activate_step("1")
+        tracker.activate_step("2")
+        tracker.activate_step("3")
+
+        assert tracker.steps[0].status == "active"
+        assert tracker.steps[1].status == "active"
+        assert tracker.steps[2].status == "active"
+        assert tracker._active_step_ids == {"1", "2", "3"}
+
+    def test_complete_step_by_id_removes_from_active_set(self):
+        """Completing a step by ID removes it from _active_step_ids."""
+        tracker = _PlanTracker()
+        tracker.steps = [
+            _PlanStep(step_id="1", label="Drums", track_name="Drums"),
+            _PlanStep(step_id="2", label="Bass", track_name="Bass"),
+        ]
+        tracker.activate_step("1")
+        tracker.activate_step("2")
+        assert tracker._active_step_ids == {"1", "2"}
+
+        tracker.complete_step_by_id("1")
+        assert tracker._active_step_ids == {"2"}
+        assert tracker.steps[0].status == "completed"
+        assert tracker.steps[1].status == "active"
+
+    def test_complete_all_active_steps(self):
+        """complete_all_active_steps completes every active step at once."""
+        tracker = _PlanTracker()
+        tracker.steps = [
+            _PlanStep(step_id="1", label="Drums", track_name="Drums", status="active"),
+            _PlanStep(step_id="2", label="Bass", track_name="Bass", status="active"),
+            _PlanStep(step_id="3", label="Mix", status="pending"),
+        ]
+        tracker._active_step_ids = {"1", "2"}
+        events = tracker.complete_all_active_steps()
+        assert len(events) == 2
+        assert all(e["status"] == "completed" for e in events)
+        assert tracker._active_step_ids == set()
+        assert tracker.steps[0].status == "completed"
+        assert tracker.steps[1].status == "completed"
+        assert tracker.steps[2].status == "pending"
+
+    def test_find_active_step_for_track(self):
+        """find_active_step_for_track locates the active step by track name."""
+        tracker = _PlanTracker()
+        tracker.steps = [
+            _PlanStep(step_id="1", label="Create Drums", track_name="Drums", status="active"),
+            _PlanStep(step_id="2", label="Add content to Drums", track_name="Drums", status="pending"),
+            _PlanStep(step_id="3", label="Create Bass", track_name="Bass", status="active"),
+        ]
+        tracker._active_step_ids = {"1", "3"}
+
+        drums = tracker.find_active_step_for_track("Drums")
+        assert drums is not None
+        assert drums.step_id == "1"
+
+        bass = tracker.find_active_step_for_track("Bass")
+        assert bass is not None
+        assert bass.step_id == "3"
+
+        guitar = tracker.find_active_step_for_track("Guitar")
+        assert guitar is None
+
+    def test_finalize_pending_after_parallel_completion(self):
+        """After completing parallel steps, pending steps become skipped."""
+        tracker = _PlanTracker()
+        tracker.steps = [
+            _PlanStep(step_id="1", label="Drums", status="completed"),
+            _PlanStep(step_id="2", label="Bass", status="completed"),
+            _PlanStep(step_id="3", label="Mix", status="pending"),
+        ]
+        events = tracker.finalize_pending_as_skipped()
+        assert len(events) == 1
+        assert events[0]["stepId"] == "3"
+        assert events[0]["status"] == "skipped"
+
+
+# ---------------------------------------------------------------------------
+# Executor — _group_into_phases
+# ---------------------------------------------------------------------------
+
+class TestGroupIntoPhases:
+    """_group_into_phases splits tool calls into setup / instruments / mixing."""
+
+    def _tc(self, name: str, params: dict | None = None) -> ToolCall:
+        return ToolCall(name=name, params=params or {})
+
+    def test_basic_three_phase_split(self):
+        """Setup, instrument, and mixing calls are correctly separated."""
+        from app.core.executor import _group_into_phases
+        calls = [
+            self._tc("stori_set_tempo", {"tempo": 92}),
+            self._tc("stori_set_key", {"key": "Cm"}),
+            self._tc("stori_add_midi_track", {"name": "Drums"}),
+            self._tc("stori_add_midi_region", {"trackName": "Drums", "startBeat": 0, "durationBeats": 16}),
+            self._tc("stori_generate_midi", {"trackName": "Drums", "role": "drums", "style": "funk", "tempo": 92, "bars": 4}),
+            self._tc("stori_add_midi_track", {"name": "Bass"}),
+            self._tc("stori_add_midi_region", {"trackName": "Bass", "startBeat": 0, "durationBeats": 16}),
+            self._tc("stori_generate_midi", {"trackName": "Bass", "role": "bass", "style": "funk", "tempo": 92, "bars": 4}),
+            self._tc("stori_ensure_bus", {"name": "Reverb"}),
+            self._tc("stori_add_send", {"trackName": "Bass", "busName": "Reverb"}),
+            self._tc("stori_set_track_volume", {"trackName": "Drums", "volume": -3}),
+        ]
+        phase1, groups, order, phase3 = _group_into_phases(calls)
+
+        assert len(phase1) == 2
+        assert phase1[0].name == "stori_set_tempo"
+        assert phase1[1].name == "stori_set_key"
+
+        assert set(groups.keys()) == {"drums", "bass"}
+        assert len(groups["drums"]) == 3
+        assert len(groups["bass"]) == 3
+        assert order == ["drums", "bass"]
+
+        assert len(phase3) == 3
+        assert phase3[0].name == "stori_ensure_bus"
+        assert phase3[1].name == "stori_add_send"
+        assert phase3[2].name == "stori_set_track_volume"
+
+    def test_empty_plan(self):
+        """Empty tool call list produces empty phases."""
+        from app.core.executor import _group_into_phases
+        p1, groups, order, p3 = _group_into_phases([])
+        assert p1 == []
+        assert groups == {}
+        assert order == []
+        assert p3 == []
+
+    def test_single_instrument(self):
+        """Single instrument produces one group, no setup or mixing."""
+        from app.core.executor import _group_into_phases
+        calls = [
+            self._tc("stori_add_midi_track", {"name": "Piano"}),
+            self._tc("stori_add_midi_region", {"trackName": "Piano", "startBeat": 0, "durationBeats": 16}),
+            self._tc("stori_generate_midi", {"trackName": "Piano", "role": "chords", "style": "jazz", "tempo": 120, "bars": 4}),
+            self._tc("stori_add_insert_effect", {"trackName": "Piano", "type": "reverb"}),
+        ]
+        p1, groups, order, p3 = _group_into_phases(calls)
+        assert p1 == []
+        assert len(groups) == 1
+        assert "piano" in groups
+        assert len(groups["piano"]) == 4
+        assert p3 == []
+
+    def test_five_instruments_all_grouped(self):
+        """Five instruments each get their own group."""
+        from app.core.executor import _group_into_phases
+        instruments = ["Drums", "Bass", "Guitar", "Keys", "Strings"]
+        calls = []
+        for inst in instruments:
+            calls.append(self._tc("stori_add_midi_track", {"name": inst}))
+            calls.append(self._tc("stori_add_midi_region", {"trackName": inst, "startBeat": 0, "durationBeats": 16}))
+            calls.append(self._tc("stori_generate_midi", {"trackName": inst, "role": inst.lower(), "style": "jazz", "tempo": 120, "bars": 4}))
+
+        p1, groups, order, p3 = _group_into_phases(calls)
+        assert len(groups) == 5
+        assert order == [i.lower() for i in instruments]
+        for inst in instruments:
+            assert inst.lower() in groups
+            assert len(groups[inst.lower()]) == 3
+
+    def test_instrument_order_preserved(self):
+        """instrument_order matches first-seen ordering of tracks."""
+        from app.core.executor import _group_into_phases
+        calls = [
+            self._tc("stori_add_midi_track", {"name": "Strings"}),
+            self._tc("stori_add_midi_track", {"name": "Bass"}),
+            self._tc("stori_add_midi_track", {"name": "Drums"}),
+        ]
+        _, _, order, _ = _group_into_phases(calls)
+        assert order == ["strings", "bass", "drums"]

@@ -308,12 +308,16 @@ NOTE_TOOLS = [
     {
         "name": "stori_add_notes",
         "description": """Add MIDI notes to a region.
-        
+
 Note timing is relative to region start. Pitch is MIDI note number (60 = Middle C).
 Velocity controls dynamics (0-127, typically 70-100 for normal playing).
 
 For drums, use standard GM drum map:
-- 36: Kick, 38: Snare, 42: Closed Hi-Hat, 46: Open Hi-Hat, 49: Crash""",
+- 36: Kick, 38: Snare, 42: Closed Hi-Hat, 46: Open Hi-Hat, 49: Crash
+
+For regions requiring more than 128 notes, call stori_add_notes multiple times
+with the same regionId — each call appends to existing notes.
+NEVER use shorthand params like _noteCount or _beatRange; always provide a real 'notes' array.""",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -446,32 +450,51 @@ EFFECTS_TOOLS = [
 AUTOMATION_TOOLS = [
     {
         "name": "stori_add_automation",
-        "description": "Add automation to a track parameter (volume, pan, filter, etc.).",
+        "description": (
+            "Add automation to a track parameter. "
+            "trackId identifies the track. parameter is the exact canonical string "
+            "(e.g. 'Volume', 'Pan', 'EQ Low', 'Mod Wheel (CC1)', 'Pitch Bend', "
+            "'Synth Cutoff'). points is an array of {beat, value, curve?} objects. "
+            "Volume/Pan/EQ/Synth params use 0.0–1.0; MIDI CC params use 0–127."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "target": {"type": "string", "description": "Target (e.g. trackId or parameter path)"},
+                "trackId": {"type": "string", "description": "Track ID"},
+                "parameter": {
+                    "type": "string",
+                    "description": (
+                        "Canonical parameter name. Exact values: 'Volume', 'Pan', "
+                        "'EQ Low', 'EQ Mid', 'EQ High', 'Mod Wheel (CC1)', "
+                        "'Volume (CC7)', 'Pan (CC10)', 'Expression (CC11)', "
+                        "'Sustain (CC64)', 'Filter Cutoff (CC74)', 'Pitch Bend', "
+                        "'Synth Cutoff', 'Synth Resonance', 'Synth Attack', 'Synth Release'"
+                    ),
+                },
                 "points": {
                     "type": "array",
-                    "description": "Automation points [{beat, value}, ...]",
+                    "description": "Automation points [{beat, value, curve?}]",
                     "items": {
                         "type": "object",
                         "properties": {
                             "beat": {"type": "number"},
                             "value": {"type": "number"},
-                            "curve": {"type": "string", "enum": ["Linear", "Smooth", "Step", "Exp", "Log"]}
+                            "curve": {
+                                "type": "string",
+                                "enum": ["linear", "smooth", "step", "exp", "log"],
+                            },
                         },
-                        "required": ["beat", "value"]
-                    }
-                }
+                        "required": ["beat", "value"],
+                    },
+                },
             },
-            "required": ["target", "points"]
-        }
+            "required": ["trackId", "parameter", "points"],
+        },
     },
 ]
 
 # =============================================================================
-# MIDI CC / PITCH BEND
+# MIDI CC / PITCH BEND / AFTERTOUCH
 # =============================================================================
 
 MIDI_CONTROL_TOOLS = [
@@ -502,6 +525,30 @@ MIDI_CONTROL_TOOLS = [
                 "events": {
                     "type": "array",
                     "description": "List of {beat, value} events (value typically -8192 to 8191)"
+                }
+            },
+            "required": ["regionId", "events"]
+        }
+    },
+    {
+        "name": "stori_add_aftertouch",
+        "description": "Add aftertouch events to a region. Channel pressure: {beat, value}. Polyphonic key pressure: {beat, value, pitch}.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "regionId": {"type": "string", "description": "Region ID"},
+                "events": {
+                    "type": "array",
+                    "description": "List of aftertouch events. Each: {beat, value} for channel, {beat, value, pitch} for polyphonic.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "beat": {"type": "number"},
+                            "value": {"type": "integer", "minimum": 0, "maximum": 127},
+                            "pitch": {"type": "integer", "minimum": 0, "maximum": 127, "description": "MIDI note for polyphonic aftertouch (omit for channel)"}
+                        },
+                        "required": ["beat", "value"]
+                    }
                 }
             },
             "required": ["regionId", "events"]

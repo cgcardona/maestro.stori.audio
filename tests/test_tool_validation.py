@@ -539,3 +539,94 @@ class TestTargetScopeCheck:
         assert len(result.warnings) == 1
         assert "region:Verse A" in result.warnings[0]
         assert result.valid
+
+
+# =============================================================================
+# stori_add_automation — canonical schema enforcement
+# =============================================================================
+
+class TestAddAutomationValidation:
+    """stori_add_automation requires trackId (not target), parameter, and points."""
+
+    VALID_POINTS = [{"beat": 0, "value": 0.5}, {"beat": 8, "value": 1.0}]
+    ALLOWED = {"stori_add_automation"}
+
+    def test_valid_automation_call_passes(self):
+        """Well-formed call with trackId + canonical parameter + points is valid."""
+        registry = EntityRegistry()
+        track_id = registry.create_track("Piano")
+        result = validate_tool_call(
+            "stori_add_automation",
+            {"trackId": track_id, "parameter": "Volume", "points": self.VALID_POINTS},
+            self.ALLOWED,
+            registry=registry,
+        )
+        assert result.valid, result.errors
+
+    def test_all_canonical_parameters_accepted(self):
+        """Every canonical parameter string must be accepted."""
+        from app.core.tool_validation import AUTOMATION_CANONICAL_PARAMETERS
+        registry = EntityRegistry()
+        track_id = registry.create_track("T")
+        for param in AUTOMATION_CANONICAL_PARAMETERS:
+            result = validate_tool_call(
+                "stori_add_automation",
+                {"trackId": track_id, "parameter": param, "points": self.VALID_POINTS},
+                self.ALLOWED,
+                registry=registry,
+            )
+            assert result.valid, f"Canonical parameter '{param}' was rejected: {result.errors}"
+
+    def test_target_instead_of_trackId_is_rejected(self):
+        """Using 'target' instead of 'trackId' must fail with WRONG_PARAM_NAME."""
+        registry = EntityRegistry()
+        track_id = registry.create_track("Piano")
+        result = validate_tool_call(
+            "stori_add_automation",
+            {"target": track_id, "parameter": "Volume", "points": self.VALID_POINTS},
+            self.ALLOWED,
+            registry=registry,
+        )
+        assert not result.valid
+        codes = [e.code for e in result.errors]
+        assert "WRONG_PARAM_NAME" in codes
+
+    def test_missing_parameter_field_is_rejected(self):
+        """Omitting 'parameter' entirely must fail with MISSING_REQUIRED."""
+        registry = EntityRegistry()
+        track_id = registry.create_track("Piano")
+        result = validate_tool_call(
+            "stori_add_automation",
+            {"trackId": track_id, "points": self.VALID_POINTS},
+            self.ALLOWED,
+            registry=registry,
+        )
+        assert not result.valid
+        codes = [e.code for e in result.errors]
+        assert "MISSING_REQUIRED" in codes
+
+    def test_invalid_parameter_string_is_rejected(self):
+        """Non-canonical parameter values like 'reverb_wet' must fail with INVALID_VALUE."""
+        registry = EntityRegistry()
+        track_id = registry.create_track("Piano")
+        for bad_param in ("reverb_wet", "tremolo_rate", "delay_feedback", "filter_cutoff", "volume"):
+            result = validate_tool_call(
+                "stori_add_automation",
+                {"trackId": track_id, "parameter": bad_param, "points": self.VALID_POINTS},
+                self.ALLOWED,
+                registry=registry,
+            )
+            assert not result.valid, f"Non-canonical '{bad_param}' should be rejected"
+            codes = [e.code for e in result.errors]
+            assert "INVALID_VALUE" in codes, f"Expected INVALID_VALUE for '{bad_param}'"
+
+    def test_missing_trackId_and_parameter_both_reported(self):
+        """A call with only points should report both missing fields."""
+        result = validate_tool_call(
+            "stori_add_automation",
+            {"points": self.VALID_POINTS},
+            self.ALLOWED,
+        )
+        assert not result.valid
+        fields = [e.field for e in result.errors]
+        assert "trackId" in fields or "parameter" in fields

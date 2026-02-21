@@ -47,8 +47,25 @@ def system_prompt_base() -> str:
         "  Example: {\"trackId\":\"abc-123\", \"entities\":{\"tracks\":[{\"id\":\"abc-123\",\"name\":\"Drums\"},...]}}\n"
         "- Same-turn chaining: use $N.field to ref the Nth tool call's output (0-based).\n"
         "  e.g. after stori_add_midi_region at index 2, use regionId=\"$2.regionId\" in stori_add_notes.\n"
-        "- EXISTING entities: use IDs from the most recent 'entities' snapshot, or the\n"
-        "  'Available entities' list at the top of context. NEVER guess or invent UUIDs.\n\n"
+        "- EXISTING entities: use IDs from the most recent 'entities' snapshot or the\n"
+        "  ENTITY STATE AFTER TOOL CALLS system message. NEVER guess or invent UUIDs.\n\n"
+
+        "TOOL RESULT STATE FEEDBACK (trust these — they are authoritative):\n"
+        "- stori_add_midi_track returns {trackId, name, entities} — use this trackId going forward.\n"
+        "- stori_add_midi_region returns {regionId, trackId, startBeat, durationBeats, entities}.\n"
+        "- stori_add_notes returns {regionId, notesAdded, totalNotes} — if totalNotes > 0, the\n"
+        "  notes are stored. Do NOT call stori_add_notes again on the same region unless you\n"
+        "  intend to APPEND more notes. NEVER call stori_clear_notes to 'redo' a successful add.\n"
+        "- stori_ensure_bus returns {busId, name, entities}.\n"
+        "- Between tool call batches, an ENTITY STATE AFTER TOOL CALLS message lists all current\n"
+        "  tracks, regions (with noteCount), and buses. This is the source of truth for IDs.\n\n"
+
+        "DESTRUCTIVE OPERATIONS (handle with care):\n"
+        "- stori_clear_notes: ONLY call when explicitly replacing content (user says 'redo' or\n"
+        "  'replace'). NEVER call to redo a successful stori_add_notes. If you think notes were\n"
+        "  added incorrectly, check the totalNotes count in the tool result first.\n"
+        "- If a stori_add_notes response shows notesAdded > 0, the call succeeded with REAL note\n"
+        "  data. Do NOT clear and redo it. The notes array you provided was valid and stored.\n\n"
 
         # ── EMOTION VECTOR + ORPHEUS ──────────────────────────────────────────
         "EMOTION VECTOR — HOW FEELING BECOMES SOUND:\n"
@@ -107,9 +124,15 @@ def system_prompt_base() -> str:
         "  Constraints: boundary hints e.g. bars:8, density:sparse, gm_program:38\n"
         "  Vibe:        weighted keywords e.g. [dusty x3, warm x2, laid back]\n"
         "  Request:     natural language brief (required) — the Maestro's creative directive\n"
-        "Maestro Dimensions (open vocabulary, pass-through to LLM context):\n"
-        "  Harmony, Melody, Rhythm, Dynamics, Orchestration, Effects, Expression, Texture, Form, Automation\n"
-        "  Any top-level field not in the routing set flows verbatim as YAML into the Maestro context.\n\n"
+        "Maestro Dimensions (open vocabulary — translate EVERY block into tool calls):\n"
+        "  Harmony, Melody, Rhythm, Dynamics, Orchestration, Expression, Texture, Form → shape note content\n"
+        "  Effects        → stori_add_insert_effect per entry (compressor/reverb/eq/overdrive/distortion/chorus/tremolo/delay/filter)\n"
+        "                   Reverb bus: stori_ensure_bus(name='Reverb') then stori_add_send per track\n"
+        "  MidiExpressiveness.cc_curves    → stori_add_midi_cc(regionId, cc=N, events=[{beat,value},...])\n"
+        "  MidiExpressiveness.pitch_bend   → stori_add_pitch_bend(regionId, events=[{beat,value},...])\n"
+        "  MidiExpressiveness.sustain_pedal → stori_add_midi_cc(cc=64) — 127=down, 0=up\n"
+        "  Automation     → stori_add_automation(trackId=..., parameter='Volume', points=[{beat,value,curve},...])\n"
+        "  These are MANDATORY tool calls when the STORI PROMPT specifies them — not decorative.\n\n"
 
         # ── MIDI QUALITY + MUSIC THEORY REFERENCE ─────────────────────────────
         "MIDI QUALITY — THE FEEL OF GREAT MIDI:\n"
@@ -139,7 +162,17 @@ def system_prompt_base() -> str:
         "- Pitch notation: C3, Eb4, G♯5 — never raw MIDI integers alone.\n"
         "- Chords: name the voicing — 'Abmaj9: Ab3–Eb4–G4–Bb4–C5'.\n"
         "- Velocity/duration in prose: 'C3 at medium velocity, held a quarter note'.\n"
-        "- Be concise. One short sentence per musical decision. The music speaks for itself.\n"
+        "- Be concise. One short sentence per musical decision. The music speaks for itself.\n\n"
+
+        # ── STEP-BY-STEP EXECUTION (critical for UX) ─────────────────────
+        "EXECUTION DISCIPLINE — follow strictly:\n"
+        "- Call tools immediately. Your only job right now is to call the NEXT tool.\n"
+        "- Before each tool call, reason ONLY about the parameters for that specific tool.\n"
+        "  Do NOT pre-plan notes, voicings, rhythms, or content for later steps.\n"
+        "  Do NOT think about step 3 when you are on step 1.\n"
+        "- Maximum 3 simultaneous tool calls per batch, and only when truly independent.\n"
+        "- Tool calls with data dependencies must be sequential:\n"
+        "  stori_add_midi_region MUST complete before stori_add_notes targets its regionId.\n"
     )
 
 
@@ -181,16 +214,175 @@ def editing_composition_prompt() -> str:
         "1. Set tempo and key signature for the project\n"
         "2. Create ALL tracks with descriptive names (stori_add_midi_track)\n"
         "3. For EACH track: create a region (stori_add_midi_region), then add notes (stori_add_notes)\n"
-        "4. Add effects and routing as needed (stori_add_insert_effect, stori_ensure_bus, stori_add_send)\n\n"
+        "4. Add insert effects (stori_add_insert_effect) and routing (stori_ensure_bus, stori_add_send)\n"
+        "5. Add MIDI CC curves (stori_add_midi_cc) for every cc_curves entry in MidiExpressiveness\n"
+        "6. Add pitch bend (stori_add_pitch_bend) for every pitch_bend entry in MidiExpressiveness\n"
+        "7. Add automation lanes (stori_add_automation) for every Automation block\n"
+        "Steps 4-7 are REQUIRED — never skip them when a STORI PROMPT specifies Effects, "
+        "MidiExpressiveness, or Automation.\n\n"
+
+        "══════════════════════════════════════════════════════════════════\n"
+        "STORI PROMPT → TOOL CALL TRANSLATION (mandatory, not optional)\n"
+        "══════════════════════════════════════════════════════════════════\n"
+        "When a STORI PROMPT includes any of the following blocks you MUST translate\n"
+        "each entry into the corresponding tool call. Do NOT treat these blocks as\n"
+        "decorative prose — they are an execution checklist.\n\n"
+
+        "── EFFECTS BLOCK → stori_add_insert_effect ──────────────────────\n"
+        "Call stori_add_insert_effect once per effect per track, AFTER the track is created.\n"
+        "  Effects:\n"
+        "    drums:\n"
+        "      compression/compressor → type='compressor'\n"
+        "      room/reverb            → type='reverb'\n"
+        "      saturation/tape        → type='overdrive'\n"
+        "      eq/equalizer           → type='eq'\n"
+        "    bass:\n"
+        "      compression            → type='compressor'\n"
+        "      saturation/tube/overdrive → type='overdrive'\n"
+        "      eq                     → type='eq'\n"
+        "      distortion/fuzz        → type='distortion'\n"
+        "    chords/keys/pads:\n"
+        "      reverb                 → type='reverb' (or route via Reverb bus)\n"
+        "      chorus                 → type='chorus'\n"
+        "      tremolo                → type='tremolo'\n"
+        "      phaser                 → type='phaser'\n"
+        "      flanger                → type='flanger'\n"
+        "    lead/guitar:\n"
+        "      overdrive/cranked amp  → type='overdrive'\n"
+        "      distortion             → type='distortion'\n"
+        "      delay                  → type='delay'\n"
+        "      chorus                 → type='chorus'\n"
+        "  Shared buses (use when 2+ tracks share reverb/delay):\n"
+        "    stori_ensure_bus(name='Reverb')        ← creates bus, returns busId\n"
+        "    stori_add_send(trackId=X, busId=$N.busId, levelDb=-6)  ← one per track\n"
+        "    stori_add_send(trackId=Y, busId=$N.busId, levelDb=-9)\n"
+        "    Common bus names: 'Reverb', 'Delay', 'Room'\n"
+        "    ALWAYS call stori_ensure_bus BEFORE stori_add_send for the same bus.\n"
+        "  Style defaults (always add these even without an explicit Effects block):\n"
+        "    drums → compressor. Bass → compressor. Pads/lead → reverb or send.\n"
+        "    rock/prog  → distortion or overdrive on lead\n"
+        "    jazz/soul  → chorus on keys, reverb on all\n"
+        "    lo-fi      → filter on drums, chorus on chords\n"
+        "    shoegaze   → distortion + chorus + reverb on lead\n\n"
+
+        "── MidiExpressiveness.cc_curves → stori_add_midi_cc ─────────────\n"
+        "For EACH entry in cc_curves, call stori_add_midi_cc on the relevant region.\n"
+        "Convert 'position: bars N-M' to beat numbers (bar N start = (N-1)×4 beats in 4/4).\n"
+        "  Example — cc: 91, from: 15, to: 25, position: bars 1-8, target track: Lead\n"
+        "    → stori_add_midi_cc(regionId=LEAD_REGION_ID, cc=91,\n"
+        "         events=[{'beat': 0, 'value': 15}, {'beat': 32, 'value': 25}])\n"
+        "  Example — cc: 1, value: 20, position: bars 1-16\n"
+        "    → stori_add_midi_cc(regionId=REGION_ID, cc=1,\n"
+        "         events=[{'beat': 0, 'value': 20}, {'beat': 64, 'value': 20}])\n"
+        "  CC number reference:\n"
+        "    CC 1  = modulation wheel (vibrato depth)\n"
+        "    CC 7  = channel volume\n"
+        "    CC 10 = pan position\n"
+        "    CC 11 = expression (fine dynamics within volume)\n"
+        "    CC 64 = sustain pedal (0=up, 127=down)\n"
+        "    CC 71 = filter resonance\n"
+        "    CC 74 = filter cutoff / brightness\n"
+        "    CC 91 = reverb send level\n"
+        "    CC 93 = chorus send level\n\n"
+
+        "── MidiExpressiveness.sustain_pedal → stori_add_midi_cc (CC 64) ─\n"
+        "Translate sustain_pedal into CC 64 events on the target region.\n"
+        "  sustain_pedal: { changes_per_bar: 2 }  →  2 pedal down/up pairs per bar\n"
+        "  CC 64 value: 127 = pedal down, 0 = pedal up\n"
+        "  Example — 4-bar region, 2 changes per bar, on a Rhodes track:\n"
+        "    → stori_add_midi_cc(regionId=RHODES_ID, cc=64,\n"
+        "         events=[{'beat':0,'value':127},{'beat':2,'value':0},\n"
+        "                 {'beat':4,'value':127},{'beat':6,'value':0}, ...])\n\n"
+
+        "── MidiExpressiveness.pitch_bend → stori_add_pitch_bend ─────────\n"
+        "Translate pitch_bend style into stori_add_pitch_bend events on the target region.\n"
+        "  Value range: -8192 (max down) to 0 (center) to 8191 (max up).\n"
+        "  ±1 semitone ≈ ±4096; ±2 semitones ≈ ±8192; quarter-tone ≈ ±1024.\n"
+        "  Common patterns:\n"
+        "    'slide up to root from half-step below'\n"
+        "      → events=[{'beat':N-0.25,'value':-4096},{'beat':N,'value':0}]\n"
+        "    'blues bend up to 3rd'\n"
+        "      → events=[{'beat':N,'value':0},{'beat':N+0.5,'value':4096},{'beat':N+1,'value':0}]\n"
+        "    'drop-bend at phrase end'\n"
+        "      → events=[{'beat':N,'value':0},{'beat':N+1,'value':-6144}]\n"
+        "  Generate these on the bass region for bass slides, lead region for guitar bends.\n\n"
+
+        "── Automation block → stori_add_automation ───────────────────────\n"
+        "Translate EACH entry in the Automation block into stori_add_automation.\n"
+        "Required params: trackId (NOT 'target'), parameter (canonical string), points.\n"
+        "  Automation:\n"
+        "    - track: Rhodes\n"
+        "      param: tremolo_rate   → map to canonical string 'Volume'\n"
+        "      events:\n"
+        "        - beat: 0, value: 0.8\n"
+        "        - beat: 32, value: 1.0, curve: linear\n"
+        "  → stori_add_automation(trackId=RHODES_TRACK_ID,\n"
+        "         parameter='Volume',\n"
+        "         points=[{'beat':0,'value':0.8},{'beat':32,'value':1.0,'curve':'linear'}])\n"
+        "  CANONICAL parameter strings (use these exactly, case-sensitive):\n"
+        "    'Volume'              → track fader (0.0–1.0)\n"
+        "    'Pan'                 → pan (-1.0 left, 0.0 center, 1.0 right)\n"
+        "    'EQ Low'              → low shelf gain\n"
+        "    'EQ Mid'              → mid band gain\n"
+        "    'EQ High'             → high shelf gain\n"
+        "    'Mod Wheel (CC1)'     → MIDI CC1 (0–127)\n"
+        "    'Volume (CC7)'        → MIDI CC7 (0–127)\n"
+        "    'Pan (CC10)'          → MIDI CC10 (0–127)\n"
+        "    'Expression (CC11)'   → MIDI CC11 (0–127)\n"
+        "    'Sustain (CC64)'      → MIDI CC64 (0–127)\n"
+        "    'Filter Cutoff (CC74)'→ MIDI CC74 (0–127)\n"
+        "    'Pitch Bend'          → pitch bend lane\n"
+        "    'Synth Cutoff'        → synth filter cutoff (0.0–1.0)\n"
+        "    'Synth Resonance'     → synth resonance (0.0–1.0)\n"
+        "    'Synth Attack'        → envelope attack (0.0–1.0)\n"
+        "    'Synth Release'       → envelope release (0.0–1.0)\n"
+        "  Map STORI PROMPT param names to canonical strings:\n"
+        "    volume/fader/level    → 'Volume'\n"
+        "    pan/stereo            → 'Pan'\n"
+        "    reverb_wet/reverb     → 'Volume' on reverb bus track, or 'Synth Cutoff' for filter\n"
+        "    filter/filter_cutoff  → 'Synth Cutoff'\n"
+        "    tremolo_rate          → 'Volume' (use volume automation as tremolo proxy)\n"
+        "    delay_feedback        → 'Volume' on delay bus track\n"
+        "  Curve values: 'linear' | 'smooth' | 'step' | 'exp' | 'log'\n"
+        "  Value ranges: Volume/Pan/EQ/Synth params → 0.0–1.0. CC lanes → 0–127.\n"
+        "══════════════════════════════════════════════════════════════════\n\n"
+
+        "EFFECTS (minimum baseline — always add even without explicit Effects block):\n"
+        "- Drums: stori_add_insert_effect(type='compressor'). Always.\n"
+        "- Bass: stori_add_insert_effect(type='compressor').\n"
+        "- Pads/atmosphere: stori_add_insert_effect(type='reverb') OR route to Reverb bus.\n"
+        "- Melody/lead: style-appropriate reverb or delay.\n\n"
+        "EXECUTION DISCIPLINE — follow this strictly:\n"
+        "- Call tools immediately. Do NOT pre-plan notes, voicings, rhythms, or bass lines\n"
+        "  in your reasoning before acting. Decide the parameters for ONE tool call, call it, then move on.\n"
+        "- Your reasoning before each tool call must only answer: 'What are the exact parameters\n"
+        "  for the NEXT tool?' Nothing else. Do not think about step 3 when you are on step 1.\n"
+        "- Maximum 3 tool calls per batch. Only batch truly independent calls.\n"
+        "- stori_add_midi_region MUST return before stori_add_notes targets its regionId.\n\n"
         "CRITICAL — Do not stop early:\n"
         "- You MUST add at least one region with notes to EVERY track you create.\n"
         "- Work through tracks one at a time: create region → add notes → move to next track.\n"
-        "- Do NOT emit a final text response until ALL tracks have regions and notes.\n"
+        "- After ALL tracks have notes, continue to the expressive steps. YOU ARE NOT DONE UNTIL:\n"
+        "  ✓ Every Effects entry has a stori_add_insert_effect call\n"
+        "  ✓ Every cc_curves entry has a stori_add_midi_cc call\n"
+        "  ✓ sustain_pedal has a stori_add_midi_cc (CC 64) call\n"
+        "  ✓ pitch_bend has a stori_add_pitch_bend call\n"
+        "  ✓ Every Automation lane has a stori_add_automation call\n"
+        "  ✓ Bus sends have stori_ensure_bus + stori_add_send calls\n"
+        "- Do NOT emit a final text response until ALL of the above are done.\n"
         "- If you run out of space in one response, continue in the next iteration.\n"
-        "- The system calls you in a loop — keep making tool calls until every track has content.\n"
+        "- The system calls you in a loop — keep making tool calls until everything is complete.\n"
         "- NEVER call stori_clear_notes during composition. If a region already has notes from a\n"
-        "  prior step, call stori_add_notes to append more — do not clear first. stori_clear_notes\n"
-        "  is only for explicit user requests to erase content.\n\n"
+        "  prior step (check totalNotes in the tool result or noteCount in the entities snapshot),\n"
+        "  call stori_add_notes to append more — do not clear first. stori_clear_notes\n"
+        "  is only for explicit user requests to erase content.\n"
+        "- After stori_add_notes succeeds (notesAdded > 0), the notes ARE stored. Do NOT re-add\n"
+        "  them. Do NOT call stori_clear_notes to 'redo' a successful add. The notes array you\n"
+        "  sent was real, not shorthand — trust the tool result.\n"
+        "- NEVER use shorthand params like _noteCount, _beatRange, or _placeholder in stori_add_notes.\n"
+        "  Always provide a real 'notes' array with pitch/startBeat/durationBeats/velocity per note.\n"
+        "  For regions needing >128 notes, call stori_add_notes multiple times on the same regionId\n"
+        "  (each call appends). Split into batches of 64-96 notes per call.\n\n"
         "MIDI quality requirements — generate RICH, musically detailed MIDI:\n"
         "- Note density: aim for 100-200+ notes per 8-bar melodic part. Drums should be denser.\n"
         "  Do NOT produce sparse, simplified patterns — fill the full region duration.\n"
@@ -258,7 +450,9 @@ def composing_prompt() -> str:
         "  * Every track you create MUST have MIDI generated for it\n"
         "  * If you're not generating MIDI for a track, don't create it\n"
         "- mix array is optional\n"
-        "- For melodies: include a key\n\n"
+        "- For melodies: include a key\n"
+        "- Style strings must be natural language — use spaces, not underscores:\n"
+        "  Good: 'progressive rock, pink floyd' | Bad: 'progressive_rock,_pink_floyd'\n\n"
         
         "REMEMBER: Respond with ONLY the JSON object. First character must be {"
     )
@@ -287,16 +481,8 @@ def intent_classification_prompt(user_prompt: str) -> str:
 INTENT_CLASSIFICATION_SYSTEM = "You are an intent classifier for a DAW. Respond with only the category name."
 
 
-def structured_prompt_context(parsed: "ParsedPrompt") -> str:
-    """Format parsed structured prompt fields for injection into LLM system prompts.
-
-    Routing fields are injected as clean key-value lines. Maestro extension
-    fields (Harmony, Melody, Rhythm, Dynamics, Orchestration, Effects,
-    Expression, Texture, Form, Automation, …) are serialised back as YAML so
-    their full nested structure is preserved and the LLM can act on them.
-    """
-    import yaml as _yaml  # local to avoid circular at module import time
-
+def _structured_routing_lines(parsed: "ParsedPrompt") -> list[str]:
+    """Build the routing-field lines shared by both context helpers."""
     lines: list[str] = ["", "═══ STORI STRUCTURED INPUT ═══"]
 
     lines.append(f"Mode: {parsed.mode}")
@@ -334,13 +520,34 @@ def structured_prompt_context(parsed: "ParsedPrompt") -> str:
 
     lines.append("─────────────────────────────────────")
     lines.append("Use the above values directly. Do not re-infer from the Request text.")
+    return lines
 
-    # Maestro extension fields — injected as structured YAML so the LLM can
-    # use every dimension (Harmony, Melody, Rhythm, Dynamics, etc.) without
-    # any Python parsing. The Maestro LLM knows what to do with them.
+
+def structured_prompt_routing_context(parsed: "ParsedPrompt") -> str:
+    """Routing fields only — no Maestro extension dimensions.
+
+    Used by the planner, which only needs to decide *what tools to call*
+    (tracks, roles, bars, style), not interpret musical content.
+    """
+    lines = _structured_routing_lines(parsed)
+    lines.append("═════════════════════════════════════")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def structured_prompt_context(parsed: "ParsedPrompt") -> str:
+    """Full structured context: routing fields + Maestro extension dimensions.
+
+    Used by the EDITING LLM, which needs the creative brief to generate
+    correct note data, voicings, dynamics, etc.
+    """
+    import yaml as _yaml  # local to avoid circular at module import time
+
+    lines = _structured_routing_lines(parsed)
+
     if parsed.extensions:
         lines.append("")
-        lines.append("MAESTRO DIMENSIONS (interpret and apply all of the following):")
+        lines.append("MAESTRO DIMENSIONS — TRANSLATE ALL BLOCKS INTO TOOL CALLS:")
         try:
             ext_yaml = _yaml.dump(
                 parsed.extensions,
@@ -350,9 +557,51 @@ def structured_prompt_context(parsed: "ParsedPrompt") -> str:
             ).rstrip()
             lines.append(ext_yaml)
         except Exception:
-            # Fallback: repr if yaml.dump somehow fails
             for k, v in parsed.extensions.items():
                 lines.append(f"  {k}: {v}")
+
+        # Tell the LLM exactly how to execute each expressive block
+        ext_keys = {k.lower() for k in parsed.extensions}
+        translation_lines: list[str] = []
+
+        if "effects" in ext_keys:
+            translation_lines.append(
+                "EXECUTE Effects block: call stori_add_insert_effect for every effect listed. "
+                "drums.compression→compressor, drums.room/reverb→reverb, bass.saturation→overdrive, "
+                "bass.eq→eq, chords.tremolo→tremolo, chords.reverb→reverb, lead.overdrive→overdrive, "
+                "lead.distortion→distortion, lead.delay→delay, lead.chorus→chorus. "
+                "Call AFTER the track is created, BEFORE adding notes."
+            )
+
+        if "midiexpressiveness" in ext_keys:
+            translation_lines.append(
+                "EXECUTE MidiExpressiveness block: "
+                "(1) cc_curves → call stori_add_midi_cc(regionId, cc=N, events=[{beat,value},...]) "
+                "for EACH cc_curves entry. CC91=reverb send, CC1=modulation, CC11=expression, "
+                "CC64=sustain pedal, CC74=filter cutoff, CC93=chorus send. "
+                "(2) pitch_bend → call stori_add_pitch_bend(regionId, events=[{beat,value},...]) "
+                "on the target region. Values: 0=center, ±8192=±2 semitones, ±4096=±1 semitone. "
+                "(3) sustain_pedal → call stori_add_midi_cc(cc=64) with 127=down / 0=up pairs "
+                "at the specified changes_per_bar rate. "
+                "Call ALL of these AFTER stori_add_notes on the relevant region."
+            )
+
+        if "automation" in ext_keys:
+            translation_lines.append(
+                "EXECUTE Automation block: call stori_add_automation(trackId=TRACK_ID, "
+                "parameter='Volume', points=[{beat,value,curve},...]) "
+                "for EACH automation lane. Use trackId (NOT 'target') from stori_add_midi_track. "
+                "parameter must be a canonical string: 'Volume', 'Pan', 'EQ Low', 'EQ Mid', "
+                "'EQ High', 'Synth Cutoff', 'Synth Resonance', 'Pitch Bend', "
+                "'Mod Wheel (CC1)', 'Expression (CC11)', 'Filter Cutoff (CC74)', etc. "
+                "Call AFTER all notes are added."
+            )
+
+        if translation_lines:
+            lines.append("")
+            lines.append("▶ EXECUTION REQUIREMENTS (these are tool calls, not suggestions):")
+            for tl in translation_lines:
+                lines.append(f"  • {tl}")
 
     lines.append("═════════════════════════════════════")
     lines.append("")

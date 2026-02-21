@@ -186,6 +186,11 @@ class StateStore:
         # Materialized note store: region_id -> list of note dicts
         # Maintained by add_notes/remove_notes; queryable after commit
         self._region_notes: dict[str, list[dict[str, Any]]] = {}
+
+        # MIDI CC, pitch bend, and aftertouch stores: region_id -> list of event dicts
+        self._region_cc: dict[str, list[dict[str, Any]]] = {}
+        self._region_pitch_bends: dict[str, list[dict[str, Any]]] = {}
+        self._region_aftertouch: dict[str, list[dict[str, Any]]] = {}
         
         # Project metadata
         self._tempo: int = 120
@@ -511,6 +516,57 @@ class StateStore:
         """Return the parent track ID for a region (from registry)."""
         entity = self._registry.get_region(region_id)
         return entity.parent_id if entity else None
+
+    def get_track_name(self, track_id: str) -> Optional[str]:
+        """Return the name of a track by ID, or None if not found."""
+        entity = self._registry.get_track(track_id)
+        return entity.name if entity else None
+
+    # =========================================================================
+    # MIDI CC and Pitch Bend
+    # =========================================================================
+
+    def add_cc(
+        self,
+        region_id: str,
+        cc_events: list[dict[str, Any]],
+    ) -> None:
+        """Append MIDI CC events to a region."""
+        if region_id not in self._region_cc:
+            self._region_cc[region_id] = []
+        self._region_cc[region_id].extend(deepcopy(cc_events))
+
+    def get_region_cc(self, region_id: str) -> list[dict[str, Any]]:
+        """Return CC events for a region."""
+        return deepcopy(self._region_cc.get(region_id, []))
+
+    def add_pitch_bends(
+        self,
+        region_id: str,
+        pitch_bends: list[dict[str, Any]],
+    ) -> None:
+        """Append pitch bend events to a region."""
+        if region_id not in self._region_pitch_bends:
+            self._region_pitch_bends[region_id] = []
+        self._region_pitch_bends[region_id].extend(deepcopy(pitch_bends))
+
+    def get_region_pitch_bends(self, region_id: str) -> list[dict[str, Any]]:
+        """Return pitch bend events for a region."""
+        return deepcopy(self._region_pitch_bends.get(region_id, []))
+
+    def add_aftertouch(
+        self,
+        region_id: str,
+        aftertouch: list[dict[str, Any]],
+    ) -> None:
+        """Append aftertouch events (channel or poly) to a region."""
+        if region_id not in self._region_aftertouch:
+            self._region_aftertouch[region_id] = []
+        self._region_aftertouch[region_id].extend(deepcopy(aftertouch))
+
+    def get_region_aftertouch(self, region_id: str) -> list[dict[str, Any]]:
+        """Return aftertouch events for a region."""
+        return deepcopy(self._region_aftertouch.get(region_id, []))
     
     # =========================================================================
     # Synchronization
@@ -609,6 +665,9 @@ class StateStore:
                 "key": self._key,
                 "time_signature": self._time_signature,
                 "_region_notes": deepcopy(self._region_notes),
+                "_region_cc": deepcopy(self._region_cc),
+                "_region_pitch_bends": deepcopy(self._region_pitch_bends),
+                "_region_aftertouch": deepcopy(self._region_aftertouch),
             },
         )
         self._snapshots.append(snapshot)
@@ -626,7 +685,9 @@ class StateStore:
         self._key = snapshot.project_metadata.get("key", "C")
         self._time_signature = tuple(snapshot.project_metadata.get("time_signature", (4, 4)))
         self._region_notes = deepcopy(snapshot.project_metadata.get("_region_notes", {}))
-        # Note: version is NOT restored - we continue incrementing
+        self._region_cc = deepcopy(snapshot.project_metadata.get("_region_cc", {}))
+        self._region_pitch_bends = deepcopy(snapshot.project_metadata.get("_region_pitch_bends", {}))
+        self._region_aftertouch = deepcopy(snapshot.project_metadata.get("_region_aftertouch", {}))
         
         logger.info(f"📸 Restored to snapshot v{snapshot.version}")
     

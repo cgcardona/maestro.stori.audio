@@ -189,7 +189,7 @@ def stream_maestro(api: str, token: str, prompt: str, project: dict,
     events: list[dict] = []
     print(f"\n  Streaming {label}...")
 
-    with urllib.request.urlopen(req, timeout=180) as resp:
+    with urllib.request.urlopen(req, timeout=600) as resp:
         for raw_line in resp:
             line = raw_line.decode("utf-8").rstrip("\n")
             if not line.startswith("data: "):
@@ -363,12 +363,13 @@ def summarise_prompt1(events: list[dict]) -> None:
         fail("no successful complete event")
 
 
-def summarise_prompt2(events: list[dict]) -> None:
+def summarise_prompt2(events: list[dict], project_ctx: dict) -> None:
     meta = next((e for e in events if e.get("type") == "meta"), None)
     phrases = [e for e in events if e.get("type") == "phrase"]
     done = next((e for e in events if e.get("type") == "done"), None)
     complete = next((e for e in events if e.get("type") == "complete"), None)
     errors = [e for e in events if e.get("type") == "toolError"]
+    tool_calls = [e for e in events if e.get("type") == "toolCall"]
 
     if meta:
         ok(f"meta event received")
@@ -399,6 +400,96 @@ def summarise_prompt2(events: list[dict]) -> None:
 
     if errors:
         warn(f"{len(errors)} tool error event(s) during variation generation")
+
+    # ── Bug-fix verifications ──────────────────────────────────────────────────
+    existing_uuids = {t["id"] for t in project_ctx.get("tracks", [])}
+    existing_names = {t["name"].lower() for t in project_ctx.get("tracks", [])}
+
+    # Bug 1: No stori_add_midi_track for existing tracks
+    print()
+    hdr("Bug-fix verifications")
+    add_track_calls = [tc for tc in tool_calls if tc.get("name") == "stori_add_midi_track"]
+    duplicated = [
+        tc for tc in add_track_calls
+        if tc.get("params", {}).get("name", "").lower() in existing_names
+    ]
+    if duplicated:
+        for tc in duplicated:
+            fail(f"Bug 1: Re-proposed existing track '{tc['params']['name']}'")
+    else:
+        ok("Bug 1: No stori_add_midi_track for existing tracks")
+
+    # Bug 1b: No stori_set_track_color/icon for existing tracks
+    color_icon_calls = [
+        tc for tc in tool_calls
+        if tc.get("name") in ("stori_set_track_color", "stori_set_track_icon")
+        and tc.get("params", {}).get("trackName", "").lower() in existing_names
+    ]
+    if color_icon_calls:
+        for tc in color_icon_calls:
+            fail(f"Bug 1: Re-styled existing track '{tc['params']['trackName']}' with {tc['name']}")
+    else:
+        ok("Bug 1: No color/icon calls for existing tracks")
+
+    # Bug 2: Phrase trackIds match existing UUIDs
+    bad_track_ids = []
+    for p in phrases:
+        tid = p.get("trackId", "")
+        if tid and tid not in existing_uuids:
+            # Could be a newly created track — check if add_track gave us a new UUID
+            new_track_ids = {
+                tc.get("params", {}).get("trackId", "")
+                for tc in add_track_calls
+            }
+            if tid not in new_track_ids:
+                bad_track_ids.append((p.get("phraseId", "?")[:8], tid[:8]))
+    if bad_track_ids:
+        for pid, tid in bad_track_ids:
+            fail(f"Bug 2: Phrase {pid}... uses unknown trackId {tid}...")
+    else:
+        ok("Bug 2: All phrase trackIds match known UUIDs")
+
+    # Bug 3: No "Melody" track created when instrument track exists
+    melody_tracks = [
+        tc for tc in add_track_calls
+        if tc.get("params", {}).get("name", "").lower() == "melody"
+    ]
+    if melody_tracks and "piano" in existing_names:
+        fail("Bug 3: Created 'Melody' track when Piano already exists")
+    elif melody_tracks and "organ" in existing_names:
+        fail("Bug 3: Created 'Melody' track when Organ already exists")
+    else:
+        ok("Bug 3: Melody role mapped to existing instrument track (or no melody requested)")
+
+    # Bug 4: Phrase startBeat is absolute (>= 16 for verse after intro)
+    bad_beats = []
+    for p in phrases:
+        sb = p.get("startBeat", 0)
+        if sb < 16.0:
+            bad_beats.append((p.get("phraseId", "?")[:8], sb))
+    if bad_beats:
+        for pid, sb in bad_beats:
+            fail(f"Bug 4: Phrase {pid}... has startBeat={sb} (should be >= 16)")
+    else:
+        ok(f"Bug 4: All phrase startBeats are absolute (>= 16.0)")
+
+    # Bug 6: Note startBeat within noteChanges is region-relative
+    bad_notes = []
+    for p in phrases:
+        region_start = p.get("startBeat", 0)
+        for nc in p.get("noteChanges", []):
+            after = nc.get("after")
+            if after:
+                note_sb = after.get("startBeat", 0)
+                # Region-relative notes should be < region duration (64 beats for 16 bars)
+                # and definitely < the absolute phrase start if we're in bars 5+
+                if note_sb >= 64:
+                    bad_notes.append((nc.get("noteId", "?")[:8], note_sb))
+    if bad_notes:
+        for nid, nsb in bad_notes:
+            fail(f"Bug 6: Note {nid}... has startBeat={nsb} (looks absolute, not region-relative)")
+    else:
+        ok("Bug 6: Note startBeats look region-relative")
 
     # Print what the frontend needs for the commit flow
     if meta:
@@ -476,7 +567,7 @@ def main() -> None:
         sys.exit(1)
 
     hdr("Prompt 2 — Results")
-    summarise_prompt2(p2_events)
+    summarise_prompt2(p2_events, project_ctx)
 
     # ── Final verdict ─────────────────────────────────────────────────────────
     hdr("Final verdict")

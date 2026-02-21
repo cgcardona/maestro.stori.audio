@@ -49,9 +49,9 @@ Emitted when `state.state == "editing"`. Applied immediately by the frontend.
 
 | type | Description |
 |------|-------------|
-| `plan` | Structured plan emitted once after initial reasoning, before the first tool call. `{ "type": "plan", "planId": "uuid", "title": "Creating lo-fi intro (Cm, 72 BPM)", "steps": [{ "stepId": "1", "label": "Set tempo to 72 BPM", "status": "pending" }, { "stepId": "2", "label": "Set key to Cm", "status": "pending" }, { "stepId": "3", "label": "Create Drums track", "status": "pending" }, ...] }` |
-| `planStepUpdate` | Step lifecycle update. Emitted twice per step: `active` when starting, `completed` / `failed` / `skipped` when done. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "failed" \| "skipped", "result": "optional summary" }` |
-| `toolStart` | Fires **before** each `toolCall` with a human-readable label. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Creating Drums track" }` |
+| `plan` | Structured plan emitted once after initial reasoning, before the first tool call. Steps are ordered per-track (contiguous) so each instrument's steps appear together. Labels follow canonical patterns for frontend timeline grouping. `toolName` is present when the step maps to a specific tool, omitted otherwise. Instrument steps carry `parallelGroup: "instruments"` — steps sharing the same `parallelGroup` value execute concurrently (see [Parallel execution](#parallel-execution) below). `{ "type": "plan", "planId": "uuid", "title": "Building Lo-Fi Groove", "steps": [{ "stepId": "1", "label": "Set tempo to 72 BPM", "toolName": "stori_set_tempo", "status": "pending" }, { "stepId": "2", "label": "Set key signature to Cm", "toolName": "stori_set_key", "status": "pending" }, { "stepId": "3", "label": "Create Drums track", "toolName": "stori_add_midi_track", "parallelGroup": "instruments", "status": "pending" }, { "stepId": "4", "label": "Add content to Drums", "toolName": "stori_add_notes", "parallelGroup": "instruments", "detail": "8 bars, boom bap drums", "status": "pending" }, { "stepId": "5", "label": "Add effects to Drums", "toolName": "stori_add_insert_effect", "parallelGroup": "instruments", "detail": "Compressor", "status": "pending" }, ...] }`. See [Execution Timeline contract](#execution-timeline-contract) below. |
+| `planStepUpdate` | Step lifecycle update. `active` when starting, `completed` / `failed` when done. At plan completion, steps never activated are emitted as `skipped` — no step is left in `pending`. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "failed" \| "skipped", "result": "optional summary" }` |
+| `toolStart` | Fires **before** each `toolCall` with a human-readable label. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Create Drums track" }` |
 | `toolCall` | Resolved tool call for the frontend to apply. `{ "type": "toolCall", "id": "...", "name": "stori_add_midi_track", "params": { "trackId": "uuid", ... } }`. **Critical: key is `"params"` (not `"arguments"`); key is `"name"` (not `"tool"`). All IDs are fully-resolved UUIDs.** |
 | `toolError` | Non-fatal validation error. Stream continues. `{ "type": "toolError", "name": "stori_add_notes", "error": "Region not found", "errors": ["..."] }` |
 | `complete` | Stream done. Includes `inputTokens` and `contextWindowTokens` (see global `complete` row above). |
@@ -66,8 +66,8 @@ COMPOSING now emits the same `reasoning`, `plan`, `planStepUpdate`, `toolStart`,
 |------|-------------|
 | `reasoning` | Streamed planner chain-of-thought (same as EDITING/REASONING). Emitted during the LLM planning phase before the plan is ready. Deterministic plans (structured prompts with all fields) skip this. |
 | `plan` | Structured plan (same shape as EDITING). `{ "type": "plan", "planId": "uuid", "title": "...", "steps": [...] }` |
-| `planStepUpdate` | Step lifecycle (same as EDITING). `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" }` |
-| `toolStart` | Fires before each tool call during variation execution. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Creating Drums track" }` |
+| `planStepUpdate` | Step lifecycle (same as EDITING). Unactivated steps emitted as `skipped` at completion. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "skipped" }` |
+| `toolStart` | Fires before each tool call during variation execution. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Create Drums track" }` |
 | `toolCall` | Proposal tool call. **`proposal: true`** — the frontend renders this for transparency but does NOT apply it to the DAW. `{ "type": "toolCall", "id": "...", "name": "...", "params": {...}, "proposal": true }` |
 | `meta` | Variation summary. `{ "type": "meta", "variationId": "uuid", "baseStateId": "42", "intent": "...", "aiExplanation": "...", "affectedTracks": [...], "affectedRegions": [...], "noteCounts": { "added": 32, "removed": 0, "modified": 0 } }`. Use `baseStateId: "0"` for first variation after editing. |
 | `phrase` | One musical phrase. `{ "type": "phrase", "phraseId": "uuid", "trackId": "uuid", "regionId": "uuid", "startBeat": 0.0, "endBeat": 16.0, "label": "...", "tags": [...], "explanation": "...", "noteChanges": [...], "controllerChanges": [] }` |
@@ -101,12 +101,14 @@ Emitted when `state.state == "reasoning"`. No tools; chat only.
 
 **EDITING:**
 ```
-state → reasoning* → plan → planStepUpdate(active) → toolStart → toolCall → planStepUpdate(completed) → ... → content? → budgetUpdate → complete
+state → reasoning* → plan → [planStepUpdate(active) → toolStart → toolCall → planStepUpdate(completed)]* → planStepUpdate(skipped)* → content? → budgetUpdate → complete
 ```
+
+Steps are grouped per-track (contiguous) in the `plan` event. During execution, instrument steps with the same `parallelGroup` may interleave (see [Parallel execution](#parallel-execution)). At completion, any steps never activated are emitted as `skipped` before `complete`.
 
 **COMPOSING (unified):**
 ```
-state → reasoning* → plan → [planStepUpdate(active) → toolStart → toolCall(proposal:true) → planStepUpdate(completed)]* → meta → phrase* → done → complete
+state → reasoning* → plan → [planStepUpdate(active) → toolStart → toolCall(proposal:true) → planStepUpdate(completed)]* → planStepUpdate(skipped)* → meta → phrase* → done → complete
 ```
 
 Deprecated aliases `planSummary` and `progress` are still emitted alongside the new events during the transition period.
@@ -117,6 +119,69 @@ state → reasoning* → content → complete
 ```
 
 `*` = zero or more events. `complete` is always final, even on errors.
+
+### Parallel execution
+
+When a composition involves multiple instruments, the executor runs them concurrently during Phase 2 (INSTRUMENTS). This changes the event ordering for `planStepUpdate` and `toolCall` events:
+
+```
+Phase 1 (sequential):
+  planStepUpdate(stepId=1, active) → toolStart → toolCall → planStepUpdate(stepId=1, completed)
+  planStepUpdate(stepId=2, active) → toolStart → toolCall → planStepUpdate(stepId=2, completed)
+
+Phase 2 (parallel — events from different instruments interleave):
+  planStepUpdate(stepId=3, active)   ← Drums starts
+  planStepUpdate(stepId=5, active)   ← Bass starts simultaneously
+  toolCall: stori_add_midi_track (Drums)
+  toolCall: stori_add_midi_track (Bass)
+  planStepUpdate(stepId=3, completed)
+  toolCall: stori_add_notes (Drums)
+  planStepUpdate(stepId=5, completed)
+  ...
+
+Phase 3 (sequential, after all instruments complete):
+  planStepUpdate(stepId=9, active) → toolStart → toolCall → planStepUpdate(stepId=9, completed)
+```
+
+**Frontend handling:** The frontend already groups `planStepUpdate` events by `stepId`, so interleaved events are handled naturally. Steps with `parallelGroup: "instruments"` may have `status: "active"` simultaneously. The `ExecutionTimelineView` shows all instruments progressing at once.
+
+**Backward compatibility:** Single-instrument requests produce no `parallelGroup` annotations and execute sequentially as before.
+
+### Execution Timeline contract
+
+The `plan` event and subsequent `planStepUpdate` events are designed to power the frontend's `ExecutionTimelineView`, which renders a hierarchical, per-instrument progress timeline. The frontend groups and humanises steps client-side by parsing the `label` field. The backend guarantees the following contract:
+
+**Step fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `stepId` | string | yes | Unique step identifier |
+| `label` | string | yes | Canonical pattern — the frontend parses this for grouping (see patterns below) |
+| `toolName` | string | no | Exact MCP tool name (e.g. `"stori_add_midi_track"`). Present when the step maps to a specific tool; omitted otherwise (decodes to `nil` in Swift). |
+| `parallelGroup` | string | no | Steps sharing the same value execute concurrently. Currently `"instruments"` for track-bound steps. Absent on sequential setup/mixing steps. See [Parallel execution](#parallel-execution). |
+| `status` | string | yes | One of `"pending"`, `"active"`, `"completed"`, `"skipped"`, `"failed"` |
+| `detail` | string | no | Short, forward-looking description from a musician's perspective (e.g. "8 bars of funk bass") |
+| `result` | string | no | Populated in `planStepUpdate` on completion. Backward-looking outcome (e.g. "32 notes generated - 4 bars") |
+
+**Canonical label patterns** (used by the frontend for section grouping):
+
+| Pattern | Track-bound | Example |
+|---------|-------------|---------|
+| `Create <TrackName> track` | yes | `Create Drums track` |
+| `Add content to <TrackName>` | yes | `Add content to Synth Bass` |
+| `Add effects to <TrackName>` | yes | `Add effects to Drums` |
+| `Add MIDI CC to <TrackName>` | yes | `Add MIDI CC to Piano` |
+| `Add pitch bend to <TrackName>` | yes | `Add pitch bend to Guitar Lead` |
+| `Write automation for <TrackName>` | yes | `Write automation for Strings` |
+| `Set tempo to <N> BPM` | no | `Set tempo to 120 BPM` |
+| `Set key signature to <Key>` | no | `Set key signature to A minor` |
+| `Set up shared <BusName> bus` | no | `Set up shared Reverb bus` |
+
+Track names use title-case with spaces and are consistent across all steps referring to the same instrument.
+
+**Step ordering:** In the `plan` event, steps are emitted in track-contiguous order. All steps for one instrument appear together (create, content, effects, expressive) before moving to the next instrument. Project-level setup steps (tempo, key) come first; shared bus setup comes last. During execution, instrument steps with `parallelGroup` may interleave across instruments (see [Parallel execution](#parallel-execution)).
+
+**Terminal status guarantee:** Every step reaches a terminal status (`completed`, `failed`, or `skipped`) before `complete` is emitted. The backend calls `finalize_pending_as_skipped()` at plan completion to ensure no step remains in `pending`.
 
 ---
 
@@ -139,9 +204,12 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 - **Track volume:** `volumeDb` (dB; 0 = unity). Not 0–1.
 - **Track pan:** `pan` in range -100 (left) to 100 (right).
-- **Insert effect:** `stori_add_insert_effect` with param `type` (e.g. `"reverb"`, `"compressor"`).
-- **Send:** `stori_add_send` uses `busId` (from `stori_ensure_bus` or DAW).
-- **Notes:** In `stori_add_notes`, each note uses `startBeat`, `durationBeats`, `velocity` (1–127).
+- **Insert effect:** `stori_add_insert_effect` with param `type` (e.g. `"reverb"`, `"compressor"`, `"eq"`, `"overdrive"`, `"distortion"`, `"chorus"`, `"tremolo"`, `"delay"`, `"filter"`, `"phaser"`, `"flanger"`).
+- **Bus send:** `stori_add_send` uses `busId` returned by `stori_ensure_bus`. Call `stori_ensure_bus` first — the server guarantees ordering.
+- **Notes:** In `stori_add_notes`, each note uses `startBeat`, `durationBeats`, `velocity` (1–127). The `notes` array is required and must contain real MIDI note objects — shorthand params like `_noteCount` or `_beatRange` are rejected. For large note counts (>128), call `stori_add_notes` multiple times on the same `regionId`; each call appends.
+- **MIDI CC:** `stori_add_midi_cc` uses `cc` (0–127) and `events` array of `{beat, value}`. Common numbers: CC 1 = modulation, CC 11 = expression, CC 64 = sustain (127=down / 0=up), CC 74 = filter cutoff, CC 91 = reverb send, CC 93 = chorus send.
+- **Pitch bend:** `stori_add_pitch_bend` uses `events` array of `{beat, value}`. Values: 0 = center, −8192 = max down, +8191 = max up. ±4096 ≈ ±1 semitone; ±8192 ≈ ±2 semitones; ±1024 ≈ quarter-tone.
+- **Automation:** `stori_add_automation` uses `target` (trackId) and `points` array of `{beat, value, curve}`. Curve values: `"Linear"`, `"Smooth"`, `"Step"`, `"Exp"`, `"Log"`. Common params: `volume`, `pan`, `reverb_wet`, `filter_cutoff`, `tremolo_rate`, `delay_feedback`.
 - **Quantize:** `stori_quantize_notes` uses `grid`: `"1/4"`, `"1/8"`, `"1/16"`, `"1/32"`, `"1/64"`.
 - **Region:** `stori_add_midi_region` uses `startBeat`, `durationBeats`.
 
@@ -200,9 +268,13 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
-| `stori_add_insert_effect` | Add insert effect. | `trackId`, `type` (reverb, delay, compressor, eq, distortion, filter, chorus, etc.) |
+| `stori_add_insert_effect` | Add insert effect. | `trackId`, `type` (reverb, delay, compressor, eq, distortion, overdrive, filter, chorus, tremolo, phaser, flanger, modulation) |
 | `stori_add_send` | Send track to bus. | `trackId`, `busId`, `levelDb` |
 | `stori_ensure_bus` | Create bus if missing. | `name` |
+
+**Auto-inference from STORI PROMPTs:** The planner infers effects from `Style` and `Role` fields before any LLM call — drums always get a compressor, pads/lead get a reverb send, and style-specific inserts (distortion for rock, filter for lo-fi, etc.) are added automatically. Suppress with `Constraints: no_effects: true`.
+
+**Translation from STORI PROMPT `Effects` block:** When a structured prompt includes an `Effects:` YAML block, every entry is translated into a `stori_add_insert_effect` call. Reverb is routed via a shared `Reverb` bus (`stori_ensure_bus` → `stori_add_send`), never as a direct insert, so `stori_ensure_bus` is always guaranteed to precede any `stori_add_send` for the same bus name.
 
 ---
 
@@ -210,9 +282,14 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
-| `stori_add_automation` | Add automation. | `target`, `points` (array of `beat`, `value`, optional `curve`) |
-| `stori_add_midi_cc` | Add MIDI CC events. | `regionId`, `cc` (0–127), `events` |
-| `stori_add_pitch_bend` | Add pitch bend events. | `regionId`, `events` |
+| `stori_add_automation` | Add track-level automation curves. | `target` (trackId), `points` (array of `{beat, value, curve?}`) |
+| `stori_add_midi_cc` | Add MIDI CC events to a region. | `regionId`, `cc` (0–127), `events` (array of `{beat, value}`) |
+| `stori_add_pitch_bend` | Add pitch bend events to a region. | `regionId`, `events` (array of `{beat, value}`) — values −8192 to +8191 |
+| `stori_add_aftertouch` | Add aftertouch events (channel or polyphonic). | `regionId`, `events` (each `{beat, value}` or `{beat, value, pitch}`) |
+
+**Translation from STORI PROMPT `MidiExpressiveness` block:** `cc_curves` entries → `stori_add_midi_cc`; `pitch_bend` style → `stori_add_pitch_bend`; `sustain_pedal` → `stori_add_midi_cc` with CC 64 (127=down, 0=up). These calls happen after notes are added to the region.
+
+**Translation from STORI PROMPT `Automation` block:** Each lane → `stori_add_automation` using the trackId returned by `stori_add_midi_track`.
 
 ---
 
@@ -257,8 +334,8 @@ These run in Maestro and call the music model; they do not require a connected D
 | Track | 10 |
 | Region | 5 |
 | Notes | 4 |
-| Effects | 4 |
-| Automation / MIDI control | 3 |
+| Effects & routing | 3 |
+| Automation / MIDI control | 4 |
 | Generation | 5 |
 | Playback | 3 |
 | UI | 2 |

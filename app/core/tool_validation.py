@@ -110,6 +110,17 @@ TOOL_REQUIRED_FIELDS = {
     "stori_quantize_notes": ["regionId", "gridSize"],
     "stori_transpose_notes": ["regionId", "semitones"],
     "stori_move_region": ["regionId", "startBeat"],
+    "stori_add_automation": ["trackId", "parameter", "points"],
+}
+
+# Canonical parameter values for stori_add_automation (frontend AutomationParameter.rawValue)
+AUTOMATION_CANONICAL_PARAMETERS: set[str] = {
+    "Volume", "Pan",
+    "EQ Low", "EQ Mid", "EQ High",
+    "Mod Wheel (CC1)", "Volume (CC7)", "Pan (CC10)",
+    "Expression (CC11)", "Sustain (CC64)", "Filter Cutoff (CC74)",
+    "Pitch Bend",
+    "Synth Cutoff", "Synth Resonance", "Synth Attack", "Synth Release",
 }
 
 
@@ -640,17 +651,38 @@ def _validate_tool_specific(tool_name: str, params: dict[str, Any]) -> list[Vali
             ))
     
     elif tool_name == "stori_add_notes":
+        # Detect known shorthand/placeholder params the model sometimes uses
+        _FAKE_PARAMS = {"_noteCount", "_beatRange", "_placeholder", "_notes", "_count", "_summary"}
+        fake_keys = _FAKE_PARAMS.intersection(params.keys())
+        notes_in_params = "notes" in params
         notes = params.get("notes", [])
-        if not isinstance(notes, list):
+
+        if fake_keys or not notes_in_params:
+            received = {k: v for k, v in params.items() if k != "regionId"}
             errors.append(ValidationError(
                 field="notes",
-                message="notes must be an array",
+                message=(
+                    f"'notes' array is required and must be a real MIDI note array. "
+                    f"Shorthand params like {sorted(fake_keys) or list(received.keys())} are not valid. "
+                    f"Each element must be: {{\"pitch\": 0-127, \"startBeat\": ≥0, "
+                    f"\"durationBeats\": >0, \"velocity\": 1-127}}. "
+                    f"Received: {received}"
+                ),
+                code="MISSING_REQUIRED",
+            ))
+        elif not isinstance(notes, list):
+            errors.append(ValidationError(
+                field="notes",
+                message="notes must be an array of MIDI note objects",
                 code="TYPE_MISMATCH",
             ))
         elif len(notes) == 0:
             errors.append(ValidationError(
                 field="notes",
-                message="notes array cannot be empty",
+                message=(
+                    "notes array cannot be empty. Provide real MIDI note objects: "
+                    "[{\"pitch\": 60, \"startBeat\": 0, \"durationBeats\": 1, \"velocity\": 80}, ...]"
+                ),
                 code="INVALID_VALUE",
             ))
         else:
@@ -708,7 +740,43 @@ def _validate_tool_specific(tool_name: str, params: dict[str, Any]) -> list[Vali
                 message=f"Invalid gridSize '{grid_size}'. Valid: 0.0625(1/64) 0.125(1/32) 0.25(1/16) 0.5(1/8) 1.0(1/4) 2.0(1/2) 4.0(whole)",
                 code="INVALID_VALUE",
             ))
-    
+
+    elif tool_name == "stori_add_automation":
+        # Reject the old 'target' field — must use 'trackId'
+        if "target" in params and "trackId" not in params:
+            errors.append(ValidationError(
+                field="trackId",
+                message=(
+                    "stori_add_automation requires 'trackId' (not 'target'). "
+                    "Replace target=... with trackId=..."
+                ),
+                code="WRONG_PARAM_NAME",
+            ))
+        # Require 'parameter' field with a canonical value
+        parameter = params.get("parameter")
+        if not parameter:
+            errors.append(ValidationError(
+                field="parameter",
+                message=(
+                    "stori_add_automation requires 'parameter' — the canonical automation "
+                    "parameter string. Valid values: 'Volume', 'Pan', 'EQ Low', 'EQ Mid', "
+                    "'EQ High', 'Mod Wheel (CC1)', 'Volume (CC7)', 'Pan (CC10)', "
+                    "'Expression (CC11)', 'Sustain (CC64)', 'Filter Cutoff (CC74)', "
+                    "'Pitch Bend', 'Synth Cutoff', 'Synth Resonance', 'Synth Attack', "
+                    "'Synth Release'"
+                ),
+                code="MISSING_REQUIRED",
+            ))
+        elif parameter not in AUTOMATION_CANONICAL_PARAMETERS:
+            errors.append(ValidationError(
+                field="parameter",
+                message=(
+                    f"'{parameter}' is not a valid automation parameter. "
+                    f"Valid values: {sorted(AUTOMATION_CANONICAL_PARAMETERS)}"
+                ),
+                code="INVALID_VALUE",
+            ))
+
     return errors
 
 

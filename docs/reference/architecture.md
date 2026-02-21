@@ -21,7 +21,7 @@ How the backend works: one engine, two entry points; request flow; intent; execu
    - REASONING -> no tools
 4. **REASONING:** Chat only; no tools; stream `reasoning` + `content` events.
 5. **EDITING:** LLM gets a tool allowlist; emits tool calls; server validates and resolves entity IDs. Emits a structured `plan` event (checklist of steps) before the first tool call, then `planStepUpdate` events bracketing each step, and `toolStart` + `toolCall` events for each tool.
-6. **COMPOSING:** Planner produces a plan (JSON); executor simulates it without mutation; server streams Variation events (`meta`, `phrase*`, `done`). Frontend enters Variation Review Mode. User accepts or discards.
+6. **COMPOSING:** Planner produces a plan (JSON); executor simulates it without mutation; server streams Variation events (`meta`, `phrase*`, `done`). Frontend enters Variation Review Mode. User accepts or discards. The planner is **project-context-aware**: it checks existing tracks by name and instrument type before proposing new ones, reuses existing track UUIDs in region and generator calls, and maps abstract roles (e.g. "melody") to matching existing instruments (e.g. an "Organ" track).
 7. **Stream:** Events include `state`, `reasoning`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `toolError`, `meta`, `phrase`, `done`, `budgetUpdate`, `complete`, `error`. Variable refs (`$0.trackId`) resolved server-side. `complete` is **always the final event**, even on errors (`success: false`).
 
 ---
@@ -51,8 +51,11 @@ When an EDITING request produces two or more tool calls, the backend emits a str
 state → reasoning* → plan → planStepUpdate(active) → toolStart → toolCall → planStepUpdate(completed) → ... → complete
 ```
 
-- **`plan`** — emitted once after initial reasoning, before the first tool call. Contains `planId`, `title` (with musical params like key and tempo), and `steps[]` (each with `stepId`, `label`, `status: "pending"`, optional `detail`).
-- **`planStepUpdate`** — emitted twice per step: `status: "active"` when starting, `status: "completed"` (or `"failed"` / `"skipped"`) when done, with an optional `result` summary string.
+- **`plan`** — emitted once after initial reasoning, before the first tool call. Contains `planId`, `title` (musically descriptive, e.g. "Building Funk Groove", "Composing Lo-Fi Hip Hop", "Setting Up 6-Track Jazz"), and `steps[]` (each with `stepId`, `label`, `status: "pending"`, `toolName`, optional `detail`).
+- **Step labels** follow canonical patterns that the frontend uses for per-instrument timeline grouping: `"Create <TrackName> track"`, `"Add content to <TrackName>"`, `"Add effects to <TrackName>"`, `"Add MIDI CC to <TrackName>"`, `"Add pitch bend to <TrackName>"`, `"Write automation for <TrackName>"`. Project-level steps use patterns without a track target: `"Set tempo to 120 BPM"`, `"Set key signature to A minor"`, `"Set up shared Reverb bus"`.
+- **Step ordering** is track-contiguous: all steps for one instrument appear together (create → content → effects → expressive) before the next instrument's steps begin.
+- **`toolName`** is present when the step maps to a specific tool, containing the canonical MCP tool name (e.g. `"stori_add_midi_track"`, `"stori_add_notes"`). Omitted (not empty string) when no tool applies, so Swift decodes it as `nil`. The frontend uses this for icon and color resolution independently of the label text.
+- **`planStepUpdate`** — emitted per step: `status: "active"` when starting, `status: "completed"` (or `"failed"`) when done, with an optional `result` summary string. Steps that are never activated are emitted as `status: "skipped"` at plan completion — no step remains in `"pending"` after the stream ends.
 - For composition mode (multi-iteration), the plan summary is also injected into the system prompt for subsequent LLM batches, reducing redundant chain-of-thought.
 
 ---
@@ -94,9 +97,115 @@ Implementation: `app/core/prompt_parser.py` (parser), `app/core/intent.py` (rout
 
 ---
 
+## Effects and mix routing
+
+Effects are added through two complementary mechanisms that both produce real tool calls.
+
+### 1. Deterministic planner inference
+
+When a structured prompt specifies `Style` and `Role`, the planner infers effects before any LLM call via `_infer_mix_steps`. This runs regardless of whether an `Effects:` block is present.
+
+**Role-based defaults (always applied):**
+- Drums → `stori_add_insert_effect(type="compressor")`
+- Bass → `stori_add_insert_effect(type="compressor")`
+- Pads / melody / lead → `stori_add_send` to shared "Reverb" bus
+
+**Style overrides (additive):**
+- Rock / metal / shoegaze → distortion on lead; high-compression on drums
+- Lo-fi / chill → filter on drums; chorus on lead/pads
+- Jazz → reverb on chords; mild compression on drums
+- Shoegaze → distortion + chorus + heavy reverb on lead
+
+**Routing rule:** Reverb is always routed via `stori_add_send` to a shared bus, never as a direct insert. `stori_ensure_bus` is guaranteed to precede any `stori_add_send` for the same bus name.
+
+**Suppression:** `Constraints: no_effects: true` disables all effect inference.
+
+Implementation: `app/core/planner._infer_mix_steps`, wired into `plan_from_parsed_prompt` and `_schema_to_tool_calls`.
+
+### 2. STORI PROMPT block translation
+
+When a STORI PROMPT includes `Effects:`, `MidiExpressiveness:`, or `Automation:` blocks, every entry is translated into the corresponding tool call. These are **mandatory** — the system prompt explicitly instructs the LLM to treat them as an execution checklist, not decorative prose.
+
+| STORI PROMPT block | Translated to |
+|---|---|
+| `Effects.drums.compression` | `stori_add_insert_effect(type="compressor")` |
+| `Effects.drums.room/reverb` | `stori_add_insert_effect(type="reverb")` or reverb bus send |
+| `Effects.bass.saturation/tube` | `stori_add_insert_effect(type="overdrive")` |
+| `Effects.lead.overdrive` | `stori_add_insert_effect(type="overdrive")` |
+| `Effects.lead.distortion` | `stori_add_insert_effect(type="distortion")` |
+| `Effects.*.chorus/tremolo/delay/filter` | `stori_add_insert_effect(type=…)` |
+| `MidiExpressiveness.cc_curves[cc: N]` | `stori_add_midi_cc(cc=N, events=[{beat,value},…])` |
+| `MidiExpressiveness.pitch_bend` | `stori_add_pitch_bend(events=[{beat,value},…])` |
+| `MidiExpressiveness.sustain_pedal` | `stori_add_midi_cc(cc=64, events=[…])` — 127=down, 0=up |
+| `Automation[track, param, events]` | `stori_add_automation(target=trackId, points=[…])` |
+
+The plan tracker surfaces each expressive block as a visible plan step with canonical per-track labels (`"Add effects to Drums"`, `"Add MIDI CC to Bass"`, `"Add pitch bend to Guitar Lead"`, `"Write automation for Strings"`) so the frontend's `ExecutionTimelineView` can group them into the correct instrument sections.
+
+Implementation: `app/core/prompts.structured_prompt_context` (translation mandate injection), `app/core/prompts.editing_composition_prompt` (step-by-step guide), `app/core/maestro_handlers._PlanTracker.build_from_prompt` (plan steps).
+
+---
+
+## Parallel instrument execution
+
+Multi-instrument compositions (3+ instruments) benefit from parallel execution. The executor groups tool calls into three phases and runs independent instruments concurrently:
+
+```
+Phase 1 — SETUP (sequential)
+  └── Set tempo, key, time signature
+
+Phase 2 — INSTRUMENTS (parallel, one pipeline per instrument)
+  ├── Drums    → create track → add region → generate MIDI → add effects → CC
+  ├── Bass     → create track → add region → generate MIDI → add effects → CC
+  ├── Guitar   → create track → add region → generate MIDI → add effects → CC
+  ├── Keys     → create track → add region → generate MIDI → add effects → CC
+  └── Strings  → create track → add region → generate MIDI → add effects → CC
+
+Phase 3 — MIXING (sequential, after all instruments complete)
+  └── Ensure buses, add sends, volume, pan adjustments
+```
+
+**SSE contract:** Plan steps for instruments carry `parallelGroup: "instruments"`. Steps without `parallelGroup` run sequentially (Phase 1 and Phase 3). Multiple `planStepUpdate(active)` events fire simultaneously during Phase 2; tool calls from different instruments interleave in the SSE stream. The frontend's `ExecutionTimelineView` handles this naturally since it groups by `stepId`.
+
+**Concurrency:** Bounded by a semaphore (max 5 concurrent instrument pipelines) to avoid overwhelming Orpheus. Within each instrument pipeline, tool calls execute sequentially (you can't generate notes before the region exists).
+
+**Thread safety:** asyncio's single-threaded model ensures no data races in `StateStore` or `EntityRegistry` entity creation. Each instrument creates its own track/region with UUID-based IDs (collision-free).
+
+**Performance:** For a 5-instrument, 15-step composition: `setup_time + max(instrument_times) + mixing_time` instead of `15 × avg_step_time`. Expected speedup: 3–5× for the instrument phase.
+
+Implementation: `app/core/executor._group_into_phases` (phase splitting), `app/core/executor.execute_plan_variation` (parallel dispatch), `app/core/maestro_handlers._PlanTracker` (parallel step tracking).
+
+---
+
+## Execution safety
+
+**Circuit breaker — `stori_add_notes`:** If the LLM makes three consecutive failed `stori_add_notes` calls for the same region (e.g. submitting shorthand placeholder params like `_noteCount` instead of a real `notes` array), the backend stops retrying for that region and emits a `toolError` event with a clear message. This prevents infinite retry loops. Tracked per `regionId` in `_handle_editing`.
+
+**Tool validation — fake params:** `stori_add_notes` validation rejects known shorthand parameters (`_noteCount`, `_beatRange`, `_placeholder`, `_notes`, `_count`, `_summary`) with a detailed error message explaining the required format. An empty `notes: []` array is also rejected.
+
+**No-op step elimination:** `_PlanTracker.build_from_prompt` compares requested tempo and key against the current project state and skips the corresponding plan step if the value already matches. Similarly, `_try_deterministic_plan` and the planner's track-reuse logic query `infer_track_role` to avoid creating duplicate tracks when existing tracks already fulfil the requested role.
+
+---
+
 ## Music generation
 
 **Orpheus required** for composing. No pattern fallback; if Orpheus is down, generation fails with a clear error. Config: `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`). Full health requires Orpheus. See [setup.md](../guides/setup.md) for config.
+
+### Expressive MIDI pipeline
+
+The generation pipeline carries the **complete set** of musically relevant MIDI messages — not just notes:
+
+| Data type | Pipeline field | MIDI message | Examples |
+|-----------|---------------|-------------|----------|
+| Notes | `notes` | Note On/Off (0x9n/0x8n) | pitch, velocity, duration, channel |
+| Control Change | `cc_events` | CC (0xBn) | sustain (64), expression (11), mod (1), volume (7), pan (10), filter (74), reverb (91), etc. — all 128 CCs |
+| Pitch Bend | `pitch_bends` | PB (0xEn) | 14-bit signed (−8192 to 8191) |
+| Aftertouch | `aftertouch` | Channel Pressure (0xDn) / Poly Key Pressure (0xAn) | Channel-wide or per-note pressure |
+| Program Change | track-level | PC (0xCn) | `stori_set_midi_program` |
+| Automation | track-level | n/a (DAW param curves) | `stori_add_automation` (volume, pan, FX) |
+
+**Data flow:** Orpheus generates notes + CC + pitch bend + aftertouch → `GenerationResult` → executor records into `VariationContext` → variation service groups into `Phrase.controller_changes` → commit materialises into `updated_regions` (cc_events, pitch_bends, aftertouch arrays) → frontend replaces region data.
+
+In non-variation mode (EDITING), expressive data is written to `StateStore` directly and returned in `toolCall` results.
 
 ### Emotion vector conditioning
 
@@ -151,7 +260,7 @@ For **natural language** prompts: the EmotionVector is not derived (no structure
 For Claude / Anthropic models (via OpenRouter), Maestro applies **Anthropic's prompt cache** breakpoints to:
 
 1. **System prompt** — the full Maestro system prompt (~1,500–2,000 tokens), cached on every request.
-2. **Tools array** — the 22 DAW tool definitions (~3,000–4,000 tokens), cached as a single block by marking the last tool with `cache_control: ephemeral`.
+2. **Tools array** — the full DAW tool definitions (~3,000–4,000 tokens), cached as a single block by marking the last tool with `cache_control: ephemeral`.
 
 On a **cache hit**, input token cost drops to ~10% of the uncached price (Anthropic charges ~0.1× for cached reads). The cache TTL is 5 minutes, refreshed on each hit during an active session. Cache hits/misses are logged at `INFO` level with `🗃️ Prompt cache:` prefix, making them easy to spot in production logs.
 

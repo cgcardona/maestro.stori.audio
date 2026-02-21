@@ -27,10 +27,11 @@ from app.core.expansion import ToolCall
 from app.core.intent import IntentResult, Intent
 from app.core.prompt_parser import ParsedPrompt
 from app.core.tools import build_tool_registry
-from app.core.prompts import composing_prompt, resolve_position, sequential_context, structured_prompt_context, system_prompt_base
+from app.core.prompts import composing_prompt, resolve_position, sequential_context, structured_prompt_routing_context, system_prompt_base
 from app.core.plan_schemas import (
     ExecutionPlanSchema,
     GenerationStep,
+    MixStep,
     extract_and_validate_plan,
     complete_plan,
     PlanValidationResult,
@@ -118,17 +119,19 @@ async def build_execution_plan(
     # Structured prompt fast path: if all key fields are present, build
     # the plan deterministically without an LLM call.
     if parsed is not None:
-        deterministic = _try_deterministic_plan(parsed, start_beat=start_beat)
+        deterministic = _try_deterministic_plan(
+            parsed, start_beat=start_beat, project_state=project_state,
+        )
         if deterministic is not None:
             return deterministic
 
     sys = system_prompt_base() + "\n" + composing_prompt()
 
     # Inject structured context if available (partial structured prompt
-    # that couldn't be built deterministically)
+    # that couldn't be built deterministically).  Routing fields only —
+    # Maestro extensions go to the executor, not the planner.
     if parsed is not None:
-        sys += structured_prompt_context(parsed)
-        # Tell the LLM where to place new content in the arrangement
+        sys += structured_prompt_routing_context(parsed)
         if parsed.position is not None:
             sys += sequential_context(start_beat, parsed.section, pos=parsed.position)
     
@@ -150,7 +153,7 @@ async def build_execution_plan(
     llm_response_text = resp.content or ""
     logger.debug(f"📋 Planner LLM response length: {len(llm_response_text)} chars")
 
-    return _finalise_plan(llm_response_text)
+    return _finalise_plan(llm_response_text, project_state=project_state)
 
 
 async def build_execution_plan_stream(
@@ -185,7 +188,9 @@ async def build_execution_plan_stream(
 
     # Deterministic fast-path — no LLM, no reasoning to stream.
     if parsed is not None:
-        deterministic = _try_deterministic_plan(parsed, start_beat=start_beat)
+        deterministic = _try_deterministic_plan(
+            parsed, start_beat=start_beat, project_state=project_state,
+        )
         if deterministic is not None:
             yield deterministic
             return
@@ -193,7 +198,7 @@ async def build_execution_plan_stream(
     sys = system_prompt_base() + "\n" + composing_prompt()
 
     if parsed is not None:
-        sys += structured_prompt_context(parsed)
+        sys += structured_prompt_routing_context(parsed)
         if parsed.position is not None:
             sys += sequential_context(start_beat, parsed.section, pos=parsed.position)
 
@@ -216,6 +221,7 @@ async def build_execution_plan_stream(
         tools=None,
         tool_choice=None,
         temperature=0.1,
+        reasoning_fraction=0.15,
     ):
         if chunk.get("type") == "reasoning_delta":
             reasoning_text = chunk.get("text", "")
@@ -260,10 +266,13 @@ async def build_execution_plan_stream(
     logger.debug(f"📋 Planner (stream) LLM response length: {len(llm_response_text)} chars")
 
     # From here the logic is identical to the non-streaming path.
-    yield _finalise_plan(llm_response_text)
+    yield _finalise_plan(llm_response_text, project_state=project_state)
 
 
-def _finalise_plan(llm_response_text: str) -> ExecutionPlan:
+def _finalise_plan(
+    llm_response_text: str,
+    project_state: Optional[dict[str, Any]] = None,
+) -> ExecutionPlan:
     """Shared post-LLM logic: validate, complete, and convert a plan."""
     validation = extract_and_validate_plan(llm_response_text)
 
@@ -296,7 +305,9 @@ def _finalise_plan(llm_response_text: str) -> ExecutionPlan:
             validation_result=validation,
         )
 
-    tool_calls = _schema_to_tool_calls(plan_schema)
+    tool_calls = _schema_to_tool_calls(
+        plan_schema, project_state=project_state,
+    )
 
     logger.info(
         f"✅ Planner generated {len(tool_calls)} tool calls "
@@ -319,18 +330,20 @@ def _finalise_plan(llm_response_text: str) -> ExecutionPlan:
 def _try_deterministic_plan(
     parsed: ParsedPrompt,
     start_beat: float = 0.0,
+    project_state: Optional[dict[str, Any]] = None,
 ) -> Optional[ExecutionPlan]:
     """
     Build an execution plan deterministically from a structured prompt.
 
     Requires: style, tempo, roles, and bars (from constraints).
     When all are present, we skip the LLM entirely — zero inference overhead.
-    Returns None if any required field is missing (caller falls back to LLM).
 
     Args:
         parsed: The parsed structured prompt.
         start_beat: Beat offset for all new regions, resolved from Position:.
             0.0 means start of project; 16.0 means after a 4-bar intro, etc.
+        project_state: Current project state — used to skip track creation for
+            existing tracks and to attach their UUIDs to region/generator calls.
     """
     if not parsed.style or not parsed.tempo or not parsed.roles:
         return None
@@ -365,7 +378,17 @@ def _try_deterministic_plan(
     if plan_schema is None:
         return None
 
-    tool_calls = _schema_to_tool_calls(plan_schema, region_start_offset=start_beat)
+    # Infer and attach effects based on style + roles (constraints may opt out)
+    if not parsed.constraints.get("no_effects") and not parsed.constraints.get("no reverb"):
+        mix_steps = _infer_mix_steps(parsed.style, parsed.roles)
+        if mix_steps:
+            plan_schema = plan_schema.model_copy(update={"mix": mix_steps})
+
+    tool_calls = _schema_to_tool_calls(
+        plan_schema,
+        region_start_offset=start_beat,
+        project_state=project_state,
+    )
 
     return ExecutionPlan(
         tool_calls=tool_calls,
@@ -378,22 +401,239 @@ def _try_deterministic_plan(
     )
 
 
-def _build_role_to_track_map(plan: ExecutionPlanSchema) -> dict[str, str]:
+# =============================================================================
+# Style → Effects inference for deterministic plans
+# =============================================================================
+
+# Per-role effects always applied regardless of style
+_ROLE_ALWAYS_EFFECTS: dict[str, list[str]] = {
+    "drums": ["compressor"],
+    "bass":  ["compressor"],
+    "pads":  ["reverb"],
+    "lead":  ["reverb"],
+    "chords": [],
+    "melody": [],
+    "arp":    ["reverb"],
+    "fx":     ["reverb", "delay"],
+}
+
+# Style-keyword → additional per-role overrides
+# Each entry: {style_keyword: {role: [effects]}}
+_STYLE_ROLE_EFFECTS: list[tuple[str, dict[str, list[str]]]] = [
+    # Rock / Metal / Prog
+    ("rock",       {"lead": ["distortion", "reverb"], "drums": ["compressor"], "bass": ["overdrive"]}),
+    ("metal",      {"lead": ["distortion"], "drums": ["compressor"], "bass": ["distortion"]}),
+    ("prog",       {"pads": ["reverb", "chorus"], "lead": ["reverb", "distortion"]}),
+    ("psychedel",  {"pads": ["reverb", "flanger"], "lead": ["reverb", "phaser"]}),
+
+    # Electronic
+    ("house",      {"drums": ["compressor"], "bass": ["compressor", "filter"], "pads": ["reverb", "chorus"]}),
+    ("techno",     {"drums": ["compressor"], "bass": ["distortion", "filter"]}),
+    ("trap",       {"drums": ["compressor"], "bass": ["filter"]}),
+    ("dubstep",    {"bass": ["distortion", "filter"], "drums": ["compressor"]}),
+    ("edm",        {"drums": ["compressor"], "pads": ["reverb", "chorus"], "lead": ["reverb", "delay"]}),
+
+    # Ambient / Cinematic
+    ("ambient",    {"pads": ["reverb", "chorus"], "melody": ["reverb", "delay"], "lead": ["reverb", "delay"]}),
+    ("cinematic",  {"pads": ["reverb"], "melody": ["reverb", "delay"]}),
+    ("post rock",  {"pads": ["reverb", "delay"], "lead": ["reverb", "delay"]}),
+    ("shoegaze",   {"lead": ["reverb", "chorus", "distortion"], "pads": ["reverb", "flanger"]}),
+
+    # Jazz / Blues
+    ("jazz",       {"chords": ["reverb"], "melody": ["reverb"], "bass": [], "drums": ["reverb"]}),
+    ("blues",      {"lead": ["overdrive", "reverb"], "chords": ["reverb"]}),
+    ("funk",       {"bass": ["compressor"], "drums": ["compressor"], "chords": ["chorus"]}),
+
+    # Lo-fi / Vintage
+    ("lofi",       {"drums": ["filter", "compressor"], "chords": ["reverb", "chorus"], "bass": []}),
+    ("lo-fi",      {"drums": ["filter", "compressor"], "chords": ["reverb", "chorus"]}),
+    ("vintage",    {"chords": ["chorus", "reverb"], "melody": ["reverb"]}),
+    ("tape",       {"drums": ["compressor"], "pads": ["reverb"]}),
+
+    # Soul / R&B / Neosoul
+    ("soul",       {"chords": ["reverb", "chorus"], "melody": ["reverb"]}),
+    ("r&b",        {"chords": ["reverb"], "bass": ["compressor"]}),
+    ("neosoul",    {"chords": ["reverb", "chorus"], "pads": ["reverb"], "drums": ["compressor"]}),
+
+    # Classical / Orchestral
+    ("classical",  {"pads": ["reverb"], "melody": ["reverb"], "chords": ["reverb"]}),
+    ("orchestral", {"pads": ["reverb"], "melody": ["reverb"], "chords": ["reverb"]}),
+
+    # Pop
+    ("pop",        {"drums": ["compressor"], "chords": ["reverb"], "melody": ["reverb"]}),
+    ("synth",      {"pads": ["chorus", "reverb"], "lead": ["reverb", "delay"]}),
+]
+
+
+def _infer_mix_steps(
+    style: str,
+    roles: list[str],
+) -> list["MixStep"]:
+    """Infer MixStep effects for a style + role combination.
+
+    Returns a flat list of MixStep objects ready to include in ExecutionPlanSchema.mix.
+    A shared Reverb bus is created and sends are added from every track that gets reverb.
+    Direct inserts (compressor, EQ, distortion) go on the individual tracks.
+    """
+    style_lower = style.lower()
+
+    # Collect per-role effects: start from always-on effects, then apply style overrides
+    role_effects: dict[str, set[str]] = {}
+    for role in roles:
+        effects = set(_ROLE_ALWAYS_EFFECTS.get(role, []))
+        for keyword, overrides in _STYLE_ROLE_EFFECTS:
+            if keyword in style_lower:
+                extra = overrides.get(role, [])
+                effects.update(extra)
+        if effects:
+            role_effects[role] = effects
+
+    if not role_effects:
+        return []
+
+    # Separate reverb (→ bus send) from insert effects
+    needs_reverb_bus = any("reverb" in efx for efx in role_effects.values())
+
+    steps: list[MixStep] = []
+
+    for role in roles:
+        track_name = role.capitalize()
+        effects = role_effects.get(role, set())
+
+        # Insert effects (everything except reverb)
+        for efx in sorted(effects - {"reverb"}):
+            try:
+                steps.append(MixStep(action="add_insert", track=track_name, type=efx))
+            except Exception:
+                pass  # skip invalid effect types
+
+        # Reverb → send to bus rather than insert
+        if "reverb" in effects and needs_reverb_bus:
+            try:
+                steps.append(MixStep(action="add_send", track=track_name, bus="Reverb"))
+            except Exception:
+                pass
+
+    return steps
+
+
+_ROLE_INSTRUMENT_HINTS: dict[str, set[str]] = {
+    "melody": {"organ", "piano", "guitar", "flute", "sax", "saxophone",
+               "trumpet", "violin", "synth", "lead", "keys", "keyboard",
+               "harmonica", "clarinet", "oboe", "fiddle", "mandolin"},
+    "bass": {"bass"},
+    "drums": {"drums", "drum", "percussion", "kit"},
+    "chords": {"organ", "piano", "guitar", "keys", "keyboard", "chord",
+               "rhodes", "wurlitzer", "clavinet", "harpsichord"},
+    "pads": {"pad", "strings", "ambient"},
+    "arp": {"arp", "synth"},
+    "lead": {"lead", "synth", "organ", "piano", "guitar"},
+}
+
+
+def _match_roles_to_existing_tracks(
+    roles: set[str],
+    project_state: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Map generation roles to existing project tracks by name, inferred role, then instrument.
+
+    Returns a dict of role → {"name": str, "id": str, "gmProgram": int|None}
+    for each role that has a matching existing track. Roles with no match
+    are absent from the result (the caller should create new tracks for them).
+    """
+    from app.core.entity_context import infer_track_role
+
+    tracks = project_state.get("tracks", [])
+    if not tracks:
+        return {}
+
+    # Index existing tracks with inferred role
+    existing: list[dict[str, Any]] = []
+    for t in tracks:
+        tname = t.get("name", "")
+        gm = t.get("gmProgram")
+        drum_kit = t.get("drumKitId")
+        inferred_role = t.get("role") or infer_track_role(tname, gm, drum_kit)
+        existing.append({
+            "name": tname,
+            "id": t.get("id", ""),
+            "gmProgram": gm,
+            "instrument": t.get("instrument", ""),
+            "inferred_role": inferred_role,
+        })
+
+    matched: dict[str, dict[str, Any]] = {}
+    claimed_ids: set[str] = set()
+
+    # Pass 1: inferred-role match (highest confidence — e.g. "pads" matches "Cathedral Pad")
+    for role in sorted(roles):
+        for track in existing:
+            if track["id"] in claimed_ids:
+                continue
+            if track["inferred_role"] == role:
+                matched[role] = track
+                claimed_ids.add(track["id"])
+                break
+
+    # Pass 2: exact name match for remaining roles
+    remaining_roles = roles - set(matched.keys())
+    for role in sorted(remaining_roles):
+        for track in existing:
+            if track["id"] in claimed_ids:
+                continue
+            name_lower = track["name"].lower()
+            if name_lower == role or role in name_lower:
+                matched[role] = track
+                claimed_ids.add(track["id"])
+                break
+
+    # Pass 3: instrument-keyword heuristic for remaining roles
+    remaining_roles = roles - set(matched.keys())
+    for role in sorted(remaining_roles):
+        hints = _ROLE_INSTRUMENT_HINTS.get(role, set())
+        if not hints:
+            continue
+        for track in existing:
+            if track["id"] in claimed_ids:
+                continue
+            name_lower = track["name"].lower()
+            inst_lower = (track.get("instrument") or "").lower()
+            if any(h in name_lower or h in inst_lower for h in hints):
+                matched[role] = track
+                claimed_ids.add(track["id"])
+                break
+
+    return matched
+
+
+def _build_role_to_track_map(
+    plan: ExecutionPlanSchema,
+    project_state: Optional[dict[str, Any]] = None,
+) -> dict[str, str]:
     """
     Build a mapping from generation role to actual track name.
     
-    This handles cases where the LLM creates descriptive track names
-    (e.g., "Jam Drums") that should be matched to roles (e.g., "drums").
+    Checks existing project tracks first (by name, then instrument keyword),
+    then falls back to plan edits. This prevents creating duplicate tracks
+    when the project already has matching instruments.
     
     Args:
         plan: The validated execution plan
+        project_state: Current project state (tracks with names/IDs)
         
     Returns:
         Dict mapping role (lowercase) to track name (original casing)
     """
     role_to_track: dict[str, str] = {}
     
-    # Extract all track names from edits
+    # If project context has existing tracks, prefer them
+    gen_roles = {g.role.lower() for g in plan.generations}
+    if project_state:
+        existing_match = _match_roles_to_existing_tracks(gen_roles, project_state)
+        for role, info in existing_match.items():
+            role_to_track[role] = info["name"]
+
+    # Extract all track names from edits (for roles not yet matched)
     track_names: list[str] = [
         edit.name for edit in plan.edits 
         if edit.action == "add_track" and edit.name
@@ -403,10 +643,11 @@ def _build_role_to_track_map(plan: ExecutionPlanSchema) -> dict[str, str]:
     all_roles = {"drums", "bass", "chords", "melody", "arp", "pads", "fx", "lead"}
     
     for role in all_roles:
+        if role in role_to_track:
+            continue
         # Check each track for a match
         for track_name in track_names:
             track_lower = track_name.lower()
-            # Exact match or role contained in track name
             if track_lower == role or role in track_lower:
                 role_to_track[role] = track_name
                 break
@@ -421,127 +662,198 @@ def _build_role_to_track_map(plan: ExecutionPlanSchema) -> dict[str, str]:
 def _schema_to_tool_calls(
     plan: ExecutionPlanSchema,
     region_start_offset: float = 0.0,
+    project_state: Optional[dict[str, Any]] = None,
 ) -> list[ToolCall]:
     """
     Convert validated plan schema to ToolCalls.
-    
-    Execution order is critical:
-    1. Create tracks (add_track edits)
-    2. Create regions (add_region edits)
-    3. Generate MIDI into regions (generations)
-    4. Apply mixing/effects (mix)
-    
+
+    Tool calls are grouped contiguously by track so the Execution Timeline
+    renders coherent per-instrument sections. Order within each track:
+      1. stori_add_midi_track (creation)
+      2. stori_set_track_color / stori_set_track_icon (styling)
+      3. stori_add_midi_region (region creation)
+      4. stori_generate_midi (content generation)
+      5. stori_add_insert_effect (insert effects for this track)
+
+    After all per-track groups:
+      6. stori_ensure_bus + stori_add_send (shared bus routing)
+      7. stori_set_track_volume / stori_set_track_pan (mix adjustments)
+
     Uses role→track mapping to ensure generations target the correct tracks
     when LLM uses descriptive names like "Jam Drums" instead of just "Drums".
 
     Args:
         region_start_offset: Beat offset applied to every new region's startBeat.
             Comes from a resolved Position: field (e.g. 16.0 = after a 4-bar intro).
+        project_state: Current project state. When provided, existing tracks are
+            reused (skipping add_track/set_color/set_icon) and their UUIDs are
+            attached to region and generator tool calls via trackId.
     """
-    tool_calls: list[ToolCall] = []
-    
+    project_state = project_state or {}
+
+    # Build index of existing tracks: lowercase name → {id, name, ...}
+    existing_tracks: dict[str, dict[str, Any]] = {}
+    for t in project_state.get("tracks", []):
+        name = t.get("name", "")
+        if name:
+            existing_tracks[name.lower()] = {
+                "id": t.get("id", ""),
+                "name": name,
+                "gmProgram": t.get("gmProgram"),
+            }
+
     # Build role→track name mapping for consistent targeting
-    role_to_track = _build_role_to_track_map(plan)
-    
-    # Step 1: Create tracks
+    role_to_track = _build_role_to_track_map(plan, project_state)
+
+    _role_mapped_existing: set[str] = set()
+    for role, target_name in role_to_track.items():
+        if target_name.lower() in existing_tracks:
+            _role_mapped_existing.add(role)
+
     from app.core.track_styling import get_track_styling
-    
-    track_styling_map = {}  # Store styling for later
-    
+
+    # ── Index edits and mix steps by track for per-track grouping ──
+    edits_by_track: dict[str, list[Any]] = {}
+    regions_by_track: dict[str, list[Any]] = {}
     for edit in plan.edits:
         if edit.action == "add_track" and edit.name:
-            styling = get_track_styling(edit.name)
-            track_styling_map[edit.name] = styling
-            
+            edits_by_track.setdefault(edit.name.lower(), []).append(edit)
+        elif edit.action == "add_region" and edit.track:
+            resolved = role_to_track.get(edit.track.lower(), edit.track)
+            regions_by_track.setdefault(resolved.lower(), []).append(edit)
+
+    inserts_by_track: dict[str, list[Any]] = {}
+    sends: list[Any] = []
+    buses: set[str] = set()
+    volume_pan: list[Any] = []
+    for mix in plan.mix:
+        if mix.action == "add_insert" and mix.type:
+            inserts_by_track.setdefault(mix.track.lower(), []).append(mix)
+        elif mix.action == "add_send" and mix.bus:
+            sends.append(mix)
+            buses.add(mix.bus)
+        elif mix.action in ("set_volume", "set_pan"):
+            volume_pan.append(mix)
+
+    # Determine the ordered list of track names (generation order preserves
+    # the user's requested role ordering, which is musically meaningful).
+    ordered_tracks: list[str] = []
+    seen_lower: set[str] = set()
+
+    for gen in plan.generations:
+        tname = role_to_track.get(gen.role, gen.role.capitalize())
+        if tname.lower() not in seen_lower:
+            ordered_tracks.append(tname)
+            seen_lower.add(tname.lower())
+
+    # Include tracks from edits that have no generation (e.g. manual adds)
+    for edit in plan.edits:
+        if edit.action == "add_track" and edit.name:
+            if edit.name.lower() not in seen_lower:
+                ordered_tracks.append(edit.name)
+                seen_lower.add(edit.name.lower())
+
+    # ── Emit per-track groups contiguously ──
+    tool_calls: list[ToolCall] = []
+
+    for track_name in ordered_tracks:
+        t_lower = track_name.lower()
+        is_existing = t_lower in existing_tracks
+        is_role_mapped = t_lower in _role_mapped_existing
+
+        # 1. Track creation
+        if not is_existing and not is_role_mapped and t_lower in edits_by_track:
+            styling = get_track_styling(track_name)
             tool_calls.append(ToolCall(
                 name="stori_add_midi_track",
-                params={"name": edit.name}
+                params={"name": track_name},
             ))
-    
-    # Step 1b: Set colors and icons for tracks
-    for track_name, styling in track_styling_map.items():
-        tool_calls.append(ToolCall(
-            name="stori_set_track_color",
-            params={
-                "trackName": track_name,
-                "color": styling["color"],
-            }
-        ))
-        tool_calls.append(ToolCall(
-            name="stori_set_track_icon",
-            params={
-                "trackName": track_name,
-                "icon": styling["icon"],
-            }
-        ))
-    
-    # Step 2: Create regions (convert bars to beats: 4 beats per bar in 4/4 time)
-    # region_start_offset shifts all regions by a resolved Position: beat value
-    # so "after intro" / "before chorus" etc. place content at the right point.
-    for edit in plan.edits:
-        if edit.action == "add_region" and edit.track and edit.bars:
+            # 2. Styling immediately after creation
+            tool_calls.append(ToolCall(
+                name="stori_set_track_color",
+                params={"trackName": track_name, "color": styling["color"]},
+            ))
+            tool_calls.append(ToolCall(
+                name="stori_set_track_icon",
+                params={"trackName": track_name, "icon": styling["icon"]},
+            ))
+
+        # 3. Region creation
+        for edit in regions_by_track.get(t_lower, []):
             bar_start = edit.barStart or 0
+            resolved_track = role_to_track.get(edit.track.lower(), edit.track)
+            region_params: dict[str, Any] = {
+                "name": resolved_track,
+                "trackName": resolved_track,
+                "startBeat": bar_start * 4 + region_start_offset,
+                "durationBeats": edit.bars * 4,
+            }
+            existing = existing_tracks.get(resolved_track.lower())
+            if existing and existing["id"]:
+                region_params["trackId"] = existing["id"]
             tool_calls.append(ToolCall(
                 name="stori_add_midi_region",
-                params={
-                    "name": edit.track,  # Use track name for region display
-                    "trackName": edit.track,  # For resolution
-                    "startBeat": bar_start * 4 + region_start_offset,
-                    "durationBeats": edit.bars * 4,
-                }
+                params=region_params,
             ))
-    
-    # Step 3: Generate MIDI - use role→track mapping for correct targeting
-    for gen in plan.generations:
-        track_name = role_to_track.get(gen.role, gen.role.capitalize())
-        tool_calls.append(ToolCall(
-            name="stori_generate_midi",
-            params={
+
+        # 4. Content generation
+        for gen in plan.generations:
+            gen_track = role_to_track.get(gen.role, gen.role.capitalize())
+            if gen_track.lower() != t_lower:
+                continue
+            normalized_style = gen.style.replace("_", " ").strip() if gen.style else ""
+            gen_params: dict[str, Any] = {
                 "role": gen.role,
-                "style": gen.style,
+                "style": normalized_style,
                 "tempo": gen.tempo,
                 "bars": gen.bars,
                 "key": gen.key or "",
-                "trackName": track_name,  # Use mapped track name, not just role
+                "trackName": gen_track,
                 "constraints": gen.constraints or {},
             }
-        ))
-    
-    # Step 4: Apply effects/mixing
-    for mix in plan.mix:
-        if mix.action == "add_insert" and mix.type:
+            existing = existing_tracks.get(gen_track.lower())
+            if existing and existing["id"]:
+                gen_params["trackId"] = existing["id"]
+            tool_calls.append(ToolCall(
+                name="stori_generate_midi",
+                params=gen_params,
+            ))
+
+        # 5. Insert effects for this track
+        for mix in inserts_by_track.get(t_lower, []):
             tool_calls.append(ToolCall(
                 name="stori_add_insert_effect",
-                params={
-                    "trackName": mix.track,
-                    "type": mix.type,
-                }
+                params={"trackName": mix.track, "type": mix.type},
             ))
-        elif mix.action == "add_send" and mix.bus:
-            tool_calls.append(ToolCall(
-                name="stori_add_send",
-                params={
-                    "trackName": mix.track,
-                    "busName": mix.bus,
-                }
-            ))
-        elif mix.action == "set_volume" and mix.value is not None:
+
+    # ── Shared routing (buses + sends) ──
+    _buses_ensured: set[str] = set()
+    for bus_name in sorted(buses):
+        tool_calls.append(ToolCall(
+            name="stori_ensure_bus",
+            params={"name": bus_name},
+        ))
+        _buses_ensured.add(bus_name)
+
+    for mix in sends:
+        tool_calls.append(ToolCall(
+            name="stori_add_send",
+            params={"trackName": mix.track, "busName": mix.bus},
+        ))
+
+    # ── Mix adjustments ──
+    for mix in volume_pan:
+        if mix.action == "set_volume" and mix.value is not None:
             tool_calls.append(ToolCall(
                 name="stori_set_track_volume",
-                params={
-                    "trackName": mix.track,
-                    "volume": mix.value,
-                }
+                params={"trackName": mix.track, "volume": mix.value},
             ))
         elif mix.action == "set_pan" and mix.value is not None:
             tool_calls.append(ToolCall(
                 name="stori_set_track_pan",
-                params={
-                    "trackName": mix.track,
-                    "pan": mix.value,
-                }
+                params={"trackName": mix.track, "pan": mix.value},
             ))
-    
+
     return tool_calls
 
 
@@ -549,12 +861,16 @@ def _schema_to_tool_calls(
 # Alternative: Direct Plan Building (for testing/macros)
 # =============================================================================
 
-def build_plan_from_dict(plan_dict: dict[str, Any]) -> ExecutionPlan:
+def build_plan_from_dict(
+    plan_dict: dict[str, Any],
+    project_state: Optional[dict[str, Any]] = None,
+) -> ExecutionPlan:
     """
     Build an execution plan from a dict (for testing or macro expansion).
     
     Args:
         plan_dict: Plan dictionary in the expected format
+        project_state: Optional project state for existing track reuse
         
     Returns:
         ExecutionPlan
@@ -580,7 +896,7 @@ def build_plan_from_dict(plan_dict: dict[str, Any]) -> ExecutionPlan:
             notes=["Plan schema could not be completed"],
             validation_result=validation,
         )
-    tool_calls = _schema_to_tool_calls(plan_schema)
+    tool_calls = _schema_to_tool_calls(plan_schema, project_state=project_state)
     
     return ExecutionPlan(
         tool_calls=tool_calls,

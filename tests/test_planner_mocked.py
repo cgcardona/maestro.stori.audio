@@ -18,6 +18,7 @@ from app.core.planner import (
     ExecutionPlan,
     _try_deterministic_plan,
     _schema_to_tool_calls,
+    _match_roles_to_existing_tracks,
     build_execution_plan,
     build_execution_plan_stream,
     build_plan_from_dict,
@@ -90,6 +91,57 @@ def _valid_plan_json(bars: int = 8, tempo: int = 128) -> dict:
         ],
         "mix": [],
     }
+
+
+# ===========================================================================
+# 0. _match_roles_to_existing_tracks
+# ===========================================================================
+
+class TestMatchRolesToExistingTracks:
+    """_match_roles_to_existing_tracks maps roles to project tracks."""
+
+    def test_name_match_drums_and_bass(self):
+        project = {
+            "tracks": [
+                {"id": "D-UUID", "name": "Drums"},
+                {"id": "B-UUID", "name": "Bass"},
+            ]
+        }
+        result = _match_roles_to_existing_tracks({"drums", "bass"}, project)
+        assert result["drums"]["id"] == "D-UUID"
+        assert result["bass"]["id"] == "B-UUID"
+
+    def test_instrument_keyword_melody_to_organ(self):
+        project = {
+            "tracks": [
+                {"id": "D-UUID", "name": "Drums"},
+                {"id": "O-UUID", "name": "Organ", "gmProgram": 16},
+            ]
+        }
+        result = _match_roles_to_existing_tracks({"drums", "melody"}, project)
+        assert result["drums"]["id"] == "D-UUID"
+        assert "melody" in result
+        assert result["melody"]["id"] == "O-UUID"
+
+    def test_no_match_returns_empty(self):
+        project = {"tracks": [{"id": "X", "name": "FX"}]}
+        result = _match_roles_to_existing_tracks({"drums"}, project)
+        assert "drums" not in result
+
+    def test_empty_tracks(self):
+        result = _match_roles_to_existing_tracks({"drums"}, {"tracks": []})
+        assert result == {}
+
+    def test_no_double_claim(self):
+        """A single track should not be claimed by multiple roles."""
+        project = {
+            "tracks": [
+                {"id": "P-UUID", "name": "Piano"},
+            ]
+        }
+        result = _match_roles_to_existing_tracks({"melody", "chords"}, project)
+        claimed = [r for r in result if result[r]["id"] == "P-UUID"]
+        assert len(claimed) <= 1
 
 
 # ===========================================================================
@@ -280,7 +332,8 @@ class TestSchemaToToolCalls:
         assert "drums" in roles_generated
         assert "bass" in roles_generated
 
-    def test_mix_effects_added_last(self):
+    def test_insert_effects_after_generator_per_track(self):
+        """Insert effects come after the generator within the same track group."""
         from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
         schema = ExecutionPlanSchema(
             generations=[GenerationStep(role="drums", style="house", tempo=128, bars=4)],
@@ -295,6 +348,119 @@ class TestSchemaToToolCalls:
         last_effect = max(i for i, n in enumerate(names) if n == "stori_add_insert_effect")
         first_gen = next(i for i, n in enumerate(names) if n == "stori_generate_midi")
         assert last_effect > first_gen
+
+    # -- Bug 1: Skip track creation for existing tracks -------------------------
+
+    def test_skips_add_track_for_existing_tracks(self):
+        """When project_state has Drums and Bass, stori_add_midi_track calls are skipped."""
+        schema = self._make_schema()
+        project_state = {
+            "tracks": [
+                {"id": "DRUMS-UUID", "name": "Drums"},
+                {"id": "BASS-UUID", "name": "Bass"},
+            ]
+        }
+        calls = _schema_to_tool_calls(schema, project_state=project_state)
+        track_calls = [tc for tc in calls if tc.name == "stori_add_midi_track"]
+        assert len(track_calls) == 0, "Should not create tracks that already exist"
+
+    def test_skips_color_and_icon_for_existing_tracks(self):
+        """Existing tracks should not get stori_set_track_color or stori_set_track_icon."""
+        schema = self._make_schema()
+        project_state = {
+            "tracks": [
+                {"id": "DRUMS-UUID", "name": "Drums"},
+                {"id": "BASS-UUID", "name": "Bass"},
+            ]
+        }
+        calls = _schema_to_tool_calls(schema, project_state=project_state)
+        color_calls = [tc for tc in calls if tc.name == "stori_set_track_color"]
+        icon_calls = [tc for tc in calls if tc.name == "stori_set_track_icon"]
+        assert len(color_calls) == 0, "Should not set color for existing tracks"
+        assert len(icon_calls) == 0, "Should not set icon for existing tracks"
+
+    def test_creates_track_when_not_in_project(self):
+        """Tracks not in project_state should still be created."""
+        schema = self._make_schema()
+        project_state = {"tracks": [{"id": "DRUMS-UUID", "name": "Drums"}]}
+        calls = _schema_to_tool_calls(schema, project_state=project_state)
+        track_calls = [tc for tc in calls if tc.name == "stori_add_midi_track"]
+        assert len(track_calls) == 1
+        assert track_calls[0].params["name"] == "Bass"
+
+    # -- Bug 2: Existing track UUIDs propagated to regions/generators -----------
+
+    def test_existing_track_uuid_in_region_calls(self):
+        """Region calls should carry the existing track's UUID as trackId."""
+        schema = self._make_schema()
+        project_state = {
+            "tracks": [
+                {"id": "DRUMS-UUID-123", "name": "Drums"},
+                {"id": "BASS-UUID-456", "name": "Bass"},
+            ]
+        }
+        calls = _schema_to_tool_calls(schema, project_state=project_state)
+        region_calls = [tc for tc in calls if tc.name == "stori_add_midi_region"]
+        assert len(region_calls) == 2
+        region_track_ids = {tc.params.get("trackId") for tc in region_calls}
+        assert "DRUMS-UUID-123" in region_track_ids
+        assert "BASS-UUID-456" in region_track_ids
+
+    def test_existing_track_uuid_in_generator_calls(self):
+        """Generator calls should carry the existing track's UUID as trackId."""
+        schema = self._make_schema()
+        project_state = {
+            "tracks": [
+                {"id": "DRUMS-UUID-123", "name": "Drums"},
+                {"id": "BASS-UUID-456", "name": "Bass"},
+            ]
+        }
+        calls = _schema_to_tool_calls(schema, project_state=project_state)
+        gen_calls = [tc for tc in calls if tc.name == "stori_generate_midi"]
+        assert len(gen_calls) == 2
+        gen_track_ids = {tc.params.get("trackId") for tc in gen_calls}
+        assert "DRUMS-UUID-123" in gen_track_ids
+        assert "BASS-UUID-456" in gen_track_ids
+
+    # -- Bug 3: Melody role mapped to existing Organ track ----------------------
+
+    def test_melody_role_maps_to_existing_organ_track(self):
+        """When project has an Organ track and plan generates 'melody', use Organ."""
+        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep
+        schema = ExecutionPlanSchema(
+            generations=[
+                GenerationStep(role="drums", style="house", tempo=128, bars=8),
+                GenerationStep(role="bass", style="house", tempo=128, bars=8),
+                GenerationStep(role="melody", style="house", tempo=128, bars=8, key="Am"),
+            ],
+            edits=[
+                EditStep(action="add_track", name="Drums"),
+                EditStep(action="add_track", name="Bass"),
+                EditStep(action="add_track", name="Melody"),
+                EditStep(action="add_region", track="Drums", barStart=0, bars=8),
+                EditStep(action="add_region", track="Bass", barStart=0, bars=8),
+                EditStep(action="add_region", track="Melody", barStart=0, bars=8),
+            ],
+            mix=[],
+        )
+        project_state = {
+            "tracks": [
+                {"id": "DRUMS-UUID", "name": "Drums"},
+                {"id": "BASS-UUID", "name": "Bass"},
+                {"id": "ORGAN-UUID", "name": "Organ", "gmProgram": 16},
+            ]
+        }
+        calls = _schema_to_tool_calls(schema, project_state=project_state)
+        # Should NOT create a Melody track (Organ exists for melody role)
+        track_calls = [tc for tc in calls if tc.name == "stori_add_midi_track"]
+        track_names = [tc.params["name"] for tc in track_calls]
+        assert "Melody" not in track_names, "Should not create Melody track when Organ exists"
+
+        # Generator for melody should target the Organ track
+        gen_calls = [tc for tc in calls if tc.name == "stori_generate_midi" and tc.params["role"] == "melody"]
+        assert len(gen_calls) == 1
+        assert gen_calls[0].params["trackName"] == "Organ"
+        assert gen_calls[0].params.get("trackId") == "ORGAN-UUID"
 
 
 # ===========================================================================
@@ -729,3 +895,244 @@ class TestBuildExecutionPlanStream:
 
         assert len(plans) == 1
         assert not plans[0].is_valid
+
+
+# =============================================================================
+# Effects inference — _infer_mix_steps and deterministic plan integration
+# =============================================================================
+
+class TestInferMixSteps:
+    """Tests for _infer_mix_steps style→effects inference."""
+
+    def setup_method(self):
+        from app.core.planner import _infer_mix_steps
+        self._infer = _infer_mix_steps
+
+    def test_drums_always_get_compressor(self):
+        """Drums role always receives a compressor insert regardless of style."""
+        steps = self._infer("house", ["drums"])
+        inserts = [s for s in steps if s.action == "add_insert" and s.track == "Drums"]
+        types = {s.type for s in inserts}
+        assert "compressor" in types
+
+    def test_pads_always_get_reverb_send(self):
+        """Pads role always receives a reverb bus send."""
+        steps = self._infer("ambient", ["pads"])
+        sends = [s for s in steps if s.action == "add_send" and s.track == "Pads"]
+        assert any(s.bus == "Reverb" for s in sends)
+
+    def test_rock_lead_gets_distortion(self):
+        """Rock style adds distortion to lead track."""
+        steps = self._infer("progressive rock", ["lead"])
+        inserts = {s.type for s in steps if s.action == "add_insert" and s.track == "Lead"}
+        assert "distortion" in inserts
+
+    def test_lofi_drums_get_filter(self):
+        """Lo-fi style adds filter to drums."""
+        steps = self._infer("lo-fi hip hop", ["drums"])
+        inserts = {s.type for s in steps if s.action == "add_insert" and s.track == "Drums"}
+        assert "filter" in inserts
+
+    def test_reverb_goes_to_bus_not_insert(self):
+        """Reverb is routed via add_send, not add_insert."""
+        steps = self._infer("ambient", ["pads", "melody"])
+        reverb_inserts = [s for s in steps if s.action == "add_insert" and s.type == "reverb"]
+        reverb_sends = [s for s in steps if s.action == "add_send" and s.bus == "Reverb"]
+        assert len(reverb_inserts) == 0
+        assert len(reverb_sends) >= 1
+
+    def test_no_effects_empty_roles(self):
+        """Empty role list returns no effects."""
+        steps = self._infer("jazz", [])
+        assert steps == []
+
+    def test_multiple_roles_covered(self):
+        """Multi-role request covers drums and bass effects."""
+        steps = self._infer("house", ["drums", "bass"])
+        drum_inserts = {s.type for s in steps if s.action == "add_insert" and s.track == "Drums"}
+        bass_inserts = {s.type for s in steps if s.action == "add_insert" and s.track == "Bass"}
+        assert "compressor" in drum_inserts
+        assert "compressor" in bass_inserts
+
+    def test_jazz_chords_get_reverb(self):
+        """Jazz style adds reverb to chords."""
+        steps = self._infer("jazz", ["chords"])
+        sends = [s for s in steps if s.action == "add_send" and s.track == "Chords"]
+        assert any(s.bus == "Reverb" for s in sends)
+
+    def test_shoegaze_lead_heavy_effects(self):
+        """Shoegaze style adds reverb, chorus, and distortion to lead."""
+        steps = self._infer("shoegaze", ["lead"])
+        inserts = {s.type for s in steps if s.action == "add_insert" and s.track == "Lead"}
+        assert "distortion" in inserts
+        assert "chorus" in inserts
+
+
+class TestDeterministicPlanEffects:
+    """Tests that plan_from_parsed_prompt includes inferred effects."""
+
+    def test_deterministic_plan_includes_effects(self):
+        """A deterministic plan should include mix steps (insert/send) for appropriate styles."""
+        parsed = _minimal_parsed(style="progressive rock", roles=["drums", "pads", "lead"])
+        plan = _try_deterministic_plan(parsed)
+        assert plan is not None
+        effect_tools = {tc.name for tc in plan.tool_calls}
+        # Should have at least one effect or bus tool
+        assert effect_tools & {"stori_add_insert_effect", "stori_ensure_bus", "stori_add_send"}
+
+    def test_reverb_bus_created_before_sends(self):
+        """stori_ensure_bus must appear before any stori_add_send in the tool call list."""
+        parsed = _minimal_parsed(style="ambient", roles=["pads", "melody"])
+        plan = _try_deterministic_plan(parsed)
+        assert plan is not None
+        names = [tc.name for tc in plan.tool_calls]
+        if "stori_add_send" in names and "stori_ensure_bus" in names:
+            ensure_idx = names.index("stori_ensure_bus")
+            send_idx = names.index("stori_add_send")
+            assert ensure_idx < send_idx, "stori_ensure_bus must precede stori_add_send"
+
+    def test_no_effects_constraint_skips_effects(self):
+        """Constraint no_effects=true suppresses effect inference."""
+        parsed = _minimal_parsed(
+            style="house",
+            roles=["drums", "bass"],
+        )
+        parsed.constraints["no_effects"] = True
+        plan = _try_deterministic_plan(parsed)
+        assert plan is not None
+        effect_tools = [tc.name for tc in plan.tool_calls if tc.name in {
+            "stori_add_insert_effect", "stori_ensure_bus", "stori_add_send"
+        }]
+        assert len(effect_tools) == 0
+
+    def test_effects_come_after_own_generator_per_track(self):
+        """Within each track group, effects appear after the generator."""
+        parsed = _minimal_parsed(style="jazz", roles=["drums", "chords"])
+        plan = _try_deterministic_plan(parsed)
+        assert plan is not None
+        calls = plan.tool_calls
+
+        # Group calls by track and verify per-track ordering
+        for track_name in ("Drums", "Chords"):
+            gen_indices = [
+                i for i, tc in enumerate(calls)
+                if tc.name == "stori_generate_midi"
+                and (tc.params.get("trackName") or "").lower() == track_name.lower()
+            ]
+            fx_indices = [
+                i for i, tc in enumerate(calls)
+                if tc.name == "stori_add_insert_effect"
+                and (tc.params.get("trackName") or "").lower() == track_name.lower()
+            ]
+            if gen_indices and fx_indices:
+                assert min(fx_indices) > max(gen_indices), (
+                    f"{track_name}: effects should come after generator"
+                )
+
+
+class TestSchemaToToolCallsBusOrdering:
+    """stori_ensure_bus must precede stori_add_send in _schema_to_tool_calls output."""
+
+    def test_ensure_bus_before_send(self):
+        """When mix has add_send, stori_ensure_bus is inserted before the first send."""
+        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
+        schema = ExecutionPlanSchema(
+            generations=[GenerationStep(role="pads", style="ambient", tempo=80, bars=8)],
+            edits=[
+                EditStep(action="add_track", name="Pads"),
+                EditStep(action="add_region", track="Pads", barStart=0, bars=8),
+            ],
+            mix=[
+                MixStep(action="add_send", track="Pads", bus="Reverb"),
+            ],
+        )
+        calls = _schema_to_tool_calls(schema)
+        names = [tc.name for tc in calls]
+        assert "stori_ensure_bus" in names
+        assert "stori_add_send" in names
+        ensure_idx = names.index("stori_ensure_bus")
+        send_idx = names.index("stori_add_send")
+        assert ensure_idx < send_idx
+
+    def test_bus_ensured_only_once_for_multiple_sends(self):
+        """Same bus name produces only one stori_ensure_bus even with multiple sends."""
+        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
+        schema = ExecutionPlanSchema(
+            generations=[GenerationStep(role="pads", style="ambient", tempo=80, bars=8)],
+            edits=[
+                EditStep(action="add_track", name="Pads"),
+                EditStep(action="add_track", name="Melody"),
+                EditStep(action="add_region", track="Pads", barStart=0, bars=8),
+                EditStep(action="add_region", track="Melody", barStart=0, bars=8),
+            ],
+            mix=[
+                MixStep(action="add_send", track="Pads", bus="Reverb"),
+                MixStep(action="add_send", track="Melody", bus="Reverb"),
+            ],
+        )
+        calls = _schema_to_tool_calls(schema)
+        bus_ensures = [tc for tc in calls if tc.name == "stori_ensure_bus"]
+        assert len(bus_ensures) == 1
+
+
+class TestSchemaToToolCallsTrackContiguous:
+    """Tool calls are grouped contiguously by track for timeline rendering."""
+
+    def test_track_calls_contiguous(self):
+        """Each track's tool calls appear as a contiguous block."""
+        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
+        schema = ExecutionPlanSchema(
+            generations=[
+                GenerationStep(role="drums", style="funk", tempo=100, bars=8),
+                GenerationStep(role="bass", style="funk", tempo=100, bars=8),
+            ],
+            edits=[
+                EditStep(action="add_track", name="Drums"),
+                EditStep(action="add_track", name="Bass"),
+                EditStep(action="add_region", track="Drums", barStart=0, bars=8),
+                EditStep(action="add_region", track="Bass", barStart=0, bars=8),
+            ],
+            mix=[
+                MixStep(action="add_insert", track="Drums", type="compressor"),
+                MixStep(action="add_insert", track="Bass", type="compressor"),
+            ],
+        )
+        calls = _schema_to_tool_calls(schema)
+
+        # Extract track association for each call
+        track_sequence: list[str] = []
+        for tc in calls:
+            track = tc.params.get("trackName") or tc.params.get("name") or ""
+            if track:
+                track_sequence.append(track.lower())
+
+        # Find index ranges for each track
+        drums_indices = [i for i, t in enumerate(track_sequence) if t == "drums"]
+        bass_indices = [i for i, t in enumerate(track_sequence) if t == "bass"]
+
+        # Each track's calls should be contiguous (no interleaving)
+        if drums_indices and bass_indices:
+            assert max(drums_indices) < min(bass_indices) or max(bass_indices) < min(drums_indices), (
+                f"Track calls are interleaved: drums={drums_indices}, bass={bass_indices}"
+            )
+
+    def test_track_group_internal_order(self):
+        """Within a track group: create → styling → region → generate → effects."""
+        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
+        schema = ExecutionPlanSchema(
+            generations=[GenerationStep(role="drums", style="funk", tempo=100, bars=8)],
+            edits=[
+                EditStep(action="add_track", name="Drums"),
+                EditStep(action="add_region", track="Drums", barStart=0, bars=8),
+            ],
+            mix=[MixStep(action="add_insert", track="Drums", type="compressor")],
+        )
+        calls = _schema_to_tool_calls(schema)
+        names = [tc.name for tc in calls]
+
+        track_idx = names.index("stori_add_midi_track")
+        region_idx = names.index("stori_add_midi_region")
+        gen_idx = names.index("stori_generate_midi")
+        effect_idx = names.index("stori_add_insert_effect")
+
+        assert track_idx < region_idx < gen_idx < effect_idx

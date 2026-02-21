@@ -272,6 +272,10 @@ class VariationService:
         intent: str,
         explanation: Optional[str] = None,
         variation_id: Optional[str] = None,
+        region_start_beat: float = 0.0,
+        cc_events: list[dict] | None = None,
+        pitch_bends: list[dict] | None = None,
+        aftertouch: list[dict] | None = None,
     ) -> Variation:
         """
         Compute a Variation between base and proposed note states.
@@ -287,6 +291,9 @@ class VariationService:
             intent: User intent that triggered the transformation
             explanation: Optional Muse explanation of changes
             variation_id: Optional pre-generated variation ID
+            region_start_beat: Absolute beat position of the region in the
+                project timeline.  Added to phrase start_beat/end_beat so
+                they represent absolute project positions.
             
         Returns:
             A Variation object with phrases grouped by bar range
@@ -312,14 +319,15 @@ class VariationService:
                 phrases=[],
             )
         
-        # Compute time range from changes
+        # Compute time range from changes (region-relative note beats +
+        # region offset → absolute project beats)
         min_beat = float("inf")
         max_beat = float("-inf")
         
         for match in changes:
             note = match.base_note or match.proposed_note
             if note:
-                start = note.get("start_beat", 0)
+                start = note.get("start_beat", 0) + region_start_beat
                 dur = note.get("duration_beats", 0.5)
                 min_beat = min(min_beat, start)
                 max_beat = max(max_beat, start + dur)
@@ -334,6 +342,10 @@ class VariationService:
             changes=changes,
             region_id=region_id,
             track_id=track_id,
+            region_start_beat=region_start_beat,
+            cc_events=cc_events or [],
+            pitch_bends=pitch_bends or [],
+            aftertouch=aftertouch or [],
         )
         
         logger.info(
@@ -356,12 +368,30 @@ class VariationService:
         changes: list[NoteMatch],
         region_id: str,
         track_id: str,
+        region_start_beat: float = 0.0,
+        cc_events: list[dict] | None = None,
+        pitch_bends: list[dict] | None = None,
+        aftertouch: list[dict] | None = None,
     ) -> list[Phrase]:
-        """Group note changes into musical phrases by bar range."""
+        """Group note changes into musical phrases by bar range.
+
+        Args:
+            changes: Note matches representing additions/removals/modifications.
+            region_id: Region the changes belong to.
+            track_id: Track the region belongs to.
+            region_start_beat: Absolute beat position of the region in the
+                project timeline.  Added to the phrase's ``start_beat`` /
+                ``end_beat`` so the frontend receives absolute project
+                positions.  Note start_beat values inside ``noteChanges``
+                remain region-relative (matching standard MIDI region storage).
+            cc_events: MIDI CC events for this region (region-relative beats).
+            pitch_bends: Pitch bend events for this region (region-relative beats).
+            aftertouch: Channel/poly aftertouch events (region-relative beats).
+        """
         if not changes:
             return []
         
-        # Group by bar range
+        # Group by bar range (within the region — note beats are region-relative)
         beats_per_phrase = self.bars_per_phrase * self.beats_per_bar
         phrase_groups: dict[int, list[NoteMatch]] = {}
         
@@ -374,17 +404,48 @@ class VariationService:
                 if phrase_index not in phrase_groups:
                     phrase_groups[phrase_index] = []
                 phrase_groups[phrase_index].append(match)
+
+        # Bucket CC and pitch bend events by phrase index
+        cc_by_phrase: dict[int, list[dict]] = {}
+        for ev in (cc_events or []):
+            beat = ev.get("beat", 0)
+            idx = int(beat // beats_per_phrase)
+            cc_by_phrase.setdefault(idx, []).append(ev)
+
+        pb_by_phrase: dict[int, list[dict]] = {}
+        for ev in (pitch_bends or []):
+            beat = ev.get("beat", 0)
+            idx = int(beat // beats_per_phrase)
+            pb_by_phrase.setdefault(idx, []).append(ev)
+
+        at_by_phrase: dict[int, list[dict]] = {}
+        for ev in (aftertouch or []):
+            beat = ev.get("beat", 0)
+            idx = int(beat // beats_per_phrase)
+            at_by_phrase.setdefault(idx, []).append(ev)
+
+        # Ensure phrases exist for CC/PB/AT-only buckets too
+        for idx in set(cc_by_phrase) | set(pb_by_phrase) | set(at_by_phrase):
+            if idx not in phrase_groups:
+                phrase_groups[idx] = []
         
         # Create phrases
         phrases = []
         for phrase_index in sorted(phrase_groups.keys()):
             group = phrase_groups[phrase_index]
             
-            # Calculate bar range for label
-            start_beat = phrase_index * beats_per_phrase
-            end_beat = start_beat + beats_per_phrase
-            start_bar = _beat_to_bar(start_beat, self.beats_per_bar)
-            end_bar = _beat_to_bar(end_beat - 0.01, self.beats_per_bar)  # -0.01 to avoid off-by-one
+            # Region-relative phrase bounds
+            rel_start = phrase_index * beats_per_phrase
+            rel_end = rel_start + beats_per_phrase
+
+            # Absolute project-position bounds (for frontend overlay rendering)
+            abs_start = rel_start + region_start_beat
+            abs_end = rel_end + region_start_beat
+
+            # Bar labels use absolute positions so they reflect the project bar
+            # number, not the intra-region bar number.
+            start_bar = _beat_to_bar(abs_start, self.beats_per_bar)
+            end_bar = _beat_to_bar(abs_end - 0.01, self.beats_per_bar)
             
             # Convert matches to NoteChanges
             note_changes = []
@@ -394,15 +455,41 @@ class VariationService:
             
             # Detect change tags
             tags = _detect_change_tags(note_changes)
+
+            # Build controller_changes from CC, pitch bend, and aftertouch
+            controller_changes: list[dict] = []
+            for ev in cc_by_phrase.get(phrase_index, []):
+                controller_changes.append({
+                    "kind": "cc",
+                    "cc": ev.get("cc"),
+                    "beat": ev.get("beat", 0),
+                    "value": ev.get("value", 0),
+                })
+            for ev in pb_by_phrase.get(phrase_index, []):
+                controller_changes.append({
+                    "kind": "pitch_bend",
+                    "beat": ev.get("beat", 0),
+                    "value": ev.get("value", 0),
+                })
+            for ev in at_by_phrase.get(phrase_index, []):
+                entry: dict = {
+                    "kind": "aftertouch",
+                    "beat": ev.get("beat", 0),
+                    "value": ev.get("value", 0),
+                }
+                if "pitch" in ev:
+                    entry["pitch"] = ev["pitch"]
+                controller_changes.append(entry)
             
             phrase = Phrase(
                 phrase_id=str(uuid.uuid4()),
                 track_id=track_id,
                 region_id=region_id,
-                start_beat=start_beat,
-                end_beat=end_beat,
+                start_beat=abs_start,
+                end_beat=abs_end,
                 label=_generate_bar_label(start_bar, end_bar),
                 note_changes=note_changes,
+                controller_changes=controller_changes,
                 tags=tags,
             )
             phrases.append(phrase)
@@ -444,6 +531,10 @@ class VariationService:
         track_regions: dict[str, str],  # region_id -> track_id (server-assigned)
         intent: str,
         explanation: Optional[str] = None,
+        region_start_beats: Optional[dict[str, float]] = None,
+        region_cc: Optional[dict[str, list[dict]]] = None,
+        region_pitch_bends: Optional[dict[str, list[dict]]] = None,
+        region_aftertouch: Optional[dict[str, list[dict]]] = None,
     ) -> Variation:
         """
         Compute a Variation across multiple regions, each potentially on a different track.
@@ -456,6 +547,9 @@ class VariationService:
                            correct trackId (not a single shared value).
             intent: User intent
             explanation: Optional Muse explanation
+            region_start_beats: Mapping of region_id to the region's absolute start
+                beat in the project timeline.  Used to convert phrase start_beat /
+                end_beat to absolute project positions.
 
         Returns:
             A Variation with phrases across all regions, each carrying the right trackId
@@ -464,6 +558,10 @@ class VariationService:
         all_phrases = []
         affected_regions = []
         affected_track_set: set[str] = set()
+        _region_offsets = region_start_beats or {}
+        _region_cc = region_cc or {}
+        _region_pb = region_pitch_bends or {}
+        _region_at = region_aftertouch or {}
 
         min_beat = float("inf")
         max_beat = float("-inf")
@@ -478,18 +576,22 @@ class VariationService:
             matches = match_notes(base_notes, proposed_notes)
             changes = [m for m in matches if not m.is_unchanged]
 
-            if changes:
-                # Each region belongs to exactly one track — look it up from the
-                # server-assigned mapping, never trust a caller-provided default.
-                region_track_id = track_regions.get(region_id, "unknown")
+            region_track_id = track_regions.get(region_id, "unknown")
+            region_offset = _region_offsets.get(region_id, 0.0)
+            r_cc = _region_cc.get(region_id, [])
+            r_pb = _region_pb.get(region_id, [])
+            r_at = _region_at.get(region_id, [])
+
+            # Include region even if no note changes — CC/PB/AT-only regions matter
+            has_content = bool(changes) or bool(r_cc) or bool(r_pb) or bool(r_at)
+            if has_content:
                 affected_regions.append(region_id)
                 affected_track_set.add(region_track_id)
 
-                # Update time range
                 for match in changes:
                     note = match.base_note or match.proposed_note
                     if note:
-                        start = note.get("start_beat", 0)
+                        start = note.get("start_beat", 0) + region_offset
                         dur = note.get("duration_beats", 0.5)
                         min_beat = min(min_beat, start)
                         max_beat = max(max_beat, start + dur)
@@ -498,6 +600,10 @@ class VariationService:
                     changes=changes,
                     region_id=region_id,
                     track_id=region_track_id,
+                    region_start_beat=region_offset,
+                    cc_events=r_cc,
+                    pitch_bends=r_pb,
+                    aftertouch=r_at,
                 )
                 all_phrases.extend(phrases)
 

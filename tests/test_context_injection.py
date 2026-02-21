@@ -23,6 +23,7 @@ from typing import Optional
 from app.core.prompt_parser import parse_prompt, ParsedPrompt, PositionSpec
 from app.core.prompts import (
     structured_prompt_context,
+    structured_prompt_routing_context,
     sequential_context,
     system_prompt_base,
     composing_prompt,
@@ -373,3 +374,86 @@ class TestAbsentFieldsNotInjected:
         parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Vibes:" not in ctx
+
+
+# ===========================================================================
+# 7. structured_prompt_routing_context — planner-only (no extensions)
+# ===========================================================================
+
+class TestStructuredPromptRoutingContext:
+    """Routing-only context excludes Maestro dimensions but keeps routing."""
+
+    def test_routing_excludes_maestro_dimensions(self):
+        """The planner should never see Harmony/Melody/etc. extensions."""
+        parsed = _parse(
+            "STORI PROMPT\nMode: compose\n"
+            "Harmony: ii-V-I\nMelody: scalar runs\n"
+            "Request: go\n"
+        )
+        ctx = structured_prompt_routing_context(parsed)
+        assert "MAESTRO DIMENSIONS" not in ctx
+        assert "ii-V-I" not in ctx
+        assert "scalar runs" not in ctx
+
+    def test_routing_includes_mode(self):
+        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        ctx = structured_prompt_routing_context(parsed)
+        assert "Mode: compose" in ctx
+
+    def test_routing_includes_style(self):
+        parsed = _parse("STORI PROMPT\nMode: compose\nStyle: techno\nRequest: go")
+        ctx = structured_prompt_routing_context(parsed)
+        assert "techno" in ctx
+
+    def test_routing_includes_key(self):
+        parsed = _parse("STORI PROMPT\nMode: compose\nKey: Dm\nRequest: go")
+        ctx = structured_prompt_routing_context(parsed)
+        assert "Dm" in ctx
+
+    def test_routing_includes_tempo(self):
+        parsed = _parse("STORI PROMPT\nMode: compose\nTempo: 128\nRequest: go")
+        ctx = structured_prompt_routing_context(parsed)
+        assert "128" in ctx
+
+    def test_routing_includes_roles(self):
+        parsed = _parse("STORI PROMPT\nMode: compose\nRole: drums, bass\nRequest: go")
+        ctx = structured_prompt_routing_context(parsed)
+        assert "drums" in ctx
+        assert "bass" in ctx
+
+    def test_routing_includes_vibes(self):
+        parsed = _parse("STORI PROMPT\nMode: compose\nVibe:\n- dark:2\nRequest: go")
+        ctx = structured_prompt_routing_context(parsed)
+        assert "dark" in ctx
+
+    def test_routing_includes_constraints(self):
+        parsed = _parse(
+            "STORI PROMPT\nMode: compose\n"
+            "Constraints:\n  bars: 16\n  density: high\n"
+            "Request: go\n"
+        )
+        ctx = structured_prompt_routing_context(parsed)
+        assert "bars" in ctx or "16" in ctx
+
+    def test_routing_shorter_than_full_with_extensions(self):
+        """Routing context must be strictly shorter when extensions are present."""
+        parsed = _parse(
+            "STORI PROMPT\nMode: compose\nStyle: jazz\n"
+            "Harmony: ii-V-I\nMelody: bebop phrases\n"
+            "Rhythm: swung 8ths\nDynamics: mp to ff crescendo\n"
+            "Request: go\n"
+        )
+        full = structured_prompt_context(parsed)
+        routing = structured_prompt_routing_context(parsed)
+        assert len(routing) < len(full)
+
+    def test_full_context_still_includes_extensions(self):
+        """structured_prompt_context unchanged — still has MAESTRO DIMENSIONS."""
+        parsed = _parse(
+            "STORI PROMPT\nMode: compose\n"
+            "Harmony: ii-V-I\n"
+            "Request: go\n"
+        )
+        ctx = structured_prompt_context(parsed)
+        assert "MAESTRO DIMENSIONS" in ctx
+        assert "ii-V-I" in ctx

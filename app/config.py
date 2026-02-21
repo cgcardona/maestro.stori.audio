@@ -124,7 +124,7 @@ class Settings(BaseSettings):
     
     # Music Generation Service Configuration
     orpheus_base_url: str = "http://localhost:10002"
-    orpheus_timeout: int = 60  # seconds
+    orpheus_timeout: int = 120  # seconds — 16-bar generations can be slow
     
     hf_api_key: Optional[str] = None  # HuggingFace API key
     hf_timeout: int = 120  # seconds (HF can be slow on cold starts)
@@ -139,10 +139,10 @@ class Settings(BaseSettings):
 
     # Orchestration (EDITING loop and tool-calling)
     orchestration_max_iterations: int = 5   # Max LLM turns per request in EDITING (non-composition)
-    composition_max_iterations: int = 15    # Higher iteration limit for composition (1-2 tools per turn with reasoning models)
+    composition_max_iterations: int = 20    # Higher iteration limit for composition (1-2 tools per turn with reasoning models)
     orchestration_temperature: float = 0.1   # Low temp for deterministic tool selection
     composition_max_tokens: int = 32768      # Higher token budget for GENERATE_MUSIC in EDITING mode
-    composition_reasoning_fraction: float = 0.4  # Reasoning share for composition (tool calls need more tokens than thinking)
+    composition_reasoning_fraction: float = 0.08  # Keep reasoning tight for tool-calling; ~2,600 tokens on 32K budget
     
     # CORS Settings (fail closed: no default origins)
     # Set STORI_CORS_ORIGINS (JSON array) in .env. Local dev: ["http://localhost:5173", "stori://"].

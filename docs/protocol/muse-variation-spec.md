@@ -217,8 +217,8 @@ The event-specific data lives in `payload`; outer fields provide routing and ord
   "phrase_id": "uuid",
   "track_id": "uuid",
   "region_id": "uuid",
-  "start_beat": 4.0,
-  "end_beat": 8.0,
+  "start_beat": 16.0,
+  "end_beat": 32.0,
   "label": "Bars 5-8",
   "tags": ["harmonyChange","scaleChange"],
   "explanation": "Converted major 3rds to minor 3rds",
@@ -226,13 +226,19 @@ The event-specific data lives in `payload`; outer fields provide routing and ord
     {
       "note_id": "uuid",
       "change_type": "modified",
-      "before": { "pitch": 64, "start_beat": 4.0, "duration_beats": 0.5, "velocity": 90 },
-      "after":  { "pitch": 63, "start_beat": 4.0, "duration_beats": 0.5, "velocity": 90 }
+      "before": { "pitch": 64, "start_beat": 0.0, "duration_beats": 0.5, "velocity": 90 },
+      "after":  { "pitch": 63, "start_beat": 0.0, "duration_beats": 0.5, "velocity": 90 }
     }
   ],
-  "controller_changes": []
+  "controller_changes": [
+    { "kind": "cc", "cc": 64, "beat": 0.0, "value": 127 },
+    { "kind": "pitch_bend", "beat": 1.5, "value": 4096 },
+    { "kind": "aftertouch", "beat": 2.0, "value": 80 }
+  ]
 }
 ```
+
+> **Beat semantics:** `phrase.start_beat` / `phrase.end_beat` are **absolute project positions**. Note `start_beat` values inside `note_changes` are **region-relative** (offset from the region's start beat). This matches how DAWs universally store MIDI data within regions.
 
 **Example: `done`**
 
@@ -268,7 +274,12 @@ The `variation_id` is carried in the outer `EventEnvelope` wrapper (not repeated
       "track_id": "uuid",
       "notes": [
         { "pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100, "channel": 0 }
-      ]
+      ],
+      "cc_events": [
+        { "cc": 64, "beat": 0.0, "value": 127 }
+      ],
+      "pitch_bends": [],
+      "aftertouch": []
     }
   ]
 }
@@ -351,6 +362,26 @@ Rules:
 - `removed` -> `after` must be null (enforced by backend)
 - `modified` -> both `before` and `after` must be present
 - All positions in **beats** (not seconds)
+- `start_beat` within `before`/`after` is **region-relative** (offset from the region's start)
+
+### 4.4 Controller Changes (Expressive MIDI)
+
+Phrases carry `controller_changes` — expressive MIDI data beyond notes. The
+pipeline supports the **complete** set of musically relevant MIDI messages:
+
+| `kind` | Fields | MIDI byte | Coverage |
+|--------|--------|-----------|----------|
+| `cc` | `cc`, `beat`, `value` | Control Change (0xBn) | All 128 CC numbers: sustain (64), expression (11), modulation (1), volume (7), pan (10), filter cutoff (74), resonance (71), reverb send (91), chorus send (93), attack (73), release (72), soft pedal (67), sostenuto (66), legato (68), breath (2), etc. |
+| `pitch_bend` | `beat`, `value` | Pitch Bend (0xEn) | 14-bit signed (−8192 to 8191) |
+| `aftertouch` | `beat`, `value` | Channel Pressure (0xDn) | No `pitch` field → channel-wide pressure |
+| `aftertouch` | `beat`, `value`, `pitch` | Poly Key Pressure (0xAn) | `pitch` present → per-note pressure |
+
+Program Change is handled at track level (`stori_set_midi_program`).
+Track-level automation curves (volume, pan, FX params) are handled by
+`stori_add_automation`.
+
+After commit, the full expressive state is materialized in `updated_regions`
+as three separate arrays: `cc_events`, `pitch_bends`, `aftertouch`.
 
 ---
 

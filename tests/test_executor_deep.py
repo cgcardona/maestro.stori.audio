@@ -865,3 +865,766 @@ class TestParallelGeneratorDispatch:
             )
 
         assert result is not None
+
+
+# ===========================================================================
+# Bug 4: Phrase startBeat/endBeat are absolute project positions
+# ===========================================================================
+
+
+class TestPhraseAbsoluteBeats:
+    """Phrase start_beat/end_beat must be absolute project positions, not region-relative."""
+
+    def test_phrases_offset_by_region_start_beat(self):
+        """Variation service adds region_start_beat to phrase positions."""
+        from app.services.variation import VariationService
+
+        svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
+        proposed = [
+            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
+            {"pitch": 62, "start_beat": 4, "duration_beats": 1, "velocity": 100},
+        ]
+        # Region starts at beat 16 (bar 5)
+        variation = svc.compute_variation(
+            base_notes=[],
+            proposed_notes=proposed,
+            region_id="r1",
+            track_id="t1",
+            intent="test",
+            region_start_beat=16.0,
+        )
+        assert len(variation.phrases) >= 1
+        # First phrase covers region-relative beats 0-16, but absolute 16-32
+        p0 = variation.phrases[0]
+        assert p0.start_beat == 16.0, f"Expected absolute start 16.0, got {p0.start_beat}"
+        assert p0.end_beat == 32.0, f"Expected absolute end 32.0, got {p0.end_beat}"
+
+    def test_bar_labels_reflect_absolute_position(self):
+        """Bar labels should use absolute project bar numbers, not region-relative."""
+        from app.services.variation import VariationService
+
+        svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
+        proposed = [
+            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
+        ]
+        variation = svc.compute_variation(
+            base_notes=[],
+            proposed_notes=proposed,
+            region_id="r1",
+            track_id="t1",
+            intent="test",
+            region_start_beat=16.0,
+        )
+        assert len(variation.phrases) >= 1
+        # Region starts at beat 16 = bar 5, phrase covers bars 5-8
+        assert "5" in variation.phrases[0].label
+
+    def test_note_start_beat_stays_region_relative(self):
+        """Note startBeat inside noteChanges must remain region-relative (Bug 6)."""
+        from app.services.variation import VariationService
+
+        svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
+        proposed = [
+            {"pitch": 60, "start_beat": 2.5, "duration_beats": 1, "velocity": 100},
+        ]
+        variation = svc.compute_variation(
+            base_notes=[],
+            proposed_notes=proposed,
+            region_id="r1",
+            track_id="t1",
+            intent="test",
+            region_start_beat=16.0,
+        )
+        assert len(variation.phrases) == 1
+        nc = variation.phrases[0].note_changes[0]
+        assert nc.after is not None
+        assert nc.after.start_beat == 2.5, (
+            f"Note startBeat should be region-relative (2.5), got {nc.after.start_beat}"
+        )
+
+    def test_multi_region_absolute_beats(self):
+        """compute_multi_region_variation uses per-region offsets."""
+        from app.services.variation import VariationService
+
+        svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
+        variation = svc.compute_multi_region_variation(
+            base_regions={"r1": [], "r2": []},
+            proposed_regions={
+                "r1": [{"pitch": 36, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
+                "r2": [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
+            },
+            track_regions={"r1": "t1", "r2": "t2"},
+            intent="test",
+            region_start_beats={"r1": 16.0, "r2": 16.0},
+        )
+        for phrase in variation.phrases:
+            assert phrase.start_beat >= 16.0, (
+                f"Phrase start_beat={phrase.start_beat} should be >= 16 (absolute)"
+            )
+
+    def test_zero_offset_backwards_compatible(self):
+        """With region_start_beat=0 (default), behaviour is unchanged."""
+        from app.services.variation import VariationService
+
+        svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
+        proposed = [
+            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
+        ]
+        variation = svc.compute_variation(
+            base_notes=[],
+            proposed_notes=proposed,
+            region_id="r1",
+            track_id="t1",
+            intent="test",
+        )
+        assert variation.phrases[0].start_beat == 0.0
+        assert variation.phrases[0].end_beat == 16.0
+
+
+# ===========================================================================
+# Bug 5: Commit returns fully materialized updatedRegions
+# ===========================================================================
+
+
+class TestApplyVariationUpdatedRegions:
+    """apply_variation_phrases must return non-empty updatedRegions with notes."""
+
+    @pytest.mark.anyio
+    async def test_updated_regions_contain_notes_after_commit(self):
+        """After commit, updatedRegions should include the applied notes."""
+        phrase = Phrase(
+            phrase_id="p1",
+            track_id="t1",
+            region_id="r1",
+            start_beat=0,
+            end_beat=16,
+            label="Bars 1-4",
+            note_changes=[
+                NoteChange(
+                    note_id="n1",
+                    change_type="added",
+                    before=None,
+                    after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
+                ),
+                NoteChange(
+                    note_id="n2",
+                    change_type="added",
+                    before=None,
+                    after=MidiNoteSnapshot(pitch=64, start_beat=4, duration_beats=1, velocity=90),
+                ),
+            ],
+        )
+        variation = _make_variation(
+            phrases=[phrase],
+            variation_id="v1",
+        )
+
+        with patch("app.core.executor.get_or_create_store") as mock_factory:
+            store = StateStore(conversation_id="test", project_id="proj1")
+            store.create_track("Track1", track_id="t1")
+            store.create_region("Region1", "t1", region_id="r1", metadata={
+                "startBeat": 0,
+                "durationBeats": 16,
+            })
+            mock_factory.return_value = store
+
+            result = await apply_variation_phrases(
+                variation=variation,
+                accepted_phrase_ids=["p1"],
+                project_state={},
+                conversation_id="test",
+            )
+
+        assert result.success
+        assert len(result.updated_regions) == 1
+        ur = result.updated_regions[0]
+        assert ur["region_id"] == "r1"
+        assert ur["track_id"] == "t1"
+        assert len(ur["notes"]) == 2, f"Expected 2 notes, got {len(ur['notes'])}"
+
+    @pytest.mark.anyio
+    async def test_updated_regions_include_metadata(self):
+        """updatedRegions should include start_beat, duration_beats, name."""
+        phrase = Phrase(
+            phrase_id="p1",
+            track_id="t1",
+            region_id="r1",
+            start_beat=16,
+            end_beat=32,
+            label="Bars 5-8",
+            note_changes=[
+                NoteChange(
+                    note_id="n1",
+                    change_type="added",
+                    before=None,
+                    after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
+                ),
+            ],
+        )
+        variation = _make_variation(phrases=[phrase])
+
+        with patch("app.core.executor.get_or_create_store") as mock_factory:
+            store = StateStore(conversation_id="test", project_id="proj1")
+            store.create_track("Track1", track_id="t1")
+            store.create_region("Verse", "t1", region_id="r1", metadata={
+                "startBeat": 16,
+                "durationBeats": 32,
+            })
+            mock_factory.return_value = store
+
+            result = await apply_variation_phrases(
+                variation=variation,
+                accepted_phrase_ids=["p1"],
+                project_state={},
+                conversation_id="test",
+            )
+
+        assert result.success
+        assert len(result.updated_regions) == 1
+        ur = result.updated_regions[0]
+        assert ur["start_beat"] == 16
+        assert ur["duration_beats"] == 32
+        assert ur["name"] == "Verse"
+
+    @pytest.mark.anyio
+    async def test_updated_regions_fallback_to_adds(self):
+        """When store.get_region_notes is empty, fall back to region_adds."""
+        phrase = Phrase(
+            phrase_id="p1",
+            track_id="t1",
+            region_id="r1",
+            start_beat=0,
+            end_beat=16,
+            label="Bars 1-4",
+            note_changes=[
+                NoteChange(
+                    note_id="n1",
+                    change_type="added",
+                    before=None,
+                    after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
+                ),
+            ],
+        )
+        variation = _make_variation(phrases=[phrase])
+
+        with patch("app.core.executor.get_or_create_store") as mock_factory:
+            store = MagicMock()
+            store.registry.get_region.return_value = None
+            store.get_region_track_id.return_value = "t1"
+            store.get_region_notes.return_value = []  # empty!
+            store.add_notes = MagicMock()
+            store.remove_notes = MagicMock()
+            store.begin_transaction.return_value = MagicMock()
+            store.commit = MagicMock()
+            mock_factory.return_value = store
+
+            result = await apply_variation_phrases(
+                variation=variation,
+                accepted_phrase_ids=["p1"],
+                project_state={},
+                conversation_id="test",
+            )
+
+        assert result.success
+        assert len(result.updated_regions) == 1
+        assert len(result.updated_regions[0]["notes"]) == 1
+
+
+# ===========================================================================
+# CC and Pitch Bend pipeline tests
+# ===========================================================================
+
+class TestVariationContextCC:
+    """VariationContext records CC and pitch bend data."""
+
+    def test_record_proposed_cc(self):
+        store = StateStore(conversation_id="cc", project_id="p")
+        ctx = VariationContext(
+            store=store,
+            trace=TraceContext(trace_id="test"),
+            base_notes={},
+            proposed_notes={},
+            track_regions={},
+        )
+        cc_events = [{"cc": 64, "beat": 0.0, "value": 127}]
+        ctx.record_proposed_cc("r1", cc_events)
+        assert ctx.proposed_cc["r1"] == cc_events
+
+    def test_record_proposed_pitch_bends(self):
+        store = StateStore(conversation_id="pb", project_id="p")
+        ctx = VariationContext(
+            store=store,
+            trace=TraceContext(trace_id="test"),
+            base_notes={},
+            proposed_notes={},
+            track_regions={},
+        )
+        pb_events = [{"beat": 1.0, "value": 4096}]
+        ctx.record_proposed_pitch_bends("r1", pb_events)
+        assert ctx.proposed_pitch_bends["r1"] == pb_events
+
+    def test_empty_cc_not_recorded(self):
+        store = StateStore(conversation_id="cc2", project_id="p")
+        ctx = VariationContext(
+            store=store,
+            trace=TraceContext(trace_id="test"),
+            base_notes={},
+            proposed_notes={},
+            track_regions={},
+        )
+        ctx.record_proposed_cc("r1", [])
+        assert "r1" not in ctx.proposed_cc
+
+    def test_cc_accumulates_across_calls(self):
+        store = StateStore(conversation_id="cc3", project_id="p")
+        ctx = VariationContext(
+            store=store,
+            trace=TraceContext(trace_id="test"),
+            base_notes={},
+            proposed_notes={},
+            track_regions={},
+        )
+        ctx.record_proposed_cc("r1", [{"cc": 64, "beat": 0, "value": 127}])
+        ctx.record_proposed_cc("r1", [{"cc": 11, "beat": 1, "value": 80}])
+        assert len(ctx.proposed_cc["r1"]) == 2
+
+
+class TestStateStoreCCPitchBend:
+    """StateStore CC and pitch bend storage."""
+
+    def test_add_and_get_cc(self):
+        store = StateStore(conversation_id="s1", project_id="p")
+        store.add_cc("r1", [{"cc": 64, "beat": 0, "value": 127}])
+        result = store.get_region_cc("r1")
+        assert len(result) == 1
+        assert result[0]["cc"] == 64
+
+    def test_add_and_get_pitch_bends(self):
+        store = StateStore(conversation_id="s2", project_id="p")
+        store.add_pitch_bends("r1", [{"beat": 0.5, "value": 2048}])
+        result = store.get_region_pitch_bends("r1")
+        assert len(result) == 1
+        assert result[0]["value"] == 2048
+
+    def test_get_empty_cc_returns_empty_list(self):
+        store = StateStore(conversation_id="s3", project_id="p")
+        assert store.get_region_cc("nonexistent") == []
+
+    def test_get_empty_pitch_bends_returns_empty_list(self):
+        store = StateStore(conversation_id="s4", project_id="p")
+        assert store.get_region_pitch_bends("nonexistent") == []
+
+    def test_cc_survives_snapshot_restore(self):
+        store = StateStore(conversation_id="s5", project_id="p")
+        store.add_cc("r1", [{"cc": 64, "beat": 0, "value": 127}])
+        store.add_pitch_bends("r1", [{"beat": 1.0, "value": 8191}])
+        snap = store._take_snapshot()
+        store._region_cc.clear()
+        store._region_pitch_bends.clear()
+        assert store.get_region_cc("r1") == []
+        store._restore_snapshot(snap)
+        assert len(store.get_region_cc("r1")) == 1
+        assert len(store.get_region_pitch_bends("r1")) == 1
+
+
+class TestVariationServiceCC:
+    """Variation service propagates CC/pitch bend to phrases."""
+
+    def test_cc_events_appear_in_phrase_controller_changes(self):
+        from app.services.variation import VariationService
+        svc = VariationService()
+        base_notes: list[dict] = []
+        proposed_notes = [
+            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
+        ]
+        cc = [{"cc": 64, "beat": 0.5, "value": 127}]
+
+        variation = svc.compute_variation(
+            base_notes=base_notes,
+            proposed_notes=proposed_notes,
+            region_id="r1",
+            track_id="t1",
+            intent="test",
+            cc_events=cc,
+        )
+        assert len(variation.phrases) >= 1
+        # The first phrase should have a CC controller change
+        cc_changes = [
+            c for c in variation.phrases[0].controller_changes
+            if c.get("kind") == "cc"
+        ]
+        assert len(cc_changes) == 1
+        assert cc_changes[0]["cc"] == 64
+        assert cc_changes[0]["value"] == 127
+
+    def test_pitch_bends_appear_in_phrase_controller_changes(self):
+        from app.services.variation import VariationService
+        svc = VariationService()
+        proposed_notes = [
+            {"pitch": 64, "start_beat": 0, "duration_beats": 2, "velocity": 90},
+        ]
+        pb = [{"beat": 0.5, "value": 4096}]
+
+        variation = svc.compute_variation(
+            base_notes=[],
+            proposed_notes=proposed_notes,
+            region_id="r1",
+            track_id="t1",
+            intent="test",
+            pitch_bends=pb,
+        )
+        pb_changes = [
+            c for c in variation.phrases[0].controller_changes
+            if c.get("kind") == "pitch_bend"
+        ]
+        assert len(pb_changes) == 1
+        assert pb_changes[0]["value"] == 4096
+
+    def test_multi_region_cc_per_region(self):
+        from app.services.variation import VariationService
+        svc = VariationService()
+
+        base_regions: dict[str, list[dict]] = {"r1": [], "r2": []}
+        proposed_regions = {
+            "r1": [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
+            "r2": [{"pitch": 64, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
+        }
+        track_regions = {"r1": "t1", "r2": "t2"}
+        region_cc = {
+            "r1": [{"cc": 64, "beat": 0, "value": 127}],
+            "r2": [{"cc": 11, "beat": 0, "value": 90}],
+        }
+
+        variation = svc.compute_multi_region_variation(
+            base_regions=base_regions,
+            proposed_regions=proposed_regions,
+            track_regions=track_regions,
+            intent="test",
+            region_cc=region_cc,
+        )
+        # Each region should have its own CC in controller_changes
+        cc_by_region: dict[str, list[dict]] = {}
+        for phrase in variation.phrases:
+            for c in phrase.controller_changes:
+                cc_by_region.setdefault(phrase.region_id, []).append(c)
+        assert 64 in [c["cc"] for c in cc_by_region.get("r1", [])]
+        assert 11 in [c["cc"] for c in cc_by_region.get("r2", [])]
+
+
+class TestApplyVariationCC:
+    """apply_variation_phrases stores CC data and returns it in updated_regions."""
+
+    @pytest.mark.anyio
+    async def test_cc_in_commit_response(self):
+        """CC data from phrase controller_changes flows to updated_regions."""
+        phrase = Phrase(
+            phrase_id="p1",
+            track_id="t1",
+            region_id="r1",
+            start_beat=0,
+            end_beat=16,
+            label="Bars 1-4",
+            note_changes=[
+                NoteChange(
+                    note_id="n1",
+                    change_type="added",
+                    before=None,
+                    after=MidiNoteSnapshot(
+                        pitch=60, start_beat=0, duration_beats=1, velocity=100
+                    ),
+                ),
+            ],
+            controller_changes=[
+                {"kind": "cc", "cc": 64, "beat": 0.5, "value": 127},
+                {"kind": "pitch_bend", "beat": 1.0, "value": 4096},
+            ],
+        )
+        variation = _make_variation(phrases=[phrase])
+
+        with patch("app.core.executor.get_or_create_store") as mock_factory:
+            store = StateStore(conversation_id="cc-commit", project_id="p")
+            store.create_track("Track 1", track_id="t1")
+            store.create_region("Region 1", parent_track_id="t1", region_id="r1")
+            mock_factory.return_value = store
+
+            result = await apply_variation_phrases(
+                variation=variation,
+                accepted_phrase_ids=["p1"],
+                project_state={},
+                conversation_id="cc-commit",
+            )
+
+        assert result.success
+        assert len(result.updated_regions) == 1
+        ur = result.updated_regions[0]
+        assert len(ur["cc_events"]) == 1
+        assert ur["cc_events"][0]["cc"] == 64
+        assert len(ur["pitch_bends"]) == 1
+        assert ur["pitch_bends"][0]["value"] == 4096
+
+
+class TestGenerationResultCC:
+    """GenerationResult carries CC and pitch bend data."""
+
+    def test_defaults_to_empty_lists(self):
+        from app.services.backends.base import GenerationResult, GeneratorBackend
+        r = GenerationResult(
+            success=True,
+            notes=[{"pitch": 60}],
+            backend_used=GeneratorBackend.ORPHEUS,
+            metadata={},
+        )
+        assert r.cc_events == []
+        assert r.pitch_bends == []
+
+    def test_explicit_cc_and_pitch_bends(self):
+        from app.services.backends.base import GenerationResult, GeneratorBackend
+        r = GenerationResult(
+            success=True,
+            notes=[{"pitch": 60}],
+            backend_used=GeneratorBackend.ORPHEUS,
+            metadata={},
+            cc_events=[{"cc": 64, "beat": 0, "value": 127}],
+            pitch_bends=[{"beat": 1, "value": 8191}],
+        )
+        assert len(r.cc_events) == 1
+        assert len(r.pitch_bends) == 1
+
+
+class TestOrpheusBackendCC:
+    """Orpheus backend extracts CC and pitch bend from tool_calls."""
+
+    @pytest.mark.anyio
+    async def test_extract_cc_and_pitch_bend(self):
+        from app.services.backends.orpheus import OrpheusBackend
+
+        mock_client = AsyncMock()
+        mock_client.generate.return_value = {
+            "success": True,
+            "tool_calls": [
+                {
+                    "tool": "addNotes",
+                    "params": {
+                        "notes": [
+                            {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}
+                        ]
+                    },
+                },
+                {
+                    "tool": "addMidiCC",
+                    "params": {
+                        "cc": 64,
+                        "events": [
+                            {"beat": 0, "value": 127},
+                            {"beat": 2, "value": 0},
+                        ],
+                    },
+                },
+                {
+                    "tool": "addPitchBend",
+                    "params": {
+                        "events": [{"beat": 1.5, "value": 4096}],
+                    },
+                },
+            ],
+        }
+
+        backend = OrpheusBackend()
+        backend.client = mock_client
+
+        result = await backend.generate(
+            instrument="piano",
+            style="classical",
+            tempo=120,
+            bars=4,
+        )
+
+        assert result.success
+        assert len(result.notes) == 1
+        assert len(result.cc_events) == 2
+        assert result.cc_events[0] == {"cc": 64, "beat": 0, "value": 127}
+        assert result.cc_events[1] == {"cc": 64, "beat": 2, "value": 0}
+        assert len(result.pitch_bends) == 1
+        assert result.pitch_bends[0] == {"beat": 1.5, "value": 4096}
+
+    @pytest.mark.anyio
+    async def test_no_cc_when_absent(self):
+        """When Orpheus returns only addNotes, CC/PB should be empty."""
+        from app.services.backends.orpheus import OrpheusBackend
+
+        mock_client = AsyncMock()
+        mock_client.generate.return_value = {
+            "success": True,
+            "tool_calls": [
+                {
+                    "tool": "addNotes",
+                    "params": {
+                        "notes": [
+                            {"pitch": 64, "start_beat": 0, "duration_beats": 2, "velocity": 80}
+                        ]
+                    },
+                },
+            ],
+        }
+
+        backend = OrpheusBackend()
+        backend.client = mock_client
+
+        result = await backend.generate(
+            instrument="bass",
+            style="funk",
+            tempo=100,
+            bars=4,
+        )
+
+        assert result.success
+        assert result.cc_events == []
+        assert result.pitch_bends == []
+        assert result.aftertouch == []
+
+
+# ===========================================================================
+# Aftertouch pipeline tests
+# ===========================================================================
+
+class TestAftertouchPipeline:
+    """Aftertouch data flows through the entire pipeline."""
+
+    def test_variation_context_records_aftertouch(self):
+        store = StateStore(conversation_id="at1", project_id="p")
+        ctx = VariationContext(
+            store=store,
+            trace=TraceContext(trace_id="test"),
+            base_notes={},
+            proposed_notes={},
+            track_regions={},
+        )
+        at_events = [{"beat": 0.5, "value": 80}]
+        ctx.record_proposed_aftertouch("r1", at_events)
+        assert ctx.proposed_aftertouch["r1"] == at_events
+
+    def test_empty_aftertouch_not_recorded(self):
+        store = StateStore(conversation_id="at2", project_id="p")
+        ctx = VariationContext(
+            store=store,
+            trace=TraceContext(trace_id="test"),
+            base_notes={},
+            proposed_notes={},
+            track_regions={},
+        )
+        ctx.record_proposed_aftertouch("r1", [])
+        assert "r1" not in ctx.proposed_aftertouch
+
+    def test_state_store_aftertouch(self):
+        store = StateStore(conversation_id="at3", project_id="p")
+        store.add_aftertouch("r1", [{"beat": 0, "value": 64, "pitch": 60}])
+        result = store.get_region_aftertouch("r1")
+        assert len(result) == 1
+        assert result[0]["pitch"] == 60
+        assert store.get_region_aftertouch("nonexistent") == []
+
+    def test_aftertouch_survives_snapshot_restore(self):
+        store = StateStore(conversation_id="at4", project_id="p")
+        store.add_aftertouch("r1", [{"beat": 0, "value": 100}])
+        snap = store._take_snapshot()
+        store._region_aftertouch.clear()
+        assert store.get_region_aftertouch("r1") == []
+        store._restore_snapshot(snap)
+        assert len(store.get_region_aftertouch("r1")) == 1
+
+    def test_variation_service_aftertouch_in_phrases(self):
+        from app.services.variation import VariationService
+        svc = VariationService()
+        proposed = [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}]
+        at = [{"beat": 0.5, "value": 80, "pitch": 60}]
+
+        variation = svc.compute_variation(
+            base_notes=[],
+            proposed_notes=proposed,
+            region_id="r1",
+            track_id="t1",
+            intent="test",
+            aftertouch=at,
+        )
+        at_changes = [
+            c for c in variation.phrases[0].controller_changes
+            if c.get("kind") == "aftertouch"
+        ]
+        assert len(at_changes) == 1
+        assert at_changes[0]["pitch"] == 60
+        assert at_changes[0]["value"] == 80
+
+    def test_generation_result_aftertouch_default(self):
+        from app.services.backends.base import GenerationResult, GeneratorBackend
+        r = GenerationResult(
+            success=True, notes=[], backend_used=GeneratorBackend.ORPHEUS, metadata={}
+        )
+        assert r.aftertouch == []
+
+    @pytest.mark.anyio
+    async def test_orpheus_extracts_aftertouch(self):
+        from app.services.backends.orpheus import OrpheusBackend
+        mock_client = AsyncMock()
+        mock_client.generate.return_value = {
+            "success": True,
+            "tool_calls": [
+                {"tool": "addNotes", "params": {
+                    "notes": [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}]
+                }},
+                {"tool": "addAftertouch", "params": {
+                    "events": [
+                        {"beat": 0.5, "value": 100, "pitch": 60},
+                        {"beat": 1.0, "value": 0},
+                    ]
+                }},
+            ],
+        }
+        backend = OrpheusBackend()
+        backend.client = mock_client
+        result = await backend.generate(instrument="piano", style="classical", tempo=120, bars=4)
+        assert result.success
+        assert len(result.aftertouch) == 2
+        assert result.aftertouch[0]["pitch"] == 60
+        assert "pitch" not in result.aftertouch[1]
+
+    @pytest.mark.anyio
+    async def test_commit_includes_aftertouch(self):
+        """Aftertouch in controller_changes flows to updated_regions."""
+        phrase = Phrase(
+            phrase_id="p1",
+            track_id="t1",
+            region_id="r1",
+            start_beat=0,
+            end_beat=16,
+            label="Bars 1-4",
+            note_changes=[
+                NoteChange(
+                    note_id="n1",
+                    change_type="added",
+                    before=None,
+                    after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
+                ),
+            ],
+            controller_changes=[
+                {"kind": "aftertouch", "beat": 0.5, "value": 80, "pitch": 60},
+            ],
+        )
+        variation = _make_variation(phrases=[phrase])
+
+        with patch("app.core.executor.get_or_create_store") as mock_factory:
+            store = StateStore(conversation_id="at-commit", project_id="p")
+            store.create_track("Track 1", track_id="t1")
+            store.create_region("Region 1", parent_track_id="t1", region_id="r1")
+            mock_factory.return_value = store
+
+            result = await apply_variation_phrases(
+                variation=variation,
+                accepted_phrase_ids=["p1"],
+                project_state={},
+                conversation_id="at-commit",
+            )
+
+        assert result.success
+        ur = result.updated_regions[0]
+        assert len(ur["aftertouch"]) == 1
+        assert ur["aftertouch"][0]["pitch"] == 60

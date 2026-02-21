@@ -350,6 +350,14 @@ async def _execute_generator(name: str, params: dict[str, Any], ctx: ExecutionCo
         
         # Record notes added
         ctx.store.add_notes(region_id, result.notes, transaction=ctx.transaction)
+
+        # Store CC and pitch bend data alongside notes
+        if result.cc_events:
+            ctx.store.add_cc(region_id, result.cc_events)
+        if result.pitch_bends:
+            ctx.store.add_pitch_bends(region_id, result.pitch_bends)
+        if result.aftertouch:
+            ctx.store.add_aftertouch(region_id, result.aftertouch)
         
         # Emit add_notes event
         ctx.add_event({
@@ -363,12 +371,88 @@ async def _execute_generator(name: str, params: dict[str, Any], ctx: ExecutionCo
         
         ctx.add_result(name, True, {
             "notes_count": len(result.notes),
+            "cc_count": len(result.cc_events),
+            "pitch_bend_count": len(result.pitch_bends),
+            "aftertouch_count": len(result.aftertouch),
             "backend": result.backend_used.value,
         })
         
     except Exception as e:
         logger.exception(f"❌ Generator error: {e}")
         ctx.add_result(name, False, {}, str(e))
+
+
+# =============================================================================
+# Three-phase grouping for parallel instrument execution
+# =============================================================================
+
+_PHASE1_TOOLS = {"stori_set_tempo", "stori_set_key"}
+_PHASE3_TOOLS = {
+    "stori_ensure_bus", "stori_add_send",
+    "stori_set_track_volume", "stori_set_track_pan",
+    "stori_mute_track", "stori_solo_track",
+}
+
+
+def _get_instrument_for_call(call: ToolCall) -> Optional[str]:
+    """Extract the instrument/track name a tool call belongs to.
+
+    Returns None for project-level (setup/mixing) calls.
+    """
+    if call.name == "stori_add_midi_track":
+        return call.params.get("name")
+    if call.name in _PHASE1_TOOLS | _PHASE3_TOOLS:
+        return None
+    return (
+        call.params.get("trackName")
+        or call.params.get("name")
+        or (
+            call.params.get("role", "").capitalize()
+            if call.name.startswith("stori_generate") else None
+        )
+    )
+
+
+def _group_into_phases(
+    tool_calls: list[ToolCall],
+) -> tuple[
+    list[ToolCall],
+    dict[str, list[ToolCall]],
+    list[str],
+    list[ToolCall],
+]:
+    """Split tool calls into three execution phases.
+
+    Returns:
+        (phase1_setup, instrument_groups, instrument_order, phase3_mixing)
+
+    Phase 1 — project-level setup (tempo, key).
+    Phase 2 — per-instrument groups keyed by lowercase track name.
+              ``instrument_order`` preserves first-seen ordering.
+    Phase 3 — shared buses, sends, volume/pan adjustments.
+    """
+    phase1: list[ToolCall] = []
+    groups: dict[str, list[ToolCall]] = {}
+    order: list[str] = []
+    phase3: list[ToolCall] = []
+
+    for call in tool_calls:
+        if call.name in _PHASE1_TOOLS:
+            phase1.append(call)
+        elif call.name in _PHASE3_TOOLS:
+            phase3.append(call)
+        else:
+            instrument = _get_instrument_for_call(call)
+            if instrument:
+                key = instrument.lower()
+                if key not in groups:
+                    groups[key] = []
+                    order.append(key)
+                groups[key].append(call)
+            else:
+                phase3.append(call)
+
+    return phase1, groups, order, phase3
 
 
 # =============================================================================
@@ -387,6 +471,9 @@ class VariationContext:
     base_notes: dict[str, list[dict]]  # region_id -> notes before transformation
     proposed_notes: dict[str, list[dict]]  # region_id -> notes after transformation
     track_regions: dict[str, str]  # region_id -> track_id
+    proposed_cc: dict[str, list[dict]] = field(default_factory=dict)
+    proposed_pitch_bends: dict[str, list[dict]] = field(default_factory=dict)
+    proposed_aftertouch: dict[str, list[dict]] = field(default_factory=dict)
     
     def capture_base_notes(self, region_id: str, track_id: str, notes: list[dict]) -> None:
         """Capture base notes for a region before transformation."""
@@ -398,6 +485,21 @@ class VariationContext:
         """Record proposed notes for a region after transformation."""
         self.proposed_notes[region_id] = [_normalize_note(n) for n in notes]
 
+    def record_proposed_cc(self, region_id: str, cc_events: list[dict]) -> None:
+        """Record proposed MIDI CC events for a region."""
+        if cc_events:
+            self.proposed_cc.setdefault(region_id, []).extend(cc_events)
+
+    def record_proposed_pitch_bends(self, region_id: str, pitch_bends: list[dict]) -> None:
+        """Record proposed pitch bend events for a region."""
+        if pitch_bends:
+            self.proposed_pitch_bends.setdefault(region_id, []).extend(pitch_bends)
+
+    def record_proposed_aftertouch(self, region_id: str, aftertouch: list[dict]) -> None:
+        """Record proposed aftertouch events for a region."""
+        if aftertouch:
+            self.proposed_aftertouch.setdefault(region_id, []).extend(aftertouch)
+
 
 async def execute_plan_variation(
     tool_calls: list[ToolCall],
@@ -408,6 +510,8 @@ async def execute_plan_variation(
     progress_callback: Optional[Callable[..., Awaitable[None]]] = None,
     quality_preset: Optional[str] = None,
     tool_event_callback: Optional[Callable[..., Awaitable[None]]] = None,
+    pre_tool_callback: Optional[Callable[..., Awaitable[None]]] = None,
+    post_tool_callback: Optional[Callable[..., Awaitable[None]]] = None,
 ) -> Variation:
     """
     Execute a plan in variation mode - returns proposed changes without mutation.
@@ -427,6 +531,12 @@ async def execute_plan_variation(
         progress_callback: Optional async callback(current_step, total_steps) after each step.
         tool_event_callback: Optional async callback(call_id, tool_name, params) called
             BEFORE each tool call is processed so the caller can emit toolStart/toolCall SSE.
+            Deprecated in favour of pre_tool_callback/post_tool_callback.
+        pre_tool_callback: Optional async callback(tool_name, params) fired BEFORE
+            each tool call is processed (for toolStart / planStepUpdate:active).
+        post_tool_callback: Optional async callback(tool_name, resolved_params) fired
+            AFTER each tool call completes with resolved entity IDs
+            (for toolCall with real UUIDs / planStepUpdate:completed).
 
     Returns:
         Variation object with phrases representing proposed changes
@@ -482,67 +592,74 @@ async def execute_plan_variation(
         # -----------------------------------------------------------------------
         # Three-phase execution for maximum throughput
         #
-        # Phase 1 — Setup (sequential): track / region / effect primitives must
-        #   run in order so that entity IDs are registered before generators try
-        #   to resolve them.
-        # Phase 2 — Coupled generators (sequential): drums first (captures the
-        #   rhythm spine), then bass (reads the rhythm spine for locking).
-        # Phase 3 — Independent generators (parallel): organ, guitar, horns,
-        #   etc. have no cross-dependencies and can hit Orpheus concurrently.
-        #   Each fires its tool_event_callback before starting, so the frontend
-        #   sees multiple toolStart / toolCall events arriving simultaneously —
-        #   the natural foundation for a Cursor-style parallel sub-agent card UI.
+        # Phase 1 — Setup (sequential): project-level primitives that must
+        #   complete before instrument work begins (tempo, key, time sig).
+        # Phase 2 — Instruments (parallel): each instrument gets its own
+        #   concurrent sub-pipeline running sequentially within the group
+        #   (create track → add region → generate MIDI → add effects → CC).
+        #   Independent instruments run concurrently.
+        # Phase 3 — Mixing (sequential): shared buses, sends, volume/pan
+        #   adjustments that may reference multiple tracks.
         # -----------------------------------------------------------------------
 
-        def _is_gen(call: ToolCall) -> bool:
-            meta = get_tool_meta(call.name)
-            return bool(meta and meta.tier == ToolTier.TIER1 and meta.kind == ToolKind.GENERATOR)
-
-        def _is_coupled_gen(call: ToolCall) -> bool:
-            """Drums and bass must be sequential: bass reads the drum rhythm spine."""
-            role = call.params.get("role", "").lower()
-            return role in ("drums", "bass") or call.name in (
-                "stori_generate_drums", "stori_generate_bass"
-            )
-
-        setup_calls = [c for c in tool_calls if not _is_gen(c)]
-        coupled_calls = sorted(
-            [c for c in tool_calls if _is_gen(c) and _is_coupled_gen(c)],
-            # drums before bass
-            key=lambda c: 0 if (c.params.get("role", "") == "drums" or "drums" in c.name) else 1,
+        phase1, instrument_groups, instrument_order, phase3 = _group_into_phases(
+            tool_calls
         )
-        parallel_calls = [c for c in tool_calls if _is_gen(c) and not _is_coupled_gen(c)]
 
         total = len(tool_calls)
         completed_count = [0]  # mutable counter, safe in single-threaded asyncio
 
         async def _dispatch(call: ToolCall) -> None:
             logger.info(f"🔧 Processing: {call.name}")
-            if tool_event_callback:
+            if pre_tool_callback:
+                await pre_tool_callback(call.name, call.params)
+            elif tool_event_callback:
                 await tool_event_callback(call.id, call.name, call.params)
-            await _process_call_for_variation(
+            resolved_params = await _process_call_for_variation(
                 call,
                 var_ctx,
                 quality_preset=quality_preset,
                 emotion_vector=emotion_vector,
             )
+            if post_tool_callback:
+                await post_tool_callback(call.name, resolved_params)
             completed_count[0] += 1
             if progress_callback:
                 await progress_callback(completed_count[0], total, call.name, call.params)
 
-        # Phase 1: setup primitives
-        for call in setup_calls:
+        # Phase 1: project-level setup (sequential)
+        for call in phase1:
             await _dispatch(call)
 
-        # Phase 2: coupled generators (drums → bass, sequential)
-        for call in coupled_calls:
-            await _dispatch(call)
+        # Phase 2: instrument groups (parallel across groups, sequential
+        # within each group).  Bounded concurrency prevents overloading
+        # Orpheus when many instruments are requested.
+        _MAX_PARALLEL_GROUPS = 5
+        if instrument_groups:
+            logger.info(
+                f"🚀 Parallel instrument execution: {len(instrument_groups)} groups "
+                f"({', '.join(instrument_order)}), "
+                f"max {_MAX_PARALLEL_GROUPS} concurrent"
+            )
 
-        # Phase 3: independent generators — parallel Orpheus calls
-        if parallel_calls:
-            logger.info(f"🚀 Launching {len(parallel_calls)} generators in parallel: "
-                        f"{[c.params.get('role', c.name) for c in parallel_calls]}")
-            await asyncio.gather(*[_dispatch(c) for c in parallel_calls])
+            semaphore = asyncio.Semaphore(_MAX_PARALLEL_GROUPS)
+
+            async def _run_instrument_group(calls: list[ToolCall]) -> None:
+                async with semaphore:
+                    for call in calls:
+                        await _dispatch(call)
+
+            await asyncio.gather(
+                *[
+                    _run_instrument_group(instrument_groups[name])
+                    for name in instrument_order
+                ]
+            )
+
+        # Phase 3: mixing / shared routing (sequential — may reference
+        # multiple tracks that were created in Phase 2)
+        for call in phase3:
+            await _dispatch(call)
 
         # Log what we captured
         total_base = sum(len(n) for n in var_ctx.base_notes.values())
@@ -555,6 +672,16 @@ async def execute_plan_variation(
         # Compute variation using variation service
         variation_service = get_variation_service()
         
+        # Build region_id → startBeat mapping from registry metadata so
+        # phrase start_beat/end_beat become absolute project positions.
+        _region_start_beats: dict[str, float] = {}
+        for rid in set(var_ctx.base_notes.keys()) | set(var_ctx.proposed_notes.keys()):
+            entity = store.registry.get_region(rid)
+            if entity and entity.metadata:
+                _region_start_beats[rid] = float(
+                    entity.metadata.get("startBeat", 0)
+                )
+
         # If we have multiple regions, use multi-region variation.
         # Pass the full track_regions mapping so each phrase carries the
         # correct server-assigned trackId, not a single shared value.
@@ -565,6 +692,10 @@ async def execute_plan_variation(
                 track_regions=var_ctx.track_regions,
                 intent=intent,
                 explanation=explanation,
+                region_start_beats=_region_start_beats,
+                region_cc=var_ctx.proposed_cc,
+                region_pitch_bends=var_ctx.proposed_pitch_bends,
+                region_aftertouch=var_ctx.proposed_aftertouch,
             )
         elif var_ctx.proposed_notes:
             # Single region
@@ -577,6 +708,10 @@ async def execute_plan_variation(
                 track_id=track_id,
                 intent=intent,
                 explanation=explanation,
+                region_start_beat=_region_start_beats.get(region_id, 0.0),
+                cc_events=var_ctx.proposed_cc.get(region_id),
+                pitch_bends=var_ctx.proposed_pitch_bends.get(region_id),
+                aftertouch=var_ctx.proposed_aftertouch.get(region_id),
             )
         else:
             # No notes affected - empty variation
@@ -629,13 +764,16 @@ async def _process_call_for_variation(
     var_ctx: VariationContext,
     quality_preset: Optional[str] = None,
     emotion_vector: Optional[EmotionVector] = None,
-) -> None:
+) -> dict[str, Any]:
     """
     Process a tool call to extract proposed notes for variation.
 
     Simulates entity creation (tracks, regions) in the state store so that
     subsequent generator calls can resolve track/region names. Does NOT
     mutate canonical state — uses the store's registry for name resolution.
+
+    Returns resolved params dict with server-assigned entity IDs so the
+    caller can emit real toolCall SSE events (proposal: false).
 
     emotion_vector is derived from the STORI PROMPT explanation and forwarded
     to Orpheus as expressive conditioning (tone, energy, intimacy, etc.).
@@ -662,14 +800,28 @@ async def _process_call_for_variation(
     # -----------------------------------------------------------------
     # Entity creation: register tracks and regions so generators can
     # resolve names like "Drums" → track_id → latest region.
+    # Resolved entity IDs are stored in params for the caller.
     # -----------------------------------------------------------------
     if call.name == "stori_add_midi_track":
         track_name = params.get("name", "Track")
         existing = var_ctx.store.registry.resolve_track(track_name)
         if not existing:
             track_id = var_ctx.store.create_track(track_name, track_id=params.get("trackId"))
+            params["trackId"] = track_id
             logger.info(f"🎹 [variation] Registered track: {track_name} → {track_id[:8]}")
+
+            # Auto-infer GM program for the post-execution event
+            from app.core.gm_instruments import infer_gm_program_with_context
+            inference = infer_gm_program_with_context(
+                track_name=track_name,
+                instrument=params.get("instrument"),
+            )
+            params["_gmInstrumentName"] = inference.instrument_name
+            params["_isDrums"] = inference.is_drums
+            if inference.needs_program_change:
+                params["gmProgram"] = inference.program
         else:
+            params["trackId"] = existing
             logger.debug(f"🎹 [variation] Track already exists: {track_name} → {existing[:8]}")
 
     elif call.name == "stori_add_midi_region":
@@ -678,10 +830,10 @@ async def _process_call_for_variation(
             track_ref = params.get("trackName") or params.get("name")
             if track_ref:
                 track_id = var_ctx.store.registry.resolve_track(track_ref) or ""
+                if track_id:
+                    params["trackId"] = track_id
         if track_id:
             region_name = params.get("name", "Region")
-            # Never accept an LLM-provided regionId — the server always assigns
-            # the UUID so the registry remains the sole source of truth.
             region_id = var_ctx.store.create_region(
                 name=region_name,
                 parent_track_id=track_id,
@@ -691,6 +843,7 @@ async def _process_call_for_variation(
                     "durationBeats": params.get("durationBeats", 16),
                 },
             )
+            params["regionId"] = region_id
             logger.info(
                 f"📎 [variation] Registered region: {region_name} → {region_id[:8]} "
                 f"(track={track_id[:8]})"
@@ -757,6 +910,41 @@ async def _process_call_for_variation(
                     f"region={region_id[:8]} track={track_id[:8]}"
                 )
     
+    # -----------------------------------------------------------------
+    # MIDI CC and pitch bend tools
+    # -----------------------------------------------------------------
+    elif call.name == "stori_add_midi_cc":
+        region_id = params.get("regionId", "")
+        cc = params.get("cc")
+        events = params.get("events", [])
+        if region_id and cc is not None and events:
+            cc_events = [{"cc": cc, "beat": e["beat"], "value": e["value"]} for e in events]
+            var_ctx.record_proposed_cc(region_id, cc_events)
+            logger.info(
+                f"🎛️ stori_add_midi_cc: CC{cc} {len(events)} events → "
+                f"region={region_id[:8]}"
+            )
+
+    elif call.name == "stori_add_pitch_bend":
+        region_id = params.get("regionId", "")
+        events = params.get("events", [])
+        if region_id and events:
+            var_ctx.record_proposed_pitch_bends(region_id, events)
+            logger.info(
+                f"🎛️ stori_add_pitch_bend: {len(events)} events → "
+                f"region={region_id[:8]}"
+            )
+
+    elif call.name == "stori_add_aftertouch":
+        region_id = params.get("regionId", "")
+        events = params.get("events", [])
+        if region_id and events:
+            var_ctx.record_proposed_aftertouch(region_id, events)
+            logger.info(
+                f"🎛️ stori_add_aftertouch: {len(events)} events → "
+                f"region={region_id[:8]}"
+            )
+
     # Handle generators - they produce notes that go to a region
     meta = get_tool_meta(call.name)
     if meta and meta.tier == ToolTier.TIER1 and meta.kind == ToolKind.GENERATOR:
@@ -804,8 +992,16 @@ async def _process_call_for_variation(
                             var_ctx.capture_base_notes(region_id, track_id, [])
                         
                         var_ctx.record_proposed_notes(region_id, result.notes)
+                        var_ctx.record_proposed_cc(region_id, result.cc_events)
+                        var_ctx.record_proposed_pitch_bends(region_id, result.pitch_bends)
+                        var_ctx.record_proposed_aftertouch(region_id, result.aftertouch)
+                        params["regionId"] = region_id
+                        params["trackId"] = track_id
                         logger.info(
-                            f"📝 Recorded {len(result.notes)} proposed notes for "
+                            f"📝 Recorded {len(result.notes)} notes, "
+                            f"{len(result.cc_events)} CC, "
+                            f"{len(result.pitch_bends)} PB, "
+                            f"{len(result.aftertouch)} AT for "
                             f"region={region_id[:8]} track={track_id[:8]}"
                         )
                     else:
@@ -831,6 +1027,8 @@ async def _process_call_for_variation(
             logger.exception(
                 f"⚠️ Generator simulation failed for {call.name}: {e}"
             )
+
+    return params
 
 
 @dataclass
@@ -890,6 +1088,9 @@ async def apply_variation_phrases(
             region_adds: dict[str, list[dict]] = {}
             region_removals: dict[str, list[dict]] = {}
             region_track_map: dict[str, str] = {}
+            region_cc: dict[str, list[dict]] = {}
+            region_pitch_bends: dict[str, list[dict]] = {}
+            region_aftertouch: dict[str, list[dict]] = {}
 
             # Process phrases in sequence order (accepted_phrase_ids order)
             for phrase_id in accepted_phrase_ids:
@@ -919,11 +1120,20 @@ async def apply_variation_phrases(
 
                     elif nc.change_type == "modified":
                         notes_modified += 1
-                        # Modified = remove old note + add new note
                         if nc.before:
                             region_removals[region_id].append(nc.before.to_note_dict())
                         if nc.after:
                             region_adds[region_id].append(nc.after.to_note_dict())
+
+                # Collect CC / pitch bend / aftertouch from controller_changes
+                for cc_change in phrase.controller_changes:
+                    kind = cc_change.get("kind", "cc")
+                    if kind == "pitch_bend":
+                        region_pitch_bends.setdefault(region_id, []).append(cc_change)
+                    elif kind == "aftertouch":
+                        region_aftertouch.setdefault(region_id, []).append(cc_change)
+                    else:
+                        region_cc.setdefault(region_id, []).append(cc_change)
 
                 applied_phrases.append(phrase_id)
 
@@ -938,6 +1148,18 @@ async def apply_variation_phrases(
                 if notes:
                     store.add_notes(region_id, notes, transaction=tx)
 
+            for region_id, cc_events in region_cc.items():
+                if cc_events:
+                    store.add_cc(region_id, cc_events)
+
+            for region_id, pb_events in region_pitch_bends.items():
+                if pb_events:
+                    store.add_pitch_bends(region_id, pb_events)
+
+            for region_id, at_events in region_aftertouch.items():
+                if at_events:
+                    store.add_aftertouch(region_id, at_events)
+
             store.commit(tx)
 
             # Build updated_regions: full post-commit note state for every
@@ -948,10 +1170,30 @@ async def apply_variation_phrases(
             updated_regions: list[dict[str, Any]] = []
             for rid in sorted(affected_region_ids):
                 track_id = region_track_map.get(rid) or store.get_region_track_id(rid) or ""
+
+                # Primary source: store (contains notes added during this commit)
+                notes = store.get_region_notes(rid)
+                # Fallback: use the adds directly if the store is empty (can
+                # happen when the store instance differs from the compose phase)
+                if not notes and rid in region_adds:
+                    notes = region_adds[rid]
+
+                # Attach region metadata so the API layer can populate
+                # startBeat / durationBeats / name on UpdatedRegionPayload
+                # for brand-new regions the frontend hasn't seen yet.
+                region_entity = store.registry.get_region(rid)
+                region_meta = region_entity.metadata if region_entity else {}
+
                 updated_regions.append({
                     "region_id": rid,
                     "track_id": track_id,
-                    "notes": store.get_region_notes(rid),  # snake_case internally
+                    "notes": notes,
+                    "cc_events": store.get_region_cc(rid),
+                    "pitch_bends": store.get_region_pitch_bends(rid),
+                    "aftertouch": store.get_region_aftertouch(rid),
+                    "start_beat": region_meta.get("startBeat"),
+                    "duration_beats": region_meta.get("durationBeats"),
+                    "name": region_entity.name if region_entity else None,
                 })
 
             logger.info(

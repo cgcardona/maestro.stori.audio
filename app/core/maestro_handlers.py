@@ -123,24 +123,73 @@ _ENTITY_ID_ECHO: dict[str, list[str]] = {
 _VAR_REF_RE = re.compile(r"^\$(\d+)\.(\w+)$")
 
 
+def _humanize_style(style: str) -> str:
+    """Convert machine-formatted style slugs to human-readable labels.
+
+    'progressive_rock,_pink_floyd' → 'Progressive Rock · Pink Floyd'
+    """
+    s = style.replace("_", " ").strip()
+    parts = [p.strip().title() for p in s.split(",") if p.strip()]
+    return " · ".join(parts) if parts else s
+
+
+def _enrich_params_with_track_context(
+    params: dict[str, Any],
+    store: Any,
+) -> dict[str, Any]:
+    """Inject trackName/trackId into SSE toolCall params for region-scoped tools.
+
+    Tools such as stori_add_midi_cc, stori_add_pitch_bend, stori_quantize_notes,
+    etc. receive only a regionId and carry no track context.  The Swift frontend
+    uses trackName to humanise feed entries; without it the label falls back to a
+    generic string.  We resolve the parent track at emit time and append the two
+    supplementary fields.
+
+    Rules:
+    - Skip if trackName or trackId is already present (track-scoped tools).
+    - Skip if regionId is absent.
+    - Graceful fallback: if the region or track cannot be resolved, return params
+      unchanged — never raise.
+    """
+    if "trackName" in params or "trackId" in params:
+        return params
+    region_id = params.get("regionId")
+    if not region_id:
+        return params
+    try:
+        track_id = store.get_region_track_id(region_id)
+        if not track_id:
+            return params
+        track_name = store.get_track_name(track_id)
+        if not track_name:
+            return params
+        return {**params, "trackId": track_id, "trackName": track_name}
+    except Exception:
+        return params
+
+
 def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
     """Return a short, musician-friendly description of a tool call.
 
-    Used in progress and toolStart SSE events so the frontend can show
-    something like "Writing bass notes (8/15)" instead of "Step 8/15".
+    Used in progress/toolStart SSE events and as the label for plan steps.
+    Labels follow canonical patterns that ExecutionTimelineView uses for
+    per-track grouping (see the Execution Timeline UI spec).
     """
+    track = args.get("trackName") or args.get("name") or ""
     match name:
         case "stori_set_tempo":
-            return f"Setting tempo to {args.get('tempo', '?')} BPM"
+            return f"Set tempo to {args.get('tempo', '?')} BPM"
         case "stori_set_key":
-            return f"Setting key to {args.get('key', '?')}"
+            return f"Set key signature to {args.get('key', '?')}"
         case "stori_add_midi_track":
-            return f"Creating {args.get('name', 'track')} track"
+            return f"Create {args.get('name', 'track')} track"
         case "stori_add_midi_region":
-            return f"Creating region: {args.get('name', 'region')}"
+            region_name = args.get("name", "region")
+            return f"Creating region: {region_name}"
         case "stori_add_notes":
             n = len(args.get("notes") or [])
-            return f"Writing {n} notes" if n else "Writing notes"
+            suffix = f" to {track}" if track else ""
+            return f"Add notes{suffix}" if not n else f"Add {n} notes{suffix}"
         case "stori_clear_notes":
             return "Clearing notes"
         case "stori_quantize_notes":
@@ -149,23 +198,46 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
             return "Applying swing"
         case "stori_generate_midi":
             role = args.get("role", "part")
-            style = args.get("style", "")
+            style = _humanize_style(args.get("style", ""))
             bars = args.get("bars", "")
-            return f"Generating {style} {role}{f' ({bars} bars)' if bars else ''}"
+            tname = args.get("trackName") or role.capitalize()
+            detail = f"{style} {role}" + (f", {bars} bars" if bars else "")
+            return f"Add content to {tname}"
         case "stori_generate_drums":
-            return f"Generating {args.get('style', '')} drums"
+            tname = args.get("trackName") or "Drums"
+            return f"Add content to {tname}"
         case "stori_generate_bass":
-            return f"Generating {args.get('style', '')} bass"
+            tname = args.get("trackName") or "Bass"
+            return f"Add content to {tname}"
         case "stori_generate_melody":
-            return f"Generating {args.get('style', '')} melody"
+            tname = args.get("trackName") or "Melody"
+            return f"Add content to {tname}"
         case "stori_generate_chords":
-            return f"Generating {args.get('style', '')} chords"
+            tname = args.get("trackName") or "Chords"
+            return f"Add content to {tname}"
         case "stori_add_insert_effect":
-            return f"Adding {args.get('type', 'effect')}"
+            etype = args.get("type", "effect")
+            if track:
+                return f"Add effects to {track}"
+            return f"Adding {etype}"
         case "stori_ensure_bus":
-            return f"Creating {args.get('name', 'bus')} bus"
+            return f"Set up shared {args.get('name', 'Bus')} bus"
         case "stori_add_send":
+            if track:
+                return f"Add effects for {track}"
             return "Adding send"
+        case "stori_add_midi_cc":
+            if track:
+                return f"Add MIDI CC to {track}"
+            return "Add MIDI CC"
+        case "stori_add_pitch_bend":
+            if track:
+                return f"Add pitch bend to {track}"
+            return "Add pitch bend"
+        case "stori_add_automation":
+            if track:
+                return f"Write automation for {track}"
+            return "Write automation"
         case "stori_set_track_volume":
             return "Adjusting volume"
         case "stori_set_track_pan":
@@ -183,7 +255,6 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
         case "stori_stop":
             return "Stopping"
         case _:
-            # Fallback: strip stori_ prefix and humanise
             label = name.removeprefix("stori_").replace("_", " ")
             return label.capitalize()
 
@@ -218,18 +289,120 @@ def _resolve_variable_refs(
 def _entity_manifest(store: Any) -> dict[str, Any]:
     """Return a compact entity listing so the LLM always knows current IDs.
 
-    Included in every entity-creating tool result so the LLM never has to
-    guess UUIDs or rely on the (stale) project snapshot from the request.
+    Included in every entity-creating tool result AND injected between
+    iterations so the LLM never has to guess UUIDs or rely on stale state.
+
+    Each region includes noteCount so the model knows whether notes have
+    already been added — preventing destructive clear-and-redo loops.
     """
     tracks = []
     for track in store.registry.list_tracks():
-        regions = [
-            {"name": r.name, "regionId": r.id}
-            for r in store.registry.get_track_regions(track.id)
-        ]
+        regions = []
+        for r in store.registry.get_track_regions(track.id):
+            region_info: dict[str, Any] = {
+                "name": r.name,
+                "regionId": r.id,
+                "noteCount": len(store.get_region_notes(r.id)),
+            }
+            if r.metadata:
+                region_info["startBeat"] = r.metadata.get("startBeat", 0)
+                region_info["durationBeats"] = r.metadata.get("durationBeats", 0)
+            regions.append(region_info)
         tracks.append({"name": track.name, "trackId": track.id, "regions": regions})
     buses = [{"name": b.name, "busId": b.id} for b in store.registry.list_buses()]
     return {"tracks": tracks, "buses": buses}
+
+
+def _build_tool_result(
+    tool_name: str,
+    params: dict[str, Any],
+    store: Any,
+) -> dict[str, Any]:
+    """Build a rich tool result with state feedback for the LLM.
+
+    Every result includes enough context for the model to know exactly
+    what was created/modified — preventing ID-loss loops and duplicate adds.
+
+    Entity-creating tools: echo server-assigned IDs + full entity manifest.
+    stori_add_notes: confirm notesAdded + totalNotes in the region.
+    stori_clear_notes: confirm the region was cleared.
+    All other tools: basic success + entity manifest for ID continuity.
+    """
+    result: dict[str, Any] = {"success": True}
+
+    if tool_name in _ENTITY_CREATING_TOOLS:
+        for id_field in _ENTITY_ID_ECHO.get(tool_name, []):
+            if id_field in params:
+                result[id_field] = params[id_field]
+
+        # Echo additional context for region-creating tools
+        if tool_name == "stori_add_midi_region":
+            result["startBeat"] = params.get("startBeat", 0)
+            result["durationBeats"] = params.get("durationBeats", 16)
+            result["name"] = params.get("name", "Region")
+
+        # Echo track metadata for track-creating tools
+        elif tool_name == "stori_add_midi_track":
+            result["name"] = params.get("name", "Track")
+            if params.get("gmProgram") is not None:
+                result["gmProgram"] = params["gmProgram"]
+            if params.get("drumKitId"):
+                result["drumKitId"] = params["drumKitId"]
+            if params.get("_gmInstrumentName"):
+                result["instrumentName"] = params["_gmInstrumentName"]
+
+        elif tool_name == "stori_ensure_bus":
+            result["name"] = params.get("name", "Bus")
+
+        result["entities"] = _entity_manifest(store)
+
+    elif tool_name == "stori_add_notes":
+        region_id = params.get("regionId", "")
+        notes = params.get("notes", [])
+        result["regionId"] = region_id
+        result["notesAdded"] = len(notes)
+        total_notes = len(store.get_region_notes(region_id)) if region_id else 0
+        result["totalNotes"] = total_notes
+        result["entities"] = _entity_manifest(store)
+
+    elif tool_name == "stori_clear_notes":
+        region_id = params.get("regionId", "")
+        result["regionId"] = region_id
+        result["totalNotes"] = 0
+        result["warning"] = (
+            "Region cleared. If you intended to replace notes, "
+            "call stori_add_notes with the new notes now."
+        )
+
+    elif tool_name == "stori_add_insert_effect":
+        result["trackId"] = params.get("trackId", "")
+        result["effectType"] = params.get("type", "")
+
+    elif tool_name == "stori_add_send":
+        result["trackId"] = params.get("trackId", "")
+        result["busId"] = params.get("busId", "")
+
+    elif tool_name == "stori_add_automation":
+        result["trackId"] = params.get("trackId", "")
+        result["parameter"] = params.get("parameter", "")
+        result["pointCount"] = len(params.get("points", []))
+
+    elif tool_name == "stori_add_midi_cc":
+        result["regionId"] = params.get("regionId", "")
+        result["cc"] = params.get("cc")
+        result["eventCount"] = len(params.get("events", []))
+
+    elif tool_name == "stori_add_pitch_bend":
+        result["regionId"] = params.get("regionId", "")
+        result["eventCount"] = len(params.get("events", []))
+
+    elif tool_name in ("stori_set_track_volume", "stori_set_track_pan",
+                        "stori_mute_track", "stori_solo_track",
+                        "stori_set_track_color", "stori_set_track_icon",
+                        "stori_set_track_name", "stori_set_midi_program"):
+        result["trackId"] = params.get("trackId", "")
+
+    return result
 
 
 # =========================================================================
@@ -255,6 +428,19 @@ _TRACK_CREATION_NAMES: set[str] = {
 _CONTENT_TOOL_NAMES: set[str] = {
     "stori_add_midi_region", "stori_add_notes",
 }
+_EXPRESSIVE_TOOL_NAMES: set[str] = {
+    "stori_add_midi_cc", "stori_add_pitch_bend", "stori_add_automation",
+}
+_GENERATOR_TOOL_NAMES: set[str] = {
+    "stori_generate_midi", "stori_generate_drums", "stori_generate_bass",
+    "stori_generate_melody", "stori_generate_chords",
+}
+
+# Tools whose track association can be determined from params
+_TRACK_BOUND_TOOL_NAMES: set[str] = (
+    _TRACK_CREATION_NAMES | _CONTENT_TOOL_NAMES | _EFFECT_TOOL_NAMES
+    | _EXPRESSIVE_TOOL_NAMES | _GENERATOR_TOOL_NAMES | _MIXING_TOOL_NAMES
+)
 
 
 @dataclass
@@ -266,7 +452,9 @@ class _PlanStep:
     status: str = "pending"
     result: Optional[str] = None
     track_name: Optional[str] = None
+    tool_name: Optional[str] = None  # canonical tool name for frontend icon/color rendering
     tool_indices: list[int] = field(default_factory=list)
+    parallel_group: Optional[str] = None  # steps sharing a group run concurrently
 
 
 class _PlanTracker:
@@ -281,6 +469,7 @@ class _PlanTracker:
         self.title: str = ""
         self.steps: list[_PlanStep] = []
         self._active_step_id: Optional[str] = None
+        self._active_step_ids: set[str] = set()
         self._next_id: int = 1
 
     # -- Build ----------------------------------------------------------------
@@ -304,69 +493,104 @@ class _PlanTracker:
         tool_calls: list[Any],
         project_context: dict[str, Any],
     ) -> str:
-        tempo = project_context.get("tempo")
-        key = project_context.get("key")
-        for tc in tool_calls:
-            if tc.name == "stori_set_tempo":
-                tempo = tc.params.get("tempo")
-            elif tc.name == "stori_set_key":
-                key = tc.params.get("key")
+        """Build a musically descriptive plan title.
 
-        # For structured prompts (STORI PROMPT header), extract Section + Style
-        # instead of dumping the YAML block into the title.
-        base: str
+        Target patterns (from ExecutionTimelineView spec):
+          Editing:    "Building Funk Groove"
+          Composing:  "Composing Lo-Fi Hip Hop"
+          Multi-track: "Setting Up 6-Track Jazz"
+        """
+        # Count tracks being created
+        track_count = sum(
+            1 for tc in tool_calls if tc.name in _TRACK_CREATION_NAMES
+        )
+
+        # Extract style/section from structured prompts
+        style: Optional[str] = None
+        section: Optional[str] = None
+
         if prompt.startswith("STORI PROMPT"):
-            section: Optional[str] = None
-            style: Optional[str] = None
-            request_line: Optional[str] = None
             for line in prompt.splitlines():
                 stripped = line.strip()
                 if stripped.lower().startswith("section:"):
                     section = stripped.split(":", 1)[1].strip()
                 elif stripped.lower().startswith("style:"):
                     style = stripped.split(":", 1)[1].strip()
-                elif stripped.lower().startswith("request: |"):
-                    pass  # next non-empty line is the request text
-                elif request_line is None and section and stripped and not ":" in stripped:
-                    request_line = stripped
-            if section and style:
-                base = f"Create {style} {section}"
-            elif section:
-                base = f"Create {section}"
-            elif style:
-                base = f"Create {style} section"
-            else:
-                base = "Compose"
         else:
-            base = prompt[:80].rstrip()
-            if len(prompt) > 80:
-                base = (base.rsplit(" ", 1)[0] or base)
+            # Try to extract style hints from generator tool calls
+            for tc in tool_calls:
+                if tc.name in _GENERATOR_TOOL_NAMES:
+                    s = tc.params.get("style", "")
+                    if s:
+                        style = _humanize_style(s)
+                        break
 
-        params: list[str] = []
-        if key:
-            params.append(str(key))
-        if tempo:
-            params.append(f"{tempo} BPM")
-        if params:
-            return f"{base} ({', '.join(params)})"
-        return base
+        style_title = _humanize_style(style) if style else None
+
+        if track_count >= 3 and style_title:
+            return f"Setting Up {track_count}-Track {style_title}"
+        if section and style_title:
+            return f"Building {style_title} {section.title()}"
+        if style_title:
+            return f"Composing {style_title}"
+        if section:
+            return f"Building {section.title()}"
+        if track_count >= 2:
+            return f"Setting Up {track_count}-Track Arrangement"
+
+        # Free-form: extract a musical phrase from the prompt
+        short = prompt[:80].rstrip()
+        if len(prompt) > 80:
+            short = short.rsplit(" ", 1)[0] or short
+        if short.startswith("STORI PROMPT"):
+            return "Composing"
+        return f"Building {short}" if len(short) < 40 else short
+
+    @staticmethod
+    def _track_name_for_call(tc: Any) -> Optional[str]:
+        """Extract the track name a tool call targets (None for project-level)."""
+        name = tc.name
+        params = tc.params
+        if name in _TRACK_CREATION_NAMES:
+            return params.get("name")
+        if name in _GENERATOR_TOOL_NAMES:
+            return params.get("trackName") or params.get("role", "").capitalize() or None
+        return params.get("trackName") or params.get("name") or None
 
     def _group_into_steps(self, tool_calls: list[Any]) -> list[_PlanStep]:
+        """Group tool calls into plan steps using canonical label patterns.
+
+        Canonical patterns recognised by ExecutionTimelineView:
+          "Create <TrackName> track"     — track creation
+          "Add content to <TrackName>"   — region + note generation
+          "Add notes to <TrackName>"     — note-only addition
+          "Add region to <TrackName>"    — region-only
+          "Add effects to <TrackName>"   — insert effects for a track
+          "Add MIDI CC to <TrackName>"   — CC curves
+          "Add pitch bend to <TrackName>"— pitch bend events
+          "Write automation for <TrackName>" — automation lanes
+          "Set up shared Reverb bus"     — project-level bus setup
+
+        Project-level steps (tempo, key, bus) must NOT contain a
+        preposition pattern — they fall into "Project Setup".
+        """
         steps: list[_PlanStep] = []
         i, n = 0, len(tool_calls)
 
-        # Leading setup tools — one step per call for granularity
+        # Leading setup tools — one step per call (project-level)
         while i < n and tool_calls[i].name in _SETUP_TOOL_NAMES:
             tc = tool_calls[i]
             if tc.name == "stori_set_tempo":
                 label = f"Set tempo to {tc.params.get('tempo', '?')} BPM"
             elif tc.name == "stori_set_key":
-                label = f"Set key to {tc.params.get('key', '?')}"
+                key_val = tc.params.get("key", "?")
+                label = f"Set key signature to {key_val}"
             else:
                 label = _human_label_for_tool(tc.name, tc.params)
             steps.append(_PlanStep(
                 step_id=str(self._next_id),
                 label=label,
+                tool_name=tc.name,
                 tool_indices=[i],
             ))
             self._next_id += 1
@@ -375,70 +599,217 @@ class _PlanTracker:
         while i < n:
             tc = tool_calls[i]
 
+            # ----- Track creation: "Create <TrackName> track" -----
             if tc.name in _TRACK_CREATION_NAMES:
                 track_name = tc.params.get("name", "Track")
-                indices = [i]
-                i += 1
-                while i < n and tool_calls[i].name in _CONTENT_TOOL_NAMES:
-                    indices.append(i)
-                    i += 1
-                has_notes = any(
-                    tool_calls[j].name == "stori_add_notes" for j in indices
-                )
-                label = f"Create {track_name} track"
-                if has_notes:
-                    label += " and add content"
-                detail = None
-                gm = tc.params.get("gmProgram")
-                drum_kit = tc.params.get("drumKitId")
-                if gm is not None:
-                    detail = f"GM {gm}"
-                elif drum_kit:
-                    detail = str(drum_kit)
                 steps.append(_PlanStep(
                     step_id=str(self._next_id),
-                    label=label,
-                    detail=detail,
+                    label=f"Create {track_name} track",
                     track_name=track_name,
-                    tool_indices=indices,
+                    tool_name="stori_add_midi_track",
+                    tool_indices=[i],
+                    parallel_group="instruments",
                 ))
                 self._next_id += 1
+                i += 1
 
-            elif tc.name in _CONTENT_TOOL_NAMES:
-                indices = []
-                while i < n and tool_calls[i].name in _CONTENT_TOOL_NAMES:
-                    indices.append(i)
+                # Consume contiguous content/generator tools for the same track
+                content_indices: list[int] = []
+                content_detail_parts: list[str] = []
+                while i < n and tool_calls[i].name in (
+                    _CONTENT_TOOL_NAMES | _GENERATOR_TOOL_NAMES | _MIXING_TOOL_NAMES
+                ):
+                    next_tc = tool_calls[i]
+                    # Styling tools (color/icon) are consumed silently
+                    if next_tc.name in {"stori_set_track_color", "stori_set_track_icon"}:
+                        content_indices.append(i)
+                        i += 1
+                        continue
+                    next_track = self._track_name_for_call(next_tc)
+                    if next_track and next_track.lower() != track_name.lower():
+                        break
+                    content_indices.append(i)
+                    if next_tc.name in _GENERATOR_TOOL_NAMES:
+                        style = next_tc.params.get("style", "")
+                        bars = next_tc.params.get("bars", "")
+                        role = next_tc.params.get("role", "")
+                        parts = []
+                        if bars:
+                            parts.append(f"{bars} bars")
+                        if style:
+                            parts.append(_humanize_style(style))
+                        if role:
+                            parts.append(role)
+                        if parts:
+                            content_detail_parts.append(", ".join(parts))
                     i += 1
-                steps.append(_PlanStep(
-                    step_id=str(self._next_id),
-                    label="Add musical content",
-                    tool_indices=indices,
-                ))
-                self._next_id += 1
+                if content_indices:
+                    steps.append(_PlanStep(
+                        step_id=str(self._next_id),
+                        label=f"Add content to {track_name}",
+                        detail="; ".join(content_detail_parts) if content_detail_parts else None,
+                        track_name=track_name,
+                        tool_name="stori_add_notes",
+                        tool_indices=content_indices,
+                        parallel_group="instruments",
+                    ))
+                    self._next_id += 1
 
-            elif tc.name in _EFFECT_TOOL_NAMES:
-                indices = []
-                detail_parts: list[str] = []
+                # Consume contiguous effects for the same track
+                effect_indices: list[int] = []
+                effect_detail_parts: list[str] = []
                 while i < n and tool_calls[i].name in _EFFECT_TOOL_NAMES:
                     etc = tool_calls[i]
-                    indices.append(i)
+                    etc_track = etc.params.get("trackName") or etc.params.get("name", "")
+                    if etc.name == "stori_ensure_bus":
+                        break  # bus setup is project-level
+                    if etc_track and etc_track.lower() != track_name.lower():
+                        break
+                    effect_indices.append(i)
                     if etc.name == "stori_add_insert_effect":
                         etype = etc.params.get("type", "")
                         if etype:
-                            detail_parts.append(etype)
-                    elif etc.name == "stori_ensure_bus":
-                        bname = etc.params.get("name", "")
-                        if bname:
-                            detail_parts.append(f"{bname} bus")
+                            effect_detail_parts.append(etype.title())
+                    i += 1
+                if effect_indices:
+                    steps.append(_PlanStep(
+                        step_id=str(self._next_id),
+                        label=f"Add effects to {track_name}",
+                        detail=", ".join(effect_detail_parts) if effect_detail_parts else None,
+                        track_name=track_name,
+                        tool_name="stori_add_insert_effect",
+                        tool_indices=effect_indices,
+                        parallel_group="instruments",
+                    ))
+                    self._next_id += 1
+
+                # Consume contiguous expressive tools for the same track
+                while i < n and tool_calls[i].name in _EXPRESSIVE_TOOL_NAMES:
+                    etc = tool_calls[i]
+                    if etc.name == "stori_add_midi_cc":
+                        steps.append(_PlanStep(
+                            step_id=str(self._next_id),
+                            label=f"Add MIDI CC to {track_name}",
+                            track_name=track_name,
+                            tool_name="stori_add_midi_cc",
+                            tool_indices=[i],
+                            parallel_group="instruments",
+                        ))
+                    elif etc.name == "stori_add_pitch_bend":
+                        steps.append(_PlanStep(
+                            step_id=str(self._next_id),
+                            label=f"Add pitch bend to {track_name}",
+                            track_name=track_name,
+                            tool_name="stori_add_pitch_bend",
+                            tool_indices=[i],
+                            parallel_group="instruments",
+                        ))
+                    elif etc.name == "stori_add_automation":
+                        steps.append(_PlanStep(
+                            step_id=str(self._next_id),
+                            label=f"Write automation for {track_name}",
+                            track_name=track_name,
+                            tool_name="stori_add_automation",
+                            tool_indices=[i],
+                            parallel_group="instruments",
+                        ))
+                    self._next_id += 1
+                    i += 1
+
+            # ----- Orphaned content tools (no preceding track creation) -----
+            elif tc.name in (_CONTENT_TOOL_NAMES | _GENERATOR_TOOL_NAMES):
+                track_name = self._track_name_for_call(tc) or "Track"
+                indices = [i]
+                i += 1
+                while i < n and tool_calls[i].name in (
+                    _CONTENT_TOOL_NAMES | _GENERATOR_TOOL_NAMES
+                ):
+                    next_track = self._track_name_for_call(tool_calls[i])
+                    if next_track and next_track.lower() != track_name.lower():
+                        break
+                    indices.append(i)
                     i += 1
                 steps.append(_PlanStep(
                     step_id=str(self._next_id),
-                    label="Add effects and routing",
-                    detail=", ".join(detail_parts) if detail_parts else None,
+                    label=f"Add content to {track_name}",
+                    track_name=track_name,
+                    tool_name="stori_add_notes",
                     tool_indices=indices,
+                    parallel_group="instruments",
                 ))
                 self._next_id += 1
 
+            # ----- Effects (track-targeted or bus setup) -----
+            elif tc.name in _EFFECT_TOOL_NAMES:
+                if tc.name == "stori_ensure_bus":
+                    bus_name = tc.params.get("name", "Bus")
+                    bus_indices = [i]
+                    i += 1
+                    # Consume following sends for the same bus
+                    while i < n and tool_calls[i].name == "stori_add_send":
+                        bus_indices.append(i)
+                        i += 1
+                    steps.append(_PlanStep(
+                        step_id=str(self._next_id),
+                        label=f"Set up shared {bus_name} bus",
+                        tool_name="stori_ensure_bus",
+                        tool_indices=bus_indices,
+                    ))
+                    self._next_id += 1
+                else:
+                    track_name = tc.params.get("trackName") or "Track"
+                    indices = [i]
+                    detail_parts: list[str] = []
+                    if tc.name == "stori_add_insert_effect":
+                        etype = tc.params.get("type", "")
+                        if etype:
+                            detail_parts.append(etype.title())
+                    i += 1
+                    while i < n and tool_calls[i].name in _EFFECT_TOOL_NAMES:
+                        etc = tool_calls[i]
+                        if etc.name == "stori_ensure_bus":
+                            break
+                        etc_track = etc.params.get("trackName", "")
+                        if etc_track and etc_track.lower() != track_name.lower():
+                            break
+                        indices.append(i)
+                        if etc.name == "stori_add_insert_effect":
+                            etype = etc.params.get("type", "")
+                            if etype:
+                                detail_parts.append(etype.title())
+                        i += 1
+                    steps.append(_PlanStep(
+                        step_id=str(self._next_id),
+                        label=f"Add effects to {track_name}",
+                        detail=", ".join(detail_parts) if detail_parts else None,
+                        track_name=track_name,
+                        tool_name="stori_add_insert_effect",
+                        tool_indices=indices,
+                        parallel_group="instruments",
+                    ))
+                    self._next_id += 1
+
+            # ----- Expressive tools (standalone) -----
+            elif tc.name in _EXPRESSIVE_TOOL_NAMES:
+                track_name = self._track_name_for_call(tc) or "Track"
+                if tc.name == "stori_add_midi_cc":
+                    label = f"Add MIDI CC to {track_name}"
+                elif tc.name == "stori_add_pitch_bend":
+                    label = f"Add pitch bend to {track_name}"
+                else:
+                    label = f"Write automation for {track_name}"
+                steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label=label,
+                    track_name=track_name,
+                    tool_name=tc.name,
+                    tool_indices=[i],
+                    parallel_group="instruments",
+                ))
+                self._next_id += 1
+                i += 1
+
+            # ----- Mixing tools -----
             elif tc.name in _MIXING_TOOL_NAMES:
                 indices = []
                 while i < n and tool_calls[i].name in _MIXING_TOOL_NAMES:
@@ -447,14 +818,17 @@ class _PlanTracker:
                 steps.append(_PlanStep(
                     step_id=str(self._next_id),
                     label="Adjust mix",
+                    tool_name="stori_set_track_volume",
                     tool_indices=indices,
                 ))
                 self._next_id += 1
 
+            # ----- Fallback -----
             else:
                 steps.append(_PlanStep(
                     step_id=str(self._next_id),
                     label=_human_label_for_tool(tc.name, tc.params),
+                    tool_name=tc.name,
                     tool_indices=[i],
                 ))
                 self._next_id += 1
@@ -474,24 +848,45 @@ class _PlanTracker:
         routing fields (Tempo, Key, Role, Style, Section) so the TODO list
         appears immediately when the user submits, not after the first LLM
         response arrives.
+
+        Labels use canonical patterns for ExecutionTimelineView grouping.
+        Steps are ordered per-track (contiguous) so the timeline renders
+        coherent instrument sections.
         """
         self.title = self._derive_title(prompt, [], project_context)
 
-        # Setup steps from routing fields
-        if parsed.tempo:
+        # Setup steps from routing fields — skip if project already matches
+        current_tempo = project_context.get("tempo")
+        current_key = (project_context.get("key") or "").strip().lower()
+        if parsed.tempo and parsed.tempo != current_tempo:
             self.steps.append(_PlanStep(
                 step_id=str(self._next_id),
                 label=f"Set tempo to {parsed.tempo} BPM",
+                tool_name="stori_set_tempo",
             ))
             self._next_id += 1
-        if parsed.key:
+        if parsed.key and parsed.key.strip().lower() != current_key:
             self.steps.append(_PlanStep(
                 step_id=str(self._next_id),
-                label=f"Set key to {parsed.key}",
+                label=f"Set key signature to {parsed.key}",
+                tool_name="stori_set_key",
             ))
             self._next_id += 1
 
-        # One step per role — map role names to human-friendly track labels
+        # Build set of existing track names for label selection
+        existing_track_names = {
+            t.get("name", "").lower()
+            for t in project_context.get("tracks", [])
+            if t.get("name")
+        }
+
+        # Expressive tool steps — derive from STORI PROMPT extensions
+        ext = getattr(parsed, "extensions", {}) or {}
+        ext_keys = {k.lower() for k in ext}
+        effects_data = ext.get("effects") or ext.get("Effects") or {}
+
+        # One step per role — map role names to human-friendly track labels.
+        # Steps are grouped per track: create → content → effects → expressive
         _ROLE_LABELS: dict[str, str] = {
             "drums": "Drums",
             "drum": "Drums",
@@ -507,10 +902,81 @@ class _PlanTracker:
         }
         for role in parsed.roles:
             track_label = _ROLE_LABELS.get(role.lower(), role.title())
+            track_exists = track_label.lower() in existing_track_names
+
+            # Step 1: Create track (or note that it exists)
+            if track_exists:
+                self.steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label=f"Add content to {track_label}",
+                    track_name=track_label,
+                    tool_name="stori_add_notes",
+                    parallel_group="instruments",
+                ))
+            else:
+                self.steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label=f"Create {track_label} track",
+                    track_name=track_label,
+                    tool_name="stori_add_midi_track",
+                    parallel_group="instruments",
+                ))
+            self._next_id += 1
+
+            if not track_exists:
+                # Step 2: Add content (separate from creation for timeline granularity)
+                self.steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label=f"Add content to {track_label}",
+                    track_name=track_label,
+                    tool_name="stori_add_notes",
+                    parallel_group="instruments",
+                ))
+                self._next_id += 1
+
+            # Step 3: Per-track effects (from Effects block or style defaults)
+            track_key_lower = track_label.lower()
+            if "effects" in ext_keys and isinstance(effects_data, dict):
+                matched_key = None
+                for ek in effects_data:
+                    if ek.replace("_", " ").lower() == track_key_lower:
+                        matched_key = ek
+                        break
+                if matched_key:
+                    self.steps.append(_PlanStep(
+                        step_id=str(self._next_id),
+                        label=f"Add effects to {track_label}",
+                        track_name=track_label,
+                        tool_name="stori_add_insert_effect",
+                        parallel_group="instruments",
+                    ))
+                    self._next_id += 1
+
+        # Per-track effects from Effects block for tracks NOT in roles
+        if "effects" in ext_keys and isinstance(effects_data, dict):
+            role_labels_lower = {
+                _ROLE_LABELS.get(r.lower(), r.title()).lower()
+                for r in parsed.roles
+            }
+            for track_key in effects_data:
+                label = track_key.replace("_", " ").title()
+                if label.lower() not in role_labels_lower:
+                    self.steps.append(_PlanStep(
+                        step_id=str(self._next_id),
+                        label=f"Add effects to {label}",
+                        track_name=label,
+                        tool_name="stori_add_insert_effect",
+                        parallel_group="instruments",
+                    ))
+                    self._next_id += 1
+
+        # Generic effects step when composing without explicit Effects block
+        if "effects" not in ext_keys and parsed.roles:
             self.steps.append(_PlanStep(
                 step_id=str(self._next_id),
-                label=f"Create {track_label} track and add content",
-                track_name=track_label,
+                label="Add effects and routing",
+                tool_name="stori_add_insert_effect",
+                parallel_group="instruments",
             ))
             self._next_id += 1
 
@@ -519,8 +985,90 @@ class _PlanTracker:
             self.steps.append(_PlanStep(
                 step_id=str(self._next_id),
                 label="Generate music",
+                tool_name="stori_add_midi_track",
             ))
             self._next_id += 1
+
+        # Expressive steps with track names where possible
+        if "midiexpressiveness" in ext_keys:
+            midi_exp = ext.get("midiexpressiveness") or ext.get("MidiExpressiveness") or {}
+            if isinstance(midi_exp, dict):
+                # Try to derive target track from the extension data
+                target_track = None
+                if parsed.roles:
+                    # Default to first melodic role
+                    for r in parsed.roles:
+                        if r.lower() not in ("drums",):
+                            target_track = _ROLE_LABELS.get(r.lower(), r.title())
+                            break
+                    if not target_track:
+                        target_track = _ROLE_LABELS.get(
+                            parsed.roles[0].lower(), parsed.roles[0].title()
+                        )
+
+                if "cc_curves" in midi_exp:
+                    label = f"Add MIDI CC to {target_track}" if target_track else "Add MIDI CC curves"
+                    self.steps.append(_PlanStep(
+                        step_id=str(self._next_id),
+                        label=label,
+                        track_name=target_track,
+                        tool_name="stori_add_midi_cc",
+                        parallel_group="instruments",
+                    ))
+                    self._next_id += 1
+                if "pitch_bend" in midi_exp:
+                    label = f"Add pitch bend to {target_track}" if target_track else "Add pitch bend"
+                    self.steps.append(_PlanStep(
+                        step_id=str(self._next_id),
+                        label=label,
+                        track_name=target_track,
+                        tool_name="stori_add_pitch_bend",
+                        parallel_group="instruments",
+                    ))
+                    self._next_id += 1
+                if "sustain_pedal" in midi_exp:
+                    label = f"Add MIDI CC to {target_track}" if target_track else "Add sustain pedal (CC 64)"
+                    self.steps.append(_PlanStep(
+                        step_id=str(self._next_id),
+                        label=label,
+                        track_name=target_track,
+                        tool_name="stori_add_midi_cc",
+                        parallel_group="instruments",
+                    ))
+                    self._next_id += 1
+
+        if "automation" in ext_keys:
+            automation_data = ext.get("automation") or ext.get("Automation") or []
+            count = len(automation_data) if isinstance(automation_data, list) else 1
+            # Try to derive track names from automation entries
+            if isinstance(automation_data, list) and automation_data:
+                first_track = automation_data[0].get("track")
+                if first_track:
+                    label = f"Write automation for {first_track.replace('_', ' ').title()}"
+                else:
+                    label = f"Write automation ({count} lane{'s' if count != 1 else ''})"
+            else:
+                label = f"Write automation ({count} lane{'s' if count != 1 else ''})"
+            self.steps.append(_PlanStep(
+                step_id=str(self._next_id),
+                label=label,
+                tool_name="stori_add_automation",
+            ))
+            self._next_id += 1
+
+        # Shared reverb bus — when 2+ tracks in the Effects block need reverb
+        if "effects" in ext_keys and isinstance(effects_data, dict):
+            tracks_needing_reverb = [
+                k for k, v in effects_data.items()
+                if isinstance(v, dict) and "reverb" in v
+            ]
+            if len(tracks_needing_reverb) >= 2:
+                self.steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label="Set up shared Reverb bus",
+                    tool_name="stori_ensure_bus",
+                ))
+                self._next_id += 1
 
     def _add_anticipatory_steps(self, store: Any) -> None:
         """For composition mode, add pending steps for tracks still needing content."""
@@ -539,6 +1087,7 @@ class _PlanTracker:
                     step_id=str(self._next_id),
                     label=f"Add content to {track.name}",
                     track_name=track.name,
+                    tool_name="stori_add_midi_track",
                 ))
                 self._next_id += 1
 
@@ -554,7 +1103,9 @@ class _PlanTracker:
                     "stepId": s.step_id,
                     "label": s.label,
                     "status": "pending",
+                    **({"toolName": s.tool_name} if s.tool_name else {}),
                     **({"detail": s.detail} if s.detail else {}),
+                    **({"parallelGroup": s.parallel_group} if s.parallel_group else {}),
                 }
                 for s in self.steps
             ],
@@ -614,10 +1165,47 @@ class _PlanTracker:
                             ):
                                 return step
                         break
+        # Effect tools: match by track name first, then fall back to generic
         if tc_name in _EFFECT_TOOL_NAMES:
+            tc_track = tc_params.get("trackName", "").lower()
+            if tc_track:
+                for step in self.steps:
+                    if (
+                        "effect" in step.label.lower()
+                        and step.track_name
+                        and step.track_name.lower() == tc_track
+                        and step.status != "completed"
+                    ):
+                        return step
+            if tc_name == "stori_ensure_bus":
+                for step in self.steps:
+                    if "bus" in step.label.lower() and step.status != "completed":
+                        return step
             for step in self.steps:
                 if "effect" in step.label.lower() and step.status != "completed":
                     return step
+
+        # Expressive tools: match by tool name and track
+        if tc_name in _EXPRESSIVE_TOOL_NAMES:
+            tc_track = tc_params.get("trackName", "").lower()
+            if tc_name == "stori_add_midi_cc":
+                for step in self.steps:
+                    if "MIDI CC" in step.label and step.status != "completed":
+                        if not tc_track or not step.track_name or step.track_name.lower() == tc_track:
+                            return step
+                # Also match sustain pedal steps
+                for step in self.steps:
+                    if "sustain" in step.label.lower() and step.status != "completed":
+                        return step
+            elif tc_name == "stori_add_pitch_bend":
+                for step in self.steps:
+                    if "pitch bend" in step.label.lower() and step.status != "completed":
+                        return step
+            elif tc_name == "stori_add_automation":
+                for step in self.steps:
+                    if "automation" in step.label.lower() and step.status != "completed":
+                        return step
+
         if tc_name in _MIXING_TOOL_NAMES:
             for step in self.steps:
                 if "mix" in step.label.lower() and step.status != "completed":
@@ -635,6 +1223,7 @@ class _PlanTracker:
         if step:
             step.status = "active"
         self._active_step_id = step_id
+        self._active_step_ids.add(step_id)
         return {"type": "planStepUpdate", "stepId": step_id, "status": "active"}
 
     def complete_active_step(self) -> Optional[dict[str, Any]]:
@@ -645,6 +1234,7 @@ class _PlanTracker:
         if not step:
             return None
         step.status = "completed"
+        self._active_step_ids.discard(self._active_step_id)
         self._active_step_id = None
         d: dict[str, Any] = {
             "type": "planStepUpdate",
@@ -665,6 +1255,7 @@ class _PlanTracker:
                 step.result = result
         if self._active_step_id == step_id:
             self._active_step_id = None
+        self._active_step_ids.discard(step_id)
         d: dict[str, Any] = {
             "type": "planStepUpdate",
             "stepId": step_id,
@@ -673,6 +1264,55 @@ class _PlanTracker:
         if result:
             d["result"] = result
         return d
+
+    def complete_all_active_steps(self) -> list[dict[str, Any]]:
+        """Complete every currently-active step. Returns list of event dicts."""
+        events: list[dict[str, Any]] = []
+        for step_id in list(self._active_step_ids):
+            step = self.get_step(step_id)
+            if step and step.status == "active":
+                step.status = "completed"
+                d: dict[str, Any] = {
+                    "type": "planStepUpdate",
+                    "stepId": step.step_id,
+                    "status": "completed",
+                }
+                if step.result:
+                    d["result"] = step.result
+                events.append(d)
+        self._active_step_ids.clear()
+        self._active_step_id = None
+        return events
+
+    def find_active_step_for_track(self, track_name: str) -> Optional[_PlanStep]:
+        """Find the active step bound to a specific instrument track."""
+        track_lower = track_name.lower()
+        for step in self.steps:
+            if (
+                step.status == "active"
+                and step.track_name
+                and step.track_name.lower() == track_lower
+            ):
+                return step
+        return None
+
+    def finalize_pending_as_skipped(self) -> list[dict[str, Any]]:
+        """Mark all remaining pending steps as skipped and return events.
+
+        The Execution Timeline spec requires that no step is left in "pending"
+        at plan completion — steps that were never activated must be emitted
+        as "skipped" so the frontend can render them correctly.
+        """
+        events: list[dict[str, Any]] = []
+        for step in self.steps:
+            if step.status == "pending":
+                step.status = "skipped"
+                events.append({
+                    "type": "planStepUpdate",
+                    "stepId": step.step_id,
+                    "status": "skipped",
+                })
+        return events
 
     def progress_context(self) -> str:
         """Format plan progress for injection into the system prompt."""
@@ -720,6 +1360,36 @@ def _project_needs_structure(project_context: dict[str, Any]) -> bool:
     return len(tracks) == 0
 
 
+def _is_additive_composition(
+    parsed: Optional["ParsedPrompt"],
+    project_context: dict[str, Any],
+) -> bool:
+    """Detect if a composition request creates a new section (EDITING, not COMPOSING).
+
+    Returns True when the request appends new content (Position: after/last)
+    or introduces roles that don't map to existing tracks. In these cases
+    EDITING mode is preferred because the content is additive — there is
+    nothing to diff against, and COMPOSING with phraseCount: 0 is always a bug.
+    """
+    if not parsed:
+        return False
+
+    if parsed.position and parsed.position.kind in ("after", "last"):
+        return True
+
+    existing_names = {
+        t.get("name", "").lower()
+        for t in project_context.get("tracks", [])
+        if t.get("name")
+    }
+    if parsed.roles:
+        for role in parsed.roles:
+            if role.lower() not in existing_names:
+                return True
+
+    return False
+
+
 def _get_incomplete_tracks(
     store: "StateStore",
     tool_calls_collected: list[dict[str, Any]] | None = None,
@@ -755,6 +1425,81 @@ def _get_incomplete_tracks(
         ):
             incomplete.append(track.name)
     return incomplete
+
+
+def _get_missing_expressive_steps(
+    parsed: Optional["ParsedPrompt"],
+    tool_calls_collected: list[dict[str, Any]],
+) -> list[str]:
+    """Return human-readable descriptions of expressive steps not yet executed.
+
+    Checks Effects, MidiExpressiveness, and Automation blocks from the parsed
+    STORI PROMPT against the tool calls already made this session. Returns an
+    empty list when everything has been called (or when the parsed prompt has
+    no expressive blocks).
+    """
+    if parsed is None:
+        return []
+
+    # Keys are lowercased by the parser (prompt_parser.py line 177)
+    extensions: dict[str, Any] = parsed.extensions or {}
+    called_tools = {tc["tool"] for tc in tool_calls_collected}
+
+    missing: list[str] = []
+
+    # Effects → stori_add_insert_effect  (stored as lowercase "effects")
+    if extensions.get("effects") and "stori_add_insert_effect" not in called_tools:
+        missing.append(
+            "Effects block present but stori_add_insert_effect was never called. "
+            "Call stori_add_insert_effect for each effects entry (compressor, reverb, eq, etc.)."
+        )
+
+    # MidiExpressiveness.cc_curves → stori_add_midi_cc  (stored as "midiexpressiveness")
+    me = extensions.get("midiexpressiveness") or {}
+    if me.get("cc_curves") and "stori_add_midi_cc" not in called_tools:
+        missing.append(
+            "MidiExpressiveness.cc_curves present but stori_add_midi_cc was never called. "
+            "Call stori_add_midi_cc for each cc_curves entry."
+        )
+
+    # MidiExpressiveness.sustain_pedal → stori_add_midi_cc (CC 64)
+    if me.get("sustain_pedal") and "stori_add_midi_cc" not in called_tools:
+        missing.append(
+            "MidiExpressiveness.sustain_pedal present but stori_add_midi_cc (CC 64) was never called. "
+            "Call stori_add_midi_cc with cc=64 on the target region."
+        )
+
+    # MidiExpressiveness.pitch_bend → stori_add_pitch_bend
+    if me.get("pitch_bend") and "stori_add_pitch_bend" not in called_tools:
+        missing.append(
+            "MidiExpressiveness.pitch_bend present but stori_add_pitch_bend was never called. "
+            "Call stori_add_pitch_bend with slide events on the target region."
+        )
+
+    # Automation → stori_add_automation  (stored as lowercase "automation")
+    if extensions.get("automation") and "stori_add_automation" not in called_tools:
+        missing.append(
+            "Automation block present but stori_add_automation was never called. "
+            "Call stori_add_automation(trackId=..., parameter='Volume', points=[...]) "
+            "for each lane. Use trackId (NOT 'target'). parameter must be a canonical "
+            "string like 'Volume', 'Pan', 'Synth Cutoff', 'Expression (CC11)', etc."
+        )
+
+    # Effects with reverb on multiple tracks → stori_ensure_bus + stori_add_send
+    effects_data = extensions.get("effects") or {}
+    if isinstance(effects_data, dict):
+        tracks_needing_reverb = [
+            k for k, v in effects_data.items()
+            if isinstance(v, dict) and "reverb" in v
+        ]
+        if len(tracks_needing_reverb) >= 2 and "stori_ensure_bus" not in called_tools:
+            missing.append(
+                f"Multiple tracks ({', '.join(tracks_needing_reverb)}) need reverb — "
+                "use a shared Reverb bus: call stori_ensure_bus(name='Reverb') once, "
+                "then stori_add_send(trackId=X, busId=$N.busId, levelDb=-6) for each track."
+            )
+
+    return missing
 
 
 def _create_editing_composition_route(route: "IntentResult") -> "IntentResult":
@@ -916,20 +1661,34 @@ async def orchestrate(
             with trace_span(trace, "intent_classification"):
                 route = await get_intent_result_with_llm(prompt, project_context, llm, conversation_history)
                 
+                # Extract parsed prompt for state-detection heuristics
+                _orch_slots = getattr(route, "slots", None)
+                _orch_extras = getattr(_orch_slots, "extras", None) if _orch_slots is not None else None
+                _orch_parsed: Optional[ParsedPrompt] = (
+                    _orch_extras.get("parsed_prompt") if isinstance(_orch_extras, dict) else None
+                )
+                
                 # Backend-owned execution mode policy:
                 # COMPOSING → variation (music generation requires human review)
                 #   EXCEPT: empty project → override to EDITING (can't diff against nothing)
+                #   EXCEPT: additive composition (new section / new tracks) → EDITING
                 # EDITING   → apply (structural ops execute directly)
                 # REASONING → n/a (no tools)
                 if route.sse_state == SSEState.COMPOSING:
                     if _project_needs_structure(project_context):
-                        # Empty project: structural changes need tool_call events,
-                        # not variation review — you can't diff against nothing.
                         route = _create_editing_composition_route(route)
                         execution_mode = "apply"
                         logger.info(
                             f"🔄 Empty project: overriding {route.intent.value} → EDITING "
                             f"for structural creation with tool_call events"
+                        )
+                    elif _is_additive_composition(_orch_parsed, project_context):
+                        route = _create_editing_composition_route(route)
+                        execution_mode = "apply"
+                        logger.info(
+                            f"🔄 Additive composition (new section/tracks): "
+                            f"overriding {route.intent.value} → EDITING "
+                            f"for direct execution with tool_call events"
                         )
                     else:
                         execution_mode = "variation"
@@ -1230,7 +1989,7 @@ async def _handle_composing(
                 yield item
 
     if plan and plan.tool_calls:
-        # ── Phase 2 (Unified SSE UX): build plan tracker and emit plan event ──
+        # ── Build plan tracker and emit plan event ──
         composing_plan_tracker = _PlanTracker()
         composing_plan_tracker.build(
             plan.tool_calls, prompt, project_context,
@@ -1239,48 +1998,74 @@ async def _handle_composing(
         if len(composing_plan_tracker.steps) >= 1:
             yield await sse_event(composing_plan_tracker.to_plan_event())
 
-        # Deprecated — kept for backward compat during transition
+        # planSummary uses plan tracker step count (Bug 9)
         yield await sse_event({
             "type": "planSummary",
-            "totalSteps": len(plan.tool_calls),
+            "totalSteps": len(composing_plan_tracker.steps),
             "generations": plan.generation_count,
             "edits": plan.edit_count,
         })
-        
-        # =====================================================================
-        # Variation Mode: Generate proposal without mutation
-        # =====================================================================
+
+        # =================================================================
+        # PROPOSAL PHASE: emit all tool calls as proposals.
+        # No planStepUpdate events during this phase (Bug 2).
+        # Steps remain "pending" in the frontend TODO list.
+        # =================================================================
+        for tc in plan.tool_calls:
+            yield await sse_event({
+                "type": "toolCall",
+                "id": "",
+                "name": tc.name,
+                "params": tc.params,
+                "proposal": True,
+            })
+
+        # =================================================================
+        # EXECUTION PHASE: execute each tool call for real.
+        # Emit planStepUpdate:active/completed, toolStart, and toolCall
+        # events with real UUIDs (proposal: false).
+        # =================================================================
         try:
             with trace_span(trace, "variation_generation", {"steps": len(plan.tool_calls)}):
                 from app.core.executor import execute_plan_variation
 
                 logger.info(
-                    f"[{trace.trace_id[:8]}] Starting variation generation: "
+                    f"[{trace.trace_id[:8]}] Starting variation execution: "
                     f"{len(plan.tool_calls)} tool calls"
                 )
 
-                # ── Phase 2+3 unified event queue ──
-                # All executor events (planStepUpdate, toolStart, toolCall,
-                # deprecated progress) are funnelled through a single queue
-                # so the SSE drain loop can emit them in order.
                 _event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+                # Per-track active-step tracking for parallel instrument execution.
+                # When multiple instruments execute concurrently, each track has
+                # its own "current step" rather than a single global active step.
+                _active_step_by_track: dict[str, str] = {}
 
-                async def _on_tool_event(
-                    call_id: str, tool_name: str, params: dict[str, Any],
+                async def _on_pre_tool(
+                    tool_name: str, params: dict[str, Any],
                 ) -> None:
-                    """Phase 3: emit toolStart + proposal toolCall."""
-                    # ── planStepUpdate: activate matching step ──
+                    """Execution phase: planStepUpdate:active + toolStart.
+
+                    Supports parallel instrument execution: multiple steps from
+                    different instruments can be active simultaneously. Step
+                    transitions are tracked per-instrument (by track_name) so
+                    completing one instrument's step doesn't affect another's.
+                    """
                     step = composing_plan_tracker.find_step_for_tool(
                         tool_name, params, store,
                     )
-                    if step and step.step_id != composing_plan_tracker._active_step_id:
-                        if composing_plan_tracker._active_step_id:
-                            completed_evt = composing_plan_tracker.complete_active_step()
-                            if completed_evt:
-                                await _event_queue.put(completed_evt)
+                    if step and step.status != "active":
+                        track_key = (step.track_name or "").lower()
+                        # Complete the previous step for the same instrument
+                        prev_step_id = _active_step_by_track.get(track_key)
+                        if prev_step_id and prev_step_id != step.step_id:
+                            await _event_queue.put(
+                                composing_plan_tracker.complete_step_by_id(prev_step_id)
+                            )
                         await _event_queue.put(
                             composing_plan_tracker.activate_step(step.step_id)
                         )
+                        if track_key:
+                            _active_step_by_track[track_key] = step.step_id
 
                     label = _human_label_for_tool(tool_name, params)
                     await _event_queue.put({
@@ -1288,19 +2073,25 @@ async def _handle_composing(
                         "name": tool_name,
                         "label": label,
                     })
+
+                async def _on_post_tool(
+                    tool_name: str, resolved_params: dict[str, Any],
+                ) -> None:
+                    """Execution phase: toolCall with real UUID after success."""
+                    call_id = str(_uuid_mod.uuid4())
+                    emit_params = _enrich_params_with_track_context(resolved_params, store)
                     await _event_queue.put({
                         "type": "toolCall",
                         "id": call_id,
                         "name": tool_name,
-                        "params": params,
-                        "proposal": True,
+                        "params": emit_params,
+                        "proposal": False,
                     })
 
                 async def _on_progress(
                     current: int, total: int,
                     tool_name: str = "", tool_args: dict | None = None,
                 ) -> None:
-                    """Progress callback — deprecated progress event for compat."""
                     label = _human_label_for_tool(tool_name, tool_args or {}) if tool_name else f"Step {current}"
                     await _event_queue.put({
                         "type": "progress",
@@ -1310,7 +2101,7 @@ async def _handle_composing(
                         "toolName": tool_name,
                     })
 
-                _VARIATION_TIMEOUT = 90  # seconds
+                _VARIATION_TIMEOUT = 300
                 task = asyncio.create_task(
                     execute_plan_variation(
                         tool_calls=plan.tool_calls,
@@ -1319,7 +2110,8 @@ async def _handle_composing(
                         conversation_id=conversation_id,
                         explanation=plan.llm_response_text,
                         progress_callback=_on_progress,
-                        tool_event_callback=_on_tool_event,
+                        pre_tool_callback=_on_pre_tool,
+                        post_tool_callback=_on_post_tool,
                         quality_preset=quality_preset,
                     )
                 )
@@ -1345,17 +2137,19 @@ async def _handle_composing(
                                 break
                         await asyncio.sleep(0)
 
-                    # Drain any remaining queued events
                     while not _event_queue.empty():
                         yield await sse_event(await _event_queue.get())
 
                     variation = await task
 
-                    # Complete remaining active plan step
-                    if composing_plan_tracker._active_step_id:
-                        final_step_evt = composing_plan_tracker.complete_active_step()
-                        if final_step_evt:
-                            yield await sse_event(final_step_evt)
+                    # Complete all remaining active plan steps (may be multiple
+                    # when instruments ran in parallel)
+                    for final_evt in composing_plan_tracker.complete_all_active_steps():
+                        yield await sse_event(final_evt)
+
+                    # Mark any steps that were never activated as skipped
+                    for skip_evt in composing_plan_tracker.finalize_pending_as_skipped():
+                        yield await sse_event(skip_evt)
 
                 except asyncio.TimeoutError:
                     logger.error(
@@ -1387,10 +2181,21 @@ async def _handle_composing(
                     f"{variation.total_changes} changes, {len(variation.phrases)} phrases"
                 )
 
-                # Persist to VariationStore so commit/discard can find it
+                # Safety: composing with 0 phrases is always a bug (Bug 1).
+                if len(variation.phrases) == 0:
+                    logger.error(
+                        f"[{trace.trace_id[:8]}] COMPOSING produced 0 phrases "
+                        f"despite {len(plan.tool_calls)} tool calls — "
+                        f"this indicates a generation or entity resolution failure. "
+                        f"Proposed notes captured: {sum(len(n) for n in getattr(variation, '_proposed_notes', {}).values()) if hasattr(variation, '_proposed_notes') else 'N/A'}"
+                    )
+
                 _store_variation(variation, project_context, store)
 
-                # Emit meta event
+                # =============================================================
+                # PHRASE STREAMING PHASE: one event per modified region.
+                # =============================================================
+
                 note_counts = variation.note_counts
                 yield await sse_event({
                     "type": "meta",
@@ -1403,7 +2208,6 @@ async def _handle_composing(
                     "noteCounts": note_counts,
                 })
 
-                # Emit individual phrase events
                 for i, phrase in enumerate(variation.phrases):
                     logger.debug(
                         f"[{trace.trace_id[:8]}] Emitting phrase {i + 1}/{len(variation.phrases)}: "
@@ -1423,7 +2227,6 @@ async def _handle_composing(
                         "controllerChanges": phrase.controller_changes,
                     })
 
-                # Emit done event
                 yield await sse_event({
                     "type": "done",
                     "variationId": variation.variation_id,
@@ -1435,7 +2238,6 @@ async def _handle_composing(
                     f"{variation.total_changes} changes in {len(variation.phrases)} phrases"
                 )
 
-                # Complete event
                 yield await sse_event({
                     "type": "complete",
                     "success": True,
@@ -1590,6 +2392,9 @@ async def _handle_editing(
     tool_calls_collected: list[dict[str, Any]] = []
     plan_tracker: Optional[_PlanTracker] = None
     iteration = 0
+    # Circuit breaker: track stori_add_notes failures per regionId within this session.
+    # If the same regionId fails 3+ times we return a hard error so the model stops looping.
+    _add_notes_failures: dict[str, int] = {}
     max_iterations = (
         settings.composition_max_iterations if is_composition
         else settings.orchestration_max_iterations
@@ -1747,6 +2552,31 @@ async def _handle_editing(
                         plan_tracker.activate_step(step.step_id)
                     )
 
+            # ── Circuit breaker: stori_add_notes infinite-retry guard ──
+            if tc.name == "stori_add_notes":
+                cb_region_id = resolved_args.get("regionId", "__unknown__")
+                cb_failures = _add_notes_failures.get(cb_region_id, 0)
+                if cb_failures >= 3:
+                    cb_error = (
+                        f"stori_add_notes: regionId '{cb_region_id}' has failed {cb_failures} times "
+                        f"without valid notes being added. Stop retrying with shorthand params. "
+                        f"Provide a real 'notes' array: "
+                        f"[{{\"pitch\": 60, \"startBeat\": 0, \"durationBeats\": 1, \"velocity\": 80}}, ...]"
+                    )
+                    logger.error(
+                        f"[{trace.trace_id[:8]}] 🔴 Circuit breaker: {cb_error}"
+                    )
+                    yield await sse_event({"type": "toolError", "name": tc.name, "error": cb_error})
+                    messages.append({
+                        "role": "assistant",
+                        "tool_calls": [{"id": tc.id, "type": "function",
+                                        "function": {"name": tc.name, "arguments": json.dumps(resolved_args)}}]
+                    })
+                    cb_result = {"error": cb_error}
+                    iter_tool_results.append(cb_result)
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(cb_result)})
+                    continue
+
             with trace_span(trace, f"validate:{tc.name}"):
                 validation = validate_tool_call(
                     tc.name, resolved_args, route.allowed_tool_names, store.registry
@@ -1758,6 +2588,11 @@ async def _handle_editing(
                     tc.name,
                     [str(e) for e in validation.errors],
                 )
+
+                # Increment circuit-breaker counter for add_notes failures
+                if tc.name == "stori_add_notes":
+                    cb_region_id = resolved_args.get("regionId", "__unknown__")
+                    _add_notes_failures[cb_region_id] = _add_notes_failures.get(cb_region_id, 0) + 1
                 
                 yield await sse_event({
                     "type": "toolError",
@@ -1832,14 +2667,12 @@ async def _handle_editing(
                 region_name: str = str(enriched_params.get("name", "Region"))
                 
                 # CRITICAL: Always generate new UUID for entity-creating tools
-                # LLMs sometimes hallucinate duplicate UUIDs, causing frontend crashes
                 if "regionId" in enriched_params:
                     logger.warning(
                         f"⚠️ LLM provided regionId '{enriched_params['regionId']}' for NEW region '{region_name}'. "
                         f"Ignoring and generating fresh UUID to prevent duplicates."
                     )
                 
-                # Always generate fresh UUID via StateStore
                 if midi_region_track_id:
                     try:
                         region_id = store.create_region(
@@ -1853,6 +2686,33 @@ async def _handle_editing(
                         logger.debug(f"🔑 Generated regionId: {region_id[:8]} for '{region_name}'")
                     except ValueError as e:
                         logger.error(f"Failed to create region: {e}")
+                        error_result = {"success": False, "error": f"Failed to create region: {e}"}
+                        iter_tool_results.append(error_result)
+                        messages.append({
+                            "role": "assistant",
+                            "tool_calls": [{"id": tc.id, "type": "function",
+                                            "function": {"name": tc.name, "arguments": json.dumps(enriched_params)}}]
+                        })
+                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(error_result)})
+                        continue
+                else:
+                    logger.error(
+                        f"⚠️ stori_add_midi_region called without trackId for region '{region_name}'"
+                    )
+                    error_result = {
+                        "success": False,
+                        "error": f"Cannot create region '{region_name}' — no trackId provided. "
+                                 "Use $N.trackId to reference a track created in a prior tool call, "
+                                 "or use trackName for name-based resolution.",
+                    }
+                    iter_tool_results.append(error_result)
+                    messages.append({
+                        "role": "assistant",
+                        "tool_calls": [{"id": tc.id, "type": "function",
+                                        "function": {"name": tc.name, "arguments": json.dumps(enriched_params)}}]
+                    })
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(error_result)})
+                    continue
             
             elif tc.name == "stori_duplicate_region":
                 # Duplicating a region creates a new entity — register the copy.
@@ -1886,16 +2746,17 @@ async def _handle_editing(
             
             # Emit tool start + call to client (only in apply mode)
             if execution_mode == "apply":
+                emit_params = _enrich_params_with_track_context(enriched_params, store)
                 yield await sse_event({
                     "type": "toolStart",
                     "name": tc.name,
-                    "label": _human_label_for_tool(tc.name, enriched_params),
+                    "label": _human_label_for_tool(tc.name, emit_params),
                 })
                 yield await sse_event({
                     "type": "toolCall",
                     "id": tc.id,
                     "name": tc.name,
-                    "params": enriched_params,
+                    "params": emit_params,
                 })
             
             log_tool_call(trace.trace_id, tc.name, enriched_params, True)
@@ -1993,16 +2854,17 @@ async def _handle_editing(
                     "function": {"name": tc.name, "arguments": msg_arguments}
                 }]
             })
-            # Build tool result. For entity-creating tools: echo the
-            # server-assigned ID(s) AND include the full current entity
-            # manifest so the LLM always has an up-to-date picture of the
-            # project after every creation — no stale UUIDs, no guessing.
-            tool_result: dict = {"status": "success"}
-            if tc.name in _ENTITY_CREATING_TOOLS:
-                for _field in _ENTITY_ID_ECHO.get(tc.name, []):
-                    if _field in enriched_params:
-                        tool_result[_field] = enriched_params[_field]
-                tool_result["entities"] = _entity_manifest(store)
+            # Reset circuit-breaker counter on successful stori_add_notes
+            if tc.name == "stori_add_notes":
+                cb_region_id = enriched_params.get("regionId", "__unknown__")
+                _add_notes_failures.pop(cb_region_id, None)
+
+            # Build tool result with rich state feedback.
+            # Every entity-creating tool echoes the server-assigned ID(s)
+            # plus a full entity manifest so the LLM always has current IDs.
+            # stori_add_notes returns notesAdded + totalNotes so the model
+            # knows the call was real and doesn't re-add.
+            tool_result = _build_tool_result(tc.name, enriched_params, store)
 
             # Accumulate for $N.field variable reference resolution in
             # subsequent tool calls within this same iteration.
@@ -2019,6 +2881,26 @@ async def _handle_editing(
             evt = plan_tracker.complete_active_step()
             if evt:
                 yield await sse_event(evt)
+
+        # ── Entity snapshot injection between iterations ──
+        # After all tool calls in this batch, inject an updated entity
+        # manifest as a system message. This is the fundamental fix that
+        # prevents the model from losing track of created entities (empty
+        # regionId, re-adding notes, etc.) between tool call batches.
+        if response is not None and response.has_tool_calls:
+            snapshot = _entity_manifest(store)
+            messages.append({
+                "role": "system",
+                "content": (
+                    "ENTITY STATE AFTER TOOL CALLS (authoritative — use these IDs):\n"
+                    + json.dumps(snapshot, indent=None)
+                    + "\nUse the IDs above for subsequent tool calls. "
+                    "Do NOT re-add notes to regions that already have notes (check noteCount). "
+                    "Do NOT call stori_clear_notes unless explicitly replacing content. "
+                    "A successful stori_add_notes response means the notes were stored — "
+                    "do not redo the call."
+                ),
+            })
 
         # Force stop after first tool execution
         if route.force_stop_after and tool_calls_collected:
@@ -2048,12 +2930,19 @@ async def _handle_editing(
                 continue
             elif incomplete:
                 # ── Plan tracking: mark completed track steps ──
+                # Only mark a step completed if its track actually EXISTS in the
+                # registry AND is not incomplete. A track that was never created
+                # must stay pending — not be falsely marked completed (Bug 4).
                 if plan_tracker and execution_mode == "apply":
                     incomplete_set = set(incomplete)
+                    existing_track_names = {
+                        t.name for t in store.registry.list_tracks()
+                    }
                     for _step in plan_tracker.steps:
                         if (
                             _step.track_name
                             and _step.status in ("active", "pending")
+                            and _step.track_name in existing_track_names
                             and _step.track_name not in incomplete_set
                         ):
                             yield await sse_event(
@@ -2081,9 +2970,40 @@ async def _handle_editing(
                 )
                 continue
             else:
-                # All tracks have content — composition is complete
+                # All tracks have content — now check expressive steps
+                missing_expressive = _get_missing_expressive_steps(
+                    parsed, tool_calls_collected
+                )
+                if missing_expressive:
+                    # Include entity manifest so the model has IDs without looking them up
+                    entity_snapshot = _entity_manifest(store)
+                    # System-level guard prevents the model from regressing to track creation
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "EXPRESSIVE PHASE LOCK: All tracks have been created and have notes. "
+                            "You MUST NOT call stori_add_midi_track, stori_add_midi_region, "
+                            "stori_add_notes, or any track/region creation tool. "
+                            "Only call: stori_add_insert_effect, stori_add_midi_cc, "
+                            "stori_add_pitch_bend, stori_add_automation, stori_ensure_bus, stori_add_send."
+                        ),
+                    })
+                    expressive_msg = (
+                        "⚠️ EXPRESSIVE PHASE — call ALL of these in ONE batch, then stop:\n"
+                        + "\n".join(f"  {i+1}. {m}" for i, m in enumerate(missing_expressive))
+                        + f"\n\nEntity IDs for your calls:\n{entity_snapshot}"
+                        + "\n\nBatch ALL tool calls in a single response. No text. Just the tool calls."
+                    )
+                    messages.append({"role": "user", "content": expressive_msg})
+                    logger.info(
+                        f"[{trace.trace_id[:8]}] 🔄 Continuation: {len(missing_expressive)} "
+                        f"expressive step(s) pending (iteration {iteration})"
+                    )
+                    continue
+                # All done — tracks + expressive steps complete
                 logger.info(
-                    f"[{trace.trace_id[:8]}] ✅ All tracks have content after iteration {iteration}"
+                    f"[{trace.trace_id[:8]}] ✅ All tracks and expressive steps done "
+                    f"after iteration {iteration}"
                 )
                 break
 
@@ -2186,6 +3106,12 @@ async def _handle_editing(
     # =========================================================================
     # Apply Mode: Standard completion (existing behavior)
     # =========================================================================
+
+    # Mark any plan steps that were never activated as skipped
+    if plan_tracker:
+        for skip_evt in plan_tracker.finalize_pending_as_skipped():
+            yield await sse_event(skip_evt)
+
     yield await sse_event({
         "type": "complete",
         "success": True,

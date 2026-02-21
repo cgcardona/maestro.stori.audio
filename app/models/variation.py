@@ -115,9 +115,9 @@ class Phrase(_CamelModel):
         default_factory=list,
         description="List of note changes in this phrase"
     )
-    controller_changes: list[dict] = Field(
+    controller_changes: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="List of MIDI CC changes (future use)"
+        description="MIDI CC, pitch bend, and aftertouch changes in this phrase",
     )
     
     explanation: Optional[str] = Field(
@@ -287,6 +287,18 @@ class UpdatedRegionPayload(_CamelModel):
     region_id: str
     track_id: str
     notes: list[MidiNoteSnapshot] = Field(default_factory=list)
+    cc_events: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="MIDI CC events (sustain, expression, modulation, etc.)",
+    )
+    pitch_bends: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="MIDI pitch bend events",
+    )
+    aftertouch: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="MIDI aftertouch events (channel pressure and poly key pressure)",
+    )
     start_beat: Optional[float] = Field(
         default=None,
         description="Region start in beats — present only for new regions",

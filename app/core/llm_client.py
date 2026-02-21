@@ -394,7 +394,7 @@ class LLMClient:
             fraction = reasoning_fraction if reasoning_fraction is not None else 0.8
             reasoning_budget = int(max_tok * fraction)
             payload["reasoning"] = {
-                "max_tokens": max(reasoning_budget, 2048),  # Minimum 2K tokens for reasoning
+                "max_tokens": max(reasoning_budget, 1024),  # Minimum 1K tokens for reasoning
             }
             logger.info(f"🧠 Reasoning enabled: {reasoning_budget} tokens")
 

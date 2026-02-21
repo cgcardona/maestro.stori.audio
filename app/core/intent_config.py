@@ -66,6 +66,7 @@ class Intent(str, Enum):
     AUTOMATION_ADD = "automation.add"
     MIDI_CC_ADD = "midi_cc.add"
     PITCH_BEND_ADD = "pitch_bend.add"
+    AFTERTOUCH_ADD = "aftertouch.add"
     
     # Producer Idioms (high-level mixing)
     MIX_TONALITY = "mix.tonality"
@@ -110,6 +111,7 @@ _PRIMITIVES_MIXING = frozenset({
     "stori_add_automation",
     "stori_add_midi_cc",
     "stori_add_pitch_bend",
+    "stori_add_aftertouch",
 })
 
 _PRIMITIVES_TRACK = frozenset({
@@ -360,6 +362,14 @@ INTENT_CONFIGS: dict[Intent, IntentConfig] = {
         force_stop_after=True,
         tool_choice="required",
         description="Add pitch bend",
+    ),
+    Intent.AFTERTOUCH_ADD: IntentConfig(
+        intent=Intent.AFTERTOUCH_ADD,
+        sse_state=SSEState.EDITING,
+        allowed_tools=frozenset({"stori_add_aftertouch"}),
+        force_stop_after=True,
+        tool_choice="required",
+        description="Add aftertouch",
     ),
     
     # Producer idioms - mixing primitives

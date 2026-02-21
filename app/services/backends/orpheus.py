@@ -93,25 +93,63 @@ class OrpheusBackend(MusicGeneratorBackend):
         )
         
         if result.get("success"):
-            # Extract notes from Orpheus tool_calls response. We request one instrument per call
-            # (instruments=[instrument]); Orpheus filters to that instrument's channel so we get
-            # only that role's notes, not the full mix repeated on every track.
-            notes = []
+            # Extract notes, CC events, and pitch bends from Orpheus tool_calls
+            # response. We request one instrument per call (instruments=[instrument]);
+            # Orpheus filters to that instrument's channel.
+            notes: list[dict] = []
+            cc_events: list[dict] = []
+            pitch_bends: list[dict] = []
+            aftertouch: list[dict] = []
             tool_calls = result.get("tool_calls", [])
             
             for tool_call in tool_calls:
-                if tool_call.get("tool") == "addNotes":
-                    params = tool_call.get("params", {})
-                    call_notes = params.get("notes", [])
-                    notes.extend(call_notes)
+                tool_name = tool_call.get("tool", "")
+                params = tool_call.get("params", {})
+
+                if tool_name == "addNotes":
+                    notes.extend(params.get("notes", []))
+
+                elif tool_name == "addMidiCC":
+                    cc_num = params.get("cc")
+                    for ev in params.get("events", []):
+                        cc_events.append({
+                            "cc": cc_num,
+                            "beat": ev.get("beat", 0),
+                            "value": ev.get("value", 0),
+                        })
+
+                elif tool_name == "addPitchBend":
+                    for ev in params.get("events", []):
+                        pitch_bends.append({
+                            "beat": ev.get("beat", 0),
+                            "value": ev.get("value", 0),
+                        })
+
+                elif tool_name == "addAftertouch":
+                    for ev in params.get("events", []):
+                        entry: dict = {
+                            "beat": ev.get("beat", 0),
+                            "value": ev.get("value", 0),
+                        }
+                        if "pitch" in ev:
+                            entry["pitch"] = ev["pitch"]
+                        aftertouch.append(entry)
             
             if notes:
-                logger.info(f"Orpheus generated {len(notes)} notes")
+                logger.info(
+                    f"Orpheus generated {len(notes)} notes, "
+                    f"{len(cc_events)} CC, "
+                    f"{len(pitch_bends)} PB, "
+                    f"{len(aftertouch)} AT"
+                )
                 return GenerationResult(
                     success=True,
                     notes=notes,
                     backend_used=self.backend_type,
                     metadata={"source": "orpheus", "tool_calls_count": len(tool_calls)},
+                    cc_events=cc_events,
+                    pitch_bends=pitch_bends,
+                    aftertouch=aftertouch,
                 )
             else:
                 logger.warning("Orpheus returned success but no notes found in tool_calls")

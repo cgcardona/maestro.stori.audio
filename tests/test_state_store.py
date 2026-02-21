@@ -18,7 +18,7 @@ writes through. Zero test coverage previously. This file covers:
  12.  Serialization — to_dict shape
  13.  Optimistic concurrency — get_state_id, check_state_id
  14.  Store registry — get_or_create_store, clear_store, clear_all_stores
- 15.  get_region_track_id, get_or_create_bus
+ 15.  get_region_track_id, get_track_name, get_or_create_bus
 """
 
 import pytest
@@ -176,6 +176,14 @@ class TestEntityCreation:
 
     def test_get_region_track_id_unknown_returns_none(self):
         assert _fresh().get_region_track_id("nonexistent") is None
+
+    def test_get_track_name_returns_name(self):
+        store = _fresh()
+        tid = store.create_track("Guitar Lead")
+        assert store.get_track_name(tid) == "Guitar Lead"
+
+    def test_get_track_name_unknown_returns_none(self):
+        assert _fresh().get_track_name("nonexistent") is None
 
     def test_multiple_tracks_all_registered(self):
         store = _fresh()

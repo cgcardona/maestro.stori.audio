@@ -361,7 +361,12 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_add_notes",
-            "description": "Add MIDI notes into a region. Notes are explicit (pitch/start/duration/velocity).",
+            "description": (
+                "Add MIDI notes into a region. Notes are explicit (pitch/start/duration/velocity). "
+                "For regions requiring more than 128 notes, call stori_add_notes multiple times with "
+                "the same regionId — each call appends to existing notes. "
+                "NEVER use shorthand params like _noteCount or _beatRange; always provide a real 'notes' array."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -492,8 +497,46 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_add_automation",
-            "description": "Add automation to a parameter (volume, pan, filter, etc).",
-            "parameters": {"type": "object", "properties": {"target": {"type": "string"}, "points": {"type": "array"}}},
+            "description": (
+                "Add automation to a track parameter. "
+                "trackId identifies the track. parameter is the exact canonical string "
+                "(e.g. 'Volume', 'Pan', 'EQ Low', 'Mod Wheel (CC1)', 'Pitch Bend', "
+                "'Synth Cutoff'). points is an array of {beat, value, curve?} objects. "
+                "Volume/Pan/EQ/Synth params use 0.0–1.0; MIDI CC params use 0–127."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "trackId": {"type": "string", "description": "Track ID"},
+                    "parameter": {
+                        "type": "string",
+                        "description": (
+                            "Canonical parameter name. Exact values: 'Volume', 'Pan', "
+                            "'EQ Low', 'EQ Mid', 'EQ High', 'Mod Wheel (CC1)', "
+                            "'Volume (CC7)', 'Pan (CC10)', 'Expression (CC11)', "
+                            "'Sustain (CC64)', 'Filter Cutoff (CC74)', 'Pitch Bend', "
+                            "'Synth Cutoff', 'Synth Resonance', 'Synth Attack', 'Synth Release'"
+                        ),
+                    },
+                    "points": {
+                        "type": "array",
+                        "description": "Automation points [{beat, value, curve?}]",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "beat": {"type": "number"},
+                                "value": {"type": "number"},
+                                "curve": {
+                                    "type": "string",
+                                    "enum": ["linear", "smooth", "step", "exp", "log"],
+                                },
+                            },
+                            "required": ["beat", "value"],
+                        },
+                    },
+                },
+                "required": ["trackId", "parameter", "points"],
+            },
         },
     },
     {
@@ -509,6 +552,14 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "stori_add_pitch_bend",
             "description": "Add pitch bend events.",
+            "parameters": {"type": "object", "properties": {"regionId": {"type": "string"}, "events": {"type": "array"}}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "stori_add_aftertouch",
+            "description": "Add aftertouch events (channel pressure or polyphonic key pressure).",
             "parameters": {"type": "object", "properties": {"regionId": {"type": "string"}, "events": {"type": "array"}}},
         },
     },
@@ -575,6 +626,7 @@ def build_tool_registry() -> dict[str, ToolMeta]:
     _register(ToolMeta("stori_add_automation", ToolTier.TIER2, ToolKind.PRIMITIVE))
     _register(ToolMeta("stori_add_midi_cc", ToolTier.TIER2, ToolKind.PRIMITIVE))
     _register(ToolMeta("stori_add_pitch_bend", ToolTier.TIER2, ToolKind.PRIMITIVE))
+    _register(ToolMeta("stori_add_aftertouch", ToolTier.TIER2, ToolKind.PRIMITIVE))
 
     return _TOOL_META
 

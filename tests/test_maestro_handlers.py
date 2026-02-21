@@ -630,7 +630,9 @@ class TestOrchestrateStream:
                     assert "planSummary" in types
                     assert "complete" in types
                     plan_summary = next(p for p in payloads if p.get("type") == "planSummary")
-                    assert plan_summary.get("totalSteps") == 1
+                    # totalSteps uses plan tracker step count which includes
+                    # anticipatory steps for tracks needing content
+                    assert plan_summary.get("totalSteps") >= 1
 
     @pytest.mark.anyio
     async def test_composing_empty_plan_with_stori_in_response_fallback_to_editing(self):
@@ -905,7 +907,7 @@ class TestComposingUnifiedSSE:
 
     @pytest.mark.anyio
     async def test_composing_emits_proposal_tool_calls(self):
-        """Phase 3: COMPOSING path emits toolStart/toolCall events with proposal:true."""
+        """COMPOSING path emits proposal toolCalls (phase 1), then real execution toolCalls (phase 2)."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
 
@@ -927,10 +929,13 @@ class TestComposingUnifiedSSE:
         )
 
         async def _mock_execute(**kwargs):
-            cb = kwargs.get("tool_event_callback")
+            pre_cb = kwargs.get("pre_tool_callback")
+            post_cb = kwargs.get("post_tool_callback")
             prog_cb = kwargs.get("progress_callback")
-            if cb:
-                await cb("tc-1", "stori_set_tempo", {"tempo": 120})
+            if pre_cb:
+                await pre_cb("stori_set_tempo", {"tempo": 120})
+            if post_cb:
+                await post_cb("stori_set_tempo", {"tempo": 120})
             if prog_cb:
                 await prog_cb(1, 1, "stori_set_tempo", {"tempo": 120})
             from app.models.variation import Variation
@@ -959,14 +964,21 @@ class TestComposingUnifiedSSE:
                         payloads = [json.loads(e.split("data: ", 1)[1].strip()) for e in events if "data:" in e]
                         types = [p.get("type") for p in payloads]
 
-                        assert "toolStart" in types, f"Expected 'toolStart' in {types}"
+                        # Phase 1: proposal toolCall (id:"", proposal:true)
                         assert "toolCall" in types, f"Expected 'toolCall' in {types}"
-                        tool_call_ev = next(p for p in payloads if p["type"] == "toolCall")
-                        assert tool_call_ev.get("proposal") is True, "toolCall in COMPOSING must have proposal:true"
+                        proposal_calls = [p for p in payloads if p["type"] == "toolCall" and p.get("proposal") is True]
+                        assert len(proposal_calls) >= 1, "Must have at least one proposal toolCall"
+                        assert proposal_calls[0].get("id") == "", "Proposal toolCall must have empty id"
+
+                        # Phase 2: execution toolStart + toolCall (proposal:false)
+                        assert "toolStart" in types, f"Expected 'toolStart' in {types}"
+                        execution_calls = [p for p in payloads if p["type"] == "toolCall" and p.get("proposal") is False]
+                        assert len(execution_calls) >= 1, "Must have at least one execution toolCall"
+                        assert execution_calls[0].get("id") != "", "Execution toolCall must have a real UUID"
 
     @pytest.mark.anyio
     async def test_composing_plan_step_updates(self):
-        """Phase 2: COMPOSING path emits planStepUpdate activate/complete events."""
+        """COMPOSING execution phase emits planStepUpdate active/complete events (not during proposal phase)."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
 
@@ -994,12 +1006,15 @@ class TestComposingUnifiedSSE:
 
         async def _mock_execute(**kwargs):
             nonlocal call_idx
-            cb = kwargs.get("tool_event_callback")
+            pre_cb = kwargs.get("pre_tool_callback")
+            post_cb = kwargs.get("post_tool_callback")
             prog_cb = kwargs.get("progress_callback")
             for tc in plan.tool_calls:
                 call_idx += 1
-                if cb:
-                    await cb(tc.id, tc.name, tc.params)
+                if pre_cb:
+                    await pre_cb(tc.name, tc.params)
+                if post_cb:
+                    await post_cb(tc.name, tc.params)
                 if prog_cb:
                     await prog_cb(call_idx, len(plan.tool_calls), tc.name, tc.params)
             from app.models.variation import Variation
@@ -1032,4 +1047,12 @@ class TestComposingUnifiedSSE:
                         step_updates = [p for p in payloads if p["type"] == "planStepUpdate"]
                         statuses = [u.get("status") for u in step_updates]
                         assert "active" in statuses
+
+                        # planStepUpdate must NOT appear before the first execution toolCall
+                        # (i.e., it must not fire during the proposal phase)
+                        proposal_indices = [i for i, p in enumerate(payloads) if p["type"] == "toolCall" and p.get("proposal") is True]
+                        step_indices = [i for i, p in enumerate(payloads) if p["type"] == "planStepUpdate"]
+                        if proposal_indices and step_indices:
+                            assert step_indices[0] > proposal_indices[-1], \
+                                "planStepUpdate must not fire during proposal phase"
                         assert "completed" in statuses

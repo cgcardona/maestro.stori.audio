@@ -462,9 +462,10 @@ async def commit_variation(
             )
 
             # --- Convert to typed UpdatedRegionPayload at the API boundary ---
-            # result.updated_regions uses snake_case (Python-idiomatic).
-            # PhraseRecords carry region position so brand-new regions can be
-            # created by the frontend without a second round-trip.
+            # result.updated_regions uses snake_case (Python-idiomatic) and
+            # may already include start_beat/duration_beats/name from the
+            # executor.  Fall back to PhraseRecord metadata for regions whose
+            # executor data is incomplete.
             region_meta: dict[str, dict] = {}
             for pr in record.phrases:
                 if pr.region_id not in region_meta:
@@ -475,17 +476,44 @@ async def commit_variation(
                     }
 
             updated_region_payloads: list[UpdatedRegionPayload] = []
-            for ur in result.updated_regions:
-                rid = ur["region_id"]
-                meta = region_meta.get(rid, {})
-                updated_region_payloads.append(UpdatedRegionPayload(
-                    region_id=rid,
-                    track_id=ur["track_id"],
-                    notes=[MidiNoteSnapshot.from_note_dict(n) for n in ur["notes"]],
-                    start_beat=meta.get("start_beat"),
-                    duration_beats=meta.get("duration_beats"),
-                    name=meta.get("name"),
-                ))
+
+            if result.updated_regions:
+                for ur in result.updated_regions:
+                    rid = ur["region_id"]
+                    pr_meta = region_meta.get(rid, {})
+                    updated_region_payloads.append(UpdatedRegionPayload(
+                        region_id=rid,
+                        track_id=ur["track_id"],
+                        notes=[MidiNoteSnapshot.from_note_dict(n) for n in ur.get("notes", [])],
+                        cc_events=ur.get("cc_events", []),
+                        pitch_bends=ur.get("pitch_bends", []),
+                        aftertouch=ur.get("aftertouch", []),
+                        start_beat=ur.get("start_beat") or pr_meta.get("start_beat"),
+                        duration_beats=ur.get("duration_beats") or pr_meta.get("duration_beats"),
+                        name=ur.get("name") or pr_meta.get("name"),
+                    ))
+            else:
+                # Fallback: build updatedRegions from phrase note changes so
+                # the frontend always gets the canonical path.
+                for pr in sorted(record.phrases, key=lambda p: p.sequence):
+                    if pr.phrase_id not in commit_request.accepted_phrase_ids:
+                        continue
+                    pr_meta = region_meta.get(pr.region_id, {})
+                    nc_raw = pr.diff_json.get("noteChanges", [])
+                    notes: list[MidiNoteSnapshot] = []
+                    for nc in nc_raw:
+                        after = nc.get("after")
+                        if after and nc.get("changeType") in ("added", "modified"):
+                            notes.append(MidiNoteSnapshot.model_validate(after))
+                    if notes:
+                        updated_region_payloads.append(UpdatedRegionPayload(
+                            region_id=pr.region_id,
+                            track_id=pr.track_id,
+                            notes=notes,
+                            start_beat=pr_meta.get("start_beat"),
+                            duration_beats=pr_meta.get("duration_beats"),
+                            name=pr_meta.get("name"),
+                        ))
 
             return CommitVariationResponse(
                 project_id=commit_request.project_id,

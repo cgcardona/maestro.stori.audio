@@ -24,6 +24,8 @@ honour every facet:
 - **Expression** — emotional arc, narrative, tension/release
 - **Texture** — density, register spread, layering
 - **Form** — large-scale structure and development
+- **MIDI Expressiveness** — sustain, expression, mod wheel, pitch bend,
+  aftertouch, filter, portamento, and every CC 0-127
 
 Natural language remains fully valid. The structured format exists to
 remove ambiguity and unlock dimensions of control that free text cannot
@@ -320,6 +322,7 @@ Rhythm:
 ### Dynamics
 
 Velocity arcs, automation, crescendo/decrescendo, accent shaping.
+Dynamics maps to MIDI note velocity (0-127) and CC 11 (Expression).
 
 ```yaml
 Dynamics:
@@ -336,6 +339,9 @@ Dynamics:
       shape: flat with accents
   accent_velocity: 95
   ghost_velocity: 35
+  expression_cc:                  # CC 11 — fine dynamic shading
+    curve: follow velocity arc
+    range: [40, 120]
   automation:
     - param: filter_cutoff
       from: 400hz
@@ -354,6 +360,8 @@ Dynamics:
 ### Orchestration
 
 Instrument assignment, technique, articulation, doublings, counterpoint.
+Articulation directives map to MIDI performance data: legato (CC 68),
+portamento (CC 5/65), sustain pedal (CC 64), soft pedal (CC 67).
 
 ```yaml
 Orchestration:
@@ -366,14 +374,16 @@ Orchestration:
     technique: finger style, palm muted
     register: low (E2–D3)
     articulation: legato with occasional staccato on syncopations
+    portamento: glide on tied notes  # CC 5 + CC 65
   piano:
     voicing: rootless left hand (7th and 3rd only)
-    pedaling: half pedal throughout
+    pedaling: half pedal throughout   # CC 64 continuous values
     right_hand: single-note melody with occasional 3rd doubling
   strings:
     doublings: [violin I, viola]
     articulation: col legno on accented beats, arco elsewhere
     register: mid (G3–E5)
+    vibrato: delayed onset, moderate depth  # CC 76-78
   counterpoint:
     bass_vs_melody: contrary motion in bars 5–6
     inner_voices: hold while outer voices move
@@ -417,6 +427,29 @@ Effects:
       wet: 15%
     tape_warmth: subtle wow/flutter
 ```
+
+**This block produces mandatory tool calls.** Every entry under `Effects` is translated into `stori_add_insert_effect` calls after tracks are created. The translation table:
+
+| Effects entry | Tool call |
+|---|---|
+| `drums.compression` / `drums.compressor` | `stori_add_insert_effect(type="compressor")` |
+| `drums.room` / `drums.reverb` | `stori_add_insert_effect(type="reverb")` or reverb bus send |
+| `drums.saturation` / `drums.tape` | `stori_add_insert_effect(type="overdrive")` |
+| `bass.eq` | `stori_add_insert_effect(type="eq")` |
+| `bass.saturation` / `bass.tube` | `stori_add_insert_effect(type="overdrive")` |
+| `bass.distortion` / `bass.fuzz` | `stori_add_insert_effect(type="distortion")` |
+| `*.reverb` (2+ tracks) | `stori_ensure_bus(name="Reverb")` → `stori_add_send` per track |
+| `*.chorus` | `stori_add_insert_effect(type="chorus")` |
+| `*.tremolo` | `stori_add_insert_effect(type="tremolo")` |
+| `*.delay` | `stori_add_insert_effect(type="delay")` |
+| `*.filter` | `stori_add_insert_effect(type="filter")` |
+| `*.phaser` | `stori_add_insert_effect(type="phaser")` |
+| `lead.overdrive` / `lead.cranked` | `stori_add_insert_effect(type="overdrive")` |
+| `lead.distortion` | `stori_add_insert_effect(type="distortion")` |
+
+These tool calls appear in the plan as explicit steps (`"Add effects to Drums"`, `"Add effects to Bass"`, etc.) so the frontend progress view reflects them.
+
+**Style-based auto-inference:** Even without an explicit `Effects:` block, the planner always adds baseline effects from `Style` and `Role`: drums get a compressor, bass gets a compressor, pads and leads get a reverb bus send. Suppress with `Constraints: no_effects: true`.
 
 ------------------------------------------------------------------------
 
@@ -520,6 +553,106 @@ Automation:
         value: 0db
         curve: smooth
 ```
+
+**This block produces mandatory tool calls.** Each lane is translated into `stori_add_automation(target=TRACK_ID, points=[{beat, value, curve?}, …])`. The trackId comes from the `stori_add_midi_track` result for that track name. The plan tracker shows each as a per-track step with canonical label `"Write automation for <TrackName>"`.
+
+Common `param` values: `volume`, `pan`, `reverb_wet`, `filter_cutoff`, `tremolo_rate`, `delay_feedback`, `overdrive_drive`. Curve values: `Linear`, `Smooth`, `Step`, `Exp`, `Log`.
+
+### MIDI Expressiveness
+
+Explicit control over MIDI performance data beyond notes. The Maestro pipeline
+supports the **complete** set of musically relevant MIDI messages — every
+property listed here flows all the way to the frontend DAW via the variation
+pipeline or direct tool calls.
+
+```yaml
+MidiExpressiveness:
+  sustain_pedal:
+    style: half-pedal catches  # or: full sustain, no pedal, legato only
+    changes_per_bar: 2–4
+  expression:
+    curve: crescendo bars 1–4, plateau bars 5–8
+    range: [40, 120]           # CC 11 value range
+  modulation:
+    instrument: strings
+    depth: subtle vibrato       # CC 1 values 0–30
+    onset: delayed 1 beat      # vibrato starts after attack
+  pitch_bend:
+    range: ±2 semitones        # pitch bend range (set on synth)
+    style: blues bends on 3rds and 7ths
+    depth: quarter-tone to half-tone
+  aftertouch:
+    type: channel              # or: polyphonic
+    response: velocity-mapped   # pressure follows velocity curve
+    use: filter cutoff modulation
+  breath_control:
+    instrument: wind synth
+    mapping: filter + volume    # CC 2 drives filter and amplitude
+  filter:
+    cutoff:
+      sweep: low → high bars 5–8  # CC 74
+      resonance: moderate          # CC 71
+  cc_curves:
+    - cc: 91                   # reverb send
+      from: 20
+      to: 100
+      position: bars 1–8
+    - cc: 93                   # chorus send
+      value: 60
+      position: bars 5–8
+  articulation:
+    legato: true               # CC 68
+    portamento:
+      time: 80                 # CC 5
+      switch: on               # CC 65
+    soft_pedal: bars 1–4       # CC 67
+    sostenuto: beat 1 bar 5    # CC 66
+```
+
+**Supported MIDI messages** (complete coverage):
+
+| Category | CC / Message | Description |
+|----------|-------------|-------------|
+| **Dynamics** | Note velocity | Per-note attack strength (0-127) |
+| | CC 7 (Volume) | Channel volume |
+| | CC 11 (Expression) | Fine dynamic control within volume |
+| | CC 2 (Breath) | Wind instrument breath control |
+| **Pedals** | CC 64 (Sustain) | Damper pedal (on/off or continuous) |
+| | CC 66 (Sostenuto) | Sustain only held notes |
+| | CC 67 (Soft Pedal) | Una corda / soft pedal |
+| **Modulation** | CC 1 (Mod Wheel) | Vibrato, tremolo, filter sweep |
+| | Pitch Bend | 14-bit pitch deviation (−8192 to 8191) |
+| | Channel Aftertouch | Pressure applied after note-on (whole channel) |
+| | Poly Key Pressure | Per-note aftertouch |
+| **Timbre** | CC 74 (Filter Cutoff) | Brightness control |
+| | CC 71 (Resonance) | Filter resonance / harmonic emphasis |
+| | CC 73 (Attack) | Envelope attack time |
+| | CC 72 (Release) | Envelope release time |
+| | CC 76–78 (Vibrato) | Rate, depth, delay |
+| **Spatial** | CC 10 (Pan) | Stereo position |
+| | CC 91 (Reverb Send) | Reverb wet level |
+| | CC 93 (Chorus Send) | Chorus wet level |
+| **Technique** | CC 5 (Portamento Time) | Glide speed |
+| | CC 65 (Portamento Switch) | Glide on/off |
+| | CC 68 (Legato) | Legato mode on/off |
+| | CC 84 (Portamento Control) | Source note for glide |
+| **Program** | Program Change | Instrument selection (track-level) |
+
+All 128 CC numbers are supported. The table above highlights the most
+musically significant ones; any CC 0-127 can be specified via `cc_curves`.
+
+**This block produces mandatory tool calls.** Each sub-property of `MidiExpressiveness` is translated into tool calls on the region after notes are added:
+
+| MidiExpressiveness entry | Tool call |
+|---|---|
+| `cc_curves[cc: N, from: X, to: Y]` | `stori_add_midi_cc(regionId, cc=N, events=[{beat:0, value:X}, {beat:END, value:Y}])` |
+| `sustain_pedal` with `changes_per_bar: N` | `stori_add_midi_cc(cc=64, events=[…])` — 127=pedal down, 0=up, N pairs per bar |
+| `expression.range: [lo, hi]` | `stori_add_midi_cc(cc=11, events=[{beat:0, value:lo}, …])` |
+| `modulation.depth` | `stori_add_midi_cc(cc=1, events=[…])` |
+| `pitch_bend.style` | `stori_add_pitch_bend(regionId, events=[{beat, value}, …])` — 0=center, ±8192=±2 semitones |
+| `filter.cutoff.sweep` | `stori_add_midi_cc(cc=74, events=[…])` |
+
+The plan tracker surfaces these as per-track steps with canonical labels: `"Add MIDI CC to <TrackName>"`, `"Add pitch bend to <TrackName>"`. These labels follow the same canonical pattern convention used by the frontend's `ExecutionTimelineView` for per-instrument grouping.
 
 ------------------------------------------------------------------------
 
@@ -796,6 +929,23 @@ Texture:
   density: medium-sparse
   register_spread: E2–G5 (avoid top register)
   space: every instrument needs room to breathe
+
+MidiExpressiveness:
+  sustain_pedal:
+    style: half-pedal catches
+    changes_per_bar: 2
+  expression:
+    curve: flat mp, slight swell bars 5–6
+    range: [50, 95]
+  pitch_bend:
+    style: subtle blues bends on minor 3rds
+    depth: quarter-tone
+  aftertouch:
+    type: channel
+    response: gentle, velocity-mapped
+  filter:
+    cutoff:
+      sweep: slow open bars 1–4
 ```
 
 ------------------------------------------------------------------------
@@ -901,6 +1051,96 @@ Structured fields reduce jailbreak surface area.
 
 ------------------------------------------------------------------------
 
+## Prompt → Expressive MIDI: End-to-End Flow
+
+The following diagram shows how a structured prompt's expressive dimensions
+become actual MIDI data in the DAW. Every link in this chain is implemented.
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  STORI PROMPT                                                            │
+│  ┌─────────────┐  ┌─────────────────┐  ┌────────────┐  ┌─────────────┐ │
+│  │ Routing      │  │ Content Dims    │  │ Effects    │  │MidiExpress- │ │
+│  │ Mode, Style, │  │ Harmony, Melody,│  │ drums:     │  │iveness /    │ │
+│  │ Key, Tempo,  │  │ Rhythm,         │  │  compress- │  │ Automation  │ │
+│  │ Role, Vibe   │  │ Orchestration,  │  │  ion, room │  │ cc_curves,  │ │
+│  │              │  │ Expression,Form │  │ bass: eq   │  │ pitch_bend, │ │
+│  │              │  │                 │  │ lead: od   │  │ sustain,    │ │
+│  └──────┬───────┘  └────────┬────────┘  └─────┬──────┘  │ automation  │ │
+└─────────┼───────────────────┼─────────────────┼─────────┴──────┬───────┘
+          │                   │                 │                 │
+          ▼                   │          PATH B │          PATH C │
+   ┌──────────────┐           │   (mandatory    │   (mandatory    │
+   │ Intent class │           │   tool calls)   │   tool calls)   │
+   │ → EDITING /  │           │                 │                 │
+   │   COMPOSING  │           │                 │                 │
+   └──────┬───────┘           │                 ▼                 ▼
+          │                   │   ┌────────────────────────────────────┐
+          │                   │   │ Tool Call Translation              │
+          │                   │   │ Effects → stori_add_insert_effect  │
+          │                   │   │ cc_curves → stori_add_midi_cc      │
+          │                   │   │ pitch_bend → stori_add_pitch_bend  │
+          │                   │   │ sustain_pedal → stori_add_midi_cc  │
+          │                   │   │ automation → stori_add_automation  │
+          │                   │   └─────────────────┬──────────────────┘
+          │                   ▼              PATH A  │
+          │         ┌────────────────────┐           │
+          │         │ Maestro LLM Prompt │           │
+          │         │ Content dims +     │           │
+          │         │ execution mandate  │           │
+          │         │ for expressive     │           │
+          │         │ blocks             │           │
+          │         └────────┬───────────┘           │
+          │                  │                        │
+          ▼                  ▼                        ▼
+   ┌──────────────┐  ┌──────────────────────────────────────┐
+   │ EmotionVector│  │ Execution Plan (tool calls)           │
+   │ (5-axis)     │  │ stori_generate, stori_add_notes       │
+   │ → Orpheus    │  │ stori_add_insert_effect, stori_ensure_│
+   │   condition  │  │ bus, stori_add_send,                  │
+   └──────┬───────┘  │ stori_add_midi_cc, stori_add_pitch_   │
+          │          │ bend, stori_add_automation            │
+          │          └────────────────┬─────────────────────┘
+          │                           │
+          ▼                           ▼
+   ┌─────────────────────────────────────────────┐
+   │ Orpheus / Generator                          │
+   │ Returns: notes[], cc_events[], pitch_bends[] │
+   │          aftertouch[]                        │
+   └──────────────────────┬──────────────────────┘
+                          │
+                          ▼
+   ┌─────────────────────────────────────────────┐
+   │ Executor → VariationContext (COMPOSING)      │
+   │   or StateStore direct write (EDITING)       │
+   │                                              │
+   │ VariationService → Phrase.controller_changes │
+   └──────────────────────┬──────────────────────┘
+                          │
+                          ▼
+   ┌─────────────────────────────────────────────┐
+   │ SSE Stream → Frontend                        │
+   │   toolCall events (EDITING, applied directly)│
+   │   phrase events with controller_changes      │
+   │   (COMPOSING, accepted/discarded by user)    │
+   │                                              │
+   │ Commit → updated_regions                     │
+   │   cc_events[], pitch_bends[], aftertouch[]   │
+   └──────────────────────────────────────────────┘
+```
+
+**Key insight:** A STORI PROMPT's expressive blocks flow through three parallel paths:
+
+**Path A — LLM context (content dims):** `Harmony`, `Melody`, `Rhythm`, `Dynamics`, `Orchestration`, `Expression`, `Texture`, `Form` are injected verbatim into the Maestro system prompt. The LLM reads them and produces richer notes, voicings, rhythms, and dynamics.
+
+**Path B — Mandatory tool call translation (effects + expressiveness):** `Effects`, `MidiExpressiveness`, and `Automation` blocks are translated by the system into explicit `stori_add_insert_effect`, `stori_add_midi_cc`, `stori_add_pitch_bend`, and `stori_add_automation` calls. The system prompt injects an execution mandate and the plan tracker surfaces each block as a visible frontend step. These are not suggestions.
+
+**Path C — EmotionVector (Orpheus conditioning):** `Vibe`, `Section`, `Style`, and `Energy` are parsed into a 5-axis numeric vector forwarded directly to Orpheus as `tone_brightness`, `energy_intensity`, and `musical_goals`. A prompt with `Vibe: melancholic x3, sparse` generates measurably different notes than `Vibe: euphoric x3, driving` — the vibe vocabulary conditions the neural generator directly.
+
+The result: a prompt with `Effects: drums: compression`, `MidiExpressiveness: cc_curves: [{cc: 91}]`, and `Vibe: groovy x3` produces three concrete actions — a compressor insert on the Drums track, a CC 91 automation curve on the drums region, and an Orpheus call biased toward driving, rhythmic output.
+
+------------------------------------------------------------------------
+
 ## Backend Implementation Status
 
 | Item | Status | Module |
@@ -918,16 +1158,43 @@ Structured fields reduce jailbreak surface area.
 | Entity manifest in tool results | Done | `app/core/maestro_handlers.py` |
 | `$N.field` variable references | Done | `app/core/maestro_handlers.py` |
 | Vibe/Section/Style/Energy → EmotionVector → Orpheus | Done | `app/core/emotion_vector.py`, `app/core/executor.py`, `app/services/backends/orpheus.py` |
+| CC events extraction + pipeline (all 128 CCs) | Done | `app/services/backends/orpheus.py`, `app/core/executor.py`, `app/services/variation.py` |
+| Pitch bend extraction + pipeline (14-bit) | Done | `app/services/backends/orpheus.py`, `app/core/executor.py`, `app/services/variation.py` |
+| Aftertouch extraction + pipeline (channel + poly) | Done | `app/services/backends/orpheus.py`, `app/core/executor.py`, `app/services/variation.py` |
+| Expressive data in `updated_regions` (commit response) | Done | `app/core/executor.py`, `app/api/routes/variation.py` |
+| Routing-only context for planner (reduces verbosity) | Done | `app/core/prompts.py`, `app/core/planner.py` |
+| Planner reasoning fraction | Done | `app/core/planner.py` |
+| **Effects block → stori_add_insert_effect (mandatory translation)** | Done | `app/core/prompts.py`, `app/core/maestro_handlers.py` |
+| **Style/Role → effects inference (deterministic, pre-LLM)** | Done | `app/core/planner._infer_mix_steps` |
+| **MidiExpressiveness.cc_curves → stori_add_midi_cc** | Done | `app/core/prompts.py` (mandate), `app/core/maestro_handlers.py` (plan step) |
+| **MidiExpressiveness.pitch_bend → stori_add_pitch_bend** | Done | `app/core/prompts.py` (mandate), `app/core/maestro_handlers.py` (plan step) |
+| **MidiExpressiveness.sustain_pedal → stori_add_midi_cc (CC 64)** | Done | `app/core/prompts.py` (mandate), `app/core/maestro_handlers.py` (plan step) |
+| **Automation block → stori_add_automation** | Done | `app/core/prompts.py` (mandate), `app/core/maestro_handlers.py` (plan step) |
+| **Plan steps for expressive blocks (visible in frontend)** | Done | `app/core/maestro_handlers._PlanTracker.build_from_prompt` |
+| **Track role inference from GM program / drum kit** | Done | `app/core/entity_context.infer_track_role` |
+| **New-section track reuse (existing tracks matched by role)** | Done | `app/core/planner._match_roles_to_existing_tracks`, `app/core/entity_context` |
+| **No-op tempo/key step elimination** | Done | `app/core/maestro_handlers._PlanTracker.build_from_prompt` |
+| **stori_add_notes fake-param validation + circuit breaker** | Done | `app/core/tool_validation.py`, `app/core/maestro_handlers._handle_editing` |
+| **Bus-before-send ordering guaranteed** | Done | `app/core/planner._schema_to_tool_calls` |
 
-### Vibe → Orpheus conditioning note
+### How expressive blocks flow through the system
 
 `Vibe`, `Section`, `Style`, and `Energy` fields are **parsed twice**:
 
-1. **LLM context** (existing) — all fields injected into the Maestro system prompt for planning.
-2. **Orpheus conditioning** (new) — `emotion_vector_from_stori_prompt()` blends these fields into a 5-axis EmotionVector (`energy`, `valence`, `tension`, `intimacy`, `motion`) that is forwarded to Orpheus as `tone_brightness`, `energy_intensity`, and `musical_goals`. This means a prompt with `Vibe: Melancholic, sparse` actually generates *different notes* from Orpheus than `Vibe: Euphoric, driving` — the entire Vibe vocabulary now flows all the way to the generator.
+1. **LLM context** — all fields injected into the Maestro system prompt for planning.
+2. **Orpheus conditioning** — `emotion_vector_from_stori_prompt()` blends these into a 5-axis EmotionVector forwarded to Orpheus as `tone_brightness`, `energy_intensity`, and `musical_goals`. A prompt with `Vibe: melancholic, sparse` generates measurably different notes than `Vibe: euphoric, driving` — the vibe vocabulary flows all the way to the generator.
 
-The richer Maestro dimensions (`Expression`, `Harmony`, `Dynamics`, `Orchestration`, etc.) reach the LLM planner context but are not currently parsed into the EmotionVector. They condition the *plan and tool selection*; Vibe/Section/Style/Energy condition the *generator directly*.
+`Effects`, `MidiExpressiveness`, and `Automation` blocks flow through a **third path** — mandatory tool call translation:
+
+3. **Tool call translation** — The structured prompt context injects an explicit execution mandate alongside the YAML block. The plan tracker surfaces each block as a per-track step with canonical labels (e.g. `"Add effects to Drums"`, `"Add MIDI CC to Bass"`, `"Write automation for Strings"`). The LLM translates every entry into `stori_add_insert_effect`, `stori_add_midi_cc`, `stori_add_pitch_bend`, or `stori_add_automation` calls. These are not suggestions — the system prompt treats them as a checklist.
+
+The richer text-only dimensions (`Expression`, `Harmony`, `Dynamics`, `Orchestration`, `Texture`, `Form`) reach the LLM context and shape note content but do not produce direct tool calls of their own.
 
 **Tests:** `tests/test_prompt_parser.py` (91+), `tests/test_intent_structured.py` (26),
 `tests/test_structured_prompt_integration.py` (16), `tests/test_tool_validation.py` (6+),
-`tests/test_neural_mvp.py` (EmotionVector parser, 18 new tests).
+`tests/test_neural_mvp.py` (EmotionVector parser),
+`tests/test_context_injection.py` (routing-only context, extensions, translation mandate),
+`tests/test_executor_deep.py` (CC, pitch bend, aftertouch pipeline, variation context),
+`tests/test_maestro_handler_internals.py` (plan steps for expressive blocks),
+`tests/test_planner_mocked.py` (effects inference, bus ordering, no-op suppression),
+`tests/test_entity_context.py` (role inference, format_project_context, add_notes validation).
