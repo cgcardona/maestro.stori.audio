@@ -30,7 +30,9 @@ The `prompt` field accepts both natural language and the **Stori structured prom
 
 ## SSE event types
 
-All events are newline-delimited `data: {json}\n\n` lines. Every event has a `type` field. **Keys are camelCase.**
+All events are newline-delimited `data: {json}\n\n` lines. Every event has a `type` field and a monotonic `seq` integer (assigned at the route layer, starting at 1 per request). **Keys are camelCase.**
+
+`seq` is the canonical ordering key for Agent Teams events that may arrive out of order. Frontend should sort by `seq` when reconstructing timeline order if needed.
 
 ### Events emitted in all modes
 
@@ -50,10 +52,12 @@ Emitted when `state.state == "editing"`. Applied immediately by the frontend.
 | type | Description |
 |------|-------------|
 | `plan` | Structured plan emitted once after initial reasoning, before the first tool call. Steps are ordered per-track (contiguous) so each instrument's steps appear together. Labels follow canonical patterns for frontend timeline grouping. `toolName` is present when the step maps to a specific tool, omitted otherwise. Instrument steps carry `parallelGroup: "instruments"` — steps sharing the same `parallelGroup` value execute concurrently (see [Parallel execution](#parallel-execution) below). `{ "type": "plan", "planId": "uuid", "title": "Building Lo-Fi Groove", "steps": [{ "stepId": "1", "label": "Set tempo to 72 BPM", "toolName": "stori_set_tempo", "status": "pending" }, { "stepId": "2", "label": "Set key signature to Cm", "toolName": "stori_set_key", "status": "pending" }, { "stepId": "3", "label": "Create Drums track", "toolName": "stori_add_midi_track", "parallelGroup": "instruments", "status": "pending" }, { "stepId": "4", "label": "Add content to Drums", "toolName": "stori_add_notes", "parallelGroup": "instruments", "detail": "8 bars, boom bap drums", "status": "pending" }, { "stepId": "5", "label": "Add effects to Drums", "toolName": "stori_add_insert_effect", "parallelGroup": "instruments", "detail": "Compressor", "status": "pending" }, ...] }`. See [Execution Timeline contract](#execution-timeline-contract) below. |
+| `preflight` | Emitted before Phase 2 agents start (Agent Teams only). One per expected instrument step, derived from the plan — no LLM call. Lets the frontend pre-allocate timeline rows. `{ "type": "preflight", "stepId": "3", "agentId": "drums", "agentRole": "drums", "label": "Create Drums track", "toolName": "stori_add_midi_track", "parallelGroup": "instruments", "confidence": 0.9 }` |
 | `planStepUpdate` | Step lifecycle update. `active` when starting, `completed` / `failed` when done. At plan completion, steps never activated are emitted as `skipped` — no step is left in `pending`. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "failed" \| "skipped", "result": "optional summary" }` |
 | `toolStart` | Fires **before** each `toolCall` with a human-readable label. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Create Drums track" }` |
-| `toolCall` | Resolved tool call for the frontend to apply. `{ "type": "toolCall", "id": "...", "name": "stori_add_midi_track", "params": { "trackId": "uuid", ... } }`. **Critical: key is `"params"` (not `"arguments"`); key is `"name"` (not `"tool"`). All IDs are fully-resolved UUIDs.** |
+| `toolCall` | Resolved tool call for the frontend to apply. In Agent Teams mode, includes `agentId` identifying which instrument agent produced it. `{ "type": "toolCall", "id": "...", "name": "stori_add_midi_track", "params": { "trackId": "uuid", ... }, "agentId": "drums" }`. **Critical: key is `"params"` (not `"arguments"`); key is `"name"` (not `"tool"`). All IDs are fully-resolved UUIDs.** |
 | `toolError` | Non-fatal validation error. Stream continues. `{ "type": "toolError", "name": "stori_add_notes", "error": "Region not found", "errors": ["..."] }` |
+| `summary.final` | Emitted by Agent Teams handler immediately before `complete`. Rich composition summary for the "Ready!" line. `{ "type": "summary.final", "traceId": "...", "trackCount": 3, "tracksCreated": [{"name": "Drums", "instrument": "TR-808", "trackId": "uuid"}], "regionsCreated": 3, "notesGenerated": 128, "effectsAdded": [{"trackId": "uuid", "type": "compressor"}], "effectCount": 2, "sendsCreated": 1, "ccEnvelopes": [{"cc": 74, "name": "Filter Cutoff"}], "automationLanes": 0 }` |
 | `complete` | Stream done. Includes `inputTokens` and `contextWindowTokens` (see global `complete` row above). |
 
 ### COMPOSING mode events (Variation protocol)
@@ -328,6 +332,91 @@ These run in Maestro and call the music model; they do not require a connected D
 |------|-------------|-----------------|
 | `stori_show_panel` | Show/hide panel. | `panel`, `visible` |
 | `stori_set_zoom` | Set editor zoom. | `zoomPercent` |
+
+---
+
+## Maestro Default UI
+
+Endpoints that power the creative launchpad in the macOS client. Content is static today; future versions will support personalisation, A/B testing, and localisation.
+
+### Placeholders
+
+**Endpoint:** `GET /api/v1/maestro/ui/placeholders`
+**Auth:** none (public, cacheable)
+
+Rotating strings for the hero prompt input. The client cycles through them every 4 seconds. Returns at least 3 items.
+
+```json
+{ "placeholders": ["Describe a groove…", "Build a cinematic swell…", …] }
+```
+
+### Prompt chips
+
+**Endpoint:** `GET /api/v1/maestro/prompts/chips`
+**Auth:** none
+
+Quick-start genre chips for the flow grid (6–10 items). Each chip carries a `fullPrompt` string injected into the prompt input on tap, and a `promptTemplateID` referencing a full template.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique slug |
+| `title` | string | Display label |
+| `icon` | string | SF Symbol name |
+| `promptTemplateID` | string | References a prompt template |
+| `fullPrompt` | string | Complete prompt text |
+
+### Prompt cards
+
+**Endpoint:** `GET /api/v1/maestro/prompts/cards`
+**Auth:** none
+
+Advanced structured template cards for the horizontal carousel (3–5 items). Each card has 5 sections following STORI PROMPT SPEC v2: Style, Arrangement, Instruments, Production Notes, Creative Intent.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique slug |
+| `title` | string | Card title |
+| `description` | string | One-liner summary |
+| `previewTags` | string[] | Up to 3 short tags |
+| `templateID` | string | References a prompt template |
+| `sections` | object[] | Array of `{heading, content}` |
+
+### Single template lookup
+
+**Endpoint:** `GET /api/v1/maestro/prompts/{template_id}`
+**Auth:** none
+
+Returns the fully-expanded prompt template with pre-filled section content. Template IDs: `lofi_chill`, `dark_trap`, `jazz_trio`, `synthwave`, `cinematic`, `funk_groove`, `ambient`, `deep_house`, `full_production`, `beat_lab`, `mood_piece`. Returns 404 if the ID is unknown.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Template slug |
+| `title` | string | Display title |
+| `fullPrompt` | string | Flat prompt string |
+| `sections` | object[] | Array of `{heading, content}` |
+
+### Budget status
+
+**Endpoint:** `GET /api/v1/maestro/budget/status`
+**Auth:** `Authorization: Bearer <token>`
+
+Focused budget/fuel status for the Creative Fuel UI. Wraps the same data as `/api/v1/users/me` with a `state` field computed server-side.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `remaining` | float | Remaining budget in dollars |
+| `total` | float | Total budget limit in dollars |
+| `state` | string | `"normal"` \| `"low"` \| `"critical"` \| `"exhausted"` |
+| `sessionsUsed` | int | Compose requests this billing period |
+
+**State derivation (authoritative):**
+
+| Condition | State |
+|-----------|-------|
+| remaining ≤ 0 | `exhausted` |
+| remaining < 0.25 | `critical` |
+| remaining < 1.0 | `low` |
+| else | `normal` |
 
 ---
 

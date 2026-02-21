@@ -16,7 +16,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
-from app.api.routes import maestro, health, users, conversations, assets, variation
+from app.api.routes import maestro, maestro_ui, health, users, conversations, assets, variation
 from app.api.routes import mcp as mcp_routes
 from app.db import init_db, close_db
 from app.services.orpheus import get_orpheus_client, close_orpheus_client
@@ -141,6 +141,7 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(maestro.router, prefix="/api/v1", tags=["maestro"])
+app.include_router(maestro_ui.router, prefix="/api/v1", tags=["maestro-ui"])
 app.include_router(variation.router, prefix="/api/v1", tags=["variation"])
 app.include_router(users.router, prefix="/api/v1", tags=["users"])
 app.include_router(conversations.router, prefix="/api/v1", tags=["conversations"])

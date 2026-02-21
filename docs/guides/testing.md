@@ -86,7 +86,7 @@ Add your own for smoke tests and demos.
 
 ## Test coverage and gaps
 
-- **Covered well:** Config, health, auth, DB, intent classification, pipeline, executor, RAG, MCP, tool validation, conversations, variation, assets, plan schemas, critic, groove engine, budget integration, **maestro_handlers**, **sse_utils**, **planner** (ExecutionPlan, build_execution_plan, preview_plan), **macro_engine**, **expansion**, **chord_utils**, **entity_context**. Plus **API contract tests** (root, health, health/full, auth 401) and **orchestrate stream** tests (REASONING and COMPOSING-with-empty-plan with mocks).
+- **Covered well:** Config, health, auth, DB, intent classification, pipeline, executor, RAG, MCP, tool validation, conversations, variation, assets, plan schemas, critic, groove engine, budget integration, **maestro_handlers**, **maestro_ui** (placeholders, chips, cards, template lookup, budget status + state derivation + camelCase serialization), **sse_utils**, **planner** (ExecutionPlan, build_execution_plan, preview_plan), **macro_engine**, **expansion**, **chord_utils**, **entity_context**. Plus **API contract tests** (root, health, health/full, auth 401) and **orchestrate stream** tests (REASONING and COMPOSING-with-empty-plan with mocks).
 - **Supercharge checklist — done:** Gap coverage (handlers, sse_utils, planner, macro, expansion, chord_utils, entity_context); API contract tests for key public/protected routes; E2E-style orchestrate tests (mocked intent/LLM).
 - **Supercharge checklist — remaining:**
   1. ~~**CI coverage threshold**~~ — **Done.** GitHub Actions runs tests with coverage; `pyproject.toml` sets `fail_under` (currently 80%).
