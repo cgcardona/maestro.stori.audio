@@ -3581,7 +3581,7 @@ class TestIconValidation:
         trace = _make_trace()
         add_notes_failures: dict[str, int] = {}
 
-        with patch("app.core.maestro_editing.icon_for_gm_program", return_value="nonexistent.icon"):
+        with patch("app.core.maestro_editing.tool_execution.icon_for_gm_program", return_value="nonexistent.icon"):
             outcome = await _apply_single_tool_call(
                 tc_id="tc-icon-test",
                 tc_name="stori_add_midi_track",

@@ -1,125 +1,23 @@
-"""Plan tracker for Maestro EDITING sessions.
-
-Manages the structured plan lifecycle: building a plan from tool calls or
-parsed prompts, emitting plan/planStepUpdate SSE events, and tracking step
-progress across composition iterations.
-"""
+"""_PlanTracker — manages plan lifecycle for an EDITING session."""
 
 from __future__ import annotations
 
 import uuid as _uuid_mod
-from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.core.maestro_helpers import _human_label_for_tool, _humanize_style
-
-
-# ---------------------------------------------------------------------------
-# Tool-name category sets
-# ---------------------------------------------------------------------------
-
-_SETUP_TOOL_NAMES: set[str] = {
-    "stori_set_tempo", "stori_set_key",
-}
-_EFFECT_TOOL_NAMES: set[str] = {
-    "stori_add_insert_effect",
-    "stori_ensure_bus", "stori_add_send",
-}
-_MIXING_TOOL_NAMES: set[str] = {
-    "stori_set_track_volume", "stori_set_track_pan",
-    "stori_mute_track", "stori_solo_track",
-    "stori_set_track_color", "stori_set_track_icon",
-    "stori_set_track_name",
-}
-_TRACK_CREATION_NAMES: set[str] = {
-    "stori_add_midi_track",
-}
-_CONTENT_TOOL_NAMES: set[str] = {
-    "stori_add_midi_region", "stori_add_notes",
-}
-_EXPRESSIVE_TOOL_NAMES: set[str] = {
-    "stori_add_midi_cc", "stori_add_pitch_bend", "stori_add_automation",
-}
-_GENERATOR_TOOL_NAMES: set[str] = {
-    "stori_generate_midi", "stori_generate_drums", "stori_generate_bass",
-    "stori_generate_melody", "stori_generate_chords",
-}
-
-# Tools whose track association can be determined from params
-_TRACK_BOUND_TOOL_NAMES: set[str] = (
-    _TRACK_CREATION_NAMES | _CONTENT_TOOL_NAMES | _EFFECT_TOOL_NAMES
-    | _EXPRESSIVE_TOOL_NAMES | _GENERATOR_TOOL_NAMES | _MIXING_TOOL_NAMES
+from app.core.maestro_plan_tracker.constants import (
+    _AGENT_TEAM_PHASE3_TOOLS,
+    _CONTENT_TOOL_NAMES,
+    _EFFECT_TOOL_NAMES,
+    _EXPRESSIVE_TOOL_NAMES,
+    _GENERATOR_TOOL_NAMES,
+    _MIXING_TOOL_NAMES,
+    _SETUP_TOOL_NAMES,
+    _TRACK_CREATION_NAMES,
 )
+from app.core.maestro_plan_tracker.models import _PlanStep
 
-# Agent Teams — tools each instrument agent may call (no setup/mixing tools)
-_INSTRUMENT_AGENT_TOOLS: frozenset[str] = frozenset({
-    "stori_add_midi_track",
-    "stori_add_midi_region",
-    "stori_add_notes",
-    "stori_generate_midi",
-    "stori_generate_drums",
-    "stori_generate_bass",
-    "stori_generate_melody",
-    "stori_generate_chords",
-    "stori_add_insert_effect",
-    "stori_add_midi_cc",
-    "stori_add_pitch_bend",
-    "stori_apply_swing",
-    "stori_quantize_notes",
-    "stori_set_track_icon",
-    "stori_set_track_color",
-})
-
-# Agent Teams — tools the Phase 3 mixing coordinator may call
-_AGENT_TEAM_PHASE3_TOOLS: frozenset[str] = frozenset({
-    "stori_ensure_bus",
-    "stori_add_send",
-    "stori_set_track_volume",
-    "stori_set_track_pan",
-    "stori_mute_track",
-    "stori_solo_track",
-    "stori_add_automation",
-})
-
-
-# ---------------------------------------------------------------------------
-# Dataclasses
-# ---------------------------------------------------------------------------
-
-@dataclass
-class _PlanStep:
-    """Internal state for one plan step."""
-    step_id: str
-    label: str
-    detail: Optional[str] = None
-    status: str = "pending"
-    result: Optional[str] = None
-    track_name: Optional[str] = None
-    tool_name: Optional[str] = None  # canonical tool name for frontend icon/color rendering
-    tool_indices: list[int] = field(default_factory=list)
-    parallel_group: Optional[str] = None  # steps sharing a group run concurrently
-
-
-@dataclass
-class _ToolCallOutcome:
-    """Outcome of executing one tool call in editing/agent mode.
-
-    The caller decides what to do with SSE events and message objects —
-    either yield them directly (editing path) or put them into a queue
-    (agent-team path).
-    """
-    enriched_params: dict[str, Any]
-    tool_result: dict[str, Any]
-    sse_events: list[dict[str, Any]]    # in order: toolStart, toolCall OR toolError
-    msg_call: dict[str, Any]            # assistant message containing the tool call
-    msg_result: dict[str, Any]          # tool response message
-    skipped: bool = False               # True when rejected by circuit-breaker or validation
-    extra_tool_calls: list[dict[str, Any]] = field(default_factory=list)  # synthetic calls (icon)
-
-
-# ---------------------------------------------------------------------------
-# Plan tracker
-# ---------------------------------------------------------------------------
 
 class _PlanTracker:
     """Manages the structured plan lifecycle for an EDITING session.
@@ -969,19 +867,3 @@ class _PlanTracker:
                 line += " — pending"
             lines.append(line)
         return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Step result helper (shared by editing and agent-teams)
-# ---------------------------------------------------------------------------
-
-def _build_step_result(
-    tool_name: str,
-    params: dict[str, Any],
-    existing: Optional[str] = None,
-) -> str:
-    """Build a human-readable result string for a plan step."""
-    part = _human_label_for_tool(tool_name, params)
-    if existing:
-        return f"{existing}; {part}"
-    return part
