@@ -28,6 +28,7 @@ from app.services.backends.orpheus import OrpheusBackend
 from app.services.backends.huggingface import HuggingFaceBackend
 from app.services.backends.llm import LLMGeneratorBackend
 from app.services.groove_engine import RhythmSpine, extract_kick_onsets
+from app.services.expressiveness import apply_expressiveness
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -173,10 +174,13 @@ class MusicGenerator:
             backend = self.backend_map.get(preferred_backend)
             if backend:
                 logger.info(f"Using requested backend: {preferred_backend.value}")
-                return await self._generate_with_coupling(
+                result = await self._generate_with_coupling(
                     backend, preferred_backend, instrument, style, tempo, bars, key, chords,
                     preset_config, n, **kwargs
                 )
+                if result.success:
+                    result = self._apply_expressiveness(result, instrument, style, bars)
+                return result
             else:
                 logger.warning(f"Requested backend not available: {preferred_backend}")
         
@@ -201,6 +205,7 @@ class MusicGenerator:
             
             if result.success:
                 logger.info(f"✓ Generated {len(result.notes)} notes via {backend_type.value}")
+                result = self._apply_expressiveness(result, instrument, style, bars)
                 return result
             else:
                 last_failure = result
@@ -381,6 +386,27 @@ class MusicGenerator:
 
         return result
     
+    @staticmethod
+    def _apply_expressiveness(
+        result: GenerationResult,
+        instrument: str,
+        style: str,
+        bars: int,
+    ) -> GenerationResult:
+        """
+        Enrich a successful generation with velocity curves, CC automation,
+        pitch bends, and timing humanization.
+        """
+        expr = apply_expressiveness(
+            notes=result.notes,
+            style=style,
+            bars=bars,
+            instrument_role=instrument.lower(),
+        )
+        result.cc_events = (result.cc_events or []) + expr.get("cc_events", [])
+        result.pitch_bends = (result.pitch_bends or []) + expr.get("pitch_bends", [])
+        return result
+
     def _capture_drum_context(self, notes: list[dict], style: str, tempo: int, bars: int):
         """Capture rhythm spine from drum generation for bass coupling."""
         rhythm_spine = RhythmSpine.from_drum_notes(notes, tempo=tempo, bars=bars, style=style)

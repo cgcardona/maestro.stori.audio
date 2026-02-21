@@ -44,7 +44,8 @@ _HEADER_RE = re.compile(r"^\s*stori\s+prompt\s*$", re.IGNORECASE)
 
 _ROUTING_FIELDS = frozenset({
     "mode", "section", "position", "after",
-    "target", "style", "key", "tempo", "role", "constraints", "vibe", "request",
+    "target", "style", "key", "tempo", "energy",
+    "role", "constraints", "vibe", "request",
 })
 
 # ─── Regexes ─────────────────────────────────────────────────────────────────
@@ -121,6 +122,7 @@ class ParsedPrompt:
     style: Optional[str] = None
     key: Optional[str] = None
     tempo: Optional[int] = None
+    energy: Optional[str] = None
     roles: list[str] = field(default_factory=list)
     constraints: dict[str, Any] = field(default_factory=dict)
     vibes: list[VibeWeight] = field(default_factory=list)
@@ -204,6 +206,7 @@ def parse_prompt(text: str) -> Optional[ParsedPrompt]:
         style=_str(data.get("style")),
         key=_str(data.get("key")),
         tempo=_parse_tempo(data.get("tempo")),
+        energy=_str(data.get("energy"), lower=True),
         roles=_parse_roles(data.get("role")),
         constraints=_parse_constraints(data.get("constraints")),
         vibes=_parse_vibes(data.get("vibe")),

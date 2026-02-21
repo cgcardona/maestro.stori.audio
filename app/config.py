@@ -88,6 +88,11 @@ def get_context_window_tokens(model: str) -> int:
     return CONTEXT_WINDOW_TOKENS.get(model, 0)
 
 
+# Single source of truth for default tempo (BPM).  Referenced by the executor,
+# Orpheus client, request models, and planner so they all agree.
+DEFAULT_TEMPO: int = 120
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     

@@ -160,6 +160,7 @@ class GenerateRequest(BaseModel):
     tempo: int = 90
     instruments: List[str] = ["drums", "bass"]
     bars: int = 4
+    key: Optional[str] = None
     
     # Intent system outputs (from LLM classification)
     musical_goals: Optional[List[str]] = None          # ["dark", "energetic", "minimal"]
@@ -213,144 +214,510 @@ INSTRUMENT_PROGRAMS = {
 # This keeps the policy logic separate and testable
 
 
-def create_seed_midi(tempo: int, genre: str) -> str:
+# ---------------------------------------------------------------------------
+# Seed MIDI: genre-specific patterns with full expressiveness
+#
+# Reference heuristics (200 MAESTRO performances + orchestral concerto):
+#   CC density:   ~27 CC events per bar (pedal-heavy classical)
+#   Velocity:     mean 64, stdev 17, full 5-127 range
+#   Timing:       92.7% of notes off 16th grid (0.06 beat deviation)
+#   Key CCs:      CC 64 (sustain), CC 67 (soft pedal), CC 11 (expression),
+#                 CC 1 (mod wheel), CC 91 (reverb)
+# ---------------------------------------------------------------------------
+
+# Semitone offset from C for each key root (for transposition)
+_KEY_OFFSETS: dict = {
+    "C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3,
+    "E": 4, "F": 5, "F#": 6, "Gb": 6, "G": 7, "G#": 8,
+    "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11,
+}
+
+
+def _key_offset(key: Optional[str]) -> int:
+    """Semitone transposition from C for a key string like 'Am', 'F#', 'Eb'."""
+    if not key:
+        return 0
+    root = key.rstrip("mM# ").rstrip("b")
+    if len(key) > 1 and key[1] in ("#", "b"):
+        root = key[:2]
+    return _KEY_OFFSETS.get(root, 0)
+
+
+def _add_sustain_pedal(midi: MIDIFile, track: int, channel: int, bars: int = 1):
+    """Add sustain pedal down/up per bar — the single most common CC in pro MIDI."""
+    for bar in range(bars):
+        beat = bar * 4
+        midi.addControllerEvent(track, channel, beat, 64, 127)
+        midi.addControllerEvent(track, channel, beat + 3.75, 64, 0)
+
+
+def _add_expression_curve(midi: MIDIFile, track: int, channel: int, bars: int = 1,
+                          low: int = 80, high: int = 120):
+    """CC 11 swell: rise to bar midpoint, fall back. ~8 events per bar."""
+    for bar in range(bars):
+        base = bar * 4
+        steps = 8
+        for i in range(steps):
+            t = i / (steps - 1)
+            # Triangle wave: 0→1→0
+            shape = 1.0 - abs(2.0 * t - 1.0)
+            val = int(low + (high - low) * shape)
+            midi.addControllerEvent(track, channel, base + i * 4 / steps, 11, min(val, 127))
+
+
+def _add_mod_wheel(midi: MIDIFile, track: int, channel: int, bars: int = 1,
+                   depth: int = 40):
+    """CC 1 (mod wheel / vibrato) — gentle rise on sustained passages."""
+    for bar in range(bars):
+        base = bar * 4
+        midi.addControllerEvent(track, channel, base, 1, 0)
+        midi.addControllerEvent(track, channel, base + 1, 1, depth // 3)
+        midi.addControllerEvent(track, channel, base + 2, 1, depth)
+        midi.addControllerEvent(track, channel, base + 3, 1, depth // 2)
+
+
+# ---------------------------------------------------------------------------
+# Genre seed definitions
+# ---------------------------------------------------------------------------
+
+def _seed_boom_bap(midi: MIDIFile, offset: int):
+    # Drums — swung kick/snare with ghost hats
+    midi.addNote(0, 9, 36, 0, 0.5, 105)
+    midi.addNote(0, 9, 42, 0, 0.25, 75)
+    midi.addNote(0, 9, 42, 0.5, 0.25, 55)        # ghost hat
+    midi.addNote(0, 9, 38, 1, 0.5, 95)
+    midi.addNote(0, 9, 42, 1.5, 0.25, 65)
+    midi.addNote(0, 9, 36, 2, 0.5, 100)
+    midi.addNote(0, 9, 42, 2, 0.25, 70)
+    midi.addNote(0, 9, 42, 2.5, 0.25, 50)        # ghost hat
+    midi.addNote(0, 9, 38, 3, 0.5, 90)
+    midi.addNote(0, 9, 42, 3, 0.25, 60)
+    midi.addNote(0, 9, 42, 3.5, 0.25, 72)
+    # Bass (ch 0)
+    midi.addNote(1, 0, 48 + offset, 0, 1.0, 100)
+    midi.addNote(1, 0, 48 + offset, 2, 0.75, 90)
+    midi.addNote(1, 0, 50 + offset, 2.75, 0.25, 80)
+    # Melody (ch 1)
+    midi.addNote(2, 1, 60 + offset, 0.5, 0.5, 85)
+    midi.addNote(2, 1, 63 + offset, 1, 0.75, 75)
+    midi.addNote(2, 1, 65 + offset, 2.5, 0.5, 70)
+    _add_sustain_pedal(midi, 2, 1, 1)
+
+
+def _seed_trap(midi: MIDIFile, offset: int):
+    # Drums — 808 kick + rapid hats with velocity ramps
+    midi.addNote(0, 9, 36, 0, 0.25, 115)
+    midi.addNote(0, 9, 36, 0.75, 0.25, 105)
+    midi.addNote(0, 9, 38, 1, 0.5, 95)
+    midi.addNote(0, 9, 39, 1, 0.5, 55)           # clap layer
+    for i in range(8):
+        vel = 60 + (i % 3) * 12
+        midi.addNote(0, 9, 42, i * 0.5, 0.125, vel)
+    # Bass
+    midi.addNote(1, 0, 48 + offset, 0, 1.5, 115)
+    midi.addNote(1, 0, 50 + offset, 1.5, 0.5, 100)
+    midi.addNote(1, 0, 46 + offset, 2, 1.5, 110)
+    _add_expression_curve(midi, 1, 0, 1, 90, 127)
+    # Melody — staccato high
+    midi.addNote(2, 1, 72 + offset, 0, 0.25, 95)
+    midi.addNote(2, 1, 74 + offset, 0.5, 0.25, 85)
+    midi.addNote(2, 1, 72 + offset, 1.5, 0.5, 90)
+
+
+def _seed_house(midi: MIDIFile, offset: int):
+    # Drums — four on the floor + off-beat hats
+    for beat in range(4):
+        midi.addNote(0, 9, 36, beat, 0.5, 105 - beat * 3)
+    for beat in range(4):
+        midi.addNote(0, 9, 42, beat + 0.5, 0.25, 78 + beat * 2)
+    midi.addNote(0, 9, 38, 1, 0.5, 90)
+    midi.addNote(0, 9, 38, 3, 0.5, 85)
+    # Bass — octave pumping
+    midi.addNote(1, 0, 36 + offset, 0, 0.75, 105)
+    midi.addNote(1, 0, 48 + offset, 1, 0.5, 85)
+    midi.addNote(1, 0, 36 + offset, 2, 0.75, 100)
+    midi.addNote(1, 0, 48 + offset, 3, 0.5, 80)
+    # Chords (ch 1) — off-beat stabs
+    for beat in range(4):
+        midi.addNote(2, 1, 60 + offset, beat + 0.5, 0.25, 75 + beat * 3)
+        midi.addNote(2, 1, 64 + offset, beat + 0.5, 0.25, 70 + beat * 3)
+        midi.addNote(2, 1, 67 + offset, beat + 0.5, 0.25, 68 + beat * 3)
+
+
+def _seed_techno(midi: MIDIFile, offset: int):
+    for beat in range(4):
+        midi.addNote(0, 9, 36, beat, 0.5, 110)
+    for i in range(8):
+        midi.addNote(0, 9, 42, i * 0.5, 0.125, 70 + (i % 2) * 15)
+    midi.addNote(0, 9, 39, 1, 0.5, 85)
+    midi.addNote(0, 9, 39, 3, 0.5, 80)
+    # Acid bass line
+    midi.addNote(1, 0, 36 + offset, 0, 0.25, 110)
+    midi.addNote(1, 0, 36 + offset, 0.5, 0.25, 90)
+    midi.addNote(1, 0, 39 + offset, 1, 0.5, 100)
+    midi.addNote(1, 0, 36 + offset, 2, 0.25, 105)
+    midi.addNote(1, 0, 41 + offset, 2.75, 0.25, 85)
+    _add_expression_curve(midi, 1, 0, 1, 70, 127)
+    # Sparse stab (ch 1)
+    midi.addNote(2, 1, 60 + offset, 0.5, 0.125, 90)
+    midi.addNote(2, 1, 63 + offset, 2, 0.125, 85)
+
+
+def _seed_jazz(midi: MIDIFile, offset: int):
+    # Drums — ride + kick/snare comping
+    midi.addNote(0, 9, 51, 0, 0.5, 80)           # ride
+    midi.addNote(0, 9, 51, 1, 0.5, 75)
+    midi.addNote(0, 9, 51, 2, 0.5, 82)
+    midi.addNote(0, 9, 51, 3, 0.5, 70)
+    midi.addNote(0, 9, 36, 0, 0.5, 70)
+    midi.addNote(0, 9, 36, 2.5, 0.5, 60)
+    midi.addNote(0, 9, 38, 1.5, 0.25, 50)        # ghost snare
+    midi.addNote(0, 9, 44, 1, 0.25, 55)          # pedal hh
+    midi.addNote(0, 9, 44, 3, 0.25, 50)
+    # Walking bass (ch 0) — chromatic passing
+    midi.addNote(1, 0, 48 + offset, 0, 0.9, 85)
+    midi.addNote(1, 0, 50 + offset, 1, 0.9, 80)
+    midi.addNote(1, 0, 52 + offset, 2, 0.9, 82)
+    midi.addNote(1, 0, 53 + offset, 3, 0.9, 78)
+    # Chord voicing (ch 1) — rootless Dm9
+    midi.addNote(2, 1, 64 + offset, 0, 3.5, 65)
+    midi.addNote(2, 1, 67 + offset, 0, 3.5, 60)
+    midi.addNote(2, 1, 72 + offset, 0, 3.5, 58)
+    midi.addNote(2, 1, 74 + offset, 0, 3.5, 55)
+    _add_sustain_pedal(midi, 2, 1, 1)
+    _add_mod_wheel(midi, 2, 1, 1, 25)
+
+
+def _seed_neosoul(midi: MIDIFile, offset: int):
+    # Drums — lazy pocket
+    midi.addNote(0, 9, 36, 0, 0.5, 90)
+    midi.addNote(0, 9, 38, 1, 0.5, 70)
+    midi.addNote(0, 9, 36, 2.5, 0.5, 85)
+    midi.addNote(0, 9, 38, 3, 0.5, 65)
+    for i in [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]:
+        midi.addNote(0, 9, 42, i, 0.25, 50 + int(i * 4) % 20)
+    # Bass — Erykah-style
+    midi.addNote(1, 0, 43 + offset, 0, 1.0, 90)
+    midi.addNote(1, 0, 46 + offset, 1.5, 0.5, 80)
+    midi.addNote(1, 0, 48 + offset, 2, 1.25, 85)
+    midi.addNote(1, 0, 46 + offset, 3.5, 0.5, 75)
+    # Rhodes chord (ch 1)
+    for p in [60, 63, 67, 70]:
+        midi.addNote(2, 1, p + offset, 0, 3.5, 55 + (p % 5) * 3)
+    _add_sustain_pedal(midi, 2, 1, 1)
+    _add_expression_curve(midi, 2, 1, 1, 60, 100)
+
+
+def _seed_classical(midi: MIDIFile, offset: int):
+    # Piano seed — Alberti bass + melody + heavy pedal (matches MAESTRO heuristics)
+    # Left hand — Alberti (ch 0)
+    pattern = [48, 55, 52, 55]  # C-G-E-G
+    for i, p in enumerate(pattern):
+        midi.addNote(1, 0, p + offset, i * 0.5, 0.45, 60 + (i % 2) * 8)
+    pattern2 = [47, 55, 50, 55]
+    for i, p in enumerate(pattern2):
+        midi.addNote(1, 0, p + offset, 2 + i * 0.5, 0.45, 58 + (i % 2) * 10)
+    # Right hand melody (ch 1)
+    melody = [(67, 0, 0.75, 80), (65, 0.75, 0.25, 65), (64, 1, 1.0, 75),
+              (62, 2, 0.5, 70), (64, 2.5, 0.5, 72), (67, 3, 1.0, 78)]
+    for p, t, d, v in melody:
+        midi.addNote(2, 1, p + offset, t, d, v)
+    _add_sustain_pedal(midi, 1, 0, 1)
+    _add_sustain_pedal(midi, 2, 1, 1)
+    _add_expression_curve(midi, 2, 1, 1, 70, 110)
+
+
+def _seed_cinematic(midi: MIDIFile, offset: int):
+    # Strings pad + timpani + French horn melody
+    midi.addNote(0, 9, 47, 0, 0.5, 100)          # timpani low-mid tom
+    midi.addNote(0, 9, 49, 3, 0.5, 90)           # crash
+    # Low strings (ch 0) — sustained fifths
+    midi.addNote(1, 0, 36 + offset, 0, 4.0, 70)
+    midi.addNote(1, 0, 43 + offset, 0, 4.0, 65)
+    # Horn melody (ch 1)
+    midi.addNote(2, 1, 60 + offset, 0, 1.5, 80)
+    midi.addNote(2, 1, 64 + offset, 1.5, 1.0, 85)
+    midi.addNote(2, 1, 67 + offset, 2.5, 1.5, 90)
+    _add_expression_curve(midi, 1, 0, 1, 50, 100)
+    _add_expression_curve(midi, 2, 1, 1, 60, 110)
+    _add_mod_wheel(midi, 2, 1, 1, 50)
+
+
+def _seed_ambient(midi: MIDIFile, offset: int):
+    # Pads — very slow, sustained, soft
+    midi.addNote(1, 0, 48 + offset, 0, 4.0, 45)
+    midi.addNote(1, 0, 55 + offset, 0, 4.0, 40)
+    midi.addNote(1, 0, 60 + offset, 0, 4.0, 38)
+    midi.addNote(2, 1, 67 + offset, 1, 3.0, 50)
+    midi.addNote(2, 1, 72 + offset, 2, 2.0, 45)
+    _add_expression_curve(midi, 1, 0, 1, 30, 80)
+    _add_mod_wheel(midi, 1, 0, 1, 60)
+    _add_mod_wheel(midi, 2, 1, 1, 50)
+
+
+def _seed_reggae(midi: MIDIFile, offset: int):
+    # One-drop drums
+    midi.addNote(0, 9, 38, 1, 0.5, 100)          # snare on 3 (half-time)
+    midi.addNote(0, 9, 36, 1, 0.5, 95)           # kick on 3
+    midi.addNote(0, 9, 42, 0, 0.25, 70)
+    midi.addNote(0, 9, 42, 0.5, 0.25, 60)
+    midi.addNote(0, 9, 42, 1.5, 0.25, 65)
+    midi.addNote(0, 9, 42, 2, 0.25, 70)
+    midi.addNote(0, 9, 42, 2.5, 0.25, 55)
+    midi.addNote(0, 9, 42, 3, 0.25, 68)
+    midi.addNote(0, 9, 42, 3.5, 0.25, 58)
+    # Bass (ch 0) — syncopated roots
+    midi.addNote(1, 0, 48 + offset, 0, 0.75, 100)
+    midi.addNote(1, 0, 48 + offset, 1.5, 0.5, 85)
+    midi.addNote(1, 0, 53 + offset, 2, 0.75, 90)
+    midi.addNote(1, 0, 48 + offset, 3, 0.75, 80)
+    # Skank organ (ch 1) — off-beats
+    for beat in range(4):
+        midi.addNote(2, 1, 60 + offset, beat + 0.5, 0.2, 65)
+        midi.addNote(2, 1, 64 + offset, beat + 0.5, 0.2, 60)
+        midi.addNote(2, 1, 67 + offset, beat + 0.5, 0.2, 58)
+
+
+def _seed_funk(midi: MIDIFile, offset: int):
+    # Drums — 16th note groove
+    for i in range(16):
+        beat = i * 0.25
+        if i in (0, 4, 10):                       # kick
+            midi.addNote(0, 9, 36, beat, 0.25, 105 - (i % 3) * 5)
+        if i in (4, 12):                          # snare
+            midi.addNote(0, 9, 38, beat, 0.25, 95)
+        vel = 55 + (i % 4) * 10 if i not in (0, 4, 8, 12) else 80
+        midi.addNote(0, 9, 42, beat, 0.125, vel)
+    # Slap bass (ch 0)
+    midi.addNote(1, 0, 48 + offset, 0, 0.2, 115)
+    midi.addNote(1, 0, 48 + offset, 0.5, 0.2, 95)
+    midi.addNote(1, 0, 50 + offset, 1, 0.25, 100)
+    midi.addNote(1, 0, 53 + offset, 1.75, 0.2, 90)
+    midi.addNote(1, 0, 48 + offset, 2, 0.2, 110)
+    midi.addNote(1, 0, 55 + offset, 2.75, 0.2, 85)
+    midi.addNote(1, 0, 53 + offset, 3, 0.5, 95)
+    # Clavinet stab (ch 1)
+    for beat in [0.5, 1.5, 2.5, 3.5]:
+        midi.addNote(2, 1, 60 + offset, beat, 0.15, 90)
+        midi.addNote(2, 1, 64 + offset, beat, 0.15, 85)
+
+
+def _seed_dnb(midi: MIDIFile, offset: int):
+    # Drums — broken beat at high tempo
+    midi.addNote(0, 9, 36, 0, 0.25, 110)
+    midi.addNote(0, 9, 38, 0.5, 0.25, 100)
+    midi.addNote(0, 9, 36, 1.25, 0.25, 100)
+    midi.addNote(0, 9, 38, 2, 0.25, 105)
+    midi.addNote(0, 9, 36, 2.75, 0.25, 95)
+    midi.addNote(0, 9, 38, 3.5, 0.25, 98)
+    for i in range(8):
+        midi.addNote(0, 9, 42, i * 0.5, 0.125, 65 + (i % 3) * 8)
+    # Reese bass (ch 0) — sustained + movement
+    midi.addNote(1, 0, 36 + offset, 0, 2.0, 110)
+    midi.addNote(1, 0, 39 + offset, 2, 1.5, 100)
+    midi.addNote(1, 0, 34 + offset, 3.5, 0.5, 105)
+    _add_expression_curve(midi, 1, 0, 1, 80, 127)
+    # Pad (ch 1)
+    midi.addNote(2, 1, 60 + offset, 0, 4.0, 55)
+    midi.addNote(2, 1, 63 + offset, 0, 4.0, 50)
+    midi.addNote(2, 1, 67 + offset, 0, 4.0, 48)
+    _add_mod_wheel(midi, 2, 1, 1, 40)
+
+
+def _seed_dubstep(midi: MIDIFile, offset: int):
+    midi.addNote(0, 9, 36, 0, 0.5, 115)
+    midi.addNote(0, 9, 38, 1, 0.5, 105)
+    midi.addNote(0, 9, 36, 2, 0.5, 110)
+    midi.addNote(0, 9, 38, 3, 0.5, 100)
+    for i in range(8):
+        midi.addNote(0, 9, 42, i * 0.5, 0.125, 60 + (i % 2) * 20)
+    # Wobble bass (ch 0)
+    midi.addNote(1, 0, 36 + offset, 0, 2.0, 120)
+    midi.addNote(1, 0, 34 + offset, 2, 2.0, 115)
+    _add_expression_curve(midi, 1, 0, 1, 60, 127)
+    # Stab (ch 1)
+    midi.addNote(2, 1, 60 + offset, 0, 0.25, 100)
+    midi.addNote(2, 1, 63 + offset, 0, 0.25, 95)
+    midi.addNote(2, 1, 67 + offset, 0, 0.25, 90)
+
+
+def _seed_drill(midi: MIDIFile, offset: int):
+    # Sliding 808 + rapid hats
+    midi.addNote(0, 9, 36, 0, 0.5, 115)
+    midi.addNote(0, 9, 36, 1.5, 0.25, 105)
+    midi.addNote(0, 9, 38, 1, 0.5, 95)
+    midi.addNote(0, 9, 39, 1, 0.5, 60)
+    midi.addNote(0, 9, 38, 3, 0.5, 90)
+    for i in range(16):
+        vel = 50 + (i % 4) * 10
+        midi.addNote(0, 9, 42, i * 0.25, 0.1, vel)
+    midi.addNote(1, 0, 36 + offset, 0, 1.5, 120)
+    midi.addNote(1, 0, 38 + offset, 1.5, 1.0, 110)
+    midi.addNote(1, 0, 34 + offset, 2.5, 1.5, 115)
+    _add_expression_curve(midi, 1, 0, 1, 80, 127)
+    midi.addNote(2, 1, 72 + offset, 0, 0.5, 90)
+    midi.addNote(2, 1, 70 + offset, 0.75, 0.5, 80)
+    midi.addNote(2, 1, 67 + offset, 1.5, 1.0, 85)
+
+
+def _seed_lofi(midi: MIDIFile, offset: int):
+    # Drums — dusty, low velocity
+    midi.addNote(0, 9, 36, 0, 0.5, 75)
+    midi.addNote(0, 9, 38, 1, 0.5, 60)
+    midi.addNote(0, 9, 36, 2, 0.5, 70)
+    midi.addNote(0, 9, 38, 3, 0.5, 55)
+    for i in range(8):
+        midi.addNote(0, 9, 42, i * 0.5, 0.25, 40 + (i % 3) * 8)
+    # Muted bass (ch 0)
+    midi.addNote(1, 0, 48 + offset, 0, 0.75, 70)
+    midi.addNote(1, 0, 46 + offset, 1.5, 0.5, 60)
+    midi.addNote(1, 0, 48 + offset, 2, 1.0, 65)
+    midi.addNote(1, 0, 50 + offset, 3.25, 0.5, 55)
+    # Piano/Rhodes chords (ch 1)
+    for p in [60, 64, 67, 71]:
+        midi.addNote(2, 1, p + offset, 0, 3.0, 45 + (p % 5) * 3)
+    _add_sustain_pedal(midi, 2, 1, 1)
+    _add_expression_curve(midi, 2, 1, 1, 40, 80)
+
+
+_GENRE_SEEDS = {
+    "boom_bap":   _seed_boom_bap,
+    "hip_hop":    _seed_boom_bap,
+    "trap":       _seed_trap,
+    "house":      _seed_house,
+    "techno":     _seed_techno,
+    "jazz":       _seed_jazz,
+    "neo_soul":   _seed_neosoul,
+    "r_and_b":    _seed_neosoul,
+    "classical":  _seed_classical,
+    "cinematic":  _seed_cinematic,
+    "ambient":    _seed_ambient,
+    "reggae":     _seed_reggae,
+    "funk":       _seed_funk,
+    "drum_and_bass": _seed_dnb,
+    "dnb":        _seed_dnb,
+    "dubstep":    _seed_dubstep,
+    "drill":      _seed_drill,
+    "lofi":       _seed_lofi,
+    "lo-fi":      _seed_lofi,
+}
+
+
+def create_seed_midi(tempo: int, genre: str, key: Optional[str] = None) -> str:
     """
-    Create genre-appropriate seed MIDI with drums, bass, and melody patterns.
-    
-    The seed quality directly affects Orpheus output quality - good seeds = good generations.
+    Create genre-appropriate seed MIDI with expressive CC, velocity curves,
+    and optional key transposition.
+
+    The seed quality directly affects Orpheus output quality.
     """
-    # Check cache first
-    cache_key = f"{genre}_{tempo}"
+    offset = _key_offset(key)
+    cache_key = f"{genre}_{tempo}_{offset}"
     if cache_key in _seed_cache:
-        logger.info(f"✅ Seed cache hit for {cache_key}")
+        logger.info(f"Seed cache hit for {cache_key}")
         return _seed_cache[cache_key]
-    
-    logger.info(f"❌ Seed cache miss for {cache_key}, creating new seed")
-    
-    midi = MIDIFile(3)  # 3 tracks for drums, bass, melody
+
+    midi = MIDIFile(3)
     midi.addTempo(0, 0, tempo)
-    
-    # DRUMS (Channel 9) - These are working well, keep them
-    if genre in ["boom_bap", "hip_hop"]:
-        # Classic boom bap: kick on 1, snare on 2
-        midi.addNote(0, 9, 36, 0, 0.5, 100)      # Kick beat 1
-        midi.addNote(0, 9, 38, 1, 0.5, 90)       # Snare beat 2
-        midi.addNote(0, 9, 36, 2, 0.5, 100)      # Kick beat 3
-        midi.addNote(0, 9, 38, 3, 0.5, 90)       # Snare beat 4
-        # Add hi-hats
-        for i in [0, 0.5, 1.5, 2, 2.5, 3, 3.5]:
-            midi.addNote(0, 9, 42, i, 0.25, 80)
-    elif genre in ["trap"]:
-        # Trap: 808s and hi-hats
-        midi.addNote(0, 9, 36, 0, 0.25, 110)
-        midi.addNote(0, 9, 36, 0.75, 0.25, 100)
-        midi.addNote(0, 9, 38, 1, 0.5, 90)
-        midi.addNote(0, 9, 42, 0, 0.125, 70)     # Closed hi-hat
-        midi.addNote(0, 9, 42, 0.25, 0.125, 70)
-        midi.addNote(0, 9, 42, 0.5, 0.125, 70)
-        midi.addNote(0, 9, 42, 0.75, 0.125, 70)
-    elif genre in ["house", "techno"]:
-        # Four on the floor
-        for beat in range(4):
-            midi.addNote(0, 9, 36, beat, 0.5, 100)
-        midi.addNote(0, 9, 42, 0.5, 0.25, 80)
-        midi.addNote(0, 9, 42, 1.5, 0.25, 80)
-    else:
-        # Default pattern
-        midi.addNote(0, 9, 36, 0, 0.5, 100)
-        midi.addNote(0, 9, 38, 1, 0.5, 90)
-    
-    # BASS (Channel 0) - Add simple, musical bass patterns
-    if genre in ["boom_bap", "hip_hop"]:
-        # Boom bap bass: Root note on 1 and 3, with passing tones
-        midi.addNote(1, 0, 48, 0, 1.0, 95)       # C3 (root)
-        midi.addNote(1, 0, 48, 2, 0.75, 90)      # C3
-        midi.addNote(1, 0, 50, 2.75, 0.25, 85)   # D3 (passing)
-    elif genre in ["trap"]:
-        # Trap bass: 808-style sustained notes with slides
-        midi.addNote(1, 0, 48, 0, 1.5, 110)      # Long C3
-        midi.addNote(1, 0, 50, 1.5, 0.5, 100)    # D3
-        midi.addNote(1, 0, 46, 2, 1.5, 105)      # Bb2
-    elif genre in ["house", "techno"]:
-        # Four-on-floor bass
-        for beat in range(4):
-            midi.addNote(1, 0, 48, beat, 0.75, 100)
-    else:
-        # Default bass: Simple root pattern
-        midi.addNote(1, 0, 48, 0, 0.75, 95)
-        midi.addNote(1, 0, 48, 2, 0.75, 90)
-    
-    # MELODY (Channel 1) - Add simple, musical melody seeds
-    if genre in ["boom_bap", "hip_hop"]:
-        # Hip hop melody: Syncopated, sparse
-        midi.addNote(2, 1, 60, 0.5, 0.5, 85)     # C4
-        midi.addNote(2, 1, 63, 1, 0.75, 80)      # Eb4
-        midi.addNote(2, 1, 65, 2.5, 0.5, 75)     # F4
-    elif genre in ["trap"]:
-        # Trap melody: Higher register, staccato
-        midi.addNote(2, 1, 72, 0, 0.25, 90)      # C5
-        midi.addNote(2, 1, 74, 0.5, 0.25, 85)    # D5
-        midi.addNote(2, 1, 72, 1.5, 0.5, 88)     # C5
-    elif genre in ["house", "techno"]:
-        # House melody: Sustained chords/notes
-        midi.addNote(2, 1, 60, 0, 2.0, 80)       # C4
-        midi.addNote(2, 1, 64, 2, 2.0, 75)       # E4
-    else:
-        # Default melody: Simple motif
-        midi.addNote(2, 1, 60, 0, 0.5, 85)
-        midi.addNote(2, 1, 62, 1, 0.5, 80)
-    
-    # Write to temp file
+
+    # Look up genre seed builder; fall back to boom_bap for unknown genres
+    genre_key = genre.lower().replace(" ", "_").replace("-", "_")
+    seed_fn = _GENRE_SEEDS.get(genre_key)
+
+    # Fuzzy fallback: try substring matching
+    if seed_fn is None:
+        for gk, fn in _GENRE_SEEDS.items():
+            if gk in genre_key or genre_key in gk:
+                seed_fn = fn
+                break
+
+    if seed_fn is None:
+        seed_fn = _seed_boom_bap
+
+    seed_fn(midi, offset)
+
     fd, path = tempfile.mkstemp(suffix=".mid")
     with os.fdopen(fd, 'wb') as f:
         midi.writeFile(f)
-    
-    # Cache the path
+
     _seed_cache[cache_key] = path
-    logger.info(f"💾 Cached seed for {cache_key} (cache size: {len(_seed_cache)})")
-    
+    logger.info(f"Seed created: {genre} key_offset={offset} ({cache_key})")
     return path
 
 
 def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
-    """Parse MIDI file into notes grouped by channel"""
+    """
+    Parse MIDI file into notes AND expressive events grouped by channel.
+
+    Returns ``{"notes": {ch: [...]}, "cc_events": {ch: [...]},
+               "pitch_bends": {ch: [...]}, "aftertouch": {ch: [...]}}``.
+    """
     mid = mido.MidiFile(midi_path)
     ticks_per_beat = mid.ticks_per_beat
-    
-    # Group notes by channel
-    channels = {}
-    current_time = {}  # Track time per channel
-    
+
+    notes: dict = {}
+    cc_events: dict = {}
+    pitch_bends: dict = {}
+    aftertouch: dict = {}
+
     for track in mid.tracks:
         time = 0
         for msg in track:
             time += msg.time
+            beat = round(time / ticks_per_beat, 3)
+
             if msg.type == 'note_on' and msg.velocity > 0:
                 ch = msg.channel
-                if ch not in channels:
-                    channels[ch] = []
-                    current_time[ch] = 0
-                
-                # Convert ticks to beats
-                beat = time / ticks_per_beat
-                
-                channels[ch].append({
+                notes.setdefault(ch, []).append({
                     "pitch": msg.note,
-                    "start_beat": round(beat, 3),
-                    "duration_beats": 0.5,  # Will be updated by note_off
-                    "velocity": msg.velocity
+                    "start_beat": beat,
+                    "duration_beats": 0.5,
+                    "velocity": msg.velocity,
                 })
+
             elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
                 ch = msg.channel
-                if ch in channels:
-                    # Find the matching note and update duration
-                    beat = time / ticks_per_beat
-                    for note in reversed(channels[ch]):
+                if ch in notes:
+                    for note in reversed(notes[ch]):
                         if note["pitch"] == msg.note and note.get("duration_beats") == 0.5:
                             note["duration_beats"] = round(beat - note["start_beat"], 3)
                             break
-    
-    return channels
+
+            elif msg.type == 'control_change':
+                ch = msg.channel
+                cc_events.setdefault(ch, []).append({
+                    "cc": msg.control,
+                    "beat": beat,
+                    "value": msg.value,
+                })
+
+            elif msg.type == 'pitchwheel':
+                ch = msg.channel
+                pitch_bends.setdefault(ch, []).append({
+                    "beat": beat,
+                    "value": msg.pitch,
+                })
+
+            elif msg.type == 'aftertouch':
+                ch = msg.channel
+                aftertouch.setdefault(ch, []).append({
+                    "beat": beat,
+                    "value": msg.value,
+                })
+
+            elif msg.type == 'polytouch':
+                ch = msg.channel
+                aftertouch.setdefault(ch, []).append({
+                    "beat": beat,
+                    "value": msg.value,
+                    "pitch": msg.note,
+                })
+
+    return {
+        "notes": notes,
+        "cc_events": cc_events,
+        "pitch_bends": pitch_bends,
+        "aftertouch": aftertouch,
+    }
 
 
 # Map requested instrument (from Maestro) to melodic channel index.
@@ -372,62 +739,69 @@ MELODIC_INDEX_BY_INSTRUMENT = {
 }
 
 
-def filter_channels_for_instruments(channels: dict, instruments: List[str]) -> dict:
-    """
-    Keep only channels that correspond to the requested instruments.
-
-    Maestro calls Orpheus once per instrument (e.g. instruments=["drums"], then ["bass"]).
-    Orpheus always returns multi-channel MIDI (drums + melodic). If we return all channels,
-    Maestro merges them and assigns the same combined notes to every track, so every
-    track gets the same pattern. Filter to the single channel (or channels) for this
-    request so each Maestro track gets only its instrument's notes.
-    """
+def _channels_to_keep(channel_keys: set, instruments: List[str]) -> set:
+    """Determine which MIDI channels to keep for the requested instruments."""
     if not instruments:
-        return channels
+        return channel_keys
     requested = [i.lower().strip() for i in instruments]
-    keep = set()
-    # Drums = channel 9 (GM)
-    if any(i in requested for i in ("drums",)):
+    keep: set = set()
+    if any(i == "drums" for i in requested):
         keep.add(9)
-    # Melodic channels (non-9), in deterministic order
-    melodic_channels = sorted(c for c in channels if c != 9)
+    melodic_channels = sorted(c for c in channel_keys if c != 9)
     for inst in requested:
-        if inst in ("drums",):
+        if inst == "drums":
             continue
         idx = MELODIC_INDEX_BY_INSTRUMENT.get(inst, 0)
         if idx < len(melodic_channels):
             keep.add(melodic_channels[idx])
-    if not keep:
-        return channels
-    return {ch: channels[ch] for ch in channels if ch in keep}
+    return keep if keep else channel_keys
 
 
-def generate_tool_calls(channels: dict, tempo: int, instruments: List[str]) -> List[dict]:
-    """Convert parsed MIDI channels to Stori tool calls"""
-    tool_calls = []
-    
-    # 1. Create project
+def filter_channels_for_instruments(parsed: dict, instruments: List[str]) -> dict:
+    """
+    Keep only channels that correspond to the requested instruments.
+
+    Accepts the full parsed dict (notes, cc_events, pitch_bends, aftertouch)
+    returned by ``parse_midi_to_notes`` and filters every sub-dict.
+    """
+    all_chs: set = set()
+    for sub in ("notes", "cc_events", "pitch_bends", "aftertouch"):
+        all_chs.update(parsed.get(sub, {}).keys())
+
+    keep = _channels_to_keep(all_chs, instruments)
+
+    return {
+        sub_key: {ch: evts for ch, evts in parsed.get(sub_key, {}).items() if ch in keep}
+        for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch")
+    }
+
+
+def generate_tool_calls(parsed: dict, tempo: int, instruments: List[str]) -> List[dict]:
+    """Convert parsed MIDI (notes + expressive events) to Stori tool calls."""
+    channels_notes = parsed.get("notes", {})
+    channels_cc = parsed.get("cc_events", {})
+    channels_pb = parsed.get("pitch_bends", {})
+    channels_at = parsed.get("aftertouch", {})
+
+    all_chs = sorted(set(channels_notes) | set(channels_cc) | set(channels_pb) | set(channels_at))
+
+    tool_calls: List[dict] = []
+
     tool_calls.append({
         "tool": "createProject",
-        "params": {
-            "name": "AI Composition",
-            "tempo": tempo
-        }
+        "params": {"name": "AI Composition", "tempo": tempo},
     })
-    
-    track_refs = {}  # Map channel to track reference index
-    
-    # 2. Add tracks for each channel
-    for ch, notes in sorted(channels.items()):
+
+    track_refs: dict = {}
+
+    for ch in all_chs:
+        notes = channels_notes.get(ch, [])
         if ch == 9:
-            # Drum channel
             track_name = "Drums"
             program = 0
             is_drum = True
         else:
-            # Melodic channel - assign instrument
             if instruments:
-                # Pick from requested instruments (excluding drums)
                 melodic_instruments = [i for i in instruments if i.lower() != "drums"]
                 if melodic_instruments:
                     idx = len([c for c in track_refs if c != 9]) % len(melodic_instruments)
@@ -436,32 +810,28 @@ def generate_tool_calls(channels: dict, tempo: int, instruments: List[str]) -> L
                     inst = "bass"
             else:
                 inst = "piano"
-            
             track_name = inst.replace("_", " ").title()
             program = INSTRUMENT_PROGRAMS.get(inst.lower(), 33)
             is_drum = False
-        
+
         track_idx = len(tool_calls)
         track_refs[ch] = track_idx
-        
+
         tool_calls.append({
             "tool": "addMidiTrack",
-            "params": {
-                "name": track_name,
-                "instrument": program if not is_drum else 0,
-                "isDrum": is_drum
-            }
+            "params": {"name": track_name, "instrument": program if not is_drum else 0, "isDrum": is_drum},
         })
-        
-        # 3. Add region for this track
-        # Calculate region length (round up to nearest 4 bars)
+
+        # Region length from notes + expressive events
+        max_beat = 0.0
         if notes:
             max_beat = max(n["start_beat"] + n["duration_beats"] for n in notes)
-            bars = int((max_beat / 4) + 1)
-            bars = ((bars + 3) // 4) * 4  # Round to 4
-        else:
-            bars = 4
-        
+        for evts in (channels_cc.get(ch, []), channels_pb.get(ch, []), channels_at.get(ch, [])):
+            for ev in evts:
+                max_beat = max(max_beat, ev.get("beat", 0))
+        bars = max(int((max_beat / 4) + 1), 4)
+        bars = ((bars + 3) // 4) * 4
+
         region_idx = len(tool_calls)
         tool_calls.append({
             "tool": "addMidiRegion",
@@ -469,20 +839,46 @@ def generate_tool_calls(channels: dict, tempo: int, instruments: List[str]) -> L
                 "trackId": f"${track_idx}.trackId",
                 "name": f"{track_name} Pattern",
                 "startBar": 1,
-                "lengthBars": bars
-            }
+                "lengthBars": bars,
+            },
         })
-        
-        # 4. Add notes to region
+
+        region_ref = f"${region_idx}.regionId"
+
         if notes:
             tool_calls.append({
                 "tool": "addNotes",
-                "params": {
-                    "regionId": f"${region_idx}.regionId",
-                    "notes": notes
-                }
+                "params": {"regionId": region_ref, "notes": notes},
             })
-    
+
+        # CC events — group by CC number for cleaner tool calls
+        cc_evts = channels_cc.get(ch, [])
+        if cc_evts:
+            by_cc: dict = {}
+            for ev in cc_evts:
+                by_cc.setdefault(ev["cc"], []).append({"beat": ev["beat"], "value": ev["value"]})
+            for cc_num, events in sorted(by_cc.items()):
+                tool_calls.append({
+                    "tool": "addMidiCC",
+                    "params": {"regionId": region_ref, "cc": cc_num, "events": events},
+                })
+
+        # Pitch bends
+        pb_evts = channels_pb.get(ch, [])
+        if pb_evts:
+            tool_calls.append({
+                "tool": "addPitchBend",
+                "params": {"regionId": region_ref, "events": pb_evts},
+            })
+
+        # Aftertouch
+        at_evts = channels_at.get(ch, [])
+        if at_evts:
+            tool_calls.append({
+                "tool": "addAftertouch",
+                "params": {"regionId": region_ref, "events": at_evts},
+            })
+
     return tool_calls
 
 
@@ -641,7 +1037,7 @@ async def generate(request: GenerateRequest):
         client = get_client()
         
         # Create seed MIDI (with caching)
-        seed_path = create_seed_midi(request.tempo, request.genre)
+        seed_path = create_seed_midi(request.tempo, request.genre, key=request.key)
         
         # Map instruments to Orpheus format
         orpheus_instruments = []
@@ -688,7 +1084,7 @@ async def generate(request: GenerateRequest):
         tokens_per_bar = orpheus_params["num_gen_tokens_per_bar"]
         num_prime_tokens = orpheus_params["num_prime_tokens"]
         
-        num_gen_tokens = min(request.bars * tokens_per_bar, 256)
+        num_gen_tokens = min(request.bars * tokens_per_bar, 1024)
         
         logger.info(f"🎵 Generating {request.genre} @ {request.tempo} BPM")
         logger.info(f"   Goals: {musical_goals}")
@@ -715,34 +1111,43 @@ async def generate(request: GenerateRequest):
         midi_result = client.predict(batch_number=0, api_name="/add_batch")
         midi_path = midi_result[2]
         
-        # Parse MIDI
-        channels = parse_midi_to_notes(midi_path, request.tempo)
-        
-        # Filter notes to only include requested bars (4 beats per bar)
+        # Parse MIDI (notes + CC + pitch bends + aftertouch)
+        parsed = parse_midi_to_notes(midi_path, request.tempo)
+
+        # Trim to requested bar range
         max_beat = request.bars * 4
-        filtered_channels = {}
-        for ch, notes in channels.items():
-            filtered_notes = [n for n in notes if n["start_beat"] < max_beat]
-            if filtered_notes:
-                filtered_channels[ch] = filtered_notes
+        for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
+            sub = parsed.get(sub_key, {})
+            beat_field = "start_beat" if sub_key == "notes" else "beat"
+            for ch in list(sub):
+                sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
+                if not sub[ch]:
+                    del sub[ch]
 
-        # Return only the channel(s) for the requested instrument(s). Maestro calls
-        # once per track (e.g. instruments=["drums"], then ["bass"]). Without this,
-        # we would return all channels and Maestro would merge them, putting the
-        # same combined notes on every track.
-        filtered_channels = filter_channels_for_instruments(filtered_channels, request.instruments)
+        parsed = filter_channels_for_instruments(parsed, request.instruments)
 
-        # Generate tool calls
-        tool_calls = generate_tool_calls(filtered_channels, request.tempo, request.instruments)
+        tool_calls = generate_tool_calls(parsed, request.tempo, request.instruments)
         
-        # Extract notes for quality analysis
+        # Extract notes and expressive event counts for quality analysis
         all_notes = []
+        cc_count = 0
+        pb_count = 0
+        at_count = 0
         for tool_call in tool_calls:
-            if tool_call.get("tool") == "addNotes":
+            t = tool_call.get("tool", "")
+            if t == "addNotes":
                 all_notes.extend(tool_call.get("params", {}).get("notes", []))
-        
-        # Analyze quality
+            elif t == "addMidiCC":
+                cc_count += len(tool_call.get("params", {}).get("events", []))
+            elif t == "addPitchBend":
+                pb_count += len(tool_call.get("params", {}).get("events", []))
+            elif t == "addAftertouch":
+                at_count += len(tool_call.get("params", {}).get("events", []))
+
         quality_metrics = analyze_quality(all_notes, request.bars, request.tempo)
+        quality_metrics["cc_events"] = cc_count
+        quality_metrics["pitch_bend_events"] = pb_count
+        quality_metrics["aftertouch_events"] = at_count
         
         # Build response with metadata
         response_data = {

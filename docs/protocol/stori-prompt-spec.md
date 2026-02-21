@@ -75,6 +75,7 @@ Target:       # optional — project | selection | track:<name> | region:<name>
 Style:        # optional — e.g. "lofi hip hop", "melodic techno"
 Key:          # optional — e.g. "Cm", "F#m", "D dorian"
 Tempo:        # optional — integer BPM
+Energy:       # optional — very low | low | medium | high | very high
 Role:         # optional — list of musical roles
 Constraints:  # optional — key-value boundary hints
 Vibe:         # optional — producer idiom lexicon (weighted)
@@ -174,6 +175,22 @@ Style: boom bap hip hop
 Key: F#m
 Key: D dorian
 Tempo: 92
+```
+
+------------------------------------------------------------------------
+
+### Energy
+
+Coarse energy level. Maps directly to the EmotionVector's energy and
+motion axes (1.5× weight). See the EmotionVector section for the full
+vocabulary and numeric mapping.
+
+```yaml
+Energy: very low    # stillness, ambient
+Energy: low         # relaxed, subdued
+Energy: medium      # balanced, standard
+Energy: high        # energetic, driving
+Energy: very high   # explosive, full-force
 ```
 
 ------------------------------------------------------------------------
@@ -354,6 +371,51 @@ Dynamics:
       position: bars 1–4
       curve: linear
 ```
+
+------------------------------------------------------------------------
+
+### Humanization
+
+Micro-timing and velocity humanization controlling the "feel" of the
+performance. These parameters feed directly into the expressiveness
+post-processor that runs on every generated track.
+
+The post-processor is **always active** — these fields override its
+defaults. Without explicit `Humanization:`, the system uses genre-
+appropriate defaults from the Style (e.g. jazz = heavy timing jitter +
+laid-back feel; techno = tight grid + subtle velocity variation).
+
+```yaml
+Humanization:
+  timing:
+    jitter: 0.06             # ± beats of random offset (0 = quantized)
+    late_bias: 0.015          # positive = laid-back, negative = pushed
+    grid: 16th               # grid that jitter is relative to
+  velocity:
+    arc: phrase               # phrase | bar | crescendo | none
+    stdev: 18                 # target standard deviation across notes
+    accents:
+      beats: [1, 3]           # strong beats (0-indexed within bar)
+      strength: 12            # velocity boost on accents
+    ghost_notes:
+      probability: 0.15       # chance of inserting ghost note
+      velocity: [25, 45]      # velocity range for ghost notes
+  feel: behind the beat       # or: on the grid, pushed, drunken
+```
+
+**Timing presets by genre** (defaults when `Humanization:` is omitted):
+
+| Genre | Jitter (beats) | Late bias | Feel |
+|-------|---------------|-----------|------|
+| Classical | 0.06 | 0.00 | Rubato-influenced |
+| Jazz | 0.05 | 0.015 | Laid back |
+| Lo-fi | 0.05 | 0.02 | Lazy, behind |
+| Boom Bap | 0.03 | 0.01 | Slight swing |
+| Trap | 0.015 | 0.00 | Tight, punchy |
+| House | 0.01 | 0.00 | Metronomic groove |
+| Techno | 0.008 | 0.00 | Precise, mechanical |
+| Ambient | 0.07 | 0.00 | Floating, free |
+| Funk | 0.02 | 0.005 | Tight pocket |
 
 ------------------------------------------------------------------------
 
@@ -1129,7 +1191,7 @@ become actual MIDI data in the DAW. Every link in this chain is implemented.
    └──────────────────────────────────────────────┘
 ```
 
-**Key insight:** A STORI PROMPT's expressive blocks flow through three parallel paths:
+**Key insight:** A STORI PROMPT's expressive blocks flow through four parallel paths:
 
 **Path A — LLM context (content dims):** `Harmony`, `Melody`, `Rhythm`, `Dynamics`, `Orchestration`, `Expression`, `Texture`, `Form` are injected verbatim into the Maestro system prompt. The LLM reads them and produces richer notes, voicings, rhythms, and dynamics.
 
@@ -1137,7 +1199,17 @@ become actual MIDI data in the DAW. Every link in this chain is implemented.
 
 **Path C — EmotionVector (Orpheus conditioning):** `Vibe`, `Section`, `Style`, and `Energy` are parsed into a 5-axis numeric vector forwarded directly to Orpheus as `tone_brightness`, `energy_intensity`, and `musical_goals`. A prompt with `Vibe: melancholic x3, sparse` generates measurably different notes than `Vibe: euphoric x3, driving` — the vibe vocabulary conditions the neural generator directly.
 
-The result: a prompt with `Effects: drums: compression`, `MidiExpressiveness: cc_curves: [{cc: 91}]`, and `Vibe: groovy x3` produces three concrete actions — a compressor insert on the Drums track, a CC 91 automation curve on the drums region, and an Orpheus call biased toward driving, rhythmic output.
+**Path D — Automatic expressiveness post-processing:** After Orpheus generates raw notes, the `ExpressivenessPostProcessor` automatically enriches them with performance-quality dynamics based on `Style`. This layer adds:
+- **Velocity curves** — phrase-level arcs, accent patterns, ghost note insertion
+- **CC automation** — CC 11 (expression) swells, CC 64 (sustain pedal) for keys, CC 1 (mod wheel) for vibrato
+- **Pitch bends** — bass slides, approach notes, blues bends (style-dependent)
+- **Timing humanization** — micro-timing jitter pushing ~92% of notes off the 16th grid (matching professional MIDI analysis of 200 MAESTRO performances)
+
+Each genre has a tuned profile (classical, jazz, trap, house, ambient, etc.) calibrated against analysis of 200 professional classical piano performances and orchestral reference MIDIs. The post-processor runs on every non-drum instrument after Orpheus returns notes, before the critic scores the result.
+
+Path D is **always active** — even a minimal prompt with just `Style: jazz` and no `MidiExpressiveness` block produces expressively humanized MIDI. Adding an explicit `MidiExpressiveness` block (Path B) layers on top of Path D for maximum control.
+
+The result: a prompt with `Effects: drums: compression`, `MidiExpressiveness: cc_curves: [{cc: 91}]`, and `Vibe: groovy x3` produces four concrete actions — a compressor insert on the Drums track, a CC 91 automation curve on the drums region, an Orpheus call biased toward driving output, and automatic velocity curves + CC 11 expression swells + timing humanization on every melodic track.
 
 ------------------------------------------------------------------------
 
@@ -1176,6 +1248,14 @@ The result: a prompt with `Effects: drums: compression`, `MidiExpressiveness: cc
 | **No-op tempo/key step elimination** | Done | `app/core/maestro_handlers._PlanTracker.build_from_prompt` |
 | **stori_add_notes fake-param validation + circuit breaker** | Done | `app/core/tool_validation/`, `app/core/maestro_handlers._handle_editing` |
 | **Bus-before-send ordering guaranteed** | Done | `app/core/planner._schema_to_tool_calls` |
+| **Expressiveness post-processor (velocity, CC, PB, timing)** | Done | `app/services/expressiveness.py`, `app/services/music_generator.py` |
+| **Genre expressiveness profiles (14 genres)** | Done | `app/services/expressiveness.py` (PROFILES) |
+| **Orpheus MIDI parser: full CC/PB/AT extraction** | Done | `orpheus-music/music_service.py` (parse\_midi\_to\_notes) |
+| **Orpheus token budget raised (1024 max, 24-64/bar)** | Done | `orpheus-music/music_service.py`, `orpheus-music/generation_policy.py` |
+| **Key-aware seed transposition** | Done | `orpheus-music/music_service.py` (create\_seed\_midi) |
+| **Genre seed library (16 genres with CC + velocity curves)** | Done | `orpheus-music/music_service.py` (\_GENRE\_SEEDS) |
+| **Time signature-aware region calculation** | Done | `app/core/planner/conversion.py` (\_beats\_per\_bar) |
+| **MIDI analysis tooling (reference corpus)** | Done | `scripts/analyze_midi.py`, `scripts/download_reference_midi.py` |
 
 ### How expressive blocks flow through the system
 
@@ -1187,6 +1267,10 @@ The result: a prompt with `Effects: drums: compression`, `MidiExpressiveness: cc
 `Effects`, `MidiExpressiveness`, and `Automation` blocks flow through a **third path** — mandatory tool call translation:
 
 3. **Tool call translation** — The structured prompt context injects an explicit execution mandate alongside the YAML block. The plan tracker surfaces each block as a per-track step with canonical labels (e.g. `"Add effects to Drums"`, `"Add MIDI CC to Bass"`, `"Write automation for Strings"`). The LLM translates every entry into `stori_add_insert_effect`, `stori_add_midi_cc`, `stori_add_pitch_bend`, or `stori_add_automation` calls. These are not suggestions — the system prompt treats them as a checklist.
+
+All generated notes pass through a **fourth path** — automatic expressiveness:
+
+4. **Expressiveness post-processing** — After Orpheus returns raw notes, `apply_expressiveness()` enriches every non-drum instrument with velocity curves, CC 11/64/1 automation, pitch bends, and timing humanization. Style-specific profiles (14 genres, calibrated against 200 MAESTRO performances) control the intensity. This ensures that even a minimal prompt produces professional-grade MIDI dynamics.
 
 The richer text-only dimensions (`Expression`, `Harmony`, `Dynamics`, `Orchestration`, `Texture`, `Form`) reach the LLM context and shape note content but do not produce direct tool calls of their own.
 

@@ -354,7 +354,7 @@ Rotating strings for the hero prompt input. The client cycles through them every
 **Endpoint:** `GET /api/v1/maestro/prompts`
 **Auth:** none
 
-Returns 4 randomly sampled STORI PROMPT inspiration cards from a curated pool of 22. Each call returns a different set. Styles span lo-fi boom bap, melodic techno, cinematic orchestral, Afrobeats, ambient drone, jazz reharmonization, dark trap, bossa nova, funk, neo-soul, drum & bass, minimal house, synthwave, post-rock, reggaeton, classical string quartet, psytrance, indie folk, New Orleans brass, Nordic ambient, flamenco fusion, and UK garage.
+Returns 4 randomly sampled STORI PROMPT inspiration cards from a curated pool of 50. Each call returns a different set. Styles span every continent and tradition: lo-fi boom bap, melodic techno, cinematic orchestral, Afrobeats, ambient drone, jazz, dark trap, bossa nova, funk, neo-soul, drum & bass, minimal house, synthwave, post-rock, reggaeton, classical string quartet, psytrance, indie folk, New Orleans brass, Nordic ambient, flamenco, UK garage, West African polyrhythm, Ethio-jazz, Gnawa trance, North Indian raga, Balinese gamelan, Japanese zen, Korean sanjo, Qawwali devotional, Arabic maqam, Anatolian psych rock, Colombian cumbia, Argentine tango nuevo, Andean huayno, Jamaican dancehall, Trinidad soca, klezmer, Baroque suite, Balkan brass, Appalachian bluegrass, gospel, Polynesian/Taiko fusion, Sufi ney meditation, Gregorian chant, progressive rock, Afro-Cuban rumba, minimalist phasing, full hip-hop song, and through-composed cinematic score.
 
 Every `fullPrompt` is a complete STORI PROMPT YAML using the full spec breadth — injected verbatim into the compose input on tap.
 

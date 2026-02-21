@@ -40,6 +40,7 @@ RUN pip install --no-cache-dir pytest-cov
 # Copy application code
 COPY --chown=stori:stori app/ ./app/
 COPY --chown=stori:stori scripts/ ./scripts/
+COPY --chown=stori:stori reference_midi/ ./reference_midi/
 COPY --chown=stori:stori alembic/ ./alembic/
 COPY --chown=stori:stori alembic.ini ./
 COPY --chown=stori:stori pyproject.toml ./

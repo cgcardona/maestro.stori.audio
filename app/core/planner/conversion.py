@@ -9,6 +9,19 @@ from app.core.plan_schemas import ExecutionPlanSchema
 from app.core.planner.track_matching import _build_role_to_track_map
 
 
+def _beats_per_bar(project_state: Optional[dict[str, Any]]) -> int:
+    """Extract beats per bar from project state, defaulting to 4."""
+    if project_state:
+        ts = project_state.get("time_signature") or project_state.get("timeSignature")
+        if isinstance(ts, (list, tuple)) and len(ts) >= 1:
+            return int(ts[0])
+        if isinstance(ts, dict):
+            return int(ts.get("numerator", 4))
+        if isinstance(ts, str) and "/" in ts:
+            return int(ts.split("/")[0])
+    return 4
+
+
 def _schema_to_tool_calls(
     plan: ExecutionPlanSchema,
     region_start_offset: float = 0.0,
@@ -36,6 +49,7 @@ def _schema_to_tool_calls(
     from app.core.track_styling import get_track_styling
 
     project_state = project_state or {}
+    bpb = _beats_per_bar(project_state)
 
     existing_tracks: dict[str, dict[str, Any]] = {}
     for t in project_state.get("tracks", []):
@@ -118,8 +132,8 @@ def _schema_to_tool_calls(
             region_params: dict[str, Any] = {
                 "name": resolved_track,
                 "trackName": resolved_track,
-                "startBeat": bar_start * 4 + region_start_offset,
-                "durationBeats": edit.bars * 4,
+                "startBeat": bar_start * bpb + region_start_offset,
+                "durationBeats": edit.bars * bpb,
             }
             existing = existing_tracks.get(resolved_track.lower())
             if existing and existing["id"]:

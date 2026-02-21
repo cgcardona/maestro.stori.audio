@@ -106,7 +106,7 @@ class OrpheusClient:
     async def generate(
         self,
         genre: str = "boom_bap",
-        tempo: int = 90,
+        tempo: int = 120,
         instruments: Optional[list[str]] = None,
         bars: int = 4,
         key: Optional[str] = None,

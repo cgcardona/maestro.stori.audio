@@ -384,9 +384,9 @@ class TestBudgetStateDerivation:
 class TestDataIntegrity:
     """Cross-cutting checks on the pool and template data."""
 
-    def test_pool_has_at_least_twenty_items(self):
-        """Pool has 20+ curated prompts."""
-        assert len(PROMPT_POOL) >= 20
+    def test_pool_has_at_least_fifty_items(self):
+        """Pool has 50 curated prompts spanning every continent."""
+        assert len(PROMPT_POOL) >= 50
 
     def test_pool_ids_unique(self):
         """All pool IDs are unique."""
@@ -428,15 +428,18 @@ class TestDataIntegrity:
             assert len(p.preview) > 10
 
     def test_pool_covers_diverse_styles(self):
-        """Pool covers at least 10 distinct genre keywords in titles."""
+        """Pool covers at least 20 distinct genre keywords in titles."""
         titles_lower = " ".join(p.title.lower() for p in PROMPT_POOL)
         genres = [
             "jazz", "trap", "house", "ambient", "funk", "techno",
             "folk", "classical", "afrobeats", "drum", "bossa",
             "synthwave", "psytrance", "reggaeton", "flamenco",
+            "gamelan", "zen", "qawwali", "cumbia", "tango",
+            "klezmer", "baroque", "bluegrass", "gospel", "rumba",
+            "gnawa", "raga", "dancehall", "calypso", "gregorian",
         ]
         found = [g for g in genres if g in titles_lower]
-        assert len(found) >= 10, f"Only found genres: {found}"
+        assert len(found) >= 20, f"Only found genres: {found}"
 
     def test_template_ids_unique(self):
         """All template dict keys match their template id field."""

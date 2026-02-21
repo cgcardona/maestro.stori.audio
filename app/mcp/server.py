@@ -197,7 +197,7 @@ class StoriMCPServer:
         result = await self.generator.generate(
             instrument=instrument,
             style=arguments.get("style", "boom_bap"),
-            tempo=arguments.get("tempo", 90),
+            tempo=arguments.get("tempo", 120),
             bars=arguments.get("bars", 4),
             key=arguments.get("key"),
             chords=arguments.get("chords"),

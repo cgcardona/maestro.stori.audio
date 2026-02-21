@@ -309,8 +309,8 @@ def apply_tempo_adjustments(controls: GenerationControlVector, tempo: int) -> Ge
 ORPHEUS_RANGES = {
     "temperature": (0.70, 1.10),
     "top_p": (0.90, 0.99),
-    "tokens_per_bar": (16, 32),
-    "num_prime_tokens": (32, 64),
+    "tokens_per_bar": (24, 64),
+    "num_prime_tokens": (48, 128),
 }
 
 

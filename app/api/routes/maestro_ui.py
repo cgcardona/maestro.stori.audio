@@ -88,7 +88,8 @@ async def get_prompts():
     """Return 4 randomly sampled STORI PROMPT inspiration cards.
 
     Each call returns a different random set drawn from a curated pool of
-    22 full STORI PROMPTs spanning a wide sonic field. No auth required.
+    50 full STORI PROMPTs spanning genres, traditions, and time signatures
+    from every continent. No auth required.
 
     Each item carries:
       - id         — unique slug
