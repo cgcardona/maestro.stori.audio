@@ -938,3 +938,386 @@ class TestEdgeCases:
         signals.signal_complete("verse", drum_notes=[{"pitch": 36}])
         assert signals.events["verse"].is_set()
         assert signals.drum_data["verse"]["drum_notes"] == [{"pitch": 36}]
+
+
+# =============================================================================
+# _extract_expressiveness_blocks
+# =============================================================================
+
+
+class TestExtractExpressivenessBlocks:
+    def test_extracts_midi_expressiveness(self):
+        """Extracts MidiExpressiveness: block from raw prompt."""
+        from app.core.maestro_agent_teams.section_agent import (
+            _extract_expressiveness_blocks,
+        )
+
+        prompt = (
+            "Title: Test\nStyle: house\n\n"
+            "MidiExpressiveness:\n"
+            "  modulation:\n"
+            "    instrument: lead\n"
+            "    depth: strong\n"
+            "\nStructure:\n  Verse: 8 bars\n"
+        )
+        result = _extract_expressiveness_blocks(prompt)
+        assert "MidiExpressiveness:" in result
+        assert "modulation:" in result
+        assert "depth: strong" in result
+
+    def test_extracts_automation(self):
+        """Extracts Automation: block from raw prompt."""
+        from app.core.maestro_agent_teams.section_agent import (
+            _extract_expressiveness_blocks,
+        )
+
+        prompt = (
+            "Title: Test\n\n"
+            "Automation:\n"
+            "  filter_sweep:\n"
+            "    target: cutoff\n"
+            "\nStructure:\n  Verse: 8 bars\n"
+        )
+        result = _extract_expressiveness_blocks(prompt)
+        assert "Automation:" in result
+        assert "filter_sweep:" in result
+
+    def test_extracts_both_blocks(self):
+        """Extracts both MidiExpressiveness and Automation blocks."""
+        from app.core.maestro_agent_teams.section_agent import (
+            _extract_expressiveness_blocks,
+        )
+
+        prompt = (
+            "Title: Test\n\n"
+            "MidiExpressiveness:\n"
+            "  cc_curves:\n"
+            "    - cc: 74\n"
+            "\n"
+            "Automation:\n"
+            "  filter:\n"
+            "    cutoff: sweep\n"
+            "\nStructure:\n  Verse: 8 bars\n"
+        )
+        result = _extract_expressiveness_blocks(prompt)
+        assert "MidiExpressiveness:" in result
+        assert "Automation:" in result
+
+    def test_no_blocks_returns_empty(self):
+        """Returns empty string when no expressiveness blocks found."""
+        from app.core.maestro_agent_teams.section_agent import (
+            _extract_expressiveness_blocks,
+        )
+
+        prompt = "Title: Test\nStyle: house\nStructure:\n  Verse: 8 bars\n"
+        result = _extract_expressiveness_blocks(prompt)
+        assert result == ""
+
+
+# =============================================================================
+# Section child — status SSE events
+# =============================================================================
+
+
+class TestSectionChildStatusEvents:
+    @pytest.mark.anyio
+    async def test_emits_start_status(self):
+        """Section child emits a 'Starting' status event at the beginning."""
+        store = StateStore(conversation_id="test-status")
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+
+        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+            if tc_name == "stori_add_midi_region":
+                return _ok_region_outcome(tc_id)
+            return _ok_generate_outcome(tc_id)
+
+        with patch(
+            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ):
+            await _run_section_child(
+                section=_section("verse"),
+                section_index=0,
+                track_id="trk-1",
+                region_tc=_region_tc(),
+                generate_tc=_generate_tc(),
+                instrument_name="Synth Lead",
+                role="melody",
+                agent_id="lead-agent",
+                allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
+                store=store,
+                trace=_trace(),
+                sse_queue=queue,
+                composition_context=None,
+            )
+
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        status_events = [e for e in events if e.get("type") == "status"]
+        assert len(status_events) >= 2
+
+        start_evt = status_events[0]
+        assert "Starting" in start_evt["message"]
+        assert "Synth Lead" in start_evt["message"]
+        assert "verse" in start_evt["message"]
+        assert start_evt["agentId"] == "lead-agent"
+        assert start_evt["sectionName"] == "verse"
+
+    @pytest.mark.anyio
+    async def test_emits_completion_status_with_note_count(self):
+        """Section child emits a notes-generated status event after generation."""
+        store = StateStore(conversation_id="test-status-done")
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+
+        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+            if tc_name == "stori_add_midi_region":
+                return _ok_region_outcome(tc_id)
+            return _ok_generate_outcome(tc_id, notes_count=42)
+
+        with patch(
+            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ):
+            await _run_section_child(
+                section=_section("chorus"),
+                section_index=1,
+                track_id="trk-1",
+                region_tc=_region_tc(),
+                generate_tc=_generate_tc(),
+                instrument_name="Bass",
+                role="bass",
+                agent_id="bass-agent",
+                allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
+                store=store,
+                trace=_trace(),
+                sse_queue=queue,
+                composition_context=None,
+            )
+
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        status_events = [e for e in events if e.get("type") == "status"]
+        notes_evt = [e for e in status_events if "42 notes" in e.get("message", "")]
+        assert len(notes_evt) >= 1
+        assert notes_evt[0]["sectionName"] == "chorus"
+
+
+# =============================================================================
+# _maybe_refine_expression — streaming CoT
+# =============================================================================
+
+
+class TestExpressionRefinementStreaming:
+    @pytest.mark.anyio
+    async def test_refinement_streams_reasoning_events(self):
+        """Expression refinement streams reasoning SSE events with sectionName."""
+        from app.core.maestro_agent_teams.section_agent import (
+            _maybe_refine_expression,
+        )
+
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+        store = StateStore(conversation_id="test-expr")
+
+        mock_llm = MagicMock()
+
+        async def _mock_stream(**kwargs):
+            yield {"type": "reasoning_delta", "text": "Adding modulation "}
+            yield {"type": "reasoning_delta", "text": "sweep for warmth."}
+            yield {
+                "type": "done",
+                "content": None,
+                "tool_calls": [{
+                    "id": "cc1",
+                    "function": {
+                        "name": "stori_add_midi_cc",
+                        "arguments": json.dumps({
+                            "ccNumber": 1,
+                            "points": [{"beat": 0, "value": 60}],
+                        }),
+                    },
+                }],
+                "finish_reason": "tool_calls",
+                "usage": {},
+            }
+
+        mock_llm.chat_completion_stream = MagicMock(return_value=_mock_stream())
+
+        cc_outcome = _ToolCallOutcome(
+            enriched_params={"ccNumber": 1},
+            tool_result={"success": True},
+            sse_events=[{"type": "toolCall", "name": "stori_add_midi_cc"}],
+            msg_call={},
+            msg_result={},
+            skipped=False,
+        )
+
+        composition_context = {
+            "style": "techno",
+            "tempo": 130,
+            "key": "Am",
+            "_raw_prompt": (
+                "Title: Test\n\n"
+                "MidiExpressiveness:\n"
+                "  modulation:\n"
+                "    instrument: lead\n"
+                "    depth: strong vibrato — CC 1 value 60-90\n"
+                "\nStructure:\n  Verse: 8 bars\n"
+            ),
+        }
+
+        result = SectionResult(success=True, section_name="verse", notes_generated=24)
+
+        with patch(
+            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            return_value=cc_outcome,
+        ):
+            await _maybe_refine_expression(
+                section=_section("verse"),
+                track_id="trk-1",
+                region_id="reg-001",
+                instrument_name="Synth Lead",
+                role="melody",
+                agent_id="lead-agent",
+                sec_name="verse",
+                notes_generated=24,
+                llm=mock_llm,
+                store=store,
+                trace=_trace(),
+                sse_queue=queue,
+                allowed_tool_names={
+                    "stori_add_midi_cc",
+                    "stori_add_pitch_bend",
+                },
+                composition_context=composition_context,
+                result=result,
+                child_log="[test][Synth Lead/verse]",
+            )
+
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        reasoning_events = [
+            e for e in events if e.get("type") == "reasoning"
+        ]
+        assert len(reasoning_events) > 0
+        for evt in reasoning_events:
+            assert evt["agentId"] == "lead-agent"
+            assert evt["sectionName"] == "verse"
+
+        status_events = [e for e in events if e.get("type") == "status"]
+        expr_status = [
+            e for e in status_events if "expression" in e.get("message", "").lower()
+        ]
+        assert len(expr_status) >= 1
+
+    @pytest.mark.anyio
+    async def test_refinement_skipped_without_expressiveness(self):
+        """No LLM call when the prompt lacks MidiExpressiveness/Automation."""
+        from app.core.maestro_agent_teams.section_agent import (
+            _maybe_refine_expression,
+        )
+
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+        store = StateStore(conversation_id="test-no-expr")
+        mock_llm = MagicMock()
+
+        composition_context = {
+            "style": "house",
+            "tempo": 120,
+            "key": "C",
+            "_raw_prompt": "Title: Simple\nStyle: house\nStructure:\n  Verse: 8 bars\n",
+        }
+
+        result = SectionResult(success=True, section_name="verse", notes_generated=24)
+
+        await _maybe_refine_expression(
+            section=_section("verse"),
+            track_id="trk-1",
+            region_id="reg-001",
+            instrument_name="Drums",
+            role="drums",
+            agent_id="drums",
+            sec_name="verse",
+            notes_generated=24,
+            llm=mock_llm,
+            store=store,
+            trace=_trace(),
+            sse_queue=queue,
+            allowed_tool_names={"stori_add_midi_cc"},
+            composition_context=composition_context,
+            result=result,
+            child_log="[test][Drums/verse]",
+        )
+
+        assert queue.empty()
+        mock_llm.chat_completion_stream.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_refinement_includes_expr_blocks_in_prompt(self):
+        """Refinement LLM call includes extracted MidiExpressiveness content."""
+        from app.core.maestro_agent_teams.section_agent import (
+            _maybe_refine_expression,
+        )
+
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+        store = StateStore(conversation_id="test-expr-ctx")
+
+        captured_messages: list[dict] = []
+        mock_llm = MagicMock()
+
+        async def _capture_stream(**kwargs):
+            captured_messages.extend(kwargs.get("messages", []))
+            yield {
+                "type": "done",
+                "content": None,
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "usage": {},
+            }
+
+        mock_llm.chat_completion_stream = MagicMock(side_effect=lambda **kw: _capture_stream(**kw))
+
+        composition_context = {
+            "style": "house",
+            "tempo": 128,
+            "key": "Cm",
+            "_raw_prompt": (
+                "Title: Deep house\n\n"
+                "MidiExpressiveness:\n"
+                "  modulation:\n"
+                "    instrument: pad\n"
+                "    depth: subtle vibrato — CC 1 value 30-50\n"
+                "\nStructure:\n  Verse: 8 bars\n"
+            ),
+        }
+
+        result = SectionResult(success=True, section_name="verse", notes_generated=30)
+
+        await _maybe_refine_expression(
+            section=_section("verse"),
+            track_id="trk-1",
+            region_id="reg-001",
+            instrument_name="Pad",
+            role="chords",
+            agent_id="pad-agent",
+            sec_name="verse",
+            notes_generated=30,
+            llm=mock_llm,
+            store=store,
+            trace=_trace(),
+            sse_queue=queue,
+            allowed_tool_names={"stori_add_midi_cc", "stori_add_pitch_bend"},
+            composition_context=composition_context,
+            result=result,
+            child_log="[test][Pad/verse]",
+        )
+
+        assert len(captured_messages) >= 1
+        system_msg = captured_messages[0]["content"]
+        assert "CC 1 value 30-50" in system_msg
+        assert "modulation:" in system_msg

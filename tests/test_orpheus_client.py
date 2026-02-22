@@ -11,6 +11,7 @@ def client():
         m.orpheus_base_url = "http://orpheus:10002"
         m.orpheus_timeout = 30
         m.hf_api_key = None
+        m.orpheus_max_concurrent = 2
         yield OrpheusClient()
 
 
@@ -194,6 +195,7 @@ def test_connection_limits_configured():
         m.orpheus_base_url = "http://orpheus:10002"
         m.orpheus_timeout = 30
         m.hf_api_key = None
+        m.orpheus_max_concurrent = 4
         orpheus_module._shared_client = None
         c = get_orpheus_client()
         with patch.object(httpx.AsyncClient, "__init__", capturing_init):
@@ -476,6 +478,7 @@ class TestGpuColdStartRetry:
             m.orpheus_base_url = "http://orpheus:10002"
             m.orpheus_timeout = 30
             m.hf_api_key = None
+            m.orpheus_max_concurrent = 2
             yield OrpheusClient()
 
     @pytest.mark.asyncio
@@ -598,3 +601,93 @@ class TestGpuColdStartRetry:
 
         assert result["success"] is True
         assert result["metadata"]["retry_count"] == 1  # succeeded on attempt index 1
+
+
+# ---------------------------------------------------------------------------
+# Semaphore tests
+# ---------------------------------------------------------------------------
+
+
+class TestSemaphore:
+    """Tests for the GPU concurrency semaphore in OrpheusClient."""
+
+    def test_semaphore_configurable(self):
+        """max_concurrent param controls semaphore capacity."""
+        with patch("app.services.orpheus.settings") as m:
+            m.orpheus_base_url = "http://orpheus:10002"
+            m.orpheus_timeout = 30
+            m.hf_api_key = None
+            m.orpheus_max_concurrent = 5
+            c = OrpheusClient()
+            assert c._max_concurrent == 5
+            assert c._semaphore._value == 5
+
+    def test_semaphore_explicit_override(self):
+        """Explicit max_concurrent kwarg overrides the config value."""
+        with patch("app.services.orpheus.settings") as m:
+            m.orpheus_base_url = "http://orpheus:10002"
+            m.orpheus_timeout = 30
+            m.hf_api_key = None
+            m.orpheus_max_concurrent = 2
+            c = OrpheusClient(max_concurrent=7)
+            assert c._max_concurrent == 7
+            assert c._semaphore._value == 7
+
+    @pytest.mark.asyncio
+    async def test_semaphore_limits_concurrent_calls(self):
+        """Only max_concurrent generate() calls run simultaneously."""
+        import asyncio
+
+        max_concurrent = 2
+        with patch("app.services.orpheus.settings") as m:
+            m.orpheus_base_url = "http://orpheus:10002"
+            m.orpheus_timeout = 30
+            m.hf_api_key = None
+            m.orpheus_max_concurrent = max_concurrent
+            c = OrpheusClient()
+
+        peak = 0
+        active = 0
+        gate = asyncio.Event()
+
+        async def slow_post(*args, **kwargs):
+            nonlocal peak, active
+            active += 1
+            if active > peak:
+                peak = active
+            await gate.wait()
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.json.return_value = {"success": True, "notes": [], "metadata": {}}
+            active -= 1
+            return resp
+
+        c._client = MagicMock()
+        c._client.post = AsyncMock(side_effect=slow_post)
+
+        tasks = [
+            asyncio.create_task(c.generate(genre="pop", tempo=120, bars=4))
+            for _ in range(max_concurrent + 2)
+        ]
+        await asyncio.sleep(0.05)
+        assert peak <= max_concurrent
+
+        gate.set()
+        await asyncio.gather(*tasks)
+
+    @pytest.mark.asyncio
+    async def test_semaphore_releases_on_error(self):
+        """Semaphore slot is released even when generate() hits an error."""
+        with patch("app.services.orpheus.settings") as m:
+            m.orpheus_base_url = "http://orpheus:10002"
+            m.orpheus_timeout = 30
+            m.hf_api_key = None
+            m.orpheus_max_concurrent = 1
+            c = OrpheusClient()
+
+        c._client = MagicMock()
+        c._client.post = AsyncMock(side_effect=Exception("boom"))
+
+        result = await c.generate(genre="jazz", tempo=100, bars=4)
+        assert result["success"] is False
+        assert c._semaphore._value == 1, "Semaphore must be released after error"

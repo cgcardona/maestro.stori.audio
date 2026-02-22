@@ -56,12 +56,17 @@ class OrpheusClient:
         base_url: Optional[str] = None,
         timeout: Optional[int] = None,
         hf_token: Optional[str] = None,
+        max_concurrent: Optional[int] = None,
     ):
         self.base_url = (base_url or settings.orpheus_base_url).rstrip("/")
         self.timeout = timeout or settings.orpheus_timeout
         # Use HF token if provided (for Gradio Spaces)
         self.hf_token = hf_token or getattr(settings, "hf_api_key", None)
         self._client: Optional[httpx.AsyncClient] = None
+
+        n = max_concurrent or settings.orpheus_max_concurrent
+        self._semaphore = asyncio.Semaphore(n)
+        self._max_concurrent = n
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -205,114 +210,126 @@ class OrpheusClient:
                 "⚠️ Orpheus request without HF token; Gradio Space may return GPU quota errors"
             )
 
-        for attempt in range(_MAX_RETRIES):
-            try:
-                response = await self.client.post(
-                    f"{self.base_url}/generate",
-                    json=payload,
-                )
-                response.raise_for_status()
-                data = response.json()
+        if self._semaphore.locked():
+            logger.info(
+                f"⏳ [Orpheus] All {self._max_concurrent} GPU slots in use — "
+                f"request for {instruments} queued"
+            )
 
-                if data is None or not isinstance(data, dict):
-                    raw = response.text[:200] if response.text else "(empty)"
-                    logger.warning(
-                        f"⚠️ Orpheus returned non-dict response (attempt {attempt + 1}): {raw}"
+        async with self._semaphore:
+            logger.debug(
+                f"[Orpheus] GPU slot acquired for {instruments} "
+                f"({self._max_concurrent - self._semaphore._value}/{self._max_concurrent} in use)"
+            )
+
+            for attempt in range(_MAX_RETRIES):
+                try:
+                    response = await self.client.post(
+                        f"{self.base_url}/generate",
+                        json=payload,
                     )
-                    if self._is_transient_error(raw) and attempt < _MAX_RETRIES - 1:
-                        delay = _RETRY_DELAYS[attempt]
-                        logger.warning(f"⚠️ Retrying in {delay}s (GPU issue in raw body)")
-                        await asyncio.sleep(delay)
-                        continue
-                    return {
-                        "success": False,
-                        "error": f"Orpheus returned invalid response: {raw}",
-                        "retry_count": attempt,
-                    }
+                    response.raise_for_status()
+                    data = response.json()
 
-                error_text = data.get("error", "")
-                if not data.get("success") and self._is_gpu_cold_start_error(error_text):
-                    if attempt < _MAX_RETRIES - 1:
+                    if data is None or not isinstance(data, dict):
+                        raw = response.text[:200] if response.text else "(empty)"
+                        logger.warning(
+                            f"⚠️ Orpheus returned non-dict response (attempt {attempt + 1}): {raw}"
+                        )
+                        if self._is_transient_error(raw) and attempt < _MAX_RETRIES - 1:
+                            delay = _RETRY_DELAYS[attempt]
+                            logger.warning(f"⚠️ Retrying in {delay}s (GPU issue in raw body)")
+                            await asyncio.sleep(delay)
+                            continue
+                        return {
+                            "success": False,
+                            "error": f"Orpheus returned invalid response: {raw}",
+                            "retry_count": attempt,
+                        }
+
+                    error_text = data.get("error", "")
+                    if not data.get("success") and self._is_gpu_cold_start_error(error_text):
+                        if attempt < _MAX_RETRIES - 1:
+                            delay = _RETRY_DELAYS[attempt]
+                            logger.warning(
+                                f"⚠️ Orpheus GPU cold-start (attempt {attempt + 1}/{_MAX_RETRIES}) "
+                                f"— retrying in {delay}s. Error: {error_text[:120]}"
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+                        logger.error(
+                            f"❌ Orpheus GPU unavailable after {_MAX_RETRIES} attempts"
+                        )
+                        return {
+                            "success": False,
+                            "error": "gpu_unavailable",
+                            "message": (
+                                f"MIDI generation failed after {_MAX_RETRIES} attempts — "
+                                "GPU unavailable. Try again in a few minutes."
+                            ),
+                            "retry_count": attempt + 1,
+                        }
+
+                    out: dict[str, Any] = {
+                        "success": data.get("success", False),
+                        "notes": data.get("notes", []),
+                        "tool_calls": data.get("tool_calls", []),
+                        "metadata": {**data.get("metadata", {}), "retry_count": attempt},
+                    }
+                    if not out["success"] and error_text:
+                        out["error"] = error_text
+                    return out
+
+                except httpx.HTTPStatusError as e:
+                    body = e.response.text
+                    if self._is_transient_error(body) and attempt < _MAX_RETRIES - 1:
                         delay = _RETRY_DELAYS[attempt]
                         logger.warning(
-                            f"⚠️ Orpheus GPU cold-start (attempt {attempt + 1}/{_MAX_RETRIES}) "
-                            f"— retrying in {delay}s. Error: {error_text[:120]}"
+                            f"⚠️ Orpheus GPU cold-start in HTTP {e.response.status_code} "
+                            f"(attempt {attempt + 1}/{_MAX_RETRIES}) — retrying in {delay}s"
                         )
                         await asyncio.sleep(delay)
                         continue
-                    logger.error(
-                        f"❌ Orpheus GPU unavailable after {_MAX_RETRIES} attempts"
-                    )
+                    logger.error(f"❌ Orpheus HTTP error: {e.response.status_code}")
                     return {
                         "success": False,
-                        "error": "gpu_unavailable",
-                        "message": (
-                            f"MIDI generation failed after {_MAX_RETRIES} attempts — "
-                            "GPU unavailable. Try again in a few minutes."
-                        ),
-                        "retry_count": attempt + 1,
+                        "error": f"HTTP {e.response.status_code}: {body}",
+                        "retry_count": attempt,
                     }
 
-                out: dict[str, Any] = {
-                    "success": data.get("success", False),
-                    "notes": data.get("notes", []),
-                    "tool_calls": data.get("tool_calls", []),
-                    "metadata": {**data.get("metadata", {}), "retry_count": attempt},
-                }
-                if not out["success"] and error_text:
-                    out["error"] = error_text
-                return out
+                except httpx.ConnectError:
+                    logger.warning("⚠️ Orpheus service not reachable")
+                    return {
+                        "success": False,
+                        "error": "Orpheus service not available",
+                        "notes": [],
+                        "retry_count": attempt,
+                    }
 
-            except httpx.HTTPStatusError as e:
-                body = e.response.text
-                if self._is_transient_error(body) and attempt < _MAX_RETRIES - 1:
-                    delay = _RETRY_DELAYS[attempt]
-                    logger.warning(
-                        f"⚠️ Orpheus GPU cold-start in HTTP {e.response.status_code} "
-                        f"(attempt {attempt + 1}/{_MAX_RETRIES}) — retrying in {delay}s"
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                logger.error(f"❌ Orpheus HTTP error: {e.response.status_code}")
-                return {
-                    "success": False,
-                    "error": f"HTTP {e.response.status_code}: {body}",
-                    "retry_count": attempt,
-                }
+                except Exception as e:
+                    err_str = str(e)
+                    if self._is_transient_error(err_str) and attempt < _MAX_RETRIES - 1:
+                        delay = _RETRY_DELAYS[attempt]
+                        logger.warning(
+                            f"⚠️ Orpheus transient error (attempt {attempt + 1}/{_MAX_RETRIES}) "
+                            f"— retrying in {delay}s: {err_str[:120]}"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    logger.error(f"❌ Orpheus request failed: {e}")
+                    return {
+                        "success": False,
+                        "error": err_str,
+                        "retry_count": attempt,
+                    }
 
-            except httpx.ConnectError:
-                logger.warning("⚠️ Orpheus service not reachable")
-                return {
-                    "success": False,
-                    "error": "Orpheus service not available",
-                    "notes": [],
-                    "retry_count": attempt,
-                }
-
-            except Exception as e:
-                err_str = str(e)
-                if self._is_transient_error(err_str) and attempt < _MAX_RETRIES - 1:
-                    delay = _RETRY_DELAYS[attempt]
-                    logger.warning(
-                        f"⚠️ Orpheus transient error (attempt {attempt + 1}/{_MAX_RETRIES}) "
-                        f"— retrying in {delay}s: {err_str[:120]}"
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                logger.error(f"❌ Orpheus request failed: {e}")
-                return {
-                    "success": False,
-                    "error": err_str,
-                    "retry_count": attempt,
-                }
-
-        # Should not reach here, but satisfy return type
-        return {
-            "success": False,
-            "error": "gpu_unavailable",
-            "message": f"MIDI generation failed after {_MAX_RETRIES} attempts — GPU unavailable.",
-            "retry_count": _MAX_RETRIES,
-        }
+            # Should not reach here, but satisfy return type
+            return {
+                "success": False,
+                "error": "gpu_unavailable",
+                "message": f"MIDI generation failed after {_MAX_RETRIES} attempts — GPU unavailable.",
+                "retry_count": _MAX_RETRIES,
+            }
 
 
 # ---------------------------------------------------------------------------

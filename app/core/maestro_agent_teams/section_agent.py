@@ -17,12 +17,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid as _uuid_mod
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.core.expansion import ToolCall
 from app.core.llm_client import LLMClient
+from app.core.sse_utils import ReasoningBuffer
 from app.core.state_store import StateStore
 from app.core.maestro_plan_tracker import (
     _ToolCallOutcome,
@@ -106,6 +108,13 @@ async def _run_section_child(
     sec_tempo = float(composition_context.get("tempo", 120)) if composition_context else 120.0
 
     try:
+        await sse_queue.put({
+            "type": "status",
+            "message": f"Starting {instrument_name} / {sec_name}",
+            "agentId": agent_id,
+            "sectionName": sec_name,
+        })
+
         # ── If bass, wait for the corresponding drum section ──
         if is_bass and section_signals:
             logger.info(f"{child_log} ⏳ Waiting for drum section '{sec_name}'")
@@ -237,6 +246,16 @@ async def _run_section_child(
             state_key = _state_key(instrument_name, sec_name)
             await section_state.set(state_key, telemetry)
 
+        await sse_queue.put({
+            "type": "status",
+            "message": (
+                f"{instrument_name} / {sec_name}: "
+                f"{result.notes_generated} notes generated"
+            ),
+            "agentId": agent_id,
+            "sectionName": sec_name,
+        })
+
         # ── Optional refinement LLM call for expressive tools ──
         if result.success and llm and composition_context:
             await _maybe_refine_expression(
@@ -268,6 +287,20 @@ async def _run_section_child(
         return result
 
 
+_EXPR_BLOCK_RE = re.compile(
+    r"^(MidiExpressiveness|Automation):.*?(?=\n\S|\Z)",
+    re.MULTILINE | re.DOTALL | re.IGNORECASE,
+)
+
+
+def _extract_expressiveness_blocks(raw_prompt: str) -> str:
+    """Pull MidiExpressiveness: and Automation: YAML blocks from the raw prompt."""
+    matches = list(_EXPR_BLOCK_RE.finditer(raw_prompt))
+    if not matches:
+        return ""
+    return "\n\n".join(m.group(0) for m in matches)
+
+
 async def _maybe_refine_expression(
     section: dict[str, Any],
     track_id: str,
@@ -286,11 +319,12 @@ async def _maybe_refine_expression(
     result: SectionResult,
     child_log: str,
 ) -> None:
-    """Add CC curves and pitch bends via a small focused LLM call.
+    """Add CC curves and pitch bends via a streamed LLM call.
 
     Only triggered when the STORI PROMPT includes MidiExpressiveness or
-    Automation blocks. Keeps the call tiny — just the expression tools
-    with minimal context.
+    Automation blocks.  Streams reasoning (CoT) as SSE events tagged with
+    ``agentId`` + ``sectionName`` so the GUI can display per-section
+    musical thinking in real time.
     """
     from app.core.tools import ALL_TOOLS
 
@@ -315,18 +349,42 @@ async def _maybe_refine_expression(
     if not expr_tools:
         return
 
+    expr_blocks = _extract_expressiveness_blocks(prompt_text)
+
     refine_prompt = (
-        f"Add expressive MIDI CC and/or pitch bend to the {sec_name.upper()} section "
-        f"of the {instrument_name} track ({style}, {tempo} BPM, {key}).\n"
+        f"You are a MIDI expression agent for the {sec_name.upper()} section "
+        f"of the {instrument_name} track.\n\n"
+        f"Context: {style} | {tempo} BPM | {key}\n"
         f"Section: {sec_bars} bars starting at beat {sec_start}, "
         f"{notes_generated} notes generated.\n"
-        f"trackId='{track_id}', regionId='{region_id}'.\n"
-        f"Add 1-3 expressive tool calls that enhance musicality. "
-        f"No text output — just tool calls."
+        f"trackId='{track_id}', regionId='{region_id}'.\n\n"
+    )
+    if expr_blocks:
+        refine_prompt += (
+            f"The composer specified these expressiveness instructions:\n"
+            f"```\n{expr_blocks}\n```\n\n"
+        )
+    refine_prompt += (
+        "REASONING: Briefly explain (1-2 sentences) what expression you'll add "
+        "and why it fits this section's energy.\n"
+        "Then make 1-3 tool calls for CC curves and/or pitch bends that match "
+        "the instructions above."
     )
 
+    await sse_queue.put({
+        "type": "status",
+        "message": f"Adding expression to {instrument_name} / {sec_name}",
+        "agentId": agent_id,
+        "sectionName": sec_name,
+    })
+
     try:
-        resp = await llm.chat_completion(
+        from app.config import settings
+
+        resp_tool_calls: list[dict[str, Any]] = []
+        rbuf = ReasoningBuffer()
+
+        async for chunk in llm.chat_completion_stream(
             messages=[
                 {"role": "system", "content": refine_prompt},
                 {"role": "user", "content": "Add expression now."},
@@ -334,10 +392,56 @@ async def _maybe_refine_expression(
             tools=expr_tools,
             tool_choice="auto",
             max_tokens=1000,
-        )
+            reasoning_fraction=settings.agent_reasoning_fraction,
+        ):
+            ct = chunk.get("type")
+            if ct == "reasoning_delta":
+                text = chunk.get("text", "")
+                if text:
+                    word = rbuf.add(text)
+                    if word:
+                        await sse_queue.put({
+                            "type": "reasoning",
+                            "content": word,
+                            "agentId": agent_id,
+                            "sectionName": sec_name,
+                        })
+            elif ct == "content_delta":
+                flush = rbuf.flush()
+                if flush:
+                    await sse_queue.put({
+                        "type": "reasoning",
+                        "content": flush,
+                        "agentId": agent_id,
+                        "sectionName": sec_name,
+                    })
+            elif ct == "done":
+                flush = rbuf.flush()
+                if flush:
+                    await sse_queue.put({
+                        "type": "reasoning",
+                        "content": flush,
+                        "agentId": agent_id,
+                        "sectionName": sec_name,
+                    })
+                resp_tool_calls = chunk.get("tool_calls", [])
+
+        tool_calls: list[ToolCall] = []
+        for tc_raw in resp_tool_calls:
+            try:
+                args = tc_raw.get("function", {}).get("arguments", "{}")
+                if isinstance(args, str):
+                    args = json.loads(args) if args else {}
+                tool_calls.append(ToolCall(
+                    id=tc_raw.get("id", ""),
+                    name=tc_raw.get("function", {}).get("name", ""),
+                    params=args,
+                ))
+            except Exception as parse_err:
+                logger.error(f"{child_log} Error parsing expression tool call: {parse_err}")
 
         add_notes_failures: dict[str, int] = {}
-        for tc in resp.tool_calls:
+        for tc in tool_calls:
             params = dict(tc.params)
             params["trackId"] = track_id
             params["regionId"] = region_id
@@ -362,6 +466,11 @@ async def _maybe_refine_expression(
                 result.tool_call_records.append(
                     {"tool": tc.name, "params": outcome.enriched_params}
                 )
+
+        if tool_calls:
+            logger.info(
+                f"{child_log} ✨ Expression refinement: {len(tool_calls)} tool calls applied"
+            )
     except Exception as exc:
         logger.warning(
             f"⚠️ {child_log} Expression refinement failed (non-fatal): {exc}"

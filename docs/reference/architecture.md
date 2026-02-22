@@ -216,18 +216,30 @@ For single-section compositions, the parent uses the sequential execution path (
 
 ### Section child flow (Level 3)
 
-1. If bass: `await section_signals.wait_for(section_name)` — blocks until drum section completes
-2. If bass: read `SectionState["Drums: {section}"]` — inject drum telemetry (groove, density, kick hash) into `composition_context` for the generate call
-3. Execute `stori_add_midi_region` with parent's pre-resolved params (trackId injected)
-4. Capture `regionId` from result
-5. Execute `stori_generate_midi` with `regionId` and `trackId` injected
-6. Extract generated notes from SSE events
-7. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
-8. If drums: call `section_signals.signal_complete(section_name, drum_notes)`
-9. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, make one small focused LLM call to add CC curves / pitch bend (tiny prompt, ~$0.005)
-10. Return `SectionResult` to parent
+1. Emit `status` SSE event: `"Starting {instrument} / {section}"`
+2. If bass: `await section_signals.wait_for(section_name)` — blocks until drum section completes
+3. If bass: read `SectionState["Drums: {section}"]` — inject drum telemetry (groove, density, kick hash) into `composition_context` for the generate call
+4. Execute `stori_add_midi_region` with parent's pre-resolved params (trackId injected)
+5. Capture `regionId` from result
+6. Execute `stori_generate_midi` with `regionId` and `trackId` injected
+7. Extract generated notes from SSE events
+8. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
+9. If drums: call `section_signals.signal_complete(section_name, drum_notes)`
+10. Emit `status` SSE event: `"{instrument} / {section}: N notes generated"`
+11. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, run a **streamed** refinement LLM call (see below)
+12. Return `SectionResult` to parent
 
 Drum children always signal — even on failure — to prevent bass children from hanging indefinitely.
+
+### Expression refinement (Level 3 streamed LLM call)
+
+When the STORI PROMPT contains `MidiExpressiveness:` or `Automation:` blocks, section children make one small streamed LLM call after generation to add CC curves and pitch bends. This call:
+
+- **Extracts** the relevant `MidiExpressiveness:` and `Automation:` YAML blocks from the raw prompt and includes them verbatim in the system message — the LLM sees the exact CC numbers, value ranges, and sweep descriptions the composer specified.
+- **Streams reasoning** via `chat_completion_stream` with `reasoning_fraction` matching the parent's setting. Reasoning events are emitted as SSE `type: "reasoning"` tagged with both `agentId` and `sectionName`, so the GUI can display per-section musical thinking in real time alongside the parent's instrument-level CoT.
+- **Emits** a `status` event (`"Adding expression to {instrument} / {section}"`) before the LLM call.
+- **Executes** 1-3 tool calls (`stori_add_midi_cc`, `stori_add_pitch_bend`) with trackId/regionId auto-injected.
+- **Cost:** ~$0.005 per section (tiny prompt, ~1000 max tokens). Skipped entirely when the prompt has no expressiveness blocks.
 
 ### Edge cases
 
@@ -268,7 +280,7 @@ Implementation: `app/core/telemetry.py` (computation), `app/core/maestro_agent_t
 
 **Routing:** `orchestrate()` intercepts `Intent.GENERATE_MUSIC` + `execution_mode="apply"` + multi-role `ParsedPrompt` (2+ roles) before the standard EDITING path. Single-instrument requests and all non-STORI-PROMPT requests fall through to `_handle_editing` unchanged.
 
-**SSE contract:** Plan steps for instruments carry `parallelGroup: "instruments"`. Phase 1 and Phase 3 steps have no `parallelGroup`. Multiple `planStepUpdate(active)` events fire simultaneously during Phase 2 as parents start. Section children tag their SSE events with both `agentId` and `sectionName` for frontend grouping. Tool calls from different instruments and sections interleave in the SSE stream — the frontend groups by `stepId`, so interleaving is handled naturally.
+**SSE contract:** Plan steps for instruments carry `parallelGroup: "instruments"`. Phase 1 and Phase 3 steps have no `parallelGroup`. Multiple `planStepUpdate(active)` events fire simultaneously during Phase 2 as parents start. Section children tag their SSE events with both `agentId` and `sectionName` for frontend grouping — this includes `status`, `reasoning`, `toolCall`, `toolStart`, `toolError`, `generatorStart`, `generatorComplete`, and `content` events. The `reasoning` events from Level 3 expression refinement carry `sectionName` to distinguish them from the parent's instrument-level reasoning. Tool calls from different instruments and sections interleave in the SSE stream — the frontend groups by `stepId`, so interleaving is handled naturally.
 
 **Agent isolation:** Each instrument parent runs with a focused system prompt naming only its instrument, uses a restricted tool allowlist (`_INSTRUMENT_AGENT_TOOLS`), and makes one primary LLM call. Section children are further isolated — a failing child marks only its section's steps as failed and does not propagate to sibling sections or sibling instruments.
 

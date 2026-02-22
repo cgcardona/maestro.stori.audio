@@ -129,7 +129,8 @@ class Settings(BaseSettings):
     
     # Music Generation Service Configuration
     orpheus_base_url: str = "http://localhost:10002"
-    orpheus_timeout: int = 120  # seconds — 16-bar generations can be slow
+    orpheus_timeout: int = 360  # seconds — 32-bar generations through Gradio queue can take 5+ min
+    orpheus_max_concurrent: int = 4  # max parallel GPU inference calls (A100: 4, A10G: 2)
     
     hf_api_key: Optional[str] = None  # HuggingFace API key
     hf_timeout: int = 120  # seconds (HF can be slow on cold starts)
