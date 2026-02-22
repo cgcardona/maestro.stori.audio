@@ -763,8 +763,8 @@ class TestHandleEditing:
         assert "stori_add_midi_track" in names
         assert "stori_set_track_icon" in names
         icon_call = next(p for p in tc_events if p["name"] == "stori_set_track_icon")
-        # GM 33 = Electric Bass Guitar → waveform.path
-        assert icon_call["params"]["icon"] == "waveform.path"
+        # GM 33 = Electric Bass Guitar → guitars.fill
+        assert icon_call["params"]["icon"] == "guitars.fill"
         # trackId must match the generated UUID from stori_add_midi_track
         track_call = next(p for p in tc_events if p["name"] == "stori_add_midi_track")
         assert icon_call["params"]["trackId"] == track_call["params"]["trackId"]
@@ -2884,6 +2884,154 @@ class TestApplySingleToolCall:
         assert not outcome.skipped
         assert outcome.enriched_params.get("_isDrums") is True
 
+    @pytest.mark.anyio
+    async def test_color_autoassigned_when_missing(self):
+        """Tracks without a color param get a named color from the role map."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-color-auto")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-c1",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Bass"},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        assert outcome.enriched_params["color"] == "green"
+
+    @pytest.mark.anyio
+    async def test_invalid_color_replaced_with_named(self):
+        """Arbitrary CSS names are rejected and replaced by a role-based color."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-color-invalid")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-c2",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Drums", "color": "crimson"},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        assert outcome.enriched_params["color"] == "red"
+
+    @pytest.mark.anyio
+    async def test_valid_hex_color_passthrough(self):
+        """Valid #RRGGBB hex is accepted as-is."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-color-hex")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-c3",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Piano", "color": "#4A90D9"},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        assert outcome.enriched_params["color"] == "#4A90D9"
+
+    @pytest.mark.anyio
+    async def test_valid_named_color_passthrough(self):
+        """Valid named color is kept."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-color-named")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-c4",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Piano", "color": "indigo"},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        assert outcome.enriched_params["color"] == "indigo"
+
+    @pytest.mark.anyio
+    async def test_gm_program_xor_is_drums_enforced(self):
+        """Exactly one of _isDrums or gmProgram is always present."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-xor")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-xor1",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Drums", "drumKitId": "TR-808", "gmProgram": 0},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        assert outcome.enriched_params.get("_isDrums") is True
+        assert "gmProgram" not in outcome.enriched_params
+
+    @pytest.mark.anyio
+    async def test_gm_program_default_when_neither_set(self):
+        """gmProgram defaults to 0 when neither _isDrums nor gmProgram is set."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-xor-default")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-xor2",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Mystery Track"},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        has_gm = outcome.enriched_params.get("gmProgram") is not None
+        is_drums = outcome.enriched_params.get("_isDrums", False)
+        assert has_gm or is_drums, "Exactly one of gmProgram or _isDrums must be set"
+        assert not (has_gm and is_drums), "Both gmProgram and _isDrums should not be set"
+
+    @pytest.mark.anyio
+    async def test_note_fields_backfilled(self):
+        """Missing note fields get default values before SSE emission."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-note-backfill")
+        store.create_track("Piano")
+        track_id = store.registry.resolve_track("Piano")
+        store.create_region("Region", track_id)
+        region_id = store.registry.get_latest_region_for_track(track_id)
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-notes",
+            tc_name="stori_add_notes",
+            resolved_args={
+                "regionId": region_id,
+                "notes": [{"pitch": 72}],
+            },
+            allowed_tool_names={"stori_add_notes"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        note = outcome.enriched_params["notes"][0]
+        assert note["pitch"] == 72
+        assert note["velocity"] == 100
+        assert note["startBeat"] == 0
+        assert note["durationBeats"] == 1.0
+
 
 class TestRunInstrumentAgent:
     """_run_instrument_agent() makes one LLM call and pushes events to the queue."""
@@ -3614,37 +3762,49 @@ class TestSuppressCoordinatorReasoningForStoriPrompt:
 
 
 class TestIconValidation:
-    """Synthetic stori_set_track_icon is validated against curated SF Symbols list."""
+    """Icon validation: invalid icons fall back to name-inferred defaults."""
 
     @pytest.mark.anyio
-    async def test_invalid_icon_is_omitted(self):
-        """An icon not in the curated set is silently dropped."""
+    async def test_invalid_icon_replaced_by_inferred(self):
+        """An LLM-provided icon not in the curated set is replaced by inference."""
         from app.core.maestro_editing import _apply_single_tool_call
-        from app.core.tool_validation import VALID_SF_SYMBOL_ICONS
 
         store = StateStore(conversation_id="test-icon-validate")
         trace = _make_trace()
-        add_notes_failures: dict[str, int] = {}
 
-        with patch("app.core.maestro_editing.tool_execution.icon_for_gm_program", return_value="nonexistent.icon"):
-            outcome = await _apply_single_tool_call(
-                tc_id="tc-icon-test",
-                tc_name="stori_add_midi_track",
-                resolved_args={"name": "Strings", "gmProgram": 48},
-                allowed_tool_names={"stori_add_midi_track"},
-                store=store,
-                trace=trace,
-                add_notes_failures=add_notes_failures,
-                emit_sse=True,
-            )
-
-        icon_events = [
-            e for e in outcome.sse_events
-            if e.get("name") == "stori_set_track_icon"
-        ]
-        assert icon_events == [], (
-            "Invalid icon should not produce stori_set_track_icon events"
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-icon-test",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Strings", "icon": "nonexistent.icon"},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
         )
+
+        assert outcome.enriched_params["icon"] == "instrument.violin"
+
+    @pytest.mark.anyio
+    async def test_missing_icon_autoassigned(self):
+        """When no icon is provided, one is inferred from the track name."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-icon-missing")
+        trace = _make_trace()
+
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-icon-miss",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Drums"},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+
+        assert outcome.enriched_params["icon"] == "instrument.drum"
 
     @pytest.mark.anyio
     async def test_valid_icon_is_emitted(self):
@@ -3653,7 +3813,6 @@ class TestIconValidation:
 
         store = StateStore(conversation_id="test-icon-valid")
         trace = _make_trace()
-        add_notes_failures: dict[str, int] = {}
 
         outcome = await _apply_single_tool_call(
             tc_id="tc-icon-valid",
@@ -3662,7 +3821,7 @@ class TestIconValidation:
             allowed_tool_names={"stori_add_midi_track"},
             store=store,
             trace=trace,
-            add_notes_failures=add_notes_failures,
+            add_notes_failures={},
             emit_sse=True,
         )
 
@@ -3673,6 +3832,27 @@ class TestIconValidation:
         assert len(icon_events) >= 1, "Valid icon should produce stori_set_track_icon events"
         icon_param = icon_events[-1]["params"]["icon"]
         assert icon_param == "pianokeys"
+
+    @pytest.mark.anyio
+    async def test_valid_icon_passthrough(self):
+        """A valid LLM-provided icon is kept as-is."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-icon-pass")
+        trace = _make_trace()
+
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-icon-pass",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Whatever", "icon": "sparkles"},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+
+        assert outcome.enriched_params["icon"] == "sparkles"
 
 
 class TestGmIconsAllValid:

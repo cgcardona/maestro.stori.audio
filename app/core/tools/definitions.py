@@ -215,8 +215,8 @@ TIER2_TOOLS: list[dict[str, Any]] = [
                     "drumKitId": {"type": "string", "description": "Drum kit — ONLY for drum tracks. Options: 'acoustic', 'TR-909', 'TR-808', 'jazz'. Mutually exclusive with gmProgram."},
                     "instrument": {"type": "string", "description": "Optional instrument name hint for voice selection (melodic tracks only)"},
                     "gmProgram": {"type": "integer", "description": "GM program 0-127 for melodic/harmonic tracks only. Do NOT use for drums — use drumKitId instead."},
-                    "color": {"type": "string", "description": "Optional hex color (e.g. '#FF6B6B'). Auto-generated if omitted."},
-                    "icon": {"type": "string", "description": "Optional SF Symbol name (e.g. 'pianokeys', 'guitars.fill'). Auto-inferred from name if omitted."},
+                    "color": {"type": "string", "description": "Track color. Use named colors: blue, indigo, purple, pink, red, orange, yellow, green, teal, cyan, mint, gray. Hex (#RRGGBB) also accepted. Auto-assigned from role if omitted."},
+                    "icon": {"type": "string", "description": "SF Symbol icon. Must be from curated list: pianokeys, pianokeys.inverse, guitars, guitars.fill, instrument.drum, instrument.trumpet, instrument.violin, instrument.saxophone, instrument.flute, instrument.harp, instrument.xylophone, music.mic, music.note, waveform, sparkles, etc. Auto-inferred from name/role if omitted or invalid."},
                 },
             },
         },
@@ -498,16 +498,53 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_add_midi_cc",
-            "description": "Add MIDI CC events.",
-            "parameters": {"type": "object", "properties": {"regionId": {"type": "string"}, "cc": {"type": "integer"}, "events": {"type": "array"}}},
+            "description": "Add MIDI CC events to a region. Each event must have beat and value.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "regionId": {"type": "string", "description": "Region UUID"},
+                    "cc": {"type": "integer", "description": "CC number 0-127"},
+                    "events": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "beat": {"type": "number"},
+                                "value": {"type": "integer"},
+                                "channel": {"type": "integer"},
+                            },
+                            "required": ["beat", "value"],
+                        },
+                    },
+                },
+                "required": ["regionId", "cc", "events"],
+            },
         },
     },
     {
         "type": "function",
         "function": {
             "name": "stori_add_pitch_bend",
-            "description": "Add pitch bend events.",
-            "parameters": {"type": "object", "properties": {"regionId": {"type": "string"}, "events": {"type": "array"}}},
+            "description": "Add pitch bend events to a region. Each event must have beat and value.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "regionId": {"type": "string", "description": "Region UUID"},
+                    "events": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "beat": {"type": "number"},
+                                "value": {"type": "integer", "description": "Pitch bend -8192 to 8191"},
+                                "channel": {"type": "integer"},
+                            },
+                            "required": ["beat", "value"],
+                        },
+                    },
+                },
+                "required": ["regionId", "events"],
+            },
         },
     },
     {

@@ -332,6 +332,7 @@ async def _apply_single_tool_call(
         )
 
     enriched_params = validation.resolved_params
+    _icon_from_llm = False
 
     # ── Entity creation ──
     if tc_name == "stori_add_midi_track":
@@ -365,6 +366,47 @@ async def _apply_single_tool_call(
             logger.info(
                 f"🥁 drumKitId='{drum_kit_id}' present — forcing _isDrums=True "
                 f"for track '{track_name}'"
+            )
+
+        from app.core.track_styling import (
+            normalize_color, color_for_role, is_valid_icon, infer_track_icon,
+        )
+        raw_color = enriched_params.get("color")
+        valid_color = normalize_color(raw_color)
+        if valid_color:
+            enriched_params["color"] = valid_color
+        else:
+            track_count = len(store.registry.list_tracks())
+            enriched_params["color"] = color_for_role(track_name, track_count)
+            if raw_color:
+                logger.debug(
+                    f"🎨 Unrecognised color '{raw_color}' for '{track_name}' "
+                    f"→ auto-assigned '{enriched_params['color']}'"
+                )
+
+        raw_icon = enriched_params.get("icon")
+        _icon_from_llm = is_valid_icon(raw_icon)
+        if not _icon_from_llm:
+            enriched_params["icon"] = infer_track_icon(track_name)
+            if raw_icon:
+                logger.debug(
+                    f"🏷️ Invalid icon '{raw_icon}' for '{track_name}' "
+                    f"→ auto-assigned '{enriched_params['icon']}'"
+                )
+
+        # FE strict contract: exactly one of _isDrums or gmProgram must be set.
+        is_drums = enriched_params.get("_isDrums", False)
+        has_gm = enriched_params.get("gmProgram") is not None
+        if is_drums and has_gm:
+            enriched_params.pop("gmProgram", None)
+            logger.debug(
+                f"🔧 _isDrums=True — removed gmProgram for '{track_name}'"
+            )
+        elif not is_drums and not has_gm:
+            enriched_params["gmProgram"] = 0
+            logger.debug(
+                f"🔧 Neither _isDrums nor gmProgram set for '{track_name}' "
+                f"— defaulting gmProgram=0 (Acoustic Grand Piano)"
             )
 
     elif tc_name == "stori_add_midi_region":
@@ -492,7 +534,7 @@ async def _apply_single_tool_call(
 
     log_tool_call(trace.trace_id, tc_name, enriched_params, True)
 
-    # ── Synthetic stori_set_track_icon after stori_add_midi_track ──
+    # ── Refine icon via GM/drum inference and emit synthetic stori_set_track_icon ──
     if tc_name == "stori_add_midi_track" and emit_sse:
         _icon_track_id = enriched_params.get("trackId", "")
         _drum_kit = enriched_params.get("drumKitId")
@@ -500,16 +542,16 @@ async def _apply_single_tool_call(
         _gm_program = enriched_params.get("gmProgram")
         if _drum_kit or _is_drums:
             _track_icon: Optional[str] = DRUM_ICON
+        elif _icon_from_llm:
+            _track_icon = enriched_params.get("icon")
         elif _gm_program is not None:
             _track_icon = icon_for_gm_program(int(_gm_program))
         else:
-            _track_icon = None
+            _track_icon = enriched_params.get("icon")
         if _track_icon and _track_icon not in VALID_SF_SYMBOL_ICONS:
-            logger.warning(
-                f"⚠️ Icon '{_track_icon}' not in curated SF Symbols list — "
-                f"omitting stori_set_track_icon (frontend will assign default)"
-            )
-            _track_icon = None
+            _track_icon = enriched_params.get("icon")
+        if _track_icon:
+            enriched_params["icon"] = _track_icon
         if _track_icon and _icon_track_id:
             _icon_params: dict[str, Any] = {"trackId": _icon_track_id, "icon": _track_icon}
             sse_events.append({
@@ -528,6 +570,26 @@ async def _apply_single_tool_call(
                 f"🎨 Synthetic icon '{_track_icon}' → trackId {_icon_track_id[:8]} "
                 f"({'drum kit' if (_drum_kit or _is_drums) else f'GM {_gm_program}'})"
             )
+
+    # ── FE strict contract: backfill missing required fields ──
+    if tc_name == "stori_add_notes":
+        for note in enriched_params.get("notes", []):
+            note.setdefault("pitch", 60)
+            note.setdefault("velocity", 100)
+            note.setdefault("startBeat", 0)
+            note.setdefault("durationBeats", 1.0)
+    elif tc_name == "stori_add_automation":
+        for pt in enriched_params.get("points", []):
+            pt.setdefault("beat", 0)
+            pt.setdefault("value", 0.5)
+    elif tc_name == "stori_add_midi_cc":
+        for ev in enriched_params.get("events", []):
+            ev.setdefault("beat", 0)
+            ev.setdefault("value", 0)
+    elif tc_name == "stori_add_pitch_bend":
+        for ev in enriched_params.get("events", []):
+            ev.setdefault("beat", 0)
+            ev.setdefault("value", 0)
 
     # ── Note persistence (with post-processing when context is available) ──
     if tc_name == "stori_add_notes":

@@ -106,6 +106,7 @@ def _schema_to_tool_calls(
                 seen_lower.add(edit.name.lower())
 
     tool_calls: list[ToolCall] = []
+    _new_track_idx = 0
 
     for track_name in ordered_tracks:
         t_lower = track_name.lower()
@@ -114,7 +115,8 @@ def _schema_to_tool_calls(
 
         # 1 + 2. Track creation + styling
         if not is_existing and not is_role_mapped and t_lower in edits_by_track:
-            styling = get_track_styling(track_name)
+            styling = get_track_styling(track_name, rotation_index=_new_track_idx)
+            _new_track_idx += 1
             tool_calls.append(ToolCall(name="stori_add_midi_track", params={"name": track_name}))
             tool_calls.append(ToolCall(
                 name="stori_set_track_color",

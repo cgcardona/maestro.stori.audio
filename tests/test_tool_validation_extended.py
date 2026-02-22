@@ -196,7 +196,7 @@ class TestValidateValueRanges:
         assert _validate_value_ranges({"tempo": 120}) == []
 
     def test_tempo_below_min(self):
-        errors = _validate_value_ranges({"tempo": 29})
+        errors = _validate_value_ranges({"tempo": 19})
         assert any(e.code == "VALUE_OUT_OF_RANGE" for e in errors)
 
     def test_tempo_above_max(self):

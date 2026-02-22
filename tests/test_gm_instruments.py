@@ -544,24 +544,24 @@ class TestIconForGMProgram:
         # One representative from each of the 16 GM categories
         (0,   "pianokeys"),                # Piano
         (8,   "instrument.xylophone"),     # Chromatic Percussion
-        (16,  "music.note.house.fill"),    # Organ
+        (16,  "pianokeys"),                # Organ (keyboard family)
         (24,  "guitars.fill"),             # Guitar
-        (32,  "waveform.path"),            # Bass
+        (32,  "guitars.fill"),             # Bass (guitar family)
         (40,  "instrument.violin"),        # Strings
         (48,  "instrument.violin"),        # Ensemble / Strings
         (56,  "instrument.trumpet"),       # Brass
         (64,  "instrument.saxophone"),     # Reed
         (72,  "instrument.flute"),         # Pipe
-        (80,  "waveform"),                 # Synth Lead
-        (88,  "waveform.circle.fill"),     # Synth Pad
+        (80,  "pianokeys.inverse"),        # Synth Lead
+        (88,  "pianokeys.inverse"),        # Synth Pad
         (96,  "sparkles"),                 # Synth Effects
         (104, "globe"),                    # Ethnic
         (112, "instrument.drum"),          # Percussive
-        (120, "speaker.wave.3"),           # Sound Effects
+        (120, "sparkles"),                 # Sound Effects
         # Boundary values
         (7,   "pianokeys"),
         (15,  "instrument.xylophone"),
-        (127, "speaker.wave.3"),
+        (127, "sparkles"),
     ])
     def test_category_boundaries(self, program, expected):
         assert icon_for_gm_program(program) == expected

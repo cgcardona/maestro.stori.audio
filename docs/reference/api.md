@@ -223,14 +223,16 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 ---
 
+> **Strict contract:** The macOS client enforces all required parameters — missing fields throw `invalidParameter` errors. The server guarantees all required fields are present in every SSE `toolCall` event via auto-assignment and backfill. See per-tool tables below for which fields are required.
+
 ## Project
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
 | `stori_read_project` | Read current project state (tempo, key, tracks, regions). | `include_notes`, `include_automation` (optional bools) |
 | `stori_create_project` | Create a new project. | `name`, `tempo` (required); `keySignature`, `timeSignature` |
-| `stori_set_tempo` | Set project tempo (BPM). | `tempo` (40–240) |
-| `stori_set_key` | Set key signature. | `key` (e.g. C, Am, F#m) |
+| `stori_set_tempo` | Set project tempo (BPM). | `tempo` (**required**, 20–300) |
+| `stori_set_key` | Set key signature. | `key` (**required**, e.g. C, Am, F#m) |
 
 ---
 
@@ -238,15 +240,62 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
-| `stori_add_midi_track` | Add MIDI track. Drums: set `drumKitId` (server auto-sets `_isDrums: true`). Melodic: set `gmProgram`. | `name` (required); `drumKitId`, `gmProgram` 0–127, `instrument`, `color`, `icon` |
-| `stori_set_track_volume` | Set track volume. | `trackId`, `volumeDb` |
-| `stori_set_track_pan` | Set track pan. | `trackId`, `pan` (-100–100) |
+| `stori_add_midi_track` | Add MIDI track. Server auto-assigns `trackId`, `color`, `icon`, and exactly one of `_isDrums`/`gmProgram`. | `name` (**required**); `drumKitId`, `gmProgram` 0–127, `instrument`, `color`, `icon` — all guaranteed present in SSE output |
+| `stori_set_track_volume` | Set track volume. | `trackId`, `volume` (**required**, 0.0–1.5) |
+| `stori_set_track_pan` | Set track pan. | `trackId`, `pan` (**required**, 0.0–1.0) |
 | `stori_set_track_name` | Rename track. | `trackId`, `name` |
 | `stori_set_midi_program` | Set GM program (instrument voice). | `trackId`, `program` (0–127); `channel` (1–16, default 1; use 10 for drums) |
 | `stori_mute_track` | Mute/unmute. | `trackId`, `muted` |
 | `stori_solo_track` | Solo/unsolo. | `trackId`, `solo` |
-| `stori_set_track_color` | Set track color. | `trackId`, `color` (red, orange, yellow, green, blue, purple, pink, teal, indigo) |
-| `stori_set_track_icon` | Set track icon (SF Symbol). | `trackId`, `icon` (e.g. pianokeys, guitars, music.note) |
+| `stori_set_track_color` | Set track color. | `trackId`, `color` (see color table below) |
+| `stori_set_track_icon` | Set track icon (SF Symbol). | `trackId`, `icon` (must be from curated list — see icon table below) |
+
+### Track color values
+
+Use **named colors** (preferred — adaptive dark mode) or `#RRGGBB` hex:
+
+| Name     | Best for                     |
+|----------|------------------------------|
+| `blue`   | Piano, keys, pads            |
+| `indigo` | Synth, electric piano        |
+| `purple` | Strings, orchestral          |
+| `pink`   | Vocals, choir                |
+| `red`    | Drums, kick                  |
+| `orange` | Brass, horns                 |
+| `yellow` | Guitar, plucked strings      |
+| `green`  | Bass, sub-bass               |
+| `teal`   | Woodwinds, flute             |
+| `cyan`   | FX, texture, ambient         |
+| `mint`   | Percussion, auxiliary        |
+| `gray`   | Utility, click track         |
+
+The server auto-assigns a named color from the track name/role when `color` is omitted or unrecognised. Palette rotation order: blue → indigo → purple → pink → red → orange → yellow → green → teal → cyan → mint → gray.
+
+### Track icon values
+
+Icons must be SF Symbol names from the curated allowlist. The server validates icons and auto-assigns from the track name/role when `icon` is omitted or invalid.
+
+**Role defaults:**
+
+| Role              | Icon                  |
+|-------------------|-----------------------|
+| Piano / keys      | `pianokeys`           |
+| Synth / pad       | `pianokeys.inverse`   |
+| Guitar (acoustic) | `guitars`             |
+| Guitar (electric) | `guitars.fill`        |
+| Bass              | `guitars.fill`        |
+| Drums / kick      | `instrument.drum`     |
+| Percussion / perc | `instrument.drum`     |
+| Brass             | `instrument.trumpet`  |
+| Strings           | `instrument.violin`   |
+| Woodwind / flute  | `instrument.flute`    |
+| Saxophone         | `instrument.saxophone`|
+| Vocals            | `music.mic`           |
+| Texture / ambient | `waveform`            |
+| FX / utility      | `sparkles`            |
+| Fallback          | `music.note`          |
+
+Do NOT send arbitrary strings — the client rejects icons not in the compiled allowlist.
 
 ---
 
@@ -265,7 +314,7 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
-| `stori_add_notes` | Add MIDI notes to region. | `regionId`, `notes` (array of `pitch`, `startBeat`, `durationBeats`, `velocity` 1–127) |
+| `stori_add_notes` | Add MIDI notes to region. | `regionId`, `notes` — each note **must** have `pitch` (0–127), `velocity` (1–127), `startBeat` (>=0), `durationBeats` (>0). Server backfills defaults if missing. |
 | `stori_clear_notes` | Clear all notes in region. | `regionId` |
 | `stori_quantize_notes` | Quantize to grid. | `regionId`; `grid` (1/4, 1/8, 1/16, 1/32, 1/64); `strength` 0–1 |
 | `stori_apply_swing` | Apply swing. | `regionId`, `amount` (0–1) |
@@ -290,9 +339,9 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
-| `stori_add_automation` | Add track-level automation curves. | `target` (trackId), `points` (array of `{beat, value, curve?}`) |
-| `stori_add_midi_cc` | Add MIDI CC events to a region. | `regionId`, `cc` (0–127), `events` (array of `{beat, value}`) |
-| `stori_add_pitch_bend` | Add pitch bend events to a region. | `regionId`, `events` (array of `{beat, value}`) — values −8192 to +8191 |
+| `stori_add_automation` | Add track-level automation curves. | `trackId`, `parameter`, `points` — each point **must** have `beat` and `value`. `curve` defaults to `"linear"`. |
+| `stori_add_midi_cc` | Add MIDI CC events to a region. | `regionId` (**required**), `cc` (**required**, 0–127), `events` — each **must** have `beat` and `value`. |
+| `stori_add_pitch_bend` | Add pitch bend events to a region. | `regionId` (**required**), `events` — each **must** have `beat` and `value` (−8192 to +8191). |
 | `stori_add_aftertouch` | Add aftertouch events (channel or polyphonic). | `regionId`, `events` (each `{beat, value}` or `{beat, value, pitch}`) |
 
 **Translation from STORI PROMPT `MidiExpressiveness` block:** `cc_curves` entries → `stori_add_midi_cc`; `pitch_bend` style → `stori_add_pitch_bend`; `sustain_pedal` → `stori_add_midi_cc` with CC 64 (127=down, 0=up). These calls happen after notes are added to the region.

@@ -303,7 +303,7 @@ class TestTrackIconValidation:
             "waveform.path",
             "pianokeys",
             "guitars.fill",
-            "speaker.wave.3",
+            "pianokeys.inverse",
             "music.mic.circle.fill",
             "music.note.list",
         ]
