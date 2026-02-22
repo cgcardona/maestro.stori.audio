@@ -37,7 +37,7 @@ from app.core.maestro_plan_tracker import (
 from app.core.maestro_editing import _apply_single_tool_call
 from app.core.maestro_agent_teams.agent import _run_instrument_agent
 from app.core.maestro_agent_teams.sections import parse_sections
-from app.core.maestro_agent_teams.signals import SectionSignals
+from app.core.maestro_agent_teams.signals import SectionSignals, SectionState
 from app.core.maestro_agent_teams.summary import _build_composition_summary
 
 logger = logging.getLogger(__name__)
@@ -271,8 +271,9 @@ async def _handle_composition_agent_team(
         logger.warning(
             f"[{trace.trace_id[:8]}] EmotionVector parse failed: {_ev_exc}"
         )
-    # ── Create section-level signals for drum→bass pipelining ──
+    # ── Create section-level signals and shared telemetry state ──
     _section_signals: SectionSignals | None = None
+    _section_state = SectionState()
     if _multi_section:
         _section_signals = SectionSignals.from_sections(_sections)
 
@@ -285,6 +286,7 @@ async def _handle_composition_agent_team(
         "quality_preset": "quality",
         "sections": _sections,
         "section_signals": _section_signals,
+        "section_state": _section_state,
         "_raw_prompt": prompt,
     }
 

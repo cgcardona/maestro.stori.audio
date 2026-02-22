@@ -217,12 +217,15 @@ For single-section compositions, the parent uses the sequential execution path (
 ### Section child flow (Level 3)
 
 1. If bass: `await section_signals.wait_for(section_name)` — blocks until drum section completes
-2. Execute `stori_add_midi_region` with parent's pre-resolved params (trackId injected)
-3. Capture `regionId` from result
-4. Execute `stori_generate_midi` with `regionId` and `trackId` injected
-5. If drums: extract generated notes from outcome, call `section_signals.signal_complete(section_name, drum_notes)`
-6. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, make one small focused LLM call to add CC curves / pitch bend (tiny prompt, ~$0.005)
-7. Return `SectionResult` to parent
+2. If bass: read `SectionState["Drums: {section}"]` — inject drum telemetry (groove, density, kick hash) into `composition_context` for the generate call
+3. Execute `stori_add_midi_region` with parent's pre-resolved params (trackId injected)
+4. Capture `regionId` from result
+5. Execute `stori_generate_midi` with `regionId` and `trackId` injected
+6. Extract generated notes from SSE events
+7. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
+8. If drums: call `section_signals.signal_complete(section_name, drum_notes)`
+9. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, make one small focused LLM call to add CC curves / pitch bend (tiny prompt, ~$0.005)
+10. Return `SectionResult` to parent
 
 Drum children always signal — even on failure — to prevent bass children from hanging indefinitely.
 
@@ -233,6 +236,33 @@ Drum children always signal — even on failure — to prevent bass children fro
 - **No bass**: drum signals fire but nobody listens, no overhead
 - **Section child failure**: parent marks that section's steps as failed, other sections continue; parent optionally retries the failed section in a follow-up turn
 - **LLM produces incomplete plan**: multi-turn retry loop (existing) catches missing sections and prompts the LLM again
+
+### SectionState — deterministic musical telemetry
+
+`SectionState` is a shared, write-once telemetry store that runs alongside `SectionSignals`. Every section child computes a `SectionTelemetry` snapshot from its generated MIDI notes — pure math, no LLM calls, <2ms per section.
+
+```
+@dataclass(frozen=True)
+class SectionTelemetry:
+    section_name: str           # "verse"
+    instrument: str             # "Drums"
+    tempo: float                # 120.0
+    energy_level: float         # normalized(velocity × density), 0–1
+    density_score: float        # notes / beats
+    groove_vector: tuple        # 16-bin onset histogram (16th-note resolution)
+    kick_pattern_hash: str      # MD5 fingerprint of kick drum positions
+    rhythmic_complexity: float  # stddev of inter-onset intervals
+    velocity_mean: float        # mean MIDI velocity
+    velocity_variance: float    # variance of MIDI velocity
+```
+
+Keys follow `"Instrument: Section"` format (e.g. `"Drums: Verse"`, `"Bass: Intro"`). All writes go through an `asyncio.Lock` for thread safety across concurrent section children. Values are frozen dataclasses — immutable after write.
+
+**Bass enrichment:** Before generating, each bass section child reads `SectionState["Drums: {section}"]`. If available, the drum telemetry (groove vector, density, kick pattern hash, rhythmic complexity) is injected into the `composition_context` passed to the generate call. This enables deterministic cross-instrument awareness without expanding LLM prompts or adding token cost.
+
+**Diagnostic value:** The coordinator can read `section_state.snapshot()` after composition completes for orchestration diagnostics, quality scoring, and future mixing decisions.
+
+Implementation: `app/core/telemetry.py` (computation), `app/core/maestro_agent_teams/signals.py` (SectionState store).
 
 ### Routing, SSE, isolation, safety
 
@@ -248,7 +278,7 @@ Drum children always signal — even on failure — to prevent bass children fro
 
 **Performance:** Wall-clock time for Phase 2 is `max(per-instrument time)` instead of `sum`, and within each instrument `max(per-section time)` instead of `sum(section times)`. For a 5-instrument, 3-section composition, bass sections start ~1 section behind drums rather than waiting for all 3 drum sections. Expected speedup: 3–5× for the instrument phase, with additional gains from section-level pipelining.
 
-Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/signals.py` (drum-to-bass coupling).
+Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/signals.py` (SectionSignals + SectionState), `app/core/telemetry.py` (SectionTelemetry computation).
 
 ---
 

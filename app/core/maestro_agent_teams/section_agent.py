@@ -30,7 +30,8 @@ from app.core.maestro_plan_tracker import (
     _INSTRUMENT_AGENT_TOOLS,
 )
 from app.core.maestro_editing import _apply_single_tool_call
-from app.core.maestro_agent_teams.signals import SectionSignals
+from app.core.maestro_agent_teams.signals import SectionSignals, SectionState, _state_key
+from app.core.telemetry import compute_section_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,12 @@ async def _run_section_child(
                 evt = {**evt, "agentId": agent_id, "sectionName": sec_name}
             await sse_queue.put(evt)
 
+    section_state: SectionState | None = None
+    if composition_context:
+        section_state = composition_context.get("section_state")
+    sec_beats = float(section.get("length_beats", 16))
+    sec_tempo = float(composition_context.get("tempo", 120)) if composition_context else 120.0
+
     try:
         # ── If bass, wait for the corresponding drum section ──
         if is_bass and section_signals:
@@ -107,6 +114,27 @@ async def _run_section_child(
                 logger.info(
                     f"{child_log} ✅ Drum section '{sec_name}' ready "
                     f"({len(drum_data.get('drum_notes', []))} drum notes)"
+                )
+
+        # ── Bass: read drum telemetry for cross-instrument awareness ──
+        if is_bass and section_state:
+            drum_key = _state_key("Drums", sec_name)
+            drum_telemetry = await section_state.get(drum_key)
+            if drum_telemetry:
+                composition_context = {
+                    **(composition_context or {}),
+                    "drum_telemetry": {
+                        "energy_level": drum_telemetry.energy_level,
+                        "density_score": drum_telemetry.density_score,
+                        "groove_vector": drum_telemetry.groove_vector,
+                        "kick_pattern_hash": drum_telemetry.kick_pattern_hash,
+                        "rhythmic_complexity": drum_telemetry.rhythmic_complexity,
+                    },
+                }
+                logger.info(
+                    f"{child_log} 🎯 Drum telemetry injected: "
+                    f"energy={drum_telemetry.energy_level:.2f} "
+                    f"density={drum_telemetry.density_score:.2f}"
                 )
 
         # ── Execute stori_add_midi_region ──
@@ -183,17 +211,31 @@ async def _run_section_child(
         result.notes_generated = gen_outcome.tool_result.get("notesAdded", 0)
         result.success = True
 
-        # ── Drum signaling — extract notes and signal bass ──
+        # ── Extract generated notes from SSE events ──
+        generated_notes: list[dict] = []
+        for evt in gen_outcome.sse_events:
+            if evt.get("name") == "stori_add_notes":
+                generated_notes = evt.get("params", {}).get("notes", [])
+                break
+
+        # ── Drum signaling — signal bass with drum notes ──
         if is_drum and section_signals:
-            drum_notes: list[dict] = []
-            for evt in gen_outcome.sse_events:
-                if evt.get("name") == "stori_add_notes":
-                    drum_notes = evt.get("params", {}).get("notes", [])
-                    break
-            section_signals.signal_complete(sec_name, drum_notes=drum_notes)
+            section_signals.signal_complete(sec_name, drum_notes=generated_notes)
             logger.info(
-                f"{child_log} 🥁 Signaled bass: {len(drum_notes)} drum notes ready"
+                f"{child_log} 🥁 Signaled bass: {len(generated_notes)} drum notes ready"
             )
+
+        # ── Compute and store musical telemetry ──
+        if section_state and generated_notes:
+            telemetry = compute_section_telemetry(
+                notes=generated_notes,
+                tempo=sec_tempo,
+                instrument=instrument_name,
+                section_name=sec_name,
+                section_beats=sec_beats,
+            )
+            state_key = _state_key(instrument_name, sec_name)
+            await section_state.set(state_key, telemetry)
 
         # ── Optional refinement LLM call for expressive tools ──
         if result.success and llm and composition_context:

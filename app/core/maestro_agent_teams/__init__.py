@@ -8,11 +8,12 @@ Architecture:
 
 from app.core.maestro_agent_teams.constants import _CC_NAMES
 from app.core.maestro_agent_teams.agent import _run_instrument_agent
-from app.core.maestro_agent_teams.signals import SectionSignals
+from app.core.maestro_agent_teams.signals import SectionSignals, SectionState
 from app.core.maestro_agent_teams.section_agent import (
     _run_section_child,
     SectionResult,
 )
+from app.core.telemetry import SectionTelemetry, compute_section_telemetry
 from app.core.maestro_agent_teams.summary import (
     _build_composition_summary,
     _compose_summary_text,
@@ -25,6 +26,9 @@ __all__ = [
     "_run_section_child",
     "SectionResult",
     "SectionSignals",
+    "SectionState",
+    "SectionTelemetry",
+    "compute_section_telemetry",
     "_build_composition_summary",
     "_compose_summary_text",
     "_handle_composition_agent_team",
