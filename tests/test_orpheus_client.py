@@ -466,11 +466,17 @@ class TestOrpheusBeatRescaling:
 
 
 # =============================================================================
-# GPU cold-start retry logic (regression: orpheus previously had no retry)
+# GPU cold-start AND Gradio transient retry logic
 # =============================================================================
 
 class TestGpuColdStartRetry:
-    """OrpheusClient.generate retries up to 3× on Gradio GPU cold-start errors."""
+    """OrpheusClient.generate retries up to 4× on GPU cold-start and Gradio transient errors.
+
+    Regression: before the P0 fix, only GPU cold-start phrases triggered a retry.
+    Gradio-level transient errors like "'NoneType' object is not a mapping" were
+    surfaced immediately as toolError with zero retry attempts.  The fix extends
+    the retry branch to cover _is_transient_error() (a superset of GPU cold-start).
+    """
 
     @pytest.fixture
     def client(self):
@@ -601,6 +607,119 @@ class TestGpuColdStartRetry:
 
         assert result["success"] is True
         assert result["metadata"]["retry_count"] == 1  # succeeded on attempt index 1
+
+
+    @pytest.mark.asyncio
+    async def test_gradio_nonetype_error_retries_and_succeeds(self, client):
+        """'NoneType' object is not a mapping' in dict body triggers retry.
+
+        Regression for P0: this Gradio-level transient error was previously
+        not retried — the request failed immediately on first attempt.
+        """
+        nonetype_resp = MagicMock()
+        nonetype_resp.raise_for_status = MagicMock()
+        nonetype_resp.json.return_value = {
+            "success": False,
+            "error": "'NoneType' object is not a mapping",
+        }
+
+        ok_resp = MagicMock()
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {
+            "success": True,
+            "notes": [],
+            "tool_calls": [
+                {"tool": "addNotes", "params": {"notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 80}]}}
+            ],
+            "metadata": {},
+        }
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock(side_effect=[nonetype_resp, ok_resp])
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client.generate(genre="dancehall", tempo=90, bars=8)
+
+        assert result["success"] is True
+        assert mock_sleep.await_count == 1, (
+            "Should retry once (one sleep) before succeeding on second attempt"
+        )
+
+    @pytest.mark.asyncio
+    async def test_gradio_nonetype_error_exhausted_returns_raw_error(self, client):
+        """After max retries on 'NoneType' error the raw error string is returned.
+
+        Regression for P0: previously this path was never reached because the
+        error was not retried at all.  After the fix, we verify:
+        - error key is the raw Gradio string (not 'gpu_unavailable')
+        - all retry delays are consumed
+        """
+        nonetype_resp = MagicMock()
+        nonetype_resp.raise_for_status = MagicMock()
+        nonetype_resp.json.return_value = {
+            "success": False,
+            "error": "'NoneType' object is not a mapping",
+        }
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock(return_value=nonetype_resp)
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client.generate(genre="dancehall", tempo=90, bars=8)
+
+        assert result["success"] is False
+        # Not labeled as gpu_unavailable — this is a Gradio worker error
+        assert result.get("error") != "gpu_unavailable"
+        assert "NoneType" in result.get("error", "") or "NoneType" in result.get("message", "")
+        # All retry delays consumed (3 sleeps before the 4th and final attempt)
+        assert mock_sleep.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_gradio_queue_full_retries(self, client):
+        """'Queue is full' from Gradio also triggers retry."""
+        queue_resp = MagicMock()
+        queue_resp.raise_for_status = MagicMock()
+        queue_resp.json.return_value = {
+            "success": False,
+            "error": "Queue is full. Try again later.",
+        }
+
+        ok_resp = MagicMock()
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {
+            "success": True,
+            "notes": [],
+            "tool_calls": [],
+            "metadata": {},
+        }
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock(side_effect=[queue_resp, ok_resp])
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client.generate(genre="reggaeton", tempo=96, bars=4)
+
+        assert result["success"] is True
+        assert mock_sleep.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_non_transient_error_still_does_not_retry(self, client):
+        """Non-transient failure (e.g. auth) still returns immediately — no retry."""
+        error_resp = MagicMock()
+        error_resp.raise_for_status = MagicMock()
+        error_resp.json.return_value = {
+            "success": False,
+            "error": "Invalid API key or quota exceeded (billing)",
+        }
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock(return_value=error_resp)
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client.generate(genre="jazz", tempo=120, bars=4)
+
+        assert result["success"] is False
+        assert mock_sleep.await_count == 0  # zero retries — not a transient phrase
 
 
 # ---------------------------------------------------------------------------

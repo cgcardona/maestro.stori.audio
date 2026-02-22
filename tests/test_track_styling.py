@@ -9,10 +9,12 @@ from app.core.track_styling import (
     get_track_styling,
     normalize_color,
     color_for_role,
-   is_valid_icon,
+    is_valid_icon,
+    allocate_colors,
     NAMED_COLORS,
     NAMED_COLORS_SET,
     PALETTE_ROTATION,
+    COMPOSITION_PALETTE,
     DEFAULT_ICON,
 )
 from app.core.tool_validation.constants import VALID_SF_SYMBOL_ICONS
@@ -286,3 +288,100 @@ class TestTrackStyling:
         s5 = get_track_styling("Unknown", rotation_index=5)
         assert s0["color"] == "blue"
         assert s5["color"] == "orange"
+
+
+# ── Composition palette and color allocation ─────────────────────────
+
+
+class TestCompositionPalette:
+    """COMPOSITION_PALETTE structure and properties."""
+
+    def test_palette_has_eight_entries(self):
+        """Palette must have exactly 8 perceptually-spaced hex colors."""
+        assert len(COMPOSITION_PALETTE) == 8
+
+    def test_all_entries_are_valid_hex(self):
+        """Every palette entry must be a valid #RRGGBB hex string."""
+        import re
+        hex_re = re.compile(r"^#[0-9a-fA-F]{6}$")
+        for color in COMPOSITION_PALETTE:
+            assert hex_re.match(color), f"Not a valid hex color: {color!r}"
+
+    def test_normalize_color_accepts_all_palette_entries(self):
+        """normalize_color must pass every COMPOSITION_PALETTE entry through."""
+        for color in COMPOSITION_PALETTE:
+            assert normalize_color(color) == color, (
+                f"normalize_color rejected palette entry {color!r}"
+            )
+
+    def test_all_entries_unique(self):
+        """No duplicate colors in the composition palette."""
+        assert len(COMPOSITION_PALETTE) == len(set(COMPOSITION_PALETTE))
+
+
+class TestAllocateColors:
+    """Coordinator-level color pre-allocation — regression for same-color-all-tracks bug."""
+
+    def test_four_track_project_all_distinct(self):
+        """4-track projects (Drums, Bass, Synth Lead, Organ Bubble) get distinct colors."""
+        instruments = ["Drums", "Bass", "Synth Lead", "Organ Bubble"]
+        result = allocate_colors(instruments)
+        colors = list(result.values())
+        assert len(colors) == len(set(colors)), (
+            f"Duplicate colors assigned to tracks: {result}"
+        )
+
+    def test_returns_one_color_per_instrument(self):
+        """Result contains exactly one entry per instrument name."""
+        instruments = ["Drums", "Bass", "Lead", "Pads"]
+        result = allocate_colors(instruments)
+        assert set(result.keys()) == set(instruments)
+
+    def test_colors_come_from_composition_palette(self):
+        """Every assigned color must come from COMPOSITION_PALETTE."""
+        instruments = ["Drums", "Bass", "Keys", "Lead", "Arp", "FX", "Perc", "Choir"]
+        result = allocate_colors(instruments)
+        for name, color in result.items():
+            assert color in COMPOSITION_PALETTE, (
+                f"Color {color!r} for {name!r} not in COMPOSITION_PALETTE"
+            )
+
+    def test_order_matches_palette_index(self):
+        """First instrument gets palette[0], second gets palette[1], etc."""
+        instruments = ["A", "B", "C"]
+        result = allocate_colors(instruments)
+        assert result["A"] == COMPOSITION_PALETTE[0]
+        assert result["B"] == COMPOSITION_PALETTE[1]
+        assert result["C"] == COMPOSITION_PALETTE[2]
+
+    def test_cycles_after_eight_tracks(self):
+        """Colors wrap after the 8-entry palette is exhausted."""
+        instruments = [f"Track{i}" for i in range(10)]
+        result = allocate_colors(instruments)
+        assert result["Track0"] == COMPOSITION_PALETTE[0]
+        assert result["Track8"] == COMPOSITION_PALETTE[0]
+        assert result["Track9"] == COMPOSITION_PALETTE[1]
+
+    def test_empty_list_returns_empty_dict(self):
+        """Empty instrument list produces an empty mapping."""
+        assert allocate_colors([]) == {}
+
+    def test_single_instrument(self):
+        """Single instrument gets the first palette color."""
+        result = allocate_colors(["Solo Piano"])
+        assert result == {"Solo Piano": COMPOSITION_PALETTE[0]}
+
+    def test_regression_no_same_color_adjacent_tracks(self):
+        """Adjacent tracks in a 4-track project must never share the same color.
+
+        Regression for: Bass, Synth Lead, Organ Bubble, Drums all receiving
+        amber/orange because the LLM hallucinated the same color for every track.
+        """
+        instruments = ["Drums", "Bass", "Synth Lead", "Organ Bubble"]
+        result = allocate_colors(instruments)
+        names = list(result.keys())
+        for i in range(len(names) - 1):
+            assert result[names[i]] != result[names[i + 1]], (
+                f"Adjacent tracks '{names[i]}' and '{names[i+1]}' share color "
+                f"{result[names[i]]!r} — violates diversity requirement"
+            )

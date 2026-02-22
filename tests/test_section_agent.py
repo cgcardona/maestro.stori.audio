@@ -907,6 +907,155 @@ class TestDispatchSectionChildren:
         assert ro == 1
         assert gc == 1
 
+    @pytest.mark.anyio
+    async def test_planstep_completed_emitted_after_children_finish(self):
+        """planStepUpdate(completed) is queued for content_step_id after children finish.
+
+        Regression for P2: before the fix _dispatch_section_children activated
+        content_step_id but never completed it.  The outer loop's active_step_id
+        was never updated from the multi-section path, so the step stayed stuck
+        in 'active' indefinitely on the macOS client.
+        """
+        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+
+        store = StateStore(conversation_id="test-planstep-completed")
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+        all_results: list[dict] = []
+        collected: list[dict] = []
+
+        r1 = _region_tc("r1", start_beat=0, duration=16)
+        g1 = _generate_tc("g1", role="drums")
+
+        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+            if tc_name == "stori_add_midi_region":
+                return _ok_region_outcome(tc_id)
+            return _ok_generate_outcome(tc_id)
+
+        # Fake plan step that is "active" — simulates what the coordinator sets up.
+        content_step = MagicMock()
+        content_step.status = "active"
+
+        mock_plan = MagicMock()
+        mock_plan.steps = []
+        mock_plan.activate_step = MagicMock(return_value={
+            "type": "planStepUpdate", "stepId": "s2", "status": "active",
+        })
+        mock_plan.complete_step_by_id = MagicMock(return_value={
+            "type": "planStepUpdate", "stepId": "s2", "status": "completed",
+            "result": "1/1 sections completed, 24 notes",
+        })
+        mock_plan.get_step = MagicMock(return_value=content_step)
+
+        with patch(
+            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ), patch(
+            "app.core.maestro_agent_teams.agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ):
+            await _dispatch_section_children(
+                tool_calls=[r1, g1],
+                sections=[_section("verse", 0, 16)],
+                existing_track_id="trk-99",
+                instrument_name="Drums",
+                role="drums",
+                style="house",
+                tempo=120.0,
+                key="Am",
+                agent_id="drums",
+                agent_log="[test]",
+                reusing=True,
+                allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
+                store=store,
+                trace=_trace(),
+                sse_queue=queue,
+                collected_tool_calls=collected,
+                all_tool_results=all_results,
+                add_notes_failures={},
+                composition_context={"style": "house", "sections": [_section("verse", 0, 16)]},
+                plan_tracker=mock_plan,
+                step_ids=["s1", "s2"],
+                active_step_id=None,
+                llm=MagicMock(),
+                prior_stage_track=True,
+                prior_stage_effect=False,
+                prior_regions_completed=0,
+                prior_regions_ok=0,
+                prior_generates_completed=0,
+            )
+
+        # Drain the queue and look for planStepUpdate(completed) for step s2.
+        events: list[dict] = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        completed_events = [
+            e for e in events
+            if e.get("type") == "planStepUpdate" and e.get("status") == "completed"
+            and e.get("stepId") == "s2"
+        ]
+        assert len(completed_events) >= 1, (
+            f"Expected planStepUpdate(completed) for s2 but got: {events}"
+        )
+        assert completed_events[0].get("agentId") == "drums"
+
+    @pytest.mark.anyio
+    async def test_generator_events_tagged_with_agentid_via_emit(self):
+        """generatorStart and generatorComplete events in section children carry agentId.
+
+        The _emit() helper in section_agent tags all _AGENT_TAGGED_EVENTS with
+        agentId + sectionName.  This test verifies that a section child's queued
+        events contain agentId so the macOS client can route them to the correct
+        instrument card.
+        """
+        store = StateStore(conversation_id="test-agentid-tag")
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+
+        # Generate outcome whose sse_events include generatorStart / generatorComplete
+        gen_outcome = _ok_generate_outcome("g1", notes_count=16)
+        # Confirm the fixture contains the expected event types
+        event_types = {e["type"] for e in gen_outcome.sse_events}
+        assert "generatorStart" in event_types or "generatorComplete" in event_types
+
+        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+            if tc_name == "stori_add_midi_region":
+                return _ok_region_outcome(tc_id)
+            return gen_outcome
+
+        with patch(
+            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ):
+            await _run_section_child(
+                section=_section("chorus"),
+                section_index=0,
+                track_id="trk-1",
+                region_tc=_region_tc(),
+                generate_tc=_generate_tc(role="bass"),
+                instrument_name="Bass",
+                role="bass",
+                agent_id="bass",
+                allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
+                store=store,
+                trace=_trace(),
+                sse_queue=queue,
+                composition_context=None,
+            )
+
+        events: list[dict] = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        # Every tagged event type should have agentId = "bass" and sectionName = "chorus"
+        for evt in events:
+            if evt.get("type") in {"generatorStart", "generatorComplete", "toolCall", "status"}:
+                assert evt.get("agentId") == "bass", (
+                    f"Event {evt['type']} missing agentId: {evt}"
+                )
+                assert evt.get("sectionName") == "chorus", (
+                    f"Event {evt['type']} missing sectionName: {evt}"
+                )
+
 
 # =============================================================================
 # Edge cases

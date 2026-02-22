@@ -150,6 +150,11 @@ class Settings(BaseSettings):
     composition_max_tokens: int = 32768      # Higher token budget for GENERATE_MUSIC in EDITING mode
     composition_reasoning_fraction: float = 0.08  # Keep reasoning tight for tool-calling; ~2,600 tokens on 32K budget
     agent_reasoning_fraction: float = 0.05        # Minimal reasoning — agents execute a fixed pipeline; Orpheus handles musical decisions
+
+    # Agent watchdog timeouts (seconds) — prevents orphaned subagents
+    section_child_timeout: int = 300     # 5 min per section child (region + generate + optional refinement)
+    instrument_agent_timeout: int = 600  # 10 min per instrument agent (LLM + all sections + effect)
+    bass_signal_wait_timeout: int = 240  # 4 min waiting for drum section signal before giving up
     
     # CORS Settings (fail closed: no default origins)
     # Set STORI_CORS_ORIGINS (JSON array) in .env. Local dev: ["http://localhost:5173", "stori://"].

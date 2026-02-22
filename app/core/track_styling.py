@@ -23,6 +23,20 @@ _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 # colors to multiple tracks in a single composition.
 PALETTE_ROTATION: list[str] = list(NAMED_COLORS)
 
+# Perceptually-spaced hex palette for multi-track compositions.
+# Colors are ordered to maximise contrast between adjacent tracks;
+# pick in index order and cycle only after all 8 are exhausted.
+COMPOSITION_PALETTE: list[str] = [
+    "#E87040",  # amber/orange  (warm)
+    "#4A9EE8",  # sky blue      (cool)
+    "#60C264",  # sage green    (natural)
+    "#B06FD8",  # violet        (purple)
+    "#E85D75",  # rose          (warm red)
+    "#40C4C0",  # teal          (cyan)
+    "#E8C040",  # gold          (yellow)
+    "#8C8CE8",  # periwinkle    (blue-purple)
+]
+
 # Role/keyword → preferred named color (from FE contract).
 _ROLE_COLOR_MAP: dict[str, str] = {
     "piano": "blue", "keys": "blue", "pads": "blue", "pad": "blue",
@@ -184,6 +198,25 @@ def color_for_role(track_name: str, rotation_index: int = 0) -> str:
 def get_random_track_color() -> str:
     """Get a named color for a new track (rotation-based, not random)."""
     return PALETTE_ROTATION[0]
+
+
+def allocate_colors(instrument_names: list[str]) -> dict[str, str]:
+    """Assign one hex color per instrument, guaranteed no repeats.
+
+    Colors are drawn from ``COMPOSITION_PALETTE`` in index order so that
+    adjacent tracks are always maximally distinct.  The palette cycles only
+    after all 8 entries are exhausted (rare in practice).
+
+    Args:
+        instrument_names: Ordered list of instrument/role names.
+
+    Returns:
+        Mapping of ``{instrument_name: hex_color}``.
+    """
+    return {
+        name: COMPOSITION_PALETTE[i % len(COMPOSITION_PALETTE)]
+        for i, name in enumerate(instrument_names)
+    }
 
 
 def is_valid_icon(icon: Optional[str]) -> bool:

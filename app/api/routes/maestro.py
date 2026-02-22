@@ -167,6 +167,8 @@ async def stream_maestro(
 
     async def stream_with_budget():
         _seq = 0
+        import time as _time
+        _stream_start = _time.monotonic()
 
         def _with_seq(event_str: str) -> str:
             """Inject monotonic seq counter into every SSE event."""
@@ -181,6 +183,11 @@ async def stream_maestro(
             except Exception:
                 return event_str
 
+        logger.info(
+            f"🔌 SSE stream opened: model={selected_model}, "
+            f"prompt_len={len(safe_prompt)}"
+        )
+
         try:
             async for event in orchestrate(
                 safe_prompt,
@@ -193,7 +200,19 @@ async def stream_maestro(
                 is_cancelled=request.is_disconnected,
                 quality_preset=maestro_request.quality_preset,
             ):
+                if await request.is_disconnected():
+                    _elapsed = _time.monotonic() - _stream_start
+                    logger.warning(
+                        f"⚠️ SSE client disconnected after {_elapsed:.1f}s, "
+                        f"{_seq} events sent — aborting stream"
+                    )
+                    return
                 yield _with_seq(event)
+
+            _elapsed = _time.monotonic() - _stream_start
+            logger.info(
+                f"✅ SSE stream completed: {_seq} events in {_elapsed:.1f}s"
+            )
 
             # Deduct budget
             if user_id and (usage_tracker.prompt_tokens > 0 or usage_tracker.completion_tokens > 0):
@@ -215,7 +234,10 @@ async def stream_maestro(
                     logger.error(f"Budget deduction failed: {e}")
 
         except Exception as e:
-            logger.exception(f"Stream error: {e}")
+            _elapsed = _time.monotonic() - _stream_start
+            logger.exception(
+                f"❌ SSE stream error after {_elapsed:.1f}s, {_seq} events: {e}"
+            )
             yield await sse_event({"type": "error", "message": str(e)})
 
     headers = {

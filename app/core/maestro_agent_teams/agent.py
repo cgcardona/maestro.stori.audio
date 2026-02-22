@@ -58,6 +58,7 @@ async def _run_instrument_agent(
     existing_track_id: Optional[str] = None,
     start_beat: int = 0,
     composition_context: Optional[dict[str, Any]] = None,
+    assigned_color: Optional[str] = None,
 ) -> None:
     """Independent instrument agent: dedicated multi-turn LLM session per instrument.
 
@@ -117,6 +118,7 @@ async def _run_instrument_agent(
             agent_id=_agent_id,
             reusing=reusing,
             composition_context=composition_context,
+            assigned_color=assigned_color,
         )
     except Exception as exc:
         logger.exception(f"{agent_log} Unhandled agent error: {exc}")
@@ -144,6 +146,7 @@ async def _run_instrument_agent_inner(
     agent_id: str,
     reusing: bool,
     composition_context: Optional[dict[str, Any]] = None,
+    assigned_color: Optional[str] = None,
 ) -> None:
     """Inner implementation of a single instrument agent.
 
@@ -197,8 +200,9 @@ async def _run_instrument_agent_inner(
 
         if not reusing:
             step_num += 1
+            _color_clause = f', color="{assigned_color}"' if assigned_color else ""
             lines.append(
-                f"{step_num}. stori_add_midi_track — create the {instrument_name} track → "
+                f"{step_num}. stori_add_midi_track — create the {instrument_name} track{_color_clause} → "
                 f"returns trackId (${step_num - 1}.trackId)"
             )
 
@@ -311,12 +315,19 @@ async def _run_instrument_agent_inner(
         "stori_add_midi_region. Never pass trackId as regionId. Never omit start_beat."
     )
 
+    _color_rule = (
+        f'TRACK COLOR: You MUST pass color="{assigned_color}" verbatim in stori_add_midi_track. '
+        f"Do NOT change it — the coordinator pre-assigned this color to guarantee visual diversity.\n"
+        if assigned_color else ""
+    )
+
     if reusing:
         system_content = (
             f"You are a music production agent for the **{instrument_name}** track.\n\n"
             f"{_reasoning_guidance}\n\n"
             f"Context: {style} | {tempo} BPM | {key} | {_length_emphasis}\n"
             f"{_musical_dna}"
+            f"{_color_rule}"
             f"Track already exists: trackId='{existing_track_id}', content ends at beat {start_beat}.\n\n"
             f"Pipeline (execute ALL {_expected_calls} steps now, in this exact order):\n"
             f"{_pipeline_text}\n\n"
@@ -331,6 +342,7 @@ async def _run_instrument_agent_inner(
             f"{_reasoning_guidance}\n\n"
             f"Context: {style} | {tempo} BPM | {key} | {_length_emphasis}\n"
             f"{_musical_dna}"
+            f"{_color_rule}"
             f"Pipeline (execute ALL {_expected_calls} steps now, in this exact order):\n"
             f"{_pipeline_text}\n\n"
             f"{_generate_midi_guidance}\n"
@@ -424,11 +436,23 @@ async def _run_instrument_agent_inner(
             missing.append(f"stori_add_insert_effect — {track_ref}, one insert effect")
         return missing
 
+    logger.info(
+        f"{agent_log} 🎬 Starting instrument agent: "
+        f"role={role}, style={style}, bars={bars}, tempo={tempo}, key={key}, "
+        f"multi_section={_multi_section}, sections={_section_count}, "
+        f"reusing={reusing}, max_turns={max_turns}"
+    )
+
     for turn in range(max_turns):
         if turn > 0:
             missing = _missing_stages()
             if not missing:
+                logger.info(f"{agent_log} ✅ All stages complete after turn {turn}")
                 break
+            logger.info(
+                f"{agent_log} 🔄 Turn {turn}/{max_turns}: {len(missing)} stages remaining — "
+                + ", ".join(m.split(" — ")[0] for m in missing)
+            )
             reminder = (
                 "You have not finished the pipeline. You MUST still call:\n"
                 + "\n".join(f"  • {m}" for m in missing)
@@ -437,6 +461,8 @@ async def _run_instrument_agent_inner(
             messages.append({"role": "user", "content": reminder})
 
         # ── LLM call (streaming for per-agent reasoning) ──
+        logger.info(f"{agent_log} 🤖 LLM call starting (turn {turn})")
+        _llm_start = asyncio.get_event_loop().time()
         try:
             _resp_content: Optional[str] = None
             _resp_tool_calls: list[dict[str, Any]] = []
@@ -501,7 +527,10 @@ async def _run_instrument_agent_inner(
                 except Exception as _parse_err:
                     logger.error(f"{agent_log} Error parsing tool call: {_parse_err}")
         except Exception as exc:
-            logger.error(f"{agent_log} LLM call failed (turn {turn}): {exc}")
+            _llm_elapsed = asyncio.get_event_loop().time() - _llm_start
+            logger.error(
+                f"{agent_log} ❌ LLM call failed (turn {turn}, {_llm_elapsed:.1f}s): {exc}"
+            )
             for step_id in step_ids:
                 step = next((s for s in plan_tracker.steps if s.step_id == step_id), None)
                 if step and step.status in ("pending", "active"):
@@ -515,7 +544,16 @@ async def _run_instrument_agent_inner(
                     })
             return
 
+        _llm_elapsed = asyncio.get_event_loop().time() - _llm_start
+        logger.info(
+            f"{agent_log} 🤖 LLM response (turn {turn}, {_llm_elapsed:.1f}s): "
+            f"{len(response.tool_calls)} tool calls, "
+            f"finish={_resp_finish}, "
+            f"usage={_resp_usage}"
+        )
+
         if not response.tool_calls:
+            logger.info(f"{agent_log} No tool calls returned — exiting loop")
             break
 
         # Enforce correct tool ordering within a single LLM response batch.
@@ -577,6 +615,11 @@ async def _run_instrument_agent_inner(
         }
 
         # ── Multi-section: dispatch via section children ──
+        _tool_summary = ", ".join(tc.name for tc in response.tool_calls)
+        logger.info(
+            f"{agent_log} 🔧 Executing {len(response.tool_calls)} tool calls "
+            f"(multi_section={_multi_section}): {_tool_summary}"
+        )
         if _multi_section and len(response.tool_calls) > 1:
             tool_result_messages, _stage_track, _stage_effect, \
                 _regions_completed, _regions_ok, _generates_completed = \
@@ -848,6 +891,16 @@ async def _dispatch_section_children(
         await sse_queue.put({**activate_evt, "agentId": agent_id})
 
     # ── Pair region + generate calls into section groups ──
+    logger.info(
+        f"{agent_log} 📦 Tool call breakdown: "
+        f"track={len(track_tcs)}, region={len(region_tcs)}, "
+        f"generate={len(generate_tcs)}, effect={len(effect_tcs)}, other={len(other_tcs)}"
+    )
+    if len(region_tcs) != len(generate_tcs):
+        logger.warning(
+            f"{agent_log} ⚠️ Region/generate mismatch: "
+            f"{len(region_tcs)} regions vs {len(generate_tcs)} generates"
+        )
     pairs: list[tuple[ToolCall, ToolCall]] = list(zip(region_tcs, generate_tcs))
 
     # Detect drum/bass role for signaling
@@ -857,31 +910,36 @@ async def _dispatch_section_children(
     if composition_context:
         section_signals = composition_context.get("section_signals")
 
-    # ── Spawn section children ──
+    # ── Spawn section children (with watchdog timeout) ──
+    _child_timeout = settings.section_child_timeout
     children: list[asyncio.Task[SectionResult]] = []
     for i, (region_tc, gen_tc) in enumerate(pairs):
         sec = sections[i] if i < len(sections) else sections[-1]
+        _sec_name = sec.get("name", str(i))
         task = asyncio.create_task(
-            _run_section_child(
-                section=sec,
-                section_index=i,
-                track_id=real_track_id,
-                region_tc=region_tc,
-                generate_tc=gen_tc,
-                instrument_name=instrument_name,
-                role=role,
-                agent_id=agent_id,
-                allowed_tool_names=allowed_tool_names,
-                store=store,
-                trace=trace,
-                sse_queue=sse_queue,
-                composition_context=composition_context,
-                section_signals=section_signals,
-                is_drum=is_drum,
-                is_bass=is_bass,
-                llm=llm,
+            asyncio.wait_for(
+                _run_section_child(
+                    section=sec,
+                    section_index=i,
+                    track_id=real_track_id,
+                    region_tc=region_tc,
+                    generate_tc=gen_tc,
+                    instrument_name=instrument_name,
+                    role=role,
+                    agent_id=agent_id,
+                    allowed_tool_names=allowed_tool_names,
+                    store=store,
+                    trace=trace,
+                    sse_queue=sse_queue,
+                    composition_context=composition_context,
+                    section_signals=section_signals,
+                    is_drum=is_drum,
+                    is_bass=is_bass,
+                    llm=llm,
+                ),
+                timeout=_child_timeout,
             ),
-            name=f"{instrument_name}/{sec.get('name', i)}",
+            name=f"{instrument_name}/{_sec_name}",
         )
         children.append(task)
 
@@ -892,13 +950,32 @@ async def _dispatch_section_children(
         )
 
     # ── Wait for all section children ──
+    logger.info(
+        f"{agent_log} ⏳ Waiting for {len(children)} section children to complete..."
+    )
+    _children_start = asyncio.get_event_loop().time()
     child_results: list[SectionResult | BaseException] = await asyncio.gather(
         *children, return_exceptions=True
     )
+    _children_elapsed = asyncio.get_event_loop().time() - _children_start
 
+    _child_successes = 0
+    _child_failures = 0
+    _child_crashes = 0
+    _child_timeouts = 0
+    _total_notes = 0
     for cr in child_results:
+        if isinstance(cr, asyncio.TimeoutError):
+            logger.error(
+                f"{agent_log} ⏰ Section child timed out after {_child_timeout}s — "
+                f"orphaned subagent killed"
+            )
+            _child_timeouts += 1
+            _child_crashes += 1
+            continue
         if isinstance(cr, BaseException):
-            logger.error(f"{agent_log} Section child crashed: {cr}")
+            logger.error(f"{agent_log} 💥 Section child crashed: {cr}")
+            _child_crashes += 1
             continue
         tool_result_msgs.extend(cr.tool_result_msgs)
         collected_tool_calls.extend(cr.tool_call_records)
@@ -908,6 +985,20 @@ async def _dispatch_section_children(
             regions_ok += 1
         if cr.success:
             generates_completed += 1
+            _child_successes += 1
+            _total_notes += cr.notes_generated
+        else:
+            _child_failures += 1
+            logger.warning(
+                f"{agent_log} ⚠️ Section child '{cr.section_name}' failed: {cr.error}"
+            )
+
+    logger.info(
+        f"{agent_log} 🏁 Section children done ({_children_elapsed:.1f}s): "
+        f"✅ {_child_successes} ok, ❌ {_child_failures} failed, "
+        f"💥 {_child_crashes} crashed, ⏰ {_child_timeouts} timed out, "
+        f"🎵 {_total_notes} total notes"
+    )
 
     # ── Execute effect calls sequentially ──
     for tc in effect_tcs:
@@ -983,6 +1074,24 @@ async def _dispatch_section_children(
             "tool_call_id": tc.id,
             "content": json.dumps(outcome.tool_result),
         })
+
+    # ── Emit planStepUpdate(completed) for the content step ──
+    # content_step_id was activated above but the outer _run_instrument_agent_inner
+    # loop never receives it (active_step_id is not updated from this function),
+    # so without explicit completion here the macOS client sees the step stuck in
+    # "active" indefinitely.
+    if content_step_id:
+        _content_step = plan_tracker.get_step(content_step_id)
+        if _content_step and _content_step.status == "active":
+            _n_total = max(len(children), 1) if children else 1
+            _result_text = (
+                f"{_child_successes}/{_n_total} sections completed, "
+                f"{_total_notes} notes"
+            )
+            if _child_failures:
+                _result_text += f" ({_child_failures} failed)"
+            _done_evt = plan_tracker.complete_step_by_id(content_step_id, _result_text)
+            await sse_queue.put({**_done_evt, "agentId": agent_id})
 
     return (
         tool_result_msgs,

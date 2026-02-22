@@ -91,6 +91,14 @@ async def _run_section_child(
     """
     sec_name = section.get("name", f"section_{section_index}")
     child_log = f"[{trace.trace_id[:8]}][{instrument_name}/{sec_name}]"
+    _child_start = asyncio.get_event_loop().time()
+
+    logger.info(
+        f"{child_log} 🎬 Section child starting: "
+        f"is_drum={is_drum}, is_bass={is_bass}, "
+        f"beats={section.get('length_beats', '?')}, "
+        f"start_beat={section.get('start_beat', '?')}"
+    )
 
     result = SectionResult(success=False, section_name=sec_name)
     add_notes_failures: dict[str, int] = {}
@@ -115,15 +123,41 @@ async def _run_section_child(
             "sectionName": sec_name,
         })
 
-        # ── If bass, wait for the corresponding drum section ──
+        # ── If bass, wait for the corresponding drum section (with timeout) ──
         if is_bass and section_signals:
-            logger.info(f"{child_log} ⏳ Waiting for drum section '{sec_name}'")
-            drum_data = await section_signals.wait_for(sec_name)
-            if drum_data:
-                logger.info(
-                    f"{child_log} ✅ Drum section '{sec_name}' ready "
-                    f"({len(drum_data.get('drum_notes', []))} drum notes)"
+            from app.config import settings as _cfg
+            _bass_timeout = _cfg.bass_signal_wait_timeout
+            logger.info(
+                f"{child_log} ⏳ Waiting for drum section '{sec_name}' "
+                f"(timeout={_bass_timeout}s)..."
+            )
+            _wait_start = asyncio.get_event_loop().time()
+            try:
+                drum_data = await asyncio.wait_for(
+                    section_signals.wait_for(sec_name),
+                    timeout=_bass_timeout,
                 )
+            except asyncio.TimeoutError:
+                _wait_elapsed = asyncio.get_event_loop().time() - _wait_start
+                logger.error(
+                    f"{child_log} ⏰ Bass wait TIMED OUT after {_wait_elapsed:.1f}s — "
+                    f"drum section '{sec_name}' never signaled. "
+                    f"Proceeding without drum spine."
+                )
+                drum_data = None
+            else:
+                _wait_elapsed = asyncio.get_event_loop().time() - _wait_start
+                if drum_data:
+                    logger.info(
+                        f"{child_log} ✅ Drum section '{sec_name}' ready after "
+                        f"{_wait_elapsed:.1f}s "
+                        f"({len(drum_data.get('drum_notes', []))} drum notes)"
+                    )
+                else:
+                    logger.warning(
+                        f"{child_log} ⚠️ Drum wait returned no data after "
+                        f"{_wait_elapsed:.1f}s"
+                    )
 
         # ── Bass: read drum telemetry for cross-instrument awareness ──
         if is_bass and section_state:
@@ -147,6 +181,12 @@ async def _run_section_child(
                 )
 
         # ── Execute stori_add_midi_region ──
+        logger.info(
+            f"{child_log} 📌 Creating region: "
+            f"startBeat={region_tc.params.get('startBeat')}, "
+            f"durationBeats={region_tc.params.get('durationBeats')}, "
+            f"name={region_tc.params.get('name')}"
+        )
         region_params = dict(region_tc.params)
         region_params["trackId"] = track_id
 
@@ -183,6 +223,11 @@ async def _run_section_child(
         result.region_id = region_id
 
         # ── Execute stori_generate_midi ──
+        logger.info(
+            f"{child_log} 🎵 Generating MIDI: regionId={region_id}, "
+            f"prompt={str(generate_tc.params.get('prompt', ''))[:80]}..."
+        )
+        _gen_start = asyncio.get_event_loop().time()
         gen_params = dict(generate_tc.params)
         gen_params["trackId"] = track_id
         gen_params["regionId"] = region_id
@@ -210,15 +255,22 @@ async def _run_section_child(
             "content": json.dumps(gen_outcome.tool_result),
         })
 
+        _gen_elapsed = asyncio.get_event_loop().time() - _gen_start
+
         if gen_outcome.skipped:
             result.error = gen_outcome.tool_result.get("error", "Generation failed")
-            logger.warning(f"⚠️ {child_log} Generate failed: {result.error}")
+            logger.warning(
+                f"⚠️ {child_log} Generate failed after {_gen_elapsed:.1f}s: {result.error}"
+            )
             if is_drum and section_signals:
                 section_signals.signal_complete(sec_name)
             return result
 
         result.notes_generated = gen_outcome.tool_result.get("notesAdded", 0)
         result.success = True
+        logger.info(
+            f"{child_log} ✅ Generated {result.notes_generated} notes in {_gen_elapsed:.1f}s"
+        )
 
         # ── Extract generated notes from SSE events ──
         generated_notes: list[dict] = []
@@ -258,6 +310,7 @@ async def _run_section_child(
 
         # ── Optional refinement LLM call for expressive tools ──
         if result.success and llm and composition_context:
+            logger.info(f"{child_log} 🎨 Checking expression refinement...")
             await _maybe_refine_expression(
                 section=section,
                 track_id=track_id,
@@ -277,10 +330,18 @@ async def _run_section_child(
                 child_log=child_log,
             )
 
+        _child_elapsed = asyncio.get_event_loop().time() - _child_start
+        logger.info(
+            f"{child_log} 🏁 Section child complete ({_child_elapsed:.1f}s): "
+            f"success={result.success}, notes={result.notes_generated}"
+        )
         return result
 
     except Exception as exc:
-        logger.exception(f"{child_log} Unhandled section error: {exc}")
+        _child_elapsed = asyncio.get_event_loop().time() - _child_start
+        logger.exception(
+            f"{child_log} 💥 Unhandled section error after {_child_elapsed:.1f}s: {exc}"
+        )
         result.error = str(exc)
         if is_drum and section_signals:
             section_signals.signal_complete(sec_name)

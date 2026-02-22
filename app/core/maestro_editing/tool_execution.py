@@ -16,6 +16,7 @@ from app.core.maestro_helpers import (
     _human_label_for_tool,
 )
 from app.core.maestro_plan_tracker import _ToolCallOutcome, _GENERATOR_TOOL_NAMES
+from app.services.music_generator import get_music_generator
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,6 @@ async def _execute_agent_generator(
     Returns a complete ``_ToolCallOutcome`` on success, or ``None`` to
     fall through to normal tool handling.
     """
-    from app.services.music_generator import get_music_generator
-
     sse_events: list[dict[str, Any]] = []
     extra_tool_calls: list[dict[str, Any]] = []
 
@@ -106,6 +105,10 @@ async def _execute_agent_generator(
         sse_events.append({
             "type": "generatorStart",
             "role": role,
+            # agentId is baked in here so the client receives it even on the
+            # single-section path where _emit does not add sectionName.
+            # Section children override this via _emit (agentId + sectionName).
+            "agentId": role,
             "style": style,
             "bars": bars,
             "startBeat": start_beat,
@@ -200,6 +203,7 @@ async def _execute_agent_generator(
         sse_events.append({
             "type": "generatorComplete",
             "role": role,
+            "agentId": role,
             "noteCount": len(result.notes),
             "durationMs": _gen_duration_ms,
         })

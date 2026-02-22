@@ -249,6 +249,44 @@ When the STORI PROMPT contains `MidiExpressiveness:` or `Automation:` blocks, se
 - **Section child failure**: parent marks that section's steps as failed, other sections continue; parent optionally retries the failed section in a follow-up turn
 - **LLM produces incomplete plan**: multi-turn retry loop (existing) catches missing sections and prompts the LLM again
 
+### Agent safety nets
+
+Defense-in-depth against the failure modes that occur in nested, GPU-bound agent pipelines. All timeouts are configurable via `STORI_*` env vars.
+
+**Orphaned subagent prevention (§2):**
+- Section children are wrapped in `asyncio.wait_for(timeout=section_child_timeout)` (default 300s). If a child hangs on Orpheus or an LLM call, it is killed and the parent reports it as timed out.
+- Instrument parents are wrapped in `asyncio.wait_for(timeout=instrument_agent_timeout)` (default 600s). A stuck parent cannot block the entire composition indefinitely.
+- Bass signal waits use `asyncio.wait_for(timeout=bass_signal_wait_timeout)` (default 240s). If drums fail silently, bass proceeds without the rhythm spine rather than deadlocking.
+
+**Track color pre-allocation:**
+- Before Phase 2 starts, the coordinator calls `allocate_colors(instrument_names)` (`app/core/track_styling.py`) to assign one distinct hex color per instrument from a fixed 8-entry perceptually-spaced palette (`COMPOSITION_PALETTE`). Colors are chosen in role order so adjacent tracks always contrast. Each instrument agent receives its pre-assigned color and is instructed to pass it verbatim in `stori_add_midi_track` — the agent cannot override it. This prevents the LLM from hallucinating repeated colors (the original bug was all tracks receiving amber/orange).
+
+**Orpheus pre-flight health check:**
+- Before Phase 2 starts, the coordinator calls `OrpheusClient.health_check()`. If it returns `False` or raises, a `{"type": "status"}` SSE event is emitted immediately with a human-readable warning ("⚠️ Music generation (Orpheus) is not responding…") so the macOS client can surface the problem before any instrument agent is spawned. Composition continues with retry logic active; if Orpheus recovers within the retry window, generation succeeds.
+
+**Orpheus transient-error retry:**
+- `OrpheusClient.generate()` retries up to 4 attempts (delays: 2 s / 5 s / 10 s / 20 s) on *any* transient error — GPU cold-start phrases (`"No GPU was available"`, etc.) **and** Gradio-level transient errors (`"'NoneType' object is not a mapping"`, `"Queue is full"`, `"upstream Gradio app has raised an exception"`). Previously only GPU cold-start phrases triggered a retry; Gradio transient errors surfaced immediately as `toolError`. The retry label in logs distinguishes the two (`"GPU cold-start"` vs `"Gradio transient error"`).
+
+**SSE keepalive (heartbeat monitoring):**
+- The coordinator emits an SSE comment (`: heartbeat\n\n`) every 8 seconds when no real events are flowing. This prevents proxies and HTTP clients from interpreting GPU-bound silence as a dead connection.
+
+**Frozen progress detection (§5):**
+- The coordinator tracks `_last_event_time`. If no SSE events arrive for 30 seconds, it emits escalating warnings to the server log with the names of still-running agents. This makes "frozen but not crashed" states immediately visible in `docker compose logs`.
+
+**Client disconnect propagation:**
+- `is_cancelled` (from `request.is_disconnected`) is threaded from the SSE route through `orchestrate()` to the coordinator. The coordinator checks it on every 50ms poll cycle. If the client has disconnected, all pending agent tasks are cancelled, preventing wasted GPU and LLM tokens on compositions nobody will receive.
+
+**Lifecycle logging:**
+- Every level emits structured log messages with emoji prefixes for at-a-glance diagnosis: `🎬` start, `✅` success, `❌` error, `⏰` timeout, `💥` crash, `⏳` waiting, `🔄` retry, `🏁` completion. Timing is logged for LLM calls, Orpheus generation, signal waits, and full section/instrument durations.
+
+| Config key | Default | Controls |
+|---|---|---|
+| `STORI_SECTION_CHILD_TIMEOUT` | 300 | Per-section child watchdog (seconds) |
+| `STORI_INSTRUMENT_AGENT_TIMEOUT` | 600 | Per-instrument parent watchdog (seconds) |
+| `STORI_BASS_SIGNAL_WAIT_TIMEOUT` | 240 | Bass waiting for drum signal (seconds) |
+| `STORI_ORPHEUS_MAX_CONCURRENT` | 4 | GPU inference semaphore slots |
+| `STORI_ORPHEUS_TIMEOUT` | 360 | Per-Orpheus HTTP call timeout (seconds) |
+
 ### SectionState — deterministic musical telemetry
 
 `SectionState` is a shared, write-once telemetry store that runs alongside `SectionSignals`. Every section child computes a `SectionTelemetry` snapshot from its generated MIDI notes — pure math, no LLM calls, <2ms per section.
@@ -280,7 +318,7 @@ Implementation: `app/core/telemetry.py` (computation), `app/core/maestro_agent_t
 
 **Routing:** `orchestrate()` intercepts `Intent.GENERATE_MUSIC` + `execution_mode="apply"` + multi-role `ParsedPrompt` (2+ roles) before the standard EDITING path. Single-instrument requests and all non-STORI-PROMPT requests fall through to `_handle_editing` unchanged.
 
-**SSE contract:** Plan steps for instruments carry `parallelGroup: "instruments"`. Phase 1 and Phase 3 steps have no `parallelGroup`. Multiple `planStepUpdate(active)` events fire simultaneously during Phase 2 as parents start. Section children tag their SSE events with both `agentId` and `sectionName` for frontend grouping — this includes `status`, `reasoning`, `toolCall`, `toolStart`, `toolError`, `generatorStart`, `generatorComplete`, and `content` events. The `reasoning` events from Level 3 expression refinement carry `sectionName` to distinguish them from the parent's instrument-level reasoning. Tool calls from different instruments and sections interleave in the SSE stream — the frontend groups by `stepId`, so interleaving is handled naturally.
+**SSE contract:** Plan steps for instruments carry `parallelGroup: "instruments"`. Phase 1 and Phase 3 steps have no `parallelGroup`. Multiple `planStepUpdate(active)` events fire simultaneously during Phase 2 as parents start. Every `planStepUpdate(active)` for an instrument content step is followed by exactly one `planStepUpdate(completed)` (or `planStepUpdate(failed)`) when the instrument agent finishes — no step remains in "active" after the stream ends. Section children tag their SSE events with both `agentId` and `sectionName` for frontend grouping — this includes `status`, `reasoning`, `toolCall`, `toolStart`, `toolError`, `generatorStart`, `generatorComplete`, and `content` events. `generatorStart` and `generatorComplete` additionally carry `agentId` baked in at source (in `_execute_agent_generator`) so the field is present regardless of the execution path. The `reasoning` events from Level 3 expression refinement carry `sectionName` to distinguish them from the parent's instrument-level reasoning. Tool calls from different instruments and sections interleave in the SSE stream — the frontend groups by `stepId`, so interleaving is handled naturally.
 
 **Agent isolation:** Each instrument parent runs with a focused system prompt naming only its instrument, uses a restricted tool allowlist (`_INSTRUMENT_AGENT_TOOLS`), and makes one primary LLM call. Section children are further isolated — a failing child marks only its section's steps as failed and does not propagate to sibling sections or sibling instruments.
 

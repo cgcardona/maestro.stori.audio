@@ -202,6 +202,7 @@ async def orchestrate(
                 async for event in _handle_composition_agent_team(
                     prompt, project_context, _orch_parsed, route, llm, store,
                     trace, usage_tracker,
+                    is_cancelled=is_cancelled,
                 ):
                     yield event
             else:

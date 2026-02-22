@@ -216,12 +216,22 @@ class OrpheusClient:
                 f"request for {instruments} queued"
             )
 
+        _queue_start = asyncio.get_event_loop().time()
         async with self._semaphore:
-            logger.debug(
-                f"[Orpheus] GPU slot acquired for {instruments} "
-                f"({self._max_concurrent - self._semaphore._value}/{self._max_concurrent} in use)"
-            )
+            _queue_waited = asyncio.get_event_loop().time() - _queue_start
+            _in_use = self._max_concurrent - self._semaphore._value
+            if _queue_waited > 0.1:
+                logger.info(
+                    f"[Orpheus] GPU slot acquired for {instruments} after "
+                    f"{_queue_waited:.1f}s queue wait ({_in_use}/{self._max_concurrent} in use)"
+                )
+            else:
+                logger.info(
+                    f"[Orpheus] GPU slot acquired for {instruments} "
+                    f"({_in_use}/{self._max_concurrent} in use)"
+                )
 
+            _gen_start = asyncio.get_event_loop().time()
             for attempt in range(_MAX_RETRIES):
                 try:
                     response = await self.client.post(
@@ -248,24 +258,41 @@ class OrpheusClient:
                         }
 
                     error_text = data.get("error", "")
-                    if not data.get("success") and self._is_gpu_cold_start_error(error_text):
+                    # Retry on any transient error (GPU cold-start OR Gradio-level
+                    # transient failures like "NoneType object is not a mapping").
+                    # Previously only GPU cold-start was retried; this caused the
+                    # Gradio transient errors observed during multi-section runs to
+                    # be surfaced immediately as toolError without any retry attempt.
+                    if not data.get("success") and self._is_transient_error(error_text):
                         if attempt < _MAX_RETRIES - 1:
                             delay = _RETRY_DELAYS[attempt]
+                            _err_label = (
+                                "GPU cold-start"
+                                if self._is_gpu_cold_start_error(error_text)
+                                else "Gradio transient error"
+                            )
                             logger.warning(
-                                f"⚠️ Orpheus GPU cold-start (attempt {attempt + 1}/{_MAX_RETRIES}) "
-                                f"— retrying in {delay}s. Error: {error_text[:120]}"
+                                f"⚠️ Orpheus {_err_label} "
+                                f"(attempt {attempt + 1}/{_MAX_RETRIES}) "
+                                f"— retrying in {delay}s: {error_text[:120]}"
                             )
                             await asyncio.sleep(delay)
                             continue
+                        _is_gpu = self._is_gpu_cold_start_error(error_text)
                         logger.error(
-                            f"❌ Orpheus GPU unavailable after {_MAX_RETRIES} attempts"
+                            f"❌ Orpheus generation failed after {_MAX_RETRIES} attempts: "
+                            f"{error_text[:120]}"
                         )
                         return {
                             "success": False,
-                            "error": "gpu_unavailable",
+                            "error": "gpu_unavailable" if _is_gpu else error_text,
                             "message": (
                                 f"MIDI generation failed after {_MAX_RETRIES} attempts — "
-                                "GPU unavailable. Try again in a few minutes."
+                                + (
+                                    "GPU unavailable. Try again in a few minutes."
+                                    if _is_gpu
+                                    else error_text[:200]
+                                )
                             ),
                             "retry_count": attempt + 1,
                         }
@@ -278,6 +305,12 @@ class OrpheusClient:
                     }
                     if not out["success"] and error_text:
                         out["error"] = error_text
+                    _gen_elapsed = asyncio.get_event_loop().time() - _gen_start
+                    logger.info(
+                        f"[Orpheus] ✅ Generation done for {instruments}: "
+                        f"{len(out['notes'])} notes in {_gen_elapsed:.1f}s "
+                        f"(attempt {attempt + 1})"
+                    )
                     return out
 
                 except httpx.HTTPStatusError as e:

@@ -538,6 +538,77 @@ class TestAgentIdTaggingRegression:
         }
         assert "reasoning" in tagged
 
+    @pytest.mark.anyio
+    async def test_generator_start_event_contains_agentid_at_source(self):
+        """generatorStart emitted by _execute_agent_generator carries agentId = role.
+
+        Regression for P2 (generatorStart/generatorComplete missing agentId):
+        before the fix these events had no agentId field at the source level.
+        Section children added it via _emit, but single-section paths and any
+        future consumer that bypassed _emit would not get the field.  The fix
+        bakes agentId = role into the event inside _execute_agent_generator.
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from app.core.maestro_editing.tool_execution import _execute_agent_generator
+        from app.core.tracing import TraceContext
+        from app.core.state_store import StateStore
+        from app.services.backends.base import GenerationResult, GeneratorBackend
+
+        store = StateStore()
+        track_id = store.create_track("Bass")
+        region_id = store.create_region("Region", track_id)
+
+        trace = TraceContext(trace_id="test-agentid-src")
+        comp_ctx = {"style": "dancehall", "tempo": 90, "bars": 8, "key": "Am", "quality_preset": "balanced"}
+
+        ok_result = GenerationResult(
+            success=True,
+            notes=[{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 80}],
+            backend_used=GeneratorBackend.ORPHEUS,
+            metadata={},
+        )
+
+        mock_mg = MagicMock()
+        mock_mg.generate = AsyncMock(return_value=ok_result)
+
+        with patch("app.core.maestro_editing.tool_execution.get_music_generator", return_value=mock_mg):
+            outcome = await _execute_agent_generator(
+                tc_id="tc-1",
+                tc_name="stori_generate_midi",
+                enriched_params={
+                    "role": "bass",
+                    "trackId": track_id,
+                    "regionId": region_id,
+                    "style": "dancehall",
+                    "tempo": 90,
+                    "bars": 8,
+                    "key": "Am",
+                },
+                store=store,
+                trace=trace,
+                composition_context=comp_ctx,
+                emit_sse=True,
+            )
+
+        assert outcome is not None
+        generator_start_events = [
+            e for e in outcome.sse_events if e.get("type") == "generatorStart"
+        ]
+        generator_complete_events = [
+            e for e in outcome.sse_events if e.get("type") == "generatorComplete"
+        ]
+
+        assert len(generator_start_events) == 1, "Expected exactly one generatorStart event"
+        assert len(generator_complete_events) == 1, "Expected exactly one generatorComplete event"
+
+        gs = generator_start_events[0]
+        assert "agentId" in gs, f"generatorStart missing agentId: {gs}"
+        assert gs["agentId"] == "bass", f"Expected agentId='bass', got {gs['agentId']}"
+
+        gc = generator_complete_events[0]
+        assert "agentId" in gc, f"generatorComplete missing agentId: {gc}"
+        assert gc["agentId"] == "bass", f"Expected agentId='bass', got {gc['agentId']}"
+
 
 class TestEffectPersistenceRegression:
     """Regression: stori_add_insert_effect must persist to StateStore."""

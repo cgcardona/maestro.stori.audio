@@ -15,8 +15,9 @@ import json
 import logging
 import re
 import uuid as _uuid_mod
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
+from app.config import settings
 from app.core.emotion_vector import emotion_vector_from_stori_prompt
 from app.core.llm_client import LLMClient
 from app.core.prompts import system_prompt_base
@@ -36,6 +37,7 @@ from app.core.maestro_plan_tracker import (
 )
 from app.core.maestro_editing import _apply_single_tool_call
 from app.core.maestro_agent_teams.agent import _run_instrument_agent
+from app.core.track_styling import allocate_colors
 from app.core.maestro_agent_teams.sections import parse_sections
 from app.core.maestro_agent_teams.signals import SectionSignals, SectionState
 from app.core.maestro_agent_teams.summary import _build_composition_summary
@@ -64,6 +66,7 @@ async def _handle_composition_agent_team(
     store: StateStore,
     trace: Any,
     usage_tracker: Optional["UsageTracker"],
+    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
 ) -> AsyncIterator[str]:
     """Agent Teams coordinator for multi-instrument STORI PROMPT compositions.
 
@@ -232,20 +235,39 @@ async def _handle_composition_agent_team(
 
     # ── GPU warm-up: fire a lightweight health probe before spawning agents ──
     # This primes the Gradio Space GPU pod so the first real generation call
-    # does not hit the 60-second cold-start timeout.
+    # does not hit the 60-second cold-start timeout.  If Orpheus is unreachable
+    # we surface a user-facing status event so the macOS client can show a
+    # warning before committing to a full composition run.
+    _orpheus_healthy = True
     try:
         from app.services.orpheus import get_orpheus_client
         _orpheus = get_orpheus_client()
-        _gpu_healthy = await _orpheus.health_check()
-        if _gpu_healthy:
+        _orpheus_healthy = await _orpheus.health_check()
+        if _orpheus_healthy:
             logger.debug(f"[{trace.trace_id[:8]}] Orpheus GPU warm-up: healthy ✓")
         else:
             logger.warning(
                 f"⚠️ [{trace.trace_id[:8]}] Orpheus health check failed before composition — "
-                "generation may encounter GPU cold-start delays (retry logic is active)"
+                "generation may fail; retry logic will attempt recovery"
             )
+            yield await sse_event({
+                "type": "status",
+                "message": (
+                    "⚠️ Music generation (Orpheus) is not responding. "
+                    "MIDI regions may be empty — verify Orpheus is running on port 10002, "
+                    "then retry."
+                ),
+            })
     except Exception as _wu_exc:
+        _orpheus_healthy = False
         logger.warning(f"⚠️ [{trace.trace_id[:8]}] Orpheus warm-up probe failed: {_wu_exc}")
+        yield await sse_event({
+            "type": "status",
+            "message": (
+                f"⚠️ Could not reach music generation service (Orpheus): {_wu_exc}. "
+                "MIDI regions will be empty — check that Orpheus is running."
+            ),
+        })
 
     # ── Section parsing: decompose STORI PROMPT into musical sections ──
     _sections = parse_sections(
@@ -254,6 +276,13 @@ async def _handle_composition_agent_team(
         roles=list(parsed.roles),
     )
     _multi_section = len(_sections) > 1
+    logger.info(
+        f"[{trace.trace_id[:8]}] 📋 Section parsing: {len(_sections)} section(s) — "
+        + ", ".join(
+            f"{s['name']}(start={s.get('start_beat', '?')}, len={s.get('length_beats', '?')})"
+            for s in _sections
+        )
+    )
     if _multi_section:
         yield await sse_event({
             "type": "status",
@@ -276,6 +305,10 @@ async def _handle_composition_agent_team(
     _section_state = SectionState()
     if _multi_section:
         _section_signals = SectionSignals.from_sections(_sections)
+        logger.info(
+            f"[{trace.trace_id[:8]}] 🔗 SectionSignals created for drum→bass pipelining: "
+            f"{list(_section_signals.events.keys())}"
+        )
 
     _composition_context: dict[str, Any] = {
         "style": style,
@@ -316,38 +349,57 @@ async def _handle_composition_agent_team(
             f"ids={_reused_ids}"
         )
 
+    # ── Pre-allocate one distinct color per instrument ──
+    # Coordinator owns color assignment so no two agents can collide.
+    # Colors are drawn from a perceptually-spaced palette in role order.
+    _instrument_names_ordered = [
+        _role_track_info[r]["instrument_name"] for r in parsed.roles
+    ]
+    _color_map: dict[str, str] = allocate_colors(_instrument_names_ordered)
+    logger.info(
+        f"[{trace.trace_id[:8]}] 🎨 Color allocation: "
+        + ", ".join(f"{n}={c}" for n, c in _color_map.items())
+    )
+
     def _spawn_agent(role: str) -> asyncio.Task:
         role_info = _role_track_info[role]
         instrument_name = role_info["instrument_name"]
         step_ids_for_role = instrument_step_ids.get(instrument_name.lower(), [])
         existing_track_id = role_info["existing_track_id"]
         agent_start_beat = role_info["start_beat"]
+        assigned_color = _color_map.get(instrument_name)
         if existing_track_id:
             agent_tool_calls.append({
                 "tool": "_reused_track",
                 "params": {"name": instrument_name, "trackId": existing_track_id},
             })
         _ctx = {**_composition_context, "role": role}
+        _agent_timeout = settings.instrument_agent_timeout
         task = asyncio.create_task(
-            _run_instrument_agent(
-                instrument_name=instrument_name,
-                role=role,
-                style=style,
-                bars=bars,
-                tempo=tempo,
-                key=key,
-                step_ids=step_ids_for_role,
-                plan_tracker=plan_tracker,
-                llm=llm,
-                store=store,
-                allowed_tool_names=_INSTRUMENT_AGENT_TOOLS,
-                trace=trace,
-                sse_queue=sse_queue,
-                collected_tool_calls=agent_tool_calls,
-                existing_track_id=existing_track_id,
-                start_beat=agent_start_beat,
-                composition_context=_ctx,
-            )
+            asyncio.wait_for(
+                _run_instrument_agent(
+                    instrument_name=instrument_name,
+                    role=role,
+                    style=style,
+                    bars=bars,
+                    tempo=tempo,
+                    key=key,
+                    step_ids=step_ids_for_role,
+                    plan_tracker=plan_tracker,
+                    llm=llm,
+                    store=store,
+                    allowed_tool_names=_INSTRUMENT_AGENT_TOOLS,
+                    trace=trace,
+                    sse_queue=sse_queue,
+                    collected_tool_calls=agent_tool_calls,
+                    existing_track_id=existing_track_id,
+                    start_beat=agent_start_beat,
+                    composition_context=_ctx,
+                    assigned_color=assigned_color,
+                ),
+                timeout=_agent_timeout,
+            ),
+            name=f"agent/{instrument_name}",
         )
         return task
 
@@ -387,19 +439,112 @@ async def _handle_composition_agent_team(
     for role in parsed.roles:
         all_tasks.append(_spawn_agent(role))
 
+    _heartbeat_interval = 8.0   # seconds between keepalive pings
+    _stall_warn_interval = 30.0  # warn if no real events for this long
+    _now_init = asyncio.get_event_loop().time()
+    _last_heartbeat_time = _now_init
+    _last_progress_time = _now_init   # only reset by real events, not heartbeats
+    _last_warn_time = _now_init
+    _total_events_emitted = 0
+    _stall_warnings = 0
+
+    logger.info(
+        f"[{trace.trace_id[:8]}] 🚀 Phase 2: launching {len(all_tasks)} instrument agents "
+        f"({', '.join(parsed.roles)})"
+    )
+
     pending: set[asyncio.Task] = set(all_tasks)
     while pending:
         done, pending = await asyncio.wait(pending, timeout=0.05)
+
+        _drained = 0
         while not sse_queue.empty():
-            yield await sse_event(sse_queue.get_nowait())
+            evt = sse_queue.get_nowait()
+            yield await sse_event(evt)
+            _drained += 1
+            _total_events_emitted += 1
+            _last_heartbeat_time = asyncio.get_event_loop().time()
+            _last_progress_time = _last_heartbeat_time
+            _stall_warnings = 0  # reset stall counter on any activity
+
+        _now = asyncio.get_event_loop().time()
+
+        # SSE keepalive — prevents proxy/client timeout during GPU-bound work
+        if _now - _last_heartbeat_time > _heartbeat_interval:
+            yield ": heartbeat\n\n"
+            _last_heartbeat_time = _now
+            logger.debug(
+                f"[{trace.trace_id[:8]}] 💓 SSE heartbeat "
+                f"(events={_total_events_emitted}, pending_agents={len(pending)})"
+            )
+
+        # Client disconnect detection — stop wasting GPU/LLM tokens
+        if is_cancelled:
+            try:
+                if await is_cancelled():
+                    logger.warning(
+                        f"⚠️ [{trace.trace_id[:8]}] Client disconnected — "
+                        f"cancelling {len(pending)} pending agent tasks "
+                        f"(events={_total_events_emitted})"
+                    )
+                    for task in pending:
+                        task.cancel()
+                    break
+            except Exception:
+                pass
+
+        # Frozen progress detection — separate timer from heartbeat
+        _silence = _now - _last_progress_time
+        if _silence > _stall_warn_interval and _now - _last_warn_time > _stall_warn_interval:
+            _stall_warnings += 1
+            _pending_names = [t.get_name() for t in pending]
+            logger.warning(
+                f"⚠️ [{trace.trace_id[:8]}] FROZEN PROGRESS: "
+                f"no SSE events for {_silence:.0f}s "
+                f"(warning #{_stall_warnings}, "
+                f"total_events={_total_events_emitted}, "
+                f"pending_agents={_pending_names})"
+            )
+            _last_warn_time = _now
+
         for task in done:
+            _task_name = task.get_name()
+            _exc = task.exception() if not task.cancelled() else None
+            if task.cancelled():
+                logger.warning(
+                    f"[{trace.trace_id[:8]}] 🚫 Agent task '{_task_name}' cancelled"
+                )
+            elif isinstance(_exc, asyncio.TimeoutError):
+                logger.error(
+                    f"[{trace.trace_id[:8]}] ⏰ Agent task '{_task_name}' TIMED OUT "
+                    f"after {settings.instrument_agent_timeout}s — orphaned agent killed"
+                )
+            elif _exc:
+                logger.error(
+                    f"[{trace.trace_id[:8]}] ❌ Agent task '{_task_name}' crashed: {_exc}"
+                )
+            else:
+                logger.info(
+                    f"[{trace.trace_id[:8]}] ✅ Agent task '{_task_name}' completed "
+                    f"({len(pending)} still running)"
+                )
             await _handle_task_failure(task)
 
     # Final drain — catch any events queued during the last task completions
+    _final_drained = 0
     while not sse_queue.empty():
         yield await sse_event(sse_queue.get_nowait())
+        _final_drained += 1
+        _total_events_emitted += 1
+
+    logger.info(
+        f"[{trace.trace_id[:8]}] 🏁 Phase 2 complete: "
+        f"{_total_events_emitted} SSE events emitted "
+        f"({_final_drained} in final drain)"
+    )
 
     # ── Phase 3: Mixing coordinator (optional, one LLM call) ──
+    logger.info(f"[{trace.trace_id[:8]}] 🎛️  Entering Phase 3 (mixing)")
     phase3_steps = [
         s for s in plan_tracker.steps
         if s.status == "pending" and s.parallel_group is None
