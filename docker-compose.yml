@@ -148,14 +148,15 @@ services:
     environment:
       # Gradio Client needs HF token for Space GPU quota; use same key as Maestro
       HF_TOKEN: ${STORI_HF_API_KEY:-}
+      STORI_ORPHEUS_SPACE: ${STORI_ORPHEUS_SPACE:-asigalov61/Orpheus-Music-Transformer}
     networks:
       - maestro-stori-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:10002/health"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+      timeout: 30s
+      retries: 5
+      start_period: 15s
     # Security hardening
     security_opt:
       - no-new-privileges:true

@@ -1,4 +1,12 @@
-"""Agent Teams coordinator — three-phase parallel instrument composition."""
+"""Agent Teams coordinator (Level 1) — three-phase parallel composition.
+
+Three-level architecture:
+  Level 1 — Coordinator (this file): deterministic setup, spawns
+            instrument parents, optional mixing pass.
+  Level 2 — Instrument Parent (agent.py): one LLM call per instrument,
+            dispatches section children.
+  Level 3 — Section Child (section_agent.py): per-section executor.
+"""
 
 from __future__ import annotations
 
@@ -28,6 +36,8 @@ from app.core.maestro_plan_tracker import (
 )
 from app.core.maestro_editing import _apply_single_tool_call
 from app.core.maestro_agent_teams.agent import _run_instrument_agent
+from app.core.maestro_agent_teams.sections import parse_sections
+from app.core.maestro_agent_teams.signals import SectionSignals
 from app.core.maestro_agent_teams.summary import _build_composition_summary
 
 logger = logging.getLogger(__name__)
@@ -57,14 +67,16 @@ async def _handle_composition_agent_team(
 ) -> AsyncIterator[str]:
     """Agent Teams coordinator for multi-instrument STORI PROMPT compositions.
 
-    Three-phase execution:
+    Three-level, three-phase execution:
 
     - **Phase 1** (sequential): tempo and key applied deterministically from
       the parsed prompt — no LLM call needed.
-    - **Phase 2** (parallel): one independent ``_run_instrument_agent`` task
-      per role, all launched simultaneously via ``asyncio.gather``. SSE events
-      from all agents are multiplexed through a shared queue and forwarded to
-      the client as they arrive.
+    - **Phase 2** (parallel, all instruments launched simultaneously):
+      All instrument parents (including bass) start in one wave.  Drum-to-bass
+      coupling is handled at the section level: each bass section child waits
+      on its corresponding drum section child via ``SectionSignals``.  This
+      means bass LLM planning happens immediately (parallel with drums); only
+      bass section execution waits per-section.
     - **Phase 3** (sequential): optional mixing coordinator LLM call for
       shared buses, sends, and volume adjustments.
     """
@@ -218,6 +230,39 @@ async def _handle_composition_agent_team(
     agent_tool_calls: list[dict[str, Any]] = []
     tasks: list[asyncio.Task] = []
 
+    # ── GPU warm-up: fire a lightweight health probe before spawning agents ──
+    # This primes the Gradio Space GPU pod so the first real generation call
+    # does not hit the 60-second cold-start timeout.
+    try:
+        from app.services.orpheus import get_orpheus_client
+        _orpheus = get_orpheus_client()
+        _gpu_healthy = await _orpheus.health_check()
+        if _gpu_healthy:
+            logger.debug(f"[{trace.trace_id[:8]}] Orpheus GPU warm-up: healthy ✓")
+        else:
+            logger.warning(
+                f"⚠️ [{trace.trace_id[:8]}] Orpheus health check failed before composition — "
+                "generation may encounter GPU cold-start delays (retry logic is active)"
+            )
+    except Exception as _wu_exc:
+        logger.warning(f"⚠️ [{trace.trace_id[:8]}] Orpheus warm-up probe failed: {_wu_exc}")
+
+    # ── Section parsing: decompose STORI PROMPT into musical sections ──
+    _sections = parse_sections(
+        prompt=prompt,
+        bars=bars,
+        roles=list(parsed.roles),
+    )
+    _multi_section = len(_sections) > 1
+    if _multi_section:
+        yield await sse_event({
+            "type": "status",
+            "message": (
+                f"Parsed {len(_sections)} sections: "
+                + ", ".join(s["name"] for s in _sections)
+            ),
+        })
+
     # ── Build composition context for Orpheus routing ──
     _emotion_vector = None
     try:
@@ -226,6 +271,11 @@ async def _handle_composition_agent_team(
         logger.warning(
             f"[{trace.trace_id[:8]}] EmotionVector parse failed: {_ev_exc}"
         )
+    # ── Create section-level signals for drum→bass pipelining ──
+    _section_signals: SectionSignals | None = None
+    if _multi_section:
+        _section_signals = SectionSignals.from_sections(_sections)
+
     _composition_context: dict[str, Any] = {
         "style": style,
         "tempo": tempo,
@@ -233,6 +283,9 @@ async def _handle_composition_agent_team(
         "key": key,
         "emotion_vector": _emotion_vector,
         "quality_preset": "quality",
+        "sections": _sections,
+        "section_signals": _section_signals,
+        "_raw_prompt": prompt,
     }
 
     _role_track_info: dict[str, dict[str, Any]] = {}
@@ -296,56 +349,51 @@ async def _handle_composition_agent_team(
         )
         return task
 
-    # ── Phase 2a: Run drums first for RhythmSpine coupling ──
-    drum_roles = [r for r in parsed.roles if r.lower() in ("drums", "drum")]
-    other_roles = [r for r in parsed.roles if r not in drum_roles]
+    # ── Phase 2: All instrument parents launched simultaneously ──
+    #
+    # Three-level architecture: drum-to-bass coupling is handled at the
+    # section child level via SectionSignals.  Bass section children wait
+    # on their corresponding drum section child — the coordinator no
+    # longer needs two-wave sequencing.  All instrument parents (including
+    # bass) start at the same time so bass LLM planning runs in parallel
+    # with drums.
 
-    if drum_roles:
-        drum_task = _spawn_agent(drum_roles[0])
-        await drum_task
-        while not sse_queue.empty():
-            yield await sse_event(sse_queue.get_nowait())
-        if not drum_task.cancelled() and drum_task.exception() is not None:
-            exc = drum_task.exception()
-            logger.error(f"[{trace.trace_id[:8]}] Drum agent crashed: {exc}")
+    async def _handle_task_failure(task: asyncio.Task) -> None:
+        """Emit plan step failures for a crashed agent task."""
+        if task.cancelled() or task.exception() is None:
+            return
+        exc = task.exception()
+        logger.error(f"[{trace.trace_id[:8]}] Instrument agent crashed: {exc}")
+        for step in plan_tracker.steps:
+            if (
+                step.parallel_group == "instruments"
+                and step.status in ("pending", "active")
+            ):
+                role_for_step = (step.track_name or "").lower()
+                sids = instrument_step_ids.get(role_for_step, [])
+                if step.step_id in sids:
+                    step.status = "failed"
+                    await sse_queue.put({
+                        "type": "planStepUpdate",
+                        "stepId": step.step_id,
+                        "status": "failed",
+                        "result": f"Failed: {exc}",
+                        "agentId": role_for_step,
+                    })
 
-    # ── Phase 2b: Spawn remaining agents in parallel ──
-    for role in other_roles:
-        tasks.append(_spawn_agent(role))
+    all_tasks: list[asyncio.Task] = []
+    for role in parsed.roles:
+        all_tasks.append(_spawn_agent(role))
 
-    # Drain queue while agents run — forward events to client as they arrive.
-    # Task-level exceptions are caught here as a failsafe; the agent's own
-    # try/except should handle most failures, but a truly unexpected crash
-    # (e.g. OOM, interpreter error) could bypass it.
-    pending: set[asyncio.Task] = set(tasks)
+    pending: set[asyncio.Task] = set(all_tasks)
     while pending:
         done, pending = await asyncio.wait(pending, timeout=0.05)
         while not sse_queue.empty():
             yield await sse_event(sse_queue.get_nowait())
         for task in done:
-            if not task.cancelled() and task.exception() is not None:
-                exc = task.exception()
-                logger.error(
-                    f"[{trace.trace_id[:8]}] Instrument agent crashed: {exc}"
-                )
-                # Failsafe: mark any steps that are still pending/active as
-                # failed so the client never sees steps stuck in limbo.
-                for step in plan_tracker.steps:
-                    if (
-                        step.parallel_group == "instruments"
-                        and step.status in ("pending", "active")
-                    ):
-                        role_for_step = (step.track_name or "").lower()
-                        step_ids_for_role = instrument_step_ids.get(role_for_step, [])
-                        if step.step_id in step_ids_for_role:
-                            step.status = "failed"
-                            yield await sse_event({
-                                "type": "planStepUpdate",
-                                "stepId": step.step_id,
-                                "status": "failed",
-                                "result": f"Failed: {exc}",
-                                "agentId": role_for_step,
-                            })
+            await _handle_task_failure(task)
+
+    # Final drain — catch any events queued during the last task completions
     while not sse_queue.empty():
         yield await sse_event(sse_queue.get_nowait())
 

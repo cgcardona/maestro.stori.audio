@@ -1213,6 +1213,180 @@ The result: a prompt with `Effects: drums: compression`, `MidiExpressiveness: cc
 
 ------------------------------------------------------------------------
 
+## Auto-Section Parsing (Single-Prompt Multi-Part Composition)
+
+In addition to the sequential section workflow above, Maestro supports
+**automatic section detection** from a single free-text prompt. When the
+`Request:` field mentions multiple structural keywords (intro, verse,
+chorus, bridge, breakdown, build, outro, drop), the coordinator:
+
+1. **Detects sections** by scanning the prompt for structural keywords.
+   Synonyms are normalized (e.g. "drop" → chorus, "breakdown" → bridge).
+2. **Assigns beat ranges** proportionally based on default section weights,
+   snapped to bar boundaries. Every section is at least 1 bar (4 beats).
+   The last section is stretched to fill the exact total beat count.
+3. **Generates per-section, per-instrument descriptions** from a template
+   library tuned to each section's energy profile (e.g. chorus drums are
+   "full energy, all elements active" while breakdown drums are "stripped
+   to minimal or silence").
+4. **Dispatches per-section regions** — each instrument agent receives the
+   full section list and creates one `stori_add_midi_region` +
+   `stori_generate_midi` pair per section, each with a section-specific
+   `prompt` reflecting that section's energy, density, and musical role.
+
+### Example
+
+A prompt like:
+
+```
+Make a 32-bar reggaeton track with an intro, verse, and chorus in Bm at 96 BPM
+```
+
+Is automatically decomposed into:
+
+```json
+{
+  "sections": [
+    { "name": "intro",  "start_beat": 0,  "length_beats": 20 },
+    { "name": "verse",  "start_beat": 20, "length_beats": 44 },
+    { "name": "chorus", "start_beat": 64, "length_beats": 64 }
+  ]
+}
+```
+
+Each instrument agent then creates 3 regions (one per section) with
+section-appropriate MIDI content, rather than one flat 128-beat region
+with no structural variation.
+
+### Inferred sections
+
+Descriptive language also triggers section detection:
+
+| Phrase | Inferred section |
+|--------|-----------------|
+| "builds up", "gradually rises" | `build` |
+| "stripped back", "bare", "minimalist" | `breakdown` |
+| "full drop", "big hit" | `chorus` |
+| "opening" | `intro` |
+| "closing", "ends" | `outro` |
+
+### Fallback
+
+If fewer than 2 section keywords are detected, the full arrangement is
+treated as a single section (original behaviour preserved).
+
+### Module
+
+`app/core/maestro_agent_teams/sections.py` — `parse_sections(prompt, bars, roles)`.
+Tests: `tests/test_sections.py`.
+
+------------------------------------------------------------------------
+
+## `stori_generate_midi` — Updated Tool Schema
+
+The `stori_generate_midi` tool now requires explicit entity references
+to prevent the ordering bugs where agents called the generator before
+creating a region.
+
+### Required parameters (all must be present)
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `trackId` | string (UUID) | From `stori_add_midi_track` or existing track |
+| `regionId` | string (UUID) | From `stori_add_midi_region` for this track. **Must** call `stori_add_midi_region` first. |
+| `start_beat` | number | Beat position where this region starts (e.g. `0.0`) |
+| `role` | string | Instrument role: `drums`, `bass`, `chords`, `melody`, `arp`, `pads`, `fx` |
+| `style` | string | Style tag: `boom_bap`, `trap`, `house`, `lofi`, `jazz`, `reggaeton`, etc. |
+| `tempo` | integer | Tempo in BPM |
+| `bars` | integer | Number of bars to generate (1–64) |
+
+### Optional parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `key` | string | Key signature (e.g. `"Bm"`, `"F# minor"`) |
+| `prompt` | string | **Instrument-specific musical description** (2–3 sentences). Include rhythmic role, note range, density, inter-track interaction, and genre idioms. Each section should have a different prompt. |
+| `constraints` | object | Structured constraints (density, syncopation, swing, note_range) |
+
+### Strict call ordering
+
+For every track, the call sequence is:
+
+```
+stori_create_track     → returns trackId
+stori_add_midi_region  → requires: trackId, startBeat, durationBeats
+                         returns: regionId
+stori_generate_midi    → requires: trackId, regionId, start_beat
+                         (regionId from step 2, NOT the trackId)
+stori_add_insert_effect → requires: trackId
+```
+
+Steps 2–3 repeat once per section in multi-section compositions.
+Step 3 must not be called until step 2 for the **same section** has
+returned successfully.
+
+### Breaking change from previous schema
+
+The old schema only required `[role, style, tempo, bars]`. Code that
+calls `stori_generate_midi` without `trackId`, `regionId`, and
+`start_beat` will now receive a validation error.
+
+------------------------------------------------------------------------
+
+## GPU Resilience — Retry and Warm-Up
+
+### Problem
+
+The Orpheus MIDI generation model runs on Gradio Spaces with GPU pods
+that cold-start. A cold pod returns `"No GPU was available after 60s.
+Retry later"`, which previously caused a permanent failure for that track.
+
+### Retry logic
+
+`OrpheusClient.generate()` now retries up to 3 times with exponential
+backoff delays of **5s**, **15s**, **30s** when it detects a GPU
+cold-start error in:
+
+- The JSON response body (`success: false, error: "No GPU was available..."`)
+- An HTTP error body (e.g. 503 with GPU text)
+
+After all retries are exhausted, a structured error is returned:
+
+```json
+{
+  "success": false,
+  "error": "gpu_unavailable",
+  "message": "MIDI generation failed after 3 attempts — GPU unavailable.",
+  "retry_count": 3
+}
+```
+
+Non-GPU errors (auth failures, network errors, etc.) are returned
+immediately without retrying.
+
+### GPU warm-up
+
+Before spawning instrument agents, the coordinator fires a lightweight
+`health_check()` probe to the Orpheus endpoint. This primes the GPU pod
+so the first real generation call doesn't hit the 60-second cold-start.
+
+### Frontend implications
+
+- Tracks may take up to ~50 seconds longer when the GPU is cold (retry
+  delays sum to 50s). The SSE stream remains open during this time.
+- The `generatorComplete` event includes `durationMs` reflecting the
+  full wall-clock time including retries.
+- If all retries fail, the FE receives a `toolError` event with
+  `"gpu_unavailable"` — display this clearly rather than a spinner.
+
+### Module
+
+`app/services/orpheus.py` — retry logic in `OrpheusClient.generate()`.
+`app/core/maestro_agent_teams/coordinator.py` — warm-up probe before Phase 2.
+Tests: `tests/test_orpheus_client.py` (`TestGpuColdStartRetry`).
+
+------------------------------------------------------------------------
+
 ## Backend Implementation Status
 
 | Item | Status | Module |
@@ -1256,6 +1430,13 @@ The result: a prompt with `Effects: drums: compression`, `MidiExpressiveness: cc
 | **Genre seed library (16 genres with CC + velocity curves)** | Done | `orpheus-music/music_service.py` (\_GENRE\_SEEDS) |
 | **Time signature-aware region calculation** | Done | `app/core/planner/conversion.py` (\_beats\_per\_bar) |
 | **MIDI analysis tooling (reference corpus)** | Done | `scripts/analyze_midi.py`, `scripts/download_reference_midi.py` |
+| **Auto-section parsing (single-prompt multi-part)** | Done | `app/core/maestro_agent_teams/sections.py` |
+| **Multi-section agent pipeline (per-section region+generate)** | Done | `app/core/maestro_agent_teams/agent.py` |
+| **stori_generate_midi: trackId/regionId/start_beat required** | Done | `app/core/tools/definitions.py`, `app/core/maestro_editing/tool_execution.py` |
+| **Instrument-specific prompt field on stori_generate_midi** | Done | `app/core/tools/definitions.py`, `app/core/maestro_agent_teams/agent.py` |
+| **GPU retry (3x backoff: 5s/15s/30s)** | Done | `app/services/orpheus.py` |
+| **GPU warm-up probe before composition** | Done | `app/core/maestro_agent_teams/coordinator.py` |
+| **Structured diagnostic logging for stori_generate_midi** | Done | `app/core/maestro_editing/tool_execution.py` |
 
 ### How expressive blocks flow through the system
 
@@ -1275,10 +1456,12 @@ All generated notes pass through a **fourth path** — automatic expressiveness:
 The richer text-only dimensions (`Expression`, `Harmony`, `Dynamics`, `Orchestration`, `Texture`, `Form`) reach the LLM context and shape note content but do not produce direct tool calls of their own.
 
 **Tests:** `tests/test_prompt_parser.py` (91+), `tests/test_intent_structured.py` (26),
-`tests/test_structured_prompt_integration.py` (16), `tests/test_tool_validation.py` (6+),
+`tests/test_structured_prompt_integration.py` (16), `tests/test_tool_validation.py` (schema regression for stori_generate_midi),
 `tests/test_neural_mvp.py` (EmotionVector parser),
 `tests/test_context_injection.py` (routing-only context, extensions, translation mandate),
 `tests/test_executor_deep.py` (CC, pitch bend, aftertouch pipeline, variation context),
 `tests/test_maestro_handler_internals.py` (plan steps for expressive blocks),
 `tests/test_planner_mocked.py` (effects inference, bus ordering, no-op suppression),
-`tests/test_entity_context.py` (role inference, format_project_context, add_notes validation).
+`tests/test_entity_context.py` (role inference, format_project_context, add_notes validation),
+`tests/test_sections.py` (auto-section parsing, beat ranges, per-track descriptions),
+`tests/test_orpheus_client.py` (GPU cold-start retry logic, backoff, structured error).

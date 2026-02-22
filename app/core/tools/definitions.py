@@ -23,21 +23,55 @@ TIER1_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_generate_midi",
-            "description": "Generate MIDI for a musical role (drums/bass/chords/melody/etc). Returns MIDI notes.",
+            "description": (
+                "Generate MIDI for a musical role. MUST be called AFTER stori_add_midi_region "
+                "for the same track. Pass trackId and regionId from prior calls; never omit start_beat."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "role": {"type": "string", "description": "Role: drums, bass, chords, melody, arp, pads, fx"},
-                    "style": {"type": "string", "description": "Style tag: boom_bap, trap, house, lofi, jazz, funk, etc"},
+                    "trackId": {
+                        "type": "string",
+                        "description": "Track UUID from stori_add_midi_track (or existing track)",
+                    },
+                    "regionId": {
+                        "type": "string",
+                        "description": (
+                            "Region UUID from stori_add_midi_region. "
+                            "Call stori_add_midi_region first and pass its regionId here."
+                        ),
+                    },
+                    "start_beat": {
+                        "type": "number",
+                        "description": "Beat position where this region starts (e.g. 0.0 for the first region).",
+                    },
+                    "role": {
+                        "type": "string",
+                        "description": "Instrument role: drums, bass, chords, melody, arp, pads, fx",
+                    },
+                    "style": {
+                        "type": "string",
+                        "description": "Style tag: boom_bap, trap, house, lofi, jazz, funk, reggaeton, etc",
+                    },
                     "tempo": {"type": "integer", "description": "Tempo in BPM"},
                     "bars": {"type": "integer", "description": "Number of bars to generate (1-64)"},
-                    "key": {"type": "string", "description": "Key like Cm, F# minor, etc"},
+                    "key": {"type": "string", "description": "Key like Cm, F# minor, Bm, etc"},
+                    "prompt": {
+                        "type": "string",
+                        "description": (
+                            "Instrument-specific musical description (2-3 sentences). "
+                            "Include: rhythmic role (groove anchor/counter-rhythm/pad/lead), "
+                            "note range (e.g. 'bass stays below C3'), density (sparse/dense), "
+                            "and how this part interacts with other tracks. "
+                            "Genre idioms (e.g. 'dembow bass line locking to the kick')."
+                        ),
+                    },
                     "constraints": {
                         "type": "object",
                         "description": "Optional structured constraints (density, syncopation, swing, note_range, etc)",
                     },
                 },
-                "required": ["role", "style", "tempo", "bars"],
+                "required": ["trackId", "regionId", "start_beat", "role", "style", "tempo", "bars"],
             },
         },
     },

@@ -237,6 +237,14 @@ MidiExpressiveness:
     type: channel
     response: subtle — adds shimmer on sustained chord tones
     use: slight brightness boost
+  modulation:
+    instrument: guitar
+    depth: subtle vibrato — CC 1 value 20-40 on sustained skank chords
+    onset: delayed 1 beat
+  filter:
+    cutoff:
+      sweep: bass filter opens gradually across verse into chorus
+      resonance: low
 
 Automation:
   - track: Keys
@@ -463,6 +471,45 @@ MidiExpressiveness:
   pitch_bend:
     style: kora slides between melody notes
     depth: quarter-tone
+  aftertouch:
+    type: channel
+    response: adds resonance bloom on balafon sustained notes
+    use: resonance and brightness
+  modulation:
+    instrument: kora
+    depth: gentle vibrato on sustained melody notes — CC 1 value 25-50
+    onset: delayed 2 beats
+  filter:
+    cutoff:
+      sweep: bass frequencies on kora warm gradually across sections
+      resonance: low
+
+Automation:
+  - track: Kora
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.15
+        curve: linear
+      - beat: 96
+        value: 0.45
+        curve: smooth
+  - track: Djembe
+    param: pan
+    events:
+      - beat: 0
+        value: -15
+      - beat: 96
+        value: 15
+        curve: smooth
+  - track: Master
+    param: high_shelf
+    events:
+      - beat: 0
+        value: -2db
+      - beat: 96
+        value: 0db
+        curve: smooth
 """,
     ),
 
@@ -661,6 +708,44 @@ MidiExpressiveness:
     depth: half-tone to whole-tone
   articulation:
     legato: true
+  aftertouch:
+    type: channel
+    response: adds tremolo depth on organ sustained chords
+    use: tremolo intensity and filter brightness
+  breath_control:
+    instrument: alto sax
+    mapping: CC 2 controls filter cutoff + volume — breathy dynamics
+  filter:
+    cutoff:
+      sweep: bass filter opens with wah-like movement across groove section
+      resonance: moderate
+
+Automation:
+  - track: AltoSax
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.2
+        curve: linear
+      - beat: 96
+        value: 0.5
+        curve: smooth
+  - track: Vibraphone
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.3
+      - beat: 96
+        value: 0.55
+        curve: smooth
+  - track: Master
+    param: volume
+    events:
+      - beat: 0
+        value: 0.7
+      - beat: 96
+        value: 0.92
+        curve: smooth
 """,
     ),
 
@@ -856,6 +941,50 @@ MidiExpressiveness:
   pitch_bend:
     style: guembri slides between notes
     depth: quarter-tone to half-tone
+  aftertouch:
+    type: channel
+    response: adds resonance bloom on guembri bass notes
+    use: filter resonance and sustain depth
+  modulation:
+    instrument: voice (choir aahs)
+    depth: subtle vibrato on sustained vocal tones — CC 1 value 30-60
+    onset: delayed 1 beat
+  filter:
+    cutoff:
+      sweep: guembri low-pass opens slowly across trance section
+      resonance: moderate
+
+Automation:
+  - track: Voice
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.3
+        curve: linear
+      - beat: 128
+        value: 0.7
+        curve: smooth
+  - track: Qraqeb
+    param: delay_feedback
+    events:
+      - beat: 32
+        value: 0.1
+      - beat: 96
+        value: 0.35
+        curve: smooth
+  - track: Master
+    param: volume
+    events:
+      - beat: 0
+        value: 0.5
+      - beat: 96
+        value: 0.95
+        curve: smooth
+      - beat: 112
+        value: 0.95
+      - beat: 128
+        value: 0.4
+        curve: exp
 """,
     ),
 
@@ -1072,6 +1201,45 @@ MidiExpressiveness:
     portamento:
       time: 40
       switch: on
+  aftertouch:
+    type: channel
+    response: intensifies meend/gamak depth on sitar sustained notes
+    use: vibrato depth and resonance
+  modulation:
+    instrument: sitar
+    depth: gamak oscillation intensity — CC 1 value 20-70, deeper in jhala
+    onset: immediate
+  filter:
+    cutoff:
+      sweep: tanpura drone brightness opens slowly across alap to gat
+      resonance: low
+
+Automation:
+  - track: Sitar
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.25
+        curve: linear
+      - beat: 128
+        value: 0.5
+        curve: smooth
+  - track: Tabla
+    param: volume
+    events:
+      - beat: 64
+        value: 0.6
+      - beat: 128
+        value: 0.95
+        curve: smooth
+  - track: Master
+    param: high_shelf
+    events:
+      - beat: 0
+        value: -3db
+      - beat: 128
+        value: 0db
+        curve: smooth
 """,
     ),
 
@@ -1262,6 +1430,48 @@ MidiExpressiveness:
       from: 60
       to: 115
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: adds resonance bloom on metallophone sustained tones
+    use: resonance and shimmer
+  modulation:
+    instrument: suling (bamboo flute, if present)
+    depth: gentle vibrato on sustained tones — CC 1 value 30-55
+    onset: immediate
+  breath_control:
+    instrument: suling
+    mapping: CC 2 controls breath dynamics — filter cutoff + volume
+  filter:
+    cutoff:
+      sweep: gong low frequencies open slowly across kotekan section
+      resonance: low
+
+Automation:
+  - track: Gangsa
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.3
+        curve: linear
+      - beat: 96
+        value: 0.55
+        curve: smooth
+  - track: Gong
+    param: pan
+    events:
+      - beat: 0
+        value: -10
+      - beat: 96
+        value: 10
+        curve: smooth
+  - track: Master
+    param: high_shelf
+    events:
+      - beat: 0
+        value: -1db
+      - beat: 96
+        value: +2db
+        curve: smooth
 """,
     ),
 
@@ -1456,6 +1666,48 @@ MidiExpressiveness:
       position: bars 9-24
   articulation:
     legato: true
+  aftertouch:
+    type: channel
+    response: adds resonance on koto sustained plucks
+    use: brightness and sustain depth
+  modulation:
+    instrument: shakuhachi
+    depth: gentle vibrato — CC 1 value 10-30, barely perceptible
+    onset: delayed 2 beats
+  breath_control:
+    instrument: shakuhachi
+    mapping: CC 2 controls breath dynamics — filter + volume, honkyoku style
+  filter:
+    cutoff:
+      sweep: koto brightness opens subtly across water section
+      resonance: low
+
+Automation:
+  - track: Shakuhachi
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.35
+        curve: linear
+      - beat: 96
+        value: 0.6
+        curve: smooth
+  - track: Koto
+    param: volume
+    events:
+      - beat: 32
+        value: 0.3
+      - beat: 96
+        value: 0.5
+        curve: smooth
+  - track: Master
+    param: high_shelf
+    events:
+      - beat: 0
+        value: -1db
+      - beat: 96
+        value: +1db
+        curve: smooth
 """,
     ),
 
@@ -1665,6 +1917,45 @@ MidiExpressiveness:
     portamento:
       time: 45
       switch: on
+  aftertouch:
+    type: channel
+    response: deepens nonghyeon vibrato on gayageum sustained notes
+    use: vibrato depth and string resonance
+  modulation:
+    instrument: gayageum
+    depth: nonghyeon vibrato intensity — CC 1 value 30-90, deepens with tempo
+    onset: immediate
+  filter:
+    cutoff:
+      sweep: gayageum brightness opens across jungmori to hwimori
+      resonance: moderate
+
+Automation:
+  - track: Gayageum
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.2
+        curve: linear
+      - beat: 96
+        value: 0.48
+        curve: smooth
+  - track: Janggu
+    param: volume
+    events:
+      - beat: 16
+        value: 0.5
+      - beat: 96
+        value: 0.95
+        curve: smooth
+  - track: Master
+    param: high_shelf
+    events:
+      - beat: 0
+        value: -2db
+      - beat: 96
+        value: +1db
+        curve: smooth
 """,
     ),
 
@@ -1874,6 +2165,45 @@ MidiExpressiveness:
     depth: half-tone
   articulation:
     legato: true
+  aftertouch:
+    type: channel
+    response: adds bellows pressure intensity on harmonium sustained chords
+    use: volume swell and tremolo depth
+  modulation:
+    instrument: harmonium
+    depth: tremolo intensity — CC 1 value 35-70, deepens in ecstasy
+    onset: immediate
+  filter:
+    cutoff:
+      sweep: tabla brightness opens gradually across building to ecstasy
+      resonance: low
+
+Automation:
+  - track: Harmonium
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.3
+        curve: linear
+      - beat: 128
+        value: 0.6
+        curve: smooth
+  - track: Choir
+    param: volume
+    events:
+      - beat: 32
+        value: 0.4
+      - beat: 128
+        value: 1.0
+        curve: smooth
+  - track: Master
+    param: volume
+    events:
+      - beat: 0
+        value: 0.55
+      - beat: 128
+        value: 1.0
+        curve: smooth
 """,
     ),
 
@@ -2087,6 +2417,48 @@ MidiExpressiveness:
     portamento:
       time: 35
       switch: on
+  aftertouch:
+    type: channel
+    response: adds resonance depth on oud sustained notes
+    use: filter resonance and string brightness
+  modulation:
+    instrument: oud
+    depth: vibrato on sustained melody notes — CC 1 value 25-65
+    onset: delayed 1 beat
+  breath_control:
+    instrument: ney
+    mapping: CC 2 controls breath dynamics — filter cutoff + volume, breathy tone
+  filter:
+    cutoff:
+      sweep: bass drone and riq low frequencies open across groove to tarab
+      resonance: moderate
+
+Automation:
+  - track: Ney
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.25
+        curve: linear
+      - beat: 96
+        value: 0.55
+        curve: smooth
+  - track: Oud
+    param: delay_feedback
+    events:
+      - beat: 0
+        value: 0.05
+      - beat: 96
+        value: 0.3
+        curve: smooth
+  - track: Master
+    param: high_shelf
+    events:
+      - beat: 0
+        value: -2db
+      - beat: 96
+        value: +1db
+        curve: smooth
 """,
     ),
 

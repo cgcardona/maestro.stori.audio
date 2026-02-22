@@ -79,6 +79,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 | Intent     | `app/core/intent*.py`              | `tests/test_intent*.py`           |
 | Pipeline   | `app/core/pipeline.py`             | `tests/test_pipeline.py`          |
 | Maestro    | `app/core/maestro_handlers.py`     | `tests/test_maestro_handlers.py`  |
+| Agent Teams| `app/core/maestro_agent_teams/`    | `tests/test_section_agent.py`, `tests/test_sections.py` |
 | Executor   | `app/core/executor.py`             | `tests/test_executor.py`          |
 | RAG        | `app/services/rag.py`              | `tests/test_rag.py`               |
 | MCP        | `app/mcp/`, routes                 | `tests/test_mcp.py`               |

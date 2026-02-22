@@ -630,3 +630,83 @@ class TestAddAutomationValidation:
         assert not result.valid
         fields = [e.field for e in result.errors]
         assert "trackId" in fields or "parameter" in fields
+
+
+# =============================================================================
+# stori_generate_midi schema regression tests
+# (Bug fix: trackId, regionId, start_beat are now required fields)
+# =============================================================================
+
+class TestGenerateMidiSchemaRegression:
+    """Regression: stori_generate_midi previously accepted calls without trackId/regionId/start_beat.
+    Those parameters are now required so the server can route MIDI into the correct region."""
+
+    ALLOWED = {"stori_generate_midi"}
+
+    def _valid_params(self, **overrides) -> dict:
+        base = {
+            "trackId": "00000000-0000-0000-0000-000000000001",
+            "regionId": "00000000-0000-0000-0000-000000000002",
+            "start_beat": 0.0,
+            "role": "bass",
+            "style": "reggaeton",
+            "tempo": 96,
+            "bars": 24,
+            "key": "Bm",
+        }
+        base.update(overrides)
+        return base
+
+    def test_full_valid_params_accepted(self):
+        """A complete stori_generate_midi call with all required fields passes validation."""
+        result = validate_tool_call(
+            "stori_generate_midi", self._valid_params(), self.ALLOWED
+        )
+        assert result.valid, result.errors
+
+    def test_missing_region_id_rejected(self):
+        """Regression: omitting regionId must fail — previously it was silently ignored."""
+        params = self._valid_params()
+        del params["regionId"]
+        result = validate_tool_call("stori_generate_midi", params, self.ALLOWED)
+        assert not result.valid
+        fields = [e.field for e in result.errors]
+        assert "regionId" in fields
+
+    def test_missing_track_id_rejected(self):
+        """Regression: omitting trackId must fail — agent must pass it explicitly."""
+        params = self._valid_params()
+        del params["trackId"]
+        result = validate_tool_call("stori_generate_midi", params, self.ALLOWED)
+        assert not result.valid
+        fields = [e.field for e in result.errors]
+        assert "trackId" in fields
+
+    def test_missing_start_beat_rejected(self):
+        """Regression: omitting start_beat must fail — previously drums received this error."""
+        params = self._valid_params()
+        del params["start_beat"]
+        result = validate_tool_call("stori_generate_midi", params, self.ALLOWED)
+        assert not result.valid
+        fields = [e.field for e in result.errors]
+        assert "start_beat" in fields
+
+    def test_optional_prompt_field_accepted(self):
+        """The new prompt field is optional; including it must not break validation."""
+        params = self._valid_params(
+            prompt=(
+                "Syncopated reggaeton bass line in Bm at 96 BPM. "
+                "Root-fifth dembow pattern locking to the kick, staying below C3. 24 bars."
+            )
+        )
+        result = validate_tool_call("stori_generate_midi", params, self.ALLOWED)
+        assert result.valid, result.errors
+
+    def test_legacy_call_without_new_fields_fails(self):
+        """A legacy call with only role/style/tempo/bars (the old required set) now fails."""
+        legacy_params = {"role": "drums", "style": "trap", "tempo": 140, "bars": 8}
+        result = validate_tool_call("stori_generate_midi", legacy_params, self.ALLOWED)
+        assert not result.valid
+        # At minimum trackId, regionId, start_beat must be reported as missing
+        fields = [e.field for e in result.errors]
+        assert len(fields) >= 2

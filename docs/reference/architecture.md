@@ -145,38 +145,110 @@ Implementation: `app/core/prompts.structured_prompt_context` (translation mandat
 
 ---
 
-## Agent Teams — parallel instrument execution
+## Agent Teams — three-level parallel composition
 
-Multi-instrument STORI PROMPT compositions (2+ roles) use **Agent Teams**: one independent LLM session per instrument, all running concurrently. This is genuine parallelism — each agent makes its own HTTP call to the LLM API simultaneously.
+Multi-instrument STORI PROMPT compositions (2+ roles) use **Agent Teams**: a three-level agent hierarchy that enables both instrument-level and section-level parallelism.
+
+### Architecture levels
+
+```
+Level 1 — COORDINATOR (coordinator.py)
+  └── Deterministic setup, spawns instrument parents, optional mixing pass
+
+Level 2 — INSTRUMENT PARENT (agent.py) — one per instrument
+  └── One LLM call plans the entire instrument: track + [region, generate]* + effect
+      Groups tool calls into section pairs, spawns section children
+
+Level 3 — SECTION CHILD (section_agent.py) — one per section per instrument
+  └── Lightweight executor: region → generate (no LLM needed for core pipeline)
+      Optional refinement LLM call for CC curves / pitch bend / automation
+```
+
+### Three-phase execution
 
 ```
 Phase 1 — SETUP (sequential, coordinator, no LLM)
   └── Set tempo, key (deterministic from ParsedPrompt)
 
-Phase 2 — INSTRUMENTS (parallel — one independent LLM session per instrument)
-  ├── Drums agent    → LLM call → create track → add region → add notes → add effect
-  ├── Bass agent     → LLM call → create track → add region → add notes → add effect
-  ├── Guitar agent   → LLM call → create track → add region → add notes → add effect
-  ├── Keys agent     → LLM call → create track → add region → add notes → add effect
-  └── Strings agent  → LLM call → create track → add region → add notes → add effect
+Phase 2 — INSTRUMENTS (all parents launched simultaneously)
+  ├── Drums parent   → LLM → create track → spawn section children:
+  │     ├── Intro child  → region → generate → signal bass
+  │     ├── Verse child  → region → generate → signal bass
+  │     └── Chorus child → region → generate → signal bass
+  ├── Bass parent    → LLM → create track → spawn section children:
+  │     ├── Intro child  → wait for drum intro → region → generate
+  │     ├── Verse child  → wait for drum verse → region → generate
+  │     └── Chorus child → wait for drum chorus → region → generate
+  ├── Keys parent    → LLM → create track → spawn section children (all parallel)
+  ├── Melody parent  → LLM → create track → spawn section children (all parallel)
+  └── Guitar parent  → LLM → create track → spawn section children (all parallel)
 
 Phase 3 — MIXING (sequential, one coordinator LLM call, after all agents complete)
   └── Ensure buses, add sends, volume, pan
 ```
 
+### Drum-to-bass section-level pipelining
+
+Bass section children no longer wait for ALL drum sections to finish. Instead, each bass section waits only for its corresponding drum section via `SectionSignals`:
+
+```
+Drums:  [intro ██████|verse █████████████|chorus ████████]
+Bass:         [intro ██████|verse █████████████|chorus ████████]
+Keys:   [intro ████|verse ██████████|chorus ██████]
+Melody: [intro ███|verse █████████|chorus █████]
+```
+
+`SectionSignals` is a shared dataclass containing one `asyncio.Event` per parsed section. After a drum section child generates, it stores the drum notes in `SectionSignals.drum_data` and fires the event. The matching bass section child awaits the event, reads the drum data for per-section RhythmSpine coupling, then generates.
+
+Independent instruments (keys, melody, guitar, pads, etc.) ignore `SectionSignals` entirely — their section children all run in parallel from the start.
+
+### Instrument parent flow (Level 2)
+
+1. One LLM call produces tool calls: `create_track` + `[region, generate_midi]` per section + `effect`
+2. Parent executes `create_track` immediately, captures real `trackId`
+3. Groups remaining calls into section pairs `(region, generate_midi)`
+4. Spawns section children — parallel for all instruments (bass children self-gate via signals)
+5. Waits for all children
+6. Executes `effect` call at the end
+7. If children failed, optionally makes a retry LLM turn with `_missing_stages()`
+
+For single-section compositions, the parent uses the sequential execution path (same as before the three-level refactor). Section children are only spawned for multi-section compositions.
+
+### Section child flow (Level 3)
+
+1. If bass: `await section_signals.wait_for(section_name)` — blocks until drum section completes
+2. Execute `stori_add_midi_region` with parent's pre-resolved params (trackId injected)
+3. Capture `regionId` from result
+4. Execute `stori_generate_midi` with `regionId` and `trackId` injected
+5. If drums: extract generated notes from outcome, call `section_signals.signal_complete(section_name, drum_notes)`
+6. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, make one small focused LLM call to add CC curves / pitch bend (tiny prompt, ~$0.005)
+7. Return `SectionResult` to parent
+
+Drum children always signal — even on failure — to prevent bass children from hanging indefinitely.
+
+### Edge cases
+
+- **Single-section compositions**: parent spawns one child, effectively same as before
+- **No drums**: all instruments are independent, all sections run in parallel, no signals needed
+- **No bass**: drum signals fire but nobody listens, no overhead
+- **Section child failure**: parent marks that section's steps as failed, other sections continue; parent optionally retries the failed section in a follow-up turn
+- **LLM produces incomplete plan**: multi-turn retry loop (existing) catches missing sections and prompts the LLM again
+
+### Routing, SSE, isolation, safety
+
 **Routing:** `orchestrate()` intercepts `Intent.GENERATE_MUSIC` + `execution_mode="apply"` + multi-role `ParsedPrompt` (2+ roles) before the standard EDITING path. Single-instrument requests and all non-STORI-PROMPT requests fall through to `_handle_editing` unchanged.
 
-**SSE contract:** Plan steps for instruments carry `parallelGroup: "instruments"`. Phase 1 and Phase 3 steps have no `parallelGroup`. Multiple `planStepUpdate(active)` events fire simultaneously during Phase 2 as agents start. Tool calls from different instruments interleave in the SSE stream — the frontend groups by `stepId`, so interleaving is handled naturally.
+**SSE contract:** Plan steps for instruments carry `parallelGroup: "instruments"`. Phase 1 and Phase 3 steps have no `parallelGroup`. Multiple `planStepUpdate(active)` events fire simultaneously during Phase 2 as parents start. Section children tag their SSE events with both `agentId` and `sectionName` for frontend grouping. Tool calls from different instruments and sections interleave in the SSE stream — the frontend groups by `stepId`, so interleaving is handled naturally.
 
-**Agent isolation:** Each `_run_instrument_agent()` runs with a focused system prompt that names only its instrument, uses a restricted tool allowlist (`_INSTRUMENT_AGENT_TOOLS`), and makes exactly one `llm.chat_completion()` call. Failures are isolated: a failing agent marks its own steps `"failed"` and does not propagate exceptions to sibling agents.
+**Agent isolation:** Each instrument parent runs with a focused system prompt naming only its instrument, uses a restricted tool allowlist (`_INSTRUMENT_AGENT_TOOLS`), and makes one primary LLM call. Section children are further isolated — a failing child marks only its section's steps as failed and does not propagate to sibling sections or sibling instruments.
 
-**Event multiplexing:** Agents write SSE event dicts into a shared `asyncio.Queue`. The coordinator drains the queue with a 50ms polling loop (`asyncio.wait(pending, timeout=0.05)`) and forwards events to the client as they arrive, preserving arrival order within each agent while interleaving across agents.
+**Event multiplexing:** Parents and children write SSE event dicts into a shared `asyncio.Queue`. The coordinator drains the queue with a 50ms polling loop (`asyncio.wait(pending, timeout=0.05)`) and forwards events to the client as they arrive.
 
-**Thread safety:** asyncio's single-threaded event loop serialises all `StateStore` and `_PlanTracker` mutations — no locks needed. UUID-based entity IDs are collision-free across agents.
+**Thread safety:** asyncio's single-threaded event loop serialises all `StateStore` and `_PlanTracker` mutations — no locks needed. UUID-based entity IDs are collision-free across agents and sections.
 
-**Performance:** Wall-clock time for Phase 2 is `max(per-instrument time)` instead of `sum`. For a 5-instrument composition: `setup_time + max(instrument_times) + mixing_time` vs. the sequential `15 × avg_step_time`. Expected speedup: 3–5× for the instrument phase.
+**Performance:** Wall-clock time for Phase 2 is `max(per-instrument time)` instead of `sum`, and within each instrument `max(per-section time)` instead of `sum(section times)`. For a 5-instrument, 3-section composition, bass sections start ~1 section behind drums rather than waiting for all 3 drum sections. Expected speedup: 3–5× for the instrument phase, with additional gains from section-level pipelining.
 
-Implementation: `app/core/maestro_handlers._handle_composition_agent_team` (coordinator), `app/core/maestro_handlers._run_instrument_agent` (per-instrument agent), `app/core/maestro_handlers._apply_single_tool_call` (shared tool execution helper), `app/core/maestro_handlers._PlanTracker` (parallel step tracking). The COMPOSING path (`execute_plan_variation`) retains its own `asyncio.gather` for Orpheus HTTP parallelism independently.
+Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/signals.py` (drum-to-bass coupling).
 
 ---
 

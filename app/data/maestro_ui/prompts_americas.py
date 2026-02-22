@@ -202,6 +202,14 @@ MidiExpressiveness:
     type: channel
     response: gentle — adds warmth on sustained piano tones
     use: slight filter opening
+  modulation:
+    instrument: melody synth pad
+    depth: slow vibrato — CC 1 from 0 to 30 over phrase
+    onset: delayed 2 beats
+  filter:
+    cutoff:
+      sweep: slowly opens from 800hz to 3khz across 24 bars
+      resonance: low
 
 Automation:
   - track: Piano
@@ -465,6 +473,40 @@ MidiExpressiveness:
     portamento:
       time: 35
       switch: on
+  aftertouch:
+    type: channel
+    response: adds warmth on sustained piano chords
+    use: slight volume swell and filter opening
+  modulation:
+    instrument: upright bass
+    depth: subtle vibrato — CC 1 from 0 to 20 on long notes
+    onset: delayed 1 beat
+  filter:
+    cutoff:
+      sweep: warm low-pass opens from 1.2khz to 4khz across piece
+      resonance: low
+
+Automation:
+  - track: Piano
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.2
+        curve: linear
+      - beat: 48
+        value: 0.4
+        curve: smooth
+      - beat: 96
+        value: 0.3
+        curve: smooth
+  - track: Master
+    param: high_shelf
+    events:
+      - beat: 0
+        value: -2db
+      - beat: 96
+        value: 0db
+        curve: smooth
 """,
     ),
 
@@ -667,6 +709,14 @@ MidiExpressiveness:
   expression:
     curve: rises across sections
     range: [35, 95]
+  aftertouch:
+    type: channel
+    response: deepens pad texture on sustained notes
+    use: filter opening and volume swell
+  modulation:
+    instrument: pad
+    depth: slow dark vibrato — CC 1 from 0 to 45 across section
+    onset: delayed 1 beat
 
 Automation:
   - track: Pad
@@ -890,6 +940,43 @@ MidiExpressiveness:
     portamento:
       time: 25
       switch: on
+  aftertouch:
+    type: channel
+    response: adds warmth on sustained piano and bass tones
+    use: gentle volume swell
+  modulation:
+    instrument: guitar
+    depth: subtle vibrato — CC 1 from 0 to 20 on melody notes
+    onset: delayed 1.5 beats
+  filter:
+    cutoff:
+      sweep: gentle low-pass opens from 1khz to 5khz across bridge
+      resonance: low
+
+Automation:
+  - track: Guitar
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.15
+        curve: linear
+      - beat: 48
+        value: 0.3
+        curve: smooth
+      - beat: 96
+        value: 0.2
+        curve: smooth
+  - track: Shaker
+    param: pan
+    events:
+      - beat: 0
+        value: -0.3
+      - beat: 48
+        value: 0.3
+        curve: smooth
+      - beat: 96
+        value: -0.3
+        curve: smooth
 """,
     ),
 
@@ -1089,6 +1176,32 @@ MidiExpressiveness:
     type: channel
     response: light filter opening on sustained horn notes
     use: slight brightness boost
+  modulation:
+    instrument: clavinet
+    depth: subtle wah effect — CC 1 from 0 to 40 on held notes
+    onset: immediate
+
+Automation:
+  - track: Clavinet
+    param: filter_cutoff
+    events:
+      - beat: 0
+        value: 1.2khz
+        curve: linear
+      - beat: 48
+        value: 4khz
+        curve: smooth
+      - beat: 96
+        value: 2khz
+        curve: smooth
+  - track: Drums
+    param: compressor_ratio
+    events:
+      - beat: 0
+        value: 3.0
+      - beat: 96
+        value: 5.0
+        curve: linear
 """,
     ),
 
@@ -1303,6 +1416,39 @@ MidiExpressiveness:
       from: 35
       to: 90
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: adds warmth and depth on sustained Rhodes chords
+    use: filter opening and tremolo depth
+  filter:
+    cutoff:
+      sweep: warm low-pass on bass — opens from 600hz to 2.5khz across verse
+      resonance: moderate
+
+Automation:
+  - track: Rhodes
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.3
+        curve: linear
+      - beat: 48
+        value: 0.5
+        curve: smooth
+      - beat: 96
+        value: 0.35
+        curve: smooth
+  - track: Guitar
+    param: tremolo_rate
+    events:
+      - beat: 0
+        value: 2.0
+      - beat: 48
+        value: 3.5
+        curve: smooth
+      - beat: 96
+        value: 2.5
+        curve: smooth
 """,
     ),
 
@@ -1476,6 +1622,18 @@ MidiExpressiveness:
   expression:
     curve: rises across sections
     range: [80, 122]
+  aftertouch:
+    type: channel
+    response: adds edge on synth lead sustains
+    use: filter brightness and vibrato depth
+  modulation:
+    instrument: synth lead
+    depth: aggressive vibrato — CC 1 from 0 to 55 on hook phrases
+    onset: delayed 0.5 beats
+  filter:
+    cutoff:
+      sweep: bass filter opens from 300hz to 3khz across intro to chorus
+      resonance: moderate
 
 Automation:
   - track: Bass
@@ -1687,6 +1845,46 @@ MidiExpressiveness:
   articulation:
     legato: true
     soft_pedal: bars 1-8
+  aftertouch:
+    type: channel
+    response: adds warmth on sustained piano notes
+    use: gentle volume swell
+  modulation:
+    instrument: strings (melody synth)
+    depth: slow vibrato — CC 1 from 0 to 25 on sustained notes
+    onset: delayed 2 beats
+  filter:
+    cutoff:
+      sweep: subtle low-pass warms bass — from 2khz to 5khz across bridge
+      resonance: low
+
+Automation:
+  - track: Vocal_Melody
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.2
+        curve: linear
+      - beat: 32
+        value: 0.35
+        curve: smooth
+      - beat: 96
+        value: 0.25
+        curve: smooth
+  - track: Strings
+    param: volume
+    events:
+      - beat: 0
+        value: 0.0
+      - beat: 32
+        value: 0.4
+        curve: smooth
+      - beat: 64
+        value: 0.7
+        curve: smooth
+      - beat: 96
+        value: 0.5
+        curve: smooth
 """,
     ),
 
@@ -1880,6 +2078,42 @@ MidiExpressiveness:
     type: channel
     response: adds brightness on high notes
     use: expression boost
+  modulation:
+    instrument: trumpet
+    depth: warm vibrato — CC 1 from 0 to 50 on sustained melody notes
+    onset: delayed 1 beat
+  breath_control:
+    instrument: trumpet
+    mapping: filter + volume — CC 2 shapes phrase dynamics and brightness
+  filter:
+    cutoff:
+      sweep: tuba low-pass warms from 800hz to 2khz across chorus
+      resonance: low
+
+Automation:
+  - track: Brass
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.2
+        curve: linear
+      - beat: 48
+        value: 0.4
+        curve: smooth
+      - beat: 96
+        value: 0.3
+        curve: smooth
+  - track: Second_Line_Drums
+    param: pan
+    events:
+      - beat: 0
+        value: -0.2
+      - beat: 48
+        value: 0.2
+        curve: smooth
+      - beat: 96
+        value: -0.2
+        curve: smooth
 """,
     ),
 
@@ -2076,6 +2310,46 @@ MidiExpressiveness:
   pitch_bend:
     style: gaita ornamental slides
     depth: quarter-tone
+  aftertouch:
+    type: channel
+    response: adds bellows expression on accordion sustains
+    use: volume swell and brightness
+  modulation:
+    instrument: gaita
+    depth: breathy vibrato — CC 1 from 0 to 40 on sustained melody notes
+    onset: delayed 1 beat
+  breath_control:
+    instrument: gaita
+    mapping: filter + volume — CC 2 shapes airflow dynamics and tone color
+  filter:
+    cutoff:
+      sweep: bass low-pass opens from 500hz to 2khz across verse to chorus
+      resonance: low
+
+Automation:
+  - track: Gaita
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.25
+        curve: linear
+      - beat: 48
+        value: 0.45
+        curve: smooth
+      - beat: 96
+        value: 0.3
+        curve: smooth
+  - track: Guacharaca
+    param: pan
+    events:
+      - beat: 0
+        value: 0.3
+      - beat: 48
+        value: -0.3
+        curve: smooth
+      - beat: 96
+        value: 0.3
+        curve: smooth
 """,
     ),
 
@@ -2301,6 +2575,49 @@ MidiExpressiveness:
     portamento:
       time: 30
       switch: on
+  aftertouch:
+    type: channel
+    response: adds dramatic weight on sustained piano chords
+    use: volume swell and filter darkening
+  modulation:
+    instrument: violin
+    depth: passionate vibrato — CC 1 from 25 to 70 on sustained phrases
+    onset: immediate
+  breath_control:
+    instrument: bandoneon
+    mapping: bellows expression — CC 2 controls dynamics and tonal color
+  filter:
+    cutoff:
+      sweep: bass darkens from 2khz to 800hz in variación, then opens
+      resonance: moderate
+
+Automation:
+  - track: Strings
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.2
+        curve: linear
+      - beat: 32
+        value: 0.45
+        curve: smooth
+      - beat: 96
+        value: 0.3
+        curve: smooth
+  - track: Bandoneon
+    param: expression
+    events:
+      - beat: 0
+        value: 0.5
+      - beat: 32
+        value: 0.8
+        curve: smooth
+      - beat: 64
+        value: 1.0
+        curve: smooth
+      - beat: 88
+        value: 0.6
+        curve: smooth
 """,
     ),
 
@@ -2484,6 +2801,46 @@ MidiExpressiveness:
       from: 28
       to: 100
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: adds resonance on charango tremolo sustains
+    use: brightness and volume swell
+  modulation:
+    instrument: quena
+    depth: breathy vibrato — CC 1 from 0 to 45 on sustained notes
+    onset: delayed 1 beat
+  breath_control:
+    instrument: quena
+    mapping: airflow dynamics — CC 2 controls volume and breathiness
+  filter:
+    cutoff:
+      sweep: bass low-pass opens from 400hz to 1.8khz across verse to chorus
+      resonance: low
+
+Automation:
+  - track: Quena
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.3
+        curve: linear
+      - beat: 32
+        value: 0.5
+        curve: smooth
+      - beat: 96
+        value: 0.35
+        curve: smooth
+  - track: Charango
+    param: pan
+    events:
+      - beat: 0
+        value: 0.2
+      - beat: 48
+        value: -0.2
+        curve: smooth
+      - beat: 96
+        value: 0.2
+        curve: smooth
 """,
     ),
 
@@ -2678,6 +3035,46 @@ MidiExpressiveness:
       from: 35
       to: 85
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: adds grit on synth stab sustains
+    use: filter edge and distortion depth
+  modulation:
+    instrument: pad
+    depth: dark vibrato — CC 1 from 0 to 35 on ambient pad
+    onset: delayed 1 beat
+
+Automation:
+  - track: Bass
+    param: filter_cutoff
+    events:
+      - beat: 0
+        value: 400hz
+        curve: linear
+      - beat: 32
+        value: 2khz
+        curve: exp
+      - beat: 64
+        value: 3khz
+        curve: smooth
+  - track: Organ
+    param: tremolo_rate
+    events:
+      - beat: 0
+        value: 0.3
+      - beat: 64
+        value: 0.5
+        curve: smooth
+  - track: Master
+    param: highpass
+    events:
+      - beat: 0
+        value: 200hz
+      - beat: 32
+        value: 20hz
+        curve: exp
+      - beat: 96
+        value: 20hz
 """,
     ),
 
@@ -2868,6 +3265,43 @@ MidiExpressiveness:
       from: 72
       to: 115
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: adds shimmer on sustained steel pan notes
+    use: brightness and resonance
+  modulation:
+    instrument: steel drums
+    depth: subtle tremolo vibrato — CC 1 from 0 to 30 on ringing notes
+    onset: delayed 0.5 beats
+  filter:
+    cutoff:
+      sweep: bass low-pass opens from 600hz to 2.5khz across verse to chorus
+      resonance: low
+
+Automation:
+  - track: Steel_Drums
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.3
+        curve: linear
+      - beat: 32
+        value: 0.5
+        curve: smooth
+      - beat: 96
+        value: 0.35
+        curve: smooth
+  - track: Shaker
+    param: pan
+    events:
+      - beat: 0
+        value: 0.3
+      - beat: 48
+        value: -0.3
+        curve: smooth
+      - beat: 96
+        value: 0.3
+        curve: smooth
 """,
     ),
 
@@ -3067,6 +3501,40 @@ MidiExpressiveness:
       from: 82
       to: 118
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: adds brightness on mandolin tremolo sustains
+    use: resonance and volume swell
+  modulation:
+    instrument: fiddle
+    depth: Appalachian vibrato — CC 1 from 0 to 40 on sustained notes
+    onset: delayed 0.5 beats
+  filter:
+    cutoff:
+      sweep: bass low-pass opens from 800hz to 3khz across verse to breakdown
+      resonance: low
+
+Automation:
+  - track: Fiddle
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.15
+        curve: linear
+      - beat: 32
+        value: 0.3
+        curve: smooth
+      - beat: 96
+        value: 0.2
+        curve: smooth
+  - track: Master
+    param: high_shelf
+    events:
+      - beat: 0
+        value: -1db
+      - beat: 96
+        value: 0db
+        curve: smooth
 """,
     ),
 
@@ -3300,6 +3768,46 @@ MidiExpressiveness:
     depth: quarter-tone to half-tone
   articulation:
     legato: true
+  aftertouch:
+    type: channel
+    response: adds depth on sustained organ chords
+    use: Leslie speed and volume swell
+  modulation:
+    instrument: church organ
+    depth: Leslie tremolo — CC 1 from 20 to 55 across crescendo sections
+    onset: immediate
+  filter:
+    cutoff:
+      sweep: bass low-pass opens from 500hz to 2khz across invocation to altar
+      resonance: low
+
+Automation:
+  - track: Choir
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.35
+        curve: linear
+      - beat: 64
+        value: 0.55
+        curve: smooth
+      - beat: 128
+        value: 0.4
+        curve: smooth
+  - track: Organ
+    param: volume
+    events:
+      - beat: 0
+        value: 0.6
+      - beat: 64
+        value: 0.85
+        curve: smooth
+      - beat: 120
+        value: 1.0
+        curve: smooth
+      - beat: 124
+        value: 0.5
+        curve: smooth
 """,
     ),
 
@@ -3409,7 +3917,7 @@ Orchestration:
     kick: boom-bap — beats 1 and 3-and
     snare: hard snappy on 2 and 4
     hi_hat: 16ths, open hat on and-of-2
-    entry: bar 9, exit: bar 25, re-entry: bar 29
+    entry: "bar 9, exit: bar 25, re-entry: bar 29"
   bass:
     instrument: fingered bass (GM 33)
     technique: deep Fm sub pattern, boom-bap locked to kick
@@ -3529,8 +4037,50 @@ MidiExpressiveness:
   pitch_bend:
     style: Rhodes pitch wobble, vocal slides
     depth: quarter-tone
+  aftertouch:
+    type: channel
+    response: adds warmth on sustained Rhodes and vocal lead
+    use: filter opening and tremolo depth
+  modulation:
+    instrument: strings
+    depth: cinematic vibrato — CC 1 from 0 to 40 on sustained pads
+    onset: delayed 2 beats
+  filter:
+    cutoff:
+      sweep: bass low-pass opens from 400hz to 2.5khz across verse to chorus
+      resonance: moderate
 
 Automation:
+  - track: Master
+    param: highpass
+    events:
+      - beat: 0
+        value: 80hz
+      - beat: 32
+        value: 30hz
+        curve: smooth
+      - beat: 96
+        value: 30hz
+      - beat: 112
+        value: 120hz
+        curve: smooth
+      - beat: 128
+        value: 30hz
+        curve: smooth
+  - track: Melody
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.15
+      - beat: 64
+        value: 0.35
+        curve: smooth
+      - beat: 96
+        value: 0.2
+        curve: smooth
+      - beat: 128
+        value: 0.3
+        curve: smooth
   - track: Rhodes
     param: tremolo_depth
     events:

@@ -280,6 +280,13 @@ MidiExpressiveness:
     type: channel
     response: gentle swell on sustained notes
     use: expression boost on peaks, especially bar 25 onward
+  breath_control:
+    instrument: French horns
+    mapping: dynamics and air noise — CC 2 controls tone from covered muted (0) to bright open bell (127)
+  filter:
+    cutoff:
+      sweep: strings brightness swell — dark sul tasto (bar 1) to full brilliance (bar 25)
+      resonance: low
 
 Automation:
   - track: Strings
@@ -530,6 +537,10 @@ MidiExpressiveness:
   sustain_pedal:
     style: full sustain throughout — everything rings
     changes_per_bar: 0
+  aftertouch:
+    type: channel
+    response: slow filter opening on pad — pressure widens low-pass cutoff
+    use: gradual brightness on sustained pad tones, peak warmth at bar 16
 
 Automation:
   - track: Pads
@@ -767,6 +778,53 @@ MidiExpressiveness:
       from: 72
       to: 127
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: resonance swell on mallet instruments — pressure deepens tone body
+    use: sustain intensity on log drums, adds presence to pan flute held notes
+  modulation:
+    instrument: pan flute
+    depth: gentle breath vibrato — CC 1 value 0-30
+    onset: delayed 2 beats from note attack
+  breath_control:
+    instrument: pan flute
+    mapping: air pressure and breathy tone — CC 2 controls breath noise mix from pure (0) to airy (90)
+  filter:
+    cutoff:
+      sweep: taiko low-end rumble — sub filter opens from 60hz to 200hz across convergence section
+      resonance: moderate
+
+Automation:
+  - track: Pan Flute
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.3
+      - beat: 60
+        value: 0.65
+        curve: smooth
+      - beat: 120
+        value: 0.8
+        curve: linear
+  - track: Taiko
+    param: volume
+    events:
+      - beat: 0
+        value: 0.85
+      - beat: 40
+        value: 0.55
+        curve: smooth
+      - beat: 80
+        value: 1.0
+        curve: exp
+  - track: Master
+    param: high_shelf
+    events:
+      - beat: 0
+        value: -3db
+      - beat: 120
+        value: +2db
+        curve: smooth
 """,
     ),
 
@@ -961,6 +1019,59 @@ MidiExpressiveness:
       position: bars 1-24
   articulation:
     legato: true
+  aftertouch:
+    type: channel
+    response: vibrato depth on ney — pressure intensifies ornamental wavering
+    use: expressive swells on sustained tones, especially trance section peaks
+  modulation:
+    instrument: ney flute
+    depth: ornamental vibrato — CC 1 value 0-45, subtle in breath section, full in trance
+    onset: delayed 1 beat from note attack
+  breath_control:
+    instrument: ney flute
+    mapping: primary expression — CC 2 controls air volume and reed noise from whisper (0) to full cry (127)
+  filter:
+    cutoff:
+      sweep: drone brightness — slow low-pass opening from 200hz to 2khz over 24 bars
+      resonance: low
+
+Automation:
+  - track: Ney Flute
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.4
+      - beat: 32
+        value: 0.55
+        curve: smooth
+      - beat: 64
+        value: 0.7
+        curve: smooth
+      - beat: 96
+        value: 0.5
+        curve: smooth
+  - track: Frame Drum
+    param: delay_feedback
+    events:
+      - beat: 32
+        value: 0.15
+      - beat: 64
+        value: 0.35
+        curve: smooth
+      - beat: 96
+        value: 0.2
+        curve: linear
+  - track: Master
+    param: volume
+    events:
+      - beat: 0
+        value: 0.6
+      - beat: 48
+        value: 0.85
+        curve: smooth
+      - beat: 96
+        value: 0.5
+        curve: smooth
 """,
     ),
 
@@ -1157,6 +1268,56 @@ MidiExpressiveness:
       from: 10
       to: 45
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: volume swell on choir — pressure deepens sustained vowels
+    use: subtle dynamic emphasis on chant phrases, organum 5ths in resonance section
+  modulation:
+    instrument: choir
+    depth: gentle vibrato — CC 1 value 0-20, monastic restraint
+    onset: delayed 2 beats from note attack
+  filter:
+    cutoff:
+      sweep: drone pad brightness — very slow low-pass opening from 150hz to 1.2khz
+      resonance: low
+
+Automation:
+  - track: Choir
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.65
+      - beat: 32
+        value: 0.7
+        curve: smooth
+      - beat: 64
+        value: 0.8
+        curve: smooth
+      - beat: 96
+        value: 0.75
+        curve: smooth
+  - track: Drone
+    param: volume
+    events:
+      - beat: 0
+        value: 0.3
+      - beat: 48
+        value: 0.5
+        curve: smooth
+      - beat: 80
+        value: 0.45
+        curve: smooth
+      - beat: 96
+        value: 0.25
+        curve: smooth
+  - track: Master
+    param: high_shelf
+    events:
+      - beat: 0
+        value: -4db
+      - beat: 96
+        value: -2db
+        curve: smooth
 """,
     ),
 
@@ -1379,6 +1540,52 @@ MidiExpressiveness:
       from: 72
       to: 125
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: filter opening on mellotron — pressure brightens tape-loop timbre
+    use: timbral intensity on sustained mellotron chords, adds edge in climax
+  filter:
+    cutoff:
+      sweep: bass fuzz sweep — filter opens from 400hz to 3khz across climax section
+      resonance: moderate
+
+Automation:
+  - track: Bass
+    param: filter_cutoff
+    events:
+      - beat: 0
+        value: 600hz
+      - beat: 80
+        value: 1.2khz
+        curve: smooth
+      - beat: 120
+        value: 3khz
+        curve: exp
+  - track: Vibraphone
+    param: delay_feedback
+    events:
+      - beat: 0
+        value: 0.1
+      - beat: 40
+        value: 0.25
+        curve: smooth
+      - beat: 80
+        value: 0.4
+        curve: smooth
+      - beat: 120
+        value: 0.15
+        curve: linear
+  - track: Master
+    param: volume
+    events:
+      - beat: 0
+        value: 0.75
+      - beat: 80
+        value: 0.9
+        curve: smooth
+      - beat: 120
+        value: 1.0
+        curve: exp
 """,
     ),
 
@@ -1587,6 +1794,59 @@ MidiExpressiveness:
       from: 68
       to: 110
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: velocity-mapped warmth on tres guitar — pressure rounds tone
+    use: timbral softening on montuno chords, adds body to pan flute sustains
+  modulation:
+    instrument: pan flute
+    depth: slow vibrato — CC 1 value 0-35, enters during descarga
+    onset: delayed 1 beat from note attack
+  breath_control:
+    instrument: pan flute
+    mapping: air flow and breathy color — CC 2 controls breath noise from focused (0) to diffuse (100)
+  filter:
+    cutoff:
+      sweep: bass tumbao — subtle low-pass from 800hz to 2khz across montuno and descarga
+      resonance: low
+
+Automation:
+  - track: Pan Flute
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.25
+      - beat: 36
+        value: 0.45
+        curve: smooth
+      - beat: 72
+        value: 0.6
+        curve: linear
+  - track: Congas
+    param: pan
+    events:
+      - beat: 0
+        value: -0.15
+      - beat: 24
+        value: 0.15
+        curve: smooth
+      - beat: 48
+        value: -0.1
+        curve: smooth
+      - beat: 72
+        value: 0.0
+        curve: smooth
+  - track: Master
+    param: volume
+    events:
+      - beat: 0
+        value: 0.7
+      - beat: 48
+        value: 0.85
+        curve: smooth
+      - beat: 72
+        value: 0.95
+        curve: exp
 """,
     ),
 
@@ -1792,6 +2052,49 @@ MidiExpressiveness:
       from: 40
       to: 55
       position: bars 17-32
+  aftertouch:
+    type: channel
+    response: resonance swell on marimba — pressure adds sustain ring and body
+    use: tonal warmth on held notes, emergent harmonic emphasis during phasing
+  filter:
+    cutoff:
+      sweep: marimba gradual brightness — low-pass opens from 1khz to 4khz over 32 bars
+      resonance: low
+
+Automation:
+  - track: Marimba 1
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.2
+      - beat: 64
+        value: 0.35
+        curve: smooth
+      - beat: 128
+        value: 0.45
+        curve: smooth
+  - track: Vibraphone
+    param: volume
+    events:
+      - beat: 64
+        value: 0.0
+      - beat: 68
+        value: 0.4
+        curve: smooth
+      - beat: 96
+        value: 0.6
+        curve: smooth
+      - beat: 128
+        value: 0.7
+        curve: linear
+  - track: Master
+    param: high_shelf
+    events:
+      - beat: 0
+        value: -2db
+      - beat: 128
+        value: 0db
+        curve: smooth
 """,
     ),
 
@@ -2047,6 +2350,68 @@ MidiExpressiveness:
     portamento:
       time: 30
       switch: on
+  aftertouch:
+    type: channel
+    response: vibrato depth on strings — pressure intensifies expressive wavering
+    use: emotional swells on sustained string phrases, peak intensity in transcendence
+  modulation:
+    instrument: strings
+    depth: delayed vibrato onset — CC 1 value 0-65, none in tension, full in transcendence
+    onset: delayed 2 beats from note attack
+  breath_control:
+    instrument: brass (French horns)
+    mapping: dynamics and tone color — CC 2 controls from dark covered (0) to bright heroic bell (127)
+  filter:
+    cutoff:
+      sweep: brass muted to open — filter widens from 500hz to 4khz across resolution and transcendence
+      resonance: moderate
+
+Automation:
+  - track: Strings
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.35
+      - beat: 32
+        value: 0.4
+        curve: smooth
+      - beat: 64
+        value: 0.55
+        curve: smooth
+      - beat: 96
+        value: 0.65
+        curve: smooth
+      - beat: 128
+        value: 0.7
+        curve: linear
+  - track: Piano
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.3
+      - beat: 64
+        value: 0.45
+        curve: smooth
+      - beat: 128
+        value: 0.5
+        curve: smooth
+  - track: Master
+    param: volume
+    events:
+      - beat: 0
+        value: 0.55
+      - beat: 32
+        value: 0.65
+        curve: smooth
+      - beat: 64
+        value: 0.8
+        curve: smooth
+      - beat: 96
+        value: 0.95
+        curve: exp
+      - beat: 128
+        value: 1.0
+        curve: linear
 """,
     ),
 

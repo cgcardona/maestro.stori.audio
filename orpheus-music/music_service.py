@@ -17,6 +17,7 @@ from midiutil import MIDIFile
 from dataclasses import dataclass
 from collections import OrderedDict
 from time import time
+import asyncio
 import mido
 import tempfile
 import os
@@ -41,15 +42,17 @@ app = FastAPI(title="Orpheus Music Service")
 # Lazy-load Gradio client
 gradio_client = None
 
+_DEFAULT_SPACE = "asigalov61/Orpheus-Music-Transformer"
+
 def get_client():
     global gradio_client
     if gradio_client is None:
-        # Pass HF token so the Space attributes GPU usage to our account (required for quota).
-        # Maestro sends token in Authorization header; Orpheus uses env so the Gradio client has it.
         hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
         if not hf_token:
             logger.warning("No HF_TOKEN or STORI_HF_API_KEY set; Gradio Space may return GPU quota errors")
-        gradio_client = Client("asigalov61/Orpheus-Music-Transformer", hf_token=hf_token)
+        space_id = os.environ.get("STORI_ORPHEUS_SPACE", _DEFAULT_SPACE)
+        logger.info(f"Connecting to Orpheus Space: {space_id}")
+        gradio_client = Client(space_id, hf_token=hf_token)
     return gradio_client
 
 
@@ -1096,7 +1099,11 @@ async def generate(request: GenerateRequest):
         logger.info(f"   Policy: {get_policy_version()}")
         
         # Generate with Orpheus using policy-computed parameters
-        result = client.predict(
+        # Gradio client.predict() is synchronous/blocking — offload to
+        # a thread so the event loop stays free for health checks and
+        # concurrent generation requests.
+        result = await asyncio.to_thread(
+            client.predict,
             input_midi=handle_file(seed_path),
             prime_instruments=orpheus_instruments,
             num_prime_tokens=num_prime_tokens,
@@ -1104,15 +1111,17 @@ async def generate(request: GenerateRequest):
             model_temperature=temperature,
             model_top_p=top_p,
             add_drums="drums" in [i.lower() for i in request.instruments],
-            api_name="/generate_music_and_state"
+            api_name="/generate_music_and_state",
         )
         
         # Get MIDI file from first batch
-        midi_result = client.predict(batch_number=0, api_name="/add_batch")
+        midi_result = await asyncio.to_thread(
+            client.predict, batch_number=0, api_name="/add_batch"
+        )
         midi_path = midi_result[2]
         
-        # Parse MIDI (notes + CC + pitch bends + aftertouch)
-        parsed = parse_midi_to_notes(midi_path, request.tempo)
+        # Parse MIDI (CPU-bound — also offloaded to keep loop free)
+        parsed = await asyncio.to_thread(parse_midi_to_notes, midi_path, request.tempo)
 
         # Trim to requested bar range
         max_beat = request.bars * 4

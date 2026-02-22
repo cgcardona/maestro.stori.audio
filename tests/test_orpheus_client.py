@@ -461,3 +461,140 @@ class TestOrpheusBeatRescaling:
         scale = target / max_end
         assert result.cc_events[0]["beat"] == 0
         assert abs(result.cc_events[1]["beat"] - round(3 * scale, 4)) < 0.01
+
+
+# =============================================================================
+# GPU cold-start retry logic (regression: orpheus previously had no retry)
+# =============================================================================
+
+class TestGpuColdStartRetry:
+    """OrpheusClient.generate retries up to 3× on Gradio GPU cold-start errors."""
+
+    @pytest.fixture
+    def client(self):
+        with patch("app.services.orpheus.settings") as m:
+            m.orpheus_base_url = "http://orpheus:10002"
+            m.orpheus_timeout = 30
+            m.hf_api_key = None
+            yield OrpheusClient()
+
+    @pytest.mark.asyncio
+    async def test_gpu_error_triggers_retry_and_succeeds_on_second_attempt(self, client):
+        """When first attempt returns GPU cold-start error, second attempt succeeds."""
+        ok_resp = MagicMock()
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {
+            "success": True,
+            "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 80}],
+            "tool_calls": [
+                {"tool": "addNotes", "params": {"notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 80}]}}
+            ],
+            "metadata": {},
+        }
+        gpu_resp = MagicMock()
+        gpu_resp.raise_for_status = MagicMock()
+        gpu_resp.json.return_value = {
+            "success": False,
+            "error": "No GPU was available after 60s. Retry later",
+        }
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock(side_effect=[gpu_resp, ok_resp])
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client.generate(genre="reggaeton", tempo=96, bars=24)
+
+        assert result["success"] is True
+        assert mock_sleep.await_count == 1
+        assert mock_sleep.call_args[0][0] == 2  # first retry delay is 2s
+
+    @pytest.mark.asyncio
+    async def test_gpu_error_all_retries_exhausted_returns_structured_error(self, client):
+        """After 3 GPU cold-start failures the error is gpu_unavailable (not a crash)."""
+        gpu_resp = MagicMock()
+        gpu_resp.raise_for_status = MagicMock()
+        gpu_resp.json.return_value = {
+            "success": False,
+            "error": "No GPU was available after 60s. Retry later",
+        }
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock(return_value=gpu_resp)
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client.generate(genre="trap", tempo=140, bars=8)
+
+        assert result["success"] is False
+        assert result.get("error") == "gpu_unavailable"
+        assert "GPU unavailable" in result.get("message", "")
+        assert mock_sleep.await_count == 3  # delays before attempts 2, 3, and 4 (not after final)
+
+    @pytest.mark.asyncio
+    async def test_gpu_error_in_http_body_also_retries(self, client):
+        """GPU cold-start text in an HTTP error body also triggers retry."""
+        import httpx
+
+        gpu_http_resp = MagicMock()
+        gpu_http_resp.status_code = 503
+        gpu_http_resp.text = "No GPU was available after 60s. Retry later"
+
+        ok_resp = MagicMock()
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {"success": True, "notes": [], "tool_calls": [], "metadata": {}}
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock(side_effect=[
+            httpx.HTTPStatusError("503", request=MagicMock(), response=gpu_http_resp),
+            ok_resp,
+        ])
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client.generate(genre="house", tempo=128, bars=4)
+
+        assert result["success"] is True
+        assert mock_sleep.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_non_gpu_error_does_not_retry(self, client):
+        """Non-GPU failures (e.g. auth error) return immediately without retrying."""
+        error_resp = MagicMock()
+        error_resp.raise_for_status = MagicMock()
+        error_resp.json.return_value = {
+            "success": False,
+            "error": "Invalid API key",
+        }
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock(return_value=error_resp)
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client.generate(genre="jazz", tempo=120, bars=4)
+
+        assert result["success"] is False
+        assert result.get("error") == "Invalid API key"
+        assert mock_sleep.await_count == 0  # no retry for non-GPU errors
+
+    @pytest.mark.asyncio
+    async def test_retry_count_in_metadata_on_success(self, client):
+        """Successful result after a retry records retry_count in metadata."""
+        gpu_resp = MagicMock()
+        gpu_resp.raise_for_status = MagicMock()
+        gpu_resp.json.return_value = {"success": False, "error": "No GPU was available after 60s."}
+
+        ok_resp = MagicMock()
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {
+            "success": True,
+            "notes": [],
+            "tool_calls": [],
+            "metadata": {"source": "orpheus"},
+        }
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock(side_effect=[gpu_resp, ok_resp])
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock):
+            result = await client.generate(genre="lofi", tempo=85, bars=4)
+
+        assert result["success"] is True
+        assert result["metadata"]["retry_count"] == 1  # succeeded on attempt index 1

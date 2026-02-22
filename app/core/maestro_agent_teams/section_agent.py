@@ -1,0 +1,326 @@
+"""Per-section child agent — Level 3 of the three-level agent architecture.
+
+Each section child executes a pre-planned (region + generate) pair for one
+musical section of one instrument.  No LLM call is needed for the core
+pipeline; the parent agent already wrote the section-specific prompt.
+
+Optional refinement: when the STORI PROMPT specifies expressive tools
+(CC curves, pitch bend, automation), a small focused LLM call adds them
+after generation completes.
+
+For drums, the child signals completion via ``SectionSignals`` so the
+matching bass section child can start with the drum RhythmSpine.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import uuid as _uuid_mod
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+from app.core.expansion import ToolCall
+from app.core.llm_client import LLMClient
+from app.core.state_store import StateStore
+from app.core.maestro_plan_tracker import (
+    _ToolCallOutcome,
+    _GENERATOR_TOOL_NAMES,
+    _INSTRUMENT_AGENT_TOOLS,
+)
+from app.core.maestro_editing import _apply_single_tool_call
+from app.core.maestro_agent_teams.signals import SectionSignals
+
+logger = logging.getLogger(__name__)
+
+_AGENT_TAGGED_EVENTS = frozenset({
+    "toolCall", "toolStart", "toolError",
+    "generatorStart", "generatorComplete",
+    "reasoning", "content", "status",
+})
+
+_EXPRESSIVENESS_TOOLS = frozenset({
+    "stori_add_midi_cc",
+    "stori_add_pitch_bend",
+})
+
+
+@dataclass
+class SectionResult:
+    """Outcome of a section child's execution."""
+
+    success: bool
+    section_name: str
+    region_id: str | None = None
+    notes_generated: int = 0
+    tool_results: list[dict[str, Any]] = field(default_factory=list)
+    tool_call_records: list[dict[str, Any]] = field(default_factory=list)
+    tool_result_msgs: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
+
+
+async def _run_section_child(
+    section: dict[str, Any],
+    section_index: int,
+    track_id: str,
+    region_tc: ToolCall,
+    generate_tc: ToolCall,
+    instrument_name: str,
+    role: str,
+    agent_id: str,
+    allowed_tool_names: set[str],
+    store: StateStore,
+    trace: Any,
+    sse_queue: asyncio.Queue[dict[str, Any]],
+    composition_context: dict[str, Any] | None,
+    section_signals: SectionSignals | None = None,
+    is_drum: bool = False,
+    is_bass: bool = False,
+    llm: Optional[LLMClient] = None,
+) -> SectionResult:
+    """Execute one section's region + generate pipeline.
+
+    This is a lightweight executor — the parent LLM already planned the
+    tool calls and wrote the section-specific prompt.  The child resolves
+    the trackId and regionId, executes the two tool calls, and optionally
+    runs a refinement LLM call for expressive tools.
+    """
+    sec_name = section.get("name", f"section_{section_index}")
+    child_log = f"[{trace.trace_id[:8]}][{instrument_name}/{sec_name}]"
+
+    result = SectionResult(success=False, section_name=sec_name)
+    add_notes_failures: dict[str, int] = {}
+
+    async def _emit(outcome: _ToolCallOutcome) -> None:
+        for evt in outcome.sse_events:
+            if evt.get("type") in _AGENT_TAGGED_EVENTS:
+                evt = {**evt, "agentId": agent_id, "sectionName": sec_name}
+            await sse_queue.put(evt)
+
+    try:
+        # ── If bass, wait for the corresponding drum section ──
+        if is_bass and section_signals:
+            logger.info(f"{child_log} ⏳ Waiting for drum section '{sec_name}'")
+            drum_data = await section_signals.wait_for(sec_name)
+            if drum_data:
+                logger.info(
+                    f"{child_log} ✅ Drum section '{sec_name}' ready "
+                    f"({len(drum_data.get('drum_notes', []))} drum notes)"
+                )
+
+        # ── Execute stori_add_midi_region ──
+        region_params = dict(region_tc.params)
+        region_params["trackId"] = track_id
+
+        region_outcome = await _apply_single_tool_call(
+            tc_id=region_tc.id or str(_uuid_mod.uuid4()),
+            tc_name=region_tc.name,
+            resolved_args=region_params,
+            allowed_tool_names=allowed_tool_names,
+            store=store,
+            trace=trace,
+            add_notes_failures=add_notes_failures,
+            emit_sse=True,
+        )
+        await _emit(region_outcome)
+
+        result.tool_results.append(region_outcome.tool_result)
+        result.tool_call_records.append(
+            {"tool": region_tc.name, "params": region_outcome.enriched_params}
+        )
+        result.tool_result_msgs.append({
+            "role": "tool",
+            "tool_call_id": region_tc.id,
+            "content": json.dumps(region_outcome.tool_result),
+        })
+
+        region_id = region_outcome.tool_result.get("regionId")
+        if not region_id:
+            result.error = f"Region creation failed for {sec_name}"
+            logger.warning(f"⚠️ {child_log} {result.error}")
+            if is_drum and section_signals:
+                section_signals.signal_complete(sec_name)
+            return result
+
+        result.region_id = region_id
+
+        # ── Execute stori_generate_midi ──
+        gen_params = dict(generate_tc.params)
+        gen_params["trackId"] = track_id
+        gen_params["regionId"] = region_id
+
+        gen_outcome = await _apply_single_tool_call(
+            tc_id=generate_tc.id or str(_uuid_mod.uuid4()),
+            tc_name=generate_tc.name,
+            resolved_args=gen_params,
+            allowed_tool_names=allowed_tool_names,
+            store=store,
+            trace=trace,
+            add_notes_failures=add_notes_failures,
+            emit_sse=True,
+            composition_context=composition_context,
+        )
+        await _emit(gen_outcome)
+
+        result.tool_results.append(gen_outcome.tool_result)
+        result.tool_call_records.append(
+            {"tool": generate_tc.name, "params": gen_outcome.enriched_params}
+        )
+        result.tool_result_msgs.append({
+            "role": "tool",
+            "tool_call_id": generate_tc.id,
+            "content": json.dumps(gen_outcome.tool_result),
+        })
+
+        if gen_outcome.skipped:
+            result.error = gen_outcome.tool_result.get("error", "Generation failed")
+            logger.warning(f"⚠️ {child_log} Generate failed: {result.error}")
+            if is_drum and section_signals:
+                section_signals.signal_complete(sec_name)
+            return result
+
+        result.notes_generated = gen_outcome.tool_result.get("notesAdded", 0)
+        result.success = True
+
+        # ── Drum signaling — extract notes and signal bass ──
+        if is_drum and section_signals:
+            drum_notes: list[dict] = []
+            for evt in gen_outcome.sse_events:
+                if evt.get("name") == "stori_add_notes":
+                    drum_notes = evt.get("params", {}).get("notes", [])
+                    break
+            section_signals.signal_complete(sec_name, drum_notes=drum_notes)
+            logger.info(
+                f"{child_log} 🥁 Signaled bass: {len(drum_notes)} drum notes ready"
+            )
+
+        # ── Optional refinement LLM call for expressive tools ──
+        if result.success and llm and composition_context:
+            await _maybe_refine_expression(
+                section=section,
+                track_id=track_id,
+                region_id=region_id,
+                instrument_name=instrument_name,
+                role=role,
+                agent_id=agent_id,
+                sec_name=sec_name,
+                notes_generated=result.notes_generated,
+                llm=llm,
+                store=store,
+                trace=trace,
+                sse_queue=sse_queue,
+                allowed_tool_names=allowed_tool_names,
+                composition_context=composition_context,
+                result=result,
+                child_log=child_log,
+            )
+
+        return result
+
+    except Exception as exc:
+        logger.exception(f"{child_log} Unhandled section error: {exc}")
+        result.error = str(exc)
+        if is_drum and section_signals:
+            section_signals.signal_complete(sec_name)
+        return result
+
+
+async def _maybe_refine_expression(
+    section: dict[str, Any],
+    track_id: str,
+    region_id: str,
+    instrument_name: str,
+    role: str,
+    agent_id: str,
+    sec_name: str,
+    notes_generated: int,
+    llm: LLMClient,
+    store: StateStore,
+    trace: Any,
+    sse_queue: asyncio.Queue[dict[str, Any]],
+    allowed_tool_names: set[str],
+    composition_context: dict[str, Any],
+    result: SectionResult,
+    child_log: str,
+) -> None:
+    """Add CC curves and pitch bends via a small focused LLM call.
+
+    Only triggered when the STORI PROMPT includes MidiExpressiveness or
+    Automation blocks. Keeps the call tiny — just the expression tools
+    with minimal context.
+    """
+    from app.core.tools import ALL_TOOLS
+
+    style = composition_context.get("style", "")
+    tempo = composition_context.get("tempo", 120)
+    key = composition_context.get("key", "C")
+    sec_bars = max(1, int(section.get("length_beats", 16)) // 4)
+    sec_start = section.get("start_beat", 0)
+
+    prompt_text = composition_context.get("_raw_prompt", "")
+    has_expressiveness = any(
+        kw in prompt_text.lower()
+        for kw in ("midiexpressiveness:", "automation:", "cc_curves:", "pitch_bend:")
+    )
+    if not has_expressiveness:
+        return
+
+    expr_tools = [
+        t for t in ALL_TOOLS
+        if t["function"]["name"] in _EXPRESSIVENESS_TOOLS
+    ]
+    if not expr_tools:
+        return
+
+    refine_prompt = (
+        f"Add expressive MIDI CC and/or pitch bend to the {sec_name.upper()} section "
+        f"of the {instrument_name} track ({style}, {tempo} BPM, {key}).\n"
+        f"Section: {sec_bars} bars starting at beat {sec_start}, "
+        f"{notes_generated} notes generated.\n"
+        f"trackId='{track_id}', regionId='{region_id}'.\n"
+        f"Add 1-3 expressive tool calls that enhance musicality. "
+        f"No text output — just tool calls."
+    )
+
+    try:
+        resp = await llm.chat_completion(
+            messages=[
+                {"role": "system", "content": refine_prompt},
+                {"role": "user", "content": "Add expression now."},
+            ],
+            tools=expr_tools,
+            tool_choice="auto",
+            max_tokens=1000,
+        )
+
+        add_notes_failures: dict[str, int] = {}
+        for tc in resp.tool_calls:
+            params = dict(tc.params)
+            params["trackId"] = track_id
+            params["regionId"] = region_id
+
+            outcome = await _apply_single_tool_call(
+                tc_id=tc.id or str(_uuid_mod.uuid4()),
+                tc_name=tc.name,
+                resolved_args=params,
+                allowed_tool_names=allowed_tool_names,
+                store=store,
+                trace=trace,
+                add_notes_failures=add_notes_failures,
+                emit_sse=True,
+            )
+            for evt in outcome.sse_events:
+                if evt.get("type") in _AGENT_TAGGED_EVENTS:
+                    evt = {**evt, "agentId": agent_id, "sectionName": sec_name}
+                await sse_queue.put(evt)
+
+            if not outcome.skipped:
+                result.tool_results.append(outcome.tool_result)
+                result.tool_call_records.append(
+                    {"tool": tc.name, "params": outcome.enriched_params}
+                )
+    except Exception as exc:
+        logger.warning(
+            f"⚠️ {child_log} Expression refinement failed (non-fatal): {exc}"
+        )

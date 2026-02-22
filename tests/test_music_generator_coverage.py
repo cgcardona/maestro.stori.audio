@@ -37,7 +37,7 @@ class TestQualityPresets:
 
     def test_quality_preset(self):
         p = QUALITY_PRESETS["quality"]
-        assert p.num_candidates == 6
+        assert p.num_candidates == 4
         assert p.use_critic is True
 
 
@@ -175,14 +175,14 @@ class TestCandidatesForRole:
         """Drums keeps the full quality-preset candidate count."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
-        config = QUALITY_PRESETS["quality"]  # num_candidates=6
-        assert mg._candidates_for_role("drums", config, GeneratorBackend.ORPHEUS) == 6
+        config = QUALITY_PRESETS["quality"]  # num_candidates=4
+        assert mg._candidates_for_role("drums", config, GeneratorBackend.ORPHEUS) == 4
 
     def test_bass_keeps_full_candidates(self):
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]
-        assert mg._candidates_for_role("bass", config, GeneratorBackend.ORPHEUS) == 6
+        assert mg._candidates_for_role("bass", config, GeneratorBackend.ORPHEUS) == 4
 
     def test_organ_capped_at_two_for_quality(self):
         """Melodic instruments are capped at 2 candidates for quality preset."""
@@ -202,7 +202,7 @@ class TestCandidatesForRole:
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]
-        assert mg._candidates_for_role("organ", config, GeneratorBackend.HARMONIC_IR) == 6
+        assert mg._candidates_for_role("organ", config, GeneratorBackend.HARMONIC_IR) == 4
 
     def test_balanced_preset_melodic_unchanged(self):
         """Balanced preset (2 candidates) is not further reduced for melodic tracks."""
@@ -258,8 +258,8 @@ class TestParallelCandidateGeneration:
             num_candidates=config.num_candidates,
         )
 
-        # All 6 candidates dispatched in parallel (drums keeps full count)
-        assert call_count[0] == 6
+        # All 4 candidates dispatched in parallel (drums keeps full count)
+        assert call_count[0] == 4
         assert result.success
         assert "critic_score" in result.metadata
         assert "parallel_candidates" in result.metadata

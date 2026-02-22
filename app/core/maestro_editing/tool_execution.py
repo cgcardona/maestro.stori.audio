@@ -57,23 +57,27 @@ async def _execute_agent_generator(
     tempo = int(enriched_params.get("tempo") or composition_context.get("tempo", 120))
     bars = int(enriched_params.get("bars") or composition_context.get("bars", 4))
     key = enriched_params.get("key") or composition_context.get("key")
+    start_beat = float(enriched_params.get("start_beat", 0))
+    instrument_prompt = enriched_params.get("prompt", "")
 
+    # Prefer explicit trackId/regionId passed by the agent; fall back to registry lookup.
     track_id = enriched_params.get("trackId", "")
+    region_id = enriched_params.get("regionId", "")
+
     if not track_id:
         track_name = enriched_params.get("trackName", role.capitalize())
         track_id = store.registry.resolve_track(track_name) or ""
 
-    region_id = ""
-    if track_id:
+    if not region_id and track_id:
         region_id = store.registry.get_latest_region_for_track(track_id) or ""
 
     if not region_id:
         error_msg = (
-            f"Generator {tc_name}: no region found for track '{track_id}' "
-            f"(role='{role}'). Ensure stori_add_midi_region is called before "
-            f"the generator tool."
+            f"Generator {tc_name}: no region found for track '{track_id or role}' "
+            f"(role='{role}'). stori_add_midi_region must be called for this track "
+            f"before stori_generate_midi. Pass regionId from stori_add_midi_region."
         )
-        logger.error(f"[{trace.trace_id[:8]}] {error_msg}")
+        logger.error(f"❌ [{trace.trace_id[:8]}] {error_msg}")
         error_result: dict[str, Any] = {"error": error_msg}
         if emit_sse:
             sse_events.append({"type": "toolError", "name": tc_name, "error": error_msg})
@@ -104,6 +108,7 @@ async def _execute_agent_generator(
             "role": role,
             "style": style,
             "bars": bars,
+            "startBeat": start_beat,
             "label": role.capitalize(),
         })
 
@@ -116,6 +121,14 @@ async def _execute_agent_generator(
 
     import time as _time
     _gen_start = _time.monotonic()
+
+    _prompt_preview = repr(instrument_prompt[:80]) if instrument_prompt else "none"
+    logger.info(
+        f"stori_generate_midi | role={role} track={track_id[:8] if track_id else 'none'} "
+        f"region={region_id[:8] if region_id else 'none'} start_beat={start_beat} "
+        f"bars={bars} style={style} key={key} prompt={_prompt_preview}"
+    )
+
     try:
         mg = get_music_generator()
         result = await mg.generate(
@@ -127,7 +140,7 @@ async def _execute_agent_generator(
             **gen_kwargs,
         )
     except Exception as exc:
-        logger.error(f"[{trace.trace_id[:8]}] Generator {tc_name} failed: {exc}")
+        logger.error(f"❌ [{trace.trace_id[:8]}] Generator {tc_name} failed: {exc}")
         error_result: dict[str, Any] = {"error": str(exc)}
         if emit_sse:
             sse_events.append({"type": "toolError", "name": tc_name, "error": str(exc)})
@@ -147,11 +160,17 @@ async def _execute_agent_generator(
             skipped=True,
         )
 
+    _gen_duration_ms = int((_time.monotonic() - _gen_start) * 1000)
+
     if not result.success:
+        _is_gpu_error = "gpu_unavailable" in (result.error or "") or "GPU" in (result.error or "")
         logger.warning(
-            f"[{trace.trace_id[:8]}] Generator {tc_name} returned failure: {result.error}"
+            f"⚠️ [{trace.trace_id[:8]}] Generator {tc_name} returned failure "
+            f"(role={role} duration={_gen_duration_ms}ms gpu_error={_is_gpu_error}): {result.error}"
         )
         error_msg = result.error or "Generation failed"
+        if _is_gpu_error:
+            error_msg = result.error or "gpu_unavailable"
         error_result = {"error": error_msg}
         if emit_sse:
             sse_events.append({"type": "toolError", "name": tc_name, "error": error_msg})
@@ -171,7 +190,11 @@ async def _execute_agent_generator(
             skipped=True,
         )
 
-    _gen_duration_ms = int((_time.monotonic() - _gen_start) * 1000)
+    logger.info(
+        f"✅ stori_generate_midi | role={role} notes={len(result.notes)} "
+        f"cc={len(result.cc_events or [])} pb={len(result.pitch_bends or [])} "
+        f"duration_ms={_gen_duration_ms} retry_count={result.metadata.get('retry_count', 0)}"
+    )
 
     if emit_sse:
         sse_events.append({

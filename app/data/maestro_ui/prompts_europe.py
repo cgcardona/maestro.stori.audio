@@ -248,6 +248,10 @@ MidiExpressiveness:
       from: 0
       to: 90
       position: bars 9-24
+  aftertouch:
+    type: channel
+    response: adds filter opening and volume swell on lead synth
+    use: filter cutoff + amplitude — harder pressure brightens and lifts the lead
   pitch_bend:
     range: +-2 semitones
     style: upward bends on phrase peaks in drop
@@ -488,6 +492,10 @@ MidiExpressiveness:
       from: 55
       to: 100
       position: bars 9-24
+  aftertouch:
+    type: channel
+    response: opens pad filter for warmth on sustained chords
+    use: filter cutoff — pressure reveals upper harmonics on the pad
   pitch_bend:
     style: bass filter resonance slides
     depth: 1 semitone
@@ -691,6 +699,14 @@ MidiExpressiveness:
   expression:
     curve: slow rise across sections
     range: [75, 112]
+  aftertouch:
+    type: channel
+    response: adds velocity-mapped warmth on Rhodes stabs
+    use: subtle filter opening — pressure warms the stab tone
+  modulation:
+    instrument: pad
+    depth: subtle vibrato — CC 1 value 15-35
+    onset: delayed 4 beats, bloom section only
   pitch_bend:
     style: none — minimal house is precise
 
@@ -928,6 +944,10 @@ MidiExpressiveness:
   pitch_bend:
     style: vibrato-style narrow bends on lead phrase peaks
     depth: quarter-tone
+  aftertouch:
+    type: channel
+    response: sweeps lead synth filter on sustained notes
+    use: filter cutoff — pressure opens the lowpass for neon brightness
   articulation:
     portamento:
       time: 40
@@ -1174,6 +1194,17 @@ MidiExpressiveness:
     instrument: guitars
     depth: vibrato on sustained notes storm/catharsis — CC 1 from 0 to 65
     onset: bars 17-32 only
+  aftertouch:
+    type: channel
+    response: increases tremolo intensity on sustained guitar chords
+    use: vibrato depth — pressure adds shimmer in storm and catharsis sections
+  filter:
+    cutoff:
+      sweep: |
+        Whisper bars 1-8: fully open, clean signal
+        Storm bars 17-24: slowly closing lowpass on guitar wash
+        Catharsis bars 25-32: wide open, everything unleashed
+      resonance: low whisper/gathering, moderate storm/catharsis
   pitch_bend:
     style: guitar bends on phrase peaks — up 1 semitone
     depth: 1 semitone
@@ -1418,6 +1449,17 @@ MidiExpressiveness:
       from: 45
       to: 102
       position: bars 1-32
+  aftertouch:
+    type: channel
+    response: deepens vibrato depth on sustained string notes
+    use: vibrato intensity — pressure adds expressive warmth to long tones
+  filter:
+    cutoff:
+      sweep: |
+        Exposition bars 1-8: fully open, natural string tone
+        Development bars 9-16: subtle brightness increase on cello
+        Coda bars 25-32: gentle rolloff, warmth as voices thin
+      resonance: low throughout — classical clarity
   pitch_bend:
     style: classical string intonation — very subtle vibrato pitch variation
     depth: microtonal
@@ -1426,6 +1468,46 @@ MidiExpressiveness:
     portamento:
       time: 20
       switch: on
+
+Automation:
+  - track: Violin_I
+    param: volume
+    events:
+      - beat: 0
+        value: 0.6
+      - beat: 32
+        value: 0.7
+        curve: smooth
+      - beat: 64
+        value: 0.75
+        curve: smooth
+      - beat: 96
+        value: 0.7
+      - beat: 128
+        value: 0.3
+        curve: smooth
+  - track: Cello
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.25
+      - beat: 64
+        value: 0.35
+        curve: smooth
+      - beat: 96
+        value: 0.4
+        curve: smooth
+  - track: Master
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.3
+      - beat: 96
+        value: 0.35
+        curve: smooth
+      - beat: 128
+        value: 0.45
+        curve: smooth
 """,
     ),
 
@@ -1631,6 +1713,10 @@ MidiExpressiveness:
       from: 80
       to: 120
       position: bars 9-32
+  aftertouch:
+    type: channel
+    response: drives acid bass filter and resonance simultaneously
+    use: filter cutoff + resonance — pressure creates squelchy acid sweeps
   pitch_bend:
     range: +-2 semitones
     style: rapid psychedelic pitch sweeps on lead
@@ -1874,9 +1960,54 @@ MidiExpressiveness:
   sustain_pedal:
     style: full sustain throughout on piano
     changes_per_bar: 0
+  aftertouch:
+    type: channel
+    response: adds volume swell on kantele and nyckelharpa sustained tones
+    use: amplitude — pressure creates gentle dynamic swells on folk strings
   pitch_bend:
     style: subtle cello intonation — microtonal
     depth: microtonal
+
+Automation:
+  - track: Folk_Strings
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.4
+      - beat: 32
+        value: 0.5
+        curve: smooth
+      - beat: 64
+        value: 0.6
+        curve: smooth
+      - beat: 80
+        value: 0.7
+        curve: smooth
+      - beat: 96
+        value: 0.5
+        curve: smooth
+  - track: Piano
+    param: delay_feedback
+    events:
+      - beat: 32
+        value: 0.1
+      - beat: 64
+        value: 0.25
+        curve: smooth
+      - beat: 96
+        value: 0.15
+        curve: smooth
+  - track: Master
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.4
+      - beat: 80
+        value: 0.55
+        curve: smooth
+      - beat: 96
+        value: 0.4
+        curve: smooth
 """,
     ),
 
@@ -2107,6 +2238,17 @@ MidiExpressiveness:
     type: channel
     response: adds sustain on sustained guitar tones
     use: tremolo expression
+  modulation:
+    instrument: guitar
+    depth: vibrato on sustained bends — CC 1 value 40-80
+    onset: delayed 1 beat on long notes, immediate on bends
+  filter:
+    cutoff:
+      sweep: |
+        Llamada bars 1-8: open, natural guitar tone
+        Verse bars 9-16: bass filter gradually opening from 400hz to 2khz
+        Rasgueado bars 17-24: fully open, raw and aggressive
+      resonance: low on guitar, moderate on bass
   articulation:
     portamento:
       time: 20
@@ -2223,7 +2365,7 @@ Orchestration:
     kick: 2-step pattern — beats 1, 2-and, 3, 4-and
     snare: tight rimshot on 2 and 4
     hi_hat: 16th notes, partially open, opens further in evolution
-    entry: bar 9, exit: bar 22 (drums drop out bars 23-24)
+    entry: "bar 9, exit: bar 22 (drums drop out bars 23-24)"
   bass:
     technique: pulsed electronic bass
     register: Db1-Db2
@@ -2334,6 +2476,14 @@ MidiExpressiveness:
       from: 68
       to: 112
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: opens stab synth filter and adds volume swell
+    use: filter cutoff + amplitude — pressure brightens and lifts the stab
+  modulation:
+    instrument: synth pad
+    depth: subtle vibrato — CC 1 value 20-45
+    onset: delayed 2 beats on sustained pad chords
   pitch_bend:
     style: bass slides between kicks — subtle
     depth: quarter-tone
@@ -2565,6 +2715,21 @@ MidiExpressiveness:
       from: 78
       to: 125
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: adds vibrato depth on saz/baglama sustained notes
+    use: vibrato — pressure deepens the microtonal shimmer of the saz
+  modulation:
+    instrument: electric saz
+    depth: wah-like sweep — CC 1 value 50-100
+    onset: immediate in solo section, delayed 2 beats in riff/verse
+  filter:
+    cutoff:
+      sweep: |
+        Riff bars 1-8: bass filter at 800hz, dark and fuzzy
+        Verse bars 9-16: bass opens to 2khz, weight emerges
+        Solo bars 17-24: bass fully open, fuzz filter saturated
+      resonance: moderate on bass, high on saz wah
 
 Automation:
   - track: Electric_Saz
@@ -2777,11 +2942,67 @@ MidiExpressiveness:
       from: 20
       to: 65
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: simulates accordion bellows pressure dynamics
+    use: volume + filter — pressure controls bellows intensity and brightness
+  modulation:
+    instrument: clarinet
+    depth: expressive klezmer vibrato — CC 1 value 40-85
+    onset: immediate on sustained notes, wider in sher section
+  breath_control:
+    instrument: clarinet
+    mapping: filter cutoff + volume — CC 2 shapes clarinet dynamics naturally
+  filter:
+    cutoff:
+      sweep: |
+        Doina bars 1-8: open, natural clarinet tone
+        Freilach bars 9-16: bass filter opens from 600hz to 2khz
+        Sher bars 17-24: fully open, everything raw and present
+      resonance: low on clarinet, moderate on bass
   articulation:
     legato: true
     portamento:
       time: 25
       switch: on
+
+Automation:
+  - track: Clarinet
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.4
+      - beat: 32
+        value: 0.3
+        curve: smooth
+      - beat: 64
+        value: 0.25
+        curve: smooth
+      - beat: 96
+        value: 0.2
+        curve: linear
+  - track: Accordion
+    param: volume
+    events:
+      - beat: 32
+        value: 0.6
+      - beat: 64
+        value: 0.8
+        curve: smooth
+      - beat: 96
+        value: 1.0
+        curve: exp
+  - track: Master
+    param: volume
+    events:
+      - beat: 0
+        value: 0.5
+      - beat: 32
+        value: 0.7
+        curve: smooth
+      - beat: 96
+        value: 1.0
+        curve: exp
 """,
     ),
 
@@ -2980,8 +3201,64 @@ MidiExpressiveness:
       from: 58
       to: 92
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: adds subtle dynamic emphasis on harpsichord ornamental notes
+    use: velocity variation — pressure creates nuanced terraced dynamics
+  modulation:
+    instrument: oboe
+    depth: Baroque vibrato — CC 1 value 25-50, narrow and controlled
+    onset: delayed 1 beat on sustained notes only
+  breath_control:
+    instrument: oboe
+    mapping: filter cutoff + volume — CC 2 shapes oboe phrasing and dynamics
+  filter:
+    cutoff:
+      sweep: |
+        Gavotte bars 1-8: open, bright harpsichord tone
+        Musette bars 9-16: cello drone slightly warmer, gentle rolloff
+        Return bars 17-24: fully open, all voices clear and present
+      resonance: low throughout — Baroque clarity
   articulation:
     legato: true
+
+Automation:
+  - track: Oboe
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.2
+      - beat: 24
+        value: 0.3
+        curve: smooth
+      - beat: 48
+        value: 0.35
+        curve: smooth
+      - beat: 72
+        value: 0.3
+        curve: smooth
+  - track: Cello
+    param: volume
+    events:
+      - beat: 0
+        value: 0.7
+      - beat: 24
+        value: 0.5
+        curve: smooth
+      - beat: 48
+        value: 0.7
+        curve: smooth
+  - track: Master
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.3
+      - beat: 48
+        value: 0.35
+        curve: smooth
+      - beat: 72
+        value: 0.3
+        curve: smooth
 """,
     ),
 
@@ -3172,6 +3449,62 @@ MidiExpressiveness:
       from: 82
       to: 127
       position: bars 1-24
+  aftertouch:
+    type: channel
+    response: adds bellows pressure dynamics on accordion chords
+    use: volume + brightness — pressure intensifies the accordion pump
+  modulation:
+    instrument: trumpet
+    depth: brass vibrato — CC 1 value 35-70
+    onset: delayed 1 beat on sustained notes, immediate in fire section
+  breath_control:
+    instrument: trumpet
+    mapping: filter cutoff + volume — CC 2 controls brass dynamics and air
+  filter:
+    cutoff:
+      sweep: |
+        March bars 1-8: bass at 1khz, warm and round
+        Cocek bars 9-16: bass opens to 3khz, presence emerges
+        Fire bars 17-24: fully open, raw brass power
+      resonance: low on brass, moderate on bass
+
+Automation:
+  - track: Trumpet
+    param: reverb_wet
+    events:
+      - beat: 0
+        value: 0.2
+      - beat: 28
+        value: 0.25
+        curve: smooth
+      - beat: 56
+        value: 0.2
+        curve: smooth
+      - beat: 84
+        value: 0.15
+        curve: linear
+  - track: Snare
+    param: pan
+    events:
+      - beat: 0
+        value: -0.1
+      - beat: 56
+        value: 0.1
+        curve: smooth
+      - beat: 84
+        value: -0.1
+        curve: smooth
+  - track: Master
+    param: volume
+    events:
+      - beat: 0
+        value: 0.7
+      - beat: 56
+        value: 0.85
+        curve: smooth
+      - beat: 84
+        value: 1.0
+        curve: exp
 """,
     ),
 

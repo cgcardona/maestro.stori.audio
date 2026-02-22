@@ -64,7 +64,7 @@ QUALITY_PRESETS = {
         use_coupled_generation=True,
     ),
     "quality": QualityPresetConfig(
-        num_candidates=6,
+        num_candidates=4,
         use_critic=True,
         accept_threshold=0.75,
         early_stop_threshold=0.88,
@@ -403,7 +403,8 @@ class MusicGenerator:
 
     def _capture_drum_context(self, notes: list[dict], style: str, tempo: int, bars: int):
         """Capture rhythm spine from drum generation for bass coupling."""
-        rhythm_spine = RhythmSpine.from_drum_notes(notes, tempo=tempo, bars=bars, style=style)
+        snake_notes = self._ensure_snake_keys(notes)
+        rhythm_spine = RhythmSpine.from_drum_notes(snake_notes, tempo=tempo, bars=bars, style=style)
         self._generation_context = GenerationContext(
             rhythm_spine=rhythm_spine,
             drum_notes=notes,
