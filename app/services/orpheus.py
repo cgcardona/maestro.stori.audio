@@ -186,12 +186,11 @@ class OrpheusClient:
         if instruments is None:
             instruments = ["drums", "bass"]
 
-        payload = {
+        payload: dict[str, Any] = {
             "genre": genre,
             "tempo": tempo,
             "instruments": instruments,
             "bars": bars,
-            "musical_goals": musical_goals,
             "tone_brightness": tone_brightness,
             "tone_warmth": tone_warmth,
             "energy_intensity": energy_intensity,
@@ -199,8 +198,13 @@ class OrpheusClient:
             "complexity": complexity,
             "quality_preset": quality_preset,
         }
+        # Only include optional fields when they carry a value.
+        # Sending null for list/string fields triggers a Gradio-level
+        # TypeError ("'NoneType' object is not a mapping") on the server.
         if key:
             payload["key"] = key
+        if musical_goals:
+            payload["musical_goals"] = musical_goals
 
         logger.info(f"Generating {instruments} in {genre} style at {tempo} BPM")
         if musical_goals:
@@ -301,7 +305,7 @@ class OrpheusClient:
                         "success": data.get("success", False),
                         "notes": data.get("notes", []),
                         "tool_calls": data.get("tool_calls", []),
-                        "metadata": {**data.get("metadata", {}), "retry_count": attempt},
+                        "metadata": {**(data.get("metadata") or {}), "retry_count": attempt},
                     }
                     if not out["success"] and error_text:
                         out["error"] = error_text

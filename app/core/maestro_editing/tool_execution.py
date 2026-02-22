@@ -16,9 +16,35 @@ from app.core.maestro_helpers import (
     _human_label_for_tool,
 )
 from app.core.maestro_plan_tracker import _ToolCallOutcome, _GENERATOR_TOOL_NAMES
+from app.core.maestro_plan_tracker.constants import (
+    _SETUP_TOOL_NAMES,
+    _EFFECT_TOOL_NAMES,
+    _MIXING_TOOL_NAMES,
+    _TRACK_CREATION_NAMES,
+    _CONTENT_TOOL_NAMES,
+    _EXPRESSIVE_TOOL_NAMES,
+)
 from app.services.music_generator import get_music_generator
 
 logger = logging.getLogger(__name__)
+
+
+def phase_for_tool(tool_name: str) -> str:
+    """Map a tool name to its composition phase.
+
+    Phases:
+      setup       — tempo, key
+      composition — track creation, regions, notes, generators
+      soundDesign — insert effects, CC, pitch bend
+      mixing      — volume, pan, buses, sends, automation
+    """
+    if tool_name in _SETUP_TOOL_NAMES:
+        return "setup"
+    if tool_name in _MIXING_TOOL_NAMES:
+        return "mixing"
+    if tool_name in _EFFECT_TOOL_NAMES or tool_name in _EXPRESSIVE_TOOL_NAMES:
+        return "soundDesign"
+    return "composition"
 
 
 async def _execute_agent_generator(
@@ -96,18 +122,18 @@ async def _execute_agent_generator(
             skipped=True,
         )
 
+    _gen_label = f"Generating {role} via Orpheus"
+    _gen_phase = phase_for_tool(tc_name)
     if emit_sse:
         sse_events.append({
             "type": "toolStart",
             "name": tc_name,
-            "label": f"Generating {role} via Orpheus",
+            "label": _gen_label,
+            "phase": _gen_phase,
         })
         sse_events.append({
             "type": "generatorStart",
             "role": role,
-            # agentId is baked in here so the client receives it even on the
-            # single-section path where _emit does not add sectionName.
-            # Section children override this via _emit (agentId + sectionName).
             "agentId": role,
             "style": style,
             "bars": bars,
@@ -237,6 +263,8 @@ async def _execute_agent_generator(
             "type": "toolCall",
             "id": tc_id,
             "name": "stori_add_notes",
+            "label": _gen_label,
+            "phase": _gen_phase,
             "params": {
                 "trackId": track_id,
                 "regionId": region_id,
@@ -512,17 +540,22 @@ async def _apply_single_tool_call(
 
     # ── SSE events (toolStart + toolCall) ──
     extra_tool_calls: list[dict[str, Any]] = []
+    _tc_phase = phase_for_tool(tc_name)
     if emit_sse:
         emit_params = _enrich_params_with_track_context(enriched_params, store)
+        _tc_label = _human_label_for_tool(tc_name, emit_params)
         sse_events.append({
             "type": "toolStart",
             "name": tc_name,
-            "label": _human_label_for_tool(tc_name, emit_params),
+            "label": _tc_label,
+            "phase": _tc_phase,
         })
         sse_events.append({
             "type": "toolCall",
             "id": tc_id,
             "name": tc_name,
+            "label": _tc_label,
+            "phase": _tc_phase,
             "params": emit_params,
         })
 
@@ -548,15 +581,20 @@ async def _apply_single_tool_call(
             enriched_params["icon"] = _track_icon
         if _track_icon and _icon_track_id:
             _icon_params: dict[str, Any] = {"trackId": _icon_track_id, "icon": _track_icon}
+            _icon_label = f"Setting icon for {enriched_params.get('name', 'track')}"
+            _icon_phase = phase_for_tool("stori_set_track_icon")
             sse_events.append({
                 "type": "toolStart",
                 "name": "stori_set_track_icon",
-                "label": f"Setting icon for {enriched_params.get('name', 'track')}",
+                "label": _icon_label,
+                "phase": _icon_phase,
             })
             sse_events.append({
                 "type": "toolCall",
                 "id": f"{tc_id}-icon",
                 "name": "stori_set_track_icon",
+                "label": _icon_label,
+                "phase": _icon_phase,
                 "params": _icon_params,
             })
             extra_tool_calls.append({"tool": "stori_set_track_icon", "params": _icon_params})

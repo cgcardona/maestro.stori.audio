@@ -24,17 +24,21 @@ _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 PALETTE_ROTATION: list[str] = list(NAMED_COLORS)
 
 # Perceptually-spaced hex palette for multi-track compositions.
-# Colors are ordered to maximise contrast between adjacent tracks;
-# pick in index order and cycle only after all 8 are exhausted.
+# 12 colors with high hue separation; pick in index order and cycle
+# only after all 12 are exhausted.
 COMPOSITION_PALETTE: list[str] = [
-    "#E87040",  # amber/orange  (warm)
-    "#4A9EE8",  # sky blue      (cool)
-    "#60C264",  # sage green    (natural)
-    "#B06FD8",  # violet        (purple)
-    "#E85D75",  # rose          (warm red)
-    "#40C4C0",  # teal          (cyan)
-    "#E8C040",  # gold          (yellow)
-    "#8C8CE8",  # periwinkle    (blue-purple)
+    "#E85D75",  # rose
+    "#5B8DEF",  # blue
+    "#50C878",  # emerald
+    "#F5A623",  # amber
+    "#9B59B6",  # violet
+    "#1ABC9C",  # teal
+    "#E74C3C",  # red
+    "#3498DB",  # sky blue
+    "#2ECC71",  # green
+    "#F39C12",  # gold
+    "#8E44AD",  # purple
+    "#16A085",  # dark teal
 ]
 
 # Role/keyword → preferred named color (from FE contract).

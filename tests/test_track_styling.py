@@ -296,9 +296,9 @@ class TestTrackStyling:
 class TestCompositionPalette:
     """COMPOSITION_PALETTE structure and properties."""
 
-    def test_palette_has_eight_entries(self):
-        """Palette must have exactly 8 perceptually-spaced hex colors."""
-        assert len(COMPOSITION_PALETTE) == 8
+    def test_palette_has_twelve_entries(self):
+        """Palette must have exactly 12 high-hue-separation hex colors."""
+        assert len(COMPOSITION_PALETTE) == 12
 
     def test_all_entries_are_valid_hex(self):
         """Every palette entry must be a valid #RRGGBB hex string."""
@@ -354,13 +354,13 @@ class TestAllocateColors:
         assert result["B"] == COMPOSITION_PALETTE[1]
         assert result["C"] == COMPOSITION_PALETTE[2]
 
-    def test_cycles_after_eight_tracks(self):
-        """Colors wrap after the 8-entry palette is exhausted."""
-        instruments = [f"Track{i}" for i in range(10)]
+    def test_cycles_after_twelve_tracks(self):
+        """Colors wrap after the 12-entry palette is exhausted."""
+        instruments = [f"Track{i}" for i in range(14)]
         result = allocate_colors(instruments)
         assert result["Track0"] == COMPOSITION_PALETTE[0]
-        assert result["Track8"] == COMPOSITION_PALETTE[0]
-        assert result["Track9"] == COMPOSITION_PALETTE[1]
+        assert result["Track12"] == COMPOSITION_PALETTE[0]
+        assert result["Track13"] == COMPOSITION_PALETTE[1]
 
     def test_empty_list_returns_empty_dict(self):
         """Empty instrument list produces an empty mapping."""

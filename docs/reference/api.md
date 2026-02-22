@@ -30,9 +30,9 @@ The `prompt` field accepts both natural language and the **Stori structured prom
 
 ## SSE event types
 
-All events are newline-delimited `data: {json}\n\n` lines. Every event has a `type` field and a monotonic `seq` integer (assigned at the route layer, starting at 1 per request). **Keys are camelCase.**
+All events are newline-delimited `data: {json}\n\n` lines. Every event has a `type` field and a monotonic `seq` integer (assigned at the route layer, starting at 0 per request, incrementing 0, 1, 2, ...). **Keys are camelCase.**
 
-`seq` is the canonical ordering key for Agent Teams events that may arrive out of order. Frontend should sort by `seq` when reconstructing timeline order if needed.
+`seq` is the canonical ordering key for Agent Teams events that may arrive out of order. Frontend should sort by `seq` when reconstructing timeline order if needed. `seq` resets to 0 at the start of each new conversation turn.
 
 ### Events emitted in all modes
 
@@ -42,7 +42,7 @@ All events are newline-delimited `data: {json}\n\n` lines. Every event has a `ty
 | `reasoning` | LLM chain-of-thought chunk (streamed). `{ "type": "reasoning", "content": "..." }` |
 | `content` | Final user-facing text response. `{ "type": "content", "content": "..." }` |
 | `error` | Error message (non-fatal or fatal). `{ "type": "error", "error": "...", "message": "..." }` |
-| `complete` | **Always the final event**, even on errors. `{ "type": "complete", "success": true \| false, "traceId": "...", "inputTokens": 42350, "contextWindowTokens": 200000 }`. On error: `success: false`. `inputTokens` = full input tokens sent to the model this turn (from `usage.prompt_tokens`; reflects the entire context window occupied, including history, system prompt, and tools). `contextWindowTokens` = model capacity (200 000 for all supported Claude models). Both are `0` if unavailable — frontend should leave any usage display at its previous value in that case. |
+| `complete` | **Always the final event**, even on errors. `{ "type": "complete", "success": true \| false, "traceId": "...", "inputTokens": 42350, "contextWindowTokens": 200000 }`. `success` is `false` when: (a) an error aborted the stream, or (b) tool errors occurred and zero notes were generated (generation failed silently). `inputTokens` = full input tokens sent to the model this turn (from `usage.prompt_tokens`; reflects the entire context window occupied, including history, system prompt, and tools). `contextWindowTokens` = model capacity (200 000 for all supported Claude models). Both are `0` if unavailable — frontend should leave any usage display at its previous value in that case. |
 
 ### EDITING mode events
 
@@ -51,11 +51,12 @@ Emitted when `state.state == "editing"`. Applied immediately by the frontend.
 | type | Description |
 |------|-------------|
 | `plan` | Structured plan emitted once after initial reasoning, before the first tool call. Steps are ordered per-track (contiguous) so each instrument's steps appear together. Labels follow canonical patterns for frontend timeline grouping. `toolName` is present when the step maps to a specific tool, omitted otherwise. Instrument steps carry `parallelGroup: "instruments"` — steps sharing the same `parallelGroup` value execute concurrently (see [Parallel execution](#parallel-execution) below). `{ "type": "plan", "planId": "uuid", "title": "Building Lo-Fi Groove", "steps": [{ "stepId": "1", "label": "Set tempo to 72 BPM", "toolName": "stori_set_tempo", "status": "pending" }, { "stepId": "2", "label": "Set key signature to Cm", "toolName": "stori_set_key", "status": "pending" }, { "stepId": "3", "label": "Create Drums track", "toolName": "stori_add_midi_track", "parallelGroup": "instruments", "status": "pending" }, { "stepId": "4", "label": "Add content to Drums", "toolName": "stori_add_notes", "parallelGroup": "instruments", "detail": "8 bars, boom bap drums", "status": "pending" }, { "stepId": "5", "label": "Add effects to Drums", "toolName": "stori_add_insert_effect", "parallelGroup": "instruments", "detail": "Compressor", "status": "pending" }, ...] }`. See [Execution Timeline contract](#execution-timeline-contract) below. |
-| `preflight` | Emitted before Phase 2 agents start (Agent Teams only). One per expected instrument step, derived from the plan — no LLM call. Lets the frontend pre-allocate timeline rows. `{ "type": "preflight", "stepId": "3", "agentId": "drums", "agentRole": "drums", "label": "Create Drums track", "toolName": "stori_add_midi_track", "parallelGroup": "instruments", "confidence": 0.9 }` |
-| `planStepUpdate` | Step lifecycle update. `active` when starting, `completed` / `failed` when done. At plan completion, steps never activated are emitted as `skipped` — no step is left in `pending`. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "failed" \| "skipped", "result": "optional summary" }` |
-| `toolStart` | Fires **before** each `toolCall` with a human-readable label. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Create Drums track" }` |
-| `toolCall` | Resolved tool call for the frontend to apply. In Agent Teams mode, includes `agentId` identifying which instrument agent produced it. `{ "type": "toolCall", "id": "...", "name": "stori_add_midi_track", "params": { "trackId": "uuid", ... }, "agentId": "drums" }`. **Critical: key is `"params"` (not `"arguments"`); key is `"name"` (not `"tool"`). All IDs are fully-resolved UUIDs.** |
+| `preflight` | Emitted before Phase 2 agents start (Agent Teams only). One per expected instrument step, derived from the plan — no LLM call. Lets the frontend pre-allocate timeline rows. Includes `trackColor` (hex) from the curated 12-color composition palette. `{ "type": "preflight", "stepId": "3", "agentId": "drums", "agentRole": "drums", "label": "Create Drums track", "toolName": "stori_add_midi_track", "parallelGroup": "instruments", "confidence": 0.9, "trackColor": "#E85D75" }` |
+| `planStepUpdate` | Step lifecycle update. `active` when starting, `completed` / `failed` when done. At plan completion, steps never activated are emitted as `skipped` — no step is left in `pending`. Includes `phase` when the step maps to a tool. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "failed" \| "skipped", "phase": "setup", "result": "optional summary" }` |
+| `toolStart` | Fires **before** each `toolCall` with a human-readable label and composition phase. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Create Drums track", "phase": "composition" }` |
+| `toolCall` | Resolved tool call for the frontend to apply. In Agent Teams mode, includes `agentId` identifying which instrument agent produced it. Includes `label` (matching the preceding `toolStart`) and `phase`. `{ "type": "toolCall", "id": "...", "name": "stori_add_midi_track", "label": "Create Drums track", "phase": "composition", "params": { "trackId": "uuid", ... }, "agentId": "drums" }`. **Critical: key is `"params"` (not `"arguments"`); key is `"name"` (not `"tool"`). All IDs are fully-resolved UUIDs.** |
 | `toolError` | Non-fatal validation error. Stream continues. `{ "type": "toolError", "name": "stori_add_notes", "error": "Region not found", "errors": ["..."] }` |
+| `agentComplete` | Emitted when an instrument agent finishes all its work (success or failure). Lets the frontend distinguish "agent done" from "agent between tool calls." `{ "type": "agentComplete", "agentId": "drums", "success": true }` |
 | `summary.final` | Emitted by Agent Teams handler immediately before `complete`. Rich composition summary for the "Ready!" line. `{ "type": "summary.final", "traceId": "...", "trackCount": 3, "tracksCreated": [{"name": "Drums", "instrument": "TR-808", "trackId": "uuid"}], "regionsCreated": 3, "notesGenerated": 128, "effectsAdded": [{"trackId": "uuid", "type": "compressor"}], "effectCount": 2, "sendsCreated": 1, "ccEnvelopes": [{"cc": 74, "name": "Filter Cutoff"}], "automationLanes": 0 }` |
 | `complete` | Stream done. Includes `inputTokens` and `contextWindowTokens` (see global `complete` row above). |
 
@@ -69,9 +70,9 @@ COMPOSING now emits the same `reasoning`, `plan`, `planStepUpdate`, `toolStart`,
 |------|-------------|
 | `reasoning` | Streamed planner chain-of-thought (same as EDITING/REASONING). Emitted during the LLM planning phase before the plan is ready. Deterministic plans (structured prompts with all fields) skip this. |
 | `plan` | Structured plan (same shape as EDITING). `{ "type": "plan", "planId": "uuid", "title": "...", "steps": [...] }` |
-| `planStepUpdate` | Step lifecycle (same as EDITING). Unactivated steps emitted as `skipped` at completion. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "skipped" }` |
-| `toolStart` | Fires before each tool call during variation execution. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Create Drums track" }` |
-| `toolCall` | Proposal tool call. **`proposal: true`** — the frontend renders this for transparency but does NOT apply it to the DAW. `{ "type": "toolCall", "id": "...", "name": "...", "params": {...}, "proposal": true }` |
+| `planStepUpdate` | Step lifecycle (same as EDITING, includes `phase`). Unactivated steps emitted as `skipped` at completion. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "skipped", "phase": "composition" }` |
+| `toolStart` | Fires before each tool call during variation execution (includes `phase`). `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Create Drums track", "phase": "composition" }` |
+| `toolCall` | Proposal tool call. **`proposal: true`** — the frontend renders this for transparency but does NOT apply it to the DAW. Includes `label` and `phase`. `{ "type": "toolCall", "id": "...", "name": "...", "label": "Create Drums track", "phase": "composition", "params": {...}, "proposal": true }` |
 | `meta` | Variation summary. `{ "type": "meta", "variationId": "uuid", "baseStateId": "42", "intent": "...", "aiExplanation": "...", "affectedTracks": [...], "affectedRegions": [...], "noteCounts": { "added": 32, "removed": 0, "modified": 0 } }`. Use `baseStateId: "0"` for first variation after editing. |
 | `phrase` | One musical phrase. `{ "type": "phrase", "phraseId": "uuid", "trackId": "uuid", "regionId": "uuid", "startBeat": 0.0, "endBeat": 16.0, "label": "...", "tags": [...], "explanation": "...", "noteChanges": [...], "controllerChanges": [] }` |
 | `done` | End of variation stream. Frontend enables Accept/Discard. `{ "type": "done", "variationId": "uuid", "phraseCount": 4 }` |
@@ -104,10 +105,10 @@ Emitted when `state.state == "reasoning"`. No tools; chat only.
 
 **EDITING:**
 ```
-state → reasoning* → plan → [planStepUpdate(active) → toolStart → toolCall → planStepUpdate(completed)]* → planStepUpdate(skipped)* → content? → complete
+state → reasoning* → plan → preflight* → [planStepUpdate(active) → toolStart → toolCall → planStepUpdate(completed)]* → agentComplete* → planStepUpdate(skipped)* → summary.final? → content? → complete
 ```
 
-Steps are grouped per-track (contiguous) in the `plan` event. During execution, instrument steps with the same `parallelGroup` may interleave (see [Parallel execution](#parallel-execution)). At completion, any steps never activated are emitted as `skipped` before `complete`.
+Steps are grouped per-track (contiguous) in the `plan` event. During execution, instrument steps with the same `parallelGroup` may interleave (see [Parallel execution](#parallel-execution)). Each instrument agent emits `agentComplete` when it finishes. At completion, any steps never activated are emitted as `skipped` before `complete`.
 
 **COMPOSING (unified):**
 ```
@@ -169,6 +170,7 @@ The `plan` event and subsequent `planStepUpdate` events are designed to power th
 | `parallelGroup` | string | no | Steps sharing the same value execute concurrently. Currently `"instruments"` for track-bound steps. Absent on sequential setup/mixing steps. See [Parallel execution](#parallel-execution). |
 | `status` | string | yes | One of `"pending"`, `"active"`, `"completed"`, `"skipped"`, `"failed"` |
 | `detail` | string | no | Short, forward-looking description from a musician's perspective (e.g. "8 bars of funk bass") |
+| `phase` | string | no | Composition phase derived from the tool (see [Composition phases](#composition-phases)). Present on `toolStart`, `toolCall`, and `planStepUpdate` when the step maps to a tool. Values: `"setup"`, `"composition"`, `"soundDesign"`, `"mixing"`. |
 | `result` | string | no | Populated in `planStepUpdate` on completion. Backward-looking outcome (e.g. "32 notes generated - 4 bars") |
 
 **Canonical label patterns** (used by the frontend for section grouping):
@@ -190,6 +192,17 @@ Track names use title-case with spaces and are consistent across all steps refer
 **Step ordering:** In the `plan` event, steps are emitted in track-contiguous order. All steps for one instrument appear together (create, content, effects, expressive) before moving to the next instrument. Project-level setup steps (tempo, key) come first; shared bus setup comes last. During execution, instrument steps with `parallelGroup` may interleave across instruments (see [Parallel execution](#parallel-execution)).
 
 **Terminal status guarantee:** Every step reaches a terminal status (`completed`, `failed`, or `skipped`) before `complete` is emitted. The backend calls `finalize_pending_as_skipped()` at plan completion to ensure no step remains in `pending`.
+
+### Composition phases
+
+`toolStart`, `toolCall`, and `planStepUpdate` events include a `phase` field derived from the tool name. The backend determines the phase — the frontend should not infer it from tool names.
+
+| Phase | Tools | Description |
+|-------|-------|-------------|
+| `setup` | `stori_set_tempo`, `stori_set_key` | Project-level configuration |
+| `composition` | `stori_add_midi_track`, `stori_add_midi_region`, `stori_add_notes`, `stori_generate_*` | Track creation, region layout, note generation |
+| `soundDesign` | `stori_add_insert_effect`, `stori_ensure_bus`, `stori_add_send`, `stori_add_midi_cc`, `stori_add_pitch_bend` | Effects, expressive controllers |
+| `mixing` | `stori_set_track_volume`, `stori_set_track_pan`, `stori_mute_track`, `stori_solo_track`, `stori_set_track_color`, `stori_set_track_icon`, `stori_set_track_name` | Mix balance, track management |
 
 ---
 

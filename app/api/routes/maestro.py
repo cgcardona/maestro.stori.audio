@@ -166,7 +166,7 @@ async def stream_maestro(
             logger.warning(f"Failed to load conversation history: {e}")
 
     async def stream_with_budget():
-        _seq = 0
+        _seq = -1  # first _seq += 1 yields 0
         import time as _time
         _stream_start = _time.monotonic()
 

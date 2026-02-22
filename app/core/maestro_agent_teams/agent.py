@@ -96,6 +96,7 @@ async def _run_instrument_agent(
                     "agentId": _agent_id,
                 })
 
+    _agent_success = False
     try:
         await _run_instrument_agent_inner(
             instrument_name=instrument_name,
@@ -120,9 +121,16 @@ async def _run_instrument_agent(
             composition_context=composition_context,
             assigned_color=assigned_color,
         )
+        _agent_success = True
     except Exception as exc:
         logger.exception(f"{agent_log} Unhandled agent error: {exc}")
         await _fail_all_steps(f"Failed: {exc}")
+    finally:
+        await sse_queue.put({
+            "type": "agentComplete",
+            "agentId": _agent_id,
+            "success": _agent_success,
+        })
 
 
 async def _run_instrument_agent_inner(
@@ -612,6 +620,7 @@ async def _run_instrument_agent_inner(
             "toolCall", "toolStart", "toolError",
             "generatorStart", "generatorComplete",
             "reasoning", "content", "status",
+            "agentComplete",
         }
 
         # ── Multi-section: dispatch via section children ──
@@ -793,6 +802,7 @@ async def _dispatch_section_children(
         "toolCall", "toolStart", "toolError",
         "generatorStart", "generatorComplete",
         "reasoning", "content", "status",
+        "agentComplete",
     }
 
     stage_track = prior_stage_track

@@ -810,3 +810,86 @@ class TestSemaphore:
         result = await c.generate(genre="jazz", tempo=100, bars=4)
         assert result["success"] is False
         assert c._semaphore._value == 1, "Semaphore must be released after error"
+
+
+class TestMusicalGoalsPayload:
+    """Regression: musical_goals=None must not appear as null in the HTTP payload.
+
+    Sending {"musical_goals": null} to the Gradio Space causes it to raise
+    TypeError: 'NoneType' object is not a mapping, which propagates back as a
+    toolError and silently empties all generated tracks.
+    """
+
+    def _make_client(self) -> OrpheusClient:
+        with patch("app.services.orpheus.settings") as m:
+            m.orpheus_base_url = "http://orpheus:10002"
+            m.orpheus_timeout = 30
+            m.hf_api_key = None
+            m.orpheus_max_concurrent = 2
+            return OrpheusClient()
+
+    def _ok_response(self) -> MagicMock:
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = {
+            "success": True,
+            "notes": [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 80}],
+            "tool_calls": [],
+            "metadata": {},
+        }
+        return resp
+
+    @pytest.mark.asyncio
+    async def test_musical_goals_none_omitted_from_payload(self):
+        """When musical_goals=None, the key must not appear in the POST body."""
+        c = self._make_client()
+        c._client = MagicMock()
+        c._client.post = AsyncMock(return_value=self._ok_response())
+
+        await c.generate(genre="jazz", tempo=100, bars=4, musical_goals=None)
+
+        _, kwargs = c._client.post.call_args
+        payload = kwargs["json"]
+        assert "musical_goals" not in payload, (
+            "musical_goals=None must be omitted from payload — "
+            "sending null causes Gradio to raise 'NoneType is not a mapping'"
+        )
+
+    @pytest.mark.asyncio
+    async def test_musical_goals_present_when_provided(self):
+        """When musical_goals has values they ARE included in the payload."""
+        c = self._make_client()
+        c._client = MagicMock()
+        c._client.post = AsyncMock(return_value=self._ok_response())
+
+        await c.generate(genre="jazz", tempo=100, bars=4, musical_goals=["dark", "energetic"])
+
+        _, kwargs = c._client.post.call_args
+        payload = kwargs["json"]
+        assert payload["musical_goals"] == ["dark", "energetic"]
+
+    @pytest.mark.asyncio
+    async def test_default_call_omits_musical_goals(self):
+        """A bare generate() call (no musical_goals arg) must not include the key."""
+        c = self._make_client()
+        c._client = MagicMock()
+        c._client.post = AsyncMock(return_value=self._ok_response())
+
+        await c.generate(genre="boom_bap", tempo=120, bars=4)
+
+        _, kwargs = c._client.post.call_args
+        payload = kwargs["json"]
+        assert "musical_goals" not in payload
+
+    @pytest.mark.asyncio
+    async def test_empty_list_omitted_from_payload(self):
+        """An empty musical_goals list is falsy and must also be omitted."""
+        c = self._make_client()
+        c._client = MagicMock()
+        c._client.post = AsyncMock(return_value=self._ok_response())
+
+        await c.generate(genre="pop", tempo=110, bars=4, musical_goals=[])
+
+        _, kwargs = c._client.post.call_args
+        payload = kwargs["json"]
+        assert "musical_goals" not in payload

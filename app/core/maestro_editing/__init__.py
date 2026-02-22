@@ -9,7 +9,7 @@ from app.core.maestro_editing.continuation import (
     _get_incomplete_tracks,
     _get_missing_expressive_steps,
 )
-from app.core.maestro_editing.tool_execution import _apply_single_tool_call
+from app.core.maestro_editing.tool_execution import _apply_single_tool_call, phase_for_tool
 from app.core.maestro_editing.handler import _handle_editing
 
 __all__ = [
@@ -22,6 +22,7 @@ __all__ = [
     "_get_missing_expressive_steps",
     # Tool execution
     "_apply_single_tool_call",
+    "phase_for_tool",
     # Handler
     "_handle_editing",
 ]

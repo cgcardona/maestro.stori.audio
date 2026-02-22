@@ -41,6 +41,7 @@ _AGENT_TAGGED_EVENTS = frozenset({
     "toolCall", "toolStart", "toolError",
     "generatorStart", "generatorComplete",
     "reasoning", "content", "status",
+    "agentComplete",
 })
 
 _EXPRESSIVENESS_TOOLS = frozenset({

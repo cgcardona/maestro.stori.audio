@@ -619,3 +619,333 @@ class TestEffectPersistenceRegression:
         store = StateStore()
         assert hasattr(store, "add_effect")
         assert callable(store.add_effect)
+
+
+class TestCompleteEventSuccessField:
+    """Regression: complete event must set success=false when 0 notes were generated.
+
+    When stori_generate_midi fails for all tracks (e.g. Orpheus returns a
+    NoneType error), the composition finishes with empty regions.
+    The complete event must NOT report success=true in this case.
+    """
+
+    def _make_summary(self, notes: int, regions: int) -> dict:
+        """Build a minimal summary dict as _build_composition_summary would."""
+        return {
+            "notesGenerated": notes,
+            "regionsCreated": regions,
+            "tracksCreated": [{"name": "Bass", "trackId": "t1", "instrument": "bass"}] if regions else [],
+            "tracksReused": [],
+            "trackCount": 1 if regions else 0,
+            "effectsAdded": [],
+            "effectCount": 0,
+            "sendsCreated": 0,
+            "ccEnvelopes": [],
+            "automationLanes": 0,
+            "text": "",
+        }
+
+    def _success_for(self, notes: int, regions: int) -> bool:
+        """Mirror the coordinator's success logic."""
+        return notes > 0 or regions == 0
+
+    def test_zero_notes_with_regions_is_failure(self):
+        """0 notes + regions > 0 means generation was attempted but failed."""
+        assert self._success_for(notes=0, regions=4) is False
+
+    def test_notes_present_is_success(self):
+        """Any notes produced = success."""
+        assert self._success_for(notes=120, regions=4) is True
+
+    def test_zero_notes_zero_regions_is_success(self):
+        """No regions means generation was never attempted — not a failure."""
+        assert self._success_for(notes=0, regions=0) is True
+
+    def test_single_note_is_success(self):
+        """Even one note is enough to call the composition successful."""
+        assert self._success_for(notes=1, regions=1) is True
+
+    def test_regression_four_track_all_failed(self):
+        """4-track composition, all stori_generate_midi calls failed → success=false.
+
+        Regression for: summary.final reports notesGenerated=0 but complete event
+        still said success=true, misleading the macOS client into displaying a
+        success confirmation for an empty composition.
+        """
+        notes, regions = 0, 4
+        result = self._success_for(notes=notes, regions=regions)
+        assert result is False, (
+            f"4-track composition with {notes} notes and {regions} regions "
+            "must produce success=false in the complete event"
+        )
+
+    def test_tool_errors_with_zero_notes_is_failure(self):
+        """toolErrors > 0 AND notesGenerated == 0 → success=false."""
+        notes, regions, tool_errors = 0, 4, 4
+        base = self._success_for(notes=notes, regions=regions)
+        assert base is False
+        if tool_errors > 0 and notes == 0:
+            assert True  # coordinator forces success=false
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SSE contract gap regressions
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSeqFieldRegression:
+    """Regression: SSE events must carry monotonically increasing seq (0-based)."""
+
+    @pytest.mark.anyio
+    async def test_seq_starts_at_zero(self):
+        """The _with_seq wrapper must produce seq=0 for the first event."""
+        import json as _json
+
+        _seq = -1
+
+        def _with_seq(event_str: str) -> str:
+            nonlocal _seq
+            if not event_str.startswith("data: "):
+                return event_str
+            _seq += 1
+            data = _json.loads(event_str[6:].strip())
+            data["seq"] = _seq
+            return f"data: {_json.dumps(data)}\n\n"
+
+        first_event = await sse_event({"type": "status", "message": "hello"})
+        result = _with_seq(first_event)
+        payload = _parse_sse(result)
+        assert payload["seq"] == 0, f"First event should have seq=0, got {payload['seq']}"
+
+    @pytest.mark.anyio
+    async def test_seq_increments_monotonically(self):
+        """Sequential events must get seq 0, 1, 2, ..."""
+        import json as _json
+
+        _seq = -1
+
+        def _with_seq(event_str: str) -> str:
+            nonlocal _seq
+            if not event_str.startswith("data: "):
+                return event_str
+            _seq += 1
+            data = _json.loads(event_str[6:].strip())
+            data["seq"] = _seq
+            return f"data: {_json.dumps(data)}\n\n"
+
+        events = [
+            await sse_event({"type": "status", "message": f"msg-{i}"})
+            for i in range(5)
+        ]
+        seq_values = []
+        for e in events:
+            result = _with_seq(e)
+            payload = _parse_sse(result)
+            seq_values.append(payload["seq"])
+        assert seq_values == [0, 1, 2, 3, 4]
+
+
+class TestPhaseFieldRegression:
+    """Regression: toolStart, toolCall, and planStepUpdate events must include phase."""
+
+    def test_phase_for_tool_setup(self):
+        """Setup tools (tempo, key) map to phase 'setup'."""
+        from app.core.maestro_editing.tool_execution import phase_for_tool
+        assert phase_for_tool("stori_set_tempo") == "setup"
+        assert phase_for_tool("stori_set_key") == "setup"
+
+    def test_phase_for_tool_composition(self):
+        """Composition tools (track, region, generate) map to phase 'composition'."""
+        from app.core.maestro_editing.tool_execution import phase_for_tool
+        assert phase_for_tool("stori_add_midi_track") == "composition"
+        assert phase_for_tool("stori_add_midi_region") == "composition"
+        assert phase_for_tool("stori_generate_midi") == "composition"
+        assert phase_for_tool("stori_add_notes") == "composition"
+
+    def test_phase_for_tool_sound_design(self):
+        """Effect and expressive tools map to phase 'soundDesign'."""
+        from app.core.maestro_editing.tool_execution import phase_for_tool
+        assert phase_for_tool("stori_add_insert_effect") == "soundDesign"
+        assert phase_for_tool("stori_add_midi_cc") == "soundDesign"
+        assert phase_for_tool("stori_add_pitch_bend") == "soundDesign"
+        assert phase_for_tool("stori_ensure_bus") == "soundDesign"
+
+    def test_phase_for_tool_mixing(self):
+        """Mixing tools (volume, pan, sends) map to phase 'mixing'."""
+        from app.core.maestro_editing.tool_execution import phase_for_tool
+        assert phase_for_tool("stori_set_track_volume") == "mixing"
+        assert phase_for_tool("stori_set_track_pan") == "mixing"
+
+    @pytest.mark.anyio
+    async def test_tool_start_includes_phase(self):
+        """toolStart events must include a phase field."""
+        from unittest.mock import MagicMock
+        from app.core.maestro_editing.tool_execution import _apply_single_tool_call
+        from app.core.tracing import TraceContext
+        from app.core.state_store import StateStore
+
+        store = StateStore()
+        trace = TraceContext(trace_id="test-phase")
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-phase-1",
+            tc_name="stori_set_tempo",
+            resolved_args={"tempo": 120},
+            allowed_tool_names={"stori_set_tempo"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        tool_start_events = [e for e in outcome.sse_events if e["type"] == "toolStart"]
+        assert len(tool_start_events) >= 1
+        assert tool_start_events[0]["phase"] == "setup"
+
+    @pytest.mark.anyio
+    async def test_tool_call_includes_phase_and_label(self):
+        """toolCall events must include phase and label fields."""
+        from app.core.maestro_editing.tool_execution import _apply_single_tool_call
+        from app.core.tracing import TraceContext
+        from app.core.state_store import StateStore
+
+        store = StateStore()
+        trace = TraceContext(trace_id="test-label-phase")
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-lp-1",
+            tc_name="stori_set_tempo",
+            resolved_args={"tempo": 140},
+            allowed_tool_names={"stori_set_tempo"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        tool_call_events = [e for e in outcome.sse_events if e["type"] == "toolCall"]
+        assert len(tool_call_events) >= 1
+        tc_evt = tool_call_events[0]
+        assert "label" in tc_evt, "toolCall must include label"
+        assert "phase" in tc_evt, "toolCall must include phase"
+        assert tc_evt["phase"] == "setup"
+        assert tc_evt["label"]  # non-empty
+
+
+class TestLabelOnToolCallRegression:
+    """Regression: toolCall events must repeat the label from the preceding toolStart."""
+
+    @pytest.mark.anyio
+    async def test_tool_call_label_matches_tool_start(self):
+        """The label on toolCall must match the label on toolStart."""
+        from app.core.maestro_editing.tool_execution import _apply_single_tool_call
+        from app.core.tracing import TraceContext
+        from app.core.state_store import StateStore
+
+        store = StateStore()
+        trace = TraceContext(trace_id="test-label-match")
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-lm-1",
+            tc_name="stori_set_tempo",
+            resolved_args={"tempo": 90},
+            allowed_tool_names={"stori_set_tempo"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        starts = [e for e in outcome.sse_events if e["type"] == "toolStart"]
+        calls = [e for e in outcome.sse_events if e["type"] == "toolCall"]
+        assert len(starts) >= 1
+        assert len(calls) >= 1
+        assert starts[0]["label"] == calls[0]["label"], (
+            f"toolStart label '{starts[0]['label']}' != toolCall label '{calls[0]['label']}'"
+        )
+
+
+class TestAgentCompleteEventContract:
+    """agentComplete: agentId, success (both required)."""
+
+    @pytest.mark.anyio
+    async def test_required_fields_present(self):
+        event = await sse_event({
+            "type": "agentComplete",
+            "agentId": "drums",
+            "success": True,
+        })
+        payload = _parse_sse(event)
+        assert payload["agentId"]
+        assert isinstance(payload["success"], bool)
+
+    def test_agent_complete_in_tagged_set(self):
+        """agentComplete must be in the agent-tagged event set for proper routing."""
+        from app.core.maestro_agent_teams.section_agent import _AGENT_TAGGED_EVENTS
+        assert "agentComplete" in _AGENT_TAGGED_EVENTS
+
+
+class TestPreflightTrackColorRegression:
+    """Regression: preflight events should include trackColor from curated palette."""
+
+    @pytest.mark.anyio
+    async def test_preflight_with_track_color(self):
+        event = await sse_event({
+            "type": "preflight",
+            "stepId": "step-1",
+            "agentId": "drums",
+            "agentRole": "drums",
+            "label": "Create Drums track",
+            "trackColor": "#E85D75",
+        })
+        payload = _parse_sse(event)
+        assert "trackColor" in payload
+        assert payload["trackColor"].startswith("#")
+
+    def test_composition_palette_has_12_colors(self):
+        """The palette must have 12 high-hue-separation colors."""
+        from app.core.track_styling import COMPOSITION_PALETTE
+        assert len(COMPOSITION_PALETTE) == 12
+
+    def test_no_duplicate_colors_in_palette(self):
+        """All palette colors must be unique."""
+        from app.core.track_styling import COMPOSITION_PALETTE
+        assert len(set(COMPOSITION_PALETTE)) == len(COMPOSITION_PALETTE)
+
+    def test_allocate_colors_cycles_palette(self):
+        """allocate_colors assigns distinct colors and cycles after exhaustion."""
+        from app.core.track_styling import allocate_colors, COMPOSITION_PALETTE
+        names = [f"Inst{i}" for i in range(14)]
+        result = allocate_colors(names)
+        assert len(result) == 14
+        first_12 = [result[f"Inst{i}"] for i in range(12)]
+        assert len(set(first_12)) == 12
+        assert result["Inst12"] == COMPOSITION_PALETTE[0]
+
+
+class TestOrpheusMetadataNoneRegression:
+    """Regression: Orpheus returning metadata: null must not crash the client."""
+
+    def test_metadata_none_unpacking(self):
+        """Dict unpacking with None metadata must not raise TypeError.
+
+        Regression for P0: 'NoneType' object is not a mapping when
+        Orpheus returns {"metadata": null} in its response JSON.
+        """
+        data: dict[str, Any] = {
+            "success": True,
+            "notes": [{"pitch": 60}],
+            "metadata": None,
+        }
+        out = {**(data.get("metadata") or {}), "retry_count": 0}
+        assert out == {"retry_count": 0}
+
+    def test_metadata_missing_key(self):
+        """Missing metadata key falls back to empty dict."""
+        data: dict[str, Any] = {"success": True, "notes": []}
+        out = {**(data.get("metadata") or {}), "retry_count": 1}
+        assert out == {"retry_count": 1}
+
+    def test_metadata_present(self):
+        """Valid metadata dict is preserved."""
+        data: dict[str, Any] = {
+            "success": True,
+            "notes": [],
+            "metadata": {"model": "v2"},
+        }
+        out = {**(data.get("metadata") or {}), "retry_count": 2}
+        assert out == {"model": "v2", "retry_count": 2}

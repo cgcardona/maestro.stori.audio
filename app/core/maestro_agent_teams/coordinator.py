@@ -210,6 +210,17 @@ async def _handle_composition_agent_team(
                 "trackId": track_id,
                 "next_beat": next_beat,
             }
+    # ── Pre-allocate one distinct color per instrument ──
+    # Must happen before preflight so trackColor can be included.
+    _instrument_names_ordered = [
+        _ROLE_LABELS.get(r.lower(), r.title()) for r in parsed.roles
+    ]
+    _color_map: dict[str, str] = allocate_colors(_instrument_names_ordered)
+    logger.info(
+        f"[{trace.trace_id[:8]}] 🎨 Color allocation: "
+        + ", ".join(f"{n}={c}" for n, c in _color_map.items())
+    )
+
     # ── Preflight events — latency masking (emit before agents start) ──
     # Lets the frontend pre-allocate timeline rows and show "incoming" states
     # for every predicted instrument step. Derived from the plan, no LLM needed.
@@ -217,8 +228,9 @@ async def _handle_composition_agent_team(
         instrument_name = _ROLE_LABELS.get(role.lower(), role.title())
         step_ids_for_role = instrument_step_ids.get(instrument_name.lower(), [])
         steps_for_role = [s for s in plan_tracker.steps if s.step_id in step_ids_for_role]
+        _preflight_color = _color_map.get(instrument_name)
         for step in steps_for_role:
-            yield await sse_event({
+            _preflight_evt: dict[str, Any] = {
                 "type": "preflight",
                 "stepId": step.step_id,
                 "agentId": instrument_name.lower(),
@@ -227,7 +239,10 @@ async def _handle_composition_agent_team(
                 "toolName": step.tool_name,
                 "parallelGroup": step.parallel_group,
                 "confidence": 0.9,
-            })
+            }
+            if _preflight_color:
+                _preflight_evt["trackColor"] = _preflight_color
+            yield await sse_event(_preflight_evt)
 
     sse_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     agent_tool_calls: list[dict[str, Any]] = []
@@ -349,18 +364,6 @@ async def _handle_composition_agent_team(
             f"ids={_reused_ids}"
         )
 
-    # ── Pre-allocate one distinct color per instrument ──
-    # Coordinator owns color assignment so no two agents can collide.
-    # Colors are drawn from a perceptually-spaced palette in role order.
-    _instrument_names_ordered = [
-        _role_track_info[r]["instrument_name"] for r in parsed.roles
-    ]
-    _color_map: dict[str, str] = allocate_colors(_instrument_names_ordered)
-    logger.info(
-        f"[{trace.trace_id[:8]}] 🎨 Color allocation: "
-        + ", ".join(f"{n}={c}" for n, c in _color_map.items())
-    )
-
     def _spawn_agent(role: str) -> asyncio.Task:
         role_info = _role_track_info[role]
         instrument_name = role_info["instrument_name"]
@@ -447,6 +450,7 @@ async def _handle_composition_agent_team(
     _last_warn_time = _now_init
     _total_events_emitted = 0
     _stall_warnings = 0
+    _tool_error_count = 0
 
     logger.info(
         f"[{trace.trace_id[:8]}] 🚀 Phase 2: launching {len(all_tasks)} instrument agents "
@@ -460,6 +464,8 @@ async def _handle_composition_agent_team(
         _drained = 0
         while not sse_queue.empty():
             evt = sse_queue.get_nowait()
+            if evt.get("type") == "toolError":
+                _tool_error_count += 1
             yield await sse_event(evt)
             _drained += 1
             _total_events_emitted += 1
@@ -533,7 +539,10 @@ async def _handle_composition_agent_team(
     # Final drain — catch any events queued during the last task completions
     _final_drained = 0
     while not sse_queue.empty():
-        yield await sse_event(sse_queue.get_nowait())
+        _final_evt = sse_queue.get_nowait()
+        if _final_evt.get("type") == "toolError":
+            _tool_error_count += 1
+        yield await sse_event(_final_evt)
         _final_drained += 1
         _total_events_emitted += 1
 
@@ -612,11 +621,13 @@ async def _handle_composition_agent_team(
     )
 
     _all_tracks = summary.get("tracksCreated", []) + summary.get("tracksReused", [])
+    _notes_generated = summary.get("notesGenerated", 0)
+    _regions_created = summary.get("regionsCreated", 0)
     yield await sse_event({
         "type": "summary",
         "tracks": [t.get("name", "") for t in _all_tracks],
-        "regions": summary.get("regionsCreated", 0),
-        "notes": summary.get("notesGenerated", 0),
+        "regions": _regions_created,
+        "notes": _notes_generated,
         "effects": summary.get("effectCount", 0),
     })
 
@@ -626,11 +637,35 @@ async def _handle_composition_agent_team(
         **summary,
     })
 
+    # success is False when generation was attempted (regions created) but
+    # produced no notes, or when toolErrors were recorded.
+    _generation_succeeded = _notes_generated > 0 or _regions_created == 0
+    if _tool_error_count > 0 and _notes_generated == 0:
+        _generation_succeeded = False
+    _complete_warnings: list[str] = []
+    if not _generation_succeeded:
+        if _tool_error_count > 0:
+            _complete_warnings.append(
+                f"{_tool_error_count} tool error(s) occurred during composition"
+            )
+        if _notes_generated == 0 and _regions_created > 0:
+            _complete_warnings.append(
+                f"MIDI generation failed for all {_regions_created} region(s) — "
+                "Orpheus returned no notes. Check that the Orpheus service is "
+                "reachable and returning valid responses."
+            )
+        logger.warning(
+            f"⚠️ [{trace.trace_id[:8]}] Composition complete but notesGenerated=0 "
+            f"with {_regions_created} region(s), {_tool_error_count} toolError(s) — "
+            f"marking success=false"
+        )
+
     yield await sse_event({
         "type": "complete",
-        "success": True,
+        "success": _generation_succeeded,
         "toolCalls": all_collected,
         "stateVersion": store.version,
         "traceId": trace.trace_id,
+        **({"warnings": _complete_warnings} if _complete_warnings else {}),
         **_context_usage_fields(usage_tracker, llm.model),
     })
