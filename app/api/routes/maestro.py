@@ -116,9 +116,9 @@ async def stream_maestro(
             raise HTTPException(
                 status_code=402,
                 detail={
-                    "error": "Insufficient budget",
+                    "message": "Insufficient budget",
                     "budgetRemaining": e.budget_remaining,
-                }
+                },
             )
         except BudgetError:
             pass

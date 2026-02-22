@@ -63,7 +63,13 @@ async def add_message_to_conversation(
     try:
         await check_budget(db, user_id)
     except InsufficientBudgetError as e:
-        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "message": str(e),
+                "budgetRemaining": e.budget_remaining,
+            },
+        )
 
     user_message_content = maestro_request.prompt if maestro_request.store_prompt else "[content not stored]"
     user_message = await conv_service.add_message(

@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid as _uuid_mod
 from typing import Any, AsyncIterator, Optional
 
+from app.core.emotion_vector import emotion_vector_from_stori_prompt
 from app.core.llm_client import LLMClient
 from app.core.prompts import system_prompt_base
 from app.core.sse_utils import sse_event
@@ -29,6 +31,18 @@ from app.core.maestro_agent_teams.agent import _run_instrument_agent
 from app.core.maestro_agent_teams.summary import _build_composition_summary
 
 logger = logging.getLogger(__name__)
+
+_BARS_RE = re.compile(r"\b(\d{1,3})[\s-]*bars?\b", re.IGNORECASE)
+
+
+def _parse_bars_from_text(text: str) -> Optional[int]:
+    """Extract an explicit bar count from natural language (e.g. '24-bar bridge')."""
+    m = _BARS_RE.search(text)
+    if m:
+        val = int(m.group(1))
+        if 1 <= val <= 128:
+            return val
+    return None
 
 
 async def _handle_composition_agent_team(
@@ -149,9 +163,20 @@ async def _handle_composition_agent_team(
 
     style = parsed.style or "default"
     ext = getattr(parsed, "extensions", {}) or {}
-    bars = int(ext.get("bars") or ext.get("Bars") or 4)
+    constraints = getattr(parsed, "constraints", {}) or {}
+    bars = int(
+        constraints.get("bars")
+        or ext.get("bars") or ext.get("Bars")
+        or _parse_bars_from_text(getattr(parsed, "request", "") or prompt)
+        or 4
+    )
     tempo = float(parsed.tempo or project_context.get("tempo") or 120)
     key = parsed.key or project_context.get("key") or "C"
+    logger.info(
+        f"[{trace.trace_id[:8]}] Composition parameters: bars={bars}, tempo={tempo}, "
+        f"key={key}, style={style} (source: "
+        f"{'constraints' if constraints.get('bars') else 'extensions' if ext.get('bars') or ext.get('Bars') else 'prompt-parse' if _parse_bars_from_text(getattr(parsed, 'request', '') or prompt) else 'default'})"
+    )
 
     # ── Detect existing tracks to avoid creating duplicates ──
     _existing_track_info: dict[str, dict[str, Any]] = {}
@@ -204,6 +229,23 @@ async def _handle_composition_agent_team(
     agent_tool_calls: list[dict[str, Any]] = []
     tasks: list[asyncio.Task] = []
 
+    # ── Build composition context for Orpheus routing ──
+    _emotion_vector = None
+    try:
+        _emotion_vector = emotion_vector_from_stori_prompt(prompt)
+    except Exception as _ev_exc:
+        logger.warning(
+            f"[{trace.trace_id[:8]}] EmotionVector parse failed: {_ev_exc}"
+        )
+    _composition_context: dict[str, Any] = {
+        "style": style,
+        "tempo": tempo,
+        "bars": bars,
+        "key": key,
+        "emotion_vector": _emotion_vector,
+        "quality_preset": "quality",
+    }
+
     _role_track_info: dict[str, dict[str, Any]] = {}
     for role in parsed.roles:
         instrument_name = _ROLE_LABELS.get(role.lower(), role.title())
@@ -235,7 +277,7 @@ async def _handle_composition_agent_team(
             f"ids={_reused_ids} — check project_context track names vs role names"
         )
 
-    for role in parsed.roles:
+    def _spawn_agent(role: str) -> asyncio.Task:
         role_info = _role_track_info[role]
         instrument_name = role_info["instrument_name"]
         step_ids_for_role = instrument_step_ids.get(instrument_name.lower(), [])
@@ -246,6 +288,7 @@ async def _handle_composition_agent_team(
                 "tool": "_reused_track",
                 "params": {"name": instrument_name, "trackId": existing_track_id},
             })
+        _ctx = {**_composition_context, "role": role}
         task = asyncio.create_task(
             _run_instrument_agent(
                 instrument_name=instrument_name,
@@ -264,17 +307,43 @@ async def _handle_composition_agent_team(
                 collected_tool_calls=agent_tool_calls,
                 existing_track_id=existing_track_id,
                 start_beat=agent_start_beat,
+                composition_context=_ctx,
             )
         )
-        tasks.append(task)
         logger.info(
             f"[{trace.trace_id[:8]}] 🚀 Spawned {instrument_name} agent "
             f"(step_ids={step_ids_for_role}"
             + (f", reusing trackId={existing_track_id}, startBeat={agent_start_beat}" if existing_track_id else "")
             + ")"
         )
+        return task
 
-    # Drain queue while agents run — forward events to client as they arrive
+    # ── Phase 2a: Run drums first for RhythmSpine coupling ──
+    drum_roles = [r for r in parsed.roles if r.lower() in ("drums", "drum")]
+    other_roles = [r for r in parsed.roles if r not in drum_roles]
+
+    if drum_roles:
+        drum_task = _spawn_agent(drum_roles[0])
+        await drum_task
+        while not sse_queue.empty():
+            yield await sse_event(sse_queue.get_nowait())
+        if not drum_task.cancelled() and drum_task.exception() is not None:
+            exc = drum_task.exception()
+            logger.error(f"[{trace.trace_id[:8]}] ❌ Drum agent crashed: {exc}")
+        else:
+            logger.info(
+                f"[{trace.trace_id[:8]}] ✅ Drums complete — "
+                f"RhythmSpine captured for bass coupling"
+            )
+
+    # ── Phase 2b: Spawn remaining agents in parallel ──
+    for role in other_roles:
+        tasks.append(_spawn_agent(role))
+
+    # Drain queue while agents run — forward events to client as they arrive.
+    # Task-level exceptions are caught here as a failsafe; the agent's own
+    # try/except should handle most failures, but a truly unexpected crash
+    # (e.g. OOM, interpreter error) could bypass it.
     pending: set[asyncio.Task] = set(tasks)
     while pending:
         done, pending = await asyncio.wait(pending, timeout=0.05)
@@ -282,9 +351,28 @@ async def _handle_composition_agent_team(
             yield await sse_event(sse_queue.get_nowait())
         for task in done:
             if not task.cancelled() and task.exception() is not None:
+                exc = task.exception()
                 logger.error(
-                    f"[{trace.trace_id[:8]}] ❌ Instrument agent failed: {task.exception()}"
+                    f"[{trace.trace_id[:8]}] ❌ Instrument agent task crashed: {exc}"
                 )
+                # Failsafe: mark any steps that are still pending/active as
+                # failed so the client never sees steps stuck in limbo.
+                for step in plan_tracker.steps:
+                    if (
+                        step.parallel_group == "instruments"
+                        and step.status in ("pending", "active")
+                    ):
+                        role_for_step = (step.track_name or "").lower()
+                        step_ids_for_role = instrument_step_ids.get(role_for_step, [])
+                        if step.step_id in step_ids_for_role:
+                            step.status = "failed"
+                            yield await sse_event({
+                                "type": "planStepUpdate",
+                                "stepId": step.step_id,
+                                "status": "failed",
+                                "result": f"Failed: {exc}",
+                                "agentId": role_for_step,
+                            })
     while not sse_queue.empty():
         yield await sse_event(sse_queue.get_nowait())
 
@@ -356,6 +444,16 @@ async def _handle_composition_agent_team(
     summary = _build_composition_summary(
         all_collected, tempo=tempo, key=key, style=style,
     )
+
+    _all_tracks = summary.get("tracksCreated", []) + summary.get("tracksReused", [])
+    yield await sse_event({
+        "type": "summary",
+        "tracks": [t.get("name", "") for t in _all_tracks],
+        "regions": summary.get("regionsCreated", 0),
+        "notes": summary.get("notesGenerated", 0),
+        "effects": summary.get("effectCount", 0),
+    })
+
     yield await sse_event({
         "type": "summary.final",
         "traceId": trace.trace_id,

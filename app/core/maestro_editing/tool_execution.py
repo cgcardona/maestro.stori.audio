@@ -99,6 +99,13 @@ async def _execute_agent_generator(
             "name": tc_name,
             "label": f"Generating {role} via Orpheus",
         })
+        sse_events.append({
+            "type": "generatorStart",
+            "role": role,
+            "style": style,
+            "bars": bars,
+            "label": role.capitalize(),
+        })
 
     gen_kwargs: dict[str, Any] = {
         "quality_preset": composition_context.get("quality_preset", "quality"),
@@ -107,6 +114,8 @@ async def _execute_agent_generator(
     if emotion_vector is not None:
         gen_kwargs["emotion_vector"] = emotion_vector
 
+    import time as _time
+    _gen_start = _time.monotonic()
     try:
         mg = get_music_generator()
         result = await mg.generate(
@@ -142,9 +151,10 @@ async def _execute_agent_generator(
         logger.warning(
             f"[{trace.trace_id[:8]}] Generator {tc_name} returned failure: {result.error}"
         )
-        error_result = {"error": result.error or "Generation failed"}
+        error_msg = result.error or "Generation failed"
+        error_result = {"error": error_msg}
         if emit_sse:
-            sse_events.append({"type": "toolError", "name": tc_name, "error": result.error or ""})
+            sse_events.append({"type": "toolError", "name": tc_name, "error": error_msg})
         return _ToolCallOutcome(
             enriched_params=enriched_params,
             tool_result=error_result,
@@ -160,6 +170,16 @@ async def _execute_agent_generator(
             },
             skipped=True,
         )
+
+    _gen_duration_ms = int((_time.monotonic() - _gen_start) * 1000)
+
+    if emit_sse:
+        sse_events.append({
+            "type": "generatorComplete",
+            "role": role,
+            "noteCount": len(result.notes),
+            "durationMs": _gen_duration_ms,
+        })
 
     store.add_notes(region_id, result.notes)
 

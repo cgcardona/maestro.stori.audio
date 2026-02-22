@@ -148,6 +148,7 @@ class Settings(BaseSettings):
     orchestration_temperature: float = 0.1   # Low temp for deterministic tool selection
     composition_max_tokens: int = 32768      # Higher token budget for GENERATE_MUSIC in EDITING mode
     composition_reasoning_fraction: float = 0.08  # Keep reasoning tight for tool-calling; ~2,600 tokens on 32K budget
+    agent_reasoning_fraction: float = 0.05        # Minimal reasoning — agents execute a fixed pipeline; Orpheus handles musical decisions
     
     # CORS Settings (fail closed: no default origins)
     # Set STORI_CORS_ORIGINS (JSON array) in .env. Local dev: ["http://localhost:5173", "stori://"].

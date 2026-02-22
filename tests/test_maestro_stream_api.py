@@ -119,7 +119,7 @@ class TestComposeStreamEndpoint:
             )
         assert resp.status_code == 402
         data = resp.json()
-        assert "Insufficient budget" in data["detail"]["error"]
+        assert "Insufficient budget" in data["detail"]["message"]
 
     @pytest.mark.anyio
     async def test_maestro_stream_budget_deduction(self, client, auth_headers, test_user, db_session):

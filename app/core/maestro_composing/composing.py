@@ -219,6 +219,7 @@ async def _handle_composing(
                         f"[{trace.trace_id[:8]}] Variation generation timed out "
                         f"after {_VARIATION_TIMEOUT}s"
                     )
+                    _fail_variation_id = str(_uuid_mod.uuid4())
                     yield await sse_event({
                         "type": "error",
                         "message": f"Generation timed out after {_VARIATION_TIMEOUT}s",
@@ -226,7 +227,7 @@ async def _handle_composing(
                     })
                     yield await sse_event({
                         "type": "done",
-                        "variationId": "",
+                        "variationId": _fail_variation_id,
                         "phraseCount": 0,
                         "status": "failed",
                     })
@@ -310,6 +311,7 @@ async def _handle_composing(
             logger.exception(
                 f"[{trace.trace_id[:8]}] Variation generation failed: {e}"
             )
+            _fail_variation_id = str(_uuid_mod.uuid4())
             yield await sse_event({
                 "type": "error",
                 "message": f"Generation failed: {e}",
@@ -317,7 +319,7 @@ async def _handle_composing(
             })
             yield await sse_event({
                 "type": "done",
-                "variationId": "",
+                "variationId": _fail_variation_id,
                 "phraseCount": 0,
                 "status": "failed",
             })

@@ -258,15 +258,69 @@ PROFILES["drill"] = PROFILES["trap"]
 PROFILES["dubstep"] = PROFILES["drum_and_bass"]
 
 
-def get_profile(style: str) -> ExpressivenessProfile:
-    """Look up profile by style, with fuzzy fallback."""
+def get_profile(style: str, role: str = "melody") -> ExpressivenessProfile:
+    """Look up profile by style and instrument role.
+
+    The base genre profile is modulated by role-specific heuristics
+    from 222K professional compositions.  For example a jazz *lead*
+    gets more pitch bend probability than jazz *chords*, and pads
+    get expression CC while bass gets higher timing late-bias.
+    """
     key = style.lower().replace(" ", "_").replace("-", "_")
+    base: Optional[ExpressivenessProfile] = None
     if key in PROFILES:
-        return PROFILES[key]
-    for pk in PROFILES:
-        if pk in key or key in pk:
-            return PROFILES[pk]
-    return ExpressivenessProfile()
+        base = PROFILES[key]
+    else:
+        for pk in PROFILES:
+            if pk in key or key in pk:
+                base = PROFILES[pk]
+                break
+    if base is None:
+        base = ExpressivenessProfile()
+
+    role_lower = role.lower()
+    from app.data.role_profiles import get_role_profile
+    rp = get_role_profile(role_lower)
+    if rp is None:
+        return base
+
+    return ExpressivenessProfile(
+        velocity_arc=base.velocity_arc,
+        velocity_arc_shape=base.velocity_arc_shape,
+        velocity_stdev_target=max(8.0, rp.velocity_stdev),
+        accent_beats=base.accent_beats,
+        accent_strength=base.accent_strength,
+        ghost_probability=base.ghost_probability,
+        ghost_velocity_range=base.ghost_velocity_range,
+        cc_expression_enabled=role_lower in ("lead", "melody", "pads", "pad", "strings"),
+        cc_expression_density=base.cc_expression_density,
+        cc_expression_range=base.cc_expression_range,
+        cc_sustain_enabled=role_lower in ("chords", "piano", "keys", "pads", "pad"),
+        cc_sustain_changes_per_bar=base.cc_sustain_changes_per_bar,
+        cc_mod_enabled=base.cc_mod_enabled or role_lower in ("lead", "melody"),
+        cc_mod_depth=base.cc_mod_depth,
+        pitch_bend_enabled=(
+            base.pitch_bend_enabled
+            or role_lower in ("lead", "melody", "bass")
+        ),
+        pitch_bend_probability=(
+            0.10 if role_lower in ("lead", "melody")
+            else 0.12 if role_lower == "bass"
+            else base.pitch_bend_probability
+        ),
+        pitch_bend_range=base.pitch_bend_range,
+        humanize_timing=base.humanize_timing,
+        timing_jitter_beats=(
+            0.06 if role_lower in ("lead", "melody")
+            else 0.02 if role_lower == "bass"
+            else 0.04 if role_lower == "pads"
+            else base.timing_jitter_beats
+        ),
+        timing_late_bias=(
+            0.015 if role_lower == "bass"
+            else base.timing_late_bias
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +332,7 @@ def add_velocity_curves(
     style: str,
     bars: int,
     rng: Optional[random.Random] = None,
+    role: str = "melody",
 ) -> list[dict]:
     """
     Apply phrase-level velocity arcs, accent patterns, and ghost notes.
@@ -287,7 +342,7 @@ def add_velocity_curves(
     if not notes:
         return notes
 
-    prof = get_profile(style)
+    prof = get_profile(style, role)
     if not prof.velocity_arc:
         return notes
 
@@ -358,7 +413,7 @@ def add_cc_automation(
 
     Returns a list of CC event dicts: {cc, beat, value}.
     """
-    prof = get_profile(style)
+    prof = get_profile(style, instrument_role)
     cc_events: list[dict] = []
     is_keys = instrument_role in ("chords", "piano", "keys", "pads")
 
@@ -422,7 +477,7 @@ def add_pitch_bend_phrasing(
 
     Returns a list of pitch bend event dicts: {beat, value}.
     """
-    prof = get_profile(style)
+    prof = get_profile(style, instrument_role)
     if not prof.pitch_bend_enabled:
         return []
 
@@ -457,6 +512,7 @@ def add_timing_humanization(
     notes: list[dict],
     style: str,
     rng: Optional[random.Random] = None,
+    role: str = "melody",
 ) -> list[dict]:
     """
     Add micro-timing offsets to push notes slightly off-grid.
@@ -464,7 +520,7 @@ def add_timing_humanization(
     Mutates notes in-place and returns the same list.
     Target: ~92% of notes off the 16th grid (matching pro MIDI analysis).
     """
-    prof = get_profile(style)
+    prof = get_profile(style, role)
     if not prof.humanize_timing:
         return notes
 
@@ -511,8 +567,8 @@ def apply_expressiveness(
     if instrument_role == "drums":
         return {"notes": notes, "cc_events": [], "pitch_bends": []}
 
-    add_velocity_curves(notes, style, bars, rng)
-    add_timing_humanization(notes, style, rng)
+    add_velocity_curves(notes, style, bars, rng, role=instrument_role)
+    add_timing_humanization(notes, style, rng, role=instrument_role)
     cc_events = add_cc_automation(notes, style, bars, instrument_role)
     pitch_bends = add_pitch_bend_phrasing(notes, style, instrument_role, rng)
 

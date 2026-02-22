@@ -469,6 +469,30 @@ async def _handle_editing(
         for skip_evt in plan_tracker.finalize_pending_as_skipped():
             yield await sse_event(skip_evt)
 
+    if tool_calls_collected:
+        _summary_tracks: list[str] = []
+        _summary_regions = 0
+        _summary_notes = 0
+        _summary_effects = 0
+        for _tc in tool_calls_collected:
+            _tc_name = _tc.get("tool", "")
+            _tc_params = _tc.get("params", {})
+            if _tc_name == "stori_add_midi_track":
+                _summary_tracks.append(_tc_params.get("name", ""))
+            elif _tc_name == "stori_add_midi_region":
+                _summary_regions += 1
+            elif _tc_name == "stori_add_notes":
+                _summary_notes += len(_tc_params.get("notes", []))
+            elif _tc_name == "stori_add_insert_effect":
+                _summary_effects += 1
+        yield await sse_event({
+            "type": "summary",
+            "tracks": _summary_tracks,
+            "regions": _summary_regions,
+            "notes": _summary_notes,
+            "effects": _summary_effects,
+        })
+
     yield await sse_event({
         "type": "complete",
         "success": True,

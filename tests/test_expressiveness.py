@@ -52,52 +52,53 @@ def _make_notes(
 
 
 class TestGetProfile:
-    """Tests for get_profile()."""
+    """Tests for get_profile() — role-aware profile lookup."""
 
     def test_exact_match(self):
-        """Known genre returns its profile."""
+        """Known genre returns a profile based on that genre."""
         p = get_profile("jazz")
-        assert p is PROFILES["jazz"]
+        assert p.velocity_arc == PROFILES["jazz"].velocity_arc
+        assert p.accent_beats == PROFILES["jazz"].accent_beats
 
     def test_case_insensitive(self):
         """Lookup is case-insensitive."""
         p = get_profile("Jazz")
-        assert p is PROFILES["jazz"]
+        assert p.velocity_arc == PROFILES["jazz"].velocity_arc
 
     def test_hyphen_normalised(self):
         """Hyphens are normalised to underscores."""
         p = get_profile("neo-soul")
-        assert p is PROFILES["neo_soul"]
+        assert p.accent_beats == PROFILES["neo_soul"].accent_beats
 
     def test_space_normalised(self):
         """Spaces are normalised to underscores."""
         p = get_profile("drum and bass")
-        assert p is PROFILES["drum_and_bass"]
+        assert p.accent_beats == PROFILES["drum_and_bass"].accent_beats
 
     def test_alias_hip_hop(self):
         """Alias 'hip_hop' resolves to boom_bap profile."""
         p = get_profile("hip hop")
-        assert p is PROFILES["boom_bap"]
+        assert p.accent_beats == PROFILES["boom_bap"].accent_beats
 
     def test_alias_lofi_dash(self):
         """'lo-fi' normalises to 'lo_fi' alias which resolves to lofi."""
         p = get_profile("lo-fi")
-        assert p is PROFILES["lofi"]
+        assert p.accent_beats == PROFILES["lofi"].accent_beats
 
     def test_alias_dnb(self):
         """Alias 'dnb' resolves to drum_and_bass profile."""
         p = get_profile("dnb")
-        assert p is PROFILES["drum_and_bass"]
+        assert p.accent_beats == PROFILES["drum_and_bass"].accent_beats
 
     def test_alias_drill(self):
         """Alias 'drill' resolves to trap profile."""
         p = get_profile("drill")
-        assert p is PROFILES["trap"]
+        assert p.accent_beats == PROFILES["trap"].accent_beats
 
     def test_fuzzy_substring_match(self):
         """Substring match catches compound styles like 'melodic techno'."""
         p = get_profile("melodic techno")
-        assert p.velocity_stdev_target == PROFILES["techno"].velocity_stdev_target
+        assert p.accent_beats == PROFILES["techno"].accent_beats
 
     def test_unknown_returns_default(self):
         """Unknown genre returns default ExpressivenessProfile."""
@@ -112,7 +113,8 @@ class TestGetProfile:
             "trap", "house", "techno", "ambient", "funk", "lofi",
             "drum_and_bass", "reggae",
         ]:
-            assert get_profile(genre) is PROFILES[genre]
+            p = get_profile(genre)
+            assert p.accent_beats == PROFILES[genre].accent_beats
 
 
 # ─── Velocity curves ─────────────────────────────────────────────────────────
@@ -275,10 +277,10 @@ class TestCCAutomation:
         prof = get_profile("cinematic")
         assert all(0 <= e["value"] <= prof.cc_mod_depth for e in mod)
 
-    def test_no_expression_when_disabled(self):
-        """Profiles with cc_expression_enabled=False produce no CC 11."""
+    def test_no_expression_for_drums(self):
+        """Drums produce no CC 11 expression events."""
         notes = _make_notes(16, bars=4)
-        cc = add_cc_automation(notes, "house", 4, instrument_role="melody")
+        cc = add_cc_automation(notes, "house", 4, instrument_role="drums")
         expr = [e for e in cc if e["cc"] == 11]
         assert len(expr) == 0
 
@@ -302,9 +304,9 @@ class TestPitchBends:
     """Tests for add_pitch_bend_phrasing()."""
 
     def test_disabled_returns_empty(self):
-        """Profiles with pitch_bend_enabled=False return empty list."""
+        """Chords role with non-bend genre returns empty list."""
         notes = _make_notes(16, bars=4)
-        bends = add_pitch_bend_phrasing(notes, "jazz", instrument_role="melody")
+        bends = add_pitch_bend_phrasing(notes, "jazz", instrument_role="chords")
         assert bends == []
 
     def test_trap_produces_bends(self):
@@ -407,12 +409,12 @@ class TestTimingHumanization:
             assert statistics.mean(non_clamped) > 0
 
     def test_techno_tight_jitter(self):
-        """Techno has very tight jitter (0.008)."""
+        """Techno chords have very tight jitter."""
         notes = _make_notes(100, bars=25)
         original_beats = [n["start_beat"] for n in notes]
-        add_timing_humanization(notes, "techno", rng=random.Random(42))
+        add_timing_humanization(notes, "techno", rng=random.Random(42), role="chords")
         offsets = [abs(n["start_beat"] - o) for n, o in zip(notes, original_beats)]
-        assert max(offsets) < 0.1  # very tight
+        assert max(offsets) < 0.1
 
     def test_deterministic(self):
         """Same seed → same timing offsets."""
@@ -452,12 +454,11 @@ class TestApplyExpressiveness:
         assert not all(v == 80 for v in vels)
 
     def test_cc_events_present_for_classical_piano(self):
-        """Classical piano gets expression + sustain CC events."""
+        """Classical piano gets sustain CC events."""
         notes = _make_notes(16, bars=4)
         result = apply_expressiveness(notes, "classical", 4, instrument_role="piano")
         ccs = result["cc_events"]
         cc_numbers = {e["cc"] for e in ccs}
-        assert 11 in cc_numbers  # expression
         assert 64 in cc_numbers  # sustain pedal
 
     def test_pitch_bends_for_trap_bass(self):
@@ -466,10 +467,10 @@ class TestApplyExpressiveness:
         result = apply_expressiveness(notes, "trap", 8, instrument_role="bass", seed=42)
         assert len(result["pitch_bends"]) > 0
 
-    def test_no_pitch_bends_for_house_melody(self):
-        """House melody (pitch_bend_enabled=False) gets no bends."""
+    def test_no_pitch_bends_for_house_chords(self):
+        """House chords (pitch_bend_enabled=False) gets no bends."""
         notes = _make_notes(16, bars=4)
-        result = apply_expressiveness(notes, "house", 4, instrument_role="melody")
+        result = apply_expressiveness(notes, "house", 4, instrument_role="chords")
         assert result["pitch_bends"] == []
 
     def test_return_structure(self):

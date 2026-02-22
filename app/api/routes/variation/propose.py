@@ -64,7 +64,7 @@ async def propose_variation(
             await check_budget(db, user_id)
         except InsufficientBudgetError as e:
             raise HTTPException(status_code=402, detail={
-                "error": "Insufficient budget",
+                "message": "Insufficient budget",
                 "budgetRemaining": e.budget_remaining,
             })
         except BudgetError:

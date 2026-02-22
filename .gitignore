@@ -222,3 +222,6 @@ qa_results_*.md
 assets/drum-kits/**/*.wav
 assets/soundfonts/**/*.sf2
 assets/bundle/
+
+# Reference MIDI (downloaded for analysis, not committed)
+reference_midi/

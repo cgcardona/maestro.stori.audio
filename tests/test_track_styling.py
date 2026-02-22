@@ -151,12 +151,14 @@ class TestIsValidIcon:
         assert is_valid_icon("") is False
         assert is_valid_icon(None) is False
 
-    def test_removed_icons_rejected(self):
-        """Icons removed from the curated list are no longer accepted."""
-        assert is_valid_icon("speaker.wave.3") is False
-        assert is_valid_icon("wand.and.stars.inverse") is False
-        assert is_valid_icon("bolt.circle") is False
-        assert is_valid_icon("waveform.slash") is False
+    def test_fe_contract_icons_accepted(self):
+        """Icons in the FE curated SF Symbol list must be accepted."""
+        assert is_valid_icon("speaker.wave.3") is True
+        assert is_valid_icon("wand.and.stars.inverse") is True
+        assert is_valid_icon("bolt.circle") is True
+        assert is_valid_icon("waveform.slash") is True
+        assert is_valid_icon("speaker") is True
+        assert is_valid_icon("speaker.wave.3.fill") is True
 
 
 class TestTrackIcons:
