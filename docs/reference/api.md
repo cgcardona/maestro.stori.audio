@@ -238,7 +238,7 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
-| `stori_add_midi_track` | Add MIDI track. Drums: set `drumKitId`. Melodic: set `gmProgram`. | `name` (required); `drumKitId`, `gmProgram` 0–127, `instrument`, `color`, `icon` |
+| `stori_add_midi_track` | Add MIDI track. Drums: set `drumKitId` (server auto-sets `_isDrums: true`). Melodic: set `gmProgram`. | `name` (required); `drumKitId`, `gmProgram` 0–127, `instrument`, `color`, `icon` |
 | `stori_set_track_volume` | Set track volume. | `trackId`, `volumeDb` |
 | `stori_set_track_pan` | Set track pan. | `trackId`, `pan` (-100–100) |
 | `stori_set_track_name` | Rename track. | `trackId`, `name` |
@@ -301,9 +301,9 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 ---
 
-## Generation (server-side)
+## Generation (server-side, internal)
 
-These run in Maestro and call the music model; they do not require a connected DAW. Orpheus required.
+These run inside Maestro and call the Orpheus music model. They are **never emitted as `toolCall` events** in the SSE stream — the server translates their output into `stori_add_notes` (and optionally `stori_add_midi_cc` / `stori_add_pitch_bend`) before forwarding to the client. If notes from Orpheus span less than half the requested duration, the server rescales beat positions to fill the target bar count.
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|

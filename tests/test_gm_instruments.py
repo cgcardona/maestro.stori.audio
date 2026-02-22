@@ -577,3 +577,33 @@ class TestIconForGMProgram:
 
     def test_drum_icon_constant(self):
         assert DRUM_ICON == "instrument.drum"
+
+
+# ===========================================================================
+# Bug fix regression: "perc" keyword detected as drums
+# ===========================================================================
+
+class TestPercKeywordDetectedAsDrums:
+    """Tracks named 'Perc' or with role='perc' must be detected as drums."""
+
+    def test_perc_track_name(self):
+        result = infer_gm_program_with_context(track_name="Perc")
+        assert result.is_drums
+        assert result.program is None
+
+    def test_perc_role(self):
+        result = infer_gm_program_with_context(role="perc")
+        assert result.is_drums
+
+    def test_perc_instrument(self):
+        result = infer_gm_program_with_context(instrument="perc")
+        assert result.is_drums
+
+    def test_perc_in_longer_name(self):
+        result = infer_gm_program_with_context(track_name="Perc Hits")
+        assert result.is_drums
+
+    def test_infer_gm_program_perc(self):
+        """The lower-level infer_gm_program should also detect 'perc'."""
+        result = infer_gm_program("perc")
+        assert result is None  # drums → channel 10, no GM program

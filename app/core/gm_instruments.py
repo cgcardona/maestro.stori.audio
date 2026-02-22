@@ -309,7 +309,7 @@ def infer_gm_program(
     text_tokens = _tokenize(text)
     
     # Special case: drums don't need a GM program (channel 10)
-    drum_keywords = {"drums", "drum", "kick", "snare", "hihat", "hi-hat", "percussion", "beat", "kit"}
+    drum_keywords = {"drums", "drum", "kick", "snare", "hihat", "hi-hat", "percussion", "perc", "beat", "kit"}
     if text_tokens & drum_keywords:
         return None  # Drums use channel 10
     
@@ -464,7 +464,7 @@ def infer_gm_program_with_context(
         GMInferenceResult with program, name, and confidence
     """
     # Check for drums first (any source) — must match infer_gm_program's keyword set.
-    drum_keywords = {"drums", "drum", "kick", "snare", "hihat", "hi-hat", "percussion", "beat", "kit"}
+    drum_keywords = {"drums", "drum", "kick", "snare", "hihat", "hi-hat", "percussion", "perc", "beat", "kit"}
     all_text = " ".join(filter(None, [track_name, instrument, role])).lower()
     
     for kw in drum_keywords:

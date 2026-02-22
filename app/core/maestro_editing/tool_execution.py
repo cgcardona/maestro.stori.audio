@@ -15,9 +15,220 @@ from app.core.maestro_helpers import (
     _enrich_params_with_track_context,
     _human_label_for_tool,
 )
-from app.core.maestro_plan_tracker import _ToolCallOutcome
+from app.core.maestro_plan_tracker import _ToolCallOutcome, _GENERATOR_TOOL_NAMES
 
 logger = logging.getLogger(__name__)
+
+
+async def _execute_agent_generator(
+    tc_id: str,
+    tc_name: str,
+    enriched_params: dict[str, Any],
+    store: Any,
+    trace: Any,
+    composition_context: dict[str, Any],
+    emit_sse: bool,
+) -> Optional[_ToolCallOutcome]:
+    """Route a generator tool call through MusicGenerator (Orpheus).
+
+    Called from ``_apply_single_tool_call`` when the tool is a generator
+    (``stori_generate_midi``, ``stori_generate_drums``, etc.) and
+    ``composition_context`` is available.
+
+    Returns a complete ``_ToolCallOutcome`` on success, or ``None`` to
+    fall through to normal tool handling.
+    """
+    from app.services.music_generator import get_music_generator
+
+    sse_events: list[dict[str, Any]] = []
+    extra_tool_calls: list[dict[str, Any]] = []
+
+    role = enriched_params.get("role", "")
+    if not role:
+        name_to_role = {
+            "stori_generate_drums": "drums",
+            "stori_generate_bass": "bass",
+            "stori_generate_melody": "melody",
+            "stori_generate_chords": "chords",
+        }
+        role = name_to_role.get(tc_name, "melody")
+
+    style = enriched_params.get("style") or composition_context.get("style", "")
+    tempo = int(enriched_params.get("tempo") or composition_context.get("tempo", 120))
+    bars = int(enriched_params.get("bars") or composition_context.get("bars", 4))
+    key = enriched_params.get("key") or composition_context.get("key")
+
+    track_id = enriched_params.get("trackId", "")
+    if not track_id:
+        track_name = enriched_params.get("trackName", role.capitalize())
+        track_id = store.registry.resolve_track(track_name) or ""
+
+    region_id = ""
+    if track_id:
+        region_id = store.registry.get_latest_region_for_track(track_id) or ""
+
+    if not region_id:
+        error_msg = (
+            f"Generator {tc_name}: no region found for track '{track_id}' "
+            f"(role='{role}'). Ensure stori_add_midi_region is called before "
+            f"the generator tool."
+        )
+        logger.error(f"[{trace.trace_id[:8]}] {error_msg}")
+        error_result: dict[str, Any] = {"error": error_msg}
+        if emit_sse:
+            sse_events.append({"type": "toolError", "name": tc_name, "error": error_msg})
+        return _ToolCallOutcome(
+            enriched_params=enriched_params,
+            tool_result=error_result,
+            sse_events=sse_events,
+            msg_call={
+                "role": "assistant",
+                "tool_calls": [{"id": tc_id, "type": "function",
+                                "function": {"name": tc_name, "arguments": json.dumps(enriched_params)}}],
+            },
+            msg_result={
+                "role": "tool", "tool_call_id": tc_id,
+                "content": json.dumps(error_result),
+            },
+            skipped=True,
+        )
+
+    if emit_sse:
+        sse_events.append({
+            "type": "toolStart",
+            "name": tc_name,
+            "label": f"Generating {role} via Orpheus",
+        })
+
+    gen_kwargs: dict[str, Any] = {
+        "quality_preset": composition_context.get("quality_preset", "quality"),
+    }
+    emotion_vector = composition_context.get("emotion_vector")
+    if emotion_vector is not None:
+        gen_kwargs["emotion_vector"] = emotion_vector
+
+    try:
+        mg = get_music_generator()
+        result = await mg.generate(
+            instrument=role,
+            style=style,
+            tempo=tempo,
+            bars=bars,
+            key=key,
+            **gen_kwargs,
+        )
+    except Exception as exc:
+        logger.error(f"[{trace.trace_id[:8]}] Generator {tc_name} failed: {exc}")
+        error_result: dict[str, Any] = {"error": str(exc)}
+        if emit_sse:
+            sse_events.append({"type": "toolError", "name": tc_name, "error": str(exc)})
+        return _ToolCallOutcome(
+            enriched_params=enriched_params,
+            tool_result=error_result,
+            sse_events=sse_events,
+            msg_call={
+                "role": "assistant",
+                "tool_calls": [{"id": tc_id, "type": "function",
+                                "function": {"name": tc_name, "arguments": json.dumps(enriched_params)}}],
+            },
+            msg_result={
+                "role": "tool", "tool_call_id": tc_id,
+                "content": json.dumps(error_result),
+            },
+            skipped=True,
+        )
+
+    if not result.success:
+        logger.warning(
+            f"[{trace.trace_id[:8]}] Generator {tc_name} returned failure: {result.error}"
+        )
+        error_result = {"error": result.error or "Generation failed"}
+        if emit_sse:
+            sse_events.append({"type": "toolError", "name": tc_name, "error": result.error or ""})
+        return _ToolCallOutcome(
+            enriched_params=enriched_params,
+            tool_result=error_result,
+            sse_events=sse_events,
+            msg_call={
+                "role": "assistant",
+                "tool_calls": [{"id": tc_id, "type": "function",
+                                "function": {"name": tc_name, "arguments": json.dumps(enriched_params)}}],
+            },
+            msg_result={
+                "role": "tool", "tool_call_id": tc_id,
+                "content": json.dumps(error_result),
+            },
+            skipped=True,
+        )
+
+    store.add_notes(region_id, result.notes)
+
+    if result.cc_events:
+        store.add_cc(region_id, result.cc_events)
+    if result.pitch_bends:
+        store.add_pitch_bends(region_id, result.pitch_bends)
+    if result.aftertouch:
+        store.add_aftertouch(region_id, result.aftertouch)
+
+    logger.info(
+        f"[{trace.trace_id[:8]}] Generator {tc_name} ({role}): "
+        f"{len(result.notes)} notes, {len(result.cc_events)} CC, "
+        f"{len(result.pitch_bends)} PB via {result.backend_used.value}"
+    )
+
+    tool_result: dict[str, Any] = {
+        "regionId": region_id,
+        "trackId": track_id,
+        "notesAdded": len(result.notes),
+        "totalNotes": len(result.notes),
+        "ccEvents": len(result.cc_events),
+        "pitchBends": len(result.pitch_bends),
+        "backend": result.backend_used.value,
+    }
+
+    enriched_params["regionId"] = region_id
+    enriched_params["trackId"] = track_id
+    enriched_params["_notesGenerated"] = len(result.notes)
+
+    if emit_sse:
+        emit_params = _enrich_params_with_track_context(enriched_params, store)
+        sse_events.append({
+            "type": "toolCall",
+            "id": tc_id,
+            "name": "stori_add_notes",
+            "params": {
+                "trackId": track_id,
+                "regionId": region_id,
+                "notes": result.notes,
+            },
+        })
+        if result.cc_events:
+            extra_tool_calls.append({
+                "tool": "stori_add_midi_cc",
+                "params": {"regionId": region_id, "events": result.cc_events},
+            })
+        if result.pitch_bends:
+            extra_tool_calls.append({
+                "tool": "stori_add_pitch_bend",
+                "params": {"regionId": region_id, "events": result.pitch_bends},
+            })
+
+    return _ToolCallOutcome(
+        enriched_params=enriched_params,
+        tool_result=tool_result,
+        sse_events=sse_events,
+        msg_call={
+            "role": "assistant",
+            "tool_calls": [{"id": tc_id, "type": "function",
+                            "function": {"name": tc_name, "arguments": json.dumps(enriched_params)}}],
+        },
+        msg_result={
+            "role": "tool", "tool_call_id": tc_id,
+            "content": json.dumps(tool_result),
+        },
+        skipped=False,
+        extra_tool_calls=extra_tool_calls,
+    )
 
 
 async def _apply_single_tool_call(
@@ -29,14 +240,15 @@ async def _apply_single_tool_call(
     trace: Any,
     add_notes_failures: dict[str, int],
     emit_sse: bool = True,
+    composition_context: Optional[dict[str, Any]] = None,
 ) -> _ToolCallOutcome:
     """Validate, enrich, persist, and return results for one tool call.
 
-    Handles entity creation (UUIDs), note persistence, icon synthesis, and
-    tool result building. Returns SSE events, LLM message objects, and
-    enriched params without yielding — the caller decides whether to yield
-    events directly (editing path) or put them into an asyncio.Queue
-    (agent-team path).
+    Handles entity creation (UUIDs), note persistence, generator routing
+    (Orpheus), icon synthesis, and tool result building. Returns SSE events,
+    LLM message objects, and enriched params without yielding — the caller
+    decides whether to yield events directly (editing path) or put them
+    into an asyncio.Queue (agent-team path).
 
     Args:
         tc_id: Tool call ID (from LLM response or synthetic UUID).
@@ -47,6 +259,8 @@ async def _apply_single_tool_call(
         trace: Trace context for logging and spans.
         add_notes_failures: Mutable circuit-breaker counter (modified in-place).
         emit_sse: When ``False``, sse_events is empty (variation/proposal mode).
+        composition_context: Optional dict with style, tempo, bars, key,
+            emotion_vector, quality_preset for generator tool routing.
     """
     sse_events: list[dict[str, Any]] = []
 
@@ -124,6 +338,7 @@ async def _apply_single_tool_call(
         track_name = enriched_params.get("name", "Track")
         instrument = enriched_params.get("instrument")
         gm_program = enriched_params.get("gmProgram")
+        drum_kit_id = enriched_params.get("drumKitId")
         if "trackId" in enriched_params:
             logger.warning(
                 f"⚠️ LLM provided trackId '{enriched_params['trackId']}' for NEW track '{track_name}'. "
@@ -144,6 +359,13 @@ async def _apply_single_tool_call(
             )
             if inference.needs_program_change:
                 enriched_params["gmProgram"] = inference.program
+
+        if drum_kit_id and not enriched_params.get("_isDrums"):
+            enriched_params["_isDrums"] = True
+            logger.info(
+                f"🥁 drumKitId='{drum_kit_id}' present — forcing _isDrums=True "
+                f"for track '{track_name}'"
+            )
 
     elif tc_name == "stori_add_midi_region":
         midi_region_track_id: Optional[str] = enriched_params.get("trackId")
@@ -243,6 +465,15 @@ async def _apply_single_tool_call(
         bus_id = store.get_or_create_bus(bus_name)
         enriched_params["busId"] = bus_id
 
+    # ── Generator routing (Orpheus) ──
+    if tc_name in _GENERATOR_TOOL_NAMES and composition_context:
+        gen_outcome = await _execute_agent_generator(
+            tc_id, tc_name, enriched_params, store, trace,
+            composition_context, emit_sse,
+        )
+        if gen_outcome is not None:
+            return gen_outcome
+
     # ── SSE events (toolStart + toolCall) ──
     extra_tool_calls: list[dict[str, Any]] = []
     if emit_sse:
@@ -298,11 +529,32 @@ async def _apply_single_tool_call(
                 f"({'drum kit' if (_drum_kit or _is_drums) else f'GM {_gm_program}'})"
             )
 
-    # ── Note persistence ──
+    # ── Note persistence (with post-processing when context is available) ──
     if tc_name == "stori_add_notes":
         _notes = enriched_params.get("notes", [])
         _rid = enriched_params.get("regionId", "")
         if _rid and _notes:
+            if composition_context:
+                from app.services.expressiveness import apply_expressiveness
+                _role = composition_context.get("role", "melody")
+                _style = composition_context.get("style", "")
+                _bars = composition_context.get("bars", 4)
+                if _style:
+                    expr = apply_expressiveness(
+                        _notes, _style, _bars, instrument_role=_role,
+                    )
+                    _notes = expr["notes"]
+                    enriched_params["notes"] = _notes
+                    if expr.get("cc_events"):
+                        store.add_cc(_rid, expr["cc_events"])
+                    if expr.get("pitch_bends"):
+                        store.add_pitch_bends(_rid, expr["pitch_bends"])
+                    logger.debug(
+                        f"🎭 Post-processed {len(_notes)} notes for region "
+                        f"{_rid[:8]} ({_role}/{_style}): "
+                        f"+{len(expr.get('cc_events', []))} CC, "
+                        f"+{len(expr.get('pitch_bends', []))} PB"
+                    )
             store.add_notes(_rid, _notes)
             logger.debug(
                 f"📝 Persisted {len(_notes)} notes for region {_rid[:8]} in StateStore"

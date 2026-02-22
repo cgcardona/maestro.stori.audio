@@ -234,7 +234,8 @@ class TestOrpheusBackendEmotionMapping:
 
     @pytest.mark.asyncio
     async def test_no_emotion_vector_uses_defaults(self):
-        """Without an emotion_vector kwarg, Orpheus receives zero defaults."""
+        """Without an emotion_vector kwarg, tone values default to zero but
+        heuristic-derived musical_goals may still be present."""
         mock_client = self._make_mock_client()
         backend = self._make_backend(mock_client)
 
@@ -243,7 +244,8 @@ class TestOrpheusBackendEmotionMapping:
         call_kwargs = mock_client.generate.call_args[1]
         assert call_kwargs["tone_brightness"] == 0.0
         assert call_kwargs["energy_intensity"] == 0.0
-        assert call_kwargs.get("musical_goals") is None
+        assert call_kwargs["tone_warmth"] == 0.0
+        assert call_kwargs["energy_excitement"] == 0.0
 
     @pytest.mark.asyncio
     async def test_dark_emotion_vector_sets_negative_brightness(self):
@@ -303,3 +305,159 @@ class TestOrpheusBackendEmotionMapping:
 
         call_kwargs = mock_client.generate.call_args[1]
         assert call_kwargs["quality_preset"] == "fast"
+
+
+# =============================================================================
+# OrpheusBackend — note key normalization (snake_case → camelCase)
+# =============================================================================
+
+class TestOrpheusNoteNormalization:
+    """Notes from Orpheus may use snake_case keys; backend must normalize to camelCase."""
+
+    def _make_backend(self, mock_client):
+        from app.services.backends.orpheus import OrpheusBackend
+        import app.services.orpheus as orpheus_module
+        orpheus_module._shared_client = mock_client
+        return OrpheusBackend()
+
+    @pytest.mark.asyncio
+    async def test_snake_case_keys_normalized_to_camel(self):
+        """start_beat/duration_beats → startBeat/durationBeats."""
+        notes = [
+            {"pitch": 60, "start_beat": 0, "duration_beats": 4, "velocity": 80},
+            {"pitch": 64, "start_beat": 4, "duration_beats": 4, "velocity": 90},
+            {"pitch": 67, "start_beat": 8, "duration_beats": 4, "velocity": 85},
+            {"pitch": 72, "start_beat": 12, "duration_beats": 4, "velocity": 80},
+        ]
+        mock = MagicMock()
+        mock.generate = AsyncMock(return_value={
+            "success": True,
+            "notes": [],
+            "tool_calls": [{"tool": "addNotes", "params": {"notes": notes}}],
+            "metadata": {},
+        })
+        backend = self._make_backend(mock)
+        result = await backend.generate("bass", "house", 120, 4, key="Am")
+
+        assert result.success
+        for n in result.notes:
+            assert "startBeat" in n
+            assert "durationBeats" in n
+            assert "start_beat" not in n
+            assert "duration_beats" not in n
+
+    @pytest.mark.asyncio
+    async def test_camel_case_keys_pass_through(self):
+        """Notes already using camelCase should not be corrupted."""
+        notes = [
+            {"pitch": 60, "startBeat": 0, "durationBeats": 4, "velocity": 80},
+            {"pitch": 64, "startBeat": 4, "durationBeats": 4, "velocity": 90},
+            {"pitch": 67, "startBeat": 8, "durationBeats": 4, "velocity": 85},
+            {"pitch": 72, "startBeat": 12, "durationBeats": 4, "velocity": 80},
+        ]
+        mock = MagicMock()
+        mock.generate = AsyncMock(return_value={
+            "success": True,
+            "notes": [],
+            "tool_calls": [{"tool": "addNotes", "params": {"notes": notes}}],
+            "metadata": {},
+        })
+        backend = self._make_backend(mock)
+        result = await backend.generate("bass", "house", 120, 4, key="Am")
+
+        assert result.success
+        assert result.notes[0]["startBeat"] == 0
+        assert result.notes[0]["durationBeats"] == 4
+
+
+# =============================================================================
+# OrpheusBackend — beat rescaling
+# =============================================================================
+
+class TestOrpheusBeatRescaling:
+    """Notes compressed into a short window must be rescaled to the target bars."""
+
+    def _make_backend(self, mock_client):
+        from app.services.backends.orpheus import OrpheusBackend
+        import app.services.orpheus as orpheus_module
+        orpheus_module._shared_client = mock_client
+        return OrpheusBackend()
+
+    @pytest.mark.asyncio
+    async def test_compressed_notes_rescaled_to_target(self):
+        """330 notes in 0-8 beats should be rescaled to span 0-96 beats for 24 bars."""
+        compressed_notes = [
+            {"pitch": 60, "startBeat": i * 0.024, "durationBeats": 0.02, "velocity": 80}
+            for i in range(330)
+        ]
+        max_end_compressed = max(
+            n["startBeat"] + n["durationBeats"] for n in compressed_notes
+        )
+        assert max_end_compressed < 10  # notes span < 10 beats
+
+        mock = MagicMock()
+        mock.generate = AsyncMock(return_value={
+            "success": True,
+            "notes": [],
+            "tool_calls": [{"tool": "addNotes", "params": {"notes": compressed_notes}}],
+            "metadata": {},
+        })
+        backend = self._make_backend(mock)
+        result = await backend.generate("bass", "minimal deep house", 122, 24, key="Am")
+
+        assert result.success
+        assert len(result.notes) == 330
+        max_end = max(n["startBeat"] + n["durationBeats"] for n in result.notes)
+        assert max_end >= 90, f"Notes should span ~96 beats, got max_end={max_end}"
+
+    @pytest.mark.asyncio
+    async def test_full_range_notes_not_rescaled(self):
+        """Notes already spanning the target range should not be modified."""
+        full_range_notes = [
+            {"pitch": 60, "startBeat": float(i * 4), "durationBeats": 2.0, "velocity": 80}
+            for i in range(24)
+        ]
+        mock = MagicMock()
+        mock.generate = AsyncMock(return_value={
+            "success": True,
+            "notes": [],
+            "tool_calls": [{"tool": "addNotes", "params": {"notes": full_range_notes}}],
+            "metadata": {},
+        })
+        backend = self._make_backend(mock)
+        result = await backend.generate("bass", "house", 120, 24, key="Am")
+
+        assert result.success
+        assert result.notes[0]["startBeat"] == 0.0
+        assert result.notes[12]["startBeat"] == 48.0
+        assert result.notes[23]["startBeat"] == 92.0
+
+    @pytest.mark.asyncio
+    async def test_cc_events_rescaled_with_notes(self):
+        """CC events must be rescaled alongside notes."""
+        notes = [
+            {"pitch": 60 + (i % 12), "startBeat": i * 0.12, "durationBeats": 0.1, "velocity": 80}
+            for i in range(60)
+        ]
+        max_end = max(n["startBeat"] + n["durationBeats"] for n in notes)
+        mock = MagicMock()
+        mock.generate = AsyncMock(return_value={
+            "success": True,
+            "notes": [],
+            "tool_calls": [
+                {"tool": "addNotes", "params": {"notes": notes}},
+                {"tool": "addMidiCC", "params": {"cc": 11, "events": [
+                    {"beat": 0, "value": 80},
+                    {"beat": 3, "value": 120},
+                ]}},
+            ],
+            "metadata": {},
+        })
+        backend = self._make_backend(mock)
+        result = await backend.generate("bass", "house", 120, 24, key="Am")
+
+        assert result.success
+        target = 24 * 4
+        scale = target / max_end
+        assert result.cc_events[0]["beat"] == 0
+        assert abs(result.cc_events[1]["beat"] - round(3 * scale, 4)) < 0.01

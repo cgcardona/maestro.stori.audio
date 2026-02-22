@@ -2839,6 +2839,51 @@ class TestApplySingleToolCall:
         assert not outcome.skipped
         assert outcome.sse_events == []
 
+    @pytest.mark.anyio
+    async def test_generator_no_region_returns_error_not_none(self):
+        """stori_generate_midi without a prior region returns a skipped error outcome,
+        never falling through to emit the internal tool name to SSE."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-gen-no-region")
+        store.create_track("Bass")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-gen",
+            tc_name="stori_generate_midi",
+            resolved_args={"role": "bass", "style": "house", "tempo": 120, "bars": 4},
+            allowed_tool_names={"stori_generate_midi"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+            composition_context={"style": "house", "tempo": 120, "bars": 4, "key": "Am"},
+        )
+        assert outcome.skipped
+        assert "error" in outcome.tool_result
+        tool_names_in_sse = [e.get("name") for e in outcome.sse_events if e.get("type") == "toolCall"]
+        assert "stori_generate_midi" not in tool_names_in_sse
+
+    @pytest.mark.anyio
+    async def test_drumkitid_forces_is_drums_true(self):
+        """A track with drumKitId but a non-drum name still gets _isDrums=True."""
+        from app.core.maestro_editing import _apply_single_tool_call
+
+        store = StateStore(conversation_id="test-drumkit-flag")
+        trace = _make_trace()
+        outcome = await _apply_single_tool_call(
+            tc_id="tc-dk",
+            tc_name="stori_add_midi_track",
+            resolved_args={"name": "Shaker", "drumKitId": "TR-909"},
+            allowed_tool_names={"stori_add_midi_track"},
+            store=store,
+            trace=trace,
+            add_notes_failures={},
+            emit_sse=True,
+        )
+        assert not outcome.skipped
+        assert outcome.enriched_params.get("_isDrums") is True
+
 
 class TestRunInstrumentAgent:
     """_run_instrument_agent() makes one LLM call and pushes events to the queue."""
