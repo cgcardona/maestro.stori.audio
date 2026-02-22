@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 import asyncio
+import logging
 import os
 import sys
 import httpx
@@ -26,6 +27,9 @@ from typing import Optional
 
 # Add app to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 from bs4 import BeautifulSoup
 from qdrant_client import QdrantClient
@@ -141,7 +145,7 @@ def parse_html_doc(html_file: Path) -> Optional[Document]:
             })
         
         if not sections:
-            print(f"  ⚠️  No content found in {html_file.name}")
+            logger.warning("  No content found in %s", html_file.name)
             return None
         
         return Document(
@@ -153,7 +157,7 @@ def parse_html_doc(html_file: Path) -> Optional[Document]:
         )
         
     except Exception as e:
-        print(f"  ❌ Error parsing {html_file.name}: {e}")
+        logger.error("  Error parsing %s: %s", html_file.name, e)
         return None
 
 
@@ -250,7 +254,7 @@ async def embed_chunks_hf(
             # Create embedding text with heading for context
             texts = [f"{chunk.heading}\n\n{chunk.content}" for chunk in batch]
             
-            print(f"  Embedding batch {i // batch_size + 1}/{(len(chunks) - 1) // batch_size + 1}...")
+            logger.info("  Embedding batch %d/%d...", i // batch_size + 1, (len(chunks) - 1) // batch_size + 1)
             
             response = await client.post(
                 api_url,
@@ -259,7 +263,7 @@ async def embed_chunks_hf(
             )
             
             if response.status_code != 200:
-                print(f"  ❌ HuggingFace API error: {response.status_code} - {response.text}")
+                logger.error("  HuggingFace API error: %d - %s", response.status_code, response.text)
                 continue
             
             batch_embeddings = response.json()
@@ -291,7 +295,7 @@ def store_in_qdrant(
         embedding_dim: Dimension of embedding vectors
     """
     # Recreate collection
-    print(f"  Creating collection '{collection_name}' (dim={embedding_dim})...")
+    logger.info("  Creating collection '%s' (dim=%d)...", collection_name, embedding_dim)
     
     try:
         qdrant.delete_collection(collection_name)
@@ -328,7 +332,7 @@ def store_in_qdrant(
         batch = points[i:i + batch_size]
         qdrant.upsert(collection_name=collection_name, points=batch)
     
-    print(f"  ✅ Stored {len(points)} chunks in Qdrant")
+    logger.info("  Stored %d chunks in Qdrant", len(points))
 
 
 async def main():
@@ -341,79 +345,71 @@ async def main():
     
     docs_dir = Path(args.docs_dir)
     if not docs_dir.exists():
-        print(f"❌ Docs directory not found: {docs_dir}")
+        logger.error("Docs directory not found: %s", docs_dir)
         sys.exit(1)
-    
+
     hf_key = args.hf_key or os.environ.get("HF_API_KEY") or os.environ.get("STORI_HF_API_KEY")
     if not hf_key:
-        print("❌ HuggingFace API key required. Set STORI_HF_API_KEY or use --hf-key")
+        logger.error("HuggingFace API key required. Set STORI_HF_API_KEY or use --hf-key")
         sys.exit(1)
     embedding_dim = HF_EMBEDDING_DIM
-    print("Using HuggingFace embeddings (all-MiniLM-L6-v2)")
-    
-    print(f"\n📚 Stori Docs Ingestion")
-    print(f"=" * 50)
-    print(f"Docs directory: {docs_dir}")
-    print(f"Qdrant: {args.qdrant_host}:{args.qdrant_port}")
-    print(f"Embedding dim: {embedding_dim}")
-    print()
-    
-    # Find HTML files
+    logger.info("Using HuggingFace embeddings (all-MiniLM-L6-v2)")
+
+    logger.info("\nStori Docs Ingestion")
+    logger.info("=" * 50)
+    logger.info("Docs directory: %s", docs_dir)
+    logger.info("Qdrant: %s:%d", args.qdrant_host, args.qdrant_port)
+    logger.info("Embedding dim: %d", embedding_dim)
+    logger.info("")
+
     html_files = list(docs_dir.glob("*.html"))
-    
-    # Filter out index pages
     html_files = [f for f in html_files if f.name not in ["index.html", "docs.html"]]
-    
+
     if not html_files:
-        print(f"❌ No HTML files found in {docs_dir}")
+        logger.error("No HTML files found in %s", docs_dir)
         sys.exit(1)
-    
-    print(f"📄 Found {len(html_files)} HTML files")
-    
-    # Parse documents
-    print("\n1️⃣ Parsing HTML documents...")
+
+    logger.info("Found %d HTML files", len(html_files))
+
+    logger.info("\n[1/5] Parsing HTML documents...")
     documents = []
     for html_file in html_files:
-        print(f"  Parsing {html_file.name}...")
+        logger.info("  Parsing %s...", html_file.name)
         doc = parse_html_doc(html_file)
         if doc:
             documents.append(doc)
-            print(f"    → {len(doc.sections)} sections")
-    
-    print(f"  ✅ Parsed {len(documents)} documents")
-    
-    # Chunk documents
-    print("\n2️⃣ Chunking documents...")
+            logger.info("    -> %d sections", len(doc.sections))
+
+    logger.info("  Parsed %d documents", len(documents))
+
+    logger.info("\n[2/5] Chunking documents...")
     all_chunks = []
     for doc in documents:
         chunks = chunk_document(doc)
         all_chunks.extend(chunks)
-        print(f"  {doc.source_file}: {len(chunks)} chunks")
-    
-    print(f"  ✅ Created {len(all_chunks)} chunks")
-    
-    # Generate embeddings
-    print("\n3️⃣ Generating embeddings...")
+        logger.info("  %s: %d chunks", doc.source_file, len(chunks))
+
+    logger.info("  Created %d chunks", len(all_chunks))
+
+    logger.info("\n[3/5] Generating embeddings...")
     embeddings = await embed_chunks_hf(all_chunks, hf_key)
-    print(f"  ✅ Generated {len(embeddings)} embeddings")
-    
-    # Store in Qdrant
-    print("\n4️⃣ Storing in Qdrant...")
+    logger.info("  Generated %d embeddings", len(embeddings))
+
+    logger.info("\n[4/5] Storing in Qdrant...")
     qdrant = QdrantClient(host=args.qdrant_host, port=args.qdrant_port, check_compatibility=False)
     store_in_qdrant(embeddings, qdrant, embedding_dim=embedding_dim)
-    
-    # Verify
-    print("\n5️⃣ Verification...")
+
+    logger.info("\n[5/5] Verification...")
     try:
         info = qdrant.get_collection("stori_docs")
-        print(f"  Collection: stori_docs")
-        print(f"  Points: {info.points_count}")
+        logger.info("  Collection: stori_docs")
+        logger.info("  Points: %s", info.points_count)
     except Exception as e:
-        print(f"  Verification: {e}")
-    
-    print(f"\n✅ Done! RAG is ready.")
-    print(f"   Total documents: {len(documents)}")
-    print(f"   Total chunks: {len(all_chunks)}")
+        logger.warning("  Verification: %s", e)
+
+    logger.info("\nDone! RAG is ready.")
+    logger.info("   Total documents: %d", len(documents))
+    logger.info("   Total chunks: %d", len(all_chunks))
 
 
 if __name__ == "__main__":

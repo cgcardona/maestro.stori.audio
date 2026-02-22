@@ -12,10 +12,14 @@ Usage:
 
 import sys
 import json
+import logging
 import uuid
 import argparse
 import urllib.request
 import urllib.error
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 # ─── Prompts ──────────────────────────────────────────────────────────────────
 
@@ -148,21 +152,21 @@ Rhythm:
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def hdr(text: str) -> None:
-    print(f"\n{'─'*60}")
-    print(f"  {text}")
-    print('─'*60)
+    logger.info("\n%s", "─" * 60)
+    logger.info("  %s", text)
+    logger.info("─" * 60)
 
 def ok(text: str) -> None:
-    print(f"  ✅ {text}")
+    logger.info("  ✅ %s", text)
 
 def info(text: str) -> None:
-    print(f"  ℹ️  {text}")
+    logger.info("  ℹ️  %s", text)
 
 def warn(text: str) -> None:
-    print(f"  ⚠️  {text}")
+    logger.warning("  ⚠️  %s", text)
 
 def fail(text: str) -> None:
-    print(f"  ❌ {text}")
+    logger.error("  ❌ %s", text)
 
 
 def stream_maestro(api: str, token: str, prompt: str, project: dict,
@@ -187,7 +191,7 @@ def stream_maestro(api: str, token: str, prompt: str, project: dict,
     )
 
     events: list[dict] = []
-    print(f"\n  Streaming {label}...")
+    logger.info("\n  Streaming %s...", label)
 
     with urllib.request.urlopen(req, timeout=600) as resp:
         for raw_line in resp:
@@ -200,57 +204,56 @@ def stream_maestro(api: str, token: str, prompt: str, project: dict,
                 continue
             events.append(ev)
             t = ev.get("type", "?")
-            # Print terse per-event output
             if t == "state":
-                print(f"    📡 state={ev.get('state')}  intent={ev.get('intent')}  confidence={ev.get('confidence')}")
+                logger.info("    state=%s  intent=%s  confidence=%s",
+                            ev.get("state"), ev.get("intent"), ev.get("confidence"))
             elif t == "status":
-                print(f"    📡 status: {ev.get('message')}")
+                logger.info("    status: %s", ev.get("message"))
             elif t == "planSummary":
-                print(f"    📡 planSummary: {ev.get('totalSteps')} steps  "
-                      f"(generations={ev.get('generations')} edits={ev.get('edits')})")
+                logger.info("    planSummary: %s steps (generations=%s edits=%s)",
+                            ev.get("totalSteps"), ev.get("generations"), ev.get("edits"))
             elif t == "progress":
-                cur, tot = ev.get("currentStep", "?"), ev.get("totalSteps", "?")
-                msg = ev.get("message", "")
-                print(f"    📡 progress {cur}/{tot}: {msg}")
+                logger.info("    progress %s/%s: %s",
+                            ev.get("currentStep", "?"), ev.get("totalSteps", "?"), ev.get("message", ""))
             elif t == "toolStart":
-                print(f"    📡 toolStart: {ev.get('label')}")
+                logger.info("    toolStart: %s", ev.get("label"))
             elif t == "toolCall":
                 name = ev.get("name", "?")
                 params = ev.get("params", {})
                 note_count = len(params.get("notes", [])) if "notes" in params else None
                 extra = f"  [{note_count} notes]" if note_count is not None else ""
-                print(f"    📡 toolCall: {name}{extra}")
+                logger.info("    toolCall: %s%s", name, extra)
             elif t == "toolError":
-                print(f"    📡 toolError: {ev.get('name')} — {ev.get('error')}")
+                logger.warning("    toolError: %s — %s", ev.get("name"), ev.get("error"))
             elif t == "meta":
-                print(f"    📡 meta: variationId={ev.get('variationId', '?')[:8]}...  "
-                      f"baseStateId={ev.get('baseStateId')}  "
-                      f"noteCounts={ev.get('noteCounts')}")
+                logger.info("    meta: variationId=%s...  baseStateId=%s  noteCounts=%s",
+                            ev.get("variationId", "?")[:8], ev.get("baseStateId"), ev.get("noteCounts"))
             elif t == "phrase":
-                print(f"    📡 phrase: {ev.get('phraseId', '?')[:8]}...  "
-                      f"beats {ev.get('startBeat')}–{ev.get('endBeat')}  "
-                      f"changes={len(ev.get('noteChanges', []))}")
+                logger.info("    phrase: %s...  beats %s–%s  changes=%d",
+                            ev.get("phraseId", "?")[:8], ev.get("startBeat"), ev.get("endBeat"),
+                            len(ev.get("noteChanges", [])))
             elif t == "done":
-                print(f"    📡 done: variationId={ev.get('variationId', '?')[:8]}...  "
-                      f"phraseCount={ev.get('phraseCount')}")
+                logger.info("    done: variationId=%s...  phraseCount=%s",
+                            ev.get("variationId", "?")[:8], ev.get("phraseCount"))
             elif t == "complete":
-                print(f"    📡 complete: success={ev.get('success')}  "
-                      f"variationId={str(ev.get('variationId',''))[:8] or 'n/a'}  "
-                      f"toolCalls={len(ev.get('toolCalls') or [])}  "
-                      f"totalChanges={ev.get('totalChanges', 'n/a')}")
+                logger.info("    complete: success=%s  variationId=%s  toolCalls=%d  totalChanges=%s",
+                            ev.get("success"),
+                            str(ev.get("variationId", ""))[:8] or "n/a",
+                            len(ev.get("toolCalls") or []),
+                            ev.get("totalChanges", "n/a"))
             elif t == "budgetUpdate":
-                print(f"    📡 budgetUpdate: remaining=${ev.get('budgetRemaining'):.2f}  "
-                      f"cost=${ev.get('cost', 0):.4f}")
+                logger.info("    budgetUpdate: remaining=$%.2f  cost=$%.4f",
+                            ev.get("budgetRemaining", 0), ev.get("cost", 0))
             elif t == "content":
                 snippet = ev.get("content", "")[:80].replace("\n", " ")
-                print(f"    📡 content: \"{snippet}\"")
+                logger.info('    content: "%s"', snippet)
             elif t == "reasoning":
                 snippet = ev.get("content", ev.get("delta", ""))[:60].replace("\n", " ")
-                print(f"    📡 reasoning: \"{snippet}...\"")
+                logger.info('    reasoning: "%s..."', snippet)
             elif t == "error":
-                print(f"    📡 ERROR: {ev.get('message')}")
+                logger.error("    ERROR: %s", ev.get("message"))
             else:
-                print(f"    📡 {t}: {str(ev)[:80]}")
+                logger.debug("    %s: %s", t, str(ev)[:80])
 
     return events
 
@@ -406,7 +409,7 @@ def summarise_prompt2(events: list[dict], project_ctx: dict) -> None:
     existing_names = {t["name"].lower() for t in project_ctx.get("tracks", [])}
 
     # Bug 1: No stori_add_midi_track for existing tracks
-    print()
+    logger.info("")
     hdr("Bug-fix verifications")
     add_track_calls = [tc for tc in tool_calls if tc.get("name") == "stori_add_midi_track"]
     duplicated = [
@@ -493,9 +496,9 @@ def summarise_prompt2(events: list[dict], project_ctx: dict) -> None:
 
     # Print what the frontend needs for the commit flow
     if meta:
-        print()
+        logger.info("")
         info("FE commit payload (what to send to /variation/commit after user approves):")
-        print(json.dumps({
+        logger.info("%s", json.dumps({
             "variationId": meta.get("variationId"),
             "projectId": meta.get("projectId", "<from project context>"),
             "baseStateId": meta.get("baseStateId"),
@@ -515,11 +518,11 @@ def main() -> None:
     api = args.api.rstrip("/")
     conv_id = str(uuid.uuid4())  # shared conversation thread for both prompts
 
-    print("=" * 60)
-    print("  STORI Two-Prompt E2E Flow Test")
-    print("=" * 60)
-    print(f"  API:  {api}")
-    print(f"  Conv: {conv_id[:8]}...")
+    logger.info("=" * 60)
+    logger.info("  STORI Two-Prompt E2E Flow Test")
+    logger.info("=" * 60)
+    logger.info("  API:  %s", api)
+    logger.info("  Conv: %s...", conv_id[:8])
 
     # ── PROMPT 1 ──────────────────────────────────────────────────────────────
     hdr("PROMPT 1: Floating intro (EDITING — new project)")
@@ -552,9 +555,9 @@ def main() -> None:
         )
         info(f"  [{track['id'][:8]}] {track['name']}: {region_summary or '(no regions)'}")
 
-    print()
+    logger.info("")
     info("Full project context JSON (what FE sends as `project` in Prompt 2):")
-    print(json.dumps(project_ctx, indent=2))
+    logger.info("%s", json.dumps(project_ctx, indent=2))
 
     # ── PROMPT 2 ──────────────────────────────────────────────────────────────
     hdr("PROMPT 2: Verse groove (COMPOSING — variation mode)")

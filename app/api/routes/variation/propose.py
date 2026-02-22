@@ -102,16 +102,6 @@ async def propose_variation(
                 variation_id=variation_id,
             )
 
-            logger.info(
-                "Variation proposed",
-                extra={
-                    "variation_id": variation_id,
-                    "project_id": propose_request.project_id,
-                    "base_state_id": propose_request.base_state_id,
-                    "intent": propose_request.intent[:80],
-                },
-            )
-
             task = asyncio.create_task(
                 _run_generation(
                     record=record,
@@ -265,20 +255,10 @@ async def _run_generation(
 
             record.transition_to(VariationStatus.READY)
 
-            logger.info(
-                "Variation generation complete",
-                extra={
-                    "variation_id": variation_id,
-                    "phrase_count": len(record.phrases),
-                    "status": "ready",
-                },
-            )
-
         finally:
             await llm.close()
 
     except asyncio.CancelledError:
-        logger.info(f"Generation cancelled for variation {variation_id[:8]}")
         if record.status == VariationStatus.STREAMING:
             try:
                 record.transition_to(VariationStatus.DISCARDED)

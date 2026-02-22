@@ -141,11 +141,6 @@ async def _run_instrument_agent_inner(
     """
     _agent_id = agent_id
 
-    logger.info(
-        f"{agent_log} Starting — style={style}, bars={bars}, tempo={tempo}, key={key}"
-        + (f", reusing trackId={existing_track_id}, startBeat={start_beat}" if reusing else "")
-    )
-
     from app.data.role_profiles import get_role_profile
 
     beat_count = bars * 4
@@ -159,16 +154,21 @@ async def _run_instrument_agent_inner(
     if _role_profile:
         _musical_dna = f"\n{_role_profile.prompt_block()}\n"
 
+    _reasoning_guidance = (
+        "REASONING: Keep reasoning to 1-3 sentences. Be specific to THIS "
+        f"instrument ({instrument_name}, {role}) — what character, feel, or "
+        "musical role it plays in the arrangement. Do NOT list the pipeline "
+        "steps as reasoning — the execution feed already shows those."
+    )
+
     if reusing:
         system_content = (
-            f"You are a music production agent for the **{instrument_name}** track. "
-            f"Execute the pipeline below immediately — do NOT reason about music theory "
-            f"or composition choices. Orpheus handles all musical decisions. "
-            f"Just call the tools.\n\n"
+            f"You are a music production agent for the **{instrument_name}** track.\n\n"
+            f"{_reasoning_guidance}\n\n"
             f"Context: {style} | {tempo} BPM | {key} | {_length_emphasis}\n"
             f"{_musical_dna}"
             f"Track already exists: trackId='{existing_track_id}', content ends at beat {start_beat}.\n\n"
-            f"Pipeline (execute ALL now, in order):\n"
+            f"Pipeline (execute ALL now, in this exact order):\n"
             f"1. stori_add_midi_region — {beat_count} beats starting at beat {start_beat} "
             f"on trackId='{existing_track_id}'\n"
             f"2. stori_generate_midi — role=\"{role}\", style=\"{style}\", "
@@ -179,13 +179,11 @@ async def _run_instrument_agent_inner(
         )
     else:
         system_content = (
-            f"You are a music production agent for the **{instrument_name}** track. "
-            f"Execute the pipeline below immediately — do NOT reason about music theory "
-            f"or composition choices. Orpheus handles all musical decisions. "
-            f"Just call the tools.\n\n"
+            f"You are a music production agent for the **{instrument_name}** track.\n\n"
+            f"{_reasoning_guidance}\n\n"
             f"Context: {style} | {tempo} BPM | {key} | {_length_emphasis}\n"
             f"{_musical_dna}"
-            f"Pipeline (execute ALL now, in order):\n"
+            f"Pipeline (execute ALL now, in this exact order):\n"
             f"1. stori_add_midi_track — create the {instrument_name} track\n"
             f"2. stori_add_midi_region — {beat_count} beats at beat 0 "
             f"(use $0.trackId). durationBeats MUST be {beat_count}.\n"
@@ -202,14 +200,14 @@ async def _run_instrument_agent_inner(
     ]
     if reusing:
         user_message = (
-            f"Go. Add region → generate → effect. "
+            f"Add region → generate → effect. "
             f"trackId='{existing_track_id}', startBeat={start_beat}, "
-            f"{beat_count} beats. No reasoning needed."
+            f"{beat_count} beats."
         )
     else:
         user_message = (
-            f"Go. Create track → add region → generate → effect. "
-            f"{bars} bars, {beat_count} beats. No reasoning needed."
+            f"Create track → add region → generate → effect. "
+            f"{bars} bars, {beat_count} beats."
         )
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_content},
@@ -336,10 +334,21 @@ async def _run_instrument_agent_inner(
                     })
             return
 
-        logger.info(f"{agent_log} Turn {turn}: {len(response.tool_calls)} tool call(s)")
-
         if not response.tool_calls:
             break
+
+        # Enforce correct tool ordering within a single LLM response batch:
+        # track creation → region → generators → effects.
+        # The LLM sometimes emits all calls in one shot out of order.
+        _TOOL_ORDER: dict[str, int] = {}
+        for _name in _TRACK_CREATION_NAMES:
+            _TOOL_ORDER[_name] = 0
+        _TOOL_ORDER["stori_add_midi_region"] = 1
+        for _name in _GENERATOR_TOOL_NAMES:
+            _TOOL_ORDER[_name] = 2
+        for _name in _EFFECT_TOOL_NAMES:
+            _TOOL_ORDER[_name] = 3
+        response.tool_calls.sort(key=lambda tc: _TOOL_ORDER.get(tc.name, 2))
 
         assistant_tool_calls = [
             {
@@ -400,9 +409,14 @@ async def _run_instrument_agent_inner(
                 composition_context=composition_context,
             )
 
+            _AGENT_TAGGED_EVENTS = {
+                "toolCall", "toolStart", "toolError",
+                "generatorStart", "generatorComplete",
+                "reasoning", "content", "status",
+            }
             for evt in outcome.sse_events:
-                if evt.get("type") in ("toolCall", "toolStart", "toolError"):
-                    evt = {**evt, "agentId": instrument_name.lower()}
+                if evt.get("type") in _AGENT_TAGGED_EVENTS:
+                    evt = {**evt, "agentId": _agent_id}
                 await sse_queue.put(evt)
 
             if not outcome.skipped and active_step_id:
@@ -440,8 +454,6 @@ async def _run_instrument_agent_inner(
                 "content": json.dumps(outcome.tool_result),
             })
 
-            logger.debug(f"{agent_log} {tc.name} executed (skipped={outcome.skipped})")
-
         messages.extend(tool_result_messages)
 
     if active_step_id:
@@ -449,4 +461,3 @@ async def _run_instrument_agent_inner(
         if evt:
             await sse_queue.put({**evt, "agentId": _agent_id})
 
-    logger.info(f"{agent_log} Complete ({len(all_tool_results)} tool calls, {turn + 1} turn(s))")

@@ -161,7 +161,6 @@ class MusicGenerator:
         Returns:
             GenerationResult with notes and metadata
         """
-        logger.info(f"Generating {bars} bars of {style} {instrument} at {tempo} BPM")
         quality_preset = kwargs.pop("quality_preset", "quality")  # "fast" | "balanced" | "quality"
         num_candidates = kwargs.pop("num_candidates", None)
         
@@ -173,7 +172,6 @@ class MusicGenerator:
         if preferred_backend:
             backend = self.backend_map.get(preferred_backend)
             if backend:
-                logger.info(f"Using requested backend: {preferred_backend.value}")
                 result = await self._generate_with_coupling(
                     backend, preferred_backend, instrument, style, tempo, bars, key, chords,
                     preset_config, n, **kwargs
@@ -191,12 +189,8 @@ class MusicGenerator:
             if not backend:
                 continue
             
-            # Check availability (with caching for performance)
             if not await self._is_backend_available(backend):
-                logger.debug(f"Backend {backend_type.value} not available, skipping")
                 continue
-            
-            logger.info(f"Trying backend: {backend_type.value}")
             
             result = await self._generate_with_coupling(
                 backend, backend_type, instrument, style, tempo, bars, key, chords,
@@ -204,18 +198,15 @@ class MusicGenerator:
             )
             
             if result.success:
-                logger.info(f"✓ Generated {len(result.notes)} notes via {backend_type.value}")
                 result = self._apply_expressiveness(result, instrument, style, bars)
                 return result
             else:
                 last_failure = result
-                logger.warning(f"✗ Backend {backend_type.value} failed: {result.error}")
-                # Continue to next backend
+                logger.warning(f"Backend {backend_type.value} failed: {result.error}")
         
-        # No backend succeeded; surface the real error if we have one
         if last_failure and last_failure.error:
             error_msg = last_failure.error
-            logger.error(f"❌ {error_msg}")
+            logger.error(error_msg)
             return GenerationResult(
                 success=False,
                 notes=[],
@@ -223,13 +214,12 @@ class MusicGenerator:
                 metadata=last_failure.metadata or {},
                 error=error_msg,
             )
-        # No backend was reachable (all failed availability)
         error_msg = (
             "Music generation (Orpheus) is currently unavailable. "
             "Ensure the Orpheus service is running (port 10002) and reachable. "
             "Please try again once the service is up."
         )
-        logger.error(f"❌ {error_msg}")
+        logger.error(error_msg)
         return GenerationResult(
             success=False,
             notes=[],
@@ -238,6 +228,16 @@ class MusicGenerator:
             error=error_msg,
         )
     
+    @staticmethod
+    def _ensure_snake_keys(notes: list[dict]) -> list[dict]:
+        """Return a shallow copy of notes with snake_case beat keys for critics."""
+        _MAP = {"startBeat": "start_beat", "durationBeats": "duration_beats"}
+        out: list[dict] = []
+        for n in notes:
+            converted = {_MAP.get(k, k): v for k, v in n.items()}
+            out.append(converted)
+        return out
+
     def _scorer_for_instrument(
         self,
         instrument: str,
@@ -258,19 +258,20 @@ class MusicGenerator:
             score_melody_notes,
             score_chord_notes,
         )
+        _snake = self._ensure_snake_keys
         role = instrument.lower()
         if role in ("drums", "percussion") or backend_type == GeneratorBackend.DRUM_IR:
             fill_bars = [b for b in range(3, bars, 4)]
-            return lambda notes: score_drum_notes(notes, fill_bars=fill_bars, bars=bars, style=style)
+            return lambda notes: score_drum_notes(_snake(notes), fill_bars=fill_bars, bars=bars, style=style)
         if role == "bass" or backend_type == GeneratorBackend.BASS_IR:
             kick_beats = None
             if self._generation_context and self._generation_context.rhythm_spine:
                 kick_beats = self._generation_context.rhythm_spine.kick_onsets
-            return lambda notes: score_bass_notes(notes, kick_beats=kick_beats)
+            return lambda notes: score_bass_notes(_snake(notes), kick_beats=kick_beats)
         if role in ("lead", "melody", "synth", "vocal") or backend_type == GeneratorBackend.MELODY_IR:
-            return lambda notes: score_melody_notes(notes)
+            return lambda notes: score_melody_notes(_snake(notes))
         if role in ("piano", "chords", "harmony", "keys", "organ", "guitar", "horns", "brass", "strings") or backend_type == GeneratorBackend.HARMONIC_IR:
-            return lambda notes: score_chord_notes(notes)
+            return lambda notes: score_chord_notes(_snake(notes))
         return None  # unknown role — no scoring
 
     def _candidates_for_role(
@@ -328,7 +329,6 @@ class MusicGenerator:
             if self._generation_context and self._generation_context.rhythm_spine:
                 gen_kwargs["rhythm_spine"] = self._generation_context.rhythm_spine
                 gen_kwargs["drum_kick_beats"] = self._generation_context.rhythm_spine.kick_onsets
-                logger.info(f"Bass coupled to rhythm spine ({len(self._generation_context.rhythm_spine.kick_onsets)} kicks)")
 
         # Smarter candidate count — melodic instruments cap at 2 for Orpheus
         effective_candidates = self._candidates_for_role(instrument, preset_config, backend_type)
@@ -352,8 +352,6 @@ class MusicGenerator:
 
             for res in candidates:
                 if isinstance(res, Exception) or not res.success:
-                    if isinstance(res, Exception):
-                        logger.warning(f"Candidate failed: {res}")
                     continue
                 score, _ = scorer(res.notes)
                 all_scores.append(score)
@@ -370,10 +368,6 @@ class MusicGenerator:
                     "all_scores": all_scores,
                     "parallel_candidates": effective_candidates,
                 })
-                logger.info(
-                    f"✓ Parallel candidates: best score {best_score:.3f} "
-                    f"from {len(all_scores)}/{effective_candidates} valid ({backend_type.value})"
-                )
                 return best_result
 
         # Single generation (no rejection sampling, or all candidates failed)
@@ -417,7 +411,6 @@ class MusicGenerator:
             tempo=tempo,
             bars=bars,
         )
-        logger.info(f"Captured rhythm spine: {len(rhythm_spine.kick_onsets)} kicks, {len(rhythm_spine.snare_onsets)} snares")
     
     async def _is_backend_available(self, backend: MusicGeneratorBackend) -> bool:
         """Check backend availability with caching.
@@ -432,10 +425,6 @@ class MusicGenerator:
         available = await backend.is_available()
         if available:
             self._availability_cache[cache_key] = True
-            logger.info(f"Backend {backend_type.value} is available ✓")
-        else:
-            # Do not cache False so next request will retry (e.g. Orpheus was starting)
-            logger.debug(f"Backend {backend_type.value} is not available")
         return available
     
     def clear_cache(self):

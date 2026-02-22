@@ -21,6 +21,7 @@ Environment:
 import argparse
 import io
 import json
+import logging
 import os
 import sys
 import zipfile
@@ -29,6 +30,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import boto3
 from botocore.exceptions import ClientError
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 DRUM_KITS_PREFIX = "assets/drum-kits/"
 KITS = [
@@ -72,7 +76,7 @@ def main():
     try:
         s3.head_bucket(Bucket=bucket)
     except ClientError as e:
-        print(f"Error: cannot access bucket {bucket}: {e}", file=sys.stderr)
+        logger.error("Cannot access bucket %s: %s", bucket, e)
         sys.exit(1)
 
     for kit_id, name in KITS:
@@ -84,7 +88,7 @@ def main():
         buf.seek(0)
         key = f"{DRUM_KITS_PREFIX}{kit_id}.zip"
         s3.upload_fileobj(buf, bucket, key, ExtraArgs={"ContentType": "application/zip"})
-        print(f"Uploaded {key}")
+        logger.info("Uploaded %s", key)
 
     manifest = {"kits": [{"id": k[0], "name": k[1], "version": "1.0"} for k in KITS]}
     s3.put_object(
@@ -93,8 +97,8 @@ def main():
         Body=json.dumps(manifest, indent=2).encode(),
         ContentType="application/json",
     )
-    print(f"Uploaded {DRUM_KITS_PREFIX}manifest.json")
-    print("Done.")
+    logger.info("Uploaded %smanifest.json", DRUM_KITS_PREFIX)
+    logger.info("Done.")
 
 
 if __name__ == "__main__":

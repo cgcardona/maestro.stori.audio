@@ -44,14 +44,14 @@ def run_max_length_to_beats_mapping(hf_token: str):
     prompt = "A simple piano melody in C major with a steady rhythm"
     
     results = []
-    
-    print("\n" + "="*80)
-    print("TEXT2MIDI MAX_LENGTH → BEATS MAPPING TEST")
-    print("="*80)
-    print(f"\nPrompt: {prompt}")
-    print(f"\nTesting {len(test_max_lengths)} max_length values...\n")
-    print(f"{'max_length':>12} │ {'beats':>8} │ {'bars':>6} │ {'notes':>7}")
-    print("─"*12 + "─┼─" + "─"*8 + "─┼─" + "─"*6 + "─┼─" + "─"*7)
+
+    logger.info("\n" + "=" * 80)
+    logger.info("TEXT2MIDI MAX_LENGTH -> BEATS MAPPING TEST")
+    logger.info("=" * 80)
+    logger.info("\nPrompt: %s", prompt)
+    logger.info("\nTesting %d max_length values...\n", len(test_max_lengths))
+    logger.info("%12s │ %8s │ %6s │ %7s", "max_length", "beats", "bars", "notes")
+    logger.info("─" * 12 + "─┼─" + "─" * 8 + "─┼─" + "─" * 6 + "─┼─" + "─" * 7)
     
     for max_len in test_max_lengths:
         try:
@@ -88,41 +88,38 @@ def run_max_length_to_beats_mapping(hf_token: str):
                 'notes': note_count,
             })
             
-            print(f"{max_len:12d} │ {total_beats:8.1f} │ {total_bars:6.1f} │ {note_count:7d}")
-            
+            logger.info("%12d │ %8.1f │ %6.1f │ %7d", max_len, total_beats, total_bars, note_count)
+
         except Exception as e:
-            logger.error(f"max_length={max_len} failed: {e}")
-            print(f"{max_len:12d} │ {'ERROR':>8} │ {'':>6} │ {'':>7}")
-    
-    print("\n" + "="*80)
-    print("ANALYSIS")
-    print("="*80)
-    
-    # Find good values for common beat counts
+            logger.error("max_length=%d failed: %s", max_len, e)
+            logger.info("%12d │ %8s │ %6s │ %7s", max_len, "ERROR", "", "")
+
+    logger.info("\n" + "=" * 80)
+    logger.info("ANALYSIS")
+    logger.info("=" * 80)
+
     target_beats = [8, 16, 32, 48, 64, 96, 128, 192, 256]
-    
-    print(f"\n{'Target Beats':>13} │ {'Target Bars':>12} │ {'Recommended max_length':>25}")
-    print("─"*13 + "─┼─" + "─"*12 + "─┼─" + "─"*25)
-    
+
+    logger.info("\n%13s │ %12s │ %25s", "Target Beats", "Target Bars", "Recommended max_length")
+    logger.info("─" * 13 + "─┼─" + "─" * 12 + "─┼─" + "─" * 25)
+
     for target in target_beats:
-        # Find closest result
         if results:
-            closest = min(results, key=lambda x: abs(x['beats'] - target))
-            print(f"{target:13d} │ {target/4:12.1f} │ {closest['max_length']:25d}")
-    
-    # Generate Python mapping code
-    print("\n" + "="*80)
-    print("SUGGESTED MAPPING FUNCTION")
-    print("="*80)
+            closest = min(results, key=lambda x: abs(x["beats"] - target))
+            logger.info("%13d │ %12.1f │ %25d", target, target / 4, closest["max_length"])
+
+    logger.info("\n" + "=" * 80)
+    logger.info("SUGGESTED MAPPING FUNCTION")
+    logger.info("=" * 80)
+
     print("\ndef beats_to_max_length(beats: float) -> int:")
     print('    """Map beat count to text2midi max_length parameter."""')
     print("    # Empirically derived mapping")
-    
+
     if results:
-        # Create a simple piecewise linear mapping from the data
-        sorted_results = sorted(results, key=lambda x: x['beats'])
+        sorted_results = sorted(results, key=lambda x: x["beats"])
         print("    mapping = [")
-        for r in sorted_results[::3]:  # Sample every 3rd point
+        for r in sorted_results[::3]:
             print(f"        ({r['beats']:.1f}, {r['max_length']}),  # {r['bars']:.1f} bars")
         print("    ]")
         print("    ")
@@ -141,8 +138,8 @@ def run_max_length_to_beats_mapping(hf_token: str):
         print("            return int(ml1 + ratio * (ml2 - ml1))")
         print("    ")
         print("    return 500  # fallback")
-    
-    print("\n" + "="*80)
+
+    logger.info("\n" + "=" * 80)
     return results
 
 
@@ -152,10 +149,10 @@ if __name__ == "__main__":
     # Get HF token from environment
     hf_token = os.getenv("HF_API_KEY")
     if not hf_token:
-        print("ERROR: HF_API_KEY environment variable not set")
+        logger.error("HF_API_KEY environment variable not set")
         sys.exit(1)
 
     results = run_max_length_to_beats_mapping(hf_token)
-    
-    print(f"\n✓ Test complete. Tested {len(results)} configurations.")
-    print("\nCopy the suggested mapping function into text2midi_backend.py")
+
+    logger.info("\nTest complete. Tested %d configurations.", len(results))
+    logger.info("Copy the suggested mapping function into text2midi_backend.py")

@@ -8,6 +8,8 @@ Note: This test requires internet access and may take 30-60 seconds
 as the Space may need to wake up.
 """
 
+import logging
+
 import pytest
 import asyncio
 from app.services.neural.text2midi_backend import (
@@ -17,6 +19,8 @@ from app.services.neural.text2midi_backend import (
 )
 from app.services.neural.melody_generator import MelodyGenerationRequest
 from app.core.emotion_vector import EmotionVector
+
+logger = logging.getLogger(__name__)
 
 
 class TestText2MidiLive:
@@ -29,7 +33,7 @@ class TestText2MidiLive:
         
         try:
             available = await backend.is_available()
-            print(f"\n[text2midi] Space available: {available}")
+            logger.info("Space available: %s", available)
             
             if not available:
                 pytest.skip("text2midi Space not available")
@@ -56,8 +60,8 @@ class TestText2MidiLive:
             motion=0.5,
         )
         
-        print(f"\n[text2midi] Testing with emotion: {emotion}")
-        print(f"[text2midi] Description: {emotion_to_text_description(emotion, key='C', tempo=100)[:100]}...")
+        logger.info("Testing with emotion: %s", emotion)
+        logger.info("Description: %s...", emotion_to_text_description(emotion, key="C", tempo=100)[:100])
         
         result = await backend.generate(
             bars=4,
@@ -68,17 +72,17 @@ class TestText2MidiLive:
             instrument="piano",
         )
         
-        print(f"\n[text2midi] Success: {result.success}")
-        print(f"[text2midi] Model: {result.model_used}")
-        print(f"[text2midi] Notes generated: {len(result.notes)}")
-        
+        logger.info("Success: %s", result.success)
+        logger.info("Model: %s", result.model_used)
+        logger.info("Notes generated: %d", len(result.notes))
+
         if result.error:
-            print(f"[text2midi] Error: {result.error}")
-        
+            logger.warning("Error: %s", result.error)
+
         if result.notes:
-            print(f"[text2midi] First 3 notes: {result.notes[:3]}")
+            logger.info("First 3 notes: %s", result.notes[:3])
             pitches = [n["pitch"] for n in result.notes]
-            print(f"[text2midi] Pitch range: {min(pitches)} - {max(pitches)}")
+            logger.info("Pitch range: %d - %d", min(pitches), max(pitches))
         
         # The test passes if we got any result (success or graceful failure)
         assert result is not None
@@ -102,9 +106,9 @@ class TestText2MidiLive:
         # Low energy, negative
         somber = EmotionVector(energy=0.2, valence=-0.7, motion=0.2)
         
-        print("\n[text2midi] Generating upbeat melody...")
+        logger.info("Generating upbeat melody...")
         upbeat_desc = emotion_to_text_description(upbeat, key="G", tempo=140)
-        print(f"  Description: {upbeat_desc[:80]}...")
+        logger.info("  Description: %s...", upbeat_desc[:80])
         
         upbeat_result = await backend.generate(
             bars=4,
@@ -113,9 +117,9 @@ class TestText2MidiLive:
             emotion_vector=upbeat,
         )
         
-        print("\n[text2midi] Generating somber melody...")
+        logger.info("Generating somber melody...")
         somber_desc = emotion_to_text_description(somber, key="Dm", tempo=60)
-        print(f"  Description: {somber_desc[:80]}...")
+        logger.info("  Description: %s...", somber_desc[:80])
         
         somber_result = await backend.generate(
             bars=4,
@@ -124,8 +128,8 @@ class TestText2MidiLive:
             emotion_vector=somber,
         )
         
-        print(f"\n[text2midi] Upbeat: {len(upbeat_result.notes)} notes")
-        print(f"[text2midi] Somber: {len(somber_result.notes)} notes")
+        logger.info("Upbeat: %d notes", len(upbeat_result.notes))
+        logger.info("Somber: %d notes", len(somber_result.notes))
         
         # Both should have generated something (or gracefully failed)
         assert upbeat_result is not None
@@ -154,12 +158,12 @@ class TestText2MidiMelodyBackendLive:
             emotion_vector=EmotionVector(energy=0.5, valence=-0.3),
         )
         
-        print("\n[text2midi] Testing MelodyBackend interface...")
+        logger.info("Testing MelodyBackend interface...")
         result = await backend.generate(request)
-        
-        print(f"[text2midi] Success: {result.success}")
-        print(f"[text2midi] Model: {result.model_used}")
-        print(f"[text2midi] Notes: {len(result.notes)}")
+
+        logger.info("Success: %s", result.success)
+        logger.info("Model: %s", result.model_used)
+        logger.info("Notes: %d", len(result.notes))
         
         assert result is not None
 
@@ -167,9 +171,10 @@ class TestText2MidiMelodyBackendLive:
 if __name__ == "__main__":
     # Quick manual test
     async def main():
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
         backend = Text2MidiBackend()
-        print(f"Available: {await backend.is_available()}")
-        
+        logger.info("Available: %s", await backend.is_available())
+
         if await backend.is_available():
             result = await backend.generate(
                 bars=4,
@@ -177,6 +182,6 @@ if __name__ == "__main__":
                 key="C",
                 emotion_vector=EmotionVector(),
             )
-            print(f"Generated {len(result.notes)} notes")
+            logger.info("Generated %d notes", len(result.notes))
     
     asyncio.run(main())

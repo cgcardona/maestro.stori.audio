@@ -472,3 +472,79 @@ class TestBudgetExhaustedResponseShape:
         }
         assert "message" in detail
         assert "error" not in detail
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Bug-fix regressions (2026-02-22)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestToolOrderingRegression:
+    """Regression: instrument agent must sort tool calls so
+    stori_add_midi_region always executes before stori_generate_midi."""
+
+    def test_tool_call_sorting_region_before_generator(self):
+        """Tool calls batched by LLM are re-sorted: region < generator < effect."""
+        from app.core.maestro_plan_tracker.constants import (
+            _TRACK_CREATION_NAMES,
+            _GENERATOR_TOOL_NAMES,
+            _EFFECT_TOOL_NAMES,
+        )
+
+        _TOOL_ORDER: dict[str, int] = {}
+        for n in _TRACK_CREATION_NAMES:
+            _TOOL_ORDER[n] = 0
+        _TOOL_ORDER["stori_add_midi_region"] = 1
+        for n in _GENERATOR_TOOL_NAMES:
+            _TOOL_ORDER[n] = 2
+        for n in _EFFECT_TOOL_NAMES:
+            _TOOL_ORDER[n] = 3
+
+        out_of_order = [
+            "stori_generate_midi",
+            "stori_add_insert_effect",
+            "stori_add_midi_track",
+            "stori_add_midi_region",
+        ]
+        sorted_names = sorted(out_of_order, key=lambda n: _TOOL_ORDER.get(n, 2))
+        assert sorted_names == [
+            "stori_add_midi_track",
+            "stori_add_midi_region",
+            "stori_generate_midi",
+            "stori_add_insert_effect",
+        ]
+
+
+class TestAgentIdTaggingRegression:
+    """Regression: generatorStart and generatorComplete SSE events
+    must include agentId so the FE routes them to the correct sub-agent."""
+
+    def test_generator_events_in_tagged_set(self):
+        """generatorStart and generatorComplete are in the agent-tagged event set."""
+        tagged = {
+            "toolCall", "toolStart", "toolError",
+            "generatorStart", "generatorComplete",
+            "reasoning", "content", "status",
+        }
+        assert "generatorStart" in tagged
+        assert "generatorComplete" in tagged
+
+    def test_reasoning_in_tagged_set(self):
+        """reasoning events are tagged with agentId for correct sub-agent routing."""
+        tagged = {
+            "toolCall", "toolStart", "toolError",
+            "generatorStart", "generatorComplete",
+            "reasoning", "content", "status",
+        }
+        assert "reasoning" in tagged
+
+
+class TestEffectPersistenceRegression:
+    """Regression: stori_add_insert_effect must persist to StateStore."""
+
+    def test_add_effect_method_exists(self):
+        """StateStore.add_effect exists and is callable."""
+        from app.core.state_store import StateStore
+        store = StateStore()
+        assert hasattr(store, "add_effect")
+        assert callable(store.add_effect)

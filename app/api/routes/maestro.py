@@ -162,7 +162,6 @@ async def stream_maestro(
                     "content": msg.content
                 })
 
-            logger.info(f"Loaded {len(conversation_history)} messages for conversation {maestro_request.conversation_id}")
         except Exception as e:
             logger.warning(f"Failed to load conversation history: {e}")
 

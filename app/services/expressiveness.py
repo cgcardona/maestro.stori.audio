@@ -13,13 +13,10 @@ reference MIDI:
   - 92.7% of notes off 16th grid (0.06 beat mean deviation)
   - Duration range: grace notes (0.008 beats) to sustained pads (28 beats)
 """
-import logging
 import math
 import random
 from dataclasses import dataclass, field
 from typing import Optional
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -537,6 +534,30 @@ def add_timing_humanization(
 
 
 # ---------------------------------------------------------------------------
+# Note key normalization (camelCase ↔ snake_case)
+# ---------------------------------------------------------------------------
+
+_CAMEL_TO_SNAKE: dict[str, str] = {"startBeat": "start_beat", "durationBeats": "duration_beats"}
+_SNAKE_TO_CAMEL: dict[str, str] = {"start_beat": "startBeat", "duration_beats": "durationBeats"}
+
+
+def _notes_to_snake(notes: list[dict]) -> None:
+    """Convert camelCase note keys to snake_case in-place."""
+    for n in notes:
+        for camel, snake in _CAMEL_TO_SNAKE.items():
+            if camel in n and snake not in n:
+                n[snake] = n.pop(camel)
+
+
+def _notes_to_camel(notes: list[dict]) -> None:
+    """Convert snake_case note keys to camelCase in-place."""
+    for n in notes:
+        for snake, camel in _SNAKE_TO_CAMEL.items():
+            if snake in n and camel not in n:
+                n[camel] = n.pop(snake)
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -551,7 +572,7 @@ def apply_expressiveness(
     Full expressiveness post-processing pipeline.
 
     Args:
-        notes: Raw note dicts from Orpheus.
+        notes: Raw note dicts from Orpheus (accepts both camelCase and snake_case keys).
         style: Genre/style string.
         bars: Number of bars.
         instrument_role: "drums", "bass", "melody", "chords", etc.
@@ -560,11 +581,18 @@ def apply_expressiveness(
     Returns:
         Dict with keys: notes, cc_events, pitch_bends.
         notes is mutated in-place with velocity curves and timing humanization.
+        Output notes use the same key format (camelCase or snake_case) as the input.
     """
     rng = random.Random(seed)
 
+    _was_camel = any("startBeat" in n for n in notes) if notes else False
+    if _was_camel:
+        _notes_to_snake(notes)
+
     # Skip drums — they have their own groove engine
     if instrument_role == "drums":
+        if _was_camel:
+            _notes_to_camel(notes)
         return {"notes": notes, "cc_events": [], "pitch_bends": []}
 
     add_velocity_curves(notes, style, bars, rng, role=instrument_role)
@@ -572,8 +600,7 @@ def apply_expressiveness(
     cc_events = add_cc_automation(notes, style, bars, instrument_role)
     pitch_bends = add_pitch_bend_phrasing(notes, style, instrument_role, rng)
 
-    logger.info(
-        f"Expressiveness applied ({style}/{instrument_role}): "
-        f"{len(notes)} notes, {len(cc_events)} CC, {len(pitch_bends)} PB"
-    )
+    if _was_camel:
+        _notes_to_camel(notes)
+
     return {"notes": notes, "cc_events": cc_events, "pitch_bends": pitch_bends}

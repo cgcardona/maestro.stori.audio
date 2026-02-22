@@ -561,6 +561,71 @@ class TestProfileIntegrity:
 # ─── Music generator integration ─────────────────────────────────────────────
 
 
+class TestCamelCaseNormalization:
+    """Regression: Orpheus notes use camelCase (startBeat) but
+    expressiveness previously crashed with KeyError: 'start_beat'."""
+
+    @staticmethod
+    def _camel_notes(count: int = 16, bars: int = 4, velocity: int = 80) -> list[dict]:
+        beats_total = bars * 4
+        step = beats_total / max(count, 1)
+        return [
+            {
+                "pitch": 60 + (i % 12),
+                "startBeat": round(i * step, 3),
+                "durationBeats": round(step * 0.8, 3),
+                "velocity": velocity,
+            }
+            for i in range(count)
+        ]
+
+    def test_apply_expressiveness_camel_no_crash(self):
+        """camelCase notes must not raise KeyError."""
+        notes = self._camel_notes(16, bars=4)
+        result = apply_expressiveness(notes, "jazz", 4, instrument_role="melody")
+        assert len(result["notes"]) >= 16
+        assert "cc_events" in result
+
+    def test_camel_keys_preserved_on_output(self):
+        """Output notes keep camelCase keys when input was camelCase."""
+        notes = self._camel_notes(8, bars=2)
+        result = apply_expressiveness(notes, "classical", 2, instrument_role="piano")
+        for n in result["notes"]:
+            assert "startBeat" in n
+            assert "start_beat" not in n
+
+    def test_snake_keys_preserved_on_output(self):
+        """Output notes keep snake_case keys when input was snake_case."""
+        notes = _make_notes(8, bars=2)
+        result = apply_expressiveness(notes, "classical", 2, instrument_role="piano")
+        for n in result["notes"]:
+            assert "start_beat" in n
+            assert "startBeat" not in n
+
+    def test_velocity_curves_work_with_camel(self):
+        """Velocity shaping works correctly with camelCase input."""
+        notes = self._camel_notes(16, bars=4, velocity=80)
+        result = apply_expressiveness(notes, "jazz", 4, instrument_role="melody")
+        vels = [n["velocity"] for n in result["notes"]]
+        assert not all(v == 80 for v in vels)
+
+    def test_ghost_notes_use_camel_keys(self):
+        """Ghost notes inserted during camelCase processing also use camelCase."""
+        notes = self._camel_notes(40, bars=8, velocity=80)
+        original_count = len(notes)
+        result = apply_expressiveness(notes, "funk", 8, instrument_role="melody")
+        if len(result["notes"]) > original_count:
+            for n in result["notes"]:
+                assert "startBeat" in n
+
+    def test_drums_skip_with_camel(self):
+        """Drums skip fast-path preserves camelCase keys."""
+        notes = self._camel_notes(4, bars=1)
+        result = apply_expressiveness(notes, "trap", 1, instrument_role="drums")
+        for n in result["notes"]:
+            assert "startBeat" in n
+
+
 class TestMusicGeneratorExpressiveness:
     """Tests for expressiveness integration in MusicGenerator._apply_expressiveness."""
 
@@ -603,6 +668,25 @@ class TestMusicGeneratorExpressiveness:
         enriched = MusicGenerator._apply_expressiveness(result, "drums", "jazz", 4)
         assert enriched.cc_events == []
         assert enriched.pitch_bends == []
+
+    def test_camel_case_notes_from_orpheus(self):
+        """Regression: Orpheus notes (camelCase) don't crash _apply_expressiveness."""
+        from app.services.backends.base import GenerationResult, GeneratorBackend
+        from app.services.music_generator import MusicGenerator
+
+        camel_notes = [
+            {"pitch": 60, "startBeat": float(i), "durationBeats": 0.5, "velocity": 80}
+            for i in range(16)
+        ]
+        result = GenerationResult(
+            success=True,
+            notes=camel_notes,
+            backend_used=GeneratorBackend.ORPHEUS,
+            metadata={},
+        )
+        enriched = MusicGenerator._apply_expressiveness(result, "bass", "trap", 4)
+        assert enriched.success is True
+        assert len(enriched.notes) >= 16
 
 
 # ─── Conversion beats_per_bar ─────────────────────────────────────────────────

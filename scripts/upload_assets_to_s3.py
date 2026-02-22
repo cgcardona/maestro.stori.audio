@@ -31,6 +31,7 @@ Environment:
 """
 import argparse
 import json
+import logging
 import os
 import sys
 import zipfile
@@ -41,6 +42,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import boto3
 from botocore.exceptions import ClientError
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 # S3 key prefixes (must match app/services/assets.py)
 DRUM_KITS_PREFIX = "assets/drum-kits/"
@@ -83,7 +87,7 @@ def build_kit_zip(kit_dir: Path, kit_json_override: dict | None = None) -> bytes
 def upload_drum_kits(client, bucket: str, source_dir: Path) -> list[dict]:
     drum_kits_dir = source_dir / "drum-kits"
     if not drum_kits_dir.is_dir():
-        print("No drum-kits/ directory found, skipping.")
+        logger.warning("No drum-kits/ directory found, skipping.")
         return []
     manifest_kits = []
     for kit_dir in sorted(drum_kits_dir.iterdir()):
@@ -92,7 +96,7 @@ def upload_drum_kits(client, bucket: str, source_dir: Path) -> list[dict]:
         kit_id = kit_dir.name
         kit_json = kit_dir / "kit.json"
         if not kit_json.exists():
-            print(f"  Skip {kit_id}: no kit.json")
+            logger.warning("  Skip %s: no kit.json", kit_id)
             continue
         try:
             with open(kit_json) as f:
@@ -101,7 +105,7 @@ def upload_drum_kits(client, bucket: str, source_dir: Path) -> list[dict]:
             name = meta["name"]
             version = meta["version"]
         except Exception as e:
-            print(f"  Skip {kit_id}: invalid kit.json - {e}")
+            logger.warning("  Skip %s: invalid kit.json - %s", kit_id, e)
             continue
         # Zip and upload (kit.json in zip uses normalized meta: author, license, sounds, etc.)
         zip_bytes = build_kit_zip(kit_dir, kit_json_override=meta)
@@ -111,7 +115,7 @@ def upload_drum_kits(client, bucket: str, source_dir: Path) -> list[dict]:
             BytesIO(zip_bytes), bucket, key_zip,
             ExtraArgs={"ContentType": "application/zip"},
         )
-        print(f"  Uploaded {kit_id}.zip -> s3://{bucket}/{key_zip}")
+        logger.info("  Uploaded %s.zip -> s3://%s/%s", kit_id, bucket, key_zip)
         file_count = len(list(kit_dir.rglob("*.wav"))) + (1 if kit_json.exists() else 0)
         manifest_kits.append({
             "id": kit_id,
@@ -125,7 +129,7 @@ def upload_drum_kits(client, bucket: str, source_dir: Path) -> list[dict]:
 def upload_soundfonts(client, bucket: str, source_dir: Path) -> list[dict]:
     soundfonts_dir = source_dir / "soundfonts"
     if not soundfonts_dir.is_dir():
-        print("No soundfonts/ directory found, skipping.")
+        logger.warning("No soundfonts/ directory found, skipping.")
         return []
     manifest_sf = []
     for f in sorted(soundfonts_dir.iterdir()):
@@ -136,7 +140,7 @@ def upload_soundfonts(client, bucket: str, source_dir: Path) -> list[dict]:
         name = f.stem.replace("_", " ")
         key = f"{SOUNDFONTS_PREFIX}{filename}"
         client.upload_file(str(f), bucket, key, ExtraArgs={"ContentType": "application/octet-stream"})
-        print(f"  Uploaded {filename} -> s3://{bucket}/{key}")
+        logger.info("  Uploaded %s -> s3://%s/%s", filename, bucket, key)
         manifest_sf.append({"id": sf_id, "name": name, "filename": filename})
     return manifest_sf
 
@@ -150,7 +154,7 @@ def upload_manifests(client, bucket: str, drum_kits: list[dict], soundfonts: lis
             Body=body.encode("utf-8"),
             ContentType="application/json",
         )
-        print(f"  Uploaded manifest -> s3://{bucket}/{DRUM_KITS_MANIFEST_KEY}")
+        logger.info("  Uploaded manifest -> s3://%s/%s", bucket, DRUM_KITS_MANIFEST_KEY)
     if soundfonts:
         body = json.dumps({"soundfonts": soundfonts}, indent=2)
         client.put_object(
@@ -159,7 +163,7 @@ def upload_manifests(client, bucket: str, drum_kits: list[dict], soundfonts: lis
             Body=body.encode("utf-8"),
             ContentType="application/json",
         )
-        print(f"  Uploaded manifest -> s3://{bucket}/{SOUNDFONTS_MANIFEST_KEY}")
+        logger.info("  Uploaded manifest -> s3://%s/%s", bucket, SOUNDFONTS_MANIFEST_KEY)
 
 
 def build_bundle_zip(source_dir: Path, kit_ids: list[str]) -> bytes:
@@ -193,7 +197,7 @@ def upload_bundle(client, bucket: str, source_dir: Path, kit_ids: list[str]):
         BytesIO(zip_bytes), bucket, BUNDLE_KEY,
         ExtraArgs={"ContentType": "application/zip"},
     )
-    print(f"  Uploaded bundle -> s3://{bucket}/{BUNDLE_KEY}")
+    logger.info("  Uploaded bundle -> s3://%s/%s", bucket, BUNDLE_KEY)
 
 
 def main():
@@ -207,28 +211,28 @@ def main():
     args = parser.parse_args()
     source_dir = args.source_dir.resolve()
     if not source_dir.is_dir():
-        print(f"Error: {source_dir} is not a directory", file=sys.stderr)
+        logger.error("Not a directory: %s", source_dir)
         sys.exit(1)
     bucket = args.bucket or os.environ.get("STORI_AWS_S3_ASSET_BUCKET")
     if not bucket:
-        print("Error: set --bucket or STORI_AWS_S3_ASSET_BUCKET", file=sys.stderr)
+        logger.error("Set --bucket or STORI_AWS_S3_ASSET_BUCKET")
         sys.exit(1)
     client = get_s3_client(args.region)
     try:
         client.head_bucket(Bucket=bucket)
     except ClientError as e:
-        print(f"Error: cannot access bucket {bucket}: {e}", file=sys.stderr)
+        logger.error("Cannot access bucket %s: %s", bucket, e)
         sys.exit(1)
-    print("Uploading drum kits...")
+    logger.info("Uploading drum kits...")
     drum_kits = upload_drum_kits(client, bucket, source_dir)
-    print("Uploading soundfonts...")
+    logger.info("Uploading soundfonts...")
     soundfonts = upload_soundfonts(client, bucket, source_dir)
-    print("Uploading manifests...")
+    logger.info("Uploading manifests...")
     upload_manifests(client, bucket, drum_kits, soundfonts)
     if not args.no_bundle and drum_kits and soundfonts:
-        print("Uploading bundle (all-assets.zip)...")
+        logger.info("Uploading bundle (all-assets.zip)...")
         upload_bundle(client, bucket, source_dir, [k["id"] for k in drum_kits])
-    print("Done.")
+    logger.info("Done.")
 
 
 if __name__ == "__main__":

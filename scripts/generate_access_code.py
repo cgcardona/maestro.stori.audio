@@ -17,6 +17,7 @@ Environment:
     STORI_ACCESS_TOKEN_SECRET must be set (generate with: openssl rand -hex 32)
 """
 import argparse
+import logging
 import sys
 import os
 import uuid as uuid_module
@@ -25,6 +26,9 @@ import uuid as uuid_module
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.auth.tokens import generate_access_code, get_token_expiration, AccessCodeError
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -119,8 +123,7 @@ Environment:
             print(token)
         else:
             expiration = get_token_expiration(token)
-            
-            # Calculate human-readable duration
+
             parts = []
             if args.days > 0:
                 parts.append(f"{args.days} day{'s' if args.days != 1 else ''}")
@@ -129,36 +132,36 @@ Environment:
             if args.minutes > 0:
                 parts.append(f"{args.minutes} minute{'s' if args.minutes != 1 else ''}")
             duration_str = ", ".join(parts)
-            
-            print("\n" + "=" * 60)
+
+            logger.info("\n" + "=" * 60)
             if args.admin:
-                print("STORI MAESTRO ADMIN ACCESS CODE")
+                logger.info("STORI MAESTRO ADMIN ACCESS CODE")
             else:
-                print("STORI MAESTRO ACCESS CODE")
-            print("=" * 60)
-            print(f"\nDuration: {duration_str}")
-            print(f"Expires:  {expiration.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-            print(f"User ID:  {user_id}")
+                logger.info("STORI MAESTRO ACCESS CODE")
+            logger.info("=" * 60)
+            logger.info("\nDuration: %s", duration_str)
+            logger.info("Expires:  %s", expiration.strftime("%Y-%m-%d %H:%M:%S UTC"))
+            logger.info("User ID:  %s", user_id)
             if args.admin:
-                print("Role:     ADMIN (can modify user budgets)")
-            print("\nAccess Code:")
-            print("-" * 60)
-            print(token)
-            print("-" * 60)
+                logger.info("Role:     ADMIN (can modify user budgets)")
+            logger.info("\nAccess Code:")
+            logger.info("-" * 60)
+            logger.info(token)
+            logger.info("-" * 60)
             if args.admin:
-                print("\nWARNING: This is an ADMIN token. Keep it secure!")
-                print("Admin tokens can modify any user's budget.")
+                logger.warning("\nWARNING: This is an ADMIN token. Keep it secure!")
+                logger.warning("Admin tokens can modify any user's budget.")
             else:
                 if args.user_id:
-                    print("\nApp flow: This token's sub is the device UUID; app should use same UUID for X-Device-ID on assets.")
+                    logger.info("\nApp flow: This token's sub is the device UUID; app should use same UUID for X-Device-ID on assets.")
                 else:
-                    print("\nOne-off: Register this user so they have a budget:")
-                    print(f'  curl -X POST https://<your-api>/api/v1/users/register -H "Content-Type: application/json" -d \'{{"user_id": "{user_id}"}}\'')
-                print("\nThen share the access code with your user.")
-            print("=" * 60 + "\n")
-            
+                    logger.info("\nOne-off: Register this user so they have a budget:")
+                    logger.info('  curl -X POST https://<your-api>/api/v1/users/register -H "Content-Type: application/json" -d \'{"user_id": "%s"}\'', user_id)
+                logger.info("\nThen share the access code with your user.")
+            logger.info("=" * 60 + "\n")
+
     except AccessCodeError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error("Error: %s", e)
         sys.exit(1)
 
 

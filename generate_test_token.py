@@ -4,16 +4,20 @@ Generate a valid JWT token for testing.
 Usage: python3 generate_test_token.py <secret>
 """
 
+import logging
 import jwt
 import time
 import sys
 from datetime import datetime, timedelta
 
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
+
 if len(sys.argv) < 2:
-    print("Usage: python3 generate_test_token.py <secret>")
-    print("")
-    print("Example:")
-    print("  python3 generate_test_token.py 37cb24acdd29d432af320f645d1e27f1470705e413a15b11f0443d968569ec31")
+    logger.error("Usage: python3 generate_test_token.py <secret>")
+    logger.error("")
+    logger.error("Example:")
+    logger.error("  python3 generate_test_token.py 37cb24acdd29d432af320f645d1e27f1470705e413a15b11f0443d968569ec31")
     sys.exit(1)
 
 SECRET = sys.argv[1]

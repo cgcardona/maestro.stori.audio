@@ -190,12 +190,6 @@ async def _execute_agent_generator(
     if result.aftertouch:
         store.add_aftertouch(region_id, result.aftertouch)
 
-    logger.info(
-        f"[{trace.trace_id[:8]}] Generator {tc_name} ({role}): "
-        f"{len(result.notes)} notes, {len(result.cc_events)} CC, "
-        f"{len(result.pitch_bends)} PB via {result.backend_used.value}"
-    )
-
     tool_result: dict[str, Any] = {
         "regionId": region_id,
         "trackId": track_id,
@@ -295,7 +289,7 @@ async def _apply_single_tool_call(
                 f"Provide a real 'notes' array: "
                 f"[{{\"pitch\": 60, \"startBeat\": 0, \"durationBeats\": 1, \"velocity\": 80}}, ...]"
             )
-            logger.error(f"[{trace.trace_id[:8]}] 🔴 Circuit breaker: {cb_error}")
+            logger.error(f"[{trace.trace_id[:8]}] Circuit breaker: {cb_error}")
             if emit_sse:
                 sse_events.append({"type": "toolError", "name": tc_name, "error": cb_error})
             msg_call: dict[str, Any] = {
@@ -360,33 +354,18 @@ async def _apply_single_tool_call(
         instrument = enriched_params.get("instrument")
         gm_program = enriched_params.get("gmProgram")
         drum_kit_id = enriched_params.get("drumKitId")
-        if "trackId" in enriched_params:
-            logger.warning(
-                f"⚠️ LLM provided trackId '{enriched_params['trackId']}' for NEW track '{track_name}'. "
-                f"Ignoring and generating fresh UUID to prevent duplicates."
-            )
         track_id = store.create_track(track_name)
         enriched_params["trackId"] = track_id
-        logger.debug(f"🔑 Generated trackId: {track_id[:8]} for '{track_name}'")
         if gm_program is None:
             from app.core.gm_instruments import infer_gm_program_with_context
             inference = infer_gm_program_with_context(track_name=track_name, instrument=instrument)
             enriched_params["_gmInstrumentName"] = inference.instrument_name
             enriched_params["_isDrums"] = inference.is_drums
-            logger.info(
-                f"🎵 GM inference for '{track_name}': "
-                f"program={inference.program}, instrument={inference.instrument_name}, "
-                f"is_drums={inference.is_drums}"
-            )
             if inference.needs_program_change:
                 enriched_params["gmProgram"] = inference.program
 
         if drum_kit_id and not enriched_params.get("_isDrums"):
             enriched_params["_isDrums"] = True
-            logger.info(
-                f"🥁 drumKitId='{drum_kit_id}' present — forcing _isDrums=True "
-                f"for track '{track_name}'"
-            )
 
         from app.core.track_styling import (
             normalize_color, color_for_role, is_valid_icon, infer_track_icon,
@@ -398,45 +377,23 @@ async def _apply_single_tool_call(
         else:
             track_count = len(store.registry.list_tracks())
             enriched_params["color"] = color_for_role(track_name, track_count)
-            if raw_color:
-                logger.debug(
-                    f"🎨 Unrecognised color '{raw_color}' for '{track_name}' "
-                    f"→ auto-assigned '{enriched_params['color']}'"
-                )
 
         raw_icon = enriched_params.get("icon")
         _icon_from_llm = is_valid_icon(raw_icon)
         if not _icon_from_llm:
             enriched_params["icon"] = infer_track_icon(track_name)
-            if raw_icon:
-                logger.debug(
-                    f"🏷️ Invalid icon '{raw_icon}' for '{track_name}' "
-                    f"→ auto-assigned '{enriched_params['icon']}'"
-                )
 
         # FE strict contract: exactly one of _isDrums or gmProgram must be set.
         is_drums = enriched_params.get("_isDrums", False)
         has_gm = enriched_params.get("gmProgram") is not None
         if is_drums and has_gm:
             enriched_params.pop("gmProgram", None)
-            logger.debug(
-                f"🔧 _isDrums=True — removed gmProgram for '{track_name}'"
-            )
         elif not is_drums and not has_gm:
             enriched_params["gmProgram"] = 0
-            logger.debug(
-                f"🔧 Neither _isDrums nor gmProgram set for '{track_name}' "
-                f"— defaulting gmProgram=0 (Acoustic Grand Piano)"
-            )
 
     elif tc_name == "stori_add_midi_region":
         midi_region_track_id: Optional[str] = enriched_params.get("trackId")
         region_name: str = str(enriched_params.get("name", "Region"))
-        if "regionId" in enriched_params:
-            logger.warning(
-                f"⚠️ LLM provided regionId '{enriched_params['regionId']}' for NEW region '{region_name}'. "
-                f"Ignoring and generating fresh UUID to prevent duplicates."
-            )
         if midi_region_track_id:
             try:
                 region_id = store.create_region(
@@ -447,7 +404,6 @@ async def _apply_single_tool_call(
                     }
                 )
                 enriched_params["regionId"] = region_id
-                logger.debug(f"🔑 Generated regionId: {region_id[:8]} for '{region_name}'")
             except ValueError as e:
                 logger.error(f"Failed to create region: {e}")
                 error_result = {"success": False, "error": f"Failed to create region: {e}"}
@@ -470,7 +426,7 @@ async def _apply_single_tool_call(
                 )
         else:
             logger.error(
-                f"⚠️ stori_add_midi_region called without trackId for region '{region_name}'"
+                f"stori_add_midi_region called without trackId for region '{region_name}'"
             )
             error_result = {
                 "success": False,
@@ -510,20 +466,11 @@ async def _apply_single_tool_call(
                     metadata={"startBeat": enriched_params.get("startBeat", 0)},
                 )
                 enriched_params["newRegionId"] = new_region_id
-                logger.debug(
-                    f"🔑 Generated newRegionId: {new_region_id[:8]} "
-                    f"for duplicate of '{source_entity.name}'"
-                )
             except ValueError as e:
                 logger.error(f"Failed to register duplicate region: {e}")
 
     elif tc_name == "stori_ensure_bus":
         bus_name = enriched_params.get("name", "Bus")
-        if "busId" in enriched_params:
-            logger.warning(
-                f"⚠️ LLM provided busId '{enriched_params['busId']}' for bus '{bus_name}'. "
-                f"Ignoring to prevent duplicates."
-            )
         bus_id = store.get_or_create_bus(bus_name)
         enriched_params["busId"] = bus_id
 
@@ -586,10 +533,6 @@ async def _apply_single_tool_call(
                 "params": _icon_params,
             })
             extra_tool_calls.append({"tool": "stori_set_track_icon", "params": _icon_params})
-            logger.debug(
-                f"🎨 Synthetic icon '{_track_icon}' → trackId {_icon_track_id[:8]} "
-                f"({'drum kit' if (_drum_kit or _is_drums) else f'GM {_gm_program}'})"
-            )
 
     # ── FE strict contract: backfill missing required fields ──
     if tc_name == "stori_add_notes":
@@ -631,17 +574,18 @@ async def _apply_single_tool_call(
                         store.add_cc(_rid, expr["cc_events"])
                     if expr.get("pitch_bends"):
                         store.add_pitch_bends(_rid, expr["pitch_bends"])
-                    logger.debug(
-                        f"🎭 Post-processed {len(_notes)} notes for region "
-                        f"{_rid[:8]} ({_role}/{_style}): "
-                        f"+{len(expr.get('cc_events', []))} CC, "
-                        f"+{len(expr.get('pitch_bends', []))} PB"
-                    )
             store.add_notes(_rid, _notes)
-            logger.debug(
-                f"📝 Persisted {len(_notes)} notes for region {_rid[:8]} in StateStore"
-            )
         add_notes_failures.pop(enriched_params.get("regionId", "__unknown__"), None)
+
+    # ── Effect persistence ──
+    if tc_name == "stori_add_insert_effect":
+        _fx_track = enriched_params.get("trackId", "")
+        _fx_type = enriched_params.get("type", "")
+        if _fx_track and _fx_type:
+            try:
+                store.add_effect(_fx_track, _fx_type)
+            except Exception as _fx_exc:
+                logger.error(f"Effect persistence failed: {_fx_exc}")
 
     # ── Message objects for LLM conversation history ──
     if tc_name == "stori_add_notes":
@@ -649,7 +593,7 @@ async def _apply_single_tool_call(
         summary_params = {k: v for k, v in enriched_params.items() if k != "notes"}
         summary_params["_noteCount"] = len(notes)
         if notes:
-            starts = [n["startBeat"] for n in notes]
+            starts = [n.get("startBeat", n.get("start_beat", 0)) for n in notes]
             summary_params["_beatRange"] = [min(starts), max(starts)]
         msg_arguments = json.dumps(summary_params)
     else:

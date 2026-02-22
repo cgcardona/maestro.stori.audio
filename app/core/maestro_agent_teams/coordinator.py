@@ -172,12 +172,6 @@ async def _handle_composition_agent_team(
     )
     tempo = float(parsed.tempo or project_context.get("tempo") or 120)
     key = parsed.key or project_context.get("key") or "C"
-    logger.info(
-        f"[{trace.trace_id[:8]}] Composition parameters: bars={bars}, tempo={tempo}, "
-        f"key={key}, style={style} (source: "
-        f"{'constraints' if constraints.get('bars') else 'extensions' if ext.get('bars') or ext.get('Bars') else 'prompt-parse' if _parse_bars_from_text(getattr(parsed, 'request', '') or prompt) else 'default'})"
-    )
-
     # ── Detect existing tracks to avoid creating duplicates ──
     _existing_track_info: dict[str, dict[str, Any]] = {}
     for pc_track in project_context.get("tracks", []):
@@ -201,11 +195,6 @@ async def _handle_composition_agent_team(
                 "trackId": track_id,
                 "next_beat": next_beat,
             }
-    logger.debug(
-        f"[{trace.trace_id[:8]}] Existing track map: "
-        + ", ".join(f"{k}={v['trackId'][:8]}" for k, v in _existing_track_info.items() if v["trackId"])
-    )
-
     # ── Preflight events — latency masking (emit before agents start) ──
     # Lets the frontend pre-allocate timeline rows and show "incoming" states
     # for every predicted instrument step. Derived from the plan, no LLM needed.
@@ -261,11 +250,6 @@ async def _handle_composition_agent_team(
             "existing_track_id": track_id if track_id else None,
             "start_beat": existing_info["next_beat"] if existing_info and track_id else 0,
         }
-        logger.debug(
-            f"[{trace.trace_id[:8]}] Role '{role}' → instrument='{instrument_name}' "
-            f"existing_track_id={track_id or 'None (will create)'}"
-        )
-
     _reused_ids = [
         info["existing_track_id"]
         for info in _role_track_info.values()
@@ -273,8 +257,8 @@ async def _handle_composition_agent_team(
     ]
     if len(_reused_ids) != len(set(_reused_ids)):
         logger.error(
-            f"[{trace.trace_id[:8]}] ❌ DUPLICATE trackId in role→track mapping! "
-            f"ids={_reused_ids} — check project_context track names vs role names"
+            f"[{trace.trace_id[:8]}] Duplicate trackId in role→track mapping: "
+            f"ids={_reused_ids}"
         )
 
     def _spawn_agent(role: str) -> asyncio.Task:
@@ -310,12 +294,6 @@ async def _handle_composition_agent_team(
                 composition_context=_ctx,
             )
         )
-        logger.info(
-            f"[{trace.trace_id[:8]}] 🚀 Spawned {instrument_name} agent "
-            f"(step_ids={step_ids_for_role}"
-            + (f", reusing trackId={existing_track_id}, startBeat={agent_start_beat}" if existing_track_id else "")
-            + ")"
-        )
         return task
 
     # ── Phase 2a: Run drums first for RhythmSpine coupling ──
@@ -329,12 +307,7 @@ async def _handle_composition_agent_team(
             yield await sse_event(sse_queue.get_nowait())
         if not drum_task.cancelled() and drum_task.exception() is not None:
             exc = drum_task.exception()
-            logger.error(f"[{trace.trace_id[:8]}] ❌ Drum agent crashed: {exc}")
-        else:
-            logger.info(
-                f"[{trace.trace_id[:8]}] ✅ Drums complete — "
-                f"RhythmSpine captured for bass coupling"
-            )
+            logger.error(f"[{trace.trace_id[:8]}] Drum agent crashed: {exc}")
 
     # ── Phase 2b: Spawn remaining agents in parallel ──
     for role in other_roles:
@@ -353,7 +326,7 @@ async def _handle_composition_agent_team(
             if not task.cancelled() and task.exception() is not None:
                 exc = task.exception()
                 logger.error(
-                    f"[{trace.trace_id[:8]}] ❌ Instrument agent task crashed: {exc}"
+                    f"[{trace.trace_id[:8]}] Instrument agent crashed: {exc}"
                 )
                 # Failsafe: mark any steps that are still pending/active as
                 # failed so the client never sees steps stuck in limbo.
@@ -375,8 +348,6 @@ async def _handle_composition_agent_team(
                             })
     while not sse_queue.empty():
         yield await sse_event(sse_queue.get_nowait())
-
-    logger.info(f"[{trace.trace_id[:8]}] ✅ All instrument agents complete")
 
     # ── Phase 3: Mixing coordinator (optional, one LLM call) ──
     phase3_steps = [

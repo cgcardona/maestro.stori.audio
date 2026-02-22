@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import statistics
 import sys
@@ -24,6 +25,9 @@ from pathlib import Path
 from typing import Any
 
 import mido
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 2
 
@@ -986,11 +990,11 @@ def main() -> None:
     elif target.is_file():
         files = [target]
     else:
-        print(f"Error: {args.path} not found", file=sys.stderr)
+        logger.error("Path not found: %s", args.path)
         sys.exit(1)
 
     if not files:
-        print(f"No MIDI files found in {args.path}", file=sys.stderr)
+        logger.error("No MIDI files found in %s", args.path)
         sys.exit(1)
 
     reports: list[dict[str, Any]] = []
@@ -999,11 +1003,11 @@ def main() -> None:
         try:
             reports.append(analyze_midi(str(f)))
             if len(files) > 10 and (i % 500 == 0 or i == len(files)):
-                print(f"  ... analyzed {i}/{len(files)} files", file=sys.stderr)
+                logger.info("  ... analyzed %d/%d files", i, len(files))
         except Exception as e:
             errors += 1
             if errors <= 10:
-                print(f"Error analyzing {f}: {e}", file=sys.stderr)
+                logger.error("Error analyzing %s: %s", f, e)
 
     if args.json or args.output:
         output: dict[str, Any] = {}
@@ -1018,7 +1022,7 @@ def main() -> None:
         json_str = json.dumps(output, indent=2)
         if args.output:
             Path(args.output).write_text(json_str)
-            print(f"Wrote results to {args.output}", file=sys.stderr)
+            logger.info("Wrote results to %s", args.output)
         else:
             print(json_str)
     else:
@@ -1028,7 +1032,7 @@ def main() -> None:
             print("\n=== AGGREGATE ===")
             print(json.dumps(aggregate_reports(reports), indent=2))
         if errors:
-            print(f"  ({errors} files failed to parse)", file=sys.stderr)
+            logger.warning("  (%d files failed to parse)", errors)
 
 
 if __name__ == "__main__":

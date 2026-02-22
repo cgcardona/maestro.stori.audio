@@ -105,11 +105,6 @@ async def _handle_composing(
             with trace_span(trace, "variation_generation", {"steps": len(plan.tool_calls)}):
                 from app.core.executor import execute_plan_variation
 
-                logger.info(
-                    f"[{trace.trace_id[:8]}] Starting variation execution: "
-                    f"{len(plan.tool_calls)} tool calls"
-                )
-
                 _event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
                 _active_step_by_track: dict[str, str] = {}
 
@@ -240,11 +235,6 @@ async def _handle_composing(
                     })
                     return
 
-                logger.info(
-                    f"[{trace.trace_id[:8]}] Variation computed: "
-                    f"{variation.total_changes} changes, {len(variation.phrases)} phrases"
-                )
-
                 if len(variation.phrases) == 0:
                     logger.error(
                         f"[{trace.trace_id[:8]}] COMPOSING produced 0 phrases "
@@ -267,11 +257,7 @@ async def _handle_composing(
                     "noteCounts": note_counts,
                 })
 
-                for i, phrase in enumerate(variation.phrases):
-                    logger.debug(
-                        f"[{trace.trace_id[:8]}] Emitting phrase {i + 1}/{len(variation.phrases)}: "
-                        f"{len(phrase.note_changes)} note changes"
-                    )
+                for phrase in variation.phrases:
                     yield await sse_event({
                         "type": "phrase",
                         "phraseId": phrase.phrase_id,
@@ -291,11 +277,6 @@ async def _handle_composing(
                     "variationId": variation.variation_id,
                     "phraseCount": len(variation.phrases),
                 })
-
-                logger.info(
-                    f"[{trace.trace_id[:8]}] Variation streamed: "
-                    f"{variation.total_changes} changes in {len(variation.phrases)} phrases"
-                )
 
                 yield await sse_event({
                     "type": "complete",

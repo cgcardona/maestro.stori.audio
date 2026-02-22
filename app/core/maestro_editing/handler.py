@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import time
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional, cast
 
@@ -38,8 +37,6 @@ from app.core.maestro_editing.continuation import (
     _get_missing_expressive_steps,
 )
 from app.core.maestro_editing.tool_execution import _apply_single_tool_call
-
-logger = logging.getLogger(__name__)
 
 
 async def _handle_editing(
@@ -119,18 +116,9 @@ async def _handle_editing(
         if is_cancelled:
             try:
                 if await is_cancelled():
-                    logger.info(
-                        f"[{trace.trace_id[:8]}] 🛑 Client disconnected, "
-                        f"stopping at iteration {iteration}"
-                    )
                     break
             except Exception:
                 pass
-
-        logger.info(
-            f"[{trace.trace_id[:8]}] 🔄 Editing iteration {iteration}/{max_iterations} "
-            f"(composition={is_composition})"
-        )
 
         with trace_span(trace, f"llm_iteration_{iteration}"):
             start_time = time.time()
@@ -291,7 +279,6 @@ async def _handle_editing(
             })
 
         if route.force_stop_after and tool_calls_collected:
-            logger.info(f"[{trace.trace_id[:8]}] ✅ Force stop after {len(tool_calls_collected)} tool(s)")
             break
 
         if is_composition and iteration < max_iterations:
@@ -305,10 +292,6 @@ async def _handle_editing(
                     "then stori_add_midi_region and stori_add_notes for each."
                 )
                 messages.append({"role": "user", "content": continuation})
-                logger.info(
-                    f"[{trace.trace_id[:8]}] 🔄 Continuation: no tracks yet "
-                    f"(iteration {iteration})"
-                )
                 continue
             elif incomplete:
                 if plan_tracker and execution_mode == "apply":
@@ -341,10 +324,6 @@ async def _handle_editing(
                     f"Use multiple tool calls in one response."
                 )
                 messages.append({"role": "user", "content": continuation})
-                logger.info(
-                    f"[{trace.trace_id[:8]}] 🔄 Continuation: {len(incomplete)} tracks still need content "
-                    f"(iteration {iteration})"
-                )
                 continue
             else:
                 missing_expressive = _get_missing_expressive_steps(
@@ -369,24 +348,10 @@ async def _handle_editing(
                         + "\n\nBatch ALL tool calls in a single response. No text. Just the tool calls."
                     )
                     messages.append({"role": "user", "content": expressive_msg})
-                    logger.info(
-                        f"[{trace.trace_id[:8]}] 🔄 Continuation: {len(missing_expressive)} "
-                        f"expressive step(s) pending (iteration {iteration})"
-                    )
                     continue
-                logger.info(
-                    f"[{trace.trace_id[:8]}] ✅ All tracks and expressive steps done "
-                    f"after iteration {iteration}"
-                )
                 break
 
         if not is_composition:
-            if response is not None and response.has_tool_calls:
-                logger.info(
-                    f"[{trace.trace_id[:8]}] ✅ Non-composition: executed "
-                    f"{len(response.tool_calls)} tool(s), stopping after iteration {iteration}"
-                )
-                break
             break
 
     # =========================================================================
@@ -444,11 +409,6 @@ async def _handle_editing(
             "variationId": variation.variation_id,
             "phraseCount": len(variation.phrases),
         })
-
-        logger.info(
-            f"[{trace.trace_id[:8]}] EDITING variation streamed: "
-            f"{variation.total_changes} changes in {len(variation.phrases)} phrases"
-        )
 
         yield await sse_event({
             "type": "complete",

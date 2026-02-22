@@ -97,8 +97,6 @@ async def add_message_to_conversation(
                     max_messages=20,
                     include_entity_summary=True,
                 )
-                logger.info(f"🔗 Built optimized context: {len(conversation_history)} messages for entity ID tracking")
-
             async for event in orchestrate(
                 prompt=maestro_request.prompt,
                 project_context=maestro_request.project,
@@ -226,11 +224,6 @@ async def add_message_to_conversation(
                 )
 
             await db.commit()
-
-            logger.info(
-                f"Conversation {conversation_id[:8]}: "
-                f"tokens={total_tokens} cost=${cost_cents/100:.4f}"
-            )
 
         except Exception as e:
             logger.error(f"Error in conversation message stream: {e}", exc_info=True)
