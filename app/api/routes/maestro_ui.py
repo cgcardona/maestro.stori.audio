@@ -15,14 +15,14 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_valid_token
-from app.data.maestro_ui import PLACEHOLDERS, PROMPT_POOL, TEMPLATES
+from app.data.maestro_ui import PLACEHOLDERS, PROMPT_POOL, PROMPT_BY_ID
 from app.db import get_db, User, UsageLog
 from app.models.maestro_ui import (
     BudgetState,
     BudgetStatusResponse,
     PlaceholdersResponse,
+    PromptItem,
     PromptsResponse,
-    PromptTemplate,
 )
 
 logger = logging.getLogger(__name__)
@@ -108,24 +108,30 @@ async def get_prompts():
 
 
 @router.get(
-    "/maestro/prompts/{template_id}",
-    response_model=PromptTemplate,
+    "/maestro/prompts/{prompt_id}",
+    response_model=PromptItem,
     response_model_by_alias=True,
 )
-async def get_prompt_template(template_id: str):
-    """Fetch a single fully-expanded prompt template by ID.
+async def get_prompt_by_id(prompt_id: str):
+    """Fetch a single STORI PROMPT inspiration card by its slug ID.
 
-    Template IDs: lofi_chill, dark_trap, jazz_trio, synthwave, cinematic,
-    funk_groove, ambient, deep_house, full_production, beat_lab, mood_piece.
-    Returns 404 if the ID is unknown.
+    IDs are stable slugs from the curated pool, e.g.:
+      melodic_techno_drop, jamaican_dancehall, lo_fi_boom_bap,
+      afrobeats_highlife, jazz_trio_late_night, cumbia_electronica,
+      flamenco_nuevo, nordic_ambient_folk, west_african_polyrhythm,
+      celestial_strings, gnawa_trance, gregorian_bass_drop.
+
+    Returns the same shape as the carousel (id, title, preview, fullPrompt).
+    Returns 404 if the ID is not in the pool.
+    No auth required.
     """
-    template = TEMPLATES.get(template_id)
-    if template is None:
+    prompt = PROMPT_BY_ID.get(prompt_id)
+    if prompt is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Template not found",
+            detail=f"Prompt '{prompt_id}' not found.",
         )
-    return template
+    return prompt
 
 
 # ---------------------------------------------------------------------------

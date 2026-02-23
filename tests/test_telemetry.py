@@ -235,9 +235,9 @@ class TestComputeTelemetry:
 
 class TestSectionState:
     def test_state_key_format(self):
-        assert _state_key("Drums", "verse") == "Drums: Verse"
-        assert _state_key("Bass", "intro") == "Bass: Intro"
-        assert _state_key("Keys", "CHORUS") == "Keys: Chorus"
+        assert _state_key("Drums", "0:verse") == "Drums: 0:verse"
+        assert _state_key("Bass", "0:intro") == "Bass: 0:intro"
+        assert _state_key("Keys", "2:chorus") == "Keys: 2:chorus"
 
     @pytest.mark.anyio
     async def test_set_and_get(self):
@@ -276,7 +276,7 @@ class TestSectionState:
             write("A", 0.1), write("B", 0.2), write("C", 0.3),
             write("D", 0.4), write("E", 0.5),
         )
-        assert len(state.snapshot()) == 5
+        assert len(await state.snapshot()) == 5
 
     @pytest.mark.anyio
     async def test_snapshot_returns_copy(self):
@@ -289,7 +289,7 @@ class TestSectionState:
             velocity_variance=0.0,
         )
         await state.set("X: X", t)
-        snap = state.snapshot()
+        snap = await state.snapshot()
         assert "X: X" in snap
         assert snap["X: X"] is t
 
@@ -305,7 +305,7 @@ class TestSectionAgentTelemetry:
     @pytest.mark.anyio
     async def test_telemetry_stored_after_generate(self):
         """Successful generation writes telemetry to SectionState."""
-        from app.core.maestro_agent_teams.contracts import RuntimeContext, SectionContract, SectionSpec
+        from app.core.maestro_agent_teams.contracts import ExecutionServices, RuntimeContext, SectionContract, SectionSpec
         from app.core.maestro_agent_teams.section_agent import _run_section_child
         from app.core.maestro_agent_teams.signals import SectionSignals
         from app.core.expansion import ToolCall
@@ -351,7 +351,7 @@ class TestSectionAgentTelemetry:
             side_effect=_mock_apply,
         ):
             spec = SectionSpec(
-                name="verse", index=0, start_beat=0, duration_beats=16,
+                section_id="0:verse", name="verse", index=0, start_beat=0, duration_beats=16,
                 bars=4, character="Test verse", role_brief="Test drums brief",
             )
             contract = SectionContract(
@@ -368,11 +368,12 @@ class TestSectionAgentTelemetry:
                 store=store,
                 trace=TraceContext(trace_id="test-telem"),
                 sse_queue=queue,
-                runtime_ctx=RuntimeContext(section_state=section_state),
+                runtime_ctx=RuntimeContext(),
+                execution_services=ExecutionServices(section_state=section_state),
             )
 
         assert result.success
-        stored = await section_state.get("Drums: Verse")
+        stored = await section_state.get("Drums: 0:verse")
         assert stored is not None
         assert stored.instrument == "Drums"
         assert stored.section_name == "verse"
@@ -382,7 +383,7 @@ class TestSectionAgentTelemetry:
     @pytest.mark.anyio
     async def test_bass_reads_drum_telemetry(self):
         """Bass section child reads drum telemetry and enriches RuntimeContext."""
-        from app.core.maestro_agent_teams.contracts import RuntimeContext, SectionContract, SectionSpec
+        from app.core.maestro_agent_teams.contracts import ExecutionServices, RuntimeContext, SectionContract, SectionSpec
         from app.core.maestro_agent_teams.section_agent import _run_section_child
         from app.core.maestro_agent_teams.signals import SectionSignals
         from app.core.expansion import ToolCall
@@ -402,10 +403,10 @@ class TestSectionAgentTelemetry:
             rhythmic_complexity=0.15,
             velocity_mean=95.0, velocity_variance=20.0,
         )
-        await section_state.set("Drums: Verse", drum_t)
+        await section_state.set("Drums: 0:verse", drum_t)
 
-        signals = SectionSignals.from_sections([{"name": "verse"}])
-        signals.signal_complete("verse", drum_notes=[{"pitch": 36}])
+        signals = SectionSignals.from_section_ids(["0:verse"])
+        signals.signal_complete("0:verse", success=True, drum_notes=[{"pitch": 36}])
 
         captured_ctx: list[dict] = []
 
@@ -438,7 +439,7 @@ class TestSectionAgentTelemetry:
             side_effect=_mock_apply,
         ):
             spec = SectionSpec(
-                name="verse", index=0, start_beat=0, duration_beats=16,
+                section_id="0:verse", name="verse", index=0, start_beat=0, duration_beats=16,
                 bars=4, character="Test verse", role_brief="Test bass brief",
             )
             contract = SectionContract(
@@ -455,8 +456,11 @@ class TestSectionAgentTelemetry:
                 store=store,
                 trace=TraceContext(trace_id="test-bass-t"),
                 sse_queue=queue,
-                runtime_ctx=RuntimeContext(section_state=section_state),
-                section_signals=signals,
+                runtime_ctx=RuntimeContext(),
+                execution_services=ExecutionServices(
+                    section_state=section_state,
+                    section_signals=signals,
+                ),
             )
 
         assert result.success
@@ -502,7 +506,7 @@ class TestSectionAgentTelemetry:
             side_effect=_mock_apply,
         ):
             spec = SectionSpec(
-                name="verse", index=0, start_beat=0, duration_beats=8,
+                section_id="0:verse", name="verse", index=0, start_beat=0, duration_beats=8,
                 bars=2, character="Test verse", role_brief="Test chords brief",
             )
             contract = SectionContract(

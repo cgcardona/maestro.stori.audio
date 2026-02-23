@@ -38,6 +38,7 @@ from app.core.maestro_plan_tracker import (
 from app.core.maestro_editing import _apply_single_tool_call
 from app.core.maestro_agent_teams.agent import _run_instrument_agent
 from app.core.maestro_agent_teams.contracts import (
+    ExecutionServices,
     InstrumentContract,
     RuntimeContext,
     SectionSpec,
@@ -325,27 +326,11 @@ async def _handle_composition_agent_team(
         logger.warning(
             f"[{trace.trace_id[:8]}] EmotionVector parse failed: {_ev_exc}"
         )
-    # ── Create section-level signals and shared telemetry state ──
-    _section_signals: SectionSignals | None = None
-    _section_state = SectionState()
-    if _multi_section:
-        _section_signals = SectionSignals.from_sections(_sections)
-        logger.info(
-            f"[{trace.trace_id[:8]}] 🔗 SectionSignals created for drum→bass pipelining: "
-            f"{list(_section_signals.events.keys())}"
-        )
-
-    _runtime_context = RuntimeContext(
-        raw_prompt=prompt,
-        emotion_vector=_emotion_vector,
-        quality_preset="quality",
-        section_signals=_section_signals,
-        section_state=_section_state,
-    )
-
-    # Build canonical SectionSpecs once — shared across all instruments
+    # Build canonical SectionSpecs once — shared across all instruments.
+    # section_id is the stable unique key (index:name) for signal/state keying.
     _section_specs: tuple[SectionSpec, ...] = tuple(
         SectionSpec(
+            section_id=f"{i}:{s.get('name', f'section_{i}')}",
             name=s.get("name", f"section_{i}"),
             index=i,
             start_beat=int(s.get("start_beat", 0)),
@@ -355,6 +340,28 @@ async def _handle_composition_agent_team(
             role_brief="",
         )
         for i, s in enumerate(_sections)
+    )
+
+    # ── Create section-level signals and shared telemetry state ──
+    _section_signals: SectionSignals | None = None
+    _section_state = SectionState()
+    if _multi_section:
+        _section_signals = SectionSignals.from_section_ids(
+            [s.section_id for s in _section_specs]
+        )
+        logger.info(
+            f"[{trace.trace_id[:8]}] 🔗 SectionSignals created for drum→bass pipelining: "
+            f"{list(_section_signals.events.keys())}"
+        )
+
+    _execution_services = ExecutionServices(
+        section_signals=_section_signals,
+        section_state=_section_state,
+    )
+    _runtime_context = RuntimeContext(
+        raw_prompt=prompt,
+        emotion_vector=_emotion_vector,
+        quality_preset="quality",
     )
 
     _role_track_info: dict[str, dict[str, Any]] = {}
@@ -399,6 +406,7 @@ async def _handle_composition_agent_team(
         # ── Build role-specific SectionSpecs (with per-role brief) ──
         _role_specs = tuple(
             SectionSpec(
+                section_id=s.section_id,
                 name=s.name,
                 index=s.index,
                 start_beat=s.start_beat,
@@ -447,6 +455,7 @@ async def _handle_composition_agent_team(
                     assigned_color=assigned_color,
                     instrument_contract=_instrument_contract,
                     runtime_context=_runtime_context,
+                    execution_services=_execution_services,
                 ),
                 timeout=_agent_timeout,
             ),
@@ -717,3 +726,7 @@ async def _handle_composition_agent_team(
         **({"warnings": _complete_warnings} if _complete_warnings else {}),
         **_context_usage_fields(usage_tracker, llm.model),
     })
+
+    # Drain delay: give the ASGI server time to flush the .complete event
+    # to the client before any cleanup (e.g. WebSocket teardown) can race.
+    await asyncio.sleep(0.5)

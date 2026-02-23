@@ -219,11 +219,20 @@ async def _execute_agent_generator(
             skipped=True,
         )
 
-    logger.info(
-        f"✅ stori_generate_midi | role={role} notes={len(result.notes)} "
-        f"cc={len(result.cc_events or [])} pb={len(result.pitch_bends or [])} "
-        f"duration_ms={_gen_duration_ms} retry_count={result.metadata.get('retry_count', 0)}"
-    )
+    _MIN_NOTES_THRESHOLD = 4
+    if len(result.notes) < _MIN_NOTES_THRESHOLD:
+        logger.warning(
+            f"⚠️ [{trace.trace_id[:8]}] stori_generate_midi returned only "
+            f"{len(result.notes)} note(s) (< {_MIN_NOTES_THRESHOLD}) — likely a generation failure. "
+            f"Full params: role={role}, style={style}, tempo={tempo}, bars={bars}, "
+            f"key={key}, start_beat={start_beat}, instrument_prompt={instrument_prompt!r}"
+        )
+    else:
+        logger.info(
+            f"✅ stori_generate_midi | role={role} notes={len(result.notes)} "
+            f"cc={len(result.cc_events or [])} pb={len(result.pitch_bends or [])} "
+            f"duration_ms={_gen_duration_ms} retry_count={result.metadata.get('retry_count', 0)}"
+        )
 
     if emit_sse:
         sse_events.append({
@@ -460,8 +469,23 @@ async def _apply_single_tool_call(
                 )
                 enriched_params["regionId"] = region_id
             except ValueError as e:
-                logger.error(f"Failed to create region: {e}")
-                error_result = {"success": False, "error": f"Failed to create region: {e}"}
+                logger.error(f"❌ Failed to create region: {e}")
+                _existing_rid = store.registry.find_overlapping_region(
+                    midi_region_track_id,
+                    enriched_params.get("startBeat", 0),
+                    enriched_params.get("durationBeats", 16),
+                )
+                error_result: dict[str, Any] = {
+                    "success": False,
+                    "error": f"Failed to create region: {e}",
+                }
+                if _existing_rid:
+                    error_result["existingRegionId"] = _existing_rid
+                    enriched_params["regionId"] = _existing_rid
+                    logger.info(
+                        f"📍 Recovery: found existing region {_existing_rid[:8]} "
+                        f"at same beat range — agent can use this regionId"
+                    )
                 msg_call = {
                     "role": "assistant",
                     "tool_calls": [{"id": tc_id, "type": "function",
@@ -477,7 +501,7 @@ async def _apply_single_tool_call(
                     sse_events=sse_events,
                     msg_call=msg_call,
                     msg_result=msg_result,
-                    skipped=True,
+                    skipped=not bool(_existing_rid),
                 )
         else:
             logger.error(

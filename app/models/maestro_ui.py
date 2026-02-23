@@ -1,8 +1,7 @@
 """Pydantic models for the Maestro Default UI endpoints.
 
-Serves prompt inspiration cards, placeholder strings, individual prompt
-templates, and budget status — all consumed by the macOS client's creative
-launchpad view.
+Serves prompt inspiration cards, placeholder strings, and budget status —
+all consumed by the macOS client's creative launchpad view.
 """
 
 from typing import Literal
@@ -13,18 +12,7 @@ from app.models.base import CamelModel
 
 
 # ---------------------------------------------------------------------------
-# Shared building blocks
-# ---------------------------------------------------------------------------
-
-class PromptSection(CamelModel):
-    """One accordion section inside a prompt template (STORI PROMPT SPEC v2)."""
-
-    heading: str
-    content: str
-
-
-# ---------------------------------------------------------------------------
-# Prompt inspiration cards (GET /maestro/prompts)
+# Prompt inspiration cards (GET /maestro/prompts, GET /maestro/prompts/{id})
 # ---------------------------------------------------------------------------
 
 class PromptItem(CamelModel):
@@ -40,19 +28,6 @@ class PromptsResponse(CamelModel):
     """Response for GET /maestro/prompts — 4 randomly sampled items."""
 
     prompts: list[PromptItem]
-
-
-# ---------------------------------------------------------------------------
-# Prompt template (single lookup)
-# ---------------------------------------------------------------------------
-
-class PromptTemplate(CamelModel):
-    """Fully expanded prompt template returned by GET /maestro/prompts/{template_id}."""
-
-    id: str
-    title: str
-    full_prompt: str
-    sections: list[PromptSection]
 
 
 # ---------------------------------------------------------------------------

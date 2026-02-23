@@ -440,19 +440,49 @@ Every `fullPrompt` is a complete STORI PROMPT YAML using the full spec breadth �
 }
 ```
 
-### Single template lookup
+### Single prompt by ID
 
-**Endpoint:** `GET /api/v1/maestro/prompts/{template_id}`
+**Endpoint:** `GET /api/v1/maestro/prompts/{prompt_id}`
 **Auth:** none
 
-Returns a named prompt template with structured sections. Template IDs: `lofi_chill`, `dark_trap`, `jazz_trio`, `synthwave`, `cinematic`, `funk_groove`, `ambient`, `deep_house`, `full_production`, `beat_lab`, `mood_piece`. Returns 404 if the ID is unknown.
+Fetches a single STORI PROMPT inspiration card by its stable slug ID — the same shape as the carousel. Use this to re-fetch a card the user previously tapped, deep-link to a specific style, or seed the compose input programmatically.
+
+`prompt_id` must match an ID from the pool. Returns 404 if unknown.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | string | Template slug |
-| `title` | string | Display title |
-| `fullPrompt` | string | Flat prompt string |
-| `sections` | object[] | Array of `{heading, content}` |
+| `id` | string | Unique slug (same as requested) |
+| `title` | string | Human label, e.g. `"Melodic techno drop · Am · 128 BPM"` |
+| `preview` | string | First 3–4 YAML lines visible in the card |
+| `fullPrompt` | string | Complete STORI PROMPT YAML, ready for the compose input |
+
+**Example IDs** (non-exhaustive):
+
+| ID | Title |
+|----|-------|
+| `lo_fi_boom_bap` | Lo-fi boom bap · Cm · 75 BPM |
+| `melodic_techno_drop` | Melodic techno drop · Am · 128 BPM |
+| `jamaican_dancehall` | Jamaican dancehall · Dm · 90 BPM |
+| `afrobeats_highlife` | Afrobeats highlife · Gbm · 102 BPM |
+| `jazz_trio_late_night` | Jazz trio · late night · Bb · 140 BPM swing |
+| `nordic_ambient_folk` | Nordic ambient folk · Dm · 72 BPM |
+| `flamenco_nuevo_fusion` | Flamenco nuevo · Phrygian · Am · 112 BPM |
+| `gnawa_trance` | Gnawa trance · Gm · 88 BPM |
+| `gregorian_bass_drop` | Gregorian chant bass drop · Dm · 70 BPM |
+| `celestial_strings` | Celestial strings · Dm · 58 BPM |
+
+```bash
+GET /api/v1/maestro/prompts/melodic_techno_drop
+```
+
+```json
+{
+  "id": "melodic_techno_drop",
+  "title": "Melodic techno drop · Am · 128 BPM",
+  "preview": "Mode: compose · Section: drop\nStyle: melodic techno · Key: Am · 128 BPM\nRole: kick, bass, lead, pads, perc\nVibe: hypnotic x3, driving x2, euphoric",
+  "fullPrompt": "STORI PROMPT\nMode: compose\n..."
+}
+```
 
 ### Budget status
 

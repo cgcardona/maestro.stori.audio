@@ -177,24 +177,30 @@ InstrumentContract  (L1 → L2)
   └── gm_guidance                         ← genre-specific GM voice block
 
 SectionContract  (L2 → L3)
-  ├── section: SectionSpec                ← name, index, start_beat, duration_beats, bars
+  ├── section: SectionSpec                ← section_id, name, index, start_beat, duration_beats, bars
   ├── track_id, instrument_name, role
   ├── style, tempo, key, region_name
   └── l2_generate_prompt                  ← ADVISORY — L3 may refine via CoT
 
-RuntimeContext  (travels alongside contracts, not structural)
+RuntimeContext  (travels alongside contracts — pure data, frozen)
   ├── raw_prompt, quality_preset
   ├── emotion_vector
-  ├── section_signals, section_state
-  └── drum_telemetry                      ← injected immutably via with_drum_telemetry()
+  └── drum_telemetry                      ← immutable tuple-of-pairs via with_drum_telemetry()
+
+ExecutionServices  (mutable coordination — NOT frozen, passed separately)
+  ├── section_signals: SectionSignals     ← asyncio.Event per section_id
+  └── section_state: SectionState         ← write-once telemetry store
 ```
 
 **Design rules:**
-- `frozen=True` on all contracts — structural fields are immutable once built by L1.
+- `frozen=True` on all contracts and `RuntimeContext` — structural fields and data are immutable once built by L1.
 - L3 may only reason about HOW to describe the music (Orpheus prompt). It must not reinterpret beat ranges, section names, roles, or track IDs — those come from the frozen contract.
 - `l2_generate_prompt` is explicitly marked advisory; the contract's `section.character` and `section.role_brief` are authoritative when they conflict.
-- `RuntimeContext` carries dynamic state. Immutable updates use `with_drum_telemetry()` which returns a new instance — no mutation.
-- At the `_apply_single_tool_call` boundary (tool execution layer), a bridge dict is constructed from the contract + `RuntimeContext` fields. No dict flows through the agent teams layer itself.
+- `RuntimeContext` is genuinely frozen — no nested mutable objects. `drum_telemetry` is stored as a `tuple[tuple[str, Any], ...]` (not a dict). Immutable updates use `with_drum_telemetry()` which returns a new instance.
+- Mutable coordination primitives (`SectionSignals`, `SectionState`) live in `ExecutionServices`, which is explicitly NOT frozen and passed separately from contracts and `RuntimeContext`. This prevents the frozen data boundary from wrapping live mutable synchronization state.
+- `to_composition_context()` returns a `types.MappingProxyType` (read-only mapping) — downstream code cannot mutate shared state through the bridge dict. Services are excluded from the bridge.
+- At the `_apply_single_tool_call` boundary (tool execution layer), a new dict is constructed by spreading the read-only bridge with local additions (`style`, `tempo`, etc.). No dict flows through the agent teams layer itself.
+- L2 fallback SectionSpec reconstruction from LLM output is a hard error (`ValueError`). The contract is authoritative; if `instrument_contract` is missing or section index exceeds contract sections, the system fails fast rather than silently degrading.
 
 ### Three-phase execution
 
@@ -230,7 +236,13 @@ Keys:   [intro ████|verse ██████████|chorus ██�
 Melody: [intro ███|verse █████████|chorus █████]
 ```
 
-`SectionSignals` is a shared dataclass containing one `asyncio.Event` per parsed section. After a drum section child generates, it stores the drum notes in `SectionSignals.drum_data` and fires the event. The matching bass section child awaits the event, reads the drum data for per-section RhythmSpine coupling, then generates.
+`SectionSignals` is a shared dataclass containing one `asyncio.Event` per `section_id` (not section name — prevents collisions when compositions reuse names like "verse" across sections). After a drum section child generates, it calls `signal_complete(section_id, success=True, drum_notes=...)` which stores a typed `SectionSignalResult` and fires the event. The matching bass section child calls `wait_for(section_id, timeout=...)` and receives either a success result with drum notes, a failure result (drums failed), or `asyncio.TimeoutError`.
+
+**Safety guarantees:**
+- `signal_complete` is **idempotent** — calling it twice for the same section_id is a no-op (first write wins).
+- Store-before-signal ordering: drum data is stored in `_results` before the event is set.
+- **Failure signaling:** `signal_complete(sid, success=False)` lets dependents distinguish "drums failed" from "drums never ran" — bass proceeds without the rhythm spine instead of deadlocking.
+- Keying by `section_id` (e.g. `"0:verse"`, `"1:verse"`) prevents collisions when a composition has repeated section names.
 
 Independent instruments (keys, melody, guitar, pads, etc.) ignore `SectionSignals` entirely — their section children all run in parallel from the start.
 
@@ -252,20 +264,20 @@ For single-section compositions, the parent uses the sequential execution path (
 ### Section child flow (Level 3)
 
 1. Emit `status` SSE event: `"Starting {instrument} / {section}"`
-2. If bass: `await section_signals.wait_for(section_name)` — blocks until drum section completes
-3. If bass: read `SectionState["Drums: {section}"]` — inject drum telemetry (groove, density, kick hash) into `RuntimeContext` via `with_drum_telemetry()`, which is bridged to the generate call at the tool-execution boundary
+2. If bass: `await section_signals.wait_for(section_id, timeout=...)` — blocks until drum section completes or fails. On timeout or failure, proceeds without rhythm spine.
+3. If bass: read `SectionState["Drums: {section_id}"]` — inject drum telemetry (groove, density, kick hash) into `RuntimeContext` via `with_drum_telemetry()`, which is bridged to the generate call at the tool-execution boundary
 4. Execute `stori_add_midi_region` with parent's pre-resolved params (trackId injected)
 5. Capture `regionId` from result
 6. **Section reasoning**: brief streamed LLM call (`_reason_before_generate`) — reasons about section-specific musical approach (density, register, rhythmic choices). Emits `type: "reasoning"` events tagged with `agentId` + `sectionName` so the frontend can nest section-specific thinking under the correct section header. Returns a refined prompt for the generate call, or falls back to the parent's prompt on failure.
 7. Execute `stori_generate_midi` with `regionId`, `trackId`, and (optionally refined) prompt
 8. Extract generated notes from SSE events
 9. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
-10. If drums: call `section_signals.signal_complete(section_name, drum_notes)`
+10. If drums: call `section_signals.signal_complete(section_id, success=True, drum_notes=...)`
 11. Emit `status` SSE event: `"{instrument} / {section}: N notes generated"`
 12. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, run a **streamed** refinement LLM call (see below)
 13. Return `SectionResult` to parent
 
-Drum children always signal — even on failure — to prevent bass children from hanging indefinitely.
+Drum children always signal — even on failure (`signal_complete(section_id, success=False)`) — to prevent bass children from hanging indefinitely.
 
 ### Expression refinement (Level 3 streamed LLM call)
 
@@ -347,11 +359,11 @@ class SectionTelemetry:
     velocity_variance: float    # variance of MIDI velocity
 ```
 
-Keys follow `"Instrument: Section"` format (e.g. `"Drums: Verse"`, `"Bass: Intro"`). All writes go through an `asyncio.Lock` for thread safety across concurrent section children. Values are frozen dataclasses — immutable after write.
+Keys follow `"Instrument: section_id"` format (e.g. `"Drums: 0:verse"`, `"Bass: 1:chorus"`). All writes go through an `asyncio.Lock` for thread safety across concurrent section children. `snapshot()` is also async and locked to prevent races during execution. Values are frozen dataclasses — immutable after write.
 
-**Bass enrichment:** Before generating, each bass section child reads `SectionState["Drums: {section}"]`. If available, the drum telemetry (groove vector, density, kick pattern hash, rhythmic complexity) is injected into a new `RuntimeContext` instance via `with_drum_telemetry()` (immutable update — frozen dataclass). The updated context is bridged to the Orpheus generate call at the tool-execution boundary. This enables deterministic cross-instrument awareness without expanding LLM prompts or adding token cost.
+**Bass enrichment:** Before generating, each bass section child reads `SectionState["Drums: {section_id}"]`. If available, the drum telemetry (groove vector, density, kick pattern hash, rhythmic complexity) is injected into a new `RuntimeContext` instance via `with_drum_telemetry()` (immutable update — stores as `tuple[tuple[str, Any], ...]`). The updated context is bridged to the Orpheus generate call at the tool-execution boundary via a read-only `MappingProxyType`. This enables deterministic cross-instrument awareness without expanding LLM prompts or adding token cost.
 
-**Diagnostic value:** The coordinator can read `section_state.snapshot()` after composition completes for orchestration diagnostics, quality scoring, and future mixing decisions.
+**Diagnostic value:** The coordinator can call `await section_state.snapshot()` after composition completes for orchestration diagnostics, quality scoring, and future mixing decisions.
 
 Implementation: `app/core/telemetry.py` (computation), `app/core/maestro_agent_teams/signals.py` (SectionState store).
 
@@ -369,7 +381,7 @@ Implementation: `app/core/telemetry.py` (computation), `app/core/maestro_agent_t
 
 **Performance:** Wall-clock time for Phase 2 is `max(per-instrument time)` instead of `sum`, and within each instrument `max(per-section time)` instead of `sum(section times)`. For a 5-instrument, 3-section composition, bass sections start ~1 section behind drums rather than waiting for all 3 drum sections. Expected speedup: 3–5× for the instrument phase, with additional gains from section-level pipelining.
 
-Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/signals.py` (SectionSignals + SectionState), `app/core/telemetry.py` (SectionTelemetry computation).
+Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/contracts.py` (SectionSpec, SectionContract, InstrumentContract, RuntimeContext, ExecutionServices), `app/core/maestro_agent_teams/signals.py` (SectionSignals, SectionSignalResult, SectionState), `app/core/telemetry.py` (SectionTelemetry computation).
 
 ---
 

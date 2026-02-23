@@ -9,8 +9,9 @@ Contract hierarchy:
   L1 → L2:  ``InstrumentContract``  (coordinator builds, agent executes)
   L2 → L3:  ``SectionContract``     (dispatch builds, section child executes)
 
-  ``RuntimeContext``  travels alongside contracts for dynamic state
-  (section signals, emotion vector, raw prompt) that is NOT structural.
+  ``RuntimeContext``  carries pure data (prompt, emotion, quality preset).
+  ``ExecutionServices`` carries mutable coordination primitives (signals,
+  state) and is passed alongside contracts — never inside them.
 
 Design rules:
   - Structural fields (beat ranges, section names, roles) are IMMUTABLE.
@@ -20,10 +21,13 @@ Design rules:
   - Advisory fields (``l2_generate_prompt``) are explicitly marked and may
     be overridden by canonical descriptions baked into the contract.
   - No free-form reasoning transfer between layers — only typed fields.
+  - Mutable coordination primitives (SectionSignals, SectionState) live
+    in ``ExecutionServices``, never in frozen contracts or RuntimeContext.
 """
 
 from __future__ import annotations
 
+import types
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -42,8 +46,14 @@ class SectionSpec:
     Built by the coordinator (L1) from ``parse_sections`` output and
     canonical templates.  Immutable — L2 and L3 execute against these
     values, they never recompute or reinterpret them.
+
+    ``section_id`` is the stable unique key used for signal/state
+    coordination.  It prevents collisions when a composition has
+    repeated section names (e.g. two "verse" sections).
     """
 
+    section_id: str
+    """Stable unique key, e.g. ``"0:intro"``. Used for signal/state keying."""
     name: str
     index: int
     start_beat: int
@@ -158,44 +168,61 @@ class InstrumentContract:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Runtime context (travels alongside contracts, not structural)
+# Execution services (mutable coordination — NOT frozen)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class ExecutionServices:
+    """Mutable coordination primitives passed alongside contracts.
+
+    Explicitly NOT frozen.  These are live asyncio-backed objects that
+    must be shared by reference across concurrent agent tasks.  They
+    are separated from ``RuntimeContext`` so that frozen data contracts
+    never wrap mutable synchronization state.
+    """
+
+    section_signals: SectionSignals | None = None
+    section_state: SectionState | None = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Runtime context (pure data, travels alongside contracts)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
 @dataclass(frozen=True)
 class RuntimeContext:
-    """Frozen runtime context that travels alongside contracts.
+    """Frozen runtime context carrying pure data alongside contracts.
 
-    Contains dynamic state needed during execution but NOT structural
-    decisions.  Frozen to prevent accidental mutation — when bass needs
-    to add ``drum_telemetry``, it creates a NEW RuntimeContext via
-    ``with_drum_telemetry()``.
+    Contains prompt text, emotion conditioning, and quality preset —
+    all immutable.  Mutable coordination primitives (signals, state)
+    live in ``ExecutionServices``, never here.
+
+    ``drum_telemetry`` is stored as a frozen tuple-of-pairs so the
+    entire dataclass is genuinely immutable — no nested mutable dicts.
     """
 
     raw_prompt: str = ""
     emotion_vector: Any = None
     quality_preset: str = "quality"
-    section_signals: Optional[SectionSignals] = None
-    section_state: Optional[SectionState] = None
-    drum_telemetry: Optional[dict[str, Any]] = field(default=None)
+    drum_telemetry: tuple[tuple[str, Any], ...] | None = None
 
     def with_drum_telemetry(self, telemetry: dict[str, Any]) -> RuntimeContext:
-        """Return a new RuntimeContext with drum telemetry injected."""
+        """Return a new RuntimeContext with an immutable telemetry snapshot."""
         return RuntimeContext(
             raw_prompt=self.raw_prompt,
             emotion_vector=self.emotion_vector,
             quality_preset=self.quality_preset,
-            section_signals=self.section_signals,
-            section_state=self.section_state,
-            drum_telemetry=telemetry,
+            drum_telemetry=tuple(telemetry.items()),
         )
 
-    def to_composition_context(self) -> dict[str, Any]:
-        """Bridge to legacy code that expects dict[str, Any].
+    def to_composition_context(self) -> types.MappingProxyType[str, Any]:
+        """Read-only bridge to legacy code that expects a dict-like mapping.
 
-        Used at boundaries where downstream code (e.g. ``_apply_single_tool_call``)
-        still reads ``composition_context.get("emotion_vector")``.  This will
-        be removed once all downstream consumers are typed.
+        Returns a ``MappingProxyType`` to prevent downstream mutation.
+        Does NOT include mutable services (signals, state) — those live
+        in ``ExecutionServices``.
         """
         ctx: dict[str, Any] = {
             "_raw_prompt": self.raw_prompt,
@@ -203,10 +230,6 @@ class RuntimeContext:
         }
         if self.emotion_vector is not None:
             ctx["emotion_vector"] = self.emotion_vector
-        if self.section_signals is not None:
-            ctx["section_signals"] = self.section_signals
-        if self.section_state is not None:
-            ctx["section_state"] = self.section_state
         if self.drum_telemetry is not None:
-            ctx["drum_telemetry"] = self.drum_telemetry
-        return ctx
+            ctx["drum_telemetry"] = dict(self.drum_telemetry)
+        return types.MappingProxyType(ctx)

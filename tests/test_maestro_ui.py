@@ -6,7 +6,7 @@ lookup, budget status derivation, auth requirements, and camelCase serialization
 
 import pytest
 
-from app.data.maestro_ui import ALL_TEMPLATE_IDS, PLACEHOLDERS, PROMPT_POOL, TEMPLATES
+from app.data.maestro_ui import PLACEHOLDERS, PROMPT_BY_ID, PROMPT_POOL
 
 
 # ---------------------------------------------------------------------------
@@ -153,63 +153,70 @@ class TestPrompts:
 
 
 # ---------------------------------------------------------------------------
-# 3. GET /api/v1/maestro/prompts/{template_id}
+# 3. GET /api/v1/maestro/prompts/{prompt_id}
 # ---------------------------------------------------------------------------
 
 
-class TestPromptTemplate:
+class TestSinglePrompt:
 
     @pytest.mark.anyio
-    async def test_returns_template(self, client, db_session):
-        """Happy path — returns a template by ID."""
-        resp = await client.get("/api/v1/maestro/prompts/lofi_chill")
+    async def test_returns_prompt_item(self, client, db_session):
+        """Happy path — returns a PromptItem from the pool by ID."""
+        first_id = next(iter(PROMPT_BY_ID))
+        resp = await client.get(f"/api/v1/maestro/prompts/{first_id}")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["id"] == "lofi_chill"
+        assert data["id"] == first_id
         assert "title" in data
+        assert "preview" in data
         assert "fullPrompt" in data
-        assert "sections" in data
 
     @pytest.mark.anyio
-    async def test_template_not_found(self, client, db_session):
-        """Unknown template_id returns 404 with detail."""
-        resp = await client.get("/api/v1/maestro/prompts/nonexistent_template")
+    async def test_shape_matches_carousel(self, client, db_session):
+        """Single-lookup returns the same shape as carousel items (no 'sections' field)."""
+        first_id = next(iter(PROMPT_BY_ID))
+        data = (await client.get(f"/api/v1/maestro/prompts/{first_id}")).json()
+        assert "fullPrompt" in data
+        assert "sections" not in data
+
+    @pytest.mark.anyio
+    async def test_not_found_returns_404(self, client, db_session):
+        """Unknown prompt_id returns 404."""
+        resp = await client.get("/api/v1/maestro/prompts/does_not_exist_xyz")
         assert resp.status_code == 404
-        assert resp.json()["detail"] == "Template not found"
+        assert "not found" in resp.json()["detail"].lower()
 
     @pytest.mark.anyio
-    async def test_all_eleven_template_ids_resolvable(self, client, db_session):
-        """All 11 template IDs are resolvable."""
-        expected_ids = {
-            "lofi_chill", "dark_trap", "jazz_trio", "synthwave",
-            "cinematic", "funk_groove", "ambient", "deep_house",
-            "full_production", "beat_lab", "mood_piece",
-        }
-        for tid in expected_ids:
-            resp = await client.get(f"/api/v1/maestro/prompts/{tid}")
-            assert resp.status_code == 200, f"Template '{tid}' returned {resp.status_code}"
-            assert resp.json()["id"] == tid
+    async def test_all_pool_ids_resolvable(self, client, db_session):
+        """Every ID in PROMPT_BY_ID resolves to the correct item."""
+        for pid, item in PROMPT_BY_ID.items():
+            resp = await client.get(f"/api/v1/maestro/prompts/{pid}")
+            assert resp.status_code == 200, f"Pool item '{pid}' returned {resp.status_code}"
+            data = resp.json()
+            assert data["id"] == pid
+            assert data["title"] == item.title
 
     @pytest.mark.anyio
-    async def test_template_has_five_sections(self, client, db_session):
-        """Every template has exactly 5 sections."""
-        for tid in ALL_TEMPLATE_IDS:
-            data = (await client.get(f"/api/v1/maestro/prompts/{tid}")).json()
-            assert len(data["sections"]) == 5, (
-                f"Template '{tid}' has {len(data['sections'])} sections"
-            )
+    async def test_full_prompt_matches_pool(self, client, db_session):
+        """fullPrompt in response matches the pool's stored value exactly."""
+        first_id = next(iter(PROMPT_BY_ID))
+        expected = PROMPT_BY_ID[first_id].full_prompt
+        data = (await client.get(f"/api/v1/maestro/prompts/{first_id}")).json()
+        assert data["fullPrompt"] == expected
 
     @pytest.mark.anyio
-    async def test_template_camel_case(self, client, db_session):
-        """Template response uses fullPrompt, not full_prompt."""
-        data = (await client.get("/api/v1/maestro/prompts/lofi_chill")).json()
+    async def test_camel_case_field_name(self, client, db_session):
+        """Wire format uses fullPrompt (camelCase), not full_prompt."""
+        first_id = next(iter(PROMPT_BY_ID))
+        data = (await client.get(f"/api/v1/maestro/prompts/{first_id}")).json()
         assert "fullPrompt" in data
         assert "full_prompt" not in data
 
     @pytest.mark.anyio
     async def test_no_auth_required(self, client, db_session):
-        """Template endpoint is public."""
-        resp = await client.get("/api/v1/maestro/prompts/lofi_chill")
+        """Single-prompt endpoint is public."""
+        first_id = next(iter(PROMPT_BY_ID))
+        resp = await client.get(f"/api/v1/maestro/prompts/{first_id}")
         assert resp.status_code == 200
 
 
@@ -441,14 +448,12 @@ class TestDataIntegrity:
         found = [g for g in genres if g in titles_lower]
         assert len(found) >= 20, f"Only found genres: {found}"
 
-    def test_template_ids_unique(self):
-        """All template dict keys match their template id field."""
-        for key, tmpl in TEMPLATES.items():
-            assert key == tmpl.id
-
-    def test_exactly_eleven_templates(self):
-        """We have exactly 11 named templates (for backward compat)."""
-        assert len(TEMPLATES) == 11
+    def test_prompt_by_id_index_complete(self):
+        """PROMPT_BY_ID contains every item in PROMPT_POOL."""
+        assert len(PROMPT_BY_ID) == len(PROMPT_POOL)
+        for item in PROMPT_POOL:
+            assert item.id in PROMPT_BY_ID
+            assert PROMPT_BY_ID[item.id] is item
 
     def test_placeholder_count(self):
         """Seed data has at least 3 placeholders."""

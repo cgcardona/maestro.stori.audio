@@ -260,7 +260,12 @@ class MusicGenerator:
         )
         _snake = self._ensure_snake_keys
         role = instrument.lower()
-        if role in ("drums", "percussion") or backend_type == GeneratorBackend.DRUM_IR:
+        _PERCUSSION_ROLES = {
+            "drums", "percussion", "congas", "bongos", "timbales",
+            "guacharaca", "tumbadora", "djembe", "cajon", "shaker",
+            "tambourine", "cowbell", "claves", "maracas", "cabasa",
+        }
+        if role in _PERCUSSION_ROLES or backend_type == GeneratorBackend.DRUM_IR:
             fill_bars = [b for b in range(3, bars, 4)]
             return lambda notes: score_drum_notes(_snake(notes), fill_bars=fill_bars, bars=bars, style=style)
         if role == "bass" or backend_type == GeneratorBackend.BASS_IR:
@@ -270,7 +275,12 @@ class MusicGenerator:
             return lambda notes: score_bass_notes(_snake(notes), kick_beats=kick_beats)
         if role in ("lead", "melody", "synth", "vocal") or backend_type == GeneratorBackend.MELODY_IR:
             return lambda notes: score_melody_notes(_snake(notes))
-        if role in ("piano", "chords", "harmony", "keys", "organ", "guitar", "horns", "brass", "strings") or backend_type == GeneratorBackend.HARMONIC_IR:
+        _HARMONIC_ROLES = {
+            "piano", "chords", "harmony", "keys", "organ", "guitar",
+            "horns", "brass", "strings", "accordion", "gaita",
+            "bandoneón", "charango", "cuatro", "tres", "marimba",
+        }
+        if role in _HARMONIC_ROLES or backend_type == GeneratorBackend.HARMONIC_IR:
             return lambda notes: score_chord_notes(_snake(notes))
         return None  # unknown role — no scoring
 
@@ -292,7 +302,11 @@ class MusicGenerator:
         if backend_type != GeneratorBackend.ORPHEUS:
             return preset_config.num_candidates
         role = instrument.lower()
-        if role in ("drums", "bass", "percussion"):
+        _HIGH_VARIANCE_ROLES = {
+            "drums", "bass", "percussion", "congas", "bongos", "timbales",
+            "guacharaca", "tumbadora", "djembe", "cajon", "shaker",
+        }
+        if role in _HIGH_VARIANCE_ROLES:
             return preset_config.num_candidates
         # Melodic / harmonic tracks: cap at 2 for quality, keep as-is otherwise
         if preset_config.num_candidates > 2:

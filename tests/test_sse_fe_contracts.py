@@ -1115,7 +1115,7 @@ class TestRegionCollisionCanonicalOverride:
         """SectionContract carries canonical beats; L2 tool-call params are ignored."""
         from app.core.maestro_agent_teams.contracts import SectionContract, SectionSpec
         spec = SectionSpec(
-            name="verse", index=1, start_beat=16, duration_beats=32,
+            section_id="1:verse", name="verse", index=1, start_beat=16, duration_beats=32,
             bars=8, character="Narrative verse", role_brief="Steady groove",
         )
         contract = SectionContract(
@@ -1132,7 +1132,7 @@ class TestRegionCollisionCanonicalOverride:
         """SectionContract must be immutable — no field mutation allowed."""
         from app.core.maestro_agent_teams.contracts import SectionContract, SectionSpec
         spec = SectionSpec(
-            name="verse", index=1, start_beat=16, duration_beats=32,
+            section_id="1:verse", name="verse", index=1, start_beat=16, duration_beats=32,
             bars=8, character="", role_brief="",
         )
         contract = SectionContract(
@@ -1375,7 +1375,7 @@ class TestAgentContractProtocol:
         from app.core.maestro_agent_teams.contracts import SectionSpec
         import pytest
         spec = SectionSpec(
-            name="chorus", index=2, start_beat=48, duration_beats=32,
+            section_id="2:chorus", name="chorus", index=2, start_beat=48, duration_beats=32,
             bars=8, character="Full energy", role_brief="Drive the hook",
         )
         with pytest.raises(AttributeError):
@@ -1388,7 +1388,7 @@ class TestAgentContractProtocol:
         from app.core.maestro_agent_teams.contracts import SectionContract, SectionSpec
         import pytest
         spec = SectionSpec(
-            name="intro", index=0, start_beat=0, duration_beats=16,
+            section_id="0:intro", name="intro", index=0, start_beat=0, duration_beats=16,
             bars=4, character="Sparse intro", role_brief="Set the mood",
         )
         contract = SectionContract(
@@ -1405,7 +1405,7 @@ class TestAgentContractProtocol:
         """Derived properties (is_drum, is_bass, bars, etc.) compute correctly."""
         from app.core.maestro_agent_teams.contracts import SectionContract, SectionSpec
         spec = SectionSpec(
-            name="verse", index=1, start_beat=16, duration_beats=32,
+            section_id="1:verse", name="verse", index=1, start_beat=16, duration_beats=32,
             bars=8, character="Narrative", role_brief="Lock with drums",
         )
         bass = SectionContract(
@@ -1439,7 +1439,7 @@ class TestAgentContractProtocol:
         """l2_generate_prompt defaults to empty string when not provided."""
         from app.core.maestro_agent_teams.contracts import SectionContract, SectionSpec
         spec = SectionSpec(
-            name="v", index=0, start_beat=0, duration_beats=16,
+            section_id="0:v", name="v", index=0, start_beat=0, duration_beats=16,
             bars=4, character="", role_brief="",
         )
         contract = SectionContract(
@@ -1455,9 +1455,7 @@ class TestAgentContractProtocol:
         from app.core.maestro_agent_teams import agent as agent_mod
         source = inspect.getsource(agent_mod._dispatch_section_children)
         assert "SectionContract(" in source
-        assert "SectionSpec(" in source
-        assert "_section_overall_description" in source
-        assert "_get_section_role_description" in source
+        assert "instrument_contract.sections[i]" in source
 
     def test_section_child_signature_uses_contract(self):
         """_run_section_child must accept 'contract' as first parameter."""
@@ -1507,7 +1505,7 @@ class TestInstrumentContractProtocol:
         from app.core.maestro_agent_teams.contracts import InstrumentContract, SectionSpec
         import pytest
         spec = SectionSpec(
-            name="verse", index=0, start_beat=0, duration_beats=16,
+            section_id="0:verse", name="verse", index=0, start_beat=0, duration_beats=16,
             bars=4, character="Test", role_brief="Test",
         )
         contract = InstrumentContract(
@@ -1525,7 +1523,7 @@ class TestInstrumentContractProtocol:
         """Derived properties compute correctly from role."""
         from app.core.maestro_agent_teams.contracts import InstrumentContract, SectionSpec
         spec = SectionSpec(
-            name="v", index=0, start_beat=0, duration_beats=16,
+            section_id="0:v", name="v", index=0, start_beat=0, duration_beats=16,
             bars=4, character="", role_brief="",
         )
         drums = InstrumentContract(
@@ -1567,7 +1565,7 @@ class TestInstrumentContractProtocol:
         """InstrumentContract must carry pre-computed GM guidance."""
         from app.core.maestro_agent_teams.contracts import InstrumentContract, SectionSpec
         spec = SectionSpec(
-            name="v", index=0, start_beat=0, duration_beats=16,
+            section_id="0:v", name="v", index=0, start_beat=0, duration_beats=16,
             bars=4, character="", role_brief="",
         )
         contract = InstrumentContract(
@@ -1582,7 +1580,7 @@ class TestInstrumentContractProtocol:
         """Sections must be a tuple (immutable), not a list."""
         from app.core.maestro_agent_teams.contracts import InstrumentContract, SectionSpec
         spec = SectionSpec(
-            name="v", index=0, start_beat=0, duration_beats=16,
+            section_id="0:v", name="v", index=0, start_beat=0, duration_beats=16,
             bars=4, character="", role_brief="",
         )
         contract = InstrumentContract(
@@ -1612,7 +1610,7 @@ class TestRuntimeContextProtocol:
         original = RuntimeContext(raw_prompt="test", quality_preset="quality")
         updated = original.with_drum_telemetry({"energy_level": 0.8})
         assert updated is not original
-        assert updated.drum_telemetry == {"energy_level": 0.8}
+        assert updated.drum_telemetry == (("energy_level", 0.8),)
         assert original.drum_telemetry is None
 
     def test_to_composition_context_bridge(self):
@@ -1636,6 +1634,8 @@ class TestRuntimeContextProtocol:
         source = inspect.getsource(coordinator._handle_composition_agent_team)
         assert "RuntimeContext(" in source
         assert "runtime_context=" in source
+        assert "ExecutionServices(" in source
+        assert "execution_services=" in source
 
 
 class TestL2ToolCallValidation:
@@ -1665,3 +1665,189 @@ class TestL2ToolCallValidation:
         source = inspect.getsource(agent_mod._dispatch_section_children)
         assert "instrument_contract" in source
         assert "instrument_contract.sections" in source
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Colombian cumbia session bug-fix regressions (2026-02-23)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestIdempotentRegionCreation:
+    """BUG 1 regression (cumbia session): create_region must be idempotent —
+    if a region at the same beat range already exists on the track, return
+    the existing region ID instead of creating a duplicate."""
+
+    def test_duplicate_region_returns_existing_id(self):
+        """Second create_region with same beat range returns existing ID."""
+        from app.core.entity_registry import EntityRegistry
+        reg = EntityRegistry()
+        reg.create_track("Guacharaca")
+        track_id = reg.resolve_track("Guacharaca")
+
+        first_id = reg.create_region(
+            "Verse", track_id,
+            metadata={"startBeat": 0, "durationBeats": 32},
+        )
+        second_id = reg.create_region(
+            "Verse", track_id,
+            metadata={"startBeat": 0, "durationBeats": 32},
+        )
+        assert first_id == second_id, "Idempotent: same beat range must return same region ID"
+
+    def test_different_beat_range_creates_new_region(self):
+        """Different beat ranges must create distinct regions."""
+        from app.core.entity_registry import EntityRegistry
+        reg = EntityRegistry()
+        reg.create_track("Bass")
+        track_id = reg.resolve_track("Bass")
+
+        id_a = reg.create_region("Intro", track_id, metadata={"startBeat": 0, "durationBeats": 16})
+        id_b = reg.create_region("Verse", track_id, metadata={"startBeat": 16, "durationBeats": 32})
+        assert id_a != id_b, "Different beat ranges must create separate regions"
+
+    def test_find_overlapping_region(self):
+        """find_overlapping_region returns the correct ID for an existing region."""
+        from app.core.entity_registry import EntityRegistry
+        reg = EntityRegistry()
+        reg.create_track("Tumbadora")
+        track_id = reg.resolve_track("Tumbadora")
+
+        rid = reg.create_region("Chorus", track_id, metadata={"startBeat": 32, "durationBeats": 16})
+        found = reg.find_overlapping_region(track_id, 32, 16)
+        assert found == rid
+
+        not_found = reg.find_overlapping_region(track_id, 0, 16)
+        assert not_found is None
+
+
+class TestRegionCollisionRecovery:
+    """BUG 2 regression (cumbia session): when create_region raises ValueError
+    (e.g. track not found), the error body should include existingRegionId if
+    a region at that beat range exists on another resolution path."""
+
+    def test_tool_execution_returns_existing_region_on_error(self):
+        """tool_execution.py region error handler includes existingRegionId recovery."""
+        import inspect
+        from app.core.maestro_editing import tool_execution as te_mod
+        source = inspect.getsource(te_mod._apply_single_tool_call)
+        assert "existingRegionId" in source, (
+            "Error handler must include existingRegionId for agent recovery"
+        )
+        assert "find_overlapping_region" in source, (
+            "Must search for existing region on ValueError"
+        )
+
+
+class TestCompactToolResults:
+    """BUG 3 regression (cumbia session): section children must compact tool
+    results before feeding them back to the L2 LLM to prevent '...' truncation
+    that the pipeline checker misinterprets as failure."""
+
+    def test_compact_tool_result_strips_entities(self):
+        """_compact_tool_result strips 'entities' and 'notes' keys."""
+        from app.core.maestro_agent_teams.section_agent import _compact_tool_result
+
+        full_result = {
+            "regionId": "reg-001",
+            "trackId": "trk-1",
+            "notesAdded": 116,
+            "totalNotes": 116,
+            "entities": [{"id": "e1"}, {"id": "e2"}],
+            "notes": [{"pitch": 60}] * 100,
+            "backend": "orpheus",
+        }
+        compact = _compact_tool_result(full_result)
+        assert "entities" not in compact
+        assert "notes" not in compact
+        assert compact["regionId"] == "reg-001"
+        assert compact["notesAdded"] == 116
+
+    def test_compact_preserves_error_fields(self):
+        """Error-related fields must survive compaction."""
+        from app.core.maestro_agent_teams.section_agent import _compact_tool_result
+
+        error_result = {
+            "error": "Region collision",
+            "existingRegionId": "reg-existing",
+            "success": False,
+        }
+        compact = _compact_tool_result(error_result)
+        assert compact["error"] == "Region collision"
+        assert compact["existingRegionId"] == "reg-existing"
+
+    def test_section_child_uses_compact_results(self):
+        """Section child tool_result_msgs must use _compact_tool_result."""
+        import inspect
+        from app.core.maestro_agent_teams.section_agent import _run_section_child
+        source = inspect.getsource(_run_section_child)
+        assert "_compact_tool_result" in source
+
+    def test_retry_reminder_mentions_completed_stages(self):
+        """Multi-turn retry reminder must list completed stages so LLM skips them."""
+        import inspect
+        from app.core.maestro_agent_teams import agent as agent_mod
+        source = inspect.getsource(agent_mod._run_instrument_agent_inner)
+        assert "Already completed" in source
+        assert "DO NOT re-call" in source
+        assert "'...' in a prior result means SUCCESS" in source or "truncated output" in source
+
+
+class TestCompleteEventAlwaysFlushed:
+    """BUG 5 regression (cumbia session): the SSE stream must always yield
+    the .complete event, even if the client appears disconnected."""
+
+    def test_stream_always_yields_complete(self):
+        """stream_with_budget must not skip type=complete events on disconnect."""
+        import inspect
+        from app.api.routes import maestro as maestro_route
+        source = inspect.getsource(maestro_route.stream_maestro)
+        assert "_is_terminal" in source or "complete" in source
+        assert "is_disconnected" in source
+
+    def test_coordinator_drain_delay(self):
+        """Coordinator must sleep briefly after .complete to let ASGI flush."""
+        import inspect
+        from app.core.maestro_agent_teams import coordinator as coord_mod
+        source = inspect.getsource(coord_mod._handle_composition_agent_team)
+        assert "asyncio.sleep" in source
+        assert '"type": "complete"' in source or "'type': 'complete'" in source
+
+
+class TestLowNoteCountGuard:
+    """BUG 4 regression (cumbia session): stori_generate_midi must flag
+    near-empty results (< 4 notes) as a potential generation failure."""
+
+    def test_generator_logs_low_note_count(self):
+        """_execute_agent_generator must warn when notes < 4."""
+        import inspect
+        from app.core.maestro_editing import tool_execution as te_mod
+        source = inspect.getsource(te_mod._execute_agent_generator)
+        assert "_MIN_NOTES_THRESHOLD" in source or "< 4" in source or "notes_generated" in source.lower()
+
+    def test_section_child_emits_error_on_low_notes(self):
+        """Section child must emit toolError SSE event when notes < 4."""
+        import inspect
+        from app.core.maestro_agent_teams.section_agent import _run_section_child
+        source = inspect.getsource(_run_section_child)
+        assert "_MIN_NOTES" in source
+        assert "Low note count" in source or "near-empty" in source
+
+    def test_percussion_roles_recognised_by_scorer(self):
+        """Latin percussion instruments must match the drum scorer."""
+        from app.services.music_generator import MusicGenerator
+        from app.services.backends.base import GeneratorBackend
+
+        mg = MusicGenerator()
+        for role in ("guacharaca", "tumbadora", "congas", "bongos", "djembe"):
+            scorer = mg._scorer_for_instrument(role, GeneratorBackend.ORPHEUS, 8, "cumbia")
+            assert scorer is not None, f"'{role}' must be recognised as percussion by scorer"
+
+    def test_harmonic_roles_recognised_by_scorer(self):
+        """Latin melodic/harmonic instruments must match the chord scorer."""
+        from app.services.music_generator import MusicGenerator
+        from app.services.backends.base import GeneratorBackend
+
+        mg = MusicGenerator()
+        for role in ("accordion", "gaita", "marimba"):
+            scorer = mg._scorer_for_instrument(role, GeneratorBackend.ORPHEUS, 8, "cumbia")
+            assert scorer is not None, f"'{role}' must be recognised by scorer"

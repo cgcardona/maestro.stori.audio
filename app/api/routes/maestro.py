@@ -200,7 +200,8 @@ async def stream_maestro(
                 is_cancelled=request.is_disconnected,
                 quality_preset=maestro_request.quality_preset,
             ):
-                if await request.is_disconnected():
+                _is_terminal = '"type": "complete"' in event or '"type":"complete"' in event
+                if not _is_terminal and await request.is_disconnected():
                     _elapsed = _time.monotonic() - _stream_start
                     logger.warning(
                         f"⚠️ SSE client disconnected after {_elapsed:.1f}s, "

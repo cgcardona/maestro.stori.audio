@@ -32,6 +32,7 @@ from app.core.maestro_plan_tracker import (
 )
 from app.core.maestro_editing import _apply_single_tool_call
 from app.core.maestro_agent_teams.contracts import (
+    ExecutionServices,
     InstrumentContract,
     RuntimeContext,
     SectionContract,
@@ -71,6 +72,7 @@ async def _run_instrument_agent(
     assigned_color: Optional[str] = None,
     instrument_contract: Optional[InstrumentContract] = None,
     runtime_context: Optional[RuntimeContext] = None,
+    execution_services: Optional[ExecutionServices] = None,
 ) -> None:
     """Independent instrument agent: dedicated multi-turn LLM session per instrument.
 
@@ -79,9 +81,9 @@ async def _run_instrument_agent(
     until all tool calls complete (create track → region → notes → effect).
 
     ``InstrumentContract`` provides frozen structural fields (sections, GM
-    guidance, track info). ``RuntimeContext`` carries dynamic state (emotion
-    vector, quality preset, section signals). No ``dict[str, Any]`` flows
-    through this layer.
+    guidance, track info). ``RuntimeContext`` carries pure data (emotion
+    vector, quality preset). ``ExecutionServices`` carries mutable coordination
+    primitives (section signals, section state).
 
     Failure is isolated: an exception marks only this agent's plan steps as
     failed and does not propagate to sibling agents.
@@ -129,6 +131,7 @@ async def _run_instrument_agent(
             assigned_color=assigned_color,
             instrument_contract=instrument_contract,
             runtime_context=runtime_context,
+            execution_services=execution_services,
         )
         _agent_success = True
     except Exception as exc:
@@ -165,6 +168,7 @@ async def _run_instrument_agent_inner(
     assigned_color: Optional[str] = None,
     instrument_contract: Optional[InstrumentContract] = None,
     runtime_context: Optional[RuntimeContext] = None,
+    execution_services: Optional[ExecutionServices] = None,
 ) -> None:
     """Inner implementation of a single instrument agent.
 
@@ -508,10 +512,27 @@ async def _run_instrument_agent_inner(
                 f"{agent_log} 🔄 Turn {turn}/{max_turns}: {len(missing)} stages remaining — "
                 + ", ".join(m.split(" — ")[0] for m in missing)
             )
+            _done_summary_parts: list[str] = []
+            if _stage_track or reusing:
+                _done_summary_parts.append("track ✓")
+            if _regions_completed > 0:
+                _done_summary_parts.append(f"{_regions_completed}/{_expected_sections} regions ✓")
+            if _generates_completed > 0:
+                _done_summary_parts.append(f"{_generates_completed}/{_expected_sections} generates ✓")
+            if _stage_effect:
+                _done_summary_parts.append("effect ✓")
+            _done_line = (
+                f"Already completed: {', '.join(_done_summary_parts)}. "
+                "DO NOT re-call completed steps.\n"
+                if _done_summary_parts else ""
+            )
             reminder = (
-                "You have not finished the pipeline. You MUST still call:\n"
+                f"{_done_line}"
+                "You MUST still call:\n"
                 + "\n".join(f"  • {m}" for m in missing)
-                + f"\nMake these tool calls now ({len(missing)} remaining)."
+                + f"\nMake these {len(missing)} tool call(s) now. "
+                "REMINDER: '...' in a prior result means SUCCESS (truncated output). "
+                "Only retry if you see 'error' or 'failed'."
             )
             messages.append({"role": "user", "content": reminder})
 
@@ -709,6 +730,7 @@ async def _run_instrument_agent_inner(
                     all_tool_results=all_tool_results,
                     add_notes_failures=add_notes_failures,
                     runtime_context=runtime_context,
+                    execution_services=execution_services,
                     plan_tracker=plan_tracker,
                     step_ids=step_ids,
                     active_step_id=active_step_id,
@@ -769,12 +791,14 @@ async def _run_instrument_agent_inner(
 
                 _tool_ctx: dict[str, Any] | None = None
                 if runtime_context:
-                    _tool_ctx = runtime_context.to_composition_context()
-                    _tool_ctx["style"] = style
-                    _tool_ctx["tempo"] = tempo
-                    _tool_ctx["bars"] = bars
-                    _tool_ctx["key"] = key
-                    _tool_ctx["role"] = role
+                    _tool_ctx = {
+                        **runtime_context.to_composition_context(),
+                        "style": style,
+                        "tempo": tempo,
+                        "bars": bars,
+                        "key": key,
+                        "role": role,
+                    }
 
                 outcome = await _apply_single_tool_call(
                     tc_id=tc.id,
@@ -882,6 +906,7 @@ async def _dispatch_section_children(
     all_tool_results: list[dict[str, Any]],
     add_notes_failures: dict[str, int],
     runtime_context: Optional[RuntimeContext],
+    execution_services: Optional[ExecutionServices] = None,
     plan_tracker: _PlanTracker,
     step_ids: list[str],
     active_step_id: Optional[str],
@@ -1021,8 +1046,8 @@ async def _dispatch_section_children(
     is_drum = role.lower() in ("drums", "drum")
     is_bass = role.lower() == "bass"
     section_signals: SectionSignals | None = None
-    if runtime_context:
-        section_signals = runtime_context.section_signals
+    if execution_services:
+        section_signals = execution_services.section_signals
 
     # ── Validate L2 tool calls against section plan ──
     # Reject region calls whose startBeat/durationBeats disagree with the
@@ -1052,22 +1077,13 @@ async def _dispatch_section_children(
         sec = sections[i] if i < len(sections) else sections[-1]
         _sec_name = sec.get("name", str(i))
 
-        # Use pre-built SectionSpec from InstrumentContract when available
-        if instrument_contract and i < len(instrument_contract.sections):
-            _spec = instrument_contract.sections[i]
-        else:
-            _sec_start = int(sec.get("start_beat", 0))
-            _sec_duration = int(sec.get("length_beats", 16))
-            _sec_bars = max(1, _sec_duration // 4)
-            _spec = SectionSpec(
-                name=_sec_name,
-                index=i,
-                start_beat=_sec_start,
-                duration_beats=_sec_duration,
-                bars=_sec_bars,
-                character=_section_overall_description(_sec_name),
-                role_brief=_get_section_role_description(_sec_name, role),
+        if not instrument_contract or i >= len(instrument_contract.sections):
+            raise ValueError(
+                f"Contract violation: section {i} ({_sec_name}) has no "
+                f"InstrumentContract spec. L2 must not rebuild structure "
+                f"from LLM output — contracts are authoritative."
             )
+        _spec = instrument_contract.sections[i]
 
         _contract = SectionContract(
             section=_spec,
@@ -1095,7 +1111,7 @@ async def _dispatch_section_children(
                     trace=trace,
                     sse_queue=sse_queue,
                     runtime_ctx=runtime_context,
-                    section_signals=section_signals,
+                    execution_services=execution_services,
                     llm=llm,
                 ),
                 timeout=_child_timeout,
@@ -1199,10 +1215,14 @@ async def _dispatch_section_children(
         collected_tool_calls.append(
             {"tool": tc.name, "params": outcome.enriched_params}
         )
+        _compact_effect = {
+            k: v for k, v in outcome.tool_result.items()
+            if k != "entities"
+        }
         tool_result_msgs.append({
             "role": "tool",
             "tool_call_id": tc.id,
-            "content": json.dumps(outcome.tool_result),
+            "content": json.dumps(_compact_effect),
         })
 
     # ── Execute any remaining tool calls (CC, pitch bend, etc.) ──

@@ -161,6 +161,23 @@ class EntityRegistry:
         logger.debug(f"🎹 Registered track: {name} → {track_id[:8]}")
         return track_id
     
+    def find_overlapping_region(
+        self,
+        parent_track_id: str,
+        start_beat: int | float,
+        duration_beats: int | float,
+    ) -> Optional[str]:
+        """Return the ID of an existing region that occupies the same beat range, or None."""
+        for rid in self._track_regions.get(parent_track_id, []):
+            existing = self._regions.get(rid)
+            if not existing:
+                continue
+            e_start = existing.metadata.get("startBeat", -1)
+            e_dur = existing.metadata.get("durationBeats", -1)
+            if int(e_start) == int(start_beat) and int(e_dur) == int(duration_beats):
+                return rid
+        return None
+
     def create_region(
         self,
         name: str,
@@ -170,6 +187,11 @@ class EntityRegistry:
     ) -> str:
         """
         Create and register a new region.
+
+        Idempotent: if a region already occupies the same beat range on the
+        same track, the existing region ID is returned instead of creating a
+        duplicate.  This prevents collision errors when retry loops cause
+        duplicate region creation calls.
         
         Args:
             name: Display name for the region
@@ -185,6 +207,20 @@ class EntityRegistry:
         """
         if parent_track_id not in self._tracks:
             raise ValueError(f"Parent track {parent_track_id} not found")
+
+        meta = metadata or {}
+        start_beat = meta.get("startBeat", 0)
+        duration_beats = meta.get("durationBeats", 0)
+
+        existing_id = self.find_overlapping_region(
+            parent_track_id, start_beat, duration_beats,
+        )
+        if existing_id is not None:
+            logger.info(
+                f"📍 Region already exists at beat {start_beat}-{start_beat + duration_beats} "
+                f"on track {parent_track_id[:8]} — returning existing {existing_id[:8]}"
+            )
+            return existing_id
         
         region_id = region_id or str(uuid.uuid4())
         
@@ -193,7 +229,7 @@ class EntityRegistry:
             entity_type=EntityType.REGION,
             name=name,
             parent_id=parent_track_id,
-            metadata=metadata or {},
+            metadata=meta,
         )
         
         self._regions[region_id] = entity

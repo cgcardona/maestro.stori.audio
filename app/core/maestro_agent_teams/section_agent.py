@@ -40,7 +40,11 @@ from app.core.maestro_plan_tracker import (
     _INSTRUMENT_AGENT_TOOLS,
 )
 from app.core.maestro_editing import _apply_single_tool_call
-from app.core.maestro_agent_teams.contracts import RuntimeContext, SectionContract
+from app.core.maestro_agent_teams.contracts import (
+    ExecutionServices,
+    RuntimeContext,
+    SectionContract,
+)
 from app.core.maestro_agent_teams.signals import SectionSignals, SectionState, _state_key
 from app.core.telemetry import compute_section_telemetry
 
@@ -57,6 +61,23 @@ _EXPRESSIVENESS_TOOLS = frozenset({
     "stori_add_midi_cc",
     "stori_add_pitch_bend",
 })
+
+_COMPACT_KEEP_KEYS = frozenset({
+    "regionId", "trackId", "notesAdded", "totalNotes",
+    "success", "error", "existingRegionId", "skipped",
+    "ccEvents", "pitchBends", "backend", "startBeat",
+    "durationBeats", "name",
+})
+
+
+def _compact_tool_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Strip large payloads (entities, notes) that bloat LLM context.
+
+    Keeps only key fields so the result stays under the LLM's
+    attention window and avoids '...' truncation that agents
+    misinterpret as failure.
+    """
+    return {k: v for k, v in result.items() if k in _COMPACT_KEEP_KEYS}
 
 
 @dataclass
@@ -83,15 +104,15 @@ async def _run_section_child(
     trace: Any,
     sse_queue: asyncio.Queue[dict[str, Any]],
     runtime_ctx: RuntimeContext | None = None,
-    section_signals: SectionSignals | None = None,
+    execution_services: ExecutionServices | None = None,
     llm: Optional[LLMClient] = None,
 ) -> SectionResult:
     """Execute one section's region + generate pipeline against a contract.
 
     The ``SectionContract`` is the single source of truth for structural
     decisions — beat range, track, section name, role.  ``RuntimeContext``
-    carries dynamic state (section_state, emotion_vector, raw_prompt).
-    No ``dict[str, Any]`` flows through this layer.
+    carries pure data (prompt, emotion vector).  ``ExecutionServices``
+    carries mutable coordination (signals, state).
     """
     sec_name = contract.section_name
     child_log = f"[{trace.trace_id[:8]}][{contract.instrument_name}/{sec_name}]"
@@ -113,21 +134,25 @@ async def _run_section_child(
                 evt = {**evt, "agentId": agent_id, "sectionName": sec_name}
             await sse_queue.put(evt)
 
-    section_state: SectionState | None = None
-    if runtime_ctx:
-        section_state = runtime_ctx.section_state
+    section_signals: SectionSignals | None = (
+        execution_services.section_signals if execution_services else None
+    )
+    section_state: SectionState | None = (
+        execution_services.section_state if execution_services else None
+    )
 
     def _tool_ctx() -> dict[str, Any] | None:
         """Bridge dict for _apply_single_tool_call (tool_execution boundary)."""
         if not runtime_ctx:
             return None
-        ctx = runtime_ctx.to_composition_context()
-        ctx["style"] = contract.style
-        ctx["tempo"] = contract.tempo
-        ctx["bars"] = contract.bars
-        ctx["key"] = contract.key
-        ctx["role"] = contract.role
-        return ctx
+        return {
+            **runtime_ctx.to_composition_context(),
+            "style": contract.style,
+            "tempo": contract.tempo,
+            "bars": contract.bars,
+            "key": contract.key,
+            "role": contract.role,
+        }
 
     try:
         await sse_queue.put({
@@ -138,6 +163,7 @@ async def _run_section_child(
         })
 
         # ── If bass, wait for the corresponding drum section (with timeout) ──
+        _section_id = contract.section.section_id
         if contract.is_bass and section_signals:
             from app.config import settings as _cfg
             _bass_timeout = _cfg.bass_signal_wait_timeout
@@ -147,9 +173,8 @@ async def _run_section_child(
             )
             _wait_start = asyncio.get_event_loop().time()
             try:
-                drum_data = await asyncio.wait_for(
-                    section_signals.wait_for(sec_name),
-                    timeout=_bass_timeout,
+                _signal_result = await section_signals.wait_for(
+                    _section_id, timeout=_bass_timeout,
                 )
             except asyncio.TimeoutError:
                 _wait_elapsed = asyncio.get_event_loop().time() - _wait_start
@@ -161,21 +186,33 @@ async def _run_section_child(
                 drum_data = None
             else:
                 _wait_elapsed = asyncio.get_event_loop().time() - _wait_start
-                if drum_data:
+                if _signal_result and _signal_result.success:
+                    drum_data = (
+                        {"drum_notes": _signal_result.drum_notes}
+                        if _signal_result.drum_notes
+                        else None
+                    )
                     logger.info(
                         f"{child_log} ✅ Drum section '{sec_name}' ready after "
                         f"{_wait_elapsed:.1f}s "
-                        f"({len(drum_data.get('drum_notes', []))} drum notes)"
+                        f"({len(_signal_result.drum_notes or [])} drum notes)"
+                    )
+                elif _signal_result and not _signal_result.success:
+                    drum_data = None
+                    logger.warning(
+                        f"{child_log} ⚠️ Drum section '{sec_name}' FAILED after "
+                        f"{_wait_elapsed:.1f}s — proceeding without drum spine"
                     )
                 else:
+                    drum_data = None
                     logger.warning(
-                        f"{child_log} ⚠️ Drum wait returned no data after "
+                        f"{child_log} ⚠️ Drum wait returned no result after "
                         f"{_wait_elapsed:.1f}s"
                     )
 
         # ── Bass: read drum telemetry for cross-instrument awareness ──
         if contract.is_bass and section_state and runtime_ctx:
-            drum_key = _state_key("Drums", sec_name)
+            drum_key = _state_key("Drums", _section_id)
             drum_telemetry = await section_state.get(drum_key)
             if drum_telemetry:
                 runtime_ctx = runtime_ctx.with_drum_telemetry({
@@ -226,7 +263,7 @@ async def _run_section_child(
         result.tool_result_msgs.append({
             "role": "tool",
             "tool_call_id": region_tc.id,
-            "content": json.dumps(region_outcome.tool_result),
+            "content": json.dumps(_compact_tool_result(region_outcome.tool_result)),
         })
 
         region_id = region_outcome.tool_result.get("regionId")
@@ -234,7 +271,7 @@ async def _run_section_child(
             result.error = f"Region creation failed for {sec_name}"
             logger.warning(f"⚠️ {child_log} {result.error}")
             if contract.is_drum and section_signals:
-                section_signals.signal_complete(sec_name)
+                section_signals.signal_complete(_section_id, success=False)
             return result
 
         result.region_id = region_id
@@ -296,7 +333,7 @@ async def _run_section_child(
         result.tool_result_msgs.append({
             "role": "tool",
             "tool_call_id": generate_tc.id,
-            "content": json.dumps(gen_outcome.tool_result),
+            "content": json.dumps(_compact_tool_result(gen_outcome.tool_result)),
         })
 
         _gen_elapsed = asyncio.get_event_loop().time() - _gen_start
@@ -307,14 +344,36 @@ async def _run_section_child(
                 f"⚠️ {child_log} Generate failed after {_gen_elapsed:.1f}s: {result.error}"
             )
             if contract.is_drum and section_signals:
-                section_signals.signal_complete(sec_name)
+                section_signals.signal_complete(_section_id, success=False)
             return result
 
         result.notes_generated = gen_outcome.tool_result.get("notesAdded", 0)
         result.success = True
-        logger.info(
-            f"{child_log} ✅ Generated {result.notes_generated} notes in {_gen_elapsed:.1f}s"
-        )
+
+        _MIN_NOTES = 4
+        if result.notes_generated < _MIN_NOTES:
+            logger.warning(
+                f"⚠️ {child_log} Generated only {result.notes_generated} note(s) "
+                f"(< {_MIN_NOTES}) — possible generation failure. "
+                f"Params: role={contract.role}, style={contract.style}, "
+                f"tempo={contract.tempo}, bars={contract.bars}, key={contract.key}, "
+                f"start_beat={contract.start_beat}"
+            )
+            await sse_queue.put({
+                "type": "toolError",
+                "name": "stori_generate_midi",
+                "error": (
+                    f"Low note count ({result.notes_generated}) for "
+                    f"{contract.instrument_name}/{sec_name} — "
+                    f"MIDI may be near-empty"
+                ),
+                "agentId": agent_id,
+                "sectionName": sec_name,
+            })
+        else:
+            logger.info(
+                f"{child_log} ✅ Generated {result.notes_generated} notes in {_gen_elapsed:.1f}s"
+            )
 
         # ── Extract generated notes from SSE events ──
         generated_notes: list[dict] = []
@@ -325,7 +384,9 @@ async def _run_section_child(
 
         # ── Drum signaling — signal bass with drum notes ──
         if contract.is_drum and section_signals:
-            section_signals.signal_complete(sec_name, drum_notes=generated_notes)
+            section_signals.signal_complete(
+                _section_id, success=True, drum_notes=generated_notes,
+            )
             logger.info(
                 f"{child_log} 🥁 Signaled bass: {len(generated_notes)} drum notes ready"
             )
@@ -339,7 +400,7 @@ async def _run_section_child(
                 section_name=sec_name,
                 section_beats=float(contract.duration_beats),
             )
-            state_key = _state_key(contract.instrument_name, sec_name)
+            state_key = _state_key(contract.instrument_name, _section_id)
             await section_state.set(state_key, telemetry)
 
         await sse_queue.put({
@@ -384,7 +445,7 @@ async def _run_section_child(
         )
         result.error = str(exc)
         if contract.is_drum and section_signals:
-            section_signals.signal_complete(sec_name)
+            section_signals.signal_complete(_section_id, success=False)
         return result
 
 

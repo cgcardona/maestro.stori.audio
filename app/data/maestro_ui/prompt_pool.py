@@ -39,3 +39,5 @@ PROMPT_POOL: list[PromptItem] = (
 )
 
 ALL_PROMPT_IDS: set[str] = {p.id for p in PROMPT_POOL}
+
+PROMPT_BY_ID: dict[str, PromptItem] = {p.id: p for p in PROMPT_POOL}

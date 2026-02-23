@@ -2462,4 +2462,244 @@ Automation:
 """,
     ),
 
+
+    # ── E2E smoke test — spec-complete, fast to generate ─────────────────
+    PromptItem(
+        id="e2e_pocket_groove",
+        title="Pocket groove · Fm · 92 BPM · 8 bars",
+        preview="Mode: compose · Section: intro → groove\nStyle: neo-soul · Key: Fm · 92 BPM\nRole: drums, bass, keys\nVibe: warm x2, groovy x2, intimate",
+        full_prompt="""\
+STORI PROMPT
+Mode: compose
+Section: intro
+Style: neo-soul
+Key: Fm
+Tempo: 92
+Energy: medium
+Role: [drums, bass, keys]
+Constraints:
+  bars: 8
+  density: medium
+Vibe: [warm x2, groovy x2, intimate, soulful, late-night]
+
+Request: |
+  A compact neo-soul pocket piece in two sections. 4-bar intro — keys
+  play a Rhodes chord pad on Fm9-Bbm7, bass enters on beat 3 of bar 2
+  with a warm walking line, drums enter bar 3 with brushed hi-hats and
+  a lazy kick. 4-bar groove — full pocket: drums lay down a tight boom-
+  bap-meets-neo-soul pattern, bass locks with the kick on a Fm9-Db9-
+  Bbm7-C7alt loop, keys add a simple right-hand motif above the chords.
+  Like D'Angelo's Voodoo — unhurried, deep pocket, every note in its
+  place.
+
+Harmony:
+  progression: [Fm9, Db9, Bbm7, C7alt]
+  voicing: rootless — 3rd and 7th in left hand, 9th and extensions in right
+  rhythm: whole notes in intro, quarter-note pushes in groove
+  extensions: 9ths on all chords, altered extensions on C7
+  color: dark warmth — minor 9ths and altered dominants
+  reharmonize: |
+    Bar 8 substitutes C7alt with C7#9#5 for maximum tension into repeat
+
+Melody:
+  scale: F dorian
+  register: mid (C4-Ab5)
+  contour: |
+    Intro: no melody — chords and bass only.
+    Groove: short 2-note motif (F5-Eb5) on the "and" of beat 2, call-response.
+  phrases:
+    structure: 1-bar call, 1-bar response
+    breath: 2 beats of silence between phrases
+  density: very sparse — 2 notes per bar average
+  ornamentation:
+    - grace note on the minor 3rd (Ab)
+    - blue note (Cb) approach in bar 7
+
+Rhythm:
+  feel: behind the beat — lazy neo-soul pocket
+  subdivision: 16th-note feel
+  swing: 58%
+  accent:
+    pattern: ghost snare on e-and-a of beats 2 and 4
+    weight: subtle — velocity ±8
+  ghost_notes:
+    instrument: snare
+    velocity: 28-42
+    frequency: every other 16th on beats 2 and 4
+  pushed_hits:
+    - beat: 2.75
+      anticipation: 16th note early
+
+Dynamics:
+  overall: mp to mf
+  arc:
+    - bars: 1-2
+      level: mp
+      shape: flat — keys alone, intimate
+    - bars: 3-4
+      level: mp to mf
+      shape: linear crescendo as instruments enter
+    - bars: 5-8
+      level: mf
+      shape: steady groove with subtle accents
+  accent_velocity: 98
+  ghost_velocity: 32
+
+Orchestration:
+  drums:
+    kit: neo-soul (vinyl kick, brushed snare, slightly open hi-hat)
+    hi_hat: 8th notes, slightly open on upbeats
+    kick: quarter notes with ghost on the e of 2
+    snare: 2 and 4 with ghost rolls
+  bass:
+    technique: finger style, round tone
+    register: low (F1-C3)
+    articulation: legato with occasional staccato on syncopations
+  keys:
+    voicing: Rhodes electric piano — rootless left hand, melody right hand
+    pedaling: no sustain pedal — Rhodes damper only
+    right_hand: sparse motif above chord pads
+
+Effects:
+  drums:
+    compression:
+      type: FET
+      attack: 5ms
+      release: auto
+      ratio: 3:1
+    room: small plate, 0.6s decay
+    saturation:
+      type: tape
+      amount: subtle
+  bass:
+    saturation:
+      type: tube
+      drive: low
+  keys:
+    chorus:
+      rate: 0.3hz
+      depth: subtle
+    reverb:
+      type: plate
+      size: medium
+      wet: 18%
+
+Expression:
+  arc: intimate → settled → grooving → warm resolve
+  narrative: |
+    A small room. Three musicians who've played together for years.
+    The keys player starts alone — Fm9 chords floating from a warm
+    Rhodes. The bassist nods and walks in at bar 2. The drummer joins
+    at bar 3, brushes barely touching the hi-hat. By bar 5 they're
+    locked in — a pocket so deep you could fall asleep in it. Nothing
+    flashy. Just feel.
+  character: D'Angelo's Voodoo. Erykah Badu's Mama's Gun. 2am vibes.
+
+Texture:
+  density: sparse (intro) to medium (groove)
+  register_spread: F1-Ab5
+  layering:
+    strategy: bass anchors bottom, keys fill mid, drums frame
+    avoid: frequency clash between bass and Rhodes left hand
+  space: |
+    Plenty of air. Every instrument has room. The silence between
+    notes matters as much as the notes.
+
+Form:
+  structure: intro-groove
+  development:
+    - section: intro (bars 1-4)
+      intensity: low — keys alone, then bass, then drums
+    - section: groove (bars 5-8)
+      variation: full pocket, all three locked in, motif appears
+  variation_strategy: |
+    Intro is additive — one instrument per bar. Groove is the payoff.
+
+Humanization:
+  timing:
+    jitter: 0.04
+    late_bias: 0.015
+    grid: 16th
+  velocity:
+    arc: phrase
+    stdev: 16
+    accents:
+      beats: [0, 2]
+      strength: 10
+    ghost_notes:
+      probability: 0.12
+      velocity: [25, 42]
+  feel: behind the beat — deep pocket, never rushing
+
+MidiExpressiveness:
+  sustain_pedal:
+    style: no sustain — Rhodes damper only
+    changes_per_bar: 0
+  expression:
+    curve: follows dynamic arc, mp to mf
+    range: [55, 100]
+  modulation:
+    instrument: keys
+    depth: subtle tremolo — CC 1 value 15-35
+    onset: delayed 2 beats
+  pitch_bend:
+    range: +-2 semitones
+    style: subtle bass slides on tied notes
+    depth: quarter-tone
+  aftertouch:
+    type: channel
+    response: adds warmth on sustained Rhodes chords
+    use: gentle filter opening
+  filter:
+    cutoff:
+      sweep: Rhodes brightness opens gently bars 3-8
+      resonance: low
+  cc_curves:
+    - cc: 91
+      from: 15
+      to: 40
+      position: bars 1-8
+    - cc: 11
+      from: 55
+      to: 100
+      position: bars 1-8
+    - cc: 1
+      from: 15
+      to: 35
+      position: bars 3-8
+  articulation:
+    legato: true
+    portamento:
+      time: 20
+      switch: on
+
+Automation:
+  - track: Keys
+    param: chorus_depth
+    events:
+      - beat: 0
+        value: 0.1
+        curve: linear
+      - beat: 16
+        value: 0.35
+        curve: smooth
+  - track: Bass
+    param: volume
+    events:
+      - beat: 4
+        value: 0.0
+      - beat: 8
+        value: 0.75
+        curve: smooth
+  - track: Drums
+    param: reverb_wet
+    events:
+      - beat: 8
+        value: 0.08
+      - beat: 32
+        value: 0.2
+        curve: linear
+""",
+    ),
+
 ]
