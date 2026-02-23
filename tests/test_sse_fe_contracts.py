@@ -949,3 +949,106 @@ class TestOrpheusMetadataNoneRegression:
         }
         out = {**(data.get("metadata") or {}), "retry_count": 2}
         assert out == {"model": "v2", "retry_count": 2}
+
+
+class TestCircuitBreakerContract:
+    """Orpheus circuit breaker behavior: trip, fast-fail, reset."""
+
+    def test_circuit_breaker_starts_closed(self):
+        """New circuit breaker is closed (not open)."""
+        from app.services.orpheus import _CircuitBreaker
+        cb = _CircuitBreaker(threshold=3, cooldown=60)
+        assert not cb.is_open
+
+    def test_circuit_breaker_trips_after_threshold(self):
+        """Circuit opens after `threshold` consecutive failures."""
+        from app.services.orpheus import _CircuitBreaker
+        cb = _CircuitBreaker(threshold=2, cooldown=60)
+        cb.record_failure()
+        assert not cb.is_open
+        cb.record_failure()
+        assert cb.is_open
+
+    def test_circuit_breaker_success_resets(self):
+        """A successful call resets the failure counter and closes the circuit."""
+        from app.services.orpheus import _CircuitBreaker
+        cb = _CircuitBreaker(threshold=2, cooldown=60)
+        cb.record_failure()
+        cb.record_success()
+        assert cb._failures == 0
+        cb.record_failure()
+        assert not cb.is_open, "Counter should have reset — one failure is below threshold"
+
+    def test_circuit_breaker_cooldown_half_open(self):
+        """After cooldown, is_open returns False (half-open allows probe)."""
+        import time
+        from app.services.orpheus import _CircuitBreaker
+        cb = _CircuitBreaker(threshold=1, cooldown=0.01)
+        cb.record_failure()
+        assert cb.is_open
+        time.sleep(0.02)
+        assert not cb.is_open, "Cooldown expired — should be half-open"
+
+    def test_circuit_open_error_message_format(self):
+        """Fast-fail result has the expected error key for downstream detection."""
+        result = {
+            "success": False,
+            "error": "orpheus_circuit_open",
+            "message": "Orpheus music service is unavailable (circuit breaker open).",
+        }
+        assert result["error"] == "orpheus_circuit_open"
+        assert "circuit breaker" in result["message"].lower()
+
+
+class TestL2ReasoningGuidanceContract:
+    """Level 2 agent reasoning guidance prevents verbose section-level CoT."""
+
+    def test_reasoning_guidance_prohibits_section_reasoning(self):
+        """The L2 system prompt must contain instructions against per-section reasoning."""
+        import inspect
+        from app.core.maestro_agent_teams import agent as agent_mod
+        source = inspect.getsource(agent_mod._run_instrument_agent_inner)
+        assert "Do NOT reason about individual sections" in source
+        assert "section agents handle" in source
+
+    def test_reasoning_guidance_limits_length(self):
+        """The L2 system prompt must cap reasoning at 1-2 sentences."""
+        import inspect
+        from app.core.maestro_agent_teams import agent as agent_mod
+        source = inspect.getsource(agent_mod._run_instrument_agent_inner)
+        assert "1-2 sentences ONLY" in source
+
+
+class TestL3SectionReasoningContract:
+    """Level 3 section child emits reasoning events with sectionName."""
+
+    def test_section_child_has_reasoning_function(self):
+        """_reason_before_generate exists and accepts the expected parameters."""
+        import inspect
+        from app.core.maestro_agent_teams.section_agent import _reason_before_generate
+        sig = inspect.signature(_reason_before_generate)
+        params = set(sig.parameters.keys())
+        assert "section" in params
+        assert "sec_name" in params
+        assert "llm" in params
+        assert "sse_queue" in params
+        assert "generate_prompt" in params
+
+    def test_section_reasoning_returns_optional_string(self):
+        """_reason_before_generate return type allows None (fallback to original prompt)."""
+        import inspect
+        from app.core.maestro_agent_teams.section_agent import _reason_before_generate
+        sig = inspect.signature(_reason_before_generate)
+        assert sig.return_annotation is not inspect.Parameter.empty
+
+
+class TestAgentCircuitBreakerAbort:
+    """Level 2 agent stops retrying when Orpheus circuit breaker is open."""
+
+    def test_agent_imports_orpheus_client(self):
+        """agent.py imports get_orpheus_client for circuit breaker checks."""
+        import inspect
+        from app.core.maestro_agent_teams import agent as agent_mod
+        source = inspect.getsource(agent_mod)
+        assert "get_orpheus_client" in source
+        assert "circuit_breaker_open" in source

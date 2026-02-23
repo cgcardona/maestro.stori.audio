@@ -36,6 +36,7 @@ from app.core.maestro_agent_teams.section_agent import (
     SectionResult,
 )
 from app.core.maestro_agent_teams.signals import SectionSignals
+from app.services.orpheus import get_orpheus_client
 
 logger = logging.getLogger(__name__)
 
@@ -181,11 +182,17 @@ async def _run_instrument_agent_inner(
     _multi_section = len(_sections) > 1
 
     _reasoning_guidance = (
-        "REASONING RULES (mandatory):\n"
-        f"- Write 2-3 sentences MAX about what makes this {instrument_name} part musically distinctive.\n"
-        f"- Describe sonic character, rhythmic role, and how it sits in the {style} arrangement.\n"
-        "- Do NOT list pipeline steps — the execution feed shows those automatically.\n"
-        "- No generic phrases like 'Let me execute all steps' or 'Step 1 is independent'."
+        "REASONING RULES (mandatory — violating these wastes tokens):\n"
+        f"- Write 1-2 sentences ONLY about {instrument_name}'s overall sonic character "
+        f"and role in the {style} arrangement.\n"
+        "- Do NOT reason about individual sections — section agents handle "
+        "section-specific decisions.\n"
+        "- Do NOT list pipeline steps, tool names, or execution order.\n"
+        "- Do NOT mention regions, trackIds, regionIds, beats, or bar counts.\n"
+        "- No phrases like 'Let me...', 'I will...', 'Step 1...', "
+        "'For the verse...', 'For the chorus...'.\n"
+        "- If you catch yourself writing more than 2 sentences of reasoning, "
+        "STOP and make tool calls immediately."
     )
 
     _generate_midi_guidance = (
@@ -457,6 +464,14 @@ async def _run_instrument_agent_inner(
             if not missing:
                 logger.info(f"{agent_log} ✅ All stages complete after turn {turn}")
                 break
+
+            _any_generate_missing = any("stori_generate_midi" in m for m in missing)
+            if _any_generate_missing and get_orpheus_client().circuit_breaker_open:
+                logger.warning(
+                    f"{agent_log} ⚠️ Orpheus circuit breaker open on retry turn {turn} — aborting"
+                )
+                break
+
             logger.info(
                 f"{agent_log} 🔄 Turn {turn}/{max_turns}: {len(missing)} stages remaining — "
                 + ", ".join(m.split(" — ")[0] for m in missing)
@@ -754,6 +769,24 @@ async def _run_instrument_agent_inner(
                 })
 
         messages.extend(tool_result_messages)
+
+        if _generates_completed < _expected_sections:
+            _oc = get_orpheus_client()
+            if _oc.circuit_breaker_open:
+                logger.warning(
+                    f"{agent_log} ⚠️ Orpheus circuit breaker is open — "
+                    f"stopping retries (would waste tokens)"
+                )
+                await sse_queue.put({
+                    "type": "toolError",
+                    "name": "stori_generate_midi",
+                    "error": (
+                        "Orpheus music service is unavailable. "
+                        "Generation cannot proceed."
+                    ),
+                    "agentId": _agent_id,
+                })
+                break
 
     if active_step_id:
         evt = plan_tracker.complete_step_by_id(active_step_id)

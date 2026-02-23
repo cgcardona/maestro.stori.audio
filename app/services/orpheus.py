@@ -6,6 +6,7 @@ Client for communicating with the Orpheus music generation service.
 import asyncio
 import httpx
 import logging
+import time as _time
 from typing import Optional, Any
 
 from app.config import settings
@@ -31,6 +32,55 @@ _MAX_RETRIES = 4
 _RETRY_DELAYS = [2, 5, 10, 20]  # seconds between attempts
 
 logger = logging.getLogger(__name__)
+
+
+class _CircuitBreaker:
+    """Prevents cascading failures when Orpheus is unavailable.
+
+    After ``threshold`` consecutive failures the circuit opens and all
+    subsequent calls fail immediately for ``cooldown`` seconds.  After the
+    cooldown one probe request is allowed (half-open).  Success closes the
+    circuit; failure re-opens it.
+
+    Thread-safety is not needed — asyncio is single-threaded per event loop.
+    """
+
+    def __init__(self, threshold: int = 3, cooldown: float = 60.0):
+        self.threshold = threshold
+        self.cooldown = cooldown
+        self._failures = 0
+        self._opened_at: Optional[float] = None
+
+    @property
+    def is_open(self) -> bool:
+        if self._opened_at is None:
+            return False
+        if _time.monotonic() - self._opened_at >= self.cooldown:
+            return False
+        return True
+
+    def record_success(self) -> None:
+        if self._opened_at is not None:
+            logger.info("🟢 Orpheus circuit breaker CLOSED (successful request)")
+        self._failures = 0
+        self._opened_at = None
+
+    def record_failure(self) -> None:
+        self._failures += 1
+        if self._failures >= self.threshold and self._opened_at is None:
+            self._opened_at = _time.monotonic()
+            logger.error(
+                f"🔴 Orpheus circuit breaker OPEN after {self._failures} "
+                f"consecutive failures — failing fast for {self.cooldown}s"
+            )
+        elif self._opened_at is not None:
+            elapsed = _time.monotonic() - self._opened_at
+            if elapsed >= self.cooldown:
+                self._opened_at = _time.monotonic()
+                logger.error(
+                    "🔴 Orpheus circuit breaker re-opened (probe failed) "
+                    f"— failing fast for another {self.cooldown}s"
+                )
 
 # Connection pool settings: kept generous because Orpheus calls are sequential
 # within a session but multiple FastAPI workers may hit it concurrently.
@@ -67,6 +117,16 @@ class OrpheusClient:
         n = max_concurrent or settings.orpheus_max_concurrent
         self._semaphore = asyncio.Semaphore(n)
         self._max_concurrent = n
+
+        self._cb = _CircuitBreaker(
+            threshold=settings.orpheus_cb_threshold,
+            cooldown=float(settings.orpheus_cb_cooldown),
+        )
+
+    @property
+    def circuit_breaker_open(self) -> bool:
+        """True when the circuit breaker is tripped (Orpheus is down)."""
+        return self._cb.is_open
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -206,6 +266,17 @@ class OrpheusClient:
         if musical_goals:
             payload["musical_goals"] = musical_goals
 
+        if self._cb.is_open:
+            return {
+                "success": False,
+                "error": "orpheus_circuit_open",
+                "message": (
+                    "Orpheus music service is unavailable (circuit breaker open). "
+                    "Do not retry — the service will be probed automatically."
+                ),
+                "retry_count": 0,
+            }
+
         logger.info(f"Generating {instruments} in {genre} style at {tempo} BPM")
         if musical_goals:
             logger.info(f"  Musical goals: {musical_goals}")
@@ -255,6 +326,7 @@ class OrpheusClient:
                             logger.warning(f"⚠️ Retrying in {delay}s (GPU issue in raw body)")
                             await asyncio.sleep(delay)
                             continue
+                        self._cb.record_failure()
                         return {
                             "success": False,
                             "error": f"Orpheus returned invalid response: {raw}",
@@ -283,6 +355,7 @@ class OrpheusClient:
                             await asyncio.sleep(delay)
                             continue
                         _is_gpu = self._is_gpu_cold_start_error(error_text)
+                        self._cb.record_failure()
                         logger.error(
                             f"❌ Orpheus generation failed after {_MAX_RETRIES} attempts: "
                             f"{error_text[:120]}"
@@ -309,6 +382,9 @@ class OrpheusClient:
                     }
                     if not out["success"] and error_text:
                         out["error"] = error_text
+                        self._cb.record_failure()
+                    else:
+                        self._cb.record_success()
                     _gen_elapsed = asyncio.get_event_loop().time() - _gen_start
                     logger.info(
                         f"[Orpheus] ✅ Generation done for {instruments}: "
@@ -318,23 +394,27 @@ class OrpheusClient:
                     return out
 
                 except httpx.HTTPStatusError as e:
+                    status_code = e.response.status_code
                     body = e.response.text
-                    if self._is_transient_error(body) and attempt < _MAX_RETRIES - 1:
+                    is_server_error = 500 <= status_code < 600
+                    if (is_server_error or self._is_transient_error(body)) and attempt < _MAX_RETRIES - 1:
                         delay = _RETRY_DELAYS[attempt]
                         logger.warning(
-                            f"⚠️ Orpheus GPU cold-start in HTTP {e.response.status_code} "
+                            f"⚠️ Orpheus HTTP {status_code} "
                             f"(attempt {attempt + 1}/{_MAX_RETRIES}) — retrying in {delay}s"
                         )
                         await asyncio.sleep(delay)
                         continue
-                    logger.error(f"❌ Orpheus HTTP error: {e.response.status_code}")
+                    self._cb.record_failure()
+                    logger.error(f"❌ Orpheus HTTP error: {status_code}")
                     return {
                         "success": False,
-                        "error": f"HTTP {e.response.status_code}: {body}",
+                        "error": f"HTTP {status_code}: {body}",
                         "retry_count": attempt,
                     }
 
                 except httpx.ConnectError:
+                    self._cb.record_failure()
                     logger.warning("⚠️ Orpheus service not reachable")
                     return {
                         "success": False,
@@ -353,6 +433,7 @@ class OrpheusClient:
                         )
                         await asyncio.sleep(delay)
                         continue
+                    self._cb.record_failure()
                     logger.error(f"❌ Orpheus request failed: {e}")
                     return {
                         "success": False,
@@ -360,7 +441,7 @@ class OrpheusClient:
                         "retry_count": attempt,
                     }
 
-            # Should not reach here, but satisfy return type
+            self._cb.record_failure()
             return {
                 "success": False,
                 "error": "gpu_unavailable",

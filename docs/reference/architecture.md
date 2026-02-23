@@ -157,10 +157,11 @@ Level 1 — COORDINATOR (coordinator.py)
 
 Level 2 — INSTRUMENT PARENT (agent.py) — one per instrument
   └── One LLM call plans the entire instrument: track + [region, generate]* + effect
+      Brief high-level reasoning (1-2 sentences about sonic character)
       Groups tool calls into section pairs, spawns section children
 
 Level 3 — SECTION CHILD (section_agent.py) — one per section per instrument
-  └── Lightweight executor: region → generate (no LLM needed for core pipeline)
+  └── Section reasoning LLM call (streamed, with sectionName) → region → generate
       Optional refinement LLM call for CC curves / pitch bend / automation
 ```
 
@@ -205,12 +206,15 @@ Independent instruments (keys, melody, guitar, pads, etc.) ignore `SectionSignal
 ### Instrument parent flow (Level 2)
 
 1. One LLM call produces tool calls: `create_track` + `[region, generate_midi]` per section + `effect`
+   - Reasoning is constrained to 1-2 sentences about instrument character — no per-section reasoning
+   - Section-specific musical decisions are delegated to Level 3
 2. Parent executes `create_track` immediately, captures real `trackId`
 3. Groups remaining calls into section pairs `(region, generate_midi)`
 4. Spawns section children — parallel for all instruments (bass children self-gate via signals)
 5. Waits for all children
 6. Executes `effect` call at the end
-7. If children failed, optionally makes a retry LLM turn with `_missing_stages()`
+7. If children failed, checks whether the Orpheus circuit breaker is open — if so, aborts immediately instead of making a retry LLM turn (prevents wasting tokens on retries that will also fail)
+8. Otherwise, optionally makes a retry LLM turn with `_missing_stages()`
 
 For single-section compositions, the parent uses the sequential execution path (same as before the three-level refactor). Section children are only spawned for multi-section compositions.
 
@@ -221,13 +225,14 @@ For single-section compositions, the parent uses the sequential execution path (
 3. If bass: read `SectionState["Drums: {section}"]` — inject drum telemetry (groove, density, kick hash) into `composition_context` for the generate call
 4. Execute `stori_add_midi_region` with parent's pre-resolved params (trackId injected)
 5. Capture `regionId` from result
-6. Execute `stori_generate_midi` with `regionId` and `trackId` injected
-7. Extract generated notes from SSE events
-8. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
-9. If drums: call `section_signals.signal_complete(section_name, drum_notes)`
-10. Emit `status` SSE event: `"{instrument} / {section}: N notes generated"`
-11. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, run a **streamed** refinement LLM call (see below)
-12. Return `SectionResult` to parent
+6. **Section reasoning**: brief streamed LLM call (`_reason_before_generate`) — reasons about section-specific musical approach (density, register, rhythmic choices). Emits `type: "reasoning"` events tagged with `agentId` + `sectionName` so the frontend can nest section-specific thinking under the correct section header. Returns a refined prompt for the generate call, or falls back to the parent's prompt on failure.
+7. Execute `stori_generate_midi` with `regionId`, `trackId`, and (optionally refined) prompt
+8. Extract generated notes from SSE events
+9. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
+10. If drums: call `section_signals.signal_complete(section_name, drum_notes)`
+11. Emit `status` SSE event: `"{instrument} / {section}: N notes generated"`
+12. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, run a **streamed** refinement LLM call (see below)
+13. Return `SectionResult` to parent
 
 Drum children always signal — even on failure — to prevent bass children from hanging indefinitely.
 
@@ -259,13 +264,16 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 - Bass signal waits use `asyncio.wait_for(timeout=bass_signal_wait_timeout)` (default 240s). If drums fail silently, bass proceeds without the rhythm spine rather than deadlocking.
 
 **Track color pre-allocation:**
-- Before Phase 2 starts, the coordinator calls `allocate_colors(instrument_names)` (`app/core/track_styling.py`) to assign one distinct hex color per instrument from a fixed 8-entry perceptually-spaced palette (`COMPOSITION_PALETTE`). Colors are chosen in role order so adjacent tracks always contrast. Each instrument agent receives its pre-assigned color and is instructed to pass it verbatim in `stori_add_midi_track` — the agent cannot override it. This prevents the LLM from hallucinating repeated colors (the original bug was all tracks receiving amber/orange).
+- Before Phase 2 starts, the coordinator calls `allocate_colors(instrument_names)` (`app/core/track_styling.py`) to assign one distinct hex color per instrument from a fixed 12-entry perceptually-spaced palette (`COMPOSITION_PALETTE`). Colors are chosen in role order so adjacent tracks always contrast. Each instrument agent receives its pre-assigned color and is instructed to pass it verbatim in `stori_add_midi_track` — the agent cannot override it. This prevents the LLM from hallucinating repeated colors (the original bug was all tracks receiving amber/orange).
 
 **Orpheus pre-flight health check:**
 - Before Phase 2 starts, the coordinator calls `OrpheusClient.health_check()`. If it returns `False` or raises, a `{"type": "status"}` SSE event is emitted immediately with a human-readable warning ("⚠️ Music generation (Orpheus) is not responding…") so the macOS client can surface the problem before any instrument agent is spawned. Composition continues with retry logic active; if Orpheus recovers within the retry window, generation succeeds.
 
 **Orpheus transient-error retry:**
-- `OrpheusClient.generate()` retries up to 4 attempts (delays: 2 s / 5 s / 10 s / 20 s) on *any* transient error — GPU cold-start phrases (`"No GPU was available"`, etc.) **and** Gradio-level transient errors (`"'NoneType' object is not a mapping"`, `"Queue is full"`, `"upstream Gradio app has raised an exception"`). Previously only GPU cold-start phrases triggered a retry; Gradio transient errors surfaced immediately as `toolError`. The retry label in logs distinguishes the two (`"GPU cold-start"` vs `"Gradio transient error"`).
+- `OrpheusClient.generate()` retries up to 4 attempts (delays: 2 s / 5 s / 10 s / 20 s) on *any* transient error — GPU cold-start phrases (`"No GPU was available"`, etc.), Gradio-level transient errors (`"'NoneType' object is not a mapping"`, `"Queue is full"`, `"upstream Gradio app has raised an exception"`), and **any 5xx HTTP status code** (including 503 Service Unavailable). The retry label in logs distinguishes the two (`"GPU cold-start"` vs `"Gradio transient error"`).
+
+**Orpheus circuit breaker:**
+- After `orpheus_cb_threshold` (default 3) consecutive failed `generate()` calls (across requests — not retries within a single call), the circuit breaker trips. While tripped, all subsequent `generate()` calls fail immediately with `error: "orpheus_circuit_open"` — no HTTP request is made, no tokens are wasted on LLM reasoning for retries that will also fail. The circuit automatically allows one probe request after `orpheus_cb_cooldown` seconds (default 60). If the probe succeeds, the circuit closes and normal operation resumes; if it fails, the circuit re-opens for another cooldown period. Instrument parents check `circuit_breaker_open` after dispatching section children — if the breaker is open and generates are still pending, the agent breaks out of its retry loop instead of making another LLM call.
 
 **SSE keepalive (heartbeat monitoring):**
 - The coordinator emits an SSE comment (`: heartbeat\n\n`) every 8 seconds when no real events are flowing. This prevents proxies and HTTP clients from interpreting GPU-bound silence as a dead connection.
@@ -286,6 +294,8 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 | `STORI_BASS_SIGNAL_WAIT_TIMEOUT` | 240 | Bass waiting for drum signal (seconds) |
 | `STORI_ORPHEUS_MAX_CONCURRENT` | 4 | GPU inference semaphore slots |
 | `STORI_ORPHEUS_TIMEOUT` | 360 | Per-Orpheus HTTP call timeout (seconds) |
+| `STORI_ORPHEUS_CB_THRESHOLD` | 3 | Consecutive failures before circuit breaker trips |
+| `STORI_ORPHEUS_CB_COOLDOWN` | 60 | Seconds before tripped circuit allows a probe |
 
 ### SectionState — deterministic musical telemetry
 

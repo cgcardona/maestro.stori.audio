@@ -223,6 +223,30 @@ async def _run_section_child(
 
         result.region_id = region_id
 
+        # ── Section reasoning (L3 CoT, streamed with sectionName) ──
+        _parent_prompt = generate_tc.params.get("prompt", "")
+        if llm and _parent_prompt:
+            _refined = await _reason_before_generate(
+                section=section,
+                instrument_name=instrument_name,
+                role=role,
+                style=composition_context.get("style", "") if composition_context else "",
+                tempo=sec_tempo,
+                key=composition_context.get("key", "C") if composition_context else "C",
+                generate_prompt=_parent_prompt,
+                agent_id=agent_id,
+                sec_name=sec_name,
+                llm=llm,
+                sse_queue=sse_queue,
+                child_log=child_log,
+            )
+            if _refined:
+                generate_tc = ToolCall(
+                    id=generate_tc.id,
+                    name=generate_tc.name,
+                    params={**generate_tc.params, "prompt": _refined},
+                )
+
         # ── Execute stori_generate_midi ──
         logger.info(
             f"{child_log} 🎵 Generating MIDI: regionId={region_id}, "
@@ -347,6 +371,104 @@ async def _run_section_child(
         if is_drum and section_signals:
             section_signals.signal_complete(sec_name)
         return result
+
+
+async def _reason_before_generate(
+    section: dict[str, Any],
+    instrument_name: str,
+    role: str,
+    style: str,
+    tempo: float,
+    key: str,
+    generate_prompt: str,
+    agent_id: str,
+    sec_name: str,
+    llm: LLMClient,
+    sse_queue: asyncio.Queue[dict[str, Any]],
+    child_log: str,
+) -> Optional[str]:
+    """Brief LLM reasoning about a section's musical approach (Level 3 CoT).
+
+    Streams ``type=reasoning`` events tagged with ``sectionName`` so the
+    frontend can display per-section musical thinking.  Returns a refined
+    prompt string for the generate call, or ``None`` to keep the original.
+    """
+    sec_bars = max(1, int(section.get("length_beats", 16)) // 4)
+    per_track = section.get("per_track_description", {})
+    sec_hint = per_track.get(
+        role.lower(), per_track.get(instrument_name.lower(), "")
+    )
+
+    system = (
+        f"You are the section agent for the **{sec_name.upper()}** section "
+        f"of the **{instrument_name}** track.\n\n"
+        f"Context: {style} | {tempo:.0f} BPM | {key} | {sec_bars} bars\n"
+    )
+    if sec_hint:
+        system += f"Composer direction: {sec_hint}\n"
+    system += (
+        f"Parent agent prompt: \"{generate_prompt}\"\n\n"
+        "TASK: Think about what makes this section's {instrument_name} part "
+        "distinctive — density, register, rhythmic approach, and how it "
+        "serves the arrangement energy at this point.  Then write a refined "
+        "1-2 sentence generation prompt for Orpheus that captures your "
+        "musical intent for this specific section.\n\n"
+        "Output ONLY the refined prompt (no explanation, no tool calls)."
+    ).format(instrument_name=instrument_name)
+
+    try:
+        from app.config import settings
+
+        rbuf = ReasoningBuffer()
+        _refined: Optional[str] = None
+
+        async for chunk in llm.chat_completion_stream(
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": "Reason about this section, then output the refined prompt."},
+            ],
+            tools=None,
+            tool_choice=None,
+            max_tokens=800,
+            reasoning_fraction=settings.agent_reasoning_fraction * 4,
+        ):
+            ct = chunk.get("type")
+            if ct == "reasoning_delta":
+                text = chunk.get("text", "")
+                if text:
+                    word = rbuf.add(text)
+                    if word:
+                        await sse_queue.put({
+                            "type": "reasoning",
+                            "content": word,
+                            "agentId": agent_id,
+                            "sectionName": sec_name,
+                        })
+            elif ct in ("content_delta", "done"):
+                flush = rbuf.flush()
+                if flush:
+                    await sse_queue.put({
+                        "type": "reasoning",
+                        "content": flush,
+                        "agentId": agent_id,
+                        "sectionName": sec_name,
+                    })
+                if ct == "done":
+                    _refined = chunk.get("content")
+
+        if _refined and len(_refined.strip()) > 10:
+            logger.info(
+                f"{child_log} 🧠 Section reasoning refined prompt: "
+                f"{_refined.strip()[:80]}..."
+            )
+            return _refined.strip()
+        return None
+
+    except Exception as exc:
+        logger.warning(
+            f"⚠️ {child_log} Section reasoning failed (non-fatal): {exc}"
+        )
+        return None
 
 
 _EXPR_BLOCK_RE = re.compile(

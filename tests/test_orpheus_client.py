@@ -1,17 +1,26 @@
 """Tests for app.services.orpheus.OrpheusClient (mocked HTTP)."""
+import time as _time
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.orpheus import OrpheusClient
 
 
+def _patch_settings(m):
+    """Apply default Orpheus test settings to a mock."""
+    m.orpheus_base_url = "http://orpheus:10002"
+    m.orpheus_timeout = 30
+    m.hf_api_key = None
+    m.orpheus_max_concurrent = 2
+    m.orpheus_cb_threshold = 3
+    m.orpheus_cb_cooldown = 60
+
+
 @pytest.fixture
 def client():
     with patch("app.services.orpheus.settings") as m:
-        m.orpheus_base_url = "http://orpheus:10002"
-        m.orpheus_timeout = 30
-        m.hf_api_key = None
-        m.orpheus_max_concurrent = 2
+        _patch_settings(m)
         yield OrpheusClient()
 
 
@@ -192,9 +201,7 @@ def test_connection_limits_configured():
 
     orpheus_module._shared_client = None  # force fresh
     with patch("app.services.orpheus.settings") as m:
-        m.orpheus_base_url = "http://orpheus:10002"
-        m.orpheus_timeout = 30
-        m.hf_api_key = None
+        _patch_settings(m)
         m.orpheus_max_concurrent = 4
         orpheus_module._shared_client = None
         c = get_orpheus_client()
@@ -481,10 +488,7 @@ class TestGpuColdStartRetry:
     @pytest.fixture
     def client(self):
         with patch("app.services.orpheus.settings") as m:
-            m.orpheus_base_url = "http://orpheus:10002"
-            m.orpheus_timeout = 30
-            m.hf_api_key = None
-            m.orpheus_max_concurrent = 2
+            _patch_settings(m)
             yield OrpheusClient()
 
     @pytest.mark.asyncio
@@ -733,9 +737,7 @@ class TestSemaphore:
     def test_semaphore_configurable(self):
         """max_concurrent param controls semaphore capacity."""
         with patch("app.services.orpheus.settings") as m:
-            m.orpheus_base_url = "http://orpheus:10002"
-            m.orpheus_timeout = 30
-            m.hf_api_key = None
+            _patch_settings(m)
             m.orpheus_max_concurrent = 5
             c = OrpheusClient()
             assert c._max_concurrent == 5
@@ -744,10 +746,7 @@ class TestSemaphore:
     def test_semaphore_explicit_override(self):
         """Explicit max_concurrent kwarg overrides the config value."""
         with patch("app.services.orpheus.settings") as m:
-            m.orpheus_base_url = "http://orpheus:10002"
-            m.orpheus_timeout = 30
-            m.hf_api_key = None
-            m.orpheus_max_concurrent = 2
+            _patch_settings(m)
             c = OrpheusClient(max_concurrent=7)
             assert c._max_concurrent == 7
             assert c._semaphore._value == 7
@@ -759,9 +758,7 @@ class TestSemaphore:
 
         max_concurrent = 2
         with patch("app.services.orpheus.settings") as m:
-            m.orpheus_base_url = "http://orpheus:10002"
-            m.orpheus_timeout = 30
-            m.hf_api_key = None
+            _patch_settings(m)
             m.orpheus_max_concurrent = max_concurrent
             c = OrpheusClient()
 
@@ -798,9 +795,7 @@ class TestSemaphore:
     async def test_semaphore_releases_on_error(self):
         """Semaphore slot is released even when generate() hits an error."""
         with patch("app.services.orpheus.settings") as m:
-            m.orpheus_base_url = "http://orpheus:10002"
-            m.orpheus_timeout = 30
-            m.hf_api_key = None
+            _patch_settings(m)
             m.orpheus_max_concurrent = 1
             c = OrpheusClient()
 
@@ -822,10 +817,7 @@ class TestMusicalGoalsPayload:
 
     def _make_client(self) -> OrpheusClient:
         with patch("app.services.orpheus.settings") as m:
-            m.orpheus_base_url = "http://orpheus:10002"
-            m.orpheus_timeout = 30
-            m.hf_api_key = None
-            m.orpheus_max_concurrent = 2
+            _patch_settings(m)
             return OrpheusClient()
 
     def _ok_response(self) -> MagicMock:
@@ -893,3 +885,155 @@ class TestMusicalGoalsPayload:
         _, kwargs = c._client.post.call_args
         payload = kwargs["json"]
         assert "musical_goals" not in payload
+
+
+# =============================================================================
+# Circuit breaker tests
+# =============================================================================
+
+
+class TestCircuitBreaker:
+    """Orpheus circuit breaker prevents cascading failures.
+
+    When the Orpheus HF Space is down (503, connect errors, etc.), the circuit
+    breaker trips after N consecutive failures and fails fast on subsequent
+    calls, avoiding token-burning LLM retries for requests that cannot succeed.
+    """
+
+    @pytest.fixture
+    def client(self):
+        with patch("app.services.orpheus.settings") as m:
+            _patch_settings(m)
+            m.orpheus_cb_threshold = 2
+            m.orpheus_cb_cooldown = 60
+            yield OrpheusClient()
+
+    @pytest.mark.asyncio
+    async def test_circuit_trips_after_threshold_consecutive_failures(self, client):
+        """Circuit opens after `threshold` consecutive failures."""
+        import httpx
+
+        assert not client.circuit_breaker_open
+
+        error_resp = MagicMock()
+        error_resp.status_code = 503
+        error_resp.text = "Service Unavailable"
+        client._client = MagicMock()
+        client._client.post = AsyncMock(
+            side_effect=httpx.HTTPStatusError("503", request=MagicMock(), response=error_resp)
+        )
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock):
+            await client.generate(genre="pop", tempo=120, bars=4)
+        assert not client.circuit_breaker_open, "One failure should not trip"
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock):
+            await client.generate(genre="pop", tempo=120, bars=4)
+        assert client.circuit_breaker_open, "Two consecutive failures should trip"
+
+    @pytest.mark.asyncio
+    async def test_circuit_open_returns_immediately(self, client):
+        """When circuit is open, generate() returns immediately without HTTP call."""
+        client._cb._failures = 3
+        client._cb._opened_at = _time.monotonic()
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock()
+
+        result = await client.generate(genre="pop", tempo=120, bars=4)
+
+        assert result["success"] is False
+        assert result["error"] == "orpheus_circuit_open"
+        client._client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_circuit_resets_after_cooldown(self, client):
+        """After cooldown expires, the circuit allows one probe request."""
+        client._cb._failures = 3
+        client._cb._opened_at = _time.monotonic() - 120  # cooldown expired
+
+        ok_resp = MagicMock()
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {
+            "success": True,
+            "notes": [],
+            "tool_calls": [],
+            "metadata": {},
+        }
+        client._client = MagicMock()
+        client._client.post = AsyncMock(return_value=ok_resp)
+
+        result = await client.generate(genre="pop", tempo=120, bars=4)
+
+        assert result["success"] is True
+        assert not client.circuit_breaker_open, "Success should close circuit"
+        assert client._cb._failures == 0
+
+    @pytest.mark.asyncio
+    async def test_success_resets_circuit(self, client):
+        """A successful call resets the failure counter."""
+        import httpx
+
+        ok_resp = MagicMock()
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {
+            "success": True,
+            "notes": [],
+            "tool_calls": [],
+            "metadata": {},
+        }
+
+        client._client = MagicMock()
+        # ConnectError doesn't retry internally, so it records a single failure
+        client._client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        await client.generate(genre="pop", tempo=120, bars=4)
+        assert client._cb._failures == 1
+
+        client._client.post = AsyncMock(return_value=ok_resp)
+        await client.generate(genre="pop", tempo=120, bars=4)
+        assert client._cb._failures == 0, "Success should reset counter"
+        assert not client.circuit_breaker_open
+
+    @pytest.mark.asyncio
+    async def test_503_http_error_triggers_retry(self, client):
+        """503 Service Unavailable triggers retry even without GPU error phrases."""
+        import httpx
+
+        error_resp = MagicMock()
+        error_resp.status_code = 503
+        error_resp.text = "Service Unavailable"
+
+        ok_resp = MagicMock()
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {
+            "success": True,
+            "notes": [],
+            "tool_calls": [],
+            "metadata": {},
+        }
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock(side_effect=[
+            httpx.HTTPStatusError("503", request=MagicMock(), response=error_resp),
+            ok_resp,
+        ])
+
+        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client.generate(genre="house", tempo=128, bars=4)
+
+        assert result["success"] is True
+        assert mock_sleep.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_connect_error_trips_circuit(self, client):
+        """ConnectError counts toward circuit breaker failures."""
+        import httpx
+
+        client._client = MagicMock()
+        client._client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+        await client.generate(genre="pop", tempo=120, bars=4)
+        assert client._cb._failures == 1
+
+        await client.generate(genre="pop", tempo=120, bars=4)
+        assert client.circuit_breaker_open
