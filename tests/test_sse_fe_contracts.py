@@ -1615,17 +1615,23 @@ class TestRuntimeContextProtocol:
 
     def test_to_composition_context_bridge(self):
         """to_composition_context produces a dict compatible with legacy code."""
+        from app.core.emotion_vector import EmotionVector
         from app.core.maestro_agent_teams.contracts import RuntimeContext
-        mock_ev = [0.5, 0.3, 0.2]
+
+        ev = EmotionVector(energy=0.8, valence=0.3, tension=0.4, intimacy=0.5, motion=0.6)
+        frozen_ev = RuntimeContext.freeze_emotion_vector(ev)
         ctx = RuntimeContext(
             raw_prompt="My song prompt",
-            emotion_vector=mock_ev,
+            emotion_vector=frozen_ev,
             quality_preset="quality",
         )
         d = ctx.to_composition_context()
         assert d["_raw_prompt"] == "My song prompt"
-        assert d["emotion_vector"] == mock_ev
         assert d["quality_preset"] == "quality"
+        reconstructed = d["emotion_vector"]
+        assert isinstance(reconstructed, EmotionVector)
+        assert reconstructed.energy == 0.8
+        assert reconstructed.valence == 0.3
 
     def test_coordinator_builds_runtime_context(self):
         """Coordinator must build RuntimeContext alongside contracts."""

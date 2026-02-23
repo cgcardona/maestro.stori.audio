@@ -14,6 +14,7 @@ import pytest
 from app.core.expansion import ToolCall
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
+from app.contracts import seal_contract
 from app.core.maestro_agent_teams.contracts import (
     ExecutionServices,
     InstrumentContract,
@@ -60,8 +61,10 @@ def _instrument_contract(
         )
         for i, s in enumerate(sections)
     )
+    for s in specs:
+        seal_contract(s)
     total_bars = sum(s.get("length_beats", 16) // 4 for s in sections)
-    return InstrumentContract(
+    ic = InstrumentContract(
         instrument_name=instrument_name,
         role=role,
         style=style,
@@ -74,6 +77,8 @@ def _instrument_contract(
         assigned_color=None,
         gm_guidance="",
     )
+    seal_contract(ic)
+    return ic
 
 
 def _contract(
@@ -100,7 +105,8 @@ def _contract(
         character=f"Test {name} section",
         role_brief=f"Test {role} brief",
     )
-    return SectionContract(
+    seal_contract(spec)
+    sc = SectionContract(
         section=spec,
         track_id=track_id,
         instrument_name=instrument_name,
@@ -111,6 +117,8 @@ def _contract(
         region_name=f"{instrument_name} – {name}",
         l2_generate_prompt=l2_generate_prompt,
     )
+    seal_contract(sc)
+    return sc
 
 
 def _region_tc(tc_id: str = "r1", start_beat: int = 0, duration: int = 16) -> ToolCall:

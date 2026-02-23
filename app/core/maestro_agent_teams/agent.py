@@ -31,6 +31,7 @@ from app.core.maestro_plan_tracker import (
     _INSTRUMENT_AGENT_TOOLS,
 )
 from app.core.maestro_editing import _apply_single_tool_call
+from app.contracts import seal_contract, verify_contract_hash
 from app.core.maestro_agent_teams.contracts import (
     ExecutionServices,
     InstrumentContract,
@@ -700,13 +701,16 @@ async def _run_instrument_agent_inner(
             "agentComplete",
         }
 
-        # ── Multi-section: dispatch via section children ──
+        # ── Unified dispatch: both single- and multi-section use contract
+        #    enforcement via _dispatch_section_children.  Single-section
+        #    previously bypassed contract construction — PART 5 lockdown
+        #    eliminates that semantic telephone risk zone.
         _tool_summary = ", ".join(tc.name for tc in response.tool_calls)
         logger.info(
             f"{agent_log} 🔧 Executing {len(response.tool_calls)} tool calls "
             f"(multi_section={_multi_section}): {_tool_summary}"
         )
-        if _multi_section and len(response.tool_calls) > 1:
+        if instrument_contract and len(response.tool_calls) > 1:
             tool_result_messages, _stage_track, _stage_effect, \
                 _regions_completed, _regions_ok, _generates_completed = \
                 await _dispatch_section_children(
@@ -742,7 +746,7 @@ async def _run_instrument_agent_inner(
                     prior_generates_completed=_generates_completed,
                 )
 
-        # ── Single-section: sequential execution (original path) ──
+        # ── Fallback: single tool-call retry turns (no region+generate pair) ──
         else:
             for tc in response.tool_calls:
                 resolved_args = _resolve_variable_refs(tc.params, all_tool_results)
@@ -845,9 +849,6 @@ async def _run_instrument_agent_inner(
                 all_tool_results.append(outcome.tool_result)
                 collected_tool_calls.append({"tool": tc.name, "params": outcome.enriched_params})
 
-                # Strip verbose entity manifests from results fed back to the
-                # LLM context — they bloat the context window and get truncated
-                # to "..." which agents misinterpret as failure.
                 _compact_result = {
                     k: v for k, v in outcome.tool_result.items()
                     if k != "entities"
@@ -1085,6 +1086,18 @@ async def _dispatch_section_children(
             )
         _spec = instrument_contract.sections[i]
 
+        # ── PART 4: Protocol guard — verify SectionSpec identity ──
+        if not _spec.section_id:
+            raise ValueError(
+                f"Protocol violation: SectionSpec[{i}] ({_sec_name}) has no "
+                f"section_id — L1 contract construction is broken."
+            )
+        if not _spec.contract_hash:
+            raise ValueError(
+                f"Protocol violation: SectionSpec[{i}] ({_sec_name}) has no "
+                f"contract_hash — L1 must seal all specs before dispatch."
+            )
+
         _contract = SectionContract(
             section=_spec,
             track_id=real_track_id,
@@ -1097,6 +1110,11 @@ async def _dispatch_section_children(
                 "name", f"{instrument_name} – {_sec_name}"
             ),
             l2_generate_prompt=gen_tc.params.get("prompt", ""),
+        )
+        # Seal with lineage: parent is the InstrumentContract
+        seal_contract(
+            _contract,
+            parent_hash=instrument_contract.contract_hash,
         )
 
         task = asyncio.create_task(

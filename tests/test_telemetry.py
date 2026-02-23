@@ -305,6 +305,7 @@ class TestSectionAgentTelemetry:
     @pytest.mark.anyio
     async def test_telemetry_stored_after_generate(self):
         """Successful generation writes telemetry to SectionState."""
+        from app.contracts import seal_contract
         from app.core.maestro_agent_teams.contracts import ExecutionServices, RuntimeContext, SectionContract, SectionSpec
         from app.core.maestro_agent_teams.section_agent import _run_section_child
         from app.core.maestro_agent_teams.signals import SectionSignals
@@ -354,11 +355,13 @@ class TestSectionAgentTelemetry:
                 section_id="0:verse", name="verse", index=0, start_beat=0, duration_beats=16,
                 bars=4, character="Test verse", role_brief="Test drums brief",
             )
+            seal_contract(spec)
             contract = SectionContract(
                 section=spec, track_id="trk-1", instrument_name="Drums",
                 role="drums", style="house", tempo=120.0, key="Am",
                 region_name="Drums – verse",
             )
+            seal_contract(contract)
             result = await _run_section_child(
                 contract=contract,
                 region_tc=ToolCall(id="r1", name="stori_add_midi_region", params={}),
@@ -373,6 +376,7 @@ class TestSectionAgentTelemetry:
             )
 
         assert result.success
+        assert result.contract_hash != ""
         stored = await section_state.get("Drums: 0:verse")
         assert stored is not None
         assert stored.instrument == "Drums"
@@ -383,6 +387,7 @@ class TestSectionAgentTelemetry:
     @pytest.mark.anyio
     async def test_bass_reads_drum_telemetry(self):
         """Bass section child reads drum telemetry and enriches RuntimeContext."""
+        from app.contracts import seal_contract
         from app.core.maestro_agent_teams.contracts import ExecutionServices, RuntimeContext, SectionContract, SectionSpec
         from app.core.maestro_agent_teams.section_agent import _run_section_child
         from app.core.maestro_agent_teams.signals import SectionSignals
@@ -442,11 +447,13 @@ class TestSectionAgentTelemetry:
                 section_id="0:verse", name="verse", index=0, start_beat=0, duration_beats=16,
                 bars=4, character="Test verse", role_brief="Test bass brief",
             )
+            seal_contract(spec)
             contract = SectionContract(
                 section=spec, track_id="trk-2", instrument_name="Bass",
                 role="bass", style="house", tempo=120.0, key="Am",
                 region_name="Bass – verse",
             )
+            seal_contract(contract)
             result = await _run_section_child(
                 contract=contract,
                 region_tc=ToolCall(id="r1", name="stori_add_midi_region", params={}),
@@ -474,6 +481,7 @@ class TestSectionAgentTelemetry:
     @pytest.mark.anyio
     async def test_no_telemetry_without_section_state(self):
         """When section_state is absent, telemetry is not computed (no crash)."""
+        from app.contracts import seal_contract
         from app.core.maestro_agent_teams.contracts import RuntimeContext, SectionContract, SectionSpec
         from app.core.maestro_agent_teams.section_agent import _run_section_child
         from app.core.expansion import ToolCall
@@ -509,11 +517,13 @@ class TestSectionAgentTelemetry:
                 section_id="0:verse", name="verse", index=0, start_beat=0, duration_beats=8,
                 bars=2, character="Test verse", role_brief="Test chords brief",
             )
+            seal_contract(spec)
             contract = SectionContract(
                 section=spec, track_id="trk-1", instrument_name="Keys",
                 role="chords", style="house", tempo=120.0, key="C",
                 region_name="Keys – verse",
             )
+            seal_contract(contract)
             result = await _run_section_child(
                 contract=contract,
                 region_tc=ToolCall(id="r1", name="stori_add_midi_region", params={}),

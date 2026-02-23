@@ -174,18 +174,30 @@ InstrumentContract  (L1 → L2)
   ├── instrument_name, role, style, bars, tempo, key
   ├── sections: tuple[SectionSpec, ...]   ← immutable beat layout
   ├── existing_track_id, assigned_color
-  └── gm_guidance                         ← genre-specific GM voice block
+  ├── gm_guidance                         ← genre-specific GM voice block (advisory, excluded from hash)
+  ├── contract_version: int               ← always 1 (v1 protocol)
+  ├── contract_hash: str                  ← SHA-256 short hash of structural fields
+  └── parent_contract_hash: str           ← SHA-256 of joined SectionSpec hashes
 
 SectionContract  (L2 → L3)
   ├── section: SectionSpec                ← section_id, name, index, start_beat, duration_beats, bars
   ├── track_id, instrument_name, role
   ├── style, tempo, key, region_name
-  └── l2_generate_prompt                  ← ADVISORY — L3 may refine via CoT
+  ├── l2_generate_prompt                  ← ADVISORY — L3 may refine via CoT (excluded from hash)
+  ├── contract_version: int
+  ├── contract_hash: str                  ← hash of structural fields above
+  └── parent_contract_hash: str           ← instrument_contract.contract_hash
+
+SectionSpec  (embedded in both contracts)
+  ├── section_id, name, index, start_beat, duration_beats, bars
+  ├── character, role_brief               ← canonical descriptions (structural)
+  ├── contract_version: int
+  └── contract_hash: str                  ← set by coordinator after construction
 
 RuntimeContext  (travels alongside contracts — pure data, frozen)
   ├── raw_prompt, quality_preset
-  ├── emotion_vector
-  └── drum_telemetry                      ← immutable tuple-of-pairs via with_drum_telemetry()
+  ├── emotion_vector: tuple[tuple[str, float], ...] | None   ← frozen tuple-of-pairs, never a dict
+  └── drum_telemetry: tuple[tuple[str, Any], ...] | None     ← immutable via with_drum_telemetry()
 
 ExecutionServices  (mutable coordination — NOT frozen, passed separately)
   ├── section_signals: SectionSignals     ← asyncio.Event per section_id
@@ -196,11 +208,66 @@ ExecutionServices  (mutable coordination — NOT frozen, passed separately)
 - `frozen=True` on all contracts and `RuntimeContext` — structural fields and data are immutable once built by L1.
 - L3 may only reason about HOW to describe the music (Orpheus prompt). It must not reinterpret beat ranges, section names, roles, or track IDs — those come from the frozen contract.
 - `l2_generate_prompt` is explicitly marked advisory; the contract's `section.character` and `section.role_brief` are authoritative when they conflict.
-- `RuntimeContext` is genuinely frozen — no nested mutable objects. `drum_telemetry` is stored as a `tuple[tuple[str, Any], ...]` (not a dict). Immutable updates use `with_drum_telemetry()` which returns a new instance.
+- `RuntimeContext` is genuinely frozen — no nested mutable objects. `emotion_vector` is stored as `tuple[tuple[str, float], ...]` (never a dict). `drum_telemetry` is a `tuple[tuple[str, Any], ...]`. Immutable updates use `with_emotion_vector()` / `with_drum_telemetry()`, each returning a new instance. `to_composition_context()` returns a `types.MappingProxyType` (read-only).
 - Mutable coordination primitives (`SectionSignals`, `SectionState`) live in `ExecutionServices`, which is explicitly NOT frozen and passed separately from contracts and `RuntimeContext`. This prevents the frozen data boundary from wrapping live mutable synchronization state.
 - `to_composition_context()` returns a `types.MappingProxyType` (read-only mapping) — downstream code cannot mutate shared state through the bridge dict. Services are excluded from the bridge.
 - At the `_apply_single_tool_call` boundary (tool execution layer), a new dict is constructed by spreading the read-only bridge with local additions (`style`, `tempo`, etc.). No dict flows through the agent teams layer itself.
 - L2 fallback SectionSpec reconstruction from LLM output is a hard error (`ValueError`). The contract is authoritative; if `instrument_contract` is missing or section index exceeds contract sections, the system fails fast rather than silently degrading.
+
+### Contract lineage protocol (hash-based execution identity)
+
+All three contract types carry a **self-verifying hash identity** implemented in `app/contracts/hash_utils.py`. This makes the system swarm-safe: any orchestration layer can verify a contract without trusting the agent that delivered it.
+
+**Hash rules:**
+
+- Only **structural fields** participate in hashes: beat ranges, section names, role, tempo, key, style, track layout.
+- **Advisory fields are always excluded**: `l2_generate_prompt`, `region_name`, `gm_guidance`, `assigned_color`, `existing_track_id`, `contract_hash`, `parent_contract_hash`, `contract_version`. Changing advisory text never alters the contract's structural identity.
+- Serialization is canonical: `json.dumps(..., separators=(",", ":"), sort_keys=True)` applied to a recursively sorted dict. No repr(), no pickle, no runtime randomness.
+- Hash function: SHA-256, truncated to the first 16 hex characters (64-bit short hash).
+
+**Lineage construction (three levels):**
+
+```
+L1 Coordinator:
+  for each SectionSpec:
+      seal_contract(spec)                             # sets spec.contract_hash
+
+  specs_parent_hash = SHA256(":".join(spec.contract_hash for spec in role_specs))[:16]
+  seal_contract(instrument_contract, parent_hash=specs_parent_hash)
+  # sets ic.parent_contract_hash = specs_parent_hash
+  # sets ic.contract_hash = hash of structural ic fields
+
+L2 Instrument parent (dispatch):
+  verify section_spec.section_id and section_spec.contract_hash  # hard fail if missing
+  seal_contract(section_contract, parent_hash=instrument_contract.contract_hash)
+  # sets sc.parent_contract_hash = ic.contract_hash
+  # sets sc.contract_hash = hash of structural sc fields
+
+L3 Section child (_run_section_child):
+  assert verify_contract_hash(contract)  # recompute and compare to stored hash
+  # → ValueError("Protocol violation: SectionContract hash mismatch") if tampered
+  # → ValueError("Protocol violation: … has no contract_hash") if unsealed
+```
+
+**Verified lineage chain:**
+
+```
+SectionSpec.contract_hash
+    ↓ (joined + SHA256)
+InstrumentContract.parent_contract_hash
+    ↓ (structural hash)
+InstrumentContract.contract_hash
+    ↓ (copied into)
+SectionContract.parent_contract_hash
+    ↓ (structural hash)
+SectionContract.contract_hash
+    ↓ (copied into)
+SectionResult.contract_hash + SectionResult.parent_contract_hash
+```
+
+**Execution attestation:** `SectionResult` (returned by every L3 child) carries `contract_hash` and `parent_contract_hash` populated at completion. Orchestration layers can verify that a result came from the expected contract lineage by comparing these to the originating `SectionContract`.
+
+**Implementation:** `app/contracts/hash_utils.py` (`canonical_contract_dict`, `compute_contract_hash`, `seal_contract`, `verify_contract_hash`), `app/contracts/__init__.py` (re-exports). Verified by `tests/test_protocol_proof.py` (15 determinism, lineage, tamper, lockdown, freeze, field-audit, and attestation proofs).
 
 ### Three-phase execution
 
@@ -263,19 +330,21 @@ For single-section compositions, the parent uses the sequential execution path (
 
 ### Section child flow (Level 3)
 
-1. Emit `status` SSE event: `"Starting {instrument} / {section}"`
-2. If bass: `await section_signals.wait_for(section_id, timeout=...)` — blocks until drum section completes or fails. On timeout or failure, proceeds without rhythm spine.
-3. If bass: read `SectionState["Drums: {section_id}"]` — inject drum telemetry (groove, density, kick hash) into `RuntimeContext` via `with_drum_telemetry()`, which is bridged to the generate call at the tool-execution boundary
-4. Execute `stori_add_midi_region` with parent's pre-resolved params (trackId injected)
-5. Capture `regionId` from result
-6. **Section reasoning**: brief streamed LLM call (`_reason_before_generate`) — reasons about section-specific musical approach (density, register, rhythmic choices). Emits `type: "reasoning"` events tagged with `agentId` + `sectionName` so the frontend can nest section-specific thinking under the correct section header. Returns a refined prompt for the generate call, or falls back to the parent's prompt on failure.
-7. Execute `stori_generate_midi` with `regionId`, `trackId`, and (optionally refined) prompt
-8. Extract generated notes from SSE events
-9. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
-10. If drums: call `section_signals.signal_complete(section_id, success=True, drum_notes=...)`
-11. Emit `status` SSE event: `"{instrument} / {section}: N notes generated"`
-12. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, run a **streamed** refinement LLM call (see below)
-13. Return `SectionResult` to parent
+1. **Protocol guard:** recompute `contract_hash` from structural fields and compare to stored value. Raises `ValueError("Protocol violation: SectionContract hash mismatch")` on tamper or `ValueError("… has no contract_hash")` if L2 forgot to seal. Execution halts before any DAW mutation.
+2. Emit `status` SSE event: `"Starting {instrument} / {section}"`
+3. If bass: `await section_signals.wait_for(section_id, timeout=...)` — blocks until drum section completes or fails. On timeout or failure, proceeds without rhythm spine.
+4. If bass: read `SectionState["Drums: {section_id}"]` — inject drum telemetry (groove, density, kick hash) into `RuntimeContext` via `with_drum_telemetry()`, which is bridged to the generate call at the tool-execution boundary
+5. Execute `stori_add_midi_region` — all structural params (`trackId`, `startBeat`, `durationBeats`) come **exclusively from the frozen contract**, never from LLM-proposed values. LLM drift is silently corrected.
+6. Capture `regionId` from result
+7. **Section reasoning**: brief streamed LLM call (`_reason_before_generate`) — reasons about section-specific musical approach (density, register, rhythmic choices). Emits `type: "reasoning"` events tagged with `agentId` + `sectionName` so the frontend can nest section-specific thinking under the correct section header. Returns a refined prompt for the generate call, or falls back to the parent's prompt on failure.
+8. Execute `stori_generate_midi` — structural params (`trackId`, `regionId`, `role`, `bars`, `key`, `start_beat`, `tempo`) also come from the frozen contract.
+9. Extract generated notes from SSE events
+10. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
+11. If drums: call `section_signals.signal_complete(section_id, success=True, drum_notes=...)`
+12. Emit `status` SSE event: `"{instrument} / {section}: N notes generated"`
+13. **Execution attestation:** stamp `result.contract_hash` and `result.parent_contract_hash` from the contract before returning.
+14. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, run a **streamed** refinement LLM call (see below)
+15. Return `SectionResult` to parent
 
 Drum children always signal — even on failure (`signal_complete(section_id, success=False)`) — to prevent bass children from hanging indefinitely.
 
@@ -381,7 +450,7 @@ Implementation: `app/core/telemetry.py` (computation), `app/core/maestro_agent_t
 
 **Performance:** Wall-clock time for Phase 2 is `max(per-instrument time)` instead of `sum`, and within each instrument `max(per-section time)` instead of `sum(section times)`. For a 5-instrument, 3-section composition, bass sections start ~1 section behind drums rather than waiting for all 3 drum sections. Expected speedup: 3–5× for the instrument phase, with additional gains from section-level pipelining.
 
-Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/contracts.py` (SectionSpec, SectionContract, InstrumentContract, RuntimeContext, ExecutionServices), `app/core/maestro_agent_teams/signals.py` (SectionSignals, SectionSignalResult, SectionState), `app/core/telemetry.py` (SectionTelemetry computation).
+Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/contracts.py` (SectionSpec, SectionContract, InstrumentContract, RuntimeContext, ExecutionServices), `app/core/maestro_agent_teams/signals.py` (SectionSignals, SectionSignalResult, SectionState), `app/core/telemetry.py` (SectionTelemetry computation), `app/contracts/hash_utils.py` (contract lineage hashing: `canonical_contract_dict`, `compute_contract_hash`, `seal_contract`, `verify_contract_hash`).
 
 ---
 

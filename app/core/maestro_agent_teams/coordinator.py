@@ -11,6 +11,7 @@ Three-level architecture:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -37,6 +38,7 @@ from app.core.maestro_plan_tracker import (
 )
 from app.core.maestro_editing import _apply_single_tool_call
 from app.core.maestro_agent_teams.agent import _run_instrument_agent
+from app.contracts import seal_contract
 from app.core.maestro_agent_teams.contracts import (
     ExecutionServices,
     InstrumentContract,
@@ -342,6 +344,10 @@ async def _handle_composition_agent_team(
         for i, s in enumerate(_sections)
     )
 
+    # ── Seal canonical SectionSpecs with structural hashes ──
+    for spec in _section_specs:
+        seal_contract(spec)
+
     # ── Create section-level signals and shared telemetry state ──
     _section_signals: SectionSignals | None = None
     _section_state = SectionState()
@@ -358,9 +364,12 @@ async def _handle_composition_agent_team(
         section_signals=_section_signals,
         section_state=_section_state,
     )
+    _frozen_ev: tuple[tuple[str, float], ...] | None = None
+    if _emotion_vector is not None:
+        _frozen_ev = RuntimeContext.freeze_emotion_vector(_emotion_vector)
     _runtime_context = RuntimeContext(
         raw_prompt=prompt,
-        emotion_vector=_emotion_vector,
+        emotion_vector=_frozen_ev,
         quality_preset="quality",
     )
 
@@ -417,6 +426,13 @@ async def _handle_composition_agent_team(
             )
             for s in _section_specs
         )
+        for _rs in _role_specs:
+            seal_contract(_rs)
+
+        # Parent hash: joined hash of all constituent SectionSpec hashes
+        _specs_parent_hash = hashlib.sha256(
+            ":".join(s.contract_hash for s in _role_specs).encode()
+        ).hexdigest()[:16]
 
         _instrument_contract = InstrumentContract(
             instrument_name=instrument_name,
@@ -431,6 +447,7 @@ async def _handle_composition_agent_team(
             assigned_color=assigned_color,
             gm_guidance=get_genre_gm_guidance(style, role),
         )
+        seal_contract(_instrument_contract, parent_hash=_specs_parent_hash)
 
         _agent_timeout = settings.instrument_agent_timeout
         task = asyncio.create_task(

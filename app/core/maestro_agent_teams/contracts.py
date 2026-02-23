@@ -50,6 +50,10 @@ class SectionSpec:
     ``section_id`` is the stable unique key used for signal/state
     coordination.  It prevents collisions when a composition has
     repeated section names (e.g. two "verse" sections).
+
+    ``contract_hash`` is set by the coordinator after construction via
+    ``seal_contract()`` — it captures the structural identity of this
+    spec for lineage verification downstream.
     """
 
     section_id: str
@@ -64,6 +68,10 @@ class SectionSpec:
     role_brief: str
     """Canonical per-role description (from ``_get_section_role_description``)."""
 
+    # ── Contract identity (set post-construction via seal_contract) ──
+    contract_version: int = 1
+    contract_hash: str = ""
+
 
 @dataclass(frozen=True)
 class SectionContract:
@@ -77,6 +85,10 @@ class SectionContract:
     ``l2_generate_prompt`` is advisory — the section child should prefer
     ``section.character`` and ``section.role_brief`` when they conflict
     with the L2's suggestion.
+
+    ``contract_hash`` captures the structural identity; ``parent_contract_hash``
+    links back to the InstrumentContract that spawned this SectionContract,
+    enabling lineage verification without trusting agents.
     """
 
     # ── Immutable structural fields ──
@@ -91,6 +103,11 @@ class SectionContract:
 
     # ── Advisory (L3 uses for Orpheus prompt, may override) ──
     l2_generate_prompt: str = ""
+
+    # ── Contract identity (set post-construction via seal_contract) ──
+    contract_version: int = 1
+    contract_hash: str = ""
+    parent_contract_hash: str = ""
 
     # ── Derived properties (computed, not reinterpretable) ──
 
@@ -136,6 +153,10 @@ class InstrumentContract:
     for track creation, section dispatching, and system prompt construction.
     L2 may only reason about musical character and generate prompts —
     it must not reinterpret structural fields.
+
+    ``contract_hash`` captures structural identity; ``parent_contract_hash``
+    is the joined hash of all constituent SectionSpec hashes, linking this
+    contract to the L1-built section layout.
     """
 
     instrument_name: str
@@ -149,6 +170,11 @@ class InstrumentContract:
     existing_track_id: Optional[str]
     assigned_color: Optional[str]
     gm_guidance: str
+
+    # ── Contract identity (set post-construction via seal_contract) ──
+    contract_version: int = 1
+    contract_hash: str = ""
+    parent_contract_hash: str = ""
 
     @property
     def is_drum(self) -> bool:
@@ -199,14 +225,38 @@ class RuntimeContext:
     all immutable.  Mutable coordination primitives (signals, state)
     live in ``ExecutionServices``, never here.
 
-    ``drum_telemetry`` is stored as a frozen tuple-of-pairs so the
-    entire dataclass is genuinely immutable — no nested mutable dicts.
+    ``emotion_vector`` is stored as a frozen tuple-of-pairs so no
+    mutable dict references leak through the immutability boundary.
+    ``drum_telemetry`` follows the same pattern.
     """
 
     raw_prompt: str = ""
-    emotion_vector: Any = None
+    emotion_vector: tuple[tuple[str, float], ...] | None = None
     quality_preset: str = "quality"
     drum_telemetry: tuple[tuple[str, Any], ...] | None = None
+
+    @staticmethod
+    def freeze_emotion_vector(ev: Any) -> tuple[tuple[str, float], ...]:
+        """Convert an EmotionVector or dict to a frozen tuple-of-pairs."""
+        if hasattr(ev, "to_dict"):
+            d = ev.to_dict()
+        elif isinstance(ev, dict):
+            d = ev
+        else:
+            raise TypeError(
+                f"Cannot freeze emotion vector of type {type(ev).__name__}"
+            )
+        return tuple(sorted((k, float(v)) for k, v in d.items()))
+
+    def with_emotion_vector(self, ev: Any) -> RuntimeContext:
+        """Return a new RuntimeContext with a frozen emotion vector."""
+        frozen = RuntimeContext.freeze_emotion_vector(ev)
+        return RuntimeContext(
+            raw_prompt=self.raw_prompt,
+            emotion_vector=frozen,
+            quality_preset=self.quality_preset,
+            drum_telemetry=self.drum_telemetry,
+        )
 
     def with_drum_telemetry(self, telemetry: dict[str, Any]) -> RuntimeContext:
         """Return a new RuntimeContext with an immutable telemetry snapshot."""
@@ -223,13 +273,21 @@ class RuntimeContext:
         Returns a ``MappingProxyType`` to prevent downstream mutation.
         Does NOT include mutable services (signals, state) — those live
         in ``ExecutionServices``.
+
+        Reconstructs ``EmotionVector`` from the frozen tuple so downstream
+        consumers (Orpheus backends) can access ``.energy``, ``.valence``,
+        etc. as attributes.
         """
         ctx: dict[str, Any] = {
             "_raw_prompt": self.raw_prompt,
             "quality_preset": self.quality_preset,
         }
         if self.emotion_vector is not None:
-            ctx["emotion_vector"] = self.emotion_vector
+            from app.core.emotion_vector import EmotionVector
+
+            ctx["emotion_vector"] = EmotionVector(**dict(self.emotion_vector))
         if self.drum_telemetry is not None:
-            ctx["drum_telemetry"] = dict(self.drum_telemetry)
+            ctx["drum_telemetry"] = types.MappingProxyType(
+                dict(self.drum_telemetry)
+            )
         return types.MappingProxyType(ctx)
