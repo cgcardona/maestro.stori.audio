@@ -305,6 +305,7 @@ class TestSectionAgentTelemetry:
     @pytest.mark.anyio
     async def test_telemetry_stored_after_generate(self):
         """Successful generation writes telemetry to SectionState."""
+        from app.core.maestro_agent_teams.contracts import RuntimeContext, SectionContract, SectionSpec
         from app.core.maestro_agent_teams.section_agent import _run_section_child
         from app.core.maestro_agent_teams.signals import SectionSignals
         from app.core.expansion import ToolCall
@@ -349,24 +350,25 @@ class TestSectionAgentTelemetry:
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
+            spec = SectionSpec(
+                name="verse", index=0, start_beat=0, duration_beats=16,
+                bars=4, character="Test verse", role_brief="Test drums brief",
+            )
+            contract = SectionContract(
+                section=spec, track_id="trk-1", instrument_name="Drums",
+                role="drums", style="house", tempo=120.0, key="Am",
+                region_name="Drums – verse",
+            )
             result = await _run_section_child(
-                section={"name": "verse", "start_beat": 0, "length_beats": 16},
-                section_index=0,
-                track_id="trk-1",
+                contract=contract,
                 region_tc=ToolCall(id="r1", name="stori_add_midi_region", params={}),
                 generate_tc=ToolCall(id="g1", name="stori_generate_midi", params={"role": "drums"}),
-                instrument_name="Drums",
-                role="drums",
                 agent_id="drums",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=TraceContext(trace_id="test-telem"),
                 sse_queue=queue,
-                composition_context={
-                    "tempo": 120, "style": "house",
-                    "section_state": section_state,
-                    "sections": [{"name": "verse"}],
-                },
+                runtime_ctx=RuntimeContext(section_state=section_state),
             )
 
         assert result.success
@@ -379,7 +381,8 @@ class TestSectionAgentTelemetry:
 
     @pytest.mark.anyio
     async def test_bass_reads_drum_telemetry(self):
-        """Bass section child reads drum telemetry and enriches composition_context."""
+        """Bass section child reads drum telemetry and enriches RuntimeContext."""
+        from app.core.maestro_agent_teams.contracts import RuntimeContext, SectionContract, SectionSpec
         from app.core.maestro_agent_teams.section_agent import _run_section_child
         from app.core.maestro_agent_teams.signals import SectionSignals
         from app.core.expansion import ToolCall
@@ -434,31 +437,31 @@ class TestSectionAgentTelemetry:
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
+            spec = SectionSpec(
+                name="verse", index=0, start_beat=0, duration_beats=16,
+                bars=4, character="Test verse", role_brief="Test bass brief",
+            )
+            contract = SectionContract(
+                section=spec, track_id="trk-2", instrument_name="Bass",
+                role="bass", style="house", tempo=120.0, key="Am",
+                region_name="Bass – verse",
+            )
             result = await _run_section_child(
-                section={"name": "verse", "start_beat": 0, "length_beats": 16},
-                section_index=0,
-                track_id="trk-2",
+                contract=contract,
                 region_tc=ToolCall(id="r1", name="stori_add_midi_region", params={}),
                 generate_tc=ToolCall(id="g1", name="stori_generate_midi", params={"role": "bass"}),
-                instrument_name="Bass",
-                role="bass",
                 agent_id="bass",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=TraceContext(trace_id="test-bass-t"),
                 sse_queue=queue,
-                composition_context={
-                    "tempo": 120, "style": "house",
-                    "section_state": section_state,
-                    "sections": [{"name": "verse"}],
-                },
+                runtime_ctx=RuntimeContext(section_state=section_state),
                 section_signals=signals,
-                is_bass=True,
             )
 
         assert result.success
         gen_ctx = [c for c in captured_ctx if "drum_telemetry" in c]
-        assert len(gen_ctx) > 0, "drum_telemetry should be injected into composition_context"
+        assert len(gen_ctx) > 0, "drum_telemetry should be injected into bridge dict"
         dt = gen_ctx[0]["drum_telemetry"]
         assert dt["energy_level"] == 0.75
         assert dt["density_score"] == 3.5
@@ -467,6 +470,7 @@ class TestSectionAgentTelemetry:
     @pytest.mark.anyio
     async def test_no_telemetry_without_section_state(self):
         """When section_state is absent, telemetry is not computed (no crash)."""
+        from app.core.maestro_agent_teams.contracts import RuntimeContext, SectionContract, SectionSpec
         from app.core.maestro_agent_teams.section_agent import _run_section_child
         from app.core.expansion import ToolCall
         from app.core.state_store import StateStore
@@ -497,20 +501,25 @@ class TestSectionAgentTelemetry:
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
+            spec = SectionSpec(
+                name="verse", index=0, start_beat=0, duration_beats=8,
+                bars=2, character="Test verse", role_brief="Test chords brief",
+            )
+            contract = SectionContract(
+                section=spec, track_id="trk-1", instrument_name="Keys",
+                role="chords", style="house", tempo=120.0, key="C",
+                region_name="Keys – verse",
+            )
             result = await _run_section_child(
-                section={"name": "verse", "start_beat": 0, "length_beats": 8},
-                section_index=0,
-                track_id="trk-1",
+                contract=contract,
                 region_tc=ToolCall(id="r1", name="stori_add_midi_region", params={}),
                 generate_tc=ToolCall(id="g1", name="stori_generate_midi", params={}),
-                instrument_name="Keys",
-                role="chords",
                 agent_id="keys",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=TraceContext(trace_id="test-no-state"),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
             )
 
         assert result.success

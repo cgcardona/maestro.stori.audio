@@ -14,6 +14,7 @@ import pytest
 from app.core.expansion import ToolCall
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
+from app.core.maestro_agent_teams.contracts import RuntimeContext, SectionContract, SectionSpec
 from app.core.maestro_agent_teams.signals import SectionSignals
 from app.core.maestro_agent_teams.section_agent import (
     SectionResult,
@@ -28,6 +29,42 @@ def _trace() -> TraceContext:
 
 def _section(name: str = "verse", start_beat: int = 0, length_beats: int = 16):
     return {"name": name, "start_beat": start_beat, "length_beats": length_beats}
+
+
+def _contract(
+    name: str = "verse",
+    start_beat: int = 0,
+    duration_beats: int = 16,
+    instrument_name: str = "Drums",
+    role: str = "drums",
+    track_id: str = "trk-1",
+    style: str = "house",
+    tempo: float = 120.0,
+    key: str = "Am",
+    l2_generate_prompt: str = "",
+) -> SectionContract:
+    """Build a frozen SectionContract for test use."""
+    bars = max(1, duration_beats // 4)
+    spec = SectionSpec(
+        name=name,
+        index=0,
+        start_beat=start_beat,
+        duration_beats=duration_beats,
+        bars=bars,
+        character=f"Test {name} section",
+        role_brief=f"Test {role} brief",
+    )
+    return SectionContract(
+        section=spec,
+        track_id=track_id,
+        instrument_name=instrument_name,
+        role=role,
+        style=style,
+        tempo=tempo,
+        key=key,
+        region_name=f"{instrument_name} – {name}",
+        l2_generate_prompt=l2_generate_prompt,
+    )
 
 
 def _region_tc(tc_id: str = "r1", start_beat: int = 0, duration: int = 16) -> ToolCall:
@@ -199,19 +236,15 @@ class TestRunSectionChild:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                section=_section("verse"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Drums",
-                role="drums",
                 agent_id="drums",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
             )
 
         assert result.success
@@ -243,19 +276,15 @@ class TestRunSectionChild:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                section=_section("verse"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Drums",
-                role="drums",
                 agent_id="drums",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
             )
 
         assert not result.success
@@ -278,19 +307,15 @@ class TestRunSectionChild:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                section=_section("verse"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Drums",
-                role="drums",
                 agent_id="drums",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
             )
 
         assert not result.success
@@ -315,19 +340,15 @@ class TestRunSectionChild:
             side_effect=_mock_apply,
         ):
             await _run_section_child(
-                section=_section("verse"),
-                section_index=0,
-                track_id="MY-TRACK-ID",
+                contract=_contract(track_id="MY-TRACK-ID"),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Drums",
-                role="drums",
                 agent_id="drums",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
             )
 
         assert captured_args[0]["args"]["trackId"] == "MY-TRACK-ID"
@@ -358,21 +379,16 @@ class TestSectionChildDrumSignaling:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                section=_section("verse"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(role="drums"),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Drums",
-                role="drums",
                 agent_id="drums",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
                 section_signals=signals,
-                is_drum=True,
             )
 
         assert result.success
@@ -403,21 +419,16 @@ class TestSectionChildDrumSignaling:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                section=_section("chorus"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(name="chorus", role="drums"),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Drums",
-                role="drums",
                 agent_id="drums",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
                 section_signals=signals,
-                is_drum=True,
             )
 
         assert not result.success
@@ -440,21 +451,16 @@ class TestSectionChildDrumSignaling:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                section=_section("verse"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(role="drums"),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Drums",
-                role="drums",
                 agent_id="drums",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
                 section_signals=signals,
-                is_drum=True,
             )
 
         assert not result.success
@@ -493,21 +499,16 @@ class TestSectionChildBassWaiting:
         ):
             drum_task = asyncio.create_task(_signal_drum())
             result = await _run_section_child(
-                section=_section("verse"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(instrument_name="Bass", role="bass"),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Bass",
-                role="bass",
                 agent_id="bass",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
                 section_signals=signals,
-                is_bass=True,
             )
             await drum_task
 
@@ -530,21 +531,16 @@ class TestSectionChildBassWaiting:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                section=_section("verse"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(instrument_name="Bass", role="bass"),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Bass",
-                role="bass",
                 agent_id="bass",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
                 section_signals=None,
-                is_bass=True,
             )
 
         assert result.success
@@ -572,19 +568,15 @@ class TestSectionChildSSE:
             side_effect=_mock_apply,
         ):
             await _run_section_child(
-                section=_section("chorus"),
-                section_index=2,
-                track_id="trk-1",
+                contract=_contract(name="chorus", role="drums"),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Drums",
-                role="drums",
                 agent_id="drums",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
             )
 
         events = []
@@ -618,19 +610,15 @@ class TestSectionChildException:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                section=_section("verse"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Drums",
-                role="drums",
                 agent_id="drums",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
             )
 
         assert not result.success
@@ -651,21 +639,16 @@ class TestSectionChildException:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                section=_section("verse"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(role="drums"),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Drums",
-                role="drums",
                 agent_id="drums",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
                 section_signals=signals,
-                is_drum=True,
             )
 
         assert not result.success
@@ -769,7 +752,7 @@ class TestDispatchSectionChildren:
                 collected_tool_calls=collected,
                 all_tool_results=all_results,
                 add_notes_failures={},
-                composition_context={"style": "house", "sections": sections},
+                runtime_context=None,
                 plan_tracker=mock_plan,
                 step_ids=["s1", "s2"],
                 active_step_id=None,
@@ -823,7 +806,7 @@ class TestDispatchSectionChildren:
             collected_tool_calls=[],
             all_tool_results=[],
             add_notes_failures={},
-            composition_context=None,
+            runtime_context=None,
             plan_tracker=mock_plan,
             step_ids=[],
             active_step_id=None,
@@ -890,7 +873,7 @@ class TestDispatchSectionChildren:
                 collected_tool_calls=[],
                 all_tool_results=[],
                 add_notes_failures={},
-                composition_context={"style": "house", "sections": [_section("verse")]},
+                runtime_context=None,
                 plan_tracker=mock_plan,
                 step_ids=["s1"],
                 active_step_id=None,
@@ -972,7 +955,7 @@ class TestDispatchSectionChildren:
                 collected_tool_calls=collected,
                 all_tool_results=all_results,
                 add_notes_failures={},
-                composition_context={"style": "house", "sections": [_section("verse", 0, 16)]},
+                runtime_context=None,
                 plan_tracker=mock_plan,
                 step_ids=["s1", "s2"],
                 active_step_id=None,
@@ -1027,19 +1010,17 @@ class TestDispatchSectionChildren:
             side_effect=_mock_apply,
         ):
             await _run_section_child(
-                section=_section("chorus"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(
+                    name="chorus", instrument_name="Bass", role="bass",
+                ),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(role="bass"),
-                instrument_name="Bass",
-                role="bass",
                 agent_id="bass",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
             )
 
         events: list[dict] = []
@@ -1185,19 +1166,15 @@ class TestSectionChildStatusEvents:
             side_effect=_mock_apply,
         ):
             await _run_section_child(
-                section=_section("verse"),
-                section_index=0,
-                track_id="trk-1",
+                contract=_contract(instrument_name="Synth Lead", role="melody"),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Synth Lead",
-                role="melody",
                 agent_id="lead-agent",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
             )
 
         events = []
@@ -1230,19 +1207,17 @@ class TestSectionChildStatusEvents:
             side_effect=_mock_apply,
         ):
             await _run_section_child(
-                section=_section("chorus"),
-                section_index=1,
-                track_id="trk-1",
+                contract=_contract(
+                    name="chorus", instrument_name="Bass", role="bass",
+                ),
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
-                instrument_name="Bass",
-                role="bass",
                 agent_id="bass-agent",
                 allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
                 store=store,
                 trace=_trace(),
                 sse_queue=queue,
-                composition_context=None,
+                runtime_ctx=None,
             )
 
         events = []
@@ -1304,11 +1279,8 @@ class TestExpressionRefinementStreaming:
             skipped=False,
         )
 
-        composition_context = {
-            "style": "techno",
-            "tempo": 130,
-            "key": "Am",
-            "_raw_prompt": (
+        _runtime_ctx = RuntimeContext(
+            raw_prompt=(
                 "Title: Test\n\n"
                 "MidiExpressiveness:\n"
                 "  modulation:\n"
@@ -1316,7 +1288,7 @@ class TestExpressionRefinementStreaming:
                 "    depth: strong vibrato — CC 1 value 60-90\n"
                 "\nStructure:\n  Verse: 8 bars\n"
             ),
-        }
+        )
 
         result = SectionResult(success=True, section_name="verse", notes_generated=24)
 
@@ -1325,14 +1297,13 @@ class TestExpressionRefinementStreaming:
             return_value=cc_outcome,
         ):
             await _maybe_refine_expression(
-                section=_section("verse"),
-                track_id="trk-1",
+                contract=_contract(
+                    instrument_name="Synth Lead", role="melody",
+                    style="techno", tempo=130.0, key="Am",
+                ),
                 region_id="reg-001",
-                instrument_name="Synth Lead",
-                role="melody",
-                agent_id="lead-agent",
-                sec_name="verse",
                 notes_generated=24,
+                agent_id="lead-agent",
                 llm=mock_llm,
                 store=store,
                 trace=_trace(),
@@ -1341,7 +1312,7 @@ class TestExpressionRefinementStreaming:
                     "stori_add_midi_cc",
                     "stori_add_pitch_bend",
                 },
-                composition_context=composition_context,
+                runtime_ctx=_runtime_ctx,
                 result=result,
                 child_log="[test][Synth Lead/verse]",
             )
@@ -1375,30 +1346,23 @@ class TestExpressionRefinementStreaming:
         store = StateStore(conversation_id="test-no-expr")
         mock_llm = MagicMock()
 
-        composition_context = {
-            "style": "house",
-            "tempo": 120,
-            "key": "C",
-            "_raw_prompt": "Title: Simple\nStyle: house\nStructure:\n  Verse: 8 bars\n",
-        }
+        _runtime_ctx = RuntimeContext(
+            raw_prompt="Title: Simple\nStyle: house\nStructure:\n  Verse: 8 bars\n",
+        )
 
         result = SectionResult(success=True, section_name="verse", notes_generated=24)
 
         await _maybe_refine_expression(
-            section=_section("verse"),
-            track_id="trk-1",
+            contract=_contract(),
             region_id="reg-001",
-            instrument_name="Drums",
-            role="drums",
-            agent_id="drums",
-            sec_name="verse",
             notes_generated=24,
+            agent_id="drums",
             llm=mock_llm,
             store=store,
             trace=_trace(),
             sse_queue=queue,
             allowed_tool_names={"stori_add_midi_cc"},
-            composition_context=composition_context,
+            runtime_ctx=_runtime_ctx,
             result=result,
             child_log="[test][Drums/verse]",
         )
@@ -1431,11 +1395,8 @@ class TestExpressionRefinementStreaming:
 
         mock_llm.chat_completion_stream = MagicMock(side_effect=lambda **kw: _capture_stream(**kw))
 
-        composition_context = {
-            "style": "house",
-            "tempo": 128,
-            "key": "Cm",
-            "_raw_prompt": (
+        _runtime_ctx = RuntimeContext(
+            raw_prompt=(
                 "Title: Deep house\n\n"
                 "MidiExpressiveness:\n"
                 "  modulation:\n"
@@ -1443,25 +1404,24 @@ class TestExpressionRefinementStreaming:
                 "    depth: subtle vibrato — CC 1 value 30-50\n"
                 "\nStructure:\n  Verse: 8 bars\n"
             ),
-        }
+        )
 
         result = SectionResult(success=True, section_name="verse", notes_generated=30)
 
         await _maybe_refine_expression(
-            section=_section("verse"),
-            track_id="trk-1",
+            contract=_contract(
+                instrument_name="Pad", role="chords",
+                style="house", tempo=128.0, key="Cm",
+            ),
             region_id="reg-001",
-            instrument_name="Pad",
-            role="chords",
-            agent_id="pad-agent",
-            sec_name="verse",
             notes_generated=30,
+            agent_id="pad-agent",
             llm=mock_llm,
             store=store,
             trace=_trace(),
             sse_queue=queue,
             allowed_tool_names={"stori_add_midi_cc", "stori_add_pitch_bend"},
-            composition_context=composition_context,
+            runtime_ctx=_runtime_ctx,
             result=result,
             child_log="[test][Pad/verse]",
         )

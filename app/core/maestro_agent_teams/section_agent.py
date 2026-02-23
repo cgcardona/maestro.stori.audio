@@ -4,6 +4,14 @@ Each section child executes a pre-planned (region + generate) pair for one
 musical section of one instrument.  No LLM call is needed for the core
 pipeline; the parent agent already wrote the section-specific prompt.
 
+Contract model (v1):
+    L3 receives a frozen ``SectionContract`` that contains every structural
+    decision (beat range, role, section character) as immutable fields.
+    L3 may only reason about HOW to phrase the Orpheus generation prompt —
+    it MUST NOT reinterpret section boundaries, beat ranges, or musical role.
+    Advisory fields like ``l2_generate_prompt`` are clearly marked and may
+    be overridden by canonical descriptions baked into the contract.
+
 Optional refinement: when the STORI PROMPT specifies expressive tools
 (CC curves, pitch bend, automation), a small focused LLM call adds them
 after generation completes.
@@ -32,6 +40,7 @@ from app.core.maestro_plan_tracker import (
     _INSTRUMENT_AGENT_TOOLS,
 )
 from app.core.maestro_editing import _apply_single_tool_call
+from app.core.maestro_agent_teams.contracts import RuntimeContext, SectionContract
 from app.core.maestro_agent_teams.signals import SectionSignals, SectionState, _state_key
 from app.core.telemetry import compute_section_telemetry
 
@@ -65,40 +74,34 @@ class SectionResult:
 
 
 async def _run_section_child(
-    section: dict[str, Any],
-    section_index: int,
-    track_id: str,
+    contract: SectionContract,
     region_tc: ToolCall,
     generate_tc: ToolCall,
-    instrument_name: str,
-    role: str,
     agent_id: str,
     allowed_tool_names: set[str],
     store: StateStore,
     trace: Any,
     sse_queue: asyncio.Queue[dict[str, Any]],
-    composition_context: dict[str, Any] | None,
+    runtime_ctx: RuntimeContext | None = None,
     section_signals: SectionSignals | None = None,
-    is_drum: bool = False,
-    is_bass: bool = False,
     llm: Optional[LLMClient] = None,
 ) -> SectionResult:
-    """Execute one section's region + generate pipeline.
+    """Execute one section's region + generate pipeline against a contract.
 
-    This is a lightweight executor — the parent LLM already planned the
-    tool calls and wrote the section-specific prompt.  The child resolves
-    the trackId and regionId, executes the two tool calls, and optionally
-    runs a refinement LLM call for expressive tools.
+    The ``SectionContract`` is the single source of truth for structural
+    decisions — beat range, track, section name, role.  ``RuntimeContext``
+    carries dynamic state (section_state, emotion_vector, raw_prompt).
+    No ``dict[str, Any]`` flows through this layer.
     """
-    sec_name = section.get("name", f"section_{section_index}")
-    child_log = f"[{trace.trace_id[:8]}][{instrument_name}/{sec_name}]"
+    sec_name = contract.section_name
+    child_log = f"[{trace.trace_id[:8]}][{contract.instrument_name}/{sec_name}]"
     _child_start = asyncio.get_event_loop().time()
 
     logger.info(
-        f"{child_log} 🎬 Section child starting: "
-        f"is_drum={is_drum}, is_bass={is_bass}, "
-        f"beats={section.get('length_beats', '?')}, "
-        f"start_beat={section.get('start_beat', '?')}"
+        f"{child_log} 🎬 Section child starting (contract v1): "
+        f"is_drum={contract.is_drum}, is_bass={contract.is_bass}, "
+        f"beats={contract.duration_beats}, "
+        f"start_beat={contract.start_beat}"
     )
 
     result = SectionResult(success=False, section_name=sec_name)
@@ -111,21 +114,31 @@ async def _run_section_child(
             await sse_queue.put(evt)
 
     section_state: SectionState | None = None
-    if composition_context:
-        section_state = composition_context.get("section_state")
-    sec_beats = float(section.get("length_beats", 16))
-    sec_tempo = float(composition_context.get("tempo", 120)) if composition_context else 120.0
+    if runtime_ctx:
+        section_state = runtime_ctx.section_state
+
+    def _tool_ctx() -> dict[str, Any] | None:
+        """Bridge dict for _apply_single_tool_call (tool_execution boundary)."""
+        if not runtime_ctx:
+            return None
+        ctx = runtime_ctx.to_composition_context()
+        ctx["style"] = contract.style
+        ctx["tempo"] = contract.tempo
+        ctx["bars"] = contract.bars
+        ctx["key"] = contract.key
+        ctx["role"] = contract.role
+        return ctx
 
     try:
         await sse_queue.put({
             "type": "status",
-            "message": f"Starting {instrument_name} / {sec_name}",
+            "message": f"Starting {contract.instrument_name} / {sec_name}",
             "agentId": agent_id,
             "sectionName": sec_name,
         })
 
         # ── If bass, wait for the corresponding drum section (with timeout) ──
-        if is_bass and section_signals:
+        if contract.is_bass and section_signals:
             from app.config import settings as _cfg
             _bass_timeout = _cfg.bass_signal_wait_timeout
             logger.info(
@@ -161,20 +174,17 @@ async def _run_section_child(
                     )
 
         # ── Bass: read drum telemetry for cross-instrument awareness ──
-        if is_bass and section_state:
+        if contract.is_bass and section_state and runtime_ctx:
             drum_key = _state_key("Drums", sec_name)
             drum_telemetry = await section_state.get(drum_key)
             if drum_telemetry:
-                composition_context = {
-                    **(composition_context or {}),
-                    "drum_telemetry": {
-                        "energy_level": drum_telemetry.energy_level,
-                        "density_score": drum_telemetry.density_score,
-                        "groove_vector": drum_telemetry.groove_vector,
-                        "kick_pattern_hash": drum_telemetry.kick_pattern_hash,
-                        "rhythmic_complexity": drum_telemetry.rhythmic_complexity,
-                    },
-                }
+                runtime_ctx = runtime_ctx.with_drum_telemetry({
+                    "energy_level": drum_telemetry.energy_level,
+                    "density_score": drum_telemetry.density_score,
+                    "groove_vector": drum_telemetry.groove_vector,
+                    "kick_pattern_hash": drum_telemetry.kick_pattern_hash,
+                    "rhythmic_complexity": drum_telemetry.rhythmic_complexity,
+                })
                 logger.info(
                     f"{child_log} 🎯 Drum telemetry injected: "
                     f"energy={drum_telemetry.energy_level:.2f} "
@@ -182,14 +192,20 @@ async def _run_section_child(
                 )
 
         # ── Execute stori_add_midi_region ──
+        # All structural params come from the frozen contract — never from
+        # the L2's tool-call params.  This eliminates region collision drift.
+        region_params = {
+            "trackId": contract.track_id,
+            "startBeat": contract.start_beat,
+            "durationBeats": contract.duration_beats,
+            "name": contract.region_name,
+        }
         logger.info(
-            f"{child_log} 📌 Creating region: "
-            f"startBeat={region_tc.params.get('startBeat')}, "
-            f"durationBeats={region_tc.params.get('durationBeats')}, "
-            f"name={region_tc.params.get('name')}"
+            f"{child_log} 📌 Creating region (from contract): "
+            f"startBeat={contract.start_beat}, "
+            f"durationBeats={contract.duration_beats}, "
+            f"name={contract.region_name}"
         )
-        region_params = dict(region_tc.params)
-        region_params["trackId"] = track_id
 
         region_outcome = await _apply_single_tool_call(
             tc_id=region_tc.id or str(_uuid_mod.uuid4()),
@@ -217,45 +233,48 @@ async def _run_section_child(
         if not region_id:
             result.error = f"Region creation failed for {sec_name}"
             logger.warning(f"⚠️ {child_log} {result.error}")
-            if is_drum and section_signals:
+            if contract.is_drum and section_signals:
                 section_signals.signal_complete(sec_name)
             return result
 
         result.region_id = region_id
 
         # ── Section reasoning (L3 CoT, streamed with sectionName) ──
-        _parent_prompt = generate_tc.params.get("prompt", "")
-        if llm and _parent_prompt:
-            _refined = await _reason_before_generate(
-                section=section,
-                instrument_name=instrument_name,
-                role=role,
-                style=composition_context.get("style", "") if composition_context else "",
-                tempo=sec_tempo,
-                key=composition_context.get("key", "C") if composition_context else "C",
-                generate_prompt=_parent_prompt,
+        # The contract carries canonical section character + role brief.
+        # The L2's generate prompt is advisory; the contract is authoritative.
+        _refined_prompt: str | None = None
+        if llm and contract.l2_generate_prompt:
+            _refined_prompt = await _reason_before_generate(
+                contract=contract,
                 agent_id=agent_id,
-                sec_name=sec_name,
                 llm=llm,
                 sse_queue=sse_queue,
                 child_log=child_log,
             )
-            if _refined:
-                generate_tc = ToolCall(
-                    id=generate_tc.id,
-                    name=generate_tc.name,
-                    params={**generate_tc.params, "prompt": _refined},
-                )
 
         # ── Execute stori_generate_midi ──
+        # All structural params from contract; only prompt is refined by L3.
+        _final_prompt = (
+            _refined_prompt
+            or contract.l2_generate_prompt
+            or f"{contract.section.character} — {contract.instrument_name}"
+        )
         logger.info(
             f"{child_log} 🎵 Generating MIDI: regionId={region_id}, "
-            f"prompt={str(generate_tc.params.get('prompt', ''))[:80]}..."
+            f"prompt={_final_prompt[:80]}..."
         )
         _gen_start = asyncio.get_event_loop().time()
-        gen_params = dict(generate_tc.params)
-        gen_params["trackId"] = track_id
-        gen_params["regionId"] = region_id
+        gen_params = {
+            "trackId": contract.track_id,
+            "regionId": region_id,
+            "role": contract.role,
+            "style": contract.style,
+            "tempo": int(contract.tempo),
+            "bars": contract.bars,
+            "key": contract.key,
+            "start_beat": contract.start_beat,
+            "prompt": _final_prompt,
+        }
 
         gen_outcome = await _apply_single_tool_call(
             tc_id=generate_tc.id or str(_uuid_mod.uuid4()),
@@ -266,7 +285,7 @@ async def _run_section_child(
             trace=trace,
             add_notes_failures=add_notes_failures,
             emit_sse=True,
-            composition_context=composition_context,
+            composition_context=_tool_ctx(),
         )
         await _emit(gen_outcome)
 
@@ -287,7 +306,7 @@ async def _run_section_child(
             logger.warning(
                 f"⚠️ {child_log} Generate failed after {_gen_elapsed:.1f}s: {result.error}"
             )
-            if is_drum and section_signals:
+            if contract.is_drum and section_signals:
                 section_signals.signal_complete(sec_name)
             return result
 
@@ -305,7 +324,7 @@ async def _run_section_child(
                 break
 
         # ── Drum signaling — signal bass with drum notes ──
-        if is_drum and section_signals:
+        if contract.is_drum and section_signals:
             section_signals.signal_complete(sec_name, drum_notes=generated_notes)
             logger.info(
                 f"{child_log} 🥁 Signaled bass: {len(generated_notes)} drum notes ready"
@@ -315,18 +334,18 @@ async def _run_section_child(
         if section_state and generated_notes:
             telemetry = compute_section_telemetry(
                 notes=generated_notes,
-                tempo=sec_tempo,
-                instrument=instrument_name,
+                tempo=contract.tempo,
+                instrument=contract.instrument_name,
                 section_name=sec_name,
-                section_beats=sec_beats,
+                section_beats=float(contract.duration_beats),
             )
-            state_key = _state_key(instrument_name, sec_name)
+            state_key = _state_key(contract.instrument_name, sec_name)
             await section_state.set(state_key, telemetry)
 
         await sse_queue.put({
             "type": "status",
             "message": (
-                f"{instrument_name} / {sec_name}: "
+                f"{contract.instrument_name} / {sec_name}: "
                 f"{result.notes_generated} notes generated"
             ),
             "agentId": agent_id,
@@ -334,23 +353,19 @@ async def _run_section_child(
         })
 
         # ── Optional refinement LLM call for expressive tools ──
-        if result.success and llm and composition_context:
+        if result.success and llm and runtime_ctx:
             logger.info(f"{child_log} 🎨 Checking expression refinement...")
             await _maybe_refine_expression(
-                section=section,
-                track_id=track_id,
+                contract=contract,
                 region_id=region_id,
-                instrument_name=instrument_name,
-                role=role,
-                agent_id=agent_id,
-                sec_name=sec_name,
                 notes_generated=result.notes_generated,
+                agent_id=agent_id,
                 llm=llm,
                 store=store,
                 trace=trace,
                 sse_queue=sse_queue,
                 allowed_tool_names=allowed_tool_names,
-                composition_context=composition_context,
+                runtime_ctx=runtime_ctx,
                 result=result,
                 child_log=child_log,
             )
@@ -368,59 +383,64 @@ async def _run_section_child(
             f"{child_log} 💥 Unhandled section error after {_child_elapsed:.1f}s: {exc}"
         )
         result.error = str(exc)
-        if is_drum and section_signals:
+        if contract.is_drum and section_signals:
             section_signals.signal_complete(sec_name)
         return result
 
 
 async def _reason_before_generate(
-    section: dict[str, Any],
-    instrument_name: str,
-    role: str,
-    style: str,
-    tempo: float,
-    key: str,
-    generate_prompt: str,
+    contract: SectionContract,
     agent_id: str,
-    sec_name: str,
     llm: LLMClient,
     sse_queue: asyncio.Queue[dict[str, Any]],
     child_log: str,
 ) -> Optional[str]:
     """Brief LLM reasoning about a section's musical approach (Level 3 CoT).
 
+    All context comes from the frozen ``SectionContract``.  The L3 is allowed
+    to reason about HOW to phrase the Orpheus prompt — it must not
+    reinterpret the section identity, beat range, or role.
+
     Streams ``type=reasoning`` events tagged with ``sectionName`` so the
     frontend can display per-section musical thinking.  Returns a refined
     prompt string for the generate call, or ``None`` to keep the original.
     """
-    sec_bars = max(1, int(section.get("length_beats", 16)) // 4)
-    per_track = section.get("per_track_description", {})
-    sec_hint = per_track.get(
-        role.lower(), per_track.get(instrument_name.lower(), "")
-    )
+    sec_name = contract.section_name
 
     system = (
         f"You are the section agent for the **{sec_name.upper()}** section "
-        f"of the **{instrument_name}** track.\n\n"
-        f"Context: {style} | {tempo:.0f} BPM | {key} | {sec_bars} bars\n"
+        f"of the **{contract.instrument_name}** track.\n\n"
+        f"Context: {contract.style} | {contract.tempo:.0f} BPM | "
+        f"{contract.key} | {contract.bars} bars\n"
+        f"Section character (AUTHORITATIVE): {contract.section.character}\n"
     )
-    if sec_hint:
-        system += f"Composer direction: {sec_hint}\n"
+    if contract.section.role_brief:
+        system += (
+            f"Your role in this section (AUTHORITATIVE): "
+            f"{contract.section.role_brief}\n"
+        )
+    if contract.l2_generate_prompt:
+        system += (
+            f"\nParent agent suggestion (ADVISORY ONLY — trust the "
+            f"authoritative section character above if they conflict): "
+            f"\"{contract.l2_generate_prompt}\"\n"
+        )
     system += (
-        f"Parent agent prompt: \"{generate_prompt}\"\n\n"
-        "TASK: Think about what makes this section's {instrument_name} part "
-        "distinctive — density, register, rhythmic approach, and how it "
-        "serves the arrangement energy at this point.  Then write a refined "
-        "1-2 sentence generation prompt for Orpheus that captures your "
-        "musical intent for this specific section.\n\n"
-        "Output ONLY the refined prompt (no explanation, no tool calls)."
-    ).format(instrument_name=instrument_name)
+        f"\nTASK: Think about what makes this section's "
+        f"{contract.instrument_name} part distinctive — density, register, "
+        f"rhythmic approach, and how it serves the arrangement energy at "
+        f"this point.  Then write a refined 1-2 sentence generation prompt "
+        f"for Orpheus that captures your musical intent for this specific "
+        f"section.\n\n"
+        f"Output ONLY the refined prompt (no explanation, no tool calls)."
+    )
 
     try:
         from app.config import settings
 
         rbuf = ReasoningBuffer()
         _refined: Optional[str] = None
+        _had_reasoning = False
 
         async for chunk in llm.chat_completion_stream(
             messages=[
@@ -438,23 +458,40 @@ async def _reason_before_generate(
                 if text:
                     word = rbuf.add(text)
                     if word:
+                        _had_reasoning = True
                         await sse_queue.put({
                             "type": "reasoning",
                             "content": word,
                             "agentId": agent_id,
                             "sectionName": sec_name,
                         })
-            elif ct in ("content_delta", "done"):
+            elif ct == "content_delta":
                 flush = rbuf.flush()
                 if flush:
+                    _had_reasoning = True
                     await sse_queue.put({
                         "type": "reasoning",
                         "content": flush,
                         "agentId": agent_id,
                         "sectionName": sec_name,
                     })
-                if ct == "done":
-                    _refined = chunk.get("content")
+            elif ct == "done":
+                flush = rbuf.flush()
+                if flush:
+                    _had_reasoning = True
+                    await sse_queue.put({
+                        "type": "reasoning",
+                        "content": flush,
+                        "agentId": agent_id,
+                        "sectionName": sec_name,
+                    })
+                if _had_reasoning:
+                    await sse_queue.put({
+                        "type": "reasoningEnd",
+                        "agentId": agent_id,
+                        "sectionName": sec_name,
+                    })
+                _refined = chunk.get("content")
 
         if _refined and len(_refined.strip()) > 10:
             logger.info(
@@ -486,39 +523,30 @@ def _extract_expressiveness_blocks(raw_prompt: str) -> str:
 
 
 async def _maybe_refine_expression(
-    section: dict[str, Any],
-    track_id: str,
+    contract: SectionContract,
     region_id: str,
-    instrument_name: str,
-    role: str,
-    agent_id: str,
-    sec_name: str,
     notes_generated: int,
+    agent_id: str,
     llm: LLMClient,
     store: StateStore,
     trace: Any,
     sse_queue: asyncio.Queue[dict[str, Any]],
     allowed_tool_names: set[str],
-    composition_context: dict[str, Any],
+    runtime_ctx: RuntimeContext,
     result: SectionResult,
     child_log: str,
 ) -> None:
     """Add CC curves and pitch bends via a streamed LLM call.
 
-    Only triggered when the STORI PROMPT includes MidiExpressiveness or
-    Automation blocks.  Streams reasoning (CoT) as SSE events tagged with
-    ``agentId`` + ``sectionName`` so the GUI can display per-section
-    musical thinking in real time.
+    All structural context comes from the frozen ``SectionContract``.
+    Only ``runtime_ctx.raw_prompt`` is used for expressiveness block
+    detection.
     """
     from app.core.tools import ALL_TOOLS
 
-    style = composition_context.get("style", "")
-    tempo = composition_context.get("tempo", 120)
-    key = composition_context.get("key", "C")
-    sec_bars = max(1, int(section.get("length_beats", 16)) // 4)
-    sec_start = section.get("start_beat", 0)
+    sec_name = contract.section_name
 
-    prompt_text = composition_context.get("_raw_prompt", "")
+    prompt_text = runtime_ctx.raw_prompt
     has_expressiveness = any(
         kw in prompt_text.lower()
         for kw in ("midiexpressiveness:", "automation:", "cc_curves:", "pitch_bend:")
@@ -537,11 +565,11 @@ async def _maybe_refine_expression(
 
     refine_prompt = (
         f"You are a MIDI expression agent for the {sec_name.upper()} section "
-        f"of the {instrument_name} track.\n\n"
-        f"Context: {style} | {tempo} BPM | {key}\n"
-        f"Section: {sec_bars} bars starting at beat {sec_start}, "
+        f"of the {contract.instrument_name} track.\n\n"
+        f"Context: {contract.style} | {contract.tempo:.0f} BPM | {contract.key}\n"
+        f"Section: {contract.bars} bars starting at beat {contract.start_beat}, "
         f"{notes_generated} notes generated.\n"
-        f"trackId='{track_id}', regionId='{region_id}'.\n\n"
+        f"trackId='{contract.track_id}', regionId='{region_id}'.\n\n"
     )
     if expr_blocks:
         refine_prompt += (
@@ -557,7 +585,7 @@ async def _maybe_refine_expression(
 
     await sse_queue.put({
         "type": "status",
-        "message": f"Adding expression to {instrument_name} / {sec_name}",
+        "message": f"Adding expression to {contract.instrument_name} / {sec_name}",
         "agentId": agent_id,
         "sectionName": sec_name,
     })
@@ -567,6 +595,7 @@ async def _maybe_refine_expression(
 
         resp_tool_calls: list[dict[str, Any]] = []
         rbuf = ReasoningBuffer()
+        _had_reasoning = False
 
         async for chunk in llm.chat_completion_stream(
             messages=[
@@ -584,6 +613,7 @@ async def _maybe_refine_expression(
                 if text:
                     word = rbuf.add(text)
                     if word:
+                        _had_reasoning = True
                         await sse_queue.put({
                             "type": "reasoning",
                             "content": word,
@@ -593,6 +623,7 @@ async def _maybe_refine_expression(
             elif ct == "content_delta":
                 flush = rbuf.flush()
                 if flush:
+                    _had_reasoning = True
                     await sse_queue.put({
                         "type": "reasoning",
                         "content": flush,
@@ -602,9 +633,16 @@ async def _maybe_refine_expression(
             elif ct == "done":
                 flush = rbuf.flush()
                 if flush:
+                    _had_reasoning = True
                     await sse_queue.put({
                         "type": "reasoning",
                         "content": flush,
+                        "agentId": agent_id,
+                        "sectionName": sec_name,
+                    })
+                if _had_reasoning:
+                    await sse_queue.put({
+                        "type": "reasoningEnd",
                         "agentId": agent_id,
                         "sectionName": sec_name,
                     })
@@ -627,7 +665,7 @@ async def _maybe_refine_expression(
         add_notes_failures: dict[str, int] = {}
         for tc in tool_calls:
             params = dict(tc.params)
-            params["trackId"] = track_id
+            params["trackId"] = contract.track_id
             params["regionId"] = region_id
 
             outcome = await _apply_single_tool_call(

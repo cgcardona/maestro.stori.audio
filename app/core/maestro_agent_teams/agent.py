@@ -31,9 +31,19 @@ from app.core.maestro_plan_tracker import (
     _INSTRUMENT_AGENT_TOOLS,
 )
 from app.core.maestro_editing import _apply_single_tool_call
+from app.core.maestro_agent_teams.contracts import (
+    InstrumentContract,
+    RuntimeContext,
+    SectionContract,
+    SectionSpec,
+)
 from app.core.maestro_agent_teams.section_agent import (
     _run_section_child,
     SectionResult,
+)
+from app.core.maestro_agent_teams.sections import (
+    _get_section_role_description,
+    _section_overall_description,
 )
 from app.core.maestro_agent_teams.signals import SectionSignals
 from app.services.orpheus import get_orpheus_client
@@ -58,8 +68,9 @@ async def _run_instrument_agent(
     collected_tool_calls: list[dict[str, Any]],
     existing_track_id: Optional[str] = None,
     start_beat: int = 0,
-    composition_context: Optional[dict[str, Any]] = None,
     assigned_color: Optional[str] = None,
+    instrument_contract: Optional[InstrumentContract] = None,
+    runtime_context: Optional[RuntimeContext] = None,
 ) -> None:
     """Independent instrument agent: dedicated multi-turn LLM session per instrument.
 
@@ -67,14 +78,10 @@ async def _run_instrument_agent(
     with sibling agents via ``asyncio.gather``. The agent loops over LLM turns
     until all tool calls complete (create track → region → notes → effect).
 
-    When ``existing_track_id`` is provided the track already exists in the
-    project; the agent skips ``stori_add_midi_track`` and places new regions
-    starting at ``start_beat`` (the beat immediately after the last existing
-    region on that track).
-
-    SSE events are written to ``sse_queue`` (forwarded to client by coordinator).
-    All executed tool calls are appended to ``collected_tool_calls`` for the
-    summary.final event.
+    ``InstrumentContract`` provides frozen structural fields (sections, GM
+    guidance, track info). ``RuntimeContext`` carries dynamic state (emotion
+    vector, quality preset, section signals). No ``dict[str, Any]`` flows
+    through this layer.
 
     Failure is isolated: an exception marks only this agent's plan steps as
     failed and does not propagate to sibling agents.
@@ -119,8 +126,9 @@ async def _run_instrument_agent(
             agent_log=agent_log,
             agent_id=_agent_id,
             reusing=reusing,
-            composition_context=composition_context,
             assigned_color=assigned_color,
+            instrument_contract=instrument_contract,
+            runtime_context=runtime_context,
         )
         _agent_success = True
     except Exception as exc:
@@ -154,8 +162,9 @@ async def _run_instrument_agent_inner(
     agent_log: str,
     agent_id: str,
     reusing: bool,
-    composition_context: Optional[dict[str, Any]] = None,
     assigned_color: Optional[str] = None,
+    instrument_contract: Optional[InstrumentContract] = None,
+    runtime_context: Optional[RuntimeContext] = None,
 ) -> None:
     """Inner implementation of a single instrument agent.
 
@@ -167,7 +176,9 @@ async def _run_instrument_agent_inner(
     _agent_id = agent_id
 
     from app.data.role_profiles import get_role_profile
+    from app.core.gm_instruments import get_genre_gm_guidance
 
+    _ic = instrument_contract  # shorthand
     beat_count = bars * 4
 
     _role_profile = get_role_profile(role)
@@ -175,10 +186,19 @@ async def _run_instrument_agent_inner(
     if _role_profile:
         _musical_dna = f"\n{_role_profile.prompt_block()}\n"
 
-    # Pull section info if the coordinator parsed sections.
+    _gm_guidance = _ic.gm_guidance if _ic else get_genre_gm_guidance(style, role)
+    _gm_guidance_block = f"\n{_gm_guidance}\n" if _gm_guidance else ""
+
     _sections: list[dict] = []
-    if composition_context:
-        _sections = composition_context.get("sections", [])
+    if _ic:
+        _sections = [
+            {
+                "name": s.name,
+                "start_beat": s.start_beat,
+                "length_beats": s.duration_beats,
+            }
+            for s in _ic.sections
+        ]
     _multi_section = len(_sections) > 1
 
     _reasoning_guidance = (
@@ -330,6 +350,14 @@ async def _run_instrument_agent_inner(
         "stori_add_midi_region. Never pass trackId as regionId. Never omit start_beat."
     )
 
+    _truncation_guidance = (
+        "TOOL RESULT READING: A tool result displayed as '...' means the output was "
+        "large and was truncated for context efficiency. It does NOT mean the call "
+        "failed. Only retry a tool call if you receive an explicit error message "
+        "containing the word 'error' or 'failed'. Truncated results ('...') indicate "
+        "SUCCESS — move on to the next pipeline step."
+    )
+
     _color_rule = (
         f'TRACK COLOR: You MUST pass color="{assigned_color}" verbatim in stori_add_midi_track. '
         f"Do NOT change it — the coordinator pre-assigned this color to guarantee visual diversity.\n"
@@ -342,12 +370,14 @@ async def _run_instrument_agent_inner(
             f"{_reasoning_guidance}\n\n"
             f"Context: {style} | {tempo} BPM | {key} | {_length_emphasis}\n"
             f"{_musical_dna}"
+            f"{_gm_guidance_block}"
             f"{_color_rule}"
             f"Track already exists: trackId='{existing_track_id}', content ends at beat {start_beat}.\n\n"
             f"Pipeline (execute ALL {_expected_calls} steps now, in this exact order):\n"
             f"{_pipeline_text}\n\n"
             f"{_generate_midi_guidance}\n"
             f"{_critical_rules}\n"
+            f"{_truncation_guidance}\n"
             f"Rules: DO NOT call stori_add_midi_track. DO NOT use stori_add_notes. "
             f"DO NOT create tracks for other instruments."
         )
@@ -357,11 +387,13 @@ async def _run_instrument_agent_inner(
             f"{_reasoning_guidance}\n\n"
             f"Context: {style} | {tempo} BPM | {key} | {_length_emphasis}\n"
             f"{_musical_dna}"
+            f"{_gm_guidance_block}"
             f"{_color_rule}"
             f"Pipeline (execute ALL {_expected_calls} steps now, in this exact order):\n"
             f"{_pipeline_text}\n\n"
             f"{_generate_midi_guidance}\n"
             f"{_critical_rules}\n"
+            f"{_truncation_guidance}\n"
             f"Rules: DO NOT use stori_add_notes. DO NOT create tracks for other instruments. "
             f"Make all {_expected_calls} tool calls now."
         )
@@ -492,6 +524,7 @@ async def _run_instrument_agent_inner(
             _resp_finish: Optional[str] = None
             _resp_usage: dict[str, Any] = {}
             _rbuf = ReasoningBuffer()
+            _had_reasoning = False
 
             async for _chunk in llm.chat_completion_stream(
                 messages=messages,
@@ -506,6 +539,7 @@ async def _run_instrument_agent_inner(
                     if _text:
                         _word = _rbuf.add(_text)
                         if _word:
+                            _had_reasoning = True
                             await sse_queue.put({
                                 "type": "reasoning",
                                 "content": _word,
@@ -514,6 +548,7 @@ async def _run_instrument_agent_inner(
                 elif _ct == "content_delta":
                     _flush = _rbuf.flush()
                     if _flush:
+                        _had_reasoning = True
                         await sse_queue.put({
                             "type": "reasoning",
                             "content": _flush,
@@ -522,9 +557,15 @@ async def _run_instrument_agent_inner(
                 elif _ct == "done":
                     _flush = _rbuf.flush()
                     if _flush:
+                        _had_reasoning = True
                         await sse_queue.put({
                             "type": "reasoning",
                             "content": _flush,
+                            "agentId": _agent_id,
+                        })
+                    if _had_reasoning:
+                        await sse_queue.put({
+                            "type": "reasoningEnd",
                             "agentId": _agent_id,
                         })
                     _resp_content = _chunk.get("content")
@@ -663,10 +704,11 @@ async def _run_instrument_agent_inner(
                     store=store,
                     trace=trace,
                     sse_queue=sse_queue,
+                    instrument_contract=instrument_contract,
                     collected_tool_calls=collected_tool_calls,
                     all_tool_results=all_tool_results,
                     add_notes_failures=add_notes_failures,
-                    composition_context=composition_context,
+                    runtime_context=runtime_context,
                     plan_tracker=plan_tracker,
                     step_ids=step_ids,
                     active_step_id=active_step_id,
@@ -700,10 +742,18 @@ async def _run_instrument_agent_inner(
                     active_step_id = desired_step_id
 
                 if tc.name in _GENERATOR_TOOL_NAMES and _regions_ok == 0:
-                    logger.warning(
-                        f"{agent_log} {tc.name} called but no stori_add_midi_region has "
-                        f"returned a regionId yet — generator will fail without a valid region."
+                    _skip_reason = (
+                        f"Skipping {tc.name}: no stori_add_midi_region has returned a "
+                        f"valid regionId. Region creation must succeed before generation. "
+                        f"Do NOT retry stori_generate_midi — fix the region collision first."
                     )
+                    logger.warning(f"{agent_log} ⚠️ {_skip_reason}")
+                    tool_result_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps({"error": _skip_reason, "skipped": True}),
+                    })
+                    continue
 
                 if tc.name in _EFFECT_TOOL_NAMES and _regions_ok == 0 and reusing:
                     logger.warning(
@@ -717,6 +767,15 @@ async def _run_instrument_agent_inner(
                     })
                     continue
 
+                _tool_ctx: dict[str, Any] | None = None
+                if runtime_context:
+                    _tool_ctx = runtime_context.to_composition_context()
+                    _tool_ctx["style"] = style
+                    _tool_ctx["tempo"] = tempo
+                    _tool_ctx["bars"] = bars
+                    _tool_ctx["key"] = key
+                    _tool_ctx["role"] = role
+
                 outcome = await _apply_single_tool_call(
                     tc_id=tc.id,
                     tc_name=tc.name,
@@ -726,7 +785,7 @@ async def _run_instrument_agent_inner(
                     trace=trace,
                     add_notes_failures=add_notes_failures,
                     emit_sse=True,
-                    composition_context=composition_context,
+                    composition_context=_tool_ctx,
                 )
 
                 for evt in outcome.sse_events:
@@ -762,10 +821,17 @@ async def _run_instrument_agent_inner(
                 all_tool_results.append(outcome.tool_result)
                 collected_tool_calls.append({"tool": tc.name, "params": outcome.enriched_params})
 
+                # Strip verbose entity manifests from results fed back to the
+                # LLM context — they bloat the context window and get truncated
+                # to "..." which agents misinterpret as failure.
+                _compact_result = {
+                    k: v for k, v in outcome.tool_result.items()
+                    if k != "entities"
+                }
                 tool_result_messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": json.dumps(outcome.tool_result),
+                    "content": json.dumps(_compact_result),
                 })
 
         messages.extend(tool_result_messages)
@@ -811,10 +877,11 @@ async def _dispatch_section_children(
     store: StateStore,
     trace: Any,
     sse_queue: "asyncio.Queue[dict[str, Any]]",
+    instrument_contract: Optional[InstrumentContract] = None,
     collected_tool_calls: list[dict[str, Any]],
     all_tool_results: list[dict[str, Any]],
     add_notes_failures: dict[str, int],
-    composition_context: Optional[dict[str, Any]],
+    runtime_context: Optional[RuntimeContext],
     plan_tracker: _PlanTracker,
     step_ids: list[str],
     active_step_id: Optional[str],
@@ -898,10 +965,14 @@ async def _dispatch_section_children(
         collected_tool_calls.append(
             {"tool": tc.name, "params": outcome.enriched_params}
         )
+        _compact_result = {
+            k: v for k, v in outcome.tool_result.items()
+            if k != "entities"
+        }
         tool_result_msgs.append({
             "role": "tool",
             "tool_call_id": tc.id,
-            "content": json.dumps(outcome.tool_result),
+            "content": json.dumps(_compact_result),
         })
 
     # ── Resolve the real track ID ──
@@ -950,8 +1021,29 @@ async def _dispatch_section_children(
     is_drum = role.lower() in ("drums", "drum")
     is_bass = role.lower() == "bass"
     section_signals: SectionSignals | None = None
-    if composition_context:
-        section_signals = composition_context.get("section_signals")
+    if runtime_context:
+        section_signals = runtime_context.section_signals
+
+    # ── Validate L2 tool calls against section plan ──
+    # Reject region calls whose startBeat/durationBeats disagree with the
+    # canonical section layout.  Log drift but DO NOT fail — the contract
+    # at L3 overrides the bad params anyway.  This surfaces the problem.
+    for i, (region_tc, _) in enumerate(pairs):
+        sec = sections[i] if i < len(sections) else sections[-1]
+        planned_start = int(sec.get("start_beat", 0))
+        planned_dur = int(sec.get("length_beats", 16))
+        llm_start = region_tc.params.get("startBeat")
+        llm_dur = region_tc.params.get("durationBeats")
+        if llm_start is not None and int(llm_start) != planned_start:
+            logger.warning(
+                f"{agent_log} ⚠️ L2 drift: region[{i}] startBeat={llm_start} "
+                f"vs planned={planned_start} — contract will override"
+            )
+        if llm_dur is not None and int(llm_dur) != planned_dur:
+            logger.warning(
+                f"{agent_log} ⚠️ L2 drift: region[{i}] durationBeats={llm_dur} "
+                f"vs planned={planned_dur} — contract will override"
+            )
 
     # ── Spawn section children (with watchdog timeout) ──
     _child_timeout = settings.section_child_timeout
@@ -959,25 +1051,51 @@ async def _dispatch_section_children(
     for i, (region_tc, gen_tc) in enumerate(pairs):
         sec = sections[i] if i < len(sections) else sections[-1]
         _sec_name = sec.get("name", str(i))
+
+        # Use pre-built SectionSpec from InstrumentContract when available
+        if instrument_contract and i < len(instrument_contract.sections):
+            _spec = instrument_contract.sections[i]
+        else:
+            _sec_start = int(sec.get("start_beat", 0))
+            _sec_duration = int(sec.get("length_beats", 16))
+            _sec_bars = max(1, _sec_duration // 4)
+            _spec = SectionSpec(
+                name=_sec_name,
+                index=i,
+                start_beat=_sec_start,
+                duration_beats=_sec_duration,
+                bars=_sec_bars,
+                character=_section_overall_description(_sec_name),
+                role_brief=_get_section_role_description(_sec_name, role),
+            )
+
+        _contract = SectionContract(
+            section=_spec,
+            track_id=real_track_id,
+            instrument_name=instrument_name,
+            role=role,
+            style=style,
+            tempo=tempo,
+            key=key,
+            region_name=region_tc.params.get(
+                "name", f"{instrument_name} – {_sec_name}"
+            ),
+            l2_generate_prompt=gen_tc.params.get("prompt", ""),
+        )
+
         task = asyncio.create_task(
             asyncio.wait_for(
                 _run_section_child(
-                    section=sec,
-                    section_index=i,
-                    track_id=real_track_id,
+                    contract=_contract,
                     region_tc=region_tc,
                     generate_tc=gen_tc,
-                    instrument_name=instrument_name,
-                    role=role,
                     agent_id=agent_id,
                     allowed_tool_names=allowed_tool_names,
                     store=store,
                     trace=trace,
                     sse_queue=sse_queue,
-                    composition_context=composition_context,
+                    runtime_ctx=runtime_context,
                     section_signals=section_signals,
-                    is_drum=is_drum,
-                    is_bass=is_bass,
                     llm=llm,
                 ),
                 timeout=_child_timeout,

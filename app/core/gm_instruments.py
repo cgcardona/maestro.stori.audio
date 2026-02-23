@@ -379,6 +379,1160 @@ def infer_gm_program(
     return default_program
 
 
+# =============================================================================
+# Genre-specific GM voice guidance
+# =============================================================================
+
+GENRE_GM_GUIDANCE: dict[str, dict[str, list[tuple[int, str]]]] = {
+    # =========================================================================
+    # Caribbean / Latin America
+    # =========================================================================
+    "dancehall": {
+        "drums": [],
+        "bass": [
+            (33, "Electric Bass (Finger) — standard dancehall bass"),
+            (36, "Slap Bass 1 — punchier dancehall thump"),
+        ],
+        "chords": [
+            (16, "Drawbar Organ — classic choppy offbeat 'bubble' stab (short notes, offbeats on 2+ and 4+)"),
+            (17, "Percussive Organ — snappy organ bubble variant"),
+        ],
+        "lead": [
+            (80, "Square Lead — buzzy digital synth texture"),
+            (85, "Lead (Voice) — melodica-style dancehall lead"),
+        ],
+        "melody": [
+            (80, "Square Lead — digital dancehall synth"),
+            (85, "Lead (Voice) — melodica feel"),
+        ],
+        "pads": [(88, "Pad (New Age) — ambient dancehall wash")],
+    },
+    "reggae": {
+        "drums": [],
+        "bass": [
+            (33, "Electric Bass (Finger) — deep reggae bass"),
+            (32, "Acoustic Bass — roots reggae upright"),
+        ],
+        "chords": [
+            (16, "Drawbar Organ — reggae organ bubble"),
+            (27, "Electric Guitar (Clean) — reggae skank chop"),
+        ],
+        "lead": [
+            (56, "Trumpet — reggae horn lead"),
+            (85, "Lead (Voice) — melodica lead"),
+        ],
+        "melody": [(56, "Trumpet — reggae horn melody")],
+        "pads": [(88, "Pad (New Age)")],
+    },
+    "reggaeton": {
+        "drums": [],
+        "bass": [
+            (38, "Synth Bass 1 — reggaeton 808 sub bass"),
+            (39, "Synth Bass 2 — deep digital sub"),
+        ],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — reggaeton keys"),
+            (90, "Polysynth Pad — perreo synth stabs"),
+        ],
+        "lead": [
+            (80, "Square Lead — reggaeton synth lead"),
+            (62, "Synth Brass 1 — brass stab hits"),
+        ],
+        "melody": [(80, "Square Lead — reggaeton hook synth")],
+        "pads": [(88, "Pad (New Age) — atmospheric reggaeton wash")],
+    },
+    "soca": {
+        "drums": [],
+        "bass": [
+            (33, "Electric Bass (Finger) — soca bass groove"),
+            (38, "Synth Bass 1 — modern soca sub"),
+        ],
+        "chords": [
+            (114, "Steel Drums — iconic Caribbean steel pan chords"),
+            (61, "Brass Section — soca horn stabs"),
+        ],
+        "lead": [
+            (114, "Steel Drums — steel pan melody lead"),
+            (56, "Trumpet — soca horn lead"),
+        ],
+        "melody": [(114, "Steel Drums — Caribbean steel pan")],
+        "pads": [(88, "Pad (New Age) — tropical wash")],
+    },
+    "bossa nova": {
+        "drums": [],
+        "bass": [(32, "Acoustic Bass — essential bossa nova upright")],
+        "chords": [(24, "Nylon Guitar — classic bossa nova guitar comping")],
+        "lead": [
+            (73, "Flute — Jobim-style bossa flute"),
+            (66, "Tenor Sax — bossa nova sax"),
+        ],
+        "melody": [(73, "Flute — bossa nova flute melody")],
+        "pads": [(48, "String Ensemble — lush bossa strings")],
+    },
+    "cumbia": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — cumbia bass")],
+        "chords": [
+            (21, "Accordion — essential cumbia accordion"),
+            (24, "Nylon Guitar — cumbia guitar rhythm"),
+        ],
+        "lead": [
+            (21, "Accordion — cumbia accordion lead"),
+            (73, "Flute — Colombian cumbia gaita-style"),
+        ],
+        "melody": [
+            (73, "Flute — cumbia gaita flute melody"),
+            (21, "Accordion — accordion melody"),
+        ],
+        "pads": [(48, "String Ensemble")],
+    },
+    "tango": {
+        "drums": [],
+        "bass": [(32, "Acoustic Bass — tango upright bass")],
+        "chords": [
+            (23, "Tango Accordion — bandoneón (essential tango)"),
+            (0, "Acoustic Grand Piano — tango piano"),
+        ],
+        "lead": [
+            (23, "Tango Accordion — bandoneón lead"),
+            (40, "Violin — tango violin solo"),
+        ],
+        "melody": [
+            (40, "Violin — tango violin melody"),
+            (23, "Tango Accordion — bandoneón melody"),
+        ],
+        "pads": [(42, "Cello — tango cello sustain")],
+    },
+    "huayno": {
+        "drums": [],
+        "bass": [(24, "Nylon Guitar — Andean guitar bass")],
+        "chords": [
+            (24, "Nylon Guitar — charango-style strumming"),
+            (46, "Orchestral Harp — Andean harp"),
+        ],
+        "lead": [(75, "Pan Flute — quintessential Andean quena/zampoña")],
+        "melody": [(75, "Pan Flute — Andean pan flute melody")],
+        "pads": [(48, "String Ensemble — Andean string texture")],
+    },
+    "afro-cuban": {
+        "drums": [],
+        "bass": [(32, "Acoustic Bass — Afro-Cuban upright bass")],
+        "chords": [
+            (0, "Acoustic Grand Piano — montuno comping"),
+            (56, "Trumpet — horn section stabs"),
+        ],
+        "lead": [
+            (56, "Trumpet — Afro-Cuban trumpet solo"),
+            (57, "Trombone — salsa trombone"),
+        ],
+        "melody": [
+            (56, "Trumpet — Afro-Cuban horn melody"),
+            (73, "Flute — charanga flute"),
+        ],
+        "pads": [(48, "String Ensemble — charanga strings")],
+    },
+
+    # =========================================================================
+    # Hip-hop / Urban
+    # =========================================================================
+    "boom bap": {
+        "drums": [],
+        "bass": [
+            (33, "Electric Bass (Finger) — boom bap bass"),
+            (38, "Synth Bass 1 — sampled 808 feel"),
+        ],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — boom bap keys"),
+            (0, "Acoustic Grand Piano — sample chop feel"),
+        ],
+        "lead": [(80, "Square Lead — synth stab")],
+        "melody": [(80, "Square Lead")],
+        "pads": [(89, "Warm Pad — dusty boom bap texture")],
+    },
+    "hip hop": {
+        "drums": [],
+        "bass": [
+            (38, "Synth Bass 1 — hip-hop sub bass"),
+            (33, "Electric Bass (Finger) — classic hip-hop bass"),
+        ],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — hip-hop Rhodes"),
+            (0, "Acoustic Grand Piano — sampled piano"),
+        ],
+        "lead": [(80, "Square Lead — hip-hop synth lead")],
+        "melody": [(80, "Square Lead")],
+        "pads": [(88, "Pad (New Age) — hip-hop ambient pad")],
+    },
+    "trap": {
+        "drums": [],
+        "bass": [
+            (38, "Synth Bass 1 — 808 sub bass"),
+            (39, "Synth Bass 2 — digital 808"),
+        ],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — dark trap chords"),
+            (88, "Pad (New Age) — ambient trap pad"),
+        ],
+        "lead": [
+            (80, "Square Lead — trap synth lead"),
+            (82, "Calliope Lead — high-pitched trap bell"),
+        ],
+        "melody": [(82, "Calliope Lead — trap bell melody")],
+        "pads": [(88, "Pad (New Age) — dark ambient trap")],
+    },
+    "drill": {
+        "drums": [],
+        "bass": [
+            (38, "Synth Bass 1 — drill 808 slide bass"),
+            (39, "Synth Bass 2 — aggressive 808"),
+        ],
+        "chords": [
+            (0, "Acoustic Grand Piano — dark drill piano chords"),
+            (88, "Pad (New Age) — sinister drill pad"),
+        ],
+        "lead": [
+            (82, "Calliope Lead — drill bell lead"),
+            (80, "Square Lead — drill synth"),
+        ],
+        "melody": [(82, "Calliope Lead — drill bell melody")],
+        "pads": [(88, "Pad (New Age) — dark drill atmosphere")],
+    },
+    "lofi": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — mellow lo-fi bass")],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — lo-fi Rhodes"),
+            (0, "Acoustic Grand Piano — lo-fi piano"),
+        ],
+        "lead": [(73, "Flute — airy lo-fi melody")],
+        "melody": [(73, "Flute — lo-fi melody")],
+        "pads": [(89, "Warm Pad — lo-fi warmth")],
+    },
+    "lo-fi": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — mellow lo-fi bass")],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — lo-fi Rhodes"),
+            (0, "Acoustic Grand Piano — lo-fi piano"),
+        ],
+        "lead": [(73, "Flute — airy lo-fi melody")],
+        "melody": [(73, "Flute — lo-fi melody")],
+        "pads": [(89, "Warm Pad — lo-fi warmth")],
+    },
+
+    # =========================================================================
+    # Jazz / Soul / R&B / Funk / Gospel
+    # =========================================================================
+    "jazz": {
+        "drums": [],
+        "bass": [
+            (32, "Acoustic Bass — jazz upright bass"),
+            (33, "Electric Bass (Finger) — jazz fusion bass"),
+        ],
+        "chords": [
+            (0, "Acoustic Grand Piano — jazz piano comping"),
+            (26, "Electric Guitar (Jazz) — hollow-body jazz guitar"),
+        ],
+        "lead": [
+            (66, "Tenor Sax — jazz sax solo"),
+            (56, "Trumpet — jazz trumpet lead"),
+        ],
+        "melody": [(66, "Tenor Sax — jazz melody")],
+        "pads": [(48, "String Ensemble — lush jazz strings")],
+    },
+    "bebop": {
+        "drums": [],
+        "bass": [(32, "Acoustic Bass — bebop walking bass (fast chromatic)")],
+        "chords": [(0, "Acoustic Grand Piano — bebop piano comping (Bud Powell style)")],
+        "lead": [
+            (65, "Alto Sax — bebop alto sax (Charlie Parker style)"),
+            (56, "Trumpet — bebop trumpet (Dizzy Gillespie style)"),
+        ],
+        "melody": [(65, "Alto Sax — bebop alto sax")],
+        "pads": [],
+    },
+    "ethio-jazz": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — Ethio-jazz electric bass")],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — Ethio-jazz Rhodes"),
+            (16, "Drawbar Organ — Ethio-jazz organ"),
+        ],
+        "lead": [
+            (66, "Tenor Sax — Ethio-jazz sax (Mulatu Astatke style)"),
+            (11, "Vibraphone — Ethio-jazz vibes"),
+        ],
+        "melody": [
+            (66, "Tenor Sax — Ethio-jazz sax melody"),
+            (73, "Flute — Ethiopian flute"),
+        ],
+        "pads": [(48, "String Ensemble")],
+    },
+    "neo-soul": {
+        "drums": [],
+        "bass": [
+            (33, "Electric Bass (Finger) — neo-soul bass"),
+            (35, "Fretless Bass — smooth neo-soul fretless"),
+        ],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — essential neo-soul Rhodes (warm, slightly overdriven)"),
+            (5, "Electric Piano 2 (DX7) — crystalline neo-soul FM keys"),
+        ],
+        "lead": [
+            (4, "Electric Piano 1 (Rhodes) — Rhodes solo"),
+            (80, "Square Lead — neo-soul synth lead"),
+        ],
+        "melody": [(4, "Electric Piano 1 (Rhodes) — neo-soul Rhodes melody")],
+        "pads": [(89, "Warm Pad — neo-soul warmth")],
+    },
+    "r&b": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — R&B bass")],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — classic R&B Rhodes"),
+            (7, "Clavinet — funky R&B clav"),
+        ],
+        "lead": [(80, "Square Lead — R&B synth lead")],
+        "melody": [(80, "Square Lead — R&B melody")],
+        "pads": [(89, "Warm Pad — R&B warmth")],
+    },
+    "soul": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — Motown soul bass")],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — soul Rhodes"),
+            (16, "Drawbar Organ — soul Hammond organ"),
+        ],
+        "lead": [
+            (66, "Tenor Sax — soul sax lead"),
+            (56, "Trumpet — soul brass"),
+        ],
+        "melody": [(66, "Tenor Sax — soul sax melody")],
+        "pads": [(48, "String Ensemble — Motown string section")],
+    },
+    "funk": {
+        "drums": [],
+        "bass": [
+            (36, "Slap Bass 1 — funky slap bass"),
+            (33, "Electric Bass (Finger) — funk fingered bass"),
+        ],
+        "chords": [
+            (7, "Clavinet — funk clav (Stevie Wonder style)"),
+            (4, "Electric Piano 1 (Rhodes) — funk Rhodes"),
+        ],
+        "lead": [
+            (61, "Brass Section — funk horn stab"),
+            (80, "Square Lead — funk synth lead"),
+        ],
+        "melody": [(61, "Brass Section — funk horn hit")],
+        "pads": [(16, "Drawbar Organ — funky organ")],
+    },
+    "gospel": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — gospel bass")],
+        "chords": [
+            (16, "Drawbar Organ — gospel Hammond organ (essential)"),
+            (0, "Acoustic Grand Piano — gospel piano"),
+        ],
+        "lead": [
+            (0, "Acoustic Grand Piano — gospel piano lead runs"),
+            (16, "Drawbar Organ — gospel organ solo"),
+        ],
+        "melody": [(0, "Acoustic Grand Piano — gospel piano melody")],
+        "pads": [
+            (19, "Church Organ — sustained gospel organ"),
+            (91, "Choir Pad — gospel vocal pad"),
+        ],
+    },
+    "blues": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — blues bass")],
+        "chords": [
+            (27, "Electric Guitar (Clean) — blues guitar comping"),
+            (0, "Acoustic Grand Piano — blues piano"),
+        ],
+        "lead": [
+            (27, "Electric Guitar (Clean) — blues guitar lead"),
+            (22, "Harmonica — blues harp"),
+        ],
+        "melody": [
+            (22, "Harmonica — blues harp melody"),
+            (27, "Electric Guitar (Clean) — blues guitar"),
+        ],
+        "pads": [(16, "Drawbar Organ — blues organ")],
+    },
+    "disco": {
+        "drums": [],
+        "bass": [
+            (33, "Electric Bass (Finger) — disco bass groove"),
+            (36, "Slap Bass 1 — disco slap bass"),
+        ],
+        "chords": [
+            (27, "Electric Guitar (Clean) — disco guitar chop (16th-note wah)"),
+            (4, "Electric Piano 1 (Rhodes) — disco Rhodes"),
+        ],
+        "lead": [
+            (62, "Synth Brass 1 — disco brass stab"),
+            (80, "Square Lead — disco synth lead"),
+        ],
+        "melody": [(62, "Synth Brass 1 — disco brass melody")],
+        "pads": [(48, "String Ensemble — disco strings (lush ascending)")],
+    },
+
+    # =========================================================================
+    # Electronic
+    # =========================================================================
+    "edm": {
+        "drums": [],
+        "bass": [
+            (38, "Synth Bass 1 — EDM sub bass"),
+            (81, "Sawtooth Lead — EDM bass growl"),
+        ],
+        "chords": [
+            (90, "Polysynth Pad — EDM supersaw chords"),
+            (62, "Synth Brass 1 — EDM brass stab"),
+        ],
+        "lead": [
+            (81, "Sawtooth Lead — EDM main lead"),
+            (80, "Square Lead — plucky EDM lead"),
+        ],
+        "melody": [(81, "Sawtooth Lead — EDM melody")],
+        "pads": [(90, "Polysynth Pad — EDM pad wash")],
+    },
+    "house": {
+        "drums": [],
+        "bass": [
+            (38, "Synth Bass 1 — house bass line"),
+            (33, "Electric Bass (Finger) — deep house bass"),
+        ],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — deep house Rhodes stabs"),
+            (90, "Polysynth Pad — house chord stabs"),
+        ],
+        "lead": [
+            (80, "Square Lead — house synth lead"),
+            (62, "Synth Brass 1 — house brass stab"),
+        ],
+        "melody": [(80, "Square Lead — house melody")],
+        "pads": [
+            (89, "Warm Pad — deep house warmth"),
+            (88, "Pad (New Age) — ambient house pad"),
+        ],
+    },
+    "techno": {
+        "drums": [],
+        "bass": [(38, "Synth Bass 1 — techno bass (acid/sub)")],
+        "chords": [
+            (90, "Polysynth Pad — techno chord stab"),
+            (88, "Pad (New Age) — techno ambient chord"),
+        ],
+        "lead": [
+            (81, "Sawtooth Lead — melodic techno lead"),
+            (80, "Square Lead — classic techno lead"),
+        ],
+        "melody": [(81, "Sawtooth Lead — melodic techno melody")],
+        "pads": [
+            (88, "Pad (New Age) — techno ambient pad"),
+            (89, "Warm Pad — deep techno pad"),
+        ],
+        "arp": [(80, "Square Lead — techno arpeggio")],
+    },
+    "drum and bass": {
+        "drums": [],
+        "bass": [
+            (38, "Synth Bass 1 — DnB reese bass"),
+            (81, "Sawtooth Lead — DnB growl bass"),
+        ],
+        "chords": [
+            (88, "Pad (New Age) — DnB atmospheric pad"),
+            (90, "Polysynth Pad — liquid DnB chords"),
+        ],
+        "lead": [
+            (80, "Square Lead — DnB synth lead"),
+            (81, "Sawtooth Lead — DnB lead"),
+        ],
+        "melody": [(80, "Square Lead — liquid DnB melody")],
+        "pads": [(88, "Pad (New Age) — DnB atmosphere")],
+    },
+    "dnb": {
+        "drums": [],
+        "bass": [
+            (38, "Synth Bass 1 — DnB reese bass"),
+            (81, "Sawtooth Lead — DnB growl bass"),
+        ],
+        "chords": [(88, "Pad (New Age) — DnB atmospheric pad")],
+        "lead": [(80, "Square Lead — DnB synth lead")],
+        "melody": [(80, "Square Lead — liquid DnB melody")],
+        "pads": [(88, "Pad (New Age) — DnB atmosphere")],
+    },
+    "dubstep": {
+        "drums": [],
+        "bass": [
+            (81, "Sawtooth Lead — dubstep wobble bass"),
+            (38, "Synth Bass 1 — dubstep sub bass"),
+        ],
+        "chords": [(90, "Polysynth Pad — dubstep chord stab")],
+        "lead": [
+            (81, "Sawtooth Lead — dubstep screech lead"),
+            (80, "Square Lead — dubstep synth"),
+        ],
+        "melody": [(80, "Square Lead — dubstep melody")],
+        "pads": [(88, "Pad (New Age) — dubstep ambient intro pad")],
+    },
+    "synthwave": {
+        "drums": [],
+        "bass": [(38, "Synth Bass 1 — analog 80s synth bass")],
+        "chords": [
+            (90, "Polysynth Pad — big 80s supersaw chords"),
+            (62, "Synth Brass 1 — 80s brass stab"),
+        ],
+        "lead": [
+            (81, "Sawtooth Lead — soaring synthwave lead"),
+            (80, "Square Lead — retro digital lead"),
+        ],
+        "melody": [(81, "Sawtooth Lead — synthwave melody")],
+        "pads": [(89, "Warm Pad — lush 80s analog pad")],
+        "arp": [(80, "Square Lead — synthwave arpeggio")],
+    },
+    "psytrance": {
+        "drums": [],
+        "bass": [(38, "Synth Bass 1 — psytrance acid bass line")],
+        "chords": [(90, "Polysynth Pad — psytrance stab")],
+        "lead": [
+            (80, "Square Lead — psytrance squelch lead"),
+            (81, "Sawtooth Lead — psytrance lead"),
+        ],
+        "melody": [(80, "Square Lead — psytrance melody")],
+        "pads": [(99, "Atmosphere FX — psychedelic texture")],
+        "arp": [(80, "Square Lead — psytrance gated arpeggio")],
+    },
+    "uk garage": {
+        "drums": [],
+        "bass": [(38, "Synth Bass 1 — UKG bouncy bass")],
+        "chords": [
+            (4, "Electric Piano 1 (Rhodes) — chopped UKG Rhodes"),
+            (90, "Polysynth Pad — UKG vocal chop chord"),
+        ],
+        "lead": [(80, "Square Lead — UKG synth lead")],
+        "melody": [(52, "Choir Aahs — UKG vocal chop melody")],
+        "pads": [(89, "Warm Pad — UKG warm pad")],
+    },
+    "ambient": {
+        "drums": [],
+        "bass": [(38, "Synth Bass 1 — ambient sub drone")],
+        "chords": [(88, "Pad (New Age) — ambient pad chord")],
+        "lead": [
+            (88, "Pad (New Age) — ambient melodic texture"),
+            (99, "Atmosphere FX — ambient drone texture"),
+        ],
+        "melody": [(88, "Pad (New Age) — ambient drifting melody")],
+        "pads": [
+            (88, "Pad (New Age) — ambient pad"),
+            (95, "Sweep Pad — ambient evolving sweep"),
+        ],
+        "arp": [(88, "Pad (New Age) — ambient granular arpeggio")],
+    },
+
+    # =========================================================================
+    # Rock / Metal / Pop / Indie
+    # =========================================================================
+    "rock": {
+        "drums": [],
+        "bass": [(34, "Electric Bass (Pick) — rock bass")],
+        "chords": [
+            (29, "Overdriven Guitar — rock rhythm guitar"),
+            (27, "Electric Guitar (Clean) — clean rock guitar"),
+        ],
+        "lead": [
+            (29, "Overdriven Guitar — rock guitar solo"),
+            (30, "Distortion Guitar — heavy rock lead"),
+        ],
+        "melody": [(29, "Overdriven Guitar — rock melody")],
+        "pads": [(48, "String Ensemble — rock power ballad strings")],
+    },
+    "progressive rock": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — prog bass (complex time)")],
+        "chords": [
+            (18, "Rock Organ — prog rock organ (Rick Wakeman style)"),
+            (0, "Acoustic Grand Piano — prog piano"),
+        ],
+        "lead": [
+            (81, "Sawtooth Lead — prog synth lead (Moog-style)"),
+            (29, "Overdriven Guitar — prog guitar solo"),
+        ],
+        "melody": [(81, "Sawtooth Lead — prog synth melody")],
+        "pads": [
+            (90, "Polysynth Pad — prog synth bed"),
+            (88, "Pad (New Age) — prog ambient texture"),
+        ],
+    },
+    "post-rock": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — post-rock bass (clean, reverbed)")],
+        "chords": [
+            (27, "Electric Guitar (Clean) — post-rock tremolo guitar (heavy reverb/delay)"),
+            (49, "Slow Strings — post-rock string layer"),
+        ],
+        "lead": [
+            (27, "Electric Guitar (Clean) — post-rock guitar with delay"),
+            (29, "Overdriven Guitar — post-rock climax guitar"),
+        ],
+        "melody": [(27, "Electric Guitar (Clean) — post-rock arpeggiated guitar")],
+        "pads": [
+            (49, "Slow Strings — post-rock string pad"),
+            (88, "Pad (New Age) — post-rock ambient texture"),
+        ],
+    },
+    "metal": {
+        "drums": [],
+        "bass": [(34, "Electric Bass (Pick) — metal bass (tight picking)")],
+        "chords": [(30, "Distortion Guitar — metal rhythm (palm-muted chugs)")],
+        "lead": [(30, "Distortion Guitar — metal guitar shred solo")],
+        "melody": [(30, "Distortion Guitar — metal melody")],
+        "pads": [(48, "String Ensemble — symphonic metal strings")],
+    },
+    "pop": {
+        "drums": [],
+        "bass": [
+            (33, "Electric Bass (Finger) — pop bass"),
+            (38, "Synth Bass 1 — modern pop synth bass"),
+        ],
+        "chords": [
+            (0, "Acoustic Grand Piano — pop piano"),
+            (4, "Electric Piano 1 (Rhodes) — pop Rhodes"),
+        ],
+        "lead": [
+            (80, "Square Lead — pop synth lead"),
+            (81, "Sawtooth Lead — bright pop lead"),
+        ],
+        "melody": [(80, "Square Lead — pop melody")],
+        "pads": [(88, "Pad (New Age) — pop ambient pad")],
+    },
+    "indie folk": {
+        "drums": [],
+        "bass": [
+            (32, "Acoustic Bass — folk upright bass"),
+            (33, "Electric Bass (Finger) — indie bass"),
+        ],
+        "chords": [
+            (25, "Acoustic Guitar (Steel) — essential folk fingerpicking/strumming"),
+            (24, "Nylon Guitar — folk classical guitar"),
+        ],
+        "lead": [
+            (25, "Acoustic Guitar (Steel) — folk lead guitar"),
+            (73, "Flute — folk flute"),
+        ],
+        "melody": [
+            (25, "Acoustic Guitar (Steel) — indie folk guitar melody"),
+            (40, "Violin — folk fiddle melody"),
+        ],
+        "pads": [
+            (48, "String Ensemble — indie folk string pad"),
+            (21, "Accordion — folk accordion"),
+        ],
+    },
+    "ska": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — ska walking bass")],
+        "chords": [(27, "Electric Guitar (Clean) — ska upstroke skank (offbeat chop)")],
+        "lead": [
+            (56, "Trumpet — ska horn section lead"),
+            (57, "Trombone — ska trombone"),
+        ],
+        "melody": [(56, "Trumpet — ska trumpet melody")],
+        "pads": [(16, "Drawbar Organ — ska organ")],
+    },
+
+    # =========================================================================
+    # Latin / World Americas
+    # =========================================================================
+    "latin": {
+        "drums": [],
+        "bass": [
+            (33, "Electric Bass (Finger) — Latin bass"),
+            (32, "Acoustic Bass — Latin acoustic"),
+        ],
+        "chords": [
+            (0, "Acoustic Grand Piano — Latin montuno"),
+            (24, "Nylon Guitar — Latin guitar"),
+        ],
+        "lead": [
+            (56, "Trumpet — Latin brass lead"),
+            (73, "Flute — Latin flute"),
+        ],
+        "melody": [(56, "Trumpet — Latin horn line")],
+        "pads": [(48, "String Ensemble — Latin strings")],
+    },
+    "new orleans": {
+        "drums": [],
+        "bass": [
+            (58, "Tuba — New Orleans sousaphone bass"),
+            (32, "Acoustic Bass — NOLA upright"),
+        ],
+        "chords": [(0, "Acoustic Grand Piano — New Orleans piano (Professor Longhair style)")],
+        "lead": [
+            (56, "Trumpet — New Orleans trumpet lead (second line)"),
+            (57, "Trombone — NOLA trombone"),
+        ],
+        "melody": [
+            (71, "Clarinet — New Orleans clarinet"),
+            (56, "Trumpet — second line trumpet"),
+        ],
+        "pads": [(61, "Brass Section — NOLA brass ensemble")],
+    },
+    "bluegrass": {
+        "drums": [],
+        "bass": [(32, "Acoustic Bass — bluegrass upright bass")],
+        "chords": [(25, "Acoustic Guitar (Steel) — bluegrass flatpick guitar")],
+        "lead": [
+            (105, "Banjo — bluegrass banjo rolls (Scruggs style)"),
+            (40, "Violin — bluegrass fiddle"),
+        ],
+        "melody": [
+            (105, "Banjo — banjo melody"),
+            (40, "Violin — bluegrass fiddle melody"),
+        ],
+        "pads": [(25, "Acoustic Guitar (Steel) — bluegrass rhythm guitar")],
+    },
+
+    # =========================================================================
+    # European classical / historical
+    # =========================================================================
+    "classical": {
+        "drums": [],
+        "bass": [
+            (42, "Cello — classical cello bass line"),
+            (43, "Contrabass — orchestral double bass"),
+        ],
+        "chords": [
+            (0, "Acoustic Grand Piano — classical piano"),
+            (48, "String Ensemble — orchestral strings"),
+        ],
+        "lead": [
+            (40, "Violin — classical violin solo"),
+            (73, "Flute — classical flute"),
+        ],
+        "melody": [
+            (40, "Violin — classical violin melody"),
+            (73, "Flute — classical flute melody"),
+        ],
+        "pads": [(48, "String Ensemble — orchestral string pad")],
+    },
+    "baroque": {
+        "drums": [],
+        "bass": [(6, "Harpsichord — baroque basso continuo")],
+        "chords": [(6, "Harpsichord — essential baroque keyboard")],
+        "lead": [
+            (40, "Violin — baroque violin solo"),
+            (73, "Flute — baroque flute"),
+        ],
+        "melody": [
+            (40, "Violin — baroque violin"),
+            (73, "Flute — baroque traverso flute"),
+        ],
+        "pads": [(48, "String Ensemble — baroque string ensemble")],
+    },
+    "cinematic": {
+        "drums": [],
+        "bass": [
+            (42, "Cello — cinematic cello bass"),
+            (43, "Contrabass — orchestral sub bass"),
+        ],
+        "chords": [
+            (48, "String Ensemble — cinematic string chords"),
+            (0, "Acoustic Grand Piano — cinematic piano"),
+        ],
+        "lead": [
+            (56, "Trumpet — heroic cinematic brass"),
+            (60, "French Horn — epic cinematic horn"),
+        ],
+        "melody": [
+            (40, "Violin — cinematic violin melody"),
+            (73, "Flute — cinematic flute"),
+        ],
+        "pads": [
+            (48, "String Ensemble — cinematic string pad"),
+            (49, "Slow Strings — cinematic sustain"),
+        ],
+    },
+    "minimalist": {
+        "drums": [],
+        "bass": [(0, "Acoustic Grand Piano — minimalist piano bass register")],
+        "chords": [(0, "Acoustic Grand Piano — minimalist piano (Reich/Glass style)")],
+        "lead": [
+            (0, "Acoustic Grand Piano — minimalist piano patterns"),
+            (11, "Vibraphone — minimalist mallet patterns"),
+        ],
+        "melody": [(0, "Acoustic Grand Piano — minimalist piano melody")],
+        "pads": [(48, "String Ensemble — minimalist string sustain")],
+        "arp": [(0, "Acoustic Grand Piano — minimalist phasing patterns")],
+    },
+    "gregorian": {
+        "drums": [],
+        "bass": [(19, "Church Organ — Gregorian organ drone pedal")],
+        "chords": [(19, "Church Organ — Gregorian organ chords")],
+        "lead": [(52, "Choir Aahs — Gregorian chant voice")],
+        "melody": [(52, "Choir Aahs — Gregorian plainchant melody")],
+        "pads": [
+            (91, "Choir Pad — Gregorian vocal ambience"),
+            (19, "Church Organ — cathedral organ sustain"),
+        ],
+    },
+
+    # =========================================================================
+    # European folk / regional
+    # =========================================================================
+    "flamenco": {
+        "drums": [],
+        "bass": [(24, "Nylon Guitar — flamenco bass thumb technique")],
+        "chords": [(24, "Nylon Guitar — flamenco rasgueado strumming (essential)")],
+        "lead": [(24, "Nylon Guitar — flamenco picado (single-note runs)")],
+        "melody": [(24, "Nylon Guitar — flamenco guitar melody")],
+        "pads": [(42, "Cello — flamenco cello drone")],
+    },
+    "klezmer": {
+        "drums": [],
+        "bass": [(32, "Acoustic Bass — klezmer upright bass")],
+        "chords": [
+            (21, "Accordion — klezmer accordion"),
+            (0, "Acoustic Grand Piano — klezmer piano"),
+        ],
+        "lead": [(71, "Clarinet — essential klezmer clarinet (laughing/crying ornaments)")],
+        "melody": [(71, "Clarinet — klezmer clarinet melody")],
+        "pads": [(40, "Violin — klezmer fiddle")],
+    },
+    "balkan": {
+        "drums": [],
+        "bass": [(58, "Tuba — Balkan brass tuba bass")],
+        "chords": [(61, "Brass Section — Balkan brass ensemble")],
+        "lead": [
+            (56, "Trumpet — Balkan trumpet lead"),
+            (71, "Clarinet — Balkan clarinet"),
+        ],
+        "melody": [
+            (71, "Clarinet — Balkan clarinet melody"),
+            (56, "Trumpet — Balkan trumpet"),
+        ],
+        "pads": [(21, "Accordion — Balkan accordion")],
+    },
+    "nordic": {
+        "drums": [],
+        "bass": [
+            (32, "Acoustic Bass — Nordic folk upright"),
+            (42, "Cello — Nordic cello drone"),
+        ],
+        "chords": [
+            (46, "Orchestral Harp — Nordic harp"),
+            (25, "Acoustic Guitar (Steel) — Nordic folk guitar"),
+        ],
+        "lead": [
+            (73, "Flute — Nordic wooden flute"),
+            (40, "Violin — Hardanger fiddle style"),
+        ],
+        "melody": [
+            (40, "Violin — Nordic fiddle melody"),
+            (73, "Flute — Nordic folk flute"),
+        ],
+        "pads": [
+            (88, "Pad (New Age) — Nordic ambient pad"),
+            (49, "Slow Strings — Nordic string drone"),
+        ],
+    },
+    "anatolian": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — Anatolian psych bass")],
+        "chords": [
+            (104, "Sitar — saz/bağlama-like string instrument"),
+            (27, "Electric Guitar (Clean) — Anatolian psych guitar"),
+        ],
+        "lead": [
+            (104, "Sitar — saz/bağlama lead (Anatolian scales)"),
+            (68, "Oboe — zurna-like Anatolian double reed"),
+        ],
+        "melody": [
+            (104, "Sitar — bağlama melody"),
+            (68, "Oboe — zurna melody"),
+        ],
+        "pads": [(88, "Pad (New Age) — psychedelic ambient pad")],
+    },
+
+    # =========================================================================
+    # African
+    # =========================================================================
+    "afrobeats": {
+        "drums": [],
+        "bass": [(33, "Electric Bass (Finger) — Afrobeats bass groove")],
+        "chords": [
+            (27, "Electric Guitar (Clean) — Afrobeats guitar pattern (palm-muted staccato)"),
+            (4, "Electric Piano 1 (Rhodes) — Afrobeats keys"),
+        ],
+        "lead": [
+            (80, "Square Lead — Afrobeats synth lead"),
+            (56, "Trumpet — Afrobeats horn accent"),
+        ],
+        "melody": [
+            (80, "Square Lead — Afrobeats melody"),
+            (27, "Electric Guitar (Clean) — Afrobeats guitar lead"),
+        ],
+        "pads": [(88, "Pad (New Age) — Afrobeats ambient pad")],
+    },
+    "west african": {
+        "drums": [],
+        "bass": [
+            (33, "Electric Bass (Finger) — West African bass"),
+            (108, "Kalimba — West African thumb piano bass"),
+        ],
+        "chords": [
+            (108, "Kalimba — West African kalimba/balafon pattern"),
+            (24, "Nylon Guitar — West African kora-like"),
+        ],
+        "lead": [
+            (108, "Kalimba — West African balafon lead"),
+            (24, "Nylon Guitar — kora-style lead"),
+        ],
+        "melody": [(108, "Kalimba — West African melody")],
+        "pads": [(52, "Choir Aahs — West African vocal texture")],
+    },
+    "gnawa": {
+        "drums": [],
+        "bass": [(32, "Acoustic Bass — sintir/guembri-like bass (deep, buzzy)")],
+        "chords": [
+            (108, "Kalimba — qraqeb metallic percussion pattern"),
+            (113, "Agogo — qraqeb-like metal castanets"),
+        ],
+        "lead": [
+            (32, "Acoustic Bass — guembri lead (bass and melody combined)"),
+            (52, "Choir Aahs — Gnawa call-and-response vocal"),
+        ],
+        "melody": [(52, "Choir Aahs — Gnawa vocal melody")],
+        "pads": [(91, "Choir Pad — Gnawa trance vocal drone")],
+    },
+
+    # =========================================================================
+    # Middle Eastern / South Asian / Sufi
+    # =========================================================================
+    "arabic": {
+        "drums": [],
+        "bass": [(24, "Nylon Guitar — oud-like bass register")],
+        "chords": [
+            (24, "Nylon Guitar — oud (essential Arabic plucked string)"),
+            (104, "Sitar — Arabic kanun/qanun-like"),
+        ],
+        "lead": [
+            (74, "Recorder — ney-like Arabic flute"),
+            (68, "Oboe — mizmar/zurna-like double reed"),
+        ],
+        "melody": [
+            (24, "Nylon Guitar — oud maqam melody"),
+            (74, "Recorder — ney melody (Arabic microtonal flute)"),
+        ],
+        "pads": [(91, "Choir Pad — Arabic vocal texture")],
+    },
+    "maqam": {
+        "drums": [],
+        "bass": [(24, "Nylon Guitar — oud bass")],
+        "chords": [(24, "Nylon Guitar — oud maqam chords")],
+        "lead": [
+            (74, "Recorder — ney (Arabic flute, microtonal scales)"),
+            (24, "Nylon Guitar — oud taqsim (improvised maqam lead)"),
+        ],
+        "melody": [(24, "Nylon Guitar — oud maqam melody")],
+        "pads": [(91, "Choir Pad — maqam vocal texture")],
+    },
+    "qawwali": {
+        "drums": [],
+        "bass": [(22, "Harmonica — harmonium drone (essential qawwali)")],
+        "chords": [
+            (22, "Harmonica — harmonium chord drone (pump organ style)"),
+            (21, "Accordion — harmonium variant"),
+        ],
+        "lead": [
+            (52, "Choir Aahs — qawwali lead vocal"),
+            (22, "Harmonica — harmonium solo passage"),
+        ],
+        "melody": [(52, "Choir Aahs — qawwali vocal melody (Nusrat style)")],
+        "pads": [(91, "Choir Pad — qawwali group vocal response")],
+    },
+    "sufi": {
+        "drums": [],
+        "bass": [(24, "Nylon Guitar — oud/tanbur drone")],
+        "chords": [
+            (22, "Harmonica — harmonium sustain"),
+            (24, "Nylon Guitar — oud drone chords"),
+        ],
+        "lead": [
+            (74, "Recorder — ney (Sufi reed flute, breathy, microtonal)"),
+            (52, "Choir Aahs — Sufi dhikr vocal"),
+        ],
+        "melody": [(74, "Recorder — ney meditation melody")],
+        "pads": [(91, "Choir Pad — Sufi vocal ambience")],
+    },
+    "hindustani": {
+        "drums": [],
+        "bass": [(104, "Sitar — tanpura drone (essential raga drone)")],
+        "chords": [(104, "Sitar — tanpura/sitar chordal drone")],
+        "lead": [
+            (104, "Sitar — sitar lead (alap, jor, jhala)"),
+            (73, "Flute — bansuri (North Indian bamboo flute)"),
+        ],
+        "melody": [
+            (104, "Sitar — sitar raga melody"),
+            (73, "Flute — bansuri raga melody"),
+        ],
+        "pads": [(47, "Timpani — tabla-like sustained drone")],
+    },
+    "raga": {
+        "drums": [],
+        "bass": [(104, "Sitar — tanpura drone")],
+        "chords": [(104, "Sitar — tanpura/sitar drone chords")],
+        "lead": [
+            (104, "Sitar — sitar raga lead"),
+            (73, "Flute — bansuri lead"),
+        ],
+        "melody": [(104, "Sitar — sitar melody")],
+        "pads": [(47, "Timpani — tabla-like drone")],
+    },
+
+    # =========================================================================
+    # East Asian / Southeast Asian / Pacific
+    # =========================================================================
+    "gamelan": {
+        "drums": [],
+        "bass": [(12, "Marimba — Balinese jegogan/calung-like bass metalophone")],
+        "chords": [(11, "Vibraphone — gamelan metalophone interlocking pattern")],
+        "lead": [
+            (11, "Vibraphone — gamelan kantilan/gangsa (high metalophone)"),
+            (13, "Xylophone — gamelan gender wayang"),
+        ],
+        "melody": [(11, "Vibraphone — gamelan melody (pokok)")],
+        "pads": [(9, "Glockenspiel — gamelan shimmering metalophone texture")],
+    },
+    "japanese": {
+        "drums": [],
+        "bass": [(107, "Koto — koto bass register")],
+        "chords": [(107, "Koto — koto arpeggiated chords")],
+        "lead": [
+            (77, "Shakuhachi — essential Japanese zen bamboo flute"),
+            (107, "Koto — koto melody"),
+        ],
+        "melody": [
+            (77, "Shakuhachi — shakuhachi zen melody"),
+            (107, "Koto — koto melody"),
+        ],
+        "pads": [(88, "Pad (New Age) — zen ambient texture")],
+    },
+    "zen": {
+        "drums": [],
+        "bass": [(107, "Koto — koto bass drone")],
+        "chords": [(107, "Koto — koto arpeggiated pattern")],
+        "lead": [(77, "Shakuhachi — shakuhachi zen flute (breathy, meditative)")],
+        "melody": [(77, "Shakuhachi — shakuhachi zen melody")],
+        "pads": [
+            (88, "Pad (New Age) — zen ambient pad"),
+            (107, "Koto — koto harmonic wash"),
+        ],
+    },
+    "korean": {
+        "drums": [],
+        "bass": [(107, "Koto — gayageum-like bass register")],
+        "chords": [(107, "Koto — gayageum/geomungo chordal pattern")],
+        "lead": [
+            (107, "Koto — gayageum sanjo lead (virtuosic bending)"),
+            (77, "Shakuhachi — daegeum-like Korean flute"),
+        ],
+        "melody": [(107, "Koto — gayageum melody")],
+        "pads": [(52, "Choir Aahs — pansori vocal texture")],
+    },
+    "sanjo": {
+        "drums": [],
+        "bass": [(107, "Koto — gayageum bass")],
+        "chords": [(107, "Koto — gayageum/geomungo")],
+        "lead": [(107, "Koto — gayageum sanjo lead")],
+        "melody": [(107, "Koto — gayageum sanjo melody")],
+        "pads": [(52, "Choir Aahs — pansori vocal")],
+    },
+    "polynesian": {
+        "drums": [],
+        "bass": [(116, "Taiko Drum — taiko bass drum pattern")],
+        "chords": [
+            (108, "Kalimba — Pacific island percussion pattern"),
+            (114, "Steel Drums — Pacific island steel pan"),
+        ],
+        "lead": [
+            (75, "Pan Flute — Polynesian nose flute"),
+            (78, "Whistle — Pacific island whistle"),
+        ],
+        "melody": [(75, "Pan Flute — Polynesian flute melody")],
+        "pads": [(52, "Choir Aahs — Polynesian choral texture")],
+    },
+    "taiko": {
+        "drums": [],
+        "bass": [(116, "Taiko Drum — taiko odaiko bass")],
+        "chords": [(116, "Taiko Drum — taiko ensemble pattern")],
+        "lead": [
+            (77, "Shakuhachi — Japanese shakuhachi accent"),
+            (116, "Taiko Drum — taiko solo"),
+        ],
+        "melody": [(77, "Shakuhachi — shakuhachi melody")],
+        "pads": [(88, "Pad (New Age) — ambient taiko reverb pad")],
+    },
+}
+
+
+def _normalize_genre_key(text: str) -> str:
+    """Normalize a genre string for matching: lowercase, strip hyphens/underscores."""
+    return text.lower().strip().replace("-", " ").replace("_", " ")
+
+
+def get_genre_gm_guidance(style: str, role: str) -> str:
+    """Return genre-specific GM program guidance for an instrument agent.
+
+    If the genre has specific voice recommendations, returns a formatted
+    string listing recommended GM programs. Returns empty string if no
+    genre-specific guidance exists.
+
+    Matching strategy: exact key match first, then bidirectional substring
+    match with hyphen/underscore normalization.
+    """
+    style_lower = style.lower().strip()
+    style_norm = _normalize_genre_key(style)
+
+    # Exact match on canonical key
+    genre_map = GENRE_GM_GUIDANCE.get(style_lower)
+
+    # Substring match (both directions) with normalization
+    if not genre_map:
+        for genre_key, gmap in GENRE_GM_GUIDANCE.items():
+            key_norm = _normalize_genre_key(genre_key)
+            if key_norm in style_norm or style_norm in key_norm:
+                genre_map = gmap
+                break
+
+    # Fallback: try matching individual words from the style
+    if not genre_map:
+        style_words = style_norm.split()
+        for genre_key, gmap in GENRE_GM_GUIDANCE.items():
+            key_norm = _normalize_genre_key(genre_key)
+            if any(key_norm == w for w in style_words):
+                genre_map = gmap
+                break
+
+    if not genre_map:
+        return ""
+
+    role_lower = role.lower().strip()
+    programs = genre_map.get(role_lower, [])
+    if not programs:
+        return ""
+
+    lines = [f"GENRE GM VOICE GUIDANCE ({style}):", "Recommended GM programs for this role:"]
+    for prog, desc in programs:
+        lines.append(f"  - gmProgram={prog}: {desc}")
+    lines.append("Use the FIRST option unless the track name or prompt strongly suggests another.")
+    return "\n".join(lines)
+
+
 def get_default_program_for_role(role: str) -> Optional[int]:
     """
     Get a sensible default GM program for a musical role.

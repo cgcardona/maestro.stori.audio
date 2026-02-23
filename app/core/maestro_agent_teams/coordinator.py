@@ -37,8 +37,18 @@ from app.core.maestro_plan_tracker import (
 )
 from app.core.maestro_editing import _apply_single_tool_call
 from app.core.maestro_agent_teams.agent import _run_instrument_agent
+from app.core.maestro_agent_teams.contracts import (
+    InstrumentContract,
+    RuntimeContext,
+    SectionSpec,
+)
+from app.core.maestro_agent_teams.sections import (
+    parse_sections,
+    _get_section_role_description,
+    _section_overall_description,
+)
+from app.core.gm_instruments import get_genre_gm_guidance
 from app.core.track_styling import allocate_colors
-from app.core.maestro_agent_teams.sections import parse_sections
 from app.core.maestro_agent_teams.signals import SectionSignals, SectionState
 from app.core.maestro_agent_teams.summary import _build_composition_summary
 
@@ -325,18 +335,27 @@ async def _handle_composition_agent_team(
             f"{list(_section_signals.events.keys())}"
         )
 
-    _composition_context: dict[str, Any] = {
-        "style": style,
-        "tempo": tempo,
-        "bars": bars,
-        "key": key,
-        "emotion_vector": _emotion_vector,
-        "quality_preset": "quality",
-        "sections": _sections,
-        "section_signals": _section_signals,
-        "section_state": _section_state,
-        "_raw_prompt": prompt,
-    }
+    _runtime_context = RuntimeContext(
+        raw_prompt=prompt,
+        emotion_vector=_emotion_vector,
+        quality_preset="quality",
+        section_signals=_section_signals,
+        section_state=_section_state,
+    )
+
+    # Build canonical SectionSpecs once — shared across all instruments
+    _section_specs: tuple[SectionSpec, ...] = tuple(
+        SectionSpec(
+            name=s.get("name", f"section_{i}"),
+            index=i,
+            start_beat=int(s.get("start_beat", 0)),
+            duration_beats=int(s.get("length_beats", 16)),
+            bars=max(1, int(s.get("length_beats", 16)) // 4),
+            character=_section_overall_description(s.get("name", f"section_{i}")),
+            role_brief="",
+        )
+        for i, s in enumerate(_sections)
+    )
 
     _role_track_info: dict[str, dict[str, Any]] = {}
     for role in parsed.roles:
@@ -376,7 +395,35 @@ async def _handle_composition_agent_team(
                 "tool": "_reused_track",
                 "params": {"name": instrument_name, "trackId": existing_track_id},
             })
-        _ctx = {**_composition_context, "role": role}
+
+        # ── Build role-specific SectionSpecs (with per-role brief) ──
+        _role_specs = tuple(
+            SectionSpec(
+                name=s.name,
+                index=s.index,
+                start_beat=s.start_beat,
+                duration_beats=s.duration_beats,
+                bars=s.bars,
+                character=s.character,
+                role_brief=_get_section_role_description(s.name, role),
+            )
+            for s in _section_specs
+        )
+
+        _instrument_contract = InstrumentContract(
+            instrument_name=instrument_name,
+            role=role,
+            style=style,
+            bars=bars,
+            tempo=tempo,
+            key=key,
+            start_beat=agent_start_beat,
+            sections=_role_specs,
+            existing_track_id=existing_track_id,
+            assigned_color=assigned_color,
+            gm_guidance=get_genre_gm_guidance(style, role),
+        )
+
         _agent_timeout = settings.instrument_agent_timeout
         task = asyncio.create_task(
             asyncio.wait_for(
@@ -397,8 +444,9 @@ async def _handle_composition_agent_team(
                     collected_tool_calls=agent_tool_calls,
                     existing_track_id=existing_track_id,
                     start_beat=agent_start_beat,
-                    composition_context=_ctx,
                     assigned_color=assigned_color,
+                    instrument_contract=_instrument_contract,
+                    runtime_context=_runtime_context,
                 ),
                 timeout=_agent_timeout,
             ),

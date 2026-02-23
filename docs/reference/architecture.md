@@ -165,6 +165,37 @@ Level 3 — SECTION CHILD (section_agent.py) — one per section per instrument
       Optional refinement LLM call for CC curves / pitch bend / automation
 ```
 
+### Contract-based handoffs (protocol, not conversation)
+
+Each level boundary is formalized with a **frozen dataclass contract** — no free-form dict passing between layers.
+
+```
+InstrumentContract  (L1 → L2)
+  ├── instrument_name, role, style, bars, tempo, key
+  ├── sections: tuple[SectionSpec, ...]   ← immutable beat layout
+  ├── existing_track_id, assigned_color
+  └── gm_guidance                         ← genre-specific GM voice block
+
+SectionContract  (L2 → L3)
+  ├── section: SectionSpec                ← name, index, start_beat, duration_beats, bars
+  ├── track_id, instrument_name, role
+  ├── style, tempo, key, region_name
+  └── l2_generate_prompt                  ← ADVISORY — L3 may refine via CoT
+
+RuntimeContext  (travels alongside contracts, not structural)
+  ├── raw_prompt, quality_preset
+  ├── emotion_vector
+  ├── section_signals, section_state
+  └── drum_telemetry                      ← injected immutably via with_drum_telemetry()
+```
+
+**Design rules:**
+- `frozen=True` on all contracts — structural fields are immutable once built by L1.
+- L3 may only reason about HOW to describe the music (Orpheus prompt). It must not reinterpret beat ranges, section names, roles, or track IDs — those come from the frozen contract.
+- `l2_generate_prompt` is explicitly marked advisory; the contract's `section.character` and `section.role_brief` are authoritative when they conflict.
+- `RuntimeContext` carries dynamic state. Immutable updates use `with_drum_telemetry()` which returns a new instance — no mutation.
+- At the `_apply_single_tool_call` boundary (tool execution layer), a bridge dict is constructed from the contract + `RuntimeContext` fields. No dict flows through the agent teams layer itself.
+
 ### Three-phase execution
 
 ```
@@ -222,7 +253,7 @@ For single-section compositions, the parent uses the sequential execution path (
 
 1. Emit `status` SSE event: `"Starting {instrument} / {section}"`
 2. If bass: `await section_signals.wait_for(section_name)` — blocks until drum section completes
-3. If bass: read `SectionState["Drums: {section}"]` — inject drum telemetry (groove, density, kick hash) into `composition_context` for the generate call
+3. If bass: read `SectionState["Drums: {section}"]` — inject drum telemetry (groove, density, kick hash) into `RuntimeContext` via `with_drum_telemetry()`, which is bridged to the generate call at the tool-execution boundary
 4. Execute `stori_add_midi_region` with parent's pre-resolved params (trackId injected)
 5. Capture `regionId` from result
 6. **Section reasoning**: brief streamed LLM call (`_reason_before_generate`) — reasons about section-specific musical approach (density, register, rhythmic choices). Emits `type: "reasoning"` events tagged with `agentId` + `sectionName` so the frontend can nest section-specific thinking under the correct section header. Returns a refined prompt for the generate call, or falls back to the parent's prompt on failure.
@@ -318,7 +349,7 @@ class SectionTelemetry:
 
 Keys follow `"Instrument: Section"` format (e.g. `"Drums: Verse"`, `"Bass: Intro"`). All writes go through an `asyncio.Lock` for thread safety across concurrent section children. Values are frozen dataclasses — immutable after write.
 
-**Bass enrichment:** Before generating, each bass section child reads `SectionState["Drums: {section}"]`. If available, the drum telemetry (groove vector, density, kick pattern hash, rhythmic complexity) is injected into the `composition_context` passed to the generate call. This enables deterministic cross-instrument awareness without expanding LLM prompts or adding token cost.
+**Bass enrichment:** Before generating, each bass section child reads `SectionState["Drums: {section}"]`. If available, the drum telemetry (groove vector, density, kick pattern hash, rhythmic complexity) is injected into a new `RuntimeContext` instance via `with_drum_telemetry()` (immutable update — frozen dataclass). The updated context is bridged to the Orpheus generate call at the tool-execution boundary. This enables deterministic cross-instrument awareness without expanding LLM prompts or adding token cost.
 
 **Diagnostic value:** The coordinator can read `section_state.snapshot()` after composition completes for orchestration diagnostics, quality scoring, and future mixing decisions.
 
