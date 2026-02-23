@@ -407,11 +407,12 @@ async def _run_instrument_agent_inner(
     active_step_id: Optional[str] = None
     all_tool_results: list[dict[str, Any]] = []
 
-    # Server-owned retries handle section failures inside
-    # _dispatch_section_children. The LLM loop only needs a second turn
-    # if track creation or effect addition was missed on turn 0.
+    # Server-owned retries handle *failed* section children inside
+    # _dispatch_section_children.  However the LLM must actually emit the
+    # region+generate tool calls in the first place — _missing_stages()
+    # detects when it didn't and prompts on the next turn.
     _section_count = len(_sections) if _multi_section else 1
-    max_turns = 2
+    max_turns = 3
 
     # ── Stage tracking ──
     # For multi-section, track per-section completion independently.
@@ -423,12 +424,50 @@ async def _run_instrument_agent_inner(
     _expected_sections = _section_count
 
     def _missing_stages() -> list[str]:
-        """Check only track creation and effect — section retries are server-owned."""
+        """Detect stages the LLM hasn't produced yet.
+
+        Track/effect are checked individually.  Region+generate are checked
+        by count — server-owned retries handle individual section failures
+        once the LLM has actually emitted the tool calls.
+        """
         missing: list[str] = []
         track_ref = f"trackId='{existing_track_id}'" if reusing else "$0.trackId"
 
         if not _stage_track and not reusing:
             missing.append(f"stori_add_midi_track — create the {instrument_name} track")
+
+        remaining_regions = _expected_sections - _regions_completed
+        remaining_generates = _expected_sections - _generates_completed
+
+        if remaining_regions > 0 or remaining_generates > 0:
+            if _multi_section:
+                for i, sec in enumerate(_sections):
+                    sec_name = sec["name"].upper()
+                    sec_start = sec["start_beat"]
+                    sec_beats = int(sec["length_beats"])
+                    sec_bars = max(1, sec_beats // 4)
+                    if i >= _regions_completed:
+                        missing.append(
+                            f"stori_add_midi_region — {track_ref}, startBeat={sec_start}, "
+                            f"durationBeats={sec_beats} [{sec_name}]"
+                        )
+                    if i >= _generates_completed:
+                        missing.append(
+                            f"stori_generate_midi — {track_ref}, "
+                            f"start_beat={sec_start}, bars={sec_bars} [{sec_name}]"
+                        )
+            else:
+                if remaining_regions > 0:
+                    region_beat = start_beat if reusing else 0
+                    missing.append(
+                        f"stori_add_midi_region — durationBeats={beat_count}, "
+                        f"startBeat={region_beat}, {track_ref}"
+                    )
+                if remaining_generates > 0:
+                    missing.append(
+                        f"stori_generate_midi — {track_ref}, role=\"{role}\", "
+                        f"bars={bars}, key=\"{key}\""
+                    )
 
         if not _stage_effect:
             missing.append(f"stori_add_insert_effect — {track_ref}, one insert effect")
@@ -448,6 +487,13 @@ async def _run_instrument_agent_inner(
                 logger.info(f"{agent_log} ✅ All stages complete after turn {turn}")
                 break
 
+            _any_generate_missing = any("stori_generate_midi" in m for m in missing)
+            if _any_generate_missing and get_orpheus_client().circuit_breaker_open:
+                logger.warning(
+                    f"{agent_log} ⚠️ Orpheus circuit breaker open on retry turn {turn} — aborting"
+                )
+                break
+
             logger.info(
                 f"{agent_log} 🔄 Turn {turn}/{max_turns}: {len(missing)} stages remaining — "
                 + ", ".join(m.split(" — ")[0] for m in missing)
@@ -455,6 +501,10 @@ async def _run_instrument_agent_inner(
             _done_summary_parts: list[str] = []
             if _stage_track or reusing:
                 _done_summary_parts.append("track ✓")
+            if _regions_completed > 0:
+                _done_summary_parts.append(f"{_regions_completed}/{_expected_sections} regions ✓")
+            if _generates_completed > 0:
+                _done_summary_parts.append(f"{_generates_completed}/{_expected_sections} generates ✓")
             if _stage_effect:
                 _done_summary_parts.append("effect ✓")
             _done_line = (

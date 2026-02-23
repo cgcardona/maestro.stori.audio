@@ -357,7 +357,7 @@ Independent instruments (keys, melody, guitar, pads, etc.) ignore `SectionSignal
 5. **Server-owned retries** — `_dispatch_section_children` automatically retries failed sections (up to 2 retries per section, 2s/5s delays). Retries re-use the original frozen `SectionContract`, skip region creation if the region already exists (idempotent), and check the Orpheus circuit breaker before each retry round. No LLM involvement — the server replays the contract deterministically.
 6. Results are collapsed into **one summary tool-result message** per dispatch batch (plus `"..."` stubs for remaining `tool_call_id`s), keeping the LLM conversation small regardless of section count.
 7. Executes `effect` call at the end
-8. The LLM retry loop (`max_turns = 2`) only retries if track creation or effect was missed on turn 0 — `_missing_stages()` no longer checks for regions or generates (those are server-owned).
+8. The LLM retry loop (`max_turns = 3`) catches any stage the LLM missed on Turn 0 — `_missing_stages()` checks track, region/generate counts, and effect. If generates are missing and the Orpheus circuit breaker is open, the loop aborts early. Server-owned retries handle *failed* section children; `_missing_stages()` handles the LLM *not emitting* the tool calls at all.
 
 For single-section compositions, the parent uses the sequential execution path (same as before the three-level refactor). Section children are only spawned for multi-section compositions.
 
@@ -397,7 +397,7 @@ When the STORI PROMPT contains `MidiExpressiveness:` or `Automation:` blocks, se
 - **No drums**: all instruments are independent, all sections run in parallel, no signals needed
 - **No bass**: drum signals fire but nobody listens, no overhead
 - **Section child failure**: server-owned retry in `_dispatch_section_children` retries the failed section (up to 2 retries, 2s/5s delays) using the same frozen `SectionContract`. Other sections continue unaffected. If all retries fail, the section is marked failed in the summary message.
-- **LLM produces incomplete plan**: the LLM loop (`max_turns = 2`) catches missing track creation or effect stages — region/generate retries are server-owned and no longer depend on the LLM.
+- **LLM produces incomplete plan**: the LLM loop (`max_turns = 3`) catches all missing stages (track, regions, generates, effect) via `_missing_stages()` and prompts the LLM on the next turn. Server-owned retries handle section execution failures once the tool calls are emitted.
 
 ### Agent safety nets
 

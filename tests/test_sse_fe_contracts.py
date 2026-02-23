@@ -1907,12 +1907,16 @@ class TestServerOwnedRetryContracts:
         assert "batch_complete" in source
         assert "_section_summaries" in source
 
-    def test_missing_stages_only_checks_track_and_effect(self):
-        """_missing_stages no longer checks region/generate — those are server-owned."""
+    def test_missing_stages_checks_all_tool_types(self):
+        """_missing_stages checks track, region, generate, and effect.
+
+        Region/generate checks ensure the LLM is prompted to produce
+        those tool calls if it didn't on Turn 0 — server-owned retries
+        handle failures AFTER the calls are emitted.
+        """
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
         source = inspect.getsource(agent_mod._run_instrument_agent_inner)
-        # Extract just _missing_stages
         lines = source.split("\n")
         in_func = False
         func_lines = []
@@ -1926,8 +1930,8 @@ class TestServerOwnedRetryContracts:
         func_body = "\n".join(func_lines)
         assert "stori_add_midi_track" in func_body
         assert "stori_add_insert_effect" in func_body
-        assert "stori_add_midi_region" not in func_body
-        assert "stori_generate_midi" not in func_body
+        assert "stori_add_midi_region" in func_body
+        assert "stori_generate_midi" in func_body
 
     def test_no_entity_manifest_injection_on_retry(self):
         """Retry turns must NOT inject entity manifest (regionIds not needed)."""
