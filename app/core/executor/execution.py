@@ -177,14 +177,32 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
                     return
 
             region_name = params.get("name", "Region")
+            _req_start = params.get("startBeat", 0)
+            _req_dur = params.get("durationBeats", 16)
+
+            _existing_rid = ctx.store.registry.find_overlapping_region(
+                track_id, _req_start, _req_dur,
+            )
+            if _existing_rid:
+                params["regionId"] = _existing_rid
+                logger.info(
+                    f"📍 Idempotent region hit: {region_name} → {_existing_rid[:8]}"
+                )
+                ctx.add_result(call.name, True, {
+                    "params": params,
+                    "existingRegionId": _existing_rid,
+                    "skipped": True,
+                }, entity_created=_existing_rid)
+                return
+
             try:
                 region_id = ctx.store.create_region(
                     name=region_name,
                     parent_track_id=track_id,
                     region_id=params.get("regionId"),
                     metadata={
-                        "startBeat": params.get("startBeat", 0),
-                        "durationBeats": params.get("durationBeats", 16),
+                        "startBeat": _req_start,
+                        "durationBeats": _req_dur,
                     },
                     transaction=ctx.transaction,
                 )

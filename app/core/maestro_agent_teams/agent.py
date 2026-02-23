@@ -428,6 +428,7 @@ async def _run_instrument_agent_inner(
     _regions_ok: int = 0              # how many returned a valid regionId
     _generates_completed: int = 0     # how many stori_generate_midi calls completed
     _expected_sections = _section_count
+    _completed_region_ids: dict[int, str] = {}  # section_index → regionId (for retry ID injection)
 
     def _missing_stages() -> list[str]:
         missing: list[str] = []
@@ -527,8 +528,19 @@ async def _run_instrument_agent_inner(
                 "DO NOT re-call completed steps.\n"
                 if _done_summary_parts else ""
             )
+            _id_lines = ""
+            if _completed_region_ids:
+                _id_entries = [
+                    f"  section[{idx}] regionId='{rid}'"
+                    for idx, rid in sorted(_completed_region_ids.items())
+                ]
+                _id_lines = (
+                    "KNOWN REGION IDs (use these — do NOT re-call stori_add_midi_region for them):\n"
+                    + "\n".join(_id_entries) + "\n"
+                )
             reminder = (
                 f"{_done_line}"
+                f"{_id_lines}"
                 "You MUST still call:\n"
                 + "\n".join(f"  • {m}" for m in missing)
                 + f"\nMake these {len(missing)} tool call(s) now. "
@@ -834,8 +846,10 @@ async def _run_instrument_agent_inner(
                     _stage_track = True
                 elif tc.name in {"stori_add_midi_region"}:
                     _regions_completed += 1
-                    if outcome.tool_result.get("regionId"):
+                    _rid = outcome.tool_result.get("regionId") or outcome.tool_result.get("existingRegionId")
+                    if _rid:
                         _regions_ok += 1
+                        _completed_region_ids[_regions_completed - 1] = _rid
                     else:
                         logger.warning(
                             f"{agent_log} stori_add_midi_region completed but returned no regionId "

@@ -459,33 +459,62 @@ async def _apply_single_tool_call(
         midi_region_track_id: Optional[str] = enriched_params.get("trackId")
         region_name: str = str(enriched_params.get("name", "Region"))
         if midi_region_track_id:
+            _req_start = enriched_params.get("startBeat", 0)
+            _req_dur = enriched_params.get("durationBeats", 16)
+
+            _existing_rid = store.registry.find_overlapping_region(
+                midi_region_track_id, _req_start, _req_dur,
+            )
+            if _existing_rid:
+                enriched_params["regionId"] = _existing_rid
+                logger.info(
+                    f"📍 Idempotent region hit: beat {_req_start}-{_req_start + _req_dur} "
+                    f"on track {midi_region_track_id[:8]} → returning {_existing_rid[:8]}"
+                )
+                _existing_entity = store.registry.get_region(_existing_rid)
+                _existing_name = _existing_entity.name if _existing_entity else region_name
+                idempotent_result: dict[str, Any] = {
+                    "success": True,
+                    "regionId": _existing_rid,
+                    "existingRegionId": _existing_rid,
+                    "skipped": True,
+                    "startBeat": _req_start,
+                    "durationBeats": _req_dur,
+                    "name": _existing_name,
+                }
+                msg_call = {
+                    "role": "assistant",
+                    "tool_calls": [{"id": tc_id, "type": "function",
+                                    "function": {"name": tc_name, "arguments": json.dumps(enriched_params)}}],
+                }
+                msg_result = {
+                    "role": "tool", "tool_call_id": tc_id,
+                    "content": json.dumps(idempotent_result),
+                }
+                return _ToolCallOutcome(
+                    enriched_params=enriched_params,
+                    tool_result=idempotent_result,
+                    sse_events=[],
+                    msg_call=msg_call,
+                    msg_result=msg_result,
+                    skipped=False,
+                )
+
             try:
                 region_id = store.create_region(
                     region_name, midi_region_track_id,
                     metadata={
-                        "startBeat": enriched_params.get("startBeat", 0),
-                        "durationBeats": enriched_params.get("durationBeats", 16),
+                        "startBeat": _req_start,
+                        "durationBeats": _req_dur,
                     }
                 )
                 enriched_params["regionId"] = region_id
             except ValueError as e:
                 logger.error(f"❌ Failed to create region: {e}")
-                _existing_rid = store.registry.find_overlapping_region(
-                    midi_region_track_id,
-                    enriched_params.get("startBeat", 0),
-                    enriched_params.get("durationBeats", 16),
-                )
                 error_result: dict[str, Any] = {
                     "success": False,
                     "error": f"Failed to create region: {e}",
                 }
-                if _existing_rid:
-                    error_result["existingRegionId"] = _existing_rid
-                    enriched_params["regionId"] = _existing_rid
-                    logger.info(
-                        f"📍 Recovery: found existing region {_existing_rid[:8]} "
-                        f"at same beat range — agent can use this regionId"
-                    )
                 msg_call = {
                     "role": "assistant",
                     "tool_calls": [{"id": tc_id, "type": "function",
@@ -501,7 +530,7 @@ async def _apply_single_tool_call(
                     sse_events=sse_events,
                     msg_call=msg_call,
                     msg_result=msg_result,
-                    skipped=not bool(_existing_rid),
+                    skipped=True,
                 )
         else:
             logger.error(

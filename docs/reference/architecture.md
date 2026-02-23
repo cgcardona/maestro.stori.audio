@@ -367,8 +367,8 @@ For single-section compositions, the parent uses the sequential execution path (
 2. Emit `status` SSE event: `"Starting {instrument} / {section}"`
 3. If bass: `await section_signals.wait_for(section_id, contract_hash=..., timeout=...)` — blocks until drum section completes or fails. On timeout or failure, proceeds without rhythm spine.
 4. If bass: read `SectionState["Drums: {section_id}"]` — inject drum telemetry (groove, density, kick hash) into `RuntimeContext` via `with_drum_telemetry()`, which is bridged to the generate call at the tool-execution boundary
-5. Execute `stori_add_midi_region` — all structural params (`trackId`, `startBeat`, `durationBeats`) come **exclusively from the frozen contract**, never from LLM-proposed values. LLM drift is silently corrected.
-6. Capture `regionId` from result
+5. Execute `stori_add_midi_region` — all structural params (`trackId`, `startBeat`, `durationBeats`) come **exclusively from the frozen contract**, never from LLM-proposed values. LLM drift is silently corrected. **Idempotent:** if a region already exists at the same (trackId, startBeat, durationBeats) location, the existing region's ID is returned with `skipped: true` and no `toolCall` event is emitted to the frontend — preventing duplicate-region errors when agents retry after context truncation.
+6. Capture `regionId` from result (also injected into retry reminders so agents can proceed without re-calling)
 7. **Section reasoning**: brief streamed LLM call (`_reason_before_generate`) — reasons about section-specific musical approach (density, register, rhythmic choices). Emits `type: "reasoning"` events tagged with `agentId` + `sectionName` so the frontend can nest section-specific thinking under the correct section header. Returns a refined prompt for the generate call, or falls back to the parent's prompt on failure.
 8. Execute `stori_generate_midi` — structural params (`trackId`, `regionId`, `role`, `bars`, `key`, `start_beat`, `tempo`) also come from the frozen contract.
 9. Extract generated notes from SSE events
@@ -411,11 +411,11 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 **Track color pre-allocation:**
 - Before Phase 2 starts, the coordinator calls `allocate_colors(instrument_names)` (`app/core/track_styling.py`) to assign one distinct hex color per instrument from a fixed 12-entry perceptually-spaced palette (`COMPOSITION_PALETTE`). Colors are chosen in role order so adjacent tracks always contrast. Each instrument agent receives its pre-assigned color and is instructed to pass it verbatim in `stori_add_midi_track` — the agent cannot override it. This prevents the LLM from hallucinating repeated colors (the original bug was all tracks receiving amber/orange).
 
-**Orpheus pre-flight health check:**
-- Before Phase 2 starts, the coordinator calls `OrpheusClient.health_check()`. If it returns `False` or raises, a `{"type": "status"}` SSE event is emitted immediately with a human-readable warning ("⚠️ Music generation (Orpheus) is not responding…") so the macOS client can surface the problem before any instrument agent is spawned. Composition continues with retry logic active; if Orpheus recovers within the retry window, generation succeeds.
+**Orpheus pre-flight health check (hard gate):**
+- Before Phase 2 starts, the coordinator calls `OrpheusClient.health_check()`. When `STORI_ORPHEUS_REQUIRED=true` (default), an unhealthy probe aborts the composition immediately with `complete(success=false)` instead of wasting 45+ seconds of LLM reasoning that would inevitably fail at generation time. When `STORI_ORPHEUS_REQUIRED=false` (development/testing), it falls back to a soft warning and continues with retry logic active.
 
 **Orpheus transient-error retry:**
-- `OrpheusClient.generate()` retries up to 4 attempts (delays: 2 s / 5 s / 10 s / 20 s) on *any* transient error — GPU cold-start phrases (`"No GPU was available"`, etc.), Gradio-level transient errors (`"'NoneType' object is not a mapping"`, `"Queue is full"`, `"upstream Gradio app has raised an exception"`), and **any 5xx HTTP status code** (including 503 Service Unavailable). The retry label in logs distinguishes the two (`"GPU cold-start"` vs `"Gradio transient error"`).
+- `OrpheusClient.generate()` retries up to 4 attempts (delays: 2 s / 5 s / 10 s / 20 s) on *any* transient error — GPU cold-start phrases (`"No GPU was available"`, etc.), Gradio-level transient errors (`"'NoneType' object is not a mapping"`, `"Queue is full"`, `"upstream Gradio app has raised an exception"`, `"timed out"`), `httpx.ReadTimeout` exceptions, and **any 5xx HTTP status code** (including 503 Service Unavailable). The retry label in logs distinguishes the two (`"GPU cold-start"` vs `"Gradio transient error"`).
 
 **Orpheus circuit breaker:**
 - After `orpheus_cb_threshold` (default 3) consecutive failed `generate()` calls (across requests — not retries within a single call), the circuit breaker trips. While tripped, all subsequent `generate()` calls fail immediately with `error: "orpheus_circuit_open"` — no HTTP request is made, no tokens are wasted on LLM reasoning for retries that will also fail. The circuit automatically allows one probe request after `orpheus_cb_cooldown` seconds (default 60). If the probe succeeds, the circuit closes and normal operation resumes; if it fails, the circuit re-opens for another cooldown period. Instrument parents check `circuit_breaker_open` after dispatching section children — if the breaker is open and generates are still pending, the agent breaks out of its retry loop instead of making another LLM call.
@@ -438,9 +438,12 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 | `STORI_INSTRUMENT_AGENT_TIMEOUT` | 600 | Per-instrument parent watchdog (seconds) |
 | `STORI_BASS_SIGNAL_WAIT_TIMEOUT` | 240 | Bass waiting for drum signal (seconds) |
 | `STORI_ORPHEUS_MAX_CONCURRENT` | 4 | GPU inference semaphore slots |
-| `STORI_ORPHEUS_TIMEOUT` | 360 | Per-Orpheus HTTP call timeout (seconds) |
+| `STORI_ORPHEUS_TIMEOUT` | 180 | Max read timeout per Orpheus HTTP call (seconds) |
+| `STORI_ORPHEUS_TIMEOUT_BASE` | 60 | Fixed overhead per request (connect + cold-start buffer) |
+| `STORI_ORPHEUS_TIMEOUT_PER_BAR` | 15 | Added per bar of requested music (A100: ~1-2 bars/s) |
 | `STORI_ORPHEUS_CB_THRESHOLD` | 3 | Consecutive failures before circuit breaker trips |
 | `STORI_ORPHEUS_CB_COOLDOWN` | 60 | Seconds before tripped circuit allows a probe |
+| `STORI_ORPHEUS_REQUIRED` | true | Abort composition if pre-flight health check fails |
 
 ### SectionState — deterministic musical telemetry
 
@@ -563,6 +566,10 @@ For **natural language** prompts: the EmotionVector is not derived (no structure
 ### Orpheus connection pool
 
 `OrpheusClient` is a process-wide singleton (see `app/services/orpheus.get_orpheus_client()`). The `httpx.AsyncClient` is created once at startup with explicit connection limits and keepalive settings, and `warmup()` is called in the FastAPI lifespan to pre-establish the TCP connection before the first user request.
+
+**Dynamic timeout scaling:** The read timeout per request is computed as `base + (per_bar * bars)`, clamped to `[30, orpheus_timeout]`. A 4-bar request gets ~120s; a 32-bar request gets ~540s. This replaces the previous flat 360s timeout.
+
+**Orpheus-music service (container):** The Orpheus container wraps the HuggingFace Space Gradio API. Key reliability features: (1) `asyncio.wait_for()` around each Gradio `predict()` call (default 120s per call, configurable via `ORPHEUS_PREDICT_TIMEOUT`), (2) periodic keepalive pings to prevent the HF Space GPU from going to sleep (`ORPHEUS_KEEPALIVE_INTERVAL`, default 600s), (3) automatic Gradio client recreation on connection failures, (4) `/diagnostics` endpoint for operational visibility (Gradio client status, HF Space status, active generation count, cache stats).
 
 ---
 

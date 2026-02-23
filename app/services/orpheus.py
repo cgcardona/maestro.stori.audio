@@ -26,6 +26,8 @@ _GRADIO_TRANSIENT_PHRASES = (
     "is not a mapping",
     "Queue is full",
     "Connection refused",
+    "read operation timed out",
+    "timed out",
 )
 
 _MAX_RETRIES = 4
@@ -127,6 +129,17 @@ class OrpheusClient:
     def circuit_breaker_open(self) -> bool:
         """True when the circuit breaker is tripped (Orpheus is down)."""
         return self._cb.is_open
+
+    def _timeout_for_bars(self, bars: int) -> float:
+        """Compute dynamic read timeout scaled to the number of requested bars.
+
+        Formula: base + (per_bar * bars), clamped to [30, orpheus_timeout].
+        Short requests (4 bars) get ~120s; long ones (32 bars) get ~540s.
+        """
+        base = settings.orpheus_timeout_base
+        per_bar = settings.orpheus_timeout_per_bar
+        dynamic = base + per_bar * bars
+        return float(min(max(dynamic, 30), self.timeout))
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -307,11 +320,19 @@ class OrpheusClient:
                 )
 
             _gen_start = asyncio.get_event_loop().time()
+            _req_timeout = self._timeout_for_bars(bars)
+            _req_httpx_timeout = httpx.Timeout(
+                connect=5.0, read=_req_timeout, write=30.0, pool=5.0,
+            )
+            logger.debug(
+                f"[Orpheus] Read timeout for {bars} bars: {_req_timeout:.0f}s"
+            )
             for attempt in range(_MAX_RETRIES):
                 try:
                     response = await self.client.post(
                         f"{self.base_url}/generate",
                         json=payload,
+                        timeout=_req_httpx_timeout,
                     )
                     response.raise_for_status()
                     data = response.json()
@@ -411,6 +432,29 @@ class OrpheusClient:
                         "success": False,
                         "error": f"HTTP {status_code}: {body}",
                         "retry_count": attempt,
+                    }
+
+                except httpx.ReadTimeout:
+                    if attempt < _MAX_RETRIES - 1:
+                        delay = _RETRY_DELAYS[attempt]
+                        logger.warning(
+                            f"⚠️ Orpheus read timeout "
+                            f"(attempt {attempt + 1}/{_MAX_RETRIES}) — retrying in {delay}s"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    self._cb.record_failure()
+                    logger.error(
+                        f"❌ Orpheus read timeout after {_MAX_RETRIES} attempts"
+                    )
+                    return {
+                        "success": False,
+                        "error": "Orpheus generation timed out",
+                        "message": (
+                            f"MIDI generation timed out after {_MAX_RETRIES} attempts. "
+                            "The GPU may be overloaded — try again shortly."
+                        ),
+                        "retry_count": attempt + 1,
                     }
 
                 except httpx.ConnectError:

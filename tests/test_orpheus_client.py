@@ -11,6 +11,8 @@ def _patch_settings(m):
     """Apply default Orpheus test settings to a mock."""
     m.orpheus_base_url = "http://orpheus:10002"
     m.orpheus_timeout = 30
+    m.orpheus_timeout_base = 10
+    m.orpheus_timeout_per_bar = 5
     m.hf_api_key = None
     m.orpheus_max_concurrent = 2
     m.orpheus_cb_threshold = 3

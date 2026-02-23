@@ -263,9 +263,10 @@ async def _handle_composition_agent_team(
 
     # ── GPU warm-up: fire a lightweight health probe before spawning agents ──
     # This primes the Gradio Space GPU pod so the first real generation call
-    # does not hit the 60-second cold-start timeout.  If Orpheus is unreachable
-    # we surface a user-facing status event so the macOS client can show a
-    # warning before committing to a full composition run.
+    # does not hit the 60-second cold-start timeout.  When orpheus_required is
+    # true (default), an unhealthy probe aborts the composition immediately
+    # instead of wasting 45+ seconds of LLM reasoning that will inevitably
+    # fail at generation time.
     _orpheus_healthy = True
     try:
         from app.services.orpheus import get_orpheus_client
@@ -275,27 +276,41 @@ async def _handle_composition_agent_team(
             logger.debug(f"[{trace.trace_id[:8]}] Orpheus GPU warm-up: healthy ✓")
         else:
             logger.warning(
-                f"⚠️ [{trace.trace_id[:8]}] Orpheus health check failed before composition — "
-                "generation may fail; retry logic will attempt recovery"
+                f"⚠️ [{trace.trace_id[:8]}] Orpheus health check failed before composition"
             )
+    except Exception as _wu_exc:
+        _orpheus_healthy = False
+        logger.warning(f"⚠️ [{trace.trace_id[:8]}] Orpheus warm-up probe failed: {_wu_exc}")
+
+    if not _orpheus_healthy:
+        if settings.orpheus_required:
+            logger.error(
+                f"❌ [{trace.trace_id[:8]}] Orpheus required but unavailable — "
+                "aborting composition (set STORI_ORPHEUS_REQUIRED=false to override)"
+            )
+            yield await sse_event({
+                "type": "error",
+                "message": (
+                    "Music generation service (Orpheus) is not responding. "
+                    "Cannot start composition — please verify Orpheus is running "
+                    "and retry."
+                ),
+            })
+            yield await sse_event({
+                "type": "complete",
+                "success": False,
+                "error": "Orpheus health check failed — composition aborted",
+                "traceId": trace.trace_id,
+            })
+            return
+        else:
             yield await sse_event({
                 "type": "status",
                 "message": (
                     "⚠️ Music generation (Orpheus) is not responding. "
-                    "MIDI regions may be empty — verify Orpheus is running on port 10002, "
-                    "then retry."
+                    "MIDI regions may be empty — retry logic will attempt recovery."
                 ),
             })
-    except Exception as _wu_exc:
-        _orpheus_healthy = False
-        logger.warning(f"⚠️ [{trace.trace_id[:8]}] Orpheus warm-up probe failed: {_wu_exc}")
-        yield await sse_event({
-            "type": "status",
-            "message": (
-                f"⚠️ Could not reach music generation service (Orpheus): {_wu_exc}. "
-                "MIDI regions will be empty — check that Orpheus is running."
-            ),
-        })
 
     # ── Section parsing: decompose STORI PROMPT into musical sections ──
     _sections = parse_sections(

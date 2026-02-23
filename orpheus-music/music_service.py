@@ -39,21 +39,62 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Orpheus Music Service")
 
-# Lazy-load Gradio client
+# Gradio client with reconnection and keepalive
 gradio_client = None
+_client_lock = asyncio.Lock()
+_last_keepalive: float = 0.0
+_last_successful_gen: float = 0.0
+_active_generations: int = 0
 
 _DEFAULT_SPACE = "asigalov61/Orpheus-Music-Transformer"
+_KEEPALIVE_INTERVAL = int(os.environ.get("ORPHEUS_KEEPALIVE_INTERVAL", "600"))
 
-def get_client():
+
+def _create_client() -> Client:
+    """Create a fresh Gradio client connection."""
+    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
+    if not hf_token:
+        logger.warning("⚠️ No HF_TOKEN or STORI_HF_API_KEY set; Gradio Space may return GPU quota errors")
+    space_id = os.environ.get("STORI_ORPHEUS_SPACE", _DEFAULT_SPACE)
+    logger.info(f"🔌 Connecting to Orpheus Space: {space_id}")
+    return Client(space_id, hf_token=hf_token)
+
+
+def get_client() -> Client:
     global gradio_client
     if gradio_client is None:
-        hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
-        if not hf_token:
-            logger.warning("No HF_TOKEN or STORI_HF_API_KEY set; Gradio Space may return GPU quota errors")
-        space_id = os.environ.get("STORI_ORPHEUS_SPACE", _DEFAULT_SPACE)
-        logger.info(f"Connecting to Orpheus Space: {space_id}")
-        gradio_client = Client(space_id, hf_token=hf_token)
+        gradio_client = _create_client()
     return gradio_client
+
+
+def reset_client() -> None:
+    """Force-recreate the Gradio client on next access (call after connection failures)."""
+    global gradio_client
+    logger.warning("🔄 Resetting Gradio client — will reconnect on next request")
+    gradio_client = None
+
+
+async def _keepalive_loop() -> None:
+    """Periodic ping to keep the HF Space GPU awake (prevents gcTimeout eviction)."""
+    global _last_keepalive
+    while True:
+        await asyncio.sleep(_KEEPALIVE_INTERVAL)
+        try:
+            client = get_client()
+            await asyncio.wait_for(
+                asyncio.to_thread(client.view_api, print_info=False),
+                timeout=30.0,
+            )
+            _last_keepalive = time()
+            logger.debug(f"💓 Orpheus keepalive ping OK")
+        except Exception as e:
+            logger.warning(f"⚠️ Orpheus keepalive ping failed: {e}")
+            reset_client()
+
+
+@app.on_event("startup")
+async def _start_keepalive():
+    asyncio.create_task(_keepalive_loop())
 
 
 # ============================================================================
@@ -890,6 +931,53 @@ async def health():
     return {"status": "ok", "service": "orpheus-music"}
 
 
+@app.get("/diagnostics")
+async def diagnostics():
+    """Structured diagnostics for the Orpheus service pipeline."""
+    now = time()
+    space_id = os.environ.get("STORI_ORPHEUS_SPACE", _DEFAULT_SPACE)
+
+    gradio_status = "disconnected"
+    hf_space_status = "unknown"
+    if gradio_client is not None:
+        gradio_status = "connected"
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(gradio_client.view_api, print_info=False),
+                timeout=10.0,
+            )
+            hf_space_status = "awake"
+        except asyncio.TimeoutError:
+            hf_space_status = "unresponsive"
+        except Exception as e:
+            hf_space_status = f"error: {str(e)[:80]}"
+
+    cache_size = len(_result_cache)
+    total_hits = sum(e.hits for e in _result_cache.values())
+
+    return {
+        "service": "orpheus-music",
+        "space_id": space_id,
+        "gradio_client": gradio_status,
+        "hf_space": hf_space_status,
+        "active_generations": _active_generations,
+        "last_successful_gen_ago_s": (
+            round(now - _last_successful_gen, 1) if _last_successful_gen > 0 else None
+        ),
+        "last_keepalive_ago_s": (
+            round(now - _last_keepalive, 1) if _last_keepalive > 0 else None
+        ),
+        "keepalive_interval_s": _KEEPALIVE_INTERVAL,
+        "predict_timeout_s": float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "120")),
+        "cache": {
+            "size": cache_size,
+            "max_size": MAX_CACHE_SIZE,
+            "total_hits": total_hits,
+            "ttl_s": CACHE_TTL_SECONDS,
+        },
+    }
+
+
 @app.get("/cache/stats")
 async def cache_stats():
     """
@@ -1027,15 +1115,17 @@ async def ab_test(request: ABTestRequest):
 @app.post("/generate", response_model=GenerateResponse)
 async def generate(request: GenerateRequest):
     """Generate music with result caching and optimized parameters."""
+    global _active_generations, _last_successful_gen
+
     # Check cache first
     cache_key = get_cache_key(request)
     cached = get_cached_result(cache_key)
     if cached:
-        # Mark as cache hit in metadata
         if "metadata" in cached:
             cached["metadata"]["cache_hit"] = True
         return GenerateResponse(**cached)
     
+    _active_generations += 1
     try:
         client = get_client()
         
@@ -1101,23 +1191,51 @@ async def generate(request: GenerateRequest):
         # Generate with Orpheus using policy-computed parameters
         # Gradio client.predict() is synchronous/blocking — offload to
         # a thread so the event loop stays free for health checks and
-        # concurrent generation requests.
-        result = await asyncio.to_thread(
-            client.predict,
-            input_midi=handle_file(seed_path),
-            prime_instruments=orpheus_instruments,
-            num_prime_tokens=num_prime_tokens,
-            num_gen_tokens=num_gen_tokens,
-            model_temperature=temperature,
-            model_top_p=top_p,
-            add_drums="drums" in [i.lower() for i in request.instruments],
-            api_name="/generate_music_and_state",
-        )
-        
+        # concurrent generation requests.  Wrapped in wait_for() to
+        # prevent indefinite hangs when the HF Space is unresponsive.
+        _predict_timeout = float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "120"))
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.predict,
+                    input_midi=handle_file(seed_path),
+                    prime_instruments=orpheus_instruments,
+                    num_prime_tokens=num_prime_tokens,
+                    num_gen_tokens=num_gen_tokens,
+                    model_temperature=temperature,
+                    model_top_p=top_p,
+                    add_drums="drums" in [i.lower() for i in request.instruments],
+                    api_name="/generate_music_and_state",
+                ),
+                timeout=_predict_timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                f"❌ Gradio /generate_music_and_state timed out after {_predict_timeout}s"
+            )
+            return GenerateResponse(
+                success=False,
+                tool_calls=[],
+                error=f"Orpheus generation timed out after {_predict_timeout}s",
+            )
+
         # Get MIDI file from first batch
-        midi_result = await asyncio.to_thread(
-            client.predict, batch_number=0, api_name="/add_batch"
-        )
+        try:
+            midi_result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.predict, batch_number=0, api_name="/add_batch"
+                ),
+                timeout=_predict_timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                f"❌ Gradio /add_batch timed out after {_predict_timeout}s"
+            )
+            return GenerateResponse(
+                success=False,
+                tool_calls=[],
+                error=f"Orpheus batch retrieval timed out after {_predict_timeout}s",
+            )
         midi_path = midi_result[2]
         
         # Parse MIDI (CPU-bound — also offloaded to keep loop free)
@@ -1177,6 +1295,7 @@ async def generate(request: GenerateRequest):
         
         # Cache the result
         cache_result(cache_key, response_data)
+        _last_successful_gen = time()
         
         logger.info(f"✅ Generated {len(tool_calls)} tool calls, quality_score={quality_metrics.get('quality_score', 0):.2f}")
         
@@ -1184,12 +1303,17 @@ async def generate(request: GenerateRequest):
         
     except Exception as e:
         logger.error(f"❌ Generation failed: {e}")
+        _err_str = str(e).lower()
+        if any(kw in _err_str for kw in ("connection", "refused", "reset", "eof")):
+            reset_client()
         error_response = {
             "success": False,
             "tool_calls": [],
             "error": str(e)
         }
         return GenerateResponse(**error_response)
+    finally:
+        _active_generations -= 1
 
 
 if __name__ == "__main__":

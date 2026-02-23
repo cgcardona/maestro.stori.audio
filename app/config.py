@@ -129,10 +129,13 @@ class Settings(BaseSettings):
     
     # Music Generation Service Configuration
     orpheus_base_url: str = "http://localhost:10002"
-    orpheus_timeout: int = 360  # seconds — 32-bar generations through Gradio queue can take 5+ min
+    orpheus_timeout: int = 180  # seconds — default max read timeout (overridden by per-bar scaling)
+    orpheus_timeout_base: int = 60   # seconds — fixed overhead (connect + cold-start buffer)
+    orpheus_timeout_per_bar: int = 15  # seconds per bar of requested music (A100: ~1-2 bars/s)
     orpheus_max_concurrent: int = 4  # max parallel GPU inference calls (A100: 4, A10G: 2)
     orpheus_cb_threshold: int = 3   # consecutive failures before circuit breaker trips
     orpheus_cb_cooldown: int = 60   # seconds before tripped circuit allows a probe request
+    orpheus_required: bool = True   # hard-gate: abort composition if pre-flight health check fails
     
     hf_api_key: Optional[str] = None  # HuggingFace API key
     hf_timeout: int = 120  # seconds (HF can be slow on cold starts)

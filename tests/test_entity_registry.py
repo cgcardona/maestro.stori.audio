@@ -65,6 +65,40 @@ class TestEntityRegistryBasics:
         region = registry.get_region(region_id)
         assert region is not None and region.name == "Main Pattern" and region.parent_id == track_id
     
+    def test_create_region_idempotent_same_beat_range(self):
+        """Duplicate stori_add_midi_region at same beat range returns existing ID."""
+        registry = EntityRegistry()
+        track_id = registry.create_track("Strings")
+
+        first_id = registry.create_region(
+            "BUILD", track_id,
+            metadata={"startBeat": 0, "durationBeats": 28},
+        )
+        second_id = registry.create_region(
+            "BUILD", track_id,
+            metadata={"startBeat": 0, "durationBeats": 28},
+        )
+
+        assert first_id == second_id
+        assert len(registry.get_track_regions(track_id)) == 1
+
+    def test_create_region_different_beat_range_creates_new(self):
+        """Different beat ranges create distinct regions (not idempotent)."""
+        registry = EntityRegistry()
+        track_id = registry.create_track("Strings")
+
+        first_id = registry.create_region(
+            "VERSE", track_id,
+            metadata={"startBeat": 0, "durationBeats": 16},
+        )
+        second_id = registry.create_region(
+            "CHORUS", track_id,
+            metadata={"startBeat": 16, "durationBeats": 16},
+        )
+
+        assert first_id != second_id
+        assert len(registry.get_track_regions(track_id)) == 2
+
     def test_create_region_without_parent_fails(self):
         """Should fail to create region without valid parent track."""
         registry = EntityRegistry()

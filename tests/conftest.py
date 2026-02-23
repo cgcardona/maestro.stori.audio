@@ -33,6 +33,16 @@ def anyio_backend():
 
 
 @pytest.fixture(autouse=True)
+def _disable_orpheus_hard_gate():
+    """Tests don't have Orpheus running — disable the pre-flight hard gate."""
+    from app.config import settings
+    original = settings.orpheus_required
+    settings.orpheus_required = False
+    yield
+    settings.orpheus_required = original
+
+
+@pytest.fixture(autouse=True)
 def _reset_variation_store():
     """Reset the singleton VariationStore between tests to prevent cross-test pollution."""
     yield
