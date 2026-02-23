@@ -1667,3 +1667,331 @@ class TestExpressionRefinementStreaming:
         system_msg = captured_messages[0]["content"]
         assert "CC 1 value 30-50" in system_msg
         assert "modulation:" in system_msg
+
+
+# =============================================================================
+# Server-Owned Retries — regression tests
+# =============================================================================
+
+
+class TestServerOwnedRetries:
+    """Regression tests for server-owned section retries (no LLM on retry)."""
+
+    @pytest.mark.anyio
+    async def test_failed_section_retried_server_side(self):
+        """A section that fails on first attempt is retried without LLM."""
+        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+
+        store = StateStore(conversation_id="test-server-retry")
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+        all_results: list[dict] = []
+        collected: list[dict] = []
+
+        track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
+        r1 = _region_tc("r1", start_beat=0, duration=16)
+        g1 = _generate_tc("g1", role="drums")
+        effect_tc = ToolCall(
+            id="e1", name="stori_add_insert_effect", params={"type": "compressor"},
+        )
+
+        track_outcome = _ToolCallOutcome(
+            enriched_params={"name": "Drums", "trackId": "trk-42"},
+            tool_result={"trackId": "trk-42"},
+            sse_events=[{"type": "toolCall", "name": "stori_add_midi_track"}],
+            msg_call={},
+            msg_result={},
+        )
+
+        _gen_attempts = 0
+
+        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+            nonlocal _gen_attempts
+            if tc_name == "stori_add_midi_track":
+                return track_outcome
+            if tc_name == "stori_add_midi_region":
+                return _ok_region_outcome(tc_id)
+            if tc_name == "stori_generate_midi":
+                _gen_attempts += 1
+                if _gen_attempts == 1:
+                    return _failed_generate_outcome(tc_id)
+                return _ok_generate_outcome(tc_id)
+            if tc_name == "stori_add_insert_effect":
+                return _ToolCallOutcome(
+                    enriched_params=resolved_args,
+                    tool_result={"effectId": "fx-1"},
+                    sse_events=[],
+                    msg_call={},
+                    msg_result={},
+                )
+            return _ToolCallOutcome(
+                enriched_params=resolved_args,
+                tool_result={},
+                sse_events=[],
+                msg_call={},
+                msg_result={},
+            )
+
+        sections = [_section("verse", 0, 16)]
+        ic = _instrument_contract(sections)
+
+        mock_plan = MagicMock()
+        mock_plan.steps = []
+        mock_plan.complete_step_by_id = MagicMock(return_value=None)
+        mock_plan.activate_step = MagicMock(return_value={"type": "planStepUpdate"})
+        mock_plan.get_step = MagicMock(return_value=None)
+
+        mock_orpheus = MagicMock()
+        mock_orpheus.circuit_breaker_open = False
+
+        with patch(
+            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ), patch(
+            "app.core.maestro_agent_teams.agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ), patch(
+            "app.core.maestro_agent_teams.agent.get_orpheus_client",
+            return_value=mock_orpheus,
+        ), patch(
+            "asyncio.sleep", new_callable=AsyncMock,
+        ):
+            msgs, st, se, rc, ro, gc = await _dispatch_section_children(
+                tool_calls=[track_tc, r1, g1, effect_tc],
+                sections=sections,
+                existing_track_id=None,
+                instrument_name="Drums",
+                role="drums",
+                style="house",
+                tempo=120.0,
+                key="Am",
+                agent_id="drums",
+                agent_log="[test][Drums]",
+                reusing=False,
+                allowed_tool_names={
+                    "stori_add_midi_track", "stori_add_midi_region",
+                    "stori_generate_midi", "stori_add_insert_effect",
+                },
+                store=store,
+                trace=_trace(),
+                sse_queue=queue,
+                instrument_contract=ic,
+                collected_tool_calls=collected,
+                all_tool_results=all_results,
+                add_notes_failures={},
+                runtime_context=None,
+                plan_tracker=mock_plan,
+                step_ids=["s1", "s2"],
+                active_step_id=None,
+                llm=MagicMock(),
+                prior_stage_track=False,
+                prior_stage_effect=False,
+                prior_regions_completed=0,
+                prior_regions_ok=0,
+                prior_generates_completed=0,
+            )
+
+        assert gc == 1, "Section should succeed after server retry"
+        assert ro == 1
+        assert _gen_attempts == 2, "Generate should be called twice (fail + retry)"
+
+    @pytest.mark.anyio
+    async def test_circuit_breaker_skips_section_retries(self):
+        """Server retries are skipped when Orpheus circuit breaker is open."""
+        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+
+        store = StateStore(conversation_id="test-cb-skip")
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+
+        track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
+        r1 = _region_tc("r1", start_beat=0, duration=16)
+        g1 = _generate_tc("g1", role="drums")
+
+        track_outcome = _ToolCallOutcome(
+            enriched_params={"name": "Drums", "trackId": "trk-42"},
+            tool_result={"trackId": "trk-42"},
+            sse_events=[{"type": "toolCall", "name": "stori_add_midi_track"}],
+            msg_call={},
+            msg_result={},
+        )
+
+        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+            if tc_name == "stori_add_midi_track":
+                return track_outcome
+            if tc_name == "stori_add_midi_region":
+                return _ok_region_outcome(tc_id)
+            if tc_name == "stori_generate_midi":
+                return _failed_generate_outcome(tc_id)
+            return _ToolCallOutcome(
+                enriched_params=resolved_args,
+                tool_result={},
+                sse_events=[],
+                msg_call={},
+                msg_result={},
+            )
+
+        sections = [_section("verse", 0, 16)]
+        ic = _instrument_contract(sections)
+
+        mock_plan = MagicMock()
+        mock_plan.steps = []
+        mock_plan.complete_step_by_id = MagicMock(return_value=None)
+        mock_plan.activate_step = MagicMock(return_value={"type": "planStepUpdate"})
+        mock_plan.get_step = MagicMock(return_value=None)
+
+        mock_orpheus = MagicMock()
+        mock_orpheus.circuit_breaker_open = True
+
+        with patch(
+            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ), patch(
+            "app.core.maestro_agent_teams.agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ), patch(
+            "app.core.maestro_agent_teams.agent.get_orpheus_client",
+            return_value=mock_orpheus,
+        ):
+            msgs, st, se, rc, ro, gc = await _dispatch_section_children(
+                tool_calls=[track_tc, r1, g1],
+                sections=sections,
+                existing_track_id=None,
+                instrument_name="Drums",
+                role="drums",
+                style="house",
+                tempo=120.0,
+                key="Am",
+                agent_id="drums",
+                agent_log="[test][Drums]",
+                reusing=False,
+                allowed_tool_names={
+                    "stori_add_midi_track", "stori_add_midi_region",
+                    "stori_generate_midi",
+                },
+                store=store,
+                trace=_trace(),
+                sse_queue=queue,
+                instrument_contract=ic,
+                collected_tool_calls=[],
+                all_tool_results=[],
+                add_notes_failures={},
+                runtime_context=None,
+                plan_tracker=mock_plan,
+                step_ids=["s1", "s2"],
+                active_step_id=None,
+                llm=MagicMock(),
+                prior_stage_track=False,
+                prior_stage_effect=False,
+                prior_regions_completed=0,
+                prior_regions_ok=0,
+                prior_generates_completed=0,
+            )
+
+        assert gc == 0, "No retries should happen with circuit breaker open"
+
+    @pytest.mark.anyio
+    async def test_summary_message_replaces_individual_tool_results(self):
+        """Dispatch returns collapsed summary instead of N individual tool results."""
+        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+
+        store = StateStore(conversation_id="test-summary")
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+
+        track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
+        r1 = _region_tc("r1", start_beat=0, duration=16)
+        g1 = _generate_tc("g1", role="drums")
+        r2 = _region_tc("r2", start_beat=16, duration=16)
+        g2 = _generate_tc("g2", role="drums")
+
+        track_outcome = _ToolCallOutcome(
+            enriched_params={"name": "Drums", "trackId": "trk-42"},
+            tool_result={"trackId": "trk-42"},
+            sse_events=[{"type": "toolCall", "name": "stori_add_midi_track"}],
+            msg_call={},
+            msg_result={},
+        )
+
+        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+            if tc_name == "stori_add_midi_track":
+                return track_outcome
+            if tc_name == "stori_add_midi_region":
+                return _ok_region_outcome(tc_id)
+            if tc_name == "stori_generate_midi":
+                return _ok_generate_outcome(tc_id)
+            return _ToolCallOutcome(
+                enriched_params=resolved_args,
+                tool_result={},
+                sse_events=[],
+                msg_call={},
+                msg_result={},
+            )
+
+        sections = [_section("intro", 0, 16), _section("verse", 16, 16)]
+        ic = _instrument_contract(sections)
+
+        mock_plan = MagicMock()
+        mock_plan.steps = []
+        mock_plan.complete_step_by_id = MagicMock(return_value=None)
+        mock_plan.activate_step = MagicMock(return_value={"type": "planStepUpdate"})
+        mock_plan.get_step = MagicMock(return_value=None)
+
+        with patch(
+            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ), patch(
+            "app.core.maestro_agent_teams.agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ):
+            msgs, st, se, rc, ro, gc = await _dispatch_section_children(
+                tool_calls=[track_tc, r1, g1, r2, g2],
+                sections=sections,
+                existing_track_id=None,
+                instrument_name="Drums",
+                role="drums",
+                style="house",
+                tempo=120.0,
+                key="Am",
+                agent_id="drums",
+                agent_log="[test][Drums]",
+                reusing=False,
+                allowed_tool_names={
+                    "stori_add_midi_track", "stori_add_midi_region",
+                    "stori_generate_midi",
+                },
+                store=store,
+                trace=_trace(),
+                sse_queue=queue,
+                instrument_contract=ic,
+                collected_tool_calls=[],
+                all_tool_results=[],
+                add_notes_failures={},
+                runtime_context=None,
+                plan_tracker=mock_plan,
+                step_ids=["s1", "s2"],
+                active_step_id=None,
+                llm=MagicMock(),
+                prior_stage_track=False,
+                prior_stage_effect=False,
+                prior_regions_completed=0,
+                prior_regions_ok=0,
+                prior_generates_completed=0,
+            )
+
+        # Track result (1) + summary anchor (1) + 3 stubs (g1 + r2 + g2) = 5
+        assert len(msgs) == 5
+
+        # First msg is track creation result
+        track_msg = msgs[0]
+        track_content = json.loads(track_msg["content"])
+        assert "trackId" in track_content
+
+        # Second msg is the summary (anchored to first region tc)
+        summary_msg = msgs[1]
+        assert summary_msg["tool_call_id"] == "r1"
+        summary = json.loads(summary_msg["content"])
+        assert summary["status"] == "batch_complete"
+        assert len(summary["sections"]) == 2
+        assert all(s["status"] == "ok" for s in summary["sections"])
+
+        # Remaining msgs are stubs
+        for stub in msgs[2:]:
+            assert stub["content"] == "..."

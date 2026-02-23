@@ -40,10 +40,14 @@ class EntityInfo:
     name: str
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
     # For regions: which track they belong to
     parent_id: Optional[str] = None
-    
+
+    # Namespace scoping: which agent run created this entity.
+    # Used to filter agent_manifest() so agents only see their own entities.
+    owner_agent_id: Optional[str] = None
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -52,6 +56,7 @@ class EntityInfo:
             "created_at": self.created_at.isoformat(),
             "metadata": self.metadata,
             "parent_id": self.parent_id,
+            "owner_agent_id": self.owner_agent_id,
         }
 
 
@@ -133,6 +138,7 @@ class EntityRegistry:
         name: str,
         track_id: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
+        owner_agent_id: Optional[str] = None,
     ) -> str:
         """
         Create and register a new track.
@@ -141,6 +147,7 @@ class EntityRegistry:
             name: Display name for the track
             track_id: Optional pre-generated ID (for client sync)
             metadata: Optional additional metadata
+            owner_agent_id: Agent run that created this entity (for manifest scoping)
             
         Returns:
             The track ID (generated or provided)
@@ -152,6 +159,7 @@ class EntityRegistry:
             entity_type=EntityType.TRACK,
             name=name,
             metadata=metadata or {},
+            owner_agent_id=owner_agent_id,
         )
         
         self._tracks[track_id] = entity
@@ -184,6 +192,7 @@ class EntityRegistry:
         parent_track_id: str,
         region_id: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
+        owner_agent_id: Optional[str] = None,
     ) -> str:
         """
         Create and register a new region.
@@ -198,6 +207,7 @@ class EntityRegistry:
             parent_track_id: ID of the parent track
             region_id: Optional pre-generated ID
             metadata: Optional additional metadata (startBeat, durationBeats, etc.)
+            owner_agent_id: Agent run that created this entity (for manifest scoping)
             
         Returns:
             The region ID
@@ -230,6 +240,7 @@ class EntityRegistry:
             name=name,
             parent_id=parent_track_id,
             metadata=meta,
+            owner_agent_id=owner_agent_id,
         )
         
         self._regions[region_id] = entity
@@ -456,6 +467,54 @@ class EntityRegistry:
         """List all registered buses."""
         return list(self._buses.values())
     
+    def agent_manifest(
+        self,
+        track_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+    ) -> str:
+        """Compact text manifest of entities for injection into LLM context.
+
+        When ``track_id`` is given, only that track and its regions are
+        included.  When ``agent_id`` is given, only entities owned by
+        that agent are included — this prevents cross-agent contamination
+        (e.g. Strings regions leaking into the Bass agent manifest).
+        """
+        lines: list[str] = ["ENTITY REGISTRY (authoritative IDs — use these, never guess):"]
+
+        tracks = self.list_tracks()
+        if track_id:
+            tracks = [t for t in tracks if t.id == track_id]
+        if agent_id:
+            tracks = [t for t in tracks if t.owner_agent_id == agent_id]
+        if not tracks:
+            lines.append("  (no tracks yet)")
+            return "\n".join(lines)
+
+        for t in tracks:
+            meta = t.metadata or {}
+            extra = ""
+            if meta.get("drumKitId"):
+                extra = f", drumKit={meta['drumKitId']}"
+            elif meta.get("gmProgram"):
+                extra = f", gm={meta['gmProgram']}"
+            lines.append(f"  Track \"{t.name}\" → trackId='{t.id}'{extra}")
+
+            region_ids = self._track_regions.get(t.id, [])
+            for rid in region_ids:
+                r = self._regions.get(rid)
+                if not r:
+                    continue
+                if agent_id and r.owner_agent_id != agent_id:
+                    continue
+                rmeta = r.metadata or {}
+                start = rmeta.get("startBeat", "?")
+                dur = rmeta.get("durationBeats", "?")
+                lines.append(
+                    f"    Region \"{r.name}\" → regionId='{r.id}' "
+                    f"(beat {start}–{int(start) + int(dur) if isinstance(start, (int, float)) and isinstance(dur, (int, float)) else '?'})"
+                )
+        return "\n".join(lines)
+
     # =========================================================================
     # Synchronization with Client State
     # =========================================================================
@@ -545,6 +604,7 @@ class EntityRegistry:
                 entity_type=EntityType.TRACK,
                 name=tdata.get("name", ""),
                 metadata=tdata.get("metadata", {}),
+                owner_agent_id=tdata.get("owner_agent_id"),
             )
             registry._track_names[tdata.get("name", "").lower()] = tid
             registry._track_regions[tid] = []
@@ -558,6 +618,7 @@ class EntityRegistry:
                 name=rdata.get("name", ""),
                 parent_id=parent_id,
                 metadata=rdata.get("metadata", {}),
+                owner_agent_id=rdata.get("owner_agent_id"),
             )
             registry._region_names[rdata.get("name", "").lower()] = rid
             if parent_id and parent_id in registry._track_regions:
@@ -570,6 +631,7 @@ class EntityRegistry:
                 entity_type=EntityType.BUS,
                 name=bdata.get("name", ""),
                 metadata=bdata.get("metadata", {}),
+                owner_agent_id=bdata.get("owner_agent_id"),
             )
             registry._bus_names[bdata.get("name", "").lower()] = bid
         

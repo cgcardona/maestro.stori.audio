@@ -2025,8 +2025,7 @@ class TestBuildToolResult:
         assert result["success"] is True
         assert result["trackId"] == track_id
         assert result["name"] == "Drums"
-        assert "entities" in result
-        assert any(t["trackId"] == track_id for t in result["entities"]["tracks"])
+        assert "entities" not in result
 
     def test_add_midi_region_returns_region_id_and_metadata(self):
         """stori_add_midi_region result MUST include regionId, trackId, startBeat, durationBeats."""
@@ -2048,7 +2047,7 @@ class TestBuildToolResult:
         assert result["trackId"] == track_id
         assert result["startBeat"] == 0
         assert result["durationBeats"] == 32
-        assert "entities" in result
+        assert "entities" not in result
 
     def test_add_notes_returns_confirmation(self):
         """stori_add_notes result MUST include notesAdded and totalNotes."""
@@ -2104,7 +2103,7 @@ class TestBuildToolResult:
 
         assert result["success"] is True
         assert result["busId"] == bus_id
-        assert "entities" in result
+        assert "entities" not in result
 
     def test_add_insert_effect_returns_track_id(self):
         """stori_add_insert_effect result includes trackId."""
@@ -2127,55 +2126,42 @@ class TestBuildToolResult:
 
 
 # =============================================================================
-# _entity_manifest — regression tests for entity snapshot completeness
+# EntityRegistry.agent_manifest — regression tests for entity snapshot
 # =============================================================================
 
 
 class TestEntityManifest:
-    """_entity_manifest must include noteCount and region metadata."""
+    """EntityRegistry.agent_manifest returns compact text with entity IDs."""
 
-    def test_manifest_includes_note_count(self):
-        """Regions in the manifest must show noteCount so the model doesn't re-add."""
-        from app.core.maestro_helpers import _entity_manifest
+    def test_manifest_includes_track_and_region_ids(self):
+        """Track and region IDs must appear in the manifest text."""
         store = StateStore(conversation_id="test-manifest")
         track_id = store.create_track("Drums")
         region_id = store.create_region("Pattern", track_id, metadata={"startBeat": 0, "durationBeats": 16})
-        notes = [{"pitch": 36, "startBeat": 0, "durationBeats": 0.5, "velocity": 100}]
-        store.add_notes(region_id, notes)
 
-        manifest = _entity_manifest(store)
+        manifest = store.registry.agent_manifest()
 
-        assert len(manifest["tracks"]) == 1
-        track = manifest["tracks"][0]
-        assert track["trackId"] == track_id
-        assert len(track["regions"]) == 1
-        region = track["regions"][0]
-        assert region["regionId"] == region_id
-        assert region["noteCount"] == 1
-        assert region["startBeat"] == 0
-        assert region["durationBeats"] == 16
+        assert track_id in manifest
+        assert region_id in manifest
+        assert "Drums" in manifest
+        assert "Pattern" in manifest
 
-    def test_manifest_empty_region_shows_zero_notes(self):
-        """A region with no notes must show noteCount: 0."""
-        from app.core.maestro_helpers import _entity_manifest
+    def test_manifest_empty_registry(self):
+        """Empty registry must show 'no tracks yet'."""
         store = StateStore(conversation_id="test-manifest-empty")
-        track_id = store.create_track("Bass")
-        region_id = store.create_region("Verse", track_id, metadata={"startBeat": 0, "durationBeats": 32})
+        manifest = store.registry.agent_manifest()
+        assert "no tracks yet" in manifest
 
-        manifest = _entity_manifest(store)
-        region = manifest["tracks"][0]["regions"][0]
-        assert region["noteCount"] == 0
+    def test_manifest_scoped_to_track(self):
+        """When track_id is given, only that track's entities appear."""
+        store = StateStore(conversation_id="test-manifest-scope")
+        tid1 = store.create_track("Drums")
+        tid2 = store.create_track("Bass")
+        store.create_region("Verse", tid2, metadata={"startBeat": 0, "durationBeats": 32})
 
-    def test_manifest_includes_buses(self):
-        """Buses must appear in the manifest."""
-        from app.core.maestro_helpers import _entity_manifest
-        store = StateStore(conversation_id="test-manifest-bus")
-        bus_id = store.get_or_create_bus("Reverb")
-
-        manifest = _entity_manifest(store)
-        assert len(manifest["buses"]) == 1
-        assert manifest["buses"][0]["busId"] == bus_id
-        assert manifest["buses"][0]["name"] == "Reverb"
+        manifest = store.registry.agent_manifest(track_id=tid1)
+        assert "Drums" in manifest
+        assert "Bass" not in manifest
 
 
 # =============================================================================

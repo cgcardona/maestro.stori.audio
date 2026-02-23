@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional, cast
 
@@ -27,7 +26,6 @@ from app.core.maestro_helpers import (
     UsageTracker,
     StreamFinalResponse,
     _context_usage_fields,
-    _entity_manifest,
     _resolve_variable_refs,
     _stream_llm_response,
 )
@@ -264,14 +262,13 @@ async def _handle_editing(
                 yield await sse_event(evt)
 
         if response is not None and response.has_tool_calls:
-            snapshot = _entity_manifest(store)
+            manifest = store.registry.agent_manifest()
             messages.append({
                 "role": "system",
                 "content": (
-                    "ENTITY STATE AFTER TOOL CALLS (authoritative — use these IDs):\n"
-                    + json.dumps(snapshot, indent=None)
-                    + "\nUse the IDs above for subsequent tool calls. "
-                    "Do NOT re-add notes to regions that already have notes (check noteCount). "
+                    f"{manifest}\n"
+                    "Use the IDs above for subsequent tool calls. "
+                    "Do NOT re-add notes to regions that already have notes. "
                     "Do NOT call stori_clear_notes unless explicitly replacing content. "
                     "A successful stori_add_notes response means the notes were stored — "
                     "do not redo the call."
@@ -330,7 +327,7 @@ async def _handle_editing(
                     parsed, tool_calls_collected
                 )
                 if missing_expressive:
-                    entity_snapshot = _entity_manifest(store)
+                    manifest = store.registry.agent_manifest()
                     messages.append({
                         "role": "system",
                         "content": (
@@ -342,9 +339,9 @@ async def _handle_editing(
                         ),
                     })
                     expressive_msg = (
-                        "⚠️ EXPRESSIVE PHASE — call ALL of these in ONE batch, then stop:\n"
+                        "EXPRESSIVE PHASE — call ALL of these in ONE batch, then stop:\n"
                         + "\n".join(f"  {i+1}. {m}" for i, m in enumerate(missing_expressive))
-                        + f"\n\nEntity IDs for your calls:\n{entity_snapshot}"
+                        + f"\n\n{manifest}"
                         + "\n\nBatch ALL tool calls in a single response. No text. Just the tool calls."
                     )
                     messages.append({"role": "user", "content": expressive_msg})

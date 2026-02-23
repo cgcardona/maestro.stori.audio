@@ -1214,24 +1214,39 @@ class TestFailedRegionSkipsGenerator:
 
 
 class TestTruncatedResultGuidance:
-    """BUG 3 regression: L2 agent system prompt must explain that '...'
-    truncated tool results are successes, not failures."""
+    """BUG 3 regression: With server-owned retries and collapsed summaries,
+    truncation is no longer a risk.  The truncation guidance was removed from
+    the system prompt — verify the replacement architecture instead."""
 
-    def test_truncation_guidance_in_system_prompt(self):
-        """The L2 system prompt must contain truncation handling instructions."""
+    def test_collapsed_summary_replaces_truncation_guidance(self):
+        """Server-owned retries + collapsed summaries eliminate truncation risk."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
-        source = inspect.getsource(agent_mod._run_instrument_agent_inner)
-        assert "truncat" in source.lower()
-        assert "does NOT mean the call failed" in source or "does NOT mean" in source
+        source = inspect.getsource(agent_mod._dispatch_section_children)
+        assert "batch_complete" in source
+        assert "_section_summaries" in source
 
     def test_entity_manifest_stripped_from_tool_results(self):
-        """Tool results fed back to LLM context must not contain 'entities' key."""
+        """Tool results fed back to LLM context use _compact_tool_result to strip bulky fields."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
         source = inspect.getsource(agent_mod._run_instrument_agent_inner)
-        assert "entities" in source
-        assert "compact_result" in source or "_compact_result" in source
+        assert "_compact_tool_result" in source
+
+    def test_build_tool_result_no_entities_key(self):
+        """_build_tool_result must NOT embed an 'entities' dict — manifests are injected separately."""
+        from app.core.maestro_helpers import _build_tool_result
+        from app.core.state_store import StateStore
+        store = StateStore(conversation_id="test-no-entities")
+        tid = store.create_track("Drums")
+        rid = store.create_region("Intro", tid, metadata={"startBeat": 0, "durationBeats": 16})
+        result = _build_tool_result(
+            "stori_add_midi_region",
+            {"regionId": rid, "trackId": tid, "startBeat": 0, "durationBeats": 16, "name": "Intro"},
+            store,
+        )
+        assert "entities" not in result
+        assert result["regionId"] == rid
 
 
 class TestGenreGMVoiceGuidance:
@@ -1808,7 +1823,6 @@ class TestCompactToolResults:
         source = inspect.getsource(agent_mod._run_instrument_agent_inner)
         assert "Already completed" in source
         assert "DO NOT re-call" in source
-        assert "'...' in a prior result means SUCCESS" in source or "truncated output" in source
 
 
 class TestCompleteEventAlwaysFlushed:
@@ -1870,3 +1884,61 @@ class TestLowNoteCountGuard:
         for role in ("accordion", "gaita", "marimba"):
             scorer = mg._scorer_for_instrument(role, GeneratorBackend.ORPHEUS, 8, "cumbia")
             assert scorer is not None, f"'{role}' must be recognised by scorer"
+
+
+class TestServerOwnedRetryContracts:
+    """Server-owned retries: the server retries failed sections without LLM."""
+
+    def test_dispatch_has_server_owned_retry_loop(self):
+        """_dispatch_section_children retries failed sections server-side."""
+        import inspect
+        from app.core.maestro_agent_teams import agent as agent_mod
+        source = inspect.getsource(agent_mod._dispatch_section_children)
+        assert "_MAX_SECTION_RETRIES" in source
+        assert "_RETRY_DELAYS" in source
+        assert "_failed_indices" in source
+        assert "_retry_round" in source
+
+    def test_dispatch_returns_collapsed_summary(self):
+        """Dispatch returns a batch_complete summary instead of per-call tool results."""
+        import inspect
+        from app.core.maestro_agent_teams import agent as agent_mod
+        source = inspect.getsource(agent_mod._dispatch_section_children)
+        assert "batch_complete" in source
+        assert "_section_summaries" in source
+
+    def test_missing_stages_only_checks_track_and_effect(self):
+        """_missing_stages no longer checks region/generate — those are server-owned."""
+        import inspect
+        from app.core.maestro_agent_teams import agent as agent_mod
+        source = inspect.getsource(agent_mod._run_instrument_agent_inner)
+        # Extract just _missing_stages
+        lines = source.split("\n")
+        in_func = False
+        func_lines = []
+        for line in lines:
+            if "def _missing_stages" in line:
+                in_func = True
+            if in_func:
+                func_lines.append(line)
+                if line.strip().startswith("return "):
+                    break
+        func_body = "\n".join(func_lines)
+        assert "stori_add_midi_track" in func_body
+        assert "stori_add_insert_effect" in func_body
+        assert "stori_add_midi_region" not in func_body
+        assert "stori_generate_midi" not in func_body
+
+    def test_no_entity_manifest_injection_on_retry(self):
+        """Retry turns must NOT inject entity manifest (regionIds not needed)."""
+        import inspect
+        from app.core.maestro_agent_teams import agent as agent_mod
+        source = inspect.getsource(agent_mod._run_instrument_agent_inner)
+        assert "agent_manifest" not in source
+
+    def test_entity_registry_supports_agent_scoping(self):
+        """EntityRegistry.agent_manifest accepts agent_id for namespace scoping."""
+        import inspect
+        from app.core.entity_registry import EntityRegistry
+        sig = inspect.signature(EntityRegistry.agent_manifest)
+        assert "agent_id" in sig.parameters

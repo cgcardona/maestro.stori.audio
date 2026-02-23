@@ -50,6 +50,8 @@ def _build_composition_summary(
             regions_created += 1
         elif name == "stori_add_notes":
             notes_generated += len(params.get("notes", []))
+        elif name == "stori_generate_midi":
+            notes_generated += params.get("_notesGenerated", 0)
         elif name == "stori_add_insert_effect":
             effects_added.append({
                 "trackId": params.get("trackId", ""),

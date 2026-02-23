@@ -11,7 +11,6 @@ Three-level architecture:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 import uuid as _uuid_mod
@@ -27,7 +26,6 @@ from app.core.tools import ALL_TOOLS
 from app.core.maestro_helpers import (
     UsageTracker,
     _context_usage_fields,
-    _entity_manifest,
     _resolve_variable_refs,
 )
 from app.core.maestro_plan_tracker import (
@@ -663,7 +661,7 @@ async def _handle_composition_agent_team(
         and s.tool_name in _AGENT_TEAM_PHASE3_TOOLS
     ]
     if phase3_steps:
-        entity_snapshot = _entity_manifest(store)
+        entity_snapshot = store.registry.agent_manifest()
         phase3_tools = [
             t for t in ALL_TOOLS
             if t["function"]["name"] in _AGENT_TEAM_PHASE3_TOOLS
@@ -671,7 +669,7 @@ async def _handle_composition_agent_team(
         mixing_prompt = (
             "All instrument tracks have been created. Apply final mixing:\n"
             + "\n".join(f"- {s.label}" for s in phase3_steps)
-            + f"\n\nCurrent entity IDs:\n{json.dumps(entity_snapshot)}\n\n"
+            + f"\n\n{entity_snapshot}\n\n"
             "Batch ALL mixing tool calls in a single response. No text."
         )
         try:

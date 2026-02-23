@@ -17,7 +17,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY music_service.py generation_policy.py quality_metrics.py ./
+COPY music_service.py generation_policy.py quality_metrics.py stress_test.py ./
+
+# Persistent cache directory (mounted as volume)
+RUN mkdir -p /data/cache && chown -R orpheus:orpheus /data
 
 # Security: Set ownership
 RUN chown -R orpheus:orpheus /app

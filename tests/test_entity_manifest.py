@@ -2,7 +2,7 @@
 Tests for entity manifest and entity ID echo in maestro_handlers.
 
 Coverage:
-  1. _entity_manifest — structure, tracks, regions, buses
+  1. EntityRegistry.agent_manifest — structure, tracks, regions
   2. _ENTITY_CREATING_TOOLS — correct membership
   3. _ENTITY_ID_ECHO — correct field lists per tool
   4. EntityRegistry CRUD — create, resolve, exists, list
@@ -21,92 +21,137 @@ from app.core.entity_registry import (
     create_registry_from_context,
 )
 from app.core.maestro_helpers import (
-    _entity_manifest,
     _ENTITY_CREATING_TOOLS,
     _ENTITY_ID_ECHO,
 )
 
 
 # ===========================================================================
-# 1. _entity_manifest structure
+# 1. EntityRegistry.agent_manifest — text-based manifest
 # ===========================================================================
 
 class TestEntityManifest:
-    """_entity_manifest returns a compact entity listing for the LLM."""
+    """EntityRegistry.agent_manifest returns compact text for LLM context."""
 
-    def _store_with_tracks(self, *track_names: str):
-        """Return a mock store whose registry has the given tracks."""
-        registry = EntityRegistry()
-        track_ids = {}
-        for name in track_names:
-            tid = registry.create_track(name)
-            track_ids[name] = tid
-        store = MagicMock()
-        store.registry = registry
-        return store, registry, track_ids
-
-    def test_empty_store_returns_empty_manifest(self):
-        store = MagicMock()
-        store.registry = EntityRegistry()
-        manifest = _entity_manifest(store)
-        assert manifest == {"tracks": [], "buses": []}
+    def test_empty_registry_shows_no_tracks(self):
+        reg = EntityRegistry()
+        manifest = reg.agent_manifest()
+        assert "no tracks yet" in manifest
 
     def test_single_track_in_manifest(self):
-        store, registry, ids = self._store_with_tracks("Drums")
-        manifest = _entity_manifest(store)
-        assert len(manifest["tracks"]) == 1
-        track = manifest["tracks"][0]
-        assert track["name"] == "Drums"
-        assert track["trackId"] == ids["Drums"]
+        reg = EntityRegistry()
+        tid = reg.create_track("Drums")
+        manifest = reg.agent_manifest()
+        assert "Drums" in manifest
+        assert tid in manifest
 
     def test_multiple_tracks_all_in_manifest(self):
-        store, registry, ids = self._store_with_tracks("Drums", "Bass", "Melody")
-        manifest = _entity_manifest(store)
-        names = {t["name"] for t in manifest["tracks"]}
-        assert names == {"Drums", "Bass", "Melody"}
+        reg = EntityRegistry()
+        ids = {name: reg.create_track(name) for name in ("Drums", "Bass", "Melody")}
+        manifest = reg.agent_manifest()
+        for name, tid in ids.items():
+            assert name in manifest
+            assert tid in manifest
 
-    def test_regions_nested_under_tracks(self):
-        store, registry, ids = self._store_with_tracks("Drums")
-        tid = ids["Drums"]
-        rid = registry.create_region("Intro", parent_track_id=tid)
-        manifest = _entity_manifest(store)
-        track_entry = manifest["tracks"][0]
-        assert len(track_entry["regions"]) == 1
-        region = track_entry["regions"][0]
-        assert region["name"] == "Intro"
-        assert region["regionId"] == rid
+    def test_regions_listed_under_tracks(self):
+        reg = EntityRegistry()
+        tid = reg.create_track("Drums")
+        rid = reg.create_region("Intro", parent_track_id=tid,
+                                metadata={"startBeat": 0, "durationBeats": 16})
+        manifest = reg.agent_manifest()
+        assert "Intro" in manifest
+        assert rid in manifest
+        assert "regionId" in manifest
 
     def test_multiple_regions_on_same_track(self):
-        store, registry, ids = self._store_with_tracks("Bass")
-        tid = ids["Bass"]
-        rid1 = registry.create_region("Intro Bass", parent_track_id=tid)
-        rid2 = registry.create_region("Verse Bass", parent_track_id=tid)
-        manifest = _entity_manifest(store)
-        regions = manifest["tracks"][0]["regions"]
-        assert len(regions) == 2
-        region_ids = {r["regionId"] for r in regions}
-        assert rid1 in region_ids
-        assert rid2 in region_ids
-
-    def test_bus_in_manifest(self):
-        registry = EntityRegistry()
-        bid = registry.create_bus("Reverb")
-        store = MagicMock()
-        store.registry = registry
-        manifest = _entity_manifest(store)
-        assert len(manifest["buses"]) == 1
-        assert manifest["buses"][0]["name"] == "Reverb"
-        assert manifest["buses"][0]["busId"] == bid
+        reg = EntityRegistry()
+        tid = reg.create_track("Bass")
+        rid1 = reg.create_region("Intro Bass", parent_track_id=tid)
+        rid2 = reg.create_region("Verse Bass", parent_track_id=tid)
+        manifest = reg.agent_manifest()
+        assert rid1 in manifest
+        assert rid2 in manifest
 
     def test_manifest_ids_are_valid_strings(self):
-        store, registry, ids = self._store_with_tracks("Drums")
-        tid = ids["Drums"]
-        registry.create_region("Pattern", parent_track_id=tid)
-        manifest = _entity_manifest(store)
-        track = manifest["tracks"][0]
-        assert isinstance(track["trackId"], str)
-        assert len(track["trackId"]) > 8
-        assert isinstance(track["regions"][0]["regionId"], str)
+        reg = EntityRegistry()
+        tid = reg.create_track("Drums")
+        rid = reg.create_region("Pattern", parent_track_id=tid)
+        manifest = reg.agent_manifest()
+        assert tid in manifest
+        assert rid in manifest
+
+    def test_scoped_manifest_shows_only_given_track(self):
+        reg = EntityRegistry()
+        tid1 = reg.create_track("Drums")
+        tid2 = reg.create_track("Bass")
+        reg.create_region("Intro", parent_track_id=tid1)
+        reg.create_region("Verse", parent_track_id=tid2)
+        manifest = reg.agent_manifest(track_id=tid1)
+        assert "Drums" in manifest
+        assert tid1 in manifest
+        assert "Bass" not in manifest
+        assert tid2 not in manifest
+
+    def test_agent_id_scoped_manifest_shows_only_own_entities(self):
+        """agent_manifest(agent_id=...) filters to entities owned by that agent."""
+        reg = EntityRegistry()
+        tid1 = reg.create_track("Drums", owner_agent_id="agent-drums")
+        tid2 = reg.create_track("Bass", owner_agent_id="agent-bass")
+        reg.create_region(
+            "Drums Intro", parent_track_id=tid1,
+            metadata={"startBeat": 0, "durationBeats": 16},
+            owner_agent_id="agent-drums",
+        )
+        reg.create_region(
+            "Bass Intro", parent_track_id=tid2,
+            metadata={"startBeat": 0, "durationBeats": 16},
+            owner_agent_id="agent-bass",
+        )
+        manifest = reg.agent_manifest(agent_id="agent-drums")
+        assert "Drums" in manifest
+        assert tid1 in manifest
+        assert "Drums Intro" in manifest
+        assert "Bass" not in manifest
+        assert tid2 not in manifest
+        assert "Bass Intro" not in manifest
+
+    def test_agent_id_filters_regions_across_tracks(self):
+        """Regions owned by other agents are excluded even on the same track."""
+        reg = EntityRegistry()
+        tid = reg.create_track("Shared Track", owner_agent_id="agent-a")
+        reg.create_region(
+            "Region A", parent_track_id=tid,
+            metadata={"startBeat": 0, "durationBeats": 16},
+            owner_agent_id="agent-a",
+        )
+        reg.create_region(
+            "Region B", parent_track_id=tid,
+            metadata={"startBeat": 16, "durationBeats": 16},
+            owner_agent_id="agent-b",
+        )
+        manifest = reg.agent_manifest(agent_id="agent-a")
+        assert "Region A" in manifest
+        assert "Region B" not in manifest
+
+    def test_owner_agent_id_persists_through_serialization(self):
+        """owner_agent_id survives to_dict / from_dict round-trip."""
+        reg = EntityRegistry()
+        tid = reg.create_track("Drums", owner_agent_id="agent-drums")
+        reg.create_region(
+            "Intro", parent_track_id=tid,
+            metadata={"startBeat": 0, "durationBeats": 16},
+            owner_agent_id="agent-drums",
+        )
+        data = reg.to_dict()
+        restored = EntityRegistry.from_dict(data)
+
+        track = restored.get_track(tid)
+        assert track is not None
+        assert track.owner_agent_id == "agent-drums"
+
+        regions = restored.get_track_regions(tid)
+        assert len(regions) == 1
+        assert regions[0].owner_agent_id == "agent-drums"
 
 
 # ===========================================================================
@@ -429,3 +474,137 @@ class TestEntityRegistrySerialisation:
         restored = EntityRegistry.from_dict(reg.to_dict())
         latest = restored.get_latest_region_for_track("t1")
         assert latest == "r1"
+
+
+# ===========================================================================
+# 7. agent_manifest — LLM context injection (regression for P0 truncation bug)
+# ===========================================================================
+
+class TestAgentManifest:
+    """agent_manifest produces a compact text block with all entity IDs.
+
+    Regression: agents lost regionId when tool results were truncated to '...'
+    by the LLM provider. The manifest ensures IDs are always available regardless
+    of tool result truncation.
+    """
+
+    def test_empty_registry_shows_no_tracks(self):
+        reg = EntityRegistry()
+        text = reg.agent_manifest()
+        assert "no tracks yet" in text
+
+    def test_track_id_in_manifest(self):
+        reg = EntityRegistry()
+        tid = reg.create_track("Drums", track_id="t-drums-123")
+        text = reg.agent_manifest()
+        assert "t-drums-123" in text
+        assert "Drums" in text
+
+    def test_region_id_in_manifest(self):
+        reg = EntityRegistry()
+        tid = reg.create_track("Bass", track_id="t-bass")
+        rid = reg.create_region(
+            "INTRO", parent_track_id=tid, region_id="r-intro",
+            metadata={"startBeat": 0, "durationBeats": 16},
+        )
+        text = reg.agent_manifest()
+        assert "r-intro" in text
+        assert "INTRO" in text
+        assert "beat 0" in text
+
+    def test_scoped_to_single_track(self):
+        """When track_id is given, only that track's entities appear."""
+        reg = EntityRegistry()
+        t1 = reg.create_track("Drums", track_id="t1")
+        t2 = reg.create_track("Bass", track_id="t2")
+        reg.create_region("Intro", parent_track_id=t1, region_id="r1",
+                          metadata={"startBeat": 0, "durationBeats": 8})
+        reg.create_region("Intro", parent_track_id=t2, region_id="r2",
+                          metadata={"startBeat": 0, "durationBeats": 8})
+        text = reg.agent_manifest(track_id="t1")
+        assert "t1" in text
+        assert "r1" in text
+        assert "t2" not in text
+        assert "r2" not in text
+
+    def test_multiple_regions_all_listed(self):
+        reg = EntityRegistry()
+        tid = reg.create_track("Keys", track_id="t-keys")
+        reg.create_region("INTRO", parent_track_id=tid, region_id="r1",
+                          metadata={"startBeat": 0, "durationBeats": 8})
+        reg.create_region("GROOVE", parent_track_id=tid, region_id="r2",
+                          metadata={"startBeat": 8, "durationBeats": 12})
+        reg.create_region("VERSE", parent_track_id=tid, region_id="r3",
+                          metadata={"startBeat": 20, "durationBeats": 16})
+        text = reg.agent_manifest(track_id="t-keys")
+        assert "r1" in text
+        assert "r2" in text
+        assert "r3" in text
+        assert "INTRO" in text
+        assert "GROOVE" in text
+        assert "VERSE" in text
+
+    def test_manifest_header_present(self):
+        reg = EntityRegistry()
+        reg.create_track("Drums")
+        text = reg.agent_manifest()
+        assert "ENTITY REGISTRY" in text
+
+    def test_gm_program_shown_for_tracks(self):
+        reg = EntityRegistry()
+        reg.create_track("Bass", track_id="t1", metadata={"gmProgram": 33})
+        text = reg.agent_manifest()
+        assert "gm=33" in text
+
+    def test_drum_kit_shown_for_tracks(self):
+        reg = EntityRegistry()
+        reg.create_track("Drums", track_id="t1", metadata={"drumKitId": "acoustic"})
+        text = reg.agent_manifest()
+        assert "drumKit=acoustic" in text
+
+
+# ===========================================================================
+# 8. _compact_tool_result — prevents truncation (regression)
+# ===========================================================================
+
+class TestCompactToolResult:
+    """_compact_tool_result strips bulky fields while preserving IDs.
+
+    Regression: tool results with 'entities' dict caused provider-side
+    truncation, losing regionId needed by downstream generate_midi calls.
+    """
+
+    def test_region_id_preserved(self):
+        from app.core.maestro_agent_teams.section_agent import _compact_tool_result
+        result = {
+            "success": True,
+            "regionId": "abc-123",
+            "trackId": "def-456",
+            "startBeat": 0,
+            "durationBeats": 16,
+            "name": "INTRO",
+            "entities": {"tracks": [{"id": "t1"}], "buses": []},
+        }
+        compact = _compact_tool_result(result)
+        assert compact["regionId"] == "abc-123"
+        assert compact["trackId"] == "def-456"
+        assert "entities" not in compact
+
+    def test_existing_region_id_preserved(self):
+        from app.core.maestro_agent_teams.section_agent import _compact_tool_result
+        result = {
+            "success": True,
+            "existingRegionId": "existing-rid",
+            "skipped": True,
+            "entities": {"tracks": []},
+        }
+        compact = _compact_tool_result(result)
+        assert compact["existingRegionId"] == "existing-rid"
+        assert compact["skipped"] is True
+        assert "entities" not in compact
+
+    def test_error_field_preserved(self):
+        from app.core.maestro_agent_teams.section_agent import _compact_tool_result
+        result = {"success": False, "error": "Region overlap"}
+        compact = _compact_tool_result(result)
+        assert compact["error"] == "Region overlap"

@@ -354,10 +354,10 @@ Independent instruments (keys, melody, guitar, pads, etc.) ignore `SectionSignal
 2. Parent executes `create_track` immediately, captures real `trackId`
 3. Groups remaining calls into section pairs `(region, generate_midi)`
 4. Spawns section children — parallel for all instruments (bass children self-gate via signals)
-5. Waits for all children
-6. Executes `effect` call at the end
-7. If children failed, checks whether the Orpheus circuit breaker is open — if so, aborts immediately instead of making a retry LLM turn (prevents wasting tokens on retries that will also fail)
-8. Otherwise, optionally makes a retry LLM turn with `_missing_stages()`
+5. **Server-owned retries** — `_dispatch_section_children` automatically retries failed sections (up to 2 retries per section, 2s/5s delays). Retries re-use the original frozen `SectionContract`, skip region creation if the region already exists (idempotent), and check the Orpheus circuit breaker before each retry round. No LLM involvement — the server replays the contract deterministically.
+6. Results are collapsed into **one summary tool-result message** per dispatch batch (plus `"..."` stubs for remaining `tool_call_id`s), keeping the LLM conversation small regardless of section count.
+7. Executes `effect` call at the end
+8. The LLM retry loop (`max_turns = 2`) only retries if track creation or effect was missed on turn 0 — `_missing_stages()` no longer checks for regions or generates (those are server-owned).
 
 For single-section compositions, the parent uses the sequential execution path (same as before the three-level refactor). Section children are only spawned for multi-section compositions.
 
@@ -368,7 +368,7 @@ For single-section compositions, the parent uses the sequential execution path (
 3. If bass: `await section_signals.wait_for(section_id, contract_hash=..., timeout=...)` — blocks until drum section completes or fails. On timeout or failure, proceeds without rhythm spine.
 4. If bass: read `SectionState["Drums: {section_id}"]` — inject drum telemetry (groove, density, kick hash) into `RuntimeContext` via `with_drum_telemetry()`, which is bridged to the generate call at the tool-execution boundary
 5. Execute `stori_add_midi_region` — all structural params (`trackId`, `startBeat`, `durationBeats`) come **exclusively from the frozen contract**, never from LLM-proposed values. LLM drift is silently corrected. **Idempotent:** if a region already exists at the same (trackId, startBeat, durationBeats) location, the existing region's ID is returned with `skipped: true` and no `toolCall` event is emitted to the frontend — preventing duplicate-region errors when agents retry after context truncation.
-6. Capture `regionId` from result (also injected into retry reminders so agents can proceed without re-calling)
+6. Capture `regionId` from result
 7. **Section reasoning**: brief streamed LLM call (`_reason_before_generate`) — reasons about section-specific musical approach (density, register, rhythmic choices). Emits `type: "reasoning"` events tagged with `agentId` + `sectionName` so the frontend can nest section-specific thinking under the correct section header. Returns a refined prompt for the generate call, or falls back to the parent's prompt on failure.
 8. Execute `stori_generate_midi` — structural params (`trackId`, `regionId`, `role`, `bars`, `key`, `start_beat`, `tempo`) also come from the frozen contract.
 9. Extract generated notes from SSE events
@@ -396,8 +396,8 @@ When the STORI PROMPT contains `MidiExpressiveness:` or `Automation:` blocks, se
 - **Single-section compositions**: parent spawns one child, effectively same as before
 - **No drums**: all instruments are independent, all sections run in parallel, no signals needed
 - **No bass**: drum signals fire but nobody listens, no overhead
-- **Section child failure**: parent marks that section's steps as failed, other sections continue; parent optionally retries the failed section in a follow-up turn
-- **LLM produces incomplete plan**: multi-turn retry loop (existing) catches missing sections and prompts the LLM again
+- **Section child failure**: server-owned retry in `_dispatch_section_children` retries the failed section (up to 2 retries, 2s/5s delays) using the same frozen `SectionContract`. Other sections continue unaffected. If all retries fail, the section is marked failed in the summary message.
+- **LLM produces incomplete plan**: the LLM loop (`max_turns = 2`) catches missing track creation or effect stages — region/generate retries are server-owned and no longer depend on the LLM.
 
 ### Agent safety nets
 
@@ -418,7 +418,7 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 - `OrpheusClient.generate()` retries up to 4 attempts (delays: 2 s / 5 s / 10 s / 20 s) on *any* transient error — GPU cold-start phrases (`"No GPU was available"`, etc.), Gradio-level transient errors (`"'NoneType' object is not a mapping"`, `"Queue is full"`, `"upstream Gradio app has raised an exception"`, `"timed out"`), `httpx.ReadTimeout` exceptions, and **any 5xx HTTP status code** (including 503 Service Unavailable). The retry label in logs distinguishes the two (`"GPU cold-start"` vs `"Gradio transient error"`).
 
 **Orpheus circuit breaker:**
-- After `orpheus_cb_threshold` (default 3) consecutive failed `generate()` calls (across requests — not retries within a single call), the circuit breaker trips. While tripped, all subsequent `generate()` calls fail immediately with `error: "orpheus_circuit_open"` — no HTTP request is made, no tokens are wasted on LLM reasoning for retries that will also fail. The circuit automatically allows one probe request after `orpheus_cb_cooldown` seconds (default 60). If the probe succeeds, the circuit closes and normal operation resumes; if it fails, the circuit re-opens for another cooldown period. Instrument parents check `circuit_breaker_open` after dispatching section children — if the breaker is open and generates are still pending, the agent breaks out of its retry loop instead of making another LLM call.
+- After `orpheus_cb_threshold` (default 3) consecutive failed `generate()` calls (across requests — not retries within a single call), the circuit breaker trips. While tripped, all subsequent `generate()` calls fail immediately with `error: "orpheus_circuit_open"` — no HTTP request is made, no tokens are wasted on retries that will also fail. The circuit automatically allows one probe request after `orpheus_cb_cooldown` seconds (default 60). If the probe succeeds, the circuit closes and normal operation resumes; if it fails, the circuit re-opens for another cooldown period. Server-owned section retries check `circuit_breaker_open` before each retry round — if the breaker is open, retries are skipped immediately.
 
 **SSE keepalive (heartbeat monitoring):**
 - The coordinator emits an SSE comment (`: heartbeat\n\n`) every 8 seconds when no real events are flowing. This prevents proxies and HTTP clients from interpreting GPU-bound silence as a dead connection.
@@ -472,6 +472,12 @@ Keys follow `"Instrument: section_id"` format (e.g. `"Drums: 0:verse"`, `"Bass: 
 
 Implementation: `app/core/telemetry.py` (computation), `app/core/maestro_agent_teams/signals.py` (SectionState store).
 
+### Agent-scoped entity registry
+
+`EntityRegistry` tracks all DAW entities (tracks, regions, buses) created during a composition. Each entity carries an optional `owner_agent_id` field set at creation time. The `agent_manifest(track_id=..., agent_id=...)` method returns a compact text manifest filtered to entities owned by the requesting agent — preventing cross-agent contamination (e.g. Strings region IDs leaking into the Bass agent's context).
+
+Implementation: `app/core/entity_registry.py`. Tests: `tests/test_entity_manifest.py`.
+
 ### Routing, SSE, isolation, safety
 
 **Routing:** `orchestrate()` intercepts `Intent.GENERATE_MUSIC` + `execution_mode="apply"` + multi-role `ParsedPrompt` (2+ roles) before the standard EDITING path. Single-instrument requests and all non-STORI-PROMPT requests fall through to `_handle_editing` unchanged.
@@ -486,7 +492,7 @@ Implementation: `app/core/telemetry.py` (computation), `app/core/maestro_agent_t
 
 **Performance:** Wall-clock time for Phase 2 is `max(per-instrument time)` instead of `sum`, and within each instrument `max(per-section time)` instead of `sum(section times)`. For a 5-instrument, 3-section composition, bass sections start ~1 section behind drums rather than waiting for all 3 drum sections. Expected speedup: 3–5× for the instrument phase, with additional gains from section-level pipelining.
 
-Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/contracts.py` (CompositionContract, SectionSpec, SectionContract, InstrumentContract, RuntimeContext, ExecutionServices, ProtocolViolationError), `app/core/maestro_agent_teams/signals.py` (SectionSignals, SectionSignalResult, SectionState — lineage-bound keying), `app/core/telemetry.py` (SectionTelemetry computation), `app/contracts/hash_utils.py` (`canonical_contract_dict`, `compute_contract_hash`, `hash_list_canonical`, `compute_execution_hash`, `seal_contract`, `verify_contract_hash`).
+Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2, server-owned retries + summary collapse), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/summary.py` (batch result summarization), `app/core/maestro_agent_teams/contracts.py` (CompositionContract, SectionSpec, SectionContract, InstrumentContract, RuntimeContext, ExecutionServices, ProtocolViolationError), `app/core/maestro_agent_teams/signals.py` (SectionSignals, SectionSignalResult, SectionState — lineage-bound keying), `app/core/telemetry.py` (SectionTelemetry computation), `app/core/entity_registry.py` (EntityRegistry with agent-scoped manifests), `app/contracts/hash_utils.py` (`canonical_contract_dict`, `compute_contract_hash`, `hash_list_canonical`, `compute_execution_hash`, `seal_contract`, `verify_contract_hash`).
 
 ---
 

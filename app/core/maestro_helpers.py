@@ -282,47 +282,19 @@ def _resolve_variable_refs(
     return resolved
 
 
-def _entity_manifest(store: Any) -> dict[str, Any]:
-    """Return a compact entity listing so the LLM always knows current IDs.
-
-    Included in every entity-creating tool result AND injected between
-    iterations so the LLM never has to guess UUIDs or rely on stale state.
-
-    Each region includes noteCount so the model knows whether notes have
-    already been added — preventing destructive clear-and-redo loops.
-    """
-    tracks = []
-    for track in store.registry.list_tracks():
-        regions = []
-        for r in store.registry.get_track_regions(track.id):
-            region_info: dict[str, Any] = {
-                "name": r.name,
-                "regionId": r.id,
-                "noteCount": len(store.get_region_notes(r.id)),
-            }
-            if r.metadata:
-                region_info["startBeat"] = r.metadata.get("startBeat", 0)
-                region_info["durationBeats"] = r.metadata.get("durationBeats", 0)
-            regions.append(region_info)
-        tracks.append({"name": track.name, "trackId": track.id, "regions": regions})
-    buses = [{"name": b.name, "busId": b.id} for b in store.registry.list_buses()]
-    return {"tracks": tracks, "buses": buses}
-
-
 def _build_tool_result(
     tool_name: str,
     params: dict[str, Any],
     store: Any,
 ) -> dict[str, Any]:
-    """Build a rich tool result with state feedback for the LLM.
+    """Build a tool result with state feedback for the LLM.
 
-    Every result includes enough context for the model to know exactly
-    what was created/modified — preventing ID-loss loops and duplicate adds.
-
-    Entity-creating tools: echo server-assigned IDs + full entity manifest.
+    Entity-creating tools: echo server-assigned IDs.
     stori_add_notes: confirm notesAdded + totalNotes in the region.
     stori_clear_notes: confirm the region was cleared.
-    All other tools: basic success + entity manifest for ID continuity.
+
+    Note: entity manifests are injected separately via
+    ``EntityRegistry.agent_manifest()`` — not embedded in tool results.
     """
     result: dict[str, Any] = {"success": True}
 
@@ -348,8 +320,6 @@ def _build_tool_result(
         elif tool_name == "stori_ensure_bus":
             result["name"] = params.get("name", "Bus")
 
-        result["entities"] = _entity_manifest(store)
-
     elif tool_name == "stori_add_notes":
         region_id = params.get("regionId", "")
         notes = params.get("notes", [])
@@ -357,7 +327,6 @@ def _build_tool_result(
         result["notesAdded"] = len(notes)
         total_notes = len(store.get_region_notes(region_id)) if region_id else 0
         result["totalNotes"] = total_notes
-        result["entities"] = _entity_manifest(store)
 
     elif tool_name == "stori_clear_notes":
         region_id = params.get("regionId", "")

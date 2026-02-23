@@ -17,13 +17,17 @@ from midiutil import MIDIFile
 from dataclasses import dataclass
 from collections import OrderedDict
 from time import time
+import uuid
 import asyncio
+import math
 import mido
+import traceback
 import tempfile
 import os
 import json
 import hashlib
 import logging
+import pathlib
 
 # Import our policy layer and quality metrics
 from generation_policy import (
@@ -48,6 +52,14 @@ _active_generations: int = 0
 
 _DEFAULT_SPACE = "asigalov61/Orpheus-Music-Transformer"
 _KEEPALIVE_INTERVAL = int(os.environ.get("ORPHEUS_KEEPALIVE_INTERVAL", "600"))
+_MAX_CONCURRENT = int(os.environ.get("ORPHEUS_MAX_CONCURRENT", "2"))
+_generation_semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
+
+_CACHE_DIR = pathlib.Path(os.environ.get("ORPHEUS_CACHE_DIR", "/tmp/orpheus_cache"))
+_CACHE_FILE = _CACHE_DIR / "result_cache.json"
+
+_INTENT_QUANT_STEP = float(os.environ.get("ORPHEUS_INTENT_QUANT", "0.2"))
+_FUZZY_EPSILON = float(os.environ.get("ORPHEUS_FUZZY_EPSILON", "0.35"))
 
 
 def _create_client() -> Client:
@@ -94,6 +106,9 @@ async def _keepalive_loop() -> None:
 
 @app.on_event("startup")
 async def _start_keepalive():
+    loaded = _load_cache_from_disk()
+    if loaded:
+        logger.info(f"✅ Startup: restored {loaded} cached results from disk")
     asyncio.create_task(_keepalive_loop())
 
 
@@ -110,10 +125,11 @@ CACHE_TTL_SECONDS = 86400  # 24 hours
 
 @dataclass
 class CacheEntry:
-    """Cache entry with TTL support."""
+    """Cache entry with TTL support and key data for fuzzy matching."""
     result: dict
     timestamp: float
     hits: int = 0
+    key_data: Optional[dict] = None
 
 # Result cache: stores complete generation results (LRU with TTL)
 _result_cache: OrderedDict[str, CacheEntry] = OrderedDict()
@@ -121,29 +137,54 @@ _result_cache: OrderedDict[str, CacheEntry] = OrderedDict()
 # Seed MIDI cache: reuses seed files for same genre/tempo
 _seed_cache = {}
 
-def get_cache_key(request) -> str:
-    """
-    Generate cache key from request parameters.
-    
-    Includes intent vector fields so different intents don't collide.
-    Rounds continuous values to avoid cache misses from tiny differences.
-    """
-    key_data = {
-        "genre": request.genre,
+def _quantize(value: float, step: float = _INTENT_QUANT_STEP) -> float:
+    """Snap a continuous value to the nearest grid step for cache-friendly quantization."""
+    return round(round(value / step) * step, 4)
+
+
+def _canonical_instruments(instruments: List[str]) -> List[str]:
+    """Normalize and sort instruments for deterministic cache keys."""
+    canonical_order = ["drums", "bass", "electric_bass", "synth_bass",
+                       "piano", "electric_piano", "guitar", "acoustic_guitar",
+                       "organ", "strings", "synth", "pad", "lead"]
+    lowered = sorted(set(i.lower().strip() for i in instruments))
+    return sorted(lowered, key=lambda x: canonical_order.index(x) if x in canonical_order else 999)
+
+
+def _canonical_goals(goals: Optional[List[str]]) -> List[str]:
+    return sorted(set(g.lower().strip() for g in (goals or [])))
+
+
+def _cache_key_data(request) -> dict:
+    """Build a canonical, quantized dict of the request's cache-relevant fields."""
+    return {
+        "genre": request.genre.lower().strip(),
         "tempo": request.tempo,
-        "instruments": sorted(request.instruments),
+        "key": (request.key or "").lower().strip(),
+        "instruments": _canonical_instruments(request.instruments),
         "bars": request.bars,
-        # Include intent fields (rounded to avoid spurious misses)
-        "musical_goals": sorted(request.musical_goals or []),
-        "tone_brightness": round(request.tone_brightness, 1),
-        "tone_warmth": round(request.tone_warmth, 1),
-        "energy_intensity": round(request.energy_intensity, 1),
-        "energy_excitement": round(request.energy_excitement, 1),
-        "complexity": round(request.complexity, 1),
+        "musical_goals": _canonical_goals(request.musical_goals),
+        "tone_brightness": _quantize(request.tone_brightness),
+        "tone_warmth": _quantize(request.tone_warmth),
+        "energy_intensity": _quantize(request.energy_intensity),
+        "energy_excitement": _quantize(request.energy_excitement),
+        "complexity": _quantize(request.complexity),
         "quality_preset": request.quality_preset,
     }
+
+
+def get_cache_key(request) -> str:
+    """Generate a deterministic cache key from a canonicalized + quantized request."""
+    key_data = _cache_key_data(request)
     key_str = json.dumps(key_data, sort_keys=True)
     return hashlib.md5(key_str.encode()).hexdigest()
+
+
+def _intent_distance(a: dict, b: dict) -> float:
+    """Euclidean distance between two cache-key dicts on intent vector axes only."""
+    axes = ["tone_brightness", "tone_warmth", "energy_intensity",
+            "energy_excitement", "complexity"]
+    return math.sqrt(sum((a.get(k, 0) - b.get(k, 0)) ** 2 for k in axes))
 
 
 def get_cached_result(cache_key: str) -> Optional[dict]:
@@ -173,23 +214,118 @@ def get_cached_result(cache_key: str) -> Optional[dict]:
     return entry.result
 
 
-def cache_result(cache_key: str, result: dict):
+def cache_result(cache_key: str, result: dict, key_data: Optional[dict] = None):
     """
-    Cache a generation result with LRU eviction.
-    
+    Cache a generation result with LRU eviction + disk persistence.
+
     If cache is full, evicts least recently used item.
     """
-    # Evict oldest if at capacity
     if len(_result_cache) >= MAX_CACHE_SIZE:
-        oldest_key, oldest_entry = _result_cache.popitem(last=False)  # FIFO
+        oldest_key, oldest_entry = _result_cache.popitem(last=False)
         logger.info(f"🗑️ Evicted cache entry {oldest_key} (hits: {oldest_entry.hits})")
-    
+
     _result_cache[cache_key] = CacheEntry(
         result=result,
         timestamp=time(),
-        hits=0
+        hits=0,
+        key_data=key_data,
     )
     logger.info(f"💾 Cached result {cache_key} (cache size: {len(_result_cache)})")
+    _save_cache_to_disk()
+
+
+def fuzzy_cache_lookup(request, epsilon: float = _FUZZY_EPSILON) -> Optional[dict]:
+    """
+    Find the nearest cached result within ε distance on intent vector axes.
+
+    Only considers entries with matching genre, instruments, bars, and preset.
+    Returns the result dict (with 'approximate': True in metadata) or None.
+    """
+    if not _result_cache:
+        return None
+
+    now = time()
+    req_data = _cache_key_data(request)
+    best_dist = float("inf")
+    best_entry: Optional[CacheEntry] = None
+
+    for key, entry in _result_cache.items():
+        if now - entry.timestamp > CACHE_TTL_SECONDS:
+            continue
+        if not hasattr(entry, "key_data") or entry.key_data is None:
+            continue
+        kd = entry.key_data
+        if (kd.get("genre") != req_data["genre"]
+                or kd.get("instruments") != req_data["instruments"]
+                or kd.get("bars") != req_data["bars"]
+                or kd.get("quality_preset") != req_data["quality_preset"]):
+            continue
+
+        dist = _intent_distance(req_data, kd)
+        if dist < best_dist:
+            best_dist = dist
+            best_entry = entry
+
+    if best_entry is not None and best_dist <= epsilon:
+        best_entry.hits += 1
+        logger.info(f"🎯 Fuzzy cache hit (dist={best_dist:.3f}, ε={epsilon})")
+        result = dict(best_entry.result)
+        if "metadata" in result and result["metadata"]:
+            result["metadata"] = dict(result["metadata"])
+            result["metadata"]["cache_hit"] = True
+            result["metadata"]["approximate"] = True
+            result["metadata"]["fuzzy_distance"] = round(best_dist, 4)
+        return result
+
+    return None
+
+
+# ── Disk persistence ─────────────────────────────────────────────────
+
+def _save_cache_to_disk() -> None:
+    """Persist the result cache to disk so it survives restarts."""
+    try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        serializable = {}
+        for key, entry in _result_cache.items():
+            serializable[key] = {
+                "result": entry.result,
+                "timestamp": entry.timestamp,
+                "hits": entry.hits,
+                "key_data": entry.key_data if hasattr(entry, "key_data") else None,
+            }
+        tmp = _CACHE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(serializable, default=str))
+        tmp.rename(_CACHE_FILE)
+        logger.debug(f"💾 Cache persisted to disk ({len(serializable)} entries)")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to persist cache: {e}")
+
+
+def _load_cache_from_disk() -> int:
+    """Load cached results from disk on startup. Returns number of entries loaded."""
+    if not _CACHE_FILE.exists():
+        return 0
+    try:
+        data = json.loads(_CACHE_FILE.read_text())
+        now = time()
+        loaded = 0
+        for key, entry_data in data.items():
+            if now - entry_data["timestamp"] > CACHE_TTL_SECONDS:
+                continue
+            entry = CacheEntry(
+                result=entry_data["result"],
+                timestamp=entry_data["timestamp"],
+                hits=entry_data.get("hits", 0),
+            )
+            entry.key_data = entry_data.get("key_data")
+            _result_cache[key] = entry
+            loaded += 1
+        logger.info(f"📂 Loaded {loaded} cached results from disk (skipped {len(data) - loaded} expired)")
+        return loaded
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to load cache from disk: {e}")
+        return 0
 
 
 class GenerateRequest(BaseModel):
@@ -969,11 +1105,15 @@ async def diagnostics():
         ),
         "keepalive_interval_s": _KEEPALIVE_INTERVAL,
         "predict_timeout_s": float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "120")),
+        "max_concurrent": _MAX_CONCURRENT,
+        "intent_quant_step": _INTENT_QUANT_STEP,
+        "fuzzy_epsilon": _FUZZY_EPSILON,
         "cache": {
             "size": cache_size,
             "max_size": MAX_CACHE_SIZE,
             "total_hits": total_hits,
             "ttl_s": CACHE_TTL_SECONDS,
+            "disk_persisted": _CACHE_FILE.exists(),
         },
     }
 
@@ -1017,11 +1157,60 @@ async def cache_stats():
     }
 
 
+@app.post("/cache/warm")
+async def warm_cache():
+    """
+    Pre-generate common genre × tempo combos in the background.
+
+    Returns immediately with a job summary; generations happen async.
+    """
+    warm_combos = [
+        ("boom_bap", 90), ("trap", 140), ("house", 124), ("techno", 130),
+        ("jazz", 110), ("neo_soul", 75), ("classical", 100), ("cinematic", 95),
+        ("ambient", 70), ("lofi", 82), ("funk", 105), ("reggae", 80),
+        ("drum_and_bass", 174), ("drill", 145), ("dubstep", 140),
+    ]
+
+    already_cached = 0
+    to_generate = []
+    for genre, tempo in warm_combos:
+        req = GenerateRequest(
+            genre=genre, tempo=tempo, instruments=["drums", "bass"],
+            bars=4, quality_preset="fast",
+        )
+        if get_cached_result(get_cache_key(req)) is not None:
+            already_cached += 1
+        else:
+            to_generate.append(req)
+
+    async def _warm():
+        ok, fail = 0, 0
+        for req in to_generate:
+            try:
+                resp = await generate(req)
+                if resp.success:
+                    ok += 1
+                else:
+                    fail += 1
+            except Exception:
+                fail += 1
+        logger.info(f"🔥 Cache warm complete: {ok} generated, {fail} failed, {already_cached} already cached")
+
+    asyncio.create_task(_warm())
+    return {
+        "status": "warming",
+        "already_cached": already_cached,
+        "queued": len(to_generate),
+    }
+
+
 @app.delete("/cache/clear")
 async def clear_cache():
     """Clear all caches."""
     _result_cache.clear()
     _seed_cache.clear()
+    if _CACHE_FILE.exists():
+        _CACHE_FILE.unlink()
     logger.info("🗑️ Caches cleared")
     return {
         "status": "ok",
@@ -1117,203 +1306,198 @@ async def generate(request: GenerateRequest):
     """Generate music with result caching and optimized parameters."""
     global _active_generations, _last_successful_gen
 
-    # Check cache first
+    # Exact cache lookup (quantized key)
     cache_key = get_cache_key(request)
     cached = get_cached_result(cache_key)
     if cached:
         if "metadata" in cached:
             cached["metadata"]["cache_hit"] = True
         return GenerateResponse(**cached)
-    
-    _active_generations += 1
-    try:
-        client = get_client()
-        
-        # Create seed MIDI (with caching)
-        seed_path = create_seed_midi(request.tempo, request.genre, key=request.key)
-        
-        # Map instruments to Orpheus format
-        orpheus_instruments = []
-        if "drums" in [i.lower() for i in request.instruments]:
-            orpheus_instruments.append("Drums")
-        if any(i.lower() in ["bass", "electric_bass", "synth_bass"] for i in request.instruments):
-            orpheus_instruments.append("Electric Bass(finger)")
-        if any(i.lower() in ["piano", "electric_piano"] for i in request.instruments):
-            orpheus_instruments.append("Electric Piano 1")
-        if any(i.lower() in ["guitar", "acoustic_guitar"] for i in request.instruments):
-            orpheus_instruments.append("Acoustic Guitar(steel)")
-        
-        if not orpheus_instruments:
-            orpheus_instruments = ["Drums", "Electric Bass(finger)"]
-        
-        # ============================================================================
-        # POLICY LAYER: Intent → Controls → Generator Params
-        # ============================================================================
-        
-        # Legacy support: merge style_hints into musical_goals
-        musical_goals = request.musical_goals or []
-        if request.style_hints:
-            musical_goals = list(set(musical_goals + request.style_hints))
-        
-        # Step 1: Convert intent → abstract control vector
-        controls = intent_to_controls(
-            genre=request.genre,
-            tempo=request.tempo,
-            musical_goals=musical_goals,
-            tone_brightness=request.tone_brightness,
-            tone_warmth=request.tone_warmth,
-            energy_intensity=request.energy_intensity,
-            energy_excitement=request.energy_excitement,
-            complexity_hint=request.complexity,
-            quality_preset=request.quality_preset,
-        )
-        
-        # Step 2: Convert controls → Orpheus-specific params
-        orpheus_params = controls_to_orpheus_params(controls)
-        
-        # Step 3: Allow explicit overrides (for testing/power users)
-        temperature = request.temperature if request.temperature is not None else orpheus_params["model_temperature"]
-        top_p = request.top_p if request.top_p is not None else orpheus_params["model_top_p"]
-        tokens_per_bar = orpheus_params["num_gen_tokens_per_bar"]
-        num_prime_tokens = orpheus_params["num_prime_tokens"]
-        
-        num_gen_tokens = min(request.bars * tokens_per_bar, 1024)
-        
-        logger.info(f"🎵 Generating {request.genre} @ {request.tempo} BPM")
-        logger.info(f"   Goals: {musical_goals}")
-        logger.info(f"   Controls: creativity={controls.creativity:.2f}, "
-                   f"density={controls.density:.2f}, "
-                   f"complexity={controls.complexity:.2f}")
-        logger.info(f"   Orpheus: temp={temperature:.2f}, top_p={top_p:.2f}, "
-                   f"tokens={num_gen_tokens} ({tokens_per_bar}/bar), prime={num_prime_tokens}")
-        logger.info(f"   Policy: {get_policy_version()}")
-        
-        # Generate with Orpheus using policy-computed parameters
-        # Gradio client.predict() is synchronous/blocking — offload to
-        # a thread so the event loop stays free for health checks and
-        # concurrent generation requests.  Wrapped in wait_for() to
-        # prevent indefinite hangs when the HF Space is unresponsive.
-        _predict_timeout = float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "120"))
+
+    # Fuzzy cache lookup — find a perceptually-close result
+    fuzzy = fuzzy_cache_lookup(request)
+    if fuzzy:
+        return GenerateResponse(**fuzzy)
+
+    # Acquire semaphore to limit concurrent Gradio calls
+    async with _generation_semaphore:
+        _active_generations += 1
         try:
-            result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    client.predict,
-                    input_midi=handle_file(seed_path),
-                    prime_instruments=orpheus_instruments,
-                    num_prime_tokens=num_prime_tokens,
-                    num_gen_tokens=num_gen_tokens,
-                    model_temperature=temperature,
-                    model_top_p=top_p,
-                    add_drums="drums" in [i.lower() for i in request.instruments],
-                    api_name="/generate_music_and_state",
-                ),
-                timeout=_predict_timeout,
-            )
-        except asyncio.TimeoutError:
-            logger.error(
-                f"❌ Gradio /generate_music_and_state timed out after {_predict_timeout}s"
-            )
-            return GenerateResponse(
-                success=False,
-                tool_calls=[],
-                error=f"Orpheus generation timed out after {_predict_timeout}s",
+            client = get_client()
+
+            seed_path = create_seed_midi(request.tempo, request.genre, key=request.key)
+
+            orpheus_instruments = []
+            if "drums" in [i.lower() for i in request.instruments]:
+                orpheus_instruments.append("Drums")
+            if any(i.lower() in ["bass", "electric_bass", "synth_bass"] for i in request.instruments):
+                orpheus_instruments.append("Electric Bass(finger)")
+            if any(i.lower() in ["piano", "electric_piano"] for i in request.instruments):
+                orpheus_instruments.append("Electric Piano 1")
+            if any(i.lower() in ["guitar", "acoustic_guitar"] for i in request.instruments):
+                orpheus_instruments.append("Acoustic Guitar(steel)")
+
+            if not orpheus_instruments:
+                orpheus_instruments = ["Drums", "Electric Bass(finger)"]
+
+            musical_goals = request.musical_goals or []
+            if request.style_hints:
+                musical_goals = list(set(musical_goals + request.style_hints))
+
+            controls = intent_to_controls(
+                genre=request.genre,
+                tempo=request.tempo,
+                musical_goals=musical_goals,
+                tone_brightness=request.tone_brightness,
+                tone_warmth=request.tone_warmth,
+                energy_intensity=request.energy_intensity,
+                energy_excitement=request.energy_excitement,
+                complexity_hint=request.complexity,
+                quality_preset=request.quality_preset,
             )
 
-        # Get MIDI file from first batch
-        try:
-            midi_result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    client.predict, batch_number=0, api_name="/add_batch"
-                ),
-                timeout=_predict_timeout,
-            )
-        except asyncio.TimeoutError:
-            logger.error(
-                f"❌ Gradio /add_batch timed out after {_predict_timeout}s"
-            )
-            return GenerateResponse(
-                success=False,
-                tool_calls=[],
-                error=f"Orpheus batch retrieval timed out after {_predict_timeout}s",
-            )
-        midi_path = midi_result[2]
-        
-        # Parse MIDI (CPU-bound — also offloaded to keep loop free)
-        parsed = await asyncio.to_thread(parse_midi_to_notes, midi_path, request.tempo)
+            orpheus_params = controls_to_orpheus_params(controls)
 
-        # Trim to requested bar range
-        max_beat = request.bars * 4
-        for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
-            sub = parsed.get(sub_key, {})
-            beat_field = "start_beat" if sub_key == "notes" else "beat"
-            for ch in list(sub):
-                sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
-                if not sub[ch]:
-                    del sub[ch]
+            temperature = request.temperature if request.temperature is not None else orpheus_params["model_temperature"]
+            top_p = request.top_p if request.top_p is not None else orpheus_params["model_top_p"]
+            tokens_per_bar = orpheus_params["num_gen_tokens_per_bar"]
+            num_prime_tokens = orpheus_params["num_prime_tokens"]
 
-        parsed = filter_channels_for_instruments(parsed, request.instruments)
+            num_gen_tokens = min(request.bars * tokens_per_bar, 1024)
 
-        tool_calls = generate_tool_calls(parsed, request.tempo, request.instruments)
-        
-        # Extract notes and expressive event counts for quality analysis
-        all_notes = []
-        cc_count = 0
-        pb_count = 0
-        at_count = 0
-        for tool_call in tool_calls:
-            t = tool_call.get("tool", "")
-            if t == "addNotes":
-                all_notes.extend(tool_call.get("params", {}).get("notes", []))
-            elif t == "addMidiCC":
-                cc_count += len(tool_call.get("params", {}).get("events", []))
-            elif t == "addPitchBend":
-                pb_count += len(tool_call.get("params", {}).get("events", []))
-            elif t == "addAftertouch":
-                at_count += len(tool_call.get("params", {}).get("events", []))
+            logger.info(f"🎵 Generating {request.genre} @ {request.tempo} BPM")
+            logger.info(f"   Goals: {musical_goals}")
+            logger.info(f"   Controls: creativity={controls.creativity:.2f}, "
+                        f"density={controls.density:.2f}, "
+                        f"complexity={controls.complexity:.2f}")
+            logger.info(f"   Orpheus: temp={temperature:.2f}, top_p={top_p:.2f}, "
+                        f"tokens={num_gen_tokens} ({tokens_per_bar}/bar), prime={num_prime_tokens}")
+            logger.info(f"   Policy: {get_policy_version()}")
 
-        quality_metrics = analyze_quality(all_notes, request.bars, request.tempo)
-        quality_metrics["cc_events"] = cc_count
-        quality_metrics["pitch_bend_events"] = pb_count
-        quality_metrics["aftertouch_events"] = at_count
-        
-        # Build response with metadata
-        response_data = {
-            "success": True,
-            "tool_calls": tool_calls,
-            "error": None,
-            "metadata": {
-                "policy_version": get_policy_version(),
-                "quality_metrics": quality_metrics,
-                "controls_used": {
-                    "creativity": controls.creativity,
-                    "density": controls.density,
-                    "complexity": controls.complexity,
-                },
-                "cache_hit": False,
+            _predict_timeout = float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "120"))
+            # Fresh session hash per call — the Space's generate_music_and_state
+            # uses gr.State to accumulate tokens across calls in the same session.
+            # Without this, composition tokens grow unboundedly (45 → 190 → … → 1100+)
+            # until the model produces garbage and save_midi crashes with TypeError.
+            client.session_hash = str(uuid.uuid4())
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.predict,
+                        input_midi=handle_file(seed_path),
+                        prime_instruments=orpheus_instruments,
+                        num_prime_tokens=num_prime_tokens,
+                        num_gen_tokens=num_gen_tokens,
+                        model_temperature=temperature,
+                        model_top_p=top_p,
+                        add_drums="drums" in [i.lower() for i in request.instruments],
+                        api_name="/generate_music_and_state",
+                    ),
+                    timeout=_predict_timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"❌ Gradio /generate_music_and_state timed out after {_predict_timeout}s"
+                )
+                return GenerateResponse(
+                    success=False,
+                    tool_calls=[],
+                    error=f"Orpheus generation timed out after {_predict_timeout}s",
+                )
+
+            try:
+                midi_result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.predict, batch_number=0, api_name="/add_batch"
+                    ),
+                    timeout=_predict_timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"❌ Gradio /add_batch timed out after {_predict_timeout}s"
+                )
+                return GenerateResponse(
+                    success=False,
+                    tool_calls=[],
+                    error=f"Orpheus batch retrieval timed out after {_predict_timeout}s",
+                )
+            midi_path = midi_result[2]
+
+            parsed = await asyncio.to_thread(parse_midi_to_notes, midi_path, request.tempo)
+
+            max_beat = request.bars * 4
+            for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
+                sub = parsed.get(sub_key, {})
+                beat_field = "start_beat" if sub_key == "notes" else "beat"
+                for ch in list(sub):
+                    sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
+                    if not sub[ch]:
+                        del sub[ch]
+
+            parsed = filter_channels_for_instruments(parsed, request.instruments)
+
+            tool_calls = generate_tool_calls(parsed, request.tempo, request.instruments)
+
+            all_notes = []
+            cc_count = 0
+            pb_count = 0
+            at_count = 0
+            for tool_call in tool_calls:
+                t = tool_call.get("tool", "")
+                if t == "addNotes":
+                    all_notes.extend(tool_call.get("params", {}).get("notes", []))
+                elif t == "addMidiCC":
+                    cc_count += len(tool_call.get("params", {}).get("events", []))
+                elif t == "addPitchBend":
+                    pb_count += len(tool_call.get("params", {}).get("events", []))
+                elif t == "addAftertouch":
+                    at_count += len(tool_call.get("params", {}).get("events", []))
+
+            quality_metrics = analyze_quality(all_notes, request.bars, request.tempo)
+            quality_metrics["cc_events"] = cc_count
+            quality_metrics["pitch_bend_events"] = pb_count
+            quality_metrics["aftertouch_events"] = at_count
+
+            response_data = {
+                "success": True,
+                "tool_calls": tool_calls,
+                "error": None,
+                "metadata": {
+                    "policy_version": get_policy_version(),
+                    "quality_metrics": quality_metrics,
+                    "controls_used": {
+                        "creativity": controls.creativity,
+                        "density": controls.density,
+                        "complexity": controls.complexity,
+                    },
+                    "cache_hit": False,
+                }
             }
-        }
-        
-        # Cache the result
-        cache_result(cache_key, response_data)
-        _last_successful_gen = time()
-        
-        logger.info(f"✅ Generated {len(tool_calls)} tool calls, quality_score={quality_metrics.get('quality_score', 0):.2f}")
-        
-        return GenerateResponse(**response_data)
-        
-    except Exception as e:
-        logger.error(f"❌ Generation failed: {e}")
-        _err_str = str(e).lower()
-        if any(kw in _err_str for kw in ("connection", "refused", "reset", "eof")):
-            reset_client()
-        error_response = {
-            "success": False,
-            "tool_calls": [],
-            "error": str(e)
-        }
-        return GenerateResponse(**error_response)
-    finally:
-        _active_generations -= 1
+
+            if tool_calls:
+                cache_result(cache_key, response_data, key_data=_cache_key_data(request))
+            else:
+                logger.warning(f"⚠️ Skipping cache for {cache_key} — 0 notes generated")
+            _last_successful_gen = time()
+
+            logger.info(f"✅ Generated {len(tool_calls)} tool calls, quality_score={quality_metrics.get('quality_score', 0):.2f}")
+
+            return GenerateResponse(**response_data)
+
+        except Exception as e:
+            err_msg = str(e)
+            logger.error(f"❌ Generation failed: {err_msg}")
+            logger.debug(f"❌ Traceback:\n{traceback.format_exc()}")
+            _err_str = err_msg.lower()
+            if any(kw in _err_str for kw in ("connection", "refused", "reset", "eof", "broken pipe")):
+                reset_client()
+            return GenerateResponse(
+                success=False,
+                tool_calls=[],
+                error=err_msg,
+            )
+        finally:
+            _active_generations -= 1
 
 
 if __name__ == "__main__":
