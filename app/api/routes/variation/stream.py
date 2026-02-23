@@ -1,14 +1,19 @@
-"""GET /variation/stream — real SSE stream with envelopes + replay."""
+"""GET /variation/stream — SSE stream using Stori Protocol events."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from app.auth.dependencies import require_valid_token
+from app.core.sse_utils import sse_event
+from app.protocol.emitter import ProtocolSerializationError
+from app.protocol.validation import ProtocolGuard
+from app.variation.core.event_envelope import EventEnvelope
 from app.variation.core.state_machine import is_terminal
 from app.variation.storage.variation_store import get_variation_store
 from app.variation.streaming.sse_broadcaster import get_sse_broadcaster
@@ -18,6 +23,56 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _envelope_to_protocol_dict(envelope: EventEnvelope) -> dict[str, Any]:
+    """Convert an EventEnvelope to a Stori Protocol event dict."""
+    etype = envelope.type
+    payload = envelope.payload
+
+    if etype == "meta":
+        return {
+            "type": "meta",
+            "variationId": envelope.variation_id,
+            "baseStateId": envelope.base_state_id,
+            "intent": payload.get("intent", ""),
+            "aiExplanation": payload.get("aiExplanation"),
+            "affectedTracks": payload.get("affectedTracks", []),
+            "affectedRegions": payload.get("affectedRegions", []),
+            "noteCounts": payload.get("noteCounts"),
+        }
+    elif etype == "phrase":
+        return {
+            "type": "phrase",
+            "phraseId": payload.get("phraseId", payload.get("phrase_id", f"p-{envelope.sequence}")),
+            "trackId": payload.get("trackId", payload.get("track_id", "")),
+            "regionId": payload.get("regionId", payload.get("region_id", "")),
+            "startBeat": payload.get("startBeat", payload.get("start_beat", 0)),
+            "endBeat": payload.get("endBeat", payload.get("end_beat", 0)),
+            "label": payload.get("label", ""),
+            "tags": payload.get("tags", []),
+            "explanation": payload.get("explanation"),
+            "noteChanges": payload.get("noteChanges", payload.get("note_changes", [])),
+            "controllerChanges": payload.get("controllerChanges", payload.get("controller_changes", [])),
+        }
+    elif etype == "done":
+        return {
+            "type": "done",
+            "variationId": envelope.variation_id,
+            "phraseCount": payload.get("phraseCount", payload.get("phrase_count", 0)),
+            "status": payload.get("status"),
+        }
+    elif etype == "error":
+        return {
+            "type": "error",
+            "message": payload.get("message", "Unknown variation error"),
+            "code": payload.get("code"),
+        }
+    else:
+        return {
+            "type": "error",
+            "message": f"Unknown variation envelope type: {etype}",
+        }
+
+
 @router.get("/variation/stream")
 async def stream_variation(
     variation_id: str,
@@ -25,11 +80,10 @@ async def stream_variation(
     token_claims: dict = Depends(require_valid_token),
 ):
     """
-    Stream variation events via SSE with transport-agnostic envelopes.
+    Stream variation events via SSE using Stori Protocol.
 
-    Emits EventEnvelope objects as SSE events:
-      event: meta|phrase|done|error
-      data: {type, sequence, variation_id, project_id, base_state_id, payload, timestamp_ms}
+    Emits typed protocol events (meta, phrase, done, error)
+    validated through the protocol emitter.
 
     Supports late-join replay via ?from_sequence=N.
     """
@@ -41,11 +95,22 @@ async def stream_variation(
             "variationId": variation_id,
         })
 
+    guard = ProtocolGuard()
+
     if is_terminal(record.status):
         async def replay_stream():
             broadcaster = get_sse_broadcaster()
             for envelope in broadcaster.get_history(variation_id, from_sequence):
-                yield envelope.to_sse()
+                try:
+                    event_dict = _envelope_to_protocol_dict(envelope)
+                    yield await sse_event(event_dict)
+                except ProtocolSerializationError as exc:
+                    logger.error(f"❌ Variation replay protocol error: {exc}")
+                    yield await sse_event({
+                        "type": "error",
+                        "message": "Protocol serialization failure",
+                    })
+                    return
 
         return StreamingResponse(
             replay_stream(),
@@ -62,12 +127,22 @@ async def stream_variation(
                 try:
                     envelope = await asyncio.wait_for(queue.get(), timeout=30.0)
                 except asyncio.TimeoutError:
-                    yield f"event: heartbeat\ndata: {{}}\n\n"
+                    yield await sse_event({"type": "mcp.ping"})
                     continue
 
                 if envelope is None:
                     break
-                yield envelope.to_sse()
+
+                try:
+                    event_dict = _envelope_to_protocol_dict(envelope)
+                    yield await sse_event(event_dict)
+                except ProtocolSerializationError as exc:
+                    logger.error(f"❌ Variation stream protocol error: {exc}")
+                    yield await sse_event({
+                        "type": "error",
+                        "message": "Protocol serialization failure",
+                    })
+                    return
 
                 if envelope.type == "done":
                     break

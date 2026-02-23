@@ -101,6 +101,19 @@ Emitted when `state.state == "reasoning"`. No tools; chat only.
 | `content` | Full user-facing answer |
 | `complete` | Stream done |
 
+### MCP SSE stream events
+
+Emitted on `GET /api/v1/mcp/stream/{connection_id}`. All events use the Stori Protocol wire format.
+
+| type | Description |
+|------|-------------|
+| `mcp.message` | MCP tool-call message relayed over SSE. `{ "type": "mcp.message", "payload": { ... } }` |
+| `mcp.ping` | SSE keepalive heartbeat. `{ "type": "mcp.ping" }` |
+
+### Protocol enforcement
+
+All SSE events across every streaming endpoint (maestro, conversations, MCP, variation) are validated through the Stori Protocol emitter (`app/protocol/emitter.py`). Raw `json.dumps` emission is forbidden in streaming code. If an event fails protocol validation, the stream emits an `error` event followed by `complete(success: false)` and terminates. There is no production fallback that emits unvalidated payloads.
+
 ### Event ordering
 
 **EDITING:**

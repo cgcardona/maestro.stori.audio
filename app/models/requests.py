@@ -1,8 +1,11 @@
 """Request models for the Stori Maestro API."""
+import logging
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Any
 
 from app.models.base import CamelModel
+
+logger = logging.getLogger(__name__)
 
 # Generous limit — comfortably fits long STORI PROMPT YAML with Maestro dimensions.
 # The nginx layer guards against large binary payloads; this catches oversized text.
@@ -55,6 +58,26 @@ class MaestroRequest(CamelModel):
     def no_null_bytes(cls, v: str) -> str:
         if "\x00" in v:
             raise ValueError("Prompt must not contain null bytes")
+        return v
+
+    @field_validator("project", mode="before")
+    @classmethod
+    def validate_project_snapshot(cls, v: Any) -> Any:
+        """Validate the project payload against the ProjectSnapshot schema.
+
+        Catches structural issues (invalid pitch, out-of-range tempo, etc.)
+        at the request boundary.  On validation failure the payload is
+        nullified so downstream handlers operate on a clean slate.
+        """
+        if v is None or not isinstance(v, dict):
+            return v
+        from app.protocol.schemas.project import ProjectSnapshot
+
+        try:
+            ProjectSnapshot.model_validate(v)
+        except Exception as exc:
+            logger.error(f"❌ Project payload failed ProjectSnapshot validation: {exc}")
+            return None
         return v
 
 

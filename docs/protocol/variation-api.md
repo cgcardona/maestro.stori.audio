@@ -103,55 +103,41 @@ Real-time SSE stream of variation events. Supports late-join replay via `from_se
 | `variation_id` | string | required | Variation UUID |
 | `from_sequence` | int | 0 | Resume from sequence N (skip events <= N) |
 
-### Event Envelope (all events)
+### Wire Format (Stori Protocol)
 
-Every SSE event uses the transport-agnostic envelope:
+All variation SSE events use the unified Stori Protocol wire format (`data: {json}\n\n`). The legacy `EventEnvelope` wrapper (with nested `payload`, `sequence`, `timestamp_ms`) has been replaced by flat Stori Protocol event models validated through `serialize_event()`. Keys are camelCase.
 
-```
-event: <type>
-data: {
-  "type": "meta|phrase|done|error|heartbeat",
-  "sequence": 1,
-  "variation_id": "uuid",
-  "project_id": "uuid",
-  "base_state_id": "42",
-  "timestamp_ms": 1708099200000,
-  "payload": { ... }
-}
-```
-
-### Event: `meta` (sequence = 1, always first)
+### Event: `meta` (always first)
 
 ```json
 {
   "type": "meta",
-  "sequence": 1,
-  "payload": {
-    "intent": "add a jazz bass line",
-    "ai_explanation": "Adding a walking bass pattern...",
-    "affected_tracks": ["track-bass"],
-    "affected_regions": ["region-bass-1"],
-    "note_counts": { "added": 12, "removed": 0, "modified": 3 }
-  }
+  "variationId": "uuid",
+  "baseStateId": "42",
+  "intent": "add a jazz bass line",
+  "aiExplanation": "Adding a walking bass pattern...",
+  "affectedTracks": ["track-bass"],
+  "affectedRegions": ["region-bass-1"],
+  "noteCounts": { "added": 12, "removed": 0, "modified": 3 },
+  "seq": 0,
+  "protocolVersion": "1.0.0"
 }
 ```
 
-### Event: `phrase` (sequence = 2..N)
+### Event: `phrase`
 
 ```json
 {
   "type": "phrase",
-  "sequence": 2,
-  "payload": {
-    "phrase_id": "uuid",
-    "track_id": "track-bass",
-    "region_id": "region-bass-1",
-    "start_beat": 16.0,
-    "end_beat": 32.0,
-    "label": "Bars 5-8",
-    "tags": ["pitchChange", "rhythmChange"],
-    "explanation": "Walking bass line following ii-V-I",
-    "note_changes": [
+  "phraseId": "uuid",
+  "trackId": "track-bass",
+  "regionId": "region-bass-1",
+  "startBeat": 16.0,
+  "endBeat": 32.0,
+  "label": "Bars 5-8",
+  "tags": ["pitchChange", "rhythmChange"],
+  "explanation": "Walking bass line following ii-V-I",
+  "noteChanges": [
       {
         "note_id": "nc-uuid",
         "change_type": "added",
@@ -183,11 +169,11 @@ Phrase bounds use absolute project positions so the frontend can render overlays
 ```json
 {
   "type": "done",
-  "sequence": 5,
-  "payload": {
-    "status": "ready",
-    "phrase_count": 3
-  }
+  "variationId": "uuid",
+  "phraseCount": 3,
+  "status": "ready",
+  "seq": 4,
+  "protocolVersion": "1.0.0"
 }
 ```
 
@@ -198,19 +184,19 @@ Status values: `ready`, `failed`, `discarded`.
 ```json
 {
   "type": "error",
-  "sequence": 4,
-  "payload": {
-    "message": "Generation failed: timeout",
-    "code": "GENERATION_ERROR"
-  }
+  "message": "Generation failed: timeout",
+  "code": "GENERATION_ERROR",
+  "seq": 3,
+  "protocolVersion": "1.0.0"
 }
 ```
 
-### Event: `heartbeat` (keep-alive, no sequence)
+### Keepalive (heartbeat)
+
+The variation stream emits `mcp.ping` events as keepalive heartbeats:
 
 ```
-event: heartbeat
-data: {}
+data: {"type":"mcp.ping","seq":-1,"protocolVersion":"1.0.0"}
 ```
 
 ### Sequence Ordering Rules

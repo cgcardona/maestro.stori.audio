@@ -87,6 +87,3 @@ def normalize_tool_arguments(arguments: dict[str, Any] | None) -> dict[str, Any]
     return out
 
 
-async def sse_event(data: dict) -> str:
-    """Format data as an SSE event."""
-    return f"data: {json.dumps(data)}\n\n"

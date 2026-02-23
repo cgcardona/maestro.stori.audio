@@ -18,7 +18,7 @@ class TestMaestroRequest:
     
     def test_with_project(self):
         """Test request with project context."""
-        project = {"name": "Test", "tempo": 120}
+        project = {"id": "proj-1", "name": "Test", "tempo": 120}
         req = MaestroRequest(prompt="Add drums", mode="edit", project=project)
         assert req.mode == "edit"
         assert req.project is not None and req.project["tempo"] == 120

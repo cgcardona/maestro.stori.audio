@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 from app.api.routes.conversations import (
     normalize_tool_arguments,
     build_conversation_history_for_llm,
-    sse_event,
 )
+from app.core.sse_utils import sse_event
 
 
 # ---------------------------------------------------------------------------
@@ -156,9 +156,10 @@ class TestSSEEvent:
 
     @pytest.mark.anyio
     async def test_format(self):
-        result = await sse_event({"type": "test", "data": 42})
+        """sse_event validates through protocol models and returns SSE format."""
+        result = await sse_event({"type": "content", "content": "hello"})
         assert result.startswith("data: ")
-        assert '"type": "test"' in result
+        assert '"type":"content"' in result or '"type": "content"' in result
         assert result.endswith("\n\n")
 
 

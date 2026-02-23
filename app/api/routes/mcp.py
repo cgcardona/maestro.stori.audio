@@ -17,6 +17,9 @@ from app.models.base import CamelModel
 from app.mcp.server import get_mcp_server, StoriMCPServer
 from app.auth.dependencies import require_valid_token
 from app.auth.tokens import validate_access_code, AccessCodeError
+from app.core.sse_utils import sse_event
+from app.protocol.validation import ProtocolGuard
+from app.protocol.emitter import ProtocolSerializationError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -236,23 +239,34 @@ async def tool_stream(
     async def event_generator():
         server = get_mcp_server()
         queue: asyncio.Queue = asyncio.Queue()
-        
+        guard = ProtocolGuard()
+
         async def send_to_queue(message: dict[str, Any]):
             await queue.put(message)
-        
+
         server.register_daw(connection_id, send_to_queue)
-        
+
         try:
             while True:
                 try:
                     message = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    yield f"data: {json.dumps(message)}\n\n"
+                    try:
+                        yield await sse_event({
+                            "type": "mcp.message",
+                            "payload": message,
+                        })
+                    except ProtocolSerializationError as exc:
+                        logger.error(f"❌ MCP stream protocol error: {exc}")
+                        yield await sse_event({
+                            "type": "error",
+                            "message": "Protocol serialization failure",
+                        })
+                        return
                 except asyncio.TimeoutError:
-                    # Send keepalive
-                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                    yield await sse_event({"type": "mcp.ping"})
         finally:
             server.unregister_daw(connection_id)
-    
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",

@@ -26,7 +26,9 @@ from app.services.budget import (
 )
 from app.models.requests import MaestroRequest
 from app.api.routes.maestro import orchestrate, UsageTracker
-from app.api.routes.conversations.helpers import sse_event
+from app.core.sse_utils import sse_event
+from app.protocol.validation import ProtocolGuard
+from app.protocol.emitter import ProtocolSerializationError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -82,6 +84,7 @@ async def add_message_to_conversation(
 
     async def stream_with_save():
         usage_tracker = UsageTracker()
+        _guard = ProtocolGuard()
         assistant_content_parts: list[str] = []
         tool_calls_made: list[dict] = []
         sse_events_captured: list[dict] = []
@@ -109,6 +112,7 @@ async def add_message_to_conversation(
                 if event.startswith("data: "):
                     event_data = json.loads(event[6:])
                     event_type = event_data.get("type")
+                    _guard.check_event(event_type or "unknown", event_data)
 
                     sse_events_captured.append({
                         "type": event_type,
@@ -225,10 +229,20 @@ async def add_message_to_conversation(
 
             await db.commit()
 
+        except ProtocolSerializationError as e:
+            logger.error(f"❌ Protocol serialization failure in conversation stream: {e}")
+            await db.rollback()
+            yield await sse_event({"type": "error", "message": "Protocol serialization failure"})
+            yield await sse_event({
+                "type": "complete",
+                "success": False,
+                "error": str(e),
+                "traceId": "protocol-error",
+            })
         except Exception as e:
             logger.error(f"Error in conversation message stream: {e}", exc_info=True)
             await db.rollback()
-            yield await sse_event({"type": "error", "error": str(e)})
+            yield await sse_event({"type": "error", "message": str(e)})
 
     return StreamingResponse(
         stream_with_save(),

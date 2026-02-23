@@ -40,19 +40,19 @@ class TestCompleteEventContract:
 
     @pytest.mark.anyio
     async def test_success_field_required(self):
-        event = await sse_event({"type": "complete", "success": True})
+        event = await sse_event({"type": "complete", "success": True, "traceId": "t-1"})
         payload = _parse_sse(event)
         assert "success" in payload
 
     @pytest.mark.anyio
     async def test_success_false_on_failure(self):
-        event = await sse_event({"type": "complete", "success": False, "error": "timeout"})
+        event = await sse_event({"type": "complete", "success": False, "error": "timeout", "traceId": "t-1"})
         payload = _parse_sse(event)
         assert payload["success"] is False
 
 
 class TestPreflightEventContract:
-    """preflight: agentId, stepId (both required, non-empty)."""
+    """preflight: agentId, stepId, agentRole, label, toolName (required)."""
 
     @pytest.mark.anyio
     async def test_required_fields_present(self):
@@ -60,6 +60,9 @@ class TestPreflightEventContract:
             "type": "preflight",
             "agentId": "drums",
             "stepId": "step-1",
+            "agentRole": "drums",
+            "label": "Create Drums",
+            "toolName": "stori_add_track",
         })
         payload = _parse_sse(event)
         assert payload["agentId"]
@@ -233,15 +236,17 @@ class TestDoneEventContract:
 
 
 class TestGeneratorStartContract:
-    """generatorStart: role, style, bars (all required)."""
+    """generatorStart: role, agentId, style, bars, startBeat, label (all required)."""
 
     @pytest.mark.anyio
     async def test_required_fields(self):
         event = await sse_event({
             "type": "generatorStart",
             "role": "drums",
+            "agentId": "drums",
             "style": "boom bap",
             "bars": 8,
+            "startBeat": 0.0,
             "label": "Drums",
         })
         payload = _parse_sse(event)
@@ -251,13 +256,14 @@ class TestGeneratorStartContract:
 
 
 class TestGeneratorCompleteContract:
-    """generatorComplete: role, noteCount, durationMs (all required)."""
+    """generatorComplete: role, agentId, noteCount, durationMs (all required)."""
 
     @pytest.mark.anyio
     async def test_required_fields(self):
         event = await sse_event({
             "type": "generatorComplete",
             "role": "drums",
+            "agentId": "drums",
             "noteCount": 128,
             "durationMs": 2500,
         })
@@ -268,19 +274,19 @@ class TestGeneratorCompleteContract:
 
 
 class TestErrorEventContract:
-    """error: error OR message (at least one required)."""
+    """error: message (required)."""
 
     @pytest.mark.anyio
     async def test_message_field(self):
         event = await sse_event({"type": "error", "message": "Something went wrong"})
         payload = _parse_sse(event)
-        assert "message" in payload or "error" in payload
+        assert "message" in payload
 
     @pytest.mark.anyio
-    async def test_error_field(self):
-        event = await sse_event({"type": "error", "error": "Internal failure"})
+    async def test_message_on_internal_failure(self):
+        event = await sse_event({"type": "error", "message": "Internal failure"})
         payload = _parse_sse(event)
-        assert "message" in payload or "error" in payload
+        assert payload["message"] == "Internal failure"
 
 
 class TestReasoningEventContract:
@@ -351,11 +357,17 @@ class TestContentEventContract:
 
 
 class TestStateEventContract:
-    """state: state (required)."""
+    """state: state, intent, confidence, traceId (required)."""
 
     @pytest.mark.anyio
     async def test_state_required(self):
-        event = await sse_event({"type": "state", "state": "COMPOSING"})
+        event = await sse_event({
+            "type": "state",
+            "state": "composing",
+            "intent": "compose.generate_music",
+            "confidence": 0.95,
+            "traceId": "t-1",
+        })
         payload = _parse_sse(event)
         assert "state" in payload
 
@@ -937,6 +949,7 @@ class TestPreflightTrackColorRegression:
             "agentId": "drums",
             "agentRole": "drums",
             "label": "Create Drums track",
+            "toolName": "stori_add_track",
             "trackColor": "#E85D75",
         })
         payload = _parse_sse(event)

@@ -89,9 +89,9 @@ class TestComposeStreamEndpoint:
         """Happy-path: orchestrate yields SSE events that are forwarded."""
         async def fake_orchestrate(*args, **kwargs):
             from app.core.sse_utils import sse_event
-            yield await sse_event({"type": "state", "state": "editing"})
-            yield await sse_event({"type": "toolCall", "name": "stori_set_tempo", "params": {"tempo": 120}})
-            yield await sse_event({"type": "complete", "success": True, "toolCalls": []})
+            yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
+            yield await sse_event({"type": "toolCall", "id": "tc-1", "name": "stori_set_tempo", "params": {"tempo": 120}})
+            yield await sse_event({"type": "complete", "success": True, "traceId": "t-1", "toolCalls": []})
 
         with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
@@ -131,7 +131,8 @@ class TestComposeStreamEndpoint:
             if usage_tracker:
                 usage_tracker.add(100, 50)
             from app.core.sse_utils import sse_event
-            yield await sse_event({"type": "complete", "success": True})
+            yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
+            yield await sse_event({"type": "complete", "success": True, "traceId": "t-1"})
 
         with (
             patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate),
@@ -156,7 +157,7 @@ class TestComposeStreamEndpoint:
         """When orchestration raises, the stream yields an error event."""
         async def failing_orchestrate(*args, **kwargs):
             from app.core.sse_utils import sse_event
-            yield await sse_event({"type": "state", "state": "editing"})
+            yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
             raise RuntimeError("backend exploded")
 
         with patch("app.api.routes.maestro.orchestrate", side_effect=failing_orchestrate):
@@ -197,7 +198,8 @@ class TestComposeStreamEndpoint:
         async def spy_orchestrate(*args, **kwargs):
             captured_history["history"] = kwargs.get("conversation_history", [])
             from app.core.sse_utils import sse_event
-            yield await sse_event({"type": "complete", "success": True})
+            yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
+            yield await sse_event({"type": "complete", "success": True, "traceId": "t-1"})
 
         with patch("app.api.routes.maestro.orchestrate", side_effect=spy_orchestrate):
             resp = await client.post(
@@ -219,7 +221,8 @@ class TestComposeStreamEndpoint:
         """X-Budget-Remaining header is not emitted; frontend polls /budget/status instead."""
         async def fake_orchestrate(*args, **kwargs):
             from app.core.sse_utils import sse_event
-            yield await sse_event({"type": "complete", "success": True})
+            yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
+            yield await sse_event({"type": "complete", "success": True, "traceId": "t-1"})
 
         with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(

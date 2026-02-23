@@ -148,6 +148,9 @@ app.include_router(conversations.router, prefix="/api/v1", tags=["conversations"
 app.include_router(assets.router, prefix="/api/v1", tags=["assets"])
 app.include_router(mcp_routes.router, prefix="/api/v1/mcp", tags=["mcp"])
 
+from app.protocol.endpoints import router as protocol_router
+app.include_router(protocol_router, prefix="/api/v1", tags=["protocol"])
+
 
 @app.get("/")
 async def root():

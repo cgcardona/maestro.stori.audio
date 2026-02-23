@@ -43,6 +43,19 @@ See [api.md](api.md) for the full SSE event reference and wire format.
 
 ---
 
+## Stori Protocol (wire contract)
+
+All SSE events across every streaming endpoint are validated through the Stori Protocol layer (`app/protocol/`). The protocol enforces:
+
+- **One registry:** Every event type is registered in `app/protocol/registry.py`. Unknown types cannot be emitted.
+- **One emitter:** `serialize_event()` in `app/protocol/emitter.py` is the single serialization path. It validates every dict against its Pydantic model before serialization. Raw `json.dumps` in streaming code is forbidden.
+- **One guard:** `ProtocolGuard` is instantiated in every streaming route (maestro, conversations, MCP, variation). It checks event ordering invariants (first event = `state`, nothing after `complete`, etc.).
+- **Fail loudly:** If validation fails, the emitter raises `ProtocolSerializationError`. The stream emits `error` + `complete(success: false)` and terminates. There is no silent fallback.
+
+Introspection endpoints: `GET /api/v1/protocol` (version + hash), `GET /api/v1/protocol/events.json` (event schemas), `GET /api/v1/protocol/schema.json` (unified schema).
+
+---
+
 ## Structured plan events (EDITING)
 
 When an EDITING request produces two or more tool calls, the backend emits a structured checklist before executing tools. This gives the frontend a persistent progress view and reduces redundant reasoning on subsequent LLM iterations.

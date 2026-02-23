@@ -20,16 +20,22 @@ class TestSseEvent:
 
     @pytest.mark.anyio
     async def test_handles_nested_structure(self):
-        """Nested dicts should be JSON-serialized."""
-        result = await sse_event({"type": "toolCall", "params": {"trackId": "abc-123"}})
+        """Nested dicts are validated and serialized through the protocol model."""
+        result = await sse_event({
+            "type": "toolCall",
+            "id": "tc-1",
+            "name": "stori_add_track",
+            "params": {"trackId": "abc-123"},
+        })
         payload = json.loads(result[6:].strip())
         assert payload["params"]["trackId"] == "abc-123"
 
     @pytest.mark.anyio
-    async def test_handles_empty_dict(self):
-        """Empty dict is valid."""
-        result = await sse_event({})
-        assert result == "data: {}\n\n"
+    async def test_rejects_empty_dict(self):
+        """Empty dict raises because 'type' field is missing."""
+        from app.protocol.emitter import ProtocolSerializationError
+        with pytest.raises(ProtocolSerializationError, match="missing 'type'"):
+            await sse_event({})
 
 
 class TestSanitizeReasoning:

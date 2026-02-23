@@ -124,6 +124,9 @@ async def orchestrate(
                     else:
                         execution_mode = "variation"
                         logger.info(f"Intent {route.intent.value} → COMPOSING, execution_mode='variation'")
+                elif route.sse_state == SSEState.REASONING:
+                    execution_mode = "reasoning"
+                    logger.info(f"Intent {route.intent.value} → REASONING, execution_mode='reasoning'")
                 else:
                     execution_mode = "apply"
                     logger.info(f"Intent {route.intent.value} → {route.sse_state.value}, execution_mode='apply'")
@@ -154,6 +157,7 @@ async def orchestrate(
                 "intent": route.intent.value,
                 "confidence": route.confidence,
                 "traceId": trace.trace_id,
+                "executionMode": execution_mode,
             })
 
             logger.info(f"[{trace.trace_id[:8]}] 🎯 {route.intent.value} → {route.sse_state.value}")
