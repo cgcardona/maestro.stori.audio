@@ -3,9 +3,8 @@
 Two complementary systems:
 
 - **SectionSignals** — asyncio.Event per section for drum-to-bass
-  pipelining (readiness gating).  Keyed by ``section_id`` (not section
-  name) to prevent collisions when a composition has repeated section
-  names (e.g. two "verse" sections).
+  pipelining (readiness gating).  Keyed by ``"{section_id}:{contract_hash}"``
+  to bind signals to specific contract lineage (swarm safety).
 - **SectionState** — immutable telemetry snapshots per section per
   instrument for deterministic cross-instrument musical awareness
   (no LLM cost).
@@ -38,6 +37,12 @@ class SectionSignalResult:
 
     success: bool
     drum_notes: list[dict[str, Any]] | None = None
+    contract_hash: str = ""
+
+
+def _signal_key(section_id: str, contract_hash: str) -> str:
+    """Key format: ``"section_id:contract_hash"``."""
+    return f"{section_id}:{contract_hash}"
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -56,43 +61,56 @@ class SectionSignals:
     calls ``wait_for`` before generating, receiving the drum notes so it
     can build a per-section RhythmSpine.
 
-    All keys are ``section_id`` (e.g. ``"0:intro"``) — NOT section name.
-    This prevents collisions when a composition reuses section names.
+    All keys are ``"{section_id}:{contract_hash}"`` — lineage-bound
+    to prevent cross-composition signal leaks in swarm execution.
 
     ``signal_complete`` is idempotent: calling it twice for the same
-    ``section_id`` is a no-op (first write wins).
+    key is a no-op (first write wins).
     """
 
     events: dict[str, asyncio.Event] = field(default_factory=dict)
     _results: dict[str, SectionSignalResult] = field(default_factory=dict)
 
     @classmethod
-    def from_section_ids(cls, section_ids: list[str]) -> SectionSignals:
-        """Build signals for a list of section IDs."""
-        return cls(
-            events={sid: asyncio.Event() for sid in section_ids},
-        )
+    def from_section_ids(
+        cls,
+        section_ids: list[str],
+        contract_hashes: list[str],
+    ) -> SectionSignals:
+        """Build signals for a list of section IDs with their contract hashes."""
+        if len(section_ids) != len(contract_hashes):
+            raise ValueError(
+                f"section_ids ({len(section_ids)}) and contract_hashes "
+                f"({len(contract_hashes)}) must have equal length"
+            )
+        events: dict[str, asyncio.Event] = {}
+        for sid, ch in zip(section_ids, contract_hashes):
+            events[_signal_key(sid, ch)] = asyncio.Event()
+        return cls(events=events)
 
     def signal_complete(
         self,
         section_id: str,
         *,
+        contract_hash: str,
         success: bool = True,
         drum_notes: list[dict[str, Any]] | None = None,
     ) -> None:
         """Signal that a drum section has completed (success or failure).
 
-        Idempotent: subsequent calls for the same ``section_id`` are
-        silently ignored (first write wins).  ``drum_notes`` is stored
-        before the event is set to guarantee store-before-signal ordering.
+        Idempotent: subsequent calls for the same key are silently
+        ignored (first write wins).  ``drum_notes`` is stored before
+        the event is set to guarantee store-before-signal ordering.
         """
-        if section_id in self._results:
+        key = _signal_key(section_id, contract_hash)
+        if key in self._results:
             return
-        self._results[section_id] = SectionSignalResult(
+        self._results[key] = SectionSignalResult(
             success=success,
             drum_notes=drum_notes,
+            contract_hash=contract_hash,
         )
-        evt = self.events.get(section_id)
+        evt = self.events.get(key)
         if evt:
             evt.set()
 
@@ -100,19 +118,35 @@ class SectionSignals:
         self,
         section_id: str,
         *,
+        contract_hash: str,
         timeout: float = 240.0,
     ) -> SectionSignalResult | None:
         """Wait for a drum section to complete with typed result.
 
-        Returns ``None`` if ``section_id`` has no registered event
-        (e.g. composition has no drums).  Raises ``asyncio.TimeoutError``
+        Verifies the signal's ``contract_hash`` matches.  Raises
+        ``ProtocolViolationError`` on mismatch (swarm safety).
+
+        Returns ``None`` if the key has no registered event (e.g.
+        composition has no drums).  Raises ``asyncio.TimeoutError``
         if the drum section does not signal within ``timeout`` seconds.
         """
-        evt = self.events.get(section_id)
+        key = _signal_key(section_id, contract_hash)
+        evt = self.events.get(key)
         if not evt:
             return None
         await asyncio.wait_for(evt.wait(), timeout=timeout)
-        return self._results.get(section_id)
+        result = self._results.get(key)
+        if result and result.contract_hash != contract_hash:
+            from app.core.maestro_agent_teams.contracts import (
+                ProtocolViolationError,
+            )
+
+            raise ProtocolViolationError(
+                f"Signal lineage mismatch for section '{section_id}': "
+                f"expected contract_hash={contract_hash}, "
+                f"got={result.contract_hash}"
+            )
+        return result
 
 
 # ─────────────────────────────────────────────────────────────────────

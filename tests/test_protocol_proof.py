@@ -24,6 +24,7 @@ from app.contracts.hash_utils import (
     verify_contract_hash,
 )
 from app.core.maestro_agent_teams.contracts import (
+    CompositionContract,
     ExecutionServices,
     InstrumentContract,
     RuntimeContext,
@@ -141,13 +142,18 @@ class TestLineageChain:
     """Prove parent→child hash linkage across L1→L2→L3."""
 
     def test_full_lineage_chain(self):
-        """Two-section, one-instrument lineage chain is correct."""
+        """Two-section, one-instrument lineage chain with CompositionContract root."""
         spec_intro = _spec("intro", index=0, start=0, beats=16)
         spec_verse = _spec("verse", index=1, start=16, beats=16)
 
-        specs_parent_hash = hashlib.sha256(
-            f"{spec_intro.contract_hash}:{spec_verse.contract_hash}".encode()
-        ).hexdigest()[:16]
+        cc = CompositionContract(
+            composition_id="test-comp-001",
+            sections=(spec_intro, spec_verse),
+            style="neo-soul",
+            tempo=92.0,
+            key="Fm",
+        )
+        seal_contract(cc)
 
         ic = InstrumentContract(
             instrument_name="Drums",
@@ -162,12 +168,13 @@ class TestLineageChain:
             assigned_color="#E85D75",
             gm_guidance="Standard Kit",
         )
-        seal_contract(ic, parent_hash=specs_parent_hash)
+        seal_contract(ic, parent_hash=cc.contract_hash)
 
         sc_intro = _section_contract(spec_intro, parent_hash=ic.contract_hash)
         sc_verse = _section_contract(spec_verse, parent_hash=ic.contract_hash)
 
         print("\n## LINEAGE_CHAIN_PROOF")
+        print(f"CompositionContract.contract_hash = {cc.contract_hash}")
         print(f"SectionSpec[intro].contract_hash  = {spec_intro.contract_hash}")
         print(f"SectionSpec[verse].contract_hash  = {spec_verse.contract_hash}")
         print(f"InstrumentContract.parent_hash    = {ic.parent_contract_hash}")
@@ -177,9 +184,11 @@ class TestLineageChain:
         print(f"SectionContract[verse].parent_hash = {sc_verse.parent_contract_hash}")
         print(f"SectionContract[verse].contract_hash = {sc_verse.contract_hash}")
 
-        assert ic.parent_contract_hash == specs_parent_hash
+        assert cc.contract_hash != ""
+        assert ic.parent_contract_hash == cc.contract_hash
         assert sc_intro.parent_contract_hash == ic.contract_hash
         assert sc_verse.parent_contract_hash == ic.contract_hash
+        assert verify_contract_hash(cc)
         assert verify_contract_hash(ic)
         assert verify_contract_hash(sc_intro)
         assert verify_contract_hash(sc_verse)

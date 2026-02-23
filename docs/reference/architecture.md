@@ -170,28 +170,36 @@ Level 3 — SECTION CHILD (section_agent.py) — one per section per instrument
 Each level boundary is formalized with a **frozen dataclass contract** — no free-form dict passing between layers.
 
 ```
+CompositionContract  (global lineage anchor, built first by L1)
+  ├── composition_id                       ← trace_id of the request
+  ├── sections: tuple[SectionSpec, ...]   ← canonical section layout
+  ├── style, tempo, key
+  ├── contract_version: int = 2
+  └── contract_hash: str                  ← SHA-256 of structural fields
+                                             (sections serialized as sorted hashes, not full objects)
+
 InstrumentContract  (L1 → L2)
   ├── instrument_name, role, style, bars, tempo, key
   ├── sections: tuple[SectionSpec, ...]   ← immutable beat layout
   ├── existing_track_id, assigned_color
   ├── gm_guidance                         ← genre-specific GM voice block (advisory, excluded from hash)
-  ├── contract_version: int               ← always 1 (v1 protocol)
+  ├── contract_version: int = 1
   ├── contract_hash: str                  ← SHA-256 short hash of structural fields
-  └── parent_contract_hash: str           ← SHA-256 of joined SectionSpec hashes
+  └── parent_contract_hash: str           ← CompositionContract.contract_hash
 
 SectionContract  (L2 → L3)
   ├── section: SectionSpec                ← section_id, name, index, start_beat, duration_beats, bars
   ├── track_id, instrument_name, role
   ├── style, tempo, key, region_name
   ├── l2_generate_prompt                  ← ADVISORY — L3 may refine via CoT (excluded from hash)
-  ├── contract_version: int
+  ├── contract_version: int = 1
   ├── contract_hash: str                  ← hash of structural fields above
   └── parent_contract_hash: str           ← instrument_contract.contract_hash
 
 SectionSpec  (embedded in both contracts)
   ├── section_id, name, index, start_beat, duration_beats, bars
   ├── character, role_brief               ← canonical descriptions (structural)
-  ├── contract_version: int
+  ├── contract_version: int = 1
   └── contract_hash: str                  ← set by coordinator after construction
 
 RuntimeContext  (travels alongside contracts — pure data, frozen)
@@ -200,7 +208,7 @@ RuntimeContext  (travels alongside contracts — pure data, frozen)
   └── drum_telemetry: tuple[tuple[str, Any], ...] | None     ← immutable via with_drum_telemetry()
 
 ExecutionServices  (mutable coordination — NOT frozen, passed separately)
-  ├── section_signals: SectionSignals     ← asyncio.Event per section_id
+  ├── section_signals: SectionSignals     ← asyncio.Event per "{section_id}:{contract_hash}"
   └── section_state: SectionState         ← write-once telemetry store
 ```
 
@@ -214,27 +222,31 @@ ExecutionServices  (mutable coordination — NOT frozen, passed separately)
 - At the `_apply_single_tool_call` boundary (tool execution layer), a new dict is constructed by spreading the read-only bridge with local additions (`style`, `tempo`, etc.). No dict flows through the agent teams layer itself.
 - L2 fallback SectionSpec reconstruction from LLM output is a hard error (`ValueError`). The contract is authoritative; if `instrument_contract` is missing or section index exceeds contract sections, the system fails fast rather than silently degrading.
 
-### Contract lineage protocol (hash-based execution identity)
+### Contract lineage protocol (cryptographic execution identity)
 
-All three contract types carry a **self-verifying hash identity** implemented in `app/contracts/hash_utils.py`. This makes the system swarm-safe: any orchestration layer can verify a contract without trusting the agent that delivered it.
+All contracts carry a **self-verifying hash identity** implemented in `app/contracts/hash_utils.py`. This makes the system swarm-safe: any orchestration layer can verify a contract or result without trusting the agent that delivered it.
 
 **Hash rules:**
 
 - Only **structural fields** participate in hashes: beat ranges, section names, role, tempo, key, style, track layout.
-- **Advisory fields are always excluded**: `l2_generate_prompt`, `region_name`, `gm_guidance`, `assigned_color`, `existing_track_id`, `contract_hash`, `parent_contract_hash`, `contract_version`. Changing advisory text never alters the contract's structural identity.
+- **Advisory and meta fields are always excluded**: `l2_generate_prompt`, `region_name`, `gm_guidance`, `assigned_color`, `existing_track_id`, `contract_hash`, `parent_contract_hash`, `execution_hash`, `contract_version`. Changing advisory text never alters structural identity.
 - Serialization is canonical: `json.dumps(..., separators=(",", ":"), sort_keys=True)` applied to a recursively sorted dict. No repr(), no pickle, no runtime randomness.
 - Hash function: SHA-256, truncated to the first 16 hex characters (64-bit short hash).
+- Parent hashing uses `hash_list_canonical(items)` — sorts hashes lexicographically, JSON-encodes the list, then SHA-256. This is collision-proof (no delimiter attack) and order-independent.
 
-**Lineage construction (three levels):**
+**Lineage construction (four levels):**
 
 ```
 L1 Coordinator:
   for each SectionSpec:
-      seal_contract(spec)                             # sets spec.contract_hash
+      seal_contract(spec)                          # sets spec.contract_hash
 
-  specs_parent_hash = SHA256(":".join(spec.contract_hash for spec in role_specs))[:16]
-  seal_contract(instrument_contract, parent_hash=specs_parent_hash)
-  # sets ic.parent_contract_hash = specs_parent_hash
+  seal_contract(composition_contract)              # sections serialized as sorted hash list
+  # sets cc.contract_hash = hash of {composition_id, style, tempo, key, sorted(section_hashes)}
+
+  seal_contract(instrument_contract,
+      parent_hash=composition_contract.contract_hash)
+  # sets ic.parent_contract_hash = cc.contract_hash
   # sets ic.contract_hash = hash of structural ic fields
 
 L2 Instrument parent (dispatch):
@@ -244,16 +256,19 @@ L2 Instrument parent (dispatch):
   # sets sc.contract_hash = hash of structural sc fields
 
 L3 Section child (_run_section_child):
-  assert verify_contract_hash(contract)  # recompute and compare to stored hash
+  assert verify_contract_hash(contract)            # recompute and compare
   # → ValueError("Protocol violation: SectionContract hash mismatch") if tampered
   # → ValueError("Protocol violation: … has no contract_hash") if unsealed
+
+  execution_hash = SHA256(contract.contract_hash + trace.trace_id)[:16]
+  result.execution_hash = execution_hash           # session-bound, prevents replay
 ```
 
 **Verified lineage chain:**
 
 ```
-SectionSpec.contract_hash
-    ↓ (joined + SHA256)
+CompositionContract.contract_hash
+    ↓ (copied into parent_contract_hash)
 InstrumentContract.parent_contract_hash
     ↓ (structural hash)
 InstrumentContract.contract_hash
@@ -263,11 +278,16 @@ SectionContract.parent_contract_hash
 SectionContract.contract_hash
     ↓ (copied into)
 SectionResult.contract_hash + SectionResult.parent_contract_hash
+    +
+SectionResult.execution_hash = SHA256(contract_hash + trace_id)
 ```
 
-**Execution attestation:** `SectionResult` (returned by every L3 child) carries `contract_hash` and `parent_contract_hash` populated at completion. Orchestration layers can verify that a result came from the expected contract lineage by comparing these to the originating `SectionContract`.
+**Execution attestation:** `SectionResult` carries three lineage fields populated at L3 completion:
+- `contract_hash` — the `SectionContract` that produced this result.
+- `parent_contract_hash` — the `InstrumentContract` that spawned it.
+- `execution_hash` — `SHA256(contract_hash + trace_id)`, binding the result to a specific composition session. The same contract re-run in a different session produces a different `execution_hash`, preventing replay attacks.
 
-**Implementation:** `app/contracts/hash_utils.py` (`canonical_contract_dict`, `compute_contract_hash`, `seal_contract`, `verify_contract_hash`), `app/contracts/__init__.py` (re-exports). Verified by `tests/test_protocol_proof.py` (15 determinism, lineage, tamper, lockdown, freeze, field-audit, and attestation proofs).
+**Implementation:** `app/contracts/hash_utils.py` (`canonical_contract_dict`, `compute_contract_hash`, `hash_list_canonical`, `compute_execution_hash`, `seal_contract`, `verify_contract_hash`). Verified by `tests/test_protocol_proof.py` (existing proofs) and `tests/test_protocol_god_mode.py` (composition root, canonical parent hash, execution attestation, signal lineage, replay prevention, hash scope).
 
 ### Three-phase execution
 
@@ -303,13 +323,13 @@ Keys:   [intro ████|verse ██████████|chorus ██�
 Melody: [intro ███|verse █████████|chorus █████]
 ```
 
-`SectionSignals` is a shared dataclass containing one `asyncio.Event` per `section_id` (not section name — prevents collisions when compositions reuse names like "verse" across sections). After a drum section child generates, it calls `signal_complete(section_id, success=True, drum_notes=...)` which stores a typed `SectionSignalResult` and fires the event. The matching bass section child calls `wait_for(section_id, timeout=...)` and receives either a success result with drum notes, a failure result (drums failed), or `asyncio.TimeoutError`.
+`SectionSignals` is a shared dataclass containing one `asyncio.Event` per lineage-bound key `"{section_id}:{contract_hash}"`. After a drum section child generates, it calls `signal_complete(section_id, contract_hash=..., success=True, drum_notes=...)` which stores a typed `SectionSignalResult` and fires the event. The matching bass section child calls `wait_for(section_id, contract_hash=..., timeout=...)` and receives either a success result with drum notes, a failure result (drums failed), or `asyncio.TimeoutError`.
 
 **Safety guarantees:**
-- `signal_complete` is **idempotent** — calling it twice for the same section_id is a no-op (first write wins).
+- `signal_complete` is **idempotent** — calling it twice for the same key is a no-op (first write wins).
 - Store-before-signal ordering: drum data is stored in `_results` before the event is set.
-- **Failure signaling:** `signal_complete(sid, success=False)` lets dependents distinguish "drums failed" from "drums never ran" — bass proceeds without the rhythm spine instead of deadlocking.
-- Keying by `section_id` (e.g. `"0:verse"`, `"1:verse"`) prevents collisions when a composition has repeated section names.
+- **Failure signaling:** `signal_complete(sid, contract_hash=..., success=False)` lets dependents distinguish "drums failed" from "drums never ran" — bass proceeds without the rhythm spine instead of deadlocking.
+- **Signal lineage binding (swarm safety):** keys are `"{section_id}:{contract_hash}"`, not bare `section_id`. A drum signal from a different composition (different `contract_hash`) is invisible to the consumer waiting on the correct hash. `ProtocolViolationError` is raised if a stored result's `contract_hash` doesn't match what the waiter expected.
 
 Independent instruments (keys, melody, guitar, pads, etc.) ignore `SectionSignals` entirely — their section children all run in parallel from the start.
 
@@ -332,7 +352,7 @@ For single-section compositions, the parent uses the sequential execution path (
 
 1. **Protocol guard:** recompute `contract_hash` from structural fields and compare to stored value. Raises `ValueError("Protocol violation: SectionContract hash mismatch")` on tamper or `ValueError("… has no contract_hash")` if L2 forgot to seal. Execution halts before any DAW mutation.
 2. Emit `status` SSE event: `"Starting {instrument} / {section}"`
-3. If bass: `await section_signals.wait_for(section_id, timeout=...)` — blocks until drum section completes or fails. On timeout or failure, proceeds without rhythm spine.
+3. If bass: `await section_signals.wait_for(section_id, contract_hash=..., timeout=...)` — blocks until drum section completes or fails. On timeout or failure, proceeds without rhythm spine.
 4. If bass: read `SectionState["Drums: {section_id}"]` — inject drum telemetry (groove, density, kick hash) into `RuntimeContext` via `with_drum_telemetry()`, which is bridged to the generate call at the tool-execution boundary
 5. Execute `stori_add_midi_region` — all structural params (`trackId`, `startBeat`, `durationBeats`) come **exclusively from the frozen contract**, never from LLM-proposed values. LLM drift is silently corrected.
 6. Capture `regionId` from result
@@ -340,13 +360,13 @@ For single-section compositions, the parent uses the sequential execution path (
 8. Execute `stori_generate_midi` — structural params (`trackId`, `regionId`, `role`, `bars`, `key`, `start_beat`, `tempo`) also come from the frozen contract.
 9. Extract generated notes from SSE events
 10. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
-11. If drums: call `section_signals.signal_complete(section_id, success=True, drum_notes=...)`
+11. If drums: call `section_signals.signal_complete(section_id, contract_hash=..., success=True, drum_notes=...)`
 12. Emit `status` SSE event: `"{instrument} / {section}: N notes generated"`
-13. **Execution attestation:** stamp `result.contract_hash` and `result.parent_contract_hash` from the contract before returning.
+13. **Execution attestation:** compute `execution_hash = SHA256(contract_hash + trace_id)`, store on `result.execution_hash`. This binds the result to the specific session — the same contract re-run in a different composition produces a different `execution_hash`, preventing replay attacks.
 14. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, run a **streamed** refinement LLM call (see below)
 15. Return `SectionResult` to parent
 
-Drum children always signal — even on failure (`signal_complete(section_id, success=False)`) — to prevent bass children from hanging indefinitely.
+Drum children always signal — even on failure (`signal_complete(section_id, contract_hash=..., success=False)`) — to prevent bass children from hanging indefinitely.
 
 ### Expression refinement (Level 3 streamed LLM call)
 
@@ -450,7 +470,7 @@ Implementation: `app/core/telemetry.py` (computation), `app/core/maestro_agent_t
 
 **Performance:** Wall-clock time for Phase 2 is `max(per-instrument time)` instead of `sum`, and within each instrument `max(per-section time)` instead of `sum(section times)`. For a 5-instrument, 3-section composition, bass sections start ~1 section behind drums rather than waiting for all 3 drum sections. Expected speedup: 3–5× for the instrument phase, with additional gains from section-level pipelining.
 
-Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/contracts.py` (SectionSpec, SectionContract, InstrumentContract, RuntimeContext, ExecutionServices), `app/core/maestro_agent_teams/signals.py` (SectionSignals, SectionSignalResult, SectionState), `app/core/telemetry.py` (SectionTelemetry computation), `app/contracts/hash_utils.py` (contract lineage hashing: `canonical_contract_dict`, `compute_contract_hash`, `seal_contract`, `verify_contract_hash`).
+Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/contracts.py` (CompositionContract, SectionSpec, SectionContract, InstrumentContract, RuntimeContext, ExecutionServices, ProtocolViolationError), `app/core/maestro_agent_teams/signals.py` (SectionSignals, SectionSignalResult, SectionState — lineage-bound keying), `app/core/telemetry.py` (SectionTelemetry computation), `app/contracts/hash_utils.py` (`canonical_contract_dict`, `compute_contract_hash`, `hash_list_canonical`, `compute_execution_hash`, `seal_contract`, `verify_contract_hash`).
 
 ---
 

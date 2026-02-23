@@ -40,9 +40,10 @@ from app.core.maestro_plan_tracker import (
     _INSTRUMENT_AGENT_TOOLS,
 )
 from app.core.maestro_editing import _apply_single_tool_call
-from app.contracts import verify_contract_hash
+from app.contracts import compute_execution_hash, verify_contract_hash
 from app.core.maestro_agent_teams.contracts import (
     ExecutionServices,
+    ProtocolViolationError,
     RuntimeContext,
     SectionContract,
 )
@@ -88,6 +89,10 @@ class SectionResult:
     ``contract_hash`` and ``parent_contract_hash`` are populated at L3
     completion, enabling orchestration layers to verify that results
     came from the expected contract lineage.
+
+    ``execution_hash`` binds this result to a specific session
+    (``SHA256(contract_hash + trace_id)``), preventing replay attacks
+    where a result from one composition is reused in another.
     """
 
     success: bool
@@ -100,6 +105,7 @@ class SectionResult:
     error: str | None = None
     contract_hash: str = ""
     parent_contract_hash: str = ""
+    execution_hash: str = ""
 
 
 async def _run_section_child(
@@ -199,7 +205,9 @@ async def _run_section_child(
             _wait_start = asyncio.get_event_loop().time()
             try:
                 _signal_result = await section_signals.wait_for(
-                    _section_id, timeout=_bass_timeout,
+                    _section_id,
+                    contract_hash=contract.section.contract_hash,
+                    timeout=_bass_timeout,
                 )
             except asyncio.TimeoutError:
                 _wait_elapsed = asyncio.get_event_loop().time() - _wait_start
@@ -298,7 +306,11 @@ async def _run_section_child(
             result.parent_contract_hash = contract.parent_contract_hash
             logger.warning(f"⚠️ {child_log} {result.error}")
             if contract.is_drum and section_signals:
-                section_signals.signal_complete(_section_id, success=False)
+                section_signals.signal_complete(
+                    _section_id,
+                    contract_hash=contract.section.contract_hash,
+                    success=False,
+                )
             return result
 
         result.region_id = region_id
@@ -373,7 +385,11 @@ async def _run_section_child(
                 f"⚠️ {child_log} Generate failed after {_gen_elapsed:.1f}s: {result.error}"
             )
             if contract.is_drum and section_signals:
-                section_signals.signal_complete(_section_id, success=False)
+                section_signals.signal_complete(
+                    _section_id,
+                    contract_hash=contract.section.contract_hash,
+                    success=False,
+                )
             return result
 
         result.notes_generated = gen_outcome.tool_result.get("notesAdded", 0)
@@ -414,7 +430,10 @@ async def _run_section_child(
         # ── Drum signaling — signal bass with drum notes ──
         if contract.is_drum and section_signals:
             section_signals.signal_complete(
-                _section_id, success=True, drum_notes=generated_notes,
+                _section_id,
+                contract_hash=contract.section.contract_hash,
+                success=True,
+                drum_notes=generated_notes,
             )
             logger.info(
                 f"{child_log} 🥁 Signaled bass: {len(generated_notes)} drum notes ready"
@@ -464,11 +483,26 @@ async def _run_section_child(
         result.contract_hash = contract.contract_hash
         result.parent_contract_hash = contract.parent_contract_hash
 
+        _exec_hash = compute_execution_hash(
+            contract.contract_hash, trace.trace_id,
+        )
+        result.execution_hash = _exec_hash
+
+        _verify_exec = compute_execution_hash(
+            contract.contract_hash, trace.trace_id,
+        )
+        if _verify_exec != result.execution_hash:
+            raise ProtocolViolationError(
+                f"Execution hash verification failed for "
+                f"{contract.instrument_name}/{sec_name}: "
+                f"computed={_verify_exec}, stored={result.execution_hash}"
+            )
+
         _child_elapsed = asyncio.get_event_loop().time() - _child_start
         logger.info(
             f"{child_log} 🏁 Section child complete ({_child_elapsed:.1f}s): "
             f"success={result.success}, notes={result.notes_generated}, "
-            f"hash={result.contract_hash}"
+            f"hash={result.contract_hash}, exec={result.execution_hash}"
         )
         return result
 
@@ -481,7 +515,11 @@ async def _run_section_child(
         result.contract_hash = contract.contract_hash
         result.parent_contract_hash = contract.parent_contract_hash
         if contract.is_drum and section_signals:
-            section_signals.signal_complete(_section_id, success=False)
+            section_signals.signal_complete(
+                _section_id,
+                contract_hash=contract.section.contract_hash,
+                success=False,
+            )
         return result
 
 

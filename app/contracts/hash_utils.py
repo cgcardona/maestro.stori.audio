@@ -8,7 +8,7 @@ Rules:
   - No MD5, no pickle, no repr().
 
 Excluded fields (advisory / meta / visual / runtime):
-  contract_version, contract_hash, parent_contract_hash,
+  contract_version, contract_hash, parent_contract_hash, execution_hash,
   l2_generate_prompt, region_name, gm_guidance,
   assigned_color, existing_track_id.
 """
@@ -25,6 +25,7 @@ _HASH_EXCLUDED_FIELDS = frozenset({
     "contract_version",
     "contract_hash",
     "parent_contract_hash",
+    "execution_hash",
     "l2_generate_prompt",
     "region_name",
     "gm_guidance",
@@ -52,15 +53,27 @@ def canonical_contract_dict(obj: Any) -> dict[str, Any]:
     Excludes advisory/meta fields defined in ``_HASH_EXCLUDED_FIELDS``.
     Recursively normalizes nested dataclasses and collections.
     Keys are sorted for deterministic serialization.
+
+    Special case: ``CompositionContract.sections`` is serialized as a
+    sorted list of section contract hashes (not full objects), keeping
+    the root hash compact and order-independent.
     """
     if not dataclasses.is_dataclass(obj):
         raise TypeError(f"Expected a dataclass, got {type(obj).__name__}")
+
+    _is_composition = type(obj).__name__ == "CompositionContract"
 
     result: dict[str, Any] = {}
     for f in dataclasses.fields(obj):
         if f.name in _HASH_EXCLUDED_FIELDS:
             continue
-        result[f.name] = _normalize_value(getattr(obj, f.name))
+        value = getattr(obj, f.name)
+        if _is_composition and f.name == "sections":
+            result["sections"] = sorted(
+                getattr(s, "contract_hash", "") for s in value
+            )
+        else:
+            result[f.name] = _normalize_value(value)
 
     return dict(sorted(result.items()))
 
@@ -102,3 +115,26 @@ def verify_contract_hash(obj: Any) -> bool:
     if not stored:
         return False
     return compute_contract_hash(obj) == stored
+
+
+def hash_list_canonical(items: list[str]) -> str:
+    """Collision-proof parent hash from a list of child hashes.
+
+    Sorts lexicographically, JSON-encodes the sorted list, then
+    SHA-256 hashes the result.  Returns the first 16 hex chars.
+
+    This replaces the old ``SHA256("hashA:hashB")`` pattern which
+    was vulnerable to delimiter collisions.
+    """
+    serialized = json.dumps(sorted(items))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
+
+
+def compute_execution_hash(contract_hash: str, trace_id: str) -> str:
+    """Bind an execution to a specific contract + session.
+
+    Prevents replay attacks: same contract in a different session
+    produces a different execution_hash.  Returns 16 hex chars.
+    """
+    payload = (contract_hash + trace_id).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]

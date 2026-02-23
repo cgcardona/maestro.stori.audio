@@ -11,7 +11,6 @@ Three-level architecture:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import re
@@ -38,8 +37,9 @@ from app.core.maestro_plan_tracker import (
 )
 from app.core.maestro_editing import _apply_single_tool_call
 from app.core.maestro_agent_teams.agent import _run_instrument_agent
-from app.contracts import seal_contract
+from app.contracts import hash_list_canonical, seal_contract
 from app.core.maestro_agent_teams.contracts import (
+    CompositionContract,
     ExecutionServices,
     InstrumentContract,
     RuntimeContext,
@@ -348,12 +348,28 @@ async def _handle_composition_agent_team(
     for spec in _section_specs:
         seal_contract(spec)
 
+    # ── Build composition root contract (global lineage anchor) ──
+    _composition_contract = CompositionContract(
+        composition_id=trace.trace_id,
+        sections=_section_specs,
+        style=style,
+        tempo=tempo,
+        key=key,
+    )
+    seal_contract(_composition_contract)
+    logger.info(
+        f"[{trace.trace_id[:8]}] 🔒 CompositionContract sealed: "
+        f"hash={_composition_contract.contract_hash}, "
+        f"sections={len(_section_specs)}"
+    )
+
     # ── Create section-level signals and shared telemetry state ──
     _section_signals: SectionSignals | None = None
     _section_state = SectionState()
     if _multi_section:
         _section_signals = SectionSignals.from_section_ids(
-            [s.section_id for s in _section_specs]
+            [s.section_id for s in _section_specs],
+            contract_hashes=[s.contract_hash for s in _section_specs],
         )
         logger.info(
             f"[{trace.trace_id[:8]}] 🔗 SectionSignals created for drum→bass pipelining: "
@@ -429,11 +445,6 @@ async def _handle_composition_agent_team(
         for _rs in _role_specs:
             seal_contract(_rs)
 
-        # Parent hash: joined hash of all constituent SectionSpec hashes
-        _specs_parent_hash = hashlib.sha256(
-            ":".join(s.contract_hash for s in _role_specs).encode()
-        ).hexdigest()[:16]
-
         _instrument_contract = InstrumentContract(
             instrument_name=instrument_name,
             role=role,
@@ -447,7 +458,10 @@ async def _handle_composition_agent_team(
             assigned_color=assigned_color,
             gm_guidance=get_genre_gm_guidance(style, role),
         )
-        seal_contract(_instrument_contract, parent_hash=_specs_parent_hash)
+        seal_contract(
+            _instrument_contract,
+            parent_hash=_composition_contract.contract_hash,
+        )
 
         _agent_timeout = settings.instrument_agent_timeout
         task = asyncio.create_task(

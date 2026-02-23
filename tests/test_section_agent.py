@@ -182,61 +182,70 @@ def _failed_generate_outcome(tc_id: str = "g1") -> _ToolCallOutcome:
 # =============================================================================
 
 
+_H = "h_test_00000001"
+_H2 = "h_test_00000002"
+_H3 = "h_test_00000003"
+
+
 class TestSectionSignals:
     def test_from_sections_creates_events(self):
-        """One asyncio.Event per section_id."""
-        signals = SectionSignals.from_section_ids(["0:intro", "0:verse", "0:chorus"])
-        assert set(signals.events.keys()) == {"0:intro", "0:verse", "0:chorus"}
+        """One asyncio.Event per section_id:contract_hash key."""
+        signals = SectionSignals.from_section_ids(
+            ["0:intro", "0:verse", "0:chorus"], [_H, _H2, _H3],
+        )
+        assert len(signals.events) == 3
         for evt in signals.events.values():
             assert not evt.is_set()
 
     def test_signal_complete_sets_event(self):
-        signals = SectionSignals.from_section_ids(["0:intro"])
-        signals.signal_complete("0:intro", success=True, drum_notes=[{"pitch": 36}])
-        assert signals.events["0:intro"].is_set()
-        assert signals._results["0:intro"].drum_notes == [{"pitch": 36}]
+        signals = SectionSignals.from_section_ids(["0:intro"], [_H])
+        signals.signal_complete("0:intro", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
+        key = f"0:intro:{_H}"
+        assert signals.events[key].is_set()
+        assert signals._results[key].drum_notes == [{"pitch": 36}]
 
     def test_signal_complete_without_notes(self):
         """Signaling with no notes sets the event but stores no drum_notes."""
-        signals = SectionSignals.from_section_ids(["0:intro"])
-        signals.signal_complete("0:intro", success=True)
-        assert signals.events["0:intro"].is_set()
-        assert signals._results["0:intro"].success is True
-        assert signals._results["0:intro"].drum_notes is None
+        signals = SectionSignals.from_section_ids(["0:intro"], [_H])
+        signals.signal_complete("0:intro", contract_hash=_H, success=True)
+        key = f"0:intro:{_H}"
+        assert signals.events[key].is_set()
+        assert signals._results[key].success is True
+        assert signals._results[key].drum_notes is None
 
-    def test_signal_unknown_section_no_error(self):
-        """Signaling a section that doesn't exist does not raise."""
-        signals = SectionSignals.from_section_ids(["0:intro"])
-        signals.signal_complete("nonexistent", success=True)
+    def test_signal_unknown_section_no_raise(self):
+        """Signaling a section that doesn't exist does not raise — no event set."""
+        signals = SectionSignals.from_section_ids(["0:intro"], [_H])
+        signals.signal_complete("nonexistent", contract_hash="nohash", success=True)
 
     @pytest.mark.anyio
     async def test_wait_for_returns_data(self):
         """wait_for blocks until signaled, then returns SectionSignalResult."""
-        signals = SectionSignals.from_section_ids(["0:verse"])
+        signals = SectionSignals.from_section_ids(["0:verse"], [_H])
 
         async def _signal_later():
             await asyncio.sleep(0.01)
-            signals.signal_complete("0:verse", success=True, drum_notes=[{"pitch": 38}])
+            signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 38}])
 
         task = asyncio.create_task(_signal_later())
-        data = await signals.wait_for("0:verse")
+        data = await signals.wait_for("0:verse", contract_hash=_H)
         await task
         assert data is not None
         assert data.drum_notes == [{"pitch": 38}]
 
     @pytest.mark.anyio
     async def test_wait_for_unknown_returns_none(self):
-        """Waiting for a section not in the events dict returns None immediately."""
-        signals = SectionSignals.from_section_ids(["0:intro"])
-        result = await signals.wait_for("nonexistent")
+        """Waiting for a key not in the events dict returns None immediately."""
+        signals = SectionSignals.from_section_ids(["0:intro"], [_H])
+        result = await signals.wait_for("nonexistent", contract_hash="nohash")
         assert result is None
 
     @pytest.mark.anyio
     async def test_wait_for_already_set(self):
         """wait_for returns immediately if the event is already set."""
-        signals = SectionSignals.from_section_ids(["0:intro"])
-        signals.signal_complete("0:intro", success=True, drum_notes=[{"pitch": 42}])
-        data = await signals.wait_for("0:intro")
+        signals = SectionSignals.from_section_ids(["0:intro"], [_H])
+        signals.signal_complete("0:intro", contract_hash=_H, success=True, drum_notes=[{"pitch": 42}])
+        data = await signals.wait_for("0:intro", contract_hash=_H)
         assert data is not None
 
 
@@ -421,7 +430,9 @@ class TestSectionChildDrumSignaling:
         """A drum section child signals SectionSignals after generate completes."""
         store = StateStore(conversation_id="test-sig")
         queue: asyncio.Queue[dict] = asyncio.Queue()
-        signals = SectionSignals.from_section_ids(["0:verse"])
+        contract = _contract(role="drums")
+        ch = contract.section.contract_hash
+        signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
         async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
             if tc_name == "stori_add_midi_region":
@@ -433,7 +444,7 @@ class TestSectionChildDrumSignaling:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                contract=_contract(role="drums"),
+                contract=contract,
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
                 agent_id="drums",
@@ -446,16 +457,19 @@ class TestSectionChildDrumSignaling:
             )
 
         assert result.success
-        assert signals.events["0:verse"].is_set()
-        assert "0:verse" in signals._results
-        assert len(signals._results["0:verse"].drum_notes) == 12
+        key = f"0:verse:{ch}"
+        assert signals.events[key].is_set()
+        assert key in signals._results
+        assert len(signals._results[key].drum_notes) == 12
 
     @pytest.mark.anyio
     async def test_drum_child_signals_on_region_failure(self):
         """Drum still signals even when region fails — prevents bass from hanging."""
         store = StateStore(conversation_id="test-sig-fail")
         queue: asyncio.Queue[dict] = asyncio.Queue()
-        signals = SectionSignals.from_section_ids(["0:chorus"])
+        contract = _contract(name="chorus", role="drums")
+        ch = contract.section.contract_hash
+        signals = SectionSignals.from_section_ids(["0:chorus"], [ch])
 
         bad_region = _ToolCallOutcome(
             enriched_params={},
@@ -473,7 +487,7 @@ class TestSectionChildDrumSignaling:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                contract=_contract(name="chorus", role="drums"),
+                contract=contract,
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
                 agent_id="drums",
@@ -486,14 +500,16 @@ class TestSectionChildDrumSignaling:
             )
 
         assert not result.success
-        assert signals.events["0:chorus"].is_set()
+        assert signals.events[f"0:chorus:{ch}"].is_set()
 
     @pytest.mark.anyio
     async def test_drum_child_signals_on_generate_failure(self):
         """Drum still signals even when generate fails."""
         store = StateStore(conversation_id="test-sig-gen-fail")
         queue: asyncio.Queue[dict] = asyncio.Queue()
-        signals = SectionSignals.from_section_ids(["0:verse"])
+        contract = _contract(role="drums")
+        ch = contract.section.contract_hash
+        signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
         async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
             if tc_name == "stori_add_midi_region":
@@ -505,7 +521,7 @@ class TestSectionChildDrumSignaling:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                contract=_contract(role="drums"),
+                contract=contract,
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
                 agent_id="drums",
@@ -518,7 +534,7 @@ class TestSectionChildDrumSignaling:
             )
 
         assert not result.success
-        assert signals.events["0:verse"].is_set()
+        assert signals.events[f"0:verse:{ch}"].is_set()
 
 
 # =============================================================================
@@ -532,7 +548,9 @@ class TestSectionChildBassWaiting:
         """Bass section child blocks until the drum signal fires."""
         store = StateStore(conversation_id="test-bass-wait")
         queue: asyncio.Queue[dict] = asyncio.Queue()
-        signals = SectionSignals.from_section_ids(["0:verse"])
+        contract = _contract(instrument_name="Bass", role="bass")
+        ch = contract.section.contract_hash
+        signals = SectionSignals.from_section_ids(["0:verse"], [ch])
         bass_started = False
 
         async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
@@ -545,7 +563,7 @@ class TestSectionChildBassWaiting:
         async def _signal_drum():
             await asyncio.sleep(0.05)
             assert not bass_started, "Bass should not have started before drum signal"
-            signals.signal_complete("0:verse", success=True, drum_notes=[{"pitch": 36}])
+            signals.signal_complete("0:verse", contract_hash=ch, success=True, drum_notes=[{"pitch": 36}])
 
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
@@ -553,7 +571,7 @@ class TestSectionChildBassWaiting:
         ):
             drum_task = asyncio.create_task(_signal_drum())
             result = await _run_section_child(
-                contract=_contract(instrument_name="Bass", role="bass"),
+                contract=contract,
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
                 agent_id="bass",
@@ -683,7 +701,9 @@ class TestSectionChildException:
         """Drum child still signals on unhandled exception to unblock bass."""
         store = StateStore(conversation_id="test-exc-sig")
         queue: asyncio.Queue[dict] = asyncio.Queue()
-        signals = SectionSignals.from_section_ids(["0:verse"])
+        contract = _contract(role="drums")
+        ch = contract.section.contract_hash
+        signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
         async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
             raise RuntimeError("boom")
@@ -693,7 +713,7 @@ class TestSectionChildException:
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
-                contract=_contract(role="drums"),
+                contract=contract,
                 region_tc=_region_tc(),
                 generate_tc=_generate_tc(),
                 agent_id="drums",
@@ -706,7 +726,7 @@ class TestSectionChildException:
             )
 
         assert not result.success
-        assert signals.events["0:verse"].is_set()
+        assert signals.events[f"0:verse:{ch}"].is_set()
 
 
 # =============================================================================
@@ -1111,23 +1131,24 @@ class TestEdgeCases:
     @pytest.mark.anyio
     async def test_single_section_uses_sequential_path(self):
         """With only one section, the parent uses the sequential execution path."""
-        signals = SectionSignals.from_section_ids(["0:full"])
+        signals = SectionSignals.from_section_ids(["0:full"], [_H])
         assert len(signals.events) == 1
-        assert "0:full" in signals.events
 
     def test_no_drums_no_signals_needed(self):
         """When there are no drums, section_signals is harmless."""
-        signals = SectionSignals.from_section_ids(["0:verse"])
-        signals.signal_complete("0:verse", success=True)
-        assert signals.events["0:verse"].is_set()
-        assert signals._results["0:verse"].drum_notes is None
+        signals = SectionSignals.from_section_ids(["0:verse"], [_H])
+        signals.signal_complete("0:verse", contract_hash=_H, success=True)
+        key = f"0:verse:{_H}"
+        assert signals.events[key].is_set()
+        assert signals._results[key].drum_notes is None
 
     def test_no_bass_drum_signals_fire_unused(self):
         """Drum signals that no bass listens to are harmless."""
-        signals = SectionSignals.from_section_ids(["0:verse"])
-        signals.signal_complete("0:verse", success=True, drum_notes=[{"pitch": 36}])
-        assert signals.events["0:verse"].is_set()
-        assert signals._results["0:verse"].drum_notes == [{"pitch": 36}]
+        signals = SectionSignals.from_section_ids(["0:verse"], [_H])
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
+        key = f"0:verse:{_H}"
+        assert signals.events[key].is_set()
+        assert signals._results[key].drum_notes == [{"pitch": 36}]
 
 
 # =============================================================================
@@ -1140,30 +1161,28 @@ class TestSectionIdCollisionPrevention:
 
     def test_duplicate_section_names_get_unique_ids(self):
         """Two 'verse' sections with different indices get separate events."""
-        signals = SectionSignals.from_section_ids(["0:verse", "1:verse"])
+        signals = SectionSignals.from_section_ids(["0:verse", "1:verse"], [_H, _H2])
         assert len(signals.events) == 2
-        assert "0:verse" in signals.events
-        assert "1:verse" in signals.events
 
     def test_signal_first_verse_does_not_affect_second(self):
         """Signaling section 0:verse does not set 1:verse."""
-        signals = SectionSignals.from_section_ids(["0:verse", "1:verse"])
-        signals.signal_complete("0:verse", success=True, drum_notes=[{"pitch": 36}])
-        assert signals.events["0:verse"].is_set()
-        assert not signals.events["1:verse"].is_set()
+        signals = SectionSignals.from_section_ids(["0:verse", "1:verse"], [_H, _H2])
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
+        assert signals.events[f"0:verse:{_H}"].is_set()
+        assert not signals.events[f"1:verse:{_H2}"].is_set()
 
     @pytest.mark.anyio
     async def test_wait_for_correct_verse(self):
         """Bass waiting on 1:verse does not receive 0:verse data."""
-        signals = SectionSignals.from_section_ids(["0:verse", "1:verse"])
-        signals.signal_complete("0:verse", success=True, drum_notes=[{"pitch": 36}])
+        signals = SectionSignals.from_section_ids(["0:verse", "1:verse"], [_H, _H2])
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
 
         async def _signal_later():
             await asyncio.sleep(0.01)
-            signals.signal_complete("1:verse", success=True, drum_notes=[{"pitch": 38}])
+            signals.signal_complete("1:verse", contract_hash=_H2, success=True, drum_notes=[{"pitch": 38}])
 
         task = asyncio.create_task(_signal_later())
-        result = await signals.wait_for("1:verse")
+        result = await signals.wait_for("1:verse", contract_hash=_H2)
         await task
         assert result is not None
         assert result.drum_notes == [{"pitch": 38}]
@@ -1174,18 +1193,20 @@ class TestSignalIdempotency:
 
     def test_double_signal_is_idempotent(self):
         """Second call to signal_complete is silently ignored."""
-        signals = SectionSignals.from_section_ids(["0:verse"])
-        signals.signal_complete("0:verse", success=True, drum_notes=[{"pitch": 36}])
-        signals.signal_complete("0:verse", success=True, drum_notes=[{"pitch": 99}])
-        assert signals._results["0:verse"].drum_notes == [{"pitch": 36}]
+        signals = SectionSignals.from_section_ids(["0:verse"], [_H])
+        key = f"0:verse:{_H}"
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 99}])
+        assert signals._results[key].drum_notes == [{"pitch": 36}]
 
     def test_failure_then_success_keeps_failure(self):
         """First signal wins — even if failure followed by success attempt."""
-        signals = SectionSignals.from_section_ids(["0:verse"])
-        signals.signal_complete("0:verse", success=False)
-        signals.signal_complete("0:verse", success=True, drum_notes=[{"pitch": 36}])
-        assert signals._results["0:verse"].success is False
-        assert signals._results["0:verse"].drum_notes is None
+        signals = SectionSignals.from_section_ids(["0:verse"], [_H])
+        key = f"0:verse:{_H}"
+        signals.signal_complete("0:verse", contract_hash=_H, success=False)
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
+        assert signals._results[key].success is False
+        assert signals._results[key].drum_notes is None
 
 
 class TestFailureSignaling:
@@ -1194,14 +1215,14 @@ class TestFailureSignaling:
     @pytest.mark.anyio
     async def test_wait_for_returns_failure_result(self):
         """Bass receives explicit failure signal — not None or timeout."""
-        signals = SectionSignals.from_section_ids(["0:verse"])
+        signals = SectionSignals.from_section_ids(["0:verse"], [_H])
 
         async def _fail_drums():
             await asyncio.sleep(0.01)
-            signals.signal_complete("0:verse", success=False)
+            signals.signal_complete("0:verse", contract_hash=_H, success=False)
 
         task = asyncio.create_task(_fail_drums())
-        result = await signals.wait_for("0:verse")
+        result = await signals.wait_for("0:verse", contract_hash=_H)
         await task
         assert result is not None
         assert result.success is False
@@ -1210,9 +1231,9 @@ class TestFailureSignaling:
     @pytest.mark.anyio
     async def test_wait_for_timeout_raises(self):
         """If no signal arrives within timeout, asyncio.TimeoutError is raised."""
-        signals = SectionSignals.from_section_ids(["0:verse"])
+        signals = SectionSignals.from_section_ids(["0:verse"], [_H])
         with pytest.raises(asyncio.TimeoutError):
-            await signals.wait_for("0:verse", timeout=0.01)
+            await signals.wait_for("0:verse", contract_hash=_H, timeout=0.01)
 
 
 class TestContractHardError:
@@ -1272,7 +1293,7 @@ class TestExecutionServicesSeparation:
 
     def test_execution_services_carries_signals(self):
         """ExecutionServices carries the mutable coordination primitives."""
-        signals = SectionSignals.from_section_ids(["0:verse"])
+        signals = SectionSignals.from_section_ids(["0:verse"], [_H])
         svc = ExecutionServices(section_signals=signals)
         assert svc.section_signals is signals
 

@@ -410,8 +410,19 @@ class TestSectionAgentTelemetry:
         )
         await section_state.set("Drums: 0:verse", drum_t)
 
-        signals = SectionSignals.from_section_ids(["0:verse"])
-        signals.signal_complete("0:verse", success=True, drum_notes=[{"pitch": 36}])
+        spec = SectionSpec(
+            section_id="0:verse", name="verse", index=0, start_beat=0, duration_beats=16,
+            bars=4, character="Test verse", role_brief="Test bass brief",
+        )
+        seal_contract(spec)
+
+        signals = SectionSignals.from_section_ids(
+            ["0:verse"], contract_hashes=[spec.contract_hash],
+        )
+        signals.signal_complete(
+            "0:verse", contract_hash=spec.contract_hash,
+            success=True, drum_notes=[{"pitch": 36}],
+        )
 
         captured_ctx: list[dict] = []
 
@@ -443,11 +454,6 @@ class TestSectionAgentTelemetry:
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
-            spec = SectionSpec(
-                section_id="0:verse", name="verse", index=0, start_beat=0, duration_beats=16,
-                bars=4, character="Test verse", role_brief="Test bass brief",
-            )
-            seal_contract(spec)
             contract = SectionContract(
                 section=spec, track_id="trk-2", instrument_name="Bass",
                 role="bass", style="house", tempo=120.0, key="Am",

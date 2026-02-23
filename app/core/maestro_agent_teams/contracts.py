@@ -35,6 +35,39 @@ from app.core.maestro_agent_teams.signals import SectionSignals, SectionState
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Composition-level contract (global lineage anchor)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class ProtocolViolationError(Exception):
+    """Raised when cryptographic lineage or contract integrity is violated."""
+
+
+@dataclass(frozen=True)
+class CompositionContract:
+    """Root anchor for the entire composition lineage chain.
+
+    Built by the coordinator (L1) after all SectionSpecs are sealed.
+    The canonical dict includes ``sections`` as a tuple of their
+    contract hashes (not full objects), ensuring the root hash
+    captures the structural identity of every section.
+
+    Lineage chain::
+
+        CompositionContract → InstrumentContract → SectionContract → Execution
+    """
+
+    composition_id: str
+    sections: tuple["SectionSpec", ...]
+    style: str
+    tempo: float
+    key: str
+
+    contract_version: int = 2
+    contract_hash: str = ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Section-level contracts (L2 → L3)
 # ═══════════════════════════════════════════════════════════════════════════════
 
