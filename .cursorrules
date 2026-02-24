@@ -22,6 +22,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 - **Single engine:** Stream and MCP use the same pipeline, tools, and (when connected) DAW state. Keep route handlers thin; core logic in `app/core/` and `app/services/`.
 - **Entity resolution:** Server resolves variable refs (e.g. `$0.trackId`) and validates entity IDs; never trust client-provided IDs for security.
 - **No deprecated/legacy/fallback APIs:** Never introduce deprecated, backward-compatible, or fallback API paths, event types, or optional fields "for transition." The same person controls the frontend and backend — both ship in lockstep. Every API surface should be modern and pristine. If a field is needed, make it required. If an event type is superseded, delete the old one immediately. If you encounter dead code, fallback paths, or deprecated patterns while working, remove them proactively — treat them like lint. Only add backward compat if explicitly requested.
+- **Correct over simple:** Don't default to the simplest approach — default to the correct one. In the best case they're the same thing, but when they diverge, choose correct.
 
 ---
 
