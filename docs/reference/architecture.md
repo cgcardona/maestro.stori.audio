@@ -21,7 +21,9 @@ How the backend works: one engine, two entry points; request flow; intent; execu
    - REASONING -> no tools
 4. **REASONING:** Chat only; no tools; stream `reasoning` + `content` events.
 5. **EDITING:** LLM gets a tool allowlist; emits tool calls; server validates and resolves entity IDs. Emits a structured `plan` event (checklist of steps) before the first tool call, then `planStepUpdate` events bracketing each step, and `toolStart` + `toolCall` events for each tool.
-6. **COMPOSING:** Planner produces a plan (JSON); executor simulates it without mutation; server streams Variation events (`meta`, `phrase*`, `done`). Frontend enters Variation Review Mode. User accepts or discards. The planner is **project-context-aware**: it checks existing tracks by name and instrument type before proposing new ones, reuses existing track UUIDs in region and generator calls, and maps abstract roles (e.g. "melody") to matching existing instruments (e.g. an "Organ" track).
+6. **COMPOSING:** Two sub-paths based on whether the prompt is a structured STORI PROMPT with roles:
+   - **Structured (Mode: compose + roles):** Agent Teams runs per-instrument agents with streaming reasoning, then captures all generated notes and computes a Variation for commit/discard review. The SSE stream emits both `reasoning`/`toolCall` events (real-time per-agent chain-of-thought) AND `meta`/`phrase`/`done` events (Variation for the review UI). Single-instrument compose also uses this path — the instrument count determines parallelism, not the execution path.
+   - **Freeform (no parsed prompt):** Planner produces a plan (JSON); executor simulates it without mutation; server streams Variation events (`meta`, `phrase*`, `done`). The planner is **project-context-aware**: it checks existing tracks by name and instrument type before proposing new ones, reuses existing track UUIDs in region and generator calls, and maps abstract roles (e.g. "melody") to matching existing instruments (e.g. an "Organ" track).
 7. **Stream:** Events include `state`, `reasoning`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `toolError`, `meta`, `phrase`, `done`, `budgetUpdate`, `complete`, `error`. Variable refs (`$0.trackId`) resolved server-side. `complete` is **always the final event**, even on errors (`success: false`).
 
 ---
@@ -32,7 +34,8 @@ The backend owns the execution mode decision.
 
 | Intent state | Execution mode | Key SSE events | Frontend behavior |
 |---|---|---|---|
-| COMPOSING | `variation` | `state`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `meta`, `phrase*`, `done`, `complete` | Variation Review Mode (accept/discard) |
+| COMPOSING (structured) | `variation` | `state`, `plan`, `preflight`, `reasoning*`, `planStepUpdate`, `toolStart`, `toolCall`, `generatorStart`, `generatorComplete`, `summary`, `meta`, `phrase*`, `done`, `complete` | Agent Teams reasoning + Variation Review Mode |
+| COMPOSING (freeform) | `variation` | `state`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `meta`, `phrase*`, `done`, `complete` | Variation Review Mode (accept/discard) |
 | EDITING | `apply` | `state`, `reasoning`, `plan`, `planStepUpdate`, `toolStart`, `toolCall*`, `budgetUpdate`, `complete` | Apply tool calls directly |
 | REASONING | n/a | `state`, `reasoning`, `content`, `complete` | Show chat response |
 
@@ -100,7 +103,7 @@ User prompt arrives
  field        ← COMPLETELY UNCHANGED
 ```
 
-- `Mode: compose` → COMPOSING (planner path). When Style, Tempo, Roles, and Bars are all specified, the planner builds a deterministic plan without an LLM call.
+- `Mode: compose` → COMPOSING. When the parsed prompt has roles (1+), the request routes through Agent Teams + Variation capture: per-instrument agents stream reasoning, generate music via Orpheus, and the result is packaged as a Variation for commit/discard review. When no roles are parsed, the standard planner path is used.
 - `Mode: edit` → EDITING. Vibes are matched against the producer idiom lexicon to pick the most appropriate edit intent.
 - `Mode: ask` → REASONING. No tools.
 
@@ -160,7 +163,7 @@ Implementation: `app/core/prompts.structured_prompt_context` (translation mandat
 
 ## Agent Teams — three-level parallel composition
 
-Multi-instrument STORI PROMPT compositions (2+ roles) use **Agent Teams**: a three-level agent hierarchy that enables both instrument-level and section-level parallelism.
+STORI PROMPT compositions with `Mode: compose` and roles (1+) use **Agent Teams**: a three-level agent hierarchy that enables both instrument-level and section-level parallelism. Single-instrument compose also uses this path — the instrument count determines parallelism (1 agent vs N parallel agents), not the execution path. All Agent Teams compositions produce a Variation for commit/discard review via `_handle_composing_with_agent_teams`.
 
 ### Architecture levels
 
@@ -493,7 +496,7 @@ Implementation: `app/core/entity_registry.py`. Tests: `tests/test_entity_manifes
 
 ### Routing, SSE, isolation, safety
 
-**Routing:** `orchestrate()` intercepts `Intent.GENERATE_MUSIC` + `execution_mode="apply"` + multi-role `ParsedPrompt` (2+ roles) before the standard EDITING path. Single-instrument requests and all non-STORI-PROMPT requests fall through to `_handle_editing` unchanged.
+**Routing:** Structured STORI PROMPTs with `Mode: compose` and roles (1+) route through `_handle_composing_with_agent_teams` in the COMPOSING section. This wrapper runs Agent Teams for streaming per-agent reasoning, then computes a Variation from the StateStore's accumulated notes for commit/discard review. The `executionMode` in the `state` SSE event is `"variation"` so the frontend shows the Variation Review UI. Non-structured multi-instrument requests (`execution_mode="apply"` + 2+ roles without explicit compose) still intercept before the standard EDITING path. Single-instrument non-structured requests and all freeform requests fall through to `_handle_editing` or `_handle_composing` unchanged.
 
 **SSE contract:** Plan steps for instruments carry `parallelGroup: "instruments"`. Phase 1 and Phase 3 steps have no `parallelGroup`. Multiple `planStepUpdate(active)` events fire simultaneously during Phase 2 as parents start. Every `planStepUpdate(active)` for an instrument content step is followed by exactly one `planStepUpdate(completed)` (or `planStepUpdate(failed)`) when the instrument agent finishes — no step remains in "active" after the stream ends. Section children tag their SSE events with both `agentId` and `sectionName` for frontend grouping — this includes `status`, `reasoning`, `toolCall`, `toolStart`, `toolError`, `generatorStart`, `generatorComplete`, and `content` events. `generatorStart` and `generatorComplete` additionally carry `agentId` baked in at source (in `_execute_agent_generator`) so the field is present regardless of the execution path. The `reasoning` events from Level 3 expression refinement carry `sectionName` to distinguish them from the parent's instrument-level reasoning. Tool calls from different instruments and sections interleave in the SSE stream — the frontend groups by `stepId`, so interleaving is handled naturally.
 

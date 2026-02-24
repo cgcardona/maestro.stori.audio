@@ -6,7 +6,10 @@ from app.core.maestro_composing.fallback import (
     _retry_composing_as_editing,
 )
 from app.core.maestro_composing.reasoning import _handle_reasoning
-from app.core.maestro_composing.composing import _handle_composing
+from app.core.maestro_composing.composing import (
+    _handle_composing,
+    _handle_composing_with_agent_teams,
+)
 
 __all__ = [
     "_store_variation",
@@ -14,4 +17,5 @@ __all__ = [
     "_retry_composing_as_editing",
     "_handle_reasoning",
     "_handle_composing",
+    "_handle_composing_with_agent_teams",
 ]

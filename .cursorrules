@@ -50,12 +50,14 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 ## Tests
 
 - **Runner:** The container copies code at build time (no live volume mount). **Always rebuild before testing:** `docker compose build maestro && docker compose up -d`, then `docker compose exec maestro pytest tests/ -v`. **Coverage (canonical, from container):** `docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"`. Threshold is in `pyproject.toml` ([tool.coverage.report] fail_under). See `docs/guides/testing.md`.
+- **When to run tests yourself vs. ask the user:** Run individual tests or individual test files directly (e.g. `pytest tests/test_foo.py -v` or `pytest tests/test_foo.py::TestBar::test_baz -v`). **Do NOT run the full suite** (`pytest tests/ -v`) — the user runs that manually. If the full suite needs to run, tell the user and let them do it. They will pass back any failures or stack traces for you to fix. This avoids agent loops on full-suite failures.
 - **Layout:** One test module per app area (e.g. `test_health.py`, `test_intent.py`, `test_rag.py`). Use `tests/conftest.py` for shared fixtures (`client`, `db_session`). Do not commit tests that depend on live external APIs (Orpheus, OpenRouter, S3) unless skipped or gated (e.g. `@pytest.mark.skip`, `skipif` with env).
 - **Naming:** `test_<behavior>_<scenario>` or `test_<module>_<behavior>`. Docstrings: one line describing what is being tested.
 - **Fixtures:** Prefer `db_session` and `client` from conftest for API tests so auth and DB use the in-memory DB. Override dependencies via `app.dependency_overrides` in fixtures, and restore in `finally`.
 - **Coverage:** Aim for high coverage on `app/core/`, `app/services/`, and `app/api/routes/`. Critical paths: intent classification, pipeline (REASONING/EDITING/COMPOSING), executor, tool validation, RAG, health. When adding features, add or extend tests; when fixing bugs, add a regression test if missing.
 - **Regression tests (mandatory):** Every bug fix, behavioral change, or contract update MUST include at least one regression test that would have caught the original issue. Place regression tests in the relevant test module next to existing tests for that area. Name them `test_<what_broke>_<fixed_behavior>` (e.g. `test_drumkitid_forces_is_drums_true`, `test_invalid_color_replaced_with_named`). The test should assert the corrected behavior *and* verify the old broken behavior no longer occurs. Do not consider a fix complete until its regression test passes.
 - **Stability:** Avoid flaky tests (no sleep-based waits; mock external calls; use deterministic data). Mark known-unstable tests with `@pytest.mark.skip(reason="...")` and a short reason or ticket.
+- **After tests pass:** Once the relevant tests pass, (1) verify that docs affected by the change are up to date (architecture, API reference, guides — see Documentation section), then (2) commit everything unless the user explicitly says otherwise. Do not wait to be asked — passing tests + updated docs = ready to commit.
 - **Supercharging (optional):** Add contract/API tests for public endpoints (status codes, response shape). Add a few E2E-style tests for critical flows (e.g. stream one COMPOSING request). Consider property-based tests for serialization/validation in `app/core/` and `app/models/`. Keep CI fast: separate slow/integration tests if needed (e.g. markers).
 
 ---
@@ -67,6 +69,15 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 - **When editing:** If you change behavior, config, or API, update the relevant doc. Prefer short, concrete sentences. Keep README and docs in sync (e.g. service table, env list).
 - **Code comments:** Use docstrings for public modules, classes, and functions. Prefer "why" over "what" where non-obvious. Do not comment out code; remove or guard behind a feature flag.
 - **Ephemeral handoff prompts:** Never create `.md` files for one-off FE/BE integration prompts or cross-team handoffs. Deliver them inline in the conversation as a fenced markdown block the user can copy. Only commit docs that are durable reference material (guides, API contracts, architecture).
+
+---
+
+## HTTP & streaming requests
+
+- **SSE / streaming curl:** When making `curl` requests to streaming endpoints (SSE, chunked responses), **never truncate** the output. The terminal must stay **open and visible** so the user can watch events arrive in real time. Use a generous `block_until_ms` (e.g. `300000` for 5 minutes) so the terminal panel stays open for the full duration of the stream. Do **not** use `block_until_ms: 0` — that backgrounds the process and the terminal flashes closed immediately, which defeats the purpose.
+- **Real-time visibility matters:** The user wants to see every SSE event as it arrives — heartbeats, chain-of-thought reasoning, toolStart, toolCall, planStepUpdate, errors, everything. The terminal must remain open and scrolling live for the entire duration of the request. After the stream completes, the user will report back with results or paste output for analysis.
+- **E2E test prompt:** When curling `/api/v1/maestro/stream` to test the system, always use the `e2e_pocket_groove` prompt from `app/data/maestro_ui/prompts_global.py`. This is a compact, spec-complete STORI PROMPT (8 bars, 3 instruments, `Mode: compose`). Never use `mode: "generate"` in the STORI PROMPT — every STORI PROMPT must be `Mode: compose`. The HTTP payload field `mode` is a separate concern (defaults to `"generate"` for new compositions, `"edit"` for modifications).
+- **Ephemeral scripts:** Any throwaway scripts (Python, shell, etc.) used for testing, data extraction, or one-off tasks must be written to `/tmp/`, never inside the repo tree. This prevents them from appearing in `git status` or accidentally being committed. Clean up after use when practical.
 
 ---
 

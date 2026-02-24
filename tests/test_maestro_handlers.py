@@ -1,4 +1,6 @@
 """Tests for maestro handlers (orchestration, UsageTracker, fallback route)."""
+from typing import Any
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1050,3 +1052,262 @@ class TestComposingUnifiedSSE:
                             assert step_indices[0] > proposal_indices[-1], \
                                 "planStepUpdate must not fire during proposal phase"
                         assert "completed" in statuses
+
+
+class TestAgentTeamsVariationRouting:
+    """Verify that Mode: compose routes through Agent Teams + Variation."""
+
+    def _make_parsed_prompt(self, roles: list[str]) -> Any:
+        from app.core.prompt_parser import ParsedPrompt
+        return ParsedPrompt(
+            raw="STORI PROMPT\nMode: compose",
+            mode="compose",
+            request="make a beat",
+            style="house",
+            tempo=120,
+            key="Am",
+            roles=roles,
+        )
+
+    def _make_composing_route(self, parsed: Any) -> IntentResult:
+        return IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.COMPOSING,
+            confidence=0.9,
+            slots=Slots(extras={"parsed_prompt": parsed}),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="auto",
+            force_stop_after=False,
+            requires_planner=True,
+            reasons=("stori_prompt",),
+        )
+
+    @pytest.mark.anyio
+    async def test_explicit_compose_multi_role_routes_to_agent_teams_variation(self):
+        """Mode: compose with 3 roles routes to _handle_composing_with_agent_teams."""
+        parsed = self._make_parsed_prompt(["drums", "bass", "keys"])
+        fake_route = self._make_composing_route(parsed)
+
+        async def _fake_at_gen(*args: Any, **kwargs: Any) -> Any:
+            yield 'data: {"type": "status", "message": "test"}\n\n'
+            yield 'data: {"type": "complete", "success": true}\n\n'
+
+        mock_llm = MagicMock()
+        mock_llm.close = AsyncMock()
+
+        with (
+            patch("app.core.maestro_handlers.get_intent_result_with_llm",
+                  new_callable=AsyncMock, return_value=fake_route),
+            patch("app.core.maestro_handlers.LLMClient", return_value=mock_llm),
+            patch("app.core.maestro_handlers._handle_composing_with_agent_teams",
+                  side_effect=_fake_at_gen) as mock_at,
+        ):
+            events = []
+            async for event in orchestrate(
+                "STORI PROMPT\nMode: compose",
+                project_context=_NON_EMPTY_PROJECT,
+            ):
+                events.append(event)
+
+            mock_at.assert_called_once()
+            call_args = mock_at.call_args
+            assert call_args[0][2] is parsed
+
+    @pytest.mark.anyio
+    async def test_single_instrument_compose_routes_to_agent_teams_variation(self):
+        """Mode: compose with 1 role also routes to Agent Teams + Variation."""
+        parsed = self._make_parsed_prompt(["melody"])
+        fake_route = self._make_composing_route(parsed)
+
+        async def _fake_at_gen(*args: Any, **kwargs: Any) -> Any:
+            yield 'data: {"type": "complete", "success": true}\n\n'
+
+        mock_llm = MagicMock()
+        mock_llm.close = AsyncMock()
+
+        with (
+            patch("app.core.maestro_handlers.get_intent_result_with_llm",
+                  new_callable=AsyncMock, return_value=fake_route),
+            patch("app.core.maestro_handlers.LLMClient", return_value=mock_llm),
+            patch("app.core.maestro_handlers._handle_composing_with_agent_teams",
+                  side_effect=_fake_at_gen) as mock_at,
+        ):
+            events = []
+            async for event in orchestrate(
+                "STORI PROMPT\nMode: compose",
+                project_context=_NON_EMPTY_PROJECT,
+            ):
+                events.append(event)
+
+            mock_at.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_compose_without_parsed_prompt_uses_standard_composing(self):
+        """When no parsed prompt (freeform compose), standard _handle_composing is used."""
+        from app.core.planner import ExecutionPlan
+
+        fake_route = IntentResult(
+            intent=Intent.GENERATE_MUSIC,
+            sse_state=SSEState.COMPOSING,
+            confidence=0.85,
+            slots=Slots(),
+            tools=[],
+            allowed_tool_names=set(),
+            tool_choice="none",
+            force_stop_after=True,
+            requires_planner=True,
+            reasons=("generation_phrase",),
+        )
+        empty_plan = ExecutionPlan(tool_calls=[], safety_validated=False)
+
+        mock_llm = MagicMock()
+        mock_llm.close = AsyncMock()
+
+        with (
+            patch("app.core.maestro_handlers.get_intent_result_with_llm",
+                  new_callable=AsyncMock, return_value=fake_route),
+            patch("app.core.maestro_composing.composing.build_execution_plan_stream",
+                  return_value=_fake_plan_stream(empty_plan)),
+            patch("app.core.maestro_handlers.LLMClient", return_value=mock_llm),
+            patch("app.core.maestro_handlers._handle_composing_with_agent_teams") as mock_at,
+        ):
+            events = []
+            async for event in orchestrate(
+                "make the bass funkier",
+                project_context=_NON_EMPTY_PROJECT,
+            ):
+                events.append(event)
+
+            mock_at.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_agent_teams_variation_emits_variation_events(self):
+        """The wrapper intercepts Agent Teams complete and emits meta/phrase/done/complete."""
+        import json
+        from app.core.maestro_composing.composing import (
+            _handle_composing_with_agent_teams,
+        )
+        from app.core.prompt_parser import ParsedPrompt
+        from app.core.state_store import StateStore
+        from app.core.tracing import create_trace_context
+        from app.models.variation import Variation, Phrase, NoteChange, MidiNoteSnapshot
+
+        parsed = self._make_parsed_prompt(["drums", "bass"])
+        fake_route = self._make_composing_route(parsed)
+
+        store = StateStore(conversation_id="test", project_id="test-proj")
+        trace = create_trace_context()
+
+        tid = store.create_track("Drums")
+        rid = store.create_region(
+            name="Drums Region",
+            parent_track_id=tid,
+            metadata={"startBeat": 0, "durationBeats": 16},
+        )
+        store.add_notes(rid, [
+            {"pitch": 36, "start_beat": 0, "duration_beats": 1, "velocity": 100},
+            {"pitch": 38, "start_beat": 4, "duration_beats": 1, "velocity": 90},
+        ])
+
+        _test_variation = Variation(
+            variation_id="test-var-id",
+            intent="test",
+            ai_explanation="Test variation",
+            affected_tracks=[tid],
+            affected_regions=[rid],
+            beat_range=(0.0, 16.0),
+            phrases=[
+                Phrase(
+                    phrase_id="phrase-1",
+                    track_id=tid,
+                    region_id=rid,
+                    start_beat=0.0,
+                    end_beat=16.0,
+                    label="Drums",
+                    tags=["drums"],
+                    explanation="drum pattern",
+                    note_changes=[
+                        NoteChange(
+                            note_id="n1",
+                            change_type="added",
+                            after=MidiNoteSnapshot(
+                                pitch=36,
+                                start_beat=0.0,
+                                duration_beats=1.0,
+                                velocity=100,
+                            ),
+                        ),
+                    ],
+                    controller_changes=[],
+                ),
+            ],
+        )
+
+        async def _fake_agent_teams(*args: Any, **kwargs: Any) -> Any:
+            yield 'data: {"type": "status", "message": "Preparing..."}\n\n'
+            yield 'data: {"type": "reasoning", "content": "Thinking about drums", "agentId": "drums"}\n\n'
+            yield 'data: {"type": "summary", "tracks": ["Drums"], "regions": 1, "notes": 2}\n\n'
+            yield 'data: {"type": "complete", "success": true, "stateVersion": 1}\n\n'
+
+        mock_vs = MagicMock()
+        mock_vs.compute_multi_region_variation = MagicMock(return_value=_test_variation)
+        mock_vs.compute_variation = MagicMock(return_value=_test_variation)
+
+        with (
+            patch("app.core.maestro_agent_teams._handle_composition_agent_team",
+                  side_effect=_fake_agent_teams),
+            patch("app.core.maestro_editing._create_editing_composition_route",
+                  return_value=fake_route),
+            patch("app.services.variation.get_variation_service",
+                  return_value=mock_vs),
+            patch("app.core.maestro_composing.storage._store_variation"),
+        ):
+            events = []
+            async for event in _handle_composing_with_agent_teams(
+                prompt="test prompt",
+                project_context=_NON_EMPTY_PROJECT,
+                parsed=parsed,
+                route=fake_route,
+                llm=MagicMock(),
+                store=store,
+                trace=trace,
+                usage_tracker=None,
+            ):
+                events.append(event)
+
+        payloads = []
+        for e in events:
+            if e.startswith("data:"):
+                payloads.append(json.loads(e.split("data: ", 1)[1].strip()))
+        types = [p.get("type") for p in payloads]
+
+        # Agent Teams events pass through (except complete)
+        assert "status" in types
+        assert "reasoning" in types
+        assert "summary" in types
+
+        # Variation events are appended
+        assert "meta" in types
+        assert "phrase" in types
+        assert "done" in types
+        assert "complete" in types
+
+        # The complete event has variation info
+        complete_evt = next(p for p in payloads if p["type"] == "complete")
+        assert complete_evt["variationId"] == "test-var-id"
+        assert complete_evt["phraseCount"] == 1
+        assert complete_evt["success"] is True
+
+        # The meta event has variation metadata
+        meta_evt = next(p for p in payloads if p["type"] == "meta")
+        assert meta_evt["variationId"] == "test-var-id"
+        assert "noteCounts" in meta_evt
+
+        # Ordering: reasoning before meta, meta before phrase, phrase before done
+        reasoning_idx = types.index("reasoning")
+        meta_idx = types.index("meta")
+        phrase_idx = types.index("phrase")
+        done_idx = types.index("done")
+        complete_idx = types.index("complete")
+        assert reasoning_idx < meta_idx < phrase_idx < done_idx < complete_idx

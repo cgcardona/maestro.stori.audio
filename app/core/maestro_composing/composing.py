@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import uuid as _uuid_mod
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
 from app.core.entity_context import format_project_context
 from app.core.llm_client import LLMClient
@@ -352,3 +353,204 @@ async def _handle_composing(
             "traceId": trace.trace_id,
             **_context_usage_fields(usage_tracker, llm.model),
         })
+
+
+# ---------------------------------------------------------------------------
+# Agent Teams + Variation capture
+# ---------------------------------------------------------------------------
+
+
+async def _handle_composing_with_agent_teams(
+    prompt: str,
+    project_context: dict[str, Any],
+    parsed: ParsedPrompt,
+    route: Any,
+    llm: LLMClient,
+    store: StateStore,
+    trace: Any,
+    usage_tracker: Optional[UsageTracker],
+    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
+    quality_preset: Optional[str] = None,
+) -> AsyncIterator[str]:
+    """Agent Teams composition with Variation capture.
+
+    Combines streaming per-agent reasoning from Agent Teams with
+    Muse's Variation system for human-reviewable commit/discard.
+
+    ``Mode: compose`` is the directive — any compose request with parsed
+    roles (1+) uses this path.  The instrument count determines
+    parallelism (1 agent vs N parallel agents), not the execution path.
+
+    Flow:
+      1. Snapshot base notes from project state
+      2. Run Agent Teams (streams reasoning, tool events, heartbeats)
+      3. Collect generated notes from StateStore
+      4. Compute Variation via VariationService
+      5. Store variation for commit/discard
+      6. Emit meta/phrase/done/complete events
+    """
+    from app.core.maestro_agent_teams import _handle_composition_agent_team
+    from app.core.maestro_editing import _create_editing_composition_route
+    from app.models.variation import Variation
+    from app.services.variation import get_variation_service
+
+    # ── 1. Snapshot base notes before Agent Teams runs ──
+    _base_notes: dict[str, list[dict]] = {}
+    _track_regions: dict[str, str] = {}
+    for track in project_context.get("tracks", []):
+        track_id = track.get("id", "")
+        for region in track.get("regions", []):
+            rid = region.get("id", "")
+            notes = region.get("notes", []) or store.get_region_notes(rid)
+            if rid and notes:
+                _base_notes[rid] = notes
+                _track_regions[rid] = track_id
+
+    # Agent Teams needs an editing-level tool allowlist (tempo, key, tracks,
+    # regions, generators, effects).  The COMPOSING route may have a narrower
+    # set, so we create an editing composition route for the coordinator.
+    _at_route = _create_editing_composition_route(route)
+
+    # ── 2. Run Agent Teams — intercept the ``complete`` event ──
+    _agent_complete: dict[str, Any] | None = None
+    _SSE_PREFIX = "data: "
+
+    async for event_str in _handle_composition_agent_team(
+        prompt, project_context, parsed, _at_route, llm, store,
+        trace, usage_tracker, is_cancelled=is_cancelled,
+    ):
+        if event_str.startswith(_SSE_PREFIX):
+            try:
+                _payload = json.loads(event_str[len(_SSE_PREFIX):].rstrip())
+                if _payload.get("type") == "complete":
+                    _agent_complete = _payload
+                    continue
+            except (json.JSONDecodeError, ValueError):
+                pass
+        yield event_str
+
+    # ── 3. Collect proposed notes from StateStore ──
+    _proposed_notes: dict[str, list[dict]] = {}
+    _region_start_beats: dict[str, float] = {}
+
+    for region_entity in store.registry.list_regions():
+        rid = region_entity.id
+        notes = store.get_region_notes(rid)
+        if notes:
+            _proposed_notes[rid] = notes
+            _track_regions[rid] = region_entity.parent_id or ""
+            if rid not in _base_notes:
+                _base_notes[rid] = []
+            if region_entity.metadata:
+                _region_start_beats[rid] = float(
+                    region_entity.metadata.get("startBeat", 0)
+                )
+
+    # ── 4. Compute Variation ──
+    _vs = get_variation_service()
+
+    if _proposed_notes:
+        if len(_proposed_notes) > 1:
+            variation = _vs.compute_multi_region_variation(
+                base_regions=_base_notes,
+                proposed_regions=_proposed_notes,
+                track_regions=_track_regions,
+                intent=prompt,
+                explanation=(
+                    f"Agent Teams composition: "
+                    f"{len(parsed.roles)} instrument(s)"
+                ),
+                region_start_beats=_region_start_beats,
+            )
+        else:
+            _rid = next(iter(_proposed_notes))
+            _tid = _track_regions.get(_rid, "")
+            variation = _vs.compute_variation(
+                base_notes=_base_notes.get(_rid, []),
+                proposed_notes=_proposed_notes[_rid],
+                region_id=_rid,
+                track_id=_tid,
+                intent=prompt,
+                explanation=(
+                    f"Agent Teams composition: "
+                    f"{len(parsed.roles)} instrument(s)"
+                ),
+                region_start_beat=_region_start_beats.get(_rid, 0.0),
+            )
+    else:
+        variation = Variation(
+            variation_id=str(_uuid_mod.uuid4()),
+            intent=prompt,
+            ai_explanation="No notes generated",
+            affected_tracks=[],
+            affected_regions=[],
+            beat_range=(0.0, 0.0),
+            phrases=[],
+        )
+
+    logger.info(
+        f"[{trace.trace_id[:8]}] 🎼 Variation computed from Agent Teams: "
+        f"{variation.total_changes} changes in "
+        f"{len(variation.phrases)} phrases"
+    )
+
+    # ── 5. Store variation for commit/discard ──
+    _store_variation(variation, project_context, store)
+
+    # ── 6. Emit variation events ──
+    yield await sse_event({
+        "type": "meta",
+        "variationId": variation.variation_id,
+        "baseStateId": store.get_state_id(),
+        "intent": variation.intent,
+        "aiExplanation": variation.ai_explanation,
+        "affectedTracks": variation.affected_tracks,
+        "affectedRegions": variation.affected_regions,
+        "noteCounts": variation.note_counts,
+    })
+
+    for phrase in variation.phrases:
+        yield await sse_event({
+            "type": "phrase",
+            "phraseId": phrase.phrase_id,
+            "trackId": phrase.track_id,
+            "regionId": phrase.region_id,
+            "startBeat": phrase.start_beat,
+            "endBeat": phrase.end_beat,
+            "label": phrase.label,
+            "tags": phrase.tags,
+            "explanation": phrase.explanation,
+            "noteChanges": [
+                nc.model_dump(by_alias=True)
+                for nc in phrase.note_changes
+            ],
+            "controllerChanges": phrase.controller_changes,
+        })
+
+    yield await sse_event({
+        "type": "done",
+        "variationId": variation.variation_id,
+        "phraseCount": len(variation.phrases),
+    })
+
+    # Merge Agent Teams success/warnings with variation metadata
+    _success = (
+        _agent_complete.get("success", True)
+        if _agent_complete else True
+    )
+    _complete: dict[str, Any] = {
+        "type": "complete",
+        "success": _success,
+        "variationId": variation.variation_id,
+        "totalChanges": variation.total_changes,
+        "phraseCount": len(variation.phrases),
+        "traceId": trace.trace_id,
+        **_context_usage_fields(usage_tracker, llm.model),
+    }
+    if _agent_complete:
+        if "warnings" in _agent_complete:
+            _complete["warnings"] = _agent_complete["warnings"]
+        if "stateVersion" in _agent_complete:
+            _complete["stateVersion"] = _agent_complete["stateVersion"]
+
+    yield await sse_event(_complete)

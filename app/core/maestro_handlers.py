@@ -37,7 +37,11 @@ from app.core.maestro_editing import (
     _create_editing_composition_route,
     _handle_editing,
 )
-from app.core.maestro_composing import _handle_reasoning, _handle_composing
+from app.core.maestro_composing import (
+    _handle_reasoning,
+    _handle_composing,
+    _handle_composing_with_agent_teams,
+)
 from app.core.maestro_agent_teams import _handle_composition_agent_team
 from app.core.maestro_helpers import _context_usage_fields
 
@@ -185,16 +189,35 @@ async def orchestrate(
                 return
 
             # =================================================================
-            # Step 3: Handle COMPOSING (planner path)
+            # Step 3: Handle COMPOSING (planner path or Agent Teams + Variation)
             # =================================================================
 
             if route.sse_state == SSEState.COMPOSING:
-                async for event in _handle_composing(
-                    prompt, project_context, route, llm, store, trace,
-                    usage_tracker, conversation_id,
-                    quality_preset=quality_preset,
-                ):
-                    yield event
+                _has_roles = (
+                    _orch_parsed is not None
+                    and bool(getattr(_orch_parsed, "roles", None))
+                )
+                if _explicit_compose and _has_roles:
+                    assert _orch_parsed is not None  # narrowed by _has_roles
+                    logger.info(
+                        f"[{trace.trace_id[:8]}] 🎼 Mode: compose with "
+                        f"{len(_orch_parsed.roles)} role(s) → "
+                        f"Agent Teams + Variation capture"
+                    )
+                    async for event in _handle_composing_with_agent_teams(
+                        prompt, project_context, _orch_parsed, route,
+                        llm, store, trace, usage_tracker,
+                        is_cancelled=is_cancelled,
+                        quality_preset=quality_preset,
+                    ):
+                        yield event
+                else:
+                    async for event in _handle_composing(
+                        prompt, project_context, route, llm, store, trace,
+                        usage_tracker, conversation_id,
+                        quality_preset=quality_preset,
+                    ):
+                        yield event
                 return
 
             # =================================================================
