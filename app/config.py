@@ -129,10 +129,10 @@ class Settings(BaseSettings):
     
     # Music Generation Service Configuration
     orpheus_base_url: str = "http://localhost:10002"
-    orpheus_timeout: int = 180  # seconds — default max read timeout (overridden by per-bar scaling)
-    orpheus_timeout_base: int = 60   # seconds — fixed overhead (connect + cold-start buffer)
-    orpheus_timeout_per_bar: int = 15  # seconds per bar of requested music (A100: ~1-2 bars/s)
-    orpheus_max_concurrent: int = 4  # max parallel GPU inference calls (A100: 4, A10G: 2)
+    orpheus_timeout: int = 180  # seconds — fallback max read timeout
+    orpheus_max_concurrent: int = 2  # max parallel submit+poll cycles (serializes GPU access)
+    orpheus_poll_timeout: int = 30   # seconds — long-poll timeout per /jobs/{id}/wait request
+    orpheus_poll_max_attempts: int = 10  # max polls before giving up (~5 min total)
     orpheus_cb_threshold: int = 3   # consecutive failures before circuit breaker trips
     orpheus_cb_cooldown: int = 60   # seconds before tripped circuit allows a probe request
     orpheus_required: bool = True   # hard-gate: abort composition if pre-flight health check fails

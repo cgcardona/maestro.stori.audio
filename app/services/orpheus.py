@@ -130,17 +130,6 @@ class OrpheusClient:
         """True when the circuit breaker is tripped (Orpheus is down)."""
         return self._cb.is_open
 
-    def _timeout_for_bars(self, bars: int) -> float:
-        """Compute dynamic read timeout scaled to the number of requested bars.
-
-        Formula: base + (per_bar * bars), clamped to [30, orpheus_timeout].
-        Short requests (4 bars) get ~120s; long ones (32 bars) get ~540s.
-        """
-        base = settings.orpheus_timeout_base
-        per_bar = settings.orpheus_timeout_per_bar
-        dynamic = base + per_bar * bars
-        return float(min(max(dynamic, 30), self.timeout))
-
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -224,7 +213,6 @@ class OrpheusClient:
         instruments: Optional[list[str]] = None,
         bars: int = 4,
         key: Optional[str] = None,
-        # Intent vector fields (from LLM classification)
         musical_goals: Optional[list[str]] = None,
         tone_brightness: float = 0.0,
         tone_warmth: float = 0.0,
@@ -233,28 +221,14 @@ class OrpheusClient:
         complexity: float = 0.5,
         quality_preset: str = "balanced",
     ) -> dict[str, Any]:
-        """
-        Generate MIDI notes using Orpheus with rich intent support.
+        """Generate MIDI via Orpheus using the async submit + long-poll pattern.
 
-        Retries up to 3 times (delays: 5s, 15s, 30s) when the Gradio GPU pod
-        returns a cold-start timeout ("No GPU was available after 60s").
+        1. POST /generate → returns immediately with {jobId, status}.
+           Cache hits arrive pre-completed (no queue slot used).
+        2. GET /jobs/{jobId}/wait?timeout=30 in a loop until complete/failed.
 
-        Args:
-            genre: Musical genre/style
-            tempo: Tempo in BPM
-            instruments: List of instruments to generate
-            bars: Number of bars to generate
-            key: Musical key (e.g., "Am", "C")
-            musical_goals: List like ["dark", "energetic"] (from intent system)
-            tone_brightness: -1 (dark) to +1 (bright)
-            tone_warmth: -1 (cold) to +1 (warm)
-            energy_intensity: -1 (calm) to +1 (intense)
-            energy_excitement: -1 (laid back) to +1 (exciting)
-            complexity: 0 (simple) to 1 (complex)
-            quality_preset: "fast", "balanced", or "quality"
-
-        Returns:
-            Dict with success status and notes or error
+        Jobs survive HTTP disconnects — if a poll times out, the GPU work
+        continues and the next poll picks up the result.
         """
         if instruments is None:
             instruments = ["drums", "bass"]
@@ -271,9 +245,6 @@ class OrpheusClient:
             "complexity": complexity,
             "quality_preset": quality_preset,
         }
-        # Only include optional fields when they carry a value.
-        # Sending null for list/string fields triggers a Gradio-level
-        # TypeError ("'NoneType' object is not a mapping") on the server.
         if key:
             payload["key"] = key
         if musical_goals:
@@ -320,142 +291,78 @@ class OrpheusClient:
                 )
 
             _gen_start = asyncio.get_event_loop().time()
-            _req_timeout = self._timeout_for_bars(bars)
-            _req_httpx_timeout = httpx.Timeout(
-                connect=5.0, read=_req_timeout, write=30.0, pool=5.0,
-            )
-            logger.debug(
-                f"[Orpheus] Read timeout for {bars} bars: {_req_timeout:.0f}s"
-            )
+
+            # ── Submit phase ──────────────────────────────────────────
+            _submit_timeout = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+            job_id: Optional[str] = None
+
             for attempt in range(_MAX_RETRIES):
                 try:
                     response = await self.client.post(
                         f"{self.base_url}/generate",
                         json=payload,
-                        timeout=_req_httpx_timeout,
+                        timeout=_submit_timeout,
                     )
-                    response.raise_for_status()
-                    data = response.json()
 
-                    if data is None or not isinstance(data, dict):
-                        raw = response.text[:200] if response.text else "(empty)"
-                        logger.warning(
-                            f"⚠️ Orpheus returned non-dict response (attempt {attempt + 1}): {raw}"
-                        )
-                        if self._is_transient_error(raw) and attempt < _MAX_RETRIES - 1:
-                            delay = _RETRY_DELAYS[attempt]
-                            logger.warning(f"⚠️ Retrying in {delay}s (GPU issue in raw body)")
-                            await asyncio.sleep(delay)
-                            continue
-                        self._cb.record_failure()
-                        return {
-                            "success": False,
-                            "error": f"Orpheus returned invalid response: {raw}",
-                            "retry_count": attempt,
-                        }
-
-                    error_text = data.get("error", "")
-                    # Retry on any transient error (GPU cold-start OR Gradio-level
-                    # transient failures like "NoneType object is not a mapping").
-                    # Previously only GPU cold-start was retried; this caused the
-                    # Gradio transient errors observed during multi-section runs to
-                    # be surfaced immediately as toolError without any retry attempt.
-                    if not data.get("success") and self._is_transient_error(error_text):
+                    if response.status_code == 503:
                         if attempt < _MAX_RETRIES - 1:
                             delay = _RETRY_DELAYS[attempt]
-                            _err_label = (
-                                "GPU cold-start"
-                                if self._is_gpu_cold_start_error(error_text)
-                                else "Gradio transient error"
-                            )
                             logger.warning(
-                                f"⚠️ Orpheus {_err_label} "
-                                f"(attempt {attempt + 1}/{_MAX_RETRIES}) "
-                                f"— retrying in {delay}s: {error_text[:120]}"
+                                f"⚠️ Orpheus queue full (503) — retrying in {delay}s"
                             )
                             await asyncio.sleep(delay)
                             continue
-                        _is_gpu = self._is_gpu_cold_start_error(error_text)
                         self._cb.record_failure()
-                        logger.error(
-                            f"❌ Orpheus generation failed after {_MAX_RETRIES} attempts: "
-                            f"{error_text[:120]}"
-                        )
                         return {
                             "success": False,
-                            "error": "gpu_unavailable" if _is_gpu else error_text,
-                            "message": (
-                                f"MIDI generation failed after {_MAX_RETRIES} attempts — "
-                                + (
-                                    "GPU unavailable. Try again in a few minutes."
-                                    if _is_gpu
-                                    else error_text[:200]
-                                )
-                            ),
+                            "error": "Orpheus queue full",
+                            "message": "Generation queue is full — try again shortly.",
                             "retry_count": attempt + 1,
                         }
 
-                    out: dict[str, Any] = {
-                        "success": data.get("success", False),
-                        "notes": data.get("notes", []),
-                        "tool_calls": data.get("tool_calls", []),
-                        "metadata": {**(data.get("metadata") or {}), "retry_count": attempt},
-                    }
-                    if not out["success"] and error_text:
-                        out["error"] = error_text
+                    response.raise_for_status()
+                    data = response.json()
+
+                    if not isinstance(data, dict):
                         self._cb.record_failure()
-                    else:
+                        return {
+                            "success": False,
+                            "error": f"Invalid submit response: {response.text[:200]}",
+                            "retry_count": attempt,
+                        }
+
+                    status = data.get("status")
+
+                    if status == "complete":
+                        result = data.get("result", {})
                         self._cb.record_success()
-                    _gen_elapsed = asyncio.get_event_loop().time() - _gen_start
+                        _elapsed = asyncio.get_event_loop().time() - _gen_start
+                        logger.info(
+                            f"[Orpheus] ✅ Cache hit for {instruments} in {_elapsed:.1f}s"
+                        )
+                        return {
+                            "success": result.get("success", False),
+                            "notes": result.get("notes", []),
+                            "tool_calls": result.get("tool_calls", []),
+                            "metadata": {
+                                **(result.get("metadata") or {}),
+                                "retry_count": attempt,
+                            },
+                        }
+
+                    job_id = data.get("jobId")
+                    if not job_id:
+                        self._cb.record_failure()
+                        return {
+                            "success": False,
+                            "error": "No jobId in Orpheus submit response",
+                            "retry_count": attempt,
+                        }
                     logger.info(
-                        f"[Orpheus] ✅ Generation done for {instruments}: "
-                        f"{len(out['notes'])} notes in {_gen_elapsed:.1f}s "
-                        f"(attempt {attempt + 1})"
+                        f"[Orpheus] 📥 Job {job_id[:8]} submitted for {instruments} "
+                        f"(position {data.get('position', '?')})"
                     )
-                    return out
-
-                except httpx.HTTPStatusError as e:
-                    status_code = e.response.status_code
-                    body = e.response.text
-                    is_server_error = 500 <= status_code < 600
-                    if (is_server_error or self._is_transient_error(body)) and attempt < _MAX_RETRIES - 1:
-                        delay = _RETRY_DELAYS[attempt]
-                        logger.warning(
-                            f"⚠️ Orpheus HTTP {status_code} "
-                            f"(attempt {attempt + 1}/{_MAX_RETRIES}) — retrying in {delay}s"
-                        )
-                        await asyncio.sleep(delay)
-                        continue
-                    self._cb.record_failure()
-                    logger.error(f"❌ Orpheus HTTP error: {status_code}")
-                    return {
-                        "success": False,
-                        "error": f"HTTP {status_code}: {body}",
-                        "retry_count": attempt,
-                    }
-
-                except httpx.ReadTimeout:
-                    if attempt < _MAX_RETRIES - 1:
-                        delay = _RETRY_DELAYS[attempt]
-                        logger.warning(
-                            f"⚠️ Orpheus read timeout "
-                            f"(attempt {attempt + 1}/{_MAX_RETRIES}) — retrying in {delay}s"
-                        )
-                        await asyncio.sleep(delay)
-                        continue
-                    self._cb.record_failure()
-                    logger.error(
-                        f"❌ Orpheus read timeout after {_MAX_RETRIES} attempts"
-                    )
-                    return {
-                        "success": False,
-                        "error": "Orpheus generation timed out",
-                        "message": (
-                            f"MIDI generation timed out after {_MAX_RETRIES} attempts. "
-                            "The GPU may be overloaded — try again shortly."
-                        ),
-                        "retry_count": attempt + 1,
-                    }
+                    break
 
                 except httpx.ConnectError:
                     self._cb.record_failure()
@@ -467,30 +374,130 @@ class OrpheusClient:
                         "retry_count": attempt,
                     }
 
-                except Exception as e:
-                    err_str = str(e)
-                    if self._is_transient_error(err_str) and attempt < _MAX_RETRIES - 1:
+                except (httpx.ReadTimeout, httpx.HTTPStatusError) as exc:
+                    if attempt < _MAX_RETRIES - 1:
                         delay = _RETRY_DELAYS[attempt]
                         logger.warning(
-                            f"⚠️ Orpheus transient error (attempt {attempt + 1}/{_MAX_RETRIES}) "
-                            f"— retrying in {delay}s: {err_str[:120]}"
+                            f"⚠️ Orpheus submit error ({type(exc).__name__}) "
+                            f"(attempt {attempt + 1}/{_MAX_RETRIES}) — retrying in {delay}s"
                         )
                         await asyncio.sleep(delay)
                         continue
                     self._cb.record_failure()
-                    logger.error(f"❌ Orpheus request failed: {e}")
                     return {
                         "success": False,
-                        "error": err_str,
+                        "error": f"Orpheus submit failed: {exc}",
+                        "retry_count": attempt + 1,
+                    }
+
+                except Exception as exc:
+                    self._cb.record_failure()
+                    logger.error(f"❌ Orpheus submit error: {exc}")
+                    return {
+                        "success": False,
+                        "error": str(exc),
                         "retry_count": attempt,
                     }
 
+            if job_id is None:
+                self._cb.record_failure()
+                return {
+                    "success": False,
+                    "error": "Failed to submit job after retries",
+                    "retry_count": _MAX_RETRIES,
+                }
+
+            # ── Poll phase ────────────────────────────────────────────
+            poll_timeout = settings.orpheus_poll_timeout
+            max_polls = settings.orpheus_poll_max_attempts
+            _poll_httpx_timeout = httpx.Timeout(
+                connect=5.0,
+                read=float(poll_timeout + 5),
+                write=5.0,
+                pool=5.0,
+            )
+
+            for poll_num in range(max_polls):
+                try:
+                    response = await self.client.get(
+                        f"{self.base_url}/jobs/{job_id}/wait",
+                        params={"timeout": poll_timeout},
+                        timeout=_poll_httpx_timeout,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    status = data.get("status")
+
+                    if status in ("complete", "failed"):
+                        result = data.get("result", {})
+                        error_text = result.get("error") or data.get("error", "")
+                        _elapsed = asyncio.get_event_loop().time() - _gen_start
+
+                        if status == "failed" or not result.get("success"):
+                            self._cb.record_failure()
+                            logger.error(
+                                f"❌ Orpheus job {job_id[:8]} failed after "
+                                f"{_elapsed:.1f}s: {error_text[:120]}"
+                            )
+                            return {
+                                "success": False,
+                                "error": error_text or "Generation failed",
+                                "retry_count": 0,
+                            }
+
+                        self._cb.record_success()
+                        logger.info(
+                            f"[Orpheus] ✅ Job {job_id[:8]} complete for "
+                            f"{instruments} in {_elapsed:.1f}s "
+                            f"(poll {poll_num + 1}/{max_polls})"
+                        )
+                        return {
+                            "success": True,
+                            "notes": result.get("notes", []),
+                            "tool_calls": result.get("tool_calls", []),
+                            "metadata": {
+                                **(result.get("metadata") or {}),
+                                "retry_count": 0,
+                            },
+                        }
+
+                    logger.debug(
+                        f"[Orpheus] Job {job_id[:8]} still {status} "
+                        f"(poll {poll_num + 1}/{max_polls})"
+                    )
+
+                except httpx.ReadTimeout:
+                    logger.debug(
+                        f"[Orpheus] Poll timeout for {job_id[:8]} "
+                        f"(poll {poll_num + 1}/{max_polls}) — job still running"
+                    )
+
+                except httpx.ConnectError:
+                    self._cb.record_failure()
+                    logger.warning(
+                        f"⚠️ Orpheus connection lost while polling job {job_id[:8]}"
+                    )
+                    return {
+                        "success": False,
+                        "error": "Orpheus connection lost during polling",
+                        "notes": [],
+                        "retry_count": 0,
+                    }
+
+                except Exception as exc:
+                    logger.warning(
+                        f"⚠️ Poll error for job {job_id[:8]}: {exc}"
+                    )
+
             self._cb.record_failure()
+            _total = poll_timeout * max_polls
+            logger.error(
+                f"❌ Orpheus job {job_id[:8]} did not complete within {_total}s"
+            )
             return {
                 "success": False,
-                "error": "gpu_unavailable",
-                "message": f"MIDI generation failed after {_MAX_RETRIES} attempts — GPU unavailable.",
-                "retry_count": _MAX_RETRIES,
+                "error": f"Generation did not complete within {_total}s",
+                "retry_count": 0,
             }
 
 

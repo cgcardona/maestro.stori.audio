@@ -414,8 +414,9 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 **Orpheus pre-flight health check (hard gate):**
 - Before Phase 2 starts, the coordinator calls `OrpheusClient.health_check()`. When `STORI_ORPHEUS_REQUIRED=true` (default), an unhealthy probe aborts the composition immediately with `complete(success=false)` instead of wasting 45+ seconds of LLM reasoning that would inevitably fail at generation time. When `STORI_ORPHEUS_REQUIRED=false` (development/testing), it falls back to a soft warning and continues with retry logic active.
 
-**Orpheus transient-error retry:**
-- `OrpheusClient.generate()` retries up to 4 attempts (delays: 2 s / 5 s / 10 s / 20 s) on *any* transient error — GPU cold-start phrases (`"No GPU was available"`, etc.), Gradio-level transient errors (`"'NoneType' object is not a mapping"`, `"Queue is full"`, `"upstream Gradio app has raised an exception"`, `"timed out"`), `httpx.ReadTimeout` exceptions, and **any 5xx HTTP status code** (including 503 Service Unavailable). The retry label in logs distinguishes the two (`"GPU cold-start"` vs `"Gradio transient error"`).
+**Orpheus async job queue (submit + poll):**
+- `OrpheusClient.generate()` uses a two-phase pattern: (1) **Submit** — `POST /generate` returns immediately with `{jobId, status}`. Cache hits arrive pre-completed (`status: "complete"`) without consuming a queue slot. Cache misses enqueue a job and return `{status: "queued", position}`. (2) **Poll** — `GET /jobs/{jobId}/wait?timeout=30` long-polls until the job completes or fails. Max `orpheus_poll_max_attempts` polls (default 10 = ~5 min total). Jobs survive HTTP disconnects — if a poll times out, the GPU work continues server-side and the next poll picks up the result. This eliminates the timeout cascade that occurred when 9 agents queued behind a semaphore in a single blocking HTTP request.
+- Submit retries: up to 4 attempts (delays: 2 s / 5 s / 10 s / 20 s) on 503 (queue full), `ReadTimeout`, or `HTTPStatusError`. Poll retries: `ReadTimeout` during a poll is non-fatal — the job keeps running; only `ConnectError` (Orpheus down) fails immediately.
 
 **Orpheus circuit breaker:**
 - After `orpheus_cb_threshold` (default 3) consecutive failed `generate()` calls (across requests — not retries within a single call), the circuit breaker trips. While tripped, all subsequent `generate()` calls fail immediately with `error: "orpheus_circuit_open"` — no HTTP request is made, no tokens are wasted on retries that will also fail. The circuit automatically allows one probe request after `orpheus_cb_cooldown` seconds (default 60). If the probe succeeds, the circuit closes and normal operation resumes; if it fails, the circuit re-opens for another cooldown period. Server-owned section retries check `circuit_breaker_open` before each retry round — if the breaker is open, retries are skipped immediately.
@@ -437,10 +438,10 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 | `STORI_SECTION_CHILD_TIMEOUT` | 300 | Per-section child watchdog (seconds) |
 | `STORI_INSTRUMENT_AGENT_TIMEOUT` | 600 | Per-instrument parent watchdog (seconds) |
 | `STORI_BASS_SIGNAL_WAIT_TIMEOUT` | 240 | Bass waiting for drum signal (seconds) |
-| `STORI_ORPHEUS_MAX_CONCURRENT` | 4 | GPU inference semaphore slots |
-| `STORI_ORPHEUS_TIMEOUT` | 180 | Max read timeout per Orpheus HTTP call (seconds) |
-| `STORI_ORPHEUS_TIMEOUT_BASE` | 60 | Fixed overhead per request (connect + cold-start buffer) |
-| `STORI_ORPHEUS_TIMEOUT_PER_BAR` | 15 | Added per bar of requested music (A100: ~1-2 bars/s) |
+| `STORI_ORPHEUS_MAX_CONCURRENT` | 2 | Max parallel submit+poll cycles (serializes GPU access) |
+| `STORI_ORPHEUS_TIMEOUT` | 180 | Fallback max read timeout (seconds) |
+| `STORI_ORPHEUS_POLL_TIMEOUT` | 30 | Long-poll timeout per `/jobs/{id}/wait` request (seconds) |
+| `STORI_ORPHEUS_POLL_MAX_ATTEMPTS` | 10 | Max polls before giving up (~5 min total) |
 | `STORI_ORPHEUS_CB_THRESHOLD` | 3 | Consecutive failures before circuit breaker trips |
 | `STORI_ORPHEUS_CB_COOLDOWN` | 60 | Seconds before tripped circuit allows a probe |
 | `STORI_ORPHEUS_REQUIRED` | true | Abort composition if pre-flight health check fails |
@@ -559,23 +560,26 @@ OrpheusBackend.generate()                   ← app/services/backends/orpheus.py
     │         salient axes → musical_goals list
     ▼
 OrpheusClient.generate()                    ← app/services/orpheus.py
-    │  includes: tone_brightness, energy_intensity,
-    │            musical_goals, quality_preset
+    │  submit: POST /generate → {jobId, status}
+    │  poll:   GET /jobs/{id}/wait?timeout=30
     ▼
-Orpheus HTTP API /generate
+Orpheus JobQueue (asyncio.Queue, 2 workers)
+    │  worker picks job → calls _do_generate()
+    ▼
+HF Space gradio_client.predict()
 ```
 
 For **STORI PROMPTs**: `Vibe`, `Section`, `Style`, and `Energy` fields contribute. Everything in `Expression`, `Dynamics`, `Orchestration`, etc. continues to reach the LLM Maestro context unchanged — those dimensions inform the *plan*, while the EmotionVector conditions the *generator*.
 
 For **natural language** prompts: the EmotionVector is not derived (no structured fields to parse). The LLM's plan and tool parameters carry the full expressive brief.
 
-### Orpheus connection pool
+### Orpheus async job queue
 
 `OrpheusClient` is a process-wide singleton (see `app/services/orpheus.get_orpheus_client()`). The `httpx.AsyncClient` is created once at startup with explicit connection limits and keepalive settings, and `warmup()` is called in the FastAPI lifespan to pre-establish the TCP connection before the first user request.
 
-**Dynamic timeout scaling:** The read timeout per request is computed as `base + (per_bar * bars)`, clamped to `[30, orpheus_timeout]`. A 4-bar request gets ~120s; a 32-bar request gets ~540s. This replaces the previous flat 360s timeout.
+**Submit + poll pattern:** `POST /generate` returns immediately with `{jobId, status}`. Cache hits arrive pre-completed (no queue slot used). Cache misses enqueue a job in a bounded `asyncio.Queue` (max depth 20, configurable via `ORPHEUS_MAX_QUEUE_DEPTH`). A fixed-size worker pool (`ORPHEUS_MAX_CONCURRENT`, default 2) pulls jobs from the queue and runs `_do_generate()` (the extracted GPU generation logic). Callers poll `GET /jobs/{jobId}/wait?timeout=30` until the job completes or fails. Jobs survive HTTP disconnects — if a poll times out, the GPU work continues and the result is retrievable on the next poll. Completed jobs are cleaned up after 5 minutes (`ORPHEUS_JOB_TTL`, default 300s).
 
-**Orpheus-music service (container):** The Orpheus container wraps the HuggingFace Space Gradio API. Key reliability features: (1) `asyncio.wait_for()` around each Gradio `predict()` call (default 120s per call, configurable via `ORPHEUS_PREDICT_TIMEOUT`), (2) periodic keepalive pings to prevent the HF Space GPU from going to sleep (`ORPHEUS_KEEPALIVE_INTERVAL`, default 600s), (3) automatic Gradio client recreation on connection failures, (4) `/diagnostics` endpoint for operational visibility (Gradio client status, HF Space status, active generation count, cache stats).
+**Orpheus-music service (container):** The Orpheus container wraps the HuggingFace Space Gradio API. Key reliability features: (1) `asyncio.wait_for()` around each Gradio `predict()` call (default 180s per call, configurable via `ORPHEUS_PREDICT_TIMEOUT`), (2) periodic keepalive pings to prevent the HF Space GPU from going to sleep (`ORPHEUS_KEEPALIVE_INTERVAL`, default 600s), (3) automatic Gradio client recreation on connection failures, (4) `/diagnostics` endpoint for operational visibility (Gradio client status, HF Space status, active generation count, queue depth, cache stats), (5) `GET /queue/status` for queue depth and worker utilization.
 
 ---
 

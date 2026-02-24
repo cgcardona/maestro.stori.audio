@@ -11,12 +11,55 @@ def _patch_settings(m):
     """Apply default Orpheus test settings to a mock."""
     m.orpheus_base_url = "http://orpheus:10002"
     m.orpheus_timeout = 30
-    m.orpheus_timeout_base = 10
-    m.orpheus_timeout_per_bar = 5
     m.hf_api_key = None
     m.orpheus_max_concurrent = 2
     m.orpheus_cb_threshold = 3
     m.orpheus_cb_cooldown = 60
+    m.orpheus_poll_timeout = 30
+    m.orpheus_poll_max_attempts = 10
+
+
+_JOB_ID = "test-job-00000000"
+
+
+def _submit_resp(*, job_id=_JOB_ID, status="queued", position=1, result=None):
+    """Mock HTTP response from POST /generate (submit)."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.raise_for_status = MagicMock()
+    data: dict = {"jobId": job_id, "status": status}
+    if status == "queued":
+        data["position"] = position
+    if result is not None:
+        data["result"] = result
+    resp.json.return_value = data
+    return resp
+
+
+def _poll_resp(*, job_id=_JOB_ID, status="complete", result=None, error=None):
+    """Mock HTTP response from GET /jobs/{id}/wait (poll)."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.raise_for_status = MagicMock()
+    data: dict = {"jobId": job_id, "status": status, "elapsed": 10.0}
+    if result is not None:
+        data["result"] = result
+    if error is not None:
+        data["error"] = error
+    resp.json.return_value = data
+    return resp
+
+
+def _ok_gen_result(**overrides):
+    """A successful GenerateResponse-shaped dict."""
+    r = {
+        "success": True,
+        "notes": [{"pitch": 60, "start": 0}],
+        "tool_calls": [],
+        "metadata": {},
+    }
+    r.update(overrides)
+    return r
 
 
 @pytest.fixture
@@ -57,28 +100,37 @@ async def test_health_check_returns_false_on_exception(client):
 
 
 @pytest.mark.asyncio
-async def test_generate_success_returns_notes(client):
+async def test_generate_success_via_poll(client):
+    """Submit returns queued; poll returns complete result."""
     client._client = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"success": True, "notes": [{"pitch": 60, "start": 0}], "tool_calls": []}
-    mock_resp.raise_for_status = MagicMock()
-    client._client.post = AsyncMock(return_value=mock_resp)
+    client._client.post = AsyncMock(return_value=_submit_resp())
+    client._client.get = AsyncMock(return_value=_poll_resp(result=_ok_gen_result()))
     result = await client.generate(genre="boom_bap", tempo=90, bars=4)
     assert result["success"] is True
-    assert len(result["notes"]) == 1
     assert result["notes"][0]["pitch"] == 60
+
+
+@pytest.mark.asyncio
+async def test_generate_cache_hit_returns_immediately(client):
+    """Submit returns status=complete (cache hit) — no polling needed."""
+    client._client = MagicMock()
+    client._client.post = AsyncMock(
+        return_value=_submit_resp(status="complete", result=_ok_gen_result())
+    )
+    client._client.get = AsyncMock()  # should not be called
+    result = await client.generate(genre="boom_bap", tempo=90, bars=4)
+    assert result["success"] is True
+    client._client.get.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_generate_default_instruments(client):
     client._client = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"success": True, "notes": [], "tool_calls": []}
-    mock_resp.raise_for_status = MagicMock()
-    client._client.post = AsyncMock(return_value=mock_resp)
+    client._client.post = AsyncMock(
+        return_value=_submit_resp(status="complete", result=_ok_gen_result(notes=[]))
+    )
     await client.generate(genre="lofi", tempo=85)
-    call_args = client._client.post.call_args
-    payload = call_args[1]["json"]
+    payload = client._client.post.call_args[1]["json"]
     assert payload["instruments"] == ["drums", "bass"]
     assert payload["genre"] == "lofi"
     assert payload["tempo"] == 85
@@ -87,27 +139,29 @@ async def test_generate_default_instruments(client):
 @pytest.mark.asyncio
 async def test_generate_includes_key_when_provided(client):
     client._client = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"success": True, "notes": [], "tool_calls": []}
-    mock_resp.raise_for_status = MagicMock()
-    client._client.post = AsyncMock(return_value=mock_resp)
+    client._client.post = AsyncMock(
+        return_value=_submit_resp(status="complete", result=_ok_gen_result(notes=[]))
+    )
     await client.generate(genre="jazz", tempo=120, key="Cm")
     payload = client._client.post.call_args[1]["json"]
     assert payload["key"] == "Cm"
 
 
 @pytest.mark.asyncio
-async def test_generate_http_error_returns_error_dict(client):
+async def test_generate_submit_http_error_returns_error_dict(client):
+    """HTTP 500 during submit (after retries exhausted) returns error."""
     import httpx
     client._client = MagicMock()
     mock_resp = MagicMock()
     mock_resp.status_code = 500
     mock_resp.text = "Internal error"
-    client._client.post = AsyncMock(side_effect=httpx.HTTPStatusError("500", request=MagicMock(), response=mock_resp))
-    result = await client.generate(genre="x", tempo=90)
+    client._client.post = AsyncMock(
+        side_effect=httpx.HTTPStatusError("500", request=MagicMock(), response=mock_resp)
+    )
+    with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock):
+        result = await client.generate(genre="x", tempo=90)
     assert result["success"] is False
     assert "error" in result
-    assert "500" in result["error"]
 
 
 @pytest.mark.asyncio
@@ -117,7 +171,7 @@ async def test_generate_connect_error_returns_service_not_available(client):
     client._client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
     result = await client.generate(genre="x", tempo=90)
     assert result["success"] is False
-    assert result.get("error") == "Orpheus service not available" or "not available" in result.get("error", "")
+    assert "not available" in result.get("error", "").lower() or "not reachable" in result.get("error", "").lower()
 
 
 @pytest.mark.asyncio
@@ -478,13 +532,11 @@ class TestOrpheusBeatRescaling:
 # GPU cold-start AND Gradio transient retry logic
 # =============================================================================
 
-class TestGpuColdStartRetry:
-    """OrpheusClient.generate retries up to 4× on GPU cold-start and Gradio transient errors.
+class TestSubmitAndPoll:
+    """Tests for the submit + long-poll flow in OrpheusClient.generate.
 
-    Regression: before the P0 fix, only GPU cold-start phrases triggered a retry.
-    Gradio-level transient errors like "'NoneType' object is not a mapping" were
-    surfaced immediately as toolError with zero retry attempts.  The fix extends
-    the retry branch to cover _is_transient_error() (a superset of GPU cold-start).
+    POST /generate now returns immediately with {jobId, status}.
+    GET /jobs/{id}/wait is polled until the job completes or fails.
     """
 
     @pytest.fixture
@@ -494,74 +546,45 @@ class TestGpuColdStartRetry:
             yield OrpheusClient()
 
     @pytest.mark.asyncio
-    async def test_gpu_error_triggers_retry_and_succeeds_on_second_attempt(self, client):
-        """When first attempt returns GPU cold-start error, second attempt succeeds."""
-        ok_resp = MagicMock()
-        ok_resp.raise_for_status = MagicMock()
-        ok_resp.json.return_value = {
-            "success": True,
-            "notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 80}],
-            "tool_calls": [
-                {"tool": "addNotes", "params": {"notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 80}]}}
-            ],
-            "metadata": {},
-        }
-        gpu_resp = MagicMock()
-        gpu_resp.raise_for_status = MagicMock()
-        gpu_resp.json.return_value = {
-            "success": False,
-            "error": "No GPU was available after 60s. Retry later",
-        }
-
+    async def test_poll_returns_failed_job(self, client):
+        """When the GPU job fails, poll returns the error."""
         client._client = MagicMock()
-        client._client.post = AsyncMock(side_effect=[gpu_resp, ok_resp])
-
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await client.generate(genre="reggaeton", tempo=96, bars=24)
-
-        assert result["success"] is True
-        assert mock_sleep.await_count == 1
-        assert mock_sleep.call_args[0][0] == 2  # first retry delay is 2s
-
-    @pytest.mark.asyncio
-    async def test_gpu_error_all_retries_exhausted_returns_structured_error(self, client):
-        """After 3 GPU cold-start failures the error is gpu_unavailable (not a crash)."""
-        gpu_resp = MagicMock()
-        gpu_resp.raise_for_status = MagicMock()
-        gpu_resp.json.return_value = {
-            "success": False,
-            "error": "No GPU was available after 60s. Retry later",
-        }
-
-        client._client = MagicMock()
-        client._client.post = AsyncMock(return_value=gpu_resp)
-
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await client.generate(genre="trap", tempo=140, bars=8)
-
+        client._client.post = AsyncMock(return_value=_submit_resp())
+        client._client.get = AsyncMock(return_value=_poll_resp(
+            status="failed",
+            result={"success": False, "error": "GPU OOM", "tool_calls": []},
+            error="GPU OOM",
+        ))
+        result = await client.generate(genre="trap", tempo=140, bars=8)
         assert result["success"] is False
-        assert result.get("error") == "gpu_unavailable"
-        assert "GPU unavailable" in result.get("message", "")
-        assert mock_sleep.await_count == 3  # delays before attempts 2, 3, and 4 (not after final)
+        assert "GPU OOM" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_gpu_error_in_http_body_also_retries(self, client):
-        """GPU cold-start text in an HTTP error body also triggers retry."""
-        import httpx
+    async def test_poll_exhausted_returns_timeout(self, client):
+        """When max polls are exhausted the client reports a timeout."""
+        with patch("app.services.orpheus.settings") as m:
+            _patch_settings(m)
+            m.orpheus_poll_max_attempts = 2
+            c = OrpheusClient()
 
-        gpu_http_resp = MagicMock()
-        gpu_http_resp.status_code = 503
-        gpu_http_resp.text = "No GPU was available after 60s. Retry later"
+        c._client = MagicMock()
+        c._client.post = AsyncMock(return_value=_submit_resp())
+        c._client.get = AsyncMock(return_value=_poll_resp(status="running", result=None))
 
-        ok_resp = MagicMock()
-        ok_resp.raise_for_status = MagicMock()
-        ok_resp.json.return_value = {"success": True, "notes": [], "tool_calls": [], "metadata": {}}
+        result = await c.generate(genre="lofi", tempo=85, bars=4)
+        assert result["success"] is False
+        assert "did not complete" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_503_submit_retries_then_succeeds(self, client):
+        """503 from Orpheus queue-full triggers submit retry."""
+        full_resp = MagicMock()
+        full_resp.status_code = 503
+        full_resp.raise_for_status = MagicMock(side_effect=Exception("503"))
 
         client._client = MagicMock()
-        client._client.post = AsyncMock(side_effect=[
-            httpx.HTTPStatusError("503", request=MagicMock(), response=gpu_http_resp),
-            ok_resp,
-        ])
+        client._client.post = AsyncMock(side_effect=[full_resp, _submit_resp()])
+        client._client.get = AsyncMock(return_value=_poll_resp(result=_ok_gen_result()))
 
         with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             result = await client.generate(genre="house", tempo=128, bars=4)
@@ -570,162 +593,48 @@ class TestGpuColdStartRetry:
         assert mock_sleep.await_count == 1
 
     @pytest.mark.asyncio
-    async def test_non_gpu_error_does_not_retry(self, client):
-        """Non-GPU failures (e.g. auth error) return immediately without retrying."""
-        error_resp = MagicMock()
-        error_resp.raise_for_status = MagicMock()
-        error_resp.json.return_value = {
-            "success": False,
-            "error": "Invalid API key",
-        }
+    async def test_503_submit_all_retries_exhausted(self, client):
+        """503 on every submit attempt returns queue-full error."""
+        full_resp = MagicMock()
+        full_resp.status_code = 503
 
         client._client = MagicMock()
-        client._client.post = AsyncMock(return_value=error_resp)
-
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await client.generate(genre="jazz", tempo=120, bars=4)
-
-        assert result["success"] is False
-        assert result.get("error") == "Invalid API key"
-        assert mock_sleep.await_count == 0  # no retry for non-GPU errors
-
-    @pytest.mark.asyncio
-    async def test_retry_count_in_metadata_on_success(self, client):
-        """Successful result after a retry records retry_count in metadata."""
-        gpu_resp = MagicMock()
-        gpu_resp.raise_for_status = MagicMock()
-        gpu_resp.json.return_value = {"success": False, "error": "No GPU was available after 60s."}
-
-        ok_resp = MagicMock()
-        ok_resp.raise_for_status = MagicMock()
-        ok_resp.json.return_value = {
-            "success": True,
-            "notes": [],
-            "tool_calls": [],
-            "metadata": {"source": "orpheus"},
-        }
-
-        client._client = MagicMock()
-        client._client.post = AsyncMock(side_effect=[gpu_resp, ok_resp])
+        client._client.post = AsyncMock(return_value=full_resp)
 
         with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock):
-            result = await client.generate(genre="lofi", tempo=85, bars=4)
-
-        assert result["success"] is True
-        assert result["metadata"]["retry_count"] == 1  # succeeded on attempt index 1
-
-
-    @pytest.mark.asyncio
-    async def test_gradio_nonetype_error_retries_and_succeeds(self, client):
-        """'NoneType' object is not a mapping' in dict body triggers retry.
-
-        Regression for P0: this Gradio-level transient error was previously
-        not retried — the request failed immediately on first attempt.
-        """
-        nonetype_resp = MagicMock()
-        nonetype_resp.raise_for_status = MagicMock()
-        nonetype_resp.json.return_value = {
-            "success": False,
-            "error": "'NoneType' object is not a mapping",
-        }
-
-        ok_resp = MagicMock()
-        ok_resp.raise_for_status = MagicMock()
-        ok_resp.json.return_value = {
-            "success": True,
-            "notes": [],
-            "tool_calls": [
-                {"tool": "addNotes", "params": {"notes": [{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 80}]}}
-            ],
-            "metadata": {},
-        }
-
-        client._client = MagicMock()
-        client._client.post = AsyncMock(side_effect=[nonetype_resp, ok_resp])
-
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await client.generate(genre="dancehall", tempo=90, bars=8)
-
-        assert result["success"] is True
-        assert mock_sleep.await_count == 1, (
-            "Should retry once (one sleep) before succeeding on second attempt"
-        )
-
-    @pytest.mark.asyncio
-    async def test_gradio_nonetype_error_exhausted_returns_raw_error(self, client):
-        """After max retries on 'NoneType' error the raw error string is returned.
-
-        Regression for P0: previously this path was never reached because the
-        error was not retried at all.  After the fix, we verify:
-        - error key is the raw Gradio string (not 'gpu_unavailable')
-        - all retry delays are consumed
-        """
-        nonetype_resp = MagicMock()
-        nonetype_resp.raise_for_status = MagicMock()
-        nonetype_resp.json.return_value = {
-            "success": False,
-            "error": "'NoneType' object is not a mapping",
-        }
-
-        client._client = MagicMock()
-        client._client.post = AsyncMock(return_value=nonetype_resp)
-
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await client.generate(genre="dancehall", tempo=90, bars=8)
+            result = await client.generate(genre="trap", tempo=140, bars=8)
 
         assert result["success"] is False
-        # Not labeled as gpu_unavailable — this is a Gradio worker error
-        assert result.get("error") != "gpu_unavailable"
-        assert "NoneType" in result.get("error", "") or "NoneType" in result.get("message", "")
-        # All retry delays consumed (3 sleeps before the 4th and final attempt)
-        assert mock_sleep.await_count == 3
+        assert "queue full" in result["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_gradio_queue_full_retries(self, client):
-        """'Queue is full' from Gradio also triggers retry."""
-        queue_resp = MagicMock()
-        queue_resp.raise_for_status = MagicMock()
-        queue_resp.json.return_value = {
-            "success": False,
-            "error": "Queue is full. Try again later.",
-        }
-
-        ok_resp = MagicMock()
-        ok_resp.raise_for_status = MagicMock()
-        ok_resp.json.return_value = {
-            "success": True,
-            "notes": [],
-            "tool_calls": [],
-            "metadata": {},
-        }
+    async def test_poll_http_timeout_retries_poll(self, client):
+        """HTTP read timeout during poll just retries the poll (job survives)."""
+        import httpx
 
         client._client = MagicMock()
-        client._client.post = AsyncMock(side_effect=[queue_resp, ok_resp])
+        client._client.post = AsyncMock(return_value=_submit_resp())
+        client._client.get = AsyncMock(side_effect=[
+            httpx.ReadTimeout("poll timeout"),
+            _poll_resp(result=_ok_gen_result()),
+        ])
 
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await client.generate(genre="reggaeton", tempo=96, bars=4)
-
+        result = await client.generate(genre="ambient", tempo=60, bars=8)
         assert result["success"] is True
-        assert mock_sleep.await_count == 1
+        assert client._client.get.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_non_transient_error_still_does_not_retry(self, client):
-        """Non-transient failure (e.g. auth) still returns immediately — no retry."""
-        error_resp = MagicMock()
-        error_resp.raise_for_status = MagicMock()
-        error_resp.json.return_value = {
-            "success": False,
-            "error": "Invalid API key or quota exceeded (billing)",
-        }
+    async def test_poll_connect_error_fails_immediately(self, client):
+        """ConnectError during polling means Orpheus went down — fail fast."""
+        import httpx
 
         client._client = MagicMock()
-        client._client.post = AsyncMock(return_value=error_resp)
+        client._client.post = AsyncMock(return_value=_submit_resp())
+        client._client.get = AsyncMock(side_effect=httpx.ConnectError("lost"))
 
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await client.generate(genre="jazz", tempo=120, bars=4)
-
+        result = await client.generate(genre="jazz", tempo=120, bars=4)
         assert result["success"] is False
-        assert mock_sleep.await_count == 0  # zero retries — not a transient phrase
+        assert "connection lost" in result["error"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -774,11 +683,7 @@ class TestSemaphore:
             if active > peak:
                 peak = active
             await gate.wait()
-            resp = MagicMock()
-            resp.raise_for_status = MagicMock()
-            resp.json.return_value = {"success": True, "notes": [], "metadata": {}}
-            active -= 1
-            return resp
+            return _submit_resp(status="complete", result=_ok_gen_result(notes=[]))
 
         c._client = MagicMock()
         c._client.post = AsyncMock(side_effect=slow_post)
@@ -810,51 +715,36 @@ class TestSemaphore:
 
 
 class TestMusicalGoalsPayload:
-    """Regression: musical_goals=None must not appear as null in the HTTP payload.
-
-    Sending {"musical_goals": null} to the Gradio Space causes it to raise
-    TypeError: 'NoneType' object is not a mapping, which propagates back as a
-    toolError and silently empties all generated tracks.
-    """
+    """Regression: musical_goals=None must not appear as null in the HTTP payload."""
 
     def _make_client(self) -> OrpheusClient:
         with patch("app.services.orpheus.settings") as m:
             _patch_settings(m)
             return OrpheusClient()
 
-    def _ok_response(self) -> MagicMock:
-        resp = MagicMock()
-        resp.raise_for_status = MagicMock()
-        resp.json.return_value = {
-            "success": True,
-            "notes": [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 80}],
-            "tool_calls": [],
-            "metadata": {},
-        }
-        return resp
-
     @pytest.mark.asyncio
     async def test_musical_goals_none_omitted_from_payload(self):
         """When musical_goals=None, the key must not appear in the POST body."""
         c = self._make_client()
         c._client = MagicMock()
-        c._client.post = AsyncMock(return_value=self._ok_response())
+        c._client.post = AsyncMock(
+            return_value=_submit_resp(status="complete", result=_ok_gen_result())
+        )
 
         await c.generate(genre="jazz", tempo=100, bars=4, musical_goals=None)
 
         _, kwargs = c._client.post.call_args
         payload = kwargs["json"]
-        assert "musical_goals" not in payload, (
-            "musical_goals=None must be omitted from payload — "
-            "sending null causes Gradio to raise 'NoneType is not a mapping'"
-        )
+        assert "musical_goals" not in payload
 
     @pytest.mark.asyncio
     async def test_musical_goals_present_when_provided(self):
         """When musical_goals has values they ARE included in the payload."""
         c = self._make_client()
         c._client = MagicMock()
-        c._client.post = AsyncMock(return_value=self._ok_response())
+        c._client.post = AsyncMock(
+            return_value=_submit_resp(status="complete", result=_ok_gen_result())
+        )
 
         await c.generate(genre="jazz", tempo=100, bars=4, musical_goals=["dark", "energetic"])
 
@@ -867,7 +757,9 @@ class TestMusicalGoalsPayload:
         """A bare generate() call (no musical_goals arg) must not include the key."""
         c = self._make_client()
         c._client = MagicMock()
-        c._client.post = AsyncMock(return_value=self._ok_response())
+        c._client.post = AsyncMock(
+            return_value=_submit_resp(status="complete", result=_ok_gen_result())
+        )
 
         await c.generate(genre="boom_bap", tempo=120, bars=4)
 
@@ -880,7 +772,9 @@ class TestMusicalGoalsPayload:
         """An empty musical_goals list is falsy and must also be omitted."""
         c = self._make_client()
         c._client = MagicMock()
-        c._client.post = AsyncMock(return_value=self._ok_response())
+        c._client.post = AsyncMock(
+            return_value=_submit_resp(status="complete", result=_ok_gen_result())
+        )
 
         await c.generate(genre="pop", tempo=110, bars=4, musical_goals=[])
 
@@ -895,12 +789,7 @@ class TestMusicalGoalsPayload:
 
 
 class TestCircuitBreaker:
-    """Orpheus circuit breaker prevents cascading failures.
-
-    When the Orpheus HF Space is down (503, connect errors, etc.), the circuit
-    breaker trips after N consecutive failures and fails fast on subsequent
-    calls, avoiding token-burning LLM retries for requests that cannot succeed.
-    """
+    """Orpheus circuit breaker prevents cascading failures."""
 
     @pytest.fixture
     def client(self):
@@ -909,29 +798,6 @@ class TestCircuitBreaker:
             m.orpheus_cb_threshold = 2
             m.orpheus_cb_cooldown = 60
             yield OrpheusClient()
-
-    @pytest.mark.asyncio
-    async def test_circuit_trips_after_threshold_consecutive_failures(self, client):
-        """Circuit opens after `threshold` consecutive failures."""
-        import httpx
-
-        assert not client.circuit_breaker_open
-
-        error_resp = MagicMock()
-        error_resp.status_code = 503
-        error_resp.text = "Service Unavailable"
-        client._client = MagicMock()
-        client._client.post = AsyncMock(
-            side_effect=httpx.HTTPStatusError("503", request=MagicMock(), response=error_resp)
-        )
-
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock):
-            await client.generate(genre="pop", tempo=120, bars=4)
-        assert not client.circuit_breaker_open, "One failure should not trip"
-
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock):
-            await client.generate(genre="pop", tempo=120, bars=4)
-        assert client.circuit_breaker_open, "Two consecutive failures should trip"
 
     @pytest.mark.asyncio
     async def test_circuit_open_returns_immediately(self, client):
@@ -952,23 +818,17 @@ class TestCircuitBreaker:
     async def test_circuit_resets_after_cooldown(self, client):
         """After cooldown expires, the circuit allows one probe request."""
         client._cb._failures = 3
-        client._cb._opened_at = _time.monotonic() - 120  # cooldown expired
+        client._cb._opened_at = _time.monotonic() - 120
 
-        ok_resp = MagicMock()
-        ok_resp.raise_for_status = MagicMock()
-        ok_resp.json.return_value = {
-            "success": True,
-            "notes": [],
-            "tool_calls": [],
-            "metadata": {},
-        }
         client._client = MagicMock()
-        client._client.post = AsyncMock(return_value=ok_resp)
+        client._client.post = AsyncMock(
+            return_value=_submit_resp(status="complete", result=_ok_gen_result(notes=[]))
+        )
 
         result = await client.generate(genre="pop", tempo=120, bars=4)
 
         assert result["success"] is True
-        assert not client.circuit_breaker_open, "Success should close circuit"
+        assert not client.circuit_breaker_open
         assert client._cb._failures == 0
 
     @pytest.mark.asyncio
@@ -976,55 +836,17 @@ class TestCircuitBreaker:
         """A successful call resets the failure counter."""
         import httpx
 
-        ok_resp = MagicMock()
-        ok_resp.raise_for_status = MagicMock()
-        ok_resp.json.return_value = {
-            "success": True,
-            "notes": [],
-            "tool_calls": [],
-            "metadata": {},
-        }
-
         client._client = MagicMock()
-        # ConnectError doesn't retry internally, so it records a single failure
         client._client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
         await client.generate(genre="pop", tempo=120, bars=4)
         assert client._cb._failures == 1
 
-        client._client.post = AsyncMock(return_value=ok_resp)
+        client._client.post = AsyncMock(
+            return_value=_submit_resp(status="complete", result=_ok_gen_result(notes=[]))
+        )
         await client.generate(genre="pop", tempo=120, bars=4)
-        assert client._cb._failures == 0, "Success should reset counter"
+        assert client._cb._failures == 0
         assert not client.circuit_breaker_open
-
-    @pytest.mark.asyncio
-    async def test_503_http_error_triggers_retry(self, client):
-        """503 Service Unavailable triggers retry even without GPU error phrases."""
-        import httpx
-
-        error_resp = MagicMock()
-        error_resp.status_code = 503
-        error_resp.text = "Service Unavailable"
-
-        ok_resp = MagicMock()
-        ok_resp.raise_for_status = MagicMock()
-        ok_resp.json.return_value = {
-            "success": True,
-            "notes": [],
-            "tool_calls": [],
-            "metadata": {},
-        }
-
-        client._client = MagicMock()
-        client._client.post = AsyncMock(side_effect=[
-            httpx.HTTPStatusError("503", request=MagicMock(), response=error_resp),
-            ok_resp,
-        ])
-
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await client.generate(genre="house", tempo=128, bars=4)
-
-        assert result["success"] is True
-        assert mock_sleep.await_count == 1
 
     @pytest.mark.asyncio
     async def test_connect_error_trips_circuit(self, client):
@@ -1033,6 +855,23 @@ class TestCircuitBreaker:
 
         client._client = MagicMock()
         client._client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+        await client.generate(genre="pop", tempo=120, bars=4)
+        assert client._cb._failures == 1
+
+        await client.generate(genre="pop", tempo=120, bars=4)
+        assert client.circuit_breaker_open
+
+    @pytest.mark.asyncio
+    async def test_poll_failure_trips_circuit(self, client):
+        """Job failure during polling also counts toward circuit breaker."""
+        client._client = MagicMock()
+        client._client.post = AsyncMock(return_value=_submit_resp())
+        client._client.get = AsyncMock(return_value=_poll_resp(
+            status="failed",
+            result={"success": False, "error": "GPU crash", "tool_calls": []},
+            error="GPU crash",
+        ))
 
         await client.generate(genre="pop", tempo=120, bars=4)
         assert client._cb._failures == 1

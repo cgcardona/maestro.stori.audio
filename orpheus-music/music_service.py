@@ -9,13 +9,16 @@ Architecture:
 
 This is where UX philosophy and musical taste live.
 """
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from gradio_client import Client, handle_file
 from midiutil import MIDIFile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections import OrderedDict
+from enum import Enum
 from time import time
 import uuid
 import asyncio
@@ -33,6 +36,7 @@ import pathlib
 from generation_policy import (
     intent_to_controls,
     controls_to_orpheus_params,
+    allocate_token_budget,
     GenerationControlVector,
     get_policy_version,
 )
@@ -41,19 +45,37 @@ from quality_metrics import analyze_quality, compare_generations
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Orpheus Music Service")
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    """Start job queue workers and keepalive; drain on shutdown."""
+    global _job_queue
+    _job_queue = JobQueue(max_queue=_MAX_QUEUE_DEPTH, max_workers=_MAX_CONCURRENT)
+    await _job_queue.start()
+
+    loaded = _load_cache_from_disk()
+    if loaded:
+        logger.info(f"✅ Startup: restored {loaded} cached results from disk")
+    keepalive_task = asyncio.create_task(_keepalive_loop())
+
+    yield
+
+    keepalive_task.cancel()
+    await _job_queue.shutdown()
+
+
+app = FastAPI(title="Orpheus Music Service", lifespan=_lifespan)
 
 # Gradio client with reconnection and keepalive
 gradio_client = None
 _client_lock = asyncio.Lock()
 _last_keepalive: float = 0.0
 _last_successful_gen: float = 0.0
-_active_generations: int = 0
 
 _DEFAULT_SPACE = "asigalov61/Orpheus-Music-Transformer"
 _KEEPALIVE_INTERVAL = int(os.environ.get("ORPHEUS_KEEPALIVE_INTERVAL", "600"))
 _MAX_CONCURRENT = int(os.environ.get("ORPHEUS_MAX_CONCURRENT", "2"))
-_generation_semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
+_MAX_QUEUE_DEPTH = int(os.environ.get("ORPHEUS_MAX_QUEUE_DEPTH", "20"))
+_JOB_TTL_SECONDS = int(os.environ.get("ORPHEUS_JOB_TTL", "300"))  # 5 min
 
 _CACHE_DIR = pathlib.Path(os.environ.get("ORPHEUS_CACHE_DIR", "/tmp/orpheus_cache"))
 _CACHE_FILE = _CACHE_DIR / "result_cache.json"
@@ -104,12 +126,7 @@ async def _keepalive_loop() -> None:
             reset_client()
 
 
-@app.on_event("startup")
-async def _start_keepalive():
-    loaded = _load_cache_from_disk()
-    if loaded:
-        logger.info(f"✅ Startup: restored {loaded} cached results from disk")
-    asyncio.create_task(_keepalive_loop())
+_job_queue: Optional["JobQueue"] = None
 
 
 # ============================================================================
@@ -371,6 +388,157 @@ class GenerateResponse(BaseModel):
     tool_calls: List[dict]
     error: Optional[str] = None
     metadata: Optional[dict] = None  # Quality metrics, policy version, etc.
+
+
+# ============================================================================
+# ASYNC JOB QUEUE
+# ============================================================================
+
+
+class JobStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class QueueFullError(Exception):
+    pass
+
+
+@dataclass
+class Job:
+    id: str
+    request: GenerateRequest
+    status: JobStatus = JobStatus.QUEUED
+    result: Optional[GenerateResponse] = None
+    error: Optional[str] = None
+    created_at: float = 0.0
+    started_at: Optional[float] = None
+    completed_at: Optional[float] = None
+    event: asyncio.Event = field(default_factory=asyncio.Event)
+    position: int = 0
+
+
+class JobQueue:
+    """Bounded async job queue with a fixed-size worker pool.
+
+    Replaces the semaphore model: callers submit jobs and poll for results
+    instead of blocking on a single long HTTP request.
+    """
+
+    def __init__(self, max_queue: int = 20, max_workers: int = 2):
+        self._queue: asyncio.Queue[Job] = asyncio.Queue(maxsize=max_queue)
+        self._jobs: dict[str, Job] = {}
+        self._max_workers = max_workers
+        self._max_queue = max_queue
+        self._workers: list[asyncio.Task] = []  # type: ignore[type-arg]
+        self._cleanup_task: Optional[asyncio.Task] = None  # type: ignore[type-arg]
+
+    async def start(self) -> None:
+        for i in range(self._max_workers):
+            self._workers.append(asyncio.create_task(self._worker(i)))
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+        logger.info(
+            f"✅ JobQueue started: {self._max_workers} workers, "
+            f"max_queue={self._max_queue}"
+        )
+
+    async def shutdown(self) -> None:
+        for task in self._workers:
+            task.cancel()
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+        await asyncio.gather(
+            *self._workers,
+            *([] if self._cleanup_task is None else [self._cleanup_task]),
+            return_exceptions=True,
+        )
+        self._workers.clear()
+        logger.info("🛑 JobQueue shut down")
+
+    def submit(self, request: GenerateRequest) -> Job:
+        """Enqueue a generation request. Raises QueueFullError when at capacity."""
+        job = Job(
+            id=str(uuid.uuid4()),
+            request=request,
+            created_at=time(),
+        )
+        try:
+            self._queue.put_nowait(job)
+        except asyncio.QueueFull:
+            raise QueueFullError(
+                f"Generation queue is full ({self._max_queue} pending)"
+            )
+        job.position = self._queue.qsize()
+        self._jobs[job.id] = job
+        logger.info(f"📥 Job {job.id[:8]} queued (position {job.position})")
+        return job
+
+    def get_job(self, job_id: str) -> Optional[Job]:
+        return self._jobs.get(job_id)
+
+    @property
+    def depth(self) -> int:
+        return self._queue.qsize()
+
+    @property
+    def running_count(self) -> int:
+        return sum(1 for j in self._jobs.values() if j.status == JobStatus.RUNNING)
+
+    def status_snapshot(self) -> dict:
+        return {
+            "depth": self.depth,
+            "running": self.running_count,
+            "max_concurrent": self._max_workers,
+            "max_queue": self._max_queue,
+            "total_tracked": len(self._jobs),
+        }
+
+    # ── internal ────────────────────────────────────────────────────────
+
+    async def _worker(self, worker_id: int) -> None:
+        logger.info(f"🔧 Worker {worker_id} started")
+        while True:
+            job = await self._queue.get()
+            job.status = JobStatus.RUNNING
+            job.started_at = time()
+            try:
+                job.result = await _do_generate(job.request)
+                job.status = JobStatus.COMPLETE
+            except Exception as exc:
+                logger.error(f"❌ Worker {worker_id} job {job.id[:8]} failed: {exc}")
+                job.status = JobStatus.FAILED
+                job.error = str(exc)
+                job.result = GenerateResponse(
+                    success=False, tool_calls=[], error=str(exc),
+                )
+            finally:
+                job.completed_at = time()
+                job.event.set()
+                self._queue.task_done()
+                elapsed = job.completed_at - (job.started_at or job.created_at)
+                icon = "✅" if job.status == JobStatus.COMPLETE else "❌"
+                logger.info(
+                    f"{icon} Worker {worker_id} job {job.id[:8]} "
+                    f"{job.status.value} in {elapsed:.1f}s"
+                )
+
+    async def _cleanup_loop(self) -> None:
+        while True:
+            await asyncio.sleep(60)
+            now = time()
+            expired = [
+                jid
+                for jid, j in self._jobs.items()
+                if j.status in (JobStatus.COMPLETE, JobStatus.FAILED)
+                and j.completed_at
+                and now - j.completed_at > _JOB_TTL_SECONDS
+            ]
+            if expired:
+                for jid in expired:
+                    del self._jobs[jid]
+                logger.info(f"🧹 Cleaned up {len(expired)} expired jobs")
 
 
 # GM program numbers by instrument type
@@ -1096,7 +1264,8 @@ async def diagnostics():
         "space_id": space_id,
         "gradio_client": gradio_status,
         "hf_space": hf_space_status,
-        "active_generations": _active_generations,
+        "active_generations": _job_queue.running_count if _job_queue else 0,
+        "queue_depth": _job_queue.depth if _job_queue else 0,
         "last_successful_gen_ago_s": (
             round(now - _last_successful_gen, 1) if _last_successful_gen > 0 else None
         ),
@@ -1104,7 +1273,7 @@ async def diagnostics():
             round(now - _last_keepalive, 1) if _last_keepalive > 0 else None
         ),
         "keepalive_interval_s": _KEEPALIVE_INTERVAL,
-        "predict_timeout_s": float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "120")),
+        "predict_timeout_s": float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "180")),
         "max_concurrent": _MAX_CONCURRENT,
         "intent_quant_step": _INTENT_QUANT_STEP,
         "fuzzy_epsilon": _FUZZY_EPSILON,
@@ -1301,203 +1470,283 @@ async def ab_test(request: ABTestRequest):
     }
 
 
-@app.post("/generate", response_model=GenerateResponse)
-async def generate(request: GenerateRequest):
-    """Generate music with result caching and optimized parameters."""
-    global _active_generations, _last_successful_gen
+async def _do_generate(request: GenerateRequest) -> GenerateResponse:
+    """Core GPU generation logic — called by JobQueue workers."""
+    global _last_successful_gen
 
-    # Exact cache lookup (quantized key)
+    cache_key = get_cache_key(request)
+
+    try:
+        client = get_client()
+
+        seed_path = create_seed_midi(request.tempo, request.genre, key=request.key)
+
+        orpheus_instruments = []
+        if "drums" in [i.lower() for i in request.instruments]:
+            orpheus_instruments.append("Drums")
+        if any(i.lower() in ["bass", "electric_bass", "synth_bass"] for i in request.instruments):
+            orpheus_instruments.append("Electric Bass(finger)")
+        if any(i.lower() in ["piano", "electric_piano"] for i in request.instruments):
+            orpheus_instruments.append("Electric Piano 1")
+        if any(i.lower() in ["guitar", "acoustic_guitar"] for i in request.instruments):
+            orpheus_instruments.append("Acoustic Guitar(steel)")
+
+        if not orpheus_instruments:
+            orpheus_instruments = ["Drums", "Electric Bass(finger)"]
+
+        musical_goals = request.musical_goals or []
+        if request.style_hints:
+            musical_goals = list(set(musical_goals + request.style_hints))
+
+        controls = intent_to_controls(
+            genre=request.genre,
+            tempo=request.tempo,
+            musical_goals=musical_goals,
+            tone_brightness=request.tone_brightness,
+            tone_warmth=request.tone_warmth,
+            energy_intensity=request.energy_intensity,
+            energy_excitement=request.energy_excitement,
+            complexity_hint=request.complexity,
+            quality_preset=request.quality_preset,
+        )
+
+        orpheus_params = controls_to_orpheus_params(controls)
+
+        temperature = request.temperature if request.temperature is not None else orpheus_params["model_temperature"]
+        top_p = request.top_p if request.top_p is not None else orpheus_params["model_top_p"]
+        tokens_per_bar = orpheus_params["num_gen_tokens_per_bar"]
+
+        num_prime_tokens, num_gen_tokens = allocate_token_budget(
+            bars=request.bars,
+            tokens_per_bar=tokens_per_bar,
+            prime_from_policy=orpheus_params["num_prime_tokens"],
+        )
+
+        logger.info(f"🎵 Generating {request.genre} @ {request.tempo} BPM")
+        logger.info(f"   Goals: {musical_goals}")
+        logger.info(f"   Controls: creativity={controls.creativity:.2f}, "
+                    f"density={controls.density:.2f}, "
+                    f"complexity={controls.complexity:.2f}")
+        _ctx_util = (num_prime_tokens + num_gen_tokens) / 8192 * 100
+        logger.info(f"   Orpheus: temp={temperature:.2f}, top_p={top_p:.2f}, "
+                    f"gen={num_gen_tokens} ({tokens_per_bar}/bar), "
+                    f"prime={num_prime_tokens}, ctx={_ctx_util:.0f}%")
+        logger.info(f"   Policy: {get_policy_version()}")
+
+        _predict_timeout = float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "180"))
+        # Fresh session hash per call — the Space's generate_music_and_state
+        # uses gr.State to accumulate tokens across calls in the same session.
+        # Without this, composition tokens grow unboundedly (45 → 190 → … → 1100+)
+        # until the model produces garbage and save_midi crashes with TypeError.
+        client.session_hash = str(uuid.uuid4())
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.predict,
+                    input_midi=handle_file(seed_path),
+                    prime_instruments=orpheus_instruments,
+                    num_prime_tokens=num_prime_tokens,
+                    num_gen_tokens=num_gen_tokens,
+                    model_temperature=temperature,
+                    model_top_p=top_p,
+                    add_drums="drums" in [i.lower() for i in request.instruments],
+                    api_name="/generate_music_and_state",
+                ),
+                timeout=_predict_timeout,
+            )
+        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+            kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
+            logger.error(
+                f"❌ Gradio /generate_music_and_state {kind} after {_predict_timeout}s"
+            )
+            return GenerateResponse(
+                success=False,
+                tool_calls=[],
+                error=f"Orpheus generation {kind} after {_predict_timeout}s",
+            )
+
+        try:
+            midi_result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.predict, batch_number=0, api_name="/add_batch"
+                ),
+                timeout=_predict_timeout,
+            )
+        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+            kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
+            logger.error(
+                f"❌ Gradio /add_batch {kind} after {_predict_timeout}s"
+            )
+            return GenerateResponse(
+                success=False,
+                tool_calls=[],
+                error=f"Orpheus batch retrieval {kind} after {_predict_timeout}s",
+            )
+        midi_path = midi_result[2]
+
+        parsed = await asyncio.to_thread(parse_midi_to_notes, midi_path, request.tempo)
+
+        max_beat = request.bars * 4
+        for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
+            sub = parsed.get(sub_key, {})
+            beat_field = "start_beat" if sub_key == "notes" else "beat"
+            for ch in list(sub):
+                sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
+                if not sub[ch]:
+                    del sub[ch]
+
+        parsed = filter_channels_for_instruments(parsed, request.instruments)
+
+        tool_calls = generate_tool_calls(parsed, request.tempo, request.instruments)
+
+        all_notes = []
+        cc_count = 0
+        pb_count = 0
+        at_count = 0
+        for tool_call in tool_calls:
+            t = tool_call.get("tool", "")
+            if t == "addNotes":
+                all_notes.extend(tool_call.get("params", {}).get("notes", []))
+            elif t == "addMidiCC":
+                cc_count += len(tool_call.get("params", {}).get("events", []))
+            elif t == "addPitchBend":
+                pb_count += len(tool_call.get("params", {}).get("events", []))
+            elif t == "addAftertouch":
+                at_count += len(tool_call.get("params", {}).get("events", []))
+
+        quality_metrics = analyze_quality(all_notes, request.bars, request.tempo)
+        quality_metrics["cc_events"] = cc_count
+        quality_metrics["pitch_bend_events"] = pb_count
+        quality_metrics["aftertouch_events"] = at_count
+
+        response_data = {
+            "success": True,
+            "tool_calls": tool_calls,
+            "error": None,
+            "metadata": {
+                "policy_version": get_policy_version(),
+                "quality_metrics": quality_metrics,
+                "controls_used": {
+                    "creativity": controls.creativity,
+                    "density": controls.density,
+                    "complexity": controls.complexity,
+                },
+                "cache_hit": False,
+            }
+        }
+
+        if tool_calls:
+            cache_result(cache_key, response_data, key_data=_cache_key_data(request))
+        else:
+            logger.warning(f"⚠️ Skipping cache for {cache_key} — 0 notes generated")
+        _last_successful_gen = time()
+
+        logger.info(f"✅ Generated {len(tool_calls)} tool calls, quality_score={quality_metrics.get('quality_score', 0):.2f}")
+
+        return GenerateResponse(**response_data)
+
+    except (Exception, asyncio.CancelledError) as e:
+        err_msg = str(e) or type(e).__name__
+        logger.error(f"❌ Generation failed: {err_msg}")
+        logger.debug(f"❌ Traceback:\n{traceback.format_exc()}")
+        _err_str = err_msg.lower()
+        if any(kw in _err_str for kw in ("connection", "refused", "reset", "eof", "broken pipe")):
+            reset_client()
+        return GenerateResponse(
+            success=False,
+            tool_calls=[],
+            error=err_msg,
+        )
+
+
+def _job_response(job: Job) -> dict:
+    """Serialize a Job to the wire format used by /generate and /jobs endpoints."""
+    resp: dict = {
+        "jobId": job.id,
+        "status": job.status.value,
+    }
+    if job.status == JobStatus.QUEUED:
+        resp["position"] = job.position
+    if job.status in (JobStatus.COMPLETE, JobStatus.FAILED) and job.result:
+        resp["result"] = job.result.model_dump()
+    if job.error:
+        resp["error"] = job.error
+    if job.created_at:
+        resp["elapsed"] = round(time() - job.created_at, 1)
+    return resp
+
+
+@app.post("/generate")
+async def generate(request: GenerateRequest):
+    """Submit a generation job.  Cache hits return immediately; misses enqueue."""
+    assert _job_queue is not None, "JobQueue not initialized"
+
     cache_key = get_cache_key(request)
     cached = get_cached_result(cache_key)
     if cached:
         if "metadata" in cached:
             cached["metadata"]["cache_hit"] = True
-        return GenerateResponse(**cached)
+        return {
+            "jobId": str(uuid.uuid4()),
+            "status": "complete",
+            "result": cached,
+        }
 
-    # Fuzzy cache lookup — find a perceptually-close result
     fuzzy = fuzzy_cache_lookup(request)
     if fuzzy:
-        return GenerateResponse(**fuzzy)
+        return {
+            "jobId": str(uuid.uuid4()),
+            "status": "complete",
+            "result": fuzzy,
+        }
 
-    # Acquire semaphore to limit concurrent Gradio calls
-    async with _generation_semaphore:
-        _active_generations += 1
+    try:
+        job = _job_queue.submit(request)
+    except QueueFullError:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Generation queue is full — try again shortly"},
+            headers={"Retry-After": "30"},
+        )
+    return _job_response(job)
+
+
+@app.get("/jobs/{job_id}")
+async def get_job(job_id: str):
+    """Return current status of a submitted job."""
+    assert _job_queue is not None
+    job = _job_queue.get_job(job_id)
+    if job is None:
+        return JSONResponse(status_code=404, content={"error": "Job not found"})
+    return _job_response(job)
+
+
+@app.get("/jobs/{job_id}/wait")
+async def wait_for_job(
+    job_id: str,
+    timeout: float = Query(default=30, ge=1, le=120),
+):
+    """Long-poll until the job completes or *timeout* seconds elapse."""
+    assert _job_queue is not None
+    job = _job_queue.get_job(job_id)
+    if job is None:
+        return JSONResponse(status_code=404, content={"error": "Job not found"})
+
+    if not job.event.is_set():
         try:
-            client = get_client()
+            await asyncio.wait_for(job.event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            pass
 
-            seed_path = create_seed_midi(request.tempo, request.genre, key=request.key)
+    return _job_response(job)
 
-            orpheus_instruments = []
-            if "drums" in [i.lower() for i in request.instruments]:
-                orpheus_instruments.append("Drums")
-            if any(i.lower() in ["bass", "electric_bass", "synth_bass"] for i in request.instruments):
-                orpheus_instruments.append("Electric Bass(finger)")
-            if any(i.lower() in ["piano", "electric_piano"] for i in request.instruments):
-                orpheus_instruments.append("Electric Piano 1")
-            if any(i.lower() in ["guitar", "acoustic_guitar"] for i in request.instruments):
-                orpheus_instruments.append("Acoustic Guitar(steel)")
 
-            if not orpheus_instruments:
-                orpheus_instruments = ["Drums", "Electric Bass(finger)"]
-
-            musical_goals = request.musical_goals or []
-            if request.style_hints:
-                musical_goals = list(set(musical_goals + request.style_hints))
-
-            controls = intent_to_controls(
-                genre=request.genre,
-                tempo=request.tempo,
-                musical_goals=musical_goals,
-                tone_brightness=request.tone_brightness,
-                tone_warmth=request.tone_warmth,
-                energy_intensity=request.energy_intensity,
-                energy_excitement=request.energy_excitement,
-                complexity_hint=request.complexity,
-                quality_preset=request.quality_preset,
-            )
-
-            orpheus_params = controls_to_orpheus_params(controls)
-
-            temperature = request.temperature if request.temperature is not None else orpheus_params["model_temperature"]
-            top_p = request.top_p if request.top_p is not None else orpheus_params["model_top_p"]
-            tokens_per_bar = orpheus_params["num_gen_tokens_per_bar"]
-            num_prime_tokens = orpheus_params["num_prime_tokens"]
-
-            num_gen_tokens = min(request.bars * tokens_per_bar, 1024)
-
-            logger.info(f"🎵 Generating {request.genre} @ {request.tempo} BPM")
-            logger.info(f"   Goals: {musical_goals}")
-            logger.info(f"   Controls: creativity={controls.creativity:.2f}, "
-                        f"density={controls.density:.2f}, "
-                        f"complexity={controls.complexity:.2f}")
-            logger.info(f"   Orpheus: temp={temperature:.2f}, top_p={top_p:.2f}, "
-                        f"tokens={num_gen_tokens} ({tokens_per_bar}/bar), prime={num_prime_tokens}")
-            logger.info(f"   Policy: {get_policy_version()}")
-
-            _predict_timeout = float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "120"))
-            # Fresh session hash per call — the Space's generate_music_and_state
-            # uses gr.State to accumulate tokens across calls in the same session.
-            # Without this, composition tokens grow unboundedly (45 → 190 → … → 1100+)
-            # until the model produces garbage and save_midi crashes with TypeError.
-            client.session_hash = str(uuid.uuid4())
-            try:
-                result = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.predict,
-                        input_midi=handle_file(seed_path),
-                        prime_instruments=orpheus_instruments,
-                        num_prime_tokens=num_prime_tokens,
-                        num_gen_tokens=num_gen_tokens,
-                        model_temperature=temperature,
-                        model_top_p=top_p,
-                        add_drums="drums" in [i.lower() for i in request.instruments],
-                        api_name="/generate_music_and_state",
-                    ),
-                    timeout=_predict_timeout,
-                )
-            except asyncio.TimeoutError:
-                logger.error(
-                    f"❌ Gradio /generate_music_and_state timed out after {_predict_timeout}s"
-                )
-                return GenerateResponse(
-                    success=False,
-                    tool_calls=[],
-                    error=f"Orpheus generation timed out after {_predict_timeout}s",
-                )
-
-            try:
-                midi_result = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.predict, batch_number=0, api_name="/add_batch"
-                    ),
-                    timeout=_predict_timeout,
-                )
-            except asyncio.TimeoutError:
-                logger.error(
-                    f"❌ Gradio /add_batch timed out after {_predict_timeout}s"
-                )
-                return GenerateResponse(
-                    success=False,
-                    tool_calls=[],
-                    error=f"Orpheus batch retrieval timed out after {_predict_timeout}s",
-                )
-            midi_path = midi_result[2]
-
-            parsed = await asyncio.to_thread(parse_midi_to_notes, midi_path, request.tempo)
-
-            max_beat = request.bars * 4
-            for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
-                sub = parsed.get(sub_key, {})
-                beat_field = "start_beat" if sub_key == "notes" else "beat"
-                for ch in list(sub):
-                    sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
-                    if not sub[ch]:
-                        del sub[ch]
-
-            parsed = filter_channels_for_instruments(parsed, request.instruments)
-
-            tool_calls = generate_tool_calls(parsed, request.tempo, request.instruments)
-
-            all_notes = []
-            cc_count = 0
-            pb_count = 0
-            at_count = 0
-            for tool_call in tool_calls:
-                t = tool_call.get("tool", "")
-                if t == "addNotes":
-                    all_notes.extend(tool_call.get("params", {}).get("notes", []))
-                elif t == "addMidiCC":
-                    cc_count += len(tool_call.get("params", {}).get("events", []))
-                elif t == "addPitchBend":
-                    pb_count += len(tool_call.get("params", {}).get("events", []))
-                elif t == "addAftertouch":
-                    at_count += len(tool_call.get("params", {}).get("events", []))
-
-            quality_metrics = analyze_quality(all_notes, request.bars, request.tempo)
-            quality_metrics["cc_events"] = cc_count
-            quality_metrics["pitch_bend_events"] = pb_count
-            quality_metrics["aftertouch_events"] = at_count
-
-            response_data = {
-                "success": True,
-                "tool_calls": tool_calls,
-                "error": None,
-                "metadata": {
-                    "policy_version": get_policy_version(),
-                    "quality_metrics": quality_metrics,
-                    "controls_used": {
-                        "creativity": controls.creativity,
-                        "density": controls.density,
-                        "complexity": controls.complexity,
-                    },
-                    "cache_hit": False,
-                }
-            }
-
-            if tool_calls:
-                cache_result(cache_key, response_data, key_data=_cache_key_data(request))
-            else:
-                logger.warning(f"⚠️ Skipping cache for {cache_key} — 0 notes generated")
-            _last_successful_gen = time()
-
-            logger.info(f"✅ Generated {len(tool_calls)} tool calls, quality_score={quality_metrics.get('quality_score', 0):.2f}")
-
-            return GenerateResponse(**response_data)
-
-        except Exception as e:
-            err_msg = str(e)
-            logger.error(f"❌ Generation failed: {err_msg}")
-            logger.debug(f"❌ Traceback:\n{traceback.format_exc()}")
-            _err_str = err_msg.lower()
-            if any(kw in _err_str for kw in ("connection", "refused", "reset", "eof", "broken pipe")):
-                reset_client()
-            return GenerateResponse(
-                success=False,
-                tool_calls=[],
-                error=err_msg,
-            )
-        finally:
-            _active_generations -= 1
+@app.get("/queue/status")
+async def queue_status():
+    """Diagnostics: current queue depth, running workers, limits."""
+    if _job_queue is None:
+        return {"error": "JobQueue not initialized"}
+    return _job_queue.status_snapshot()
 
 
 if __name__ == "__main__":
