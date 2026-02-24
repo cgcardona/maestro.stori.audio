@@ -237,7 +237,21 @@ async def _handle_composing(
                         f"Proposed notes captured: {sum(len(n) for n in getattr(variation, '_proposed_notes', {}).values()) if hasattr(variation, '_proposed_notes') else 'N/A'}"
                     )
 
-                _store_variation(variation, project_context, store)
+                _region_metadata: dict[str, dict] = {}
+                for _re in store.registry.list_regions():
+                    _rmeta: dict[str, Any] = {}
+                    if _re.metadata:
+                        _rmeta["startBeat"] = _re.metadata.get("startBeat")
+                        _rmeta["durationBeats"] = _re.metadata.get("durationBeats")
+                    _rmeta["name"] = _re.name
+                    _region_metadata[_re.id] = _rmeta
+
+                _store_variation(
+                    variation, project_context,
+                    base_state_id=store.get_state_id(),
+                    conversation_id=store.conversation_id,
+                    region_metadata=_region_metadata,
+                )
 
                 note_counts = variation.note_counts
                 yield await sse_event({
@@ -391,17 +405,19 @@ async def _handle_composing_with_agent_teams(
     """
     from app.core.maestro_agent_teams import _handle_composition_agent_team
     from app.core.maestro_editing import _create_editing_composition_route
+    from app.core.executor.snapshots import capture_base_snapshot, capture_proposed_snapshot
     from app.models.variation import Variation
     from app.services.variation import get_variation_service
 
     # ── 1. Snapshot base notes before Agent Teams runs ──
+    _base_snapshot = capture_base_snapshot(store)
     _base_notes: dict[str, list[dict]] = {}
     _track_regions: dict[str, str] = {}
     for track in project_context.get("tracks", []):
         track_id = track.get("id", "")
         for region in track.get("regions", []):
             rid = region.get("id", "")
-            notes = region.get("notes", []) or store.get_region_notes(rid)
+            notes = region.get("notes", []) or _base_snapshot["region_notes"].get(rid, [])
             if rid and notes:
                 _base_notes[rid] = notes
                 _track_regions[rid] = track_id
@@ -429,13 +445,14 @@ async def _handle_composing_with_agent_teams(
                 pass
         yield event_str
 
-    # ── 3. Collect proposed notes from StateStore ──
+    # ── 3. Collect proposed notes via snapshot (never read live StateStore) ──
+    _proposed_snapshot = capture_proposed_snapshot(store)
     _proposed_notes: dict[str, list[dict]] = {}
     _region_start_beats: dict[str, float] = {}
 
     for region_entity in store.registry.list_regions():
         rid = region_entity.id
-        notes = store.get_region_notes(rid)
+        notes = _proposed_snapshot["region_notes"].get(rid, [])
         if notes:
             _proposed_notes[rid] = notes
             _track_regions[rid] = region_entity.parent_id or ""
@@ -495,7 +512,21 @@ async def _handle_composing_with_agent_teams(
     )
 
     # ── 5. Store variation for commit/discard ──
-    _store_variation(variation, project_context, store)
+    _at_region_metadata: dict[str, dict] = {}
+    for _re in store.registry.list_regions():
+        _rmeta_at: dict[str, Any] = {}
+        if _re.metadata:
+            _rmeta_at["startBeat"] = _re.metadata.get("startBeat")
+            _rmeta_at["durationBeats"] = _re.metadata.get("durationBeats")
+        _rmeta_at["name"] = _re.name
+        _at_region_metadata[_re.id] = _rmeta_at
+
+    _store_variation(
+        variation, project_context,
+        base_state_id=store.get_state_id(),
+        conversation_id=store.conversation_id,
+        region_metadata=_at_region_metadata,
+    )
 
     # ── 6. Emit variation events ──
     yield await sse_event({

@@ -1,17 +1,36 @@
-"""
-Persistent StateStore for Stori Maestro (Cursor-of-DAWs).
+"""Persistent StateStore for Stori Maestro — Maestro's in-memory working tree.
 
-This is the **authoritative source of truth** for project state across requests.
-Unlike the per-request EntityRegistry, StateStore persists across the session.
+Boundary rules (enforced by convention, verified in tests):
 
-Key principles:
-1. Project state is versioned - every mutation creates a new version
-2. Rollback is first-class - failed plans can revert to previous version
-3. Event sourcing - all changes are captured as events
-4. Multi-client ready - state can be shared across connections
+StateStore MAY:
+    - Maintain the mutable working tree (tracks, regions, notes, buses).
+    - Accept mutations from tool-call execution (create_track, add_notes, …).
+    - Resolve entity names to IDs via EntityRegistry.
+    - Provide versioned state via ``get_state_id()``.
+    - Support transactions with rollback for plan execution.
+    - Sync from the DAW via ``sync_from_client()``.
+    - Provide immutable snapshots via ``get_region_notes()`` (returns deepcopy).
+
+StateStore MUST NOT:
+    - Be accessed directly by Muse commit logic.  Muse receives snapshots
+      via ``capture_base_snapshot`` / ``capture_proposed_snapshot`` from
+      ``app.core.executor.snapshots``, never live store references.
+    - Be treated as an immutable base state.  It is mutable — callers must
+      snapshot before mutation.
+    - Store variation or phrase data (that belongs to VariationStore).
+    - Be shared across requests via conversation_id for Muse's benefit.
+
+StateStore IS:
+    A per-request working tree, a mutable scratchpad for tool-call execution,
+    a derived view of the DAW's state (via sync), and a source of snapshots
+    that Muse consumes (via explicit capture).
+
+StateStore IS NOT:
+    A persistent store, an authority on musical history, a replacement for a
+    Muse repository, or a shared state bus between Maestro and Muse.
 
 Architecture:
-    StateStore (persistent, versioned)
+    StateStore (persistent per session, versioned)
         └── EntityRegistry (derived view, fast lookups)
         └── EventLog (append-only mutation history)
         └── Snapshots (periodic full state captures)

@@ -1,8 +1,15 @@
-"""Music generation MCP tool definitions (Tier 1 — server-side)."""
+"""Music generation MCP tool definitions (Tier 1 — server-side).
+
+Every tool in this module sets ``server_side: True`` — these tools are
+executed on the Maestro backend (via Orpheus) and never forwarded to
+the DAW.  The registry uses this flag to build ``SERVER_SIDE_TOOLS``
+dynamically instead of maintaining a hardcoded set.
+"""
 
 GENERATION_TOOLS = [
     {
         "name": "stori_generate_midi",
+        "server_side": True,
         "description": "Generate MIDI for a musical role (drums, bass, chords, melody, arp, pads, fx). Returns MIDI notes. Preferred general generator.",
         "inputSchema": {
             "type": "object",
@@ -23,6 +30,7 @@ GENERATION_TOOLS = [
     },
     {
         "name": "stori_generate_drums",
+        "server_side": True,
         "description": """Generate a drum pattern using AI.
 Returns MIDI notes that can be added to a drum track.
 
@@ -59,6 +67,7 @@ Styles: boom_bap, trap, house, lofi, jazz, rock, latin""",
     },
     {
         "name": "stori_generate_bass",
+        "server_side": True,
         "description": """Generate a bass line using AI.
 Returns MIDI notes that follow the specified chord progression.
 
@@ -96,6 +105,7 @@ Styles: boom_bap, jazz_walk, funk, house, synth, reggae""",
     },
     {
         "name": "stori_generate_melody",
+        "server_side": True,
         "description": """Generate a melody using AI.
 Returns MIDI notes for a lead or melodic line.""",
         "inputSchema": {
@@ -128,6 +138,7 @@ Returns MIDI notes for a lead or melodic line.""",
     },
     {
         "name": "stori_generate_chords",
+        "server_side": True,
         "description": """Generate a chord progression using AI.
 Returns MIDI notes for chord voicings.""",
         "inputSchema": {

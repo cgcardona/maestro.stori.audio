@@ -346,10 +346,13 @@ async def _apply_single_tool_call(
     """Validate, enrich, persist, and return results for one tool call.
 
     Handles entity creation (UUIDs), note persistence, generator routing
-    (Orpheus), icon synthesis, and tool result building. Returns SSE events,
-    LLM message objects, and enriched params without yielding — the caller
-    decides whether to yield events directly (editing path) or put them
-    into an asyncio.Queue (agent-team path).
+    (Orpheus), icon synthesis, and tool result building.
+
+    **SSE contract:** This function never emits SSE events directly.
+    When ``emit_sse=True`` it *builds* SSE event dicts and returns them
+    in ``_ToolCallOutcome.sse_events``.  The caller decides whether to
+    yield them to the client (editing path) or queue them (agent-team
+    path).  When ``emit_sse=False`` the ``sse_events`` list is empty.
 
     Args:
         tc_id: Tool call ID (from LLM response or synthetic UUID).

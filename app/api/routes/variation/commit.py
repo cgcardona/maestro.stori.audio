@@ -123,13 +123,28 @@ async def commit_variation(
 
             variation = _record_to_variation(record)
 
-            apply_conversation_id = record.conversation_id or commit_request.project_id
+            commit_region_meta: dict[str, dict] = {}
+            for pr in record.phrases:
+                if pr.region_id not in commit_region_meta:
+                    entity = project_store.registry.get_region(pr.region_id)
+                    if entity and entity.metadata:
+                        commit_region_meta[pr.region_id] = {
+                            **entity.metadata,
+                            "name": entity.name,
+                        }
+                    else:
+                        commit_region_meta[pr.region_id] = {
+                            "startBeat": pr.region_start_beat,
+                            "durationBeats": pr.region_duration_beats,
+                            "name": pr.region_name,
+                        }
 
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=commit_request.accepted_phrase_ids,
                 project_state={},
-                conversation_id=apply_conversation_id,
+                store=project_store,
+                region_metadata=commit_region_meta,
             )
 
             if not result.success:

@@ -3,23 +3,34 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from app.core.state_store import StateStore
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+RegionMeta = dict[str, Any]
 
 
 def _store_variation(
     variation: Any,
     project_context: dict[str, Any],
-    store: "StateStore",
+    base_state_id: str,
+    conversation_id: str,
+    region_metadata: dict[str, RegionMeta],
 ) -> None:
     """Persist a Variation to the VariationStore so commit/discard can find it.
 
-    Called from the maestro/stream path after ``execute_plan_variation`` returns.
-    Mirrors the storage logic in the ``/variation/propose`` background task.
+    Called from the maestro/stream path after ``execute_plan_variation``
+    returns.  The caller provides ``base_state_id``, ``conversation_id``,
+    and ``region_metadata`` — this function never accesses StateStore or
+    EntityRegistry directly.
+
+    Args:
+        variation: The computed Variation object.
+        project_context: Project state dict (for project_id extraction).
+        base_state_id: Optimistic concurrency token from the StateStore.
+        conversation_id: Conversation/project identifier for cross-referencing.
+        region_metadata: Mapping of ``region_id`` to ``{startBeat, durationBeats, name}``
+            — built by the caller from the StateStore registry before calling.
     """
     from app.variation.storage.variation_store import (
         get_variation_store,
@@ -28,7 +39,6 @@ def _store_variation(
     from app.variation.core.state_machine import VariationStatus
 
     project_id = project_context.get("id", "")
-    base_state_id = store.get_state_id()
 
     vstore = get_variation_store()
     record = vstore.create(
@@ -36,7 +46,7 @@ def _store_variation(
         base_state_id=base_state_id,
         intent=variation.intent,
         variation_id=variation.variation_id,
-        conversation_id=store.conversation_id,
+        conversation_id=conversation_id,
     )
 
     record.transition_to(VariationStatus.STREAMING)
@@ -47,11 +57,10 @@ def _store_variation(
     for phrase in variation.phrases:
         seq = record.next_sequence()
 
-        region_entity = store.registry.get_region(phrase.region_id)
-        region_meta = region_entity.metadata if region_entity else {}
-        region_start_beat = region_meta.get("startBeat")
-        region_duration_beats = region_meta.get("durationBeats")
-        region_name = region_entity.name if region_entity else None
+        r_meta = region_metadata.get(phrase.region_id, {})
+        region_start_beat = r_meta.get("startBeat")
+        region_duration_beats = r_meta.get("durationBeats")
+        region_name = r_meta.get("name")
 
         record.add_phrase(PhraseRecord(
             phrase_id=phrase.phrase_id,

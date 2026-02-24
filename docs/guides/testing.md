@@ -120,3 +120,32 @@ Add your own for smoke tests and demos.
   3. **Property-based tests (Hypothesis)** — Add for Pydantic models and serialization in `app/core/` and `app/models/` to catch edge cases.
   4. **Pytest markers for slow/integration** — Mark slow or integration tests (e.g. `@pytest.mark.slow`) and run CI with `-m "not slow"` by default so CI stays fast.
   5. **Skipped tests** — Revisit when stable: intent rules (test_intent.py, test_intent_classification.py), live HuggingFace (test_text2midi_duration_mapping.py, test_huggingface_live.py); either fix expectations or gate with env (e.g. `RUN_LIVE_TESTS=1`).
+
+---
+
+## Architectural boundary checks
+
+Phase 3 boundary hardening added automated guardrails to prevent architectural regression.
+
+**Boundary check script (`scripts/check_boundaries.py`):**
+
+```bash
+docker compose exec maestro python scripts/check_boundaries.py
+```
+
+Uses AST parsing to enforce import and access rules. Fails with a non-zero exit code if any violation is found. Checks:
+
+- `app/services/variation/**` must not import `state_store` or `entity_registry`
+- `compute_variation_from_context` must have no `store` parameter
+- `apply_variation_phrases` must not import or reference `get_or_create_store` or access `store.registry`
+- Modules above `maestro_composing/` must not import Muse models directly
+
+Run locally or add to CI. See `docs/architecture/boundary_rules.md` for the full rule set.
+
+**Boundary seal tests (`tests/test_boundary_seal.py`):**
+
+Unit tests that enforce the same contracts at the pytest level:
+
+- `TestMuseComputeBoundary` — `compute_variation_from_context` signature has no `store` param; variation service files have no forbidden imports; no lazy imports of StateStore in the function body.
+- `TestApplyVariationBoundary` — `apply_variation_phrases` never calls `get_or_create_store` (mock side_effect); no `get_or_create_store` or `store.registry` references in `apply.py` source.
+- `TestGoldenShapes` — Locks the schema of `UpdatedRegionPayload`, `_ToolCallOutcome`, Orpheus normalization output, and `StoreSnapshot` to prevent silent contract drift.

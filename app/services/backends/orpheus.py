@@ -8,7 +8,7 @@ from app.services.backends.base import (
     GenerationResult,
     GeneratorBackend,
 )
-from app.services.orpheus import get_orpheus_client
+from app.services.orpheus import get_orpheus_client, normalize_orpheus_tool_calls
 
 if TYPE_CHECKING:
     from app.core.emotion_vector import EmotionVector
@@ -195,47 +195,13 @@ class OrpheusBackend(MusicGeneratorBackend):
                     metadata=result.get("metadata", {}),
                 )
 
-            # Legacy path: extract from tool_calls
-            notes: list[dict] = []
-            cc_events: list[dict] = []
-            pitch_bends: list[dict] = []
-            aftertouch: list[dict] = []
+            # Legacy path: extract from tool_calls via adapter
             tool_calls = result.get("tool_calls", [])
-
-            for tool_call in tool_calls:
-                tool_name = tool_call.get("tool", "")
-                params = tool_call.get("params", {})
-
-                if tool_name == "addNotes":
-                    notes.extend(params.get("notes", []))
-
-                elif tool_name == "addMidiCC":
-                    cc_num = params.get("cc")
-                    for ev in params.get("events", []):
-                        cc_events.append({
-                            "cc": cc_num,
-                            "beat": ev.get("beat", 0),
-                            "value": ev.get("value", 0),
-                        })
-
-                elif tool_name == "addPitchBend":
-                    for ev in params.get("events", []):
-                        pitch_bends.append({
-                            "beat": ev.get("beat", 0),
-                            "value": ev.get("value", 0),
-                        })
-
-                elif tool_name == "addAftertouch":
-                    for ev in params.get("events", []):
-                        entry: dict = {
-                            "beat": ev.get("beat", 0),
-                            "value": ev.get("value", 0),
-                        }
-                        if "pitch" in ev:
-                            entry["pitch"] = ev["pitch"]
-                        aftertouch.append(entry)
-
-            notes = [_normalize_note_keys(n) for n in notes]
+            parsed = normalize_orpheus_tool_calls(tool_calls)
+            notes: list[dict] = [_normalize_note_keys(n) for n in parsed["notes"]]
+            cc_events: list[dict] = parsed["cc_events"]
+            pitch_bends: list[dict] = parsed["pitch_bends"]
+            aftertouch: list[dict] = parsed["aftertouch"]
 
             target_beats = bars * 4
             if ENABLE_BEAT_RESCALING:

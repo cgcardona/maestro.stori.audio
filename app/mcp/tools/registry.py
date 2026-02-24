@@ -24,22 +24,28 @@ MCP_TOOLS = (
     + UI_TOOLS
 )
 
+_CATEGORY_LISTS: list[tuple[str, list[dict]]] = [
+    ("project", PROJECT_TOOLS),
+    ("track", TRACK_TOOLS),
+    ("region", REGION_TOOLS),
+    ("note", NOTE_TOOLS),
+    ("effects", EFFECTS_TOOLS),
+    ("automation", AUTOMATION_TOOLS),
+    ("midi_control", MIDI_CONTROL_TOOLS),
+    ("generation", GENERATION_TOOLS),
+    ("playback", PLAYBACK_TOOLS),
+    ("ui", UI_TOOLS),
+]
+
 TOOL_CATEGORIES: dict[str, str] = {
     str(tool["name"]): category
-    for category, tools in [
-        ("project", PROJECT_TOOLS),
-        ("track", TRACK_TOOLS),
-        ("region", REGION_TOOLS),
-        ("note", NOTE_TOOLS),
-        ("effects", EFFECTS_TOOLS),
-        ("automation", AUTOMATION_TOOLS),
-        ("midi_control", MIDI_CONTROL_TOOLS),
-        ("generation", GENERATION_TOOLS),
-        ("playback", PLAYBACK_TOOLS),
-        ("ui", UI_TOOLS),
-    ]
+    for category, tools in _CATEGORY_LISTS
     for tool in tools
 }
 
-SERVER_SIDE_TOOLS: set[str] = {str(tool["name"]) for tool in GENERATION_TOOLS}
-DAW_TOOLS: set[str] = {str(tool["name"]) for tool in MCP_TOOLS if str(tool["name"]) not in SERVER_SIDE_TOOLS}
+SERVER_SIDE_TOOLS: set[str] = {
+    str(tool["name"]) for tool in MCP_TOOLS if tool.get("server_side", False)
+}
+DAW_TOOLS: set[str] = {
+    str(tool["name"]) for tool in MCP_TOOLS if not tool.get("server_side", False)
+}

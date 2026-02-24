@@ -211,10 +211,12 @@ class TestApplyVariationPhrases:
         )
         variation = _make_variation(phrases=[phrase])
 
+        store = StateStore()
         result = await apply_variation_phrases(
             variation=variation,
             accepted_phrase_ids=["p1"],
             project_state={},
+            store=store,
         )
 
         assert result.success is True
@@ -231,10 +233,12 @@ class TestApplyVariationPhrases:
         )
         variation = _make_variation(phrases=[phrase])
 
+        store = StateStore()
         result = await apply_variation_phrases(
             variation=variation,
             accepted_phrase_ids=["p1"],
             project_state={},
+            store=store,
         )
 
         assert result.success is True
@@ -249,10 +253,12 @@ class TestApplyVariationPhrases:
         )
         variation = _make_variation(phrases=[phrase])
 
+        store = StateStore()
         result = await apply_variation_phrases(
             variation=variation,
             accepted_phrase_ids=["p1"],
             project_state={},
+            store=store,
         )
 
         assert result.success is True
@@ -265,10 +271,12 @@ class TestApplyVariationPhrases:
         p2 = _make_phrase(phrase_id="p2", note_changes=[_note_add(72, 4.0)])
         variation = _make_variation(phrases=[p1, p2])
 
+        store = StateStore()
         result = await apply_variation_phrases(
             variation=variation,
             accepted_phrase_ids=["p1"],  # only accept p1
             project_state={},
+            store=store,
         )
 
         assert result.success is True
@@ -281,10 +289,12 @@ class TestApplyVariationPhrases:
         phrase = _make_phrase(phrase_id="p1", note_changes=[_note_add(60, 0.0)])
         variation = _make_variation(phrases=[phrase])
 
+        store = StateStore()
         result = await apply_variation_phrases(
             variation=variation,
             accepted_phrase_ids=["p1", "p-nonexistent"],
             project_state={},
+            store=store,
         )
 
         assert result.success is True
@@ -296,10 +306,12 @@ class TestApplyVariationPhrases:
         phrase = _make_phrase(phrase_id="p1", note_changes=[_note_add(60)])
         variation = _make_variation(phrases=[phrase])
 
+        store = StateStore()
         result = await apply_variation_phrases(
             variation=variation,
             accepted_phrase_ids=[],
             project_state={},
+            store=store,
         )
 
         assert result.success is True
@@ -1019,21 +1031,20 @@ class TestApplyVariationUpdatedRegions:
             variation_id="v1",
         )
 
-        with patch("app.core.executor.apply.get_or_create_store") as mock_factory:
-            store = StateStore(conversation_id="test", project_id="proj1")
-            store.create_track("Track1", track_id="t1")
-            store.create_region("Region1", "t1", region_id="r1", metadata={
-                "startBeat": 0,
-                "durationBeats": 16,
-            })
-            mock_factory.return_value = store
+        store = StateStore(conversation_id="test", project_id="proj1")
+        store.create_track("Track1", track_id="t1")
+        store.create_region("Region1", "t1", region_id="r1", metadata={
+            "startBeat": 0,
+            "durationBeats": 16,
+        })
 
-            result = await apply_variation_phrases(
-                variation=variation,
-                accepted_phrase_ids=["p1"],
-                project_state={},
-                conversation_id="test",
-            )
+        result = await apply_variation_phrases(
+            variation=variation,
+            accepted_phrase_ids=["p1"],
+            project_state={},
+            store=store,
+            region_metadata={"r1": {"startBeat": 0, "durationBeats": 16, "name": "Region1"}},
+        )
 
         assert result.success
         assert len(result.updated_regions) == 1
@@ -1063,21 +1074,20 @@ class TestApplyVariationUpdatedRegions:
         )
         variation = _make_variation(phrases=[phrase])
 
-        with patch("app.core.executor.apply.get_or_create_store") as mock_factory:
-            store = StateStore(conversation_id="test", project_id="proj1")
-            store.create_track("Track1", track_id="t1")
-            store.create_region("Verse", "t1", region_id="r1", metadata={
-                "startBeat": 16,
-                "durationBeats": 32,
-            })
-            mock_factory.return_value = store
+        store = StateStore(conversation_id="test", project_id="proj1")
+        store.create_track("Track1", track_id="t1")
+        store.create_region("Verse", "t1", region_id="r1", metadata={
+            "startBeat": 16,
+            "durationBeats": 32,
+        })
 
-            result = await apply_variation_phrases(
-                variation=variation,
-                accepted_phrase_ids=["p1"],
-                project_state={},
-                conversation_id="test",
-            )
+        result = await apply_variation_phrases(
+            variation=variation,
+            accepted_phrase_ids=["p1"],
+            project_state={},
+            store=store,
+            region_metadata={"r1": {"startBeat": 16, "durationBeats": 32, "name": "Verse"}},
+        )
 
         assert result.success
         assert len(result.updated_regions) == 1
@@ -1107,23 +1117,21 @@ class TestApplyVariationUpdatedRegions:
         )
         variation = _make_variation(phrases=[phrase])
 
-        with patch("app.core.executor.apply.get_or_create_store") as mock_factory:
-            store = MagicMock()
-            store.registry.get_region.return_value = None
-            store.get_region_track_id.return_value = "t1"
-            store.get_region_notes.return_value = []  # empty!
-            store.add_notes = MagicMock()
-            store.remove_notes = MagicMock()
-            store.begin_transaction.return_value = MagicMock()
-            store.commit = MagicMock()
-            mock_factory.return_value = store
+        store = MagicMock()
+        store.registry.get_region.return_value = None
+        store.get_region_track_id.return_value = "t1"
+        store.get_region_notes.return_value = []  # empty!
+        store.add_notes = MagicMock()
+        store.remove_notes = MagicMock()
+        store.begin_transaction.return_value = MagicMock()
+        store.commit = MagicMock()
 
-            result = await apply_variation_phrases(
-                variation=variation,
-                accepted_phrase_ids=["p1"],
-                project_state={},
-                conversation_id="test",
-            )
+        result = await apply_variation_phrases(
+            variation=variation,
+            accepted_phrase_ids=["p1"],
+            project_state={},
+            store=store,
+        )
 
         assert result.success
         assert len(result.updated_regions) == 1
@@ -1341,18 +1349,16 @@ class TestApplyVariationCC:
         )
         variation = _make_variation(phrases=[phrase])
 
-        with patch("app.core.executor.apply.get_or_create_store") as mock_factory:
-            store = StateStore(conversation_id="cc-commit", project_id="p")
-            store.create_track("Track 1", track_id="t1")
-            store.create_region("Region 1", parent_track_id="t1", region_id="r1")
-            mock_factory.return_value = store
+        store = StateStore(conversation_id="cc-commit", project_id="p")
+        store.create_track("Track 1", track_id="t1")
+        store.create_region("Region 1", parent_track_id="t1", region_id="r1")
 
-            result = await apply_variation_phrases(
-                variation=variation,
-                accepted_phrase_ids=["p1"],
-                project_state={},
-                conversation_id="cc-commit",
-            )
+        result = await apply_variation_phrases(
+            variation=variation,
+            accepted_phrase_ids=["p1"],
+            project_state={},
+            store=store,
+        )
 
         assert result.success
         assert len(result.updated_regions) == 1
@@ -1611,18 +1617,16 @@ class TestAftertouchPipeline:
         )
         variation = _make_variation(phrases=[phrase])
 
-        with patch("app.core.executor.apply.get_or_create_store") as mock_factory:
-            store = StateStore(conversation_id="at-commit", project_id="p")
-            store.create_track("Track 1", track_id="t1")
-            store.create_region("Region 1", parent_track_id="t1", region_id="r1")
-            mock_factory.return_value = store
+        store = StateStore(conversation_id="at-commit", project_id="p")
+        store.create_track("Track 1", track_id="t1")
+        store.create_region("Region 1", parent_track_id="t1", region_id="r1")
 
-            result = await apply_variation_phrases(
-                variation=variation,
-                accepted_phrase_ids=["p1"],
-                project_state={},
-                conversation_id="at-commit",
-            )
+        result = await apply_variation_phrases(
+            variation=variation,
+            accepted_phrase_ids=["p1"],
+            project_state={},
+            store=store,
+        )
 
         assert result.success
         ur = result.updated_regions[0]

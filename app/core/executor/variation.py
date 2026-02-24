@@ -1,4 +1,18 @@
-"""Variation mode execution: simulate tool calls, compute musical diff."""
+"""Variation mode execution — two-phase pipeline.
+
+Phase 1 (Maestro orchestration):
+    ``execute_tools_for_variation`` dispatches tool calls against a StateStore,
+    collects base/proposed note data in a ``VariationContext``, and returns it.
+
+Phase 2 (Muse computation):
+    ``compute_variation_from_context`` takes *only* the collected musical data
+    (no StateStore access) and produces a ``Variation`` diff via
+    ``VariationService``.
+
+``execute_plan_variation`` is a thin convenience wrapper that runs both phases
+in sequence and translates the boundary (extracting region metadata from the
+store before handing off to Muse).
+"""
 
 from __future__ import annotations
 
@@ -284,6 +298,176 @@ async def _process_call_for_variation(
     return params
 
 
+def compute_variation_from_context(
+    *,
+    base_notes: dict[str, list[dict[str, Any]]],
+    proposed_notes: dict[str, list[dict[str, Any]]],
+    track_regions: dict[str, str],
+    proposed_cc: dict[str, list[dict[str, Any]]],
+    proposed_pitch_bends: dict[str, list[dict[str, Any]]],
+    proposed_aftertouch: dict[str, list[dict[str, Any]]],
+    region_start_beats: dict[str, float],
+    intent: str,
+    explanation: Optional[str] = None,
+) -> Variation:
+    """Muse computation — produce a Variation diff from collected musical data.
+
+    This function has NO access to StateStore or EntityRegistry.  All inputs
+    are plain data extracted at the Maestro→Muse boundary.
+    """
+    variation_service = get_variation_service()
+
+    if len(proposed_notes) > 1:
+        return variation_service.compute_multi_region_variation(
+            base_regions=base_notes,
+            proposed_regions=proposed_notes,
+            track_regions=track_regions,
+            intent=intent,
+            explanation=explanation,
+            region_start_beats=region_start_beats,
+            region_cc=proposed_cc,
+            region_pitch_bends=proposed_pitch_bends,
+            region_aftertouch=proposed_aftertouch,
+        )
+
+    if proposed_notes:
+        region_id = next(iter(proposed_notes.keys()))
+        track_id = track_regions.get(region_id, "unknown")
+        return variation_service.compute_variation(
+            base_notes=base_notes.get(region_id, []),
+            proposed_notes=proposed_notes.get(region_id, []),
+            region_id=region_id,
+            track_id=track_id,
+            intent=intent,
+            explanation=explanation,
+            region_start_beat=region_start_beats.get(region_id, 0.0),
+            cc_events=proposed_cc.get(region_id),
+            pitch_bends=proposed_pitch_bends.get(region_id),
+            aftertouch=proposed_aftertouch.get(region_id),
+        )
+
+    return Variation(
+        variation_id=str(uuid_module.uuid4()),
+        intent=intent,
+        ai_explanation=explanation,
+        affected_tracks=[],
+        affected_regions=[],
+        beat_range=(0.0, 0.0),
+        phrases=[],
+    )
+
+
+async def execute_tools_for_variation(
+    tool_calls: list[ToolCall],
+    project_state: dict[str, Any],
+    conversation_id: Optional[str] = None,
+    explanation: Optional[str] = None,
+    quality_preset: Optional[str] = None,
+    tool_event_callback: Optional[Callable[..., Awaitable[None]]] = None,
+    pre_tool_callback: Optional[Callable[..., Awaitable[None]]] = None,
+    post_tool_callback: Optional[Callable[..., Awaitable[None]]] = None,
+) -> VariationContext:
+    """Maestro orchestration — dispatch tool calls, collect base/proposed state.
+
+    Returns a ``VariationContext`` containing the collected musical data.
+    Does NOT compute the variation diff — that is Muse's responsibility
+    (see ``compute_variation_from_context``).
+    """
+    trace = get_trace_context()
+
+    store = get_or_create_store(
+        conversation_id=conversation_id or "default",
+        project_id=project_state.get("id"),
+    )
+    store.sync_from_client(project_state)
+
+    tool_calls = dedupe_tool_calls(tool_calls)
+
+    var_ctx = VariationContext(
+        store=store,
+        trace=trace,
+        base_notes={},
+        proposed_notes={},
+        track_regions={},
+    )
+
+    if not tool_calls:
+        return var_ctx
+
+    logger.info(f"🎭 Variation mode: {len(tool_calls)} tool calls")
+    _extract_notes_from_project(project_state, var_ctx)
+
+    emotion_vector: Optional[EmotionVector] = None
+    if explanation:
+        emotion_vector = emotion_vector_from_stori_prompt(explanation)
+        logger.info(f"🎭 Emotion vector derived: {emotion_vector}")
+
+    phase1, instrument_groups, instrument_order, phase3 = _group_into_phases(tool_calls)
+
+    completed_count = [0]
+
+    async def _dispatch(call: ToolCall) -> None:
+        logger.info(f"🔧 Processing: {call.name}")
+        if pre_tool_callback:
+            await pre_tool_callback(call.name, call.params)
+        elif tool_event_callback:
+            await tool_event_callback(call.id, call.name, call.params)
+        resolved_params = await _process_call_for_variation(
+            call,
+            var_ctx,
+            quality_preset=quality_preset,
+            emotion_vector=emotion_vector,
+        )
+        if post_tool_callback:
+            await post_tool_callback(call.name, resolved_params)
+        completed_count[0] += 1
+
+    for call in phase1:
+        await _dispatch(call)
+
+    if instrument_groups:
+        logger.info(
+            f"🚀 Parallel instrument execution: {len(instrument_groups)} groups "
+            f"({', '.join(instrument_order)}), max {_MAX_PARALLEL_GROUPS} concurrent"
+        )
+        semaphore = asyncio.Semaphore(_MAX_PARALLEL_GROUPS)
+
+        async def _run_instrument_group(calls: list[ToolCall]) -> None:
+            async with semaphore:
+                for call in calls:
+                    await _dispatch(call)
+
+        await asyncio.gather(
+            *[_run_instrument_group(instrument_groups[name]) for name in instrument_order]
+        )
+
+    for call in phase3:
+        await _dispatch(call)
+
+    total_base = sum(len(n) for n in var_ctx.base_notes.values())
+    total_proposed = sum(len(n) for n in var_ctx.proposed_notes.values())
+    logger.info(
+        f"📊 Variation context: {len(var_ctx.base_notes)} base regions ({total_base} notes), "
+        f"{len(var_ctx.proposed_notes)} proposed regions ({total_proposed} notes)"
+    )
+
+    return var_ctx
+
+
+def _collect_region_start_beats(var_ctx: VariationContext) -> dict[str, float]:
+    """Boundary translation: extract region start beats from the store.
+
+    This runs at the Maestro→Muse seam so that ``compute_variation_from_context``
+    never needs to touch the store.
+    """
+    result: dict[str, float] = {}
+    for rid in set(var_ctx.base_notes.keys()) | set(var_ctx.proposed_notes.keys()):
+        entity = var_ctx.store.registry.get_region(rid)
+        if entity and entity.metadata:
+            result[rid] = float(entity.metadata.get("startBeat", 0))
+    return result
+
+
 async def execute_plan_variation(
     tool_calls: list[ToolCall],
     project_state: dict[str, Any],
@@ -295,150 +479,39 @@ async def execute_plan_variation(
     pre_tool_callback: Optional[Callable[..., Awaitable[None]]] = None,
     post_tool_callback: Optional[Callable[..., Awaitable[None]]] = None,
 ) -> Variation:
-    """
-    Execute a plan in variation mode — returns proposed changes without mutation.
+    """Convenience wrapper — runs Maestro orchestration then Muse computation.
 
-    1. Captures base state before each note-affecting tool.
-    2. Simulates Orpheus transformations.
-    3. Computes a Variation (musical diff) for frontend review.
+    Equivalent to calling ``execute_tools_for_variation`` followed by
+    ``compute_variation_from_context`` with the boundary translation in between.
     """
-    trace = get_trace_context()
     start_time = time.time()
+    trace = get_trace_context()
 
     with trace_span(trace, "execute_plan_variation", {"tool_count": len(tool_calls)}):
-        store = get_or_create_store(
-            conversation_id=conversation_id or "default",
-            project_id=project_state.get("id"),
-        )
-        store.sync_from_client(project_state)
-
-        tool_calls = dedupe_tool_calls(tool_calls)
-
-        if not tool_calls:
-            return Variation(
-                variation_id=str(uuid_module.uuid4()),
-                intent=intent,
-                ai_explanation=explanation,
-                affected_tracks=[],
-                affected_regions=[],
-                beat_range=(0.0, 0.0),
-                phrases=[],
-            )
-
-        var_ctx = VariationContext(
-            store=store,
-            trace=trace,
-            base_notes={},
-            proposed_notes={},
-            track_regions={},
+        var_ctx = await execute_tools_for_variation(
+            tool_calls=tool_calls,
+            project_state=project_state,
+            conversation_id=conversation_id,
+            explanation=explanation,
+            quality_preset=quality_preset,
+            tool_event_callback=tool_event_callback,
+            pre_tool_callback=pre_tool_callback,
+            post_tool_callback=post_tool_callback,
         )
 
-        logger.info(f"🎭 Variation mode: {len(tool_calls)} tool calls")
-        _extract_notes_from_project(project_state, var_ctx)
+        region_start_beats = _collect_region_start_beats(var_ctx)
 
-        emotion_vector: Optional[EmotionVector] = None
-        if explanation:
-            emotion_vector = emotion_vector_from_stori_prompt(explanation)
-            logger.info(f"🎭 Emotion vector derived: {emotion_vector}")
-
-        phase1, instrument_groups, instrument_order, phase3 = _group_into_phases(tool_calls)
-
-        total = len(tool_calls)
-        completed_count = [0]
-
-        async def _dispatch(call: ToolCall) -> None:
-            logger.info(f"🔧 Processing: {call.name}")
-            if pre_tool_callback:
-                await pre_tool_callback(call.name, call.params)
-            elif tool_event_callback:
-                await tool_event_callback(call.id, call.name, call.params)
-            resolved_params = await _process_call_for_variation(
-                call,
-                var_ctx,
-                quality_preset=quality_preset,
-                emotion_vector=emotion_vector,
-            )
-            if post_tool_callback:
-                await post_tool_callback(call.name, resolved_params)
-            completed_count[0] += 1
-
-        # Phase 1: project-level setup (sequential)
-        for call in phase1:
-            await _dispatch(call)
-
-        # Phase 2: instrument groups (parallel across groups, sequential within)
-        if instrument_groups:
-            logger.info(
-                f"🚀 Parallel instrument execution: {len(instrument_groups)} groups "
-                f"({', '.join(instrument_order)}), max {_MAX_PARALLEL_GROUPS} concurrent"
-            )
-            semaphore = asyncio.Semaphore(_MAX_PARALLEL_GROUPS)
-
-            async def _run_instrument_group(calls: list[ToolCall]) -> None:
-                async with semaphore:
-                    for call in calls:
-                        await _dispatch(call)
-
-            await asyncio.gather(
-                *[_run_instrument_group(instrument_groups[name]) for name in instrument_order]
-            )
-
-        # Phase 3: mixing / shared routing (sequential)
-        for call in phase3:
-            await _dispatch(call)
-
-        total_base = sum(len(n) for n in var_ctx.base_notes.values())
-        total_proposed = sum(len(n) for n in var_ctx.proposed_notes.values())
-        logger.info(
-            f"📊 Variation context: {len(var_ctx.base_notes)} base regions ({total_base} notes), "
-            f"{len(var_ctx.proposed_notes)} proposed regions ({total_proposed} notes)"
+        variation = compute_variation_from_context(
+            base_notes=var_ctx.base_notes,
+            proposed_notes=var_ctx.proposed_notes,
+            track_regions=var_ctx.track_regions,
+            proposed_cc=var_ctx.proposed_cc,
+            proposed_pitch_bends=var_ctx.proposed_pitch_bends,
+            proposed_aftertouch=var_ctx.proposed_aftertouch,
+            region_start_beats=region_start_beats,
+            intent=intent,
+            explanation=explanation,
         )
-
-        variation_service = get_variation_service()
-
-        _region_start_beats: dict[str, float] = {}
-        for rid in set(var_ctx.base_notes.keys()) | set(var_ctx.proposed_notes.keys()):
-            entity = store.registry.get_region(rid)
-            if entity and entity.metadata:
-                _region_start_beats[rid] = float(entity.metadata.get("startBeat", 0))
-
-        if len(var_ctx.proposed_notes) > 1:
-            variation = variation_service.compute_multi_region_variation(
-                base_regions=var_ctx.base_notes,
-                proposed_regions=var_ctx.proposed_notes,
-                track_regions=var_ctx.track_regions,
-                intent=intent,
-                explanation=explanation,
-                region_start_beats=_region_start_beats,
-                region_cc=var_ctx.proposed_cc,
-                region_pitch_bends=var_ctx.proposed_pitch_bends,
-                region_aftertouch=var_ctx.proposed_aftertouch,
-            )
-        elif var_ctx.proposed_notes:
-            region_id = next(iter(var_ctx.proposed_notes.keys()))
-            track_id = var_ctx.track_regions.get(region_id, "unknown")
-            variation = variation_service.compute_variation(
-                base_notes=var_ctx.base_notes.get(region_id, []),
-                proposed_notes=var_ctx.proposed_notes.get(region_id, []),
-                region_id=region_id,
-                track_id=track_id,
-                intent=intent,
-                explanation=explanation,
-                region_start_beat=_region_start_beats.get(region_id, 0.0),
-                cc_events=var_ctx.proposed_cc.get(region_id),
-                pitch_bends=var_ctx.proposed_pitch_bends.get(region_id),
-                aftertouch=var_ctx.proposed_aftertouch.get(region_id),
-            )
-        else:
-            variation = Variation(
-                variation_id=str(uuid_module.uuid4()),
-                intent=intent,
-                ai_explanation=explanation,
-                affected_tracks=[],
-                affected_regions=[],
-                beat_range=(0.0, 0.0),
-                phrases=[],
-            )
 
         duration_ms = (time.time() - start_time) * 1000
         logger.info(

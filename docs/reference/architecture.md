@@ -512,6 +512,23 @@ Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/co
 
 ---
 
+## Architectural boundary enforcement
+
+Phase 3 boundary hardening introduced automated guardrails that prevent regression in the Maestro/Muse separation.
+
+**Boundary check script:** `scripts/check_boundaries.py` uses AST parsing to enforce import and access rules across the codebase. Run locally (`python scripts/check_boundaries.py`) or in CI — fails with non-zero exit code on any violation. Rules are documented in `docs/architecture/boundary_rules.md`.
+
+**Boundary seal tests:** `tests/test_boundary_seal.py` enforces the same contracts at the pytest level — signature checks on `compute_variation_from_context` and `apply_variation_phrases`, forbidden-import assertions, and golden shape tests for `UpdatedRegionPayload`, `_ToolCallOutcome`, Orpheus normalization output, and `StoreSnapshot`.
+
+Key invariants enforced:
+
+- `compute_variation_from_context` is a pure function of data — no `StateStore` parameter, no lazy imports of store modules.
+- `apply_variation_phrases` receives `store` and `region_metadata` as explicit params — never calls `get_or_create_store()` or accesses `store.registry`.
+- `_store_variation` receives `base_state_id`, `conversation_id`, and `region_metadata` as explicit params — never reads from StateStore directly.
+- Variation service modules do not import `state_store` or `entity_registry`.
+
+---
+
 ## Execution safety
 
 **Circuit breaker — `stori_add_notes`:** If the LLM makes three consecutive failed `stori_add_notes` calls for the same region (e.g. submitting shorthand placeholder params like `_noteCount` instead of a real `notes` array), the backend stops retrying for that region and emits a `toolError` event with a clear message. This prevents infinite retry loops. Tracked per `regionId` in `_handle_editing`.

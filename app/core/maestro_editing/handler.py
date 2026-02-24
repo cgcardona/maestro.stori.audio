@@ -372,7 +372,20 @@ async def _handle_editing(
         )
 
         from app.core.maestro_composing import _store_variation
-        _store_variation(variation, project_context, store)
+        _edit_region_metadata: dict[str, dict] = {}
+        for _re in store.registry.list_regions():
+            _rmeta: dict[str, Any] = {}
+            if _re.metadata:
+                _rmeta["startBeat"] = _re.metadata.get("startBeat")
+                _rmeta["durationBeats"] = _re.metadata.get("durationBeats")
+            _rmeta["name"] = _re.name
+            _edit_region_metadata[_re.id] = _rmeta
+        _store_variation(
+            variation, project_context,
+            base_state_id=store.get_state_id(),
+            conversation_id=store.conversation_id,
+            region_metadata=_edit_region_metadata,
+        )
 
         note_counts = variation.note_counts
         yield await sse_event({

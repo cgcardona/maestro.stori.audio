@@ -1,7 +1,13 @@
-"""
-Orpheus Music Service Client.
+"""Orpheus Music Service Client.
 
 Client for communicating with the Orpheus music generation service.
+
+The ``normalize_orpheus_tool_calls`` function is the adapter boundary:
+all Orpheus responses that contain ``tool_calls`` MUST pass through it
+before Maestro consumes the data.  Orpheus's internal tool names
+(``addNotes``, ``addMidiCC``, ``addPitchBend``, ``addAftertouch``) are
+an implementation detail of the Orpheus service and must not leak into
+Maestro's core.
 """
 import asyncio
 import httpx
@@ -507,6 +513,76 @@ class OrpheusClient:
                 "error": f"Generation did not complete within {_total}s",
                 "retry_count": 0,
             }
+
+
+# ---------------------------------------------------------------------------
+# Orpheus response adapter — normalises tool_calls into flat note/CC lists
+# ---------------------------------------------------------------------------
+
+
+def normalize_orpheus_tool_calls(
+    tool_calls: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Translate Orpheus-format tool_calls into Maestro-internal flat lists.
+
+    Orpheus returns DAW-style tool names (``addNotes``, ``addMidiCC``,
+    ``addPitchBend``, ``addAftertouch``).  This adapter extracts the
+    musical content into plain lists keyed by data type so that callers
+    never handle Orpheus-specific tool names.
+
+    Returns::
+
+        {
+            "notes": [...],
+            "cc_events": [...],
+            "pitch_bends": [...],
+            "aftertouch": [...],
+        }
+    """
+    notes: list[dict[str, Any]] = []
+    cc_events: list[dict[str, Any]] = []
+    pitch_bends: list[dict[str, Any]] = []
+    aftertouch: list[dict[str, Any]] = []
+
+    for tc in tool_calls:
+        tool_name = tc.get("tool", "")
+        params = tc.get("params", {})
+
+        if tool_name == "addNotes":
+            notes.extend(params.get("notes", []))
+
+        elif tool_name == "addMidiCC":
+            cc_num = params.get("cc")
+            for ev in params.get("events", []):
+                cc_events.append({
+                    "cc": cc_num,
+                    "beat": ev.get("beat", 0),
+                    "value": ev.get("value", 0),
+                })
+
+        elif tool_name == "addPitchBend":
+            for ev in params.get("events", []):
+                pitch_bends.append({
+                    "beat": ev.get("beat", 0),
+                    "value": ev.get("value", 0),
+                })
+
+        elif tool_name == "addAftertouch":
+            for ev in params.get("events", []):
+                entry: dict[str, Any] = {
+                    "beat": ev.get("beat", 0),
+                    "value": ev.get("value", 0),
+                }
+                if "pitch" in ev:
+                    entry["pitch"] = ev["pitch"]
+                aftertouch.append(entry)
+
+    return {
+        "notes": notes,
+        "cc_events": cc_events,
+        "pitch_bends": pitch_bends,
+        "aftertouch": aftertouch,
+    }
 
 
 # ---------------------------------------------------------------------------

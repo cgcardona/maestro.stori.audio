@@ -27,6 +27,7 @@ from app.core.tool_validation.constants import (
 from app.core.tool_validation.entities import (
     _find_closest_match,
     _resolve_and_validate_entities,
+    resolve_tool_entities,
 )
 from app.core.tool_validation.schema import _validate_schema, _validate_type
 from app.core.tool_validation.ranges import _validate_value_ranges
@@ -59,6 +60,7 @@ __all__ = [
     "_validate_value_ranges",
     "_validate_tool_specific",
     "_check_target_scope",
+    "resolve_tool_entities",
     # Main entrypoints
     "validate_tool_call",
     "validate_tool_call_simple",

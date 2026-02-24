@@ -163,8 +163,9 @@ async def test_apply_variation_phrases_empty_list(cleanup_stores):
         phrases=[],
     )
     project_state = {"projectId": "proj-1", "tracks": [], "regions": {}}
+    store = StateStore(conversation_id="conv-1")
     result = await apply_variation_phrases(
-        variation, [], project_state, conversation_id="conv-1"
+        variation, [], project_state, store=store
     )
     assert result.success is True
     assert result.applied_phrase_ids == []
@@ -186,8 +187,9 @@ async def test_apply_variation_phrases_invalid_phrase_ids_skipped(cleanup_stores
         phrases=[],
     )
     project_state = {"projectId": "proj-1", "tracks": [], "regions": {}}
+    store = StateStore()
     result = await apply_variation_phrases(
-        variation, ["phrase-unknown-1", "phrase-unknown-2"], project_state
+        variation, ["phrase-unknown-1", "phrase-unknown-2"], project_state, store=store
     )
     assert result.success is True
     assert result.applied_phrase_ids == []
