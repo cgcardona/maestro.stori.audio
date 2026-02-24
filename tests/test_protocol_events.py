@@ -40,8 +40,6 @@ from app.protocol.events import (
     PhraseEvent,
     NoteChangeSchema,
     DoneEvent,
-    PlanSummaryEvent,
-    ProgressEvent,
 )
 from app.protocol.registry import EVENT_REGISTRY, ALL_EVENT_TYPES
 from app.protocol.emitter import emit, serialize_event, ProtocolSerializationError
@@ -58,15 +56,23 @@ from app.protocol.schemas.project import ProjectSnapshot
 class TestProtocolVersion:
     def test_version_format(self):
         """Version string is semver."""
-        assert re.match(r"^\d+\.\d+\.\d+$", STORI_PROTOCOL_VERSION)
+        assert re.match(r"^\d+\.\d+\.\d+", STORI_PROTOCOL_VERSION)
+
+    def test_version_matches_pyproject(self):
+        """Protocol version reads from pyproject.toml — single source of truth."""
+        from app.protocol.version import STORI_VERSION
+        assert STORI_PROTOCOL_VERSION == STORI_VERSION
 
     def test_compatible_same_major(self):
-        assert is_compatible("1.0.0")
-        assert is_compatible("1.5.3")
+        from app.protocol.version import STORI_VERSION_MAJOR
+        assert is_compatible(f"{STORI_VERSION_MAJOR}.0.0")
+        assert is_compatible(f"{STORI_VERSION_MAJOR}.5.3")
 
     def test_incompatible_different_major(self):
-        assert not is_compatible("2.0.0")
-        assert not is_compatible("0.9.0")
+        from app.protocol.version import STORI_VERSION_MAJOR
+        assert not is_compatible(f"{STORI_VERSION_MAJOR + 1}.0.0")
+        if STORI_VERSION_MAJOR > 0:
+            assert not is_compatible(f"{STORI_VERSION_MAJOR - 1}.0.0")
 
     def test_incompatible_garbage(self):
         assert not is_compatible("abc")
@@ -814,8 +820,6 @@ def _make_minimal(model_class: type) -> Any:
         "done": {"variation_id": "v1", "phrase_count": 1},
         "mcp.message": {"payload": {"tool": "test"}},
         "mcp.ping": {},
-        "planSummary": {"total_steps": 3, "generations": 1, "edits": 2},
-        "progress": {"current_step": 1, "total_steps": 3, "message": "working"},
     }
     event_type_field = model_class.model_fields.get("type")
     if event_type_field and event_type_field.default:

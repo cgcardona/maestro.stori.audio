@@ -1684,7 +1684,6 @@ normal | low | critical | exhausted
 |---|-------|---------|
 | 5 | **`SSEComplete` model has `tool_calls` (snake_case)** | The actual `complete` event uses `toolCalls` (camelCase on wire). Model is `BaseModel` not `CamelModel`, so it would serialize as `tool_calls`. The actual events are built as raw dicts, bypassing the model entirely. |
 | 6 | **`SSEToolCall` model doesn't match actual events** | Model has `tool` and `params` fields. Actual `toolCall` events also have `id`, `label`, `phase`, `proposal`, `agentId`, `sectionName`. |
-| 7 | **Deprecated events still emitted** | `planSummary` and `progress` events appear in some code paths. Document deprecation timeline or remove. |
 
 ### 12.3 Ambiguities
 
@@ -1713,7 +1712,6 @@ normal | low | critical | exhausted
 5. **[P2]** Document WebSocket protocol for MCP DAW connection.
 6. **[P2]** Add OpenAPI schema snapshot test.
 7. **[P3]** Implement `requestId` dedup for variation propose.
-8. **[P3]** Remove deprecated `planSummary` and `progress` events.
 
 ---
 

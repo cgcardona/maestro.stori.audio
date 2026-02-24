@@ -15,6 +15,7 @@ from app.core.prompt_parser import ParsedPrompt
 from app.core.sse_utils import sse_event
 from app.core.state_store import StateStore
 from app.core.tracing import trace_span
+from app.core.maestro_editing.tool_execution import phase_for_tool
 from app.core.maestro_helpers import (
     UsageTracker,
     _context_usage_fields,
@@ -83,19 +84,14 @@ async def _handle_composing(
         if len(composing_plan_tracker.steps) >= 1:
             yield await sse_event(composing_plan_tracker.to_plan_event())
 
-        yield await sse_event({
-            "type": "planSummary",
-            "totalSteps": len(composing_plan_tracker.steps),
-            "generations": plan.generation_count,
-            "edits": plan.edit_count,
-        })
-
         # PROPOSAL PHASE
         for tc in plan.tool_calls:
             yield await sse_event({
                 "type": "toolCall",
                 "id": "",
                 "name": tc.name,
+                "label": _human_label_for_tool(tc.name, tc.params),
+                "phase": phase_for_tool(tc.name),
                 "params": tc.params,
                 "proposal": True,
             })
@@ -133,6 +129,7 @@ async def _handle_composing(
                         "type": "toolStart",
                         "name": tool_name,
                         "label": label,
+                        "phase": phase_for_tool(tool_name),
                     })
 
                 async def _on_post_tool(
@@ -148,25 +145,15 @@ async def _handle_composing(
                         return
                     call_id = str(_uuid_mod.uuid4())
                     emit_params = _enrich_params_with_track_context(resolved_params, store)
+                    label = _human_label_for_tool(tool_name, emit_params)
                     await _event_queue.put({
                         "type": "toolCall",
                         "id": call_id,
                         "name": tool_name,
+                        "label": label,
+                        "phase": phase_for_tool(tool_name),
                         "params": emit_params,
                         "proposal": False,
-                    })
-
-                async def _on_progress(
-                    current: int, total: int,
-                    tool_name: str = "", tool_args: dict | None = None,
-                ) -> None:
-                    label = _human_label_for_tool(tool_name, tool_args or {}) if tool_name else f"Step {current}"
-                    await _event_queue.put({
-                        "type": "progress",
-                        "currentStep": current,
-                        "totalSteps": total,
-                        "message": label,
-                        "toolName": tool_name,
                     })
 
                 _VARIATION_TIMEOUT = 300
@@ -177,7 +164,6 @@ async def _handle_composing(
                         intent=prompt,
                         conversation_id=conversation_id,
                         explanation=plan.llm_response_text,
-                        progress_callback=_on_progress,
                         pre_tool_callback=_on_pre_tool,
                         post_tool_callback=_on_post_tool,
                         quality_preset=quality_preset,

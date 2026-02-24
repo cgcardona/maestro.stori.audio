@@ -13,23 +13,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _app_version_from_package() -> str:
-    """Read version from pyproject.toml — the single source of truth."""
-    try:
-        from importlib.metadata import version
-        return version("maestro-stori")
-    except Exception:
-        pass
-    # Fallback: parse pyproject.toml directly (dev / non-installed mode)
-    try:
-        from pathlib import Path
-        import re
-        pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
-        match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(), re.MULTILINE)
-        if match:
-            return match.group(1)
-    except Exception:
-        pass
-    return "0.0.0-unknown"
+    """Read version from the single source of truth (pyproject.toml via protocol.version)."""
+    from app.protocol.version import STORI_VERSION
+    return STORI_VERSION
 
 
 # Models shown in the Stori Maestro model picker.

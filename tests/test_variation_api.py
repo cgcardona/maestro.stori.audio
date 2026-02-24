@@ -254,47 +254,24 @@ class TestCommitVariation:
     """Tests for POST /variation/commit endpoint."""
     
     @pytest.mark.asyncio
-    async def test_commit_variation_success(
+    async def test_commit_variation_not_found(
         self,
         variation_client,
         mock_project_id,
         mock_state_id,
         sample_variation,
     ):
-        """Test successful variation commit (backward compat with variation_data)."""
-        with patch("app.api.routes.variation.commit.get_or_create_store") as mock_store, \
-             patch("app.api.routes.variation.commit.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation.commit.apply_variation_phrases", new_callable=AsyncMock) as mock_apply:
-
-            # VariationStore returns None → falls back to variation_data path
+        """When variation is not in store, commit returns 404."""
+        with patch("app.api.routes.variation.commit.get_variation_store") as mock_vstore:
             mock_vstore_instance = MagicMock()
             mock_vstore_instance.get.return_value = None
             mock_vstore.return_value = mock_vstore_instance
 
-            # Setup mocks
-            mock_store_instance = MagicMock()
-            mock_store_instance.check_state_id.return_value = True
-            mock_store_instance.get_state_id.return_value = "43"
-            mock_store.return_value = mock_store_instance
-
-            # Mock apply result
-            from app.core.executor import VariationApplyResult
-            mock_apply.return_value = VariationApplyResult(
-                success=True,
-                applied_phrase_ids=["phrase-1"],
-                notes_added=1,
-                notes_removed=0,
-                notes_modified=1,
-            )
-
-            # Make request
             request_data = {
                 "project_id": mock_project_id,
                 "base_state_id": mock_state_id,
                 "variation_id": sample_variation.variation_id,
                 "accepted_phrase_ids": ["phrase-1"],
-                "request_id": None,
-                "variation_data": sample_variation.model_dump(),
             }
 
             response = await variation_client.post(
@@ -302,126 +279,9 @@ class TestCommitVariation:
                 json=request_data,
             )
 
-            assert response.status_code == 200
+            assert response.status_code == 404
             data = response.json()
-
-            assert data["projectId"] == mock_project_id
-            assert data["newStateId"] == "43"
-            assert data["appliedPhraseIds"] == ["phrase-1"]
-            assert "Accept Variation" in data["undoLabel"]
-            assert "updatedRegions" in data
-    
-    @pytest.mark.asyncio
-    async def test_commit_variation_state_conflict(
-        self,
-        variation_client,
-        mock_project_id,
-        sample_variation,
-    ):
-        """Test commit with state conflict (backward compat path)."""
-        with \
-             patch("app.api.routes.variation.commit.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation.commit.get_or_create_store") as mock_store:
-
-            mock_vstore_instance = MagicMock()
-            mock_vstore_instance.get.return_value = None
-            mock_vstore.return_value = mock_vstore_instance
-
-            mock_store_instance = MagicMock()
-            mock_store_instance.check_state_id.return_value = False
-            mock_store_instance.get_state_id.return_value = "100"
-            mock_store.return_value = mock_store_instance
-
-            request_data = {
-                "project_id": mock_project_id,
-                "base_state_id": "42",
-                "variation_id": sample_variation.variation_id,
-                "accepted_phrase_ids": ["phrase-1"],
-                "variation_data": sample_variation.model_dump(),
-            }
-
-            response = await variation_client.post(
-                "/api/v1/variation/commit",
-                json=request_data,
-            )
-
-            assert response.status_code == 409
-            data = response.json()
-            assert "State conflict" in data["detail"]["error"]
-    
-    @pytest.mark.asyncio
-    async def test_commit_variation_id_mismatch(
-        self,
-        variation_client,
-        mock_project_id,
-        mock_state_id,
-        sample_variation,
-    ):
-        """Test commit with variation ID mismatch (backward compat path)."""
-        with patch("app.api.routes.variation.commit.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation.commit.get_or_create_store") as mock_store:
-
-            mock_vstore_instance = MagicMock()
-            mock_vstore_instance.get.return_value = None
-            mock_vstore.return_value = mock_vstore_instance
-
-            mock_store_instance = MagicMock()
-            mock_store_instance.check_state_id.return_value = True
-            mock_store.return_value = mock_store_instance
-
-            request_data = {
-                "project_id": mock_project_id,
-                "base_state_id": mock_state_id,
-                "variation_id": "wrong-var-id",
-                "accepted_phrase_ids": ["phrase-1"],
-                "variation_data": sample_variation.model_dump(),
-            }
-
-            response = await variation_client.post(
-                "/api/v1/variation/commit",
-                json=request_data,
-            )
-
-            assert response.status_code == 400
-            data = response.json()
-            assert "Variation ID mismatch" in data["detail"]["error"]
-    
-    @pytest.mark.asyncio
-    async def test_commit_variation_invalid_phrase_ids(
-        self,
-        variation_client,
-        mock_project_id,
-        mock_state_id,
-        sample_variation,
-    ):
-        """Test commit with invalid phrase IDs (backward compat path)."""
-        with patch("app.api.routes.variation.commit.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation.commit.get_or_create_store") as mock_store:
-
-            mock_vstore_instance = MagicMock()
-            mock_vstore_instance.get.return_value = None
-            mock_vstore.return_value = mock_vstore_instance
-
-            mock_store_instance = MagicMock()
-            mock_store_instance.check_state_id.return_value = True
-            mock_store.return_value = mock_store_instance
-
-            request_data = {
-                "project_id": mock_project_id,
-                "base_state_id": mock_state_id,
-                "variation_id": sample_variation.variation_id,
-                "accepted_phrase_ids": ["nonexistent-phrase"],
-                "variation_data": sample_variation.model_dump(),
-            }
-
-            response = await variation_client.post(
-                "/api/v1/variation/commit",
-                json=request_data,
-            )
-
-            assert response.status_code == 400
-            data = response.json()
-            assert "Invalid phrase IDs" in data["detail"]["error"]
+            assert "Variation not found" in data["detail"]["error"]
 
 
 # =============================================================================

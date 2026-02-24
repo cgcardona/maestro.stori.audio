@@ -2,8 +2,7 @@
 In-Memory Variation Store (v1).
 
 Stores VariationRecord and PhraseRecord objects for the lifecycle
-of a variation proposal. This replaces the stateless approach where
-the client had to send variation_data back on commit.
+of a variation proposal.
 
 For v1, this is in-memory (dict-based). For production, swap with
 Redis or PostgreSQL backend behind the same interface.

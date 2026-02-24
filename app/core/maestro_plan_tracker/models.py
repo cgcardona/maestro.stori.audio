@@ -18,7 +18,7 @@ class _PlanStep:
     tool_name: Optional[str] = None  # canonical tool name for frontend icon/color rendering
     tool_indices: list[int] = field(default_factory=list)
     parallel_group: Optional[str] = None  # steps sharing a group run concurrently
-    phase: Optional[str] = None  # setup | composition | soundDesign | mixing
+    phase: str = "composition"  # setup | composition | arrangement | soundDesign | expression | mixing
 
 
 @dataclass

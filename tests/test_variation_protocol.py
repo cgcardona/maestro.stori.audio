@@ -12,7 +12,7 @@ invariants from the canonical v1 spec:
 6. Discard during STREAMING cancels generation
 7. SSE stream emits meta → phrases → done with strict sequencing
 8. Done payload includes status (ready|failed|discarded)
-9. variation_data no longer required on commit (loaded from store)
+9. Commit loads variation from store (no client-side data needed)
 """
 
 import asyncio

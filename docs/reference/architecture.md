@@ -32,7 +32,7 @@ The backend owns the execution mode decision.
 
 | Intent state | Execution mode | Key SSE events | Frontend behavior |
 |---|---|---|---|
-| COMPOSING | `variation` | `state`, `planSummary`, `progress`, `meta`, `phrase*`, `done`, `complete` | Variation Review Mode (accept/discard) |
+| COMPOSING | `variation` | `state`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `meta`, `phrase*`, `done`, `complete` | Variation Review Mode (accept/discard) |
 | EDITING | `apply` | `state`, `reasoning`, `plan`, `planStepUpdate`, `toolStart`, `toolCall*`, `budgetUpdate`, `complete` | Apply tool calls directly |
 | REASONING | n/a | `state`, `reasoning`, `content`, `complete` | Show chat response |
 

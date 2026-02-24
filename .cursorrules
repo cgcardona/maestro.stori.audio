@@ -10,6 +10,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 - **Client:** The Stori DAW is a **macOS app** (Swift/SwiftUI, AppKit). It is NOT an iOS app. Never say "iOS app" — always say "macOS app" or "the app".
 - **Entry points:** (1) **Stream first:** `POST /api/v1/maestro/stream` (human in the macOS app). (2) **MCP:** tools exposed to Cursor/Claude; same engine, same DAW instance. Human stays in the loop.
 - **Stack:** Python 3.11+, FastAPI, Pydantic v2, async throughout. Orpheus is **required** for music generation (no pattern fallback). Config: `app/config.py`; env vars prefixed `STORI_*`.
+- **Versioning:** One semver version in `pyproject.toml` — the single source of truth. `app/protocol/version.py` reads it; everything else (`config.py`, `main.py`, MCP server, health endpoint, SSE `protocolVersion` field) derives from there. When bumping, only edit `pyproject.toml`.
 - **Supported models (exactly two, no others):** `anthropic/claude-sonnet-4.6` and `anthropic/claude-opus-4.6` via OpenRouter. Do not add support for any other provider, model family, or version. Update both `ALLOWED_MODEL_IDS` and `CONTEXT_WINDOW_TOKENS` in `app/config.py` together when a new Claude generation ships.
 
 ---
@@ -20,6 +21,7 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 - **Orpheus required:** If Orpheus is down, generation fails with a clear error. Do not reintroduce pattern fallback or optional Orpheus.
 - **Single engine:** Stream and MCP use the same pipeline, tools, and (when connected) DAW state. Keep route handlers thin; core logic in `app/core/` and `app/services/`.
 - **Entity resolution:** Server resolves variable refs (e.g. `$0.trackId`) and validates entity IDs; never trust client-provided IDs for security.
+- **No deprecated/legacy/fallback APIs:** Never introduce deprecated, backward-compatible, or fallback API paths, event types, or optional fields "for transition." The same person controls the frontend and backend — both ship in lockstep. Every API surface should be modern and pristine. If a field is needed, make it required. If an event type is superseded, delete the old one immediately. If you encounter dead code, fallback paths, or deprecated patterns while working, remove them proactively — treat them like lint. Only add backward compat if explicitly requested.
 
 ---
 

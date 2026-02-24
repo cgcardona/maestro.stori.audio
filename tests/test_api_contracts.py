@@ -194,7 +194,6 @@ class TestVariationRequireAuth:
                 "base_state_id": "s1",
                 "variation_id": "v1",
                 "accepted_phrase_ids": [],
-                "variation_data": {"meta": {}, "phrases": []},
             },
         )
         assert response.status_code == 401

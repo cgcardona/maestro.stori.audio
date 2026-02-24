@@ -141,7 +141,7 @@ class PlanStepSchema(CamelModel):
     tool_name: Optional[str] = None
     detail: Optional[str] = None
     parallel_group: Optional[str] = None
-    phase: Optional[str] = None
+    phase: str = "composition"
 
 
 class PlanEvent(StoriEvent):
@@ -159,7 +159,7 @@ class PlanStepUpdateEvent(StoriEvent):
     type: Literal["planStepUpdate"] = "planStepUpdate"
     step_id: str
     status: Literal["active", "completed", "failed", "skipped"]
-    phase: Optional[str] = None
+    phase: str = "composition"
     result: Optional[str] = None
     agent_id: Optional[str] = None
 
@@ -175,7 +175,7 @@ class ToolStartEvent(StoriEvent):
     type: Literal["toolStart"] = "toolStart"
     name: str
     label: str
-    phase: Optional[str] = None
+    phase: str = "composition"
     agent_id: Optional[str] = None
     section_name: Optional[str] = None
 
@@ -188,7 +188,7 @@ class ToolCallEvent(StoriEvent):
     name: str
     params: dict[str, Any]
     label: Optional[str] = None
-    phase: Optional[str] = None
+    phase: str = "composition"
     proposal: Optional[bool] = None
     agent_id: Optional[str] = None
     section_name: Optional[str] = None
@@ -377,25 +377,3 @@ class MCPPingEvent(StoriEvent):
     type: Literal["mcp.ping"] = "mcp.ping"
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# Legacy composing events (still emitted by _handle_composing)
-# ═══════════════════════════════════════════════════════════════════════
-
-
-class PlanSummaryEvent(StoriEvent):
-    """Composing-mode plan overview. Superseded by PlanEvent in Agent Teams."""
-
-    type: Literal["planSummary"] = "planSummary"
-    total_steps: int
-    generations: int
-    edits: int
-
-
-class ProgressEvent(StoriEvent):
-    """Composing-mode step progress. Superseded by PlanStepUpdateEvent in Agent Teams."""
-
-    type: Literal["progress"] = "progress"
-    current_step: int
-    total_steps: int
-    message: str
-    tool_name: Optional[str] = None

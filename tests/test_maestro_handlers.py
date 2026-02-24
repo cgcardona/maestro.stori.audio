@@ -589,7 +589,7 @@ class TestOrchestrateStream:
 
     @pytest.mark.anyio
     async def test_composing_with_non_empty_plan_apply_mode(self):
-        """When COMPOSING on a non-empty project and pipeline returns a plan with tool_calls, we stream plan + planSummary then complete."""
+        """When COMPOSING on a non-empty project and pipeline returns a plan with tool_calls, we stream plan then complete."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
 
@@ -626,12 +626,8 @@ class TestOrchestrateStream:
                     types = [p.get("type") for p in payloads]
                     assert "state" in types
                     assert "plan" in types
-                    assert "planSummary" in types
                     assert "complete" in types
-                    plan_summary = next(p for p in payloads if p.get("type") == "planSummary")
-                    # totalSteps uses plan tracker step count which includes
-                    # anticipatory steps for tracks needing content
-                    assert plan_summary.get("totalSteps") >= 1
+                    assert "planSummary" not in types
 
     @pytest.mark.anyio
     async def test_composing_empty_plan_with_stori_in_response_fallback_to_editing(self):
@@ -857,7 +853,7 @@ class TestComposingUnifiedSSE:
 
     @pytest.mark.anyio
     async def test_composing_emits_plan_event(self):
-        """Phase 2: COMPOSING path emits a 'plan' event alongside deprecated 'planSummary'."""
+        """COMPOSING path emits a 'plan' event with steps."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
 
@@ -901,8 +897,7 @@ class TestComposingUnifiedSSE:
                     plan_ev = next(p for p in payloads if p["type"] == "plan")
                     assert "steps" in plan_ev
                     assert len(plan_ev["steps"]) >= 1
-
-                    assert "planSummary" in types, "Deprecated planSummary should still be emitted"
+                    assert "planSummary" not in types
 
     @pytest.mark.anyio
     async def test_composing_emits_proposal_tool_calls(self):

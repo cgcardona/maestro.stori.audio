@@ -52,7 +52,7 @@ Emitted when `state.state == "editing"`. Applied immediately by the frontend.
 |------|-------------|
 | `plan` | Structured plan emitted once after initial reasoning, before the first tool call. Steps are ordered per-track (contiguous) so each instrument's steps appear together. Labels follow canonical patterns for frontend timeline grouping. `toolName` is present when the step maps to a specific tool, omitted otherwise. Instrument steps carry `parallelGroup: "instruments"` — steps sharing the same `parallelGroup` value execute concurrently (see [Parallel execution](#parallel-execution) below). `{ "type": "plan", "planId": "uuid", "title": "Building Lo-Fi Groove", "steps": [{ "stepId": "1", "label": "Set tempo to 72 BPM", "toolName": "stori_set_tempo", "status": "pending" }, { "stepId": "2", "label": "Set key signature to Cm", "toolName": "stori_set_key", "status": "pending" }, { "stepId": "3", "label": "Create Drums track", "toolName": "stori_add_midi_track", "parallelGroup": "instruments", "status": "pending" }, { "stepId": "4", "label": "Add content to Drums", "toolName": "stori_add_notes", "parallelGroup": "instruments", "detail": "8 bars, boom bap drums", "status": "pending" }, { "stepId": "5", "label": "Add effects to Drums", "toolName": "stori_add_insert_effect", "parallelGroup": "instruments", "detail": "Compressor", "status": "pending" }, ...] }`. See [Execution Timeline contract](#execution-timeline-contract) below. |
 | `preflight` | Emitted before Phase 2 agents start (Agent Teams only). One per expected instrument step, derived from the plan — no LLM call. Lets the frontend pre-allocate timeline rows. Includes `trackColor` (hex) from the curated 12-color composition palette. `{ "type": "preflight", "stepId": "3", "agentId": "drums", "agentRole": "drums", "label": "Create Drums track", "toolName": "stori_add_midi_track", "parallelGroup": "instruments", "confidence": 0.9, "trackColor": "#E85D75" }` |
-| `planStepUpdate` | Step lifecycle update. `active` when starting, `completed` / `failed` when done. At plan completion, steps never activated are emitted as `skipped` — no step is left in `pending`. Includes `phase` when the step maps to a tool. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "failed" \| "skipped", "phase": "setup", "result": "optional summary" }` |
+| `planStepUpdate` | Step lifecycle update. `active` when starting, `completed` / `failed` when done. At plan completion, steps never activated are emitted as `skipped` — no step is left in `pending`. Always includes `phase`. `{ "type": "planStepUpdate", "stepId": "1", "status": "active" \| "completed" \| "failed" \| "skipped", "phase": "setup", "result": "optional summary" }` |
 | `toolStart` | Fires **before** each `toolCall` with a human-readable label and composition phase. `{ "type": "toolStart", "name": "stori_add_midi_track", "label": "Create Drums track", "phase": "composition" }` |
 | `toolCall` | Resolved tool call for the frontend to apply. In Agent Teams mode, includes `agentId` identifying which instrument agent produced it. Includes `label` (matching the preceding `toolStart`) and `phase`. `{ "type": "toolCall", "id": "...", "name": "stori_add_midi_track", "label": "Create Drums track", "phase": "composition", "params": { "trackId": "uuid", ... }, "agentId": "drums" }`. **Critical: key is `"params"` (not `"arguments"`); key is `"name"` (not `"tool"`). All IDs are fully-resolved UUIDs.** |
 | `toolError` | Non-fatal validation error. Stream continues. `{ "type": "toolError", "name": "stori_add_notes", "error": "Region not found", "errors": ["..."] }` |
@@ -77,13 +77,6 @@ COMPOSING now emits the same `reasoning`, `plan`, `planStepUpdate`, `toolStart`,
 | `phrase` | One musical phrase. `{ "type": "phrase", "phraseId": "uuid", "trackId": "uuid", "regionId": "uuid", "startBeat": 0.0, "endBeat": 16.0, "label": "...", "tags": [...], "explanation": "...", "noteChanges": [...], "controllerChanges": [] }` |
 | `done` | End of variation stream. Frontend enables Accept/Discard. `{ "type": "done", "variationId": "uuid", "phraseCount": 4 }` |
 | `complete` | Stream done. `{ "type": "complete", "success": true, "variationId": "uuid", "phraseCount": 4, "traceId": "..." }`. Includes `inputTokens` and `contextWindowTokens` (see global `complete` row above). |
-
-#### Deprecated events (backward compat, will be removed)
-
-| type | Description |
-|------|-------------|
-| `planSummary` | Replaced by `plan`. Still emitted alongside `plan` during transition. `{ "type": "planSummary", "totalSteps": 6, "generations": 2, "edits": 4 }` |
-| `progress` | Replaced by `planStepUpdate` + `toolStart`/`toolCall`. Still emitted during transition. `{ "type": "progress", "currentStep": 3, "totalSteps": 6, "message": "..." }` |
 
 #### `proposal` field on `toolCall`
 
@@ -128,8 +121,6 @@ Steps are grouped per-track (contiguous) in the `plan` event. During execution, 
 state → reasoning* → plan → [planStepUpdate(active) → toolStart → toolCall(proposal:true) → planStepUpdate(completed)]* → planStepUpdate(skipped)* → meta → phrase* → done → complete
 ```
 
-Deprecated aliases `planSummary` and `progress` are still emitted alongside the new events during the transition period.
-
 **REASONING:**
 ```
 state → reasoning* → content → complete
@@ -167,8 +158,6 @@ Phase 3 (sequential — one coordinator LLM call after barrier):
 
 **Failure isolation:** If one instrument agent's LLM call fails, that agent emits `planStepUpdate(status: "failed")` for its own steps and exits. Sibling agents continue unaffected. A `complete` event is always emitted at the end regardless of per-agent failures.
 
-**Backward compatibility:** Single-instrument requests and all non-STORI-PROMPT requests produce no `parallelGroup` annotations and execute sequentially via `_handle_editing` as before.
-
 ### Execution Timeline contract
 
 The `plan` event and subsequent `planStepUpdate` events are designed to power the frontend's `ExecutionTimelineView`, which renders a hierarchical, per-instrument progress timeline. The frontend groups and humanises steps client-side by parsing the `label` field. The backend guarantees the following contract:
@@ -183,7 +172,7 @@ The `plan` event and subsequent `planStepUpdate` events are designed to power th
 | `parallelGroup` | string | no | Steps sharing the same value execute concurrently. Currently `"instruments"` for track-bound steps. Absent on sequential setup/mixing steps. See [Parallel execution](#parallel-execution). |
 | `status` | string | yes | One of `"pending"`, `"active"`, `"completed"`, `"skipped"`, `"failed"` |
 | `detail` | string | no | Short, forward-looking description from a musician's perspective (e.g. "8 bars of funk bass") |
-| `phase` | string | no | DAW workflow phase derived from the tool (see [Composition phases](#composition-phases)). Present on `toolStart`, `toolCall`, `plan` step entries, and `planStepUpdate` when the step maps to a tool. Values: `"setup"`, `"composition"`, `"arrangement"`, `"soundDesign"`, `"expression"`, `"mixing"`. |
+| `phase` | string | yes | DAW workflow phase (see [Composition phases](#composition-phases)). Always present on `toolStart`, `toolCall`, `plan` step entries, and `planStepUpdate`. Values: `"setup"`, `"composition"`, `"arrangement"`, `"soundDesign"`, `"expression"`, `"mixing"`. Default: `"composition"`. |
 | `result` | string | no | Populated in `planStepUpdate` on completion. Backward-looking outcome (e.g. "32 notes generated - 4 bars") |
 
 **Canonical label patterns** (used by the frontend for section grouping):

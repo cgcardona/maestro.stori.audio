@@ -1,7 +1,7 @@
 """Deep variation API tests covering store-based commit/discard, streaming, and generation.
 
 Supplements test_variation_api.py with deeper coverage of:
-- Store-based commit (not backward compat variation_data path)
+- Store-based commit
 - Discard with cancellation
 - Variation polling endpoint
 - Generation background task lifecycle
@@ -207,8 +207,8 @@ class TestCommitVariationStoreBased:
         assert resp.status_code == 409
 
     @pytest.mark.anyio
-    async def test_commit_not_found_returns_fallback(self, var_client):
-        """When variation not in store and no variation_data, returns 400."""
+    async def test_commit_not_found_returns_404(self, var_client):
+        """When variation not in store, returns 404."""
         with patch("app.api.routes.variation.commit.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = None
 
@@ -219,8 +219,7 @@ class TestCommitVariationStoreBased:
                 "accepted_phrase_ids": ["p1"],
             })
 
-        # No variation_data provided, store returns None
-        assert resp.status_code in (400, 404)
+        assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------

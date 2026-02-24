@@ -35,8 +35,6 @@ from app.protocol.events import (
     DoneEvent,
     MCPMessageEvent,
     MCPPingEvent,
-    PlanSummaryEvent,
-    ProgressEvent,
 )
 
 EVENT_REGISTRY: dict[str, Type[StoriEvent]] = {
@@ -63,9 +61,6 @@ EVENT_REGISTRY: dict[str, Type[StoriEvent]] = {
     "done": DoneEvent,
     "mcp.message": MCPMessageEvent,
     "mcp.ping": MCPPingEvent,
-    # Deprecated (protocol 1.x compat)
-    "planSummary": PlanSummaryEvent,
-    "progress": ProgressEvent,
 }
 
 ALL_EVENT_TYPES: frozenset[str] = frozenset(EVENT_REGISTRY.keys())

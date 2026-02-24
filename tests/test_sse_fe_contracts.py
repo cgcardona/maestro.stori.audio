@@ -101,22 +101,6 @@ class TestPlanStepUpdateContract:
         assert payload["status"] in ("pending", "active", "completed", "failed", "skipped")
 
 
-class TestPlanSummaryContract:
-    """planSummary: totalSteps (required)."""
-
-    @pytest.mark.anyio
-    async def test_total_steps_required(self):
-        event = await sse_event({
-            "type": "planSummary",
-            "totalSteps": 5,
-            "generations": 3,
-            "edits": 2,
-        })
-        payload = _parse_sse(event)
-        assert "totalSteps" in payload
-        assert isinstance(payload["totalSteps"], int)
-
-
 class TestToolCallEventContract:
     """toolCall: name, params (both required)."""
 

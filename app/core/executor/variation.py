@@ -290,7 +290,6 @@ async def execute_plan_variation(
     intent: str,
     conversation_id: Optional[str] = None,
     explanation: Optional[str] = None,
-    progress_callback: Optional[Callable[..., Awaitable[None]]] = None,
     quality_preset: Optional[str] = None,
     tool_event_callback: Optional[Callable[..., Awaitable[None]]] = None,
     pre_tool_callback: Optional[Callable[..., Awaitable[None]]] = None,
@@ -362,8 +361,6 @@ async def execute_plan_variation(
             if post_tool_callback:
                 await post_tool_callback(call.name, resolved_params)
             completed_count[0] += 1
-            if progress_callback:
-                await progress_callback(completed_count[0], total, call.name, call.params)
 
         # Phase 1: project-level setup (sequential)
         for call in phase1:

@@ -49,7 +49,7 @@ async def commit_variation(
     """
     Commit accepted phrases from a variation (loads from VariationStore).
 
-    1. Load variation from store (no client-provided variation_data needed)
+    1. Load variation from store
     2. Validate status == READY
     3. Validate base_state_id matches
     4. Apply accepted phrases in sequence order (adds + removals)
@@ -67,8 +67,6 @@ async def commit_variation(
             record = vstore.get(commit_request.variation_id)
 
             if record is None:
-                if commit_request.variation_data:
-                    return await _commit_from_variation_data(commit_request, trace)
                 raise HTTPException(status_code=404, detail={
                     "error": "Variation not found",
                     "variationId": commit_request.variation_id,
@@ -226,68 +224,6 @@ async def commit_variation(
         })
     finally:
         clear_trace_context()
-
-
-async def _commit_from_variation_data(
-    commit_request: CommitVariationRequest,
-    trace,
-) -> CommitVariationResponse:
-    """Backward-compatible commit path when variation is not in store."""
-    project_store = get_or_create_store(
-        conversation_id=commit_request.project_id,
-        project_id=commit_request.project_id,
-    )
-
-    if not project_store.check_state_id(commit_request.base_state_id):
-        raise HTTPException(status_code=409, detail={
-            "error": "State conflict",
-            "message": (
-                f"Project state has changed. "
-                f"Expected={commit_request.base_state_id}, "
-                f"current={project_store.get_state_id()}"
-            ),
-            "currentStateId": project_store.get_state_id(),
-        })
-
-    try:
-        variation = Variation.model_validate(commit_request.variation_data)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail={
-            "error": "Invalid variation_data",
-            "message": str(e),
-        })
-
-    if variation.variation_id != commit_request.variation_id:
-        raise HTTPException(status_code=400, detail={"error": "Variation ID mismatch"})
-
-    available = {p.phrase_id for p in variation.phrases}
-    invalid = [pid for pid in commit_request.accepted_phrase_ids if pid not in available]
-    if invalid:
-        raise HTTPException(status_code=400, detail={
-            "error": "Invalid phrase IDs",
-            "message": f"Not found: {invalid[:3]}",
-        })
-
-    result = await apply_variation_phrases(
-        variation=variation,
-        accepted_phrase_ids=commit_request.accepted_phrase_ids,
-        project_state={},
-        conversation_id=commit_request.project_id,
-    )
-
-    if not result.success:
-        raise HTTPException(status_code=500, detail={
-            "error": "Application failed",
-            "message": result.error or "Unknown error",
-        })
-
-    return CommitVariationResponse(
-        project_id=commit_request.project_id,
-        new_state_id=project_store.get_state_id(),
-        applied_phrase_ids=result.applied_phrase_ids,
-        undo_label=f"Accept Variation: {variation.intent[:50]}",
-        updated_regions=result.updated_regions,
-    )
 
 
 def _record_to_variation(record: VariationRecord) -> Variation:

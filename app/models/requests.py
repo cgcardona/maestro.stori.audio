@@ -180,10 +180,6 @@ class CommitVariationRequest(CamelModel):
         default=None,
         description="Idempotency key for the request"
     )
-    variation_data: Optional[dict[str, Any]] = Field(
-        default=None,
-        description="Full variation data (fallback for clients without VariationStore)",
-    )
 
 
 class DiscardVariationRequest(CamelModel):

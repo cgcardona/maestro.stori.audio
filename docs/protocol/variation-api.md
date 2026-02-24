@@ -105,7 +105,7 @@ Real-time SSE stream of variation events. Supports late-join replay via `from_se
 
 ### Wire Format (Stori Protocol)
 
-All variation SSE events use the unified Stori Protocol wire format (`data: {json}\n\n`). The legacy `EventEnvelope` wrapper (with nested `payload`, `sequence`, `timestamp_ms`) has been replaced by flat Stori Protocol event models validated through `serialize_event()`. Keys are camelCase.
+All variation SSE events use the Stori Protocol wire format (`data: {json}\n\n`). Events are flat JSON objects validated through `serialize_event()`. Keys are camelCase.
 
 ### Event: `meta` (always first)
 
@@ -120,7 +120,7 @@ All variation SSE events use the unified Stori Protocol wire format (`data: {jso
   "affectedRegions": ["region-bass-1"],
   "noteCounts": { "added": 12, "removed": 0, "modified": 3 },
   "seq": 0,
-  "protocolVersion": "1.0.0"
+  "protocolVersion": "0.1.4"
 }
 ```
 
@@ -173,7 +173,7 @@ Phrase bounds use absolute project positions so the frontend can render overlays
   "phraseCount": 3,
   "status": "ready",
   "seq": 4,
-  "protocolVersion": "1.0.0"
+  "protocolVersion": "0.1.4"
 }
 ```
 
@@ -187,7 +187,7 @@ Status values: `ready`, `failed`, `discarded`.
   "message": "Generation failed: timeout",
   "code": "GENERATION_ERROR",
   "seq": 3,
-  "protocolVersion": "1.0.0"
+  "protocolVersion": "0.1.4"
 }
 ```
 
@@ -196,7 +196,7 @@ Status values: `ready`, `failed`, `discarded`.
 The variation stream emits `mcp.ping` events as keepalive heartbeats:
 
 ```
-data: {"type":"mcp.ping","seq":-1,"protocolVersion":"1.0.0"}
+data: {"type":"mcp.ping","seq":-1,"protocolVersion":"0.1.4"}
 ```
 
 ### Sequence Ordering Rules
@@ -263,7 +263,7 @@ Poll variation status and phrases. Used for reconnect or non-streaming clients.
 
 ## 4. POST /variation/commit
 
-Apply accepted phrases to canonical state. Loads variation from backend store (no client-provided `variation_data` required).
+Apply accepted phrases to canonical state. Loads variation from backend store.
 
 ### Request
 
@@ -282,7 +282,6 @@ Apply accepted phrases to canonical state. Loads variation from backend store (n
 | `base_state_id` | string | yes | Must match current project version |
 | `variation_id` | string | yes | Variation to commit |
 | `accepted_phrase_ids` | string[] | yes | Phrase IDs to apply (subset selection) |
-| `variation_data` | object | no | **Deprecated.** Backward compat only |
 | `request_id` | string | no | Idempotency key |
 
 ### Response (200)
@@ -343,8 +342,8 @@ When `start_beat`/`duration_beats`/`name` are absent, the region already exists 
 
 | Code | Condition |
 |------|-----------|
-| 400 | Invalid phrase IDs, invalid variation_data |
-| 404 | Variation not found (and no variation_data provided) |
+| 400 | Invalid phrase IDs |
+| 404 | Variation not found in store |
 | 409 | `base_state_id` mismatch |
 | 409 | Variation not in READY state |
 | 409 | Variation already committed (double commit) |

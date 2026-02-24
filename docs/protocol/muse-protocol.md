@@ -150,7 +150,7 @@ Tool names use **snake_case** (MCP convention). Parameters use **camelCase**.
 
 All SSE event data uses **camelCase** for both type values and payload keys.
 
-Event type values: `state`, `status`, `content`, `reasoning`, `planSummary`, `progress`, `meta`, `phrase`, `done`, `complete`, `toolCall`, `toolError`, `budgetUpdate`, `error`.
+Event type values: `state`, `status`, `content`, `reasoning`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `toolError`, `meta`, `phrase`, `done`, `complete`, `budgetUpdate`, `error`.
 
 ``` json
 {

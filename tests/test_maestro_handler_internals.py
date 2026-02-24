@@ -1140,7 +1140,7 @@ class TestPlanTracker:
             _PlanStep(step_id="2", label="Track"),
         ]
         evt = tracker.activate_step("1")
-        assert evt == {"type": "planStepUpdate", "stepId": "1", "status": "active"}
+        assert evt == {"type": "planStepUpdate", "stepId": "1", "status": "active", "phase": "composition"}
         assert tracker._active_step_id == "1"
         assert tracker.steps[0].status == "active"
 

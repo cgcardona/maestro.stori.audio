@@ -549,7 +549,7 @@ Score view diff + controller diffs can come after the demo.
 - [x] Background generation task (async propose via `asyncio.create_task`)
 - [x] Discard cancels in-flight generation
 - [x] `stream_router.py` — single publish entry point (WS-ready)
-- [x] `variation_data` deprecated on commit (loaded from store)
+- [x] Commit loads variation from store
 
 **Execution Mode Policy (New):**
 - [x] Backend forces `execution_mode="variation"` for all COMPOSING intents

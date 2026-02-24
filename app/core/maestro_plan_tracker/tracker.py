@@ -389,7 +389,7 @@ class _PlanTracker:
 
         from app.core.maestro_editing.tool_execution import phase_for_tool
         for step in steps:
-            if step.tool_name and not step.phase:
+            if step.tool_name:
                 step.phase = phase_for_tool(step.tool_name)
 
         return steps
@@ -611,7 +611,7 @@ class _PlanTracker:
 
         from app.core.maestro_editing.tool_execution import phase_for_tool
         for step in self.steps:
-            if step.tool_name and not step.phase:
+            if step.tool_name:
                 step.phase = phase_for_tool(step.tool_name)
 
     def _add_anticipatory_steps(self, store: Any) -> None:
@@ -631,8 +631,7 @@ class _PlanTracker:
                     step_id=str(self._next_id),
                     label=f"Add content to {track.name}",
                     track_name=track.name,
-                    tool_name="stori_add_midi_track",
-                    phase="composition",
+                    tool_name="stori_add_notes",
                 ))
                 self._next_id += 1
 
@@ -648,10 +647,10 @@ class _PlanTracker:
                     "stepId": s.step_id,
                     "label": s.label,
                     "status": "pending",
+                    "phase": s.phase,
                     **({"toolName": s.tool_name} if s.tool_name else {}),
                     **({"detail": s.detail} if s.detail else {}),
                     **({"parallelGroup": s.parallel_group} if s.parallel_group else {}),
-                    **({"phase": s.phase} if s.phase else {}),
                 }
                 for s in self.steps
             ],
@@ -785,10 +784,12 @@ class _PlanTracker:
             step.status = "active"
         self._active_step_id = step_id
         self._active_step_ids.add(step_id)
-        d: dict[str, Any] = {"type": "planStepUpdate", "stepId": step_id, "status": "active"}
-        if step and step.tool_name:
-            from app.core.maestro_editing.tool_execution import phase_for_tool
-            d["phase"] = phase_for_tool(step.tool_name)
+        d: dict[str, Any] = {
+            "type": "planStepUpdate",
+            "stepId": step_id,
+            "status": "active",
+            "phase": step.phase if step else "composition",
+        }
         return d
 
     def complete_active_step(self) -> Optional[dict[str, Any]]:
@@ -805,12 +806,10 @@ class _PlanTracker:
             "type": "planStepUpdate",
             "stepId": step.step_id,
             "status": "completed",
+            "phase": step.phase,
         }
         if step.result:
             d["result"] = step.result
-        if step.tool_name:
-            from app.core.maestro_editing.tool_execution import phase_for_tool
-            d["phase"] = phase_for_tool(step.tool_name)
         return d
 
     def complete_step_by_id(
@@ -828,18 +827,14 @@ class _PlanTracker:
             "type": "planStepUpdate",
             "stepId": step_id,
             "status": "completed",
+            "phase": step.phase if step else "composition",
         }
         if result:
             d["result"] = result
-        if step and step.tool_name:
-            from app.core.maestro_editing.tool_execution import phase_for_tool
-            d["phase"] = phase_for_tool(step.tool_name)
         return d
 
     def complete_all_active_steps(self) -> list[dict[str, Any]]:
         """Complete every currently-active step. Returns list of event dicts."""
-        from app.core.maestro_editing.tool_execution import phase_for_tool
-
         events: list[dict[str, Any]] = []
         for step_id in list(self._active_step_ids):
             step = self.get_step(step_id)
@@ -849,11 +844,10 @@ class _PlanTracker:
                     "type": "planStepUpdate",
                     "stepId": step.step_id,
                     "status": "completed",
+                    "phase": step.phase,
                 }
                 if step.result:
                     d["result"] = step.result
-                if step.tool_name:
-                    d["phase"] = phase_for_tool(step.tool_name)
                 events.append(d)
         self._active_step_ids.clear()
         self._active_step_id = None
@@ -878,20 +872,16 @@ class _PlanTracker:
         at plan completion — steps that were never activated must be emitted
         as "skipped" so the frontend can render them correctly.
         """
-        from app.core.maestro_editing.tool_execution import phase_for_tool
-
         events: list[dict[str, Any]] = []
         for step in self.steps:
             if step.status == "pending":
                 step.status = "skipped"
-                d: dict[str, Any] = {
+                events.append({
                     "type": "planStepUpdate",
                     "stepId": step.step_id,
                     "status": "skipped",
-                }
-                if step.tool_name:
-                    d["phase"] = phase_for_tool(step.tool_name)
-                events.append(d)
+                    "phase": step.phase,
+                })
         return events
 
     def progress_context(self) -> str:
