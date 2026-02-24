@@ -141,6 +141,22 @@ def _notes_match(existing: dict[str, Any], criteria: dict[str, Any]) -> bool:
     return True
 
 
+@dataclass
+class CompositionState:
+    """Tracks evolving Orpheus composition state across sections and instruments.
+
+    Stored per-composition in StateStore so the Maestro memory layer can
+    pass session continuity information to the Orpheus music service.
+    This is the architectural hook for future direct token-state persistence.
+    """
+    composition_id: str
+    session_id: str
+    accumulated_midi_path: Optional[str] = None
+    last_token_estimate: int = 0
+    created_at: float = 0.0
+    call_count: int = 0
+
+
 class StateStore:
     """
     Persistent, versioned state store for a project/conversation.
@@ -150,6 +166,7 @@ class StateStore:
     2. Transaction support for atomic multi-step operations
     3. Event log for audit trail
     4. Fast entity lookups via derived EntityRegistry
+    5. Composition state tracking for Orpheus session continuity
     
     Usage:
         store = StateStore(conversation_id="abc-123")
@@ -191,6 +208,9 @@ class StateStore:
         self._region_cc: dict[str, list[dict[str, Any]]] = {}
         self._region_pitch_bends: dict[str, list[dict[str, Any]]] = {}
         self._region_aftertouch: dict[str, list[dict[str, Any]]] = {}
+
+        # Orpheus composition state: composition_id -> CompositionState
+        self._composition_states: dict[str, CompositionState] = {}
         
         # Project metadata
         self._tempo: int = 120
@@ -567,7 +587,39 @@ class StateStore:
     def get_region_aftertouch(self, region_id: str) -> list[dict[str, Any]]:
         """Return aftertouch events for a region."""
         return deepcopy(self._region_aftertouch.get(region_id, []))
-    
+
+    # =========================================================================
+    # Composition State (Orpheus session continuity)
+    # =========================================================================
+
+    def get_composition_state(self, composition_id: str) -> Optional[CompositionState]:
+        """Return the composition state for a given composition, if any."""
+        return self._composition_states.get(composition_id)
+
+    def update_composition_state(
+        self,
+        composition_id: str,
+        session_id: str,
+        token_estimate: int = 0,
+        midi_path: Optional[str] = None,
+    ) -> CompositionState:
+        """Create or update the composition state for session continuity."""
+        import time as _time
+        state = self._composition_states.get(composition_id)
+        if state is None:
+            state = CompositionState(
+                composition_id=composition_id,
+                session_id=session_id,
+                created_at=_time.time(),
+            )
+            self._composition_states[composition_id] = state
+        state.session_id = session_id
+        state.last_token_estimate = token_estimate
+        state.call_count += 1
+        if midi_path:
+            state.accumulated_midi_path = midi_path
+        return state
+
     # =========================================================================
     # Synchronization
     # =========================================================================

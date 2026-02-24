@@ -1,5 +1,6 @@
 """Orpheus Music Transformer backend."""
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Optional
 
 from app.services.backends.base import (
@@ -13,6 +14,8 @@ if TYPE_CHECKING:
     from app.core.emotion_vector import EmotionVector
 
 logger = logging.getLogger(__name__)
+
+ENABLE_BEAT_RESCALING = os.environ.get("ENABLE_BEAT_RESCALING", "false").lower() in ("1", "true", "yes")
 
 # Orpheus may return note fields in snake_case; the DAW client expects camelCase.
 _SNAKE_TO_CAMEL: dict[str, str] = {
@@ -226,7 +229,10 @@ class OrpheusBackend(MusicGeneratorBackend):
             notes = [_normalize_note_keys(n) for n in notes]
 
             target_beats = bars * 4
-            _rescale_beats(notes, cc_events, pitch_bends, aftertouch, target_beats, bars=bars)
+            if ENABLE_BEAT_RESCALING:
+                _rescale_beats(notes, cc_events, pitch_bends, aftertouch, target_beats, bars=bars)
+            else:
+                logger.debug("Beat rescaling disabled (ENABLE_BEAT_RESCALING=false)")
 
             if notes:
                 logger.info(

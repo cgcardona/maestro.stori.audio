@@ -136,6 +136,71 @@ def analyze_quality(notes: List[Dict[str, Any]], bars: int, tempo: int) -> Dict[
     return metrics
 
 
+def rejection_score(notes: List[Dict[str, Any]], bars: int) -> float:
+    """Fast rejection sampling score for candidate ranking.
+
+    Combines four signals into a single 0–1 score:
+    - Note density variance (prefer moderate, penalize extremes)
+    - Pitch range sanity (1–3 octaves ideal)
+    - Repetition penalty (penalize >60% repeated 2-note patterns)
+    - Silence penalty (penalize bars with no notes)
+
+    Higher is better. Used by the generation loop to pick the best of
+    N candidates without human intervention.
+    """
+    if not notes:
+        return 0.0
+
+    total_beats = max(bars * 4, 1)
+
+    # ── Density variance: how evenly distributed are notes across bars? ──
+    bar_counts = [0] * max(bars, 1)
+    for n in notes:
+        b = int(n.get("startBeat", n.get("start_beat", 0)) / 4)
+        if 0 <= b < bars:
+            bar_counts[b] += 1
+    mean_density = len(notes) / max(bars, 1)
+    if mean_density > 0 and len(bar_counts) > 1:
+        variance = sum((c - mean_density) ** 2 for c in bar_counts) / len(bar_counts)
+        cv = (variance ** 0.5) / mean_density
+        density_score = max(0.0, 1.0 - cv)
+    else:
+        density_score = 0.5
+
+    # ── Pitch range sanity ──
+    pitches = [n.get("pitch", 60) for n in notes]
+    pitch_range = max(pitches) - min(pitches) if pitches else 0
+    if 12 <= pitch_range <= 36:
+        range_score = 1.0
+    elif pitch_range < 12:
+        range_score = pitch_range / 12.0
+    else:
+        range_score = max(0.0, 1.0 - (pitch_range - 36) / 48.0)
+
+    # ── Repetition penalty ──
+    if len(notes) >= 4:
+        pattern_set: set = set()
+        repeated = 0
+        for i in range(len(notes) - 1):
+            p = (notes[i].get("pitch", 0), notes[i + 1].get("pitch", 0))
+            if p in pattern_set:
+                repeated += 1
+            pattern_set.add(p)
+        rep_rate = repeated / max(len(notes) - 1, 1)
+        rep_score = max(0.0, 1.0 - max(0.0, rep_rate - 0.4) / 0.6)
+    else:
+        rep_score = 0.5
+
+    # ── Silence penalty: fraction of bars with at least one note ──
+    active_bars = sum(1 for c in bar_counts if c > 0)
+    silence_score = active_bars / max(bars, 1)
+
+    return round(
+        density_score * 0.3 + range_score * 0.2 + rep_score * 0.25 + silence_score * 0.25,
+        4,
+    )
+
+
 def compare_generations(notes_a: List[dict], notes_b: List[dict], bars: int, tempo: int) -> Dict[str, Any]:
     """
     Compare two generations to determine which is better.

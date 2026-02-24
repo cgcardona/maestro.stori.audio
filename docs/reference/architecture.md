@@ -433,6 +433,14 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 **Lifecycle logging:**
 - Every level emits structured log messages with emoji prefixes for at-a-glance diagnosis: `🎬` start, `✅` success, `❌` error, `⏰` timeout, `💥` crash, `⏳` waiting, `🔄` retry, `🏁` completion. Timing is logged for LLM calls, Orpheus generation, signal waits, and full section/instrument durations.
 
+**Deep Orpheus telemetry:** Every generation call logs token flow and output metrics:
+- `🧠 Orpheus context usage: N / 8192 tokens (X%)` — prime + gen tokens vs context window
+- `🎼 Channels generated: N` — number of MIDI channels in output
+- `🎵 Notes generated: N` — total note count
+- `📊 Session {id}: accumulated=N tokens, call #M` — persistent session state
+- `🎹 Seed program changes: {ch: patch}` — GM patch verification (debug level)
+- `🎲 Candidate N/M: X notes, rejection_score=Y` — rejection sampling candidates (quality preset)
+
 | Config key | Default | Controls |
 |---|---|---|
 | `STORI_SECTION_CHILD_TIMEOUT` | 300 | Per-section child watchdog (seconds) |
@@ -445,6 +453,10 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 | `STORI_ORPHEUS_CB_THRESHOLD` | 3 | Consecutive failures before circuit breaker trips |
 | `STORI_ORPHEUS_CB_COOLDOWN` | 60 | Seconds before tripped circuit allows a probe |
 | `STORI_ORPHEUS_REQUIRED` | true | Abort composition if pre-flight health check fails |
+| `STORI_ORPHEUS_PRESERVE_ALL_CHANNELS` | true | Return all MIDI channels (DAW handles routing) |
+| `STORI_ORPHEUS_ENABLE_BEAT_RESCALING` | false | Disable beat rescaling for raw model timing |
+| `STORI_ORPHEUS_REJECTION_CANDIDATES` | 4 | Candidates for rejection sampling (quality preset) |
+| `STORI_ORPHEUS_MAX_SESSION_TOKENS` | 4096 | Token cap before session rotation |
 
 ### SectionState — deterministic musical telemetry
 
@@ -517,11 +529,39 @@ The proxy maps Maestro instrument roles to TMIDIX-recognized GM instrument names
 
 ### Cross-section musical continuity
 
-Sections within an instrument execute sequentially. The first section generates from a genre-specific seed MIDI. Subsequent sections receive the previous section's generated notes as a continuation seed — the proxy builds a new MIDI file from the last ~2 bars (8 beats) of the prior section's output and uses it in place of the generic genre seed. This lets the Orpheus transformer extend from familiar harmonic material instead of restarting cold, producing more coherent musical arcs across verse/chorus/bridge boundaries.
+Sections within an instrument execute sequentially. The first section generates from a genre-specific seed MIDI. Subsequent sections receive the previous section's generated notes as a **multi-channel continuation seed** — the proxy builds a new MIDI file preserving original MIDI channels, program changes, and track separation from 8–16 bars (dynamic context window) of the prior section's output. This gives Orpheus ~1500+ tokens of prime context instead of ~100, producing coherent harmonic arcs across verse/chorus/bridge boundaries.
 
-### Channel filtering
+The continuation seed preserves:
+- Original MIDI channel assignments (never collapsed to channel 0)
+- Per-channel GM program change events (patch numbers)
+- Track separation between instruments
 
-After Orpheus generates a multi-channel MIDI file, the proxy filters channels to extract only the requested instrument. When the preferred channel index doesn't exist (e.g. requesting channel 2 but only channels 0-1 were generated), the filter falls back to the nearest available melodic channel instead of returning empty. If all notes are stripped by filtering despite Orpheus having generated content, the proxy returns an explicit error distinguishing "model generated nothing" from "channel filter removed everything."
+### Persistent composition sessions
+
+Each composition maintains a persistent Gradio session via `CompositionState`. Instead of resetting the session hash on every call (which destroyed accumulated token context), sessions persist across sections and instrument calls within the same composition. A token cap (`STORI_ORPHEUS_MAX_SESSION_TOKENS`, default 4096) triggers automatic session rotation — truncating earliest tokens rather than a full reset — to prevent unbounded growth while preserving continuity.
+
+`CompositionState` is tracked in both the Orpheus music service (per-call session management) and the Maestro `StateStore` (architectural hook for future direct token-state persistence).
+
+### Channel preservation
+
+By default (`STORI_ORPHEUS_PRESERVE_ALL_CHANNELS=true`), all generated MIDI channels are returned to the DAW. Instrument routing is handled DAW-side, not proxy-side. This preserves the full musical structure that Orpheus generates instead of destructively filtering channels before the DAW sees them. The legacy channel-filtering path remains available by setting the flag to `false`.
+
+### Quality rejection sampling
+
+For the `quality` preset, the Orpheus proxy generates N candidates (default 4, configurable via `STORI_ORPHEUS_REJECTION_CANDIDATES`) and scores each using a composite quality metric:
+
+| Signal | Weight | Measures |
+|--------|--------|----------|
+| Note density variance | 30% | Evenness of notes across bars |
+| Pitch range sanity | 20% | 1–3 octaves ideal |
+| Repetition penalty | 25% | Penalises >60% repeated 2-note patterns |
+| Silence penalty | 25% | Fraction of bars with at least one note |
+
+The best-scoring candidate is returned. For `balanced` and `fast` presets, a single candidate is generated (no overhead).
+
+### Beat rescaling
+
+Beat rescaling is disabled by default (`ENABLE_BEAT_RESCALING=false`) to evaluate raw Orpheus model timing without distortion. When enabled, it detects compressed output (notes spanning <50% of target duration) and applies a linear scale factor. Re-enable via environment variable when timing distortion is confirmed.
 
 ### Expressive MIDI pipeline
 

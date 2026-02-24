@@ -443,9 +443,11 @@ class TestOrpheusBeatRescaling:
     """Notes compressed into a short window must be rescaled to the target bars."""
 
     def _make_backend(self, mock_client):
+        from app.services.backends import orpheus as orpheus_backend
         from app.services.backends.orpheus import OrpheusBackend
         import app.services.orpheus as orpheus_module
         orpheus_module._shared_client = mock_client
+        orpheus_backend.ENABLE_BEAT_RESCALING = True
         return OrpheusBackend()
 
     @pytest.mark.asyncio

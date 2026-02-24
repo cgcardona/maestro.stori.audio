@@ -41,7 +41,7 @@ from generation_policy import (
     GenerationControlVector,
     get_policy_version,
 )
-from quality_metrics import analyze_quality, compare_generations
+from quality_metrics import analyze_quality, compare_generations, rejection_score
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -80,6 +80,12 @@ _JOB_TTL_SECONDS = int(os.environ.get("ORPHEUS_JOB_TTL", "300"))  # 5 min
 
 _CACHE_DIR = pathlib.Path(os.environ.get("ORPHEUS_CACHE_DIR", "/tmp/orpheus_cache"))
 _CACHE_FILE = _CACHE_DIR / "result_cache.json"
+
+# ── Storpheus config flags ─────────────────────────────────────────────
+ORPHEUS_PRESERVE_ALL_CHANNELS = os.environ.get("ORPHEUS_PRESERVE_ALL_CHANNELS", "true").lower() in ("1", "true", "yes")
+ENABLE_BEAT_RESCALING = os.environ.get("ENABLE_BEAT_RESCALING", "false").lower() in ("1", "true", "yes")
+ORPHEUS_REJECTION_CANDIDATES = int(os.environ.get("ORPHEUS_REJECTION_CANDIDATES", "4"))
+MAX_SESSION_TOKENS = int(os.environ.get("ORPHEUS_MAX_SESSION_TOKENS", "4096"))
 
 _INTENT_QUANT_STEP = float(os.environ.get("ORPHEUS_INTENT_QUANT", "0.2"))
 _FUZZY_EPSILON = float(os.environ.get("ORPHEUS_FUZZY_EPSILON", "0.35"))
@@ -1128,16 +1134,23 @@ def _create_continuation_seed(
     tempo: int,
     instruments: Optional[List[str]] = None,
 ) -> str:
-    """Build a seed MIDI from the previous section's notes for continuity.
+    """Build a multi-channel seed MIDI from the previous section for continuity.
 
-    Takes the last ~2 bars of the previous section and writes them as a
-    new MIDI file.  This lets the Orpheus transformer "continue" from
-    familiar material instead of restarting from a generic genre seed.
+    Preserves original MIDI channels, program changes, and track separation
+    so the Orpheus transformer receives genuine multi-instrument context
+    instead of a channel-0 monophonic collapse.
+
+    Uses a dynamic context window of 8–16 bars (32–64 beats in 4/4) to give
+    Orpheus ~1500+ tokens of prime context rather than the previous ~100.
     """
-    midi = MIDIFile(3)
+    # Up to 16 unique tracks: 0=drums (ch9), 1–15=melodic channels
+    num_tracks = 16
+    midi = MIDIFile(num_tracks)
     midi.addTempo(0, 0, tempo)
 
+    # Write program changes for every requested instrument on its native channel
     if instruments:
+        _seen_channels: set = set()
         for inst in instruments:
             role = inst.lower().strip()
             if role in ("drums", "cajon", "percussion"):
@@ -1148,10 +1161,11 @@ def _create_continuation_seed(
             idx = MELODIC_INDEX_BY_INSTRUMENT.get(role)
             if idx is None:
                 continue
-            track = idx + 1
             channel = idx
-            if track < 3:
+            track = idx + 1
+            if channel not in _seen_channels and track < num_tracks:
                 midi.addProgramChange(track, channel, 0, gm_program)
+                _seen_channels.add(channel)
 
     if not previous_notes:
         fd, path = tempfile.mkstemp(suffix=".mid")
@@ -1162,13 +1176,18 @@ def _create_continuation_seed(
     max_beat = max(
         (n.get("start_beat", 0) + n.get("duration_beats", 0.5)) for n in previous_notes
     )
-    # Keep last 8 beats (~2 bars in 4/4) for context
-    context_start = max(0, max_beat - 8.0)
+    available_bars = max_beat / 4.0
+    target_context_bars = min(16, max(8, available_bars))
+    target_context_beats = target_context_bars * 4
+    context_start = max(0, max_beat - target_context_beats)
 
     tail_notes = [
         n for n in previous_notes
         if n.get("start_beat", 0) >= context_start
     ]
+
+    # Collect per-note program changes for patch consistency verification
+    _patch_log: dict = {}
 
     for note in tail_notes:
         pitch = note.get("pitch", 60)
@@ -1179,18 +1198,38 @@ def _create_continuation_seed(
 
         if is_drum:
             midi.addNote(0, 9, pitch, max(0, start), max(0.01, dur), vel)
+            _patch_log.setdefault(9, "drums")
         else:
-            track = 1
-            channel = 0
+            channel = note.get("channel", 0)
+            patch = note.get("patch", None)
+            track = channel + 1 if channel < 9 else channel
+            if track >= num_tracks:
+                track = min(channel, num_tracks - 1)
+
+            # Preserve original program change per channel
+            if patch is not None and channel not in _patch_log:
+                midi.addProgramChange(track, channel, 0, patch)
+                _patch_log[channel] = patch
+
             midi.addNote(track, channel, pitch, max(0, start), max(0.01, dur), vel)
 
     fd, path = tempfile.mkstemp(suffix=".mid")
     with os.fdopen(fd, 'wb') as f:
         midi.writeFile(f)
+
+    unique_channels = len(set(
+        n.get("channel", 9 if n.get("is_drum") else 0) for n in tail_notes
+    ))
     logger.info(
-        f"🔗 Continuation seed: {len(tail_notes)} notes from beat "
-        f"{context_start:.1f}-{max_beat:.1f}"
+        f"🔗 Continuation seed: {len(tail_notes)} notes, "
+        f"{unique_channels} channels, "
+        f"context={target_context_bars:.0f} bars "
+        f"(beat {context_start:.1f}–{max_beat:.1f})"
     )
+    # GM patch verification
+    if _patch_log:
+        logger.debug(f"🎹 Seed program changes: {_patch_log}")
+
     return path
 
 
@@ -1199,7 +1238,8 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
     Parse MIDI file into notes AND expressive events grouped by channel.
 
     Returns ``{"notes": {ch: [...]}, "cc_events": {ch: [...]},
-               "pitch_bends": {ch: [...]}, "aftertouch": {ch: [...]}}``.
+               "pitch_bends": {ch: [...]}, "aftertouch": {ch: [...]},
+               "program_changes": {ch: program_number}}``.
     """
     mid = mido.MidiFile(midi_path)
     ticks_per_beat = mid.ticks_per_beat
@@ -1208,6 +1248,7 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
     cc_events: dict = {}
     pitch_bends: dict = {}
     aftertouch: dict = {}
+    program_changes: dict = {}
 
     for track in mid.tracks:
         time = 0
@@ -1215,7 +1256,10 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
             time += msg.time
             beat = round(time / ticks_per_beat, 3)
 
-            if msg.type == 'note_on' and msg.velocity > 0:
+            if msg.type == 'program_change':
+                program_changes[msg.channel] = msg.program
+
+            elif msg.type == 'note_on' and msg.velocity > 0:
                 ch = msg.channel
                 notes.setdefault(ch, []).append({
                     "pitch": msg.note,
@@ -1262,11 +1306,15 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
                     "pitch": msg.note,
                 })
 
+    if program_changes:
+        logger.debug(f"🎹 Parsed MIDI program changes: {program_changes}")
+
     return {
         "notes": notes,
         "cc_events": cc_events,
         "pitch_bends": pitch_bends,
         "aftertouch": aftertouch,
+        "program_changes": program_changes,
     }
 
 
@@ -1703,6 +1751,63 @@ async def ab_test(request: ABTestRequest):
     }
 
 
+# ── Persistent session state per composition ──────────────────────────
+# Replicates Gradio's gr.State accumulation across calls within the same
+# composition, but with a token cap to prevent unbounded growth.
+
+@dataclass
+class CompositionState:
+    """Tracks evolving composition state across sections and instruments."""
+    composition_id: str
+    session_id: str
+    accumulated_midi_path: Optional[str] = None
+    last_token_estimate: int = 0
+    created_at: float = field(default_factory=time)
+    call_count: int = 0
+
+_composition_states: dict[str, CompositionState] = {}
+_COMPOSITION_STATE_TTL = 3600  # 1 hour
+
+
+def _get_or_create_session(composition_id: Optional[str]) -> tuple[str, CompositionState]:
+    """Return (session_hash, CompositionState) for the composition.
+
+    If the composition already has accumulated state, reuse the same
+    session_id so Gradio's gr.State preserves token context.  When the
+    accumulated tokens exceed MAX_SESSION_TOKENS, rotate the session to
+    prevent model degradation (truncation via fresh session, not full reset).
+    """
+    now = time()
+    # Evict stale entries
+    stale = [k for k, v in _composition_states.items() if now - v.created_at > _COMPOSITION_STATE_TTL]
+    for k in stale:
+        _composition_states.pop(k, None)
+
+    if not composition_id:
+        fresh_id = str(uuid.uuid4())
+        return fresh_id, CompositionState(composition_id="ephemeral", session_id=fresh_id)
+
+    state = _composition_states.get(composition_id)
+    if state is None:
+        session_id = str(uuid.uuid4())
+        state = CompositionState(composition_id=composition_id, session_id=session_id)
+        _composition_states[composition_id] = state
+        logger.info(f"🆕 New composition session: {composition_id[:8]} → {session_id[:8]}")
+        return session_id, state
+
+    if state.last_token_estimate >= MAX_SESSION_TOKENS:
+        old_sid = state.session_id
+        state.session_id = str(uuid.uuid4())
+        state.last_token_estimate = 0
+        logger.info(
+            f"🔄 Session token cap reached ({MAX_SESSION_TOKENS}) for "
+            f"{composition_id[:8]} — rotated {old_sid[:8]} → {state.session_id[:8]}"
+        )
+
+    state.call_count += 1
+    return state.session_id, state
+
+
 async def _do_generate(request: GenerateRequest) -> GenerateResponse:
     """Core GPU generation logic — called by JobQueue workers."""
     global _last_successful_gen
@@ -1780,95 +1885,147 @@ async def _do_generate(request: GenerateRequest) -> GenerateResponse:
         logger.info(f"   Policy: {get_policy_version()}")
 
         _predict_timeout = float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "180"))
-        # Fresh session hash per call — the Space's generate_music_and_state
-        # uses gr.State to accumulate tokens across calls in the same session.
-        # Without this, composition tokens grow unboundedly (45 → 190 → … → 1100+)
-        # until the model produces garbage and save_midi crashes with TypeError.
-        client.session_hash = str(uuid.uuid4())
-        try:
-            result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    client.predict,
-                    input_midi=handle_file(seed_path),
-                    prime_instruments=orpheus_instruments,
-                    num_prime_tokens=num_prime_tokens,
-                    num_gen_tokens=num_gen_tokens,
-                    model_temperature=temperature,
-                    model_top_p=top_p,
-                    add_drums="drums" in [i.lower() for i in request.instruments],
-                    api_name="/generate_music_and_state",
-                ),
-                timeout=_predict_timeout,
-            )
-        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
-            kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
-            logger.error(
-                f"❌ Gradio /generate_music_and_state {kind} after {_predict_timeout}s"
-            )
-            return GenerateResponse(
-                success=False,
-                tool_calls=[],
-                error=f"Orpheus generation {kind} after {_predict_timeout}s",
-            )
+        session_hash, comp_state = _get_or_create_session(request.composition_id)
 
-        try:
-            midi_result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    client.predict, batch_number=0, api_name="/add_batch"
-                ),
-                timeout=_predict_timeout,
-            )
-        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
-            kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
-            logger.error(
-                f"❌ Gradio /add_batch {kind} after {_predict_timeout}s"
-            )
-            return GenerateResponse(
-                success=False,
-                tool_calls=[],
-                error=f"Orpheus batch retrieval {kind} after {_predict_timeout}s",
-            )
-        midi_path = midi_result[2]
-
-        parsed = await asyncio.to_thread(parse_midi_to_notes, midi_path, request.tempo)
-
+        add_drums = "drums" in [i.lower() for i in request.instruments]
         max_beat = request.bars * 4
-        for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
-            sub = parsed.get(sub_key, {})
-            beat_field = "start_beat" if sub_key == "notes" else "beat"
-            for ch in list(sub):
-                sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
-                if not sub[ch]:
-                    del sub[ch]
 
-        pre_filter_note_count = sum(
-            len(notes) for notes in parsed.get("notes", {}).values()
-        )
-        pre_filter_channels = set(parsed.get("notes", {}).keys())
+        # ── Rejection sampling: generate N candidates, pick the best ──
+        n_candidates = ORPHEUS_REJECTION_CANDIDATES if request.quality_preset == "quality" else 1
+        best_parsed: Optional[dict] = None
+        best_midi_path: Optional[str] = None
+        best_score: float = -1.0
 
-        parsed = filter_channels_for_instruments(parsed, request.instruments)
+        for candidate_idx in range(n_candidates):
+            # Each candidate gets a fresh session to avoid token contamination
+            # between candidates; the winner's tokens are tracked in comp_state.
+            cand_session = session_hash if n_candidates == 1 else str(uuid.uuid4())
+            client.session_hash = cand_session
 
-        post_filter_note_count = sum(
-            len(notes) for notes in parsed.get("notes", {}).values()
-        )
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.predict,
+                        input_midi=handle_file(seed_path),
+                        prime_instruments=orpheus_instruments,
+                        num_prime_tokens=num_prime_tokens,
+                        num_gen_tokens=num_gen_tokens,
+                        model_temperature=temperature,
+                        model_top_p=top_p,
+                        add_drums=add_drums,
+                        api_name="/generate_music_and_state",
+                    ),
+                    timeout=_predict_timeout,
+                )
+            except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+                kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
+                logger.error(
+                    f"❌ Gradio /generate_music_and_state {kind} after {_predict_timeout}s "
+                    f"(candidate {candidate_idx + 1}/{n_candidates})"
+                )
+                if best_parsed is not None:
+                    break
+                return GenerateResponse(
+                    success=False, tool_calls=[],
+                    error=f"Orpheus generation {kind} after {_predict_timeout}s",
+                )
 
-        if pre_filter_note_count > 0 and post_filter_note_count == 0:
-            logger.error(
-                f"❌ Channel filtering removed all {pre_filter_note_count} notes! "
-                f"Requested instruments={request.instruments}, "
-                f"available channels={sorted(pre_filter_channels)}"
-            )
+            try:
+                midi_result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.predict, batch_number=0, api_name="/add_batch"
+                    ),
+                    timeout=_predict_timeout,
+                )
+            except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+                kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
+                logger.error(
+                    f"❌ Gradio /add_batch {kind} (candidate {candidate_idx + 1}/{n_candidates})"
+                )
+                if best_parsed is not None:
+                    break
+                return GenerateResponse(
+                    success=False, tool_calls=[],
+                    error=f"Orpheus batch retrieval {kind} after {_predict_timeout}s",
+                )
+
+            cand_midi_path = midi_result[2]
+            cand_parsed = await asyncio.to_thread(parse_midi_to_notes, cand_midi_path, request.tempo)
+
+            for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
+                sub = cand_parsed.get(sub_key, {})
+                beat_field = "start_beat" if sub_key == "notes" else "beat"
+                for ch in list(sub):
+                    sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
+                    if not sub[ch]:
+                        del sub[ch]
+
+            # Flatten notes for scoring
+            flat_notes = []
+            for ch_notes in cand_parsed.get("notes", {}).values():
+                flat_notes.extend(ch_notes)
+
+            score = rejection_score(flat_notes, request.bars)
+
+            if n_candidates > 1:
+                logger.info(
+                    f"🎲 Candidate {candidate_idx + 1}/{n_candidates}: "
+                    f"{len(flat_notes)} notes, rejection_score={score:.3f}"
+                )
+
+            if score > best_score:
+                best_score = score
+                best_parsed = cand_parsed
+                best_midi_path = cand_midi_path
+
+        # After the rejection sampling loop, use the winning candidate
+        if best_parsed is None:
             return GenerateResponse(
-                success=False,
-                tool_calls=[],
-                error=(
-                    f"Orpheus generated {pre_filter_note_count} notes on "
-                    f"channels {sorted(pre_filter_channels)}, but channel "
-                    f"filtering for instruments={request.instruments} "
-                    f"removed all of them. The instrument may not be "
-                    f"represented in the generated output."
-                ),
+                success=False, tool_calls=[],
+                error="All rejection sampling candidates failed",
             )
+
+        parsed = best_parsed
+        midi_path = best_midi_path  # type: ignore[assignment]
+
+        if n_candidates > 1:
+            logger.info(f"🏆 Selected best candidate: rejection_score={best_score:.3f}")
+
+        # Restore session to the composition's persistent session for state tracking
+        client.session_hash = session_hash
+
+        total_note_count = sum(
+            len(notes) for notes in parsed.get("notes", {}).values()
+        )
+        all_channels = set(parsed.get("notes", {}).keys())
+
+        if ORPHEUS_PRESERVE_ALL_CHANNELS:
+            logger.info(
+                f"🎛️ Preserving all {len(all_channels)} generated channels "
+                f"({total_note_count} notes) — DAW handles instrument routing"
+            )
+        else:
+            parsed = filter_channels_for_instruments(parsed, request.instruments)
+            post_filter_count = sum(
+                len(notes) for notes in parsed.get("notes", {}).values()
+            )
+            if total_note_count > 0 and post_filter_count == 0:
+                logger.error(
+                    f"❌ Channel filtering removed all {total_note_count} notes! "
+                    f"Requested instruments={request.instruments}, "
+                    f"available channels={sorted(all_channels)}"
+                )
+                return GenerateResponse(
+                    success=False,
+                    tool_calls=[],
+                    error=(
+                        f"Orpheus generated {total_note_count} notes on "
+                        f"channels {sorted(all_channels)}, but channel "
+                        f"filtering for instruments={request.instruments} "
+                        f"removed all of them."
+                    ),
+                )
+            total_note_count = post_filter_count
 
         tool_calls = generate_tool_calls(parsed, request.tempo, request.instruments)
 
@@ -1892,6 +2049,27 @@ async def _do_generate(request: GenerateRequest) -> GenerateResponse:
         quality_metrics["pitch_bend_events"] = pb_count
         quality_metrics["aftertouch_events"] = at_count
 
+        # ── Update composition session state ──
+        comp_state.last_token_estimate += num_gen_tokens
+        comp_state.accumulated_midi_path = midi_path
+
+        # ── Deep telemetry ──
+        _ctx_window = 8192
+        _ctx_pct = (num_prime_tokens + num_gen_tokens) / _ctx_window * 100
+        channel_count_generated = len(all_channels)
+        note_count_generated = len(all_notes)
+        logger.info(
+            f"🧠 Orpheus context usage: {num_prime_tokens + num_gen_tokens} / "
+            f"{_ctx_window} tokens ({_ctx_pct:.0f}%)"
+        )
+        logger.info(f"🎼 Channels generated: {channel_count_generated}")
+        logger.info(f"🎵 Notes generated: {note_count_generated}")
+        logger.info(
+            f"📊 Session {session_hash[:8]}: "
+            f"accumulated={comp_state.last_token_estimate} tokens, "
+            f"call #{comp_state.call_count}"
+        )
+
         response_data = {
             "success": True,
             "tool_calls": tool_calls,
@@ -1905,6 +2083,15 @@ async def _do_generate(request: GenerateRequest) -> GenerateResponse:
                     "complexity": controls.complexity,
                 },
                 "cache_hit": False,
+                "telemetry": {
+                    "prime_token_count": num_prime_tokens,
+                    "gen_token_count": num_gen_tokens,
+                    "context_utilization_pct": round(_ctx_pct, 1),
+                    "channel_count_generated": channel_count_generated,
+                    "note_count_generated": note_count_generated,
+                    "session_token_total": comp_state.last_token_estimate,
+                    "session_call_count": comp_state.call_count,
+                },
             }
         }
 
@@ -1914,7 +2101,10 @@ async def _do_generate(request: GenerateRequest) -> GenerateResponse:
             logger.warning(f"⚠️ Skipping cache for {cache_key} — 0 notes generated")
         _last_successful_gen = time()
 
-        logger.info(f"✅ Generated {len(tool_calls)} tool calls, quality_score={quality_metrics.get('quality_score', 0):.2f}")
+        logger.info(
+            f"✅ Generated {len(tool_calls)} tool calls, "
+            f"quality_score={quality_metrics.get('quality_score', 0):.2f}"
+        )
 
         return GenerateResponse(**response_data)
 

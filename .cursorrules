@@ -23,6 +23,15 @@ Use these rules when editing this codebase. They keep behavior consistent, tests
 
 ---
 
+## Execution environment
+
+- **Docker-first:** All Python execution (scripts, syntax checks, linting, mypy, pytest, coverage, `python -c`) MUST run inside the Docker container. **Never** run Python directly on the host. Use `docker compose exec maestro <command>` for everything. If the container is not running, start it first with `docker compose up -d`. If code has changed, rebuild first: `docker compose build maestro && docker compose up -d`.
+- **Quick syntax check:** `docker compose exec maestro python -c "import py_compile; py_compile.compile('<file>', doraise=True)"`.
+- **Mypy:** `docker compose exec maestro mypy app/ tests/`.
+- **Tests:** `docker compose exec maestro pytest tests/ -v`.
+
+---
+
 ## Coding standards
 
 - **Style:** Black-compatible formatting. Prefer short, readable names; avoid abbreviations unless standard (e.g. `id`, `db`, `api`).

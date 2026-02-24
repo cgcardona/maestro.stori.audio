@@ -136,6 +136,10 @@ class Settings(BaseSettings):
     orpheus_cb_threshold: int = 3   # consecutive failures before circuit breaker trips
     orpheus_cb_cooldown: int = 60   # seconds before tripped circuit allows a probe request
     orpheus_required: bool = True   # hard-gate: abort composition if pre-flight health check fails
+    orpheus_preserve_all_channels: bool = True   # return all generated MIDI channels (DAW handles routing)
+    orpheus_enable_beat_rescaling: bool = False   # disable beat rescaling to evaluate raw model timing
+    orpheus_rejection_candidates: int = 4         # number of candidates for rejection sampling (quality preset)
+    orpheus_max_session_tokens: int = 4096        # token cap before session rotation
     max_concurrent_compositions_per_user: int = 2  # per-user composition concurrency limit (0 = unlimited)
     
     hf_api_key: Optional[str] = None  # HuggingFace API key
