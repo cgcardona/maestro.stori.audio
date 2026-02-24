@@ -412,7 +412,10 @@ async def _run_instrument_agent_inner(
     # region+generate tool calls in the first place — _missing_stages()
     # detects when it didn't and prompts on the next turn.
     _section_count = len(_sections) if _multi_section else 1
-    max_turns = 3
+    # Scale max_turns with section count — the LLM often drip-feeds
+    # tool calls (1-2 per turn) instead of batching all region+generate
+    # pairs.  Minimum 3 (track + content + effect), +1 per extra section.
+    max_turns = max(3, _section_count + 2)
 
     # ── Stage tracking ──
     # For multi-section, track per-section completion independently.
@@ -1023,6 +1026,103 @@ async def _dispatch_section_children(
             f"{len(region_tcs)} regions vs {len(generate_tcs)} generates"
         )
     pairs: list[tuple[ToolCall, ToolCall]] = list(zip(region_tcs, generate_tcs))
+    orphaned_regions = region_tcs[len(generate_tcs):]
+    orphaned_generates = generate_tcs[len(region_tcs):]
+
+    # ── Execute orphaned regions individually ──
+    # When the LLM sends regions without paired generates (common on
+    # multi-section Turn 1), execute them so the entity registry has
+    # the regionIds and _regions_completed tracks progress.
+    for tc in orphaned_regions:
+        resolved_args = _resolve_variable_refs(tc.params, all_tool_results)
+        resolved_args["trackId"] = real_track_id
+
+        outcome = await _apply_single_tool_call(
+            tc_id=tc.id,
+            tc_name=tc.name,
+            resolved_args=resolved_args,
+            allowed_tool_names=allowed_tool_names,
+            store=store,
+            trace=trace,
+            add_notes_failures=add_notes_failures,
+            emit_sse=True,
+        )
+        for evt in outcome.sse_events:
+            if evt.get("type") in _AGENT_TAGGED:
+                evt = {**evt, "agentId": agent_id}
+            await sse_queue.put(evt)
+
+        regions_completed += 1
+        _rid = outcome.tool_result.get("regionId") or outcome.tool_result.get("existingRegionId")
+        if _rid:
+            regions_ok += 1
+
+        all_tool_results.append(outcome.tool_result)
+        collected_tool_calls.append(
+            {"tool": tc.name, "params": outcome.enriched_params}
+        )
+        tool_result_msgs.append({
+            "role": "tool",
+            "tool_call_id": tc.id,
+            "content": json.dumps(_compact_tool_result(outcome.tool_result)),
+        })
+
+    if orphaned_regions:
+        logger.info(
+            f"{agent_log} 📋 Executed {len(orphaned_regions)} orphaned regions "
+            f"(regions_completed={regions_completed}, regions_ok={regions_ok})"
+        )
+
+    # ── Execute orphaned generates individually ──
+    # When the LLM sends generates without same-turn regions (common when
+    # regions were created on a prior turn), execute them directly.  The
+    # regionId and trackId are resolved from all_tool_results via $refs.
+    _orphan_gen_ctx: dict[str, Any] | None = None
+    if orphaned_generates and runtime_context:
+        _orphan_gen_ctx = {
+            **runtime_context.to_composition_context(),
+            "style": style,
+            "tempo": tempo,
+            "key": key,
+            "role": role,
+        }
+
+    for tc in orphaned_generates:
+        resolved_args = _resolve_variable_refs(tc.params, all_tool_results)
+        resolved_args["trackId"] = real_track_id
+
+        outcome = await _apply_single_tool_call(
+            tc_id=tc.id,
+            tc_name=tc.name,
+            resolved_args=resolved_args,
+            allowed_tool_names=allowed_tool_names,
+            store=store,
+            trace=trace,
+            add_notes_failures=add_notes_failures,
+            emit_sse=True,
+            composition_context=_orphan_gen_ctx,
+        )
+        for evt in outcome.sse_events:
+            if evt.get("type") in _AGENT_TAGGED:
+                evt = {**evt, "agentId": agent_id}
+            await sse_queue.put(evt)
+
+        generates_completed += 1
+        all_tool_results.append(outcome.tool_result)
+        collected_tool_calls.append(
+            {"tool": tc.name, "params": outcome.enriched_params}
+        )
+        tool_result_msgs.append({
+            "role": "tool",
+            "tool_call_id": tc.id,
+            "content": json.dumps(_compact_tool_result(outcome.tool_result)),
+        })
+
+    if orphaned_generates:
+        logger.info(
+            f"{agent_log} 📋 Executed {len(orphaned_generates)} orphaned generates "
+            f"(generates_completed={generates_completed})"
+        )
 
     # Detect drum/bass role for signaling
     is_drum = role.lower() in ("drums", "drum")
@@ -1238,6 +1338,10 @@ async def _dispatch_section_children(
         _failed_indices = _still_failed
 
     # ── Aggregate section results ──
+    # Count ALL dispatched sections as "completed" for _missing_stages().
+    # The server already retried failed sections — asking the LLM to
+    # re-emit calls it can't fix (Orpheus down, etc.) wastes tokens and
+    # confuses the model when it sees stub tool results.
     _children_total_elapsed = asyncio.get_event_loop().time() - _children_start
     _child_successes = 0
     _child_failures = 0
@@ -1246,14 +1350,16 @@ async def _dispatch_section_children(
     for _sr in _section_results:
         if _sr is None:
             _child_crashes += 1
+            regions_completed += 1
+            generates_completed += 1
             continue
         collected_tool_calls.extend(_sr.tool_call_records)
         all_tool_results.extend(_sr.tool_results)
+        regions_completed += 1
         if _sr.region_id:
-            regions_completed += 1
             regions_ok += 1
+        generates_completed += 1
         if _sr.success:
-            generates_completed += 1
             _child_successes += 1
             _total_notes += _sr.notes_generated
         else:
@@ -1290,6 +1396,7 @@ async def _dispatch_section_children(
                 _entry["error"] = _sr.error
             _section_summaries.append(_entry)
 
+    _STUB = "Handled by server — see batch_complete summary."
     if pairs:
         _anchor_id = pairs[0][0].id
         tool_result_msgs.append({
@@ -1306,18 +1413,18 @@ async def _dispatch_section_children(
                 tool_result_msgs.append({
                     "role": "tool",
                     "tool_call_id": _p_gen_tc.id,
-                    "content": "...",
+                    "content": _STUB,
                 })
             else:
                 tool_result_msgs.append({
                     "role": "tool",
                     "tool_call_id": _p_region_tc.id,
-                    "content": "...",
+                    "content": _STUB,
                 })
                 tool_result_msgs.append({
                     "role": "tool",
                     "tool_call_id": _p_gen_tc.id,
-                    "content": "...",
+                    "content": _STUB,
                 })
 
     logger.info(

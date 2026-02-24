@@ -169,14 +169,13 @@ def test_cache_ttl_not_expired():
 
 def test_cache_key_rounding():
     """Test that similar continuous values produce same cache key."""
-    # Very close brightness values should round to same key
-    req1 = GenerateRequest(tone_brightness=-0.71)
-    req2 = GenerateRequest(tone_brightness=-0.69)  # Rounds to same -0.7
+    # Values within the same 0.2 quantization bucket should match
+    req1 = GenerateRequest(tone_brightness=-0.61)
+    req2 = GenerateRequest(tone_brightness=-0.59)  # Both snap to -0.6 on 0.2 grid
     
     key1 = get_cache_key(req1)
     key2 = get_cache_key(req2)
     
-    # Should be same (rounded to 1 decimal place)
     assert key1 == key2
 
 

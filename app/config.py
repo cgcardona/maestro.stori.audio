@@ -136,6 +136,7 @@ class Settings(BaseSettings):
     orpheus_cb_threshold: int = 3   # consecutive failures before circuit breaker trips
     orpheus_cb_cooldown: int = 60   # seconds before tripped circuit allows a probe request
     orpheus_required: bool = True   # hard-gate: abort composition if pre-flight health check fails
+    max_concurrent_compositions_per_user: int = 2  # per-user composition concurrency limit (0 = unlimited)
     
     hf_api_key: Optional[str] = None  # HuggingFace API key
     hf_timeout: int = 120  # seconds (HF can be slow on cold starts)

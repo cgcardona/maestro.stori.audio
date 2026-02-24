@@ -176,6 +176,7 @@ class OrpheusBackend(MusicGeneratorBackend):
             complexity=complexity,
             musical_goals=musical_goals or None,
             quality_preset=quality_preset,
+            composition_id=kwargs.get("composition_id"),
         )
         
         if result.get("success"):

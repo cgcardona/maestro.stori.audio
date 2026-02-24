@@ -46,6 +46,32 @@ When CI is enabled, run the same coverage command so the build fails if coverage
 
 ---
 
+## Orpheus Music Service tests
+
+The Orpheus service (`orpheus-music/`) has its own test suite that runs independently inside its container. Like the maestro container, the orpheus container copies source at build time — rebuild before testing.
+
+**Rebuild + run:**
+```bash
+docker compose build orpheus && docker compose up -d orpheus
+docker compose exec orpheus sh -c "pytest test_*.py -v"
+```
+
+Tests cover: cache system, generation policy (intent-to-controls mapping, token budget allocation), quality metrics, job queue (submit/cancel/dedupe/cleanup), and endpoint integration (generate, jobs, queue status).
+
+---
+
+## Run all tests (both services)
+
+Rebuild both containers and run both test suites sequentially:
+
+```bash
+docker compose build maestro orpheus && docker compose up -d
+docker compose exec maestro pytest tests/ -v
+docker compose exec orpheus sh -c "pytest test_*.py -v"
+```
+
+---
+
 ## Intent-based testing
 
 The backend routes prompts by intent; each intent has an allowed tool set. Use the table below for happy-path checks.

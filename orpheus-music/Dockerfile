@@ -16,8 +16,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY music_service.py generation_policy.py quality_metrics.py stress_test.py ./
+# Test/coverage
+RUN pip install --no-cache-dir pytest pytest-cov pytest-asyncio
+
+# Copy all Python source (app + tests)
+COPY *.py ./
 
 # Persistent cache directory (mounted as volume)
 RUN mkdir -p /data/cache && chown -R orpheus:orpheus /data

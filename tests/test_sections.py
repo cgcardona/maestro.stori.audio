@@ -8,7 +8,11 @@ no structural keywords are found.
 
 import pytest
 
-from app.core.maestro_agent_teams.sections import parse_sections, _get_section_role_description
+from app.core.maestro_agent_teams.sections import (
+    parse_sections,
+    _get_section_role_description,
+    _parse_form_structure,
+)
 
 
 ROLES = ["drums", "bass", "chords", "lead"]
@@ -319,3 +323,100 @@ class TestExpandedKeywords:
         assert "intro" in names
         assert "groove" in names or "verse" in names
         assert "solo" in names
+
+
+# =============================================================================
+# Form.structure parsing (priority over keyword scan)
+# =============================================================================
+
+class TestFormStructureParsing:
+    """Regression tests: Form.structure field takes priority over keyword scan."""
+
+    def test_parse_form_structure_basic(self):
+        """_parse_form_structure extracts dash-separated section names."""
+        prompt = "Some text\nForm:\n  structure: intro-verse-chorus\n  more stuff"
+        result = _parse_form_structure(prompt)
+        assert result == ["intro", "verse", "chorus"]
+
+    def test_parse_form_structure_two_sections(self):
+        """Two-section structure is parsed correctly."""
+        prompt = "STORI PROMPT\nForm:\n  structure: intro-groove\n  development:"
+        result = _parse_form_structure(prompt)
+        assert result == ["intro", "groove"]
+
+    def test_parse_form_structure_nonstandard_names(self):
+        """Non-standard names like alap-jor-gat-jhala are preserved."""
+        prompt = "Form:\n  structure: alap-jor-gat-jhala\n"
+        result = _parse_form_structure(prompt)
+        assert result == ["alap", "jor", "gat", "jhala"]
+
+    def test_parse_form_structure_absent(self):
+        """Returns None when no Form.structure field is present."""
+        prompt = "Just a regular prompt with no Form section."
+        result = _parse_form_structure(prompt)
+        assert result is None
+
+    def test_parse_form_structure_single_name(self):
+        """Single section name is not enough for a split."""
+        prompt = "Form:\n  structure: full\n"
+        result = _parse_form_structure(prompt)
+        assert result is None
+
+    def test_form_structure_overrides_keyword_scan(self):
+        """Form.structure takes priority — narrative 'chorus' is ignored."""
+        prompt = """\
+STORI PROMPT
+Section: intro
+Style: neo-soul
+Role: [drums, bass, keys]
+
+Effects:
+  keys:
+    chorus:
+      rate: 0.3hz
+      depth: subtle
+
+Expression:
+  arc: intimate → settled → grooving → warm resolve
+
+Form:
+  structure: intro-groove
+  development:
+    - section: intro (bars 1-4)
+    - section: groove (bars 5-8)
+"""
+        sections = parse_sections(prompt, bars=8, roles=["drums", "bass", "keys"])
+        names = [s["name"] for s in sections]
+        assert names == ["intro", "groove"], (
+            f"Form.structure says intro-groove, but got {names} "
+            f"(keyword scanner likely picked up 'chorus' from Effects)"
+        )
+
+    def test_form_structure_sections_fit_within_bars(self):
+        """Sections produced from Form.structure don't exceed total bars."""
+        prompt = "Form:\n  structure: intro-groove\n"
+        sections = parse_sections(prompt, bars=8, roles=["drums"])
+        total_beats = sum(s["length_beats"] for s in sections)
+        assert total_beats == 32.0, f"8 bars = 32 beats, got {total_beats}"
+
+    def test_e2e_pocket_groove_no_phantom_sections(self):
+        """The e2e_pocket_groove prompt must produce exactly 2 sections.
+
+        Previously, keyword scanning found 7 phantom sections from narrative
+        text (chorus in Effects, solo/bridge/verse/build in descriptions),
+        making generation impossible within max_turns=3.
+        """
+        from app.data.maestro_ui.prompts_global import PROMPTS_GLOBAL
+
+        prompt = next(p for p in PROMPTS_GLOBAL if p.id == "e2e_pocket_groove")
+        sections = parse_sections(
+            prompt.full_prompt, bars=8, roles=["drums", "bass", "keys"]
+        )
+        names = [s["name"] for s in sections]
+        assert len(sections) == 2, (
+            f"e2e_pocket_groove declares Form.structure: intro-groove "
+            f"(2 sections), but parser returned {len(sections)}: {names}"
+        )
+        assert names == ["intro", "groove"]
+        total_beats = sum(s["length_beats"] for s in sections)
+        assert total_beats == 32.0

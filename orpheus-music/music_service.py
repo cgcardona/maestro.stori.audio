@@ -27,6 +27,7 @@ import mido
 import traceback
 import tempfile
 import os
+import copy
 import json
 import hashlib
 import logging
@@ -228,7 +229,7 @@ def get_cached_result(cache_key: str) -> Optional[dict]:
     entry.hits += 1
     
     logger.info(f"✅ Cache hit for {cache_key} (hits: {entry.hits}, age: {age:.0f}s)")
-    return entry.result
+    return copy.deepcopy(entry.result)
 
 
 def cache_result(cache_key: str, result: dict, key_data: Optional[dict] = None):
@@ -374,6 +375,9 @@ class GenerateRequest(BaseModel):
     temperature: Optional[float] = None                # Override computed temperature
     top_p: Optional[float] = None                      # Override computed top_p
     
+    # Correlation
+    composition_id: Optional[str] = None               # Cross-service correlation ID from Maestro
+
     # Legacy support
     style_hints: Optional[List[str]] = None            # Deprecated: use musical_goals
 
@@ -400,6 +404,7 @@ class JobStatus(str, Enum):
     RUNNING = "running"
     COMPLETE = "complete"
     FAILED = "failed"
+    CANCELED = "canceled"
 
 
 class QueueFullError(Exception):
@@ -418,6 +423,8 @@ class Job:
     completed_at: Optional[float] = None
     event: asyncio.Event = field(default_factory=asyncio.Event)
     position: int = 0
+    dedupe_key: Optional[str] = None
+    composition_id: Optional[str] = None
 
 
 class JobQueue:
@@ -430,6 +437,7 @@ class JobQueue:
     def __init__(self, max_queue: int = 20, max_workers: int = 2):
         self._queue: asyncio.Queue[Job] = asyncio.Queue(maxsize=max_queue)
         self._jobs: dict[str, Job] = {}
+        self._dedupe: dict[str, str] = {}  # dedupe_key -> job_id
         self._max_workers = max_workers
         self._max_queue = max_queue
         self._workers: list[asyncio.Task] = []  # type: ignore[type-arg]
@@ -457,12 +465,30 @@ class JobQueue:
         self._workers.clear()
         logger.info("🛑 JobQueue shut down")
 
-    def submit(self, request: GenerateRequest) -> Job:
-        """Enqueue a generation request. Raises QueueFullError when at capacity."""
+    def submit(self, request: GenerateRequest, dedupe_key: Optional[str] = None) -> Job:
+        """Enqueue a generation request. Raises QueueFullError when at capacity.
+
+        If *dedupe_key* is provided and an in-flight job with the same key
+        exists (queued or running), the existing job is returned instead of
+        creating a duplicate.
+        """
+        if dedupe_key:
+            existing_id = self._dedupe.get(dedupe_key)
+            if existing_id:
+                existing = self._jobs.get(existing_id)
+                if existing and existing.status in (JobStatus.QUEUED, JobStatus.RUNNING):
+                    logger.info(
+                        f"📥 Job {existing.id[:8]} deduplicated "
+                        f"(key {dedupe_key[:8]})"
+                    )
+                    return existing
+
         job = Job(
             id=str(uuid.uuid4()),
             request=request,
             created_at=time(),
+            dedupe_key=dedupe_key,
+            composition_id=request.composition_id,
         )
         try:
             self._queue.put_nowait(job)
@@ -472,7 +498,10 @@ class JobQueue:
             )
         job.position = self._queue.qsize()
         self._jobs[job.id] = job
-        logger.info(f"📥 Job {job.id[:8]} queued (position {job.position})")
+        if dedupe_key:
+            self._dedupe[dedupe_key] = job.id
+        _cid = f"[{job.composition_id[:8]}]" if job.composition_id else ""
+        logger.info(f"📥{_cid} Job {job.id[:8]} queued (position {job.position})")
         return job
 
     def get_job(self, job_id: str) -> Optional[Job]:
@@ -497,10 +526,29 @@ class JobQueue:
 
     # ── internal ────────────────────────────────────────────────────────
 
+    def cancel(self, job_id: str) -> Optional[Job]:
+        """Cancel a job. Queued jobs are skipped by workers; running jobs are
+        marked canceled and their result is dropped."""
+        job = self._jobs.get(job_id)
+        if job is None:
+            return None
+        if job.status in (JobStatus.COMPLETE, JobStatus.FAILED, JobStatus.CANCELED):
+            return job
+        job.status = JobStatus.CANCELED
+        job.completed_at = time()
+        job.event.set()
+        if job.dedupe_key:
+            self._dedupe.pop(job.dedupe_key, None)
+        logger.info(f"🚫 Job {job.id[:8]} canceled")
+        return job
+
     async def _worker(self, worker_id: int) -> None:
         logger.info(f"🔧 Worker {worker_id} started")
         while True:
             job = await self._queue.get()
+            if job.status == JobStatus.CANCELED:
+                self._queue.task_done()
+                continue
             job.status = JobStatus.RUNNING
             job.started_at = time()
             try:
@@ -519,8 +567,9 @@ class JobQueue:
                 self._queue.task_done()
                 elapsed = job.completed_at - (job.started_at or job.created_at)
                 icon = "✅" if job.status == JobStatus.COMPLETE else "❌"
+                _cid = f"[{job.composition_id[:8]}]" if job.composition_id else ""
                 logger.info(
-                    f"{icon} Worker {worker_id} job {job.id[:8]} "
+                    f"{icon}{_cid} Worker {worker_id} job {job.id[:8]} "
                     f"{job.status.value} in {elapsed:.1f}s"
                 )
 
@@ -537,7 +586,9 @@ class JobQueue:
             ]
             if expired:
                 for jid in expired:
-                    del self._jobs[jid]
+                    job = self._jobs.pop(jid, None)
+                    if job and job.dedupe_key:
+                        self._dedupe.pop(job.dedupe_key, None)
                 logger.info(f"🧹 Cleaned up {len(expired)} expired jobs")
 
 
@@ -1701,7 +1752,7 @@ async def generate(request: GenerateRequest):
         }
 
     try:
-        job = _job_queue.submit(request)
+        job = _job_queue.submit(request, dedupe_key=cache_key)
     except QueueFullError:
         return JSONResponse(
             status_code=503,
@@ -1738,6 +1789,16 @@ async def wait_for_job(
         except asyncio.TimeoutError:
             pass
 
+    return _job_response(job)
+
+
+@app.post("/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str):
+    """Cancel a queued or running job."""
+    assert _job_queue is not None
+    job = _job_queue.cancel(job_id)
+    if job is None:
+        return JSONResponse(status_code=404, content={"error": "Job not found"})
     return _job_response(job)
 
 

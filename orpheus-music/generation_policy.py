@@ -24,8 +24,9 @@ Key principles:
 """
 
 from dataclasses import dataclass
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Tuple
 from enum import Enum
+import os
 
 
 # =============================================================================
@@ -309,9 +310,45 @@ def apply_tempo_adjustments(controls: GenerationControlVector, tempo: int) -> Ge
 ORPHEUS_RANGES = {
     "temperature": (0.70, 1.10),
     "top_p": (0.90, 0.99),
-    "tokens_per_bar": (24, 64),
-    "num_prime_tokens": (48, 128),
+    "tokens_per_bar": (32, 96),
+    "num_prime_tokens": (512, 4096),
 }
+
+# Orpheus Music Transformer context window (prime + gen tokens)
+_CONTEXT_WINDOW = 8192
+_MAX_GEN_TOKENS = int(os.environ.get("ORPHEUS_MAX_GEN_TOKENS", "4096"))
+_MIN_PRIME_TOKENS = 256
+
+
+def allocate_token_budget(
+    bars: int,
+    tokens_per_bar: int,
+    prime_from_policy: int,
+    *,
+    context_window: int = _CONTEXT_WINDOW,
+    max_gen: int = _MAX_GEN_TOKENS,
+    min_prime: int = _MIN_PRIME_TOKENS,
+) -> Tuple[int, int]:
+    """
+    Split the model's context window between prime and generation tokens.
+
+    Short sections get generous priming (better musical coherence).
+    Long sections shift budget toward generation while keeping a useful prime floor.
+
+    Returns:
+        (num_prime_tokens, num_gen_tokens)
+    """
+    raw_gen = bars * tokens_per_bar
+    gen = min(raw_gen, max_gen)
+
+    remaining = context_window - gen
+    prime = max(min_prime, min(prime_from_policy, remaining))
+
+    # If gen + prime still exceeds the window, trim gen to fit
+    if gen + prime > context_window:
+        gen = context_window - prime
+
+    return (prime, gen)
 
 
 def controls_to_orpheus_params(controls: GenerationControlVector) -> dict:
@@ -392,7 +429,7 @@ def denormalize_signed(value: float) -> float:
 # Policy Versioning (for A/B testing)
 # =============================================================================
 
-POLICY_VERSION = "v1.0"
+POLICY_VERSION = "v1.1"
 
 def get_policy_version() -> str:
     """Return current policy version for logging/analytics."""

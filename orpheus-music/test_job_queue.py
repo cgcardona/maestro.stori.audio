@@ -2,10 +2,12 @@
 import asyncio
 
 import pytest
+import pytest_asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 from httpx import AsyncClient, ASGITransport
 
+import music_service
 from music_service import (
     app,
     Job,
@@ -130,6 +132,114 @@ class TestJobQueue:
         assert j2.status == JobStatus.COMPLETE
 
     @pytest.mark.asyncio
+    async def test_dedupe_returns_existing_queued_job(self):
+        """Submitting with the same dedupe key returns the existing job."""
+        q = JobQueue(max_queue=5, max_workers=1)
+        j1 = q.submit(GenerateRequest(genre="lofi", tempo=85), dedupe_key="abc123")
+        j2 = q.submit(GenerateRequest(genre="lofi", tempo=85), dedupe_key="abc123")
+        assert j1 is j2
+        assert q.depth == 1  # only one job in the queue
+
+    @pytest.mark.asyncio
+    async def test_dedupe_allows_different_keys(self):
+        """Different dedupe keys create separate jobs."""
+        q = JobQueue(max_queue=5, max_workers=1)
+        j1 = q.submit(GenerateRequest(genre="lofi", tempo=85), dedupe_key="aaa")
+        j2 = q.submit(GenerateRequest(genre="trap", tempo=140), dedupe_key="bbb")
+        assert j1 is not j2
+        assert q.depth == 2
+
+    @pytest.mark.asyncio
+    async def test_dedupe_allows_resubmit_after_completion(self):
+        """After a job completes, the same dedupe key creates a new job."""
+        q = JobQueue(max_queue=5, max_workers=1)
+
+        with patch("music_service._do_generate", new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = GenerateResponse(success=True, tool_calls=[])
+            await q.start()
+            try:
+                j1 = q.submit(GenerateRequest(genre="x", tempo=90), dedupe_key="dup")
+                await asyncio.wait_for(j1.event.wait(), timeout=5)
+                assert j1.status == JobStatus.COMPLETE
+
+                j2 = q.submit(GenerateRequest(genre="x", tempo=90), dedupe_key="dup")
+                assert j2 is not j1  # new job created
+                assert j2.status == JobStatus.QUEUED
+            finally:
+                await q.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_dedupe_no_key_always_creates_new(self):
+        """Without a dedupe key, every submit creates a new job."""
+        q = JobQueue(max_queue=5, max_workers=1)
+        j1 = q.submit(GenerateRequest(genre="lofi", tempo=85))
+        j2 = q.submit(GenerateRequest(genre="lofi", tempo=85))
+        assert j1 is not j2
+        assert q.depth == 2
+
+    @pytest.mark.asyncio
+    async def test_cancel_queued_job(self):
+        """Canceling a queued job marks it canceled and sets the event."""
+        q = JobQueue(max_queue=5, max_workers=1)
+        job = q.submit(GenerateRequest(genre="lofi", tempo=85))
+        assert job.status == JobStatus.QUEUED
+
+        result = q.cancel(job.id)
+        assert result is not None
+        assert result.status == JobStatus.CANCELED
+        assert job.event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_cancel_unknown_job_returns_none(self):
+        """Canceling a nonexistent job returns None."""
+        q = JobQueue(max_queue=5, max_workers=1)
+        assert q.cancel("nonexistent") is None
+
+    @pytest.mark.asyncio
+    async def test_canceled_job_skipped_by_worker(self):
+        """Worker skips canceled jobs without processing them."""
+        q = JobQueue(max_queue=5, max_workers=1)
+        call_count = 0
+
+        async def _counting_gen(req):
+            nonlocal call_count
+            call_count += 1
+            return GenerateResponse(success=True, tool_calls=[])
+
+        with patch("music_service._do_generate", side_effect=_counting_gen):
+            await q.start()
+            try:
+                j1 = q.submit(GenerateRequest(genre="first", tempo=90))
+                q.cancel(j1.id)  # cancel before worker picks it up
+
+                j2 = q.submit(GenerateRequest(genre="second", tempo=90))
+                await asyncio.wait_for(j2.event.wait(), timeout=5)
+            finally:
+                await q.shutdown()
+
+        assert call_count == 1  # only j2 was processed
+        assert j1.status == JobStatus.CANCELED
+        assert j2.status == JobStatus.COMPLETE
+
+    @pytest.mark.asyncio
+    async def test_cancel_completed_job_is_noop(self):
+        """Canceling an already-completed job does not change its status."""
+        q = JobQueue(max_queue=5, max_workers=1)
+
+        with patch("music_service._do_generate", new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = GenerateResponse(success=True, tool_calls=[])
+            await q.start()
+            try:
+                job = q.submit(GenerateRequest(genre="x", tempo=90))
+                await asyncio.wait_for(job.event.wait(), timeout=5)
+                assert job.status == JobStatus.COMPLETE
+
+                result = q.cancel(job.id)
+                assert result.status == JobStatus.COMPLETE  # unchanged
+            finally:
+                await q.shutdown()
+
+    @pytest.mark.asyncio
     async def test_cleanup_removes_expired_jobs(self):
         """Completed jobs older than TTL are cleaned up."""
         q = JobQueue(max_queue=5, max_workers=1)
@@ -158,12 +268,24 @@ class TestJobQueue:
 class TestEndpoints:
     """Integration tests for the /generate, /jobs, /queue/status endpoints."""
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def async_client(self):
         """Provide an httpx AsyncClient wired to the FastAPI ASGI app."""
-        transport = ASGITransport(app=app)  # type: ignore[arg-type]
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
-            yield c
+        queue = JobQueue(max_queue=16, max_workers=1)
+        await queue.start()
+        music_service._job_queue = queue
+        try:
+            with patch("music_service._do_generate", new_callable=AsyncMock, return_value={
+                "success": True,
+                "tool_calls": [],
+                "metadata": {"mocked": True},
+            }):
+                transport = ASGITransport(app=app)  # type: ignore[arg-type]
+                async with AsyncClient(transport=transport, base_url="http://test") as c:
+                    yield c
+        finally:
+            await queue.shutdown()
+            music_service._job_queue = None
 
     @pytest.mark.asyncio
     async def test_generate_cache_hit_returns_complete(self, async_client):

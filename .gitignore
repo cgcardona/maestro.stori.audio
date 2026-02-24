@@ -225,3 +225,5 @@ assets/bundle/
 
 # Reference MIDI (downloaded for analysis, not committed)
 reference_midi/
+
+logs.txt

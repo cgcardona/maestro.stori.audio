@@ -784,6 +784,53 @@ class TestMusicalGoalsPayload:
 
 
 # =============================================================================
+# Correlation ID tests
+# =============================================================================
+
+
+class TestCorrelationId:
+    """composition_id is threaded through to the HTTP payload."""
+
+    def _make_client(self) -> OrpheusClient:
+        with patch("app.services.orpheus.settings") as m:
+            _patch_settings(m)
+            return OrpheusClient()
+
+    @pytest.mark.asyncio
+    async def test_composition_id_included_in_payload(self):
+        """When composition_id is provided, it appears in the POST body."""
+        c = self._make_client()
+        c._client = MagicMock()
+        c._client.post = AsyncMock(
+            return_value=_submit_resp(status="complete", result=_ok_gen_result())
+        )
+
+        await c.generate(
+            genre="jazz", tempo=100, bars=4,
+            composition_id="trace-abc123",
+        )
+
+        _, kwargs = c._client.post.call_args
+        payload = kwargs["json"]
+        assert payload["composition_id"] == "trace-abc123"
+
+    @pytest.mark.asyncio
+    async def test_composition_id_omitted_when_none(self):
+        """When composition_id is None, the key must not appear in the body."""
+        c = self._make_client()
+        c._client = MagicMock()
+        c._client.post = AsyncMock(
+            return_value=_submit_resp(status="complete", result=_ok_gen_result())
+        )
+
+        await c.generate(genre="jazz", tempo=100, bars=4)
+
+        _, kwargs = c._client.post.call_args
+        payload = kwargs["json"]
+        assert "composition_id" not in payload
+
+
+# =============================================================================
 # Circuit breaker tests
 # =============================================================================
 

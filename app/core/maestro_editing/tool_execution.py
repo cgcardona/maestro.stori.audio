@@ -147,6 +147,8 @@ async def _execute_agent_generator(
     emotion_vector = composition_context.get("emotion_vector")
     if emotion_vector is not None:
         gen_kwargs["emotion_vector"] = emotion_vector
+    if trace and hasattr(trace, "trace_id"):
+        gen_kwargs["composition_id"] = trace.trace_id
 
     import time as _time
     _gen_start = _time.monotonic()

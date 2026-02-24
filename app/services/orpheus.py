@@ -220,6 +220,7 @@ class OrpheusClient:
         energy_excitement: float = 0.0,
         complexity: float = 0.5,
         quality_preset: str = "balanced",
+        composition_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Generate MIDI via Orpheus using the async submit + long-poll pattern.
 
@@ -249,6 +250,10 @@ class OrpheusClient:
             payload["key"] = key
         if musical_goals:
             payload["musical_goals"] = musical_goals
+        if composition_id:
+            payload["composition_id"] = composition_id
+
+        _log_prefix = f"[{composition_id[:8]}]" if composition_id else ""
 
         if self._cb.is_open:
             return {
@@ -261,7 +266,7 @@ class OrpheusClient:
                 "retry_count": 0,
             }
 
-        logger.info(f"Generating {instruments} in {genre} style at {tempo} BPM")
+        logger.info(f"{_log_prefix} Generating {instruments} in {genre} style at {tempo} BPM")
         if musical_goals:
             logger.info(f"  Musical goals: {musical_goals}")
         if not self.hf_token:
@@ -338,7 +343,7 @@ class OrpheusClient:
                         self._cb.record_success()
                         _elapsed = asyncio.get_event_loop().time() - _gen_start
                         logger.info(
-                            f"[Orpheus] ✅ Cache hit for {instruments} in {_elapsed:.1f}s"
+                            f"{_log_prefix}[Orpheus] ✅ Cache hit for {instruments} in {_elapsed:.1f}s"
                         )
                         return {
                             "success": result.get("success", False),
@@ -359,7 +364,7 @@ class OrpheusClient:
                             "retry_count": attempt,
                         }
                     logger.info(
-                        f"[Orpheus] 📥 Job {job_id[:8]} submitted for {instruments} "
+                        f"{_log_prefix}[Orpheus] 📥 Job {job_id[:8]} submitted for {instruments} "
                         f"(position {data.get('position', '?')})"
                     )
                     break
@@ -447,7 +452,7 @@ class OrpheusClient:
 
                         self._cb.record_success()
                         logger.info(
-                            f"[Orpheus] ✅ Job {job_id[:8]} complete for "
+                            f"{_log_prefix}[Orpheus] ✅ Job {job_id[:8]} complete for "
                             f"{instruments} in {_elapsed:.1f}s "
                             f"(poll {poll_num + 1}/{max_polls})"
                         )

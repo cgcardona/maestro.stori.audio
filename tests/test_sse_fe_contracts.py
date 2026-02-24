@@ -1933,6 +1933,34 @@ class TestServerOwnedRetryContracts:
         assert "stori_add_midi_region" in func_body
         assert "stori_generate_midi" in func_body
 
+    def test_dispatched_sections_prevent_useless_retry_turns(self):
+        """Once _dispatch_section_children handles all sections (including failures),
+        _missing_stages() must NOT trigger retry turns.  The LLM cannot fix
+        Orpheus failures and server-owned retries already ran.
+        """
+        import inspect
+        from app.core.maestro_agent_teams import agent as agent_mod
+        source = inspect.getsource(agent_mod._dispatch_section_children)
+        lines = source.split("\n")
+        in_aggregate = False
+        aggregate_lines = []
+        for line in lines:
+            if "Aggregate section results" in line:
+                in_aggregate = True
+            if in_aggregate:
+                aggregate_lines.append(line)
+                if "Build collapsed tool-result" in line:
+                    break
+        block = "\n".join(aggregate_lines)
+        assert "regions_completed += 1" in block, (
+            "All dispatched sections must increment regions_completed "
+            "regardless of success"
+        )
+        assert "generates_completed += 1" in block, (
+            "All dispatched sections must increment generates_completed "
+            "regardless of success"
+        )
+
     def test_no_entity_manifest_injection_on_retry(self):
         """Retry turns must NOT inject entity manifest (regionIds not needed)."""
         import inspect

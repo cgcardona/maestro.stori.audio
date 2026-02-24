@@ -1281,6 +1281,95 @@ class TestContractHardError:
             )
 
 
+class TestOrphanedRegionHandling:
+    """Regression: orphaned regions (sent without paired generates) must be
+    processed and counted toward _regions_completed so the multi-turn retry
+    loop in _run_instrument_agent_inner makes progress.
+
+    Before this fix, the LLM would send N regions in Turn 1 without generates.
+    ``_dispatch_section_children`` used ``zip(region_tcs, generate_tcs)``
+    producing 0 pairs, so regions were never executed and _regions_completed
+    stayed at 0.  ``_missing_stages()`` then told the LLM all stages were
+    still pending, wasting all max_turns and producing zero notes.
+    """
+
+    @pytest.mark.anyio
+    async def test_orphaned_regions_increment_regions_completed(self):
+        """Regions sent without generates are executed and counted."""
+        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+
+        sections = [
+            _section("intro", start_beat=0, length_beats=16),
+            _section("groove", start_beat=16, length_beats=16),
+        ]
+        ic = _instrument_contract(sections, role="drums")
+
+        store = StateStore(conversation_id="test-orphaned")
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+
+        region_tcs = [
+            _region_tc("r1", start_beat=0, duration=16),
+            _region_tc("r2", start_beat=16, duration=16),
+        ]
+
+        with patch(
+            "app.core.maestro_agent_teams.agent._apply_single_tool_call"
+        ) as mock_apply:
+            mock_apply.return_value = _ok_region_outcome("r1", "reg-001")
+
+            result = await _dispatch_section_children(
+                tool_calls=region_tcs,
+                sections=sections,
+                existing_track_id="trk-1",
+                instrument_name="Drums",
+                role="drums",
+                style="neo-soul",
+                tempo=92.0,
+                key="Fm",
+                agent_id="drums",
+                agent_log="[test]",
+                reusing=True,
+                allowed_tool_names={
+                    "stori_add_midi_region",
+                    "stori_generate_midi",
+                },
+                store=store,
+                trace=_trace(),
+                sse_queue=queue,
+                instrument_contract=ic,
+                collected_tool_calls=[],
+                all_tool_results=[{"trackId": "trk-1"}],
+                add_notes_failures={},
+                runtime_context=None,
+                plan_tracker=MagicMock(
+                    steps=[],
+                    complete_step_by_id=MagicMock(return_value=None),
+                    activate_step=MagicMock(return_value={"type": "planStepUpdate"}),
+                    get_step=MagicMock(return_value=None),
+                ),
+                step_ids=["s1"],
+                active_step_id=None,
+                llm=MagicMock(),
+                prior_stage_track=True,
+                prior_stage_effect=False,
+                prior_regions_completed=0,
+                prior_regions_ok=0,
+                prior_generates_completed=0,
+            )
+
+            tool_result_msgs, _, _, regions_completed, regions_ok, generates_completed = result
+
+            assert regions_completed == 2, (
+                f"Both orphaned regions should be counted, got {regions_completed}"
+            )
+            assert regions_ok == 2
+            assert generates_completed == 0
+            assert len(tool_result_msgs) == 2, (
+                "Each orphaned region must produce a tool result message"
+            )
+            assert mock_apply.call_count == 2
+
+
 class TestExecutionServicesSeparation:
     """Regression: RuntimeContext is pure data; mutable services are in ExecutionServices."""
 
@@ -1886,7 +1975,7 @@ class TestServerOwnedRetries:
                 prior_generates_completed=0,
             )
 
-        assert gc == 0, "No retries should happen with circuit breaker open"
+        assert gc == 1, "Section dispatched (counted as completed) even though generate failed — server already retried"
 
     @pytest.mark.anyio
     async def test_summary_message_replaces_individual_tool_results(self):
@@ -1992,6 +2081,7 @@ class TestServerOwnedRetries:
         assert len(summary["sections"]) == 2
         assert all(s["status"] == "ok" for s in summary["sections"])
 
-        # Remaining msgs are stubs
+        # Remaining msgs are stubs (explicit, not ambiguous "...")
         for stub in msgs[2:]:
-            assert stub["content"] == "..."
+            assert "batch_complete" in stub["content"]
+            assert stub["content"] != "..."

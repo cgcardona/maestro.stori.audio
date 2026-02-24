@@ -209,6 +209,32 @@ def _get_section_role_description(section_name: str, role: str) -> str:
     return ""
 
 
+def _parse_form_structure(prompt: str) -> list[str] | None:
+    """Extract section names from the ``Form: structure:`` field in a STORI PROMPT.
+
+    This is the authoritative source of section layout — it takes precedence
+    over keyword scanning of narrative text, which produces false positives
+    when descriptive prose mentions words like "chorus" or "bridge".
+
+    Returns a list of canonical section names, or *None* if the field is absent.
+    """
+    m = re.search(
+        r"^Form:\s*\n\s+structure:\s*(.+)",
+        prompt,
+        re.MULTILINE,
+    )
+    if not m:
+        return None
+
+    raw = m.group(1).strip()
+    parts = re.split(r"[-–—_→>]+", raw)
+    names = [p.strip().lower().replace(" ", "_") for p in parts if p.strip()]
+    if len(names) < 2:
+        return None
+
+    return names
+
+
 def parse_sections(
     prompt: str,
     bars: int,
@@ -232,27 +258,53 @@ def parse_sections(
         Returns a single full-arrangement section if no sections are detected.
     """
     beats_total = bars * 4
-    prompt_lower = prompt.lower()
 
-    # Detect which sections appear in the prompt (in order of appearance).
-    detected: list[tuple[int, str]] = []  # (char_pos, section_name)
+    # ── Priority 1: explicit Form.structure field (authoritative) ──
+    form_sections = _parse_form_structure(prompt)
+    if form_sections:
+        logger.info(
+            f"Using Form.structure field: {form_sections} "
+            f"(skipping keyword scan)"
+        )
+        ordered = form_sections
+    else:
+        # ── Priority 2: keyword scan of prompt text (legacy fallback) ──
+        ordered = _detect_sections_by_keywords(prompt)
+
+    if not ordered:
+        logger.debug(
+            "No sections detected in STORI PROMPT "
+            "— using single full-arrangement section"
+        )
+        return _single_section(beats_total, roles)
+
+    if len(ordered) < 2:
+        return _single_section(beats_total, roles)
+
+    return _build_sections(ordered, beats_total, roles)
+
+
+def _detect_sections_by_keywords(prompt: str) -> list[str]:
+    """Detect section names by scanning the prompt for keywords.
+
+    Falls back to this when the STORI PROMPT lacks an explicit
+    ``Form: structure:`` field.
+    """
+    prompt_lower = prompt.lower()
+    detected: list[tuple[int, str]] = []
 
     for pattern, name, _ in _SECTION_KEYWORDS:
         for m in re.finditer(pattern, prompt_lower):
             detected.append((m.start(), name))
 
-    # Inferred sections from descriptive language
     for pattern, name in _INFERRED_SECTIONS:
         for m in re.finditer(pattern, prompt_lower):
             if not any(n == name for _, n in detected):
                 detected.append((m.start(), name))
 
     if not detected:
-        # No sections found — return a single full-arrangement section.
-        logger.debug("No sections detected in STORI PROMPT — using single full-arrangement section")
-        return _single_section(beats_total, roles)
+        return []
 
-    # Deduplicate and sort by position in the prompt (preserves narrative order).
     seen: set[str] = set()
     ordered: list[str] = []
     for _, name in sorted(detected, key=lambda x: x[0]):
@@ -260,10 +312,15 @@ def parse_sections(
             ordered.append(name)
             seen.add(name)
 
-    if len(ordered) < 2:
-        # Only one section keyword found — not enough for a meaningful split.
-        return _single_section(beats_total, roles)
+    return ordered
 
+
+def _build_sections(
+    ordered: list[str],
+    beats_total: float,
+    roles: list[str],
+) -> list[dict]:
+    """Distribute *beats_total* across *ordered* section names proportionally."""
     # Distribute total beats across sections proportionally using default weights.
     weights = {name: w for _, name, w in _SECTION_KEYWORDS}
     total_weight = sum(weights.get(n, 0.2) for n in ordered)

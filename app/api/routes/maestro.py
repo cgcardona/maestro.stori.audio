@@ -32,6 +32,10 @@ from app.config import settings
 from app.models.requests import MaestroRequest
 from app.core.maestro_handlers import UsageTracker, orchestrate
 from app.core.sanitize import normalise_user_input
+from app.core.composition_limiter import (
+    get_composition_limiter,
+    CompositionLimitExceeded,
+)
 from app.core.intent import get_intent_result_with_llm, SSEState
 from app.core.llm_client import LLMClient
 from app.core.planner import preview_plan
@@ -196,50 +200,60 @@ async def stream_maestro(
         )
 
         try:
-            async for event in orchestrate(
-                safe_prompt,
-                maestro_request.project,
-                model=selected_model,
-                usage_tracker=usage_tracker,
-                conversation_id=maestro_request.conversation_id,
-                user_id=user_id,
-                conversation_history=conversation_history,
-                is_cancelled=request.is_disconnected,
-                quality_preset=maestro_request.quality_preset,
-            ):
-                _is_terminal = '"type": "complete"' in event or '"type":"complete"' in event
-                if not _is_terminal and await request.is_disconnected():
-                    _elapsed = _time.monotonic() - _stream_start
-                    logger.warning(
-                        f"⚠️ SSE client disconnected after {_elapsed:.1f}s, "
-                        f"{_seq} events sent — aborting stream"
-                    )
-                    return
-                yield _with_seq(event)
+            async with get_composition_limiter().acquire(user_id):
+                async for event in orchestrate(
+                    safe_prompt,
+                    maestro_request.project,
+                    model=selected_model,
+                    usage_tracker=usage_tracker,
+                    conversation_id=maestro_request.conversation_id,
+                    user_id=user_id,
+                    conversation_history=conversation_history,
+                    is_cancelled=request.is_disconnected,
+                    quality_preset=maestro_request.quality_preset,
+                ):
+                    _is_terminal = '"type": "complete"' in event or '"type":"complete"' in event
+                    if not _is_terminal and await request.is_disconnected():
+                        _elapsed = _time.monotonic() - _stream_start
+                        logger.warning(
+                            f"⚠️ SSE client disconnected after {_elapsed:.1f}s, "
+                            f"{_seq} events sent — aborting stream"
+                        )
+                        return
+                    yield _with_seq(event)
 
-            _elapsed = _time.monotonic() - _stream_start
-            logger.info(
-                f"✅ SSE stream completed: {_seq} events in {_elapsed:.1f}s"
-            )
+                _elapsed = _time.monotonic() - _stream_start
+                logger.info(
+                    f"✅ SSE stream completed: {_seq} events in {_elapsed:.1f}s"
+                )
 
-            if user_id and (usage_tracker.prompt_tokens > 0 or usage_tracker.completion_tokens > 0):
-                try:
-                    cost_cents = calculate_cost_cents(
-                        usage_tracker.prompt_tokens,
-                        usage_tracker.completion_tokens,
-                        selected_model,
-                    )
+                if user_id and (usage_tracker.prompt_tokens > 0 or usage_tracker.completion_tokens > 0):
+                    try:
+                        cost_cents = calculate_cost_cents(
+                            usage_tracker.prompt_tokens,
+                            usage_tracker.completion_tokens,
+                            selected_model,
+                        )
 
-                    await deduct_budget(
-                        db, user_id, cost_cents,
-                        safe_prompt, selected_model,
-                        usage_tracker.prompt_tokens, usage_tracker.completion_tokens,
-                        store_prompt=maestro_request.store_prompt,
-                    )
-                    await db.commit()
-                except Exception as e:
-                    logger.error(f"Budget deduction failed: {e}")
+                        await deduct_budget(
+                            db, user_id, cost_cents,
+                            safe_prompt, selected_model,
+                            usage_tracker.prompt_tokens, usage_tracker.completion_tokens,
+                            store_prompt=maestro_request.store_prompt,
+                        )
+                        await db.commit()
+                    except Exception as e:
+                        logger.error(f"Budget deduction failed: {e}")
 
+        except CompositionLimitExceeded as e:
+            logger.warning(f"⚠️ {e}")
+            yield await sse_event({"type": "error", "message": str(e)})
+            yield await sse_event({
+                "type": "complete",
+                "success": False,
+                "error": f"Too many concurrent compositions (limit: {e.limit})",
+                "traceId": "composition-limit",
+            })
         except ProtocolSerializationError as e:
             _elapsed = _time.monotonic() - _stream_start
             logger.error(

@@ -6,6 +6,7 @@ monitoring generation quality over time.
 """
 import pytest
 from quality_metrics import analyze_quality, compare_generations
+from generation_policy import intent_to_controls
 
 
 def test_analyze_empty_notes():
@@ -83,7 +84,7 @@ def test_pitch_range_scoring():
     # Good range (2 octaves)
     good_notes = [
         {"pitch": 60 + i * 2, "startBeat": i * 0.5, "duration": 0.5, "velocity": 80}
-        for i in range(12)  # C4 to C6
+        for i in range(13)  # C4 to C6 (pitches 60..84, range=24)
     ]
     
     # Too narrow (single note)
