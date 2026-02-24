@@ -59,11 +59,9 @@ TIER1_TOOLS: list[dict[str, Any]] = [
                     "prompt": {
                         "type": "string",
                         "description": (
-                            "Instrument-specific musical description (2-3 sentences). "
-                            "Include: rhythmic role (groove anchor/counter-rhythm/pad/lead), "
-                            "note range (e.g. 'bass stays below C3'), density (sparse/dense), "
-                            "and how this part interacts with other tracks. "
-                            "Genre idioms (e.g. 'dembow bass line locking to the kick')."
+                            "IGNORED — Orpheus is a token-continuation model and cannot "
+                            "accept text prompts. Do NOT spend reasoning tokens crafting "
+                            "this field. Leave blank or omit entirely."
                         ),
                     },
                     "constraints": {

@@ -309,17 +309,17 @@ Phase 1 — SETUP (sequential, coordinator, no LLM)
   └── Set tempo, key (deterministic from ParsedPrompt)
 
 Phase 2 — INSTRUMENTS (all parents launched simultaneously)
-  ├── Drums parent   → LLM → create track → spawn section children:
-  │     ├── Intro child  → region → generate → signal bass
-  │     ├── Verse child  → region → generate → signal bass
-  │     └── Chorus child → region → generate → signal bass
-  ├── Bass parent    → LLM → create track → spawn section children:
-  │     ├── Intro child  → wait for drum intro → region → generate
-  │     ├── Verse child  → wait for drum verse → region → generate
-  │     └── Chorus child → wait for drum chorus → region → generate
-  ├── Keys parent    → LLM → create track → spawn section children (all parallel)
-  ├── Melody parent  → LLM → create track → spawn section children (all parallel)
-  └── Guitar parent  → LLM → create track → spawn section children (all parallel)
+  ├── Drums parent   → LLM → create track → section children (sequential for continuity):
+  │     ├── Intro child  → region → generate → signal bass → pass notes to next
+  │     ├── Verse child  → region → generate (seeded from intro) → signal bass → pass notes
+  │     └── Chorus child → region → generate (seeded from verse) → signal bass
+  ├── Bass parent    → LLM → create track → section children (sequential):
+  │     ├── Intro child  → wait for drum intro → region → generate → pass notes
+  │     ├── Verse child  → wait for drum verse → region → generate (seeded from intro) → pass notes
+  │     └── Chorus child → wait for drum chorus → region → generate (seeded from verse)
+  ├── Keys parent    → LLM → create track → section children (sequential for continuity)
+  ├── Melody parent  → LLM → create track → section children (sequential for continuity)
+  └── Guitar parent  → LLM → create track → section children (sequential for continuity)
 
 Phase 3 — MIXING (sequential, one coordinator LLM call, after all agents complete)
   └── Ensure buses, add sends, volume, pan
@@ -344,7 +344,7 @@ Melody: [intro ███|verse █████████|chorus ████�
 - **Failure signaling:** `signal_complete(sid, contract_hash=..., success=False)` lets dependents distinguish "drums failed" from "drums never ran" — bass proceeds without the rhythm spine instead of deadlocking.
 - **Signal lineage binding (swarm safety):** keys are `"{section_id}:{contract_hash}"`, not bare `section_id`. A drum signal from a different composition (different `contract_hash`) is invisible to the consumer waiting on the correct hash. `ProtocolViolationError` is raised if a stored result's `contract_hash` doesn't match what the waiter expected.
 
-Independent instruments (keys, melody, guitar, pads, etc.) ignore `SectionSignals` entirely — their section children all run in parallel from the start.
+Independent instruments (keys, melody, guitar, pads, etc.) ignore `SectionSignals` entirely — their section children run sequentially for musical continuity (each section is seeded from the previous section's output).
 
 ### Instrument parent flow (Level 2)
 
@@ -353,8 +353,8 @@ Independent instruments (keys, melody, guitar, pads, etc.) ignore `SectionSignal
    - Section-specific musical decisions are delegated to Level 3
 2. Parent executes `create_track` immediately, captures real `trackId`
 3. Groups remaining calls into section pairs `(region, generate_midi)`
-4. Spawns section children — parallel for all instruments (bass children self-gate via signals)
-5. **Server-owned retries** — `_dispatch_section_children` automatically retries failed sections (up to 2 retries per section, 2s/5s delays). Retries re-use the original frozen `SectionContract`, skip region creation if the region already exists (idempotent), and check the Orpheus circuit breaker before each retry round. No LLM involvement — the server replays the contract deterministically.
+4. Runs section children **sequentially** for cross-section musical continuity — each section uses the previous section's generated notes as a continuation seed for Orpheus, so the transformer extends from familiar harmonic context instead of starting cold from the genre seed every time. Bass children additionally self-gate via drum signals.
+5. **Server-owned retries** — `_dispatch_section_children` automatically retries failed sections (up to 2 retries per section, 2s/5s delays). Retries re-use the original frozen `SectionContract`, skip region creation if the region already exists (idempotent), pass continuity notes from the preceding section, and check the Orpheus circuit breaker before each retry round. No LLM involvement — the server replays the contract deterministically.
 6. Results are collapsed into **one summary tool-result message** per dispatch batch (plus `"..."` stubs for remaining `tool_call_id`s), keeping the LLM conversation small regardless of section count.
 7. Executes `effect` call at the end
 8. The LLM retry loop (`max_turns = 3`) catches any stage the LLM missed on Turn 0 — `_missing_stages()` checks track, region/generate counts, and effect. If generates are missing and the Orpheus circuit breaker is open, the loop aborts early. Server-owned retries handle *failed* section children; `_missing_stages()` handles the LLM *not emitting* the tool calls at all.
@@ -370,8 +370,8 @@ For single-section compositions, the parent uses the sequential execution path (
 5. Execute `stori_add_midi_region` — all structural params (`trackId`, `startBeat`, `durationBeats`) come **exclusively from the frozen contract**, never from LLM-proposed values. LLM drift is silently corrected. **Idempotent:** if a region already exists at the same (trackId, startBeat, durationBeats) location, the existing region's ID is returned with `skipped: true` and no `toolCall` event is emitted to the frontend — preventing duplicate-region errors when agents retry after context truncation.
 6. Capture `regionId` from result
 7. **Section reasoning**: brief streamed LLM call (`_reason_before_generate`) — reasons about section-specific musical approach (density, register, rhythmic choices). Emits `type: "reasoning"` events tagged with `agentId` + `sectionName` so the frontend can nest section-specific thinking under the correct section header. Returns a refined prompt for the generate call, or falls back to the parent's prompt on failure.
-8. Execute `stori_generate_midi` — structural params (`trackId`, `regionId`, `role`, `bars`, `key`, `start_beat`, `tempo`) also come from the frozen contract.
-9. Extract generated notes from SSE events
+8. Execute `stori_generate_midi` — structural params (`trackId`, `regionId`, `role`, `bars`, `key`, `start_beat`, `tempo`) also come from the frozen contract. If `previous_notes` were passed from the preceding section, they are threaded through the composition context to the Orpheus proxy, which uses them to build a continuation seed instead of the generic genre seed.
+9. Extract generated notes from SSE events and store them on `SectionResult.generated_notes` for the next section's continuity seed
 10. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
 11. If drums: call `section_signals.signal_complete(section_id, contract_hash=..., success=True, drum_notes=...)`
 12. Emit `status` SSE event: `"{instrument} / {section}: N notes generated"`
@@ -491,7 +491,7 @@ Implementation: `app/core/entity_registry.py`. Tests: `tests/test_entity_manifes
 
 **Thread safety:** asyncio's single-threaded event loop serialises all `StateStore` and `_PlanTracker` mutations — no locks needed. UUID-based entity IDs are collision-free across agents and sections.
 
-**Performance:** Wall-clock time for Phase 2 is `max(per-instrument time)` instead of `sum`, and within each instrument `max(per-section time)` instead of `sum(section times)`. For a 5-instrument, 3-section composition, bass sections start ~1 section behind drums rather than waiting for all 3 drum sections. Expected speedup: 3–5× for the instrument phase, with additional gains from section-level pipelining.
+**Performance:** Wall-clock time for Phase 2 is `max(per-instrument time)` instead of `sum`. Within each instrument, sections run sequentially for musical continuity (each ~10-30s on GPU), so a 3-section instrument takes ~30-90s. For a 5-instrument, 3-section composition, all instruments' sequential pipelines run in parallel, so total Phase 2 time is still bounded by the slowest single instrument. Bass sections start ~1 section behind drums via signal-based pipelining.
 
 Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2, server-owned retries + summary collapse), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/summary.py` (batch result summarization), `app/core/maestro_agent_teams/contracts.py` (CompositionContract, SectionSpec, SectionContract, InstrumentContract, RuntimeContext, ExecutionServices, ProtocolViolationError), `app/core/maestro_agent_teams/signals.py` (SectionSignals, SectionSignalResult, SectionState — lineage-bound keying), `app/core/telemetry.py` (SectionTelemetry computation), `app/core/entity_registry.py` (EntityRegistry with agent-scoped manifests), `app/contracts/hash_utils.py` (`canonical_contract_dict`, `compute_contract_hash`, `hash_list_canonical`, `compute_execution_hash`, `seal_contract`, `verify_contract_hash`).
 
@@ -510,6 +510,18 @@ Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/co
 ## Music generation
 
 **Orpheus required** for composing. No pattern fallback; if Orpheus is down, generation fails with a clear error. Config: `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`). Full health requires Orpheus. See [setup.md](../guides/setup.md) for config.
+
+### Orpheus instrument mapping
+
+The proxy maps Maestro instrument roles to TMIDIX-recognized GM instrument names (e.g. `"pads"` → `"Pad 2 (warm)"`, `"cajon"` → `"Drums"`). Unknown instruments fall back to `["Drums", "Electric Bass(finger)"]` with a warning. The seed MIDI embeds GM program change events matching the requested instruments so the TMIDIX tokenizer on the HF Space encodes the correct instrument identity into the token stream.
+
+### Cross-section musical continuity
+
+Sections within an instrument execute sequentially. The first section generates from a genre-specific seed MIDI. Subsequent sections receive the previous section's generated notes as a continuation seed — the proxy builds a new MIDI file from the last ~2 bars (8 beats) of the prior section's output and uses it in place of the generic genre seed. This lets the Orpheus transformer extend from familiar harmonic material instead of restarting cold, producing more coherent musical arcs across verse/chorus/bridge boundaries.
+
+### Channel filtering
+
+After Orpheus generates a multi-channel MIDI file, the proxy filters channels to extract only the requested instrument. When the preferred channel index doesn't exist (e.g. requesting channel 2 but only channels 0-1 were generated), the filter falls back to the nearest available melodic channel instead of returning empty. If all notes are stripped by filtering despite Orpheus having generated content, the proxy returns an explicit error distinguishing "model generated nothing" from "channel filter removed everything."
 
 ### Expressive MIDI pipeline
 

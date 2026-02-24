@@ -215,8 +215,10 @@ async def _run_instrument_agent_inner(
         "section-specific decisions.\n"
         "- Do NOT list pipeline steps, tool names, or execution order.\n"
         "- Do NOT mention regions, trackIds, regionIds, beats, or bar counts.\n"
+        "- Do NOT deliberate about regionId values or how to find them — "
+        "the server resolves ALL entity references automatically.\n"
         "- No phrases like 'Let me...', 'I will...', 'Step 1...', "
-        "'For the verse...', 'For the chorus...'.\n"
+        "'For the verse...', 'For the chorus...', 'I need the regionId...'.\n"
         "- If you catch yourself writing more than 2 sentences of reasoning, "
         "STOP and make tool calls immediately."
     )
@@ -353,7 +355,10 @@ async def _run_instrument_agent_inner(
     _critical_rules = (
         "CRITICAL ORDERING: Each stori_add_midi_region MUST return a regionId BEFORE "
         "its paired stori_generate_midi is called. Pass the regionId from the IMMEDIATELY preceding "
-        "stori_add_midi_region. Never pass trackId as regionId. Never omit start_beat."
+        "stori_add_midi_region. Never pass trackId as regionId. Never omit start_beat.\n"
+        "REGION ID RULE: Do NOT reason about regionId values — the server resolves all "
+        "entity references ($N.regionId) automatically. Just use $N.regionId in your tool "
+        "calls and emit ALL calls in one response. The server handles dependency ordering."
     )
 
     _color_rule = (
@@ -418,20 +423,23 @@ async def _run_instrument_agent_inner(
     max_turns = max(3, _section_count + 2)
 
     # ── Stage tracking ──
-    # For multi-section, track per-section completion independently.
+    # Track per-section completion by name (not count) to prevent
+    # duplicate regeneration when the LLM re-emits the same section.
     _stage_track = reusing
     _stage_effect = False
-    _regions_completed: int = 0       # how many stori_add_midi_region calls succeeded
+    _sections_with_region: set[str] = set()   # section names with region created
+    _sections_with_generate: set[str] = set() # section names with generate completed
+    _regions_completed: int = 0       # total region calls dispatched
     _regions_ok: int = 0              # how many returned a valid regionId
-    _generates_completed: int = 0     # how many stori_generate_midi calls completed
+    _generates_completed: int = 0     # total generate calls dispatched
     _expected_sections = _section_count
 
     def _missing_stages() -> list[str]:
         """Detect stages the LLM hasn't produced yet.
 
         Track/effect are checked individually.  Region+generate are checked
-        by count — server-owned retries handle individual section failures
-        once the LLM has actually emitted the tool calls.
+        per-section by name — prevents duplicate regeneration when the LLM
+        re-emits tool calls for an already-completed section.
         """
         missing: list[str] = []
         track_ref = f"trackId='{existing_track_id}'" if reusing else "$0.trackId"
@@ -439,38 +447,35 @@ async def _run_instrument_agent_inner(
         if not _stage_track and not reusing:
             missing.append(f"stori_add_midi_track — create the {instrument_name} track")
 
-        remaining_regions = _expected_sections - _regions_completed
-        remaining_generates = _expected_sections - _generates_completed
-
-        if remaining_regions > 0 or remaining_generates > 0:
-            if _multi_section:
-                for i, sec in enumerate(_sections):
-                    sec_name = sec["name"].upper()
-                    sec_start = sec["start_beat"]
-                    sec_beats = int(sec["length_beats"])
-                    sec_bars = max(1, sec_beats // 4)
-                    if i >= _regions_completed:
-                        missing.append(
-                            f"stori_add_midi_region — {track_ref}, startBeat={sec_start}, "
-                            f"durationBeats={sec_beats} [{sec_name}]"
-                        )
-                    if i >= _generates_completed:
-                        missing.append(
-                            f"stori_generate_midi — {track_ref}, "
-                            f"start_beat={sec_start}, bars={sec_bars} [{sec_name}]"
-                        )
-            else:
-                if remaining_regions > 0:
-                    region_beat = start_beat if reusing else 0
+        if _multi_section:
+            for sec in _sections:
+                sec_name = sec["name"]
+                sec_start = sec["start_beat"]
+                sec_beats = int(sec["length_beats"])
+                sec_bars = max(1, sec_beats // 4)
+                if sec_name not in _sections_with_region:
                     missing.append(
-                        f"stori_add_midi_region — durationBeats={beat_count}, "
-                        f"startBeat={region_beat}, {track_ref}"
+                        f"stori_add_midi_region — {track_ref}, startBeat={sec_start}, "
+                        f"durationBeats={sec_beats} [{sec_name.upper()}]"
                     )
-                if remaining_generates > 0:
+                if sec_name not in _sections_with_generate:
                     missing.append(
-                        f"stori_generate_midi — {track_ref}, role=\"{role}\", "
-                        f"bars={bars}, key=\"{key}\""
+                        f"stori_generate_midi — {track_ref}, "
+                        f"start_beat={sec_start}, bars={sec_bars} [{sec_name.upper()}]"
                     )
+        else:
+            _sec_name = _sections[0]["name"] if _sections else "full"
+            if _sec_name not in _sections_with_region:
+                region_beat = start_beat if reusing else 0
+                missing.append(
+                    f"stori_add_midi_region — durationBeats={beat_count}, "
+                    f"startBeat={region_beat}, {track_ref}"
+                )
+            if _sec_name not in _sections_with_generate:
+                missing.append(
+                    f"stori_generate_midi — {track_ref}, role=\"{role}\", "
+                    f"bars={bars}, key=\"{key}\""
+                )
 
         if not _stage_effect:
             missing.append(f"stori_add_insert_effect — {track_ref}, one insert effect")
@@ -730,6 +735,8 @@ async def _run_instrument_agent_inner(
                     prior_regions_completed=_regions_completed,
                     prior_regions_ok=_regions_ok,
                     prior_generates_completed=_generates_completed,
+                    sections_with_region=_sections_with_region,
+                    sections_with_generate=_sections_with_generate,
                 )
 
         # ── Fallback: single tool-call retry turns (no region+generate pair) ──
@@ -905,12 +912,18 @@ async def _dispatch_section_children(
     prior_regions_completed: int,
     prior_regions_ok: int,
     prior_generates_completed: int,
+    sections_with_region: set[str] | None = None,
+    sections_with_generate: set[str] | None = None,
 ) -> tuple[list[dict[str, Any]], bool, bool, int, int, int]:
     """Group LLM tool calls and dispatch section children in parallel.
 
     Returns (tool_result_msgs, stage_track, stage_effect,
              regions_completed, regions_ok, generates_completed)
     so the parent's multi-turn retry loop can track progress.
+
+    The optional ``sections_with_region`` / ``sections_with_generate``
+    sets are mutated in-place to track which sections (by name) have
+    been dispatched, preventing duplicate regeneration.
     """
     _AGENT_TAGGED = {
         "toolCall", "toolStart", "toolError",
@@ -1152,9 +1165,8 @@ async def _dispatch_section_children(
                 f"vs planned={planned_dur} — contract will override"
             )
 
-    # ── Spawn section children (with watchdog timeout) ──
+    # ── Build section contracts ──
     _child_timeout = settings.section_child_timeout
-    children: list[asyncio.Task[SectionResult]] = []
     _child_contracts: list[tuple[SectionContract, ToolCall, ToolCall]] = []
     for i, (region_tc, gen_tc) in enumerate(pairs):
         sec = sections[i] if i < len(sections) else sections[-1]
@@ -1200,12 +1212,28 @@ async def _dispatch_section_children(
         )
         _child_contracts.append((_contract, region_tc, gen_tc))
 
-        task = asyncio.create_task(
-            asyncio.wait_for(
+    # ── Execute sections sequentially for cross-section musical continuity ──
+    # Each section uses the previous section's generated notes as seed material
+    # so the Orpheus transformer "continues" from familiar harmonic context.
+    logger.info(
+        f"{agent_log} 🔗 Running {len(_child_contracts)} sections sequentially "
+        f"for musical continuity"
+    )
+    _children_start = asyncio.get_event_loop().time()
+    _section_results: list[SectionResult | None] = []
+    _chain_notes: list[dict[str, Any]] | None = None
+
+    for _ci, (_contract, _region_tc, _gen_tc) in enumerate(_child_contracts):
+        _sec_name = _contract.section_name
+        logger.info(
+            f"{agent_log} ▶ Section {_ci + 1}/{len(_child_contracts)}: {_sec_name}"
+        )
+        try:
+            _sr = await asyncio.wait_for(
                 _run_section_child(
                     contract=_contract,
-                    region_tc=region_tc,
-                    generate_tc=gen_tc,
+                    region_tc=_region_tc,
+                    generate_tc=_gen_tc,
                     agent_id=agent_id,
                     allowed_tool_names=allowed_tool_names,
                     store=store,
@@ -1214,43 +1242,24 @@ async def _dispatch_section_children(
                     runtime_ctx=runtime_context,
                     execution_services=execution_services,
                     llm=llm,
+                    previous_notes=_chain_notes,
                 ),
                 timeout=_child_timeout,
-            ),
-            name=f"{instrument_name}/{_sec_name}",
-        )
-        children.append(task)
-
-    if children:
-        logger.info(
-            f"{agent_log} Spawned {len(children)} section children "
-            f"({'pipelined' if is_bass else 'parallel'})"
-        )
-
-    # ── Wait for all section children ──
-    logger.info(
-        f"{agent_log} ⏳ Waiting for {len(children)} section children to complete..."
-    )
-    _children_start = asyncio.get_event_loop().time()
-    child_results: list[SectionResult | BaseException] = await asyncio.gather(
-        *children, return_exceptions=True
-    )
-    _initial_elapsed = asyncio.get_event_loop().time() - _children_start
-
-    # ── Process initial results into structured list ──
-    _section_results: list[SectionResult | None] = []
-    for cr in child_results:
-        if isinstance(cr, asyncio.TimeoutError):
+            )
+            _section_results.append(_sr)
+            if _sr.success and _sr.generated_notes:
+                _chain_notes = _sr.generated_notes
+        except asyncio.TimeoutError:
             logger.error(
-                f"{agent_log} ⏰ Section child timed out after {_child_timeout}s — "
-                f"orphaned subagent killed"
+                f"{agent_log} ⏰ Section '{_sec_name}' timed out after "
+                f"{_child_timeout}s"
             )
             _section_results.append(None)
-        elif isinstance(cr, BaseException):
-            logger.error(f"{agent_log} 💥 Section child crashed: {cr}")
+        except BaseException as _exc:
+            logger.error(f"{agent_log} 💥 Section '{_sec_name}' crashed: {_exc}")
             _section_results.append(None)
-        else:
-            _section_results.append(cr)
+
+    _initial_elapsed = asyncio.get_event_loop().time() - _children_start
 
     # ── Server-owned retries for failed sections (no LLM involved) ──
     _MAX_SECTION_RETRIES = 2
@@ -1276,8 +1285,8 @@ async def _dispatch_section_children(
         )
         await asyncio.sleep(_delay)
 
-        _retry_tasks: list[asyncio.Task[SectionResult]] = []
         _retry_indices: list[int] = []
+        _retry_results: list[SectionResult | BaseException] = []
         for _idx in _failed_indices:
             _c, _r_tc, _g_tc = _child_contracts[_idx]
             _retry_region_tc = ToolCall(
@@ -1290,32 +1299,34 @@ async def _dispatch_section_children(
                 params=_g_tc.params,
                 id=str(_uuid_mod.uuid4()),
             )
-            _retry_tasks.append(
-                asyncio.create_task(
-                    asyncio.wait_for(
-                        _run_section_child(
-                            contract=_c,
-                            region_tc=_retry_region_tc,
-                            generate_tc=_retry_gen_tc,
-                            agent_id=agent_id,
-                            allowed_tool_names=allowed_tool_names,
-                            store=store,
-                            trace=trace,
-                            sse_queue=sse_queue,
-                            runtime_ctx=runtime_context,
-                            execution_services=execution_services,
-                            llm=llm,
-                        ),
-                        timeout=_child_timeout,
+            # Use the preceding section's notes for continuity seeding
+            _retry_prev: list[dict[str, Any]] | None = None
+            if _idx > 0:
+                _prior = _section_results[_idx - 1]
+                if _prior and _prior.success and _prior.generated_notes:
+                    _retry_prev = _prior.generated_notes
+            try:
+                _rr = await asyncio.wait_for(
+                    _run_section_child(
+                        contract=_c,
+                        region_tc=_retry_region_tc,
+                        generate_tc=_retry_gen_tc,
+                        agent_id=agent_id,
+                        allowed_tool_names=allowed_tool_names,
+                        store=store,
+                        trace=trace,
+                        sse_queue=sse_queue,
+                        runtime_ctx=runtime_context,
+                        execution_services=execution_services,
+                        llm=llm,
+                        previous_notes=_retry_prev,
                     ),
-                    name=f"{instrument_name}/{_c.section_name}/retry{_retry_round + 1}",
+                    timeout=_child_timeout,
                 )
-            )
+                _retry_results.append(_rr)
+            except BaseException as _exc:
+                _retry_results.append(_exc)
             _retry_indices.append(_idx)
-
-        _retry_results = await asyncio.gather(
-            *_retry_tasks, return_exceptions=True
-        )
         _still_failed: list[int] = []
         for _j, _rr in enumerate(_retry_results):
             _ri = _retry_indices[_j]
@@ -1342,16 +1353,27 @@ async def _dispatch_section_children(
     # The server already retried failed sections — asking the LLM to
     # re-emit calls it can't fix (Orpheus down, etc.) wastes tokens and
     # confuses the model when it sees stub tool results.
+    # Also populate per-section name sets to prevent duplicate regeneration.
     _children_total_elapsed = asyncio.get_event_loop().time() - _children_start
     _child_successes = 0
     _child_failures = 0
     _child_crashes = 0
     _total_notes = 0
-    for _sr in _section_results:
+    for _i, _sr in enumerate(_section_results):
+        _sec_name = (
+            _child_contracts[_i][0].section_name
+            if _i < len(_child_contracts)
+            else None
+        )
         if _sr is None:
             _child_crashes += 1
             regions_completed += 1
             generates_completed += 1
+            if _sec_name:
+                if sections_with_region is not None:
+                    sections_with_region.add(_sec_name)
+                if sections_with_generate is not None:
+                    sections_with_generate.add(_sec_name)
             continue
         collected_tool_calls.extend(_sr.tool_call_records)
         all_tool_results.extend(_sr.tool_results)
@@ -1368,6 +1390,11 @@ async def _dispatch_section_children(
                 f"{agent_log} ⚠️ Section '{_sr.section_name}' failed "
                 f"after all retries: {_sr.error}"
             )
+        if _sec_name:
+            if sections_with_region is not None:
+                sections_with_region.add(_sec_name)
+            if sections_with_generate is not None:
+                sections_with_generate.add(_sec_name)
 
     # ── Build collapsed tool-result summary for LLM conversation ──
     # One summary message + stubs replaces N individual tool results,
@@ -1397,6 +1424,11 @@ async def _dispatch_section_children(
             _section_summaries.append(_entry)
 
     _STUB = "Handled by server — see batch_complete summary."
+    # Build a concise regionId lookup so the LLM can find IDs by section name.
+    _region_lookup: dict[str, str | None] = {
+        s["name"]: s.get("regionId")
+        for s in _section_summaries
+    }
     if pairs:
         _anchor_id = pairs[0][0].id
         tool_result_msgs.append({
@@ -1406,6 +1438,12 @@ async def _dispatch_section_children(
                 "status": "batch_complete",
                 "track": {"trackId": real_track_id, "name": instrument_name},
                 "sections": _section_summaries,
+                "regionIdBySectionName": _region_lookup,
+                "instruction": (
+                    "All sections have been dispatched and retried by the server. "
+                    "Do NOT re-generate sections marked 'ok'. "
+                    "Failed sections have already been retried — do not attempt to fix them."
+                ),
             }),
         })
         for _pi, (_p_region_tc, _p_gen_tc) in enumerate(pairs):
@@ -1517,7 +1555,7 @@ async def _dispatch_section_children(
     if content_step_id:
         _content_step = plan_tracker.get_step(content_step_id)
         if _content_step and _content_step.status == "active":
-            _n_total = max(len(children), 1) if children else 1
+            _n_total = max(len(_child_contracts), 1) if _child_contracts else 1
             _result_text = (
                 f"{_child_successes}/{_n_total} sections completed, "
                 f"{_total_notes} notes"

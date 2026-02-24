@@ -99,6 +99,7 @@ class SectionResult:
     section_name: str
     region_id: str | None = None
     notes_generated: int = 0
+    generated_notes: list[dict[str, Any]] = field(default_factory=list)
     tool_results: list[dict[str, Any]] = field(default_factory=list)
     tool_call_records: list[dict[str, Any]] = field(default_factory=list)
     tool_result_msgs: list[dict[str, Any]] = field(default_factory=list)
@@ -120,6 +121,7 @@ async def _run_section_child(
     runtime_ctx: RuntimeContext | None = None,
     execution_services: ExecutionServices | None = None,
     llm: Optional[LLMClient] = None,
+    previous_notes: list[dict[str, Any]] | None = None,
 ) -> SectionResult:
     """Execute one section's region + generate pipeline against a contract.
 
@@ -176,7 +178,7 @@ async def _run_section_child(
         """Bridge dict for _apply_single_tool_call (tool_execution boundary)."""
         if not runtime_ctx:
             return None
-        return {
+        ctx: dict[str, Any] = {
             **runtime_ctx.to_composition_context(),
             "style": contract.style,
             "tempo": contract.tempo,
@@ -184,6 +186,9 @@ async def _run_section_child(
             "key": contract.key,
             "role": contract.role,
         }
+        if previous_notes:
+            ctx["previous_notes"] = previous_notes
+        return ctx
 
     try:
         await sse_queue.put({
@@ -426,6 +431,7 @@ async def _run_section_child(
             if evt.get("name") == "stori_add_notes":
                 generated_notes = evt.get("params", {}).get("notes", [])
                 break
+        result.generated_notes = generated_notes
 
         # ── Drum signaling — signal bass with drum notes ──
         if contract.is_drum and section_signals:

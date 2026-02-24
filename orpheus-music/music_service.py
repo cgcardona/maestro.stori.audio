@@ -378,6 +378,10 @@ class GenerateRequest(BaseModel):
     # Correlation
     composition_id: Optional[str] = None               # Cross-service correlation ID from Maestro
 
+    # Section continuity: previous section's notes used to build a
+    # continuation seed instead of the generic genre seed.
+    previous_notes: Optional[List[dict]] = None
+
     # Legacy support
     style_hints: Optional[List[str]] = None            # Deprecated: use musical_goals
 
@@ -606,7 +610,55 @@ INSTRUMENT_PROGRAMS = {
     "strings": 48,
     "synth": 80,
     "pad": 88,
+    "pads": 88,
     "lead": 80,
+    "melody": 0,
+    "chords": 0,
+    "keys": 4,
+    "arp": 80,
+    "fx": 96,
+    "palmas": 0,
+    "cajon": 0,
+}
+
+# Map Maestro instrument role → Orpheus GM instrument name for prime_instruments.
+# Must match TMIDIX Number2patch names exactly (e.g. "Pad 2 (warm)", not "pads").
+_ROLE_TO_ORPHEUS_INSTRUMENT: dict[str, str] = {
+    # Drums / percussion
+    "drums": "Drums",
+    "cajon": "Drums",
+    "palmas": "Woodblock",
+    "percussion": "Drums",
+    # Bass
+    "bass": "Electric Bass(finger)",
+    "electric_bass": "Electric Bass(finger)",
+    "synth_bass": "Synth Bass 1",
+    # Piano / keys
+    "piano": "Acoustic Grand",
+    "electric_piano": "Electric Piano 1",
+    "keys": "Electric Piano 1",
+    "organ": "Drawbar Organ",
+    # Guitar
+    "guitar": "Acoustic Guitar(steel)",
+    "acoustic_guitar": "Acoustic Guitar(nylon)",
+    "electric_guitar": "Electric Guitar(clean)",
+    # Chords / harmony
+    "chords": "Acoustic Grand",
+    "harmony": "Acoustic Grand",
+    # Melody / lead
+    "melody": "Acoustic Grand",
+    "lead": "Lead 1 (square)",
+    "arp": "Lead 3 (calliope)",
+    # Pads / synth
+    "pads": "Pad 2 (warm)",
+    "pad": "Pad 2 (warm)",
+    "synth": "Lead 2 (sawtooth)",
+    # Strings
+    "strings": "String Ensemble 1",
+    "violin": "Violin",
+    "cello": "Cello",
+    # FX
+    "fx": "FX 1 (rain)",
 }
 
 # Note: Musical parameter inference moved to generation_policy.py
@@ -1002,21 +1054,49 @@ _GENRE_SEEDS = {
 }
 
 
-def create_seed_midi(tempo: int, genre: str, key: Optional[str] = None) -> str:
+def create_seed_midi(
+    tempo: int,
+    genre: str,
+    key: Optional[str] = None,
+    instruments: Optional[List[str]] = None,
+) -> str:
     """
     Create genre-appropriate seed MIDI with expressive CC, velocity curves,
-    and optional key transposition.
+    optional key transposition, and GM program changes matching the requested
+    instruments.
 
     The seed quality directly affects Orpheus output quality.
+    When ``instruments`` is provided, each melodic track in the seed gets a
+    program change event corresponding to the closest GM instrument, so the
+    TMIDIX tokenizer on the HF Space encodes the correct instrument identity.
     """
     offset = _key_offset(key)
-    cache_key = f"{genre}_{tempo}_{offset}"
+    inst_key = "_".join(sorted(i.lower() for i in instruments)) if instruments else "default"
+    cache_key = f"{genre}_{tempo}_{offset}_{inst_key}"
     if cache_key in _seed_cache:
         logger.info(f"Seed cache hit for {cache_key}")
         return _seed_cache[cache_key]
 
     midi = MIDIFile(3)
     midi.addTempo(0, 0, tempo)
+
+    # Embed GM program changes for the requested instruments so the TMIDIX
+    # tokenizer encodes correct instrument identity into the token stream.
+    if instruments:
+        for inst in instruments:
+            role = inst.lower().strip()
+            if role in ("drums", "cajon", "percussion"):
+                continue
+            gm_program = INSTRUMENT_PROGRAMS.get(role)
+            if gm_program is None:
+                continue
+            idx = MELODIC_INDEX_BY_INSTRUMENT.get(role)
+            if idx is None:
+                continue
+            track = idx + 1
+            channel = idx
+            if track < 3:
+                midi.addProgramChange(track, channel, 0, gm_program)
 
     # Look up genre seed builder; fall back to boom_bap for unknown genres
     genre_key = genre.lower().replace(" ", "_").replace("-", "_")
@@ -1039,7 +1119,78 @@ def create_seed_midi(tempo: int, genre: str, key: Optional[str] = None) -> str:
         midi.writeFile(f)
 
     _seed_cache[cache_key] = path
-    logger.info(f"Seed created: {genre} key_offset={offset} ({cache_key})")
+    logger.info(f"Seed created: {genre} key_offset={offset} instruments={inst_key} ({cache_key})")
+    return path
+
+
+def _create_continuation_seed(
+    previous_notes: List[dict],
+    tempo: int,
+    instruments: Optional[List[str]] = None,
+) -> str:
+    """Build a seed MIDI from the previous section's notes for continuity.
+
+    Takes the last ~2 bars of the previous section and writes them as a
+    new MIDI file.  This lets the Orpheus transformer "continue" from
+    familiar material instead of restarting from a generic genre seed.
+    """
+    midi = MIDIFile(3)
+    midi.addTempo(0, 0, tempo)
+
+    if instruments:
+        for inst in instruments:
+            role = inst.lower().strip()
+            if role in ("drums", "cajon", "percussion"):
+                continue
+            gm_program = INSTRUMENT_PROGRAMS.get(role)
+            if gm_program is None:
+                continue
+            idx = MELODIC_INDEX_BY_INSTRUMENT.get(role)
+            if idx is None:
+                continue
+            track = idx + 1
+            channel = idx
+            if track < 3:
+                midi.addProgramChange(track, channel, 0, gm_program)
+
+    if not previous_notes:
+        fd, path = tempfile.mkstemp(suffix=".mid")
+        with os.fdopen(fd, 'wb') as f:
+            midi.writeFile(f)
+        return path
+
+    max_beat = max(
+        (n.get("start_beat", 0) + n.get("duration_beats", 0.5)) for n in previous_notes
+    )
+    # Keep last 8 beats (~2 bars in 4/4) for context
+    context_start = max(0, max_beat - 8.0)
+
+    tail_notes = [
+        n for n in previous_notes
+        if n.get("start_beat", 0) >= context_start
+    ]
+
+    for note in tail_notes:
+        pitch = note.get("pitch", 60)
+        start = note.get("start_beat", 0) - context_start
+        dur = note.get("duration_beats", 0.5)
+        vel = note.get("velocity", 80)
+        is_drum = note.get("is_drum", False)
+
+        if is_drum:
+            midi.addNote(0, 9, pitch, max(0, start), max(0.01, dur), vel)
+        else:
+            track = 1
+            channel = 0
+            midi.addNote(track, channel, pitch, max(0, start), max(0.01, dur), vel)
+
+    fd, path = tempfile.mkstemp(suffix=".mid")
+    with os.fdopen(fd, 'wb') as f:
+        midi.writeFile(f)
+    logger.info(
+        f"🔗 Continuation seed: {len(tail_notes)} notes from beat "
+        f"{context_start:.1f}-{max_beat:.1f}"
+    )
     return path
 
 
@@ -1119,8 +1270,11 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
     }
 
 
-# Map requested instrument (from Maestro) to melodic channel index.
+# Map requested instrument (from Maestro) to preferred melodic channel index.
 # Seed MIDI has: ch9=drums, ch0=first melodic (bass), ch1=second (piano/melody), etc.
+# Instruments sharing an index compete for the same channel, so when Orpheus
+# generates fewer melodic channels than expected, the fallback logic in
+# _channels_to_keep ensures we always return *something* instead of empty.
 MELODIC_INDEX_BY_INSTRUMENT = {
     "bass": 0,
     "electric_bass": 0,
@@ -1129,30 +1283,58 @@ MELODIC_INDEX_BY_INSTRUMENT = {
     "chords": 1,
     "electric_piano": 1,
     "keys": 1,
+    "organ": 1,
+    "harmony": 1,
     "melody": 2,
     "lead": 2,
     "guitar": 2,
+    "acoustic_guitar": 2,
+    "electric_guitar": 2,
     "arp": 2,
     "pads": 2,
+    "pad": 2,
+    "synth": 2,
+    "strings": 2,
+    "violin": 2,
+    "cello": 2,
     "fx": 2,
+    "palmas": 2,
+    "cajon": None,
+    "percussion": None,
 }
 
 
 def _channels_to_keep(channel_keys: set, instruments: List[str]) -> set:
-    """Determine which MIDI channels to keep for the requested instruments."""
+    """Determine which MIDI channels to keep for the requested instruments.
+
+    When the preferred channel index doesn't exist in the generated MIDI,
+    falls back to the nearest available melodic channel instead of returning
+    an empty set (which caused silent "No notes found" failures).
+    """
     if not instruments:
         return channel_keys
     requested = [i.lower().strip() for i in instruments]
     keep: set = set()
-    if any(i == "drums" for i in requested):
-        keep.add(9)
     melodic_channels = sorted(c for c in channel_keys if c != 9)
+
     for inst in requested:
-        if inst == "drums":
+        if inst in ("drums", "cajon", "percussion"):
+            if 9 in channel_keys:
+                keep.add(9)
             continue
-        idx = MELODIC_INDEX_BY_INSTRUMENT.get(inst, 0)
-        if idx < len(melodic_channels):
-            keep.add(melodic_channels[idx])
+
+        preferred_idx = MELODIC_INDEX_BY_INSTRUMENT.get(inst)
+        if preferred_idx is not None and preferred_idx < len(melodic_channels):
+            keep.add(melodic_channels[preferred_idx])
+        elif melodic_channels:
+            fallback_idx = min(preferred_idx or 0, len(melodic_channels) - 1)
+            keep.add(melodic_channels[fallback_idx])
+            logger.warning(
+                f"⚠️ Instrument '{inst}' wanted melodic channel index "
+                f"{preferred_idx}, but only {len(melodic_channels)} melodic "
+                f"channel(s) exist — falling back to index {fallback_idx}"
+            )
+
     return keep if keep else channel_keys
 
 
@@ -1530,20 +1712,33 @@ async def _do_generate(request: GenerateRequest) -> GenerateResponse:
     try:
         client = get_client()
 
-        seed_path = create_seed_midi(request.tempo, request.genre, key=request.key)
+        if request.previous_notes:
+            seed_path = _create_continuation_seed(
+                request.previous_notes, request.tempo,
+                instruments=request.instruments,
+            )
+            logger.info(
+                f"🔗 Using continuation seed from {len(request.previous_notes)} "
+                f"previous notes"
+            )
+        else:
+            seed_path = create_seed_midi(
+                request.tempo, request.genre,
+                key=request.key, instruments=request.instruments,
+            )
 
         orpheus_instruments = []
-        if "drums" in [i.lower() for i in request.instruments]:
-            orpheus_instruments.append("Drums")
-        if any(i.lower() in ["bass", "electric_bass", "synth_bass"] for i in request.instruments):
-            orpheus_instruments.append("Electric Bass(finger)")
-        if any(i.lower() in ["piano", "electric_piano"] for i in request.instruments):
-            orpheus_instruments.append("Electric Piano 1")
-        if any(i.lower() in ["guitar", "acoustic_guitar"] for i in request.instruments):
-            orpheus_instruments.append("Acoustic Guitar(steel)")
+        for inst in request.instruments:
+            mapped = _ROLE_TO_ORPHEUS_INSTRUMENT.get(inst.lower().strip())
+            if mapped and mapped not in orpheus_instruments:
+                orpheus_instruments.append(mapped)
 
         if not orpheus_instruments:
             orpheus_instruments = ["Drums", "Electric Bass(finger)"]
+            logger.warning(
+                f"⚠️ No instrument mapping found for {request.instruments}, "
+                f"falling back to {orpheus_instruments}"
+            )
 
         musical_goals = request.musical_goals or []
         if request.style_hints:
@@ -1646,7 +1841,34 @@ async def _do_generate(request: GenerateRequest) -> GenerateResponse:
                 if not sub[ch]:
                     del sub[ch]
 
+        pre_filter_note_count = sum(
+            len(notes) for notes in parsed.get("notes", {}).values()
+        )
+        pre_filter_channels = set(parsed.get("notes", {}).keys())
+
         parsed = filter_channels_for_instruments(parsed, request.instruments)
+
+        post_filter_note_count = sum(
+            len(notes) for notes in parsed.get("notes", {}).values()
+        )
+
+        if pre_filter_note_count > 0 and post_filter_note_count == 0:
+            logger.error(
+                f"❌ Channel filtering removed all {pre_filter_note_count} notes! "
+                f"Requested instruments={request.instruments}, "
+                f"available channels={sorted(pre_filter_channels)}"
+            )
+            return GenerateResponse(
+                success=False,
+                tool_calls=[],
+                error=(
+                    f"Orpheus generated {pre_filter_note_count} notes on "
+                    f"channels {sorted(pre_filter_channels)}, but channel "
+                    f"filtering for instruments={request.instruments} "
+                    f"removed all of them. The instrument may not be "
+                    f"represented in the generated output."
+                ),
+            )
 
         tool_calls = generate_tool_calls(parsed, request.tempo, request.instruments)
 

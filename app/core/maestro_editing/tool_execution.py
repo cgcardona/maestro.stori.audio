@@ -149,6 +149,9 @@ async def _execute_agent_generator(
         gen_kwargs["emotion_vector"] = emotion_vector
     if trace and hasattr(trace, "trace_id"):
         gen_kwargs["composition_id"] = trace.trace_id
+    _prev_notes = composition_context.get("previous_notes")
+    if _prev_notes:
+        gen_kwargs["previous_notes"] = _prev_notes
 
     import time as _time
     _gen_start = _time.monotonic()

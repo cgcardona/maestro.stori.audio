@@ -221,6 +221,7 @@ class OrpheusClient:
         complexity: float = 0.5,
         quality_preset: str = "balanced",
         composition_id: Optional[str] = None,
+        previous_notes: Optional[list[dict]] = None,
     ) -> dict[str, Any]:
         """Generate MIDI via Orpheus using the async submit + long-poll pattern.
 
@@ -252,6 +253,8 @@ class OrpheusClient:
             payload["musical_goals"] = musical_goals
         if composition_id:
             payload["composition_id"] = composition_id
+        if previous_notes:
+            payload["previous_notes"] = previous_notes
 
         _log_prefix = f"[{composition_id[:8]}]" if composition_id else ""
 
