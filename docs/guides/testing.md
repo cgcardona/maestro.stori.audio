@@ -125,7 +125,7 @@ Add your own for smoke tests and demos.
 
 ## Architectural boundary checks
 
-Phase 3 boundary hardening added automated guardrails to prevent architectural regression.
+Automated guardrails prevent architectural regression across the Maestro/Muse boundary.
 
 **Boundary check script (`scripts/check_boundaries.py`):**
 
@@ -133,12 +133,15 @@ Phase 3 boundary hardening added automated guardrails to prevent architectural r
 docker compose exec maestro python scripts/check_boundaries.py
 ```
 
-Uses AST parsing to enforce import and access rules. Fails with a non-zero exit code if any violation is found. Checks:
+Uses AST parsing to enforce 8 import and access rules. Fails with a non-zero exit code if any violation is found. Checks:
 
-- `app/services/variation/**` must not import `state_store` or `entity_registry`
-- `compute_variation_from_context` must have no `store` parameter
-- `apply_variation_phrases` must not import or reference `get_or_create_store` or access `store.registry`
-- Modules above `maestro_composing/` must not import Muse models directly
+1. `app/services/variation/**` must not import `state_store` or `entity_registry`
+2. `compute_variation_from_context` must have no `store` parameter and no store imports
+3. `apply_variation_phrases` must not import or reference `get_or_create_store` or access `store.registry`
+4. Modules above `maestro_composing/` must not import Muse models directly
+5. `VariationContext` must not contain a `store` field
+6. `muse_repository` must not import `StateStore` or executor modules
+7. `compute_variation_from_context` must not import executor modules
 
 Run locally or add to CI. See `docs/architecture/boundary_rules.md` for the full rule set.
 
@@ -147,5 +150,18 @@ Run locally or add to CI. See `docs/architecture/boundary_rules.md` for the full
 Unit tests that enforce the same contracts at the pytest level:
 
 - `TestMuseComputeBoundary` — `compute_variation_from_context` signature has no `store` param; variation service files have no forbidden imports; no lazy imports of StateStore in the function body.
+- `TestVariationContextDataOnly` — `VariationContext` has no `store` field; uses `SnapshotBundle` for `base` and `proposed` fields.
 - `TestApplyVariationBoundary` — `apply_variation_phrases` never calls `get_or_create_store` (mock side_effect); no `get_or_create_store` or `store.registry` references in `apply.py` source.
-- `TestGoldenShapes` — Locks the schema of `UpdatedRegionPayload`, `_ToolCallOutcome`, Orpheus normalization output, and `StoreSnapshot` to prevent silent contract drift.
+- `TestMuseRepositoryBoundary` — `muse_repository` does not import `StateStore`, executor, or `VariationService`.
+- `TestGoldenShapes` — Locks the schema of `UpdatedRegionPayload`, `_ToolCallOutcome`, Orpheus normalization output, `SnapshotBundle`, and snapshot capture output.
+
+**Muse persistence tests (`tests/test_muse_persistence.py`):**
+
+Tests for the persistent variation storage layer:
+
+- `test_variation_roundtrip` — Persist a variation, reload, assert all fields (phrases, note changes, tags, controller changes) match.
+- `test_variation_status_lifecycle` — Ready -> committed transition.
+- `test_variation_discard` — Ready -> discarded transition.
+- `test_region_metadata_roundtrip` — Region metadata stored on phrases is retrievable.
+- `test_commit_replay_from_db` — Simulate memory loss: persist, reload, verify commit-ready data matches original.
+- `test_muse_repository_boundary` — AST check that `muse_repository` respects import boundaries.

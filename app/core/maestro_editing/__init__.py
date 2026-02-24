@@ -10,7 +10,11 @@ from app.core.maestro_editing.continuation import (
     _get_missing_expressive_steps,
 )
 from app.core.maestro_editing.tool_execution import _apply_single_tool_call, phase_for_tool
-from app.core.maestro_editing.handler import _handle_editing
+from app.core.maestro_editing.handler import (
+    _handle_editing,
+    _handle_editing_apply,
+    _handle_editing_variation,
+)
 
 __all__ = [
     # Routing
@@ -23,6 +27,8 @@ __all__ = [
     # Tool execution
     "_apply_single_tool_call",
     "phase_for_tool",
-    # Handler
+    # Handler (dispatcher + mode-specific)
     "_handle_editing",
+    "_handle_editing_apply",
+    "_handle_editing_variation",
 ]

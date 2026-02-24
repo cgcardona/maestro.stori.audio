@@ -514,18 +514,22 @@ Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/co
 
 ## Architectural boundary enforcement
 
-Phase 3 boundary hardening introduced automated guardrails that prevent regression in the Maestro/Muse separation.
+Automated guardrails prevent regression in the Maestro/Muse separation.
 
-**Boundary check script:** `scripts/check_boundaries.py` uses AST parsing to enforce import and access rules across the codebase. Run locally (`python scripts/check_boundaries.py`) or in CI — fails with non-zero exit code on any violation. Rules are documented in `docs/architecture/boundary_rules.md`.
+**Boundary check script:** `scripts/check_boundaries.py` uses AST parsing to enforce 8 import and access rules across the codebase. Run locally (`python scripts/check_boundaries.py`) or in CI — fails with non-zero exit code on any violation. Rules are documented in `docs/architecture/boundary_rules.md`.
 
-**Boundary seal tests:** `tests/test_boundary_seal.py` enforces the same contracts at the pytest level — signature checks on `compute_variation_from_context` and `apply_variation_phrases`, forbidden-import assertions, and golden shape tests for `UpdatedRegionPayload`, `_ToolCallOutcome`, Orpheus normalization output, and `StoreSnapshot`.
+**Boundary seal tests:** `tests/test_boundary_seal.py` enforces the same contracts at the pytest level — signature checks, forbidden-import assertions, `VariationContext` data-only verification, `muse_repository` isolation, and golden shape tests for `UpdatedRegionPayload`, `_ToolCallOutcome`, Orpheus normalization output, and `SnapshotBundle`.
 
 Key invariants enforced:
 
-- `compute_variation_from_context` is a pure function of data — no `StateStore` parameter, no lazy imports of store modules.
+- `compute_variation_from_context` is a pure function of data — no `StateStore` parameter, no lazy imports of store modules, no executor module imports.
+- `VariationContext` is data-only — holds `base: SnapshotBundle` and `proposed: SnapshotBundle`, no `store` field. Store access lives in `VariationExecutionContext` (executor-internal only).
 - `apply_variation_phrases` receives `store` and `region_metadata` as explicit params — never calls `get_or_create_store()` or accesses `store.registry`.
-- `_store_variation` receives `base_state_id`, `conversation_id`, and `region_metadata` as explicit params — never reads from StateStore directly.
+- `_store_variation` receives `base_state_id`, `conversation_id`, and `region_metadata` as explicit params — never reads from StateStore directly. Performs dual write (in-memory + Postgres).
+- `muse_repository` must not import `StateStore`, `executor`, or `VariationService` — it is a pure persistence adapter.
 - Variation service modules do not import `state_store` or `entity_registry`.
+
+**Persistent Muse Core:** Variations are durably stored in Postgres (`variations`, `phrases`, `note_changes` tables) via `app/services/muse_repository.py`. The commit path reads from Postgres first, falling back to in-memory `VariationStore` for pre-persistence variations. Persistence tests in `tests/test_muse_persistence.py` verify roundtrip fidelity, status lifecycle, and commit replay safety.
 
 ---
 

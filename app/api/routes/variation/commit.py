@@ -1,20 +1,21 @@
-"""POST /variation/commit — apply accepted phrases from store."""
+"""POST /variation/commit — apply accepted phrases from persistent store."""
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.requests import CommitVariationRequest
 from app.models.variation import (
-    Variation,
-    Phrase,
     MidiNoteSnapshot,
+    NoteChange,
+    Phrase,
+    Variation,
     CommitVariationResponse,
     UpdatedRegionPayload,
-    NoteChange,
 )
 from app.core.executor import apply_variation_phrases
 from app.core.state_store import get_or_create_store
@@ -26,13 +27,55 @@ from app.services.budget import (
     InsufficientBudgetError,
     BudgetError,
 )
-from app.variation.core.state_machine import (
-    VariationStatus,
-    InvalidTransitionError,
-    can_commit,
-)
-from app.variation.storage.variation_store import VariationRecord, get_variation_store
+from app.services import muse_repository
+from app.variation.core.state_machine import can_commit
+from app.variation.storage.variation_store import get_variation_store, VariationRecord
 from app.api.routes.variation._state import limiter
+
+
+def _record_to_variation(record: VariationRecord) -> Variation:
+    """Convert an in-memory VariationRecord to a domain Variation.
+
+    Used by tests that create VariationRecords directly.
+    """
+    phrases: list[Phrase] = []
+    for pr in record.phrases:
+        diff = pr.diff_json or {}
+        note_changes: list[NoteChange] = []
+        for nc_dict in diff.get("noteChanges", []):
+            before_raw = nc_dict.get("before")
+            after_raw = nc_dict.get("after")
+            note_changes.append(NoteChange(
+                note_id=nc_dict.get("noteId", ""),
+                change_type=nc_dict.get("changeType", "added"),
+                before=MidiNoteSnapshot.model_validate(before_raw) if before_raw else None,
+                after=MidiNoteSnapshot.model_validate(after_raw) if after_raw else None,
+            ))
+        phrases.append(Phrase(
+            phrase_id=pr.phrase_id,
+            track_id=pr.track_id,
+            region_id=pr.region_id,
+            start_beat=pr.beat_start,
+            end_beat=pr.beat_end,
+            label=pr.label,
+            note_changes=note_changes,
+            controller_changes=diff.get("controllerChanges", []),
+            explanation=pr.ai_explanation,
+            tags=pr.tags or [],
+        ))
+
+    beat_starts = [p.start_beat for p in phrases] if phrases else [0.0]
+    beat_ends = [p.end_beat for p in phrases] if phrases else [0.0]
+
+    return Variation(
+        variation_id=record.variation_id,
+        intent=record.intent,
+        ai_explanation=record.ai_explanation,
+        affected_tracks=record.affected_tracks or [],
+        affected_regions=record.affected_regions or [],
+        beat_range=(min(beat_starts), max(beat_ends)),
+        phrases=phrases,
+    )
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -47,13 +90,16 @@ async def commit_variation(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Commit accepted phrases from a variation (loads from VariationStore).
+    Commit accepted phrases from a variation.
 
-    1. Load variation from store
-    2. Validate status == READY
+    Primary lookup: Postgres (via muse_repository).
+    Fallback: in-memory VariationStore (for variations created before persistence).
+
+    1. Load variation from DB (or in-memory fallback)
+    2. Validate status == READY (or ready)
     3. Validate base_state_id matches
     4. Apply accepted phrases in sequence order (adds + removals)
-    5. Transition to COMMITTED
+    5. Mark COMMITTED in DB + in-memory store
     """
     user_id = token_claims.get("sub")
     trace = create_trace_context(
@@ -63,31 +109,42 @@ async def commit_variation(
 
     try:
         with trace_span(trace, "commit_variation", {"phrase_count": len(commit_request.accepted_phrase_ids)}):
-            vstore = get_variation_store()
-            record = vstore.get(commit_request.variation_id)
 
-            if record is None:
-                raise HTTPException(status_code=404, detail={
-                    "error": "Variation not found",
-                    "variationId": commit_request.variation_id,
-                })
+            # ── 1. Load variation (DB primary, in-memory fallback) ────────
+            from_db = True
+            db_status = await muse_repository.get_status(db, commit_request.variation_id)
+            variation = await muse_repository.load_variation(db, commit_request.variation_id)
 
-            if record.status == VariationStatus.COMMITTED:
+            if variation is None:
+                from_db = False
+                vstore = get_variation_store()
+                mem_record = vstore.get(commit_request.variation_id)
+                if mem_record is None:
+                    raise HTTPException(status_code=404, detail={
+                        "error": "Variation not found",
+                        "variationId": commit_request.variation_id,
+                    })
+                variation = _record_to_variation(mem_record)
+                db_status = mem_record.status.value if hasattr(mem_record.status, "value") else str(mem_record.status)
+
+            # ── 2. Validate status ───────────────────────────────────────
+            if db_status in ("committed", "COMMITTED"):
                 raise HTTPException(status_code=409, detail={
                     "error": "Already committed",
                     "message": f"Variation {commit_request.variation_id} is already committed",
                 })
 
-            if not can_commit(record.status):
+            if db_status not in ("ready", "READY"):
                 raise HTTPException(status_code=409, detail={
                     "error": "Invalid state for commit",
                     "message": (
-                        f"Cannot commit variation in state '{record.status.value}'. "
+                        f"Cannot commit variation in state '{db_status}'. "
                         f"Commit is only allowed from READY state."
                     ),
-                    "currentStatus": record.status.value,
+                    "currentStatus": db_status,
                 })
 
+            # ── 3. Validate base_state_id ────────────────────────────────
             project_store = get_or_create_store(
                 conversation_id=commit_request.project_id,
                 project_id=commit_request.project_id,
@@ -104,41 +161,54 @@ async def commit_variation(
                     "currentStateId": project_store.get_state_id(),
                 })
 
-            if record.base_state_id != commit_request.base_state_id:
-                raise HTTPException(status_code=409, detail={
-                    "error": "Baseline mismatch",
-                    "message": (
-                        f"Variation was proposed against state_id={record.base_state_id}, "
-                        f"but commit requests state_id={commit_request.base_state_id}"
-                    ),
-                })
+            if from_db:
+                db_base_state = await muse_repository.get_base_state_id(
+                    db, commit_request.variation_id,
+                )
+                if db_base_state != commit_request.base_state_id:
+                    raise HTTPException(status_code=409, detail={
+                        "error": "Baseline mismatch",
+                        "message": (
+                            f"Variation was proposed against state_id={db_base_state}, "
+                            f"but commit requests state_id={commit_request.base_state_id}"
+                        ),
+                    })
 
-            available_ids = {p.phrase_id for p in record.phrases}
-            invalid_ids = [pid for pid in commit_request.accepted_phrase_ids if pid not in available_ids]
+            # ── 4. Validate phrase IDs ───────────────────────────────────
+            if from_db:
+                available_ids = await muse_repository.get_phrase_ids(
+                    db, commit_request.variation_id,
+                )
+            else:
+                available_ids = [p.phrase_id for p in variation.phrases]
+            available_set = set(available_ids)
+            invalid_ids = [
+                pid for pid in commit_request.accepted_phrase_ids
+                if pid not in available_set
+            ]
             if invalid_ids:
                 raise HTTPException(status_code=400, detail={
                     "error": "Invalid phrase IDs",
                     "message": f"Phrases not found: {invalid_ids[:3]}{'...' if len(invalid_ids) > 3 else ''}",
                 })
 
-            variation = _record_to_variation(record)
-
+            # ── 5. Collect region metadata ───────────────────────────────
             commit_region_meta: dict[str, dict] = {}
-            for pr in record.phrases:
-                if pr.region_id not in commit_region_meta:
-                    entity = project_store.registry.get_region(pr.region_id)
+            for phrase in variation.phrases:
+                if phrase.region_id not in commit_region_meta:
+                    entity = project_store.registry.get_region(phrase.region_id)
                     if entity and entity.metadata:
-                        commit_region_meta[pr.region_id] = {
+                        commit_region_meta[phrase.region_id] = {
                             **entity.metadata,
                             "name": entity.name,
                         }
-                    else:
-                        commit_region_meta[pr.region_id] = {
-                            "startBeat": pr.region_start_beat,
-                            "durationBeats": pr.region_duration_beats,
-                            "name": pr.region_name,
-                        }
 
+            if not commit_region_meta and from_db:
+                commit_region_meta = await muse_repository.get_region_metadata(
+                    db, commit_request.variation_id,
+                )
+
+            # ── 6. Apply variation phrases ───────────────────────────────
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=commit_request.accepted_phrase_ids,
@@ -148,17 +218,24 @@ async def commit_variation(
             )
 
             if not result.success:
-                try:
-                    record.transition_to(VariationStatus.FAILED)
-                    record.error_message = result.error
-                except InvalidTransitionError:
-                    pass
                 raise HTTPException(status_code=500, detail={
                     "error": "Application failed",
                     "message": result.error or "Unknown error",
                 })
 
-            record.transition_to(VariationStatus.COMMITTED)
+            # ── 7. Mark committed in DB + in-memory ──────────────────────
+            if from_db:
+                await muse_repository.mark_committed(db, commit_request.variation_id)
+
+            vstore = get_variation_store()
+            mem_record = vstore.get(commit_request.variation_id)
+            if mem_record is not None:
+                from app.variation.core.state_machine import VariationStatus, InvalidTransitionError
+                try:
+                    mem_record.transition_to(VariationStatus.COMMITTED)
+                except InvalidTransitionError:
+                    pass
+
             new_state_id = project_store.get_state_id()
 
             logger.info(
@@ -173,21 +250,19 @@ async def commit_variation(
                 },
             )
 
-            region_meta: dict[str, dict] = {}
-            for pr in record.phrases:
-                if pr.region_id not in region_meta:
-                    region_meta[pr.region_id] = {
-                        "start_beat": pr.region_start_beat,
-                        "duration_beats": pr.region_duration_beats,
-                        "name": pr.region_name,
-                    }
+            # ── 8. Build response ────────────────────────────────────────
+            db_region_meta: dict[str, dict[str, Any]] = {}
+            if from_db:
+                db_region_meta = await muse_repository.get_region_metadata(
+                    db, commit_request.variation_id,
+                )
 
             updated_region_payloads: list[UpdatedRegionPayload] = []
 
             if result.updated_regions:
                 for ur in result.updated_regions:
                     rid = ur["region_id"]
-                    pr_meta = region_meta.get(rid, {})
+                    pr_meta = db_region_meta.get(rid, {})
                     updated_region_payloads.append(UpdatedRegionPayload(
                         region_id=rid,
                         track_id=ur["track_id"],
@@ -200,20 +275,19 @@ async def commit_variation(
                         name=ur.get("name") or pr_meta.get("name"),
                     ))
             else:
-                for pr in sorted(record.phrases, key=lambda p: p.sequence):
-                    if pr.phrase_id not in commit_request.accepted_phrase_ids:
+                for phrase in variation.phrases:
+                    if phrase.phrase_id not in commit_request.accepted_phrase_ids:
                         continue
-                    pr_meta = region_meta.get(pr.region_id, {})
-                    nc_raw = pr.diff_json.get("noteChanges", [])
-                    notes: list[MidiNoteSnapshot] = []
-                    for nc in nc_raw:
-                        after = nc.get("after")
-                        if after and nc.get("changeType") in ("added", "modified"):
-                            notes.append(MidiNoteSnapshot.model_validate(after))
+                    pr_meta = db_region_meta.get(phrase.region_id, {})
+                    notes = [
+                        MidiNoteSnapshot.from_note_dict(nc.after.model_dump())
+                        for nc in phrase.note_changes
+                        if nc.change_type in ("added", "modified") and nc.after
+                    ]
                     if notes:
                         updated_region_payloads.append(UpdatedRegionPayload(
-                            region_id=pr.region_id,
-                            track_id=pr.track_id,
+                            region_id=phrase.region_id,
+                            track_id=phrase.track_id,
                             notes=notes,
                             start_beat=pr_meta.get("start_beat"),
                             duration_beats=pr_meta.get("duration_beats"),
@@ -224,7 +298,7 @@ async def commit_variation(
                 project_id=commit_request.project_id,
                 new_state_id=new_state_id,
                 applied_phrase_ids=result.applied_phrase_ids,
-                undo_label=f"Accept Variation: {record.intent[:50]}",
+                undo_label=f"Accept Variation: {variation.intent[:50]}",
                 updated_regions=updated_region_payloads,
             )
 
@@ -239,40 +313,3 @@ async def commit_variation(
         })
     finally:
         clear_trace_context()
-
-
-def _record_to_variation(record: VariationRecord) -> Variation:
-    """Convert a VariationRecord back to a Variation model for apply."""
-    phrases = []
-    for pr in sorted(record.phrases, key=lambda p: p.sequence):
-        phrase_data = pr.diff_json
-        note_changes = [
-            NoteChange.model_validate(nc_raw)
-            for nc_raw in phrase_data.get("noteChanges", [])
-        ]
-        controller_changes = phrase_data.get("controllerChanges", [])
-        phrases.append(Phrase(
-            phrase_id=pr.phrase_id,
-            track_id=pr.track_id,
-            region_id=pr.region_id,
-            start_beat=pr.beat_start,
-            end_beat=pr.beat_end,
-            label=pr.label,
-            note_changes=note_changes,
-            controller_changes=controller_changes,
-            explanation=pr.ai_explanation,
-            tags=pr.tags,
-        ))
-
-    beat_starts = [p.start_beat for p in phrases] if phrases else [0.0]
-    beat_ends = [p.end_beat for p in phrases] if phrases else [0.0]
-
-    return Variation(
-        variation_id=record.variation_id,
-        intent=record.intent,
-        ai_explanation=record.ai_explanation,
-        affected_tracks=record.affected_tracks,
-        affected_regions=record.affected_regions,
-        beat_range=(min(beat_starts), max(beat_ends)),
-        phrases=phrases,
-    )

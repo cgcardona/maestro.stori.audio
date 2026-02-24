@@ -37,7 +37,13 @@ from app.core.maestro_editing.continuation import (
 from app.core.maestro_editing.tool_execution import _apply_single_tool_call
 
 
-async def _handle_editing(
+# ---------------------------------------------------------------------------
+# Shared LLM tool dispatch loop
+# ---------------------------------------------------------------------------
+
+
+async def _run_llm_tool_loop(
+    *,
     prompt: str,
     project_context: dict[str, Any],
     route: Any,
@@ -46,20 +52,18 @@ async def _handle_editing(
     trace: Any,
     usage_tracker: Optional[UsageTracker],
     conversation_history: list[dict[str, Any]],
-    execution_mode: str = "apply",
-    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
-    quality_preset: Optional[str] = None,
+    is_cancelled: Optional[Callable[[], Awaitable[bool]]],
+    quality_preset: Optional[str],
+    emit_sse: bool,
+    plan_tracker: Optional[_PlanTracker],
+    collected: list[dict[str, Any]],
 ) -> AsyncIterator[str]:
-    """Handle EDITING state - LLM tool calls with allowlist + validation.
+    """Shared LLM iteration loop — dispatches tool calls and accumulates results.
 
-    Args:
-        execution_mode: "apply" for immediate mutation, "variation" for proposal mode
-        is_cancelled: async callback returning True if the client disconnected
+    Yields SSE event strings.  Appends executed tool call dicts to ``collected``
+    so the caller can inspect what was dispatched.
     """
     from app.core.tools import ALL_TOOLS
-
-    status_msg = "Processing..." if execution_mode == "apply" else "Generating variation..."
-    yield await sse_event({"type": "status", "message": status_msg})
 
     if route.intent == Intent.GENERATE_MUSIC:
         sys_prompt = system_prompt_base() + "\n" + editing_composition_prompt()
@@ -94,19 +98,12 @@ async def _handle_editing(
     llm_max_tokens: Optional[int] = settings.composition_max_tokens if is_composition else None
     reasoning_fraction: Optional[float] = settings.composition_reasoning_fraction if is_composition else None
 
-    tool_calls_collected: list[dict[str, Any]] = []
-    plan_tracker: Optional[_PlanTracker] = None
     iteration = 0
     _add_notes_failures: dict[str, int] = {}
     max_iterations = (
         settings.composition_max_iterations if is_composition
         else settings.orchestration_max_iterations
     )
-
-    if is_composition and parsed is not None and execution_mode == "apply":
-        plan_tracker = _PlanTracker()
-        plan_tracker.build_from_prompt(parsed, prompt, project_context or {})
-        yield await sse_event(plan_tracker.to_plan_event())
 
     while iteration < max_iterations:
         iteration += 1
@@ -182,7 +179,7 @@ async def _handle_editing(
             plan_tracker is None
             and response is not None
             and response.has_tool_calls
-            and execution_mode == "apply"
+            and emit_sse
         ):
             _candidate = _PlanTracker()
             _candidate.build(
@@ -196,7 +193,7 @@ async def _handle_editing(
             plan_tracker is not None
             and response is not None
             and response.has_tool_calls
-            and execution_mode == "apply"
+            and emit_sse
         ):
             for tc in response.tool_calls:
                 resolved = _resolve_variable_refs(tc.params, iter_tool_results)
@@ -207,7 +204,7 @@ async def _handle_editing(
         for tc_idx, tc in enumerate(response.tool_calls):
             resolved_args = _resolve_variable_refs(tc.params, iter_tool_results)
 
-            if plan_tracker and execution_mode == "apply":
+            if plan_tracker and emit_sse:
                 step = plan_tracker.step_for_tool_index(tc_idx)
                 if step is None:
                     step = plan_tracker.find_step_for_tool(
@@ -230,17 +227,17 @@ async def _handle_editing(
                 store=store,
                 trace=trace,
                 add_notes_failures=_add_notes_failures,
-                emit_sse=(execution_mode == "apply"),
+                emit_sse=emit_sse,
             )
 
             for evt in outcome.sse_events:
                 yield await sse_event(evt)
 
             if not outcome.skipped:
-                tool_calls_collected.append({"tool": tc.name, "params": outcome.enriched_params})
-                tool_calls_collected.extend(outcome.extra_tool_calls)
+                collected.append({"tool": tc.name, "params": outcome.enriched_params})
+                collected.extend(outcome.extra_tool_calls)
 
-                if plan_tracker and execution_mode == "apply":
+                if plan_tracker and emit_sse:
                     _step = (
                         plan_tracker.step_for_tool_index(tc_idx)
                         or plan_tracker.find_step_for_tool(
@@ -256,7 +253,7 @@ async def _handle_editing(
             iter_tool_results.append(outcome.tool_result)
             messages.append(outcome.msg_result)
 
-        if plan_tracker and plan_tracker._active_step_id and execution_mode == "apply":
+        if plan_tracker and plan_tracker._active_step_id and emit_sse:
             evt = plan_tracker.complete_active_step()
             if evt:
                 yield await sse_event(evt)
@@ -275,12 +272,12 @@ async def _handle_editing(
                 ),
             })
 
-        if route.force_stop_after and tool_calls_collected:
+        if route.force_stop_after and collected:
             break
 
         if is_composition and iteration < max_iterations:
             all_tracks = store.registry.list_tracks()
-            incomplete = _get_incomplete_tracks(store, tool_calls_collected)
+            incomplete = _get_incomplete_tracks(store, collected)
 
             if not all_tracks:
                 continuation = (
@@ -291,7 +288,7 @@ async def _handle_editing(
                 messages.append({"role": "user", "content": continuation})
                 continue
             elif incomplete:
-                if plan_tracker and execution_mode == "apply":
+                if plan_tracker and emit_sse:
                     incomplete_set = set(incomplete)
                     existing_track_names = {
                         t.name for t in store.registry.list_tracks()
@@ -324,7 +321,7 @@ async def _handle_editing(
                 continue
             else:
                 missing_expressive = _get_missing_expressive_steps(
-                    parsed, tool_calls_collected
+                    parsed, collected
                 )
                 if missing_expressive:
                     manifest = store.registry.agent_manifest()
@@ -351,89 +348,56 @@ async def _handle_editing(
         if not is_composition:
             break
 
-    # =========================================================================
-    # Variation Mode: Compute and emit variation per spec (meta/phrase/done)
-    # =========================================================================
-    if execution_mode == "variation" and tool_calls_collected:
-        from app.core.executor import execute_plan_variation
 
-        tool_call_objs = [
-            ToolCall(name=cast(str, tc["tool"]), params=cast(dict[str, Any], tc["params"]))
-            for tc in tool_calls_collected
-        ]
+# ---------------------------------------------------------------------------
+# Mode-specific handlers
+# ---------------------------------------------------------------------------
 
-        variation = await execute_plan_variation(
-            tool_calls=tool_call_objs,
-            project_state=project_context,
-            intent=prompt,
-            conversation_id=store.conversation_id,
-            explanation=None,
-            quality_preset=quality_preset,
-        )
 
-        from app.core.maestro_composing import _store_variation
-        _edit_region_metadata: dict[str, dict] = {}
-        for _re in store.registry.list_regions():
-            _rmeta: dict[str, Any] = {}
-            if _re.metadata:
-                _rmeta["startBeat"] = _re.metadata.get("startBeat")
-                _rmeta["durationBeats"] = _re.metadata.get("durationBeats")
-            _rmeta["name"] = _re.name
-            _edit_region_metadata[_re.id] = _rmeta
-        _store_variation(
-            variation, project_context,
-            base_state_id=store.get_state_id(),
-            conversation_id=store.conversation_id,
-            region_metadata=_edit_region_metadata,
-        )
+async def _handle_editing_apply(
+    prompt: str,
+    project_context: dict[str, Any],
+    route: Any,
+    llm: LLMClient,
+    store: Any,
+    trace: Any,
+    usage_tracker: Optional[UsageTracker],
+    conversation_history: list[dict[str, Any]],
+    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
+    quality_preset: Optional[str] = None,
+) -> AsyncIterator[str]:
+    """Handle EDITING in apply mode — immediate mutation with plan tracking."""
+    yield await sse_event({"type": "status", "message": "Processing..."})
 
-        note_counts = variation.note_counts
-        yield await sse_event({
-            "type": "meta",
-            "variationId": variation.variation_id,
-            "baseStateId": store.get_state_id(),
-            "intent": variation.intent,
-            "aiExplanation": variation.ai_explanation,
-            "affectedTracks": variation.affected_tracks,
-            "affectedRegions": variation.affected_regions,
-            "noteCounts": note_counts,
-        })
+    is_composition = route.intent == Intent.GENERATE_MUSIC
+    _slots = getattr(route, "slots", None)
+    _extras = getattr(_slots, "extras", None) if _slots is not None else None
+    parsed: Optional[ParsedPrompt] = _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
 
-        for phrase in variation.phrases:
-            yield await sse_event({
-                "type": "phrase",
-                "phraseId": phrase.phrase_id,
-                "trackId": phrase.track_id,
-                "regionId": phrase.region_id,
-                "startBeat": phrase.start_beat,
-                "endBeat": phrase.end_beat,
-                "label": phrase.label,
-                "tags": phrase.tags,
-                "explanation": phrase.explanation,
-                "noteChanges": [nc.model_dump(by_alias=True) for nc in phrase.note_changes],
-                "controllerChanges": phrase.controller_changes,
-            })
+    plan_tracker: Optional[_PlanTracker] = None
+    if is_composition and parsed is not None:
+        plan_tracker = _PlanTracker()
+        plan_tracker.build_from_prompt(parsed, prompt, project_context or {})
+        yield await sse_event(plan_tracker.to_plan_event())
 
-        yield await sse_event({
-            "type": "done",
-            "variationId": variation.variation_id,
-            "phraseCount": len(variation.phrases),
-        })
+    tool_calls_collected: list[dict[str, Any]] = []
 
-        yield await sse_event({
-            "type": "complete",
-            "success": True,
-            "variationId": variation.variation_id,
-            "totalChanges": variation.total_changes,
-            "phraseCount": len(variation.phrases),
-            "traceId": trace.trace_id,
-            **_context_usage_fields(usage_tracker, llm.model),
-        })
-        return
-
-    # =========================================================================
-    # Apply Mode: Standard completion
-    # =========================================================================
+    async for evt in _run_llm_tool_loop(
+        prompt=prompt,
+        project_context=project_context,
+        route=route,
+        llm=llm,
+        store=store,
+        trace=trace,
+        usage_tracker=usage_tracker,
+        conversation_history=conversation_history,
+        is_cancelled=is_cancelled,
+        quality_preset=quality_preset,
+        emit_sse=True,
+        plan_tracker=plan_tracker,
+        collected=tool_calls_collected,
+    ):
+        yield evt
 
     if plan_tracker:
         for skip_evt in plan_tracker.finalize_pending_as_skipped():
@@ -471,3 +435,158 @@ async def _handle_editing(
         "traceId": trace.trace_id,
         **_context_usage_fields(usage_tracker, llm.model),
     })
+
+
+async def _handle_editing_variation(
+    prompt: str,
+    project_context: dict[str, Any],
+    route: Any,
+    llm: LLMClient,
+    store: Any,
+    trace: Any,
+    usage_tracker: Optional[UsageTracker],
+    conversation_history: list[dict[str, Any]],
+    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
+    quality_preset: Optional[str] = None,
+) -> AsyncIterator[str]:
+    """Handle EDITING in variation mode — compute + emit variation proposal."""
+    yield await sse_event({"type": "status", "message": "Generating variation..."})
+
+    tool_calls_collected: list[dict[str, Any]] = []
+
+    async for evt in _run_llm_tool_loop(
+        prompt=prompt,
+        project_context=project_context,
+        route=route,
+        llm=llm,
+        store=store,
+        trace=trace,
+        usage_tracker=usage_tracker,
+        conversation_history=conversation_history,
+        is_cancelled=is_cancelled,
+        quality_preset=quality_preset,
+        emit_sse=False,
+        plan_tracker=None,
+        collected=tool_calls_collected,
+    ):
+        yield evt
+
+    if not tool_calls_collected:
+        yield await sse_event({
+            "type": "complete",
+            "success": True,
+            "toolCalls": [],
+            "traceId": trace.trace_id,
+            **_context_usage_fields(usage_tracker, llm.model),
+        })
+        return
+
+    from app.core.executor import execute_plan_variation
+
+    tool_call_objs = [
+        ToolCall(name=cast(str, tc["tool"]), params=cast(dict[str, Any], tc["params"]))
+        for tc in tool_calls_collected
+    ]
+
+    variation = await execute_plan_variation(
+        tool_calls=tool_call_objs,
+        project_state=project_context,
+        intent=prompt,
+        conversation_id=store.conversation_id,
+        explanation=None,
+        quality_preset=quality_preset,
+    )
+
+    from app.core.maestro_composing import _store_variation
+    _edit_region_metadata: dict[str, dict] = {}
+    for _re in store.registry.list_regions():
+        _rmeta: dict[str, Any] = {}
+        if _re.metadata:
+            _rmeta["startBeat"] = _re.metadata.get("startBeat")
+            _rmeta["durationBeats"] = _re.metadata.get("durationBeats")
+        _rmeta["name"] = _re.name
+        _edit_region_metadata[_re.id] = _rmeta
+    await _store_variation(
+        variation, project_context,
+        base_state_id=store.get_state_id(),
+        conversation_id=store.conversation_id,
+        region_metadata=_edit_region_metadata,
+    )
+
+    note_counts = variation.note_counts
+    yield await sse_event({
+        "type": "meta",
+        "variationId": variation.variation_id,
+        "baseStateId": store.get_state_id(),
+        "intent": variation.intent,
+        "aiExplanation": variation.ai_explanation,
+        "affectedTracks": variation.affected_tracks,
+        "affectedRegions": variation.affected_regions,
+        "noteCounts": note_counts,
+    })
+
+    for phrase in variation.phrases:
+        yield await sse_event({
+            "type": "phrase",
+            "phraseId": phrase.phrase_id,
+            "trackId": phrase.track_id,
+            "regionId": phrase.region_id,
+            "startBeat": phrase.start_beat,
+            "endBeat": phrase.end_beat,
+            "label": phrase.label,
+            "tags": phrase.tags,
+            "explanation": phrase.explanation,
+            "noteChanges": [nc.model_dump(by_alias=True) for nc in phrase.note_changes],
+            "controllerChanges": phrase.controller_changes,
+        })
+
+    yield await sse_event({
+        "type": "done",
+        "variationId": variation.variation_id,
+        "phraseCount": len(variation.phrases),
+    })
+
+    yield await sse_event({
+        "type": "complete",
+        "success": True,
+        "variationId": variation.variation_id,
+        "totalChanges": variation.total_changes,
+        "phraseCount": len(variation.phrases),
+        "traceId": trace.trace_id,
+        **_context_usage_fields(usage_tracker, llm.model),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Public dispatcher — backward-compatible entry point
+# ---------------------------------------------------------------------------
+
+
+async def _handle_editing(
+    prompt: str,
+    project_context: dict[str, Any],
+    route: Any,
+    llm: LLMClient,
+    store: Any,
+    trace: Any,
+    usage_tracker: Optional[UsageTracker],
+    conversation_history: list[dict[str, Any]],
+    execution_mode: str = "apply",
+    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
+    quality_preset: Optional[str] = None,
+) -> AsyncIterator[str]:
+    """Dispatch to mode-specific handler — no branching inside."""
+    if execution_mode == "variation":
+        async for evt in _handle_editing_variation(
+            prompt, project_context, route, llm, store, trace,
+            usage_tracker, conversation_history,
+            is_cancelled=is_cancelled, quality_preset=quality_preset,
+        ):
+            yield evt
+    else:
+        async for evt in _handle_editing_apply(
+            prompt, project_context, route, llm, store, trace,
+            usage_tracker, conversation_history,
+            is_cancelled=is_cancelled, quality_preset=quality_preset,
+        ):
+            yield evt

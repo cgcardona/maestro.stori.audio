@@ -67,6 +67,7 @@ async def init_db() -> None:
     
     # Import models to register them with Base
     from app.db import models  # noqa: F401
+    from app.db import muse_models  # noqa: F401
     
     # Create all tables
     async with _engine.begin() as conn:

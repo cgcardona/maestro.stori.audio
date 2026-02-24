@@ -20,6 +20,8 @@ from app.core.executor.note_utils import _NOTE_KEY_MAP, _normalize_note
 from app.core.executor.models import (
     ExecutionResult,
     ExecutionContext,
+    SnapshotBundle,
+    VariationExecutionContext,
     VariationContext,
     VariationApplyResult,
 )
@@ -36,7 +38,6 @@ from app.core.executor.variation import (
     execute_plan_variation,
     _extract_notes_from_project,
     _process_call_for_variation,
-    _collect_region_start_beats,
     _GENERATOR_TIMEOUT,
     _MAX_PARALLEL_GROUPS,
 )
@@ -44,7 +45,6 @@ from app.core.executor.apply import apply_variation_phrases
 from app.core.executor.snapshots import (
     capture_base_snapshot,
     capture_proposed_snapshot,
-    StoreSnapshot,
 )
 
 __all__ = [
@@ -54,6 +54,8 @@ __all__ = [
     # Models
     "ExecutionResult",
     "ExecutionContext",
+    "SnapshotBundle",
+    "VariationExecutionContext",
     "VariationContext",
     "VariationApplyResult",
     # Phases
@@ -71,7 +73,6 @@ __all__ = [
     "execute_tools_for_variation",
     "_extract_notes_from_project",
     "_process_call_for_variation",
-    "_collect_region_start_beats",
     # Variation pipeline — Muse computation
     "compute_variation_from_context",
     # Variation pipeline — convenience wrapper
@@ -81,5 +82,4 @@ __all__ = [
     # Snapshot boundary
     "capture_base_snapshot",
     "capture_proposed_snapshot",
-    "StoreSnapshot",
 ]

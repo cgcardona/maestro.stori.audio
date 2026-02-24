@@ -77,6 +77,21 @@ def _function_params(filepath: Path, func_name: str) -> list[str]:
     return []
 
 
+def _collect_import_names(filepath: Path) -> list[str]:
+    """Return all imported symbol names from a Python file."""
+    try:
+        tree = ast.parse(filepath.read_text(), filename=str(filepath))
+    except SyntaxError:
+        return []
+
+    names: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                names.append(alias.name)
+    return names
+
+
 # ── Rule 1: VariationService must not import StateStore or EntityRegistry ──
 
 def check_variation_service_isolation() -> None:
@@ -188,6 +203,65 @@ def check_apply_no_registry() -> None:
         print("  ✅ Clean")
 
 
+# ── Rule 6: VariationContext must not contain StateStore ──
+
+def check_variation_context_data_only() -> None:
+    print("\n[Rule 6] VariationContext must not contain StateStore")
+    filepath = ROOT / "app" / "core" / "executor" / "models.py"
+
+    tree = ast.parse(filepath.read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == "VariationContext":
+            for child in ast.walk(node):
+                if isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name):
+                    if child.target.id == "store":
+                        _error("VariationContext has a 'store' field")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
+# ── Rule 7: muse_repository must not import StateStore or executor ──
+
+def check_muse_repository_isolation() -> None:
+    print("\n[Rule 7] muse_repository must not import StateStore or executor")
+    filepath = ROOT / "app" / "services" / "muse_repository.py"
+    if not filepath.exists():
+        print("  ⚠️ File not found (skipping)")
+        return
+
+    imports = _collect_imports(filepath)
+    forbidden_modules = {"app.core.state_store", "app.core.executor"}
+    for imp in imports:
+        for fb in forbidden_modules:
+            if imp.startswith(fb):
+                _error(f"muse_repository.py imports {imp}")
+
+    names = _collect_import_names(filepath)
+    forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
+    for n in names:
+        if n in forbidden_names:
+            _error(f"muse_repository.py imports forbidden name: {n}")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
+# ── Rule 8: compute_variation_from_context must not import executor modules ──
+
+def check_compute_no_executor_imports() -> None:
+    print("\n[Rule 8] compute_variation_from_context must not import executor modules")
+    filepath = ROOT / "app" / "core" / "executor" / "variation.py"
+
+    func_imports = _function_imports(filepath, "compute_variation_from_context")
+    for imp in func_imports:
+        if "executor" in imp and "models" not in imp:
+            _error(f"compute_variation_from_context imports executor module: {imp}")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
 def main() -> int:
     print("=" * 60)
     print("Stori Maestro — Architectural Boundary Check")
@@ -198,6 +272,9 @@ def main() -> int:
     check_apply_no_store_lookup()
     check_muse_import_boundary()
     check_apply_no_registry()
+    check_variation_context_data_only()
+    check_muse_repository_isolation()
+    check_compute_no_executor_imports()
 
     print()
     if ERRORS:

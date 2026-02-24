@@ -1,4 +1,4 @@
-"""Variation storage helper — persist Variation to VariationStore after generation."""
+"""Variation storage helper — persist Variation to VariationStore + Postgres."""
 
 from __future__ import annotations
 
@@ -10,27 +10,23 @@ logger = logging.getLogger(__name__)
 RegionMeta = dict[str, Any]
 
 
-def _store_variation(
+async def _store_variation(
     variation: Any,
     project_context: dict[str, Any],
     base_state_id: str,
     conversation_id: str,
     region_metadata: dict[str, RegionMeta],
 ) -> None:
-    """Persist a Variation to the VariationStore so commit/discard can find it.
+    """Persist a Variation to both in-memory VariationStore and Postgres.
 
     Called from the maestro/stream path after ``execute_plan_variation``
     returns.  The caller provides ``base_state_id``, ``conversation_id``,
     and ``region_metadata`` — this function never accesses StateStore or
     EntityRegistry directly.
 
-    Args:
-        variation: The computed Variation object.
-        project_context: Project state dict (for project_id extraction).
-        base_state_id: Optimistic concurrency token from the StateStore.
-        conversation_id: Conversation/project identifier for cross-referencing.
-        region_metadata: Mapping of ``region_id`` to ``{startBeat, durationBeats, name}``
-            — built by the caller from the StateStore registry before calling.
+    Dual-write strategy:
+      1. In-memory VariationStore — keeps SSE streaming and real-time lookups working.
+      2. Postgres via muse_repository — durable storage that survives restarts.
     """
     from app.variation.storage.variation_store import (
         get_variation_store,
@@ -40,6 +36,7 @@ def _store_variation(
 
     project_id = project_context.get("id", "")
 
+    # ── 1. In-memory write (existing path) ──────────────────────────────
     vstore = get_variation_store()
     record = vstore.create(
         project_id=project_id,
@@ -91,7 +88,31 @@ def _store_variation(
         ))
 
     record.transition_to(VariationStatus.READY)
+
+    # ── 2. Postgres write (new persistent path) ─────────────────────────
+    try:
+        from app.db.database import AsyncSessionLocal
+        from app.services import muse_repository
+
+        async with AsyncSessionLocal() as session:
+            await muse_repository.save_variation(
+                session,
+                variation,
+                project_id=project_id,
+                base_state_id=base_state_id,
+                conversation_id=conversation_id,
+                region_metadata=region_metadata,
+            )
+            await session.commit()
+    except Exception:
+        logger.warning(
+            "⚠️ Postgres write failed for variation %s — in-memory copy is authoritative",
+            variation.variation_id[:8],
+            exc_info=True,
+        )
+
     logger.info(
-        f"Variation stored: {variation.variation_id[:8]} "
-        f"({len(variation.phrases)} phrases, status=READY)"
+        "Variation stored: %s (%d phrases, status=READY)",
+        variation.variation_id[:8],
+        len(variation.phrases),
     )

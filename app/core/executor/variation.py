@@ -3,6 +3,8 @@
 Phase 1 (Maestro orchestration):
     ``execute_tools_for_variation`` dispatches tool calls against a StateStore,
     collects base/proposed note data in a ``VariationContext``, and returns it.
+    The store is held in a ``VariationExecutionContext`` that does NOT leak
+    to the caller.
 
 Phase 2 (Muse computation):
     ``compute_variation_from_context`` takes *only* the collected musical data
@@ -23,11 +25,12 @@ import uuid as uuid_module
 from typing import Any, Awaitable, Callable, Optional
 
 from app.core.expansion import ToolCall, dedupe_tool_calls
+from app.core.tool_names import ToolName
 from app.core.tools import get_tool_meta, ToolTier, ToolKind
 from app.core.tracing import get_trace_context, trace_span
 from app.core.emotion_vector import EmotionVector, emotion_vector_from_stori_prompt
 from app.core.state_store import get_or_create_store
-from app.core.executor.models import VariationContext
+from app.core.executor.models import VariationContext, VariationExecutionContext
 from app.core.executor.phases import _group_into_phases
 from app.models.variation import Variation
 from app.services.variation import get_variation_service
@@ -42,10 +45,11 @@ _MAX_PARALLEL_GROUPS = 5
 def _extract_notes_from_project(
     project_state: dict[str, Any],
     var_ctx: VariationContext,
+    exec_ctx: VariationExecutionContext,
 ) -> None:
     """Extract existing notes from project state into variation context.
 
-    Falls back to StateStore when the frontend omits the notes array.
+    Falls back to StateStore (via exec_ctx) when the frontend omits the notes array.
     """
     tracks = project_state.get("tracks", [])
     for track in tracks:
@@ -54,7 +58,7 @@ def _extract_notes_from_project(
             region_id = region.get("id", "")
             notes = region.get("notes", [])
             if not notes:
-                notes = var_ctx.store.get_region_notes(region_id)
+                notes = exec_ctx.store.get_region_notes(region_id)
             if region_id and notes:
                 var_ctx.capture_base_notes(region_id, track_id, notes)
 
@@ -62,37 +66,37 @@ def _extract_notes_from_project(
 async def _process_call_for_variation(
     call: ToolCall,
     var_ctx: VariationContext,
+    exec_ctx: VariationExecutionContext,
     quality_preset: Optional[str] = None,
     emotion_vector: Optional[EmotionVector] = None,
 ) -> dict[str, Any]:
     """
     Process a tool call to extract proposed notes for variation.
 
-    Simulates entity creation in the state store for name resolution. Does NOT
-    mutate canonical state. Returns resolved params with server-assigned entity
-    IDs so the caller can emit accurate toolCall SSE events.
+    Uses ``exec_ctx.store`` for entity resolution and creation (Maestro concern).
+    Records musical data into ``var_ctx`` (data accumulation for Muse).
     """
     params = call.params.copy()
+    store = exec_ctx.store
 
-    # Name resolution mirrors streaming executor Step 1
     if "trackName" in params and "trackId" not in params:
         track_name = params["trackName"]
-        track_id = var_ctx.store.registry.resolve_track(track_name)
+        track_id = store.registry.resolve_track(track_name)
         if track_id:
             params["trackId"] = track_id
 
     if "regionName" in params and "regionId" not in params:
         region_name = params["regionName"]
         parent_track = params.get("trackId") or params.get("trackName")
-        region_id = var_ctx.store.registry.resolve_region(region_name, parent_track)
+        region_id = store.registry.resolve_region(region_name, parent_track)
         if region_id:
             params["regionId"] = region_id
 
-    if call.name == "stori_add_midi_track":
+    if call.name == ToolName.ADD_MIDI_TRACK:
         track_name = params.get("name", "Track")
-        existing = var_ctx.store.registry.resolve_track(track_name)
+        existing = store.registry.resolve_track(track_name)
         if not existing:
-            track_id = var_ctx.store.create_track(track_name, track_id=params.get("trackId"))
+            track_id = store.create_track(track_name, track_id=params.get("trackId"))
             params["trackId"] = track_id
             logger.info(f"🎹 [variation] Registered track: {track_name} → {track_id[:8]}")
 
@@ -109,17 +113,17 @@ async def _process_call_for_variation(
             params["trackId"] = existing
             logger.debug(f"🎹 [variation] Track already exists: {track_name} → {existing[:8]}")
 
-    elif call.name == "stori_add_midi_region":
+    elif call.name == ToolName.ADD_MIDI_REGION:
         track_id = params.get("trackId", "")
         if not track_id:
             track_ref = params.get("trackName") or params.get("name")
             if track_ref:
-                track_id = var_ctx.store.registry.resolve_track(track_ref) or ""
+                track_id = store.registry.resolve_track(track_ref) or ""
                 if track_id:
                     params["trackId"] = track_id
         if track_id:
             region_name = params.get("name", "Region")
-            region_id = var_ctx.store.create_region(
+            region_id = store.create_region(
                 name=region_name,
                 parent_track_id=track_id,
                 region_id=None,
@@ -136,7 +140,7 @@ async def _process_call_for_variation(
         else:
             logger.warning("⚠️ [variation] Cannot create region — no track resolved")
 
-    elif call.name == "stori_add_notes":
+    elif call.name == ToolName.ADD_NOTES:
         region_id = params.get("regionId", "")
         track_id = params.get("trackId", "")
         notes = params.get("notes", [])
@@ -146,14 +150,14 @@ async def _process_call_for_variation(
                 f"⚠️ stori_add_notes: missing regionId, dropping {len(notes)} notes"
             )
         elif notes:
-            registered = var_ctx.store.registry.get_region(region_id)
+            registered = store.registry.get_region(region_id)
             if not registered:
                 resolved_track_id = (
-                    var_ctx.store.registry.resolve_track(params.get("trackName", ""))
+                    store.registry.resolve_track(params.get("trackName", ""))
                     or track_id
                 )
                 fallback_region_id = (
-                    var_ctx.store.registry.get_latest_region_for_track(resolved_track_id)
+                    store.registry.get_latest_region_for_track(resolved_track_id)
                     if resolved_track_id else None
                 )
                 if fallback_region_id:
@@ -173,10 +177,10 @@ async def _process_call_for_variation(
 
             if region_id:
                 if not track_id:
-                    entity = var_ctx.store.registry.get_region(region_id)
+                    entity = store.registry.get_region(region_id)
                     track_id = entity.parent_id if entity else ""
 
-                if region_id not in var_ctx.base_notes:
+                if region_id not in var_ctx.base.notes:
                     var_ctx.capture_base_notes(region_id, track_id or "", [])
 
                 var_ctx.record_proposed_notes(region_id, notes)
@@ -185,7 +189,7 @@ async def _process_call_for_variation(
                     f"region={region_id[:8]} track={(track_id or '')[:8]}"
                 )
 
-    elif call.name == "stori_add_midi_cc":
+    elif call.name == ToolName.ADD_MIDI_CC:
         region_id = params.get("regionId", "")
         cc = params.get("cc")
         events = params.get("events", [])
@@ -196,7 +200,7 @@ async def _process_call_for_variation(
                 f"🎛️ stori_add_midi_cc: CC{cc} {len(events)} events → region={region_id[:8]}"
             )
 
-    elif call.name == "stori_add_pitch_bend":
+    elif call.name == ToolName.ADD_PITCH_BEND:
         region_id = params.get("regionId", "")
         events = params.get("events", [])
         if region_id and events:
@@ -205,7 +209,7 @@ async def _process_call_for_variation(
                 f"🎛️ stori_add_pitch_bend: {len(events)} events → region={region_id[:8]}"
             )
 
-    elif call.name == "stori_add_aftertouch":
+    elif call.name == ToolName.ADD_AFTERTOUCH:
         region_id = params.get("regionId", "")
         events = params.get("events", [])
         if region_id and events:
@@ -214,7 +218,6 @@ async def _process_call_for_variation(
                 f"🎛️ stori_add_aftertouch: {len(events)} events → region={region_id[:8]}"
             )
 
-    # Generator tools
     meta = get_tool_meta(call.name)
     if meta and meta.tier == ToolTier.TIER1 and meta.kind == ToolKind.GENERATOR:
         mg = get_music_generator()
@@ -251,15 +254,15 @@ async def _process_call_for_variation(
             if result.success and result.notes:
                 track_name = params.get("trackName", gen_params["instrument"].capitalize())
                 track_id = (
-                    var_ctx.store.registry.resolve_track(track_name)
+                    store.registry.resolve_track(track_name)
                     or params.get("trackId", "")
                 )
 
                 if track_id:
-                    region_id = var_ctx.store.registry.get_latest_region_for_track(track_id)
+                    region_id = store.registry.get_latest_region_for_track(track_id)
 
                     if region_id:
-                        if region_id not in var_ctx.base_notes:
+                        if region_id not in var_ctx.base.notes:
                             var_ctx.capture_base_notes(region_id, track_id, [])
 
                         var_ctx.record_proposed_notes(region_id, result.notes)
@@ -313,7 +316,7 @@ def compute_variation_from_context(
     """Muse computation — produce a Variation diff from collected musical data.
 
     This function has NO access to StateStore or EntityRegistry.  All inputs
-    are plain data extracted at the Maestro→Muse boundary.
+    are plain data extracted at the Maestro->Muse boundary.
     """
     variation_service = get_variation_service()
 
@@ -369,9 +372,8 @@ async def execute_tools_for_variation(
 ) -> VariationContext:
     """Maestro orchestration — dispatch tool calls, collect base/proposed state.
 
-    Returns a ``VariationContext`` containing the collected musical data.
-    Does NOT compute the variation diff — that is Muse's responsibility
-    (see ``compute_variation_from_context``).
+    Creates a ``VariationExecutionContext`` internally for store access.
+    Returns a data-only ``VariationContext`` — the store does not leak.
     """
     trace = get_trace_context()
 
@@ -383,19 +385,14 @@ async def execute_tools_for_variation(
 
     tool_calls = dedupe_tool_calls(tool_calls)
 
-    var_ctx = VariationContext(
-        store=store,
-        trace=trace,
-        base_notes={},
-        proposed_notes={},
-        track_regions={},
-    )
+    exec_ctx = VariationExecutionContext(store=store, trace=trace)
+    var_ctx = VariationContext(trace=trace)
 
     if not tool_calls:
         return var_ctx
 
     logger.info(f"🎭 Variation mode: {len(tool_calls)} tool calls")
-    _extract_notes_from_project(project_state, var_ctx)
+    _extract_notes_from_project(project_state, var_ctx, exec_ctx)
 
     emotion_vector: Optional[EmotionVector] = None
     if explanation:
@@ -415,6 +412,7 @@ async def execute_tools_for_variation(
         resolved_params = await _process_call_for_variation(
             call,
             var_ctx,
+            exec_ctx,
             quality_preset=quality_preset,
             emotion_vector=emotion_vector,
         )
@@ -444,28 +442,22 @@ async def execute_tools_for_variation(
     for call in phase3:
         await _dispatch(call)
 
-    total_base = sum(len(n) for n in var_ctx.base_notes.values())
-    total_proposed = sum(len(n) for n in var_ctx.proposed_notes.values())
+    total_base = sum(len(n) for n in var_ctx.base.notes.values())
+    total_proposed = sum(len(n) for n in var_ctx.proposed.notes.values())
     logger.info(
-        f"📊 Variation context: {len(var_ctx.base_notes)} base regions ({total_base} notes), "
-        f"{len(var_ctx.proposed_notes)} proposed regions ({total_proposed} notes)"
+        f"📊 Variation context: {len(var_ctx.base.notes)} base regions ({total_base} notes), "
+        f"{len(var_ctx.proposed.notes)} proposed regions ({total_proposed} notes)"
     )
 
-    return var_ctx
-
-
-def _collect_region_start_beats(var_ctx: VariationContext) -> dict[str, float]:
-    """Boundary translation: extract region start beats from the store.
-
-    This runs at the Maestro→Muse seam so that ``compute_variation_from_context``
-    never needs to touch the store.
-    """
-    result: dict[str, float] = {}
-    for rid in set(var_ctx.base_notes.keys()) | set(var_ctx.proposed_notes.keys()):
-        entity = var_ctx.store.registry.get_region(rid)
+    # Collect region start beats at the Maestro→Muse boundary
+    for rid in set(var_ctx.base.notes.keys()) | set(var_ctx.proposed.notes.keys()):
+        entity = store.registry.get_region(rid)
         if entity and entity.metadata:
-            result[rid] = float(entity.metadata.get("startBeat", 0))
-    return result
+            var_ctx.proposed.region_start_beats[rid] = float(
+                entity.metadata.get("startBeat", 0)
+            )
+
+    return var_ctx
 
 
 async def execute_plan_variation(
@@ -499,16 +491,14 @@ async def execute_plan_variation(
             post_tool_callback=post_tool_callback,
         )
 
-        region_start_beats = _collect_region_start_beats(var_ctx)
-
         variation = compute_variation_from_context(
-            base_notes=var_ctx.base_notes,
-            proposed_notes=var_ctx.proposed_notes,
-            track_regions=var_ctx.track_regions,
-            proposed_cc=var_ctx.proposed_cc,
-            proposed_pitch_bends=var_ctx.proposed_pitch_bends,
-            proposed_aftertouch=var_ctx.proposed_aftertouch,
-            region_start_beats=region_start_beats,
+            base_notes=var_ctx.base.notes,
+            proposed_notes=var_ctx.proposed.notes,
+            track_regions=var_ctx.proposed.track_regions,
+            proposed_cc=var_ctx.proposed.cc,
+            proposed_pitch_bends=var_ctx.proposed.pitch_bends,
+            proposed_aftertouch=var_ctx.proposed.aftertouch,
+            region_start_beats=var_ctx.proposed.region_start_beats,
             intent=intent,
             explanation=explanation,
         )

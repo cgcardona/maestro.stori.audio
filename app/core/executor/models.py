@@ -67,40 +67,74 @@ class ExecutionContext:
         }
 
 
+# ---------------------------------------------------------------------------
+# Snapshot & variation models
+# ---------------------------------------------------------------------------
+
+
 @dataclass
-class VariationContext:
-    """Context for variation mode execution (read-only state, no transaction)."""
+class SnapshotBundle:
+    """Unified snapshot of region musical data.
+
+    Used by both the agent-team path (``capture_*_snapshot``) and
+    the single-instrument path (``VariationContext`` incremental capture).
+    One type, one shape, everywhere.
+    """
+
+    notes: dict[str, list[dict]] = field(default_factory=dict)
+    cc: dict[str, list[dict]] = field(default_factory=dict)
+    pitch_bends: dict[str, list[dict]] = field(default_factory=dict)
+    aftertouch: dict[str, list[dict]] = field(default_factory=dict)
+    track_regions: dict[str, str] = field(default_factory=dict)
+    region_start_beats: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class VariationExecutionContext:
+    """Mutable execution state — lives only inside the executor.
+
+    Holds the StateStore reference needed for entity resolution during
+    tool dispatch.  Must NOT cross the Muse boundary.
+    """
 
     store: StateStore
     trace: TraceContext
-    base_notes: dict[str, list[dict]]
-    proposed_notes: dict[str, list[dict]]
-    track_regions: dict[str, str]
-    proposed_cc: dict[str, list[dict]] = field(default_factory=dict)
-    proposed_pitch_bends: dict[str, list[dict]] = field(default_factory=dict)
-    proposed_aftertouch: dict[str, list[dict]] = field(default_factory=dict)
+
+
+@dataclass
+class VariationContext:
+    """Data container for variation computation — no store access.
+
+    Accumulates base and proposed musical data during tool dispatch,
+    then passed to ``compute_variation_from_context`` which sees only data.
+    """
+
+    trace: TraceContext
+    base: SnapshotBundle = field(default_factory=SnapshotBundle)
+    proposed: SnapshotBundle = field(default_factory=SnapshotBundle)
 
     def capture_base_notes(self, region_id: str, track_id: str, notes: list[dict]) -> None:
-        if region_id not in self.base_notes:
+        if region_id not in self.base.notes:
             from app.core.executor.note_utils import _normalize_note
-            self.base_notes[region_id] = [_normalize_note(n) for n in notes]
-            self.track_regions[region_id] = track_id
+            self.base.notes[region_id] = [_normalize_note(n) for n in notes]
+            self.base.track_regions[region_id] = track_id
+            self.proposed.track_regions[region_id] = track_id
 
     def record_proposed_notes(self, region_id: str, notes: list[dict]) -> None:
         from app.core.executor.note_utils import _normalize_note
-        self.proposed_notes[region_id] = [_normalize_note(n) for n in notes]
+        self.proposed.notes[region_id] = [_normalize_note(n) for n in notes]
 
     def record_proposed_cc(self, region_id: str, cc_events: list[dict]) -> None:
         if cc_events:
-            self.proposed_cc.setdefault(region_id, []).extend(cc_events)
+            self.proposed.cc.setdefault(region_id, []).extend(cc_events)
 
     def record_proposed_pitch_bends(self, region_id: str, pitch_bends: list[dict]) -> None:
         if pitch_bends:
-            self.proposed_pitch_bends.setdefault(region_id, []).extend(pitch_bends)
+            self.proposed.pitch_bends.setdefault(region_id, []).extend(pitch_bends)
 
     def record_proposed_aftertouch(self, region_id: str, aftertouch: list[dict]) -> None:
         if aftertouch:
-            self.proposed_aftertouch.setdefault(region_id, []).extend(aftertouch)
+            self.proposed.aftertouch.setdefault(region_id, []).extend(aftertouch)
 
 
 @dataclass

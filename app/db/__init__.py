@@ -10,6 +10,7 @@ from app.db.database import (
     AsyncSessionLocal,
 )
 from app.db.models import User, UsageLog, AccessToken
+from app.db import muse_models as muse_models  # noqa: F401 — register with Base
 
 __all__ = [
     "get_db",

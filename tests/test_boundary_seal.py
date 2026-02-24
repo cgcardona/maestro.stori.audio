@@ -71,7 +71,28 @@ class TestMuseComputeBoundary:
                         )
 
 
-# ── 1.2  Commit path doesn't call get_or_create_store ──
+# ── 1.2  VariationContext is data-only ──
+
+
+class TestVariationContextDataOnly:
+    """VariationContext must not contain a StateStore reference."""
+
+    def test_variation_context_has_no_store_field(self):
+        from app.core.executor.models import VariationContext
+        field_names = {f.name for f in VariationContext.__dataclass_fields__.values()}
+        assert "store" not in field_names, "VariationContext must not have a 'store' field"
+
+    def test_variation_context_uses_snapshot_bundle(self):
+        from app.core.executor.models import VariationContext, SnapshotBundle
+        ctx = VariationContext.__dataclass_fields__
+        assert "base" in {f for f in ctx}, "VariationContext must have 'base' field"
+        assert "proposed" in {f for f in ctx}, "VariationContext must have 'proposed' field"
+        # With `from __future__ import annotations`, .type is a string
+        assert ctx["base"].type in (SnapshotBundle, "SnapshotBundle")
+        assert ctx["proposed"].type in (SnapshotBundle, "SnapshotBundle")
+
+
+# ── 1.3  Commit path doesn't call get_or_create_store ──
 
 
 class TestApplyVariationBoundary:
@@ -154,6 +175,29 @@ class TestApplyVariationBoundary:
             )
 
 
+# ── 1.4  muse_repository boundary ──
+
+
+class TestMuseRepositoryBoundary:
+    """muse_repository must not import StateStore or executor."""
+
+    def test_no_state_store_import(self):
+        filepath = ROOT / "app" / "services" / "muse_repository.py"
+        tree = ast.parse(filepath.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert "state_store" not in node.module
+                assert "executor" not in node.module
+
+    def test_no_variation_service_import(self):
+        filepath = ROOT / "app" / "services" / "muse_repository.py"
+        tree = ast.parse(filepath.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert "variation.service" not in node.module
+                assert "services.variation" not in node.module
+
+
 # ── 3.3  Golden shape tests ──
 
 
@@ -214,16 +258,28 @@ class TestGoldenShapes:
         assert len(result["aftertouch"]) == 1
         assert result["aftertouch"][0]["value"] == 80
 
-    def test_store_snapshot_shape(self):
-        """capture_base_snapshot must return the canonical key set."""
+    def test_snapshot_bundle_shape(self):
+        """SnapshotBundle must expose the canonical attribute set."""
+        from app.core.executor.models import SnapshotBundle
+
+        bundle = SnapshotBundle()
+        expected_attrs = {"notes", "cc", "pitch_bends", "aftertouch", "track_regions", "region_start_beats"}
+        actual_attrs = set(SnapshotBundle.__dataclass_fields__.keys())
+        assert expected_attrs == actual_attrs, f"Mismatch: {expected_attrs.symmetric_difference(actual_attrs)}"
+        for attr in expected_attrs:
+            assert isinstance(getattr(bundle, attr), dict)
+
+    def test_snapshot_bundle_from_capture(self):
+        """capture_base_snapshot must return a SnapshotBundle."""
         from app.core.executor.snapshots import capture_base_snapshot
+        from app.core.executor.models import SnapshotBundle
         from app.core.state_store import StateStore
 
         store = StateStore(conversation_id="shape-test")
         snapshot = capture_base_snapshot(store)
 
-        assert set(snapshot.keys()) == {
-            "region_notes", "region_cc", "region_pitch_bends", "region_aftertouch",
-        }
-        for v in snapshot.values():
-            assert isinstance(v, dict)
+        assert isinstance(snapshot, SnapshotBundle)
+        assert isinstance(snapshot.notes, dict)
+        assert isinstance(snapshot.cc, dict)
+        assert isinstance(snapshot.pitch_bends, dict)
+        assert isinstance(snapshot.aftertouch, dict)

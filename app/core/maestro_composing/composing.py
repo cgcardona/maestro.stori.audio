@@ -246,7 +246,7 @@ async def _handle_composing(
                     _rmeta["name"] = _re.name
                     _region_metadata[_re.id] = _rmeta
 
-                _store_variation(
+                await _store_variation(
                     variation, project_context,
                     base_state_id=store.get_state_id(),
                     conversation_id=store.conversation_id,
@@ -417,7 +417,7 @@ async def _handle_composing_with_agent_teams(
         track_id = track.get("id", "")
         for region in track.get("regions", []):
             rid = region.get("id", "")
-            notes = region.get("notes", []) or _base_snapshot["region_notes"].get(rid, [])
+            notes = region.get("notes", []) or _base_snapshot.notes.get(rid, [])
             if rid and notes:
                 _base_notes[rid] = notes
                 _track_regions[rid] = track_id
@@ -452,7 +452,7 @@ async def _handle_composing_with_agent_teams(
 
     for region_entity in store.registry.list_regions():
         rid = region_entity.id
-        notes = _proposed_snapshot["region_notes"].get(rid, [])
+        notes = _proposed_snapshot.notes.get(rid, [])
         if notes:
             _proposed_notes[rid] = notes
             _track_regions[rid] = region_entity.parent_id or ""
@@ -521,7 +521,7 @@ async def _handle_composing_with_agent_teams(
         _rmeta_at["name"] = _re.name
         _at_region_metadata[_re.id] = _rmeta_at
 
-    _store_variation(
+    await _store_variation(
         variation, project_context,
         base_state_id=store.get_state_id(),
         conversation_id=store.conversation_id,

@@ -18,6 +18,7 @@ from app.core.executor import (
     _process_call_for_variation,
     ExecutionContext,
     VariationContext,
+    VariationExecutionContext,
     VariationApplyResult,
 )
 from app.core.expansion import ToolCall
@@ -380,10 +381,8 @@ class TestExtractNotesFromProject:
         """Standard 'regions' key is extracted."""
         store = StateStore(conversation_id="test-extract")
         trace = TraceContext(trace_id="test")
-        var_ctx = VariationContext(
-            store=store, trace=trace,
-            base_notes={}, proposed_notes={}, track_regions={},
-        )
+        var_ctx = VariationContext(trace=trace)
+        exec_ctx = VariationExecutionContext(store=store, trace=trace)
         project = {
             "tracks": [{
                 "id": "t1",
@@ -392,28 +391,26 @@ class TestExtractNotesFromProject:
                 ]}],
             }]
         }
-        _extract_notes_from_project(project, var_ctx)
-        assert "r1" in var_ctx.base_notes
-        assert len(var_ctx.base_notes["r1"]) == 1
+        _extract_notes_from_project(project, var_ctx, exec_ctx)
+        assert "r1" in var_ctx.base.notes
+        assert len(var_ctx.base.notes["r1"]) == 1
 
     def test_falls_back_to_store_when_no_notes(self):
         """When region has no notes array, falls back to StateStore."""
         store = StateStore(conversation_id="test-fallback")
         store.add_notes("r1", [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}])
         trace = TraceContext(trace_id="test")
-        var_ctx = VariationContext(
-            store=store, trace=trace,
-            base_notes={}, proposed_notes={}, track_regions={},
-        )
+        var_ctx = VariationContext(trace=trace)
+        exec_ctx = VariationExecutionContext(store=store, trace=trace)
         project = {
             "tracks": [{
                 "id": "t1",
                 "regions": [{"id": "r1", "noteCount": 1}],
             }]
         }
-        _extract_notes_from_project(project, var_ctx)
-        assert "r1" in var_ctx.base_notes
-        assert len(var_ctx.base_notes["r1"]) == 1
+        _extract_notes_from_project(project, var_ctx, exec_ctx)
+        assert "r1" in var_ctx.base.notes
+        assert len(var_ctx.base.notes["r1"]) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -430,10 +427,8 @@ class TestGeneratorTimeout:
         tid = store.create_track("Drums")
         store.create_region("Pattern", tid)
         trace = TraceContext(trace_id="test")
-        var_ctx = VariationContext(
-            store=store, trace=trace,
-            base_notes={}, proposed_notes={}, track_regions={},
-        )
+        var_ctx = VariationContext(trace=trace)
+        exec_ctx = VariationExecutionContext(store=store, trace=trace)
 
         call = ToolCall("stori_generate_drums", {
             "role": "drums",
@@ -452,13 +447,11 @@ class TestGeneratorTimeout:
         try:
             executor_module._GENERATOR_TIMEOUT = 0.1
             with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
-                # Should not raise — timeout is caught internally
-                await _process_call_for_variation(call, var_ctx)
+                await _process_call_for_variation(call, var_ctx, exec_ctx)
         finally:
             executor_module._GENERATOR_TIMEOUT = original_timeout
 
-        # No proposed notes since generator timed out
-        assert len(var_ctx.proposed_notes) == 0
+        assert len(var_ctx.proposed.notes) == 0
 
     @pytest.mark.anyio
     async def test_generator_exception_does_not_crash(self):
@@ -467,10 +460,8 @@ class TestGeneratorTimeout:
         tid = store.create_track("Bass")
         store.create_region("Groove", tid)
         trace = TraceContext(trace_id="test")
-        var_ctx = VariationContext(
-            store=store, trace=trace,
-            base_notes={}, proposed_notes={}, track_regions={},
-        )
+        var_ctx = VariationContext(trace=trace)
+        exec_ctx = VariationExecutionContext(store=store, trace=trace)
 
         call = ToolCall("stori_generate_bass", {
             "role": "bass",
@@ -483,9 +474,9 @@ class TestGeneratorTimeout:
         mock_mg.generate = AsyncMock(side_effect=RuntimeError("Orpheus down"))
 
         with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
-            await _process_call_for_variation(call, var_ctx)
+            await _process_call_for_variation(call, var_ctx, exec_ctx)
 
-        assert len(var_ctx.proposed_notes) == 0
+        assert len(var_ctx.proposed.notes) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -1146,55 +1137,27 @@ class TestVariationContextCC:
     """VariationContext records CC and pitch bend data."""
 
     def test_record_proposed_cc(self):
-        store = StateStore(conversation_id="cc", project_id="p")
-        ctx = VariationContext(
-            store=store,
-            trace=TraceContext(trace_id="test"),
-            base_notes={},
-            proposed_notes={},
-            track_regions={},
-        )
+        ctx = VariationContext(trace=TraceContext(trace_id="test"))
         cc_events = [{"cc": 64, "beat": 0.0, "value": 127}]
         ctx.record_proposed_cc("r1", cc_events)
-        assert ctx.proposed_cc["r1"] == cc_events
+        assert ctx.proposed.cc["r1"] == cc_events
 
     def test_record_proposed_pitch_bends(self):
-        store = StateStore(conversation_id="pb", project_id="p")
-        ctx = VariationContext(
-            store=store,
-            trace=TraceContext(trace_id="test"),
-            base_notes={},
-            proposed_notes={},
-            track_regions={},
-        )
+        ctx = VariationContext(trace=TraceContext(trace_id="test"))
         pb_events = [{"beat": 1.0, "value": 4096}]
         ctx.record_proposed_pitch_bends("r1", pb_events)
-        assert ctx.proposed_pitch_bends["r1"] == pb_events
+        assert ctx.proposed.pitch_bends["r1"] == pb_events
 
     def test_empty_cc_not_recorded(self):
-        store = StateStore(conversation_id="cc2", project_id="p")
-        ctx = VariationContext(
-            store=store,
-            trace=TraceContext(trace_id="test"),
-            base_notes={},
-            proposed_notes={},
-            track_regions={},
-        )
+        ctx = VariationContext(trace=TraceContext(trace_id="test"))
         ctx.record_proposed_cc("r1", [])
-        assert "r1" not in ctx.proposed_cc
+        assert "r1" not in ctx.proposed.cc
 
     def test_cc_accumulates_across_calls(self):
-        store = StateStore(conversation_id="cc3", project_id="p")
-        ctx = VariationContext(
-            store=store,
-            trace=TraceContext(trace_id="test"),
-            base_notes={},
-            proposed_notes={},
-            track_regions={},
-        )
+        ctx = VariationContext(trace=TraceContext(trace_id="test"))
         ctx.record_proposed_cc("r1", [{"cc": 64, "beat": 0, "value": 127}])
         ctx.record_proposed_cc("r1", [{"cc": 11, "beat": 1, "value": 80}])
-        assert len(ctx.proposed_cc["r1"]) == 2
+        assert len(ctx.proposed.cc["r1"]) == 2
 
 
 class TestStateStoreCCPitchBend:
@@ -1497,29 +1460,15 @@ class TestAftertouchPipeline:
     """Aftertouch data flows through the entire pipeline."""
 
     def test_variation_context_records_aftertouch(self):
-        store = StateStore(conversation_id="at1", project_id="p")
-        ctx = VariationContext(
-            store=store,
-            trace=TraceContext(trace_id="test"),
-            base_notes={},
-            proposed_notes={},
-            track_regions={},
-        )
+        ctx = VariationContext(trace=TraceContext(trace_id="test"))
         at_events = [{"beat": 0.5, "value": 80}]
         ctx.record_proposed_aftertouch("r1", at_events)
-        assert ctx.proposed_aftertouch["r1"] == at_events
+        assert ctx.proposed.aftertouch["r1"] == at_events
 
     def test_empty_aftertouch_not_recorded(self):
-        store = StateStore(conversation_id="at2", project_id="p")
-        ctx = VariationContext(
-            store=store,
-            trace=TraceContext(trace_id="test"),
-            base_notes={},
-            proposed_notes={},
-            track_regions={},
-        )
+        ctx = VariationContext(trace=TraceContext(trace_id="test"))
         ctx.record_proposed_aftertouch("r1", [])
-        assert "r1" not in ctx.proposed_aftertouch
+        assert "r1" not in ctx.proposed.aftertouch
 
     def test_state_store_aftertouch(self):
         store = StateStore(conversation_id="at3", project_id="p")
