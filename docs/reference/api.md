@@ -219,6 +219,8 @@ Track names use title-case with spaces and are consistent across all steps refer
 | `expression` | `stori_add_midi_cc`, `stori_add_pitch_bend`, `stori_add_aftertouch` | Performance data: MIDI CC, pitch bend, humanisation |
 | `mixing` | `stori_set_track_volume/pan`, `stori_mute/solo_track`, `stori_ensure_bus`, `stori_add_send`, `stori_add_automation` | Balance & routing: volume, pan, buses, sends, automation |
 
+For full parameter documentation per tool, see the [tool reference tables](#1-setup--session-scaffolding-15-tools) below. For a flat lookup, see the [cross-reference table](#cross-reference-tool--phase).
+
 ---
 
 ## Models (OpenRouter)
@@ -253,7 +255,13 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 
 > **Strict contract:** The macOS client enforces all required parameters — missing fields throw `invalidParameter` errors. The server guarantees all required fields are present in every SSE `toolCall` event via auto-assignment and backfill. See per-tool tables below for which fields are required.
 
-## Project
+Tools are organized below by **DAW workflow phase** — the same phases emitted in the `phase` field of SSE events. This mirrors the order a professional producer works in: set up the session → write the music → arrange and refine → shape the sounds → add the human touch → balance the mix.
+
+---
+
+## 1. Setup — session scaffolding (15 tools)
+
+Project config, track/region creation, instrument selection, transport, and UI.
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
@@ -261,22 +269,17 @@ Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mc
 | `stori_create_project` | Create a new project. | `name`, `tempo` (required); `keySignature`, `timeSignature` |
 | `stori_set_tempo` | Set project tempo (BPM). | `tempo` (**required**, 20–300) |
 | `stori_set_key` | Set key signature. | `key` (**required**, e.g. C, Am, F#m) |
-
----
-
-## Track
-
-| Tool | Description | Key parameters |
-|------|-------------|-----------------|
 | `stori_add_midi_track` | Add MIDI track. Server auto-assigns `trackId`, `color`, `icon`, and exactly one of `_isDrums`/`gmProgram`. | `name` (**required**); `drumKitId`, `gmProgram` 0–127, `instrument`, `color`, `icon` — all guaranteed present in SSE output |
-| `stori_set_track_volume` | Set track volume. | `trackId`, `volume` (**required**, 0.0–1.5) |
-| `stori_set_track_pan` | Set track pan. | `trackId`, `pan` (**required**, 0.0–1.0) |
-| `stori_set_track_name` | Rename track. | `trackId`, `name` |
+| `stori_add_midi_region` | Add MIDI region to a track. | `trackId`, `startBeat`, `durationBeats` (required); `name` |
 | `stori_set_midi_program` | Set GM program (instrument voice). | `trackId`, `program` (0–127); `channel` (1–16, default 1; use 10 for drums) |
-| `stori_mute_track` | Mute/unmute. | `trackId`, `muted` |
-| `stori_solo_track` | Solo/unsolo. | `trackId`, `solo` |
+| `stori_set_track_name` | Rename track. | `trackId`, `name` |
 | `stori_set_track_color` | Set track color. | `trackId`, `color` (see color table below) |
 | `stori_set_track_icon` | Set track icon (SF Symbol). | `trackId`, `icon` (must be from curated list — see icon table below) |
+| `stori_play` | Start playback. | `fromBeat` (optional) |
+| `stori_stop` | Stop playback. | — |
+| `stori_set_playhead` | Move playhead. | `bar`, `beat`, or `seconds` |
+| `stori_show_panel` | Show/hide panel. | `panel`, `visible` |
+| `stori_set_zoom` | Set editor zoom. | `zoomPercent` |
 
 ### Track color values
 
@@ -327,35 +330,46 @@ Do NOT send arbitrary strings — the client rejects icons not in the compiled a
 
 ---
 
-## Region
+## 2. Composition — creative content (6 tools)
 
-| Tool | Description | Key parameters |
-|------|-------------|-----------------|
-| `stori_add_midi_region` | Add MIDI region to a track. | `trackId`, `startBeat`, `durationBeats` (required); `name` |
-| `stori_delete_region` | Delete a region. | `regionId` |
-| `stori_move_region` | Move region. | `regionId`, `startBeat` |
-| `stori_duplicate_region` | Duplicate region. | `regionId`, `startBeat` |
-
----
-
-## Notes
+Writing notes and generating MIDI via the Orpheus music model.
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
 | `stori_add_notes` | Add MIDI notes to region. | `regionId`, `notes` — each note **must** have `pitch` (0–127), `velocity` (1–127), `startBeat` (>=0), `durationBeats` (>0). Server backfills defaults if missing. |
-| `stori_clear_notes` | Clear all notes in region. | `regionId` |
-| `stori_quantize_notes` | Quantize to grid. | `regionId`; `grid` (1/4, 1/8, 1/16, 1/32, 1/64); `strength` 0–1 |
-| `stori_apply_swing` | Apply swing. | `regionId`, `amount` (0–1) |
+| `stori_generate_midi` | Generate MIDI for a role (preferred). | `role`, `style`, `tempo`, `bars` (required); `key`, `constraints` |
+| `stori_generate_drums` | Generate drum pattern (deprecated). | `style`, `tempo`; `bars`, `complexity` |
+| `stori_generate_bass` | Generate bass line (deprecated). | `style`, `tempo`, `bars`; `key`, `chords` |
+| `stori_generate_melody` | Generate melody (deprecated). | `style`, `tempo`, `bars`; `key`, `scale`, `octave` |
+| `stori_generate_chords` | Generate chord part (deprecated). | `style`, `tempo`, `bars`; `key`, `progression` |
+
+**Generation tools (server-side, internal):** `stori_generate_*` tools run inside Maestro and call the Orpheus music model. They are **never emitted as `toolCall` events** in the SSE stream — the server translates their output into `stori_add_notes` (and optionally `stori_add_midi_cc` / `stori_add_pitch_bend`) before forwarding to the client.
 
 ---
 
-## Effects & routing
+## 3. Arrangement — structural editing (7 tools)
+
+Structural edits after initial writing: moving, duplicating, transposing, quantizing.
+
+| Tool | Description | Key parameters |
+|------|-------------|-----------------|
+| `stori_move_region` | Move region to a new position. | `regionId`, `startBeat` |
+| `stori_duplicate_region` | Duplicate region. | `regionId`, `startBeat` |
+| `stori_delete_region` | Delete a region. | `regionId` |
+| `stori_transpose_notes` | Transpose all notes in a region. | `regionId`, `semitones` |
+| `stori_quantize_notes` | Quantize to grid. | `regionId`; `grid` (1/4, 1/8, 1/16, 1/32, 1/64); `strength` 0–1 |
+| `stori_apply_swing` | Apply swing. | `regionId`, `amount` (0–1) |
+| `stori_clear_notes` | Clear all notes in region. | `regionId` |
+
+---
+
+## 4. Sound Design — tone shaping (1 tool)
+
+Insert effects that shape the tone of each instrument.
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
 | `stori_add_insert_effect` | Add insert effect. | `trackId`, `type` (reverb, delay, compressor, eq, distortion, overdrive, filter, chorus, tremolo, phaser, flanger, modulation) |
-| `stori_add_send` | Send track to bus. | `trackId`, `busId`, `levelDb` |
-| `stori_ensure_bus` | Create bus if missing. | `name` |
 
 **Auto-inference from STORI PROMPTs:** The planner infers effects from `Style` and `Role` fields before any LLM call — drums always get a compressor, pads/lead get a reverb send, and style-specific inserts (distortion for rock, filter for lo-fi, etc.) are added automatically. Suppress with `Constraints: no_effects: true`.
 
@@ -363,51 +377,35 @@ Do NOT send arbitrary strings — the client rejects icons not in the compiled a
 
 ---
 
-## Automation & MIDI control
+## 5. Expression — performance data (3 tools)
+
+MIDI CC, pitch bend, and aftertouch — the data a performer creates in real time to make MIDI sound human.
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
-| `stori_add_automation` | Add track-level automation curves. | `trackId`, `parameter`, `points` — each point **must** have `beat` and `value`. `curve` defaults to `"linear"`. |
 | `stori_add_midi_cc` | Add MIDI CC events to a region. | `regionId` (**required**), `cc` (**required**, 0–127), `events` — each **must** have `beat` and `value`. |
 | `stori_add_pitch_bend` | Add pitch bend events to a region. | `regionId` (**required**), `events` — each **must** have `beat` and `value` (−8192 to +8191). |
 | `stori_add_aftertouch` | Add aftertouch events (channel or polyphonic). | `regionId`, `events` (each `{beat, value}` or `{beat, value, pitch}`) |
 
 **Translation from STORI PROMPT `MidiExpressiveness` block:** `cc_curves` entries → `stori_add_midi_cc`; `pitch_bend` style → `stori_add_pitch_bend`; `sustain_pedal` → `stori_add_midi_cc` with CC 64 (127=down, 0=up). These calls happen after notes are added to the region.
 
+---
+
+## 6. Mixing — balance & routing (7 tools)
+
+Volume, pan, mute/solo, bus routing, sends, and automation.
+
+| Tool | Description | Key parameters |
+|------|-------------|-----------------|
+| `stori_set_track_volume` | Set track volume. | `trackId`, `volume` (**required**, 0.0–1.5) |
+| `stori_set_track_pan` | Set track pan. | `trackId`, `pan` (**required**, 0.0–1.0) |
+| `stori_mute_track` | Mute/unmute. | `trackId`, `muted` |
+| `stori_solo_track` | Solo/unsolo. | `trackId`, `solo` |
+| `stori_ensure_bus` | Create bus if missing. | `name` |
+| `stori_add_send` | Send track to bus. | `trackId`, `busId`, `levelDb` |
+| `stori_add_automation` | Add track-level automation curves. | `trackId`, `parameter`, `points` — each point **must** have `beat` and `value`. `curve` defaults to `"linear"`. |
+
 **Translation from STORI PROMPT `Automation` block:** Each lane → `stori_add_automation` using the trackId returned by `stori_add_midi_track`.
-
----
-
-## Generation (server-side, internal)
-
-These run inside Maestro and call the Orpheus music model. They are **never emitted as `toolCall` events** in the SSE stream — the server translates their output into `stori_add_notes` (and optionally `stori_add_midi_cc` / `stori_add_pitch_bend`) before forwarding to the client. If notes from Orpheus span less than half the requested duration, the server rescales beat positions to fill the target bar count.
-
-| Tool | Description | Key parameters |
-|------|-------------|-----------------|
-| `stori_generate_midi` | Generate MIDI for a role (preferred). | `role`, `style`, `tempo`, `bars` (required); `key`, `constraints` |
-| `stori_generate_drums` | Generate drum pattern. | `style`, `tempo`; `bars`, `complexity` |
-| `stori_generate_bass` | Generate bass line. | `style`, `tempo`, `bars`; `key`, `chords` |
-| `stori_generate_melody` | Generate melody. | `style`, `tempo`, `bars`; `key`, `scale`, `octave` |
-| `stori_generate_chords` | Generate chord part. | `style`, `tempo`, `bars`; `key`, `progression` |
-
----
-
-## Playback & transport
-
-| Tool | Description | Key parameters |
-|------|-------------|-----------------|
-| `stori_play` | Start playback. | `fromBeat` (optional) |
-| `stori_stop` | Stop playback. | — |
-| `stori_set_playhead` | Move playhead. | `bar`, `beat`, or `seconds` |
-
----
-
-## UI
-
-| Tool | Description | Key parameters |
-|------|-------------|-----------------|
-| `stori_show_panel` | Show/hide panel. | `panel`, `visible` |
-| `stori_set_zoom` | Set editor zoom. | `zoomPercent` |
 
 ---
 
@@ -524,20 +522,63 @@ Focused budget/fuel status for the Creative Fuel UI. Wraps the same data as `/ap
 
 ---
 
-## Tool summary
+## Tool summary by phase
 
-| Category | Count |
-|----------|-------|
-| Project | 5 |
-| Track | 10 |
-| Region | 5 |
-| Notes | 4 |
-| Effects & routing | 3 |
-| Automation / MIDI control | 4 |
-| Generation | 5 |
-| Playback | 3 |
-| UI | 2 |
+| Phase | SSE value | Count | Purpose |
+|-------|-----------|-------|---------|
+| 1. Setup | `setup` | 15 | Project config, tracks, regions, instruments, transport, UI |
+| 2. Composition | `composition` | 6 | Notes and MIDI generation (Orpheus) |
+| 3. Arrangement | `arrangement` | 7 | Move, duplicate, delete, transpose, quantize, swing, clear |
+| 4. Sound Design | `soundDesign` | 1 | Insert effects |
+| 5. Expression | `expression` | 3 | MIDI CC, pitch bend, aftertouch |
+| 6. Mixing | `mixing` | 7 | Volume, pan, mute/solo, buses, sends, automation |
 
-**Total: 41** MCP tools. Generation tools run server-side; the rest are forwarded to the DAW when connected.
+**Total: 39** distinct tools. Generation tools run server-side and are never emitted as SSE `toolCall` events; all others are forwarded to the DAW when connected.
+
+---
+
+## Cross-reference: tool → phase
+
+| Tool | Phase |
+|------|-------|
+| `stori_read_project` | setup |
+| `stori_create_project` | setup |
+| `stori_set_tempo` | setup |
+| `stori_set_key` | setup |
+| `stori_add_midi_track` | setup |
+| `stori_add_midi_region` | setup |
+| `stori_set_midi_program` | setup |
+| `stori_set_track_name` | setup |
+| `stori_set_track_color` | setup |
+| `stori_set_track_icon` | setup |
+| `stori_play` | setup |
+| `stori_stop` | setup |
+| `stori_set_playhead` | setup |
+| `stori_show_panel` | setup |
+| `stori_set_zoom` | setup |
+| `stori_add_notes` | composition |
+| `stori_generate_midi` | composition |
+| `stori_generate_drums` | composition |
+| `stori_generate_bass` | composition |
+| `stori_generate_melody` | composition |
+| `stori_generate_chords` | composition |
+| `stori_move_region` | arrangement |
+| `stori_duplicate_region` | arrangement |
+| `stori_delete_region` | arrangement |
+| `stori_transpose_notes` | arrangement |
+| `stori_quantize_notes` | arrangement |
+| `stori_apply_swing` | arrangement |
+| `stori_clear_notes` | arrangement |
+| `stori_add_insert_effect` | soundDesign |
+| `stori_add_midi_cc` | expression |
+| `stori_add_pitch_bend` | expression |
+| `stori_add_aftertouch` | expression |
+| `stori_set_track_volume` | mixing |
+| `stori_set_track_pan` | mixing |
+| `stori_mute_track` | mixing |
+| `stori_solo_track` | mixing |
+| `stori_ensure_bus` | mixing |
+| `stori_add_send` | mixing |
+| `stori_add_automation` | mixing |
 
 See also: [integrate.md](../guides/integrate.md) for MCP setup (stdio, Cursor, WebSocket DAW connection).

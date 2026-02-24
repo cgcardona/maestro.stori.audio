@@ -1255,62 +1255,28 @@ Code: `app/core/tracing.py`
 
 ### 6.1 Full Tool List
 
-#### Project Tools
+> **Single source of truth:** The canonical tool reference with full parameter docs, value ranges, and DAW workflow phase mapping lives in **[api.md — Tool reference](../reference/api.md#1-setup--session-scaffolding-15-tools)**. All 39 tools are documented there, organized by the six DAW phases (`setup`, `composition`, `arrangement`, `soundDesign`, `expression`, `mixing`). A flat tool → phase lookup table is at **[api.md — Cross-reference](../reference/api.md#cross-reference-tool--phase)**.
+>
+> This contract section covers only the **FE-specific overlay**: entity creation, result shapes, and enum values the client must handle.
 
-| Tool | Purpose | Key Params | Entity Created |
-|------|---------|------------|----------------|
-| `stori_read_project` | Read project state | — | — |
-| `stori_create_project` | Create new project | `name`, `tempo`, `key` | — |
-| `stori_set_tempo` | Set tempo | `bpm` (40–240) | — |
-| `stori_set_key` | Set key | `key` (e.g., `"Am"`) | — |
+**Entity-creating tools:**
 
-#### Track Tools
+| Tool | Entity Created | ID field |
+|------|---------------|----------|
+| `stori_add_midi_track` | Track | `trackId` (server-assigned by `StateStore.create_track()`) |
+| `stori_add_midi_region` | Region | `regionId` (server-assigned) |
+| `stori_duplicate_region` | Region | `regionId` (server-assigned, new) |
 
-| Tool | Purpose | Key Params | Entity Created |
-|------|---------|------------|----------------|
-| `stori_add_midi_track` | Add MIDI track | `name`, `trackId`*, `drumKitId`\|`gmProgram`, `color`, `volume`, `pan` | Track |
-| `stori_set_track_volume` | Set volume | `trackId`, `volume` (0.0–1.5) | — |
-| `stori_set_track_pan` | Set pan | `trackId`, `pan` (0.0–1.0) | — |
-| `stori_set_track_name` | Rename track | `trackId`, `name` | — |
-| `stori_set_midi_program` | Set GM program | `trackId`, `program` (0–127) | — |
-| `stori_mute_track` | Mute/unmute | `trackId`, `mute` | — |
-| `stori_solo_track` | Solo/unsolo | `trackId`, `solo` | — |
-| `stori_set_track_color` | Set color | `trackId`, `color` (enum) | — |
-| `stori_set_track_icon` | Set icon | `trackId`, `icon` (SF Symbol) | — |
+**Enums the client must validate:**
 
-*`trackId` is server-assigned by `StateStore.create_track()` for new tracks.
+| Enum | Values |
+|------|--------|
+| Color | `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `pink`, `teal`, `indigo`, `cyan`, `mint`, `gray` |
+| Effect type | `reverb`, `delay`, `compressor`, `eq`, `distortion`, `filter`, `chorus`, `modulation`, `overdrive`, `phaser`, `flanger`, `tremolo` |
+| Automation parameter | `Volume`, `Pan`, `EQ Low`, `EQ Mid`, `EQ High`, `Mod Wheel (CC1)`, `Volume (CC7)`, `Pan (CC10)`, `Expression (CC11)`, `Sustain (CC64)`, `Filter Cutoff (CC74)`, `Pitch Bend`, `Synth Cutoff`, `Synth Resonance`, `Synth Attack`, `Synth Release` |
+| Phase | `setup`, `composition`, `arrangement`, `soundDesign`, `expression`, `mixing` |
 
-**Color enum:** `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `pink`, `teal`, `indigo`
-
-#### Region Tools
-
-| Tool | Purpose | Key Params | Entity Created |
-|------|---------|------------|----------------|
-| `stori_add_midi_region` | Add region | `trackId`, `regionId`*, `name`, `startBeat`, `durationBeats` | Region |
-| `stori_delete_region` | Delete region | `regionId` | — |
-| `stori_move_region` | Move region | `regionId`, `startBeat` | — |
-| `stori_duplicate_region` | Duplicate region | `regionId` | Region |
-
-#### Note Tools
-
-| Tool | Purpose | Key Params |
-|------|---------|------------|
-| `stori_add_notes` | Add MIDI notes | `regionId`, `notes: [{pitch, startBeat, durationBeats, velocity}]` |
-| `stori_clear_notes` | Clear all notes | `regionId` |
-| `stori_quantize_notes` | Quantize | `regionId`, `gridSize` (0.0625–4.0) |
-| `stori_apply_swing` | Apply swing | `regionId`, `amount` (0.0–1.0) |
-
-**Note schema:**
-
-```json
-{
-  "pitch": 60,
-  "startBeat": 0.0,
-  "durationBeats": 1.0,
-  "velocity": 100,
-  "channel": 0
-}
-```
+**Note schema (in `stori_add_notes` `toolCall.params.notes`):**
 
 | Field | Type | Range | Default |
 |-------|------|-------|---------|
@@ -1319,59 +1285,6 @@ Code: `app/core/tracing.py`
 | `durationBeats` | float | > 0 | Required |
 | `velocity` | int | 0–127 | 100 |
 | `channel` | int | 0–15 | 0 |
-
-#### Effects & Routing
-
-| Tool | Purpose | Key Params |
-|------|---------|------------|
-| `stori_add_insert_effect` | Add insert effect | `trackId`, `type` (enum) |
-| `stori_add_send` | Add send to bus | `trackId`, `busId`, `sendLevel` (0.0–1.0) |
-| `stori_ensure_bus` | Create/ensure bus | `name` |
-
-**Effect type enum:** `reverb`, `delay`, `compressor`, `eq`, `distortion`, `filter`, `chorus`, `modulation`, `overdrive`, `phaser`, `flanger`, `tremolo`
-
-#### Automation Tools
-
-| Tool | Purpose | Key Params |
-|------|---------|------------|
-| `stori_add_automation` | Add automation points | `trackId`, `regionId`, `parameter`, `points: [{beat, value}]` |
-
-**Parameter enum:** `Volume`, `Pan`, `EQ Low`, `EQ Mid`, `EQ High`, `Mod Wheel (CC1)`, `Volume (CC7)`, `Pan (CC10)`, `Expression (CC11)`, `Sustain (CC64)`, `Filter Cutoff (CC74)`, `Pitch Bend`, `Synth Cutoff`, `Synth Resonance`, `Synth Attack`, `Synth Release`
-
-#### MIDI Control Tools
-
-| Tool | Purpose | Key Params |
-|------|---------|------------|
-| `stori_add_midi_cc` | Add MIDI CC | `regionId`, `cc` (0–127), `value` (0–127), `beat` |
-| `stori_add_pitch_bend` | Add pitch bend | `regionId`, `value` (-8192–8191), `beat` |
-| `stori_add_aftertouch` | Add aftertouch | `regionId`, `type` (`channel`\|`polyphonic`), `value`, `beat` |
-
-#### Generation Tools (Server-Side, Tier 1)
-
-| Tool | Purpose | Key Params |
-|------|---------|------------|
-| `stori_generate_midi` | General generator | `role`, `style`, `tempo`, `bars`, `key`, `trackId`, `regionId` |
-| `stori_generate_drums` | Generate drums (deprecated) | `style`, `tempo`, `bars` |
-| `stori_generate_bass` | Generate bass (deprecated) | `style`, `tempo`, `bars`, `key` |
-| `stori_generate_melody` | Generate melody (deprecated) | `style`, `tempo`, `bars`, `key` |
-| `stori_generate_chords` | Generate chords (deprecated) | `style`, `tempo`, `bars`, `key` |
-
-**Important:** Generation tools are **NEVER callable by LLM directly**. They are Tier 1 (server-side only). The LLM plans them; the executor runs them.
-
-#### Playback Tools
-
-| Tool | Purpose | Key Params |
-|------|---------|------------|
-| `stori_play` | Start playback | — |
-| `stori_stop` | Stop playback | — |
-| `stori_set_playhead` | Move playhead | `bar` or `beat` or `seconds` |
-
-#### UI Tools
-
-| Tool | Purpose | Key Params |
-|------|---------|------------|
-| `stori_show_panel` | Show/hide panel | `panel` (mixer, inspector, piano_roll, etc.), `visible` |
-| `stori_set_zoom` | Set zoom level | `percent` |
 
 ### 6.2 Tool Result Shapes FE Relies On
 
