@@ -36,7 +36,7 @@ def _tool_schemas_canonical() -> list[dict[str, Any]]:
     from app.mcp.tools.registry import MCP_TOOLS
 
     tools = []
-    for tool in sorted(MCP_TOOLS, key=lambda t: t["name"]):
+    for tool in sorted(MCP_TOOLS, key=lambda t: str(t["name"])):
         tools.append({
             "name": tool["name"],
             "inputSchema": tool.get("inputSchema", {}),
@@ -48,13 +48,10 @@ def _enum_definitions_canonical() -> list[dict[str, Any]]:
     """Extract enum values for contract-critical enums."""
     from app.core.intent_config.enums import SSEState, Intent
 
-    enums = []
-    for enum_cls in sorted([SSEState, Intent], key=lambda e: e.__name__):
-        enums.append({
-            "name": enum_cls.__name__,
-            "values": sorted(e.value for e in enum_cls),
-        })
-    return enums
+    return [
+        {"name": "Intent", "values": sorted(m.value for m in Intent)},
+        {"name": "SSEState", "values": sorted(m.value for m in SSEState)},
+    ]
 
 
 def compute_protocol_hash() -> str:

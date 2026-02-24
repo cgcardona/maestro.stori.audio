@@ -476,7 +476,7 @@ class TestSequentialContextAllKinds:
 
     def _pos(self, kind: str, ref: Optional[str] = None,
              ref2: Optional[str] = None, offset: float = 0.0) -> PositionSpec:
-        return PositionSpec(kind=kind, ref=ref, ref2=ref2, offset=offset)
+        return PositionSpec(kind=kind, ref=ref, ref2=ref2, offset=offset)  # type: ignore[arg-type]  # kind validated by caller
 
     def test_absolute_mentions_beat(self):
         ctx = sequential_context(32.0, pos=self._pos("absolute"))
@@ -588,14 +588,15 @@ class TestPositionPlannerRegression:
         parsed = parse_prompt(prompt)
         assert parsed is not None
 
+        assert parsed.position is not None
         start_beat = resolve_position(parsed.position, project_with_intro)
         assert start_beat == 64.0
 
-        tool_calls = _try_deterministic_plan(parsed, start_beat=start_beat)
-        if tool_calls:
-            region_calls = [tc for tc in tool_calls if tc.get("name") == "stori_add_midi_region"]
+        plan = _try_deterministic_plan(parsed, start_beat=start_beat)
+        if plan:
+            region_calls = [tc for tc in plan.tool_calls if tc.name == "stori_add_midi_region"]
             for call in region_calls:
-                start = call["arguments"].get("startBeat", 0)
+                start = call.params.get("startBeat", 0)
                 assert start >= 64.0, (
                     f"startBeat {start} should be >= 64. Position offset not applied."
                 )

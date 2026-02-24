@@ -336,7 +336,7 @@ def emotion_vector_from_stori_prompt(text: str) -> EmotionVector:
         "intimacy": base.intimacy,
         "motion": base.motion,
     }
-    n = 1  # weight of the neutral baseline
+    n: float = 1  # weight of the neutral baseline
 
     def _blend(overrides: dict[str, float], weight: float = 1.0) -> None:
         nonlocal n

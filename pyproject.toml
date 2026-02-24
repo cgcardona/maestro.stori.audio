@@ -70,7 +70,7 @@ module = ["app.services.assets", "app.services.neural.text2midi_backend"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["boto3", "botocore.*", "gradio_client", "mido"]
+module = ["boto3", "botocore.*", "gradio_client", "mido", "yaml"]
 ignore_missing_imports = true
 
 [tool.hatch.build.targets.wheel]

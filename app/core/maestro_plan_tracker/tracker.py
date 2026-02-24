@@ -110,10 +110,13 @@ class _PlanTracker:
         name = tc.name
         params = tc.params
         if name in _TRACK_CREATION_NAMES:
-            return params.get("name")
+            val = params.get("name")
+            return str(val) if val else None
         if name in _GENERATOR_TOOL_NAMES:
-            return params.get("trackName") or params.get("role", "").capitalize() or None
-        return params.get("trackName") or params.get("name") or None
+            val = params.get("trackName") or params.get("role", "").capitalize() or None
+            return str(val) if val else None
+        val = params.get("trackName") or params.get("name") or None
+        return str(val) if val else None
 
     def _group_into_steps(self, tool_calls: list[Any]) -> list[_PlanStep]:
         """Group tool calls into plan steps using canonical label patterns.

@@ -332,9 +332,9 @@ def _build_sections(
         length = round((w / total_weight) * beats_total / 4) * 4  # snap to bar boundary
         # Ensure last section reaches the end exactly
         if i == len(ordered) - 1:
-            length = beats_total - current_beat
+            length = int(beats_total - current_beat)
 
-        length = max(4.0, length)  # minimum 1 bar
+        length = max(4, length)
 
         per_track: dict[str, str] = {}
         for role in roles:

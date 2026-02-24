@@ -66,7 +66,7 @@ async def _run_instrument_agent(
     plan_tracker: _PlanTracker,
     llm: LLMClient,
     store: StateStore,
-    allowed_tool_names: set[str],
+    allowed_tool_names: set[str] | frozenset[str],
     trace: Any,
     sse_queue: "asyncio.Queue[dict[str, Any]]",
     collected_tool_calls: list[dict[str, Any]],
@@ -158,7 +158,7 @@ async def _run_instrument_agent_inner(
     plan_tracker: _PlanTracker,
     llm: LLMClient,
     store: StateStore,
-    allowed_tool_names: set[str],
+    allowed_tool_names: set[str] | frozenset[str],
     trace: Any,
     sse_queue: "asyncio.Queue[dict[str, Any]]",
     collected_tool_calls: list[dict[str, Any]],
@@ -171,13 +171,15 @@ async def _run_instrument_agent_inner(
     instrument_contract: Optional[InstrumentContract] = None,
     runtime_context: Optional[RuntimeContext] = None,
     execution_services: Optional[ExecutionServices] = None,
-) -> None:
+) -> bool:
     """Inner implementation of a single instrument agent.
 
     Separated so ``_run_instrument_agent`` can wrap the entire body in a
     top-level try/except, ensuring any unhandled exception (prompt-building,
     tool dispatch, race condition, etc.) emits graceful ``planStepUpdate``
     failures rather than disconnecting the SSE stream.
+
+    Returns True if the agent successfully generated MIDI for all sections.
     """
     _agent_id = agent_id
 
@@ -275,10 +277,9 @@ async def _run_instrument_agent_inner(
                 if sec_hint_str:
                     lines.append(sec_hint_str)
         else:
-            # Single section or no sections — original behaviour
-            sec = _sections[0] if _sections else None
-            sec_start = sec["start_beat"] if sec else (start_beat if reusing else 0)
-            sec_beats = int(sec["length_beats"]) if sec else beat_count
+            single_sec: dict[str, Any] | None = _sections[0] if _sections else None
+            sec_start = single_sec["start_beat"] if single_sec else (start_beat if reusing else 0)
+            sec_beats = int(single_sec["length_beats"]) if single_sec else beat_count
             sec_bars = max(1, sec_beats // 4)
 
             step_num += 1
@@ -897,7 +898,7 @@ async def _dispatch_section_children(
     agent_id: str,
     agent_log: str,
     reusing: bool,
-    allowed_tool_names: set[str],
+    allowed_tool_names: set[str] | frozenset[str],
     store: StateStore,
     trace: Any,
     sse_queue: "asyncio.Queue[dict[str, Any]]",
@@ -1240,7 +1241,7 @@ async def _dispatch_section_children(
             f"{agent_log} ▶ Section {_ci + 1}/{len(_child_contracts)}: {_sec_name}"
         )
         try:
-            _sr = await asyncio.wait_for(
+            _dispatched = await asyncio.wait_for(
                 _run_section_child(
                     contract=_contract,
                     region_tc=_region_tc,
@@ -1257,9 +1258,9 @@ async def _dispatch_section_children(
                 ),
                 timeout=_child_timeout,
             )
-            _section_results.append(_sr)
-            if _sr.success and _sr.generated_notes:
-                _chain_notes = _sr.generated_notes
+            _section_results.append(_dispatched)
+            if _dispatched.success and _dispatched.generated_notes:
+                _chain_notes = _dispatched.generated_notes
         except asyncio.TimeoutError:
             logger.error(
                 f"{agent_log} ⏰ Section '{_sec_name}' timed out after "
@@ -1317,7 +1318,7 @@ async def _dispatch_section_children(
                 if _prior and _prior.success and _prior.generated_notes:
                     _retry_prev = _prior.generated_notes
             try:
-                _rr = await asyncio.wait_for(
+                _retried = await asyncio.wait_for(
                     _run_section_child(
                         contract=_c,
                         region_tc=_retry_region_tc,
@@ -1334,7 +1335,7 @@ async def _dispatch_section_children(
                     ),
                     timeout=_child_timeout,
                 )
-                _retry_results.append(_rr)
+                _retry_results.append(_retried)
             except BaseException as _exc:
                 _retry_results.append(_exc)
             _retry_indices.append(_idx)

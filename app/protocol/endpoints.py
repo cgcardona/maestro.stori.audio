@@ -68,9 +68,10 @@ async def protocol_schema():
         model_class = EVENT_REGISTRY[event_type]
         event_schemas[event_type] = model_class.model_json_schema()
 
-    enum_defs = {}
-    for enum_cls in [SSEState, Intent]:
-        enum_defs[enum_cls.__name__] = sorted(e.value for e in enum_cls)
+    enum_defs: dict[str, list[str]] = {
+        "Intent": sorted(m.value for m in Intent),
+        "SSEState": sorted(m.value for m in SSEState),
+    }
 
     return {
         "protocolVersion": STORI_PROTOCOL_VERSION,

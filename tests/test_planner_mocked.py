@@ -26,6 +26,7 @@ from app.core.planner import (
 from app.core.prompt_parser import parse_prompt, ParsedPrompt, PositionSpec
 from app.core.intent import IntentResult, Intent, SSEState
 from app.core.expansion import ToolCall
+from app.core.plan_schemas import ExecutionPlanSchema
 
 
 # ---------------------------------------------------------------------------

@@ -226,7 +226,7 @@ class CacheEntry:
 _result_cache: OrderedDict[str, CacheEntry] = OrderedDict()
 
 # Seed MIDI cache: reuses seed files for same genre/tempo
-_seed_cache = {}
+_seed_cache: dict[str, str] = {}
 
 def _quantize(value: float, step: float = _INTENT_QUANT_STEP) -> float:
     """Snap a continuous value to the nearest grid step for cache-friendly quantization."""
@@ -1024,7 +1024,7 @@ INSTRUMENT_PROGRAMS = _InstrumentProgramsCompat()
 # ---------------------------------------------------------------------------
 
 # Semitone offset from C for each key root (for transposition)
-_KEY_OFFSETS: dict = {
+_KEY_OFFSETS: dict[str, int] = {
     "C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3,
     "E": 4, "F": 5, "F#": 6, "Gb": 6, "G": 7, "G#": 8,
     "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11,
@@ -1761,7 +1761,7 @@ def generate_tool_calls(parsed: dict, tempo: int, instruments: List[str]) -> Lis
             else:
                 inst = "piano"
             track_name = inst.replace("_", " ").title()
-            program = INSTRUMENT_PROGRAMS.get(inst.lower(), 33)
+            program = INSTRUMENT_PROGRAMS.get(inst.lower()) or 33
             is_drum = False
 
         track_idx = len(tool_calls)
@@ -1845,11 +1845,12 @@ async def diagnostics():
 
     gradio_status = "disconnected"
     hf_space_status = "unknown"
-    if gradio_client is not None:
+    _diag_client = _client_pool.get(worker_id=0)
+    if _diag_client is not None:
         gradio_status = "connected"
         try:
             await asyncio.wait_for(
-                asyncio.to_thread(gradio_client.view_api, print_info=False),
+                asyncio.to_thread(_diag_client.view_api, print_info=False),
                 timeout=10.0,
             )
             hf_space_status = "awake"
@@ -2340,7 +2341,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         cache_result(cache_key, response_data, key_data=_cache_key_data(request))
         _last_successful_gen = time()
 
-        return GenerateResponse(**response_data)
+        return GenerateResponse(**response_data)  # type: ignore[arg-type]  # dict values are correctly typed at runtime
 
     except (Exception, asyncio.CancelledError) as e:
         err_msg = str(e) or type(e).__name__

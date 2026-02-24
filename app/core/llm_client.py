@@ -211,7 +211,7 @@ class LLMClient:
         self,
         messages: list[dict[str, Any]],
         tools: Optional[list[dict]] = None,
-    ) -> tuple[list[dict[str, Any]], Optional[list[dict]]]:
+    ) -> tuple[list[dict[str, Any]], Optional[list[dict]], None]:
         """
         Add Anthropic cache_control breakpoints to the system prompt and tools.
 

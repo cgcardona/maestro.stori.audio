@@ -4,6 +4,7 @@ Supplements test_maestro_handlers.py with deeper coverage of maestro handler int
 and execution mode policy.
 """
 import json
+from typing import Any
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1145,10 +1146,10 @@ class TestPlanTracker:
         assert tracker.steps[0].status == "active"
 
         tracker.steps[0].result = "Set 72 BPM"
-        evt = tracker.complete_active_step()
-        assert evt is not None
-        assert evt["status"] == "completed"
-        assert evt["result"] == "Set 72 BPM"
+        complete_evt = tracker.complete_active_step()
+        assert complete_evt is not None
+        assert complete_evt["status"] == "completed"
+        assert complete_evt["result"] == "Set 72 BPM"
         assert tracker._active_step_id is None
         assert tracker.steps[0].status == "completed"
 
@@ -1305,7 +1306,6 @@ class TestPlanEventsInEditing:
         fake_var = Variation(
             variation_id="v-1",
             intent="test",
-            total_changes=0,
             affected_tracks=[],
             affected_regions=[],
             beat_range=(0.0, 0.0),
@@ -2627,10 +2627,9 @@ class TestAgentTeamRouting:
 
         llm = _make_llm_mock(content="Done")
         store = StateStore(conversation_id="test-routing")
-        project_context = {}
+        project_context: dict[str, Any] = {}
 
         agent_team_events = []
-        # Patch the handler so we can detect it was called
         with patch(
             "app.core.maestro_handlers._handle_composition_agent_team",
             return_value=_fake_events_gen(["agent_team_called"]),
@@ -2660,7 +2659,7 @@ class TestAgentTeamRouting:
 
         llm = _make_llm_mock(content="Done")
         store = StateStore(conversation_id="test-single")
-        project_context = {}
+        project_context: dict[str, Any] = {}
 
         with patch(
             "app.core.maestro_handlers._handle_composition_agent_team",
@@ -2689,7 +2688,7 @@ class TestAgentTeamRouting:
 
         llm = _make_llm_mock(content="Done")
         store = StateStore(conversation_id="test-no-parsed")
-        project_context = {}
+        project_context: dict[str, Any] = {}
 
         with patch(
             "app.core.maestro_handlers._handle_composition_agent_team",
@@ -3001,8 +3000,10 @@ class TestApplySingleToolCall:
         store = StateStore(conversation_id="test-note-backfill")
         store.create_track("Piano")
         track_id = store.registry.resolve_track("Piano")
+        assert track_id is not None
         store.create_region("Region", track_id)
         region_id = store.registry.get_latest_region_for_track(track_id)
+        assert region_id is not None
         trace = _make_trace()
         outcome = await _apply_single_tool_call(
             tc_id="tc-notes",

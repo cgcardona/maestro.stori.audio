@@ -200,8 +200,10 @@ def test_cache_preserves_data():
     
     # Retrieve and modify
     cached = get_cached_result(key)
+    assert cached is not None
     cached["success"] = False
     
     # Original cache should be unchanged
     cached_again = get_cached_result(key)
+    assert cached_again is not None
     assert cached_again["success"] is True  # Not modified

@@ -460,7 +460,9 @@ class TestSectionChildDrumSignaling:
         key = f"0:verse:{ch}"
         assert signals.events[key].is_set()
         assert key in signals._results
-        assert len(signals._results[key].drum_notes) == 12
+        _drum_notes = signals._results[key].drum_notes
+        assert _drum_notes is not None
+        assert len(_drum_notes) == 12
 
     @pytest.mark.anyio
     async def test_drum_child_signals_on_region_failure(self):

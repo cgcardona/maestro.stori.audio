@@ -1,113 +1,99 @@
 # Stori Maestro — Agent Rules
 
-Use these rules when editing this codebase. They keep behavior consistent, tests strong, and docs accurate for go-live and open source.
+## Identity
 
----
+Stori Maestro — AI music composition backend (FastAPI + MCP) for the Stori DAW, a **macOS app** (never say "iOS"). Tagline: "the infinite music machine."
 
-## Project identity
+- **Entry points:** `POST /api/v1/maestro/stream` (human in DAW) and MCP tools (Cursor/Claude). Same engine, same pipeline.
+- **Stack:** Python 3.11+, FastAPI, Pydantic v2, fully async. Orpheus required for generation (no fallback).
+- **Models:** Exactly two — `anthropic/claude-sonnet-4.6` and `anthropic/claude-opus-4.6` via OpenRouter. No others.
+- **Version:** Single source of truth in `pyproject.toml`. Everything else derives from `app/protocol/version.py`.
 
-- **What it is:** Stori Maestro — AI-powered music composition backend for the Stori DAW (FastAPI + MCP). Tagline: "the infinite music machine."
-- **Client:** The Stori DAW is a **macOS app** (Swift/SwiftUI, AppKit). It is NOT an iOS app. Never say "iOS app" — always say "macOS app" or "the app".
-- **Entry points:** (1) **Stream first:** `POST /api/v1/maestro/stream` (human in the macOS app). (2) **MCP:** tools exposed to Cursor/Claude; same engine, same DAW instance. Human stays in the loop.
-- **Stack:** Python 3.11+, FastAPI, Pydantic v2, async throughout. Orpheus is **required** for music generation (no pattern fallback). Config: `app/config.py`; env vars prefixed `STORI_*`.
-- **Versioning:** One semver version in `pyproject.toml` — the single source of truth. `app/protocol/version.py` reads it; everything else (`config.py`, `main.py`, MCP server, health endpoint, SSE `protocolVersion` field) derives from there. When bumping, only edit `pyproject.toml`.
-- **Supported models (exactly two, no others):** `anthropic/claude-sonnet-4.6` and `anthropic/claude-opus-4.6` via OpenRouter. Do not add support for any other provider, model family, or version. Update both `ALLOWED_MODEL_IDS` and `CONTEXT_WINDOW_TOKENS` in `app/config.py` together when a new Claude generation ships.
+## Agent scope
 
----
+You may: implement features, fix bugs, refactor, extend architecture, add tests, update docs.
+You may NOT: introduce new frameworks/dependencies without justification, redesign architecture unless requested, weaken security, skip tests.
+When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over rewrites, (3) choose correct over simple, (4) document assumptions, (5) ask the user.
 
 ## Architecture (do not weaken)
 
-- **Intent-first:** Classify every request → REASONING (chat only) / EDITING (DAW tools, allowlist) / COMPOSING (planner → executor + Orpheus).
-- **Orpheus required:** If Orpheus is down, generation fails with a clear error. Do not reintroduce pattern fallback or optional Orpheus.
-- **Single engine:** Stream and MCP use the same pipeline, tools, and (when connected) DAW state. Keep route handlers thin; core logic in `app/core/` and `app/services/`.
-- **Entity resolution:** Server resolves variable refs (e.g. `$0.trackId`) and validates entity IDs; never trust client-provided IDs for security.
-- **No deprecated/legacy/fallback APIs:** Never introduce deprecated, backward-compatible, or fallback API paths, event types, or optional fields "for transition." The same person controls the frontend and backend — both ship in lockstep. Every API surface should be modern and pristine. If a field is needed, make it required. If an event type is superseded, delete the old one immediately. If you encounter dead code, fallback paths, or deprecated patterns while working, remove them proactively — treat them like lint. Only add backward compat if explicitly requested.
-- **Correct over simple:** Don't default to the simplest approach — default to the correct one. In the best case they're the same thing, but when they diverge, choose correct.
+- **Intent-first:** Classify → REASONING / EDITING / COMPOSING.
+- **Layers:** Routes (thin) → Core (`app/core/`) → Services (`app/services/`) → Models. Never collapse.
+- **Single engine:** Stream and MCP share pipeline, tools, DAW state.
+- **No deprecated APIs:** Frontend and backend ship in lockstep. No fallbacks. Remove dead code on sight.
 
----
+## Execution
 
-## Execution environment
+- **Docker-first:** Never run Python on the host. `docker compose exec <service> <cmd>`. Rebuild before testing: `docker compose build <service> && docker compose up -d`.
+- **Two containers:** `maestro` (`app/`, `tests/`) and `orpheus` (`orpheus-music/`). Both have mypy and pytest.
+- **Mypy (both):** `docker compose exec maestro mypy app/ tests/` AND `docker compose exec orpheus mypy .`. Both pass before committing.
+- **Tests:** Run individual files yourself; user runs full suite. Regression test for every bug fix: `test_<what_broke>_<fixed_behavior>`.
+- **Show full output:** Never truncate, pipe through `head`/`tail`, or hide shell output.
+- **After tests pass:** Update affected docs, then commit — don't wait to be asked.
 
-- **Docker-first:** All Python execution (scripts, syntax checks, linting, mypy, pytest, coverage, `python -c`) MUST run inside the Docker container. **Never** run Python directly on the host. Use `docker compose exec maestro <command>` for everything. If the container is not running, start it first with `docker compose up -d`. If code has changed, rebuild first: `docker compose build maestro && docker compose up -d`.
-- **Quick syntax check:** `docker compose exec maestro python -c "import py_compile; py_compile.compile('<file>', doraise=True)"`.
-- **Mypy:** `docker compose exec maestro mypy app/ tests/`.
-- **Tests:** `docker compose exec maestro pytest tests/ -v`.
+## Code standards
 
----
+- Black formatting. Type hints everywhere. `list[...]`/`dict[...]` style. No `# type: ignore` without reason.
+- Async for all I/O. `logging.getLogger(__name__)` — never `print()`. `STORI_*` env vars via `app.config.settings`.
+- Sparse logs with emoji prefixes (❌ error, ⚠️ warning, ✅ success). No noise.
+- Docstrings on public modules/classes/functions. "Why" over "what." Update docs in the same commit as code changes.
 
-## Coding standards
+## Testing
 
-- **Style:** Black-compatible formatting. Prefer short, readable names; avoid abbreviations unless standard (e.g. `id`, `db`, `api`).
-- **Typing:** Use type hints for all public functions and module boundaries. Use `list[...]`, `dict[...]` (Python 3.9+ style). Mark optional with `Optional[...]` or `X | None` where appropriate. Run **mypy** before committing: `mypy app/ tests/` (or in Docker: `docker compose exec maestro mypy app/ tests/`). CI runs mypy; do not add `# type: ignore` without a short comment. New code should satisfy mypy with the project config in `pyproject.toml` ([tool.mypy]).
-- **Async:** Use `async def` and `await` for I/O (DB, HTTP, Orpheus, LLM). Use `@pytest.mark.anyio` or `asyncio_mode = "auto"` for async tests; prefer `anyio` where fixtures are async.
-- **Imports:** Group stdlib, third-party, then `app.*`. Prefer explicit imports; avoid `*` except for re-exports in `__init__.py`.
-- **Config:** Read from `app.config.settings` (Pydantic Settings). No hardcoded secrets; no committing `.env` or keys. Use `STORI_*` env vars as documented in `docs/guides/setup.md`.
-- **Logging:** Always use `logging.getLogger(__name__)` — never `print()`. Use appropriate levels: `logger.debug()` for internals, `logger.info()` for lifecycle events, `logger.warning()` for recoverable issues, `logger.error()` for failures. Log level is controlled app-wide via `STORI_LOG_LEVEL` env var (default `INFO`). If you see a `print()` in existing code, replace it with the correct `logger.*` call. Never commit `print()` statements for diagnostics — they bypass level filtering, cannot be silenced in production, and pollute stdout. **Keep logs sparse** — only log what would genuinely help diagnose a production issue; remove routine "entering function" or "operation succeeded" noise. **Use emojis** in log messages where they add at-a-glance clarity: e.g. `❌` for errors, `⚠️` for warnings, `✅` for significant successes, `🔴` for critical failures. Keep emoji use consistent and purposeful — one per message, at the start.
-- **Errors:** Prefer clear, user-facing messages for API errors. Log with `logging` at appropriate levels; avoid printing secrets or full tracebacks to responses.
-- **Security:** Keep security headers (see `SecurityHeadersMiddleware` in `main.py`). Validate and sanitize inputs; use auth dependencies for protected routes. See `docs/guides/security.md` for go-live checklist.
+- Naming: `test_<behavior>_<scenario>`. Shared fixtures in `tests/conftest.py`. `@pytest.mark.anyio` for async.
+- Coverage: `docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"`
 
----
+## Streaming & E2E
 
-## Tests
+- Streaming curl: `block_until_ms: 300000` (5 min). Never `block_until_ms: 0` (kills visibility).
+- E2E tests use `e2e_pocket_groove` from `prompts_world.py` with `Mode: compose`.
+- Ephemeral scripts go to `/tmp/` — never committed.
 
-- **Runner:** The container copies code at build time (no live volume mount). **Always rebuild before testing:** `docker compose build maestro && docker compose up -d`, then `docker compose exec maestro pytest tests/ -v`. **Coverage (canonical, from container):** `docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"`. Threshold is in `pyproject.toml` ([tool.coverage.report] fail_under). See `docs/guides/testing.md`.
-- **When to run tests yourself vs. ask the user:** Run individual tests or individual test files directly (e.g. `pytest tests/test_foo.py -v` or `pytest tests/test_foo.py::TestBar::test_baz -v`). **Do NOT run the full suite** (`pytest tests/ -v`) — the user runs that manually. If the full suite needs to run, tell the user and let them do it. They will pass back any failures or stack traces for you to fix. This avoids agent loops on full-suite failures.
-- **Layout:** One test module per app area (e.g. `test_health.py`, `test_intent.py`, `test_rag.py`). Use `tests/conftest.py` for shared fixtures (`client`, `db_session`). Do not commit tests that depend on live external APIs (Orpheus, OpenRouter, S3) unless skipped or gated (e.g. `@pytest.mark.skip`, `skipif` with env).
-- **Naming:** `test_<behavior>_<scenario>` or `test_<module>_<behavior>`. Docstrings: one line describing what is being tested.
-- **Fixtures:** Prefer `db_session` and `client` from conftest for API tests so auth and DB use the in-memory DB. Override dependencies via `app.dependency_overrides` in fixtures, and restore in `finally`.
-- **Coverage:** Aim for high coverage on `app/core/`, `app/services/`, and `app/api/routes/`. Critical paths: intent classification, pipeline (REASONING/EDITING/COMPOSING), executor, tool validation, RAG, health. When adding features, add or extend tests; when fixing bugs, add a regression test if missing.
-- **Regression tests (mandatory):** Every bug fix, behavioral change, or contract update MUST include at least one regression test that would have caught the original issue. Place regression tests in the relevant test module next to existing tests for that area. Name them `test_<what_broke>_<fixed_behavior>` (e.g. `test_drumkitid_forces_is_drums_true`, `test_invalid_color_replaced_with_named`). The test should assert the corrected behavior *and* verify the old broken behavior no longer occurs. Do not consider a fix complete until its regression test passes.
-- **Stability:** Avoid flaky tests (no sleep-based waits; mock external calls; use deterministic data). Mark known-unstable tests with `@pytest.mark.skip(reason="...")` and a short reason or ticket.
-- **After tests pass:** Once the relevant tests pass, (1) verify that docs affected by the change are up to date (architecture, API reference, guides — see Documentation section), then (2) commit everything unless the user explicitly says otherwise. Do not wait to be asked — passing tests + updated docs = ready to commit.
-- **Supercharging (optional):** Add contract/API tests for public endpoints (status codes, response shape). Add a few E2E-style tests for critical flows (e.g. stream one COMPOSING request). Consider property-based tests for serialization/validation in `app/core/` and `app/models/`. Keep CI fast: separate slow/integration tests if needed (e.g. markers).
+## Orpheus service
 
----
+- `music_service.py` — FastAPI (port 10002), flat module layout. Proxies to HF Space Gradio API for inference.
+- **Instrument resolution:** `resolve_gm_program(role)` → GM program, `resolve_tmidix_name(role)` → TMIDIX string, `_resolve_melodic_index(role)` → channel (0=bass, 1=keys, 2=other).
+- **MIDI pipeline:** `create_seed_midi()` → Gradio → `parse_midi_to_notes()` → `filter_channels_for_instruments()` → `generate_tool_calls()` → DAW.
+- When adding GM aliases: extend `_GM_ALIASES` AND add parametrized cases in `test_gm_resolution.py`.
 
-## Documentation
+## Anti-patterns (never do these)
 
-- **Index:** `docs/README.md` is the entry point. Point users and contributors there.
-- **Where to document:** Setup/config/deploy → `docs/guides/setup.md`. Frontend/MCP/JWT → `docs/guides/integrate.md`. Streaming, models, tools → `docs/reference/api.md`. Request flow, intent, human/agent → `docs/reference/architecture.md`. Running tests, intent QA → `docs/guides/testing.md`. Assets (kits, soundfonts) → `docs/guides/assets.md`. Security and go-live → `docs/guides/security.md`. Specs (Muse/Variation) → `docs/protocol/`.
-- **When editing:** If you change behavior, config, or API, update the relevant doc. Prefer short, concrete sentences. Keep README and docs in sync (e.g. service table, env list).
-- **Code comments:** Use docstrings for public modules, classes, and functions. Prefer "why" over "what" where non-obvious. Do not comment out code; remove or guard behind a feature flag.
-- **Ephemeral handoff prompts:** Never create `.md` files for one-off FE/BE integration prompts or cross-team handoffs. Deliver them inline in the conversation as a fenced markdown block the user can copy. Only commit docs that are durable reference material (guides, API contracts, architecture).
+- Business logic in route handlers. Global mutable state outside designated stores.
+- Hardcoded model IDs, secrets, URLs, or instrument dicts outside config/`_GM_ALIASES`.
+- Tests on live APIs without skip guards. `sleep()` in tests. Asserting implementation details instead of behavior.
+- `print()` for diagnostics. Backgrounding streaming curl. Committing ephemeral scripts.
+- Adding pip dependencies without updating Dockerfile. Running Python on the host.
 
----
+## Doc locations
 
-## HTTP & streaming requests
+| Topic | File |
+|-------|------|
+| Setup/deploy | `docs/guides/setup.md` |
+| Frontend/MCP/JWT | `docs/guides/integrate.md` |
+| API reference | `docs/reference/api.md` |
+| Architecture | `docs/reference/architecture.md` |
+| Testing | `docs/guides/testing.md` |
+| Security | `docs/guides/security.md` |
+| Protocol specs | `docs/protocol/` |
 
-- **SSE / streaming curl:** When making `curl` requests to streaming endpoints (SSE, chunked responses), **never truncate** the output. The terminal must stay **open and visible** so the user can watch events arrive in real time. Use a generous `block_until_ms` (e.g. `300000` for 5 minutes) so the terminal panel stays open for the full duration of the stream. Do **not** use `block_until_ms: 0` — that backgrounds the process and the terminal flashes closed immediately, which defeats the purpose.
-- **Real-time visibility matters:** The user wants to see every SSE event as it arrives — heartbeats, chain-of-thought reasoning, toolStart, toolCall, planStepUpdate, errors, everything. The terminal must remain open and scrolling live for the entire duration of the request. After the stream completes, the user will report back with results or paste output for analysis.
-- **E2E test prompt:** When curling `/api/v1/maestro/stream` to test the system, always use the `e2e_pocket_groove` prompt from `app/data/maestro_ui/prompts_global.py`. This is a compact, spec-complete STORI PROMPT (8 bars, 3 instruments, `Mode: compose`). Never use `mode: "generate"` in the STORI PROMPT — every STORI PROMPT must be `Mode: compose`. The HTTP payload field `mode` is a separate concern (defaults to `"generate"` for new compositions, `"edit"` for modifications).
-- **Ephemeral scripts:** Any throwaway scripts (Python, shell, etc.) used for testing, data extraction, or one-off tasks must be written to `/tmp/`, never inside the repo tree. This prevents them from appearing in `git status` or accidentally being committed. Clean up after use when practical.
+## Services
 
----
-
-## Before go-live / open source
-
-- Run full test suite and fix any new failures or flakiness.
-- Ensure no secrets or internal URLs in code or committed config; use env and `docs/guides/setup.md` for required vars.
-- Confirm health endpoint exposes `tagline` and full health checks Orpheus (and optionally LLM/S3) as documented.
-- Review `docs/guides/security.md` and apply the checklist (headers, rate limits, auth, logging).
-- Keep README and docs accurate: service table, ports (10001–10099 block), and "Stream first, then MCP" messaging.
-- When adding dependencies, update `pyproject.toml` and any Docker/CI that installs them.
-
----
+| Service | Container | Port |
+|---------|-----------|------|
+| Maestro | `maestro-stori-app` | 10001 |
+| Orpheus | `maestro-stori-orpheus` | 10002 |
+| Postgres | `maestro-stori-postgres` | 5432 |
+| Qdrant | `maestro-stori-qdrant` | 6333/6334 |
+| Nginx | `maestro-stori-nginx` | 80/443 |
 
 ## Quick reference
 
-| Area        | Location              | Tests / Docs              |
-|------------|------------------------|----------------------------|
-| Config     | `app/config.py`                    | `tests/test_config.py`            |
-| Health     | `app/api/routes/health.py`         | `tests/test_health.py`            |
-| Intent     | `app/core/intent*.py`              | `tests/test_intent*.py`           |
-| Pipeline   | `app/core/pipeline.py`             | `tests/test_pipeline.py`          |
-| Maestro    | `app/core/maestro_handlers.py`     | `tests/test_maestro_handlers.py`  |
-| Agent Teams| `app/core/maestro_agent_teams/`    | `tests/test_section_agent.py`, `tests/test_sections.py` |
-| Telemetry  | `app/core/telemetry.py`            | `tests/test_telemetry.py`             |
-| Executor   | `app/core/executor.py`             | `tests/test_executor.py`          |
-| RAG        | `app/services/rag.py`              | `tests/test_rag.py`               |
-| MCP        | `app/mcp/`, routes                 | `tests/test_mcp.py`               |
-| Auth       | `app/auth/`                        | `tests/test_auth*.py`             |
-| DB         | `app/db/`                          | `tests/test_database.py`          |
-| Docs index | —                                  | `docs/README.md`                  |
-| Mypy       | `pyproject.toml` [tool.mypy]       | `mypy app/ tests/` (CI + pre-commit) |
+| Area | Code | Tests |
+|------|------|-------|
+| Config | `app/config.py` | `tests/test_config.py` |
+| Intent | `app/core/intent*.py` | `tests/test_intent*.py` |
+| Pipeline | `app/core/pipeline.py` | `tests/test_pipeline.py` |
+| Maestro | `app/core/maestro_handlers.py` | `tests/test_maestro_handlers.py` |
+| Agent Teams | `app/core/maestro_agent_teams/` | `tests/test_section_agent.py` |
+| Orpheus | `orpheus-music/music_service.py` | `orpheus-music/test_*.py` |
+| MCP | `app/mcp/` | `tests/test_mcp.py` |

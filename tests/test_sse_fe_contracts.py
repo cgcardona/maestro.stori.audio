@@ -27,7 +27,8 @@ from app.core.tool_validation.constants import (
 def _parse_sse(raw: str) -> dict[str, Any]:
     """Strip ``data: `` prefix and parse JSON payload."""
     assert raw.startswith("data: ")
-    return json.loads(raw[6:].strip())
+    result: dict[str, Any] = json.loads(raw[6:].strip())
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1056,7 +1057,7 @@ class TestCircuitBreakerContract:
 
     def test_circuit_open_error_message_format(self):
         """Fast-fail result has the expected error key for downstream detection."""
-        result = {
+        result: dict[str, Any] = {
             "success": False,
             "error": "orpheus_circuit_open",
             "message": "Orpheus music service is unavailable (circuit breaker open).",
@@ -1722,6 +1723,7 @@ class TestIdempotentRegionCreation:
         reg = EntityRegistry()
         reg.create_track("Guacharaca")
         track_id = reg.resolve_track("Guacharaca")
+        assert track_id is not None
 
         first_id = reg.create_region(
             "Verse", track_id,
@@ -1739,6 +1741,7 @@ class TestIdempotentRegionCreation:
         reg = EntityRegistry()
         reg.create_track("Bass")
         track_id = reg.resolve_track("Bass")
+        assert track_id is not None
 
         id_a = reg.create_region("Intro", track_id, metadata={"startBeat": 0, "durationBeats": 16})
         id_b = reg.create_region("Verse", track_id, metadata={"startBeat": 16, "durationBeats": 32})
@@ -1750,6 +1753,7 @@ class TestIdempotentRegionCreation:
         reg = EntityRegistry()
         reg.create_track("Tumbadora")
         track_id = reg.resolve_track("Tumbadora")
+        assert track_id is not None
 
         rid = reg.create_region("Chorus", track_id, metadata={"startBeat": 32, "durationBeats": 16})
         found = reg.find_overlapping_region(track_id, 32, 16)

@@ -821,7 +821,7 @@ def _make_minimal(model_class: type) -> Any:
         "mcp.message": {"payload": {"tool": "test"}},
         "mcp.ping": {},
     }
-    event_type_field = model_class.model_fields.get("type")
+    event_type_field = model_class.model_fields.get("type")  # type: ignore[attr-defined]  # all SSE event models have model_fields
     if event_type_field and event_type_field.default:
         et = event_type_field.default
     else:

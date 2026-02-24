@@ -16,11 +16,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Test/coverage
-RUN pip install --no-cache-dir pytest pytest-cov pytest-asyncio
+# Test/coverage/typing
+RUN pip install --no-cache-dir pytest pytest-cov pytest-asyncio mypy
 
-# Copy all Python source (app + tests)
-COPY *.py ./
+# Copy all Python source (app + tests) and config
+COPY *.py pyproject.toml ./
 
 # Copy pre-built seed library (curated MIDI seeds for Orpheus priming)
 COPY seed_library/ ./seed_library/

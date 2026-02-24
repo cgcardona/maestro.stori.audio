@@ -21,7 +21,7 @@ from app.services.music_generator import get_music_generator
 
 logger = logging.getLogger(__name__)
 
-_GENERATOR_TIMEOUT = 180
+_GENERATOR_TIMEOUT: float = 180
 _MAX_PARALLEL_GROUPS = 5
 
 
@@ -163,12 +163,12 @@ async def _process_call_for_variation(
                     track_id = entity.parent_id if entity else ""
 
                 if region_id not in var_ctx.base_notes:
-                    var_ctx.capture_base_notes(region_id, track_id, [])
+                    var_ctx.capture_base_notes(region_id, track_id or "", [])
 
                 var_ctx.record_proposed_notes(region_id, notes)
                 logger.info(
                     f"📝 stori_add_notes: {len(notes)} notes → "
-                    f"region={region_id[:8]} track={track_id[:8]}"
+                    f"region={region_id[:8]} track={(track_id or '')[:8]}"
                 )
 
     elif call.name == "stori_add_midi_cc":

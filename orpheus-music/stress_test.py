@@ -34,7 +34,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -62,7 +62,7 @@ QUALITY_PRESETS = ["fast", "balanced", "quality"]
 
 KEYS = [None, "C", "Am", "F#", "Bb", "Em"]
 
-INTENT_VECTORS = {
+INTENT_VECTORS: dict[str, dict[str, Any]] = {
     "neutral": {
         "tone_brightness": 0.0, "tone_warmth": 0.0,
         "energy_intensity": 0.0, "energy_excitement": 0.0,
@@ -608,12 +608,13 @@ async def check_health(url: str) -> bool:
         return False
 
 
-async def check_diagnostics(url: str) -> Optional[dict]:
+async def check_diagnostics(url: str) -> Optional[dict[Any, Any]]:
     try:
         async with httpx.AsyncClient(base_url=url) as client:
             resp = await client.get("/diagnostics", timeout=10.0)
             if resp.status_code == 200:
-                return resp.json()
+                result: dict[Any, Any] = resp.json()
+                return result
     except Exception:
         pass
     return None

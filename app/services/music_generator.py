@@ -365,7 +365,7 @@ class MusicGenerator:
             all_scores: list[float] = []
 
             for res in candidates:
-                if isinstance(res, Exception) or not res.success:
+                if isinstance(res, BaseException) or not res.success:
                     continue
                 score, _ = scorer(res.notes)
                 all_scores.append(score)

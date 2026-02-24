@@ -248,7 +248,7 @@ def _parse_target(val: Optional[str]) -> Optional[TargetSpec]:
     for kind in ("track", "region"):
         if v.startswith(f"{kind}:"):
             name = val[len(kind) + 1:].strip()
-            return TargetSpec(kind=kind, name=name or None)  # type: ignore[arg-type]
+            return TargetSpec(kind=kind, name=name or None)
     return None
 
 
@@ -384,8 +384,8 @@ def _parse_position(val: Optional[str], after_alias: bool = False) -> Optional[P
                         bar_off = (int(parts[2]) - 1) * 4.0
                     except ValueError:
                         pass
-                return PositionSpec(kind="within", ref=ref, offset=offset + bar_off)  # type: ignore[arg-type]
-            kind_val: Literal["after", "before", "alongside", "between", "within", "absolute", "last"] = kw  # type: ignore[assignment]
+                return PositionSpec(kind="within", ref=ref, offset=offset + bar_off)
+            kind_val: Literal["after", "before", "alongside", "between", "within", "absolute", "last"] = kw  # type: ignore[assignment]  # validated by _POSITION_KEYWORDS
             return PositionSpec(kind=kind_val, ref=remainder.lower() or None, offset=offset)
 
     if after_alias:

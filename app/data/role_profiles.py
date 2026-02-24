@@ -52,7 +52,8 @@ _ROLE_ALIASES: dict[str, str] = {
 def _safe_median(stat: object) -> float:
     """Extract median from a stat dict, falling back to mean, then 0."""
     if isinstance(stat, dict):
-        return float(stat.get("median", stat.get("mean", 0.0)))
+        val = stat.get("median", stat.get("mean", 0.0))
+        return float(val) if val is not None else 0.0
     if isinstance(stat, (int, float)):
         return float(stat)
     return 0.0

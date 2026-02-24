@@ -368,7 +368,7 @@ class TestFormatProjectContextRole:
 
     def test_new_section_rule_absent_for_empty_project(self):
         """No NEW SECTION RULE when project has no tracks."""
-        project = {"tracks": []}
+        project: dict[str, list[str]] = {"tracks": []}
         out = format_project_context(project)
         assert "NEW SECTION RULE" not in out
 

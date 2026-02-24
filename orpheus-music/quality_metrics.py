@@ -30,15 +30,15 @@ def analyze_quality(notes: List[Dict[str, Any]], bars: int, tempo: int) -> Dict[
     """
     if not notes:
         return {
-            "note_count": 0,
-            "error": "No notes generated"
+            "note_count": 0.0,
+            "error": -1.0,
         }
     
-    metrics = {}
+    metrics: dict[str, float] = {}
     
     # 1. Note density
     total_beats = bars * 4
-    metrics["note_count"] = len(notes)
+    metrics["note_count"] = float(len(notes))
     metrics["notes_per_bar"] = len(notes) / max(bars, 1)
     metrics["notes_per_beat"] = len(notes) / max(total_beats, 1)
     
@@ -69,7 +69,7 @@ def analyze_quality(notes: List[Dict[str, Any]], bars: int, tempo: int) -> Dict[
         if len(start_beats) > 1:
             sorted_beats = sorted(start_beats)
             gaps = [sorted_beats[i+1] - sorted_beats[i] for i in range(len(sorted_beats)-1)]
-            metrics["timing_gap_stdev"] = statistics.stdev(gaps) if gaps else 0.0
+            metrics["timing_gap_stdev"] = statistics.stdev(gaps) if len(gaps) > 1 else 0.0
     
     # 5. Duration distribution
     durations = [n["duration"] for n in notes if "duration" in n]
@@ -195,10 +195,10 @@ def rejection_score(notes: List[Dict[str, Any]], bars: int) -> float:
     active_bars = sum(1 for c in bar_counts if c > 0)
     silence_score = active_bars / max(bars, 1)
 
-    return round(
+    return float(round(
         density_score * 0.3 + range_score * 0.2 + rep_score * 0.25 + silence_score * 0.25,
         4,
-    )
+    ))
 
 
 def compare_generations(notes_a: List[dict], notes_b: List[dict], bars: int, tempo: int) -> Dict[str, Any]:

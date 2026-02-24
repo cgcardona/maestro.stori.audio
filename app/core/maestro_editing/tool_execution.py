@@ -192,7 +192,7 @@ async def _execute_agent_generator(
         )
     except Exception as exc:
         logger.error(f"❌ [{trace.trace_id[:8]}] Generator {tc_name} failed: {exc}")
-        error_result: dict[str, Any] = {"error": str(exc)}
+        error_result = {"error": str(exc)}
         if emit_sse:
             sse_events.append({"type": "toolError", "name": tc_name, "error": str(exc)})
         return _ToolCallOutcome(
@@ -335,7 +335,7 @@ async def _apply_single_tool_call(
     tc_id: str,
     tc_name: str,
     resolved_args: dict[str, Any],
-    allowed_tool_names: set[str],
+    allowed_tool_names: set[str] | frozenset[str],
     store: Any,
     trace: Any,
     add_notes_failures: dict[str, int],
@@ -534,7 +534,7 @@ async def _apply_single_tool_call(
                 enriched_params["regionId"] = region_id
             except ValueError as e:
                 logger.error(f"❌ Failed to create region: {e}")
-                error_result: dict[str, Any] = {
+                region_err: dict[str, Any] = {
                     "success": False,
                     "error": f"Failed to create region: {e}",
                 }
@@ -545,11 +545,11 @@ async def _apply_single_tool_call(
                 }
                 msg_result = {
                     "role": "tool", "tool_call_id": tc_id,
-                    "content": json.dumps(error_result),
+                    "content": json.dumps(region_err),
                 }
                 return _ToolCallOutcome(
                     enriched_params=enriched_params,
-                    tool_result=error_result,
+                    tool_result=region_err,
                     sse_events=sse_events,
                     msg_call=msg_call,
                     msg_result=msg_result,
@@ -559,7 +559,7 @@ async def _apply_single_tool_call(
             logger.error(
                 f"stori_add_midi_region called without trackId for region '{region_name}'"
             )
-            error_result = {
+            no_track_err: dict[str, Any] = {
                 "success": False,
                 "error": (
                     f"Cannot create region '{region_name}' — no trackId provided. "
@@ -574,11 +574,11 @@ async def _apply_single_tool_call(
             }
             msg_result = {
                 "role": "tool", "tool_call_id": tc_id,
-                "content": json.dumps(error_result),
+                "content": json.dumps(no_track_err),
             }
             return _ToolCallOutcome(
                 enriched_params=enriched_params,
-                tool_result=error_result,
+                tool_result=no_track_err,
                 sse_events=sse_events,
                 msg_call=msg_call,
                 msg_result=msg_result,

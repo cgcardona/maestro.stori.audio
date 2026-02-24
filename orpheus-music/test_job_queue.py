@@ -235,6 +235,7 @@ class TestJobQueue:
                 assert job.status == JobStatus.COMPLETE
 
                 result = q.cancel(job.id)
+                assert result is not None
                 assert result.status == JobStatus.COMPLETE  # unchanged
             finally:
                 await q.shutdown()

@@ -144,7 +144,7 @@ def _try_deterministic_plan(
             track_name = role.strip().title()
         generations.append(
             GenerationStep(
-                role=orpheus_role,
+                role=orpheus_role,  # type: ignore[arg-type]  # runtime-validated via _INSTRUMENT_ROLE_MAP
                 style=parsed.style,
                 tempo=parsed.tempo,
                 bars=bars,

@@ -414,29 +414,27 @@ async def _stream_llm_response(
             reasoning_text = chunk.get("text", "")
             if reasoning_text:
                 to_emit = reasoning_buf.add(reasoning_text)
-                if to_emit and emit_sse:
+                if to_emit:
                     yield await emit_sse({
                         "type": "reasoning",
                         "content": to_emit,
                     })
         elif chunk.get("type") == "content_delta":
-            # Flush any remaining reasoning before content starts
             flushed = reasoning_buf.flush()
-            if flushed and emit_sse:
+            if flushed:
                 yield await emit_sse({
                     "type": "reasoning",
                     "content": flushed,
                 })
             content_text = chunk.get("text", "")
-            if content_text and emit_sse and not suppress_content:
+            if content_text and not suppress_content:
                 yield await emit_sse({
                     "type": "content",
                     "content": content_text,
                 })
         elif chunk.get("type") == "done":
-            # Flush remaining reasoning buffer
             flushed = reasoning_buf.flush()
-            if flushed and emit_sse:
+            if flushed:
                 yield await emit_sse({
                     "type": "reasoning",
                     "content": flushed,

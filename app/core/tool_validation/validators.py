@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 def validate_tool_call(
     tool_name: str,
     params: dict[str, Any],
-    allowed_tools: set[str],
+    allowed_tools: set[str] | frozenset[str],
     registry: Optional[EntityRegistry] = None,
     target_scope: Optional[tuple[str, Optional[str]]] = None,
 ) -> ValidationResult:

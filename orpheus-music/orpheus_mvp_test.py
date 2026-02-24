@@ -18,6 +18,7 @@ import time
 import struct
 import tempfile
 import logging
+from typing import Any
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("orpheus_mvp")
@@ -137,7 +138,7 @@ def main():
     logger.info(f"Seed MIDI: {seed_path} ({os.path.getsize(seed_path)} bytes)")
 
     # Step 2: Test 3 batches with FRESH clients each time
-    results = []
+    results: list[dict[str, Any]] = []
     for batch_idx in [0, 4, 9]:
         logger.info("")
         logger.info(f"--- Batch {batch_idx} (fresh client) ---")

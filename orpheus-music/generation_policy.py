@@ -98,7 +98,7 @@ def intent_to_controls(
         GenerationControlVector with normalized 0-1 values
     """
     # Start with neutral defaults
-    controls = GenerationControlVector(quality_preset=quality_preset)
+    controls = GenerationControlVector(quality_preset=quality_preset)  # type: ignore[arg-type]  # validated by caller
     
     # Apply each factor compositionally
     controls = apply_genre_baseline(controls, genre)

@@ -16,7 +16,7 @@ def _structured_routing_lines(parsed: "ParsedPrompt") -> list[str]:
     if parsed.section:
         lines.append(f"Section: {parsed.section}")
     if parsed.target:
-        target_str = parsed.target.kind
+        target_str: str = parsed.target.kind
         if parsed.target.name:
             target_str += f":{parsed.target.name}"
         lines.append(f"Target: {target_str}")

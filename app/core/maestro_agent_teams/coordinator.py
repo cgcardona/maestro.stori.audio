@@ -424,11 +424,11 @@ async def _handle_composition_agent_team(
                 if instrument_name.lower() in ekey or ekey in instrument_name.lower():
                     existing_info = info
                     break
-        track_id = existing_info["trackId"] if existing_info else None
+        existing_track_id: str | None = existing_info["trackId"] if existing_info else None
         _role_track_info[role] = {
             "instrument_name": instrument_name,
-            "existing_track_id": track_id if track_id else None,
-            "start_beat": existing_info["next_beat"] if existing_info and track_id else 0,
+            "existing_track_id": existing_track_id if existing_track_id else None,
+            "start_beat": existing_info["next_beat"] if existing_info and existing_track_id else 0,
         }
     _reused_ids = [
         info["existing_track_id"]

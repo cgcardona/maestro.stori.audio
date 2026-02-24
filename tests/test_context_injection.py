@@ -42,7 +42,7 @@ def _parse(prompt: str) -> ParsedPrompt:
     return result
 
 
-def _full_composing_system(parsed: ParsedPrompt, project_state: dict = None) -> str:
+def _full_composing_system(parsed: ParsedPrompt, project_state: dict | None = None) -> str:
     """Assemble the exact system prompt that build_execution_plan injects."""
     project_state = project_state or {}
     sys = system_prompt_base() + "\n" + composing_prompt()
@@ -53,7 +53,7 @@ def _full_composing_system(parsed: ParsedPrompt, project_state: dict = None) -> 
     return sys
 
 
-def _full_editing_system(parsed: ParsedPrompt, project_state: dict = None) -> str:
+def _full_editing_system(parsed: ParsedPrompt, project_state: dict | None = None) -> str:
     """Assemble the system prompt that run_pipeline injects for EDITING."""
     project_state = project_state or {}
     sys = system_prompt_base() + "\n" + editing_prompt(False)
@@ -160,9 +160,9 @@ class TestStructuredPromptContextStandalone:
 class TestSequentialContextStandalone:
     """sequential_context emits ARRANGEMENT POSITION block for each kind."""
 
-    def _pos(self, kind: str, ref: str = None, ref2: str = None, offset: float = 0.0,
-             beat: float = None) -> PositionSpec:
-        return PositionSpec(kind=kind, ref=ref, ref2=ref2, offset=offset, beat=beat)
+    def _pos(self, kind: str, ref: str | None = None, ref2: str | None = None,
+             offset: float = 0.0, beat: float | None = None) -> PositionSpec:
+        return PositionSpec(kind=kind, ref=ref, ref2=ref2, offset=offset, beat=beat)  # type: ignore[arg-type]  # kind validated by caller
 
     def test_arrangement_position_sentinel(self):
         ctx = sequential_context(0.0, pos=self._pos("absolute"))
@@ -219,7 +219,7 @@ class TestSequentialContextStandalone:
 class TestCombinedContextNoDuplicates:
     """When both blocks are concatenated, no fields are duplicated."""
 
-    def _combined(self, prompt_str: str, project: dict = None) -> str:
+    def _combined(self, prompt_str: str, project: dict | None = None) -> str:
         parsed = _parse(prompt_str)
         ctx = structured_prompt_context(parsed)
         if parsed.position is not None:

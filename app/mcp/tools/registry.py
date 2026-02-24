@@ -25,7 +25,7 @@ MCP_TOOLS = (
 )
 
 TOOL_CATEGORIES: dict[str, str] = {
-    tool["name"]: category
+    str(tool["name"]): category
     for category, tools in [
         ("project", PROJECT_TOOLS),
         ("track", TRACK_TOOLS),
@@ -41,6 +41,5 @@ TOOL_CATEGORIES: dict[str, str] = {
     for tool in tools
 }
 
-# Generation tools execute server-side; all others forward to the DAW.
-SERVER_SIDE_TOOLS: set[str] = {tool["name"] for tool in GENERATION_TOOLS}
-DAW_TOOLS: set[str] = {tool["name"] for tool in MCP_TOOLS if tool["name"] not in SERVER_SIDE_TOOLS}
+SERVER_SIDE_TOOLS: set[str] = {str(tool["name"]) for tool in GENERATION_TOOLS}
+DAW_TOOLS: set[str] = {str(tool["name"]) for tool in MCP_TOOLS if str(tool["name"]) not in SERVER_SIDE_TOOLS}

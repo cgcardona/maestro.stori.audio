@@ -156,7 +156,7 @@ class TestMissingFieldInResult:
         assert result["trackId"] == "$0.trackid"
 
     def test_empty_dict_in_prior_preserves_ref(self):
-        prior = [{}]
+        prior: list[dict[str, str]] = [{}]
         result = _resolve_variable_refs({"trackId": "$0.trackId"}, prior)
         assert result["trackId"] == "$0.trackId"
 
