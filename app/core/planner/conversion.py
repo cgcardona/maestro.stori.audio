@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from app.core.expansion import ToolCall
+from app.core.gm_instruments import infer_gm_program
 from app.core.plan_schemas import ExecutionPlanSchema
 from app.core.planner.track_matching import _build_role_to_track_map
 
@@ -94,7 +95,7 @@ def _schema_to_tool_calls(
     seen_lower: set[str] = set()
 
     for gen in plan.generations:
-        tname = role_to_track.get(gen.role, gen.role.capitalize())
+        tname = gen.trackName or role_to_track.get(gen.role, gen.role.capitalize())
         if tname.lower() not in seen_lower:
             ordered_tracks.append(tname)
             seen_lower.add(tname.lower())
@@ -113,19 +114,20 @@ def _schema_to_tool_calls(
         is_existing = t_lower in existing_tracks
         is_role_mapped = t_lower in _role_mapped_existing
 
-        # 1 + 2. Track creation + styling
+        # 1. Track creation (color + icon + gmProgram inline so the
+        #    frontend can create the track in a single atomic step).
         if not is_existing and not is_role_mapped and t_lower in edits_by_track:
             styling = get_track_styling(track_name, rotation_index=_new_track_idx)
             _new_track_idx += 1
-            tool_calls.append(ToolCall(name="stori_add_midi_track", params={"name": track_name}))
-            tool_calls.append(ToolCall(
-                name="stori_set_track_color",
-                params={"trackName": track_name, "color": styling["color"]},
-            ))
-            tool_calls.append(ToolCall(
-                name="stori_set_track_icon",
-                params={"trackName": track_name, "icon": styling["icon"]},
-            ))
+            track_params: dict[str, Any] = {
+                "name": track_name,
+                "color": styling["color"],
+                "icon": styling["icon"],
+            }
+            gm = infer_gm_program(track_name)
+            if gm is not None:
+                track_params["gmProgram"] = gm
+            tool_calls.append(ToolCall(name="stori_add_midi_track", params=track_params))
 
         # 3. Region creation
         for edit in regions_by_track.get(t_lower, []):
@@ -144,7 +146,7 @@ def _schema_to_tool_calls(
 
         # 4. Content generation
         for gen in plan.generations:
-            gen_track = role_to_track.get(gen.role, gen.role.capitalize())
+            gen_track = gen.trackName or role_to_track.get(gen.role, gen.role.capitalize())
             if gen_track.lower() != t_lower:
                 continue
             normalized_style = gen.style.replace("_", " ").strip() if gen.style else ""

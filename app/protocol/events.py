@@ -141,6 +141,7 @@ class PlanStepSchema(CamelModel):
     tool_name: Optional[str] = None
     detail: Optional[str] = None
     parallel_group: Optional[str] = None
+    phase: Optional[str] = None
 
 
 class PlanEvent(StoriEvent):

@@ -320,24 +320,12 @@ async def _run_section_child(
 
         result.region_id = region_id
 
-        # ── Section reasoning (L3 CoT, streamed with sectionName) ──
-        # The contract carries canonical section character + role brief.
-        # The L2's generate prompt is advisory; the contract is authoritative.
-        _refined_prompt: str | None = None
-        if llm and contract.l2_generate_prompt:
-            _refined_prompt = await _reason_before_generate(
-                contract=contract,
-                agent_id=agent_id,
-                llm=llm,
-                sse_queue=sse_queue,
-                child_log=child_log,
-            )
-
         # ── Execute stori_generate_midi ──
-        # All structural params from contract; only prompt is refined by L3.
+        # Orpheus is a token-continuation model — the "prompt" field is
+        # ignored by the generator.  Seed selection (D1) will handle musical
+        # intent.  Skip the L3 reasoning LLM call entirely to save tokens.
         _final_prompt = (
-            _refined_prompt
-            or contract.l2_generate_prompt
+            contract.l2_generate_prompt
             or f"{contract.section.character} — {contract.instrument_name}"
         )
         logger.info(
@@ -357,6 +345,18 @@ async def _run_section_child(
             "prompt": _final_prompt,
         }
 
+        async def _pre_emit_gen(events: list[dict[str, Any]]) -> None:
+            """Flush pre-generation events to the SSE queue immediately.
+
+            Without this, toolStart/generatorStart are held in a local list
+            until mg.generate() returns — starving the SSE stream and causing
+            the frontend to time out during long Orpheus calls.
+            """
+            for evt in events:
+                if evt.get("type") in _AGENT_TAGGED_EVENTS:
+                    evt = {**evt, "agentId": agent_id, "sectionName": sec_name}
+                await sse_queue.put(evt)
+
         gen_outcome = await _apply_single_tool_call(
             tc_id=generate_tc.id or str(_uuid_mod.uuid4()),
             tc_name=generate_tc.name,
@@ -367,6 +367,7 @@ async def _run_section_child(
             add_notes_failures=add_notes_failures,
             emit_sse=True,
             composition_context=_tool_ctx(),
+            pre_emit_callback=_pre_emit_gen,
         )
         await _emit(gen_outcome)
 

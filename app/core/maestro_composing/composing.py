@@ -138,7 +138,14 @@ async def _handle_composing(
                 async def _on_post_tool(
                     tool_name: str, resolved_params: dict[str, Any],
                 ) -> None:
-                    """Execution phase: toolCall with real UUID after success."""
+                    """Execution phase: toolCall with real UUID after success.
+
+                    Generator tools (stori_generate_midi etc.) are backend-internal;
+                    their output reaches the frontend via phrase events, not toolCall.
+                    """
+                    from app.core.maestro_plan_tracker.constants import _GENERATOR_TOOL_NAMES
+                    if tool_name in _GENERATOR_TOOL_NAMES:
+                        return
                     call_id = str(_uuid_mod.uuid4())
                     emit_params = _enrich_params_with_track_context(resolved_params, store)
                     await _event_queue.put({

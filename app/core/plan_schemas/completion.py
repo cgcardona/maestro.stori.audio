@@ -20,7 +20,7 @@ def infer_edits_from_generations(generations: list[GenerationStep]) -> list[Edit
     seen_tracks: set[str] = set()
 
     for gen in generations:
-        track_name = gen.role.capitalize()
+        track_name = gen.trackName or gen.role.capitalize()
         if track_name.lower() not in seen_tracks:
             edits.append(EditStep(action="add_track", name=track_name))
             seen_tracks.add(track_name.lower())
@@ -52,6 +52,7 @@ def complete_plan(plan: ExecutionPlanSchema) -> ExecutionPlanSchema:
         return plan
 
     generation_roles = {gen.role.lower() for gen in plan.generations}
+    generation_track_names = {gen.trackName.lower() for gen in plan.generations if gen.trackName}
 
     existing_tracks: set[str] = set()
     track_name_map: dict[str, str] = {}
@@ -68,14 +69,17 @@ def complete_plan(plan: ExecutionPlanSchema) -> ExecutionPlanSchema:
     inferred_edits: list[EditStep] = []
 
     for gen in plan.generations:
-        matching_track = _find_track_for_role(gen.role, existing_tracks)
+        preferred_name = gen.trackName or gen.role.capitalize()
+        matching_track = _find_track_for_role(preferred_name.lower(), existing_tracks)
+        if not matching_track:
+            matching_track = _find_track_for_role(gen.role, existing_tracks)
 
         if matching_track:
-            original_name = track_name_map.get(matching_track, gen.role.capitalize())
+            original_name = track_name_map.get(matching_track, preferred_name)
             track_lower = matching_track
             logger.debug(f"📋 Found existing track '{original_name}' for role '{gen.role}'")
         else:
-            track_name = gen.role.capitalize()
+            track_name = preferred_name
             track_lower = track_name.lower()
             inferred_edits.append(EditStep(action="add_track", name=track_name))
             existing_tracks.add(track_lower)
@@ -96,9 +100,12 @@ def complete_plan(plan: ExecutionPlanSchema) -> ExecutionPlanSchema:
     for edit in plan.edits:
         if edit.action == "add_track" and edit.name:
             track_lower = edit.name.lower()
-            has_generation = any(
-                role in track_lower or track_lower in role
-                for role in generation_roles
+            has_generation = (
+                track_lower in generation_track_names
+                or any(
+                    role in track_lower or track_lower in role
+                    for role in generation_roles
+                )
             )
             if has_generation:
                 filtered_edits.append(edit)

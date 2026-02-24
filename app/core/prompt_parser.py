@@ -183,10 +183,22 @@ def parse_prompt(text: str) -> Optional[ParsedPrompt]:
     if not mode_raw or mode_raw.lower() not in ("compose", "edit", "ask"):
         return None
 
-    # Required: Request
+    # Request: required for edit/ask, optional for compose (synthesized from dimensions)
     request_val = _str(data.get("request"))
     if not request_val:
-        return None
+        if mode_raw.lower() == "compose":
+            parts: list[str] = []
+            if data.get("style"):
+                parts.append(str(data["style"]))
+            if data.get("role"):
+                roles_raw = data["role"]
+                if isinstance(roles_raw, list):
+                    parts.append(", ".join(str(r) for r in roles_raw))
+                else:
+                    parts.append(str(roles_raw))
+            request_val = f"Compose {' '.join(parts)}".strip() if parts else "Compose music"
+        else:
+            return None
 
     # Position wins over After when both present
     position = (

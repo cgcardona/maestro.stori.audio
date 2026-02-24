@@ -867,10 +867,12 @@ class TestEdgeCases:
         assert result.has_maestro_fields
         assert "Build the verse" in result.request
 
-    def test_prompt_with_only_header_and_mode_missing_request_returns_none(self):
-        """Mode without Request returns None."""
+    def test_prompt_with_only_header_and_mode_missing_request_synthesises_default(self):
+        """Mode: compose without Request synthesises a default request."""
         result = parse_prompt("STORI PROMPT\nMode: compose")
-        assert result is None
+        assert result is not None
+        assert result.mode == "compose"
+        assert result.request  # synthesised default
 
     def test_comments_in_yaml_body_ignored(self):
         """YAML comments are stripped; prompt still parses."""

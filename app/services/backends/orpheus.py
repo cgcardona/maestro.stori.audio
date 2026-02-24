@@ -184,15 +184,24 @@ class OrpheusBackend(MusicGeneratorBackend):
         )
         
         if result.get("success"):
-            # Extract notes, CC events, and pitch bends from Orpheus tool_calls
-            # response. We request one instrument per call (instruments=[instrument]);
-            # Orpheus filters to that instrument's channel.
+            # MVP path: use pre-flattened camelCase notes directly
+            mvp_notes = result.get("notes")
+            if mvp_notes:
+                logger.info(f"✅ Orpheus MVP: {len(mvp_notes)} notes (direct)")
+                return GenerationResult(
+                    success=True,
+                    notes=mvp_notes,
+                    backend_used=self.backend_type,
+                    metadata=result.get("metadata", {}),
+                )
+
+            # Legacy path: extract from tool_calls
             notes: list[dict] = []
             cc_events: list[dict] = []
             pitch_bends: list[dict] = []
             aftertouch: list[dict] = []
             tool_calls = result.get("tool_calls", [])
-            
+
             for tool_call in tool_calls:
                 tool_name = tool_call.get("tool", "")
                 params = tool_call.get("params", {})
@@ -225,7 +234,7 @@ class OrpheusBackend(MusicGeneratorBackend):
                         if "pitch" in ev:
                             entry["pitch"] = ev["pitch"]
                         aftertouch.append(entry)
-            
+
             notes = [_normalize_note_keys(n) for n in notes]
 
             target_beats = bars * 4

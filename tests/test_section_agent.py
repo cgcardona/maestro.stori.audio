@@ -2085,3 +2085,207 @@ class TestServerOwnedRetries:
         for stub in msgs[2:]:
             assert "batch_complete" in stub["content"]
             assert stub["content"] != "..."
+
+
+# =============================================================================
+# Regression: pre-generation events must stream immediately (SSE relay bug)
+# =============================================================================
+
+
+class TestPreEmitGeneratorEvents:
+    """Regression for SSE relay bug where generatorStart/toolStart were
+    accumulated in a local list inside _execute_agent_generator and only
+    returned after mg.generate() completed.  This starved the SSE queue
+    during long Orpheus calls, causing the frontend to time out.
+
+    The fix adds a ``pre_emit_callback`` that flushes toolStart and
+    generatorStart to the SSE queue BEFORE generation blocks.
+    """
+
+    @pytest.mark.anyio
+    async def test_pre_emit_callback_receives_generator_start_events(self):
+        """pre_emit_callback fires with toolStart + generatorStart before generate."""
+        from app.core.maestro_editing.tool_execution import _execute_agent_generator
+        from app.core.tracing import TraceContext
+        from app.services.backends.base import GenerationResult, GeneratorBackend
+
+        store = StateStore()
+        track_id = store.create_track("Drums")
+        region_id = store.create_region("Region", track_id)
+
+        trace = TraceContext(trace_id="test-pre-emit")
+        comp_ctx = {
+            "style": "house", "tempo": 120, "bars": 4,
+            "key": "Am", "quality_preset": "balanced",
+        }
+
+        ok_result = GenerationResult(
+            success=True,
+            notes=[{"pitch": 36, "startBeat": 0, "durationBeats": 1, "velocity": 80}] * 12,
+            backend_used=GeneratorBackend.ORPHEUS,
+            metadata={},
+        )
+
+        mock_mg = MagicMock()
+        mock_mg.generate = AsyncMock(return_value=ok_result)
+
+        pre_emitted: list[dict] = []
+
+        async def _capture_pre(events: list[dict]) -> None:
+            pre_emitted.extend(events)
+
+        with patch(
+            "app.core.maestro_editing.tool_execution.get_music_generator",
+            return_value=mock_mg,
+        ):
+            outcome = await _execute_agent_generator(
+                tc_id="tc-pre",
+                tc_name="stori_generate_midi",
+                enriched_params={
+                    "role": "drums",
+                    "trackId": track_id,
+                    "regionId": region_id,
+                    "style": "house",
+                    "tempo": 120,
+                    "bars": 4,
+                    "key": "Am",
+                },
+                store=store,
+                trace=trace,
+                composition_context=comp_ctx,
+                emit_sse=True,
+                pre_emit_callback=_capture_pre,
+            )
+
+        assert outcome is not None
+
+        pre_types = [e["type"] for e in pre_emitted]
+        assert "toolStart" in pre_types, "toolStart must be pre-emitted"
+        assert "generatorStart" in pre_types, "generatorStart must be pre-emitted"
+
+        outcome_types = [e["type"] for e in outcome.sse_events]
+        assert "toolStart" not in outcome_types, (
+            "toolStart must NOT be in deferred sse_events when pre_emit_callback is set"
+        )
+        assert "generatorStart" not in outcome_types, (
+            "generatorStart must NOT be in deferred sse_events when pre_emit_callback is set"
+        )
+        assert "generatorComplete" in outcome_types
+        assert "toolCall" in outcome_types
+
+    @pytest.mark.anyio
+    async def test_no_callback_preserves_old_behavior(self):
+        """Without pre_emit_callback, all events stay in sse_events (backward compat)."""
+        from app.core.maestro_editing.tool_execution import _execute_agent_generator
+        from app.core.tracing import TraceContext
+        from app.services.backends.base import GenerationResult, GeneratorBackend
+
+        store = StateStore()
+        track_id = store.create_track("Bass")
+        region_id = store.create_region("Region", track_id)
+
+        trace = TraceContext(trace_id="test-no-cb")
+        comp_ctx = {
+            "style": "house", "tempo": 120, "bars": 4,
+            "key": "Am", "quality_preset": "balanced",
+        }
+
+        ok_result = GenerationResult(
+            success=True,
+            notes=[{"pitch": 40, "startBeat": 0, "durationBeats": 1, "velocity": 80}] * 8,
+            backend_used=GeneratorBackend.ORPHEUS,
+            metadata={},
+        )
+
+        mock_mg = MagicMock()
+        mock_mg.generate = AsyncMock(return_value=ok_result)
+
+        with patch(
+            "app.core.maestro_editing.tool_execution.get_music_generator",
+            return_value=mock_mg,
+        ):
+            outcome = await _execute_agent_generator(
+                tc_id="tc-nocb",
+                tc_name="stori_generate_midi",
+                enriched_params={
+                    "role": "bass",
+                    "trackId": track_id,
+                    "regionId": region_id,
+                    "style": "house",
+                    "tempo": 120,
+                    "bars": 4,
+                    "key": "Am",
+                },
+                store=store,
+                trace=trace,
+                composition_context=comp_ctx,
+                emit_sse=True,
+            )
+
+        assert outcome is not None
+        types = [e["type"] for e in outcome.sse_events]
+        assert "toolStart" in types
+        assert "generatorStart" in types
+        assert "generatorComplete" in types
+        assert "toolCall" in types
+
+    @pytest.mark.anyio
+    async def test_section_child_streams_generator_start_to_queue_before_generate(self):
+        """End-to-end: _run_section_child puts generatorStart in the queue
+        BEFORE mg.generate() returns — the fix that prevents frontend timeout.
+        """
+        store = StateStore(conversation_id="test-e2e-pre-emit")
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+
+        events_at_generate_time: list[dict] = []
+
+        async def _mock_apply(*, tc_id, tc_name, resolved_args, pre_emit_callback=None, **kw):
+            if tc_name == "stori_add_midi_region":
+                return _ok_region_outcome(tc_id)
+
+            if pre_emit_callback is not None:
+                await pre_emit_callback([
+                    {"type": "toolStart", "name": tc_name, "label": "Generating"},
+                    {"type": "generatorStart", "role": "drums", "agentId": "drums"},
+                ])
+
+            # Snapshot the queue at the moment generate would block on Orpheus.
+            # In the old code, the queue would be empty here.
+            while not queue.empty():
+                events_at_generate_time.append(queue.get_nowait())
+            # Re-enqueue so _emit can still process
+            for evt in events_at_generate_time:
+                await queue.put(evt)
+
+            return _ok_generate_outcome(tc_id)
+
+        with patch(
+            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            side_effect=_mock_apply,
+        ):
+            result = await _run_section_child(
+                contract=_contract(role="drums"),
+                region_tc=_region_tc(),
+                generate_tc=_generate_tc(),
+                agent_id="drums",
+                allowed_tool_names={"stori_add_midi_region", "stori_generate_midi"},
+                store=store,
+                trace=_trace(),
+                sse_queue=queue,
+                runtime_ctx=RuntimeContext(
+                    raw_prompt="test prompt",
+                    emotion_vector=None,
+                    quality_preset="balanced",
+                ),
+            )
+
+        assert result.success
+
+        gen_start_in_queue = [
+            e for e in events_at_generate_time
+            if e.get("type") == "generatorStart"
+        ]
+        assert len(gen_start_in_queue) >= 1, (
+            "generatorStart must be in the SSE queue BEFORE mg.generate() runs — "
+            "this is the fix for the frontend timeout bug"
+        )

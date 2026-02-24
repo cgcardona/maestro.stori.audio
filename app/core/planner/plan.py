@@ -115,17 +115,44 @@ def _try_deterministic_plan(
     )
 
     valid_roles = {"drums", "bass", "chords", "melody", "arp", "pads", "fx", "lead"}
-    generations = [
-        GenerationStep(
-            role=role if role in valid_roles else "melody",
-            style=parsed.style,
-            tempo=parsed.tempo,
-            bars=bars,
-            key=parsed.key,
-            constraints={k: v for k, v in parsed.constraints.items() if k != "bars"} or None,
+    _INSTRUMENT_ROLE_MAP: dict[str, str] = {
+        "kick": "drums", "snare": "drums", "hihat": "drums", "hi-hat": "drums",
+        "percussion": "drums", "drum kit": "drums", "congas": "drums", "bongos": "drums",
+        "tabla": "drums", "cajon": "drums", "shaker": "drums", "tambourine": "drums",
+        "upright bass": "bass", "electric bass": "bass", "synth bass": "bass",
+        "sub bass": "bass", "acoustic bass": "bass", "fretless bass": "bass",
+        "piano": "chords", "keys": "chords", "organ": "chords", "rhodes": "chords",
+        "wurlitzer": "chords", "clavinet": "chords", "harpsichord": "chords",
+        "synth": "pads", "pad": "pads", "strings": "pads", "choir": "pads",
+        "guitar": "chords", "acoustic guitar": "chords", "electric guitar": "lead",
+        "fiddle": "melody", "violin": "melody", "flute": "melody", "oboe": "melody",
+        "clarinet": "melody", "trumpet": "melody", "saxophone": "melody",
+        "sax": "melody", "harmonica": "melody", "mandolin": "melody",
+        "banjo": "melody", "ukulele": "chords", "harp": "chords",
+        "trombone": "melody", "tuba": "bass", "french horn": "melody",
+        "cello": "bass", "viola": "melody",
+    }
+
+    generations = []
+    for role in parsed.roles:
+        role_lower = role.lower().strip()
+        if role_lower in valid_roles:
+            orpheus_role = role_lower
+            track_name = None
+        else:
+            orpheus_role = _INSTRUMENT_ROLE_MAP.get(role_lower, "melody")
+            track_name = role.strip().title()
+        generations.append(
+            GenerationStep(
+                role=orpheus_role,
+                style=parsed.style,
+                tempo=parsed.tempo,
+                bars=bars,
+                key=parsed.key,
+                constraints={k: v for k, v in parsed.constraints.items() if k != "bars"} or None,
+                trackName=track_name,
+            )
         )
-        for role in parsed.roles
-    ]
 
     plan_schema = ExecutionPlanSchema(generations=generations)
     plan_schema = complete_plan(plan_schema)

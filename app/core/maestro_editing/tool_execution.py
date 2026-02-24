@@ -17,11 +17,13 @@ from app.core.maestro_helpers import (
 )
 from app.core.maestro_plan_tracker import _ToolCallOutcome, _GENERATOR_TOOL_NAMES
 from app.core.maestro_plan_tracker.constants import (
+    _ARRANGEMENT_TOOL_NAMES,
     _SETUP_TOOL_NAMES,
     _EFFECT_TOOL_NAMES,
     _MIXING_TOOL_NAMES,
     _TRACK_CREATION_NAMES,
     _CONTENT_TOOL_NAMES,
+    _EXPRESSION_TOOL_NAMES,
     _EXPRESSIVE_TOOL_NAMES,
 )
 from app.services.music_generator import get_music_generator
@@ -30,20 +32,28 @@ logger = logging.getLogger(__name__)
 
 
 def phase_for_tool(tool_name: str) -> str:
-    """Map a tool name to its composition phase.
+    """Map a tool name to its DAW workflow phase.
 
-    Phases:
-      setup       — tempo, key
-      composition — track creation, regions, notes, generators
-      soundDesign — insert effects, CC, pitch bend
-      mixing      — volume, pan, buses, sends, automation
+    Phases (mirrors a professional DAW session, in order):
+      setup       — project scaffolding: tempo, key, track/region creation,
+                    instrument selection, cosmetics, transport, UI
+      composition — creative content: notes, MIDI generators
+      arrangement — structural editing: move, transpose, quantize, swing, clear
+      soundDesign — tone shaping: insert effects (EQ, compression, reverb…)
+      expression  — performance data: MIDI CC, pitch bend, aftertouch
+      mixing      — balance & routing: volume, pan, mute/solo, buses, sends,
+                    automation
     """
     if tool_name in _SETUP_TOOL_NAMES:
         return "setup"
+    if tool_name in _ARRANGEMENT_TOOL_NAMES:
+        return "arrangement"
+    if tool_name in _EXPRESSION_TOOL_NAMES:
+        return "expression"
+    if tool_name in _EFFECT_TOOL_NAMES:
+        return "soundDesign"
     if tool_name in _MIXING_TOOL_NAMES:
         return "mixing"
-    if tool_name in _EFFECT_TOOL_NAMES or tool_name in _EXPRESSIVE_TOOL_NAMES:
-        return "soundDesign"
     return "composition"
 
 
@@ -55,6 +65,7 @@ async def _execute_agent_generator(
     trace: Any,
     composition_context: dict[str, Any],
     emit_sse: bool,
+    pre_emit_callback: Optional[Any] = None,
 ) -> Optional[_ToolCallOutcome]:
     """Route a generator tool call through MusicGenerator (Orpheus).
 
@@ -125,21 +136,27 @@ async def _execute_agent_generator(
     _gen_label = f"Generating {role} via Orpheus"
     _gen_phase = phase_for_tool(tc_name)
     if emit_sse:
-        sse_events.append({
-            "type": "toolStart",
-            "name": tc_name,
-            "label": _gen_label,
-            "phase": _gen_phase,
-        })
-        sse_events.append({
-            "type": "generatorStart",
-            "role": role,
-            "agentId": role,
-            "style": style,
-            "bars": bars,
-            "startBeat": start_beat,
-            "label": role.capitalize(),
-        })
+        _pre_events: list[dict[str, Any]] = [
+            {
+                "type": "toolStart",
+                "name": tc_name,
+                "label": _gen_label,
+                "phase": _gen_phase,
+            },
+            {
+                "type": "generatorStart",
+                "role": role,
+                "agentId": role,
+                "style": style,
+                "bars": bars,
+                "startBeat": start_beat,
+                "label": role.capitalize(),
+            },
+        ]
+        if pre_emit_callback is not None:
+            await pre_emit_callback(_pre_events)
+        else:
+            sse_events.extend(_pre_events)
 
     gen_kwargs: dict[str, Any] = {
         "quality_preset": composition_context.get("quality_preset", "quality"),
@@ -324,6 +341,7 @@ async def _apply_single_tool_call(
     add_notes_failures: dict[str, int],
     emit_sse: bool = True,
     composition_context: Optional[dict[str, Any]] = None,
+    pre_emit_callback: Optional[Any] = None,
 ) -> _ToolCallOutcome:
     """Validate, enrich, persist, and return results for one tool call.
 
@@ -592,6 +610,7 @@ async def _apply_single_tool_call(
         gen_outcome = await _execute_agent_generator(
             tc_id, tc_name, enriched_params, store, trace,
             composition_context, emit_sse,
+            pre_emit_callback=pre_emit_callback,
         )
         if gen_outcome is not None:
             return gen_outcome

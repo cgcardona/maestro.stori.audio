@@ -39,8 +39,7 @@ from app.core.composition_limiter import (
 from app.core.intent import get_intent_result_with_llm, SSEState
 from app.core.llm_client import LLMClient
 from app.core.planner import preview_plan
-from app.core.sse_utils import sse_event
-from app.protocol.validation import ProtocolGuard
+from app.core.sse_utils import sse_event, SSESequencer
 from app.protocol.emitter import ProtocolSerializationError
 from app.auth.dependencies import require_valid_token
 from app.db import get_db
@@ -172,27 +171,9 @@ async def stream_maestro(
             logger.warning(f"Failed to load conversation history: {e}")
 
     async def stream_with_budget():
-        _seq = -1  # first _seq += 1 yields 0
-        _guard = ProtocolGuard()
-        _terminated = False
+        sequencer = SSESequencer()
         import time as _time
         _stream_start = _time.monotonic()
-
-        def _with_seq(event_str: str) -> str:
-            """Inject monotonic seq counter and run ProtocolGuard.
-
-            Raises on guard violations so the stream can terminate cleanly.
-            """
-            nonlocal _seq
-            if not event_str.startswith("data: "):
-                return event_str
-            _seq += 1
-            data = json.loads(event_str[6:].strip())
-            data["seq"] = _seq
-            violations = _guard.check_event(data.get("type", "unknown"), data)
-            if violations:
-                logger.error(f"❌ ProtocolGuard violations: {violations}")
-            return f"data: {json.dumps(data, separators=(',', ':'), ensure_ascii=False)}\n\n"
 
         logger.info(
             f"🔌 SSE stream opened: model={selected_model}, "
@@ -217,14 +198,14 @@ async def stream_maestro(
                         _elapsed = _time.monotonic() - _stream_start
                         logger.warning(
                             f"⚠️ SSE client disconnected after {_elapsed:.1f}s, "
-                            f"{_seq} events sent — aborting stream"
+                            f"{sequencer.count} events sent — aborting stream"
                         )
                         return
-                    yield _with_seq(event)
+                    yield sequencer(event)
 
                 _elapsed = _time.monotonic() - _stream_start
                 logger.info(
-                    f"✅ SSE stream completed: {_seq} events in {_elapsed:.1f}s"
+                    f"✅ SSE stream completed: {sequencer.count} events in {_elapsed:.1f}s"
                 )
 
                 if user_id and (usage_tracker.prompt_tokens > 0 or usage_tracker.completion_tokens > 0):
@@ -247,31 +228,32 @@ async def stream_maestro(
 
         except CompositionLimitExceeded as e:
             logger.warning(f"⚠️ {e}")
-            yield await sse_event({"type": "error", "message": str(e)})
-            yield await sse_event({
+            yield sequencer(await sse_event({"type": "error", "message": str(e)}))
+            yield sequencer(await sse_event({
                 "type": "complete",
                 "success": False,
                 "error": f"Too many concurrent compositions (limit: {e.limit})",
                 "traceId": "composition-limit",
-            })
+            }))
         except ProtocolSerializationError as e:
             _elapsed = _time.monotonic() - _stream_start
             logger.error(
-                f"❌ Protocol serialization failure after {_elapsed:.1f}s, {_seq} events: {e}"
+                f"❌ Protocol serialization failure after {_elapsed:.1f}s, "
+                f"{sequencer.count} events: {e}"
             )
-            yield await sse_event({"type": "error", "message": "Protocol serialization failure"})
-            yield await sse_event({
+            yield sequencer(await sse_event({"type": "error", "message": "Protocol serialization failure"}))
+            yield sequencer(await sse_event({
                 "type": "complete",
                 "success": False,
                 "error": str(e),
                 "traceId": "protocol-error",
-            })
+            }))
         except Exception as e:
             _elapsed = _time.monotonic() - _stream_start
             logger.exception(
-                f"❌ SSE stream error after {_elapsed:.1f}s, {_seq} events: {e}"
+                f"❌ SSE stream error after {_elapsed:.1f}s, {sequencer.count} events: {e}"
             )
-            yield await sse_event({"type": "error", "message": str(e)})
+            yield sequencer(await sse_event({"type": "error", "message": str(e)}))
 
     headers = {
         "Cache-Control": "no-cache",

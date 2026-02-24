@@ -682,7 +682,7 @@ Code: `app/core/maestro_handlers.py:217–230`
       "toolName": "stori_add_midi_track",
       "parallelGroup": "instruments",
       "status": "pending",
-      "phase": "composition"
+      "phase": "setup"
     }
   ],
   "seq": 3
@@ -713,7 +713,7 @@ Code: `app/core/maestro_handlers.py:217–230`
   "type": "planStepUpdate",
   "stepId": "1",
   "status": "active" | "completed" | "failed" | "skipped",
-  "phase": "setup" | "composition" | "soundDesign" | "mixing",
+  "phase": "setup" | "composition" | "arrangement" | "soundDesign" | "expression" | "mixing",
   "result": "Set tempo to 72 BPM",
   "agentId": "drums",
   "seq": 5
@@ -727,7 +727,7 @@ Code: `app/core/maestro_handlers.py:217–230`
   "type": "toolStart",
   "name": "stori_add_midi_track",
   "label": "Create Drums track",
-  "phase": "composition",
+  "phase": "setup",
   "agentId": "drums",
   "sectionName": "verse",
   "seq": 6
@@ -742,7 +742,7 @@ Code: `app/core/maestro_handlers.py:217–230`
   "id": "call_uuid",
   "name": "stori_add_midi_track",
   "label": "Create Drums track",
-  "phase": "composition",
+  "phase": "setup",
   "params": {
     "trackId": "uuid",
     "name": "Drums",
@@ -1006,7 +1006,7 @@ data: {"type":"state","state":"composing","intent":"compose.generate_music","con
 
 data: {"type":"status","message":"Composing with Agent Teams...","seq":1}
 
-data: {"type":"plan","planId":"plan-002","title":"Boom Bap Beat","steps":[{"stepId":"1","label":"Set tempo to 90 BPM","toolName":"stori_set_tempo","status":"pending","phase":"setup"},{"stepId":"2","label":"Set key to Am","toolName":"stori_set_key","status":"pending","phase":"setup"},{"stepId":"3","label":"Create Drums track","toolName":"stori_add_midi_track","parallelGroup":"instruments","status":"pending","phase":"composition"},{"stepId":"4","label":"Create Bass track","toolName":"stori_add_midi_track","parallelGroup":"instruments","status":"pending","phase":"composition"}],"seq":2}
+data: {"type":"plan","planId":"plan-002","title":"Boom Bap Beat","steps":[{"stepId":"1","label":"Set tempo to 90 BPM","toolName":"stori_set_tempo","status":"pending","phase":"setup"},{"stepId":"2","label":"Set key to Am","toolName":"stori_set_key","status":"pending","phase":"setup"},{"stepId":"3","label":"Create Drums track","toolName":"stori_add_midi_track","parallelGroup":"instruments","status":"pending","phase":"setup"},{"stepId":"4","label":"Create Bass track","toolName":"stori_add_midi_track","parallelGroup":"instruments","status":"pending","phase":"setup"}],"seq":2}
 
 data: {"type":"planStepUpdate","stepId":"1","status":"completed","phase":"setup","result":"Tempo set to 90 BPM","seq":3}
 
@@ -1016,13 +1016,13 @@ data: {"type":"preflight","stepId":"3","agentId":"drums","agentRole":"drums","la
 
 data: {"type":"preflight","stepId":"4","agentId":"bass","agentRole":"bass","label":"Create Bass track","toolName":"stori_add_midi_track","parallelGroup":"instruments","confidence":0.9,"trackColor":"#4A90D9","seq":6}
 
-data: {"type":"toolStart","name":"stori_add_midi_track","label":"Create Drums track","phase":"composition","agentId":"drums","seq":7}
+data: {"type":"toolStart","name":"stori_add_midi_track","label":"Create Drums track","phase":"setup","agentId":"drums","seq":7}
 
-data: {"type":"toolCall","id":"tc-drums-track","name":"stori_add_midi_track","label":"Create Drums track","phase":"composition","params":{"trackId":"trk-drums","name":"Drums","drumKitId":"TR-808","color":"red","volume":0.85},"agentId":"drums","seq":8}
+data: {"type":"toolCall","id":"tc-drums-track","name":"stori_add_midi_track","label":"Create Drums track","phase":"setup","params":{"trackId":"trk-drums","name":"Drums","drumKitId":"TR-808","color":"red","volume":0.85},"agentId":"drums","seq":8}
 
-data: {"type":"toolStart","name":"stori_add_midi_track","label":"Create Bass track","phase":"composition","agentId":"bass","seq":9}
+data: {"type":"toolStart","name":"stori_add_midi_track","label":"Create Bass track","phase":"setup","agentId":"bass","seq":9}
 
-data: {"type":"toolCall","id":"tc-bass-track","name":"stori_add_midi_track","label":"Create Bass track","phase":"composition","params":{"trackId":"trk-bass","name":"Bass","gmProgram":33,"color":"blue","volume":0.75},"agentId":"bass","seq":10}
+data: {"type":"toolCall","id":"tc-bass-track","name":"stori_add_midi_track","label":"Create Bass track","phase":"setup","params":{"trackId":"trk-bass","name":"Bass","gmProgram":33,"color":"blue","volume":0.75},"agentId":"bass","seq":10}
 
 : heartbeat
 

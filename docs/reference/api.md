@@ -183,7 +183,7 @@ The `plan` event and subsequent `planStepUpdate` events are designed to power th
 | `parallelGroup` | string | no | Steps sharing the same value execute concurrently. Currently `"instruments"` for track-bound steps. Absent on sequential setup/mixing steps. See [Parallel execution](#parallel-execution). |
 | `status` | string | yes | One of `"pending"`, `"active"`, `"completed"`, `"skipped"`, `"failed"` |
 | `detail` | string | no | Short, forward-looking description from a musician's perspective (e.g. "8 bars of funk bass") |
-| `phase` | string | no | Composition phase derived from the tool (see [Composition phases](#composition-phases)). Present on `toolStart`, `toolCall`, and `planStepUpdate` when the step maps to a tool. Values: `"setup"`, `"composition"`, `"soundDesign"`, `"mixing"`. |
+| `phase` | string | no | DAW workflow phase derived from the tool (see [Composition phases](#composition-phases)). Present on `toolStart`, `toolCall`, `plan` step entries, and `planStepUpdate` when the step maps to a tool. Values: `"setup"`, `"composition"`, `"arrangement"`, `"soundDesign"`, `"expression"`, `"mixing"`. |
 | `result` | string | no | Populated in `planStepUpdate` on completion. Backward-looking outcome (e.g. "32 notes generated - 4 bars") |
 
 **Canonical label patterns** (used by the frontend for section grouping):
@@ -208,14 +208,16 @@ Track names use title-case with spaces and are consistent across all steps refer
 
 ### Composition phases
 
-`toolStart`, `toolCall`, and `planStepUpdate` events include a `phase` field derived from the tool name. The backend determines the phase — the frontend should not infer it from tool names.
+`plan` step entries, `toolStart`, `toolCall`, and `planStepUpdate` events include a `phase` field derived from the tool name. The backend determines the phase — the frontend should not infer it from tool names. The six phases mirror a professional DAW session workflow.
 
 | Phase | Tools | Description |
 |-------|-------|-------------|
-| `setup` | `stori_set_tempo`, `stori_set_key` | Project-level configuration |
-| `composition` | `stori_add_midi_track`, `stori_add_midi_region`, `stori_add_notes`, `stori_generate_*` | Track creation, region layout, note generation |
-| `soundDesign` | `stori_add_insert_effect`, `stori_ensure_bus`, `stori_add_send`, `stori_add_midi_cc`, `stori_add_pitch_bend` | Effects, expressive controllers |
-| `mixing` | `stori_set_track_volume`, `stori_set_track_pan`, `stori_mute_track`, `stori_solo_track`, `stori_set_track_color`, `stori_set_track_icon`, `stori_set_track_name` | Mix balance, track management |
+| `setup` | `stori_create_project`, `stori_set_tempo`, `stori_set_key`, `stori_add_midi_track`, `stori_add_midi_region`, `stori_set_midi_program`, `stori_set_track_name/color/icon`, `stori_play/stop`, `stori_set_playhead`, `stori_show_panel`, `stori_set_zoom` | Session scaffolding: project config, track creation, transport, UI |
+| `composition` | `stori_add_notes`, `stori_generate_midi/drums/bass/chords/melody` | Creative content: writing notes, MIDI generation |
+| `arrangement` | `stori_move_region`, `stori_transpose_notes`, `stori_clear_notes`, `stori_quantize_notes`, `stori_apply_swing` | Structural editing after initial writing |
+| `soundDesign` | `stori_add_insert_effect` | Tone shaping: insert effects (EQ, compression, reverb…) |
+| `expression` | `stori_add_midi_cc`, `stori_add_pitch_bend`, `stori_add_aftertouch` | Performance data: MIDI CC, pitch bend, humanisation |
+| `mixing` | `stori_set_track_volume/pan`, `stori_mute/solo_track`, `stori_ensure_bus`, `stori_add_send`, `stori_add_automation` | Balance & routing: volume, pan, buses, sends, automation |
 
 ---
 

@@ -26,8 +26,7 @@ from app.services.budget import (
 )
 from app.models.requests import MaestroRequest
 from app.api.routes.maestro import orchestrate, UsageTracker
-from app.core.sse_utils import sse_event
-from app.protocol.validation import ProtocolGuard
+from app.core.sse_utils import sse_event, SSESequencer
 from app.protocol.emitter import ProtocolSerializationError
 
 router = APIRouter()
@@ -84,7 +83,7 @@ async def add_message_to_conversation(
 
     async def stream_with_save():
         usage_tracker = UsageTracker()
-        _guard = ProtocolGuard()
+        sequencer = SSESequencer()
         assistant_content_parts: list[str] = []
         tool_calls_made: list[dict] = []
         sse_events_captured: list[dict] = []
@@ -112,7 +111,6 @@ async def add_message_to_conversation(
                 if event.startswith("data: "):
                     event_data = json.loads(event[6:])
                     event_type = event_data.get("type")
-                    _guard.check_event(event_type or "unknown", event_data)
 
                     sse_events_captured.append({
                         "type": event_type,
@@ -165,7 +163,7 @@ async def add_message_to_conversation(
                                 "end_time": datetime.now(timezone.utc).isoformat(),
                             })
 
-                    yield event
+                    yield sequencer(event)
 
             total_tokens = usage_tracker.prompt_tokens + usage_tracker.completion_tokens
             cost_cents = calculate_cost_cents(
@@ -232,17 +230,17 @@ async def add_message_to_conversation(
         except ProtocolSerializationError as e:
             logger.error(f"❌ Protocol serialization failure in conversation stream: {e}")
             await db.rollback()
-            yield await sse_event({"type": "error", "message": "Protocol serialization failure"})
-            yield await sse_event({
+            yield sequencer(await sse_event({"type": "error", "message": "Protocol serialization failure"}))
+            yield sequencer(await sse_event({
                 "type": "complete",
                 "success": False,
                 "error": str(e),
                 "traceId": "protocol-error",
-            })
+            }))
         except Exception as e:
             logger.error(f"Error in conversation message stream: {e}", exc_info=True)
             await db.rollback()
-            yield await sse_event({"type": "error", "message": str(e)})
+            yield sequencer(await sse_event({"type": "error", "message": str(e)}))
 
     return StreamingResponse(
         stream_with_save(),

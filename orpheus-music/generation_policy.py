@@ -26,7 +26,6 @@ Key principles:
 from dataclasses import dataclass
 from typing import Optional, List, Literal, Tuple
 from enum import Enum
-import os
 
 
 # =============================================================================
@@ -306,104 +305,27 @@ def apply_tempo_adjustments(controls: GenerationControlVector, tempo: int) -> Ge
 # Control Vector → Orpheus Params (Control → Generator)
 # =============================================================================
 
-# Parameter ranges for Orpheus
-ORPHEUS_RANGES = {
-    "temperature": (0.70, 1.10),
-    "top_p": (0.90, 0.99),
-    "tokens_per_bar": (32, 96),
-    "num_prime_tokens": (512, 4096),
-}
+# Orpheus Music Transformer proven-good defaults (from HF Space).
+# The model produces best results at these values; only deviate on
+# explicit user override.
+DEFAULT_TEMPERATURE = 0.9
+DEFAULT_TOP_P = 0.96
 
-# Orpheus Music Transformer context window (prime + gen tokens)
-_CONTEXT_WINDOW = 8192
-_MAX_GEN_TOKENS = int(os.environ.get("ORPHEUS_MAX_GEN_TOKENS", "4096"))
-_MIN_PRIME_TOKENS = 256
+# HF Space UI caps gen tokens at 1024; prime at 6656.
+_MAX_PRIME_TOKENS = 6656
+_MAX_GEN_TOKENS = 1024
+_TOKENS_PER_BAR = 64
 
 
-def allocate_token_budget(
-    bars: int,
-    tokens_per_bar: int,
-    prime_from_policy: int,
-    *,
-    context_window: int = _CONTEXT_WINDOW,
-    max_gen: int = _MAX_GEN_TOKENS,
-    min_prime: int = _MIN_PRIME_TOKENS,
-) -> Tuple[int, int]:
+def allocate_token_budget(bars: int) -> Tuple[int, int]:
+    """Return (num_prime_tokens, num_gen_tokens) for a generation request.
+
+    Strategy: maximise prime context (the model is a continuation engine),
+    keep gen tokens within the HF Space's proven range.
     """
-    Split the model's context window between prime and generation tokens.
-
-    Short sections get generous priming (better musical coherence).
-    Long sections shift budget toward generation while keeping a useful prime floor.
-
-    Returns:
-        (num_prime_tokens, num_gen_tokens)
-    """
-    raw_gen = bars * tokens_per_bar
-    gen = min(raw_gen, max_gen)
-
-    remaining = context_window - gen
-    prime = max(min_prime, min(prime_from_policy, remaining))
-
-    # If gen + prime still exceeds the window, trim gen to fit
-    if gen + prime > context_window:
-        gen = context_window - prime
-
+    gen = min(bars * _TOKENS_PER_BAR, _MAX_GEN_TOKENS)
+    prime = _MAX_PRIME_TOKENS
     return (prime, gen)
-
-
-def controls_to_orpheus_params(controls: GenerationControlVector) -> dict:
-    """
-    Convert abstract control vector to concrete Orpheus parameters.
-    
-    This is the adapter layer - if we switch backends, we write a new adapter,
-    not a new policy.
-    """
-    # Temperature: maps creativity → exploration
-    temperature = lerp(
-        ORPHEUS_RANGES["temperature"][0],
-        ORPHEUS_RANGES["temperature"][1],
-        controls.creativity
-    )
-    
-    # Top-p: higher creativity = higher top_p (more diverse sampling)
-    top_p = lerp(
-        ORPHEUS_RANGES["top_p"][0],
-        ORPHEUS_RANGES["top_p"][1],
-        controls.creativity * 0.8 + 0.2  # Bias toward higher values
-    )
-    
-    # Tokens per bar: maps density + complexity
-    token_factor = (controls.density * 0.6 + controls.complexity * 0.4)
-    tokens_per_bar = int(lerp(
-        ORPHEUS_RANGES["tokens_per_bar"][0],
-        ORPHEUS_RANGES["tokens_per_bar"][1],
-        token_factor
-    ))
-    
-    # Prime tokens: more complex = more context needed
-    num_prime_tokens = int(lerp(
-        ORPHEUS_RANGES["num_prime_tokens"][0],
-        ORPHEUS_RANGES["num_prime_tokens"][1],
-        controls.complexity
-    ))
-    
-    # Apply quality preset modifiers
-    if controls.quality_preset == "fast":
-        tokens_per_bar = int(tokens_per_bar * 0.85)
-        num_prime_tokens = int(num_prime_tokens * 0.75)
-    elif controls.quality_preset == "quality":
-        tokens_per_bar = int(tokens_per_bar * 1.15)
-        num_prime_tokens = int(num_prime_tokens * 1.0)  # Already balanced
-        
-    return {
-        "model_temperature": round(temperature, 3),
-        "model_top_p": round(top_p, 3),
-        "num_gen_tokens_per_bar": tokens_per_bar,
-        "num_prime_tokens": num_prime_tokens,
-        "velocity_variation": controls.groove * 0.3,  # 0-30% variation
-        "seed_brightness_hint": controls.brightness,
-        "seed_tension_hint": controls.tension,
-    }
 
 
 # =============================================================================
@@ -429,7 +351,7 @@ def denormalize_signed(value: float) -> float:
 # Policy Versioning (for A/B testing)
 # =============================================================================
 
-POLICY_VERSION = "v1.1"
+POLICY_VERSION = "v2.0"
 
 def get_policy_version() -> str:
     """Return current policy version for logging/analytics."""
@@ -441,34 +363,11 @@ def get_policy_version() -> str:
 # =============================================================================
 
 if __name__ == "__main__":
-    # Example 1: Dark energetic trap
-    controls = intent_to_controls(
-        genre="trap",
-        tempo=140,
-        musical_goals=["dark", "energetic"],
-        tone_brightness=-0.7,
-        energy_intensity=0.8,
-        complexity_hint=0.6,
-    )
-    
-    params = controls_to_orpheus_params(controls)
-    print("Dark energetic trap:")
-    print(f"  Controls: {controls}")
-    print(f"  Orpheus params: {params}")
-    print()
-    
-    # Example 2: Bright chill lo-fi
-    controls = intent_to_controls(
-        genre="lofi",
-        tempo=85,
-        musical_goals=["bright", "chill"],
-        tone_brightness=0.5,
-        tone_warmth=0.7,
-        energy_intensity=-0.4,
-        complexity_hint=0.3,
-    )
-    
-    params = controls_to_orpheus_params(controls)
-    print("Bright chill lo-fi:")
-    print(f"  Controls: {controls}")
-    print(f"  Orpheus params: {params}")
+    prime, gen = allocate_token_budget(bars=8)
+    print(f"8-bar budget: prime={prime}, gen={gen}")
+    prime, gen = allocate_token_budget(bars=16)
+    print(f"16-bar budget: prime={prime}, gen={gen}")
+    prime, gen = allocate_token_budget(bars=32)
+    print(f"32-bar budget: prime={prime}, gen={gen}")
+    print(f"Defaults: temp={DEFAULT_TEMPERATURE}, top_p={DEFAULT_TOP_P}")
+    print(f"Policy: {get_policy_version()}")

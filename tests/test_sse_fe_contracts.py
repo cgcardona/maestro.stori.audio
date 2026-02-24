@@ -814,26 +814,47 @@ class TestPhaseFieldRegression:
         assert phase_for_tool("stori_set_key") == "setup"
 
     def test_phase_for_tool_composition(self):
-        """Composition tools (track, region, generate) map to phase 'composition'."""
+        """Composition tools (generate, notes) map to phase 'composition'."""
         from app.core.maestro_editing.tool_execution import phase_for_tool
-        assert phase_for_tool("stori_add_midi_track") == "composition"
-        assert phase_for_tool("stori_add_midi_region") == "composition"
         assert phase_for_tool("stori_generate_midi") == "composition"
         assert phase_for_tool("stori_add_notes") == "composition"
 
+    def test_phase_for_tool_setup_includes_track_creation(self):
+        """Track creation and region creation are setup (session scaffolding)."""
+        from app.core.maestro_editing.tool_execution import phase_for_tool
+        assert phase_for_tool("stori_add_midi_track") == "setup"
+        assert phase_for_tool("stori_add_midi_region") == "setup"
+        assert phase_for_tool("stori_set_midi_program") == "setup"
+
+    def test_phase_for_tool_arrangement(self):
+        """Structural editing tools map to phase 'arrangement'."""
+        from app.core.maestro_editing.tool_execution import phase_for_tool
+        assert phase_for_tool("stori_move_region") == "arrangement"
+        assert phase_for_tool("stori_transpose_notes") == "arrangement"
+        assert phase_for_tool("stori_quantize_notes") == "arrangement"
+        assert phase_for_tool("stori_apply_swing") == "arrangement"
+        assert phase_for_tool("stori_clear_notes") == "arrangement"
+
     def test_phase_for_tool_sound_design(self):
-        """Effect and expressive tools map to phase 'soundDesign'."""
+        """Insert effects map to phase 'soundDesign'."""
         from app.core.maestro_editing.tool_execution import phase_for_tool
         assert phase_for_tool("stori_add_insert_effect") == "soundDesign"
-        assert phase_for_tool("stori_add_midi_cc") == "soundDesign"
-        assert phase_for_tool("stori_add_pitch_bend") == "soundDesign"
-        assert phase_for_tool("stori_ensure_bus") == "soundDesign"
+
+    def test_phase_for_tool_expression(self):
+        """Performance data tools map to phase 'expression'."""
+        from app.core.maestro_editing.tool_execution import phase_for_tool
+        assert phase_for_tool("stori_add_midi_cc") == "expression"
+        assert phase_for_tool("stori_add_pitch_bend") == "expression"
+        assert phase_for_tool("stori_add_aftertouch") == "expression"
 
     def test_phase_for_tool_mixing(self):
-        """Mixing tools (volume, pan, sends) map to phase 'mixing'."""
+        """Mixing tools (volume, pan, sends, buses, automation) map to phase 'mixing'."""
         from app.core.maestro_editing.tool_execution import phase_for_tool
         assert phase_for_tool("stori_set_track_volume") == "mixing"
         assert phase_for_tool("stori_set_track_pan") == "mixing"
+        assert phase_for_tool("stori_ensure_bus") == "mixing"
+        assert phase_for_tool("stori_add_send") == "mixing"
+        assert phase_for_tool("stori_add_automation") == "mixing"
 
     @pytest.mark.anyio
     async def test_tool_start_includes_phase(self):

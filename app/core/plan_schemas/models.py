@@ -26,6 +26,7 @@ class GenerationStep(BaseModel):
     bars: int = Field(..., ge=1, le=64, description="Number of bars to generate (1-64)")
     key: Optional[str] = Field(default=None, description="Musical key (e.g., 'Cm', 'F#', 'G minor'). Required for melodic instruments.")
     constraints: Optional[dict[str, Any]] = Field(default=None, description="Additional constraints (density, syncopation, swing, etc.)")
+    trackName: Optional[str] = Field(default=None, description="Override track name (e.g. 'Banjo') when role is a generic category like 'melody'")
 
     @field_validator('key')
     @classmethod

@@ -177,7 +177,7 @@ class MusicGenerator:
                     preset_config, n, **kwargs
                 )
                 if result.success:
-                    result = self._apply_expressiveness(result, instrument, style, bars)
+                    result = self._maybe_apply_expressiveness(result, instrument, style, bars)
                 return result
             else:
                 logger.warning(f"Requested backend not available: {preferred_backend}")
@@ -198,7 +198,7 @@ class MusicGenerator:
             )
             
             if result.success:
-                result = self._apply_expressiveness(result, instrument, style, bars)
+                result = self._maybe_apply_expressiveness(result, instrument, style, bars)
                 return result
             else:
                 last_failure = result
@@ -395,16 +395,21 @@ class MusicGenerator:
         return result
     
     @staticmethod
-    def _apply_expressiveness(
+    def _maybe_apply_expressiveness(
         result: GenerationResult,
         instrument: str,
         style: str,
         bars: int,
     ) -> GenerationResult:
+        """Enrich a successful generation with velocity curves, CC, and humanization.
+
+        Gated by STORI_SKIP_EXPRESSIVENESS for debugging raw model output.
         """
-        Enrich a successful generation with velocity curves, CC automation,
-        pitch bends, and timing humanization.
-        """
+        from app.config import settings
+        if settings.skip_expressiveness:
+            logger.info("⏭️ Expressiveness post-processing skipped (STORI_SKIP_EXPRESSIVENESS=true)")
+            return result
+
         expr = apply_expressiveness(
             notes=result.notes,
             style=style,

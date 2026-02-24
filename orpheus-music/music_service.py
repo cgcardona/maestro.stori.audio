@@ -24,6 +24,7 @@ import uuid
 import asyncio
 import math
 import mido
+import random
 import traceback
 import tempfile
 import os
@@ -35,10 +36,9 @@ import pathlib
 
 # Import our policy layer and quality metrics
 from generation_policy import (
-    intent_to_controls,
-    controls_to_orpheus_params,
     allocate_token_budget,
-    GenerationControlVector,
+    DEFAULT_TEMPERATURE,
+    DEFAULT_TOP_P,
     get_policy_version,
 )
 from quality_metrics import analyze_quality, compare_generations, rejection_score
@@ -66,17 +66,16 @@ async def _lifespan(application: FastAPI):
 
 app = FastAPI(title="Orpheus Music Service", lifespan=_lifespan)
 
-# Gradio client with reconnection and keepalive
-gradio_client = None
-_client_lock = asyncio.Lock()
+# Gradio client pool — one client per worker to avoid session corruption
 _last_keepalive: float = 0.0
 _last_successful_gen: float = 0.0
 
 _DEFAULT_SPACE = "asigalov61/Orpheus-Music-Transformer"
 _KEEPALIVE_INTERVAL = int(os.environ.get("ORPHEUS_KEEPALIVE_INTERVAL", "600"))
-_MAX_CONCURRENT = int(os.environ.get("ORPHEUS_MAX_CONCURRENT", "2"))
+_MAX_CONCURRENT = int(os.environ.get("ORPHEUS_MAX_CONCURRENT", "1"))
 _MAX_QUEUE_DEPTH = int(os.environ.get("ORPHEUS_MAX_QUEUE_DEPTH", "20"))
 _JOB_TTL_SECONDS = int(os.environ.get("ORPHEUS_JOB_TTL", "300"))  # 5 min
+_COOLDOWN_SECONDS = float(os.environ.get("ORPHEUS_COOLDOWN_SECONDS", "3"))
 
 _CACHE_DIR = pathlib.Path(os.environ.get("ORPHEUS_CACHE_DIR", "/tmp/orpheus_cache"))
 _CACHE_FILE = _CACHE_DIR / "result_cache.json"
@@ -84,7 +83,6 @@ _CACHE_FILE = _CACHE_DIR / "result_cache.json"
 # ── Storpheus config flags ─────────────────────────────────────────────
 ORPHEUS_PRESERVE_ALL_CHANNELS = os.environ.get("ORPHEUS_PRESERVE_ALL_CHANNELS", "true").lower() in ("1", "true", "yes")
 ENABLE_BEAT_RESCALING = os.environ.get("ENABLE_BEAT_RESCALING", "false").lower() in ("1", "true", "yes")
-ORPHEUS_REJECTION_CANDIDATES = int(os.environ.get("ORPHEUS_REJECTION_CANDIDATES", "4"))
 MAX_SESSION_TOKENS = int(os.environ.get("ORPHEUS_MAX_SESSION_TOKENS", "4096"))
 
 _INTENT_QUANT_STEP = float(os.environ.get("ORPHEUS_INTENT_QUANT", "0.2"))
@@ -101,18 +99,87 @@ def _create_client() -> Client:
     return Client(space_id, hf_token=hf_token)
 
 
+class _ClientPool:
+    """Pool of Gradio clients — one per worker.
+
+    IMPORTANT: each Gradio session accumulates ``final_composition``
+    state via ``/add_batch``.  To get independent output per generation,
+    callers must either use ``fresh()`` (creates a new disposable client)
+    or call ``reset(worker_id)`` before generating so the next ``get()``
+    returns a clean session.
+    """
+
+    def __init__(self) -> None:
+        self._clients: dict[int, Client] = {}
+        self._loops_clients: dict[int, Client] = {}
+
+    def get(self, worker_id: int) -> Client:
+        if worker_id not in self._clients:
+            self._clients[worker_id] = _create_client()
+        return self._clients[worker_id]
+
+    def fresh(self, worker_id: int) -> Client:
+        """Return a brand-new client for *worker_id*, discarding any
+        previous session so ``final_composition`` state is empty."""
+        self._clients.pop(worker_id, None)
+        client = _create_client()
+        self._clients[worker_id] = client
+        return client
+
+    def get_loops(self, worker_id: int) -> Optional[Client]:
+        loops_space = os.environ.get("STORI_ORPHEUS_LOOPS_SPACE", "")
+        if not loops_space:
+            return None
+        if worker_id not in self._loops_clients:
+            hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
+            logger.info(f"🔌 Connecting to Orpheus Loops Space: {loops_space}")
+            self._loops_clients[worker_id] = Client(loops_space, hf_token=hf_token)
+        return self._loops_clients[worker_id]
+
+    def fresh_loops(self, worker_id: int) -> Optional[Client]:
+        """Return a brand-new Loops client, discarding previous session."""
+        loops_space = os.environ.get("STORI_ORPHEUS_LOOPS_SPACE", "")
+        if not loops_space:
+            return None
+        self._loops_clients.pop(worker_id, None)
+        hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
+        logger.info(f"🔌 Connecting to Orpheus Loops Space: {loops_space}")
+        client = Client(loops_space, hf_token=hf_token)
+        self._loops_clients[worker_id] = client
+        return client
+
+    def reset(self, worker_id: int) -> None:
+        self._clients.pop(worker_id, None)
+        self._loops_clients.pop(worker_id, None)
+
+    def reset_all(self) -> None:
+        self._clients.clear()
+        self._loops_clients.clear()
+
+    def any_client(self) -> Client:
+        """Return any live client for keepalive pings."""
+        if self._clients:
+            return next(iter(self._clients.values()))
+        return _create_client()
+
+
+_client_pool = _ClientPool()
+
+
 def get_client() -> Client:
-    global gradio_client
-    if gradio_client is None:
-        gradio_client = _create_client()
-    return gradio_client
+    """Legacy accessor — returns worker-0 client for non-worker callers."""
+    return _client_pool.get(0)
+
+
+def get_loops_client() -> Optional[Client]:
+    """Legacy accessor — returns worker-0 Loops client."""
+    return _client_pool.get_loops(0)
 
 
 def reset_client() -> None:
-    """Force-recreate the Gradio client on next access (call after connection failures)."""
-    global gradio_client
-    logger.warning("🔄 Resetting Gradio client — will reconnect on next request")
-    gradio_client = None
+    """Reset all pooled clients (called on catastrophic connection failure)."""
+    logger.warning("🔄 Resetting all Gradio clients — will reconnect on next request")
+    _client_pool.reset_all()
 
 
 async def _keepalive_loop() -> None:
@@ -121,7 +188,7 @@ async def _keepalive_loop() -> None:
     while True:
         await asyncio.sleep(_KEEPALIVE_INTERVAL)
         try:
-            client = get_client()
+            client = _client_pool.any_client()
             await asyncio.wait_for(
                 asyncio.to_thread(client.view_api, print_info=False),
                 timeout=30.0,
@@ -130,7 +197,7 @@ async def _keepalive_loop() -> None:
             logger.debug(f"💓 Orpheus keepalive ping OK")
         except Exception as e:
             logger.warning(f"⚠️ Orpheus keepalive ping failed: {e}")
-            reset_client()
+            _client_pool.reset_all()
 
 
 _job_queue: Optional["JobQueue"] = None
@@ -400,8 +467,9 @@ class ToolCall(BaseModel):
 class GenerateResponse(BaseModel):
     success: bool
     tool_calls: List[dict]
+    notes: Optional[List[dict]] = None
     error: Optional[str] = None
-    metadata: Optional[dict] = None  # Quality metrics, policy version, etc.
+    metadata: Optional[dict] = None
 
 
 # ============================================================================
@@ -562,7 +630,7 @@ class JobQueue:
             job.status = JobStatus.RUNNING
             job.started_at = time()
             try:
-                job.result = await _do_generate(job.request)
+                job.result = await _do_generate(job.request, worker_id=worker_id)
                 job.status = JobStatus.COMPLETE
             except Exception as exc:
                 logger.error(f"❌ Worker {worker_id} job {job.id[:8]} failed: {exc}")
@@ -582,6 +650,8 @@ class JobQueue:
                     f"{icon}{_cid} Worker {worker_id} job {job.id[:8]} "
                     f"{job.status.value} in {elapsed:.1f}s"
                 )
+                if _COOLDOWN_SECONDS > 0:
+                    await asyncio.sleep(_COOLDOWN_SECONDS)
 
     async def _cleanup_loop(self) -> None:
         while True:
@@ -1808,14 +1878,31 @@ def _get_or_create_session(composition_id: Optional[str]) -> tuple[str, Composit
     return state.session_id, state
 
 
-async def _do_generate(request: GenerateRequest) -> GenerateResponse:
+async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> GenerateResponse:
     """Core GPU generation logic — called by JobQueue workers."""
     global _last_successful_gen
 
     cache_key = get_cache_key(request)
 
     try:
-        client = get_client()
+        # Fresh client per generation — the Gradio session's
+        # final_composition state is cumulative across /add_batch calls.
+        # Reusing a client would cause each instrument to see all
+        # previously accumulated MIDI content, producing identical regions.
+        _use_loops = (
+            os.environ.get("STORI_ORPHEUS_USE_LOOPS_MODEL", "").lower() in ("1", "true", "yes")
+            and request.bars <= 8
+            and not request.previous_notes
+        )
+        if _use_loops:
+            _loops = _client_pool.fresh_loops(worker_id)
+            if _loops:
+                client = _loops
+                logger.info(f"🔁 Routing to Loops model ({request.bars} bars)")
+            else:
+                client = _client_pool.fresh(worker_id)
+        else:
+            client = _client_pool.fresh(worker_id)
 
         if request.previous_notes:
             seed_path = _create_continuation_seed(
@@ -1827,6 +1914,8 @@ async def _do_generate(request: GenerateRequest) -> GenerateResponse:
                 f"previous notes"
             )
         else:
+            # MVP: always use minimal programmatic seed so Orpheus
+            # generates cleanly for the requested instrument(s) only.
             seed_path = create_seed_midi(
                 request.tempo, request.genre,
                 key=request.key, instruments=request.instruments,
@@ -1845,44 +1934,18 @@ async def _do_generate(request: GenerateRequest) -> GenerateResponse:
                 f"falling back to {orpheus_instruments}"
             )
 
-        musical_goals = request.musical_goals or []
-        if request.style_hints:
-            musical_goals = list(set(musical_goals + request.style_hints))
+        temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
+        top_p = request.top_p if request.top_p is not None else DEFAULT_TOP_P
 
-        controls = intent_to_controls(
-            genre=request.genre,
-            tempo=request.tempo,
-            musical_goals=musical_goals,
-            tone_brightness=request.tone_brightness,
-            tone_warmth=request.tone_warmth,
-            energy_intensity=request.energy_intensity,
-            energy_excitement=request.energy_excitement,
-            complexity_hint=request.complexity,
-            quality_preset=request.quality_preset,
-        )
+        num_prime_tokens, num_gen_tokens = allocate_token_budget(bars=request.bars)
 
-        orpheus_params = controls_to_orpheus_params(controls)
-
-        temperature = request.temperature if request.temperature is not None else orpheus_params["model_temperature"]
-        top_p = request.top_p if request.top_p is not None else orpheus_params["model_top_p"]
-        tokens_per_bar = orpheus_params["num_gen_tokens_per_bar"]
-
-        num_prime_tokens, num_gen_tokens = allocate_token_budget(
-            bars=request.bars,
-            tokens_per_bar=tokens_per_bar,
-            prime_from_policy=orpheus_params["num_prime_tokens"],
-        )
-
-        logger.info(f"🎵 Generating {request.genre} @ {request.tempo} BPM")
-        logger.info(f"   Goals: {musical_goals}")
-        logger.info(f"   Controls: creativity={controls.creativity:.2f}, "
-                    f"density={controls.density:.2f}, "
-                    f"complexity={controls.complexity:.2f}")
         _ctx_util = (num_prime_tokens + num_gen_tokens) / 8192 * 100
-        logger.info(f"   Orpheus: temp={temperature:.2f}, top_p={top_p:.2f}, "
-                    f"gen={num_gen_tokens} ({tokens_per_bar}/bar), "
-                    f"prime={num_prime_tokens}, ctx={_ctx_util:.0f}%")
-        logger.info(f"   Policy: {get_policy_version()}")
+        logger.info(
+            f"🎵 Generating {request.genre} @ {request.tempo} BPM | "
+            f"temp={temperature:.2f} top_p={top_p:.2f} "
+            f"prime={num_prime_tokens} gen={num_gen_tokens} "
+            f"ctx={_ctx_util:.0f}%"
+        )
 
         _predict_timeout = float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "180"))
         session_hash, comp_state = _get_or_create_session(request.composition_id)
@@ -1890,221 +1953,128 @@ async def _do_generate(request: GenerateRequest) -> GenerateResponse:
         add_drums = "drums" in [i.lower() for i in request.instruments]
         max_beat = request.bars * 4
 
-        # ── Rejection sampling: generate N candidates, pick the best ──
-        n_candidates = ORPHEUS_REJECTION_CANDIDATES if request.quality_preset == "quality" else 1
-        best_parsed: Optional[dict] = None
-        best_midi_path: Optional[str] = None
-        best_score: float = -1.0
-
-        for candidate_idx in range(n_candidates):
-            # Each candidate gets a fresh session to avoid token contamination
-            # between candidates; the winner's tokens are tracked in comp_state.
-            cand_session = session_hash if n_candidates == 1 else str(uuid.uuid4())
-            client.session_hash = cand_session
-
-            try:
-                result = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.predict,
-                        input_midi=handle_file(seed_path),
-                        prime_instruments=orpheus_instruments,
-                        num_prime_tokens=num_prime_tokens,
-                        num_gen_tokens=num_gen_tokens,
-                        model_temperature=temperature,
-                        model_top_p=top_p,
-                        add_drums=add_drums,
-                        api_name="/generate_music_and_state",
-                    ),
-                    timeout=_predict_timeout,
-                )
-            except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
-                kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
-                logger.error(
-                    f"❌ Gradio /generate_music_and_state {kind} after {_predict_timeout}s "
-                    f"(candidate {candidate_idx + 1}/{n_candidates})"
-                )
-                if best_parsed is not None:
-                    break
-                return GenerateResponse(
-                    success=False, tool_calls=[],
-                    error=f"Orpheus generation {kind} after {_predict_timeout}s",
-                )
-
-            try:
-                midi_result = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.predict, batch_number=0, api_name="/add_batch"
-                    ),
-                    timeout=_predict_timeout,
-                )
-            except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
-                kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
-                logger.error(
-                    f"❌ Gradio /add_batch {kind} (candidate {candidate_idx + 1}/{n_candidates})"
-                )
-                if best_parsed is not None:
-                    break
-                return GenerateResponse(
-                    success=False, tool_calls=[],
-                    error=f"Orpheus batch retrieval {kind} after {_predict_timeout}s",
-                )
-
-            cand_midi_path = midi_result[2]
-            cand_parsed = await asyncio.to_thread(parse_midi_to_notes, cand_midi_path, request.tempo)
-
-            for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
-                sub = cand_parsed.get(sub_key, {})
-                beat_field = "start_beat" if sub_key == "notes" else "beat"
-                for ch in list(sub):
-                    sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
-                    if not sub[ch]:
-                        del sub[ch]
-
-            # Flatten notes for scoring
-            flat_notes = []
-            for ch_notes in cand_parsed.get("notes", {}).values():
-                flat_notes.extend(ch_notes)
-
-            score = rejection_score(flat_notes, request.bars)
-
-            if n_candidates > 1:
-                logger.info(
-                    f"🎲 Candidate {candidate_idx + 1}/{n_candidates}: "
-                    f"{len(flat_notes)} notes, rejection_score={score:.3f}"
-                )
-
-            if score > best_score:
-                best_score = score
-                best_parsed = cand_parsed
-                best_midi_path = cand_midi_path
-
-        # After the rejection sampling loop, use the winning candidate
-        if best_parsed is None:
+        # ── GPU inference: generate 10 stochastic batches in one forward pass ──
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.predict,
+                    input_midi=handle_file(seed_path),
+                    apply_sustains=True,
+                    remove_duplicate_pitches=True,
+                    remove_overlapping_durations=True,
+                    prime_instruments=orpheus_instruments,
+                    num_prime_tokens=num_prime_tokens,
+                    num_gen_tokens=num_gen_tokens,
+                    model_temperature=temperature,
+                    model_top_p=top_p,
+                    add_drums=add_drums,
+                    add_outro=False,
+                    api_name="/generate_music_and_state",
+                ),
+                timeout=_predict_timeout,
+            )
+        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+            kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
+            logger.error(f"❌ Gradio /generate_music_and_state {kind} after {_predict_timeout}s")
             return GenerateResponse(
                 success=False, tool_calls=[],
-                error="All rejection sampling candidates failed",
+                error=f"Orpheus generation {kind} after {_predict_timeout}s",
             )
 
-        parsed = best_parsed
-        midi_path = best_midi_path  # type: ignore[assignment]
+        # Pick one of the 10 stochastically-generated batches at random.
+        # /add_batch is cumulative (appends to composition state), so we
+        # call it exactly once to avoid corrupting the MIDI output.
+        batch_idx = random.randint(0, 9)
+        try:
+            midi_result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.predict, batch_number=batch_idx, api_name="/add_batch"
+                ),
+                timeout=60,
+            )
+        except Exception as exc:
+            logger.error(f"❌ /add_batch({batch_idx}) failed: {exc}")
+            return GenerateResponse(
+                success=False, tool_calls=[],
+                error=f"Orpheus add_batch failed: {exc}",
+            )
 
-        if n_candidates > 1:
-            logger.info(f"🏆 Selected best candidate: rejection_score={best_score:.3f}")
+        midi_path = midi_result[2]
+        parsed = await asyncio.to_thread(parse_midi_to_notes, midi_path, request.tempo)
 
-        # Restore session to the composition's persistent session for state tracking
-        client.session_hash = session_hash
+        for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
+            sub = parsed.get(sub_key, {})
+            beat_field = "start_beat" if sub_key == "notes" else "beat"
+            for ch in list(sub):
+                sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
+                if not sub[ch]:
+                    del sub[ch]
 
-        total_note_count = sum(
-            len(notes) for notes in parsed.get("notes", {}).values()
-        )
+        # ── MVP: flatten all channels into a single camelCase note list ──
+        # No channel filtering, no generate_tool_calls overhead.
+        # The DAW already has tracks/regions; we just need the notes.
+        mvp_notes: list[dict] = []
+        for ch_notes in parsed.get("notes", {}).values():
+            for n in ch_notes:
+                mvp_notes.append({
+                    "pitch": n["pitch"],
+                    "startBeat": n["start_beat"],
+                    "durationBeats": n["duration_beats"],
+                    "velocity": n["velocity"],
+                })
+
         all_channels = set(parsed.get("notes", {}).keys())
+        pitches = [n["pitch"] for n in mvp_notes] if mvp_notes else []
+        logger.info(
+            f"🎲 Batch {batch_idx}/10: {len(mvp_notes)} notes, "
+            f"channels={sorted(all_channels)}, "
+            f"pitch=[{min(pitches) if pitches else 0}-{max(pitches) if pitches else 0}]"
+        )
 
-        if ORPHEUS_PRESERVE_ALL_CHANNELS:
-            logger.info(
-                f"🎛️ Preserving all {len(all_channels)} generated channels "
-                f"({total_note_count} notes) — DAW handles instrument routing"
+        if not mvp_notes:
+            return GenerateResponse(
+                success=False, tool_calls=[],
+                error="Orpheus batch produced zero usable notes",
             )
-        else:
-            parsed = filter_channels_for_instruments(parsed, request.instruments)
-            post_filter_count = sum(
-                len(notes) for notes in parsed.get("notes", {}).values()
-            )
-            if total_note_count > 0 and post_filter_count == 0:
-                logger.error(
-                    f"❌ Channel filtering removed all {total_note_count} notes! "
-                    f"Requested instruments={request.instruments}, "
-                    f"available channels={sorted(all_channels)}"
-                )
-                return GenerateResponse(
-                    success=False,
-                    tool_calls=[],
-                    error=(
-                        f"Orpheus generated {total_note_count} notes on "
-                        f"channels {sorted(all_channels)}, but channel "
-                        f"filtering for instruments={request.instruments} "
-                        f"removed all of them."
-                    ),
-                )
-            total_note_count = post_filter_count
 
-        tool_calls = generate_tool_calls(parsed, request.tempo, request.instruments)
+        score = rejection_score(
+            [{"pitch": n["pitch"], "start_beat": n["startBeat"],
+              "duration_beats": n["durationBeats"], "velocity": n["velocity"]}
+             for n in mvp_notes],
+            request.bars,
+        )
 
-        all_notes = []
-        cc_count = 0
-        pb_count = 0
-        at_count = 0
-        for tool_call in tool_calls:
-            t = tool_call.get("tool", "")
-            if t == "addNotes":
-                all_notes.extend(tool_call.get("params", {}).get("notes", []))
-            elif t == "addMidiCC":
-                cc_count += len(tool_call.get("params", {}).get("events", []))
-            elif t == "addPitchBend":
-                pb_count += len(tool_call.get("params", {}).get("events", []))
-            elif t == "addAftertouch":
-                at_count += len(tool_call.get("params", {}).get("events", []))
-
-        quality_metrics = analyze_quality(all_notes, request.bars, request.tempo)
-        quality_metrics["cc_events"] = cc_count
-        quality_metrics["pitch_bend_events"] = pb_count
-        quality_metrics["aftertouch_events"] = at_count
-
-        # ── Update composition session state ──
         comp_state.last_token_estimate += num_gen_tokens
         comp_state.accumulated_midi_path = midi_path
 
-        # ── Deep telemetry ──
         _ctx_window = 8192
         _ctx_pct = (num_prime_tokens + num_gen_tokens) / _ctx_window * 100
-        channel_count_generated = len(all_channels)
-        note_count_generated = len(all_notes)
         logger.info(
-            f"🧠 Orpheus context usage: {num_prime_tokens + num_gen_tokens} / "
-            f"{_ctx_window} tokens ({_ctx_pct:.0f}%)"
-        )
-        logger.info(f"🎼 Channels generated: {channel_count_generated}")
-        logger.info(f"🎵 Notes generated: {note_count_generated}")
-        logger.info(
-            f"📊 Session {session_hash[:8]}: "
-            f"accumulated={comp_state.last_token_estimate} tokens, "
-            f"call #{comp_state.call_count}"
+            f"✅ MVP: {len(mvp_notes)} notes, score={score:.3f}, "
+            f"ctx={_ctx_pct:.0f}%, batch={batch_idx}"
         )
 
         response_data = {
             "success": True,
-            "tool_calls": tool_calls,
+            "tool_calls": [],
+            "notes": mvp_notes,
             "error": None,
             "metadata": {
                 "policy_version": get_policy_version(),
-                "quality_metrics": quality_metrics,
-                "controls_used": {
-                    "creativity": controls.creativity,
-                    "density": controls.density,
-                    "complexity": controls.complexity,
+                "params_used": {
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "prime_tokens": num_prime_tokens,
+                    "gen_tokens": num_gen_tokens,
                 },
                 "cache_hit": False,
-                "telemetry": {
-                    "prime_token_count": num_prime_tokens,
-                    "gen_token_count": num_gen_tokens,
-                    "context_utilization_pct": round(_ctx_pct, 1),
-                    "channel_count_generated": channel_count_generated,
-                    "note_count_generated": note_count_generated,
-                    "session_token_total": comp_state.last_token_estimate,
-                    "session_call_count": comp_state.call_count,
-                },
-            }
+                "note_count": len(mvp_notes),
+                "rejection_score": round(score, 3),
+            },
         }
 
-        if tool_calls:
-            cache_result(cache_key, response_data, key_data=_cache_key_data(request))
-        else:
-            logger.warning(f"⚠️ Skipping cache for {cache_key} — 0 notes generated")
+        cache_result(cache_key, response_data, key_data=_cache_key_data(request))
         _last_successful_gen = time()
-
-        logger.info(
-            f"✅ Generated {len(tool_calls)} tool calls, "
-            f"quality_score={quality_metrics.get('quality_score', 0):.2f}"
-        )
 
         return GenerateResponse(**response_data)
 
@@ -2113,8 +2083,13 @@ async def _do_generate(request: GenerateRequest) -> GenerateResponse:
         logger.error(f"❌ Generation failed: {err_msg}")
         logger.debug(f"❌ Traceback:\n{traceback.format_exc()}")
         _err_str = err_msg.lower()
-        if any(kw in _err_str for kw in ("connection", "refused", "reset", "eof", "broken pipe")):
-            reset_client()
+        _is_transient = any(kw in _err_str for kw in (
+            "connection", "refused", "reset", "eof", "broken pipe",
+            "upstream gradio app has raised an exception",
+        ))
+        if _is_transient:
+            _client_pool.reset(worker_id)
+            logger.info(f"🔄 Reset client for worker {worker_id} after transient error")
         return GenerateResponse(
             success=False,
             tool_calls=[],

@@ -21,7 +21,7 @@ from app.services.music_generator import get_music_generator
 
 logger = logging.getLogger(__name__)
 
-_GENERATOR_TIMEOUT = 30
+_GENERATOR_TIMEOUT = 180
 _MAX_PARALLEL_GROUPS = 5
 
 

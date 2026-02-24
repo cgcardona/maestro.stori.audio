@@ -13,7 +13,7 @@ from app.core.maestro_plan_tracker.constants import (
     _EXPRESSIVE_TOOL_NAMES,
     _GENERATOR_TOOL_NAMES,
     _MIXING_TOOL_NAMES,
-    _SETUP_TOOL_NAMES,
+    _PROJECT_SETUP_TOOL_NAMES,
     _TRACK_CREATION_NAMES,
 )
 from app.core.maestro_plan_tracker.models import _PlanStep
@@ -136,7 +136,7 @@ class _PlanTracker:
         i, n = 0, len(tool_calls)
 
         # Leading setup tools — one step per call (project-level)
-        while i < n and tool_calls[i].name in _SETUP_TOOL_NAMES:
+        while i < n and tool_calls[i].name in _PROJECT_SETUP_TOOL_NAMES:
             tc = tool_calls[i]
             if tc.name == "stori_set_tempo":
                 label = f"Set tempo to {tc.params.get('tempo', '?')} BPM"
@@ -218,8 +218,6 @@ class _PlanTracker:
                 while i < n and tool_calls[i].name in _EFFECT_TOOL_NAMES:
                     etc = tool_calls[i]
                     etc_track = etc.params.get("trackName") or etc.params.get("name", "")
-                    if etc.name == "stori_ensure_bus":
-                        break  # bus setup is project-level
                     if etc_track and etc_track.lower() != track_name.lower():
                         break
                     effect_indices.append(i)
@@ -296,54 +294,53 @@ class _PlanTracker:
                 ))
                 self._next_id += 1
 
-            # ----- Effects (track-targeted or bus setup) -----
-            elif tc.name in _EFFECT_TOOL_NAMES:
-                if tc.name == "stori_ensure_bus":
-                    bus_name = tc.params.get("name", "Bus")
-                    bus_indices = [i]
+            # ----- Bus/routing (ensure bus + sends) -----
+            elif tc.name == "stori_ensure_bus":
+                bus_name = tc.params.get("name", "Bus")
+                bus_indices = [i]
+                i += 1
+                while i < n and tool_calls[i].name == "stori_add_send":
+                    bus_indices.append(i)
                     i += 1
-                    while i < n and tool_calls[i].name == "stori_add_send":
-                        bus_indices.append(i)
-                        i += 1
-                    steps.append(_PlanStep(
-                        step_id=str(self._next_id),
-                        label=f"Set up shared {bus_name} bus",
-                        tool_name="stori_ensure_bus",
-                        tool_indices=bus_indices,
-                    ))
-                    self._next_id += 1
-                else:
-                    track_name = tc.params.get("trackName") or "Track"
-                    indices = [i]
-                    detail_parts: list[str] = []
-                    if tc.name == "stori_add_insert_effect":
-                        etype = tc.params.get("type", "")
+                steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label=f"Set up shared {bus_name} bus",
+                    tool_name="stori_ensure_bus",
+                    tool_indices=bus_indices,
+                ))
+                self._next_id += 1
+
+            # ----- Effects (track-targeted insert effects) -----
+            elif tc.name in _EFFECT_TOOL_NAMES:
+                track_name = tc.params.get("trackName") or "Track"
+                indices = [i]
+                detail_parts: list[str] = []
+                if tc.name == "stori_add_insert_effect":
+                    etype = tc.params.get("type", "")
+                    if etype:
+                        detail_parts.append(etype.title())
+                i += 1
+                while i < n and tool_calls[i].name in _EFFECT_TOOL_NAMES:
+                    etc = tool_calls[i]
+                    etc_track = etc.params.get("trackName", "")
+                    if etc_track and etc_track.lower() != track_name.lower():
+                        break
+                    indices.append(i)
+                    if etc.name == "stori_add_insert_effect":
+                        etype = etc.params.get("type", "")
                         if etype:
                             detail_parts.append(etype.title())
                     i += 1
-                    while i < n and tool_calls[i].name in _EFFECT_TOOL_NAMES:
-                        etc = tool_calls[i]
-                        if etc.name == "stori_ensure_bus":
-                            break
-                        etc_track = etc.params.get("trackName", "")
-                        if etc_track and etc_track.lower() != track_name.lower():
-                            break
-                        indices.append(i)
-                        if etc.name == "stori_add_insert_effect":
-                            etype = etc.params.get("type", "")
-                            if etype:
-                                detail_parts.append(etype.title())
-                        i += 1
-                    steps.append(_PlanStep(
-                        step_id=str(self._next_id),
-                        label=f"Add effects to {track_name}",
-                        detail=", ".join(detail_parts) if detail_parts else None,
-                        track_name=track_name,
-                        tool_name="stori_add_insert_effect",
-                        tool_indices=indices,
-                        parallel_group="instruments",
-                    ))
-                    self._next_id += 1
+                steps.append(_PlanStep(
+                    step_id=str(self._next_id),
+                    label=f"Add effects to {track_name}",
+                    detail=", ".join(detail_parts) if detail_parts else None,
+                    track_name=track_name,
+                    tool_name="stori_add_insert_effect",
+                    tool_indices=indices,
+                    parallel_group="instruments",
+                ))
+                self._next_id += 1
 
             # ----- Expressive tools (standalone) -----
             elif tc.name in _EXPRESSIVE_TOOL_NAMES:
@@ -389,6 +386,11 @@ class _PlanTracker:
                 ))
                 self._next_id += 1
                 i += 1
+
+        from app.core.maestro_editing.tool_execution import phase_for_tool
+        for step in steps:
+            if step.tool_name and not step.phase:
+                step.phase = phase_for_tool(step.tool_name)
 
         return steps
 
@@ -607,6 +609,11 @@ class _PlanTracker:
                 ))
                 self._next_id += 1
 
+        from app.core.maestro_editing.tool_execution import phase_for_tool
+        for step in self.steps:
+            if step.tool_name and not step.phase:
+                step.phase = phase_for_tool(step.tool_name)
+
     def _add_anticipatory_steps(self, store: Any) -> None:
         """For composition mode, add pending steps for tracks still needing content."""
         names_with_steps = {
@@ -625,6 +632,7 @@ class _PlanTracker:
                     label=f"Add content to {track.name}",
                     track_name=track.name,
                     tool_name="stori_add_midi_track",
+                    phase="composition",
                 ))
                 self._next_id += 1
 
@@ -643,6 +651,7 @@ class _PlanTracker:
                     **({"toolName": s.tool_name} if s.tool_name else {}),
                     **({"detail": s.detail} if s.detail else {}),
                     **({"parallelGroup": s.parallel_group} if s.parallel_group else {}),
+                    **({"phase": s.phase} if s.phase else {}),
                 }
                 for s in self.steps
             ],
@@ -700,6 +709,26 @@ class _PlanTracker:
                             ):
                                 return step
                         break
+
+        if tc_name in _GENERATOR_TOOL_NAMES:
+            gen_track = (tc_params.get("trackName") or "").lower()
+            if gen_track:
+                for step in self.steps:
+                    if (
+                        step.track_name
+                        and step.track_name.lower() == gen_track
+                        and "content" in step.label.lower()
+                        and step.status != "completed"
+                    ):
+                        return step
+                for step in self.steps:
+                    if (
+                        step.track_name
+                        and step.track_name.lower() == gen_track
+                        and step.status != "completed"
+                    ):
+                        return step
+
         if tc_name in _EFFECT_TOOL_NAMES:
             tc_track = tc_params.get("trackName", "").lower()
             if tc_track:

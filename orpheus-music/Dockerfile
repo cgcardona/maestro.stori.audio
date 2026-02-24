@@ -22,6 +22,9 @@ RUN pip install --no-cache-dir pytest pytest-cov pytest-asyncio
 # Copy all Python source (app + tests)
 COPY *.py ./
 
+# Copy pre-built seed library (curated MIDI seeds for Orpheus priming)
+COPY seed_library/ ./seed_library/
+
 # Persistent cache directory (mounted as volume)
 RUN mkdir -p /data/cache && chown -R orpheus:orpheus /data
 

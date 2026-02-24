@@ -113,7 +113,7 @@ class TestJobQueue:
         q = JobQueue(max_queue=5, max_workers=1)
         order: list[str] = []
 
-        async def _track_gen(req):
+        async def _track_gen(req, **kwargs):
             order.append(req.genre)
             await asyncio.sleep(0.01)
             return GenerateResponse(success=True, tool_calls=[])
@@ -201,7 +201,7 @@ class TestJobQueue:
         q = JobQueue(max_queue=5, max_workers=1)
         call_count = 0
 
-        async def _counting_gen(req):
+        async def _counting_gen(req, **kwargs):
             nonlocal call_count
             call_count += 1
             return GenerateResponse(success=True, tool_calls=[])

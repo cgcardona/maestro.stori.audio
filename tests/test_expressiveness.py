@@ -627,7 +627,13 @@ class TestCamelCaseNormalization:
 
 
 class TestMusicGeneratorExpressiveness:
-    """Tests for expressiveness integration in MusicGenerator._apply_expressiveness."""
+    """Tests for expressiveness integration in MusicGenerator._maybe_apply_expressiveness."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_expressiveness(self, monkeypatch):
+        """Force expressiveness on for these integration tests."""
+        from app.config import settings
+        monkeypatch.setattr(settings, "skip_expressiveness", False)
 
     def _result(self, notes=None, cc_events=None, pitch_bends=None):
         from app.services.backends.base import GenerationResult, GeneratorBackend
@@ -642,11 +648,11 @@ class TestMusicGeneratorExpressiveness:
         )
 
     def test_apply_enriches_result(self):
-        """_apply_expressiveness adds CC events to result."""
+        """_maybe_apply_expressiveness adds CC events to result."""
         result = self._result()
         from app.services.music_generator import MusicGenerator
 
-        enriched = MusicGenerator._apply_expressiveness(result, "melody", "jazz", 4)
+        enriched = MusicGenerator._maybe_apply_expressiveness(result, "melody", "jazz", 4)
         assert len(enriched.cc_events) > 0
         assert enriched.success is True
 
@@ -656,7 +662,7 @@ class TestMusicGeneratorExpressiveness:
         result = self._result(cc_events=existing_cc.copy())
         from app.services.music_generator import MusicGenerator
 
-        enriched = MusicGenerator._apply_expressiveness(result, "melody", "classical", 4)
+        enriched = MusicGenerator._maybe_apply_expressiveness(result, "melody", "classical", 4)
         assert any(e["cc"] == 7 for e in enriched.cc_events)
         assert len(enriched.cc_events) > 1
 
@@ -665,12 +671,12 @@ class TestMusicGeneratorExpressiveness:
         result = self._result()
         from app.services.music_generator import MusicGenerator
 
-        enriched = MusicGenerator._apply_expressiveness(result, "drums", "jazz", 4)
+        enriched = MusicGenerator._maybe_apply_expressiveness(result, "drums", "jazz", 4)
         assert enriched.cc_events == []
         assert enriched.pitch_bends == []
 
     def test_camel_case_notes_from_orpheus(self):
-        """Regression: Orpheus notes (camelCase) don't crash _apply_expressiveness."""
+        """Regression: Orpheus notes (camelCase) don't crash _maybe_apply_expressiveness."""
         from app.services.backends.base import GenerationResult, GeneratorBackend
         from app.services.music_generator import MusicGenerator
 
@@ -684,7 +690,7 @@ class TestMusicGeneratorExpressiveness:
             backend_used=GeneratorBackend.ORPHEUS,
             metadata={},
         )
-        enriched = MusicGenerator._apply_expressiveness(result, "bass", "trap", 4)
+        enriched = MusicGenerator._maybe_apply_expressiveness(result, "bass", "trap", 4)
         assert enriched.success is True
         assert len(enriched.notes) >= 16
 

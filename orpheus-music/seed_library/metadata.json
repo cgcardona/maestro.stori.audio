@@ -1,0 +1,3796 @@
+{
+  "version": "1.0",
+  "source": "asigalov61/Orpheus-Music-Transformer (230K Loops Dataset)",
+  "total_genres": 39,
+  "seeds_per_genre": 10,
+  "genres": {
+    "rock": [
+      {
+        "file": "seeds/rock/rock_00.mid",
+        "genre": "rock",
+        "rank": 0,
+        "title": "Rock Me",
+        "artist": "Steppenwolf",
+        "token_count": 1679,
+        "score": 0.8483,
+        "sha256": "aeac30e3b71b681c"
+      },
+      {
+        "file": "seeds/rock/rock_01.mid",
+        "genre": "rock",
+        "rank": 1,
+        "title": "Rock Me",
+        "artist": "Steppenwolf",
+        "token_count": 1671,
+        "score": 0.845,
+        "sha256": "e6e002cc21fcb598"
+      },
+      {
+        "file": "seeds/rock/rock_02.mid",
+        "genre": "rock",
+        "rank": 2,
+        "title": "Rock Me",
+        "artist": "Steppenwolf",
+        "token_count": 1675,
+        "score": 0.844,
+        "sha256": "c02fa8b4ad578088"
+      },
+      {
+        "file": "seeds/rock/rock_03.mid",
+        "genre": "rock",
+        "rank": 3,
+        "title": "A little Past Little rock",
+        "artist": "Lee Ann Womack",
+        "token_count": 1666,
+        "score": 0.828,
+        "sha256": "ee1828005a782e9d"
+      },
+      {
+        "file": "seeds/rock/rock_04.mid",
+        "genre": "rock",
+        "rank": 4,
+        "title": "Rock-Witcha",
+        "artist": "Brown Bobby",
+        "token_count": 1421,
+        "score": 0.7968,
+        "sha256": "17cb77eb188b5fe4"
+      },
+      {
+        "file": "seeds/rock/rock_05.mid",
+        "genre": "rock",
+        "rank": 5,
+        "title": "Rock-Witcha",
+        "artist": "Brown Bobby",
+        "token_count": 1487,
+        "score": 0.7872,
+        "sha256": "468d2a26d2bfdf45"
+      },
+      {
+        "file": "seeds/rock/rock_06.mid",
+        "genre": "rock",
+        "rank": 6,
+        "title": "Rock Steady",
+        "artist": "All Saints",
+        "token_count": 1485,
+        "score": 0.7757,
+        "sha256": "6ca026843f24bcd6"
+      },
+      {
+        "file": "seeds/rock/rock_07.mid",
+        "genre": "rock",
+        "rank": 7,
+        "title": "Rock Steady",
+        "artist": "All Saints",
+        "token_count": 1485,
+        "score": 0.7757,
+        "sha256": "6ca026843f24bcd6"
+      },
+      {
+        "file": "seeds/rock/rock_08.mid",
+        "genre": "rock",
+        "rank": 8,
+        "title": "Rock-Witcha",
+        "artist": "Brown Bobby",
+        "token_count": 1511,
+        "score": 0.775,
+        "sha256": "fcfe56978fec0c3e"
+      },
+      {
+        "file": "seeds/rock/rock_09.mid",
+        "genre": "rock",
+        "rank": 9,
+        "title": "Rock-Witcha",
+        "artist": "Brown Bobby",
+        "token_count": 1511,
+        "score": 0.775,
+        "sha256": "fcfe56978fec0c3e"
+      }
+    ],
+    "general": [
+      {
+        "file": "seeds/general/general_00.mid",
+        "genre": "general",
+        "rank": 0,
+        "title": "High Hopes 3 Karaoke",
+        "artist": "Pink Floyd",
+        "token_count": 1640,
+        "score": 0.928,
+        "sha256": "836475d0c2c63600"
+      },
+      {
+        "file": "seeds/general/general_01.mid",
+        "genre": "general",
+        "rank": 1,
+        "title": "High Hopes1",
+        "artist": "Pink Floyd",
+        "token_count": 1640,
+        "score": 0.928,
+        "sha256": "836475d0c2c63600"
+      },
+      {
+        "file": "seeds/general/general_02.mid",
+        "genre": "general",
+        "rank": 2,
+        "title": "High Hopes.4",
+        "artist": "Pink Floyd",
+        "token_count": 1640,
+        "score": 0.928,
+        "sha256": "836475d0c2c63600"
+      },
+      {
+        "file": "seeds/general/general_03.mid",
+        "genre": "general",
+        "rank": 3,
+        "title": "High Hopes.4",
+        "artist": "Pink Floyd",
+        "token_count": 1640,
+        "score": 0.928,
+        "sha256": "836475d0c2c63600"
+      },
+      {
+        "file": "seeds/general/general_04.mid",
+        "genre": "general",
+        "rank": 4,
+        "title": "High Hopes5",
+        "artist": "Pink Floyd",
+        "token_count": 1640,
+        "score": 0.928,
+        "sha256": "836475d0c2c63600"
+      },
+      {
+        "file": "seeds/general/general_05.mid",
+        "genre": "general",
+        "rank": 5,
+        "title": "High Hopes1",
+        "artist": "Pink Floyd",
+        "token_count": 1640,
+        "score": 0.928,
+        "sha256": "836475d0c2c63600"
+      },
+      {
+        "file": "seeds/general/general_06.mid",
+        "genre": "general",
+        "rank": 6,
+        "title": "High Hopes 3 Karaoke",
+        "artist": "Pink Floyd",
+        "token_count": 1640,
+        "score": 0.928,
+        "sha256": "836475d0c2c63600"
+      },
+      {
+        "file": "seeds/general/general_07.mid",
+        "genre": "general",
+        "rank": 7,
+        "title": "High Hopes4",
+        "artist": "Pink Floyd",
+        "token_count": 1640,
+        "score": 0.928,
+        "sha256": "836475d0c2c63600"
+      },
+      {
+        "file": "seeds/general/general_08.mid",
+        "genre": "general",
+        "rank": 8,
+        "title": "High Hopes4",
+        "artist": "Pink Floyd",
+        "token_count": 1640,
+        "score": 0.928,
+        "sha256": "836475d0c2c63600"
+      },
+      {
+        "file": "seeds/general/general_09.mid",
+        "genre": "general",
+        "rank": 9,
+        "title": "High Hopes5",
+        "artist": "Pink Floyd",
+        "token_count": 1640,
+        "score": 0.928,
+        "sha256": "836475d0c2c63600"
+      }
+    ],
+    "arabic_maqam": [
+      {
+        "file": "seeds/arabic_maqam/arabic_maqam_00.mid",
+        "genre": "arabic_maqam",
+        "rank": 0,
+        "title": "Fais Ce que Tu Voudras",
+        "artist": "Celine Dion",
+        "token_count": 1781,
+        "score": 0.875,
+        "sha256": "6c9ac91d2cc912c3"
+      },
+      {
+        "file": "seeds/arabic_maqam/arabic_maqam_01.mid",
+        "genre": "arabic_maqam",
+        "rank": 1,
+        "title": "I'm Your Baby Tonight",
+        "artist": "Whitney Houston",
+        "token_count": 1425,
+        "score": 0.8307,
+        "sha256": "f6d24e6771dcfb88"
+      },
+      {
+        "file": "seeds/arabic_maqam/arabic_maqam_02.mid",
+        "genre": "arabic_maqam",
+        "rank": 2,
+        "title": "ImYourBabyTonight",
+        "artist": "Whitney Houston",
+        "token_count": 1425,
+        "score": 0.8307,
+        "sha256": "f6d24e6771dcfb88"
+      },
+      {
+        "file": "seeds/arabic_maqam/arabic_maqam_03.mid",
+        "genre": "arabic_maqam",
+        "rank": 3,
+        "title": "I'm Your Baby Tonight",
+        "artist": "Whitney Houston",
+        "token_count": 1457,
+        "score": 0.8256,
+        "sha256": "3dc24c3ccc2279d7"
+      },
+      {
+        "file": "seeds/arabic_maqam/arabic_maqam_04.mid",
+        "genre": "arabic_maqam",
+        "rank": 4,
+        "title": "ImYourBabyTonight",
+        "artist": "Whitney Houston",
+        "token_count": 1457,
+        "score": 0.8256,
+        "sha256": "3dc24c3ccc2279d7"
+      },
+      {
+        "file": "seeds/arabic_maqam/arabic_maqam_05.mid",
+        "genre": "arabic_maqam",
+        "rank": 5,
+        "title": "I'm Your Baby Tonight",
+        "artist": "Whitney Houston",
+        "token_count": 1407,
+        "score": 0.8254,
+        "sha256": "3b2919278dc5409f"
+      },
+      {
+        "file": "seeds/arabic_maqam/arabic_maqam_06.mid",
+        "genre": "arabic_maqam",
+        "rank": 6,
+        "title": "ImYourBabyTonight",
+        "artist": "Whitney Houston",
+        "token_count": 1407,
+        "score": 0.8254,
+        "sha256": "3b2919278dc5409f"
+      },
+      {
+        "file": "seeds/arabic_maqam/arabic_maqam_07.mid",
+        "genre": "arabic_maqam",
+        "rank": 7,
+        "title": "ImYourBabyTonight",
+        "artist": "Whitney Houston",
+        "token_count": 1405,
+        "score": 0.8233,
+        "sha256": "27db784695b9a126"
+      },
+      {
+        "file": "seeds/arabic_maqam/arabic_maqam_08.mid",
+        "genre": "arabic_maqam",
+        "rank": 8,
+        "title": "I'm Your Baby Tonight",
+        "artist": "Whitney Houston",
+        "token_count": 1405,
+        "score": 0.8233,
+        "sha256": "27db784695b9a126"
+      },
+      {
+        "file": "seeds/arabic_maqam/arabic_maqam_09.mid",
+        "genre": "arabic_maqam",
+        "rank": 9,
+        "title": "Faithfully.1",
+        "artist": "Journey",
+        "token_count": 1393,
+        "score": 0.8205,
+        "sha256": "647b078214307dc4"
+      }
+    ],
+    "drum_and_bass": [
+      {
+        "file": "seeds/drum_and_bass/drum_and_bass_00.mid",
+        "genre": "drum_and_bass",
+        "rank": 0,
+        "title": "Jungle Fever XG",
+        "artist": "Techno",
+        "token_count": 1710,
+        "score": 0.8021,
+        "sha256": "9b9633c23c89d4cf"
+      },
+      {
+        "file": "seeds/drum_and_bass/drum_and_bass_01.mid",
+        "genre": "drum_and_bass",
+        "rank": 1,
+        "title": "Welcome To The Jungle 2",
+        "artist": "Guns N Roses",
+        "token_count": 1541,
+        "score": 0.7332,
+        "sha256": "080a178ddfb630e9"
+      },
+      {
+        "file": "seeds/drum_and_bass/drum_and_bass_02.mid",
+        "genre": "drum_and_bass",
+        "rank": 2,
+        "title": "Welcome To The Jungle 2",
+        "artist": "Guns N Roses",
+        "token_count": 1541,
+        "score": 0.7332,
+        "sha256": "080a178ddfb630e9"
+      },
+      {
+        "file": "seeds/drum_and_bass/drum_and_bass_03.mid",
+        "genre": "drum_and_bass",
+        "rank": 3,
+        "title": "Cafe Jungle XG",
+        "artist": "Jungle",
+        "token_count": 1364,
+        "score": 0.7094,
+        "sha256": "5e8e93244d745f33"
+      },
+      {
+        "file": "seeds/drum_and_bass/drum_and_bass_04.mid",
+        "genre": "drum_and_bass",
+        "rank": 4,
+        "title": "Jungle Fever XG",
+        "artist": "Techno",
+        "token_count": 1351,
+        "score": 0.7052,
+        "sha256": "4dca6312f1d6198b"
+      },
+      {
+        "file": "seeds/drum_and_bass/drum_and_bass_05.mid",
+        "genre": "drum_and_bass",
+        "rank": 5,
+        "title": "Cafe Jungle XG",
+        "artist": "Jungle",
+        "token_count": 1428,
+        "score": 0.7014,
+        "sha256": "f3bc8772db416a9d"
+      },
+      {
+        "file": "seeds/drum_and_bass/drum_and_bass_06.mid",
+        "genre": "drum_and_bass",
+        "rank": 6,
+        "title": "I Wanna Be Like You",
+        "artist": "The Jungle Book",
+        "token_count": 1662,
+        "score": 0.6899,
+        "sha256": "21ebfbf4e6f2c40b"
+      },
+      {
+        "file": "seeds/drum_and_bass/drum_and_bass_07.mid",
+        "genre": "drum_and_bass",
+        "rank": 7,
+        "title": "Cafe Jungle XG",
+        "artist": "Jungle",
+        "token_count": 1316,
+        "score": 0.685,
+        "sha256": "c2bb832985ee0698"
+      },
+      {
+        "file": "seeds/drum_and_bass/drum_and_bass_08.mid",
+        "genre": "drum_and_bass",
+        "rank": 8,
+        "title": "Cafe Jungle XG",
+        "artist": "Jungle",
+        "token_count": 1388,
+        "score": 0.6818,
+        "sha256": "b599aaa95f215578"
+      },
+      {
+        "file": "seeds/drum_and_bass/drum_and_bass_09.mid",
+        "genre": "drum_and_bass",
+        "rank": 9,
+        "title": "Jungleland",
+        "artist": "Bruce Springsteen",
+        "token_count": 1085,
+        "score": 0.6794,
+        "sha256": "b0dae4573d2016e4"
+      }
+    ],
+    "house": [
+      {
+        "file": "seeds/house/house_00.mid",
+        "genre": "house",
+        "rank": 0,
+        "title": "Its Cold Outside",
+        "artist": "Big House",
+        "token_count": 1483,
+        "score": 0.8286,
+        "sha256": "ddec4cb0dcec73f0"
+      },
+      {
+        "file": "seeds/house/house_01.mid",
+        "genre": "house",
+        "rank": 1,
+        "title": "Its Cold Outside",
+        "artist": "Big House",
+        "token_count": 1488,
+        "score": 0.8125,
+        "sha256": "c2240866a9cf99c4"
+      },
+      {
+        "file": "seeds/house/house_02.mid",
+        "genre": "house",
+        "rank": 2,
+        "title": "The-House-Of-The-Rising-Sun",
+        "artist": "Williams Hank",
+        "token_count": 1552,
+        "score": 0.8076,
+        "sha256": "eb327f5be7753215"
+      },
+      {
+        "file": "seeds/house/house_03.mid",
+        "genre": "house",
+        "rank": 3,
+        "title": "The-House-Of-The-Rising-Sun",
+        "artist": "Williams Hank",
+        "token_count": 1554,
+        "score": 0.8075,
+        "sha256": "978b1313804692ff"
+      },
+      {
+        "file": "seeds/house/house_04.mid",
+        "genre": "house",
+        "rank": 4,
+        "title": "The-House-Of-The-Rising-Sun",
+        "artist": "Williams Hank",
+        "token_count": 1549,
+        "score": 0.7993,
+        "sha256": "1de2bcc48b0f32f5"
+      },
+      {
+        "file": "seeds/house/house_05.mid",
+        "genre": "house",
+        "rank": 5,
+        "title": "The-House-Of-The-Rising-Sun",
+        "artist": "Williams Hank",
+        "token_count": 1549,
+        "score": 0.7993,
+        "sha256": "1de2bcc48b0f32f5"
+      },
+      {
+        "file": "seeds/house/house_06.mid",
+        "genre": "house",
+        "rank": 6,
+        "title": "The-House-Of-The-Rising-Sun",
+        "artist": "Williams Hank",
+        "token_count": 1554,
+        "score": 0.7988,
+        "sha256": "07338f1f41456a18"
+      },
+      {
+        "file": "seeds/house/house_07.mid",
+        "genre": "house",
+        "rank": 7,
+        "title": "The-House-Of-The-Rising-Sun",
+        "artist": "Williams Hank",
+        "token_count": 1554,
+        "score": 0.7988,
+        "sha256": "07338f1f41456a18"
+      },
+      {
+        "file": "seeds/house/house_08.mid",
+        "genre": "house",
+        "rank": 8,
+        "title": "Our House",
+        "artist": "Madness",
+        "token_count": 1490,
+        "score": 0.7986,
+        "sha256": "39df003e5e234c8e"
+      },
+      {
+        "file": "seeds/house/house_09.mid",
+        "genre": "house",
+        "rank": 9,
+        "title": "The-House-Of-The-Rising-Sun",
+        "artist": "Williams Hank",
+        "token_count": 1528,
+        "score": 0.7984,
+        "sha256": "9ffba439c57ce549"
+      }
+    ],
+    "reggae": [
+      {
+        "file": "seeds/reggae/reggae_00.mid",
+        "genre": "reggae",
+        "rank": 0,
+        "title": "Zori Spivayut GS",
+        "artist": "Nataliya Mogilevskaya",
+        "token_count": 1351,
+        "score": 0.8539,
+        "sha256": "567476256a0223fd"
+      },
+      {
+        "file": "seeds/reggae/reggae_01.mid",
+        "genre": "reggae",
+        "rank": 1,
+        "title": "Pacato Cidadao",
+        "artist": "Skank",
+        "token_count": 1653,
+        "score": 0.8259,
+        "sha256": "6fc3e128525b1928"
+      },
+      {
+        "file": "seeds/reggae/reggae_02.mid",
+        "genre": "reggae",
+        "rank": 2,
+        "title": "Skatey Eight GS",
+        "artist": "Virtual Sound Canvas",
+        "token_count": 1508,
+        "score": 0.8247,
+        "sha256": "c58ef56f8b24c9b2"
+      },
+      {
+        "file": "seeds/reggae/reggae_03.mid",
+        "genre": "reggae",
+        "rank": 3,
+        "title": "Eskadron 3 Karaoke",
+        "artist": "Oleg Gazmanov",
+        "token_count": 1929,
+        "score": 0.8145,
+        "sha256": "611718c919f6d0e3"
+      },
+      {
+        "file": "seeds/reggae/reggae_04.mid",
+        "genre": "reggae",
+        "rank": 4,
+        "title": "Eskadron 1",
+        "artist": "Oleg Gazmanov",
+        "token_count": 1845,
+        "score": 0.8128,
+        "sha256": "49b82e3117048add"
+      },
+      {
+        "file": "seeds/reggae/reggae_05.mid",
+        "genre": "reggae",
+        "rank": 5,
+        "title": "Eskadron 1",
+        "artist": "Oleg Gazmanov",
+        "token_count": 1845,
+        "score": 0.8128,
+        "sha256": "49b82e3117048add"
+      },
+      {
+        "file": "seeds/reggae/reggae_06.mid",
+        "genre": "reggae",
+        "rank": 6,
+        "title": "Skatey Eight GS",
+        "artist": "Virtual Sound Canvas",
+        "token_count": 1506,
+        "score": 0.8058,
+        "sha256": "462fd52c213b41f8"
+      },
+      {
+        "file": "seeds/reggae/reggae_07.mid",
+        "genre": "reggae",
+        "rank": 7,
+        "title": "Skazhi Mne Pravdu Ataman 2 GS",
+        "artist": "Tatyana Bulanova",
+        "token_count": 1657,
+        "score": 0.8011,
+        "sha256": "38934e02b0f0dfce"
+      },
+      {
+        "file": "seeds/reggae/reggae_08.mid",
+        "genre": "reggae",
+        "rank": 8,
+        "title": "Maestro Fellini",
+        "artist": "Lyubov Uspenskaya",
+        "token_count": 1657,
+        "score": 0.7951,
+        "sha256": "0989db3fc0d2b235"
+      },
+      {
+        "file": "seeds/reggae/reggae_09.mid",
+        "genre": "reggae",
+        "rank": 9,
+        "title": "Eskadron 1",
+        "artist": "Oleg Gazmanov",
+        "token_count": 1840,
+        "score": 0.7924,
+        "sha256": "a78c4a2314a601d6"
+      }
+    ],
+    "country": [
+      {
+        "file": "seeds/country/country_00.mid",
+        "genre": "country",
+        "rank": 0,
+        "title": "Israel Folk 0770",
+        "artist": "Israel Folk",
+        "token_count": 1752,
+        "score": 0.896,
+        "sha256": "e4e72d662a1fc066"
+      },
+      {
+        "file": "seeds/country/country_01.mid",
+        "genre": "country",
+        "rank": 1,
+        "title": "Israel Folk 0770",
+        "artist": "Israel Folk",
+        "token_count": 1758,
+        "score": 0.8957,
+        "sha256": "048418e66cce16e5"
+      },
+      {
+        "file": "seeds/country/country_02.mid",
+        "genre": "country",
+        "rank": 2,
+        "title": "Israel Folk 0770",
+        "artist": "Israel Folk",
+        "token_count": 1691,
+        "score": 0.8777,
+        "sha256": "d038f114402074f2"
+      },
+      {
+        "file": "seeds/country/country_03.mid",
+        "genre": "country",
+        "rank": 3,
+        "title": "Israel Folk 0770",
+        "artist": "Israel Folk",
+        "token_count": 1750,
+        "score": 0.8742,
+        "sha256": "3e5de14f96b76a8b"
+      },
+      {
+        "file": "seeds/country/country_04.mid",
+        "genre": "country",
+        "rank": 4,
+        "title": "Israel Folk 0512",
+        "artist": "Israel Folk",
+        "token_count": 1363,
+        "score": 0.8639,
+        "sha256": "0f5e70552c52d412"
+      },
+      {
+        "file": "seeds/country/country_05.mid",
+        "genre": "country",
+        "rank": 5,
+        "title": "Israel Folk 0770",
+        "artist": "Israel Folk",
+        "token_count": 1734,
+        "score": 0.8604,
+        "sha256": "10bac262dc28e68e"
+      },
+      {
+        "file": "seeds/country/country_06.mid",
+        "genre": "country",
+        "rank": 6,
+        "title": "Israel Folk 0770",
+        "artist": "Israel Folk",
+        "token_count": 1758,
+        "score": 0.8545,
+        "sha256": "3b7d55452ad9c402"
+      },
+      {
+        "file": "seeds/country/country_07.mid",
+        "genre": "country",
+        "rank": 7,
+        "title": "Israel Folk 0770",
+        "artist": "Israel Folk",
+        "token_count": 1758,
+        "score": 0.8545,
+        "sha256": "3b7d55452ad9c402"
+      },
+      {
+        "file": "seeds/country/country_08.mid",
+        "genre": "country",
+        "rank": 8,
+        "title": "Israel Folk 0770",
+        "artist": "Israel Folk",
+        "token_count": 1758,
+        "score": 0.8545,
+        "sha256": "3b7d55452ad9c402"
+      },
+      {
+        "file": "seeds/country/country_09.mid",
+        "genre": "country",
+        "rank": 9,
+        "title": "Israel Folk 0003",
+        "artist": "Israel Folk",
+        "token_count": 1669,
+        "score": 0.8465,
+        "sha256": "d015b54da496e955"
+      }
+    ],
+    "classical": [
+      {
+        "file": "seeds/classical/classical_00.mid",
+        "genre": "classical",
+        "rank": 0,
+        "title": "Romantica",
+        "artist": "Dallara",
+        "token_count": 1519,
+        "score": 0.7951,
+        "sha256": "3e12f86f81a7ffb2"
+      },
+      {
+        "file": "seeds/classical/classical_01.mid",
+        "genre": "classical",
+        "rank": 1,
+        "title": "Romantica",
+        "artist": "Dallara",
+        "token_count": 1526,
+        "score": 0.7894,
+        "sha256": "666e89434d0db0cc"
+      },
+      {
+        "file": "seeds/classical/classical_02.mid",
+        "genre": "classical",
+        "rank": 2,
+        "title": "Romantica.1",
+        "artist": "Dallara",
+        "token_count": 1578,
+        "score": 0.7806,
+        "sha256": "60ed0d91746f65f6"
+      },
+      {
+        "file": "seeds/classical/classical_03.mid",
+        "genre": "classical",
+        "rank": 3,
+        "title": "Romantica",
+        "artist": "Dallara",
+        "token_count": 1363,
+        "score": 0.7516,
+        "sha256": "9d9cb7406d6e9d7e"
+      },
+      {
+        "file": "seeds/classical/classical_04.mid",
+        "genre": "classical",
+        "rank": 4,
+        "title": "Romantica",
+        "artist": "Dallara",
+        "token_count": 1331,
+        "score": 0.7412,
+        "sha256": "61de65e45b8be40d"
+      },
+      {
+        "file": "seeds/classical/classical_05.mid",
+        "genre": "classical",
+        "rank": 5,
+        "title": "Romantica",
+        "artist": "Dallara",
+        "token_count": 1331,
+        "score": 0.7412,
+        "sha256": "61de65e45b8be40d"
+      },
+      {
+        "file": "seeds/classical/classical_06.mid",
+        "genre": "classical",
+        "rank": 6,
+        "title": "Romantica",
+        "artist": "Dallara",
+        "token_count": 1331,
+        "score": 0.7412,
+        "sha256": "61de65e45b8be40d"
+      },
+      {
+        "file": "seeds/classical/classical_07.mid",
+        "genre": "classical",
+        "rank": 7,
+        "title": "Bitter Sweet Symphony 1",
+        "artist": "Verve",
+        "token_count": 1399,
+        "score": 0.7275,
+        "sha256": "7897defd39f0048e"
+      },
+      {
+        "file": "seeds/classical/classical_08.mid",
+        "genre": "classical",
+        "rank": 8,
+        "title": "Bittersweet Symphony",
+        "artist": "The Verve",
+        "token_count": 1399,
+        "score": 0.7275,
+        "sha256": "7897defd39f0048e"
+      },
+      {
+        "file": "seeds/classical/classical_09.mid",
+        "genre": "classical",
+        "rank": 9,
+        "title": "Bitter Sweet Symphony 2 XG",
+        "artist": "Verve",
+        "token_count": 1352,
+        "score": 0.719,
+        "sha256": "e318e83db903e4e3"
+      }
+    ],
+    "funk": [
+      {
+        "file": "seeds/funk/funk_00.mid",
+        "genre": "funk",
+        "rank": 0,
+        "title": "Your Disco Needs You  Euro Mix",
+        "artist": "Kylie Minogue",
+        "token_count": 1521,
+        "score": 0.8475,
+        "sha256": "e72eaffffa0e2a5e"
+      },
+      {
+        "file": "seeds/funk/funk_01.mid",
+        "genre": "funk",
+        "rank": 1,
+        "title": "Smokin XG",
+        "artist": "Funky",
+        "token_count": 1613,
+        "score": 0.8382,
+        "sha256": "4b7b8b19a705fd26"
+      },
+      {
+        "file": "seeds/funk/funk_02.mid",
+        "genre": "funk",
+        "rank": 2,
+        "title": "Too Funky",
+        "artist": "Michael George",
+        "token_count": 1646,
+        "score": 0.8191,
+        "sha256": "df01001fd2bb21f6"
+      },
+      {
+        "file": "seeds/funk/funk_03.mid",
+        "genre": "funk",
+        "rank": 3,
+        "title": "Too-Funky-1",
+        "artist": "Michael George",
+        "token_count": 1646,
+        "score": 0.8191,
+        "sha256": "df01001fd2bb21f6"
+      },
+      {
+        "file": "seeds/funk/funk_04.mid",
+        "genre": "funk",
+        "rank": 4,
+        "title": "One Room Disco",
+        "artist": "Perfume",
+        "token_count": 1666,
+        "score": 0.8177,
+        "sha256": "68a11a3c1c7244a9"
+      },
+      {
+        "file": "seeds/funk/funk_05.mid",
+        "genre": "funk",
+        "rank": 5,
+        "title": "Too Funky",
+        "artist": "Michael George",
+        "token_count": 1655,
+        "score": 0.8171,
+        "sha256": "3ca4d0bf92b55302"
+      },
+      {
+        "file": "seeds/funk/funk_06.mid",
+        "genre": "funk",
+        "rank": 6,
+        "title": "Too-Funky-1",
+        "artist": "Michael George",
+        "token_count": 1655,
+        "score": 0.8171,
+        "sha256": "3ca4d0bf92b55302"
+      },
+      {
+        "file": "seeds/funk/funk_07.mid",
+        "genre": "funk",
+        "rank": 7,
+        "title": "Funky Stuff",
+        "artist": "Kool & The Gang",
+        "token_count": 1720,
+        "score": 0.8163,
+        "sha256": "d64125f464367b24"
+      },
+      {
+        "file": "seeds/funk/funk_08.mid",
+        "genre": "funk",
+        "rank": 8,
+        "title": "Funky Stuff",
+        "artist": "Kool  The Gang",
+        "token_count": 1720,
+        "score": 0.8163,
+        "sha256": "d64125f464367b24"
+      },
+      {
+        "file": "seeds/funk/funk_09.mid",
+        "genre": "funk",
+        "rank": 9,
+        "title": "Scarborough Fair 1 Karaoke",
+        "artist": "Simon  Garfunkel",
+        "token_count": 1732,
+        "score": 0.8157,
+        "sha256": "acbf7d891a881bcf"
+      }
+    ],
+    "cinematic": [
+      {
+        "file": "seeds/cinematic/cinematic_00.mid",
+        "genre": "cinematic",
+        "rank": 0,
+        "title": "Epic XG",
+        "artist": "Richard Dudeney",
+        "token_count": 1629,
+        "score": 0.8947,
+        "sha256": "6e78e4cdb9195d9a"
+      },
+      {
+        "file": "seeds/cinematic/cinematic_01.mid",
+        "genre": "cinematic",
+        "rank": 1,
+        "title": "indianajones",
+        "artist": "FilmTv divers",
+        "token_count": 1787,
+        "score": 0.8704,
+        "sha256": "19123d00baf07a5f"
+      },
+      {
+        "file": "seeds/cinematic/cinematic_02.mid",
+        "genre": "cinematic",
+        "rank": 2,
+        "title": "OAVEND1",
+        "artist": "FilmTv divers",
+        "token_count": 1579,
+        "score": 0.8038,
+        "sha256": "52db9a11d1a027ed"
+      },
+      {
+        "file": "seeds/cinematic/cinematic_03.mid",
+        "genre": "cinematic",
+        "rank": 3,
+        "title": "Golubka Iz Filma Gardemarinyi 2 XG",
+        "artist": "Mihail Boyarskiy",
+        "token_count": 1574,
+        "score": 0.8018,
+        "sha256": "ff5ad3117088e710"
+      },
+      {
+        "file": "seeds/cinematic/cinematic_04.mid",
+        "genre": "cinematic",
+        "rank": 4,
+        "title": "indianajones",
+        "artist": "FilmTv divers",
+        "token_count": 1485,
+        "score": 0.7903,
+        "sha256": "3469d4ed1125db04"
+      },
+      {
+        "file": "seeds/cinematic/cinematic_05.mid",
+        "genre": "cinematic",
+        "rank": 5,
+        "title": "GILLIGAN",
+        "artist": "FilmTv divers",
+        "token_count": 1503,
+        "score": 0.7785,
+        "sha256": "c2f981cf504f0c68"
+      },
+      {
+        "file": "seeds/cinematic/cinematic_06.mid",
+        "genre": "cinematic",
+        "rank": 6,
+        "title": "Never Ending Story 2009 Remaster From the Film Never Ending Story",
+        "artist": "Limahl",
+        "token_count": 1373,
+        "score": 0.7783,
+        "sha256": "3f21a69d550622fe"
+      },
+      {
+        "file": "seeds/cinematic/cinematic_07.mid",
+        "genre": "cinematic",
+        "rank": 7,
+        "title": "Never Ending Story (2009 Remaster) (From the Film ''Never Ending Story'')",
+        "artist": "Limahl",
+        "token_count": 1373,
+        "score": 0.7783,
+        "sha256": "3f21a69d550622fe"
+      },
+      {
+        "file": "seeds/cinematic/cinematic_08.mid",
+        "genre": "cinematic",
+        "rank": 8,
+        "title": "Pushinka Belaya Iz Filma Vesna S Severa Nevesta S Severa 1 Karaoke",
+        "artist": "Valentina Tolkunova",
+        "token_count": 1345,
+        "score": 0.7755,
+        "sha256": "33b1fc857f65cdaa"
+      },
+      {
+        "file": "seeds/cinematic/cinematic_09.mid",
+        "genre": "cinematic",
+        "rank": 9,
+        "title": "Pushinka Belaya Iz Filma Vesna S Severa Nevesta S Severa 2",
+        "artist": "Valentina Tolkunova",
+        "token_count": 1345,
+        "score": 0.7744,
+        "sha256": "d81ddc450729f1cb"
+      }
+    ],
+    "techno": [
+      {
+        "file": "seeds/techno/techno_00.mid",
+        "genre": "techno",
+        "rank": 0,
+        "title": "D-Gottogetit",
+        "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
+        "token_count": 1565,
+        "score": 0.801,
+        "sha256": "5db076574264d4c6"
+      },
+      {
+        "file": "seeds/techno/techno_01.mid",
+        "genre": "techno",
+        "rank": 1,
+        "title": "D-Think Of You Karaoke",
+        "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
+        "token_count": 1556,
+        "score": 0.773,
+        "sha256": "b729c45a437ad941"
+      },
+      {
+        "file": "seeds/techno/techno_02.mid",
+        "genre": "techno",
+        "rank": 2,
+        "title": "D-Dontcryformeargentina",
+        "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
+        "token_count": 1606,
+        "score": 0.7648,
+        "sha256": "7382b3b5df0383de"
+      },
+      {
+        "file": "seeds/techno/techno_03.mid",
+        "genre": "techno",
+        "rank": 3,
+        "title": "D-Youmakemefeelgood",
+        "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
+        "token_count": 1565,
+        "score": 0.7642,
+        "sha256": "ae49c641b771bdeb"
+      },
+      {
+        "file": "seeds/techno/techno_04.mid",
+        "genre": "techno",
+        "rank": 4,
+        "title": "D-Dontcryformeargentina",
+        "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
+        "token_count": 1659,
+        "score": 0.7628,
+        "sha256": "81c35db1abb8d063"
+      },
+      {
+        "file": "seeds/techno/techno_05.mid",
+        "genre": "techno",
+        "rank": 5,
+        "title": "D-Youmakemefeelgood",
+        "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
+        "token_count": 1566,
+        "score": 0.7522,
+        "sha256": "a1f8e0208f8b708a"
+      },
+      {
+        "file": "seeds/techno/techno_06.mid",
+        "genre": "techno",
+        "rank": 6,
+        "title": "D-Gottogetit",
+        "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
+        "token_count": 1652,
+        "score": 0.7519,
+        "sha256": "cafafbd4f1e90339"
+      },
+      {
+        "file": "seeds/techno/techno_07.mid",
+        "genre": "techno",
+        "rank": 7,
+        "title": "Move This1",
+        "artist": "Technotronic",
+        "token_count": 1638,
+        "score": 0.7478,
+        "sha256": "506c4519f2dac50c"
+      },
+      {
+        "file": "seeds/techno/techno_08.mid",
+        "genre": "techno",
+        "rank": 8,
+        "title": "D-Gottogetit",
+        "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
+        "token_count": 1647,
+        "score": 0.7474,
+        "sha256": "5ae023f4cf47bec7"
+      },
+      {
+        "file": "seeds/techno/techno_09.mid",
+        "genre": "techno",
+        "rank": 9,
+        "title": "D-Life",
+        "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
+        "token_count": 1568,
+        "score": 0.7474,
+        "sha256": "8ee488874391d97b"
+      }
+    ],
+    "hip_hop": [
+      {
+        "file": "seeds/hip_hop/hip_hop_00.mid",
+        "genre": "hip_hop",
+        "rank": 0,
+        "title": "Serenata Rap2",
+        "artist": "Jovanotti",
+        "token_count": 1858,
+        "score": 0.8395,
+        "sha256": "be0323609723be10"
+      },
+      {
+        "file": "seeds/hip_hop/hip_hop_01.mid",
+        "genre": "hip_hop",
+        "rank": 1,
+        "title": "Serenata Rap.2",
+        "artist": "Jovanotti",
+        "token_count": 1858,
+        "score": 0.8395,
+        "sha256": "be0323609723be10"
+      },
+      {
+        "file": "seeds/hip_hop/hip_hop_02.mid",
+        "genre": "hip_hop",
+        "rank": 2,
+        "title": "Serenata Rap3",
+        "artist": "Jovanotti",
+        "token_count": 1855,
+        "score": 0.8308,
+        "sha256": "0dd7593627cf53f2"
+      },
+      {
+        "file": "seeds/hip_hop/hip_hop_03.mid",
+        "genre": "hip_hop",
+        "rank": 3,
+        "title": "Serenata Rap.2",
+        "artist": "Jovanotti",
+        "token_count": 1746,
+        "score": 0.814,
+        "sha256": "91ce9882d10a01c8"
+      },
+      {
+        "file": "seeds/hip_hop/hip_hop_04.mid",
+        "genre": "hip_hop",
+        "rank": 4,
+        "title": "Serenata Rap.2",
+        "artist": "Jovanotti",
+        "token_count": 1746,
+        "score": 0.814,
+        "sha256": "91ce9882d10a01c8"
+      },
+      {
+        "file": "seeds/hip_hop/hip_hop_05.mid",
+        "genre": "hip_hop",
+        "rank": 5,
+        "title": "Serenata Rap.2",
+        "artist": "Jovanotti",
+        "token_count": 1746,
+        "score": 0.814,
+        "sha256": "91ce9882d10a01c8"
+      },
+      {
+        "file": "seeds/hip_hop/hip_hop_06.mid",
+        "genre": "hip_hop",
+        "rank": 6,
+        "title": "Serenata Rap.3",
+        "artist": "Jovanotti",
+        "token_count": 1743,
+        "score": 0.8133,
+        "sha256": "700744422d327a35"
+      },
+      {
+        "file": "seeds/hip_hop/hip_hop_07.mid",
+        "genre": "hip_hop",
+        "rank": 7,
+        "title": "Serenata Rap.3",
+        "artist": "Jovanotti",
+        "token_count": 1743,
+        "score": 0.8133,
+        "sha256": "700744422d327a35"
+      },
+      {
+        "file": "seeds/hip_hop/hip_hop_08.mid",
+        "genre": "hip_hop",
+        "rank": 8,
+        "title": "Serenata Rap.3",
+        "artist": "Jovanotti",
+        "token_count": 1743,
+        "score": 0.8133,
+        "sha256": "700744422d327a35"
+      },
+      {
+        "file": "seeds/hip_hop/hip_hop_09.mid",
+        "genre": "hip_hop",
+        "rank": 9,
+        "title": "Serenata Rap.3",
+        "artist": "Jovanotti",
+        "token_count": 1687,
+        "score": 0.8123,
+        "sha256": "b4b7520c52f03ba4"
+      }
+    ],
+    "jazz": [
+      {
+        "file": "seeds/jazz/jazz_00.mid",
+        "genre": "jazz",
+        "rank": 0,
+        "title": "Nicen Jazz",
+        "artist": "VanBasco Karaoke Player",
+        "token_count": 1566,
+        "score": 0.8532,
+        "sha256": "948e3f5b3c1518a0"
+      },
+      {
+        "file": "seeds/jazz/jazz_01.mid",
+        "genre": "jazz",
+        "rank": 1,
+        "title": "Nicen Jazz",
+        "artist": "VanBasco Karaoke Player",
+        "token_count": 1569,
+        "score": 0.838,
+        "sha256": "dd4c06f98f57c9a0"
+      },
+      {
+        "file": "seeds/jazz/jazz_02.mid",
+        "genre": "jazz",
+        "rank": 2,
+        "title": "Nicen Jazz",
+        "artist": "VanBasco Karaoke Player",
+        "token_count": 1557,
+        "score": 0.8231,
+        "sha256": "4bcfbd0508502c76"
+      },
+      {
+        "file": "seeds/jazz/jazz_03.mid",
+        "genre": "jazz",
+        "rank": 3,
+        "title": "Scarborough-Fair",
+        "artist": "Jazz Standards suite",
+        "token_count": 1714,
+        "score": 0.8034,
+        "sha256": "5cfb5a2e5f55726f"
+      },
+      {
+        "file": "seeds/jazz/jazz_04.mid",
+        "genre": "jazz",
+        "rank": 4,
+        "title": "Scarborough-Fair",
+        "artist": "Jazz Standards suite",
+        "token_count": 1714,
+        "score": 0.8034,
+        "sha256": "5cfb5a2e5f55726f"
+      },
+      {
+        "file": "seeds/jazz/jazz_05.mid",
+        "genre": "jazz",
+        "rank": 5,
+        "title": "Nicen Jazz",
+        "artist": "VanBasco Karaoke Player",
+        "token_count": 1610,
+        "score": 0.8025,
+        "sha256": "ee1722aa4a71a95c"
+      },
+      {
+        "file": "seeds/jazz/jazz_06.mid",
+        "genre": "jazz",
+        "rank": 6,
+        "title": "Come-All-Ye-Faithful",
+        "artist": "Jazz Rock",
+        "token_count": 1585,
+        "score": 0.7982,
+        "sha256": "1d75e97c42910f60"
+      },
+      {
+        "file": "seeds/jazz/jazz_07.mid",
+        "genre": "jazz",
+        "rank": 7,
+        "title": "Nicen Jazz",
+        "artist": "VanBasco Karaoke Player",
+        "token_count": 1617,
+        "score": 0.7953,
+        "sha256": "9f53b71e8b765c2e"
+      },
+      {
+        "file": "seeds/jazz/jazz_08.mid",
+        "genre": "jazz",
+        "rank": 8,
+        "title": "Somewhere-Over-The-Rainbow-2",
+        "artist": "Jazz Standards suite",
+        "token_count": 1496,
+        "score": 0.7879,
+        "sha256": "5dd7d166200a086b"
+      },
+      {
+        "file": "seeds/jazz/jazz_09.mid",
+        "genre": "jazz",
+        "rank": 9,
+        "title": "St-Thomas",
+        "artist": "Jazz Standards suite",
+        "token_count": 1610,
+        "score": 0.7845,
+        "sha256": "e362c78674f43bfa"
+      }
+    ],
+    "blues": [
+      {
+        "file": "seeds/blues/blues_00.mid",
+        "genre": "blues",
+        "rank": 0,
+        "title": "Bell Bottom Blues",
+        "artist": "Eric Clapton",
+        "token_count": 1744,
+        "score": 0.8062,
+        "sha256": "11f47150db1a8b52"
+      },
+      {
+        "file": "seeds/blues/blues_01.mid",
+        "genre": "blues",
+        "rank": 1,
+        "title": "Bell Bottom Blues",
+        "artist": "Eric Clapton",
+        "token_count": 1683,
+        "score": 0.8037,
+        "sha256": "66d098f1da026e58"
+      },
+      {
+        "file": "seeds/blues/blues_02.mid",
+        "genre": "blues",
+        "rank": 2,
+        "title": "Bell Bottom Blues",
+        "artist": "Eric Clapton",
+        "token_count": 1683,
+        "score": 0.8037,
+        "sha256": "66d098f1da026e58"
+      },
+      {
+        "file": "seeds/blues/blues_03.mid",
+        "genre": "blues",
+        "rank": 3,
+        "title": "Moody-Blues",
+        "artist": "Moody Blues The",
+        "token_count": 1495,
+        "score": 0.7957,
+        "sha256": "4e10867d90a4d33d"
+      },
+      {
+        "file": "seeds/blues/blues_04.mid",
+        "genre": "blues",
+        "rank": 4,
+        "title": "Moody-Blues",
+        "artist": "Moody Blues The",
+        "token_count": 1499,
+        "score": 0.7925,
+        "sha256": "ebf34f2425e02813"
+      },
+      {
+        "file": "seeds/blues/blues_05.mid",
+        "genre": "blues",
+        "rank": 5,
+        "title": "Im Just a Singer In a Rock and Roll Band",
+        "artist": "The Moody Blues",
+        "token_count": 1499,
+        "score": 0.7885,
+        "sha256": "aae5ce35f6aaf577"
+      },
+      {
+        "file": "seeds/blues/blues_06.mid",
+        "genre": "blues",
+        "rank": 6,
+        "title": "Im Just a Singer In a Rock and Roll Band",
+        "artist": "The Moody Blues",
+        "token_count": 1499,
+        "score": 0.7885,
+        "sha256": "aae5ce35f6aaf577"
+      },
+      {
+        "file": "seeds/blues/blues_07.mid",
+        "genre": "blues",
+        "rank": 7,
+        "title": "Im Just a Singer In a Rock and Roll Band",
+        "artist": "The Moody Blues",
+        "token_count": 1499,
+        "score": 0.7885,
+        "sha256": "aae5ce35f6aaf577"
+      },
+      {
+        "file": "seeds/blues/blues_08.mid",
+        "genre": "blues",
+        "rank": 8,
+        "title": "I'm Just a Singer (In a Rock and Roll Band)",
+        "artist": "The Moody Blues",
+        "token_count": 1499,
+        "score": 0.7885,
+        "sha256": "aae5ce35f6aaf577"
+      },
+      {
+        "file": "seeds/blues/blues_09.mid",
+        "genre": "blues",
+        "rank": 9,
+        "title": "I'm Just a Singer (In a Rock and Roll Band)",
+        "artist": "The Moody Blues",
+        "token_count": 1499,
+        "score": 0.7885,
+        "sha256": "aae5ce35f6aaf577"
+      }
+    ],
+    "neo_soul": [
+      {
+        "file": "seeds/neo_soul/neo_soul_00.mid",
+        "genre": "neo_soul",
+        "rank": 0,
+        "title": "Heart And Soul",
+        "artist": "Michael Bolton",
+        "token_count": 1616,
+        "score": 0.8024,
+        "sha256": "080a472bbbfe0c80"
+      },
+      {
+        "file": "seeds/neo_soul/neo_soul_01.mid",
+        "genre": "neo_soul",
+        "rank": 1,
+        "title": "Nao Vou Calar Meus Labios Karaoke",
+        "artist": "Gospel",
+        "token_count": 1624,
+        "score": 0.8008,
+        "sha256": "fd7f30278fc8b404"
+      },
+      {
+        "file": "seeds/neo_soul/neo_soul_02.mid",
+        "genre": "neo_soul",
+        "rank": 2,
+        "title": "AD Soul XG",
+        "artist": "Alex Volkov",
+        "token_count": 1624,
+        "score": 0.7985,
+        "sha256": "a74b09e2fb61494a"
+      },
+      {
+        "file": "seeds/neo_soul/neo_soul_03.mid",
+        "genre": "neo_soul",
+        "rank": 3,
+        "title": "Heart And Soul",
+        "artist": "Michael Bolton",
+        "token_count": 1555,
+        "score": 0.7976,
+        "sha256": "091666d94a8fb31d"
+      },
+      {
+        "file": "seeds/neo_soul/neo_soul_04.mid",
+        "genre": "neo_soul",
+        "rank": 4,
+        "title": "Soul Love",
+        "artist": "David Bowie",
+        "token_count": 1686,
+        "score": 0.7963,
+        "sha256": "004be4e44a286b49"
+      },
+      {
+        "file": "seeds/neo_soul/neo_soul_05.mid",
+        "genre": "neo_soul",
+        "rank": 5,
+        "title": "Heart And Soul",
+        "artist": "Michael Bolton",
+        "token_count": 1647,
+        "score": 0.7957,
+        "sha256": "74898b706e9d9375"
+      },
+      {
+        "file": "seeds/neo_soul/neo_soul_06.mid",
+        "genre": "neo_soul",
+        "rank": 6,
+        "title": "Heart And Soul",
+        "artist": "Michael Bolton",
+        "token_count": 1647,
+        "score": 0.7957,
+        "sha256": "74898b706e9d9375"
+      },
+      {
+        "file": "seeds/neo_soul/neo_soul_07.mid",
+        "genre": "neo_soul",
+        "rank": 7,
+        "title": "Heart And Soul",
+        "artist": "Michael Bolton",
+        "token_count": 1647,
+        "score": 0.7957,
+        "sha256": "74898b706e9d9375"
+      },
+      {
+        "file": "seeds/neo_soul/neo_soul_08.mid",
+        "genre": "neo_soul",
+        "rank": 8,
+        "title": "Heart And Soul",
+        "artist": "Michael Bolton",
+        "token_count": 1647,
+        "score": 0.7957,
+        "sha256": "74898b706e9d9375"
+      },
+      {
+        "file": "seeds/neo_soul/neo_soul_09.mid",
+        "genre": "neo_soul",
+        "rank": 9,
+        "title": "Heart And Soul",
+        "artist": "Michael Bolton",
+        "token_count": 1547,
+        "score": 0.7942,
+        "sha256": "f94669d4bb3ed31b"
+      }
+    ],
+    "celtic": [
+      {
+        "file": "seeds/celtic/celtic_00.mid",
+        "genre": "celtic",
+        "rank": 0,
+        "title": "Sky High",
+        "artist": "Jigsaw",
+        "token_count": 1571,
+        "score": 0.7974,
+        "sha256": "46bfdce2480fa3bf"
+      },
+      {
+        "file": "seeds/celtic/celtic_01.mid",
+        "genre": "celtic",
+        "rank": 1,
+        "title": "Sky High",
+        "artist": "Jigsaw",
+        "token_count": 1591,
+        "score": 0.7827,
+        "sha256": "415753ccc8f40978"
+      },
+      {
+        "file": "seeds/celtic/celtic_02.mid",
+        "genre": "celtic",
+        "rank": 2,
+        "title": "Sky High",
+        "artist": "Jigsaw",
+        "token_count": 1552,
+        "score": 0.7732,
+        "sha256": "ff78ffd9a06fa520"
+      },
+      {
+        "file": "seeds/celtic/celtic_03.mid",
+        "genre": "celtic",
+        "rank": 3,
+        "title": "Dawn",
+        "artist": "Jigsaw",
+        "token_count": 1584,
+        "score": 0.7116,
+        "sha256": "3a4e04a2c734ecbd"
+      },
+      {
+        "file": "seeds/celtic/celtic_04.mid",
+        "genre": "celtic",
+        "rank": 4,
+        "title": "Dawn",
+        "artist": "Jigsaw",
+        "token_count": 1584,
+        "score": 0.7116,
+        "sha256": "3a4e04a2c734ecbd"
+      },
+      {
+        "file": "seeds/celtic/celtic_05.mid",
+        "genre": "celtic",
+        "rank": 5,
+        "title": "Dawn",
+        "artist": "Jigsaw",
+        "token_count": 1584,
+        "score": 0.7116,
+        "sha256": "3a4e04a2c734ecbd"
+      },
+      {
+        "file": "seeds/celtic/celtic_06.mid",
+        "genre": "celtic",
+        "rank": 6,
+        "title": "Dawn",
+        "artist": "Jigsaw",
+        "token_count": 1584,
+        "score": 0.7116,
+        "sha256": "3a4e04a2c734ecbd"
+      },
+      {
+        "file": "seeds/celtic/celtic_07.mid",
+        "genre": "celtic",
+        "rank": 7,
+        "title": "Jigsaw Puzzle",
+        "artist": "Rolling Stones",
+        "token_count": 1507,
+        "score": 0.6942,
+        "sha256": "81c085b3f85bab36"
+      },
+      {
+        "file": "seeds/celtic/celtic_08.mid",
+        "genre": "celtic",
+        "rank": 8,
+        "title": "Jigsaw Puzzle",
+        "artist": "Rolling Stones",
+        "token_count": 1507,
+        "score": 0.6912,
+        "sha256": "908937f3858ef322"
+      },
+      {
+        "file": "seeds/celtic/celtic_09.mid",
+        "genre": "celtic",
+        "rank": 9,
+        "title": "Dawn",
+        "artist": "Jigsaw",
+        "token_count": 1584,
+        "score": 0.6911,
+        "sha256": "4258253e970f123f"
+      }
+    ],
+    "pop": [
+      {
+        "file": "seeds/pop/pop_00.mid",
+        "genre": "pop",
+        "rank": 0,
+        "title": "Lollipop",
+        "artist": "Chordettes",
+        "token_count": 1655,
+        "score": 0.8138,
+        "sha256": "425cb0c2f3939601"
+      },
+      {
+        "file": "seeds/pop/pop_01.mid",
+        "genre": "pop",
+        "rank": 1,
+        "title": "Por Deus Karaoke",
+        "artist": "Art Popular",
+        "token_count": 1549,
+        "score": 0.7716,
+        "sha256": "cd166cc6f0318e52"
+      },
+      {
+        "file": "seeds/pop/pop_02.mid",
+        "genre": "pop",
+        "rank": 2,
+        "title": "Lollipop",
+        "artist": "Chordettes",
+        "token_count": 1624,
+        "score": 0.7695,
+        "sha256": "34bb007f7388810e"
+      },
+      {
+        "file": "seeds/pop/pop_03.mid",
+        "genre": "pop",
+        "rank": 3,
+        "title": "Lollipop",
+        "artist": "Chordettes",
+        "token_count": 1624,
+        "score": 0.7695,
+        "sha256": "34bb007f7388810e"
+      },
+      {
+        "file": "seeds/pop/pop_04.mid",
+        "genre": "pop",
+        "rank": 4,
+        "title": "Pop Singer",
+        "artist": "John Mellencamp",
+        "token_count": 1493,
+        "score": 0.7656,
+        "sha256": "da8298510fc67719"
+      },
+      {
+        "file": "seeds/pop/pop_05.mid",
+        "genre": "pop",
+        "rank": 5,
+        "title": "Pop Singer",
+        "artist": "John Mellencamp",
+        "token_count": 1418,
+        "score": 0.7611,
+        "sha256": "02b65bcc30b7deb5"
+      },
+      {
+        "file": "seeds/pop/pop_06.mid",
+        "genre": "pop",
+        "rank": 6,
+        "title": "Lollipop",
+        "artist": "Chordettes",
+        "token_count": 1493,
+        "score": 0.751,
+        "sha256": "d7236130b71c9c67"
+      },
+      {
+        "file": "seeds/pop/pop_07.mid",
+        "genre": "pop",
+        "rank": 7,
+        "title": "M - Pop Muzik",
+        "artist": "",
+        "token_count": 1275,
+        "score": 0.7342,
+        "sha256": "37af83299f7c7e93"
+      },
+      {
+        "file": "seeds/pop/pop_08.mid",
+        "genre": "pop",
+        "rank": 8,
+        "title": "Michael XG",
+        "artist": "Pop",
+        "token_count": 1561,
+        "score": 0.7075,
+        "sha256": "b56fc134fa96aead"
+      },
+      {
+        "file": "seeds/pop/pop_09.mid",
+        "genre": "pop",
+        "rank": 9,
+        "title": "50 Special1",
+        "artist": "Lunapop",
+        "token_count": 1607,
+        "score": 0.7045,
+        "sha256": "2742cb02b2f12677"
+      }
+    ],
+    "ambient": [
+      {
+        "file": "seeds/ambient/ambient_00.mid",
+        "genre": "ambient",
+        "rank": 0,
+        "title": "Rode Rozen Rode Lippen Rode wijn",
+        "artist": "Jo Vally",
+        "token_count": 1386,
+        "score": 0.8056,
+        "sha256": "6c8b7e61839f86b5"
+      },
+      {
+        "file": "seeds/ambient/ambient_01.mid",
+        "genre": "ambient",
+        "rank": 1,
+        "title": "My Dear",
+        "artist": "Katzenjammer",
+        "token_count": 1637,
+        "score": 0.7964,
+        "sha256": "00a82124a0fc6a01"
+      },
+      {
+        "file": "seeds/ambient/ambient_02.mid",
+        "genre": "ambient",
+        "rank": 2,
+        "title": "7 anjers 7 rozen",
+        "artist": "Willy Sommers",
+        "token_count": 1707,
+        "score": 0.7928,
+        "sha256": "ff30ed513faec359"
+      },
+      {
+        "file": "seeds/ambient/ambient_03.mid",
+        "genre": "ambient",
+        "rank": 3,
+        "title": "Rode Rozen Rode Lippen Rode wijn",
+        "artist": "Jo Vally",
+        "token_count": 1413,
+        "score": 0.7638,
+        "sha256": "22b8a0f424c9ba17"
+      },
+      {
+        "file": "seeds/ambient/ambient_04.mid",
+        "genre": "ambient",
+        "rank": 4,
+        "title": "Rode Rozen Rode Lippen Rode wijn",
+        "artist": "Jo Vally",
+        "token_count": 1413,
+        "score": 0.7638,
+        "sha256": "22b8a0f424c9ba17"
+      },
+      {
+        "file": "seeds/ambient/ambient_05.mid",
+        "genre": "ambient",
+        "rank": 5,
+        "title": "Rode Rozen Rode Lippen Rode wijn",
+        "artist": "Jo Vally",
+        "token_count": 1413,
+        "score": 0.7638,
+        "sha256": "22b8a0f424c9ba17"
+      },
+      {
+        "file": "seeds/ambient/ambient_06.mid",
+        "genre": "ambient",
+        "rank": 6,
+        "title": "My Dear",
+        "artist": "Katzenjammer",
+        "token_count": 1569,
+        "score": 0.7546,
+        "sha256": "ab9a00c574367ad0"
+      },
+      {
+        "file": "seeds/ambient/ambient_07.mid",
+        "genre": "ambient",
+        "rank": 7,
+        "title": "Rode Rozen Rode Lippen Rode wijn",
+        "artist": "Jo Vally",
+        "token_count": 1392,
+        "score": 0.7494,
+        "sha256": "d09ab2ae6a10537f"
+      },
+      {
+        "file": "seeds/ambient/ambient_08.mid",
+        "genre": "ambient",
+        "rank": 8,
+        "title": "Rode Rozen Rode Lippen Rode wijn",
+        "artist": "Jo Vally",
+        "token_count": 1392,
+        "score": 0.7461,
+        "sha256": "bf2c5e93a4a6f1d7"
+      },
+      {
+        "file": "seeds/ambient/ambient_09.mid",
+        "genre": "ambient",
+        "rank": 9,
+        "title": "Je zit op rozen",
+        "artist": "Marco Borsato",
+        "token_count": 1642,
+        "score": 0.743,
+        "sha256": "a0db4971f2e2e68d"
+      }
+    ],
+    "afro_cuban": [
+      {
+        "file": "seeds/afro_cuban/afro_cuban_00.mid",
+        "genre": "afro_cuban",
+        "rank": 0,
+        "title": "elbimbo",
+        "artist": "Salsa",
+        "token_count": 1694,
+        "score": 0.7923,
+        "sha256": "6c04dea0d98171b9"
+      },
+      {
+        "file": "seeds/afro_cuban/afro_cuban_01.mid",
+        "genre": "afro_cuban",
+        "rank": 1,
+        "title": "venao",
+        "artist": "Salsa",
+        "token_count": 1510,
+        "score": 0.777,
+        "sha256": "a5c244de00688539"
+      },
+      {
+        "file": "seeds/afro_cuban/afro_cuban_02.mid",
+        "genre": "afro_cuban",
+        "rank": 2,
+        "title": "esperare",
+        "artist": "Salsa",
+        "token_count": 1637,
+        "score": 0.7463,
+        "sha256": "1025b02f0e990fe9"
+      },
+      {
+        "file": "seeds/afro_cuban/afro_cuban_03.mid",
+        "genre": "afro_cuban",
+        "rank": 3,
+        "title": "Mix-Rumbas-Raya-Real",
+        "artist": "Rumbas",
+        "token_count": 1505,
+        "score": 0.7341,
+        "sha256": "764b6b2d96aa2f19"
+      },
+      {
+        "file": "seeds/afro_cuban/afro_cuban_04.mid",
+        "genre": "afro_cuban",
+        "rank": 4,
+        "title": "ilikeitlikethat",
+        "artist": "Salsa",
+        "token_count": 1581,
+        "score": 0.7307,
+        "sha256": "d9edb3cf84e9eb3a"
+      },
+      {
+        "file": "seeds/afro_cuban/afro_cuban_05.mid",
+        "genre": "afro_cuban",
+        "rank": 5,
+        "title": "ilikeitlikethat",
+        "artist": "Salsa",
+        "token_count": 1581,
+        "score": 0.7307,
+        "sha256": "d9edb3cf84e9eb3a"
+      },
+      {
+        "file": "seeds/afro_cuban/afro_cuban_06.mid",
+        "genre": "afro_cuban",
+        "rank": 6,
+        "title": "MARIA",
+        "artist": "Rumbas",
+        "token_count": 1626,
+        "score": 0.7301,
+        "sha256": "646f5627c6df6395"
+      },
+      {
+        "file": "seeds/afro_cuban/afro_cuban_07.mid",
+        "genre": "afro_cuban",
+        "rank": 7,
+        "title": "Mix-Rumbas-Raya-Real",
+        "artist": "Rumbas",
+        "token_count": 1466,
+        "score": 0.7275,
+        "sha256": "e92b930190dfbf23"
+      },
+      {
+        "file": "seeds/afro_cuban/afro_cuban_08.mid",
+        "genre": "afro_cuban",
+        "rank": 8,
+        "title": "chechecole",
+        "artist": "Salsa",
+        "token_count": 1642,
+        "score": 0.7245,
+        "sha256": "177183b7e584f467"
+      },
+      {
+        "file": "seeds/afro_cuban/afro_cuban_09.mid",
+        "genre": "afro_cuban",
+        "rank": 9,
+        "title": "MIAMIHM",
+        "artist": "Salsa",
+        "token_count": 1317,
+        "score": 0.7193,
+        "sha256": "0fce961bd768fd6d"
+      }
+    ],
+    "gregorian": [
+      {
+        "file": "seeds/gregorian/gregorian_00.mid",
+        "genre": "gregorian",
+        "rank": 0,
+        "title": "Some Enchanted Evening",
+        "artist": "Jay And The Americans",
+        "token_count": 1477,
+        "score": 0.7759,
+        "sha256": "1656d90e5a7fcc53"
+      },
+      {
+        "file": "seeds/gregorian/gregorian_01.mid",
+        "genre": "gregorian",
+        "rank": 1,
+        "title": "Chantilly Lace",
+        "artist": "Jerry Lee Lewis",
+        "token_count": 1647,
+        "score": 0.7496,
+        "sha256": "e0fe8f675c1ab53a"
+      },
+      {
+        "file": "seeds/gregorian/gregorian_02.mid",
+        "genre": "gregorian",
+        "rank": 2,
+        "title": "Chantilly Lace",
+        "artist": "Jerry Lee Lewis",
+        "token_count": 1641,
+        "score": 0.7135,
+        "sha256": "4137c44114cd113f"
+      },
+      {
+        "file": "seeds/gregorian/gregorian_03.mid",
+        "genre": "gregorian",
+        "rank": 3,
+        "title": "ChantillyLace",
+        "artist": "Lewis Jerry Lee",
+        "token_count": 1641,
+        "score": 0.7135,
+        "sha256": "4137c44114cd113f"
+      },
+      {
+        "file": "seeds/gregorian/gregorian_04.mid",
+        "genre": "gregorian",
+        "rank": 4,
+        "title": "Le Chant Du Silence",
+        "artist": "Rune",
+        "token_count": 1446,
+        "score": 0.6985,
+        "sha256": "1ac466d08bf131da"
+      },
+      {
+        "file": "seeds/gregorian/gregorian_05.mid",
+        "genre": "gregorian",
+        "rank": 5,
+        "title": "La-Chante-Mi-Cantare",
+        "artist": "Cotugno Toto",
+        "token_count": 1130,
+        "score": 0.6972,
+        "sha256": "8870193b4f1358eb"
+      },
+      {
+        "file": "seeds/gregorian/gregorian_06.mid",
+        "genre": "gregorian",
+        "rank": 6,
+        "title": "Le Chant Du Silence",
+        "artist": "Rune",
+        "token_count": 1446,
+        "score": 0.6967,
+        "sha256": "6c7753833197208c"
+      },
+      {
+        "file": "seeds/gregorian/gregorian_07.mid",
+        "genre": "gregorian",
+        "rank": 7,
+        "title": "La-Chante-Mi-Cantare",
+        "artist": "Cotugno Toto",
+        "token_count": 1135,
+        "score": 0.6912,
+        "sha256": "831726009e7af7a2"
+      },
+      {
+        "file": "seeds/gregorian/gregorian_08.mid",
+        "genre": "gregorian",
+        "rank": 8,
+        "title": "Chantilly Lace",
+        "artist": "Jerry Lee Lewis",
+        "token_count": 1542,
+        "score": 0.6781,
+        "sha256": "3861ec0f883f377a"
+      },
+      {
+        "file": "seeds/gregorian/gregorian_09.mid",
+        "genre": "gregorian",
+        "rank": 9,
+        "title": "La-Chante-Mi-Cantare",
+        "artist": "Cotugno Toto",
+        "token_count": 1152,
+        "score": 0.6764,
+        "sha256": "7548c1e868671d3b"
+      }
+    ],
+    "bossa_nova": [
+      {
+        "file": "seeds/bossa_nova/bossa_nova_00.mid",
+        "genre": "bossa_nova",
+        "rank": 0,
+        "title": "Bossa-Tranquillo",
+        "artist": "Corea Chick",
+        "token_count": 985,
+        "score": 0.5744,
+        "sha256": "3ba348958fc7f5f1"
+      },
+      {
+        "file": "seeds/bossa_nova/bossa_nova_01.mid",
+        "genre": "bossa_nova",
+        "rank": 1,
+        "title": "Bossa-Tranquillo",
+        "artist": "Corea Chick",
+        "token_count": 1036,
+        "score": 0.5641,
+        "sha256": "e32b6ee742c1e908"
+      },
+      {
+        "file": "seeds/bossa_nova/bossa_nova_02.mid",
+        "genre": "bossa_nova",
+        "rank": 2,
+        "title": "BOSSANOVA",
+        "artist": "Samba titres B",
+        "token_count": 729,
+        "score": 0.5307,
+        "sha256": "2d6a2bc3775920d9"
+      },
+      {
+        "file": "seeds/bossa_nova/bossa_nova_03.mid",
+        "genre": "bossa_nova",
+        "rank": 3,
+        "title": "BOSSANOVA",
+        "artist": "Samba titres B",
+        "token_count": 773,
+        "score": 0.5267,
+        "sha256": "d2476789e67514d0"
+      },
+      {
+        "file": "seeds/bossa_nova/bossa_nova_04.mid",
+        "genre": "bossa_nova",
+        "rank": 4,
+        "title": "BOSSANOVA",
+        "artist": "Samba titres B",
+        "token_count": 772,
+        "score": 0.5103,
+        "sha256": "e8bde765bcd5f658"
+      },
+      {
+        "file": "seeds/bossa_nova/bossa_nova_05.mid",
+        "genre": "bossa_nova",
+        "rank": 5,
+        "title": "Schuld war nur der Bossa Nova",
+        "artist": "Manuela",
+        "token_count": 523,
+        "score": 0.5085,
+        "sha256": "40df5ce09cf7489e"
+      },
+      {
+        "file": "seeds/bossa_nova/bossa_nova_06.mid",
+        "genre": "bossa_nova",
+        "rank": 6,
+        "title": "BOSSANOVA",
+        "artist": "Samba titres B",
+        "token_count": 773,
+        "score": 0.5055,
+        "sha256": "8ba1e1af43ff982d"
+      },
+      {
+        "file": "seeds/bossa_nova/bossa_nova_07.mid",
+        "genre": "bossa_nova",
+        "rank": 7,
+        "title": "BOSSANOVA",
+        "artist": "Samba titres B",
+        "token_count": 773,
+        "score": 0.5055,
+        "sha256": "8ba1e1af43ff982d"
+      },
+      {
+        "file": "seeds/bossa_nova/bossa_nova_08.mid",
+        "genre": "bossa_nova",
+        "rank": 8,
+        "title": "BOSSANOVA",
+        "artist": "Samba titres B",
+        "token_count": 729,
+        "score": 0.5046,
+        "sha256": "3ee50d31d43a948b"
+      },
+      {
+        "file": "seeds/bossa_nova/bossa_nova_09.mid",
+        "genre": "bossa_nova",
+        "rank": 9,
+        "title": "BOSSANOVA",
+        "artist": "Samba titres B",
+        "token_count": 729,
+        "score": 0.5046,
+        "sha256": "3ee50d31d43a948b"
+      }
+    ],
+    "hindustani": [
+      {
+        "file": "seeds/hindustani/hindustani_00.mid",
+        "genre": "hindustani",
+        "rank": 0,
+        "title": "Dolce uragano",
+        "artist": "Gianni Bella",
+        "token_count": 1282,
+        "score": 0.785,
+        "sha256": "666eadcf588f29ee"
+      },
+      {
+        "file": "seeds/hindustani/hindustani_01.mid",
+        "genre": "hindustani",
+        "rank": 1,
+        "title": "Dolce uragano",
+        "artist": "Gianni Bella",
+        "token_count": 1245,
+        "score": 0.7589,
+        "sha256": "e397c91f33f8dee8"
+      },
+      {
+        "file": "seeds/hindustani/hindustani_02.mid",
+        "genre": "hindustani",
+        "rank": 2,
+        "title": "Dolce uragano",
+        "artist": "Gianni Bella",
+        "token_count": 1245,
+        "score": 0.7589,
+        "sha256": "e397c91f33f8dee8"
+      },
+      {
+        "file": "seeds/hindustani/hindustani_03.mid",
+        "genre": "hindustani",
+        "rank": 3,
+        "title": "Dolce uragano",
+        "artist": "Gianni Bella",
+        "token_count": 1158,
+        "score": 0.7585,
+        "sha256": "10c3b2cf20e161f8"
+      },
+      {
+        "file": "seeds/hindustani/hindustani_04.mid",
+        "genre": "hindustani",
+        "rank": 4,
+        "title": "Cosa fai ragazza",
+        "artist": "Biagio Antonacci",
+        "token_count": 1485,
+        "score": 0.7266,
+        "sha256": "5ba9b1640db70e47"
+      },
+      {
+        "file": "seeds/hindustani/hindustani_05.mid",
+        "genre": "hindustani",
+        "rank": 5,
+        "title": "Cosa fai ragazza",
+        "artist": "Biagio Antonacci",
+        "token_count": 1468,
+        "score": 0.7244,
+        "sha256": "b7ce47d9b0b44f30"
+      },
+      {
+        "file": "seeds/hindustani/hindustani_06.mid",
+        "genre": "hindustani",
+        "rank": 6,
+        "title": "C'era un ragazzo che come me amava i Beatles e i Rolling Stones",
+        "artist": "Morandi",
+        "token_count": 1306,
+        "score": 0.7182,
+        "sha256": "734972f64c1133cf"
+      },
+      {
+        "file": "seeds/hindustani/hindustani_07.mid",
+        "genre": "hindustani",
+        "rank": 7,
+        "title": "C'era un ragazzo che come me amava i Beatles e i Rolling Stones",
+        "artist": "Morandi",
+        "token_count": 1306,
+        "score": 0.7182,
+        "sha256": "734972f64c1133cf"
+      },
+      {
+        "file": "seeds/hindustani/hindustani_08.mid",
+        "genre": "hindustani",
+        "rank": 8,
+        "title": "C'era un ragazzo che come me amava i Beatles e i Rolling Stones",
+        "artist": "Morandi",
+        "token_count": 1306,
+        "score": 0.7182,
+        "sha256": "734972f64c1133cf"
+      },
+      {
+        "file": "seeds/hindustani/hindustani_09.mid",
+        "genre": "hindustani",
+        "rank": 9,
+        "title": "C'era un ragazzo che come me amava i Beatles e i Rolling Stones",
+        "artist": "Morandi",
+        "token_count": 1306,
+        "score": 0.7182,
+        "sha256": "734972f64c1133cf"
+      }
+    ],
+    "japanese": [
+      {
+        "file": "seeds/japanese/japanese_00.mid",
+        "genre": "japanese",
+        "rank": 0,
+        "title": "Gorod Kotorogo Net Karaoke",
+        "artist": "Igor Kornelyuk",
+        "token_count": 1100,
+        "score": 0.6736,
+        "sha256": "cf6ff5dc6b42af3c"
+      },
+      {
+        "file": "seeds/japanese/japanese_01.mid",
+        "genre": "japanese",
+        "rank": 1,
+        "title": "Gorod Kotorogo Net Karaoke",
+        "artist": "Igor Kornelyuk",
+        "token_count": 910,
+        "score": 0.5529,
+        "sha256": "8f045bb9e07beb9b"
+      },
+      {
+        "file": "seeds/japanese/japanese_02.mid",
+        "genre": "japanese",
+        "rank": 2,
+        "title": "Turning Japanese",
+        "artist": "Liz Phair",
+        "token_count": 936,
+        "score": 0.5352,
+        "sha256": "555cf20aea469986"
+      },
+      {
+        "file": "seeds/japanese/japanese_03.mid",
+        "genre": "japanese",
+        "rank": 3,
+        "title": "Turning Japanese",
+        "artist": "Liz Phair",
+        "token_count": 936,
+        "score": 0.5334,
+        "sha256": "569f641c11210362"
+      },
+      {
+        "file": "seeds/japanese/japanese_04.mid",
+        "genre": "japanese",
+        "rank": 4,
+        "title": "Turning Japanese",
+        "artist": "Liz Phair",
+        "token_count": 922,
+        "score": 0.5307,
+        "sha256": "5a13c2a740605c62"
+      },
+      {
+        "file": "seeds/japanese/japanese_05.mid",
+        "genre": "japanese",
+        "rank": 5,
+        "title": "Turning Japanese",
+        "artist": "Liz Phair",
+        "token_count": 865,
+        "score": 0.5241,
+        "sha256": "238b83ae1d759ac8"
+      },
+      {
+        "file": "seeds/japanese/japanese_06.mid",
+        "genre": "japanese",
+        "rank": 6,
+        "title": "Turning Japanese",
+        "artist": "Liz Phair",
+        "token_count": 932,
+        "score": 0.5187,
+        "sha256": "cb786841ac9bec07"
+      },
+      {
+        "file": "seeds/japanese/japanese_07.mid",
+        "genre": "japanese",
+        "rank": 7,
+        "title": "Turning Japanese",
+        "artist": "Liz Phair",
+        "token_count": 838,
+        "score": 0.5173,
+        "sha256": "d0ad40b7c9993e6b"
+      },
+      {
+        "file": "seeds/japanese/japanese_08.mid",
+        "genre": "japanese",
+        "rank": 8,
+        "title": "Turning Japanese",
+        "artist": "Liz Phair",
+        "token_count": 838,
+        "score": 0.5173,
+        "sha256": "d0ad40b7c9993e6b"
+      },
+      {
+        "file": "seeds/japanese/japanese_09.mid",
+        "genre": "japanese",
+        "rank": 9,
+        "title": "Gorod Kotorogo Net Karaoke",
+        "artist": "Igor Kornelyuk",
+        "token_count": 691,
+        "score": 0.5159,
+        "sha256": "648ca47c205759dc"
+      }
+    ],
+    "polynesian": [
+      {
+        "file": "seeds/polynesian/polynesian_00.mid",
+        "genre": "polynesian",
+        "rank": 0,
+        "title": "I-Feel-For-You-2",
+        "artist": "Khan Chaka",
+        "token_count": 1462,
+        "score": 0.7901,
+        "sha256": "c0a23a2c3ac26168"
+      },
+      {
+        "file": "seeds/polynesian/polynesian_01.mid",
+        "genre": "polynesian",
+        "rank": 1,
+        "title": "I Feel For You.1",
+        "artist": "Chaka Khan",
+        "token_count": 1462,
+        "score": 0.7901,
+        "sha256": "c0a23a2c3ac26168"
+      },
+      {
+        "file": "seeds/polynesian/polynesian_02.mid",
+        "genre": "polynesian",
+        "rank": 2,
+        "title": "I Feel For You.2",
+        "artist": "Chaka Khan",
+        "token_count": 1400,
+        "score": 0.7864,
+        "sha256": "18c75fbb7247c168"
+      },
+      {
+        "file": "seeds/polynesian/polynesian_03.mid",
+        "genre": "polynesian",
+        "rank": 3,
+        "title": "I Feel For You",
+        "artist": "Chaka Khan",
+        "token_count": 1400,
+        "score": 0.7864,
+        "sha256": "18c75fbb7247c168"
+      },
+      {
+        "file": "seeds/polynesian/polynesian_04.mid",
+        "genre": "polynesian",
+        "rank": 4,
+        "title": "I Feel For You Karaoke",
+        "artist": "Chaka Khan",
+        "token_count": 1400,
+        "score": 0.7864,
+        "sha256": "18c75fbb7247c168"
+      },
+      {
+        "file": "seeds/polynesian/polynesian_05.mid",
+        "genre": "polynesian",
+        "rank": 5,
+        "title": "I Feel For You2",
+        "artist": "Chaka Khan",
+        "token_count": 1400,
+        "score": 0.7864,
+        "sha256": "18c75fbb7247c168"
+      },
+      {
+        "file": "seeds/polynesian/polynesian_06.mid",
+        "genre": "polynesian",
+        "rank": 6,
+        "title": "IFeelForYou",
+        "artist": "ChakaKhan",
+        "token_count": 1400,
+        "score": 0.7864,
+        "sha256": "18c75fbb7247c168"
+      },
+      {
+        "file": "seeds/polynesian/polynesian_07.mid",
+        "genre": "polynesian",
+        "rank": 7,
+        "title": "I Feel For You.1",
+        "artist": "Chaka Khan",
+        "token_count": 1471,
+        "score": 0.7841,
+        "sha256": "0e0b21cef0b35cd5"
+      },
+      {
+        "file": "seeds/polynesian/polynesian_08.mid",
+        "genre": "polynesian",
+        "rank": 8,
+        "title": "I-Feel-For-You-2",
+        "artist": "Khan Chaka",
+        "token_count": 1471,
+        "score": 0.7841,
+        "sha256": "0e0b21cef0b35cd5"
+      },
+      {
+        "file": "seeds/polynesian/polynesian_09.mid",
+        "genre": "polynesian",
+        "rank": 9,
+        "title": "I-Feel-For-You-2",
+        "artist": "Khan Chaka",
+        "token_count": 1451,
+        "score": 0.7747,
+        "sha256": "196810557c8ab6a2"
+      }
+    ],
+    "minimalist": [
+      {
+        "file": "seeds/minimalist/minimalist_00.mid",
+        "genre": "minimalist",
+        "rank": 0,
+        "title": "Accordionic Groove Sewing Patches Of The Minimalistic",
+        "artist": "Heavy Competition 11",
+        "token_count": 1381,
+        "score": 0.6522,
+        "sha256": "aea46f1c82104a45"
+      },
+      {
+        "file": "seeds/minimalist/minimalist_01.mid",
+        "genre": "minimalist",
+        "rank": 1,
+        "title": "Accordionic Groove Sewing Patches Of The Minimalistic",
+        "artist": "Heavy Competition 11",
+        "token_count": 1381,
+        "score": 0.6522,
+        "sha256": "aea46f1c82104a45"
+      },
+      {
+        "file": "seeds/minimalist/minimalist_02.mid",
+        "genre": "minimalist",
+        "rank": 2,
+        "title": "Accordionic Groove Sewing Patches Of The Minimalistic",
+        "artist": "Heavy Competition 11",
+        "token_count": 1381,
+        "score": 0.6504,
+        "sha256": "c798f67c32702053"
+      },
+      {
+        "file": "seeds/minimalist/minimalist_03.mid",
+        "genre": "minimalist",
+        "rank": 3,
+        "title": "Accordionic Groove Sewing Patches Of The Minimalistic",
+        "artist": "Heavy Competition 11",
+        "token_count": 1481,
+        "score": 0.632,
+        "sha256": "77281c34be6cd12c"
+      },
+      {
+        "file": "seeds/minimalist/minimalist_04.mid",
+        "genre": "minimalist",
+        "rank": 4,
+        "title": "Accordionic Groove Sewing Patches Of The Minimalistic",
+        "artist": "Heavy Competition 11",
+        "token_count": 1481,
+        "score": 0.632,
+        "sha256": "77281c34be6cd12c"
+      },
+      {
+        "file": "seeds/minimalist/minimalist_05.mid",
+        "genre": "minimalist",
+        "rank": 5,
+        "title": "Accordionic Groove Sewing Patches Of The Minimalistic",
+        "artist": "Heavy Competition 11",
+        "token_count": 1481,
+        "score": 0.632,
+        "sha256": "77281c34be6cd12c"
+      },
+      {
+        "file": "seeds/minimalist/minimalist_06.mid",
+        "genre": "minimalist",
+        "rank": 6,
+        "title": "Accordionic Groove Sewing Patches Of The Minimalistic",
+        "artist": "Heavy Competition 11",
+        "token_count": 1481,
+        "score": 0.632,
+        "sha256": "77281c34be6cd12c"
+      },
+      {
+        "file": "seeds/minimalist/minimalist_07.mid",
+        "genre": "minimalist",
+        "rank": 7,
+        "title": "Accordionic Groove Sewing Patches Of The Minimalistic",
+        "artist": "Heavy Competition 11",
+        "token_count": 1481,
+        "score": 0.632,
+        "sha256": "77281c34be6cd12c"
+      },
+      {
+        "file": "seeds/minimalist/minimalist_08.mid",
+        "genre": "minimalist",
+        "rank": 8,
+        "title": "Accordionic Groove Sewing Patches Of The Minimalistic",
+        "artist": "Heavy Competition 11",
+        "token_count": 1481,
+        "score": 0.632,
+        "sha256": "77281c34be6cd12c"
+      },
+      {
+        "file": "seeds/minimalist/minimalist_09.mid",
+        "genre": "minimalist",
+        "rank": 9,
+        "title": "Accordionic Groove Sewing Patches Of The Minimalistic",
+        "artist": "Heavy Competition 11",
+        "token_count": 1481,
+        "score": 0.6302,
+        "sha256": "98e7feeacd157b0d"
+      }
+    ],
+    "trance": [
+      {
+        "file": "seeds/trance/trance_00.mid",
+        "genre": "trance",
+        "rank": 0,
+        "title": "Do Ya Think Im Sexy",
+        "artist": "N Trance Feat Rod Stewart",
+        "token_count": 1410,
+        "score": 0.8017,
+        "sha256": "5459a21d869cc6bd"
+      },
+      {
+        "file": "seeds/trance/trance_01.mid",
+        "genre": "trance",
+        "rank": 1,
+        "title": "Da-Ya-Think-Im-Sexy",
+        "artist": "N-Trance",
+        "token_count": 1465,
+        "score": 0.7554,
+        "sha256": "235a4a4a8c7ab7de"
+      },
+      {
+        "file": "seeds/trance/trance_02.mid",
+        "genre": "trance",
+        "rank": 2,
+        "title": "Da Ya Think I'm Sexy",
+        "artist": "N-Trance",
+        "token_count": 1465,
+        "score": 0.7554,
+        "sha256": "235a4a4a8c7ab7de"
+      },
+      {
+        "file": "seeds/trance/trance_03.mid",
+        "genre": "trance",
+        "rank": 3,
+        "title": "Da Ya Think I'm Sexy",
+        "artist": "N-Trance",
+        "token_count": 1527,
+        "score": 0.7251,
+        "sha256": "4be0e9fdab86ca38"
+      },
+      {
+        "file": "seeds/trance/trance_04.mid",
+        "genre": "trance",
+        "rank": 4,
+        "title": "Da-Ya-Think-Im-Sexy",
+        "artist": "N-Trance",
+        "token_count": 1527,
+        "score": 0.7251,
+        "sha256": "4be0e9fdab86ca38"
+      },
+      {
+        "file": "seeds/trance/trance_05.mid",
+        "genre": "trance",
+        "rank": 5,
+        "title": "Da-Ya-Think-Im-Sexy",
+        "artist": "N-Trance",
+        "token_count": 1527,
+        "score": 0.7251,
+        "sha256": "4be0e9fdab86ca38"
+      },
+      {
+        "file": "seeds/trance/trance_06.mid",
+        "genre": "trance",
+        "rank": 6,
+        "title": "Da Ya Think I'm Sexy",
+        "artist": "N-Trance",
+        "token_count": 1527,
+        "score": 0.7251,
+        "sha256": "4be0e9fdab86ca38"
+      },
+      {
+        "file": "seeds/trance/trance_07.mid",
+        "genre": "trance",
+        "rank": 7,
+        "title": "Mr Vain (Mr Trance)",
+        "artist": "Culture Beat",
+        "token_count": 1605,
+        "score": 0.7198,
+        "sha256": "30ad555d8682f8de"
+      },
+      {
+        "file": "seeds/trance/trance_08.mid",
+        "genre": "trance",
+        "rank": 8,
+        "title": "Mr Vain Mr Trance3",
+        "artist": "Culture Beat",
+        "token_count": 1605,
+        "score": 0.7198,
+        "sha256": "30ad555d8682f8de"
+      },
+      {
+        "file": "seeds/trance/trance_09.mid",
+        "genre": "trance",
+        "rank": 9,
+        "title": "Mr Vain Mr Trance",
+        "artist": "Culture Beat",
+        "token_count": 1605,
+        "score": 0.7198,
+        "sha256": "30ad555d8682f8de"
+      }
+    ],
+    "trap": [
+      {
+        "file": "seeds/trap/trap_00.mid",
+        "genre": "trap",
+        "rank": 0,
+        "title": "Cold Trap XG",
+        "artist": "Phaze1",
+        "token_count": 1518,
+        "score": 0.6965,
+        "sha256": "0400c96c2586fc63"
+      },
+      {
+        "file": "seeds/trap/trap_01.mid",
+        "genre": "trap",
+        "rank": 1,
+        "title": "Cold Trap XG",
+        "artist": "Phaze1",
+        "token_count": 1599,
+        "score": 0.6847,
+        "sha256": "ef53bd41db9e6756"
+      },
+      {
+        "file": "seeds/trap/trap_02.mid",
+        "genre": "trap",
+        "rank": 2,
+        "title": "Trapped Under Ice",
+        "artist": "Metallica",
+        "token_count": 1634,
+        "score": 0.6801,
+        "sha256": "d87d8a0490584935"
+      },
+      {
+        "file": "seeds/trap/trap_03.mid",
+        "genre": "trap",
+        "rank": 3,
+        "title": "Cold Trap XG",
+        "artist": "Phaze1",
+        "token_count": 1598,
+        "score": 0.6795,
+        "sha256": "d4cbc3863d308cfc"
+      },
+      {
+        "file": "seeds/trap/trap_04.mid",
+        "genre": "trap",
+        "rank": 4,
+        "title": "Cold Trap XG",
+        "artist": "Phaze1",
+        "token_count": 1363,
+        "score": 0.6329,
+        "sha256": "f9940e0a27cf57f4"
+      },
+      {
+        "file": "seeds/trap/trap_05.mid",
+        "genre": "trap",
+        "rank": 5,
+        "title": "Trapped Under Ice",
+        "artist": "Metal Molly",
+        "token_count": 1356,
+        "score": 0.621,
+        "sha256": "be4dbecd6b336bcc"
+      },
+      {
+        "file": "seeds/trap/trap_06.mid",
+        "genre": "trap",
+        "rank": 6,
+        "title": "Trapped Under Ice",
+        "artist": "Metallica",
+        "token_count": 1380,
+        "score": 0.6187,
+        "sha256": "f10ec4ad46eb3a2c"
+      },
+      {
+        "file": "seeds/trap/trap_07.mid",
+        "genre": "trap",
+        "rank": 7,
+        "title": "Cold Trap XG",
+        "artist": "Phaze1",
+        "token_count": 1316,
+        "score": 0.6147,
+        "sha256": "47645ccd890c0293"
+      },
+      {
+        "file": "seeds/trap/trap_08.mid",
+        "genre": "trap",
+        "rank": 8,
+        "title": "Trapped Under Ice",
+        "artist": "Metal Molly",
+        "token_count": 1297,
+        "score": 0.6144,
+        "sha256": "3cc99a89601ce8a7"
+      },
+      {
+        "file": "seeds/trap/trap_09.mid",
+        "genre": "trap",
+        "rank": 9,
+        "title": "Trapped Under Ice",
+        "artist": "Metal Molly",
+        "token_count": 1297,
+        "score": 0.6127,
+        "sha256": "3ebcbc703cec8682"
+      }
+    ],
+    "nordic": [
+      {
+        "file": "seeds/nordic/nordic_00.mid",
+        "genre": "nordic",
+        "rank": 0,
+        "title": "The Unforgiven Ii",
+        "artist": "Nordica",
+        "token_count": 1261,
+        "score": 0.6247,
+        "sha256": "e49a2f2aeb8814a7"
+      },
+      {
+        "file": "seeds/nordic/nordic_01.mid",
+        "genre": "nordic",
+        "rank": 1,
+        "title": "The Unforgiven Ii",
+        "artist": "Nordica",
+        "token_count": 1261,
+        "score": 0.6247,
+        "sha256": "e49a2f2aeb8814a7"
+      },
+      {
+        "file": "seeds/nordic/nordic_02.mid",
+        "genre": "nordic",
+        "rank": 2,
+        "title": "The Unforgiven Ii",
+        "artist": "Nordica",
+        "token_count": 1261,
+        "score": 0.6247,
+        "sha256": "e49a2f2aeb8814a7"
+      },
+      {
+        "file": "seeds/nordic/nordic_03.mid",
+        "genre": "nordic",
+        "rank": 3,
+        "title": "The Unforgiven Ii",
+        "artist": "Nordica",
+        "token_count": 1261,
+        "score": 0.6229,
+        "sha256": "4a63150cdfe1ae17"
+      },
+      {
+        "file": "seeds/nordic/nordic_04.mid",
+        "genre": "nordic",
+        "rank": 4,
+        "title": "La Carta",
+        "artist": "Nordica",
+        "token_count": 1145,
+        "score": 0.6225,
+        "sha256": "fb9e848cde478a93"
+      },
+      {
+        "file": "seeds/nordic/nordic_05.mid",
+        "genre": "nordic",
+        "rank": 5,
+        "title": "The Unforgiven Ii",
+        "artist": "Nordica",
+        "token_count": 1257,
+        "score": 0.6204,
+        "sha256": "ec14ee805c5d0a17"
+      },
+      {
+        "file": "seeds/nordic/nordic_06.mid",
+        "genre": "nordic",
+        "rank": 6,
+        "title": "The Unforgiven Ii",
+        "artist": "Nordica",
+        "token_count": 1260,
+        "score": 0.6192,
+        "sha256": "203773a4c59b5ef8"
+      },
+      {
+        "file": "seeds/nordic/nordic_07.mid",
+        "genre": "nordic",
+        "rank": 7,
+        "title": "The Unforgiven Ii",
+        "artist": "Nordica",
+        "token_count": 1198,
+        "score": 0.6121,
+        "sha256": "a6fd0809f32d4012"
+      },
+      {
+        "file": "seeds/nordic/nordic_08.mid",
+        "genre": "nordic",
+        "rank": 8,
+        "title": "The Unforgiven Ii",
+        "artist": "Nordica",
+        "token_count": 1198,
+        "score": 0.6035,
+        "sha256": "4523cd055a51e039"
+      },
+      {
+        "file": "seeds/nordic/nordic_09.mid",
+        "genre": "nordic",
+        "rank": 9,
+        "title": "The Unforgiven Ii",
+        "artist": "Nordica",
+        "token_count": 1198,
+        "score": 0.6035,
+        "sha256": "4523cd055a51e039"
+      }
+    ],
+    "anatolian": [
+      {
+        "file": "seeds/anatolian/anatolian_00.mid",
+        "genre": "anatolian",
+        "rank": 0,
+        "title": "Mors Alfabesi",
+        "artist": "Turkish Delight",
+        "token_count": 1396,
+        "score": 0.6307,
+        "sha256": "52a4a02d42938139"
+      },
+      {
+        "file": "seeds/anatolian/anatolian_01.mid",
+        "genre": "anatolian",
+        "rank": 1,
+        "title": "Turkish Delight",
+        "artist": "5th Prokurator",
+        "token_count": 1145,
+        "score": 0.5927,
+        "sha256": "d2c242c866c11115"
+      },
+      {
+        "file": "seeds/anatolian/anatolian_02.mid",
+        "genre": "anatolian",
+        "rank": 2,
+        "title": "Turkish Delight",
+        "artist": "5th Prokurator",
+        "token_count": 1145,
+        "score": 0.5927,
+        "sha256": "d2c242c866c11115"
+      },
+      {
+        "file": "seeds/anatolian/anatolian_03.mid",
+        "genre": "anatolian",
+        "rank": 3,
+        "title": "Turkish Delight",
+        "artist": "5th Prokurator",
+        "token_count": 1145,
+        "score": 0.5927,
+        "sha256": "b1092eb89a35d2a9"
+      },
+      {
+        "file": "seeds/anatolian/anatolian_04.mid",
+        "genre": "anatolian",
+        "rank": 4,
+        "title": "Turkish Delight",
+        "artist": "5th Prokurator",
+        "token_count": 1145,
+        "score": 0.5927,
+        "sha256": "d2c242c866c11115"
+      },
+      {
+        "file": "seeds/anatolian/anatolian_05.mid",
+        "genre": "anatolian",
+        "rank": 5,
+        "title": "Turkish Delight",
+        "artist": "5th Prokurator",
+        "token_count": 1144,
+        "score": 0.582,
+        "sha256": "f05bb8bbc63e85ea"
+      },
+      {
+        "file": "seeds/anatolian/anatolian_06.mid",
+        "genre": "anatolian",
+        "rank": 6,
+        "title": "Turkish Delight1",
+        "artist": "5th Prokurator",
+        "token_count": 956,
+        "score": 0.5678,
+        "sha256": "d5d8b67c05a4a596"
+      },
+      {
+        "file": "seeds/anatolian/anatolian_07.mid",
+        "genre": "anatolian",
+        "rank": 7,
+        "title": "Turkish Delight1",
+        "artist": "5th Prokurator",
+        "token_count": 961,
+        "score": 0.5524,
+        "sha256": "c6997227bf41b6ac"
+      },
+      {
+        "file": "seeds/anatolian/anatolian_08.mid",
+        "genre": "anatolian",
+        "rank": 8,
+        "title": "Turkish Delight1",
+        "artist": "5th Prokurator",
+        "token_count": 961,
+        "score": 0.5524,
+        "sha256": "a3cc8e89e3ef265a"
+      },
+      {
+        "file": "seeds/anatolian/anatolian_09.mid",
+        "genre": "anatolian",
+        "rank": 9,
+        "title": "Turkish Delight1",
+        "artist": "5th Prokurator",
+        "token_count": 961,
+        "score": 0.5524,
+        "sha256": "a3cc8e89e3ef265a"
+      }
+    ],
+    "soca": [
+      {
+        "file": "seeds/soca/soca_00.mid",
+        "genre": "soca",
+        "rank": 0,
+        "title": "Calypso-Part-1-3",
+        "artist": "Jarre Jean Michel",
+        "token_count": 1602,
+        "score": 0.7026,
+        "sha256": "b9d5cbc5bef1f32a"
+      },
+      {
+        "file": "seeds/soca/soca_01.mid",
+        "genre": "soca",
+        "rank": 1,
+        "title": "Calypso (Part 1).2",
+        "artist": "Jean Michel Jarre",
+        "token_count": 1602,
+        "score": 0.7026,
+        "sha256": "b9d5cbc5bef1f32a"
+      },
+      {
+        "file": "seeds/soca/soca_02.mid",
+        "genre": "soca",
+        "rank": 2,
+        "title": "Calypso 1C",
+        "artist": "Zhan Mishel Zharr Jean Michel Jarre",
+        "token_count": 1602,
+        "score": 0.7026,
+        "sha256": "b9d5cbc5bef1f32a"
+      },
+      {
+        "file": "seeds/soca/soca_03.mid",
+        "genre": "soca",
+        "rank": 3,
+        "title": "Calypso-Part-1-3",
+        "artist": "Jarre Jean Michel",
+        "token_count": 1604,
+        "score": 0.6941,
+        "sha256": "0e4f4eb21cbc67ae"
+      },
+      {
+        "file": "seeds/soca/soca_04.mid",
+        "genre": "soca",
+        "rank": 4,
+        "title": "Calypso (Part 1).2",
+        "artist": "Jean Michel Jarre",
+        "token_count": 1604,
+        "score": 0.6941,
+        "sha256": "0e4f4eb21cbc67ae"
+      },
+      {
+        "file": "seeds/soca/soca_05.mid",
+        "genre": "soca",
+        "rank": 5,
+        "title": "Calypso 1C",
+        "artist": "Zhan Mishel Zharr Jean Michel Jarre",
+        "token_count": 1604,
+        "score": 0.6941,
+        "sha256": "0e4f4eb21cbc67ae"
+      },
+      {
+        "file": "seeds/soca/soca_06.mid",
+        "genre": "soca",
+        "rank": 6,
+        "title": "Calypso and Rum",
+        "artist": "CHRISTIE,TONY",
+        "token_count": 1467,
+        "score": 0.689,
+        "sha256": "5f183b6a3b05128f"
+      },
+      {
+        "file": "seeds/soca/soca_07.mid",
+        "genre": "soca",
+        "rank": 7,
+        "title": "Soca-Dance",
+        "artist": "Trinidad Express",
+        "token_count": 1540,
+        "score": 0.688,
+        "sha256": "a7423f9f73eaff33"
+      },
+      {
+        "file": "seeds/soca/soca_08.mid",
+        "genre": "soca",
+        "rank": 8,
+        "title": "Calypso-And-Rum",
+        "artist": "Christie Tony",
+        "token_count": 1435,
+        "score": 0.686,
+        "sha256": "5e894227855f0432"
+      },
+      {
+        "file": "seeds/soca/soca_09.mid",
+        "genre": "soca",
+        "rank": 9,
+        "title": "Calypso and Rum",
+        "artist": "CHRISTIE,TONY",
+        "token_count": 1449,
+        "score": 0.6778,
+        "sha256": "bb4a79d18d42d771"
+      }
+    ],
+    "new_orleans": [
+      {
+        "file": "seeds/new_orleans/new_orleans_00.mid",
+        "genre": "new_orleans",
+        "rank": 0,
+        "title": "Walking To New Orleans",
+        "artist": "Fats Domino",
+        "token_count": 1477,
+        "score": 0.7502,
+        "sha256": "ebdf84af2210acd6"
+      },
+      {
+        "file": "seeds/new_orleans/new_orleans_01.mid",
+        "genre": "new_orleans",
+        "rank": 1,
+        "title": "Curtis Dixieland Medley",
+        "artist": "Various",
+        "token_count": 1554,
+        "score": 0.7258,
+        "sha256": "51512e7d44bf902a"
+      },
+      {
+        "file": "seeds/new_orleans/new_orleans_02.mid",
+        "genre": "new_orleans",
+        "rank": 2,
+        "title": "New Orleans",
+        "artist": "The Ventures",
+        "token_count": 1656,
+        "score": 0.6985,
+        "sha256": "41c0154d8327af2b"
+      },
+      {
+        "file": "seeds/new_orleans/new_orleans_03.mid",
+        "genre": "new_orleans",
+        "rank": 3,
+        "title": "New Orleans",
+        "artist": "The Ventures",
+        "token_count": 1656,
+        "score": 0.6985,
+        "sha256": "41c0154d8327af2b"
+      },
+      {
+        "file": "seeds/new_orleans/new_orleans_04.mid",
+        "genre": "new_orleans",
+        "rank": 4,
+        "title": "Dixieland Delight",
+        "artist": "Alabama",
+        "token_count": 1359,
+        "score": 0.695,
+        "sha256": "ed003db2ea3079c1"
+      },
+      {
+        "file": "seeds/new_orleans/new_orleans_05.mid",
+        "genre": "new_orleans",
+        "rank": 5,
+        "title": "Dixieland Delight",
+        "artist": "Alabama",
+        "token_count": 1267,
+        "score": 0.6902,
+        "sha256": "4342db8fcbb41e8e"
+      },
+      {
+        "file": "seeds/new_orleans/new_orleans_06.mid",
+        "genre": "new_orleans",
+        "rank": 6,
+        "title": "Dixieland Delight",
+        "artist": "Alabama",
+        "token_count": 1326,
+        "score": 0.6877,
+        "sha256": "8726a47a6868855f"
+      },
+      {
+        "file": "seeds/new_orleans/new_orleans_07.mid",
+        "genre": "new_orleans",
+        "rank": 7,
+        "title": "New Orleans",
+        "artist": "The Ventures",
+        "token_count": 1649,
+        "score": 0.6848,
+        "sha256": "ce8f895216ac1c7d"
+      },
+      {
+        "file": "seeds/new_orleans/new_orleans_08.mid",
+        "genre": "new_orleans",
+        "rank": 8,
+        "title": "Dixieland Delight",
+        "artist": "Alabama",
+        "token_count": 1144,
+        "score": 0.6658,
+        "sha256": "92ca2c98efe41bce"
+      },
+      {
+        "file": "seeds/new_orleans/new_orleans_09.mid",
+        "genre": "new_orleans",
+        "rank": 9,
+        "title": "Blue Jeans I New Orleans",
+        "artist": "Kandis",
+        "token_count": 1010,
+        "score": 0.6396,
+        "sha256": "53e58b9f7a65c85b"
+      }
+    ],
+    "tango": [
+      {
+        "file": "seeds/tango/tango_00.mid",
+        "genre": "tango",
+        "rank": 0,
+        "title": "Tango mit Fernando.1",
+        "artist": "Kristina Bach",
+        "token_count": 1512,
+        "score": 0.7511,
+        "sha256": "874810f2029ab763"
+      },
+      {
+        "file": "seeds/tango/tango_01.mid",
+        "genre": "tango",
+        "rank": 1,
+        "title": "Tango mit Fernando1",
+        "artist": "Kristina Bach",
+        "token_count": 1512,
+        "score": 0.7511,
+        "sha256": "874810f2029ab763"
+      },
+      {
+        "file": "seeds/tango/tango_02.mid",
+        "genre": "tango",
+        "rank": 2,
+        "title": "Tango mit Fernando1",
+        "artist": "Kristina Bach",
+        "token_count": 1475,
+        "score": 0.742,
+        "sha256": "4fc899fcdb2a7904"
+      },
+      {
+        "file": "seeds/tango/tango_03.mid",
+        "genre": "tango",
+        "rank": 3,
+        "title": "Tango mit Fernando.1",
+        "artist": "Kristina Bach",
+        "token_count": 1475,
+        "score": 0.742,
+        "sha256": "4fc899fcdb2a7904"
+      },
+      {
+        "file": "seeds/tango/tango_04.mid",
+        "genre": "tango",
+        "rank": 4,
+        "title": "Guitar-Tango-2",
+        "artist": "Shadows The",
+        "token_count": 1581,
+        "score": 0.7384,
+        "sha256": "23b2db75d8200eb7"
+      },
+      {
+        "file": "seeds/tango/tango_05.mid",
+        "genre": "tango",
+        "rank": 5,
+        "title": "Guitar-Tango-2",
+        "artist": "Shadows The",
+        "token_count": 1551,
+        "score": 0.7341,
+        "sha256": "2ac5f9cff186af97"
+      },
+      {
+        "file": "seeds/tango/tango_06.mid",
+        "genre": "tango",
+        "rank": 6,
+        "title": "Tango mit Fernando1",
+        "artist": "Kristina Bach",
+        "token_count": 1457,
+        "score": 0.7267,
+        "sha256": "0ad58e814ee0a5a2"
+      },
+      {
+        "file": "seeds/tango/tango_07.mid",
+        "genre": "tango",
+        "rank": 7,
+        "title": "Tango mit Fernando.1",
+        "artist": "Kristina Bach",
+        "token_count": 1457,
+        "score": 0.7267,
+        "sha256": "0ad58e814ee0a5a2"
+      },
+      {
+        "file": "seeds/tango/tango_08.mid",
+        "genre": "tango",
+        "rank": 8,
+        "title": "Tango mit Fernando.1",
+        "artist": "Kristina Bach",
+        "token_count": 1453,
+        "score": 0.7265,
+        "sha256": "b0cc369b56edae7a"
+      },
+      {
+        "file": "seeds/tango/tango_09.mid",
+        "genre": "tango",
+        "rank": 9,
+        "title": "Tango mit Fernando1",
+        "artist": "Kristina Bach",
+        "token_count": 1453,
+        "score": 0.7265,
+        "sha256": "b0cc369b56edae7a"
+      }
+    ],
+    "korean": [
+      {
+        "file": "seeds/korean/korean_00.mid",
+        "genre": "korean",
+        "rank": 0,
+        "title": "Hand In Hand Karaoke",
+        "artist": "Koreana",
+        "token_count": 843,
+        "score": 0.5157,
+        "sha256": "a236c020bddd851c"
+      },
+      {
+        "file": "seeds/korean/korean_01.mid",
+        "genre": "korean",
+        "rank": 1,
+        "title": "Hand In Hand Karaoke",
+        "artist": "Koreana",
+        "token_count": 865,
+        "score": 0.511,
+        "sha256": "f29f75f0e160ca52"
+      },
+      {
+        "file": "seeds/korean/korean_02.mid",
+        "genre": "korean",
+        "rank": 2,
+        "title": "Hand In Hand Karaoke",
+        "artist": "Koreana",
+        "token_count": 779,
+        "score": 0.4929,
+        "sha256": "29ef1541e95bfddf"
+      },
+      {
+        "file": "seeds/korean/korean_03.mid",
+        "genre": "korean",
+        "rank": 3,
+        "title": "Hand In Hand Karaoke",
+        "artist": "Koreana",
+        "token_count": 687,
+        "score": 0.4815,
+        "sha256": "aa5669ba5ac86b1f"
+      }
+    ],
+    "drill": [
+      {
+        "file": "seeds/drill/drill_00.mid",
+        "genre": "drill",
+        "rank": 0,
+        "title": "Daddy, Brother, Lover, Little Boy (The Electric Drill Song)",
+        "artist": "Big Mr",
+        "token_count": 837,
+        "score": 0.5866,
+        "sha256": "d5183ab22826bc43"
+      },
+      {
+        "file": "seeds/drill/drill_01.mid",
+        "genre": "drill",
+        "rank": 1,
+        "title": "Daddy Brother Lover Little Boy The Electric Drill Song",
+        "artist": "Big Mr",
+        "token_count": 837,
+        "score": 0.5866,
+        "sha256": "d5183ab22826bc43"
+      },
+      {
+        "file": "seeds/drill/drill_02.mid",
+        "genre": "drill",
+        "rank": 2,
+        "title": "Daddy Brother Lover Little Boy The Electric Drill Song",
+        "artist": "Big Mr",
+        "token_count": 837,
+        "score": 0.5866,
+        "sha256": "d5183ab22826bc43"
+      },
+      {
+        "file": "seeds/drill/drill_03.mid",
+        "genre": "drill",
+        "rank": 3,
+        "title": "Daddy, Brother, Lover, Little Boy (The Electric Drill Song)",
+        "artist": "Big Mr",
+        "token_count": 832,
+        "score": 0.5642,
+        "sha256": "91ec7bfb7fb92bb4"
+      },
+      {
+        "file": "seeds/drill/drill_04.mid",
+        "genre": "drill",
+        "rank": 4,
+        "title": "Daddy Brother Lover Little Boy The Electric Drill Song",
+        "artist": "Big Mr",
+        "token_count": 832,
+        "score": 0.5642,
+        "sha256": "91ec7bfb7fb92bb4"
+      },
+      {
+        "file": "seeds/drill/drill_05.mid",
+        "genre": "drill",
+        "rank": 5,
+        "title": "Daddy, Brother, Lover, Little Boy (The Electric Drill Song)",
+        "artist": "Big Mr",
+        "token_count": 832,
+        "score": 0.5642,
+        "sha256": "91ec7bfb7fb92bb4"
+      },
+      {
+        "file": "seeds/drill/drill_06.mid",
+        "genre": "drill",
+        "rank": 6,
+        "title": "Daddy Brother Lover Little Boy The Electric Drill Song",
+        "artist": "Big Mr",
+        "token_count": 832,
+        "score": 0.5642,
+        "sha256": "91ec7bfb7fb92bb4"
+      },
+      {
+        "file": "seeds/drill/drill_07.mid",
+        "genre": "drill",
+        "rank": 7,
+        "title": "Daddy, Brother, Lover, Little Boy (The Electric Drill Song)",
+        "artist": "Big Mr",
+        "token_count": 675,
+        "score": 0.5518,
+        "sha256": "87feb858b2cce242"
+      },
+      {
+        "file": "seeds/drill/drill_08.mid",
+        "genre": "drill",
+        "rank": 8,
+        "title": "Daddy Brother Lover Little Boy The Electric Drill Song",
+        "artist": "Big Mr",
+        "token_count": 675,
+        "score": 0.5518,
+        "sha256": "87feb858b2cce242"
+      },
+      {
+        "file": "seeds/drill/drill_09.mid",
+        "genre": "drill",
+        "rank": 9,
+        "title": "Daddy Brother Lover Little Boy The Electric Drill Song",
+        "artist": "Big Mr",
+        "token_count": 675,
+        "score": 0.5518,
+        "sha256": "87feb858b2cce242"
+      }
+    ],
+    "flamenco": [
+      {
+        "file": "seeds/flamenco/flamenco_00.mid",
+        "genre": "flamenco",
+        "rank": 0,
+        "title": "Spanish Guitar",
+        "artist": "Guns N Roses",
+        "token_count": 1670,
+        "score": 0.747,
+        "sha256": "c888838c00c7e01a"
+      },
+      {
+        "file": "seeds/flamenco/flamenco_01.mid",
+        "genre": "flamenco",
+        "rank": 1,
+        "title": "Spanish Guitar",
+        "artist": "Guns N Roses",
+        "token_count": 1308,
+        "score": 0.6479,
+        "sha256": "d3e09d6247937ebf"
+      },
+      {
+        "file": "seeds/flamenco/flamenco_02.mid",
+        "genre": "flamenco",
+        "rank": 2,
+        "title": "Flamenco Dance Part 2",
+        "artist": "Cher",
+        "token_count": 1148,
+        "score": 0.6252,
+        "sha256": "f346c8d696355d0b"
+      },
+      {
+        "file": "seeds/flamenco/flamenco_03.mid",
+        "genre": "flamenco",
+        "rank": 3,
+        "title": "Flamenco Dance, Part 2",
+        "artist": "Cher",
+        "token_count": 1148,
+        "score": 0.6252,
+        "sha256": "f346c8d696355d0b"
+      },
+      {
+        "file": "seeds/flamenco/flamenco_04.mid",
+        "genre": "flamenco",
+        "rank": 4,
+        "title": "Flamenco Dance, Part 2",
+        "artist": "Cher",
+        "token_count": 1155,
+        "score": 0.6195,
+        "sha256": "14e3ce413fee5968"
+      },
+      {
+        "file": "seeds/flamenco/flamenco_05.mid",
+        "genre": "flamenco",
+        "rank": 5,
+        "title": "Flamenco Dance Part 2",
+        "artist": "Cher",
+        "token_count": 1155,
+        "score": 0.6195,
+        "sha256": "14e3ce413fee5968"
+      },
+      {
+        "file": "seeds/flamenco/flamenco_06.mid",
+        "genre": "flamenco",
+        "rank": 6,
+        "title": "Spanish Guitar",
+        "artist": "Guns N Roses",
+        "token_count": 1277,
+        "score": 0.6115,
+        "sha256": "a79f027dd620030a"
+      },
+      {
+        "file": "seeds/flamenco/flamenco_07.mid",
+        "genre": "flamenco",
+        "rank": 7,
+        "title": "Spanish Guitar",
+        "artist": "Guns N Roses",
+        "token_count": 1162,
+        "score": 0.6102,
+        "sha256": "f61b1544436cd356"
+      },
+      {
+        "file": "seeds/flamenco/flamenco_08.mid",
+        "genre": "flamenco",
+        "rank": 8,
+        "title": "Latin 104 - Flamenco",
+        "artist": "Cake Walk",
+        "token_count": 1105,
+        "score": 0.5882,
+        "sha256": "702966be2fb9b260"
+      },
+      {
+        "file": "seeds/flamenco/flamenco_09.mid",
+        "genre": "flamenco",
+        "rank": 9,
+        "title": "Latin 104 - Flamenco",
+        "artist": "Cake Walk",
+        "token_count": 1100,
+        "score": 0.5873,
+        "sha256": "764835ba18147523"
+      }
+    ],
+    "indie_folk": [
+      {
+        "file": "seeds/indie_folk/indie_folk_00.mid",
+        "genre": "indie_folk",
+        "rank": 0,
+        "title": "The Blue Chip Bop",
+        "artist": "Acoustic Alchemy",
+        "token_count": 1101,
+        "score": 0.7141,
+        "sha256": "1010d77c3b026436"
+      },
+      {
+        "file": "seeds/indie_folk/indie_folk_01.mid",
+        "genre": "indie_folk",
+        "rank": 1,
+        "title": "Acoustic Childhood XG",
+        "artist": "Alex Volkov",
+        "token_count": 1535,
+        "score": 0.7119,
+        "sha256": "a2e4da30bbeafc0d"
+      },
+      {
+        "file": "seeds/indie_folk/indie_folk_02.mid",
+        "genre": "indie_folk",
+        "rank": 2,
+        "title": "The Blue Chip Bop",
+        "artist": "Acoustic Alchemy",
+        "token_count": 1125,
+        "score": 0.7075,
+        "sha256": "a9d2e66c6eb8b705"
+      },
+      {
+        "file": "seeds/indie_folk/indie_folk_03.mid",
+        "genre": "indie_folk",
+        "rank": 3,
+        "title": "Only When I Sleep Acoustic",
+        "artist": "Corrs",
+        "token_count": 1520,
+        "score": 0.6608,
+        "sha256": "18435229f9b3bece"
+      },
+      {
+        "file": "seeds/indie_folk/indie_folk_04.mid",
+        "genre": "indie_folk",
+        "rank": 4,
+        "title": "Acoustic Childhood XG",
+        "artist": "Alex Volkov",
+        "token_count": 1255,
+        "score": 0.66,
+        "sha256": "71055b03b9cff575"
+      },
+      {
+        "file": "seeds/indie_folk/indie_folk_05.mid",
+        "genre": "indie_folk",
+        "rank": 5,
+        "title": "Acoustic Demo 3",
+        "artist": "PapaRoacher",
+        "token_count": 1386,
+        "score": 0.6462,
+        "sha256": "0df373c4653cbffb"
+      },
+      {
+        "file": "seeds/indie_folk/indie_folk_06.mid",
+        "genre": "indie_folk",
+        "rank": 6,
+        "title": "Acoustic Demo 3",
+        "artist": "PapaRoacher",
+        "token_count": 1386,
+        "score": 0.6444,
+        "sha256": "232a3a8e05dac078"
+      },
+      {
+        "file": "seeds/indie_folk/indie_folk_07.mid",
+        "genre": "indie_folk",
+        "rank": 7,
+        "title": "Only When I Sleep Acoustic",
+        "artist": "Corrs",
+        "token_count": 1372,
+        "score": 0.6434,
+        "sha256": "cdb8d65651ee479d"
+      },
+      {
+        "file": "seeds/indie_folk/indie_folk_08.mid",
+        "genre": "indie_folk",
+        "rank": 8,
+        "title": "Only When I Sleep Acoustic",
+        "artist": "Corrs",
+        "token_count": 1496,
+        "score": 0.6366,
+        "sha256": "3771ac4ff5a54b42"
+      },
+      {
+        "file": "seeds/indie_folk/indie_folk_09.mid",
+        "genre": "indie_folk",
+        "rank": 9,
+        "title": "Only When I Sleep Acoustic",
+        "artist": "Corrs",
+        "token_count": 1495,
+        "score": 0.6365,
+        "sha256": "1ad48e7b54866710"
+      }
+    ],
+    "balkan": [
+      {
+        "file": "seeds/balkan/balkan_00.mid",
+        "genre": "balkan",
+        "rank": 0,
+        "title": "Balkan",
+        "artist": "Azra",
+        "token_count": 1269,
+        "score": 0.6399,
+        "sha256": "cdf749c28b8986cf"
+      },
+      {
+        "file": "seeds/balkan/balkan_01.mid",
+        "genre": "balkan",
+        "rank": 1,
+        "title": "Balkan",
+        "artist": "Azra",
+        "token_count": 1227,
+        "score": 0.6337,
+        "sha256": "6d769eb9da64675b"
+      },
+      {
+        "file": "seeds/balkan/balkan_02.mid",
+        "genre": "balkan",
+        "rank": 2,
+        "title": "Balkan",
+        "artist": "Azra",
+        "token_count": 1227,
+        "score": 0.6337,
+        "sha256": "6d769eb9da64675b"
+      },
+      {
+        "file": "seeds/balkan/balkan_03.mid",
+        "genre": "balkan",
+        "rank": 3,
+        "title": "Balkan",
+        "artist": "Azra",
+        "token_count": 1269,
+        "score": 0.6266,
+        "sha256": "988ccb26b8ac6488"
+      },
+      {
+        "file": "seeds/balkan/balkan_04.mid",
+        "genre": "balkan",
+        "rank": 4,
+        "title": "Balkan",
+        "artist": "Azra",
+        "token_count": 1135,
+        "score": 0.5837,
+        "sha256": "d5b2a1cfa484d1f9"
+      },
+      {
+        "file": "seeds/balkan/balkan_05.mid",
+        "genre": "balkan",
+        "rank": 5,
+        "title": "Balkan",
+        "artist": "Azra",
+        "token_count": 1125,
+        "score": 0.5695,
+        "sha256": "5121c73245b1a163"
+      },
+      {
+        "file": "seeds/balkan/balkan_06.mid",
+        "genre": "balkan",
+        "rank": 6,
+        "title": "Balkan",
+        "artist": "Azra",
+        "token_count": 1091,
+        "score": 0.5487,
+        "sha256": "2d7ce56d9cee4fcb"
+      },
+      {
+        "file": "seeds/balkan/balkan_07.mid",
+        "genre": "balkan",
+        "rank": 7,
+        "title": "Pyromania",
+        "artist": "Cascada",
+        "token_count": 421,
+        "score": 0.4059,
+        "sha256": "7d38c2ea32d89a34"
+      }
+    ],
+    "bossa_cumbia": [
+      {
+        "file": "seeds/bossa_cumbia/bossa_cumbia_00.mid",
+        "genre": "bossa_cumbia",
+        "rank": 0,
+        "title": "LaCumbiaCienaguera1",
+        "artist": "Cumbia",
+        "token_count": 1662,
+        "score": 0.7897,
+        "sha256": "f428792dd4bfc896"
+      },
+      {
+        "file": "seeds/bossa_cumbia/bossa_cumbia_01.mid",
+        "genre": "bossa_cumbia",
+        "rank": 1,
+        "title": "LaCumbiaCienaguera1",
+        "artist": "Cumbia",
+        "token_count": 1623,
+        "score": 0.7442,
+        "sha256": "4f44c9dde159f8c7"
+      },
+      {
+        "file": "seeds/bossa_cumbia/bossa_cumbia_02.mid",
+        "genre": "bossa_cumbia",
+        "rank": 2,
+        "title": "CumbiaLaCumbiaCienaguera",
+        "artist": "Cumbia",
+        "token_count": 1623,
+        "score": 0.7388,
+        "sha256": "fafd9ae380255205"
+      },
+      {
+        "file": "seeds/bossa_cumbia/bossa_cumbia_03.mid",
+        "genre": "bossa_cumbia",
+        "rank": 3,
+        "title": "CumbiaElChicodelApartamento",
+        "artist": "Cumbia",
+        "token_count": 1355,
+        "score": 0.6542,
+        "sha256": "9a0028eb59f91eaa"
+      },
+      {
+        "file": "seeds/bossa_cumbia/bossa_cumbia_04.mid",
+        "genre": "bossa_cumbia",
+        "rank": 4,
+        "title": "CumbiaElChicodelApartamento",
+        "artist": "Cumbia",
+        "token_count": 1233,
+        "score": 0.6349,
+        "sha256": "d65d1ff6403330b7"
+      },
+      {
+        "file": "seeds/bossa_cumbia/bossa_cumbia_05.mid",
+        "genre": "bossa_cumbia",
+        "rank": 5,
+        "title": "CumbiaMonocolorado",
+        "artist": "Cumbia",
+        "token_count": 1458,
+        "score": 0.6341,
+        "sha256": "e0950686562def46"
+      },
+      {
+        "file": "seeds/bossa_cumbia/bossa_cumbia_06.mid",
+        "genre": "bossa_cumbia",
+        "rank": 6,
+        "title": "CumbiaVinodeCoyol",
+        "artist": "Cumbia",
+        "token_count": 1015,
+        "score": 0.5818,
+        "sha256": "f800da152e1651d2"
+      }
+    ],
+    "reggaeton": [
+      {
+        "file": "seeds/reggaeton/reggaeton_00.mid",
+        "genre": "reggaeton",
+        "rank": 0,
+        "title": "Pega La Vuelta Reggaeton",
+        "artist": "Pimpinela",
+        "token_count": 1260,
+        "score": 0.6925,
+        "sha256": "dfc4eba0d14b67b9"
+      },
+      {
+        "file": "seeds/reggaeton/reggaeton_01.mid",
+        "genre": "reggaeton",
+        "rank": 1,
+        "title": "Mami Reggaeton",
+        "artist": "David Bisbal",
+        "token_count": 605,
+        "score": 0.5024,
+        "sha256": "2efdad47708a06ba"
+      }
+    ]
+  }
+}

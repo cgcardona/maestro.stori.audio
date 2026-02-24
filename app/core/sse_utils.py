@@ -7,8 +7,48 @@ and BPE token buffering so the user sees clean, properly-spaced reasoning text.
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class SSESequencer:
+    """Injects a monotonic ``seq`` counter into SSE ``data:`` frames.
+
+    Each SSE stream must create its own instance so counters are
+    independent.  The counter starts at 0 for the first event
+    (``state``) and increments by 1 for every subsequent ``data:``
+    frame.  SSE comments (e.g. ``: heartbeat``) pass through unchanged.
+
+    Thread-safety: a single ``SSESequencer`` is used within one async
+    generator — no concurrent access — so no lock is needed.
+    """
+
+    def __init__(self) -> None:
+        from app.protocol.validation import ProtocolGuard
+
+        self._seq: int = -1
+        self._guard = ProtocolGuard()
+
+    def __call__(self, event_str: str) -> str:
+        """Inject seq into a ``data:`` SSE frame string."""
+        if not event_str.startswith("data: "):
+            return event_str
+        self._seq += 1
+        data = json.loads(event_str[6:].strip())
+        data["seq"] = self._seq
+        violations = self._guard.check_event(data.get("type", "unknown"), data)
+        if violations:
+            logger.error(f"❌ ProtocolGuard violations: {violations}")
+        return f"data: {json.dumps(data, separators=(',', ':'), ensure_ascii=False)}\n\n"
+
+    @property
+    def count(self) -> int:
+        """Number of ``data:`` events sequenced so far (0-indexed last seq)."""
+        return self._seq
 
 
 async def sse_event(data: dict[str, Any]) -> str:

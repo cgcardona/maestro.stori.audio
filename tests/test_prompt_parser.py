@@ -427,7 +427,11 @@ class TestNonStructuredFallthrough:
         assert parse_prompt("STORI PROMPT\nRequest: do something") is None
 
     def test_header_with_no_request(self):
-        assert parse_prompt("STORI PROMPT\nMode: compose") is None
+        """Mode: compose without Request synthesises a default request."""
+        result = parse_prompt("STORI PROMPT\nMode: compose")
+        assert result is not None
+        assert result.mode == "compose"
+        assert result.request  # synthesised default
 
     def test_invalid_mode_value(self):
         assert parse_prompt("STORI PROMPT\nMode: destroy\nRequest: go") is None

@@ -79,10 +79,12 @@ Energy:       # optional — very low | low | medium | high | very high
 Role:         # optional — list of musical roles
 Constraints:  # optional — key-value boundary hints
 Vibe:         # optional — producer idiom lexicon (weighted)
-Request:      # required — natural language description of intent
+Request:      # required for edit/ask; optional for compose — natural language description of intent
 ```
 
-Only **Mode** and **Request** are required. Every other field is optional.
+**Mode** is always required. **Request** is required for `edit` and `ask` modes;
+for `compose` mode it is optional — when omitted the server synthesizes a
+request from the other dimensions (Style, Role, etc.).
 
 ------------------------------------------------------------------------
 

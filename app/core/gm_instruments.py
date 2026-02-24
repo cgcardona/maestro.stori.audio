@@ -88,7 +88,7 @@ GM_INSTRUMENTS: list[GMInstrument] = [
     # Guitar (24-31)
     # =========================================================================
     GMInstrument(24, "Acoustic Guitar (nylon)", "guitar", ("nylon guitar", "classical guitar", "nylon", "spanish guitar")),
-    GMInstrument(25, "Acoustic Guitar (steel)", "guitar", ("steel guitar", "acoustic guitar", "steel string", "folk guitar")),
+    GMInstrument(25, "Acoustic Guitar (steel)", "guitar", ("steel guitar", "acoustic guitar", "steel string", "folk guitar", "mandolin")),
     GMInstrument(26, "Electric Guitar (jazz)", "guitar", ("jazz guitar", "clean guitar", "hollow body")),
     GMInstrument(27, "Electric Guitar (clean)", "guitar", ("clean electric", "electric guitar clean", "electric guitar", "strat clean")),
     GMInstrument(28, "Electric Guitar (muted)", "guitar", ("muted guitar", "palm mute", "muted electric")),

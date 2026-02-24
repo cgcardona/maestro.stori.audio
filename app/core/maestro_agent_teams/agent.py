@@ -224,12 +224,9 @@ async def _run_instrument_agent_inner(
     )
 
     _generate_midi_guidance = (
-        f"For EVERY stori_generate_midi call, write a specific `prompt` field (2-3 sentences) describing:\n"
-        f"  1. Rhythmic role of {instrument_name} in a {style} track (groove anchor / counter-rhythm / melodic lead / textural pad)\n"
-        f"  2. Note range and density (e.g. 'bass stays below C3, sparse 1-2 notes/bar')\n"
-        f"  3. How it interacts with other tracks (e.g. 'offbeat chords between bass notes', 'locks to kick on beats 1 and 3')\n"
-        f"  4. Genre-specific idioms (e.g. 'dembow pattern', 'staccato upbeat stabs', 'call-and-response 4-bar motif')\n"
-        "Each section's prompt MUST be different — reflect the section's energy and density.\n"
+        "The `prompt` field in stori_generate_midi is for logging only — "
+        "the generator selects musical content via seeds and parameters. "
+        "Keep it short (a few words describing the section).\n"
     )
 
     # ── Build the pipeline steps list ──
@@ -797,6 +794,12 @@ async def _run_instrument_agent_inner(
                         "role": role,
                     }
 
+                async def _pre_emit_fallback(events: list[dict[str, Any]]) -> None:
+                    for evt in events:
+                        if evt.get("type") in _AGENT_TAGGED_EVENTS:
+                            evt = {**evt, "agentId": _agent_id}
+                        await sse_queue.put(evt)
+
                 outcome = await _apply_single_tool_call(
                     tc_id=tc.id,
                     tc_name=tc.name,
@@ -807,6 +810,7 @@ async def _run_instrument_agent_inner(
                     add_notes_failures=add_notes_failures,
                     emit_sse=True,
                     composition_context=_tool_ctx,
+                    pre_emit_callback=_pre_emit_fallback,
                 )
 
                 for evt in outcome.sse_events:
@@ -1100,6 +1104,12 @@ async def _dispatch_section_children(
             "role": role,
         }
 
+    async def _pre_emit_orphan(events: list[dict[str, Any]]) -> None:
+        for evt in events:
+            if evt.get("type") in _AGENT_TAGGED:
+                evt = {**evt, "agentId": agent_id}
+            await sse_queue.put(evt)
+
     for tc in orphaned_generates:
         resolved_args = _resolve_variable_refs(tc.params, all_tool_results)
         resolved_args["trackId"] = real_track_id
@@ -1114,6 +1124,7 @@ async def _dispatch_section_children(
             add_notes_failures=add_notes_failures,
             emit_sse=True,
             composition_context=_orphan_gen_ctx,
+            pre_emit_callback=_pre_emit_orphan,
         )
         for evt in outcome.sse_events:
             if evt.get("type") in _AGENT_TAGGED:

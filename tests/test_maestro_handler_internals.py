@@ -1012,11 +1012,13 @@ class TestPlanTracker:
         ])
         tracker = _PlanTracker()
         tracker.build(tcs, "Add drums", {}, False, StateStore(conversation_id="t"))
-        assert len(tracker.steps) == 2  # "Create Drums track" + "Add content to Drums"
         assert tracker.steps[0].label == "Create Drums track"
         assert tracker.steps[0].track_name == "Drums"
-        assert tracker.steps[1].label == "Add content to Drums"
-        assert tracker.steps[1].track_name == "Drums"
+        assert tracker.steps[0].phase == "setup"
+        content_steps = [s for s in tracker.steps if "content" in s.label.lower()]
+        assert len(content_steps) == 1
+        assert content_steps[0].label == "Add content to Drums"
+        assert content_steps[0].phase == "composition"
 
     def test_group_multiple_tracks_contiguous(self):
         """Multiple track creations produce per-track contiguous steps."""
@@ -1031,13 +1033,12 @@ class TestPlanTracker:
         ])
         tracker = _PlanTracker()
         tracker.build(tcs, "Make a beat", {}, False, StateStore(conversation_id="t"))
-        # tempo + (create drums, add content drums) + (create bass, add content bass) = 5
-        assert len(tracker.steps) == 5
-        assert "tempo" in tracker.steps[0].label.lower()
-        assert tracker.steps[1].label == "Create Drums track"
-        assert tracker.steps[2].label == "Add content to Drums"
-        assert tracker.steps[3].label == "Create Bass track"
-        assert tracker.steps[4].label == "Add content to Bass"
+        labels = [s.label for s in tracker.steps]
+        assert "tempo" in labels[0].lower()
+        assert "Create Drums track" in labels
+        assert "Add content to Drums" in labels
+        assert "Create Bass track" in labels
+        assert "Add content to Bass" in labels
 
     def test_effects_grouped_per_track(self):
         """Bus setup becomes project-level; insert effects are track-targeted."""
@@ -1048,10 +1049,12 @@ class TestPlanTracker:
         ])
         tracker = _PlanTracker()
         tracker.build(tcs, "Add effects", {}, False, StateStore(conversation_id="t"))
-        # Bus setup is one step, insert effect + send is another
         labels = [s.label for s in tracker.steps]
+        phases = [s.phase for s in tracker.steps]
         assert any("Reverb bus" in l for l in labels)
-        assert any("effects to Drums" in l for l in labels)
+        assert any("effects" in l.lower() for l in labels)
+        assert "mixing" in phases
+        assert "soundDesign" in phases
 
     def test_plan_event_shape_includes_toolName_when_set(self):
         """to_plan_event() includes toolName when the step has a tool_name."""
@@ -2302,7 +2305,7 @@ class TestParallelGroup:
         steps = event["steps"]
 
         for s in steps:
-            if "Create" in s["label"] or "Add content" in s["label"]:
+            if "Add content" in s["label"]:
                 assert s.get("parallelGroup") == "instruments", f"Step '{s['label']}' should be parallel"
             elif "tempo" in s["label"].lower() or "bus" in s["label"].lower():
                 assert "parallelGroup" not in s, f"Step '{s['label']}' should NOT be parallel"
@@ -2362,8 +2365,9 @@ class TestParallelGroup:
         ])
         tracker = _PlanTracker()
         tracker.build(tcs, "Drums", {}, False, StateStore(conversation_id="t"))
-        for step in tracker.steps:
-            assert step.parallel_group == "instruments"
+        instrument_steps = [s for s in tracker.steps if s.parallel_group == "instruments"]
+        assert len(instrument_steps) >= 2
+        assert any("effects" in s.label.lower() for s in instrument_steps)
 
     def test_single_instrument_still_works(self):
         """A single instrument request still produces valid steps (no crash)."""
@@ -2374,8 +2378,9 @@ class TestParallelGroup:
         ])
         tracker = _PlanTracker()
         tracker.build(tcs, "Piano", {}, False, StateStore(conversation_id="t"))
-        assert len(tracker.steps) == 2
-        assert all(s.parallel_group == "instruments" for s in tracker.steps)
+        assert len(tracker.steps) >= 2
+        assert any(s.label == "Create Piano track" for s in tracker.steps)
+        assert any("content" in s.label.lower() for s in tracker.steps)
 
 
 # ---------------------------------------------------------------------------

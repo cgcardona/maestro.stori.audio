@@ -396,10 +396,23 @@ async def _handle_composition_agent_team(
     _frozen_ev: tuple[tuple[str, float], ...] | None = None
     if _emotion_vector is not None:
         _frozen_ev = RuntimeContext.freeze_emotion_vector(_emotion_vector)
+
+    _n_agents = len(parsed.roles)
+    if _n_agents >= 5:
+        _qp = "fast"
+    elif _n_agents >= 3:
+        _qp = "balanced"
+    else:
+        _qp = "quality"
+    logger.info(
+        f"[{trace.trace_id[:8]}] 🎚️ quality_preset={_qp} "
+        f"(agents={_n_agents}, sections={len(_section_specs)})"
+    )
+
     _runtime_context = RuntimeContext(
         raw_prompt=prompt,
         emotion_vector=_frozen_ev,
-        quality_preset="quality",
+        quality_preset=_qp,
     )
 
     _role_track_info: dict[str, dict[str, Any]] = {}
@@ -600,9 +613,22 @@ async def _handle_composition_agent_team(
             except Exception:
                 pass
 
-        # Frozen progress detection — separate timer from heartbeat
+        # Frozen progress detection — separate timer from heartbeat.
+        # After 15s of no real events, emit a real status event so the
+        # frontend's EventSource handler fires and resets its timeout.
+        # SSE comment heartbeats keep TCP alive but DON'T trigger JS handlers.
         _silence = _now - _last_progress_time
-        if _silence > _stall_warn_interval and _now - _last_warn_time > _stall_warn_interval:
+        _STATUS_KEEPALIVE_INTERVAL = 15.0
+        if _silence > _STATUS_KEEPALIVE_INTERVAL and _now - _last_warn_time > _STATUS_KEEPALIVE_INTERVAL:
+            _pending_names = [t.get_name() for t in pending]
+            yield await sse_event({
+                "type": "status",
+                "message": f"Generating music ({len(pending)} agents working)...",
+            })
+            _last_warn_time = _now
+            _last_heartbeat_time = _now
+
+        if _silence > _stall_warn_interval:
             _stall_warnings += 1
             _pending_names = [t.get_name() for t in pending]
             logger.warning(
@@ -612,7 +638,6 @@ async def _handle_composition_agent_team(
                 f"total_events={_total_events_emitted}, "
                 f"pending_agents={_pending_names})"
             )
-            _last_warn_time = _now
 
         for task in done:
             _task_name = task.get_name()

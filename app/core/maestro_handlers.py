@@ -103,10 +103,20 @@ async def orchestrate(
                 # COMPOSING → variation (music generation requires human review)
                 #   EXCEPT: empty project → override to EDITING (can't diff against nothing)
                 #   EXCEPT: additive composition (new section / new tracks) → EDITING
+                #   OVERRIDE: explicit `Mode: compose` in STORI PROMPT always stays COMPOSING
                 # EDITING   → apply (structural ops execute directly)
                 # REASONING → n/a (no tools)
+                _explicit_compose = (
+                    _orch_parsed is not None and _orch_parsed.mode == "compose"
+                )
                 if route.sse_state == SSEState.COMPOSING:
-                    if _project_needs_structure(project_context):
+                    if _explicit_compose:
+                        execution_mode = "variation"
+                        logger.info(
+                            f"🎵 Explicit Mode: compose in STORI PROMPT — "
+                            f"staying COMPOSING (Orpheus generation)"
+                        )
+                    elif _project_needs_structure(project_context):
                         route = _create_editing_composition_route(route)
                         execution_mode = "apply"
                         logger.info(

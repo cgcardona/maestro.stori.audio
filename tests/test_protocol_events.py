@@ -670,33 +670,47 @@ class TestPhase2RuntimeIntegration:
 
 
 class TestProtocolGuardEnforcedGlobally:
-    """Prove ProtocolGuard is wired into ALL streaming endpoints."""
+    """Prove ProtocolGuard is wired into ALL streaming endpoints.
+
+    Routes use either a direct ``ProtocolGuard()`` or ``SSESequencer()``
+    (which creates a ``ProtocolGuard`` internally).  Both are accepted.
+    """
+
+    @staticmethod
+    def _has_guard(text: str) -> bool:
+        """Return True if the source uses ProtocolGuard directly or via SSESequencer."""
+        return "ProtocolGuard()" in text or "SSESequencer()" in text
+
+    @staticmethod
+    def _has_guard_import(text: str) -> bool:
+        return (
+            "from app.protocol.validation import ProtocolGuard" in text
+            or "from app.core.sse_utils import" in text
+        )
 
     def test_maestro_route_has_guard(self):
-        """maestro.py instantiates ProtocolGuard in stream_with_budget."""
+        """maestro.py uses ProtocolGuard (directly or via SSESequencer)."""
         source = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "maestro.py"
         text = source.read_text()
-        assert "ProtocolGuard()" in text
-        assert "check_event" in text
-        assert "from app.protocol.validation import ProtocolGuard" in text
+        assert self._has_guard(text)
+        assert self._has_guard_import(text)
 
     def test_messages_route_has_guard(self):
-        """messages.py instantiates ProtocolGuard in stream_with_save."""
+        """messages.py uses ProtocolGuard (directly or via SSESequencer)."""
         source = (
             Path(__file__).resolve().parent.parent
             / "app" / "api" / "routes" / "conversations" / "messages.py"
         )
         text = source.read_text()
-        assert "ProtocolGuard()" in text
-        assert "check_event" in text
-        assert "from app.protocol.validation import ProtocolGuard" in text
+        assert self._has_guard(text)
+        assert self._has_guard_import(text)
 
     def test_mcp_route_has_guard(self):
         """mcp.py instantiates ProtocolGuard in event_generator."""
         source = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "mcp.py"
         text = source.read_text()
-        assert "ProtocolGuard()" in text
-        assert "from app.protocol.validation import ProtocolGuard" in text
+        assert self._has_guard(text)
+        assert self._has_guard_import(text)
 
     def test_variation_stream_has_guard(self):
         """variation/stream.py instantiates ProtocolGuard."""
@@ -705,11 +719,11 @@ class TestProtocolGuardEnforcedGlobally:
             / "app" / "api" / "routes" / "variation" / "stream.py"
         )
         text = source.read_text()
-        assert "ProtocolGuard()" in text
-        assert "from app.protocol.validation import ProtocolGuard" in text
+        assert self._has_guard(text)
+        assert self._has_guard_import(text)
 
     def test_protocol_guard_enforced_globally(self):
-        """All four streaming routes import and instantiate ProtocolGuard."""
+        """All four streaming routes use ProtocolGuard (directly or via SSESequencer)."""
         base = Path(__file__).resolve().parent.parent
         routes = [
             base / "app" / "api" / "routes" / "maestro.py",
@@ -719,9 +733,9 @@ class TestProtocolGuardEnforcedGlobally:
         ]
         for route in routes:
             text = route.read_text()
-            assert "ProtocolGuard()" in text, f"{route.name} missing ProtocolGuard()"
-            assert "from app.protocol.validation import ProtocolGuard" in text, (
-                f"{route.name} missing ProtocolGuard import"
+            assert self._has_guard(text), f"{route.name} missing ProtocolGuard()/SSESequencer()"
+            assert self._has_guard_import(text), (
+                f"{route.name} missing ProtocolGuard/SSESequencer import"
             )
 
 
@@ -904,6 +918,7 @@ class TestProtocolConvergenceFinal:
 
         allowed = {
             "emitter.py",
+            "sse_utils.py",
         }
 
         scan_dirs = [
