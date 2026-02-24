@@ -672,70 +672,341 @@ class JobQueue:
                 logger.info(f"🧹 Cleaned up {len(expired)} expired jobs")
 
 
-# GM program numbers by instrument type
-INSTRUMENT_PROGRAMS = {
-    "piano": 0,
-    "electric_piano": 4,
-    "organ": 16,
-    "guitar": 25,
-    "acoustic_guitar": 25,
-    "electric_guitar": 27,
-    "bass": 33,
-    "electric_bass": 33,
-    "synth_bass": 38,
-    "strings": 48,
-    "synth": 80,
-    "pad": 88,
-    "pads": 88,
-    "lead": 80,
-    "melody": 0,
-    "chords": 0,
-    "keys": 4,
-    "arp": 80,
-    "fx": 96,
-    "palmas": 0,
-    "cajon": 0,
+# =============================================================================
+# GM instrument resolution — full 128-program coverage
+#
+# Replaces the former hardcoded INSTRUMENT_PROGRAMS and
+# _ROLE_TO_ORPHEUS_INSTRUMENT dicts.  Everything is keyed by GM program
+# number (0-127); string names are only produced at the Gradio boundary
+# via _TMIDIX_PATCH_NAMES.
+# =============================================================================
+
+# Authoritative TMIDIX Number2patch table.  Index = GM program number.
+# Must match the list compiled into the Orpheus HF Space's TMIDIX module.
+_TMIDIX_PATCH_NAMES: tuple[str, ...] = (
+    # Piano (0-7)
+    "Acoustic Grand", "Bright Acoustic", "Electric Grand", "Honky-Tonk",
+    "Electric Piano 1", "Electric Piano 2", "Harpsichord", "Clav",
+    # Chromatic Percussion (8-15)
+    "Celesta", "Glockenspiel", "Music Box", "Vibraphone",
+    "Marimba", "Xylophone", "Tubular Bells", "Dulcimer",
+    # Organ (16-23)
+    "Drawbar Organ", "Percussive Organ", "Rock Organ", "Church Organ",
+    "Reed Organ", "Accordion", "Harmonica", "Tango Accordion",
+    # Guitar (24-31)
+    "Acoustic Guitar(nylon)", "Acoustic Guitar(steel)",
+    "Electric Guitar(jazz)", "Electric Guitar(clean)",
+    "Electric Guitar(muted)", "Overdriven Guitar",
+    "Distortion Guitar", "Guitar Harmonics",
+    # Bass (32-39)
+    "Acoustic Bass", "Electric Bass(finger)", "Electric Bass(pick)",
+    "Fretless Bass", "Slap Bass 1", "Slap Bass 2",
+    "Synth Bass 1", "Synth Bass 2",
+    # Strings (40-47)
+    "Violin", "Viola", "Cello", "Contrabass",
+    "Tremolo Strings", "Pizzicato Strings", "Orchestral Harp", "Timpani",
+    # Ensemble (48-55)
+    "String Ensemble 1", "String Ensemble 2", "SynthStrings 1", "SynthStrings 2",
+    "Choir Aahs", "Voice Oohs", "Synth Voice", "Orchestra Hit",
+    # Brass (56-63)
+    "Trumpet", "Trombone", "Tuba", "Muted Trumpet",
+    "French Horn", "Brass Section", "SynthBrass 1", "SynthBrass 2",
+    # Reed (64-71)
+    "Soprano Sax", "Alto Sax", "Tenor Sax", "Baritone Sax",
+    "Oboe", "English Horn", "Bassoon", "Clarinet",
+    # Pipe (72-79)
+    "Piccolo", "Flute", "Recorder", "Pan Flute",
+    "Blown Bottle", "Skakuhachi", "Whistle", "Ocarina",
+    # Synth Lead (80-87)
+    "Lead 1 (square)", "Lead 2 (sawtooth)", "Lead 3 (calliope)",
+    "Lead 4 (chiff)", "Lead 5 (charang)", "Lead 6 (voice)",
+    "Lead 7 (fifths)", "Lead 8 (bass+lead)",
+    # Synth Pad (88-95)
+    "Pad 1 (new age)", "Pad 2 (warm)", "Pad 3 (polysynth)",
+    "Pad 4 (choir)", "Pad 5 (bowed)", "Pad 6 (metallic)",
+    "Pad 7 (halo)", "Pad 8 (sweep)",
+    # Synth Effects (96-103)
+    "FX 1 (rain)", "FX 2 (soundtrack)", "FX 3 (crystal)",
+    "FX 4 (atmosphere)", "FX 5 (brightness)", "FX 6 (goblins)",
+    "FX 7 (echoes)", "FX 8 (sci-fi)",
+    # Ethnic (104-111)
+    "Sitar", "Banjo", "Shamisen", "Koto",
+    "Kalimba", "Bagpipe", "Fiddle", "Shanai",
+    # Percussive (112-119)
+    "Tinkle Bell", "Agogo", "Steel Drums", "Woodblock",
+    "Taiko Drum", "Melodic Tom", "Synth Drum", "Reverse Cymbal",
+    # Sound Effects (120-127)
+    "Guitar Fret Noise", "Breath Noise", "Seashore", "Bird Tweet",
+    "Telephone Ring", "Helicopter", "Applause", "Gunshot",
+)
+
+assert len(_TMIDIX_PATCH_NAMES) == 128
+
+# Reverse lookup: TMIDIX name → program number (case-insensitive).
+_TMIDIX_NAME_TO_PROGRAM: dict[str, int] = {
+    name.lower(): idx for idx, name in enumerate(_TMIDIX_PATCH_NAMES)
 }
 
-# Map Maestro instrument role → Orpheus GM instrument name for prime_instruments.
-# Must match TMIDIX Number2patch names exactly (e.g. "Pad 2 (warm)", not "pads").
-_ROLE_TO_ORPHEUS_INSTRUMENT: dict[str, str] = {
-    # Drums / percussion
-    "drums": "Drums",
-    "cajon": "Drums",
-    "palmas": "Woodblock",
-    "percussion": "Drums",
-    # Bass
-    "bass": "Electric Bass(finger)",
-    "electric_bass": "Electric Bass(finger)",
-    "synth_bass": "Synth Bass 1",
-    # Piano / keys
-    "piano": "Acoustic Grand",
-    "electric_piano": "Electric Piano 1",
-    "keys": "Electric Piano 1",
-    "organ": "Drawbar Organ",
-    # Guitar
-    "guitar": "Acoustic Guitar(steel)",
-    "acoustic_guitar": "Acoustic Guitar(nylon)",
-    "electric_guitar": "Electric Guitar(clean)",
-    # Chords / harmony
-    "chords": "Acoustic Grand",
-    "harmony": "Acoustic Grand",
-    # Melody / lead
-    "melody": "Acoustic Grand",
-    "lead": "Lead 1 (square)",
-    "arp": "Lead 3 (calliope)",
-    # Pads / synth
-    "pads": "Pad 2 (warm)",
-    "pad": "Pad 2 (warm)",
-    "synth": "Lead 2 (sawtooth)",
-    # Strings
-    "strings": "String Ensemble 1",
-    "violin": "Violin",
-    "cello": "Cello",
-    # FX
-    "fx": "FX 1 (rain)",
+# ---------------------------------------------------------------------------
+# Alias table: natural-language role/instrument name → GM program number.
+#
+# Covers every alias from gm_instruments.py plus Stori prompt roles
+# (djembe, gayageum, oud, etc.) mapped to the nearest GM proxy.
+# Drums/percussion resolve to None (channel 10, no program change).
+# ---------------------------------------------------------------------------
+_DRUM_KEYWORDS: frozenset[str] = frozenset({
+    "drums", "drum", "drum kit", "kit", "kick", "snare", "hihat", "hi-hat",
+    "percussion", "perc", "beat", "cajon", "cajón", "djembe", "dundun",
+    "shekere", "janggu", "kendang", "tabla", "riq", "qraqeb", "bombo",
+    "guacharaca", "tumbadora", "congas", "bongos", "conga", "bongo",
+    "clapping", "palmas", "taiko", "timbales", "cowbell",
+    "808", "tr-808", "909", "tr-909",
+})
+
+_GM_ALIASES: dict[str, int] = {
+    # --- Piano / keys (0-7) ---
+    "piano": 0, "acoustic piano": 0, "grand piano": 0, "concert piano": 0,
+    "bright piano": 1, "bright acoustic": 1,
+    "electric grand": 2,
+    "honky-tonk": 3, "honky tonk": 3, "honkytonk": 3, "ragtime piano": 3,
+    "electric piano": 4, "electric piano 1": 4, "rhodes": 4, "fender rhodes": 4,
+    "ep1": 4, "e-piano": 4,
+    "electric piano 2": 5, "dx7": 5, "fm piano": 5, "ep2": 5,
+    "harpsichord": 6, "clavecin": 6, "cembalo": 6,
+    "clavinet": 7, "clav": 7, "d6": 7,
+    # --- Chromatic Percussion (8-15) ---
+    "celesta": 8, "celeste": 8,
+    "glockenspiel": 9, "glock": 9, "bells": 9,
+    "music box": 10, "musicbox": 10,
+    "vibraphone": 11, "vibes": 11, "vibraharp": 11,
+    "marimba": 12, "balafon": 12,
+    "xylophone": 13, "xylo": 13,
+    "tubular bells": 14, "chimes": 14, "orchestral chimes": 14,
+    "dulcimer": 15, "hammered dulcimer": 15,
+    # --- Organ (16-23) ---
+    "organ": 16, "drawbar organ": 16, "hammond": 16, "b3": 16,
+    "percussive organ": 17, "perc organ": 17,
+    "rock organ": 18, "distorted organ": 18,
+    "church organ": 19, "pipe organ": 19, "cathedral organ": 19,
+    "reed organ": 20, "harmonium": 20,
+    "accordion": 21, "accordian": 21,
+    "harmonica": 22, "blues harp": 22, "mouth organ": 22,
+    "tango accordion": 23, "bandoneon": 23, "bandonéon": 23,
+    # --- Guitar (24-31) ---
+    "nylon guitar": 24, "classical guitar": 24, "nylon": 24,
+    "spanish guitar": 24,
+    "acoustic guitar": 25, "steel guitar": 25, "steel string": 25,
+    "folk guitar": 25, "mandolin": 25, "charango": 25,
+    "jazz guitar": 26, "hollow body": 26,
+    "electric guitar": 27, "clean guitar": 27, "clean electric": 27,
+    "strat clean": 27,
+    "muted guitar": 28, "palm mute": 28, "muted electric": 28,
+    "overdriven guitar": 29, "overdrive guitar": 29, "crunchy guitar": 29,
+    "distortion guitar": 30, "distorted guitar": 30, "heavy guitar": 30,
+    "metal guitar": 30,
+    "guitar harmonics": 31, "harmonics": 31,
+    # --- Bass (32-39) ---
+    "acoustic bass": 32, "upright bass": 32, "double bass": 32,
+    "standup bass": 32, "contrabass": 32, "guembri": 32,
+    "bass": 33, "electric bass": 33, "finger bass": 33,
+    "bass guitar": 33, "fingered bass": 33,
+    "pick bass": 34, "picked bass": 34,
+    "fretless bass": 35, "fretless": 35,
+    "slap bass": 36, "slap": 36, "slap bass 1": 36,
+    "slap bass 2": 37, "pop bass": 37,
+    "synth bass": 38, "synth bass 1": 38, "analog bass": 38,
+    "bass drone": 38,
+    "synth bass 2": 39, "digital bass": 39, "fm bass": 39,
+    # --- Strings (40-47) ---
+    "violin": 40, "fiddle": 40, "haegeum": 40,
+    "viola": 41,
+    "cello": 42, "violoncello": 42,
+    "contrabass strings": 43, "string bass": 43,
+    "tremolo strings": 44, "tremolo": 44,
+    "pizzicato strings": 45, "pizzicato": 45, "pizz": 45,
+    "harp": 46, "orchestral harp": 46, "concert harp": 46, "kora": 46,
+    "timpani": 47, "kettle drums": 47, "kettle drum": 47,
+    # --- Ensemble (48-55) ---
+    "strings": 48, "string ensemble": 48, "orchestra strings": 48,
+    "orchestral strings": 48,
+    "slow strings": 49, "string ensemble 2": 49,
+    "synth strings": 50, "string synth": 50,
+    "synth strings 2": 51,
+    "choir": 52, "choir aahs": 52, "vocal": 52, "vocals": 52, "aahs": 52,
+    "voice": 52, "voice oohs": 53, "oohs": 53,
+    "synth voice": 54, "vocoder": 54, "synth choir": 54,
+    "vocal chop": 54, "vocal lead": 54,
+    "orchestra hit": 55, "orch hit": 55, "stab": 55,
+    # --- Brass (56-63) ---
+    "trumpet": 56, "horn": 56,
+    "trombone": 57,
+    "tuba": 58,
+    "muted trumpet": 59, "harmon mute": 59,
+    "french horn": 60,
+    "brass section": 61, "brass": 61, "horns": 61, "brass ensemble": 61,
+    "synth brass": 62, "synth brass 1": 62,
+    "synth brass 2": 63,
+    # --- Reed (64-71) ---
+    "soprano sax": 64, "soprano saxophone": 64,
+    "alto sax": 65, "alto saxophone": 65, "alto": 65,
+    "tenor sax": 66, "tenor saxophone": 66, "sax": 66, "saxophone": 66,
+    "baritone sax": 67, "baritone saxophone": 67, "bari sax": 67,
+    "oboe": 68,
+    "english horn": 69, "cor anglais": 69,
+    "bassoon": 70,
+    "clarinet": 71,
+    # --- Pipe (72-79) ---
+    "piccolo": 72,
+    "flute": 73,
+    "recorder": 74,
+    "pan flute": 75, "pan pipes": 75, "zampona": 75, "zampoña": 75,
+    "quena": 75,
+    "blown bottle": 76, "bottle": 76,
+    "shakuhachi": 77,
+    "whistle": 78, "tin whistle": 78,
+    "ocarina": 79,
+    # --- Synth Lead (80-87) ---
+    "lead": 80, "synth lead": 80, "square lead": 80, "square wave": 80,
+    "saw lead": 81, "sawtooth lead": 81, "saw wave": 81,
+    "calliope": 82, "calliope lead": 82, "arp": 82,
+    "chiff lead": 83, "chiff": 83,
+    "charang": 84, "distorted lead": 84,
+    "voice lead": 85, "synth voice lead": 85,
+    "fifths lead": 86, "power lead": 86,
+    "bass lead": 87, "bass + lead": 87,
+    # --- Synth Pad (88-95) ---
+    "pad": 88, "pads": 88, "synth pad": 88, "new age pad": 88, "ambient pad": 88,
+    "warm pad": 89, "analog pad": 89,
+    "polysynth": 90, "poly pad": 90, "synth": 90,
+    "choir pad": 91, "synth choir pad": 91,
+    "bowed pad": 92, "bowed glass": 92,
+    "metallic pad": 93, "metal pad": 93,
+    "halo pad": 94, "halo": 94,
+    "sweep pad": 95, "sweep": 95,
+    # --- Synth Effects (96-103) ---
+    "fx": 96, "rain": 96, "rain fx": 96,
+    "soundtrack": 97, "cinematic": 97,
+    "crystal": 98, "crystal fx": 98,
+    "atmosphere": 99, "atmos": 99, "atmospheric": 99,
+    "brightness": 100, "bright fx": 100,
+    "goblins": 101, "goblin": 101,
+    "echoes": 102, "echo fx": 102,
+    "sci-fi": 103, "scifi": 103, "space": 103,
+    # --- Ethnic (104-111) ---
+    "sitar": 104,
+    "banjo": 105,
+    "shamisen": 106,
+    "koto": 107, "gayageum": 107,
+    "kalimba": 108, "thumb piano": 108,
+    "bagpipe": 109, "bag pipe": 109, "bagpipes": 109,
+    "shanai": 111, "shehnai": 111, "ney": 111,
+    # --- Percussive (112-119) ---
+    "tinkle bell": 112, "bell": 112,
+    "agogo": 113,
+    "steel drums": 114, "steel drum": 114, "steel pan": 114,
+    "woodblock": 115, "wood block": 115,
+    "melodic tom": 117, "tom": 117,
+    "synth drum": 118, "electronic drum": 118,
+    "reverse cymbal": 119, "cymbal reverse": 119,
+    # --- Sound Effects (120-127) ---
+    "fret noise": 120, "guitar noise": 120,
+    "breath noise": 121, "breath": 121,
+    "seashore": 122, "ocean": 122, "waves": 122,
+    "bird": 123, "bird tweet": 123, "birds": 123,
+    "telephone": 124, "phone ring": 124,
+    "helicopter": 125, "chopper": 125,
+    "applause": 126, "clapping": 126,
+    "gunshot": 127, "gun": 127,
+    # --- Abstract Maestro roles → sensible GM defaults ---
+    "melody": 0, "chords": 0, "harmony": 0,
+    "keys": 4, "keyboard": 0,
+    "guitar": 25,
+    "organ bubble": 16,
+    "synth chord": 90,
+    "tanpura drone": 104,
+    "gaita": 75,
+    "qanun": 15,
+    "gangsa": 11, "reyong": 11, "jegogan": 12, "gong": 112,
 }
+
+
+def resolve_gm_program(role: str) -> Optional[int]:
+    """Resolve a Maestro instrument role to a GM program number (0-127).
+
+    Returns None for drums/percussion (channel 10, no program change).
+    Returns None if the role cannot be matched.
+    """
+    key = role.lower().strip()
+    if key in _DRUM_KEYWORDS:
+        return None
+    program = _GM_ALIASES.get(key)
+    if program is not None:
+        return program
+    # Substring match: try each alias as a substring of the input
+    for alias, prog in _GM_ALIASES.items():
+        if alias in key or key in alias:
+            return prog
+    return None
+
+
+def resolve_tmidix_name(role: str) -> Optional[str]:
+    """Resolve a Maestro role to the TMIDIX Number2patch string.
+
+    Returns "Drums" for drum/percussion roles.
+    Returns None only if the role cannot be matched at all.
+    """
+    key = role.lower().strip()
+    if key in _DRUM_KEYWORDS:
+        return "Drums"
+    program = resolve_gm_program(key)
+    if program is not None:
+        return _TMIDIX_PATCH_NAMES[program]
+    return None
+
+
+def _resolve_melodic_index(role: str) -> Optional[int]:
+    """Map a role to a preferred melodic channel index (0-based, excluding ch9).
+
+    Channel assignment by GM category:
+      0 = bass family (GM 32-39)
+      1 = piano/keys/organ/harmony (GM 0-7, 16-23)
+      2 = everything else (melody, guitar, strings, brass, etc.)
+
+    Returns None for drums/percussion.
+    """
+    key = role.lower().strip()
+    if key in _DRUM_KEYWORDS:
+        return None
+    program = resolve_gm_program(key)
+    if program is None:
+        return 2  # unknown melodic → default to channel 2
+    if 32 <= program <= 39:
+        return 0  # bass family
+    if program <= 7 or 16 <= program <= 23:
+        return 1  # piano/keys/organ
+    return 2  # everything else
+
+
+# Legacy compatibility: INSTRUMENT_PROGRAMS dict interface for call sites
+# that do `INSTRUMENT_PROGRAMS.get(role)`.
+class _InstrumentProgramsCompat:
+    """Dict-like accessor that resolves roles via the GM alias table."""
+
+    def get(self, role: str, default: Optional[int] = None) -> Optional[int]:
+        result = resolve_gm_program(role)
+        return result if result is not None else default
+
+    def __getitem__(self, role: str) -> int:
+        result = resolve_gm_program(role)
+        if result is None:
+            raise KeyError(role)
+        return result
+
+    def __contains__(self, role: str) -> bool:
+        return resolve_gm_program(role) is not None
+
+
+INSTRUMENT_PROGRAMS = _InstrumentProgramsCompat()
 
 # Note: Musical parameter inference moved to generation_policy.py
 # This keeps the policy logic separate and testable
@@ -1161,12 +1432,10 @@ def create_seed_midi(
     if instruments:
         for inst in instruments:
             role = inst.lower().strip()
-            if role in ("drums", "cajon", "percussion"):
-                continue
-            gm_program = INSTRUMENT_PROGRAMS.get(role)
+            gm_program = resolve_gm_program(role)
             if gm_program is None:
-                continue
-            idx = MELODIC_INDEX_BY_INSTRUMENT.get(role)
+                continue  # drums (ch10) or unresolvable
+            idx = _resolve_melodic_index(role)
             if idx is None:
                 continue
             track = idx + 1
@@ -1223,12 +1492,10 @@ def _create_continuation_seed(
         _seen_channels: set = set()
         for inst in instruments:
             role = inst.lower().strip()
-            if role in ("drums", "cajon", "percussion"):
-                continue
-            gm_program = INSTRUMENT_PROGRAMS.get(role)
+            gm_program = resolve_gm_program(role)
             if gm_program is None:
-                continue
-            idx = MELODIC_INDEX_BY_INSTRUMENT.get(role)
+                continue  # drums (ch10) or unresolvable
+            idx = _resolve_melodic_index(role)
             if idx is None:
                 continue
             channel = idx
@@ -1388,38 +1655,22 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
     }
 
 
-# Map requested instrument (from Maestro) to preferred melodic channel index.
+# Map requested instrument to preferred melodic channel index.
 # Seed MIDI has: ch9=drums, ch0=first melodic (bass), ch1=second (piano/melody), etc.
-# Instruments sharing an index compete for the same channel, so when Orpheus
-# generates fewer melodic channels than expected, the fallback logic in
-# _channels_to_keep ensures we always return *something* instead of empty.
-MELODIC_INDEX_BY_INSTRUMENT = {
-    "bass": 0,
-    "electric_bass": 0,
-    "synth_bass": 0,
-    "piano": 1,
-    "chords": 1,
-    "electric_piano": 1,
-    "keys": 1,
-    "organ": 1,
-    "harmony": 1,
-    "melody": 2,
-    "lead": 2,
-    "guitar": 2,
-    "acoustic_guitar": 2,
-    "electric_guitar": 2,
-    "arp": 2,
-    "pads": 2,
-    "pad": 2,
-    "synth": 2,
-    "strings": 2,
-    "violin": 2,
-    "cello": 2,
-    "fx": 2,
-    "palmas": 2,
-    "cajon": None,
-    "percussion": None,
-}
+# Uses _resolve_melodic_index() for dynamic resolution from the full GM table.
+# Dict-like wrapper for call sites that do `MELODIC_INDEX_BY_INSTRUMENT.get(role)`.
+class _MelodicIndexCompat:
+    """Dict-like accessor that resolves roles to melodic channel indices."""
+
+    def get(self, role: str, default: Optional[int] = None) -> Optional[int]:
+        result = _resolve_melodic_index(role)
+        return result if result is not None else default
+
+    def __contains__(self, role: str) -> bool:
+        return _resolve_melodic_index(role) is not None
+
+
+MELODIC_INDEX_BY_INSTRUMENT = _MelodicIndexCompat()
 
 
 def _channels_to_keep(channel_keys: set, instruments: List[str]) -> set:
@@ -1436,7 +1687,7 @@ def _channels_to_keep(channel_keys: set, instruments: List[str]) -> set:
     melodic_channels = sorted(c for c in channel_keys if c != 9)
 
     for inst in requested:
-        if inst in ("drums", "cajon", "percussion"):
+        if inst in _DRUM_KEYWORDS:
             if 9 in channel_keys:
                 keep.add(9)
             continue
@@ -1921,18 +2172,31 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                 key=request.key, instruments=request.instruments,
             )
 
-        orpheus_instruments = []
+        orpheus_instruments: list[str] = []
+        _unresolved: list[str] = []
         for inst in request.instruments:
-            mapped = _ROLE_TO_ORPHEUS_INSTRUMENT.get(inst.lower().strip())
-            if mapped and mapped not in orpheus_instruments:
-                orpheus_instruments.append(mapped)
+            tmidix_name = resolve_tmidix_name(inst)
+            if tmidix_name and tmidix_name not in orpheus_instruments:
+                orpheus_instruments.append(tmidix_name)
+            elif tmidix_name is None:
+                _unresolved.append(inst)
+
+        if _unresolved:
+            logger.warning(
+                f"⚠️ Could not resolve GM mapping for: {_unresolved} "
+                f"(from request.instruments={request.instruments})"
+            )
 
         if not orpheus_instruments:
             orpheus_instruments = ["Drums", "Electric Bass(finger)"]
             logger.warning(
-                f"⚠️ No instrument mapping found for {request.instruments}, "
+                f"⚠️ No instruments resolved for {request.instruments}, "
                 f"falling back to {orpheus_instruments}"
             )
+
+        logger.info(
+            f"🎹 Instrument mapping: {request.instruments} → {orpheus_instruments}"
+        )
 
         temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
         top_p = request.top_p if request.top_p is not None else DEFAULT_TOP_P

@@ -525,7 +525,14 @@ Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/co
 
 ### Orpheus instrument mapping
 
-The proxy maps Maestro instrument roles to TMIDIX-recognized GM instrument names (e.g. `"pads"` → `"Pad 2 (warm)"`, `"cajon"` → `"Drums"`). Unknown instruments fall back to `["Drums", "Electric Bass(finger)"]` with a warning. The seed MIDI embeds GM program change events matching the requested instruments so the TMIDIX tokenizer on the HF Space encodes the correct instrument identity into the token stream.
+The proxy resolves Maestro instrument roles to GM program numbers (0-127) via a comprehensive alias table (`_GM_ALIASES`), then converts to TMIDIX `Number2patch` string names at the Gradio call boundary. This covers all 128 GM programs plus world/ethnic instrument proxies (e.g. `"sitar"` → GM 104, `"koto"` → GM 107, `"shakuhachi"` → GM 77, `"oud"` → GM 111, `"banjo"` → GM 105). Drums and percussion variants resolve to channel 10 automatically.
+
+Key functions in `orpheus-music/music_service.py`:
+- `resolve_gm_program(role)` — role name → GM program number (or `None` for drums)
+- `resolve_tmidix_name(role)` — role name → TMIDIX string for the Gradio `prime_instruments` parameter
+- `_resolve_melodic_index(role)` — role → preferred MIDI channel index by GM category (bass=0, keys=1, everything else=2)
+
+If none of the requested instruments resolve, the fallback is `["Drums", "Electric Bass(finger)"]` with a warning. Unresolved individual instruments are logged but don't block generation. The seed MIDI embeds GM program change events matching the resolved instruments so the TMIDIX tokenizer on the HF Space encodes the correct instrument identity into the token stream.
 
 ### Cross-section musical continuity
 
