@@ -200,17 +200,3 @@ Exercises: commit → branch → merge → conflict detection → checkout trave
 Produces: ASCII graph, JSON dump, summary table. See `muse_e2e_demo.md` for details.
 
 ---
-
-## Evolution History
-
-| Phase | Feature | Key modules |
-|-------|---------|-------------|
-| 5 | Lineage + replay engine | `muse_repository`, `muse_replay` |
-| 6 | Drift detection | `muse_drift` |
-| 7 | Controller persistence (CC, PB, AT) | `note_matching`, `muse_drift` |
-| 8 | Drift-aware commit safety (409) | `commit.py` |
-| 9 | Checkout engine | `muse_checkout` |
-| 10 | Checkout execution | `muse_checkout_executor`, `muse_history_controller` |
-| 12 | Merge engine | `muse_merge`, `muse_merge_base`, `muse_history_controller` |
-| 13 | Log graph serialization | `muse_log_graph` |
-| E2E | Tour de force harness | `muse.py` (routes), `muse_log_render`, E2E test |
