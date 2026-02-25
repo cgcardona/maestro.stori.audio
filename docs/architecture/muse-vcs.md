@@ -1,8 +1,7 @@
 # Muse VCS — Musical Version Control System
 
 > **Status:** Canonical Implementation Reference
-> **Supersedes analysis in:** `maestro-muse-evolution.md` (Phase 1), `muse-persistent-history-bridge.md` (Phase 2)
-> **E2E demo:** `muse_e2e_demo.md`
+> **E2E demo:** [`muse_e2e_demo.md`](muse_e2e_demo.md)
 
 ---
 

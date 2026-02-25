@@ -12,9 +12,9 @@
 |-----------|---------|
 | **[guides/](guides/)** | How-to: setup, integrate, testing, assets, security. |
 | **[reference/](reference/)** | API and architecture reference. |
-| **[architecture/](architecture/)** | Deep architecture docs: Muse VCS, boundary rules, system evolution analysis. |
+| **[architecture/](architecture/)** | Deep architecture docs: Muse VCS, boundary rules, E2E demo. |
 | **[protocol/](protocol/)** | Normative specs: Muse/Variation terminology, wire contract, end-to-end spec. |
-| **[contracts/](contracts/)** | Service boundary contracts: Stori ↔ Maestro (backend truth) and Maestro ↔ Orpheus (boundary audit). |
+| **[contracts/](contracts/)** | Service boundary contracts: Maestro ↔ Orpheus boundary audit. |
 | **[roadmaps/](roadmaps/)** | Roadmaps and future work (e.g. neural MIDI). |
 
 Links in this index are relative from `docs/` so they work from repo root or from within `docs/`. When adding new docs, put them in the appropriate directory and link with paths relative to the linking file (e.g. from `guides/` use `../reference/api.md` for reference docs).
@@ -82,8 +82,6 @@ Frontend integration guide for project state serialization: how to build the `pr
 | [architecture/muse-vcs.md](architecture/muse-vcs.md) | **Canonical Muse VCS reference:** module map, HTTP API, VCS primitives, boundary rules. Start here. |
 | [architecture/muse_e2e_demo.md](architecture/muse_e2e_demo.md) | E2E tour de force: run the full VCS lifecycle demo and read the expected output. |
 | [architecture/boundary_rules.md](architecture/boundary_rules.md) | 17 AST-enforced import boundary rules (variation + Muse VCS). |
-| [architecture/maestro-muse-evolution.md](architecture/maestro-muse-evolution.md) | Phase 1 analysis: layered architecture decomposition (historical; see `muse-vcs.md` for current state). |
-| [architecture/muse-persistent-history-bridge.md](architecture/muse-persistent-history-bridge.md) | Phase 2 conceptual spec: authority model and abstractions (historical; now implemented). |
 
 ---
 
