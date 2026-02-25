@@ -727,7 +727,7 @@ These questions must be answered before Muse can become a persistent history eng
 
 3. **"How do I run Muse without a DAW?"** The answer is: you can compute variations and commit them, but the commit just updates StateStore. There is no way to persist the result or export it. The system assumes a DAW is consuming the `updated_regions` response. A headless mode would require Muse to be self-sufficient as a state owner.
 
-4. **"What is the API contract?"** The OpenAPI schema is auto-generated and only available in debug mode. There is no committed API spec file. The closest thing is `docs/contract/stori-maestro-contract.md` (1719 lines), which describes the contract in prose. A team integrating with Stori would need to read the code to understand exact payload shapes.
+4. **"What is the API contract?"** The OpenAPI schema is auto-generated and only available in debug mode. There is no committed API spec file. The closest thing is `docs/contracts/stori-maestro-contract.md`, which describes the contract in prose. A team integrating with Stori would need to read the code to understand exact payload shapes.
 
 5. **"What happens if I change a Pydantic model?"** There is no schema migration strategy for in-memory models. Changing `Phrase` or `NoteChange` fields is a breaking change for any connected frontend, but there is no versioning mechanism on these models. The protocol hash (`compute_protocol_hash()`) detects SSE event schema drift but does not cover variation model changes.
 
