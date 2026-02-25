@@ -18,6 +18,8 @@ Usage:
     python scripts/download_reference_midi.py --source all
     python scripts/download_reference_midi.py --source all --limit 500
 """
+from __future__ import annotations
+
 import argparse
 import io
 import logging

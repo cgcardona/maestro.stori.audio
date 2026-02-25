@@ -9,6 +9,7 @@ Usage:
 Requires ~2-4 GB RAM to load the pickle.  Writes MIDI files and a
 metadata.json index to the output directory.
 """
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -147,40 +148,72 @@ def score_token_sequence(tokens: list[int]) -> float:
 # ---------------------------------------------------------------------------
 
 def tokens_to_midi_bytes(tokens: list[int], tempo: int = 120) -> bytes:
-    """Convert an Orpheus TMIDIX token sequence to a minimal Standard MIDI file.
+    """Convert an Orpheus TMIDIX token sequence to a Standard MIDI file.
 
-    Orpheus uses roughly 3 tokens per note: [pitch_token, time_token, dur_token].
-    The exact tokenisation is undocumented, so we write raw tokens as
-    note-on/note-off pairs using a simple heuristic mapping that works well
-    enough for seeding the model (the model re-tokenises the MIDI anyway).
+    Uses the exact same decoding as the HF Space's ``save_midi()`` in app.py:
+
+    - Tokens   0-255:   time delta (value * 16 ms)
+    - Tokens 256-16767: patch/pitch — patch=(tok-256)//128, pitch=(tok-256)%128
+    - Tokens 16768-18815: dur/vel — dur=((tok-16768)//8)*16, vel=(((tok-16768)%8)+1)*15
+    - Token  18816: SOS (ignored)
+    - Token  18817: Outro (ignored)
+    - Token  18818: EOS (ignored)
     """
-    # Minimal approach: write tokens as raw MIDI notes so TMIDIX can re-read
-    # We produce a single-track Type-0 MIDI at the requested tempo.
     ticks_per_beat = 480
     microseconds_per_beat = int(60_000_000 / tempo)
+    ms_to_ticks = ticks_per_beat / (microseconds_per_beat / 1000)
 
-    events: list[tuple[int, int, int, int, int]] = []  # (tick, ch, note, vel, dur_ticks)
+    time_ms = 0
+    dur_ms = 16
+    vel = 90
+    pitch = 60
+    channel = 0
+    patch = 0
 
-    # Heuristic: Orpheus tokens encode (channel, pitch, time, duration, velocity)
-    # in groups.  We'll do a safe pass: treat sequential groups of 3 as
-    # (pitch_offset, time_offset, duration).
-    tick = 0
-    i = 0
-    while i + 2 < len(tokens):
-        t0, t1, t2 = tokens[i], tokens[i + 1], tokens[i + 2]
-        pitch = t0 % 128
-        channel = (t0 // 128) % 16
-        time_delta = max(0, t1 % 480)
-        dur = max(1, t2 % 480)
-        vel = 80 + (t2 % 40)
-        tick += time_delta
-        events.append((tick, channel, pitch, min(vel, 127), dur))
-        i += 3
+    patches: list[int] = [-1] * 16
+    channels: list[int] = [0] * 16
+    channels[9] = 1  # channel 9 reserved for drums
+
+    events: list[tuple[int, int, int, int, int, int]] = []  # (tick, ch, note, vel, dur_ticks, patch)
+    program_changes: list[tuple[int, int, int]] = []  # (tick, ch, program)
+
+    for tok in tokens:
+        if tok == 18816 or tok == 18817 or tok == 18818:
+            continue
+
+        if 0 <= tok < 256:
+            time_ms += tok * 16
+
+        elif 256 <= tok < 16768:
+            patch = (tok - 256) // 128
+            pitch = (tok - 256) % 128
+
+            if patch < 128:
+                if patch not in patches:
+                    if 0 in channels:
+                        cha = channels.index(0)
+                        channels[cha] = 1
+                    else:
+                        cha = 15
+                    patches[cha] = patch
+                    program_changes.append(
+                        (int(time_ms * ms_to_ticks), cha, patch)
+                    )
+                channel = patches.index(patch)
+            elif patch == 128:
+                channel = 9
+
+        elif 16768 <= tok < 18816:
+            dur_ms = ((tok - 16768) // 8) * 16
+            vel = (((tok - 16768) % 8) + 1) * 15
+
+            tick = int(time_ms * ms_to_ticks)
+            dur_ticks = max(1, int(dur_ms * ms_to_ticks))
+            events.append((tick, channel, pitch, vel, dur_ticks, patch))
 
     if not events:
-        events = [(0, 0, 60, 80, 240)]
+        events = [(0, 0, 60, 80, 240, 0)]
 
-    # Build MIDI bytes
     def var_len(val: int) -> bytes:
         result = []
         result.append(val & 0x7F)
@@ -195,14 +228,18 @@ def tokens_to_midi_bytes(tokens: list[int], tempo: int = 120) -> bytes:
     track_data += b"\x00\xFF\x51\x03"
     track_data += struct.pack(">I", microseconds_per_beat)[1:]
 
-    # Sort events by tick
-    events.sort(key=lambda e: e[0])
-
-    # Build note-on / note-off pairs
+    # Build all MIDI events (program changes + note on/off)
     midi_events: list[tuple[int, bytes]] = []
-    for tick_abs, ch, note, vel, dur in events:
-        midi_events.append((tick_abs, bytes([0x90 | ch, note, vel])))
-        midi_events.append((tick_abs + dur, bytes([0x80 | ch, note, 0])))
+
+    for tick, ch, prog in program_changes:
+        midi_events.append((tick, bytes([0xC0 | ch, prog])))
+
+    for tick, ch, note, velocity, dur_ticks, _patch in events:
+        note = max(0, min(127, note))
+        velocity = max(1, min(127, velocity))
+        midi_events.append((tick, bytes([0x90 | ch, note, velocity])))
+        midi_events.append((tick + dur_ticks, bytes([0x80 | ch, note, 0])))
+
     midi_events.sort(key=lambda e: e[0])
 
     prev_tick = 0
@@ -216,7 +253,6 @@ def tokens_to_midi_bytes(tokens: list[int], tempo: int = 120) -> bytes:
     track_data += b"\x00\xFF\x2F\x00"
 
     header = b"MThd" + struct.pack(">IHHH", 6, 0, 1, ticks_per_beat)
-    # Prepend H (big-endian unsigned short) for number of tracks — Type 0 = 1 track
     track_chunk = b"MTrk" + struct.pack(">I", len(track_data)) + bytes(track_data)
 
     return header + track_chunk
@@ -226,7 +262,7 @@ def tokens_to_midi_bytes(tokens: list[int], tempo: int = 120) -> bytes:
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Build Orpheus seed library from 230K loops dataset")
     parser.add_argument("--output-dir", default="seed_library", help="Output directory for seeds")
     parser.add_argument("--top-n", type=int, default=10, help="Number of top seeds per genre")

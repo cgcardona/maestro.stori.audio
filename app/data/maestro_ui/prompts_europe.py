@@ -5,6 +5,7 @@ post-rock, classical string quartet, psytrance, Nordic ambient folk,
 flamenco fusion, UK garage, and future additions (klezmer, baroque,
 Balkan brass).
 """
+from __future__ import annotations
 
 from app.models.maestro_ui import PromptItem
 

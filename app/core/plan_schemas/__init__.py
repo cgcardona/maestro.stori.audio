@@ -9,6 +9,7 @@ Key principles:
 3. Provide sensible defaults for optional fields
 4. Support partial plans for recovery
 """
+from __future__ import annotations
 
 from app.core.plan_schemas.models import (
     GenerationStep,

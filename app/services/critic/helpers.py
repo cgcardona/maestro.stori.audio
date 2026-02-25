@@ -1,15 +1,16 @@
 """Low-level helper functions shared across critic scorers."""
+from __future__ import annotations
 
 import math
 from collections import Counter
-from typing import Optional
+from typing import Any
 
 
-def _distinct_pitches(notes: list[dict]) -> int:
+def _distinct_pitches(notes: list[dict[str, Any]]) -> int:
     return len(set(n.get("pitch", 0) for n in notes))
 
 
-def _velocity_entropy_normalized(notes: list[dict]) -> float:
+def _velocity_entropy_normalized(notes: list[dict[str, Any]]) -> float:
     """Normalized velocity entropy: 0 = all same, 1 = well spread."""
     if not notes:
         return 0.0
@@ -22,7 +23,7 @@ def _velocity_entropy_normalized(notes: list[dict]) -> float:
     return min(1.0, ent / 4.0)
 
 
-def _offbeat_ratio(notes: list[dict], beat_resolution: float = 0.25) -> float:
+def _offbeat_ratio(notes: list[dict[str, Any]], beat_resolution: float = 0.25) -> float:
     """Fraction of onsets that are offbeat (not on a quarter note)."""
     if not notes:
         return 0.0
@@ -30,9 +31,9 @@ def _offbeat_ratio(notes: list[dict], beat_resolution: float = 0.25) -> float:
     return off / len(notes)
 
 
-def _get_notes_by_layer(notes: list[dict], layer_map: Optional[dict] = None) -> dict:
+def _get_notes_by_layer(notes: list[dict[str, Any]], layer_map: dict[int, str] | None = None) -> dict[str, list[dict[str, Any]]]:
     """Group notes by layer name."""
-    by_layer: dict[str, list[dict]] = {}
+    by_layer: dict[str, list[dict[str, Any]]] = {}
     for i, n in enumerate(notes):
         layer = n.get("layer")
         if layer is None and layer_map:

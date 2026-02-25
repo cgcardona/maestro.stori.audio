@@ -1,4 +1,8 @@
 """Tests for app.services.orpheus.OrpheusClient (mocked HTTP)."""
+from __future__ import annotations
+
+from collections.abc import Generator
+from typing import Any
 import time as _time
 
 import pytest
@@ -7,7 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.orpheus import OrpheusClient
 
 
-def _patch_settings(m):
+def _patch_settings(m: Any) -> None:
+
     """Apply default Orpheus test settings to a mock."""
     m.orpheus_base_url = "http://orpheus:10002"
     m.orpheus_timeout = 30
@@ -22,12 +27,13 @@ def _patch_settings(m):
 _JOB_ID = "test-job-00000000"
 
 
-def _submit_resp(*, job_id=_JOB_ID, status="queued", position=1, result=None):
+def _submit_resp(*, job_id: Any = _JOB_ID, status: Any = "queued", position: Any = 1, result: Any = None) -> MagicMock:
+
     """Mock HTTP response from POST /generate (submit)."""
     resp = MagicMock()
     resp.status_code = 200
     resp.raise_for_status = MagicMock()
-    data: dict = {"jobId": job_id, "status": status}
+    data: dict[str, Any] = {"jobId": job_id, "status": status}
     if status == "queued":
         data["position"] = position
     if result is not None:
@@ -36,12 +42,13 @@ def _submit_resp(*, job_id=_JOB_ID, status="queued", position=1, result=None):
     return resp
 
 
-def _poll_resp(*, job_id=_JOB_ID, status="complete", result=None, error=None):
+def _poll_resp(*, job_id: Any = _JOB_ID, status: Any = "complete", result: Any = None, error: Any = None) -> MagicMock:
+
     """Mock HTTP response from GET /jobs/{id}/wait (poll)."""
     resp = MagicMock()
     resp.status_code = 200
     resp.raise_for_status = MagicMock()
-    data: dict = {"jobId": job_id, "status": status, "elapsed": 10.0}
+    data: dict[str, Any] = {"jobId": job_id, "status": status, "elapsed": 10.0}
     if result is not None:
         data["result"] = result
     if error is not None:
@@ -50,7 +57,8 @@ def _poll_resp(*, job_id=_JOB_ID, status="complete", result=None, error=None):
     return resp
 
 
-def _ok_gen_result(**overrides):
+def _ok_gen_result(**overrides: Any) -> dict[str, Any]:
+
     """A successful GenerateResponse-shaped dict."""
     r = {
         "success": True,
@@ -63,14 +71,15 @@ def _ok_gen_result(**overrides):
 
 
 @pytest.fixture
-def client():
+def client() -> Generator[OrpheusClient, None, None]:
     with patch("app.services.orpheus.settings") as m:
         _patch_settings(m)
         yield OrpheusClient()
 
 
 @pytest.mark.asyncio
-async def test_health_check_returns_true_when_200(client):
+async def test_health_check_returns_true_when_200(client: OrpheusClient) -> None:
+
     import httpx
     client._client = MagicMock()
     client._client.get = AsyncMock(return_value=MagicMock(status_code=200))
@@ -84,7 +93,8 @@ async def test_health_check_returns_true_when_200(client):
 
 
 @pytest.mark.asyncio
-async def test_health_check_returns_false_when_not_200(client):
+async def test_health_check_returns_false_when_not_200(client: OrpheusClient) -> None:
+
     client._client = MagicMock()
     client._client.get = AsyncMock(return_value=MagicMock(status_code=503))
     result = await client.health_check()
@@ -92,7 +102,8 @@ async def test_health_check_returns_false_when_not_200(client):
 
 
 @pytest.mark.asyncio
-async def test_health_check_returns_false_on_exception(client):
+async def test_health_check_returns_false_on_exception(client: OrpheusClient) -> None:
+
     client._client = MagicMock()
     client._client.get = AsyncMock(side_effect=Exception("connection refused"))
     result = await client.health_check()
@@ -100,7 +111,8 @@ async def test_health_check_returns_false_on_exception(client):
 
 
 @pytest.mark.asyncio
-async def test_generate_success_via_poll(client):
+async def test_generate_success_via_poll(client: OrpheusClient) -> None:
+
     """Submit returns queued; poll returns complete result."""
     client._client = MagicMock()
     client._client.post = AsyncMock(return_value=_submit_resp())
@@ -111,7 +123,8 @@ async def test_generate_success_via_poll(client):
 
 
 @pytest.mark.asyncio
-async def test_generate_cache_hit_returns_immediately(client):
+async def test_generate_cache_hit_returns_immediately(client: OrpheusClient) -> None:
+
     """Submit returns status=complete (cache hit) — no polling needed."""
     client._client = MagicMock()
     client._client.post = AsyncMock(
@@ -124,7 +137,8 @@ async def test_generate_cache_hit_returns_immediately(client):
 
 
 @pytest.mark.asyncio
-async def test_generate_default_instruments(client):
+async def test_generate_default_instruments(client: OrpheusClient) -> None:
+
     client._client = MagicMock()
     client._client.post = AsyncMock(
         return_value=_submit_resp(status="complete", result=_ok_gen_result(notes=[]))
@@ -137,7 +151,8 @@ async def test_generate_default_instruments(client):
 
 
 @pytest.mark.asyncio
-async def test_generate_includes_key_when_provided(client):
+async def test_generate_includes_key_when_provided(client: OrpheusClient) -> None:
+
     client._client = MagicMock()
     client._client.post = AsyncMock(
         return_value=_submit_resp(status="complete", result=_ok_gen_result(notes=[]))
@@ -148,7 +163,8 @@ async def test_generate_includes_key_when_provided(client):
 
 
 @pytest.mark.asyncio
-async def test_generate_submit_http_error_returns_error_dict(client):
+async def test_generate_submit_http_error_returns_error_dict(client: OrpheusClient) -> None:
+
     """HTTP 500 during submit (after retries exhausted) returns error."""
     import httpx
     client._client = MagicMock()
@@ -165,7 +181,8 @@ async def test_generate_submit_http_error_returns_error_dict(client):
 
 
 @pytest.mark.asyncio
-async def test_generate_connect_error_returns_service_not_available(client):
+async def test_generate_connect_error_returns_service_not_available(client: OrpheusClient) -> None:
+
     import httpx
     client._client = MagicMock()
     client._client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
@@ -175,7 +192,8 @@ async def test_generate_connect_error_returns_service_not_available(client):
 
 
 @pytest.mark.asyncio
-async def test_close_clears_client(client):
+async def test_close_clears_client(client: OrpheusClient) -> None:
+
     client._client = MagicMock()
     client._client.aclose = AsyncMock()
     await client.close()
@@ -186,7 +204,7 @@ async def test_close_clears_client(client):
 # OrpheusClient singleton and warmup
 # =============================================================================
 
-def test_get_orpheus_client_returns_singleton():
+def test_get_orpheus_client_returns_singleton() -> None:
     """get_orpheus_client() returns the same instance on repeated calls (sync — no loop needed)."""
     import app.services.orpheus as orpheus_module
     from app.services.orpheus import get_orpheus_client
@@ -197,7 +215,7 @@ def test_get_orpheus_client_returns_singleton():
     orpheus_module._shared_client = None  # cleanup without awaiting close
 
 
-def test_close_orpheus_client_resets_singleton():
+def test_close_orpheus_client_resets_singleton() -> None:
     """close_orpheus_client() clears the singleton so the next call makes a fresh one."""
     import app.services.orpheus as orpheus_module
     from app.services.orpheus import get_orpheus_client
@@ -211,7 +229,7 @@ def test_close_orpheus_client_resets_singleton():
 
 
 @pytest.mark.asyncio
-async def test_warmup_succeeds_when_healthy():
+async def test_warmup_succeeds_when_healthy() -> None:
     """warmup() logs success when health_check returns True."""
     from app.services.orpheus import get_orpheus_client, close_orpheus_client
     await close_orpheus_client()
@@ -226,7 +244,7 @@ async def test_warmup_succeeds_when_healthy():
 
 
 @pytest.mark.asyncio
-async def test_warmup_tolerates_connection_failure():
+async def test_warmup_tolerates_connection_failure() -> None:
     """warmup() does not raise even when Orpheus is unreachable."""
     from app.services.orpheus import get_orpheus_client, close_orpheus_client
     await close_orpheus_client()
@@ -241,17 +259,18 @@ async def test_warmup_tolerates_connection_failure():
     await close_orpheus_client()
 
 
-def test_connection_limits_configured():
+def test_connection_limits_configured() -> None:
     """The OrpheusClient passes explicit connection limits when creating the AsyncClient."""
     import httpx
     import app.services.orpheus as orpheus_module
     from app.services.orpheus import get_orpheus_client, close_orpheus_client
 
-    created_kwargs: dict = {}
+    created_kwargs: dict[str, Any] = {}
 
     original_init = httpx.AsyncClient.__init__
 
-    def capturing_init(self, **kwargs):
+    def capturing_init(self: Any, **kwargs: Any) -> None:
+
         created_kwargs.update(kwargs)
         original_init(self, **kwargs)
 
@@ -277,14 +296,16 @@ def test_connection_limits_configured():
 class TestOrpheusBackendEmotionMapping:
     """Tests that OrpheusBackend correctly maps EmotionVector to OrpheusClient fields."""
 
-    def _make_backend(self, mock_client):
+    def _make_backend(self, mock_client: Any) -> Any:
+
         from app.services.backends.orpheus import OrpheusBackend
         import app.services.orpheus as orpheus_module
         orpheus_module._shared_client = mock_client
         backend = OrpheusBackend()
         return backend
 
-    def _make_mock_client(self, notes=None):
+    def _make_mock_client(self, notes: Any = None) -> MagicMock:
+
         mock = MagicMock()
         mock.health_check = AsyncMock(return_value=True)
         mock.generate = AsyncMock(return_value={
@@ -298,7 +319,8 @@ class TestOrpheusBackendEmotionMapping:
         return mock
 
     @pytest.mark.asyncio
-    async def test_no_emotion_vector_sends_none(self):
+    async def test_no_emotion_vector_sends_none(self) -> None:
+
         """Without an emotion_vector kwarg, the canonical blocks are None."""
         mock_client = self._make_mock_client()
         backend = self._make_backend(mock_client)
@@ -310,7 +332,8 @@ class TestOrpheusBackendEmotionMapping:
         assert call_kwargs["generation_constraints"] is None
 
     @pytest.mark.asyncio
-    async def test_dark_emotion_vector_sends_full_ev(self):
+    async def test_dark_emotion_vector_sends_full_ev(self) -> None:
+
         """High negative valence → full emotion_vector transmitted, dark goal derived."""
         from app.core.emotion_vector import EmotionVector
         mock_client = self._make_mock_client()
@@ -326,7 +349,8 @@ class TestOrpheusBackendEmotionMapping:
         assert "dark" in goals
 
     @pytest.mark.asyncio
-    async def test_euphoric_emotion_vector_sends_canonical_blocks(self):
+    async def test_euphoric_emotion_vector_sends_canonical_blocks(self) -> None:
+
         """High energy/valence → full emotion_vector and constraints transmitted."""
         from app.core.emotion_vector import EmotionVector
         mock_client = self._make_mock_client()
@@ -345,7 +369,8 @@ class TestOrpheusBackendEmotionMapping:
         assert "driving" in goals
 
     @pytest.mark.asyncio
-    async def test_intimate_sparse_emotion_vector(self):
+    async def test_intimate_sparse_emotion_vector(self) -> None:
+
         """High intimacy + low motion → intimate and sustained goals."""
         from app.core.emotion_vector import EmotionVector
         mock_client = self._make_mock_client()
@@ -360,7 +385,8 @@ class TestOrpheusBackendEmotionMapping:
         assert "sustained" in goals
 
     @pytest.mark.asyncio
-    async def test_quality_preset_forwarded(self):
+    async def test_quality_preset_forwarded(self) -> None:
+
         """quality_preset kwarg reaches OrpheusClient.generate."""
         from app.core.emotion_vector import EmotionVector
         mock_client = self._make_mock_client()
@@ -379,14 +405,16 @@ class TestOrpheusBackendEmotionMapping:
 class TestOrpheusNoteNormalization:
     """Notes from Orpheus may use snake_case keys; backend must normalize to camelCase."""
 
-    def _make_backend(self, mock_client):
+    def _make_backend(self, mock_client: Any) -> Any:
+
         from app.services.backends.orpheus import OrpheusBackend
         import app.services.orpheus as orpheus_module
         orpheus_module._shared_client = mock_client
         return OrpheusBackend()
 
     @pytest.mark.asyncio
-    async def test_snake_case_keys_normalized_to_camel(self):
+    async def test_snake_case_keys_normalized_to_camel(self) -> None:
+
         """start_beat/duration_beats → startBeat/durationBeats."""
         notes = [
             {"pitch": 60, "start_beat": 0, "duration_beats": 4, "velocity": 80},
@@ -412,7 +440,8 @@ class TestOrpheusNoteNormalization:
             assert "duration_beats" not in n
 
     @pytest.mark.asyncio
-    async def test_camel_case_keys_pass_through(self):
+    async def test_camel_case_keys_pass_through(self) -> None:
+
         """Notes already using camelCase should not be corrupted."""
         notes = [
             {"pitch": 60, "startBeat": 0, "durationBeats": 4, "velocity": 80},
@@ -442,7 +471,8 @@ class TestOrpheusNoteNormalization:
 class TestOrpheusBeatRescaling:
     """Notes compressed into a short window must be rescaled to the target bars."""
 
-    def _make_backend(self, mock_client):
+    def _make_backend(self, mock_client: Any) -> Any:
+
         from app.services.backends import orpheus as orpheus_backend
         from app.services.backends.orpheus import OrpheusBackend
         import app.services.orpheus as orpheus_module
@@ -451,7 +481,8 @@ class TestOrpheusBeatRescaling:
         return OrpheusBackend()
 
     @pytest.mark.asyncio
-    async def test_compressed_notes_rescaled_to_target(self):
+    async def test_compressed_notes_rescaled_to_target(self) -> None:
+
         """330 notes in 0-8 beats should be rescaled to span 0-96 beats for 24 bars."""
         compressed_notes = [
             {"pitch": 60, "startBeat": i * 0.024, "durationBeats": 0.02, "velocity": 80}
@@ -478,7 +509,8 @@ class TestOrpheusBeatRescaling:
         assert max_end >= 90, f"Notes should span ~96 beats, got max_end={max_end}"
 
     @pytest.mark.asyncio
-    async def test_full_range_notes_not_rescaled(self):
+    async def test_full_range_notes_not_rescaled(self) -> None:
+
         """Notes already spanning the target range should not be modified."""
         full_range_notes = [
             {"pitch": 60, "startBeat": float(i * 4), "durationBeats": 2.0, "velocity": 80}
@@ -500,7 +532,8 @@ class TestOrpheusBeatRescaling:
         assert result.notes[23]["startBeat"] == 92.0
 
     @pytest.mark.asyncio
-    async def test_cc_events_rescaled_with_notes(self):
+    async def test_cc_events_rescaled_with_notes(self) -> None:
+
         """CC events must be rescaled alongside notes."""
         notes = [
             {"pitch": 60 + (i % 12), "startBeat": i * 0.12, "durationBeats": 0.1, "velocity": 80}
@@ -542,13 +575,15 @@ class TestSubmitAndPoll:
     """
 
     @pytest.fixture
-    def client(self):
+    def client(self) -> Generator[OrpheusClient, None, None]:
+
         with patch("app.services.orpheus.settings") as m:
             _patch_settings(m)
             yield OrpheusClient()
 
     @pytest.mark.asyncio
-    async def test_poll_returns_failed_job(self, client):
+    async def test_poll_returns_failed_job(self, client: OrpheusClient) -> None:
+
         """When the GPU job fails, poll returns the error."""
         client._client = MagicMock()
         client._client.post = AsyncMock(return_value=_submit_resp())
@@ -562,7 +597,8 @@ class TestSubmitAndPoll:
         assert "GPU OOM" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_poll_exhausted_returns_timeout(self, client):
+    async def test_poll_exhausted_returns_timeout(self, client: OrpheusClient) -> None:
+
         """When max polls are exhausted the client reports a timeout."""
         with patch("app.services.orpheus.settings") as m:
             _patch_settings(m)
@@ -578,7 +614,8 @@ class TestSubmitAndPoll:
         assert "did not complete" in result["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_503_submit_retries_then_succeeds(self, client):
+    async def test_503_submit_retries_then_succeeds(self, client: OrpheusClient) -> None:
+
         """503 from Orpheus queue-full triggers submit retry."""
         full_resp = MagicMock()
         full_resp.status_code = 503
@@ -595,7 +632,8 @@ class TestSubmitAndPoll:
         assert mock_sleep.await_count == 1
 
     @pytest.mark.asyncio
-    async def test_503_submit_all_retries_exhausted(self, client):
+    async def test_503_submit_all_retries_exhausted(self, client: OrpheusClient) -> None:
+
         """503 on every submit attempt returns queue-full error."""
         full_resp = MagicMock()
         full_resp.status_code = 503
@@ -610,7 +648,8 @@ class TestSubmitAndPoll:
         assert "queue full" in result["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_poll_http_timeout_retries_poll(self, client):
+    async def test_poll_http_timeout_retries_poll(self, client: OrpheusClient) -> None:
+
         """HTTP read timeout during poll just retries the poll (job survives)."""
         import httpx
 
@@ -626,7 +665,8 @@ class TestSubmitAndPoll:
         assert client._client.get.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_poll_connect_error_fails_immediately(self, client):
+    async def test_poll_connect_error_fails_immediately(self, client: OrpheusClient) -> None:
+
         """ConnectError during polling means Orpheus went down — fail fast."""
         import httpx
 
@@ -647,7 +687,8 @@ class TestSubmitAndPoll:
 class TestSemaphore:
     """Tests for the GPU concurrency semaphore in OrpheusClient."""
 
-    def test_semaphore_configurable(self):
+    def test_semaphore_configurable(self) -> None:
+
         """max_concurrent param controls semaphore capacity."""
         with patch("app.services.orpheus.settings") as m:
             _patch_settings(m)
@@ -656,7 +697,8 @@ class TestSemaphore:
             assert c._max_concurrent == 5
             assert c._semaphore._value == 5
 
-    def test_semaphore_explicit_override(self):
+    def test_semaphore_explicit_override(self) -> None:
+
         """Explicit max_concurrent kwarg overrides the config value."""
         with patch("app.services.orpheus.settings") as m:
             _patch_settings(m)
@@ -665,7 +707,8 @@ class TestSemaphore:
             assert c._semaphore._value == 7
 
     @pytest.mark.asyncio
-    async def test_semaphore_limits_concurrent_calls(self):
+    async def test_semaphore_limits_concurrent_calls(self) -> None:
+
         """Only max_concurrent generate() calls run simultaneously."""
         import asyncio
 
@@ -679,7 +722,8 @@ class TestSemaphore:
         active = 0
         gate = asyncio.Event()
 
-        async def slow_post(*args, **kwargs):
+        async def slow_post(*args: Any, **kwargs: Any) -> MagicMock:
+
             nonlocal peak, active
             active += 1
             if active > peak:
@@ -701,7 +745,8 @@ class TestSemaphore:
         await asyncio.gather(*tasks)
 
     @pytest.mark.asyncio
-    async def test_semaphore_releases_on_error(self):
+    async def test_semaphore_releases_on_error(self) -> None:
+
         """Semaphore slot is released even when generate() hits an error."""
         with patch("app.services.orpheus.settings") as m:
             _patch_settings(m)
@@ -720,12 +765,14 @@ class TestIntentGoalsPayload:
     """Regression: musical_goals=None must not appear as null in the HTTP payload."""
 
     def _make_client(self) -> OrpheusClient:
+
         with patch("app.services.orpheus.settings") as m:
             _patch_settings(m)
             return OrpheusClient()
 
     @pytest.mark.asyncio
-    async def test_intent_goals_none_omitted_from_payload(self):
+    async def test_intent_goals_none_omitted_from_payload(self) -> None:
+
         """When intent_goals=None, the key must not appear in the POST body."""
         c = self._make_client()
         c._client = MagicMock()
@@ -740,7 +787,8 @@ class TestIntentGoalsPayload:
         assert "intent_goals" not in payload
 
     @pytest.mark.asyncio
-    async def test_intent_goals_present_when_provided(self):
+    async def test_intent_goals_present_when_provided(self) -> None:
+
         """When intent_goals has values they ARE included in the payload."""
         c = self._make_client()
         c._client = MagicMock()
@@ -756,7 +804,8 @@ class TestIntentGoalsPayload:
         assert payload["intent_goals"] == goals
 
     @pytest.mark.asyncio
-    async def test_default_call_omits_intent_goals(self):
+    async def test_default_call_omits_intent_goals(self) -> None:
+
         """A bare generate() call (no intent_goals arg) must not include the key."""
         c = self._make_client()
         c._client = MagicMock()
@@ -780,12 +829,14 @@ class TestCorrelationId:
     """composition_id is threaded through to the HTTP payload."""
 
     def _make_client(self) -> OrpheusClient:
+
         with patch("app.services.orpheus.settings") as m:
             _patch_settings(m)
             return OrpheusClient()
 
     @pytest.mark.asyncio
-    async def test_composition_id_included_in_payload(self):
+    async def test_composition_id_included_in_payload(self) -> None:
+
         """When composition_id is provided, it appears in the POST body."""
         c = self._make_client()
         c._client = MagicMock()
@@ -803,7 +854,8 @@ class TestCorrelationId:
         assert payload["composition_id"] == "trace-abc123"
 
     @pytest.mark.asyncio
-    async def test_composition_id_omitted_when_none(self):
+    async def test_composition_id_omitted_when_none(self) -> None:
+
         """When composition_id is None, the key must not appear in the body."""
         c = self._make_client()
         c._client = MagicMock()
@@ -827,7 +879,8 @@ class TestCircuitBreaker:
     """Orpheus circuit breaker prevents cascading failures."""
 
     @pytest.fixture
-    def client(self):
+    def client(self) -> Generator[OrpheusClient, None, None]:
+
         with patch("app.services.orpheus.settings") as m:
             _patch_settings(m)
             m.orpheus_cb_threshold = 2
@@ -835,7 +888,8 @@ class TestCircuitBreaker:
             yield OrpheusClient()
 
     @pytest.mark.asyncio
-    async def test_circuit_open_returns_immediately(self, client):
+    async def test_circuit_open_returns_immediately(self, client: OrpheusClient) -> None:
+
         """When circuit is open, generate() returns immediately without HTTP call."""
         client._cb._failures = 3
         client._cb._opened_at = _time.monotonic()
@@ -850,7 +904,8 @@ class TestCircuitBreaker:
         client._client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_circuit_resets_after_cooldown(self, client):
+    async def test_circuit_resets_after_cooldown(self, client: OrpheusClient) -> None:
+
         """After cooldown expires, the circuit allows one probe request."""
         client._cb._failures = 3
         client._cb._opened_at = _time.monotonic() - 120
@@ -867,7 +922,8 @@ class TestCircuitBreaker:
         assert client._cb._failures == 0
 
     @pytest.mark.asyncio
-    async def test_success_resets_circuit(self, client):
+    async def test_success_resets_circuit(self, client: OrpheusClient) -> None:
+
         """A successful call resets the failure counter."""
         import httpx
 
@@ -884,7 +940,8 @@ class TestCircuitBreaker:
         assert not client.circuit_breaker_open
 
     @pytest.mark.asyncio
-    async def test_connect_error_trips_circuit(self, client):
+    async def test_connect_error_trips_circuit(self, client: OrpheusClient) -> None:
+
         """ConnectError counts toward circuit breaker failures."""
         import httpx
 
@@ -898,7 +955,8 @@ class TestCircuitBreaker:
         assert client.circuit_breaker_open
 
     @pytest.mark.asyncio
-    async def test_poll_failure_trips_circuit(self, client):
+    async def test_poll_failure_trips_circuit(self, client: OrpheusClient) -> None:
+
         """Job failure during polling also counts toward circuit breaker."""
         client._client = MagicMock()
         client._client.post = AsyncMock(return_value=_submit_resp())

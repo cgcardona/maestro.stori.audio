@@ -1,4 +1,5 @@
 """Rejection sampling loop for generation quality control."""
+from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
@@ -18,8 +19,8 @@ class RejectionSamplingResult:
 
 
 def rejection_sample(
-    generate_fn: Callable,
-    scorer_fn: Callable,
+    generate_fn: Callable[..., Any],
+    scorer_fn: Callable[..., Any],
     *,
     max_attempts: int = 6,
     accept_threshold: float = 0.75,

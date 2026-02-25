@@ -8,6 +8,7 @@ Core principles:
 - For "required" tool_choice: call exactly one tool then stop
 - For multi-step editing: only chain PRIMITIVES; never call GENERATORS directly
 """
+from __future__ import annotations
 
 from app.core.prompts.system import system_prompt_base, wrap_user_request
 from app.core.prompts.modes import editing_prompt, editing_composition_prompt, composing_prompt

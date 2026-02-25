@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator
 
 from app.core.intent import Intent, IntentResult, SSEState
 from app.core.intent_config import _PRIMITIVES_REGION, _PRIMITIVES_TRACK
@@ -44,8 +44,8 @@ async def _retry_composing_as_editing(
     llm: LLMClient,
     store: StateStore,
     trace: Any,
-    usage_tracker: Optional[UsageTracker],
-    quality_preset: Optional[str] = None,
+    usage_tracker: UsageTracker | None,
+    quality_preset: str | None = None,
 ) -> AsyncIterator[str]:
     """When planner output looks like function calls instead of JSON, retry as EDITING."""
     logger.warning(

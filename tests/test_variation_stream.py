@@ -4,7 +4,9 @@ Tests for the SSE Broadcaster.
 Covers event publishing, subscription, replay, late-join,
 end-of-stream signaling, and cleanup.
 """
+from __future__ import annotations
 
+from collections.abc import Generator
 import asyncio
 import pytest
 
@@ -28,7 +30,7 @@ from app.variation.streaming.sse_broadcaster import (
 
 
 @pytest.fixture
-def broadcaster():
+def broadcaster() -> Generator[SSEBroadcaster, None, None]:
     """Fresh SSE broadcaster for each test."""
     b = SSEBroadcaster()
     yield b
@@ -36,13 +38,14 @@ def broadcaster():
 
 
 @pytest.fixture(autouse=True)
-def reset_singleton():
+def reset_singleton() -> Generator[None, None, None]:
     """Reset singleton between tests."""
     yield
     reset_sse_broadcaster()
 
 
 def _make_meta(variation_id: str = "v-1", seq: int = 1) -> EventEnvelope:
+
     """Helper to create a meta envelope."""
     return build_meta_envelope(
         variation_id=variation_id,
@@ -58,6 +61,7 @@ def _make_meta(variation_id: str = "v-1", seq: int = 1) -> EventEnvelope:
 
 
 def _make_phrase(variation_id: str = "v-1", seq: int = 2) -> EventEnvelope:
+
     """Helper to create a phrase envelope."""
     return build_phrase_envelope(
         variation_id=variation_id,
@@ -69,6 +73,7 @@ def _make_phrase(variation_id: str = "v-1", seq: int = 2) -> EventEnvelope:
 
 
 def _make_done(variation_id: str = "v-1", seq: int = 3) -> EventEnvelope:
+
     """Helper to create a done envelope."""
     return build_done_envelope(
         variation_id=variation_id,
@@ -89,7 +94,8 @@ class TestPublishing:
     """Test event publishing."""
 
     @pytest.mark.asyncio
-    async def test_publish_without_subscribers(self, broadcaster):
+    async def test_publish_without_subscribers(self, broadcaster: SSEBroadcaster) -> None:
+
         """Publishing without subscribers still stores in history."""
         envelope = _make_meta()
         delivered = await broadcaster.publish(envelope)
@@ -98,7 +104,8 @@ class TestPublishing:
         assert len(broadcaster.get_history("v-1")) == 1
 
     @pytest.mark.asyncio
-    async def test_publish_to_subscriber(self, broadcaster):
+    async def test_publish_to_subscriber(self, broadcaster: SSEBroadcaster) -> None:
+
         """Publishing delivers to subscriber queue."""
         queue = broadcaster.subscribe("v-1")
         envelope = _make_meta()
@@ -107,11 +114,13 @@ class TestPublishing:
 
         assert delivered == 1
         received = queue.get_nowait()
+        assert received is not None
         assert received.type == "meta"
         assert received.sequence == 1
 
     @pytest.mark.asyncio
-    async def test_publish_to_multiple_subscribers(self, broadcaster):
+    async def test_publish_to_multiple_subscribers(self, broadcaster: SSEBroadcaster) -> None:
+
         """Publishing delivers to all subscribers."""
         q1 = broadcaster.subscribe("v-1")
         q2 = broadcaster.subscribe("v-1")
@@ -120,11 +129,14 @@ class TestPublishing:
         delivered = await broadcaster.publish(envelope)
 
         assert delivered == 2
-        assert q1.get_nowait().type == "meta"
-        assert q2.get_nowait().type == "meta"
+        r1 = q1.get_nowait()
+        r2 = q2.get_nowait()
+        assert r1 is not None and r1.type == "meta"
+        assert r2 is not None and r2.type == "meta"
 
     @pytest.mark.asyncio
-    async def test_publish_stores_history(self, broadcaster):
+    async def test_publish_stores_history(self, broadcaster: SSEBroadcaster) -> None:
+
         """All published events are stored in history."""
         await broadcaster.publish(_make_meta())
         await broadcaster.publish(_make_phrase())
@@ -146,13 +158,15 @@ class TestSubscription:
     """Test subscribing and event replay."""
 
     @pytest.mark.asyncio
-    async def test_subscribe_creates_queue(self, broadcaster):
+    async def test_subscribe_creates_queue(self, broadcaster: SSEBroadcaster) -> None:
+
         """subscribe() returns a queue."""
         queue = broadcaster.subscribe("v-1")
         assert isinstance(queue, asyncio.Queue)
 
     @pytest.mark.asyncio
-    async def test_late_join_replays_history(self, broadcaster):
+    async def test_late_join_replays_history(self, broadcaster: SSEBroadcaster) -> None:
+
         """Late-joining subscriber receives all past events."""
         await broadcaster.publish(_make_meta())
         await broadcaster.publish(_make_phrase())
@@ -162,11 +176,14 @@ class TestSubscription:
 
         # Should have replayed events
         assert queue.qsize() == 2
-        assert queue.get_nowait().type == "meta"
-        assert queue.get_nowait().type == "phrase"
+        r1 = queue.get_nowait()
+        r2 = queue.get_nowait()
+        assert r1 is not None and r1.type == "meta"
+        assert r2 is not None and r2.type == "phrase"
 
     @pytest.mark.asyncio
-    async def test_late_join_with_from_sequence(self, broadcaster):
+    async def test_late_join_with_from_sequence(self, broadcaster: SSEBroadcaster) -> None:
+
         """Late-joining with from_sequence only replays newer events."""
         await broadcaster.publish(_make_meta())
         await broadcaster.publish(_make_phrase(seq=2))
@@ -178,11 +195,12 @@ class TestSubscription:
         assert queue.qsize() == 2
         e1 = queue.get_nowait()
         e2 = queue.get_nowait()
-        assert e1.sequence == 2
-        assert e2.sequence == 3
+        assert e1 is not None and e1.sequence == 2
+        assert e2 is not None and e2.sequence == 3
 
     @pytest.mark.asyncio
-    async def test_unsubscribe(self, broadcaster):
+    async def test_unsubscribe(self, broadcaster: SSEBroadcaster) -> None:
+
         """unsubscribe() removes the queue."""
         queue = broadcaster.subscribe("v-1")
         broadcaster.unsubscribe("v-1", queue)
@@ -201,7 +219,8 @@ class TestEndOfStream:
     """Test stream closing and cleanup."""
 
     @pytest.mark.asyncio
-    async def test_close_stream_sends_sentinel(self, broadcaster):
+    async def test_close_stream_sends_sentinel(self, broadcaster: SSEBroadcaster) -> None:
+
         """close_stream() sends None sentinel to all subscribers."""
         q1 = broadcaster.subscribe("v-1")
         q2 = broadcaster.subscribe("v-1")
@@ -212,7 +231,8 @@ class TestEndOfStream:
         assert q2.get_nowait() is None
 
     @pytest.mark.asyncio
-    async def test_close_stream_removes_subscribers(self, broadcaster):
+    async def test_close_stream_removes_subscribers(self, broadcaster: SSEBroadcaster) -> None:
+
         """close_stream() removes all subscribers for a variation."""
         broadcaster.subscribe("v-1")
         broadcaster.subscribe("v-1")
@@ -223,7 +243,8 @@ class TestEndOfStream:
         assert broadcaster.active_streams == 0
 
     @pytest.mark.asyncio
-    async def test_cleanup_removes_all_data(self, broadcaster):
+    async def test_cleanup_removes_all_data(self, broadcaster: SSEBroadcaster) -> None:
+
         """cleanup() removes both subscribers and history."""
         broadcaster.subscribe("v-1")
         await broadcaster.publish(_make_meta())
@@ -243,7 +264,8 @@ class TestHistory:
     """Test history retrieval."""
 
     @pytest.mark.asyncio
-    async def test_get_history_full(self, broadcaster):
+    async def test_get_history_full(self, broadcaster: SSEBroadcaster) -> None:
+
         """get_history() returns all stored events."""
         await broadcaster.publish(_make_meta())
         await broadcaster.publish(_make_phrase())
@@ -253,7 +275,8 @@ class TestHistory:
         assert len(history) == 3
 
     @pytest.mark.asyncio
-    async def test_get_history_from_sequence(self, broadcaster):
+    async def test_get_history_from_sequence(self, broadcaster: SSEBroadcaster) -> None:
+
         """get_history(from_sequence) filters correctly."""
         await broadcaster.publish(_make_meta())
         await broadcaster.publish(_make_phrase(seq=2))
@@ -266,7 +289,8 @@ class TestHistory:
         assert history[1].sequence == 3
 
     @pytest.mark.asyncio
-    async def test_get_history_empty(self, broadcaster):
+    async def test_get_history_empty(self, broadcaster: SSEBroadcaster) -> None:
+
         """get_history() returns empty list for unknown variation."""
         assert broadcaster.get_history("nonexistent") == []
 
@@ -280,7 +304,8 @@ class TestFullStreamSimulation:
     """End-to-end simulation of a variation event stream."""
 
     @pytest.mark.asyncio
-    async def test_complete_stream_lifecycle(self, broadcaster):
+    async def test_complete_stream_lifecycle(self, broadcaster: SSEBroadcaster) -> None:
+
         """Simulate: subscribe → meta → phrase → phrase → done → close."""
         vid = "v-sim"
         queue = broadcaster.subscribe(vid)
@@ -330,7 +355,8 @@ class TestFullStreamSimulation:
         assert events[3].payload["phraseCount"] == 2
 
     @pytest.mark.asyncio
-    async def test_error_then_done_stream(self, broadcaster):
+    async def test_error_then_done_stream(self, broadcaster: SSEBroadcaster) -> None:
+
         """Simulate error flow: meta → error → done(failed)."""
         vid = "v-err"
         queue = broadcaster.subscribe(vid)
@@ -375,13 +401,15 @@ class TestFullStreamSimulation:
 class TestBroadcasterSingleton:
     """Test singleton access."""
 
-    def test_singleton_returns_same(self):
+    def test_singleton_returns_same(self) -> None:
+
         """get_sse_broadcaster returns the same instance."""
         b1 = get_sse_broadcaster()
         b2 = get_sse_broadcaster()
         assert b1 is b2
 
-    def test_reset_clears_singleton(self):
+    def test_reset_clears_singleton(self) -> None:
+
         """reset_sse_broadcaster clears state."""
         b1 = get_sse_broadcaster()
         reset_sse_broadcaster()

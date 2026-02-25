@@ -9,6 +9,7 @@ Backends available:
 - HuggingFaceMelodyBackend: HuggingFace Inference API (needs HF_API_KEY)
 - Text2MidiBackend: HuggingFace Spaces Gradio API (best quality, no key needed)
 """
+from __future__ import annotations
 
 from app.services.neural.tokenizer import MidiTokenizer, TokenizerConfig
 from app.services.neural.melody_generator import (

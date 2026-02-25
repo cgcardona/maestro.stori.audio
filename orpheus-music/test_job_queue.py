@@ -1,5 +1,9 @@
 """Tests for the Orpheus async job queue (JobQueue, Job, endpoints)."""
+from __future__ import annotations
+
 import asyncio
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -29,7 +33,7 @@ class TestJobQueue:
     """Unit tests for the in-memory async JobQueue."""
 
     @pytest.mark.asyncio
-    async def test_submit_returns_job_with_queued_status(self):
+    async def test_submit_returns_job_with_queued_status(self) -> None:
         q = JobQueue(max_queue=5, max_workers=1)
         # Don't start workers — we just test submit mechanics
         req = GenerateRequest(genre="lofi", tempo=85)
@@ -39,25 +43,25 @@ class TestJobQueue:
         assert job.position == 1
 
     @pytest.mark.asyncio
-    async def test_submit_raises_when_full(self):
+    async def test_submit_raises_when_full(self) -> None:
         q = JobQueue(max_queue=1, max_workers=1)
         q.submit(GenerateRequest(genre="a", tempo=90))
         with pytest.raises(QueueFullError):
             q.submit(GenerateRequest(genre="b", tempo=90))
 
     @pytest.mark.asyncio
-    async def test_get_job_returns_none_for_unknown(self):
+    async def test_get_job_returns_none_for_unknown(self) -> None:
         q = JobQueue(max_queue=5, max_workers=1)
         assert q.get_job("nonexistent") is None
 
     @pytest.mark.asyncio
-    async def test_get_job_returns_submitted(self):
+    async def test_get_job_returns_submitted(self) -> None:
         q = JobQueue(max_queue=5, max_workers=1)
         job = q.submit(GenerateRequest(genre="x", tempo=90))
         assert q.get_job(job.id) is job
 
     @pytest.mark.asyncio
-    async def test_status_snapshot(self):
+    async def test_status_snapshot(self) -> None:
         q = JobQueue(max_queue=10, max_workers=2)
         snap = q.status_snapshot()
         assert snap["depth"] == 0
@@ -66,7 +70,7 @@ class TestJobQueue:
         assert snap["max_queue"] == 10
 
     @pytest.mark.asyncio
-    async def test_worker_processes_job_to_completion(self):
+    async def test_worker_processes_job_to_completion(self) -> None:
         """Start queue, submit a job, verify it completes via event."""
         q = JobQueue(max_queue=5, max_workers=1)
 
@@ -89,7 +93,7 @@ class TestJobQueue:
         assert job.completed_at is not None
 
     @pytest.mark.asyncio
-    async def test_worker_marks_failed_on_exception(self):
+    async def test_worker_marks_failed_on_exception(self) -> None:
         """If _do_generate raises, the job is marked FAILED (not lost)."""
         q = JobQueue(max_queue=5, max_workers=1)
 
@@ -108,12 +112,12 @@ class TestJobQueue:
         assert job.result.success is False
 
     @pytest.mark.asyncio
-    async def test_multiple_jobs_processed_sequentially_by_single_worker(self):
+    async def test_multiple_jobs_processed_sequentially_by_single_worker(self) -> None:
         """With 1 worker, jobs complete one at a time."""
         q = JobQueue(max_queue=5, max_workers=1)
         order: list[str] = []
 
-        async def _track_gen(req, **kwargs):
+        async def _track_gen(req: GenerateRequest, **kwargs: Any) -> GenerateResponse:
             order.append(req.genre)
             await asyncio.sleep(0.01)
             return GenerateResponse(success=True, tool_calls=[])
@@ -132,7 +136,7 @@ class TestJobQueue:
         assert j2.status == JobStatus.COMPLETE
 
     @pytest.mark.asyncio
-    async def test_dedupe_returns_existing_queued_job(self):
+    async def test_dedupe_returns_existing_queued_job(self) -> None:
         """Submitting with the same dedupe key returns the existing job."""
         q = JobQueue(max_queue=5, max_workers=1)
         j1 = q.submit(GenerateRequest(genre="lofi", tempo=85), dedupe_key="abc123")
@@ -141,7 +145,7 @@ class TestJobQueue:
         assert q.depth == 1  # only one job in the queue
 
     @pytest.mark.asyncio
-    async def test_dedupe_allows_different_keys(self):
+    async def test_dedupe_allows_different_keys(self) -> None:
         """Different dedupe keys create separate jobs."""
         q = JobQueue(max_queue=5, max_workers=1)
         j1 = q.submit(GenerateRequest(genre="lofi", tempo=85), dedupe_key="aaa")
@@ -150,7 +154,7 @@ class TestJobQueue:
         assert q.depth == 2
 
     @pytest.mark.asyncio
-    async def test_dedupe_allows_resubmit_after_completion(self):
+    async def test_dedupe_allows_resubmit_after_completion(self) -> None:
         """After a job completes, the same dedupe key creates a new job."""
         q = JobQueue(max_queue=5, max_workers=1)
 
@@ -169,7 +173,7 @@ class TestJobQueue:
                 await q.shutdown()
 
     @pytest.mark.asyncio
-    async def test_dedupe_no_key_always_creates_new(self):
+    async def test_dedupe_no_key_always_creates_new(self) -> None:
         """Without a dedupe key, every submit creates a new job."""
         q = JobQueue(max_queue=5, max_workers=1)
         j1 = q.submit(GenerateRequest(genre="lofi", tempo=85))
@@ -178,7 +182,7 @@ class TestJobQueue:
         assert q.depth == 2
 
     @pytest.mark.asyncio
-    async def test_cancel_queued_job(self):
+    async def test_cancel_queued_job(self) -> None:
         """Canceling a queued job marks it canceled and sets the event."""
         q = JobQueue(max_queue=5, max_workers=1)
         job = q.submit(GenerateRequest(genre="lofi", tempo=85))
@@ -190,18 +194,18 @@ class TestJobQueue:
         assert job.event.is_set()
 
     @pytest.mark.asyncio
-    async def test_cancel_unknown_job_returns_none(self):
+    async def test_cancel_unknown_job_returns_none(self) -> None:
         """Canceling a nonexistent job returns None."""
         q = JobQueue(max_queue=5, max_workers=1)
         assert q.cancel("nonexistent") is None
 
     @pytest.mark.asyncio
-    async def test_canceled_job_skipped_by_worker(self):
+    async def test_canceled_job_skipped_by_worker(self) -> None:
         """Worker skips canceled jobs without processing them."""
         q = JobQueue(max_queue=5, max_workers=1)
         call_count = 0
 
-        async def _counting_gen(req, **kwargs):
+        async def _counting_gen(req: GenerateRequest, **kwargs: Any) -> GenerateResponse:
             nonlocal call_count
             call_count += 1
             return GenerateResponse(success=True, tool_calls=[])
@@ -222,7 +226,7 @@ class TestJobQueue:
         assert j2.status == JobStatus.COMPLETE
 
     @pytest.mark.asyncio
-    async def test_cancel_completed_job_is_noop(self):
+    async def test_cancel_completed_job_is_noop(self) -> None:
         """Canceling an already-completed job does not change its status."""
         q = JobQueue(max_queue=5, max_workers=1)
 
@@ -241,7 +245,7 @@ class TestJobQueue:
                 await q.shutdown()
 
     @pytest.mark.asyncio
-    async def test_cleanup_removes_expired_jobs(self):
+    async def test_cleanup_removes_expired_jobs(self) -> None:
         """Completed jobs older than TTL are cleaned up."""
         q = JobQueue(max_queue=5, max_workers=1)
         with patch("music_service._do_generate", new_callable=AsyncMock) as mock_gen:
@@ -270,7 +274,7 @@ class TestEndpoints:
     """Integration tests for the /generate, /jobs, /queue/status endpoints."""
 
     @pytest_asyncio.fixture
-    async def async_client(self):
+    async def async_client(self) -> AsyncGenerator[AsyncClient, None]:
         """Provide an httpx AsyncClient wired to the FastAPI ASGI app."""
         queue = JobQueue(max_queue=16, max_workers=1)
         await queue.start()
@@ -281,7 +285,7 @@ class TestEndpoints:
                 "tool_calls": [],
                 "metadata": {"mocked": True},
             }):
-                transport = ASGITransport(app=app)  # type: ignore[arg-type]
+                transport = ASGITransport(app=app)
                 async with AsyncClient(transport=transport, base_url="http://test") as c:
                     yield c
         finally:
@@ -289,7 +293,7 @@ class TestEndpoints:
             music_service._job_queue = None
 
     @pytest.mark.asyncio
-    async def test_generate_cache_hit_returns_complete(self, async_client):
+    async def test_generate_cache_hit_returns_complete(self, async_client: AsyncClient) -> None:
         """POST /generate with a cache hit returns status=complete immediately."""
         cached = {
             "success": True,
@@ -306,7 +310,7 @@ class TestEndpoints:
         assert data["result"]["success"] is True
 
     @pytest.mark.asyncio
-    async def test_generate_enqueues_and_returns_jobid(self, async_client):
+    async def test_generate_enqueues_and_returns_jobid(self, async_client: AsyncClient) -> None:
         """POST /generate with a cache miss returns jobId + queued status."""
         with (
             patch("music_service.get_cached_result", return_value=None),
@@ -321,17 +325,17 @@ class TestEndpoints:
         assert "jobId" in data
 
     @pytest.mark.asyncio
-    async def test_get_job_returns_404_for_unknown(self, async_client):
+    async def test_get_job_returns_404_for_unknown(self, async_client: AsyncClient) -> None:
         resp = await async_client.get("/jobs/nonexistent-id")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_wait_for_job_returns_404_for_unknown(self, async_client):
+    async def test_wait_for_job_returns_404_for_unknown(self, async_client: AsyncClient) -> None:
         resp = await async_client.get("/jobs/nonexistent-id/wait", params={"timeout": 1})
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_queue_status_returns_snapshot(self, async_client):
+    async def test_queue_status_returns_snapshot(self, async_client: AsyncClient) -> None:
         resp = await async_client.get("/queue/status")
         assert resp.status_code == 200
         data = resp.json()

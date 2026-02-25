@@ -4,10 +4,12 @@ Groove Engine: Style-specific microtiming, velocity, and articulation.
 Provides instrument-role based timing offsets, swing grids, accent maps, and 
 hat articulation rules. This is the key to "played" vs "mechanized" feel.
 """
+from __future__ import annotations
+
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +35,14 @@ class GrooveProfile:
         velocity_humanize_range: (min, max) random velocity adjustment
     """
     name: str
-    role_offset_ms: dict = field(default_factory=dict)
+    role_offset_ms: dict[str, tuple[int, int]] = field(default_factory=dict)
     swing_amount: float = 0.0
     swing_grid: str = "8th"  # "8th" or "16th"
-    accent_map: dict = field(default_factory=dict)
-    hat_arc: tuple = (0.95, 1.05)
+    accent_map: dict[float, float] = field(default_factory=dict)
+    hat_arc: tuple[float, float] = (0.95, 1.05)
     ghost_timing_late_ms: int = 15
-    fill_timing_variance_ms: tuple = (-5, 10)
-    velocity_humanize_range: tuple = (-3, 3)
+    fill_timing_variance_ms: tuple[int, int] = (-5, 10)
+    velocity_humanize_range: tuple[int, int] = (-3, 3)
 
 
 # -----------------------------------------------------------------------------
@@ -236,7 +238,7 @@ GROOVE_PROFILES: dict[str, GrooveProfile] = {
 }
 
 
-def get_groove_profile(style: str, humanize_profile: Optional[str] = None) -> GrooveProfile:
+def get_groove_profile(style: str, humanize_profile: str | None = None) -> GrooveProfile:
     """
     Get groove profile for a style, optionally modified by humanize_profile.
     
@@ -283,7 +285,7 @@ PITCH_TO_ROLE = {
 }
 
 
-def get_role_for_pitch(pitch: int, velocity: int = 80, layer: Optional[str] = None) -> str:
+def get_role_for_pitch(pitch: int, velocity: int = 80, layer: str | None = None) -> str:
     """
     Determine the role of a drum hit for groove offset lookup.
     
@@ -371,13 +373,13 @@ def calculate_swing_offset(
 # -----------------------------------------------------------------------------
 
 def apply_groove_map(
-    notes: list[dict],
+    notes: list[dict[str, Any]],
     tempo: int,
     style: str = "trap",
-    humanize_profile: Optional[str] = None,
-    layer_map: Optional[dict] = None,
-    rng: Optional[random.Random] = None,
-) -> list[dict]:
+    humanize_profile: str | None = None,
+    layer_map: dict[int, str] | None = None,
+    rng: random.Random | None = None,
+) -> list[dict[str, Any]]:
     """
     Apply style-specific groove to notes: microtiming, swing, velocity shaping.
     
@@ -385,7 +387,7 @@ def apply_groove_map(
     and velocity curves.
     
     Args:
-        notes: List of {pitch, start_beat, duration_beats, velocity, ...}
+        notes: list of {pitch, start_beat, duration_beats, velocity, ...}
         tempo: BPM
         style: Music style (e.g., "boom_bap", "trap", "house")
         humanize_profile: Optional feel override ("tight", "laid_back", "pushed")
@@ -393,7 +395,7 @@ def apply_groove_map(
         rng: Random number generator for reproducibility
     
     Returns:
-        List of notes with groove applied (timing + velocity adjusted)
+        list of notes with groove applied (timing + velocity adjusted)
     """
     if not notes:
         return notes
@@ -476,7 +478,7 @@ SNARE_PITCHES = {38, 39, 40}
 HAT_PITCHES = {42, 44, 46}
 
 
-def extract_onsets(notes: list[dict], pitch_set: set) -> list[float]:
+def extract_onsets(notes: list[dict[str, Any]], pitch_set: set[int]) -> list[float]:
     """
     Extract onset times for notes matching the given pitch set.
     
@@ -485,17 +487,17 @@ def extract_onsets(notes: list[dict], pitch_set: set) -> list[float]:
     return sorted({round(n["start_beat"], 4) for n in notes if n.get("pitch") in pitch_set})
 
 
-def extract_kick_onsets(notes: list[dict]) -> list[float]:
+def extract_kick_onsets(notes: list[dict[str, Any]]) -> list[float]:
     """Extract kick drum onset times from drum notes."""
     return extract_onsets(notes, KICK_PITCHES)
 
 
-def extract_snare_onsets(notes: list[dict]) -> list[float]:
+def extract_snare_onsets(notes: list[dict[str, Any]]) -> list[float]:
     """Extract snare/clap onset times from drum notes."""
     return extract_onsets(notes, SNARE_PITCHES)
 
 
-def extract_hat_grid(notes: list[dict]) -> list[float]:
+def extract_hat_grid(notes: list[dict[str, Any]]) -> list[float]:
     """Extract hi-hat onset times from drum notes."""
     return extract_onsets(notes, HAT_PITCHES)
 
@@ -516,12 +518,12 @@ class RhythmSpine:
     hat_grid: list[float] = field(default_factory=list)
     tempo: int = 120
     bars: int = 16
-    groove_profile: Optional[GrooveProfile] = None
+    groove_profile: GrooveProfile | None = None
     
     @classmethod
     def from_drum_notes(
         cls,
-        notes: list[dict],
+        notes: list[dict[str, Any]],
         tempo: int = 120,
         bars: int = 16,
         style: str = "trap",

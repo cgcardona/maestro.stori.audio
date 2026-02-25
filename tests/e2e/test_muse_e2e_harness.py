@@ -14,6 +14,7 @@ Run:
 
 from __future__ import annotations
 
+from sqlalchemy.ext.asyncio import AsyncSession
 import json
 import logging
 from typing import Any
@@ -52,18 +53,21 @@ _forced_ops = 0
 
 
 async def save(client: AsyncClient, payload: dict[str, object], headers: dict[str, str]) -> Any:
+
     resp = await client.post(f"{BASE}/variations", json=payload, headers=headers)
     assert resp.status_code == 200, f"save failed: {resp.text}"
     return resp.json()
 
 
 async def set_head(client: AsyncClient, vid: str, headers: dict[str, str]) -> Any:
+
     resp = await client.post(f"{BASE}/head", json={"variation_id": vid}, headers=headers)
     assert resp.status_code == 200, f"set_head failed: {resp.text}"
     return resp.json()
 
 
 async def get_log(client: AsyncClient, headers: dict[str, str]) -> Any:
+
     resp = await client.get(f"{BASE}/log", params={"project_id": PROJECT_ID}, headers=headers)
     assert resp.status_code == 200, f"get_log failed: {resp.text}"
     return resp.json()
@@ -110,7 +114,8 @@ async def do_merge(
 
 
 @pytest.mark.anyio
-async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict, db_session):
+async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[str, str], db_session: AsyncSession) -> None:
+
     """Full Muse VCS lifecycle: commit → branch → merge → conflict → checkout."""
     global _checkouts_executed, _drift_blocks, _conflict_merges, _forced_ops
     _checkouts_executed = 0

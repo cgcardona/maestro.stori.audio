@@ -8,10 +8,12 @@ Assets are stored under:
   - assets/soundfonts/{filename}.sf2
   - assets/soundfonts/manifest.json (list of soundfonts)
 """
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import boto3
 from botocore.config import Config
@@ -54,7 +56,7 @@ DEFAULT_SOUNDFONTS_MANIFEST = {
 }
 
 
-def _s3_client():
+def _s3_client() -> Any:
     """
     Create S3 client with SigV4 and regional endpoint.
     Using the regional endpoint (e.g. s3.us-east-1.amazonaws.com) avoids redirects from the
@@ -77,7 +79,7 @@ def _bucket() -> str:
     return settings.aws_s3_asset_bucket
 
 
-def _get_object_json(key: str) -> Optional[dict[str, Any]]:
+def _get_object_json(key: str) -> dict[str, Any] | None:
     """Fetch a JSON object from S3. Returns None if missing or on error."""
     try:
         client = _s3_client()
@@ -123,7 +125,7 @@ def list_soundfonts() -> list[dict[str, Any]]:
 
 def get_drum_kit_download_url(
     kit_id: str,
-    expires_in: Optional[int] = None,
+    expires_in: int | None = None,
 ) -> tuple[str, datetime]:
     """
     Generate presigned URL for a drum kit zip.
@@ -164,7 +166,7 @@ def get_drum_kit_download_url(
 
 def get_soundfont_download_url(
     soundfont_id: str,
-    expires_in: Optional[int] = None,
+    expires_in: int | None = None,
 ) -> tuple[str, datetime]:
     """
     Generate presigned URL for a soundfont file.
@@ -207,7 +209,7 @@ def get_soundfont_download_url(
 
 
 def get_bundle_download_url(
-    expires_in: Optional[int] = None,
+    expires_in: int | None = None,
 ) -> tuple[str, datetime]:
     """
     Generate presigned URL for the full bundle zip (all drum kits + GM soundfont).

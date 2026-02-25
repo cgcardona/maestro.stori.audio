@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.core.entity_registry import EntityRegistry
 from app.core.tools import tool_schema_by_name
@@ -21,8 +21,8 @@ def validate_tool_call(
     tool_name: str,
     params: dict[str, Any],
     allowed_tools: set[str] | frozenset[str],
-    registry: Optional[EntityRegistry] = None,
-    target_scope: Optional[tuple[str, Optional[str]]] = None,
+    registry: EntityRegistry | None = None,
+    target_scope: tuple[str, str | None] | None = None,
 ) -> ValidationResult:
     """
     Validate a tool call.
@@ -103,7 +103,7 @@ def validate_tool_call_simple(
 def validate_tool_calls_batch(
     tool_calls: list[tuple[str, dict[str, Any]]],
     allowed_tools: set[str],
-    registry: Optional[EntityRegistry] = None,
+    registry: EntityRegistry | None = None,
 ) -> list[ValidationResult]:
     """Validate a batch of (tool_name, params) tuples."""
     return [

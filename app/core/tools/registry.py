@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+from typing import Any
 
 from app.core.tools.metadata import ToolMeta, ToolTier, ToolKind
 from app.core.tools.definitions import ALL_TOOLS, TIER1_TOOLS, TIER2_TOOLS  # noqa: F401 (re-exported)
@@ -20,10 +20,6 @@ def build_tool_registry() -> dict[str, ToolMeta]:
 
     # Tier 1 generators
     _register(ToolMeta("stori_generate_midi", ToolTier.TIER1, ToolKind.GENERATOR, planner_only=True, reversible=False))
-    _register(ToolMeta("stori_generate_drums", ToolTier.TIER1, ToolKind.GENERATOR, planner_only=True, reversible=False, deprecated=True))
-    _register(ToolMeta("stori_generate_bass", ToolTier.TIER1, ToolKind.GENERATOR, planner_only=True, reversible=False, deprecated=True))
-    _register(ToolMeta("stori_generate_chords", ToolTier.TIER1, ToolKind.GENERATOR, planner_only=True, reversible=False, deprecated=True))
-    _register(ToolMeta("stori_generate_melody", ToolTier.TIER1, ToolKind.GENERATOR, planner_only=True, reversible=False, deprecated=True))
 
     # Tier 2 primitives
     _register(ToolMeta("stori_create_project", ToolTier.TIER2, ToolKind.PRIMITIVE, creates_entity="project", id_fields=("projectId",), reversible=False))
@@ -66,7 +62,7 @@ def build_tool_registry() -> dict[str, ToolMeta]:
     return _TOOL_META
 
 
-def get_tool_meta(name: str) -> Optional[ToolMeta]:
+def get_tool_meta(name: str) -> ToolMeta | None:
     build_tool_registry()
     return _TOOL_META.get(name)
 
@@ -77,8 +73,8 @@ def tools_by_kind(kind: ToolKind) -> list[dict[str, Any]]:
     return [t for t in ALL_TOOLS if t["function"]["name"] in allowed]
 
 
-def tool_schema_by_name(name: str) -> Optional[dict[str, Any]]:
+def tool_schema_by_name(name: str) -> dict[str, Any] | None:
     for t in ALL_TOOLS:
         if t["function"]["name"] == name:
-            return cast(dict[str, Any], t)
+            return t
     return None

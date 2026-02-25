@@ -43,8 +43,11 @@ COPY --chown=stori:stori scripts/ ./scripts/
 COPY --chown=stori:stori reference_midi/ ./reference_midi/
 COPY --chown=stori:stori alembic/ ./alembic/
 COPY --chown=stori:stori alembic.ini ./
+COPY --chown=stori:stori entrypoint.sh ./
 COPY --chown=stori:stori pyproject.toml ./
 COPY --chown=stori:stori tests/ ./tests/
+COPY --chown=stori:stori stori_tourdeforce/ ./stori_tourdeforce/
+COPY --chown=stori:stori mvp_happy_path.py ./mvp_happy_path.py
 
 # Create data directory for SQLite with proper permissions
 RUN mkdir -p /data && chown -R stori:stori /data && chmod 755 /data
@@ -70,5 +73,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 EXPOSE 10001
 
-# Run with uvicorn
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "10001"]

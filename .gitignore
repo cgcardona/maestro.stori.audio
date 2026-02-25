@@ -227,3 +227,8 @@ assets/bundle/
 reference_midi/
 
 logs.txt
+
+# Tour de Force artifacts and secrets
+artifacts/
+.env.tourdeforce
+stori_tourdeforce/*.db

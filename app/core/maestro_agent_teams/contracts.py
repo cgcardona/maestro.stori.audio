@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import types
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from app.core.maestro_agent_teams.signals import SectionSignals, SectionState
 
@@ -200,8 +200,8 @@ class InstrumentContract:
     key: str
     start_beat: int
     sections: tuple[SectionSpec, ...]
-    existing_track_id: Optional[str]
-    assigned_color: Optional[str]
+    existing_track_id: str | None
+    assigned_color: str | None
     gm_guidance: str
 
     # ── Contract identity (set post-construction via seal_contract) ──

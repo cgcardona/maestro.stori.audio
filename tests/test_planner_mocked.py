@@ -9,7 +9,9 @@ Coverage:
   5. Position: → startBeat regression — offset applied in deterministic path
   6. ExecutionPlan properties — is_valid, generation_count, edit_count
 """
+from __future__ import annotations
 
+from typing import Any
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock
@@ -34,6 +36,7 @@ from app.core.plan_schemas import ExecutionPlanSchema
 # ---------------------------------------------------------------------------
 
 def _make_route(intent: Intent = Intent.GENERATE_MUSIC) -> IntentResult:
+
     from app.core.intent import Slots
     return IntentResult(
         intent=intent,
@@ -51,7 +54,7 @@ def _minimal_parsed(
     style: str = "house",
     tempo: int = 128,
     key: str = "Am",
-    roles: list | None = None,
+    roles: list[str] | None = None,
     bars: int = 8,
     position: PositionSpec | None = None,
 ) -> ParsedPrompt:
@@ -70,7 +73,8 @@ def _minimal_parsed(
     )
 
 
-def _llm_with_response(json_body: dict) -> AsyncMock:
+def _llm_with_response(json_body: dict[str, Any]) -> AsyncMock:
+
     """Return a mock LLM that yields the given JSON as its chat response."""
     llm = AsyncMock()
     response_text = json.dumps(json_body)
@@ -78,7 +82,8 @@ def _llm_with_response(json_body: dict) -> AsyncMock:
     return llm
 
 
-def _valid_plan_json(bars: int = 8, tempo: int = 128) -> dict:
+def _valid_plan_json(bars: int = 8, tempo: int = 128) -> dict[str, Any]:
+
     return {
         "generations": [
             {"role": "drums", "style": "house", "tempo": tempo, "bars": bars},
@@ -101,7 +106,8 @@ def _valid_plan_json(bars: int = 8, tempo: int = 128) -> dict:
 class TestMatchRolesToExistingTracks:
     """_match_roles_to_existing_tracks maps roles to project tracks."""
 
-    def test_name_match_drums_and_bass(self):
+    def test_name_match_drums_and_bass(self) -> None:
+
         project = {
             "tracks": [
                 {"id": "D-UUID", "name": "Drums"},
@@ -112,7 +118,8 @@ class TestMatchRolesToExistingTracks:
         assert result["drums"]["id"] == "D-UUID"
         assert result["bass"]["id"] == "B-UUID"
 
-    def test_instrument_keyword_melody_to_organ(self):
+    def test_instrument_keyword_melody_to_organ(self) -> None:
+
         project = {
             "tracks": [
                 {"id": "D-UUID", "name": "Drums"},
@@ -124,16 +131,19 @@ class TestMatchRolesToExistingTracks:
         assert "melody" in result
         assert result["melody"]["id"] == "O-UUID"
 
-    def test_no_match_returns_empty(self):
+    def test_no_match_returns_empty(self) -> None:
+
         project = {"tracks": [{"id": "X", "name": "FX"}]}
         result = _match_roles_to_existing_tracks({"drums"}, project)
         assert "drums" not in result
 
-    def test_empty_tracks(self):
+    def test_empty_tracks(self) -> None:
+
         result = _match_roles_to_existing_tracks({"drums"}, {"tracks": []})
         assert result == {}
 
-    def test_no_double_claim(self):
+    def test_no_double_claim(self) -> None:
+
         """A single track should not be claimed by multiple roles."""
         project = {
             "tracks": [
@@ -152,54 +162,64 @@ class TestMatchRolesToExistingTracks:
 class TestTryDeterministicPlan:
     """_try_deterministic_plan builds a plan without the LLM when all fields are present."""
 
-    def test_returns_plan_when_all_fields_present(self):
+    def test_returns_plan_when_all_fields_present(self) -> None:
+
         parsed = _minimal_parsed()
         plan = _try_deterministic_plan(parsed)
         assert plan is not None
         assert isinstance(plan, ExecutionPlan)
 
-    def test_returns_none_when_style_missing(self):
+    def test_returns_none_when_style_missing(self) -> None:
+
         parsed = _minimal_parsed()
         parsed.style = None
         assert _try_deterministic_plan(parsed) is None
 
-    def test_returns_none_when_tempo_missing(self):
+    def test_returns_none_when_tempo_missing(self) -> None:
+
         parsed = _minimal_parsed()
         parsed.tempo = None
         assert _try_deterministic_plan(parsed) is None
 
-    def test_returns_none_when_roles_empty(self):
+    def test_returns_none_when_roles_empty(self) -> None:
+
         parsed = _minimal_parsed(roles=[])
         assert _try_deterministic_plan(parsed) is None
 
-    def test_returns_none_when_bars_missing_from_constraints(self):
+    def test_returns_none_when_bars_missing_from_constraints(self) -> None:
+
         parsed = _minimal_parsed()
         parsed.constraints = {}
         assert _try_deterministic_plan(parsed) is None
 
-    def test_returns_none_when_bars_is_zero(self):
+    def test_returns_none_when_bars_is_zero(self) -> None:
+
         parsed = _minimal_parsed(bars=0)
         assert _try_deterministic_plan(parsed) is None
 
-    def test_plan_has_generate_calls_for_each_role(self):
+    def test_plan_has_generate_calls_for_each_role(self) -> None:
+
         parsed = _minimal_parsed(roles=["kick", "bass", "melody"])
         plan = _try_deterministic_plan(parsed)
         assert plan is not None
         gen_calls = [tc for tc in plan.tool_calls if tc.name == "stori_generate_midi"]
         assert len(gen_calls) == 3
 
-    def test_plan_is_safety_validated(self):
+    def test_plan_is_safety_validated(self) -> None:
+
         plan = _try_deterministic_plan(_minimal_parsed())
         assert plan is not None
         assert plan.safety_validated is True
 
-    def test_deterministic_plan_note_mentions_structured_prompt(self):
+    def test_deterministic_plan_note_mentions_structured_prompt(self) -> None:
+
         plan = _try_deterministic_plan(_minimal_parsed())
         assert plan is not None
         assert any("structured prompt" in note.lower() or "deterministic" in note.lower()
                    for note in plan.notes)
 
-    def test_start_beat_zero_by_default(self):
+    def test_start_beat_zero_by_default(self) -> None:
+
         parsed = _minimal_parsed()
         plan = _try_deterministic_plan(parsed, start_beat=0.0)
         assert plan is not None
@@ -207,7 +227,8 @@ class TestTryDeterministicPlan:
         for call in region_calls:
             assert call.params.get("startBeat", 0) == 0
 
-    def test_start_beat_offset_applied_to_regions(self):
+    def test_start_beat_offset_applied_to_regions(self) -> None:
+
         """Regression: Position: after intro should shift all region startBeats by 64."""
         parsed = _minimal_parsed()
         plan = _try_deterministic_plan(parsed, start_beat=64.0)
@@ -221,14 +242,16 @@ class TestTryDeterministicPlan:
                 "Position offset was not applied."
             )
 
-    def test_start_beat_offset_in_plan_notes(self):
+    def test_start_beat_offset_in_plan_notes(self) -> None:
+
         """Non-zero start_beat is recorded in plan notes for traceability."""
         plan = _try_deterministic_plan(_minimal_parsed(), start_beat=32.0)
         assert plan is not None
         notes_text = " ".join(plan.notes)
         assert "32" in notes_text or "position_offset" in notes_text
 
-    def test_tempo_from_parsed_in_generate_calls(self):
+    def test_tempo_from_parsed_in_generate_calls(self) -> None:
+
         parsed = _minimal_parsed(tempo=140)
         plan = _try_deterministic_plan(parsed)
         assert plan is not None
@@ -236,7 +259,8 @@ class TestTryDeterministicPlan:
             if tc.name == "stori_generate_midi":
                 assert tc.params.get("tempo") == 140
 
-    def test_style_from_parsed_in_generate_calls(self):
+    def test_style_from_parsed_in_generate_calls(self) -> None:
+
         parsed = _minimal_parsed(style="jazz")
         plan = _try_deterministic_plan(parsed)
         assert plan is not None
@@ -253,6 +277,7 @@ class TestSchemaToToolCalls:
     """_schema_to_tool_calls converts a validated schema into ToolCall ordering."""
 
     def _make_schema(self, bars: int = 8, tempo: int = 128) -> "ExecutionPlanSchema":
+
         from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep
         return ExecutionPlanSchema(
             generations=[
@@ -268,7 +293,8 @@ class TestSchemaToToolCalls:
             mix=[],
         )
 
-    def test_tracks_before_regions_before_generators(self):
+    def test_tracks_before_regions_before_generators(self) -> None:
+
         """Execution order: add_track → add_region → generate_midi."""
         schema = self._make_schema()
         calls = _schema_to_tool_calls(schema)
@@ -279,14 +305,16 @@ class TestSchemaToToolCalls:
         first_gen = next(i for i, n in enumerate(names) if n == "stori_generate_midi")
         assert first_track < first_region < first_gen
 
-    def test_region_start_offset_zero(self):
+    def test_region_start_offset_zero(self) -> None:
+
         schema = self._make_schema()
         calls = _schema_to_tool_calls(schema, region_start_offset=0.0)
         for tc in calls:
             if tc.name == "stori_add_midi_region":
                 assert tc.params["startBeat"] == 0.0
 
-    def test_region_start_offset_applied(self):
+    def test_region_start_offset_applied(self) -> None:
+
         """All new regions are shifted by region_start_offset beats."""
         schema = self._make_schema(bars=8)
         calls = _schema_to_tool_calls(schema, region_start_offset=64.0)
@@ -296,25 +324,29 @@ class TestSchemaToToolCalls:
                     f"startBeat {tc.params['startBeat']} not offset by 64"
                 )
 
-    def test_generates_two_track_calls(self):
+    def test_generates_two_track_calls(self) -> None:
+
         schema = self._make_schema()
         calls = _schema_to_tool_calls(schema)
         track_calls = [tc for tc in calls if tc.name == "stori_add_midi_track"]
         assert len(track_calls) == 2
 
-    def test_generates_two_region_calls(self):
+    def test_generates_two_region_calls(self) -> None:
+
         schema = self._make_schema()
         calls = _schema_to_tool_calls(schema)
         region_calls = [tc for tc in calls if tc.name == "stori_add_midi_region"]
         assert len(region_calls) == 2
 
-    def test_generates_two_generation_calls(self):
+    def test_generates_two_generation_calls(self) -> None:
+
         schema = self._make_schema()
         calls = _schema_to_tool_calls(schema)
         gen_calls = [tc for tc in calls if tc.name == "stori_generate_midi"]
         assert len(gen_calls) == 2
 
-    def test_region_duration_from_bars(self):
+    def test_region_duration_from_bars(self) -> None:
+
         """8 bars × 4 beats/bar = 32 durationBeats."""
         schema = self._make_schema(bars=8)
         calls = _schema_to_tool_calls(schema)
@@ -322,7 +354,8 @@ class TestSchemaToToolCalls:
             if tc.name == "stori_add_midi_region":
                 assert tc.params["durationBeats"] == 32
 
-    def test_generate_calls_include_role(self):
+    def test_generate_calls_include_role(self) -> None:
+
         schema = self._make_schema()
         calls = _schema_to_tool_calls(schema)
         roles_generated = {
@@ -333,7 +366,8 @@ class TestSchemaToToolCalls:
         assert "drums" in roles_generated
         assert "bass" in roles_generated
 
-    def test_insert_effects_after_generator_per_track(self):
+    def test_insert_effects_after_generator_per_track(self) -> None:
+
         """Insert effects come after the generator within the same track group."""
         from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
         schema = ExecutionPlanSchema(
@@ -352,7 +386,8 @@ class TestSchemaToToolCalls:
 
     # -- Bug 1: Skip track creation for existing tracks -------------------------
 
-    def test_skips_add_track_for_existing_tracks(self):
+    def test_skips_add_track_for_existing_tracks(self) -> None:
+
         """When project_state has Drums and Bass, stori_add_midi_track calls are skipped."""
         schema = self._make_schema()
         project_state = {
@@ -365,7 +400,8 @@ class TestSchemaToToolCalls:
         track_calls = [tc for tc in calls if tc.name == "stori_add_midi_track"]
         assert len(track_calls) == 0, "Should not create tracks that already exist"
 
-    def test_skips_color_and_icon_for_existing_tracks(self):
+    def test_skips_color_and_icon_for_existing_tracks(self) -> None:
+
         """Existing tracks should not get stori_set_track_color or stori_set_track_icon."""
         schema = self._make_schema()
         project_state = {
@@ -380,7 +416,8 @@ class TestSchemaToToolCalls:
         assert len(color_calls) == 0, "Should not set color for existing tracks"
         assert len(icon_calls) == 0, "Should not set icon for existing tracks"
 
-    def test_creates_track_when_not_in_project(self):
+    def test_creates_track_when_not_in_project(self) -> None:
+
         """Tracks not in project_state should still be created."""
         schema = self._make_schema()
         project_state = {"tracks": [{"id": "DRUMS-UUID", "name": "Drums"}]}
@@ -391,7 +428,8 @@ class TestSchemaToToolCalls:
 
     # -- Bug 2: Existing track UUIDs propagated to regions/generators -----------
 
-    def test_existing_track_uuid_in_region_calls(self):
+    def test_existing_track_uuid_in_region_calls(self) -> None:
+
         """Region calls should carry the existing track's UUID as trackId."""
         schema = self._make_schema()
         project_state = {
@@ -407,7 +445,8 @@ class TestSchemaToToolCalls:
         assert "DRUMS-UUID-123" in region_track_ids
         assert "BASS-UUID-456" in region_track_ids
 
-    def test_existing_track_uuid_in_generator_calls(self):
+    def test_existing_track_uuid_in_generator_calls(self) -> None:
+
         """Generator calls should carry the existing track's UUID as trackId."""
         schema = self._make_schema()
         project_state = {
@@ -425,7 +464,8 @@ class TestSchemaToToolCalls:
 
     # -- Bug 3: Melody role mapped to existing Organ track ----------------------
 
-    def test_melody_role_maps_to_existing_organ_track(self):
+    def test_melody_role_maps_to_existing_organ_track(self) -> None:
+
         """When project has an Organ track and plan generates 'melody', use Organ."""
         from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep
         schema = ExecutionPlanSchema(
@@ -472,7 +512,8 @@ class TestBuildExecutionPlanMocked:
     """build_execution_plan with a mocked LLM client."""
 
     @pytest.mark.anyio
-    async def test_happy_path_returns_valid_plan(self):
+    async def test_happy_path_returns_valid_plan(self) -> None:
+
         llm = _llm_with_response(_valid_plan_json())
         plan = await build_execution_plan(
             user_prompt="make a house beat",
@@ -485,7 +526,8 @@ class TestBuildExecutionPlanMocked:
         assert len(plan.tool_calls) > 0
 
     @pytest.mark.anyio
-    async def test_llm_called_without_tools(self):
+    async def test_llm_called_without_tools(self) -> None:
+
         """Planner sends tools=[] to avoid the LLM invoking functions."""
         llm = _llm_with_response(_valid_plan_json())
         await build_execution_plan(
@@ -499,7 +541,8 @@ class TestBuildExecutionPlanMocked:
         assert call_kwargs.get("tool_choice") == "none"
 
     @pytest.mark.anyio
-    async def test_invalid_json_returns_invalid_plan(self):
+    async def test_invalid_json_returns_invalid_plan(self) -> None:
+
         llm = AsyncMock()
         llm.chat.return_value = MagicMock(content="not json at all { garbage")
         plan = await build_execution_plan(
@@ -513,7 +556,8 @@ class TestBuildExecutionPlanMocked:
         assert any("validation" in n.lower() or "plan" in n.lower() for n in plan.notes)
 
     @pytest.mark.anyio
-    async def test_empty_plan_returns_invalid(self):
+    async def test_empty_plan_returns_invalid(self) -> None:
+
         """A plan with no generations, edits, or mix is considered empty."""
         llm = _llm_with_response({"generations": [], "edits": [], "mix": []})
         plan = await build_execution_plan(
@@ -525,7 +569,8 @@ class TestBuildExecutionPlanMocked:
         assert not plan.is_valid
 
     @pytest.mark.anyio
-    async def test_structured_prompt_takes_deterministic_path(self):
+    async def test_structured_prompt_takes_deterministic_path(self) -> None:
+
         """A fully-specified structured prompt skips the LLM entirely."""
         parsed = _minimal_parsed()
         llm = AsyncMock()
@@ -542,7 +587,8 @@ class TestBuildExecutionPlanMocked:
         assert plan.is_valid
 
     @pytest.mark.anyio
-    async def test_partial_structured_prompt_calls_llm(self):
+    async def test_partial_structured_prompt_calls_llm(self) -> None:
+
         """A structured prompt missing bars falls back to the LLM."""
         parsed = _minimal_parsed()
         parsed.constraints = {}  # missing bars → deterministic path impossible
@@ -558,7 +604,8 @@ class TestBuildExecutionPlanMocked:
         assert plan is not None
 
     @pytest.mark.anyio
-    async def test_position_resolved_before_llm_call(self):
+    async def test_position_resolved_before_llm_call(self) -> None:
+
         """Position: after intro is resolved to a beat and injected into system prompt."""
         parsed = _minimal_parsed()
         parsed.position = PositionSpec(kind="after", ref="intro")
@@ -584,7 +631,8 @@ class TestBuildExecutionPlanMocked:
         assert "64" in system_prompt or "ARRANGEMENT POSITION" in system_prompt
 
     @pytest.mark.anyio
-    async def test_llm_response_stored_in_plan(self):
+    async def test_llm_response_stored_in_plan(self) -> None:
+
         """LLM response text is preserved in the plan for debugging."""
         plan_json = _valid_plan_json()
         llm = _llm_with_response(plan_json)
@@ -598,7 +646,8 @@ class TestBuildExecutionPlanMocked:
         assert len(plan.llm_response_text) > 0
 
     @pytest.mark.anyio
-    async def test_generations_only_plan_valid(self):
+    async def test_generations_only_plan_valid(self) -> None:
+
         """A plan with generations but no explicit edits is still valid (complete_plan infers edits)."""
         plan_json = {
             "generations": [
@@ -626,27 +675,32 @@ class TestBuildExecutionPlanMocked:
 class TestBuildPlanFromDict:
     """build_plan_from_dict converts a dict directly to ExecutionPlan."""
 
-    def test_valid_dict_produces_valid_plan(self):
+    def test_valid_dict_produces_valid_plan(self) -> None:
+
         plan = build_plan_from_dict(_valid_plan_json())
         assert plan.is_valid
         assert len(plan.tool_calls) > 0
 
-    def test_invalid_dict_produces_invalid_plan(self):
+    def test_invalid_dict_produces_invalid_plan(self) -> None:
+
         plan = build_plan_from_dict({"not_a_real_field": True})
         assert not plan.is_valid
 
-    def test_plan_from_dict_has_tool_calls_in_order(self):
+    def test_plan_from_dict_has_tool_calls_in_order(self) -> None:
+
         plan = build_plan_from_dict(_valid_plan_json())
         names = [tc.name for tc in plan.tool_calls]
         assert "stori_add_midi_track" in names
         assert "stori_add_midi_region" in names
         assert "stori_generate_midi" in names
 
-    def test_empty_plan_not_valid(self):
+    def test_empty_plan_not_valid(self) -> None:
+
         plan = build_plan_from_dict({"generations": [], "edits": [], "mix": []})
         assert not plan.is_valid
 
-    def test_notes_field_present(self):
+    def test_notes_field_present(self) -> None:
+
         plan = build_plan_from_dict(_valid_plan_json())
         assert isinstance(plan.notes, list)
 
@@ -659,15 +713,18 @@ class TestExecutionPlanProperties:
     """ExecutionPlan.is_valid, generation_count, edit_count."""
 
     def _plan_with_calls(self, calls: list[ToolCall], safety: bool = True) -> ExecutionPlan:
+
         return ExecutionPlan(tool_calls=calls, safety_validated=safety)
 
-    def test_is_valid_requires_safety_and_calls(self):
+    def test_is_valid_requires_safety_and_calls(self) -> None:
+
         calls = [ToolCall(name="stori_generate_midi", params={})]
         assert self._plan_with_calls(calls, safety=True).is_valid
         assert not self._plan_with_calls(calls, safety=False).is_valid
         assert not self._plan_with_calls([], safety=True).is_valid
 
-    def test_generation_count(self):
+    def test_generation_count(self) -> None:
+
         calls = [
             ToolCall(name="stori_generate_midi", params={}),
             ToolCall(name="stori_generate_midi", params={}),
@@ -676,7 +733,8 @@ class TestExecutionPlanProperties:
         plan = self._plan_with_calls(calls)
         assert plan.generation_count == 2
 
-    def test_edit_count(self):
+    def test_edit_count(self) -> None:
+
         calls = [
             ToolCall(name="stori_add_midi_track", params={}),
             ToolCall(name="stori_add_midi_region", params={}),
@@ -685,14 +743,16 @@ class TestExecutionPlanProperties:
         plan = self._plan_with_calls(calls)
         assert plan.edit_count == 2
 
-    def test_to_dict_includes_tool_calls(self):
+    def test_to_dict_includes_tool_calls(self) -> None:
+
         calls = [ToolCall(name="stori_add_midi_track", params={"name": "Drums"})]
         plan = self._plan_with_calls(calls, safety=True)
         d = plan.to_dict()
         assert "tool_calls" in d
         assert len(d["tool_calls"]) == 1
 
-    def test_empty_plan_is_not_valid(self):
+    def test_empty_plan_is_not_valid(self) -> None:
+
         plan = ExecutionPlan()
         assert not plan.is_valid
 
@@ -707,7 +767,8 @@ class TestPositionToBeatRegressionFull:
     No LLM involved. Tests the exact chain that was broken.
     """
 
-    def test_after_intro_offsets_all_regions(self):
+    def test_after_intro_offsets_all_regions(self) -> None:
+
         """
         Parsing 'Position: after intro' and building a deterministic plan
         produces region tool calls with startBeat >= 64 (4 bars × 4 beats × 4 = 64 beats).
@@ -753,7 +814,8 @@ class TestPositionToBeatRegressionFull:
                 f"startBeat={call.params['startBeat']} not offset. Bug: offset not applied."
             )
 
-    def test_no_position_regions_start_at_zero(self):
+    def test_no_position_regions_start_at_zero(self) -> None:
+
         """Without Position:, regions default to startBeat=0."""
         prompt = (
             "STORI PROMPT\n"
@@ -787,13 +849,14 @@ class TestBuildExecutionPlanStream:
     """Streaming variant of build_execution_plan."""
 
     @pytest.mark.asyncio
-    async def test_deterministic_path_yields_plan_no_reasoning(self):
+    async def test_deterministic_path_yields_plan_no_reasoning(self) -> None:
+
         """Deterministic fast-path yields an ExecutionPlan with no reasoning SSE."""
         parsed = _minimal_parsed(roles=["drums", "bass"])
         route = _make_route()
         llm = AsyncMock()
 
-        items: list = []
+        items: list[Any] = []
         async for item in build_execution_plan_stream(
             "make a beat", {}, route, llm, parsed=parsed,
         ):
@@ -806,11 +869,13 @@ class TestBuildExecutionPlanStream:
         llm.chat_completion_stream.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_llm_path_yields_reasoning_then_plan(self):
+    async def test_llm_path_yields_reasoning_then_plan(self) -> None:
+
         """LLM path yields reasoning SSE events then the ExecutionPlan."""
         route = _make_route()
 
-        async def _fake_stream(**kwargs):
+        async def _fake_stream(**kwargs: Any) -> Any:
+
             yield {"type": "reasoning_delta", "text": "Thinking about drums..."}
             yield {"type": "reasoning_delta", "text": " and bass."}
             yield {
@@ -825,9 +890,10 @@ class TestBuildExecutionPlanStream:
         llm.chat_completion_stream = MagicMock(return_value=_fake_stream())
 
         reasoning_events: list[str] = []
-        plan_result = None
+        plan_result: ExecutionPlan | None = None
 
-        async def mock_emit_sse(data):
+        async def mock_emit_sse(data: Any) -> str:
+
             if data.get("type") == "reasoning":
                 reasoning_events.append(data["content"])
             return f"data: {json.dumps(data)}\n\n"
@@ -843,13 +909,15 @@ class TestBuildExecutionPlanStream:
         assert len(reasoning_events) >= 1
 
     @pytest.mark.asyncio
-    async def test_usage_tracker_updated_on_stream(self):
+    async def test_usage_tracker_updated_on_stream(self) -> None:
+
         """usage_tracker is updated with prompt/completion tokens from the stream."""
         from app.core.maestro_handlers import UsageTracker
 
         route = _make_route()
 
-        async def _fake_stream(**kwargs):
+        async def _fake_stream(**kwargs: Any) -> Any:
+
             yield {
                 "type": "done",
                 "content": json.dumps(_valid_plan_json()),
@@ -872,11 +940,13 @@ class TestBuildExecutionPlanStream:
         assert tracker.last_input_tokens == 200
 
     @pytest.mark.asyncio
-    async def test_invalid_json_returns_failed_plan(self):
+    async def test_invalid_json_returns_failed_plan(self) -> None:
+
         """When LLM returns non-JSON content, streaming path returns a failed plan."""
         route = _make_route()
 
-        async def _fake_stream(**kwargs):
+        async def _fake_stream(**kwargs: Any) -> Any:
+
             yield {"type": "content_delta", "text": "No JSON here at all."}
             yield {
                 "type": "done",
@@ -905,36 +975,42 @@ class TestBuildExecutionPlanStream:
 class TestInferMixSteps:
     """Tests for _infer_mix_steps style→effects inference."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
+
         from app.core.planner import _infer_mix_steps
         self._infer = _infer_mix_steps
 
-    def test_drums_always_get_compressor(self):
+    def test_drums_always_get_compressor(self) -> None:
+
         """Drums role always receives a compressor insert regardless of style."""
         steps = self._infer("house", ["drums"])
         inserts = [s for s in steps if s.action == "add_insert" and s.track == "Drums"]
         types = {s.type for s in inserts}
         assert "compressor" in types
 
-    def test_pads_always_get_reverb_send(self):
+    def test_pads_always_get_reverb_send(self) -> None:
+
         """Pads role always receives a reverb bus send."""
         steps = self._infer("ambient", ["pads"])
         sends = [s for s in steps if s.action == "add_send" and s.track == "Pads"]
         assert any(s.bus == "Reverb" for s in sends)
 
-    def test_rock_lead_gets_distortion(self):
+    def test_rock_lead_gets_distortion(self) -> None:
+
         """Rock style adds distortion to lead track."""
         steps = self._infer("progressive rock", ["lead"])
         inserts = {s.type for s in steps if s.action == "add_insert" and s.track == "Lead"}
         assert "distortion" in inserts
 
-    def test_lofi_drums_get_filter(self):
+    def test_lofi_drums_get_filter(self) -> None:
+
         """Lo-fi style adds filter to drums."""
         steps = self._infer("lo-fi hip hop", ["drums"])
         inserts = {s.type for s in steps if s.action == "add_insert" and s.track == "Drums"}
         assert "filter" in inserts
 
-    def test_reverb_goes_to_bus_not_insert(self):
+    def test_reverb_goes_to_bus_not_insert(self) -> None:
+
         """Reverb is routed via add_send, not add_insert."""
         steps = self._infer("ambient", ["pads", "melody"])
         reverb_inserts = [s for s in steps if s.action == "add_insert" and s.type == "reverb"]
@@ -942,12 +1018,14 @@ class TestInferMixSteps:
         assert len(reverb_inserts) == 0
         assert len(reverb_sends) >= 1
 
-    def test_no_effects_empty_roles(self):
+    def test_no_effects_empty_roles(self) -> None:
+
         """Empty role list returns no effects."""
         steps = self._infer("jazz", [])
         assert steps == []
 
-    def test_multiple_roles_covered(self):
+    def test_multiple_roles_covered(self) -> None:
+
         """Multi-role request covers drums and bass effects."""
         steps = self._infer("house", ["drums", "bass"])
         drum_inserts = {s.type for s in steps if s.action == "add_insert" and s.track == "Drums"}
@@ -955,13 +1033,15 @@ class TestInferMixSteps:
         assert "compressor" in drum_inserts
         assert "compressor" in bass_inserts
 
-    def test_jazz_chords_get_reverb(self):
+    def test_jazz_chords_get_reverb(self) -> None:
+
         """Jazz style adds reverb to chords."""
         steps = self._infer("jazz", ["chords"])
         sends = [s for s in steps if s.action == "add_send" and s.track == "Chords"]
         assert any(s.bus == "Reverb" for s in sends)
 
-    def test_shoegaze_lead_heavy_effects(self):
+    def test_shoegaze_lead_heavy_effects(self) -> None:
+
         """Shoegaze style adds reverb, chorus, and distortion to lead."""
         steps = self._infer("shoegaze", ["lead"])
         inserts = {s.type for s in steps if s.action == "add_insert" and s.track == "Lead"}
@@ -972,7 +1052,8 @@ class TestInferMixSteps:
 class TestDeterministicPlanEffects:
     """Tests that plan_from_parsed_prompt includes inferred effects."""
 
-    def test_deterministic_plan_includes_effects(self):
+    def test_deterministic_plan_includes_effects(self) -> None:
+
         """A deterministic plan should include mix steps (insert/send) for appropriate styles."""
         parsed = _minimal_parsed(style="progressive rock", roles=["drums", "pads", "lead"])
         plan = _try_deterministic_plan(parsed)
@@ -981,7 +1062,8 @@ class TestDeterministicPlanEffects:
         # Should have at least one effect or bus tool
         assert effect_tools & {"stori_add_insert_effect", "stori_ensure_bus", "stori_add_send"}
 
-    def test_reverb_bus_created_before_sends(self):
+    def test_reverb_bus_created_before_sends(self) -> None:
+
         """stori_ensure_bus must appear before any stori_add_send in the tool call list."""
         parsed = _minimal_parsed(style="ambient", roles=["pads", "melody"])
         plan = _try_deterministic_plan(parsed)
@@ -992,7 +1074,8 @@ class TestDeterministicPlanEffects:
             send_idx = names.index("stori_add_send")
             assert ensure_idx < send_idx, "stori_ensure_bus must precede stori_add_send"
 
-    def test_no_effects_constraint_skips_effects(self):
+    def test_no_effects_constraint_skips_effects(self) -> None:
+
         """Constraint no_effects=true suppresses effect inference."""
         parsed = _minimal_parsed(
             style="house",
@@ -1006,7 +1089,8 @@ class TestDeterministicPlanEffects:
         }]
         assert len(effect_tools) == 0
 
-    def test_effects_come_after_own_generator_per_track(self):
+    def test_effects_come_after_own_generator_per_track(self) -> None:
+
         """Within each track group, effects appear after the generator."""
         parsed = _minimal_parsed(style="jazz", roles=["drums", "chords"])
         plan = _try_deterministic_plan(parsed)
@@ -1034,7 +1118,8 @@ class TestDeterministicPlanEffects:
 class TestSchemaToToolCallsBusOrdering:
     """stori_ensure_bus must precede stori_add_send in _schema_to_tool_calls output."""
 
-    def test_ensure_bus_before_send(self):
+    def test_ensure_bus_before_send(self) -> None:
+
         """When mix has add_send, stori_ensure_bus is inserted before the first send."""
         from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
         schema = ExecutionPlanSchema(
@@ -1055,7 +1140,8 @@ class TestSchemaToToolCallsBusOrdering:
         send_idx = names.index("stori_add_send")
         assert ensure_idx < send_idx
 
-    def test_bus_ensured_only_once_for_multiple_sends(self):
+    def test_bus_ensured_only_once_for_multiple_sends(self) -> None:
+
         """Same bus name produces only one stori_ensure_bus even with multiple sends."""
         from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
         schema = ExecutionPlanSchema(
@@ -1079,7 +1165,8 @@ class TestSchemaToToolCallsBusOrdering:
 class TestSchemaToToolCallsTrackContiguous:
     """Tool calls are grouped contiguously by track for timeline rendering."""
 
-    def test_track_calls_contiguous(self):
+    def test_track_calls_contiguous(self) -> None:
+
         """Each track's tool calls appear as a contiguous block."""
         from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
         schema = ExecutionPlanSchema(
@@ -1117,7 +1204,8 @@ class TestSchemaToToolCallsTrackContiguous:
                 f"Track calls are interleaved: drums={drums_indices}, bass={bass_indices}"
             )
 
-    def test_track_group_internal_order(self):
+    def test_track_group_internal_order(self) -> None:
+
         """Within a track group: create → styling → region → generate → effects."""
         from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
         schema = ExecutionPlanSchema(

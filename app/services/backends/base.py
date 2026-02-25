@@ -1,25 +1,20 @@
 """Base classes for music generation backends."""
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Optional
+from dataclasses import dataclass, field
+from typing import Any
 from enum import Enum
 
 
 class GeneratorBackend(str, Enum):
     """Available generation backends."""
-    # Neural backends (primary)
-    TEXT2MIDI = "text2midi"  # Text-to-MIDI via HuggingFace Spaces (best quality)
-    
-    # IR-based backends (fallback)
-    DRUM_IR = "drum_ir"  # IR-based drum renderer
-    BASS_IR = "bass_ir"  # IR-based bass
-    HARMONIC_IR = "harmonic_ir"  # IR-based chords
-    MELODY_IR = "melody_ir"  # IR-based melody
-    
-    # Legacy backends
     ORPHEUS = "orpheus"
-    HUGGINGFACE = "huggingface"
-    LLM = "llm"
+    TEXT2MIDI = "text2midi"
+    DRUM_IR = "drum_ir"
+    BASS_IR = "bass_ir"
+    HARMONIC_IR = "harmonic_ir"
+    MELODY_IR = "melody_ir"
 
 
 @dataclass
@@ -36,18 +31,11 @@ class GenerationResult:
     notes: list[dict[str, Any]]
     backend_used: GeneratorBackend
     metadata: dict[str, Any]
-    error: Optional[str] = None
-    cc_events: list[dict[str, Any]] = None  # type: ignore[assignment]
-    pitch_bends: list[dict[str, Any]] = None  # type: ignore[assignment]
-    aftertouch: list[dict[str, Any]] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.cc_events is None:
-            self.cc_events = []
-        if self.pitch_bends is None:
-            self.pitch_bends = []
-        if self.aftertouch is None:
-            self.aftertouch = []
+    error: str | None = None
+    cc_events: list[dict[str, Any]] = field(default_factory=list)
+    pitch_bends: list[dict[str, Any]] = field(default_factory=list)
+    aftertouch: list[dict[str, Any]] = field(default_factory=list)
+    channel_notes: dict[str, list[dict[str, Any]]] | None = None
 
 
 class MusicGeneratorBackend(ABC):
@@ -60,12 +48,35 @@ class MusicGeneratorBackend(ABC):
         style: str,
         tempo: int,
         bars: int,
-        key: Optional[str] = None,
-        chords: Optional[list[str]] = None,
-        **kwargs,
+        key: str | None = None,
+        chords: list[str] | None = None,
+        **kwargs: Any,
     ) -> GenerationResult:
         """Generate MIDI notes for the given parameters."""
         pass
+
+    async def generate_unified(
+        self,
+        instruments: list[str],
+        style: str,
+        tempo: int,
+        bars: int,
+        key: str | None = None,
+        **kwargs: Any,
+    ) -> GenerationResult:
+        """Generate all instruments together in a single call.
+
+        Default implementation falls back to single-instrument generate().
+        Orpheus overrides this to produce coherent multi-instrument output.
+        """
+        return await self.generate(
+            instrument=instruments[0] if instruments else "drums",
+            style=style,
+            tempo=tempo,
+            bars=bars,
+            key=key,
+            **kwargs,
+        )
     
     @abstractmethod
     async def is_available(self) -> bool:

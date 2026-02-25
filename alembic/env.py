@@ -1,4 +1,6 @@
 """Alembic environment configuration for Stori Maestro."""
+from __future__ import annotations
+
 import asyncio
 from logging.config import fileConfig
 
@@ -28,7 +30,7 @@ target_metadata = Base.metadata
 if not settings.database_url:
     raise RuntimeError(
         "STORI_DATABASE_URL (or STORI_DB_PASSWORD with Docker Postgres) must be set for migrations. "
-        "Set in .env or export before running alembic."
+        "set in .env or export before running alembic."
     )
 config.set_main_option(
     "sqlalchemy.url",

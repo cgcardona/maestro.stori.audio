@@ -7,6 +7,7 @@ They follow the MCP tool schema format.
 Import from this package for the combined registry, or from the individual
 category modules for focused access.
 """
+from __future__ import annotations
 
 from app.mcp.tools.project import PROJECT_TOOLS
 from app.mcp.tools.track import TRACK_TOOLS

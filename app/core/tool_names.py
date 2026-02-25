@@ -22,9 +22,7 @@ class ToolName(str, Enum):
     SET_TEMPO = "stori_set_tempo"
     SET_KEY_SIGNATURE = "stori_set_key_signature"
     SET_TIME_SIGNATURE = "stori_set_time_signature"
-    GENERATE_DRUMS = "stori_generate_drums"
-    GENERATE_BASS = "stori_generate_bass"
-    GENERATE_KEYS = "stori_generate_keys"
+    GENERATE_MIDI = "stori_generate_midi"
 
     def __str__(self) -> str:
         return self.value

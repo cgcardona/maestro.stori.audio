@@ -4,6 +4,7 @@ Tests for frontend validation constraints.
 Validates that backend enforces the same constraints as the Swift frontend
 per TOOL_CALL_VALIDATION_REFERENCE.md.
 """
+from __future__ import annotations
 
 import pytest
 from app.core.tool_validation import validate_tool_call, NAME_LENGTH_LIMITS
@@ -12,7 +13,8 @@ from app.core.tool_validation import validate_tool_call, NAME_LENGTH_LIMITS
 class TestNameLengthValidation:
     """Test name length constraints."""
     
-    def test_track_name_max_50_chars(self):
+    def test_track_name_max_50_chars(self) -> None:
+
         """Track names must be <= 50 characters."""
         allowed = {"stori_add_midi_track"}
         
@@ -33,7 +35,8 @@ class TestNameLengthValidation:
         assert not result.valid
         assert any("50 characters" in str(e) for e in result.errors)
     
-    def test_track_name_cannot_be_empty(self):
+    def test_track_name_cannot_be_empty(self) -> None:
+
         """Track names cannot be empty or whitespace-only."""
         allowed = {"stori_add_midi_track"}
         
@@ -53,7 +56,8 @@ class TestNameLengthValidation:
         )
         assert not result.valid
     
-    def test_region_name_max_50_chars(self):
+    def test_region_name_max_50_chars(self) -> None:
+
         """Region names must be <= 50 characters."""
         allowed = {"stori_add_midi_region"}
         
@@ -83,7 +87,8 @@ class TestNameLengthValidation:
         )
         assert not result.valid
     
-    def test_bus_name_max_50_chars(self):
+    def test_bus_name_max_50_chars(self) -> None:
+
         """Bus names must be <= 50 characters."""
         allowed = {"stori_ensure_bus"}
         
@@ -94,7 +99,8 @@ class TestNameLengthValidation:
         )
         assert not result.valid
     
-    def test_project_name_max_100_chars(self):
+    def test_project_name_max_100_chars(self) -> None:
+
         """Project names must be <= 100 characters."""
         allowed = {"stori_create_project"}
         
@@ -118,7 +124,8 @@ class TestNameLengthValidation:
 class TestMidiNoteValidation:
     """Test MIDI note constraints."""
     
-    def test_pitch_range_0_127(self):
+    def test_pitch_range_0_127(self) -> None:
+
         """Pitch must be 0-127."""
         allowed = {"stori_add_notes"}
         
@@ -158,7 +165,8 @@ class TestMidiNoteValidation:
         )
         assert not result.valid
     
-    def test_velocity_range_1_127(self):
+    def test_velocity_range_1_127(self) -> None:
+
         """Velocity must be 1-127 (not 0)."""
         allowed = {"stori_add_notes"}
         
@@ -195,7 +203,8 @@ class TestMidiNoteValidation:
         )
         assert not result.valid
     
-    def test_start_beat_non_negative(self):
+    def test_start_beat_non_negative(self) -> None:
+
         """StartBeat must be >= 0."""
         allowed = {"stori_add_notes"}
         
@@ -221,7 +230,8 @@ class TestMidiNoteValidation:
         )
         assert not result.valid
     
-    def test_duration_range_0_01_to_1000(self):
+    def test_duration_range_0_01_to_1000(self) -> None:
+
         """Duration must be 0.01-1000 beats."""
         allowed = {"stori_add_notes"}
         
@@ -262,7 +272,8 @@ class TestMidiNoteValidation:
 class TestEffectTypeValidation:
     """Test effect type constraints."""
     
-    def test_valid_effect_types(self):
+    def test_valid_effect_types(self) -> None:
+
         """Only specific effect types are allowed."""
         allowed = {"stori_add_insert_effect"}
         
@@ -279,7 +290,8 @@ class TestEffectTypeValidation:
             )
             assert result.valid, f"{effect_type} should be valid"
     
-    def test_invalid_effect_type(self):
+    def test_invalid_effect_type(self) -> None:
+
         """Invalid effect types are rejected."""
         allowed = {"stori_add_insert_effect"}
         
@@ -295,7 +307,8 @@ class TestEffectTypeValidation:
 class TestTrackIconValidation:
     """Test track icon constraints."""
     
-    def test_valid_track_icons(self):
+    def test_valid_track_icons(self) -> None:
+
         """Only SF Symbols from curated list are allowed."""
         allowed = {"stori_set_track_icon"}
         
@@ -316,7 +329,8 @@ class TestTrackIconValidation:
             )
             assert result.valid, f"{icon} should be valid"
     
-    def test_invalid_track_icon(self):
+    def test_invalid_track_icon(self) -> None:
+
         """Invalid icons are rejected."""
         allowed = {"stori_set_track_icon"}
         
@@ -332,7 +346,8 @@ class TestTrackIconValidation:
 class TestRegionValidation:
     """Test region constraints."""
     
-    def test_start_beat_non_negative(self):
+    def test_start_beat_non_negative(self) -> None:
+
         """Region startBeat must be >= 0."""
         allowed = {"stori_add_midi_region"}
         
@@ -352,7 +367,8 @@ class TestRegionValidation:
         )
         assert not result.valid
     
-    def test_duration_minimum_0_01(self):
+    def test_duration_minimum_0_01(self) -> None:
+
         """Region duration must be at least 0.01 beats."""
         allowed = {"stori_add_midi_region"}
         

@@ -102,7 +102,7 @@ def seal_contract(obj: Any, parent_hash: str = "") -> None:
 
 
 def set_parent_hash(obj: Any, parent_hash: str) -> None:
-    """Set ``parent_contract_hash`` on a frozen dataclass."""
+    """set ``parent_contract_hash`` on a frozen dataclass."""
     object.__setattr__(obj, "parent_contract_hash", parent_hash)
 
 

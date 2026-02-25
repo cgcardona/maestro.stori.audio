@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Optional
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+)
 
 if TYPE_CHECKING:
     from app.core.maestro_handlers import UsageTracker
@@ -35,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 def _finalise_plan(
     llm_response_text: str,
-    project_state: Optional[dict[str, Any]] = None,
+    project_state: dict[str, Any] | None = None,
 ) -> ExecutionPlan:
     """Shared post-LLM logic: validate, complete, and convert a plan."""
     validation = extract_and_validate_plan(llm_response_text)
@@ -56,12 +62,6 @@ def _finalise_plan(
         )
 
     plan_schema = complete_plan(validation.plan)
-    if plan_schema is None:
-        return ExecutionPlan(
-            notes=["Plan schema could not be completed"],
-            llm_response_text=llm_response_text,
-            validation_result=validation,
-        )
 
     if plan_schema.is_empty():
         logger.warning("⚠️ Plan is empty after completion")
@@ -94,8 +94,8 @@ def _finalise_plan(
 def _try_deterministic_plan(
     parsed: ParsedPrompt,
     start_beat: float = 0.0,
-    project_state: Optional[dict[str, Any]] = None,
-) -> Optional[ExecutionPlan]:
+    project_state: dict[str, Any] | None = None,
+) -> ExecutionPlan | None:
     """Build an execution plan deterministically from a structured prompt.
 
     Requires: style, tempo, roles, and bars. When all are present, the LLM is
@@ -156,8 +156,6 @@ def _try_deterministic_plan(
 
     plan_schema = ExecutionPlanSchema(generations=generations)
     plan_schema = complete_plan(plan_schema)
-    if plan_schema is None:
-        return None
 
     if not parsed.constraints.get("no_effects") and not parsed.constraints.get("no reverb"):
         mix_steps = _infer_mix_steps(parsed.style, parsed.roles)
@@ -186,8 +184,8 @@ async def build_execution_plan(
     project_state: dict[str, Any],
     route: IntentResult,
     llm: Any,
-    parsed: Optional[ParsedPrompt] = None,
-    usage_tracker: Optional["UsageTracker"] = None,
+    parsed: ParsedPrompt | None = None,
+    usage_tracker: "UsageTracker" | None = None,
 ) -> ExecutionPlan:
     """Ask the LLM for a structured JSON plan for composing.
 
@@ -246,9 +244,9 @@ async def build_execution_plan_stream(
     project_state: dict[str, Any],
     route: IntentResult,
     llm: Any,
-    parsed: Optional[ParsedPrompt] = None,
-    usage_tracker: Optional["UsageTracker"] = None,
-    emit_sse: Optional[Callable[[dict[str, Any]], Awaitable[str]]] = None,
+    parsed: ParsedPrompt | None = None,
+    usage_tracker: "UsageTracker" | None = None,
+    emit_sse: Callable[[dict[str, Any]], Awaitable[str]] | None = None,
 ) -> AsyncIterator[ExecutionPlan | str]:
     """Streaming variant of build_execution_plan.
 
@@ -336,7 +334,7 @@ async def build_execution_plan_stream(
 
 def build_plan_from_dict(
     plan_dict: dict[str, Any],
-    project_state: Optional[dict[str, Any]] = None,
+    project_state: dict[str, Any] | None = None,
 ) -> ExecutionPlan:
     """Build an execution plan from a dict (for testing or macro expansion)."""
     validation = validate_plan_json(plan_dict)
@@ -354,11 +352,6 @@ def build_plan_from_dict(
         )
 
     plan_schema = complete_plan(validation.plan)
-    if plan_schema is None:
-        return ExecutionPlan(
-            notes=["Plan schema could not be completed"],
-            validation_result=validation,
-        )
 
     tool_calls = _schema_to_tool_calls(plan_schema, project_state=project_state)
 
@@ -375,7 +368,7 @@ async def preview_plan(
     project_state: dict[str, Any],
     route: IntentResult,
     llm: Any,
-    parsed: Optional[ParsedPrompt] = None,
+    parsed: ParsedPrompt | None = None,
 ) -> dict[str, Any]:
     """Generate a plan preview without executing."""
     plan = await build_execution_plan(user_prompt, project_state, route, llm, parsed=parsed)

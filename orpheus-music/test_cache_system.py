@@ -4,6 +4,8 @@ Tests for LRU+TTL cache system.
 The cache is critical for performance (475x speedup) and must be bounded
 to prevent memory issues in production.
 """
+from __future__ import annotations
+
 import pytest
 from time import time, sleep
 from music_service import (
@@ -18,12 +20,12 @@ from music_service import (
 )
 
 
-def setup_function():
+def setup_function() -> None:
     """Clear cache before each test."""
     _result_cache.clear()
 
 
-def test_cache_key_generation():
+def test_cache_key_generation() -> None:
     """Test that cache keys are deterministic."""
     from music_service import IntentGoal, EmotionVectorPayload
     req1 = GenerateRequest(
@@ -51,7 +53,7 @@ def test_cache_key_generation():
     assert key1 == key2
 
 
-def test_cache_key_differences():
+def test_cache_key_differences() -> None:
     """Test that different inputs produce different keys."""
     req1 = GenerateRequest(genre="trap", tempo=140)
     req2 = GenerateRequest(genre="trap", tempo=141)  # Different tempo
@@ -66,7 +68,7 @@ def test_cache_key_differences():
     assert key2 != key3
 
 
-def test_cache_hit_and_miss():
+def test_cache_hit_and_miss() -> None:
     """Test basic cache hit/miss behavior."""
     key = "test_key_123"
     
@@ -84,7 +86,7 @@ def test_cache_hit_and_miss():
     assert result["success"] is True
 
 
-def test_cache_lru_ordering():
+def test_cache_lru_ordering() -> None:
     """Test that LRU moves accessed items to end."""
     # Add 3 entries
     cache_result("key1", {"data": 1})
@@ -100,7 +102,7 @@ def test_cache_lru_ordering():
     assert keys[0] == "key2"   # Oldest
 
 
-def test_cache_eviction_at_capacity():
+def test_cache_eviction_at_capacity() -> None:
     """Test that cache evicts oldest when full."""
     # Fill cache to capacity
     for i in range(MAX_CACHE_SIZE):
@@ -116,7 +118,7 @@ def test_cache_eviction_at_capacity():
     assert "key_new" in _result_cache
 
 
-def test_cache_hit_counter():
+def test_cache_hit_counter() -> None:
     """Test that hit counter increments."""
     key = "test_key"
     cache_result(key, {"data": 1})
@@ -134,7 +136,7 @@ def test_cache_hit_counter():
     assert _result_cache[key].hits == 3
 
 
-def test_cache_ttl_expiration():
+def test_cache_ttl_expiration() -> None:
     """Test that expired entries are removed."""
     key = "test_key"
     
@@ -151,7 +153,7 @@ def test_cache_ttl_expiration():
     assert key not in _result_cache
 
 
-def test_cache_ttl_not_expired():
+def test_cache_ttl_not_expired() -> None:
     """Test that fresh entries are returned."""
     key = "test_key"
     
@@ -168,7 +170,7 @@ def test_cache_ttl_not_expired():
     assert result["data"] == 1
 
 
-def test_cache_key_rounding():
+def test_cache_key_rounding() -> None:
     """Test that similar continuous values produce same cache key."""
     from music_service import EmotionVectorPayload
     req1 = GenerateRequest(emotion_vector=EmotionVectorPayload(valence=-0.61))
@@ -180,7 +182,7 @@ def test_cache_key_rounding():
     assert key1 == key2
 
 
-def test_cache_intent_goals_order():
+def test_cache_intent_goals_order() -> None:
     """Test that intent goal order doesn't affect cache key."""
     from music_service import IntentGoal
     req1 = GenerateRequest(intent_goals=[IntentGoal(name="dark"), IntentGoal(name="energetic")])
@@ -192,7 +194,7 @@ def test_cache_intent_goals_order():
     assert key1 == key2
 
 
-def test_cache_preserves_data():
+def test_cache_preserves_data() -> None:
     """Test that cached data is not mutated."""
     key = "test_key"
     original_data = {"success": True, "tool_calls": [{"tool": "test"}]}

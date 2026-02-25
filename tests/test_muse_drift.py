@@ -8,11 +8,13 @@ Verifies:
 - Fingerprint stability for caching.
 - muse_drift boundary rules.
 """
+from __future__ import annotations
 
 import ast
 import uuid
 
 import pytest
+from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.database import Base
@@ -24,6 +26,8 @@ from app.models.variation import (
     Variation,
 )
 from app.services import muse_repository
+from typing import Any
+
 from app.services.muse_drift import (
     DriftReport,
     DriftSeverity,
@@ -38,7 +42,7 @@ from app.services.muse_replay import reconstruct_head_snapshot, HeadSnapshot
 
 
 @pytest.fixture
-async def async_session():
+async def async_session() -> AsyncGenerator[AsyncSession, None]:
     """In-memory SQLite async session for tests."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
@@ -52,7 +56,8 @@ async def async_session():
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict:
+def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict[str, Any]:
+
     return {
         "pitch": pitch,
         "start_beat": start,
@@ -63,7 +68,7 @@ def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict:
 
 
 def _make_variation_with_notes(
-    notes: list[dict],
+    notes: list[dict[str, Any]],
     region_id: str = "region-1",
     track_id: str = "track-1",
     intent: str = "test",
@@ -107,7 +112,8 @@ def _make_variation_with_notes(
 
 class TestCleanWorkingTree:
 
-    def test_identical_notes_is_clean(self):
+    def test_identical_notes_is_clean(self) -> None:
+
         """HEAD and working have the same notes → CLEAN."""
         notes = [_note(60, 0.0), _note(64, 1.0), _note(67, 2.0)]
         report = compute_drift_report(
@@ -124,7 +130,8 @@ class TestCleanWorkingTree:
         assert len(report.deleted_regions) == 0
         assert report.total_changes == 0
 
-    def test_empty_regions_is_clean(self):
+    def test_empty_regions_is_clean(self) -> None:
+
         """Both snapshots have a region with no notes → CLEAN."""
         report = compute_drift_report(
             project_id="proj-1",
@@ -135,7 +142,8 @@ class TestCleanWorkingTree:
         )
         assert report.is_clean is True
 
-    def test_no_regions_is_clean(self):
+    def test_no_regions_is_clean(self) -> None:
+
         """Both snapshots have zero regions → CLEAN."""
         report = compute_drift_report(
             project_id="proj-1",
@@ -154,7 +162,8 @@ class TestCleanWorkingTree:
 
 class TestDirtyNotesAdded:
 
-    def test_extra_note_in_working(self):
+    def test_extra_note_in_working(self) -> None:
+
         """Working has an extra note → DIRTY with 1 add."""
         head = [_note(60, 0.0)]
         working = [_note(60, 0.0), _note(72, 4.0)]
@@ -173,7 +182,8 @@ class TestDirtyNotesAdded:
         assert summary.removed == 0
         assert summary.modified == 0
 
-    def test_multiple_added_notes(self):
+    def test_multiple_added_notes(self) -> None:
+
         """Working has several extra notes → correct add count."""
         head = [_note(60, 0.0)]
         working = [_note(60, 0.0), _note(64, 1.0), _note(67, 2.0), _note(72, 3.0)]
@@ -195,7 +205,8 @@ class TestDirtyNotesAdded:
 
 class TestDirtyNotesModified:
 
-    def test_velocity_change_detected(self):
+    def test_velocity_change_detected(self) -> None:
+
         """Same pitch/time, different velocity → modified."""
         head = [_note(60, 0.0, vel=100)]
         working = [_note(60, 0.0, vel=50)]
@@ -212,7 +223,8 @@ class TestDirtyNotesModified:
         assert summary.added == 0
         assert summary.removed == 0
 
-    def test_duration_change_detected(self):
+    def test_duration_change_detected(self) -> None:
+
         """Same pitch/time, different duration → modified."""
         head = [_note(60, 0.0, dur=1.0)]
         working = [_note(60, 0.0, dur=4.0)]
@@ -226,7 +238,8 @@ class TestDirtyNotesModified:
         summary = report.region_summaries["r1"]
         assert summary.modified == 1
 
-    def test_note_removed_from_working(self):
+    def test_note_removed_from_working(self) -> None:
+
         """Head has note, working doesn't → removed."""
         head = [_note(60, 0.0), _note(64, 1.0)]
         working = [_note(60, 0.0)]
@@ -248,7 +261,8 @@ class TestDirtyNotesModified:
 
 class TestRegionDrift:
 
-    def test_added_region(self):
+    def test_added_region(self) -> None:
+
         """Region exists in working but not head → added."""
         report = compute_drift_report(
             project_id="p1",
@@ -262,7 +276,8 @@ class TestRegionDrift:
         summary = report.region_summaries["r2"]
         assert summary.added == 1
 
-    def test_deleted_region(self):
+    def test_deleted_region(self) -> None:
+
         """Region exists in head but not working → deleted."""
         report = compute_drift_report(
             project_id="p1",
@@ -276,7 +291,8 @@ class TestRegionDrift:
         summary = report.region_summaries["r2"]
         assert summary.removed == 1
 
-    def test_both_added_and_deleted(self):
+    def test_both_added_and_deleted(self) -> None:
+
         """One region added, another deleted → both detected."""
         report = compute_drift_report(
             project_id="p1",
@@ -297,17 +313,20 @@ class TestRegionDrift:
 
 class TestFingerprint:
 
-    def test_identical_notes_same_fingerprint(self):
+    def test_identical_notes_same_fingerprint(self) -> None:
+
         notes = [_note(60, 0.0), _note(64, 1.0)]
         assert _fingerprint(notes) == _fingerprint(notes)
 
-    def test_order_independent(self):
+    def test_order_independent(self) -> None:
+
         """Fingerprint should be stable regardless of note order."""
         a = [_note(60, 0.0), _note(64, 1.0)]
         b = [_note(64, 1.0), _note(60, 0.0)]
         assert _fingerprint(a) == _fingerprint(b)
 
-    def test_different_notes_different_fingerprint(self):
+    def test_different_notes_different_fingerprint(self) -> None:
+
         a = [_note(60, 0.0)]
         b = [_note(72, 0.0)]
         assert _fingerprint(a) != _fingerprint(b)
@@ -320,9 +339,10 @@ class TestFingerprint:
 
 class TestSampleChanges:
 
-    def test_sample_changes_capped(self):
+    def test_sample_changes_capped(self) -> None:
+
         """Sample changes should not exceed MAX_SAMPLE_CHANGES."""
-        head: list[dict] = []
+        head: list[dict[str, Any]] = []
         working = [_note(i, float(i)) for i in range(20)]
         report = compute_drift_report(
             project_id="p1",
@@ -335,7 +355,8 @@ class TestSampleChanges:
         assert len(summary.sample_changes) <= 5
         assert summary.added == 20
 
-    def test_sample_changes_include_type(self):
+    def test_sample_changes_include_type(self) -> None:
+
         """Each sample change should have a 'type' key."""
         head = [_note(60, 0.0)]
         working = [_note(60, 0.0, vel=50), _note(72, 4.0)]
@@ -359,7 +380,8 @@ class TestSampleChanges:
 
 class TestDriftReportProperties:
 
-    def test_total_changes_sums_all_regions(self):
+    def test_total_changes_sums_all_regions(self) -> None:
+
         report = compute_drift_report(
             project_id="p1",
             head_variation_id="v1",
@@ -375,7 +397,8 @@ class TestDriftReportProperties:
         )
         assert report.total_changes == 2  # 1 add + 1 remove
 
-    def test_no_legacy_flags(self):
+    def test_no_legacy_flags(self) -> None:
+
         """notes_only and partial_reconstruction flags have been removed."""
         report = compute_drift_report(
             project_id="p1",
@@ -396,12 +419,14 @@ class TestDriftReportProperties:
 class TestReconstructHeadSnapshot:
 
     @pytest.mark.anyio
-    async def test_no_head_returns_none(self, async_session: AsyncSession):
+    async def test_no_head_returns_none(self, async_session: AsyncSession) -> None:
+
         result = await reconstruct_head_snapshot(async_session, "nonexistent-project")
         assert result is None
 
     @pytest.mark.anyio
-    async def test_single_variation_head(self, async_session: AsyncSession):
+    async def test_single_variation_head(self, async_session: AsyncSession) -> None:
+
         """Persist a variation, set HEAD, reconstruct snapshot."""
         notes = [_note(60, 0.0), _note(64, 1.0), _note(67, 2.0)]
         var = _make_variation_with_notes(notes)
@@ -425,7 +450,8 @@ class TestReconstructHeadSnapshot:
         assert snap.track_regions["region-1"] == "track-1"
 
     @pytest.mark.anyio
-    async def test_lineage_accumulates_notes(self, async_session: AsyncSession):
+    async def test_lineage_accumulates_notes(self, async_session: AsyncSession) -> None:
+
         """Two variations in lineage → snapshot has notes from both."""
         notes_a = [_note(60, 0.0)]
         notes_b = [_note(72, 4.0)]
@@ -464,7 +490,8 @@ class TestReconstructHeadSnapshot:
 class TestEndToEndDrift:
 
     @pytest.mark.anyio
-    async def test_clean_after_commit(self, async_session: AsyncSession):
+    async def test_clean_after_commit(self, async_session: AsyncSession) -> None:
+
         """Persist, set HEAD, reconstruct, compare with identical working → CLEAN."""
         notes = [_note(60, 0.0), _note(64, 1.0)]
         var = _make_variation_with_notes(notes)
@@ -493,7 +520,8 @@ class TestEndToEndDrift:
         assert report.severity == DriftSeverity.CLEAN
 
     @pytest.mark.anyio
-    async def test_dirty_after_user_edit(self, async_session: AsyncSession):
+    async def test_dirty_after_user_edit(self, async_session: AsyncSession) -> None:
+
         """HEAD has notes, working has different notes → DIRTY."""
         notes = [_note(60, 0.0)]
         var = _make_variation_with_notes(notes)
@@ -531,7 +559,8 @@ class TestEndToEndDrift:
 
 class TestMuseDriftBoundary:
 
-    def test_no_state_store_or_executor_import(self):
+    def test_no_state_store_or_executor_import(self) -> None:
+
         """muse_drift must not import StateStore, executor, or LLM handlers."""
         import importlib
         spec = importlib.util.find_spec("app.services.muse_drift")
@@ -557,7 +586,8 @@ class TestMuseDriftBoundary:
                             f"muse_drift imports forbidden name: {alias.name}"
                         )
 
-    def test_no_get_or_create_store_call(self):
+    def test_no_get_or_create_store_call(self) -> None:
+
         """muse_drift must not call get_or_create_store (AST-level check)."""
         import importlib
         spec = importlib.util.find_spec("app.services.muse_drift")

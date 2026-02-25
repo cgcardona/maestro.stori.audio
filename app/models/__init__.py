@@ -1,4 +1,6 @@
 """Pydantic models for the Stori Maestro API."""
+from __future__ import annotations
+
 from app.models.requests import MaestroRequest, GenerateRequest
 from app.models.responses import (
     MaestroResponse,

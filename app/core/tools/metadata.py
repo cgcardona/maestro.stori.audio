@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 
 class ToolTier(str, Enum):
@@ -24,7 +23,7 @@ class ToolMeta:
     tier: ToolTier
     kind: ToolKind
     # Safety / routing hints:
-    creates_entity: Optional[str] = None      # "track" | "region" | "bus" | None
+    creates_entity: str | None = None      # "track" | "region" | "bus" | None
     id_fields: tuple[str, ...] = ()           # e.g. ("trackId",)
     reversible: bool = True
     # Planner gates:

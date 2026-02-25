@@ -2,6 +2,11 @@
 
 Covers register, revoke, check revoked, cleanup, and list active tokens.
 """
+from __future__ import annotations
+
+from app.db.models import User
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any
 import pytest
 import pytest_asyncio
 from datetime import datetime, timezone, timedelta
@@ -21,7 +26,8 @@ USER_ID = "550e8400-e29b-41d4-a716-446655440000"
 
 
 @pytest_asyncio.fixture
-async def user_with_token(db_session, test_user):
+async def user_with_token(db_session: AsyncSession, test_user: User) -> tuple[User, str, Any]:
+
     """Create a test user and register a token."""
     token = create_access_token(user_id=test_user.id, expires_hours=1)
     access_token = await register_token(db_session, token, test_user.id)
@@ -32,7 +38,8 @@ async def user_with_token(db_session, test_user):
 class TestRegisterToken:
 
     @pytest.mark.anyio
-    async def test_register_creates_record(self, db_session, test_user):
+    async def test_register_creates_record(self, db_session: AsyncSession, test_user: User) -> None:
+
         token = create_access_token(user_id=test_user.id, expires_hours=1)
         record = await register_token(db_session, token, test_user.id)
         await db_session.commit()
@@ -44,19 +51,22 @@ class TestRegisterToken:
 class TestIsTokenRevoked:
 
     @pytest.mark.anyio
-    async def test_active_token_not_revoked(self, db_session, user_with_token):
+    async def test_active_token_not_revoked(self, db_session: AsyncSession, user_with_token: Any) -> None:
+
         _, token, _ = user_with_token
         revoked = await is_token_revoked(db_session, token)
         assert revoked is False
 
     @pytest.mark.anyio
-    async def test_legacy_token_not_revoked(self, db_session):
+    async def test_legacy_token_not_revoked(self, db_session: AsyncSession) -> None:
+
         """Token not in DB (legacy) should return False."""
         revoked = await is_token_revoked(db_session, "legacy-jwt-not-in-db")
         assert revoked is False
 
     @pytest.mark.anyio
-    async def test_revoked_token_returns_true(self, db_session, user_with_token):
+    async def test_revoked_token_returns_true(self, db_session: AsyncSession, user_with_token: Any) -> None:
+
         user, token, _ = user_with_token
         await revoke_token(db_session, token)
         await db_session.commit()
@@ -67,13 +77,15 @@ class TestIsTokenRevoked:
 class TestRevokeToken:
 
     @pytest.mark.anyio
-    async def test_revoke_existing(self, db_session, user_with_token):
+    async def test_revoke_existing(self, db_session: AsyncSession, user_with_token: Any) -> None:
+
         _, token, _ = user_with_token
         result = await revoke_token(db_session, token)
         assert result is True
 
     @pytest.mark.anyio
-    async def test_revoke_nonexistent(self, db_session):
+    async def test_revoke_nonexistent(self, db_session: AsyncSession) -> None:
+
         result = await revoke_token(db_session, "nonexistent-token")
         assert result is False
 
@@ -81,7 +93,8 @@ class TestRevokeToken:
 class TestRevokeAllUserTokens:
 
     @pytest.mark.anyio
-    async def test_revoke_all(self, db_session, test_user):
+    async def test_revoke_all(self, db_session: AsyncSession, test_user: User) -> None:
+
         # Each token needs a unique payload (different expires)
         for i in range(3):
             token = create_access_token(user_id=test_user.id, expires_hours=1 + i)
@@ -94,7 +107,8 @@ class TestRevokeAllUserTokens:
 class TestCleanupExpiredTokens:
 
     @pytest.mark.anyio
-    async def test_cleanup_removes_expired(self, db_session, test_user):
+    async def test_cleanup_removes_expired(self, db_session: AsyncSession, test_user: User) -> None:
+
         from app.db.models import AccessToken
         from app.auth.tokens import hash_token
 
@@ -115,7 +129,8 @@ class TestCleanupExpiredTokens:
 class TestGetUserActiveTokens:
 
     @pytest.mark.anyio
-    async def test_returns_active_tokens(self, db_session, test_user):
+    async def test_returns_active_tokens(self, db_session: AsyncSession, test_user: User) -> None:
+
         token = create_access_token(user_id=test_user.id, expires_hours=1)
         await register_token(db_session, token, test_user.id)
         await db_session.commit()
@@ -123,7 +138,8 @@ class TestGetUserActiveTokens:
         assert len(active) >= 1
 
     @pytest.mark.anyio
-    async def test_excludes_revoked(self, db_session, test_user):
+    async def test_excludes_revoked(self, db_session: AsyncSession, test_user: User) -> None:
+
         token = create_access_token(user_id=test_user.id, expires_hours=1)
         await register_token(db_session, token, test_user.id)
         await db_session.commit()

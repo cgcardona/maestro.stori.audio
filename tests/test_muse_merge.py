@@ -8,6 +8,7 @@ Verifies:
 - Merge commit graph (two parents).
 - Boundary seal (AST).
 """
+from __future__ import annotations
 
 import ast
 import uuid
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.database import Base
@@ -41,7 +43,7 @@ from app.services.muse_replay import HeadSnapshot
 
 
 @pytest.fixture
-async def async_session():
+async def async_session() -> AsyncGenerator[AsyncSession, None]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -55,10 +57,12 @@ async def async_session():
 
 
 def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict[str, Any]:
+
     return {"pitch": pitch, "start_beat": start, "duration_beats": dur, "velocity": vel, "channel": 0}
 
 
 def _cc(cc_num: int, beat: float, value: int) -> dict[str, Any]:
+
     return {"kind": "cc", "cc": cc_num, "beat": beat, "value": value}
 
 
@@ -145,7 +149,8 @@ async def _save(
 class TestMergeBase:
 
     @pytest.mark.anyio
-    async def test_two_branches_find_common_root(self, async_session: AsyncSession):
+    async def test_two_branches_find_common_root(self, async_session: AsyncSession) -> None:
+
         """
         root ─── left_branch
           └───── right_branch
@@ -166,7 +171,8 @@ class TestMergeBase:
         assert base == root_id
 
     @pytest.mark.anyio
-    async def test_deeper_branch_finds_correct_ancestor(self, async_session: AsyncSession):
+    async def test_deeper_branch_finds_correct_ancestor(self, async_session: AsyncSession) -> None:
+
         """
         A ── B ── left
           └────── right
@@ -190,7 +196,8 @@ class TestMergeBase:
         assert base == a_id
 
     @pytest.mark.anyio
-    async def test_no_common_ancestor_returns_none(self, async_session: AsyncSession):
+    async def test_no_common_ancestor_returns_none(self, async_session: AsyncSession) -> None:
+
         a = _make_variation([_note(60, 0.0)])
         a_id = await _save(async_session, a, "proj-3a")
 
@@ -210,7 +217,8 @@ class TestMergeBase:
 
 class TestAutoMerge:
 
-    def test_disjoint_regions_merge_cleanly(self):
+    def test_disjoint_regions_merge_cleanly(self) -> None:
+
         base = _snap("base", notes={"r1": [_note(60, 0.0)]})
         left = _snap("left", notes={"r1": [_note(60, 0.0)], "r2": [_note(72, 0.0)]})
         right = _snap("right", notes={"r1": [_note(60, 0.0)], "r3": [_note(48, 0.0)]})
@@ -222,7 +230,8 @@ class TestAutoMerge:
         assert "r2" in result.merged_snapshot.notes
         assert "r3" in result.merged_snapshot.notes
 
-    def test_one_side_modifies_other_untouched(self):
+    def test_one_side_modifies_other_untouched(self) -> None:
+
         base = _snap("base", notes={"r1": [_note(60, 0.0)]})
         left = _snap("left", notes={"r1": [_note(60, 0.0), _note(64, 2.0)]})
         right = _snap("right", notes={"r1": [_note(60, 0.0)]})
@@ -233,7 +242,8 @@ class TestAutoMerge:
         assert merged is not None
         assert len(merged.notes["r1"]) == 2
 
-    def test_both_add_to_different_beats(self):
+    def test_both_add_to_different_beats(self) -> None:
+
         base = _snap("base", notes={"r1": [_note(60, 0.0)]})
         left = _snap("left", notes={"r1": [_note(60, 0.0), _note(64, 2.0)]})
         right = _snap("right", notes={"r1": [_note(60, 0.0), _note(67, 4.0)]})
@@ -244,7 +254,8 @@ class TestAutoMerge:
         assert merged is not None
         assert len(merged.notes["r1"]) == 3
 
-    def test_controller_merge_from_one_side(self):
+    def test_controller_merge_from_one_side(self) -> None:
+
         base = _snap("base", notes={"r1": [_note(60, 0.0)]})
         left = _snap("left",
                       notes={"r1": [_note(60, 0.0)]},
@@ -265,7 +276,8 @@ class TestAutoMerge:
 
 class TestConflictDetection:
 
-    def test_same_note_modified_both_sides(self):
+    def test_same_note_modified_both_sides(self) -> None:
+
         base = _snap("base", notes={"r1": [_note(60, 0.0)]})
         left = _snap("left", notes={"r1": [_note(60, 0.0, vel=50)]})
         right = _snap("right", notes={"r1": [_note(60, 0.0, vel=80)]})
@@ -276,7 +288,8 @@ class TestConflictDetection:
         assert result.conflicts[0].type == "note"
         assert result.merged_snapshot is None
 
-    def test_one_removed_other_modified(self):
+    def test_one_removed_other_modified(self) -> None:
+
         base = _snap("base", notes={"r1": [_note(60, 0.0), _note(64, 2.0)]})
         left = _snap("left", notes={"r1": [_note(64, 2.0)]})
         right = _snap("right", notes={"r1": [_note(60, 0.0, vel=50), _note(64, 2.0)]})
@@ -286,7 +299,8 @@ class TestConflictDetection:
         assert any("removed" in c.description.lower() or "modified" in c.description.lower()
                     for c in result.conflicts)
 
-    def test_controller_conflict(self):
+    def test_controller_conflict(self) -> None:
+
         base = _snap("base",
                       notes={"r1": [_note(60, 0.0)]},
                       cc={"r1": [_cc(64, 0.0, 100)]})
@@ -301,7 +315,8 @@ class TestConflictDetection:
         assert result.has_conflicts
         assert any(c.type == "cc" for c in result.conflicts)
 
-    def test_no_conflicts_both_unchanged(self):
+    def test_no_conflicts_both_unchanged(self) -> None:
+
         base = _snap("base", notes={"r1": [_note(60, 0.0)]})
         left = _snap("left", notes={"r1": [_note(60, 0.0)]})
         right = _snap("right", notes={"r1": [_note(60, 0.0)]})
@@ -318,7 +333,8 @@ class TestConflictDetection:
 
 class TestMergeDeterminism:
 
-    def test_same_merge_produces_same_hash(self):
+    def test_same_merge_produces_same_hash(self) -> None:
+
         base = _snap("base", notes={"r1": [_note(60, 0.0)]})
         left = _snap("left", notes={"r1": [_note(60, 0.0), _note(64, 2.0)]})
         right = _snap("right", notes={"r1": [_note(60, 0.0)]})
@@ -331,7 +347,8 @@ class TestMergeDeterminism:
         assert r1.merged_snapshot.notes == r2.merged_snapshot.notes
 
     @pytest.mark.anyio
-    async def test_merge_plan_deterministic(self, async_session: AsyncSession):
+    async def test_merge_plan_deterministic(self, async_session: AsyncSession) -> None:
+
         root = _make_variation([_note(60, 0.0)])
         root_id = await _save(async_session, root, "proj-det")
 
@@ -365,7 +382,8 @@ class TestMergeDeterminism:
 class TestMergeCommitGraph:
 
     @pytest.mark.anyio
-    async def test_merge_commit_has_two_parents(self, async_session: AsyncSession):
+    async def test_merge_commit_has_two_parents(self, async_session: AsyncSession) -> None:
+
         root = _make_variation([_note(60, 0.0)])
         root_id = await _save(async_session, root, "proj-graph")
 
@@ -393,7 +411,8 @@ class TestMergeCommitGraph:
         assert row.parent2_variation_id == right_id
 
     @pytest.mark.anyio
-    async def test_parent2_nullable_for_non_merge(self, async_session: AsyncSession):
+    async def test_parent2_nullable_for_non_merge(self, async_session: AsyncSession) -> None:
+
         var = _make_variation([_note(60, 0.0)])
         vid = await _save(async_session, var, "proj-null")
         await async_session.commit()
@@ -414,7 +433,8 @@ class TestMergeCommitGraph:
 
 class TestMergeBoundary:
 
-    def test_merge_no_state_store_import(self):
+    def test_merge_no_state_store_import(self) -> None:
+
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_merge.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"state_store", "executor", "maestro_handlers", "maestro_editing", "mcp"}
@@ -425,7 +445,8 @@ class TestMergeBoundary:
                         f"muse_merge imports forbidden module: {node.module}"
                     )
 
-    def test_merge_base_no_state_store_import(self):
+    def test_merge_base_no_state_store_import(self) -> None:
+
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_merge_base.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"state_store", "executor", "maestro_handlers", "mcp"}
@@ -436,7 +457,8 @@ class TestMergeBoundary:
                         f"muse_merge_base imports forbidden module: {node.module}"
                     )
 
-    def test_merge_no_forbidden_names(self):
+    def test_merge_no_forbidden_names(self) -> None:
+
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_merge.py"
         tree = ast.parse(filepath.read_text())
         forbidden_names = {"StateStore", "get_or_create_store", "VariationService"}

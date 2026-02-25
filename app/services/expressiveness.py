@@ -13,10 +13,12 @@ reference MIDI:
   - 92.7% of notes off 16th grid (0.06 beat mean deviation)
   - Duration range: grace notes (0.008 beats) to sustained pads (28 beats)
 """
+from __future__ import annotations
+
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any
 
 
 @dataclass
@@ -264,7 +266,7 @@ def get_profile(style: str, role: str = "melody") -> ExpressivenessProfile:
     get expression CC while bass gets higher timing late-bias.
     """
     key = style.lower().replace(" ", "_").replace("-", "_")
-    base: Optional[ExpressivenessProfile] = None
+    base: ExpressivenessProfile | None = None
     if key in PROFILES:
         base = PROFILES[key]
     else:
@@ -325,12 +327,12 @@ def get_profile(style: str, role: str = "melody") -> ExpressivenessProfile:
 # ---------------------------------------------------------------------------
 
 def add_velocity_curves(
-    notes: list[dict],
+    notes: list[dict[str, Any]],
     style: str,
     bars: int,
-    rng: Optional[random.Random] = None,
+    rng: random.Random | None = None,
     role: str = "melody",
-) -> list[dict]:
+    ) -> list[dict[str, Any]]:
     """
     Apply phrase-level velocity arcs, accent patterns, and ghost notes.
 
@@ -376,7 +378,7 @@ def add_velocity_curves(
 
     # Ghost note insertion
     if prof.ghost_probability > 0 and len(notes) > 2:
-        new_ghosts: list[dict] = []
+        new_ghosts: list[dict[str, Any]] = []
         for note in notes:
             if rng.random() < prof.ghost_probability:
                 ghost_beat = note["start_beat"] - 0.25
@@ -399,11 +401,11 @@ def add_velocity_curves(
 # ---------------------------------------------------------------------------
 
 def add_cc_automation(
-    notes: list[dict],
+    notes: list[dict[str, Any]],
     style: str,
     bars: int,
     instrument_role: str = "melody",
-) -> list[dict]:
+    ) -> list[dict[str, Any]]:
     """
     Generate CC events (expression, sustain pedal, mod wheel) based on style
     and instrument role.
@@ -411,7 +413,7 @@ def add_cc_automation(
     Returns a list of CC event dicts: {cc, beat, value}.
     """
     prof = get_profile(style, instrument_role)
-    cc_events: list[dict] = []
+    cc_events: list[dict[str, Any]] = []
     is_keys = instrument_role in ("chords", "piano", "keys", "pads")
 
     # CC 11 — Expression
@@ -464,11 +466,11 @@ def add_cc_automation(
 # ---------------------------------------------------------------------------
 
 def add_pitch_bend_phrasing(
-    notes: list[dict],
+    notes: list[dict[str, Any]],
     style: str,
     instrument_role: str = "melody",
-    rng: Optional[random.Random] = None,
-) -> list[dict]:
+    rng: random.Random | None = None,
+    ) -> list[dict[str, Any]]:
     """
     Add subtle pitch bends for slides, approach notes, and phrase endings.
 
@@ -479,7 +481,7 @@ def add_pitch_bend_phrasing(
         return []
 
     rng = rng or random.Random(42)
-    bends: list[dict] = []
+    bends: list[dict[str, Any]] = []
     pb_range = prof.pitch_bend_range
 
     for note in notes:
@@ -506,11 +508,11 @@ def add_pitch_bend_phrasing(
 # ---------------------------------------------------------------------------
 
 def add_timing_humanization(
-    notes: list[dict],
+    notes: list[dict[str, Any]],
     style: str,
-    rng: Optional[random.Random] = None,
+    rng: random.Random | None = None,
     role: str = "melody",
-) -> list[dict]:
+    ) -> list[dict[str, Any]]:
     """
     Add micro-timing offsets to push notes slightly off-grid.
 
@@ -541,7 +543,7 @@ _CAMEL_TO_SNAKE: dict[str, str] = {"startBeat": "start_beat", "durationBeats": "
 _SNAKE_TO_CAMEL: dict[str, str] = {"start_beat": "startBeat", "duration_beats": "durationBeats"}
 
 
-def _notes_to_snake(notes: list[dict]) -> None:
+def _notes_to_snake(notes: list[dict[str, Any]]) -> None:
     """Convert camelCase note keys to snake_case in-place."""
     for n in notes:
         for camel, snake in _CAMEL_TO_SNAKE.items():
@@ -549,7 +551,7 @@ def _notes_to_snake(notes: list[dict]) -> None:
                 n[snake] = n.pop(camel)
 
 
-def _notes_to_camel(notes: list[dict]) -> None:
+def _notes_to_camel(notes: list[dict[str, Any]]) -> None:
     """Convert snake_case note keys to camelCase in-place."""
     for n in notes:
         for snake, camel in _SNAKE_TO_CAMEL.items():
@@ -562,12 +564,12 @@ def _notes_to_camel(notes: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 
 def apply_expressiveness(
-    notes: list[dict],
+    notes: list[dict[str, Any]],
     style: str,
     bars: int,
     instrument_role: str = "melody",
     seed: int = 42,
-) -> dict:
+) -> dict[str, Any]:
     """
     Full expressiveness post-processing pipeline.
 
@@ -579,7 +581,7 @@ def apply_expressiveness(
         seed: RNG seed for reproducibility.
 
     Returns:
-        Dict with keys: notes, cc_events, pitch_bends.
+        dict with keys: notes, cc_events, pitch_bends.
         notes is mutated in-place with velocity curves and timing humanization.
         Output notes use the same key format (camelCase or snake_case) as the input.
     """

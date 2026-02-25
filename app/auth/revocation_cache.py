@@ -5,8 +5,9 @@ Reduces DB hits on every authenticated request. Cache key is token hash;
 value is whether the token is revoked. TTL is configurable; on revoke
 we clear the cache so revocation is visible on the next request.
 """
+from __future__ import annotations
+
 import time
-from typing import Optional
 
 from app.config import settings
 
@@ -14,7 +15,7 @@ from app.config import settings
 _cache: dict[str, tuple[bool, float]] = {}
 
 
-def get_revocation_status(token_hash: str) -> Optional[bool]:
+def get_revocation_status(token_hash: str) -> bool | None:
     """
     Return cached revocation status if present and not expired.
 

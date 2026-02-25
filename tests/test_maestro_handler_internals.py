@@ -3,7 +3,11 @@
 Supplements test_maestro_handlers.py with deeper coverage of maestro handler internals
 and execution mode policy.
 """
+from __future__ import annotations
+
+import asyncio
 import json
+from collections.abc import AsyncGenerator
 from typing import Any
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,7 +24,8 @@ from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
 
 
-def _parse_events(events: list[str]) -> list[dict]:
+def _parse_events(events: list[str]) -> list[dict[str, Any]]:
+
     """Parse SSE event strings into dicts."""
     parsed = []
     for e in events:
@@ -29,16 +34,18 @@ def _parse_events(events: list[str]) -> list[dict]:
     return parsed
 
 
-async def _fake_plan_stream(plan):
+async def _fake_plan_stream(plan: Any) -> AsyncGenerator[Any, None]:
+
     """Async generator yielding a single ExecutionPlan (simulates build_execution_plan_stream)."""
     yield plan
 
 
-def _make_trace():
+def _make_trace() -> TraceContext:
     return TraceContext(trace_id="test-trace-id")
 
 
-def _make_route(sse_state=SSEState.REASONING, intent=Intent.UNKNOWN, **kwargs):
+def _make_route(sse_state: Any = SSEState.REASONING, intent: Any = Intent.UNKNOWN, **kwargs: Any) -> IntentResult:
+
     defaults = dict(
         intent=intent,
         sse_state=sse_state,
@@ -55,13 +62,15 @@ def _make_route(sse_state=SSEState.REASONING, intent=Intent.UNKNOWN, **kwargs):
     return IntentResult(**defaults)
 
 
-def _response_to_stream(response: LLMResponse):
+def _response_to_stream(response: LLMResponse) -> Any:
+
     """Convert an LLMResponse to an async iterator matching chat_completion_stream protocol.
 
     Used to adapt tests that mocked chat_completion to the streaming API
     used by _run_instrument_agent.
     """
-    async def _stream(*args, **kwargs):
+    async def _stream(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+
         tool_calls_raw = [
             {
                 "id": tc.id,
@@ -80,7 +89,8 @@ def _response_to_stream(response: LLMResponse):
     return _stream
 
 
-def _make_llm_mock(content="Hello", supports_reasoning=False, tool_calls=None):
+def _make_llm_mock(content: Any = "Hello", supports_reasoning: Any = False, tool_calls: Any = None) -> MagicMock:
+
     mock = MagicMock()
     mock.model = "test-model"
     mock.supports_reasoning = MagicMock(return_value=supports_reasoning)
@@ -103,7 +113,8 @@ def _make_llm_mock(content="Hello", supports_reasoning=False, tool_calls=None):
 class TestHandleReasoning:
 
     @pytest.mark.anyio
-    async def test_general_question_non_reasoning_model(self):
+    async def test_general_question_non_reasoning_model(self) -> None:
+
         """Non-reasoning model: chat_completion -> content -> complete."""
         llm = _make_llm_mock(content="The answer is 4.")
         trace = _make_trace()
@@ -122,13 +133,15 @@ class TestHandleReasoning:
         assert any("The answer is 4" in p.get("content", "") for p in content_p)
 
     @pytest.mark.anyio
-    async def test_reasoning_model_streams_deltas(self):
+    async def test_reasoning_model_streams_deltas(self) -> None:
+
         """Reasoning model: chat_completion_stream yields reasoning + content deltas."""
         llm = _make_llm_mock(supports_reasoning=True)
         trace = _make_trace()
         route = _make_route(SSEState.REASONING, Intent.UNKNOWN)
 
-        async def fake_stream(*args, **kwargs):
+        async def fake_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+
             yield {"type": "reasoning_delta", "text": "Thinking about this..."}
             yield {"type": "content_delta", "text": "The answer."}
             yield {"type": "done", "content": "The answer.", "usage": {"prompt_tokens": 5, "completion_tokens": 10}}
@@ -145,7 +158,8 @@ class TestHandleReasoning:
         assert "complete" in types
 
     @pytest.mark.anyio
-    async def test_reasoning_tracks_usage(self):
+    async def test_reasoning_tracks_usage(self) -> None:
+
         """Usage tracker accumulates tokens from reasoning."""
         llm = _make_llm_mock(content="answer")
         trace = _make_trace()
@@ -160,7 +174,8 @@ class TestHandleReasoning:
         assert tracker.completion_tokens == 20
 
     @pytest.mark.anyio
-    async def test_rag_path_ask_stori_docs(self):
+    async def test_rag_path_ask_stori_docs(self) -> None:
+
         """ASK_STORI_DOCS intent routes through RAG when collection exists."""
         llm = _make_llm_mock()
         trace = _make_trace()
@@ -168,7 +183,8 @@ class TestHandleReasoning:
 
         mock_rag = MagicMock()
         mock_rag.collection_exists.return_value = True
-        async def rag_answer(*a, **k):
+        async def rag_answer(*a: Any, **k: Any) -> AsyncGenerator[str, None]:
+
             yield "RAG answer part 1"
             yield "RAG answer part 2"
         mock_rag.answer = rag_answer
@@ -184,7 +200,8 @@ class TestHandleReasoning:
         assert "RAG answer part 1" in content_events[0]["content"]
 
     @pytest.mark.anyio
-    async def test_rag_fallback_on_error(self):
+    async def test_rag_fallback_on_error(self) -> None:
+
         """If RAG throws, falls back to general LLM path."""
         llm = _make_llm_mock(content="Fallback answer")
         trace = _make_trace()
@@ -203,7 +220,8 @@ class TestHandleReasoning:
         assert any("Fallback answer" in p["content"] for p in content_events)
 
     @pytest.mark.anyio
-    async def test_includes_conversation_history(self):
+    async def test_includes_conversation_history(self) -> None:
+
         """Conversation history is passed to LLM messages."""
         llm = _make_llm_mock(content="With context")
         trace = _make_trace()
@@ -229,7 +247,8 @@ class TestHandleReasoning:
 class TestHandleComposing:
 
     @pytest.mark.anyio
-    async def test_variation_mode_emits_meta_phrases_done(self):
+    async def test_variation_mode_emits_meta_phrases_done(self) -> None:
+
         """COMPOSING in variation mode emits meta -> phrase(s) -> done -> complete."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
@@ -297,7 +316,8 @@ class TestHandleComposing:
         assert phrase["phraseId"] == "p1"
 
     @pytest.mark.anyio
-    async def test_empty_plan_asks_for_clarification(self):
+    async def test_empty_plan_asks_for_clarification(self) -> None:
+
         """When planner returns no tool_calls and no function-call text, asks for clarification."""
         from app.core.planner import ExecutionPlan
 
@@ -321,7 +341,8 @@ class TestHandleComposing:
         assert "style" in content_p["content"].lower() or "genre" in content_p["content"].lower()
 
     @pytest.mark.anyio
-    async def test_empty_plan_no_response_text(self):
+    async def test_empty_plan_no_response_text(self) -> None:
+
         """When planner returns no tool_calls and no response text, asks for info."""
         from app.core.planner import ExecutionPlan
 
@@ -350,7 +371,8 @@ class TestHandleComposing:
 class TestHandleEditing:
 
     @pytest.mark.anyio
-    async def test_editing_apply_mode_emits_tool_calls(self):
+    async def test_editing_apply_mode_emits_tool_calls(self) -> None:
+
         """EDITING in apply mode emits tool_call events."""
         from app.core.tools import ALL_TOOLS
 
@@ -384,7 +406,8 @@ class TestHandleEditing:
         assert tc["params"]["tempo"] == 120
 
     @pytest.mark.anyio
-    async def test_editing_emits_content_alongside_tool_calls(self):
+    async def test_editing_emits_content_alongside_tool_calls(self) -> None:
+
         """Content events are emitted during editing when LLM produces natural-language text."""
         from app.core.tools import ALL_TOOLS
 
@@ -432,7 +455,8 @@ class TestHandleEditing:
         assert "tempo" in all_content.lower() or "120" in all_content
 
     @pytest.mark.anyio
-    async def test_editing_strips_tool_echo_from_content(self):
+    async def test_editing_strips_tool_echo_from_content(self) -> None:
+
         """Tool-call syntax in content is filtered out before emission."""
         from app.core.tools import ALL_TOOLS
 
@@ -473,7 +497,8 @@ class TestHandleEditing:
         assert "(tempo=120)" not in all_content
 
     @pytest.mark.anyio
-    async def test_editing_variation_mode_emits_variation_events(self):
+    async def test_editing_variation_mode_emits_variation_events(self) -> None:
+
         """EDITING in variation mode emits meta/phrase/done instead of tool_call."""
         from app.core.tools import ALL_TOOLS
         from app.models.variation import Variation, Phrase, NoteChange, MidiNoteSnapshot
@@ -518,7 +543,8 @@ class TestHandleEditing:
         assert "done" in types
 
     @pytest.mark.anyio
-    async def test_editing_tool_validation_error_retries(self):
+    async def test_editing_tool_validation_error_retries(self) -> None:
+
         """Invalid tool calls trigger error event and retry."""
         from app.core.tools import ALL_TOOLS
 
@@ -551,7 +577,8 @@ class TestHandleEditing:
         assert "toolError" in types
 
     @pytest.mark.anyio
-    async def test_editing_force_stop_after(self):
+    async def test_editing_force_stop_after(self) -> None:
+
         """force_stop_after stops after first tool execution."""
         from app.core.tools import ALL_TOOLS
 
@@ -585,7 +612,8 @@ class TestHandleEditing:
         assert len(tc_events) == 1
 
     @pytest.mark.anyio
-    async def test_editing_no_tool_calls_returns_content(self):
+    async def test_editing_no_tool_calls_returns_content(self) -> None:
+
         """When LLM returns content without tools, emit content and complete."""
         route = _make_route(
             SSEState.EDITING,
@@ -610,7 +638,8 @@ class TestHandleEditing:
         assert "complete" in types
 
     @pytest.mark.anyio
-    async def test_editing_persists_notes_to_state_store(self):
+    async def test_editing_persists_notes_to_state_store(self) -> None:
+
         """stori_add_notes in EDITING mode should persist notes in StateStore for COMPOSING handoff."""
         from app.core.tools import ALL_TOOLS
 
@@ -655,7 +684,8 @@ class TestHandleEditing:
         assert pitches == {60, 62}
 
     @pytest.mark.anyio
-    async def test_editing_variation_meta_includes_base_state_id(self):
+    async def test_editing_variation_meta_includes_base_state_id(self) -> None:
+
         """EDITING variation meta event must include base_state_id."""
         from app.core.tools import ALL_TOOLS
         from app.models.variation import Variation
@@ -697,7 +727,8 @@ class TestHandleEditing:
         assert meta["baseStateId"] == store.get_state_id()
 
     @pytest.mark.anyio
-    async def test_editing_creates_track_entity_with_uuid(self):
+    async def test_editing_creates_track_entity_with_uuid(self) -> None:
+
         """stori_add_midi_track generates server-side UUID via StateStore."""
         from app.core.tools import ALL_TOOLS
 
@@ -732,7 +763,8 @@ class TestHandleEditing:
         uuid.UUID(track_id)  # should not raise
 
     @pytest.mark.anyio
-    async def test_synthetic_set_track_icon_emitted_after_add_track_with_gm_program(self):
+    async def test_synthetic_set_track_icon_emitted_after_add_track_with_gm_program(self) -> None:
+
         """stori_set_track_icon is auto-emitted after stori_add_midi_track when gmProgram is set."""
         allowed = {"stori_add_midi_track"}
         route = _make_route(
@@ -771,7 +803,8 @@ class TestHandleEditing:
         assert icon_call["params"]["trackId"] == track_call["params"]["trackId"]
 
     @pytest.mark.anyio
-    async def test_synthetic_set_track_icon_uses_drum_icon_for_drum_kit(self):
+    async def test_synthetic_set_track_icon_uses_drum_icon_for_drum_kit(self) -> None:
+
         """stori_set_track_icon uses instrument.drum when drumKitId is set."""
         allowed = {"stori_add_midi_track"}
         route = _make_route(
@@ -812,12 +845,14 @@ class TestHandleEditing:
 class TestStreamLLMResponse:
 
     @pytest.mark.anyio
-    async def test_yields_reasoning_and_content_deltas(self):
+    async def test_yields_reasoning_and_content_deltas(self) -> None:
+
         """Streams reasoning and content deltas, ends with StreamFinalResponse."""
         llm = _make_llm_mock(supports_reasoning=True)
         trace = _make_trace()
 
-        async def fake_stream(*args, **kwargs):
+        async def fake_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+
             yield {"type": "reasoning_delta", "text": "Let me think..."}
             yield {"type": "content_delta", "text": "Here's the answer."}
             yield {"type": "done", "content": "Here's the answer.", "tool_calls": [], "usage": {"prompt_tokens": 10, "completion_tokens": 20}}
@@ -839,12 +874,14 @@ class TestStreamLLMResponse:
         assert len(sse_items) >= 2
 
     @pytest.mark.anyio
-    async def test_parses_tool_calls_from_done(self):
+    async def test_parses_tool_calls_from_done(self) -> None:
+
         """Tool calls in done chunk are parsed into LLMResponse."""
         llm = _make_llm_mock(supports_reasoning=True)
         trace = _make_trace()
 
-        async def fake_stream(*args, **kwargs):
+        async def fake_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+
             yield {
                 "type": "done",
                 "content": None,
@@ -877,7 +914,8 @@ class TestStreamLLMResponse:
 class TestRetryComposingAsEditing:
 
     @pytest.mark.anyio
-    async def test_emits_retry_status_then_delegates_to_editing(self):
+    async def test_emits_retry_status_then_delegates_to_editing(self) -> None:
+
         """Retry emits status message then delegates to _handle_editing."""
         route = _make_route(SSEState.COMPOSING, Intent.GENERATE_MUSIC)
         llm = _make_llm_mock(content="OK done.")
@@ -903,7 +941,8 @@ class TestRetryComposingAsEditing:
 class TestOrchestrateExecutionModePolicy:
 
     @pytest.mark.anyio
-    async def test_composing_forces_variation_mode(self):
+    async def test_composing_forces_variation_mode(self) -> None:
+
         """COMPOSING intent sets execution_mode='variation' internally (requires non-empty project)."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
@@ -941,7 +980,8 @@ class TestOrchestrateExecutionModePolicy:
         assert "done" in types
 
     @pytest.mark.anyio
-    async def test_editing_forces_apply_mode(self):
+    async def test_editing_forces_apply_mode(self) -> None:
+
         """EDITING intent sets execution_mode='apply' internally."""
         from app.core.tools import ALL_TOOLS
 
@@ -984,13 +1024,15 @@ class TestOrchestrateExecutionModePolicy:
 
 class TestPlanTracker:
 
-    def _make_tool_calls(self, specs: list[tuple[str, dict]]) -> list[ToolCall]:
+    def _make_tool_calls(self, specs: list[tuple[str, dict[str, Any]]]) -> list[ToolCall]:
+
         return [
             ToolCall(id=f"tc{i}", name=name, params=params)
             for i, (name, params) in enumerate(specs)
         ]
 
-    def test_group_setup_tools_into_individual_steps(self):
+    def test_group_setup_tools_into_individual_steps(self) -> None:
+
         """Each setup tool (tempo, key) becomes its own distinct plan step."""
         tcs = self._make_tool_calls([
             ("stori_set_tempo", {"tempo": 72}),
@@ -1004,7 +1046,8 @@ class TestPlanTracker:
         assert "key" in tracker.steps[1].label.lower()
         assert "Cm" in tracker.steps[1].label
 
-    def test_group_track_creation_separate_from_content(self):
+    def test_group_track_creation_separate_from_content(self) -> None:
+
         """Track creation and content are separate steps with canonical labels."""
         tcs = self._make_tool_calls([
             ("stori_add_midi_track", {"name": "Drums", "drumKitId": "TR-808"}),
@@ -1021,7 +1064,8 @@ class TestPlanTracker:
         assert content_steps[0].label == "Add content to Drums"
         assert content_steps[0].phase == "composition"
 
-    def test_group_multiple_tracks_contiguous(self):
+    def test_group_multiple_tracks_contiguous(self) -> None:
+
         """Multiple track creations produce per-track contiguous steps."""
         tcs = self._make_tool_calls([
             ("stori_set_tempo", {"tempo": 90}),
@@ -1041,7 +1085,8 @@ class TestPlanTracker:
         assert "Create Bass track" in labels
         assert "Add content to Bass" in labels
 
-    def test_effects_grouped_per_track(self):
+    def test_effects_grouped_per_track(self) -> None:
+
         """Bus setup becomes project-level; insert effects are track-targeted."""
         tcs = self._make_tool_calls([
             ("stori_ensure_bus", {"name": "Reverb"}),
@@ -1057,7 +1102,8 @@ class TestPlanTracker:
         assert "mixing" in phases
         assert "soundDesign" in phases
 
-    def test_plan_event_shape_includes_toolName_when_set(self):
+    def test_plan_event_shape_includes_toolName_when_set(self) -> None:
+
         """to_plan_event() includes toolName when the step has a tool_name."""
         tcs = self._make_tool_calls([
             ("stori_set_tempo", {"tempo": 120}),
@@ -1075,7 +1121,8 @@ class TestPlanTracker:
             assert step["status"] == "pending"
             assert "toolName" in step  # present because all steps have real tools
 
-    def test_title_is_musically_descriptive(self):
+    def test_title_is_musically_descriptive(self) -> None:
+
         """Plan title should be musically descriptive, not a raw prompt."""
         tcs = self._make_tool_calls([
             ("stori_set_tempo", {"tempo": 72}),
@@ -1088,7 +1135,8 @@ class TestPlanTracker:
         assert "Plan" not in tracker.title
         assert "Executing" not in tracker.title
 
-    def test_title_with_style_from_generators(self):
+    def test_title_with_style_from_generators(self) -> None:
+
         """Plan title extracts style from generator tool calls."""
         tcs = self._make_tool_calls([
             ("stori_add_midi_track", {"name": "Drums"}),
@@ -1098,7 +1146,8 @@ class TestPlanTracker:
         tracker.build(tcs, "Make a beat", {}, False, StateStore(conversation_id="t"))
         assert "Boom Bap" in tracker.title
 
-    def test_build_from_prompt_creates_upfront_plan(self):
+    def test_build_from_prompt_creates_upfront_plan(self) -> None:
+
         """build_from_prompt() generates per-track steps with canonical labels."""
         from app.core.prompt_parser import ParsedPrompt
         parsed = ParsedPrompt(
@@ -1123,7 +1172,8 @@ class TestPlanTracker:
         assert any("Add content to Bass" == l for l in labels)
         assert any("Organ" in l for l in labels)
 
-    def test_build_from_prompt_no_roles_adds_placeholder(self):
+    def test_build_from_prompt_no_roles_adds_placeholder(self) -> None:
+
         """Without roles, build_from_prompt adds a generic placeholder step."""
         from app.core.prompt_parser import ParsedPrompt
         parsed = ParsedPrompt(raw="STORI PROMPT\nMode: compose", mode="compose", request="make something", tempo=120)
@@ -1133,7 +1183,8 @@ class TestPlanTracker:
         assert any("tempo" in l.lower() for l in labels)
         assert any("generate" in l.lower() or "music" in l.lower() for l in labels)
 
-    def test_step_activation_and_completion(self):
+    def test_step_activation_and_completion(self) -> None:
+
         """activate_step / complete_active_step produce correct events."""
         tracker = _PlanTracker()
         tracker.steps = [
@@ -1145,15 +1196,16 @@ class TestPlanTracker:
         assert tracker._active_step_id == "1"
         assert tracker.steps[0].status == "active"
 
-        tracker.steps[0].result = "Set 72 BPM"
+        tracker.steps[0].result = "set 72 BPM"
         complete_evt = tracker.complete_active_step()
         assert complete_evt is not None
         assert complete_evt["status"] == "completed"
-        assert complete_evt["result"] == "Set 72 BPM"
+        assert complete_evt["result"] == "set 72 BPM"
         assert tracker._active_step_id is None
-        assert tracker.steps[0].status == "completed"
+        assert tracker.steps[0].status == "completed"  # type: ignore[unreachable]
 
-    def test_step_for_tool_index(self):
+    def test_step_for_tool_index(self) -> None:
+
         """step_for_tool_index returns correct step."""
         tracker = _PlanTracker()
         tracker.steps = [
@@ -1164,7 +1216,8 @@ class TestPlanTracker:
         assert tracker.step_for_tool_index(3).step_id == "2"  # type: ignore[union-attr]
         assert tracker.step_for_tool_index(99) is None
 
-    def test_progress_context_formatting(self):
+    def test_progress_context_formatting(self) -> None:
+
         """progress_context() produces a readable summary."""
         tracker = _PlanTracker()
         tracker.steps = [
@@ -1178,7 +1231,8 @@ class TestPlanTracker:
         assert "⬜" in ctx
         assert "72 BPM, Cm" in ctx
 
-    def test_build_step_result(self):
+    def test_build_step_result(self) -> None:
+
         """_build_step_result accumulates descriptions."""
         r1 = _build_step_result("stori_set_tempo", {"tempo": 120})
         assert "120" in r1
@@ -1195,7 +1249,8 @@ class TestPlanTracker:
 class TestPlanEventsInEditing:
 
     @pytest.mark.anyio
-    async def test_plan_and_step_updates_emitted_for_multi_tool_editing(self):
+    async def test_plan_and_step_updates_emitted_for_multi_tool_editing(self) -> None:
+
         """EDITING with multiple tool calls should emit plan + planStepUpdate events."""
         from app.core.tools import ALL_TOOLS
 
@@ -1243,7 +1298,8 @@ class TestPlanEventsInEditing:
         assert "completed" in statuses
 
     @pytest.mark.anyio
-    async def test_no_plan_for_single_force_stop_tool(self):
+    async def test_no_plan_for_single_force_stop_tool(self) -> None:
+
         """Single-tool force_stop_after requests must NOT emit a plan event.
 
         A one-step plan is noise — the toolStart label is sufficient.
@@ -1281,7 +1337,8 @@ class TestPlanEventsInEditing:
         assert "complete" in types
 
     @pytest.mark.anyio
-    async def test_plan_not_emitted_in_variation_mode(self):
+    async def test_plan_not_emitted_in_variation_mode(self) -> None:
+
         """Variation mode should NOT emit plan events (those are for apply only)."""
         allowed = {"stori_add_midi_track"}
         route = _make_route(
@@ -1322,7 +1379,8 @@ class TestPlanEventsInEditing:
         assert "plan" not in types
 
     @pytest.mark.anyio
-    async def test_step_order_matches_tool_execution(self):
+    async def test_step_order_matches_tool_execution(self) -> None:
+
         """planStepUpdate events should follow the execution order of tool calls."""
         allowed = {"stori_set_tempo", "stori_add_midi_track"}
         route = _make_route(
@@ -1373,7 +1431,8 @@ class TestPlanEventsInEditing:
 class TestCompleteEventOnError:
 
     @pytest.mark.anyio
-    async def test_orchestration_error_emits_complete_with_success_false(self):
+    async def test_orchestration_error_emits_complete_with_success_false(self) -> None:
+
         """When orchestrate() hits an exception, it should emit error + complete events."""
         with (
             patch(
@@ -1403,7 +1462,8 @@ class TestCompleteEventOnError:
 class TestBuildFromPromptNoOpSkip:
     """build_from_prompt omits tempo/key steps when project already matches."""
 
-    def _make_parsed(self, tempo=None, key=None, roles=None):
+    def _make_parsed(self, tempo: Any = None, key: Any = None, roles: Any = None) -> Any:
+
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1414,31 +1474,35 @@ class TestBuildFromPromptNoOpSkip:
             roles=roles or [],
         )
 
-    def test_tempo_step_skipped_when_already_matching(self):
-        """If project tempo == requested tempo, no 'Set tempo' step is added."""
+    def test_tempo_step_skipped_when_already_matching(self) -> None:
+
+        """If project tempo == requested tempo, no 'set tempo' step is added."""
         parsed = self._make_parsed(tempo=120, key="Am", roles=["drums"])
         tracker = _PlanTracker()
         tracker.build_from_prompt(parsed, "make a beat", {"tempo": 120, "key": "C"})
         labels = [s.label for s in tracker.steps]
         assert not any("tempo" in l.lower() for l in labels)
 
-    def test_tempo_step_included_when_different(self):
-        """If project tempo != requested tempo, the Set tempo step is present."""
+    def test_tempo_step_included_when_different(self) -> None:
+
+        """If project tempo != requested tempo, the set tempo step is present."""
         parsed = self._make_parsed(tempo=90, roles=["drums"])
         tracker = _PlanTracker()
         tracker.build_from_prompt(parsed, "make a beat", {"tempo": 120})
         labels = [s.label for s in tracker.steps]
         assert any("90 BPM" in l for l in labels)
 
-    def test_key_step_skipped_when_already_matching(self):
-        """If project key == requested key (case-insensitive), no Set key step."""
+    def test_key_step_skipped_when_already_matching(self) -> None:
+
+        """If project key == requested key (case-insensitive), no set key step."""
         parsed = self._make_parsed(tempo=120, key="Am", roles=["drums"])
         tracker = _PlanTracker()
         tracker.build_from_prompt(parsed, "make a beat", {"tempo": 120, "key": "Am"})
         labels = [s.label for s in tracker.steps]
         assert not any("key" in l.lower() for l in labels)
 
-    def test_key_step_skipped_case_insensitive(self):
+    def test_key_step_skipped_case_insensitive(self) -> None:
+
         """Key match is case-insensitive (am == Am == AM)."""
         parsed = self._make_parsed(key="am", roles=["drums"])
         tracker = _PlanTracker()
@@ -1446,15 +1510,17 @@ class TestBuildFromPromptNoOpSkip:
         labels = [s.label for s in tracker.steps]
         assert not any("key" in l.lower() for l in labels)
 
-    def test_key_step_included_when_different(self):
-        """Different key produces a Set key step."""
+    def test_key_step_included_when_different(self) -> None:
+
+        """Different key produces a set key step."""
         parsed = self._make_parsed(key="F#m", roles=["drums"])
         tracker = _PlanTracker()
         tracker.build_from_prompt(parsed, "make a beat", {"key": "Am"})
         labels = [s.label for s in tracker.steps]
         assert any("F#m" in l for l in labels)
 
-    def test_both_skipped_leaves_only_role_and_effect_steps(self):
+    def test_both_skipped_leaves_only_role_and_effect_steps(self) -> None:
+
         """When both tempo and key match, only role steps + effects step remain."""
         parsed = self._make_parsed(tempo=80, key="Cm", roles=["drums", "bass"])
         tracker = _PlanTracker()
@@ -1472,7 +1538,8 @@ class TestBuildFromPromptNoOpSkip:
 class TestMatchRolesWithInferredRoles:
     """_match_roles_to_existing_tracks matches via infer_track_role, not just name."""
 
-    def test_drum_kit_track_matched_as_drums(self):
+    def test_drum_kit_track_matched_as_drums(self) -> None:
+
         """A track with drumKitId is inferred as drums even if named differently."""
         from app.core.planner import _match_roles_to_existing_tracks
         project = {
@@ -1483,7 +1550,8 @@ class TestMatchRolesWithInferredRoles:
         result = _match_roles_to_existing_tracks({"drums"}, project)
         assert result.get("drums", {}).get("id") == "BEAT-UUID"
 
-    def test_gm_bass_program_matched_as_bass(self):
+    def test_gm_bass_program_matched_as_bass(self) -> None:
+
         """A track with GM program 33 (Electric Bass) is inferred as bass role."""
         from app.core.planner import _match_roles_to_existing_tracks
         project = {
@@ -1494,7 +1562,8 @@ class TestMatchRolesWithInferredRoles:
         result = _match_roles_to_existing_tracks({"bass"}, project)
         assert result.get("bass", {}).get("id") == "LOW-UUID"
 
-    def test_synth_lead_matched_as_lead(self):
+    def test_synth_lead_matched_as_lead(self) -> None:
+
         """A track with GM program 80 (Square Lead) is inferred as lead role."""
         from app.core.planner import _match_roles_to_existing_tracks
         project = {
@@ -1505,7 +1574,8 @@ class TestMatchRolesWithInferredRoles:
         result = _match_roles_to_existing_tracks({"lead"}, project)
         assert result.get("lead", {}).get("id") == "LEAD-UUID"
 
-    def test_organ_pad_matched_as_pads(self):
+    def test_organ_pad_matched_as_pads(self) -> None:
+
         """A 'Cathedral Pad' track (Church Organ GM 19) inferred as pads, matched to pads role."""
         from app.core.planner import _match_roles_to_existing_tracks
         project = {
@@ -1524,7 +1594,8 @@ class TestMatchRolesWithInferredRoles:
 class TestBuildFromPromptExpressiveSteps:
     """build_from_prompt surfaces Effects / MidiExpressiveness / Automation as plan steps."""
 
-    def _make_parsed(self, roles=None, extensions=None):
+    def _make_parsed(self, roles: Any = None, extensions: Any = None) -> Any:
+
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1535,7 +1606,8 @@ class TestBuildFromPromptExpressiveSteps:
             extensions=extensions or {},
         )
 
-    def test_effects_block_adds_per_track_step(self):
+    def test_effects_block_adds_per_track_step(self) -> None:
+
         """Each track key in Effects produces its own 'Add effects to X' step."""
         parsed = self._make_parsed(
             roles=["drums", "bass"],
@@ -1547,7 +1619,8 @@ class TestBuildFromPromptExpressiveSteps:
         assert any("effects to Drums" in l for l in labels)
         assert any("effects to Bass" in l for l in labels)
 
-    def test_no_explicit_effects_adds_generic_effects_step(self):
+    def test_no_explicit_effects_adds_generic_effects_step(self) -> None:
+
         """Without an Effects extension, a generic 'Add effects and routing' step appears."""
         parsed = self._make_parsed(roles=["drums", "bass"])
         tracker = _PlanTracker()
@@ -1555,7 +1628,8 @@ class TestBuildFromPromptExpressiveSteps:
         labels = [s.label for s in tracker.steps]
         assert any("effect" in l.lower() for l in labels)
 
-    def test_cc_curves_adds_midi_cc_step(self):
+    def test_cc_curves_adds_midi_cc_step(self) -> None:
+
         """MidiExpressiveness with cc_curves adds an 'Add MIDI CC curves' step."""
         parsed = self._make_parsed(
             roles=["lead"],
@@ -1566,7 +1640,8 @@ class TestBuildFromPromptExpressiveSteps:
         labels = [s.label for s in tracker.steps]
         assert any("CC" in l for l in labels)
 
-    def test_pitch_bend_adds_step(self):
+    def test_pitch_bend_adds_step(self) -> None:
+
         """MidiExpressiveness with pitch_bend adds an 'Add pitch bend' step."""
         parsed = self._make_parsed(
             roles=["bass"],
@@ -1577,7 +1652,8 @@ class TestBuildFromPromptExpressiveSteps:
         labels = [s.label for s in tracker.steps]
         assert any("pitch bend" in l.lower() for l in labels)
 
-    def test_sustain_pedal_adds_step(self):
+    def test_sustain_pedal_adds_step(self) -> None:
+
         """MidiExpressiveness with sustain_pedal adds a MIDI CC step."""
         parsed = self._make_parsed(
             roles=["chords"],
@@ -1589,7 +1665,8 @@ class TestBuildFromPromptExpressiveSteps:
         # Sustain pedal is now represented as "Add MIDI CC to <Track>"
         assert any("MIDI CC" in l for l in labels)
 
-    def test_automation_block_adds_step_with_track(self):
+    def test_automation_block_adds_step_with_track(self) -> None:
+
         """Automation block labels include track name when available."""
         parsed = self._make_parsed(
             roles=["pads"],
@@ -1603,7 +1680,8 @@ class TestBuildFromPromptExpressiveSteps:
         labels = [s.label for s in tracker.steps]
         assert any("automation" in l.lower() for l in labels)
 
-    def test_all_expressive_blocks_together(self):
+    def test_all_expressive_blocks_together(self) -> None:
+
         """All three blocks together produce all expected step categories."""
         parsed = self._make_parsed(
             roles=["drums"],
@@ -1632,7 +1710,8 @@ class TestBuildFromPromptExpressiveSteps:
 class TestStructuredPromptContextTranslation:
     """structured_prompt_context injects execution requirements for expressive blocks."""
 
-    def _make_parsed(self, extensions):
+    def _make_parsed(self, extensions: Any) -> Any:
+
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1641,7 +1720,8 @@ class TestStructuredPromptContextTranslation:
             extensions=extensions,
         )
 
-    def test_effects_block_triggers_execute_line(self):
+    def test_effects_block_triggers_execute_line(self) -> None:
+
         """Effects extension adds 'EXECUTE Effects block' to the context string."""
         from app.core.prompts import structured_prompt_context
         parsed = self._make_parsed({"effects": {"drums": {"compression": True}}})
@@ -1649,7 +1729,8 @@ class TestStructuredPromptContextTranslation:
         assert "EXECUTE Effects block" in out
         assert "stori_add_insert_effect" in out
 
-    def test_midi_expressiveness_triggers_execute_line(self):
+    def test_midi_expressiveness_triggers_execute_line(self) -> None:
+
         """MidiExpressiveness extension adds CC/pitch-bend/sustain execution lines."""
         from app.core.prompts import structured_prompt_context
         parsed = self._make_parsed({"midiexpressiveness": {
@@ -1661,7 +1742,8 @@ class TestStructuredPromptContextTranslation:
         assert "stori_add_midi_cc" in out
         assert "stori_add_pitch_bend" in out
 
-    def test_automation_triggers_execute_line(self):
+    def test_automation_triggers_execute_line(self) -> None:
+
         """Automation extension adds stori_add_automation execution line."""
         from app.core.prompts import structured_prompt_context
         parsed = self._make_parsed({"automation": [{"track": "Pads", "param": "reverb_wet"}]})
@@ -1669,7 +1751,8 @@ class TestStructuredPromptContextTranslation:
         assert "EXECUTE Automation block" in out
         assert "stori_add_automation" in out
 
-    def test_no_expressive_blocks_no_translate_header(self):
+    def test_no_expressive_blocks_no_translate_header(self) -> None:
+
         """When only Harmony/Melody are present, no EXECUTE requirements block."""
         from app.core.prompts import structured_prompt_context
         parsed = self._make_parsed({"harmony": {"progression": ["Am", "G"]}})
@@ -1678,14 +1761,16 @@ class TestStructuredPromptContextTranslation:
         assert "EXECUTE MidiExpressiveness block" not in out
         assert "EXECUTE Automation block" not in out
 
-    def test_header_changes_to_translate_all_blocks(self):
+    def test_header_changes_to_translate_all_blocks(self) -> None:
+
         """Header reads 'TRANSLATE ALL BLOCKS INTO TOOL CALLS' not just 'interpret'."""
         from app.core.prompts import structured_prompt_context
         parsed = self._make_parsed({"effects": {"bass": {"eq": True}}})
         out = structured_prompt_context(parsed)
         assert "TRANSLATE ALL BLOCKS INTO TOOL CALLS" in out
 
-    def test_automation_context_uses_trackId_not_target(self):
+    def test_automation_context_uses_trackId_not_target(self) -> None:
+
         """Automation execution line must reference trackId, never 'target'."""
         from app.core.prompts import structured_prompt_context
         parsed = self._make_parsed({"automation": [{"track": "Pads", "param": "volume"}]})
@@ -1701,7 +1786,8 @@ class TestStructuredPromptContextTranslation:
 class TestPlanStepToolName:
     """_PlanStep.tool_name is included in the plan SSE event as toolName."""
 
-    def _make_tracker_from_prompt(self, roles=None, extensions=None, tempo=None, key=None):
+    def _make_tracker_from_prompt(self, roles: Any = None, extensions: Any = None, tempo: Any = None, key: Any = None) -> Any:
+
         from app.core.prompt_parser import ParsedPrompt
         from app.core.maestro_plan_tracker import _PlanTracker
         parsed = ParsedPrompt(
@@ -1717,7 +1803,8 @@ class TestPlanStepToolName:
         tracker.build_from_prompt(parsed, "make music", {})
         return tracker
 
-    def test_to_plan_event_includes_toolName_when_set(self):
+    def test_to_plan_event_includes_toolName_when_set(self) -> None:
+
         """Steps with a tool_name emit toolName in the plan event."""
         tracker = self._make_tracker_from_prompt(roles=["drums"])
         event = tracker.to_plan_event()
@@ -1726,23 +1813,26 @@ class TestPlanStepToolName:
         tool_names = [s.get("toolName") for s in steps if s.get("toolName")]
         assert len(tool_names) > 0
 
-    def test_tempo_step_has_stori_set_tempo_toolName(self):
-        """The 'Set tempo' plan step reports toolName=stori_set_tempo."""
+    def test_tempo_step_has_stori_set_tempo_toolName(self) -> None:
+
+        """The 'set tempo' plan step reports toolName=stori_set_tempo."""
         tracker = self._make_tracker_from_prompt(tempo=90)
         event = tracker.to_plan_event()
         tempo_steps = [s for s in event["steps"] if "tempo" in s["label"].lower()]
         assert len(tempo_steps) == 1
         assert tempo_steps[0].get("toolName") == "stori_set_tempo"
 
-    def test_key_step_has_stori_set_key_toolName(self):
-        """The 'Set key' plan step reports toolName=stori_set_key."""
+    def test_key_step_has_stori_set_key_toolName(self) -> None:
+
+        """The 'set key' plan step reports toolName=stori_set_key."""
         tracker = self._make_tracker_from_prompt(key="Am")
         event = tracker.to_plan_event()
         key_steps = [s for s in event["steps"] if "key" in s["label"].lower()]
         assert len(key_steps) == 1
         assert key_steps[0].get("toolName") == "stori_set_key"
 
-    def test_role_step_has_stori_add_midi_track_toolName(self):
+    def test_role_step_has_stori_add_midi_track_toolName(self) -> None:
+
         """Track creation steps report toolName=stori_add_midi_track."""
         tracker = self._make_tracker_from_prompt(roles=["bass"])
         event = tracker.to_plan_event()
@@ -1750,7 +1840,8 @@ class TestPlanStepToolName:
         assert len(track_steps) >= 1
         assert track_steps[0].get("toolName") == "stori_add_midi_track"
 
-    def test_effects_step_has_stori_add_insert_effect_toolName(self):
+    def test_effects_step_has_stori_add_insert_effect_toolName(self) -> None:
+
         """Effects plan steps report toolName=stori_add_insert_effect."""
         tracker = self._make_tracker_from_prompt(
             roles=["drums"],
@@ -1761,7 +1852,8 @@ class TestPlanStepToolName:
         assert len(fx_steps) >= 1
         assert fx_steps[0].get("toolName") == "stori_add_insert_effect"
 
-    def test_cc_step_has_stori_add_midi_cc_toolName(self):
+    def test_cc_step_has_stori_add_midi_cc_toolName(self) -> None:
+
         """MIDI CC plan steps report toolName=stori_add_midi_cc."""
         tracker = self._make_tracker_from_prompt(
             extensions={"midiexpressiveness": {"cc_curves": [{"cc": 91}]}},
@@ -1771,7 +1863,8 @@ class TestPlanStepToolName:
         assert len(cc_steps) >= 1
         assert cc_steps[0].get("toolName") == "stori_add_midi_cc"
 
-    def test_pitch_bend_step_has_stori_add_pitch_bend_toolName(self):
+    def test_pitch_bend_step_has_stori_add_pitch_bend_toolName(self) -> None:
+
         """Pitch bend plan steps report toolName=stori_add_pitch_bend."""
         tracker = self._make_tracker_from_prompt(
             extensions={"midiexpressiveness": {"pitch_bend": {"style": "slides"}}},
@@ -1781,7 +1874,8 @@ class TestPlanStepToolName:
         assert len(pb_steps) >= 1
         assert pb_steps[0].get("toolName") == "stori_add_pitch_bend"
 
-    def test_automation_step_has_stori_add_automation_toolName(self):
+    def test_automation_step_has_stori_add_automation_toolName(self) -> None:
+
         """Automation plan steps report toolName=stori_add_automation."""
         tracker = self._make_tracker_from_prompt(
             extensions={"automation": [{"track": "Piano", "param": "Volume"}]},
@@ -1791,7 +1885,8 @@ class TestPlanStepToolName:
         assert len(auto_steps) >= 1
         assert auto_steps[0].get("toolName") == "stori_add_automation"
 
-    def test_step_without_tool_name_omits_key(self):
+    def test_step_without_tool_name_omits_key(self) -> None:
+
         """Steps where tool_name is None omit toolName so Swift decodes nil."""
         from app.core.maestro_plan_tracker import _PlanStep, _PlanTracker
         tracker = _PlanTracker()
@@ -1807,7 +1902,8 @@ class TestPlanStepToolName:
 class TestGetMissingExpressiveSteps:
     """_get_missing_expressive_steps detects pending expressive tool calls."""
 
-    def _parsed(self, extensions):
+    def _parsed(self, extensions: Any) -> Any:
+
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1816,29 +1912,34 @@ class TestGetMissingExpressiveSteps:
             extensions=extensions,
         )
 
-    def _missing(self, extensions, tool_calls_collected=None):
+    def _missing(self, extensions: Any, tool_calls_collected: Any = None) -> list[str]:
+
         from app.core.maestro_editing import _get_missing_expressive_steps
         return _get_missing_expressive_steps(
             self._parsed(extensions),
             tool_calls_collected or [],
         )
 
-    def test_none_parsed_returns_empty(self):
+    def test_none_parsed_returns_empty(self) -> None:
+
         """None parsed prompt → no missing steps."""
         from app.core.maestro_editing import _get_missing_expressive_steps
         assert _get_missing_expressive_steps(None, []) == []
 
-    def test_no_extensions_returns_empty(self):
+    def test_no_extensions_returns_empty(self) -> None:
+
         """ParsedPrompt with no extensions → no missing steps."""
         assert self._missing({}) == []
 
-    def test_effects_block_present_but_not_called(self):
+    def test_effects_block_present_but_not_called(self) -> None:
+
         """effects extension without stori_add_insert_effect call → flagged."""
         result = self._missing({"effects": {"drums": {"compression": True}}})
         assert len(result) == 1
         assert "stori_add_insert_effect" in result[0]
 
-    def test_effects_block_already_called_not_flagged(self):
+    def test_effects_block_already_called_not_flagged(self) -> None:
+
         """effects extension with stori_add_insert_effect already called → empty."""
         result = self._missing(
             {"effects": {"drums": {"compression": True}}},
@@ -1846,12 +1947,14 @@ class TestGetMissingExpressiveSteps:
         )
         assert result == []
 
-    def test_cc_curves_not_called_flagged(self):
+    def test_cc_curves_not_called_flagged(self) -> None:
+
         """cc_curves without stori_add_midi_cc call → flagged."""
         result = self._missing({"midiexpressiveness": {"cc_curves": [{"cc": 91}]}})
         assert any("stori_add_midi_cc" in m for m in result)
 
-    def test_cc_curves_already_called_not_flagged(self):
+    def test_cc_curves_already_called_not_flagged(self) -> None:
+
         """cc_curves with stori_add_midi_cc already called → not flagged."""
         result = self._missing(
             {"midiexpressiveness": {"cc_curves": [{"cc": 91}]}},
@@ -1859,17 +1962,20 @@ class TestGetMissingExpressiveSteps:
         )
         assert not any("stori_add_midi_cc" in m for m in result)
 
-    def test_pitch_bend_not_called_flagged(self):
+    def test_pitch_bend_not_called_flagged(self) -> None:
+
         """pitch_bend without stori_add_pitch_bend → flagged."""
         result = self._missing({"midiexpressiveness": {"pitch_bend": {"style": "slides"}}})
         assert any("stori_add_pitch_bend" in m for m in result)
 
-    def test_sustain_pedal_not_called_flagged(self):
+    def test_sustain_pedal_not_called_flagged(self) -> None:
+
         """sustain_pedal without stori_add_midi_cc → flagged (CC 64)."""
         result = self._missing({"midiexpressiveness": {"sustain_pedal": {"changes_per_bar": 2}}})
         assert any("stori_add_midi_cc" in m for m in result)
 
-    def test_automation_not_called_flagged_with_trackId_hint(self):
+    def test_automation_not_called_flagged_with_trackId_hint(self) -> None:
+
         """automation block without stori_add_automation → flagged, and message says trackId."""
         result = self._missing({"automation": [{"track": "Piano", "param": "Volume"}]})
         assert any("stori_add_automation" in m for m in result)
@@ -1877,7 +1983,8 @@ class TestGetMissingExpressiveSteps:
         assert any("trackId" in m for m in result)
         assert not any("target=TRACK" in m for m in result)
 
-    def test_automation_already_called_not_flagged(self):
+    def test_automation_already_called_not_flagged(self) -> None:
+
         """automation block with stori_add_automation already called → empty."""
         result = self._missing(
             {"automation": [{"track": "Piano", "param": "Volume"}]},
@@ -1885,7 +1992,8 @@ class TestGetMissingExpressiveSteps:
         )
         assert not any("stori_add_automation" in m for m in result)
 
-    def test_lowercase_keys_detected_correctly(self):
+    def test_lowercase_keys_detected_correctly(self) -> None:
+
         """Parser lowercases all YAML keys; detection must use lowercase."""
         # Simulate what the parser produces: lowercase 'effects', 'midiexpressiveness'
         result = self._missing({
@@ -1898,7 +2006,8 @@ class TestGetMissingExpressiveSteps:
         assert any("stori_add_midi_cc" in m for m in result)
         assert any("stori_add_automation" in m for m in result)
 
-    def test_all_expressive_called_returns_empty(self):
+    def test_all_expressive_called_returns_empty(self) -> None:
+
         """When all expressive tools have been called, result is empty."""
         extensions = {
             "effects": {"drums": {"compression": True}},
@@ -1918,7 +2027,8 @@ class TestGetMissingExpressiveSteps:
         result = self._missing(extensions, tool_calls)
         assert result == []
 
-    def test_multi_track_reverb_suggests_bus(self):
+    def test_multi_track_reverb_suggests_bus(self) -> None:
+
         """Two or more tracks with reverb in Effects → suggests stori_ensure_bus."""
         result = self._missing({
             "effects": {
@@ -1928,7 +2038,8 @@ class TestGetMissingExpressiveSteps:
         })
         assert any("stori_ensure_bus" in m for m in result)
 
-    def test_single_track_reverb_does_not_suggest_bus(self):
+    def test_single_track_reverb_does_not_suggest_bus(self) -> None:
+
         """Only one track with reverb → no shared bus suggestion."""
         result = self._missing({
             "effects": {
@@ -1947,7 +2058,8 @@ class TestGetMissingExpressiveSteps:
 class TestBuildFromPromptReverbBus:
     """build_from_prompt adds a bus setup step when 2+ tracks need reverb."""
 
-    def _make_parsed(self, extensions):
+    def _make_parsed(self, extensions: Any) -> Any:
+
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1957,8 +2069,9 @@ class TestBuildFromPromptReverbBus:
             extensions=extensions,
         )
 
-    def test_two_reverb_tracks_adds_bus_step(self):
-        """Effects block with reverb on 2+ tracks adds 'Set up shared Reverb bus' step."""
+    def test_two_reverb_tracks_adds_bus_step(self) -> None:
+
+        """Effects block with reverb on 2+ tracks adds 'set up shared Reverb bus' step."""
         from app.core.maestro_plan_tracker import _PlanTracker
         parsed = self._make_parsed({
             "effects": {
@@ -1971,7 +2084,8 @@ class TestBuildFromPromptReverbBus:
         labels = [s.label for s in tracker.steps]
         assert any("Reverb bus" in l for l in labels)
 
-    def test_two_reverb_tracks_bus_step_has_correct_toolName(self):
+    def test_two_reverb_tracks_bus_step_has_correct_toolName(self) -> None:
+
         """Reverb bus plan step has toolName=stori_ensure_bus."""
         from app.core.maestro_plan_tracker import _PlanTracker
         parsed = self._make_parsed({
@@ -1986,7 +2100,8 @@ class TestBuildFromPromptReverbBus:
         assert len(bus_steps) == 1
         assert bus_steps[0].tool_name == "stori_ensure_bus"
 
-    def test_one_reverb_track_no_bus_step(self):
+    def test_one_reverb_track_no_bus_step(self) -> None:
+
         """Only one track with reverb → no shared bus step."""
         from app.core.maestro_plan_tracker import _PlanTracker
         parsed = self._make_parsed({
@@ -2013,11 +2128,13 @@ class TestBuildToolResult:
     Tool Result State Feedback bug report.
     """
 
-    def _make_store(self):
+    def _make_store(self) -> StateStore:
+
         store = StateStore(conversation_id="test-tool-result")
         return store
 
-    def test_add_midi_track_returns_track_id(self):
+    def test_add_midi_track_returns_track_id(self) -> None:
+
         """stori_add_midi_track result MUST include trackId."""
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
@@ -2030,7 +2147,8 @@ class TestBuildToolResult:
         assert result["name"] == "Drums"
         assert "entities" not in result
 
-    def test_add_midi_region_returns_region_id_and_metadata(self):
+    def test_add_midi_region_returns_region_id_and_metadata(self) -> None:
+
         """stori_add_midi_region result MUST include regionId, trackId, startBeat, durationBeats."""
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
@@ -2052,7 +2170,8 @@ class TestBuildToolResult:
         assert result["durationBeats"] == 32
         assert "entities" not in result
 
-    def test_add_notes_returns_confirmation(self):
+    def test_add_notes_returns_confirmation(self) -> None:
+
         """stori_add_notes result MUST include notesAdded and totalNotes."""
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
@@ -2068,7 +2187,8 @@ class TestBuildToolResult:
         assert result["notesAdded"] == 8
         assert result["totalNotes"] == 8
 
-    def test_add_notes_second_call_shows_accumulated_total(self):
+    def test_add_notes_second_call_shows_accumulated_total(self) -> None:
+
         """Calling stori_add_notes twice should show accumulated totalNotes."""
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
@@ -2085,7 +2205,8 @@ class TestBuildToolResult:
         assert result["notesAdded"] == 4
         assert result["totalNotes"] == 8
 
-    def test_clear_notes_returns_warning(self):
+    def test_clear_notes_returns_warning(self) -> None:
+
         """stori_clear_notes result MUST include warning about destructive operation."""
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
@@ -2096,7 +2217,8 @@ class TestBuildToolResult:
         assert result["totalNotes"] == 0
         assert "warning" in result
 
-    def test_ensure_bus_returns_bus_id(self):
+    def test_ensure_bus_returns_bus_id(self) -> None:
+
         """stori_ensure_bus result MUST include busId."""
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
@@ -2108,7 +2230,8 @@ class TestBuildToolResult:
         assert result["busId"] == bus_id
         assert "entities" not in result
 
-    def test_add_insert_effect_returns_track_id(self):
+    def test_add_insert_effect_returns_track_id(self) -> None:
+
         """stori_add_insert_effect result includes trackId."""
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
@@ -2117,7 +2240,8 @@ class TestBuildToolResult:
         assert result["trackId"] == "t-1"
         assert result["effectType"] == "compressor"
 
-    def test_add_midi_cc_returns_event_count(self):
+    def test_add_midi_cc_returns_event_count(self) -> None:
+
         """stori_add_midi_cc result includes regionId and event count."""
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
@@ -2136,7 +2260,8 @@ class TestBuildToolResult:
 class TestEntityManifest:
     """EntityRegistry.agent_manifest returns compact text with entity IDs."""
 
-    def test_manifest_includes_track_and_region_ids(self):
+    def test_manifest_includes_track_and_region_ids(self) -> None:
+
         """Track and region IDs must appear in the manifest text."""
         store = StateStore(conversation_id="test-manifest")
         track_id = store.create_track("Drums")
@@ -2149,13 +2274,15 @@ class TestEntityManifest:
         assert "Drums" in manifest
         assert "Pattern" in manifest
 
-    def test_manifest_empty_registry(self):
+    def test_manifest_empty_registry(self) -> None:
+
         """Empty registry must show 'no tracks yet'."""
         store = StateStore(conversation_id="test-manifest-empty")
         manifest = store.registry.agent_manifest()
         assert "no tracks yet" in manifest
 
-    def test_manifest_scoped_to_track(self):
+    def test_manifest_scoped_to_track(self) -> None:
+
         """When track_id is given, only that track's entities appear."""
         store = StateStore(conversation_id="test-manifest-scope")
         tid1 = store.create_track("Drums")
@@ -2175,7 +2302,8 @@ class TestEntityManifest:
 class TestPlanStepPhantomCompletion:
     """Plan steps must NOT be marked completed for tracks that don't exist."""
 
-    def test_nonexistent_track_stays_pending(self):
+    def test_nonexistent_track_stays_pending(self) -> None:
+
         """A plan step for 'Soul_Sample' that was never created must NOT be completed."""
         from app.core.maestro_plan_tracker import _PlanTracker
         tracker = _PlanTracker()
@@ -2216,7 +2344,8 @@ class TestPlanStepPhantomCompletion:
 class TestEnrichParamsWithTrackContext:
     """_enrich_params_with_track_context injects trackName/trackId for region-scoped tools."""
 
-    def _make_store_with_region(self):
+    def _make_store_with_region(self) -> tuple[StateStore, str, str]:
+
         """Return (store, track_id, region_id) with one track and one region."""
         from app.core.state_store import StateStore
         store = StateStore(conversation_id="enrich-test")
@@ -2224,7 +2353,8 @@ class TestEnrichParamsWithTrackContext:
         region_id = store.create_region("Region 1", track_id)
         return store, track_id, region_id
 
-    def test_injects_track_name_and_id_from_region_id(self):
+    def test_injects_track_name_and_id_from_region_id(self) -> None:
+
         """regionId-only params get trackName and trackId appended."""
         from app.core.maestro_helpers import _enrich_params_with_track_context
         store, track_id, region_id = self._make_store_with_region()
@@ -2235,16 +2365,18 @@ class TestEnrichParamsWithTrackContext:
         assert result["regionId"] == region_id
         assert result["cc"] == 11
 
-    def test_skips_if_track_name_already_present(self):
+    def test_skips_if_track_name_already_present(self) -> None:
+
         """Params already containing trackName are returned unchanged."""
         from app.core.maestro_helpers import _enrich_params_with_track_context
         store, _, region_id = self._make_store_with_region()
-        params = {"regionId": region_id, "trackName": "Already Set", "trackId": "existing"}
+        params = {"regionId": region_id, "trackName": "Already set", "trackId": "existing"}
         result = _enrich_params_with_track_context(params, store)
-        assert result["trackName"] == "Already Set"
+        assert result["trackName"] == "Already set"
         assert result["trackId"] == "existing"
 
-    def test_skips_if_no_region_id(self):
+    def test_skips_if_no_region_id(self) -> None:
+
         """Params without regionId (track-scoped tools) pass through unchanged."""
         from app.core.maestro_helpers import _enrich_params_with_track_context
         from app.core.state_store import StateStore
@@ -2253,7 +2385,8 @@ class TestEnrichParamsWithTrackContext:
         result = _enrich_params_with_track_context(params, store)
         assert result == params
 
-    def test_graceful_fallback_on_unknown_region(self):
+    def test_graceful_fallback_on_unknown_region(self) -> None:
+
         """Unknown regionId returns params unchanged without raising."""
         from app.core.maestro_helpers import _enrich_params_with_track_context
         from app.core.state_store import StateStore
@@ -2263,7 +2396,8 @@ class TestEnrichParamsWithTrackContext:
         assert result == params
         assert "trackName" not in result
 
-    def test_original_params_not_mutated(self):
+    def test_original_params_not_mutated(self) -> None:
+
         """The helper returns a new dict; the original is never mutated."""
         from app.core.maestro_helpers import _enrich_params_with_track_context
         store, _, region_id = self._make_store_with_region()
@@ -2280,13 +2414,15 @@ class TestEnrichParamsWithTrackContext:
 class TestParallelGroup:
     """parallelGroup is emitted on instrument steps but not setup/mixing steps."""
 
-    def _make_tool_calls(self, specs: list[tuple[str, dict]]) -> list[ToolCall]:
+    def _make_tool_calls(self, specs: list[tuple[str, dict[str, Any]]]) -> list[ToolCall]:
+
         return [
             ToolCall(id=f"tc{i}", name=name, params=params)
             for i, (name, params) in enumerate(specs)
         ]
 
-    def test_instrument_steps_have_parallel_group(self):
+    def test_instrument_steps_have_parallel_group(self) -> None:
+
         """Track creation and content steps carry parallelGroup='instruments'."""
         tcs = self._make_tool_calls([
             ("stori_set_tempo", {"tempo": 92}),
@@ -2310,19 +2446,21 @@ class TestParallelGroup:
             elif "tempo" in s["label"].lower() or "bus" in s["label"].lower():
                 assert "parallelGroup" not in s, f"Step '{s['label']}' should NOT be parallel"
 
-    def test_setup_steps_have_no_parallel_group(self):
+    def test_setup_steps_have_no_parallel_group(self) -> None:
+
         """Setup steps (tempo, key) must NOT have parallelGroup."""
         tcs = self._make_tool_calls([
             ("stori_set_tempo", {"tempo": 120}),
             ("stori_set_key", {"key": "Am"}),
         ])
         tracker = _PlanTracker()
-        tracker.build(tcs, "Set up", {}, False, StateStore(conversation_id="t"))
+        tracker.build(tcs, "set up", {}, False, StateStore(conversation_id="t"))
         event = tracker.to_plan_event()
         for s in event["steps"]:
             assert "parallelGroup" not in s
 
-    def test_mixing_steps_have_no_parallel_group(self):
+    def test_mixing_steps_have_no_parallel_group(self) -> None:
+
         """Mix adjust steps must NOT have parallelGroup."""
         tcs = self._make_tool_calls([
             ("stori_set_track_volume", {"trackName": "Drums", "volume": -3}),
@@ -2334,7 +2472,8 @@ class TestParallelGroup:
         for s in event["steps"]:
             assert "parallelGroup" not in s
 
-    def test_build_from_prompt_annotates_parallel_group(self):
+    def test_build_from_prompt_annotates_parallel_group(self) -> None:
+
         """build_from_prompt tags role steps with parallelGroup='instruments'."""
         from app.core.prompt_parser import ParsedPrompt
         parsed = ParsedPrompt(
@@ -2356,7 +2495,8 @@ class TestParallelGroup:
             elif any(kw in s["label"] for kw in ("Create", "Add content", "Add effects")):
                 assert s.get("parallelGroup") == "instruments", f"'{s['label']}' should be parallel"
 
-    def test_effects_within_track_group_have_parallel_group(self):
+    def test_effects_within_track_group_have_parallel_group(self) -> None:
+
         """Insert effects following a track creation share its parallelGroup."""
         tcs = self._make_tool_calls([
             ("stori_add_midi_track", {"name": "Drums"}),
@@ -2369,7 +2509,8 @@ class TestParallelGroup:
         assert len(instrument_steps) >= 2
         assert any("effects" in s.label.lower() for s in instrument_steps)
 
-    def test_single_instrument_still_works(self):
+    def test_single_instrument_still_works(self) -> None:
+
         """A single instrument request still produces valid steps (no crash)."""
         tcs = self._make_tool_calls([
             ("stori_add_midi_track", {"name": "Piano"}),
@@ -2390,7 +2531,8 @@ class TestParallelGroup:
 class TestMultiActiveSteps:
     """_PlanTracker supports multiple simultaneously active steps."""
 
-    def test_multiple_steps_active_simultaneously(self):
+    def test_multiple_steps_active_simultaneously(self) -> None:
+
         """activate_step can activate multiple steps without completing others."""
         tracker = _PlanTracker()
         tracker.steps = [
@@ -2407,7 +2549,8 @@ class TestMultiActiveSteps:
         assert tracker.steps[2].status == "active"
         assert tracker._active_step_ids == {"1", "2", "3"}
 
-    def test_complete_step_by_id_removes_from_active_set(self):
+    def test_complete_step_by_id_removes_from_active_set(self) -> None:
+
         """Completing a step by ID removes it from _active_step_ids."""
         tracker = _PlanTracker()
         tracker.steps = [
@@ -2423,7 +2566,8 @@ class TestMultiActiveSteps:
         assert tracker.steps[0].status == "completed"
         assert tracker.steps[1].status == "active"
 
-    def test_complete_all_active_steps(self):
+    def test_complete_all_active_steps(self) -> None:
+
         """complete_all_active_steps completes every active step at once."""
         tracker = _PlanTracker()
         tracker.steps = [
@@ -2440,7 +2584,8 @@ class TestMultiActiveSteps:
         assert tracker.steps[1].status == "completed"
         assert tracker.steps[2].status == "pending"
 
-    def test_find_active_step_for_track(self):
+    def test_find_active_step_for_track(self) -> None:
+
         """find_active_step_for_track locates the active step by track name."""
         tracker = _PlanTracker()
         tracker.steps = [
@@ -2461,7 +2606,8 @@ class TestMultiActiveSteps:
         guitar = tracker.find_active_step_for_track("Guitar")
         assert guitar is None
 
-    def test_finalize_pending_after_parallel_completion(self):
+    def test_finalize_pending_after_parallel_completion(self) -> None:
+
         """After completing parallel steps, pending steps become skipped."""
         tracker = _PlanTracker()
         tracker.steps = [
@@ -2482,10 +2628,12 @@ class TestMultiActiveSteps:
 class TestGroupIntoPhases:
     """_group_into_phases splits tool calls into setup / instruments / mixing."""
 
-    def _tc(self, name: str, params: dict | None = None) -> ToolCall:
+    def _tc(self, name: str, params: dict[str, Any] | None = None) -> ToolCall:
+
         return ToolCall(name=name, params=params or {})
 
-    def test_basic_three_phase_split(self):
+    def test_basic_three_phase_split(self) -> None:
+
         """Setup, instrument, and mixing calls are correctly separated."""
         from app.core.executor import _group_into_phases
         calls = [
@@ -2517,7 +2665,8 @@ class TestGroupIntoPhases:
         assert phase3[1].name == "stori_add_send"
         assert phase3[2].name == "stori_set_track_volume"
 
-    def test_empty_plan(self):
+    def test_empty_plan(self) -> None:
+
         """Empty tool call list produces empty phases."""
         from app.core.executor import _group_into_phases
         p1, groups, order, p3 = _group_into_phases([])
@@ -2526,7 +2675,8 @@ class TestGroupIntoPhases:
         assert order == []
         assert p3 == []
 
-    def test_single_instrument(self):
+    def test_single_instrument(self) -> None:
+
         """Single instrument produces one group, no setup or mixing."""
         from app.core.executor import _group_into_phases
         calls = [
@@ -2542,7 +2692,8 @@ class TestGroupIntoPhases:
         assert len(groups["piano"]) == 4
         assert p3 == []
 
-    def test_five_instruments_all_grouped(self):
+    def test_five_instruments_all_grouped(self) -> None:
+
         """Five instruments each get their own group."""
         from app.core.executor import _group_into_phases
         instruments = ["Drums", "Bass", "Guitar", "Keys", "Strings"]
@@ -2559,7 +2710,8 @@ class TestGroupIntoPhases:
             assert inst.lower() in groups
             assert len(groups[inst.lower()]) == 3
 
-    def test_instrument_order_preserved(self):
+    def test_instrument_order_preserved(self) -> None:
+
         """instrument_order matches first-seen ordering of tracks."""
         from app.core.executor import _group_into_phases
         calls = [
@@ -2577,12 +2729,12 @@ class TestGroupIntoPhases:
 
 
 def _make_parsed_multi(
-    tempo=92,
-    key="Cm",
-    roles=None,
-    style="funk",
-    bars=4,
-):
+    tempo: int = 92,
+    key: str = "Cm",
+    roles: list[str] | None = None,
+    style: str = "funk",
+    bars: int = 4,
+) -> Any:
     from app.core.prompt_parser import ParsedPrompt
     return ParsedPrompt(
         raw="STORI PROMPT",
@@ -2599,7 +2751,8 @@ def _make_parsed_multi(
 class TestAgentTeamRouting:
     """orchestrate() routes multi-role STORI PROMPT to agent-team handler."""
 
-    def _make_intent_result(self, intent, sse_state, parsed=None):
+    def _make_intent_result(self, intent: Any, sse_state: Any, parsed: Any = None) -> IntentResult:
+
         from app.core.intent import IntentResult
         slots = MagicMock()
         slots.extras = {"parsed_prompt": parsed} if parsed else {}
@@ -2617,7 +2770,8 @@ class TestAgentTeamRouting:
         )
 
     @pytest.mark.anyio
-    async def test_multi_role_routes_to_agent_team(self):
+    async def test_multi_role_routes_to_agent_team(self) -> None:
+
         """Multi-role STORI PROMPT with GENERATE_MUSIC + apply mode uses agent-team handler."""
         from app.core.intent import Intent, SSEState
         from app.core.maestro_agent_teams import _handle_composition_agent_team
@@ -2650,7 +2804,8 @@ class TestAgentTeamRouting:
         assert called_parsed.roles == ["drums", "bass"]
 
     @pytest.mark.anyio
-    async def test_single_role_uses_editing_handler(self):
+    async def test_single_role_uses_editing_handler(self) -> None:
+
         """Single-role STORI PROMPT still routes to _handle_editing."""
         from app.core.intent import Intent, SSEState
 
@@ -2680,7 +2835,8 @@ class TestAgentTeamRouting:
         mock_editing.assert_called_once()
 
     @pytest.mark.anyio
-    async def test_no_parsed_prompt_uses_editing_handler(self):
+    async def test_no_parsed_prompt_uses_editing_handler(self) -> None:
+
         """When no parsed prompt is present, routing falls through to _handle_editing."""
         from app.core.intent import Intent, SSEState
 
@@ -2708,7 +2864,8 @@ class TestAgentTeamRouting:
         mock_agent_team.assert_not_called()
 
 
-async def _fake_events_gen(events):
+async def _fake_events_gen(events: Any) -> AsyncGenerator[str, None]:
+
     """Async generator yielding fake SSE event strings."""
     for e in events:
         yield f"data: {json.dumps({'type': e})}\n\n"
@@ -2718,7 +2875,8 @@ class TestApplySingleToolCall:
     """_apply_single_tool_call() returns correct outcome for various tool types."""
 
     @pytest.mark.anyio
-    async def test_valid_tool_returns_not_skipped(self):
+    async def test_valid_tool_returns_not_skipped(self) -> None:
+
         """A valid tool call returns skipped=False with populated fields."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2742,7 +2900,8 @@ class TestApplySingleToolCall:
         assert outcome.msg_result["role"] == "tool"
 
     @pytest.mark.anyio
-    async def test_invalid_tool_returns_skipped_with_error(self):
+    async def test_invalid_tool_returns_skipped_with_error(self) -> None:
+
         """Invalid tool call (wrong tool name) returns skipped=True with toolError."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2762,7 +2921,8 @@ class TestApplySingleToolCall:
         assert any(e["type"] == "toolError" for e in outcome.sse_events)
 
     @pytest.mark.anyio
-    async def test_track_creation_generates_uuid(self):
+    async def test_track_creation_generates_uuid(self) -> None:
+
         """stori_add_midi_track generates a fresh UUID and registers in store."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2785,7 +2945,8 @@ class TestApplySingleToolCall:
         assert store.registry.get_track(track_id) is not None
 
     @pytest.mark.anyio
-    async def test_circuit_breaker_fires_at_3_failures(self):
+    async def test_circuit_breaker_fires_at_3_failures(self) -> None:
+
         """stori_add_notes is rejected when failure count >= 3."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2810,7 +2971,8 @@ class TestApplySingleToolCall:
         assert any(e["type"] == "toolError" for e in outcome.sse_events)
 
     @pytest.mark.anyio
-    async def test_emit_sse_false_produces_no_events(self):
+    async def test_emit_sse_false_produces_no_events(self) -> None:
+
         """emit_sse=False returns empty sse_events for proposal/variation path."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2830,7 +2992,8 @@ class TestApplySingleToolCall:
         assert outcome.sse_events == []
 
     @pytest.mark.anyio
-    async def test_generator_no_region_returns_error_not_none(self):
+    async def test_generator_no_region_returns_error_not_none(self) -> None:
+
         """stori_generate_midi without a prior region returns a skipped error outcome,
         never falling through to emit the internal tool name to SSE."""
         from app.core.maestro_editing import _apply_single_tool_call
@@ -2855,7 +3018,8 @@ class TestApplySingleToolCall:
         assert "stori_generate_midi" not in tool_names_in_sse
 
     @pytest.mark.anyio
-    async def test_drumkitid_forces_is_drums_true(self):
+    async def test_drumkitid_forces_is_drums_true(self) -> None:
+
         """A track with drumKitId but a non-drum name still gets _isDrums=True."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2875,7 +3039,8 @@ class TestApplySingleToolCall:
         assert outcome.enriched_params.get("_isDrums") is True
 
     @pytest.mark.anyio
-    async def test_color_autoassigned_when_missing(self):
+    async def test_color_autoassigned_when_missing(self) -> None:
+
         """Tracks without a color param get a named color from the role map."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2894,7 +3059,8 @@ class TestApplySingleToolCall:
         assert outcome.enriched_params["color"] == "green"
 
     @pytest.mark.anyio
-    async def test_invalid_color_replaced_with_named(self):
+    async def test_invalid_color_replaced_with_named(self) -> None:
+
         """Arbitrary CSS names are rejected and replaced by a role-based color."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2913,7 +3079,8 @@ class TestApplySingleToolCall:
         assert outcome.enriched_params["color"] == "red"
 
     @pytest.mark.anyio
-    async def test_valid_hex_color_passthrough(self):
+    async def test_valid_hex_color_passthrough(self) -> None:
+
         """Valid #RRGGBB hex is accepted as-is."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2932,7 +3099,8 @@ class TestApplySingleToolCall:
         assert outcome.enriched_params["color"] == "#4A90D9"
 
     @pytest.mark.anyio
-    async def test_valid_named_color_passthrough(self):
+    async def test_valid_named_color_passthrough(self) -> None:
+
         """Valid named color is kept."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2951,7 +3119,8 @@ class TestApplySingleToolCall:
         assert outcome.enriched_params["color"] == "indigo"
 
     @pytest.mark.anyio
-    async def test_gm_program_xor_is_drums_enforced(self):
+    async def test_gm_program_xor_is_drums_enforced(self) -> None:
+
         """Exactly one of _isDrums or gmProgram is always present."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2971,7 +3140,8 @@ class TestApplySingleToolCall:
         assert "gmProgram" not in outcome.enriched_params
 
     @pytest.mark.anyio
-    async def test_gm_program_default_when_neither_set(self):
+    async def test_gm_program_default_when_neither_set(self) -> None:
+
         """gmProgram defaults to 0 when neither _isDrums nor gmProgram is set."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -2993,7 +3163,8 @@ class TestApplySingleToolCall:
         assert not (has_gm and is_drums), "Both gmProgram and _isDrums should not be set"
 
     @pytest.mark.anyio
-    async def test_note_fields_backfilled(self):
+    async def test_note_fields_backfilled(self) -> None:
+
         """Missing note fields get default values before SSE emission."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -3028,7 +3199,8 @@ class TestApplySingleToolCall:
 class TestRunInstrumentAgent:
     """_run_instrument_agent() makes one LLM call and pushes events to the queue."""
 
-    def _make_track_response(self, track_name="Drums"):
+    def _make_track_response(self, track_name: Any = "Drums") -> LLMResponse:
+
         """LLMResponse with stori_add_midi_track + stori_add_midi_region."""
         response = LLMResponse(content=None, usage={"prompt_tokens": 10, "completion_tokens": 20})
         response.tool_calls = [
@@ -3038,7 +3210,8 @@ class TestRunInstrumentAgent:
         return response
 
     @pytest.mark.anyio
-    async def test_agent_puts_tool_call_events_in_queue(self):
+    async def test_agent_puts_tool_call_events_in_queue(self) -> None:
+
         """Instrument agent puts toolCall SSE events into the shared queue."""
         from app.core.maestro_agent_teams import _run_instrument_agent
 
@@ -3055,7 +3228,7 @@ class TestRunInstrumentAgent:
         llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
         trace = _make_trace()
 
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3084,7 +3257,8 @@ class TestRunInstrumentAgent:
         assert "toolStart" in event_types
 
     @pytest.mark.anyio
-    async def test_agent_marks_steps_failed_on_llm_error(self):
+    async def test_agent_marks_steps_failed_on_llm_error(self) -> None:
+
         """When the LLM call raises, all owned plan steps are marked failed."""
         from app.core.maestro_agent_teams import _run_instrument_agent
 
@@ -3097,13 +3271,14 @@ class TestRunInstrumentAgent:
         )
 
         llm = _make_llm_mock()
-        async def _failing_stream(*args, **kwargs):
+        async def _failing_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
+
             raise RuntimeError("LLM down")
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # type: ignore[unreachable]  # makes this an async generator
         llm.chat_completion_stream = MagicMock(side_effect=_failing_stream)
         trace = _make_trace()
 
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3132,7 +3307,8 @@ class TestRunInstrumentAgent:
         assert any(e.get("status") == "failed" for e in step_events)
 
     @pytest.mark.anyio
-    async def test_agent_makes_exactly_one_llm_call(self):
+    async def test_agent_makes_exactly_one_llm_call(self) -> None:
+
         """Each instrument agent makes exactly one independent streaming LLM call."""
         from app.core.maestro_agent_teams import _run_instrument_agent
 
@@ -3148,7 +3324,7 @@ class TestRunInstrumentAgent:
         resp = self._make_track_response("Bass")
         llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
         trace = _make_trace()
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3174,7 +3350,8 @@ class TestRunInstrumentAgent:
 class TestAgentTeamPhases:
     """_handle_composition_agent_team() honours phase ordering."""
 
-    def _make_route_for_team(self):
+    def _make_route_for_team(self) -> IntentResult:
+
         from app.core.intent import Intent, IntentResult, SSEState
         return IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -3194,7 +3371,8 @@ class TestAgentTeamPhases:
         )
 
     @pytest.mark.anyio
-    async def test_plan_event_emitted_before_agents(self):
+    async def test_plan_event_emitted_before_agents(self) -> None:
+
         """plan event is emitted before any instrument agents start."""
         from app.core.maestro_agent_teams import _handle_composition_agent_team
 
@@ -3225,7 +3403,8 @@ class TestAgentTeamPhases:
             assert plan_idx < first_tool_idx
 
     @pytest.mark.anyio
-    async def test_complete_event_emitted_at_end(self):
+    async def test_complete_event_emitted_at_end(self) -> None:
+
         """complete event is emitted once, at the end."""
         from app.core.maestro_agent_teams import _handle_composition_agent_team
 
@@ -3253,7 +3432,8 @@ class TestAgentTeamPhases:
         assert last_event["type"] == "complete"
 
     @pytest.mark.anyio
-    async def test_phase1_tempo_applied_before_agents(self):
+    async def test_phase1_tempo_applied_before_agents(self) -> None:
+
         """Phase 1 emits toolCall for stori_set_tempo before instrument agents run."""
         from app.core.maestro_agent_teams import _handle_composition_agent_team
 
@@ -3282,7 +3462,8 @@ class TestAgentTeamPhases:
 class TestAgentTeamFailureIsolation:
     """A failing instrument agent does not cancel sibling agents."""
 
-    def _make_route_for_team(self):
+    def _make_route_for_team(self) -> IntentResult:
+
         from app.core.intent import Intent, IntentResult, SSEState
         return IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -3302,7 +3483,8 @@ class TestAgentTeamFailureIsolation:
         )
 
     @pytest.mark.anyio
-    async def test_one_failing_agent_does_not_cancel_others(self):
+    async def test_one_failing_agent_does_not_cancel_others(self) -> None:
+
         """When one instrument agent's LLM call fails, others still complete."""
         from app.core.maestro_agent_teams import _handle_composition_agent_team
 
@@ -3313,12 +3495,13 @@ class TestAgentTeamFailureIsolation:
 
         agent_call_count = 0
 
-        def agent_stream_side_effect(*args, **kwargs):
+        def agent_stream_side_effect(*args: Any, **kwargs: Any) -> Any:
+
             nonlocal agent_call_count
             agent_call_count += 1
             current_call = agent_call_count
 
-            async def _stream():
+            async def _stream() -> AsyncGenerator[dict[str, Any], None]:
                 if current_call == 1:
                     raise RuntimeError("drums LLM failed")
                 response = LLMResponse(content=None, usage={})
@@ -3349,7 +3532,8 @@ class TestAgentTeamFailureIsolation:
         assert agent_call_count >= 2
 
     @pytest.mark.anyio
-    async def test_complete_event_emitted_even_when_all_agents_fail(self):
+    async def test_complete_event_emitted_even_when_all_agents_fail(self) -> None:
+
         """complete event fires even if every instrument agent fails."""
         from app.core.maestro_agent_teams import _handle_composition_agent_team
 
@@ -3358,10 +3542,11 @@ class TestAgentTeamFailureIsolation:
         store = StateStore(conversation_id="test-all-fail")
         trace = _make_trace()
 
-        def all_fail(*args, **kwargs):
-            async def _fail():
+        def all_fail(*args: Any, **kwargs: Any) -> Any:
+
+            async def _fail() -> AsyncGenerator[Any, None]:
                 raise RuntimeError("all down")
-                yield  # noqa: unreachable
+                yield  # type: ignore[unreachable]
             return _fail()
 
         llm = _make_llm_mock()
@@ -3390,7 +3575,8 @@ class TestIsAdditiveCompositionBug3:
     The fix: any parsed prompt with 2+ roles always returns True.
     """
 
-    def test_two_roles_returns_true_even_when_all_tracks_exist(self):
+    def test_two_roles_returns_true_even_when_all_tracks_exist(self) -> None:
+
         """2-role STORI PROMPT → True even if both tracks already exist."""
         from app.core.maestro_editing import _is_additive_composition
 
@@ -3403,7 +3589,8 @@ class TestIsAdditiveCompositionBug3:
         }
         assert _is_additive_composition(parsed, project_context) is True
 
-    def test_single_role_existing_track_returns_false(self):
+    def test_single_role_existing_track_returns_false(self) -> None:
+
         """1-role prompt where the track exists → False (original behaviour)."""
         from app.core.maestro_editing import _is_additive_composition
 
@@ -3413,7 +3600,8 @@ class TestIsAdditiveCompositionBug3:
         }
         assert _is_additive_composition(parsed, project_context) is False
 
-    def test_single_role_new_track_returns_true(self):
+    def test_single_role_new_track_returns_true(self) -> None:
+
         """1-role prompt for a brand-new track → True (existing behaviour)."""
         from app.core.maestro_editing import _is_additive_composition
 
@@ -3423,7 +3611,8 @@ class TestIsAdditiveCompositionBug3:
         }
         assert _is_additive_composition(parsed, project_context) is True
 
-    def test_no_parsed_returns_false(self):
+    def test_no_parsed_returns_false(self) -> None:
+
         """None parsed → False (guard clause)."""
         from app.core.maestro_editing import _is_additive_composition
 
@@ -3437,7 +3626,8 @@ class TestBuildCompositionSummaryBug1:
     alongside tracksCreated so the frontend shows correct labels.
     """
 
-    def test_reused_track_appears_in_tracks_reused(self):
+    def test_reused_track_appears_in_tracks_reused(self) -> None:
+
         """Synthetic _reused_track entries populate tracksReused."""
         from app.core.maestro_agent_teams import _build_composition_summary
 
@@ -3454,7 +3644,8 @@ class TestBuildCompositionSummaryBug1:
         assert summary["tracksCreated"][0]["name"] == "Bass"
         assert summary["trackCount"] == 2
 
-    def test_no_reused_tracks_gives_empty_list(self):
+    def test_no_reused_tracks_gives_empty_list(self) -> None:
+
         """When no tracks are reused, tracksReused is an empty list."""
         from app.core.maestro_agent_teams import _build_composition_summary
 
@@ -3474,7 +3665,8 @@ class TestAgentTeamExistingTrackReuse:
     all agents received the same (first) trackId instead of their own.
     """
 
-    def _make_route_for_team(self):
+    def _make_route_for_team(self) -> IntentResult:
+
         from app.core.intent import Intent, IntentResult, SSEState
         return IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -3494,7 +3686,8 @@ class TestAgentTeamExistingTrackReuse:
         )
 
     @pytest.mark.anyio
-    async def test_existing_track_injects_reused_track_into_summary(self):
+    async def test_existing_track_injects_reused_track_into_summary(self) -> None:
+
         """When a track exists, summary.final includes it in tracksReused."""
         from app.core.maestro_agent_teams import _handle_composition_agent_team
 
@@ -3534,7 +3727,8 @@ class TestAgentTeamExistingTrackReuse:
         )
 
     @pytest.mark.anyio
-    async def test_existing_track_system_prompt_skips_create(self):
+    async def test_existing_track_system_prompt_skips_create(self) -> None:
+
         """Reusing agent's system prompt does not ask to call stori_add_midi_track."""
         from app.core.maestro_agent_teams import _run_instrument_agent
 
@@ -3545,20 +3739,21 @@ class TestAgentTeamExistingTrackReuse:
             "add chorus",
             {"tracks": [{"name": "Drums", "trackId": "d1", "regions": []}]},
         )
-        captured_messages: list = []
+        captured_messages: list[dict[str, Any]] = []
 
-        def capture_stream(*args, **kwargs):
+        def capture_stream(*args: Any, **kwargs: Any) -> Any:
+
             captured_messages.extend(kwargs.get("messages", []))
             r = LLMResponse(content=None, usage={})
             r.tool_calls = []
-            async def _stream():
+            async def _stream() -> AsyncGenerator[dict[str, Any], None]:
                 yield {"type": "done", "content": None, "tool_calls": [], "finish_reason": "stop", "usage": {}}
             return _stream()
 
         llm = _make_llm_mock()
         llm.chat_completion_stream = MagicMock(side_effect=capture_stream)
         trace = _make_trace()
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3588,7 +3783,8 @@ class TestAgentTeamExistingTrackReuse:
         assert "beat 16" in sys_text
 
     @pytest.mark.anyio
-    async def test_each_agent_receives_its_own_distinct_track_id(self):
+    async def test_each_agent_receives_its_own_distinct_track_id(self) -> None:
+
         """Every parallel agent must receive its OWN trackId, not the first one.
 
         Regression test for the follow-up bug: all agents were receiving
@@ -3612,14 +3808,15 @@ class TestAgentTeamExistingTrackReuse:
 
         captured_system_prompts: list[str] = []
 
-        def capture_stream(*args, **kwargs):
+        def capture_stream(*args: Any, **kwargs: Any) -> Any:
+
             msgs = kwargs.get("messages", args[0] if args else [])
             for m in msgs:
                 if m.get("role") == "system":
                     captured_system_prompts.append(m["content"])
             r = LLMResponse(content=None, usage={})
             r.tool_calls = []
-            async def _stream():
+            async def _stream() -> AsyncGenerator[dict[str, Any], None]:
                 yield {"type": "done", "content": None, "tool_calls": [], "finish_reason": "stop", "usage": {}}
             return _stream()
 
@@ -3643,7 +3840,8 @@ class TestAgentTeamExistingTrackReuse:
             )
 
     @pytest.mark.anyio
-    async def test_client_id_key_resolved_same_as_trackid_key(self):
+    async def test_client_id_key_resolved_same_as_trackid_key(self) -> None:
+
         """project_context tracks with 'id' key (DAW format) work like 'trackId'."""
         from app.core.maestro_agent_teams import _handle_composition_agent_team
 
@@ -3661,14 +3859,15 @@ class TestAgentTeamExistingTrackReuse:
 
         captured_system_prompts: list[str] = []
 
-        def capture_stream(*args, **kwargs):
+        def capture_stream(*args: Any, **kwargs: Any) -> Any:
+
             msgs = kwargs.get("messages", args[0] if args else [])
             for m in msgs:
                 if m.get("role") == "system":
                     captured_system_prompts.append(m["content"])
             r = LLMResponse(content=None, usage={})
             r.tool_calls = []
-            async def _stream():
+            async def _stream() -> AsyncGenerator[dict[str, Any], None]:
                 yield {"type": "done", "content": None, "tool_calls": [], "finish_reason": "stop", "usage": {}}
             return _stream()
 
@@ -3691,9 +3890,6 @@ class TestAgentTeamExistingTrackReuse:
         )
 
 
-import asyncio
-
-
 # =============================================================================
 # Frontend parity: suppress coordinator reasoning, icon validation, agentId,
 # summary.final text
@@ -3703,7 +3899,8 @@ import asyncio
 class TestSuppressCoordinatorReasoningForStoriPrompt:
     """Coordinator reasoning is suppressed for STORI PROMPT requests."""
 
-    def _make_route_for_team(self):
+    def _make_route_for_team(self) -> IntentResult:
+
         from app.core.intent import Intent, IntentResult, SSEState
         return IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -3723,7 +3920,8 @@ class TestSuppressCoordinatorReasoningForStoriPrompt:
         )
 
     @pytest.mark.anyio
-    async def test_no_reasoning_events_from_coordinator(self):
+    async def test_no_reasoning_events_from_coordinator(self) -> None:
+
         """STORI PROMPT compositions emit zero reasoning events without agentId."""
         from app.core.maestro_agent_teams import _handle_composition_agent_team
 
@@ -3757,7 +3955,8 @@ class TestIconValidation:
     """Icon validation: invalid icons fall back to name-inferred defaults."""
 
     @pytest.mark.anyio
-    async def test_invalid_icon_replaced_by_inferred(self):
+    async def test_invalid_icon_replaced_by_inferred(self) -> None:
+
         """An LLM-provided icon not in the curated set is replaced by inference."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -3778,7 +3977,8 @@ class TestIconValidation:
         assert outcome.enriched_params["icon"] == "instrument.violin"
 
     @pytest.mark.anyio
-    async def test_missing_icon_autoassigned(self):
+    async def test_missing_icon_autoassigned(self) -> None:
+
         """When no icon is provided, one is inferred from the track name."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -3799,7 +3999,8 @@ class TestIconValidation:
         assert outcome.enriched_params["icon"] == "instrument.drum"
 
     @pytest.mark.anyio
-    async def test_valid_icon_is_emitted(self):
+    async def test_valid_icon_is_emitted(self) -> None:
+
         """An icon in the curated set is emitted normally."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -3826,7 +4027,8 @@ class TestIconValidation:
         assert icon_param == "pianokeys"
 
     @pytest.mark.anyio
-    async def test_valid_icon_passthrough(self):
+    async def test_valid_icon_passthrough(self) -> None:
+
         """A valid LLM-provided icon is kept as-is."""
         from app.core.maestro_editing import _apply_single_tool_call
 
@@ -3850,7 +4052,8 @@ class TestIconValidation:
 class TestGmIconsAllValid:
     """Every icon returned by icon_for_gm_program must be in the curated set."""
 
-    def test_all_gm_icons_in_curated_set(self):
+    def test_all_gm_icons_in_curated_set(self) -> None:
+
         """All 128 GM programs map to icons in VALID_SF_SYMBOL_ICONS."""
         from app.core.gm_instruments import DRUM_ICON, icon_for_gm_program
         from app.core.tool_validation import VALID_SF_SYMBOL_ICONS
@@ -3869,7 +4072,8 @@ class TestAgentReasoningEventsCarryAgentId:
     """Reasoning events from instrument agents include agentId."""
 
     @pytest.mark.anyio
-    async def test_agent_reasoning_events_have_agent_id(self):
+    async def test_agent_reasoning_events_have_agent_id(self) -> None:
+
         """Reasoning deltas from instrument agent stream include agentId."""
         from app.core.maestro_agent_teams import _run_instrument_agent
 
@@ -3883,7 +4087,8 @@ class TestAgentReasoningEventsCarryAgentId:
 
         llm = _make_llm_mock()
 
-        async def _stream_with_reasoning(*args, **kwargs):
+        async def _stream_with_reasoning(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+
             yield {"type": "reasoning_delta", "text": "Walking bass follows chord roots"}
             resp = LLMResponse(content=None, usage={})
             resp.tool_calls = [
@@ -3897,7 +4102,7 @@ class TestAgentReasoningEventsCarryAgentId:
 
         llm.chat_completion_stream = MagicMock(side_effect=_stream_with_reasoning)
         trace = _make_trace()
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3929,7 +4134,8 @@ class TestAgentReasoningEventsCarryAgentId:
             )
 
     @pytest.mark.anyio
-    async def test_plan_step_updates_carry_agent_id(self):
+    async def test_plan_step_updates_carry_agent_id(self) -> None:
+
         """planStepUpdate events from instrument agents include agentId."""
         from app.core.maestro_agent_teams import _run_instrument_agent
 
@@ -3948,7 +4154,7 @@ class TestAgentReasoningEventsCarryAgentId:
         ]
         llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
         trace = _make_trace()
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3982,7 +4188,8 @@ class TestAgentReasoningEventsCarryAgentId:
 class TestSummaryFinalText:
     """summary.final includes a human-readable text field."""
 
-    def test_text_field_present_in_summary(self):
+    def test_text_field_present_in_summary(self) -> None:
+
         """_build_composition_summary includes text when context is provided."""
         from app.core.maestro_agent_teams import _build_composition_summary
 
@@ -4007,7 +4214,8 @@ class TestSummaryFinalText:
         assert "Bass" in text
         assert "93 notes" in text
 
-    def test_text_field_present_without_context(self):
+    def test_text_field_present_without_context(self) -> None:
+
         """_build_composition_summary includes text even without musical context."""
         from app.core.maestro_agent_teams import _build_composition_summary
 
@@ -4020,7 +4228,8 @@ class TestSummaryFinalText:
         assert isinstance(summary["text"], str)
         assert len(summary["text"]) > 0
 
-    def test_extended_composition_uses_verb_extended(self):
+    def test_extended_composition_uses_verb_extended(self) -> None:
+
         """When tracks are reused, the summary uses 'Extended' verb."""
         from app.core.maestro_agent_teams import _build_composition_summary
 

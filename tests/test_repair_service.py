@@ -2,18 +2,23 @@
 
 Covers apply_drum_repair instructions and repair_drum_if_needed threshold logic.
 """
+from __future__ import annotations
+
+from typing import Any
 import random
 import pytest
 from app.services.repair import apply_drum_repair, repair_drum_if_needed
 from app.core.music_spec_ir import DrumSpec, DrumConstraints, DensityTarget, DrumLayerSpec, default_drum_spec
 
 
-def _make_drum_spec(**overrides) -> DrumSpec:
+def _make_drum_spec(**overrides: Any) -> DrumSpec:
+
     """Build a minimal DrumSpec for testing."""
     return default_drum_spec(style="boom_bap", bars=8)
 
 
-def _basic_kick_snare_hats(bars=4):
+def _basic_kick_snare_hats(bars: Any = 4) -> list[dict[str, Any]]:
+
     """Generate a basic kick/snare/hat pattern."""
     notes = []
     for bar in range(bars):
@@ -27,7 +32,8 @@ def _basic_kick_snare_hats(bars=4):
 
 class TestApplyDrumRepair:
 
-    def test_instrument_coverage_low_ghost(self):
+    def test_instrument_coverage_low_ghost(self) -> None:
+
         """instrument_coverage_low with ghost adds ghost notes."""
         notes = _basic_kick_snare_hats(8)
         spec = _make_drum_spec()
@@ -40,7 +46,8 @@ class TestApplyDrumRepair:
         ghost_notes = [n for n in repaired if n["pitch"] in (37, 40, 41)]
         assert len(ghost_notes) > 0
 
-    def test_no_fill_adds_fills(self):
+    def test_no_fill_adds_fills(self) -> None:
+
         """no_fill instruction adds fill notes in fill bars."""
         notes = _basic_kick_snare_hats(8)
         spec = _make_drum_spec()
@@ -54,7 +61,8 @@ class TestApplyDrumRepair:
         fill_notes = [n for n in repaired if n["pitch"] in (41, 43, 45, 47)]
         assert len(fill_notes) > 0
 
-    def test_hats_repetitive_adds_open_hat(self):
+    def test_hats_repetitive_adds_open_hat(self) -> None:
+
         """hats_repetitive adds open hat (46) on beat 4."""
         notes = _basic_kick_snare_hats(8)
         spec = _make_drum_spec()
@@ -66,7 +74,8 @@ class TestApplyDrumRepair:
         open_hats = [n for n in repaired if n["pitch"] == 46]
         assert len(open_hats) > 0
 
-    def test_velocity_flat_adds_dynamics(self):
+    def test_velocity_flat_adds_dynamics(self) -> None:
+
         """velocity_flat adjusts velocities: accent beats 1/3, reduce upbeats."""
         notes = _basic_kick_snare_hats(4)
         spec = _make_drum_spec()
@@ -79,14 +88,16 @@ class TestApplyDrumRepair:
         kick_on_beat1 = [n for n in repaired if n["pitch"] == 36 and abs(n["start_beat"] % 4) < 0.2]
         assert any(n["velocity"] > 100 for n in kick_on_beat1)
 
-    def test_empty_instructions_no_change(self):
+    def test_empty_instructions_no_change(self) -> None:
+
         """No repair instructions leaves notes unchanged (except salience cap + sort)."""
         notes = _basic_kick_snare_hats(4)
         spec = _make_drum_spec()
         repaired = apply_drum_repair(notes, spec, [])
         assert len(repaired) == len(notes)
 
-    def test_sorted_output(self):
+    def test_sorted_output(self) -> None:
+
         """Output is sorted by (startBeat, pitch)."""
         notes = _basic_kick_snare_hats(4)
         spec = _make_drum_spec()
@@ -102,7 +113,8 @@ class TestApplyDrumRepair:
 
 class TestRepairDrumIfNeeded:
 
-    def test_above_threshold_no_repair(self):
+    def test_above_threshold_no_repair(self) -> None:
+
         """Score above threshold returns original notes."""
         notes = _basic_kick_snare_hats(4)
         spec = _make_drum_spec()
@@ -112,7 +124,8 @@ class TestRepairDrumIfNeeded:
         assert was_repaired is False
         assert result is notes
 
-    def test_below_threshold_triggers_repair(self):
+    def test_below_threshold_triggers_repair(self) -> None:
+
         """Score below threshold triggers repair."""
         notes = _basic_kick_snare_hats(4)
         spec = _make_drum_spec()
@@ -122,7 +135,8 @@ class TestRepairDrumIfNeeded:
         assert was_repaired is True
         assert result is not notes
 
-    def test_no_instructions_no_repair(self):
+    def test_no_instructions_no_repair(self) -> None:
+
         """Empty instructions means no repair even if score is low."""
         notes = _basic_kick_snare_hats(4)
         spec = _make_drum_spec()

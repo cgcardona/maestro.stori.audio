@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from app.core.expansion import ToolCall
 from app.core.plan_schemas import PlanValidationResult
@@ -16,8 +16,8 @@ class ExecutionPlan:
     tool_calls: list[ToolCall] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     safety_validated: bool = False
-    llm_response_text: Optional[str] = None
-    validation_result: Optional[PlanValidationResult] = None
+    llm_response_text: str | None = None
+    validation_result: PlanValidationResult | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {

@@ -1,4 +1,5 @@
 """Project-level MCP tool definitions."""
+from __future__ import annotations
 
 PROJECT_TOOLS = [
     {
@@ -71,7 +72,7 @@ Use this to understand the current composition before making changes.""",
     },
     {
         "name": "stori_set_key",
-        "description": "Set the project key signature (e.g. Cm, F# minor).",
+        "description": "set the project key signature (e.g. Cm, F# minor).",
         "inputSchema": {
             "type": "object",
             "properties": {

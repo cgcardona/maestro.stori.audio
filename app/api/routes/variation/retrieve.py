@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Depends
 
 from app.auth.dependencies import require_valid_token
@@ -16,8 +18,8 @@ logger = logging.getLogger(__name__)
 @router.get("/variation/{variation_id}")
 async def get_variation(
     variation_id: str,
-    token_claims: dict = Depends(require_valid_token),
-):
+    token_claims: dict[str, Any] = Depends(require_valid_token),
+) -> dict[str, Any]:
     """
     Poll variation status and phrases (for reconnect / non-streaming clients).
 

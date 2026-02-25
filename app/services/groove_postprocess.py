@@ -4,9 +4,11 @@ Groove post-process: microtiming and velocity humanization.
 Uses Groove Engine with style-specific microtiming, swing grids,
 accent maps, and hat articulation rules.
 """
+from __future__ import annotations
+
 import logging
 import random
-from typing import Any, Optional
+from typing import Any
 
 from app.services.groove_engine import (
     apply_groove_map,
@@ -19,17 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 def apply_groove_postprocess(
-    notes: list[dict],
+    notes: list[dict[str, Any]],
     tempo: int = 120,
     *,
     style: str = "trap",
-    humanize_profile: Optional[str] = None,
-    layer_map: Optional[dict] = None,
-    rng: Optional[random.Random] = None,
-    # Legacy params for backward compat (ignored, but accepted)
-    microtiming_jitter_ms: Optional[tuple[int, int]] = None,
-    apply_velocity_curve: bool = True,
-) -> list[dict]:
+    humanize_profile: str | None = None,
+    layer_map: dict[int, str] | None = None,
+    rng: random.Random | None = None,
+) -> list[dict[str, Any]]:
     """
     Apply groove humanization using the Groove Engine.
     
@@ -41,17 +40,15 @@ def apply_groove_postprocess(
     - Ghosts: late (behind the beat)
     
     Args:
-        notes: List of {pitch, startBeat, duration, velocity, ...}
+        notes: list of {pitch, startBeat, duration, velocity, ...}
         tempo: BPM
         style: Music style (e.g., "boom_bap", "trap", "house")
         humanize_profile: Optional feel override ("tight", "laid_back", "pushed")
         layer_map: Optional dict mapping note index -> layer name
         rng: Random number generator for reproducibility
-        microtiming_jitter_ms: Legacy param (ignored - groove engine handles timing)
-        apply_velocity_curve: Legacy param (ignored - groove engine handles velocity)
     
     Returns:
-        List of notes with groove applied (timing + velocity adjusted)
+        list of notes with groove applied (timing + velocity adjusted)
     """
     if not notes:
         return notes
@@ -67,11 +64,11 @@ def apply_groove_postprocess(
 
 
 def apply_groovae_if_available(
-    notes: list[dict],
+    notes: list[dict[str, Any]],
     tempo: int,
     style: str = "trap",
     **kwargs: Any,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """
     Placeholder for future groove-model integration. For now, use Groove Engine.
     """

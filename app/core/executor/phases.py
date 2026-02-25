@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 from app.core.expansion import ToolCall
 
@@ -14,7 +13,7 @@ _PHASE3_TOOLS: set[str] = {
 }
 
 
-def _get_instrument_for_call(call: ToolCall) -> Optional[str]:
+def _get_instrument_for_call(call: ToolCall) -> str | None:
     """Extract the instrument/track name a tool call belongs to.
 
     Returns None for project-level (setup/mixing) calls.

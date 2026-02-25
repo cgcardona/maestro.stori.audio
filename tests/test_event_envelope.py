@@ -4,6 +4,7 @@ Tests for the Event Envelope system.
 Covers envelope construction, serialization, SSE formatting,
 sequence counters, and builder helpers per the v1 canonical spec.
 """
+from __future__ import annotations
 
 import json
 import pytest
@@ -27,7 +28,8 @@ from app.variation.core.event_envelope import (
 class TestEnvelopeConstruction:
     """Test EventEnvelope creation and fields."""
 
-    def test_build_envelope_basic(self):
+    def test_build_envelope_basic(self) -> None:
+
         """build_envelope creates a valid envelope with all fields."""
         envelope = build_envelope(
             event_type="meta",
@@ -47,7 +49,8 @@ class TestEnvelopeConstruction:
         assert isinstance(envelope.timestamp_ms, int)
         assert envelope.timestamp_ms > 0
 
-    def test_envelope_is_immutable(self):
+    def test_envelope_is_immutable(self) -> None:
+
         """EventEnvelope is frozen (immutable)."""
         envelope = build_envelope(
             event_type="meta",
@@ -59,7 +62,8 @@ class TestEnvelopeConstruction:
         with pytest.raises(AttributeError):
             envelope.sequence = 2  # type: ignore[misc]
 
-    def test_envelope_to_dict(self):
+    def test_envelope_to_dict(self) -> None:
+
         """to_dict returns all required fields."""
         envelope = build_envelope(
             event_type="phrase",
@@ -80,7 +84,8 @@ class TestEnvelopeConstruction:
         assert d["payload"] == {"phraseId": "p-1"}
         assert "timestampMs" in d
 
-    def test_envelope_to_json(self):
+    def test_envelope_to_json(self) -> None:
+
         """to_json returns valid JSON string."""
         envelope = build_envelope(
             event_type="done",
@@ -96,7 +101,8 @@ class TestEnvelopeConstruction:
         assert parsed["sequence"] == 5
         assert parsed["payload"]["status"] == "ready"
 
-    def test_envelope_to_sse(self):
+    def test_envelope_to_sse(self) -> None:
+
         """to_sse formats as valid SSE event string."""
         envelope = build_envelope(
             event_type="meta",
@@ -128,12 +134,14 @@ class TestEnvelopeConstruction:
 class TestSequenceCounter:
     """Test monotonic sequence counter."""
 
-    def test_starts_at_zero(self):
+    def test_starts_at_zero(self) -> None:
+
         """Counter starts at 0 (first next() returns 1)."""
         counter = SequenceCounter()
         assert counter.current == 0
 
-    def test_next_increments(self):
+    def test_next_increments(self) -> None:
+
         """next() returns strictly increasing values."""
         counter = SequenceCounter()
 
@@ -141,7 +149,8 @@ class TestSequenceCounter:
         assert counter.next() == 2
         assert counter.next() == 3
 
-    def test_current_tracks_last_value(self):
+    def test_current_tracks_last_value(self) -> None:
+
         """current property returns the last emitted value."""
         counter = SequenceCounter()
 
@@ -152,7 +161,8 @@ class TestSequenceCounter:
         counter.next()
         assert counter.current == 3
 
-    def test_reset(self):
+    def test_reset(self) -> None:
+
         """reset() brings counter back to 0."""
         counter = SequenceCounter()
         counter.next()
@@ -162,7 +172,8 @@ class TestSequenceCounter:
         assert counter.current == 0
         assert counter.next() == 1
 
-    def test_sequence_never_repeats(self):
+    def test_sequence_never_repeats(self) -> None:
+
         """Sequence values are unique and strictly increasing."""
         counter = SequenceCounter()
         seen = set()
@@ -183,7 +194,8 @@ class TestSequenceCounter:
 class TestBuilderHelpers:
     """Test convenience builder functions."""
 
-    def test_build_meta_envelope(self):
+    def test_build_meta_envelope(self) -> None:
+
         """Meta envelope has correct structure."""
         envelope = build_meta_envelope(
             variation_id="var-1",
@@ -203,7 +215,8 @@ class TestBuilderHelpers:
         assert envelope.payload["affectedTracks"] == ["track-1"]
         assert envelope.payload["noteCounts"]["modified"] == 4
 
-    def test_build_phrase_envelope(self):
+    def test_build_phrase_envelope(self) -> None:
+
         """Phrase envelope has correct structure."""
         phrase_data = {
             "phraseId": "p-1",
@@ -228,7 +241,8 @@ class TestBuilderHelpers:
         assert envelope.payload["phraseId"] == "p-1"
         assert envelope.payload["startBeat"] == 0.0
 
-    def test_build_done_envelope(self):
+    def test_build_done_envelope(self) -> None:
+
         """Done envelope has correct structure."""
         envelope = build_done_envelope(
             variation_id="var-1",
@@ -244,7 +258,8 @@ class TestBuilderHelpers:
         assert envelope.payload["status"] == "ready"
         assert envelope.payload["phraseCount"] == 3
 
-    def test_build_done_envelope_failed(self):
+    def test_build_done_envelope_failed(self) -> None:
+
         """Done envelope with failed status."""
         envelope = build_done_envelope(
             variation_id="var-1",
@@ -257,7 +272,8 @@ class TestBuilderHelpers:
 
         assert envelope.payload["status"] == "failed"
 
-    def test_build_error_envelope(self):
+    def test_build_error_envelope(self) -> None:
+
         """Error envelope has correct structure."""
         envelope = build_error_envelope(
             variation_id="var-1",
@@ -281,7 +297,8 @@ class TestBuilderHelpers:
 class TestOrderingInvariants:
     """Test that event ordering follows the v1 spec."""
 
-    def test_meta_is_sequence_one(self):
+    def test_meta_is_sequence_one(self) -> None:
+
         """Meta event should be sequence 1."""
         meta = build_meta_envelope(
             variation_id="v-1",
@@ -296,7 +313,8 @@ class TestOrderingInvariants:
 
         assert meta.sequence == 1
 
-    def test_phrases_follow_meta(self):
+    def test_phrases_follow_meta(self) -> None:
+
         """Phrase events should have sequence > 1."""
         counter = SequenceCounter()
         meta_seq = counter.next()  # 1
@@ -306,7 +324,8 @@ class TestOrderingInvariants:
         assert phrase_seq == 2
         assert phrase_seq > meta_seq
 
-    def test_done_is_last(self):
+    def test_done_is_last(self) -> None:
+
         """Done event should have the highest sequence number."""
         counter = SequenceCounter()
         counter.next()  # meta = 1
@@ -317,7 +336,8 @@ class TestOrderingInvariants:
         assert done_seq == 4
         assert done_seq == counter.current
 
-    def test_error_then_done_sequence(self):
+    def test_error_then_done_sequence(self) -> None:
+
         """Error should be followed by done, in strict sequence order."""
         counter = SequenceCounter()
         counter.next()  # meta = 1
@@ -326,7 +346,8 @@ class TestOrderingInvariants:
 
         assert done_seq == error_seq + 1
 
-    def test_full_event_stream_ordering(self):
+    def test_full_event_stream_ordering(self) -> None:
+
         """Simulate a full event stream and verify ordering."""
         counter = SequenceCounter()
         vid = "var-test"

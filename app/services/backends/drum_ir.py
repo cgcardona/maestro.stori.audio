@@ -5,8 +5,10 @@ Renders DrumSpec + GlobalSpec → MIDI notes. Used only for instrument="drums".
 Uses Groove Engine for style-specific microtiming.
 Accepts optional music_spec from orchestrator. Post: critic + IR-aware repair.
 """
+from __future__ import annotations
+
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.services.backends.base import (
     MusicGeneratorBackend,
@@ -45,9 +47,9 @@ class DrumSpecBackend(MusicGeneratorBackend):
         style: str,
         tempo: int,
         bars: int,
-        key: Optional[str] = None,
-        chords: Optional[list[str]] = None,
-        **kwargs,
+        key: str | None = None,
+        chords: list[str] | None = None,
+        **kwargs: Any,
     ) -> GenerationResult:
         if instrument != "drums":
             return GenerationResult(
@@ -58,7 +60,7 @@ class DrumSpecBackend(MusicGeneratorBackend):
                 error="DrumSpecBackend only handles drums",
             )
         try:
-            music_spec: Optional[MusicSpec] = kwargs.get("music_spec")
+            music_spec: MusicSpec | None = kwargs.get("music_spec")
             if music_spec and music_spec.drum_spec and music_spec.global_spec:
                 drum_spec = music_spec.drum_spec
                 global_spec = music_spec.global_spec

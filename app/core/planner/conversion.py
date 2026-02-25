@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from app.core.expansion import ToolCall
 from app.core.gm_instruments import infer_gm_program
@@ -10,7 +10,7 @@ from app.core.plan_schemas import ExecutionPlanSchema
 from app.core.planner.track_matching import _build_role_to_track_map
 
 
-def _beats_per_bar(project_state: Optional[dict[str, Any]]) -> int:
+def _beats_per_bar(project_state: dict[str, Any] | None) -> int:
     """Extract beats per bar from project state, defaulting to 4."""
     if project_state:
         ts = project_state.get("time_signature") or project_state.get("timeSignature")
@@ -26,7 +26,7 @@ def _beats_per_bar(project_state: Optional[dict[str, Any]]) -> int:
 def _schema_to_tool_calls(
     plan: ExecutionPlanSchema,
     region_start_offset: float = 0.0,
-    project_state: Optional[dict[str, Any]] = None,
+    project_state: dict[str, Any] | None = None,
 ) -> list[ToolCall]:
     """
     Convert validated plan schema to ToolCalls.

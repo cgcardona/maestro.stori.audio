@@ -16,7 +16,7 @@ Extra fields policy:
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import ConfigDict, Field
 
@@ -65,8 +65,8 @@ class ReasoningEvent(StoriEvent):
 
     type: Literal["reasoning"] = "reasoning"
     content: str
-    agent_id: Optional[str] = None
-    section_name: Optional[str] = None
+    agent_id: str | None = None
+    section_name: str | None = None
 
 
 class ReasoningEndEvent(StoriEvent):
@@ -74,7 +74,7 @@ class ReasoningEndEvent(StoriEvent):
 
     type: Literal["reasoningEnd"] = "reasoningEnd"
     agent_id: str
-    section_name: Optional[str] = None
+    section_name: str | None = None
 
 
 class ContentEvent(StoriEvent):
@@ -89,8 +89,8 @@ class StatusEvent(StoriEvent):
 
     type: Literal["status"] = "status"
     message: str
-    agent_id: Optional[str] = None
-    section_name: Optional[str] = None
+    agent_id: str | None = None
+    section_name: str | None = None
 
 
 class ErrorEvent(StoriEvent):
@@ -98,8 +98,8 @@ class ErrorEvent(StoriEvent):
 
     type: Literal["error"] = "error"
     message: str
-    trace_id: Optional[str] = None
-    code: Optional[str] = None
+    trace_id: str | None = None
+    code: str | None = None
 
 
 class CompleteEvent(StoriEvent):
@@ -112,17 +112,17 @@ class CompleteEvent(StoriEvent):
     context_window_tokens: int = 0
 
     # EDITING mode
-    tool_calls: Optional[list[dict[str, Any]]] = None
-    state_version: Optional[int] = None
+    tool_calls: list[dict[str, Any]] | None = None
+    state_version: int | None = None
 
     # COMPOSING mode
-    variation_id: Optional[str] = None
-    phrase_count: Optional[int] = None
-    total_changes: Optional[int] = None
+    variation_id: str | None = None
+    phrase_count: int | None = None
+    total_changes: int | None = None
 
     # Error info
-    error: Optional[str] = None
-    warnings: Optional[list[str]] = None
+    error: str | None = None
+    warnings: list[str] | None = None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -138,9 +138,9 @@ class PlanStepSchema(CamelModel):
     step_id: str
     label: str
     status: Literal["pending", "active", "completed", "failed", "skipped"] = "pending"
-    tool_name: Optional[str] = None
-    detail: Optional[str] = None
-    parallel_group: Optional[str] = None
+    tool_name: str | None = None
+    detail: str | None = None
+    parallel_group: str | None = None
     phase: str = "composition"
 
 
@@ -160,8 +160,8 @@ class PlanStepUpdateEvent(StoriEvent):
     step_id: str
     status: Literal["active", "completed", "failed", "skipped"]
     phase: str = "composition"
-    result: Optional[str] = None
-    agent_id: Optional[str] = None
+    result: str | None = None
+    agent_id: str | None = None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -176,8 +176,8 @@ class ToolStartEvent(StoriEvent):
     name: str
     label: str
     phase: str = "composition"
-    agent_id: Optional[str] = None
-    section_name: Optional[str] = None
+    agent_id: str | None = None
+    section_name: str | None = None
 
 
 class ToolCallEvent(StoriEvent):
@@ -187,11 +187,11 @@ class ToolCallEvent(StoriEvent):
     id: str
     name: str
     params: dict[str, Any]
-    label: Optional[str] = None
+    label: str | None = None
     phase: str = "composition"
-    proposal: Optional[bool] = None
-    agent_id: Optional[str] = None
-    section_name: Optional[str] = None
+    proposal: bool | None = None
+    agent_id: str | None = None
+    section_name: str | None = None
 
 
 class ToolErrorEvent(StoriEvent):
@@ -200,9 +200,9 @@ class ToolErrorEvent(StoriEvent):
     type: Literal["toolError"] = "toolError"
     name: str
     error: str
-    errors: Optional[list[str]] = None
-    agent_id: Optional[str] = None
-    section_name: Optional[str] = None
+    errors: list[str] | None = None
+    agent_id: str | None = None
+    section_name: str | None = None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -219,9 +219,9 @@ class PreflightEvent(StoriEvent):
     agent_role: str
     label: str
     tool_name: str
-    parallel_group: Optional[str] = None
+    parallel_group: str | None = None
     confidence: float = 0.9
-    track_color: Optional[str] = None
+    track_color: str | None = None
 
 
 class GeneratorStartEvent(StoriEvent):
@@ -234,7 +234,7 @@ class GeneratorStartEvent(StoriEvent):
     bars: int
     start_beat: float
     label: str
-    section_name: Optional[str] = None
+    section_name: str | None = None
 
 
 class GeneratorCompleteEvent(StoriEvent):
@@ -245,7 +245,7 @@ class GeneratorCompleteEvent(StoriEvent):
     agent_id: str
     note_count: int
     duration_ms: int
-    section_name: Optional[str] = None
+    section_name: str | None = None
 
 
 class AgentCompleteEvent(StoriEvent):
@@ -286,7 +286,7 @@ class SummaryFinalEvent(StoriEvent):
     sends_created: int = 0
     cc_envelopes: list[dict[str, Any]] = Field(default_factory=list)
     automation_lanes: int = 0
-    text: Optional[str] = None
+    text: str | None = None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -301,8 +301,8 @@ class NoteChangeSchema(CamelModel):
 
     note_id: str
     change_type: Literal["added", "removed", "modified"]
-    before: Optional[dict[str, Any]] = None
-    after: Optional[dict[str, Any]] = None
+    before: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
 
 
 class ControllerChangeSchema(CamelModel):
@@ -312,8 +312,8 @@ class ControllerChangeSchema(CamelModel):
 
     cc_number: int
     change_type: Literal["added", "removed", "modified"]
-    before: Optional[dict[str, Any]] = None
-    after: Optional[dict[str, Any]] = None
+    before: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
 
 
 class MetaEvent(StoriEvent):
@@ -323,10 +323,10 @@ class MetaEvent(StoriEvent):
     variation_id: str
     base_state_id: str
     intent: str
-    ai_explanation: Optional[str] = None
+    ai_explanation: str | None = None
     affected_tracks: list[str] = Field(default_factory=list)
     affected_regions: list[str] = Field(default_factory=list)
-    note_counts: Optional[dict[str, int]] = None
+    note_counts: dict[str, int] | None = None
 
 
 class PhraseEvent(StoriEvent):
@@ -340,7 +340,7 @@ class PhraseEvent(StoriEvent):
     end_beat: float
     label: str
     tags: list[str] = Field(default_factory=list)
-    explanation: Optional[str] = None
+    explanation: str | None = None
     note_changes: list[NoteChangeSchema] = Field(default_factory=list)
     controller_changes: list[ControllerChangeSchema] = Field(default_factory=list)
 
@@ -351,7 +351,7 @@ class DoneEvent(StoriEvent):
     type: Literal["done"] = "done"
     variation_id: str
     phrase_count: int
-    status: Optional[str] = None
+    status: str | None = None
 
 
 # ═══════════════════════════════════════════════════════════════════════

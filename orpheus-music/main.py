@@ -1,6 +1,10 @@
+from __future__ import annotations
+
+from typing import Any
+
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List, Optional
+
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import json
@@ -14,12 +18,12 @@ tokenizer = None
 class GenerateRequest(BaseModel):
     genre: str = "boom_bap"
     tempo: int = 90
-    instruments: List[str] = ["drums", "bass"]
+    instruments: list[str] = ["drums", "bass"]
     bars: int = 4
-    seed_midi: Optional[str] = None
+    seed_midi: str | None = None
 
 @app.on_event("startup")
-async def load_model():
+async def load_model() -> None:
     global model, tokenizer
     print("Loading Orpheus Music Transformer...")
     model = AutoModelForCausalLM.from_pretrained(
@@ -31,11 +35,11 @@ async def load_model():
     print("Model loaded!")
 
 @app.get("/health")
-async def health():
+async def health() -> dict[str, Any]:
     return {"status": "ok", "model_loaded": model is not None}
 
 @app.post("/generate")
-async def generate(request: GenerateRequest):
+async def generate(request: GenerateRequest) -> dict[str, Any]:
     # For MVP, generate a simple pattern
     # TODO: Use actual model inference
     return {"status": "ok", "midi_data": [], "message": "MVP placeholder"}

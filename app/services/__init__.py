@@ -1,4 +1,6 @@
 """Services for the Stori Maestro."""
+from __future__ import annotations
+
 from app.services.orpheus import OrpheusClient
 from app.services.music_generator import (
     MusicGenerator,

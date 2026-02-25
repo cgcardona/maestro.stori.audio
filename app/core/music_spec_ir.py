@@ -4,8 +4,9 @@ Music Spec IR (Intermediate Representation).
 Schema for plan → generate → edit/repair → judge pipeline.
 See docs/MIDI_SPEC_IR_SCHEMA.md for full spec.
 """
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 # -----------------------------------------------------------------------------
@@ -32,8 +33,8 @@ class GlobalSpec:
     time_signature: tuple[int, int] = (4, 4)
     microtiming_jitter_ms: tuple[int, int] = (-15, 15)  # [min_ms, max_ms] for humanization
     humanize_profile: str = "tight"  # "laid_back" | "tight" | "pushed"
-    section_map: list = field(default_factory=list)  # list of SectionMapEntry
-    energy_curve: Optional[str] = None  # "rise_hold_fall" | "flat" | etc.
+    section_map: list[SectionMapEntry] = field(default_factory=list)
+    energy_curve: str | None = None  # "rise_hold_fall" | "flat" | etc.
 
 
 # -----------------------------------------------------------------------------
@@ -43,12 +44,12 @@ class GlobalSpec:
 @dataclass
 class DensityTarget:
     """Min/max hits per bar or per N bars."""
-    min_hits_per_bar: Optional[int] = None
-    max_hits_per_bar: Optional[int] = None
-    min_hits_per_4_bars: Optional[int] = None
-    max_hits_per_4_bars: Optional[int] = None
-    min_hits_per_8_bars: Optional[int] = None
-    max_hits_per_8_bars: Optional[int] = None
+    min_hits_per_bar: int | None = None
+    max_hits_per_bar: int | None = None
+    min_hits_per_4_bars: int | None = None
+    max_hits_per_4_bars: int | None = None
+    min_hits_per_8_bars: int | None = None
+    max_hits_per_8_bars: int | None = None
 
 
 @dataclass
@@ -60,10 +61,10 @@ class DrumLayerSpec:
     velocity_range: tuple[int, int] = (70, 100)
     required: bool = True
     variation_rate: float = 0.0
-    placement: Optional[str] = None  # e.g. "offbeats_and_before_backbeat"
+    placement: str | None = None  # e.g. "offbeats_and_before_backbeat"
     probability: float = 1.0  # for ear_candy
-    fill_bars: Optional[list[int]] = None  # for fills layer
-    max_fill_density_per_bar: Optional[int] = None
+    fill_bars: list[int] | None = None  # for fills layer
+    max_fill_density_per_bar: int | None = None
 
 
 @dataclass
@@ -95,10 +96,10 @@ class DrumSpec:
     """Full drum spec for IR → notes renderer."""
     style: str = "trap"
     groove_template: str = "trap_straight"
-    layers: dict = field(default_factory=dict)  # layer_name -> DrumLayerSpec
-    salience_weight: dict = field(default_factory=lambda: dict(DEFAULT_SALIENCE_WEIGHT))
+    layers: dict[str, DrumLayerSpec] = field(default_factory=dict)
+    salience_weight: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_SALIENCE_WEIGHT))
     constraints: DrumConstraints = field(default_factory=DrumConstraints)
-    variation_plan: dict = field(default_factory=dict)  # bar_1: "establish", bar_2: "variation_hat", etc.
+    variation_plan: dict[str, str] = field(default_factory=dict)
 
 
 # -----------------------------------------------------------------------------
@@ -241,9 +242,9 @@ class ChordScheduleEntry:
 class HarmonicSpec:
     """Chord plan: chord_schedule (bar → chord), voicing, tension points."""
     chord_rhythm: str = "half_note"  # "whole" | "half_note" | "quarter" | "syncopated"
-    chord_palette: list = field(default_factory=list)  # e.g. ["Cm", "Eb", "Ab", "Gb"]
-    chord_schedule: list = field(default_factory=list)  # list of ChordScheduleEntry
-    tension_points: list = field(default_factory=list)  # bar indices
+    chord_palette: list[str] = field(default_factory=list)
+    chord_schedule: list[ChordScheduleEntry] = field(default_factory=list)
+    tension_points: list[int] = field(default_factory=list)
     voicing: str = "root_third_seventh"  # "root" | "root_third" | "root_third_seventh"
     velocity_range: tuple[int, int] = (70, 95)
 
@@ -252,7 +253,7 @@ def default_harmonic_spec(
     key: str = "C",
     scale: str = "natural_minor",
     bars: int = 16,
-    chords: Optional[list[str]] = None,
+    chords: list[str] | None = None,
 ) -> HarmonicSpec:
     """Build HarmonicSpec from key, bars, and optional chord list."""
     palette = chords or _default_chord_palette(key, scale)
@@ -306,7 +307,7 @@ class MelodySpec:
     """Melody plan: motif, phrase boundaries, contour, rest density."""
     motif_length_bars: int = 2
     call_response: bool = True
-    phrase_boundaries: list = field(default_factory=list)  # e.g. [4, 8, 12, 16]
+    phrase_boundaries: list[int] = field(default_factory=list)
     contour: str = "arc"  # "arc" | "ascending" | "descending" | "wave"
     register: str = "mid_high"  # "low" | "mid" | "mid_high" | "high"
     rest_density: float = 0.3  # fraction of beats that are rest
@@ -329,18 +330,18 @@ class MusicSpec:
     """Full IR: global + drum_spec + bass_spec + harmonic_spec + melody_spec."""
     version: str = "1.0"
     global_spec: GlobalSpec = field(default_factory=GlobalSpec)
-    drum_spec: Optional[DrumSpec] = None
-    bass_spec: Optional[BassSpec] = None
-    harmonic_spec: Optional[HarmonicSpec] = None
-    melody_spec: Optional[MelodySpec] = None
+    drum_spec: DrumSpec | None = None
+    bass_spec: BassSpec | None = None
+    harmonic_spec: HarmonicSpec | None = None
+    melody_spec: MelodySpec | None = None
 
 
 def build_full_music_spec(
     style: str = "trap",
     tempo: int = 120,
     bars: int = 16,
-    key: Optional[str] = None,
-    chords: Optional[list[str]] = None,
+    key: str | None = None,
+    chords: list[str] | None = None,
     *,
     include_drums: bool = True,
     include_bass: bool = True,
@@ -392,7 +393,7 @@ def apply_policy_to_music_spec(
     complexity: float = 0.5,  # syncopation + variation rate
     tension: float = 0.5,  # fill probability, cymbal density
     brightness: float = 0.5,  # cymbal vs tom emphasis
-    groove: Optional[str] = None,  # swing/shuffle override
+    groove: str | None = None,  # swing/shuffle override
 ) -> MusicSpec:
     """
     Apply policy (density, complexity, tension, brightness, groove) to MusicSpec.

@@ -14,6 +14,7 @@ Public API:
     validate_tool_call_simple(tool_name, params, allowed_tools) -> (bool, str)
     validate_tool_calls_batch(tool_calls, allowed_tools, registry) -> list[ValidationResult]
 """
+from __future__ import annotations
 
 from app.core.tool_validation.models import ValidationError, ValidationResult
 from app.core.tool_validation.constants import (

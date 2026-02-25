@@ -7,11 +7,13 @@ Verifies:
 - Replay plan construction and determinism.
 - muse_repository and muse_replay module boundary rules.
 """
+from __future__ import annotations
 
 import ast
 import uuid
 
 import pytest
+from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.database import Base
@@ -28,7 +30,7 @@ from app.services.muse_replay import ReplayPlan
 
 
 @pytest.fixture
-async def async_session():
+async def async_session() -> AsyncGenerator[AsyncSession, None]:
     """Create an in-memory SQLite async session for tests."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
@@ -114,7 +116,8 @@ def _make_variation() -> Variation:
 
 
 @pytest.mark.anyio
-async def test_variation_roundtrip(async_session: AsyncSession):
+async def test_variation_roundtrip(async_session: AsyncSession) -> None:
+
     """Persist a variation, reload it, assert equality."""
     original = _make_variation()
     region_metadata = {
@@ -176,7 +179,8 @@ async def test_variation_roundtrip(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_variation_status_lifecycle(async_session: AsyncSession):
+async def test_variation_status_lifecycle(async_session: AsyncSession) -> None:
+
     """Persist → mark committed → verify status transition."""
     var = _make_variation()
     await muse_repository.save_variation(
@@ -197,7 +201,8 @@ async def test_variation_status_lifecycle(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_variation_discard(async_session: AsyncSession):
+async def test_variation_discard(async_session: AsyncSession) -> None:
+
     """Persist → mark discarded → verify."""
     var = _make_variation()
     await muse_repository.save_variation(
@@ -215,14 +220,16 @@ async def test_variation_discard(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_load_nonexistent_returns_none(async_session: AsyncSession):
+async def test_load_nonexistent_returns_none(async_session: AsyncSession) -> None:
+
     """Load with unknown ID returns None."""
     result = await muse_repository.load_variation(async_session, "nonexistent-id")
     assert result is None
 
 
 @pytest.mark.anyio
-async def test_region_metadata_roundtrip(async_session: AsyncSession):
+async def test_region_metadata_roundtrip(async_session: AsyncSession) -> None:
+
     """Region metadata stored on phrases is retrievable."""
     var = _make_variation()
     region_metadata = {
@@ -246,7 +253,8 @@ async def test_region_metadata_roundtrip(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_phrase_ids_in_order(async_session: AsyncSession):
+async def test_phrase_ids_in_order(async_session: AsyncSession) -> None:
+
     """Phrase IDs returned in sequence order."""
     var = _make_variation()
     await muse_repository.save_variation(
@@ -267,7 +275,8 @@ async def test_phrase_ids_in_order(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_commit_replay_from_db(async_session: AsyncSession):
+async def test_commit_replay_from_db(async_session: AsyncSession) -> None:
+
     """Simulate memory loss: persist variation, reload, verify commit-ready data."""
     original = _make_variation()
     region_metadata = {
@@ -311,6 +320,7 @@ async def test_commit_replay_from_db(async_session: AsyncSession):
 
 
 def _make_child_variation(parent_id: str, intent: str = "child") -> Variation:
+
     """Build a simple variation for lineage tests."""
     vid = str(uuid.uuid4())
     pid = str(uuid.uuid4())
@@ -345,7 +355,8 @@ def _make_child_variation(parent_id: str, intent: str = "child") -> Variation:
 
 
 @pytest.mark.anyio
-async def test_set_and_get_head(async_session: AsyncSession):
+async def test_set_and_get_head(async_session: AsyncSession) -> None:
+
     """set_head marks a variation as HEAD, get_head retrieves it."""
     var = _make_variation()
     await muse_repository.save_variation(
@@ -370,7 +381,8 @@ async def test_set_and_get_head(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_set_head_clears_previous(async_session: AsyncSession):
+async def test_set_head_clears_previous(async_session: AsyncSession) -> None:
+
     """Setting HEAD on one variation clears HEAD from another."""
     var_a = _make_variation()
     var_b = _make_child_variation(var_a.variation_id, "second")
@@ -399,7 +411,8 @@ async def test_set_head_clears_previous(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_move_head(async_session: AsyncSession):
+async def test_move_head(async_session: AsyncSession) -> None:
+
     """move_head moves HEAD pointer without any StateStore involvement."""
     var_a = _make_variation()
     var_b = _make_child_variation(var_a.variation_id, "b")
@@ -424,7 +437,8 @@ async def test_move_head(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_get_children(async_session: AsyncSession):
+async def test_get_children(async_session: AsyncSession) -> None:
+
     """get_children returns child variations."""
     parent = _make_variation()
     child_a = _make_child_variation(parent.variation_id, "child-a")
@@ -452,7 +466,8 @@ async def test_get_children(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_get_lineage(async_session: AsyncSession):
+async def test_get_lineage(async_session: AsyncSession) -> None:
+
     """get_lineage returns root-first path."""
     root = _make_variation()
     mid = _make_child_variation(root.variation_id, "mid")
@@ -490,7 +505,8 @@ async def test_get_lineage(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_replay_plan_linear(async_session: AsyncSession):
+async def test_replay_plan_linear(async_session: AsyncSession) -> None:
+
     """build_replay_plan reconstructs A → B lineage correctly."""
     var_a = _make_variation()
     var_b = _make_child_variation(var_a.variation_id, "child-b")
@@ -518,7 +534,8 @@ async def test_replay_plan_linear(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_replay_plan_single_variation(async_session: AsyncSession):
+async def test_replay_plan_single_variation(async_session: AsyncSession) -> None:
+
     """Replay plan for a root variation (no parent) works correctly."""
     var = _make_variation()
     await muse_repository.save_variation(
@@ -537,7 +554,8 @@ async def test_replay_plan_single_variation(async_session: AsyncSession):
 
 
 @pytest.mark.anyio
-async def test_replay_plan_nonexistent_returns_none(async_session: AsyncSession):
+async def test_replay_plan_nonexistent_returns_none(async_session: AsyncSession) -> None:
+
     """Replay plan for nonexistent variation returns None."""
     plan = await muse_replay.build_replay_plan(
         async_session, "proj-x", "nonexistent",
@@ -546,7 +564,8 @@ async def test_replay_plan_nonexistent_returns_none(async_session: AsyncSession)
 
 
 @pytest.mark.anyio
-async def test_replay_preserves_phrase_ordering(async_session: AsyncSession):
+async def test_replay_preserves_phrase_ordering(async_session: AsyncSession) -> None:
+
     """Restart safety: persist, reload, build plan — phrase order is stable."""
     var_a = _make_variation()
     var_b = _make_child_variation(var_a.variation_id, "after-restart")
@@ -582,7 +601,7 @@ async def test_replay_preserves_phrase_ordering(async_session: AsyncSession):
 # ---------------------------------------------------------------------------
 
 
-def test_muse_repository_boundary():
+def test_muse_repository_boundary() -> None:
     """muse_repository must not import StateStore or executor modules."""
     import importlib
     spec = importlib.util.find_spec("app.services.muse_repository")
@@ -615,7 +634,7 @@ def test_muse_repository_boundary():
 # ---------------------------------------------------------------------------
 
 
-def test_muse_replay_boundary():
+def test_muse_replay_boundary() -> None:
     """muse_replay must not import StateStore, executor, or LLM handlers."""
     import importlib
     spec = importlib.util.find_spec("app.services.muse_replay")

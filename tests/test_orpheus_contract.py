@@ -49,6 +49,7 @@ _DEFAULT_PROFILE = RoleProfile(
 
 
 def _make_role_profile(**overrides: Any) -> RoleProfile:
+
     """Build a RoleProfile with optional field overrides."""
     return dataclasses.replace(_DEFAULT_PROFILE, **overrides)
 
@@ -61,12 +62,14 @@ class TestTensionAxis:
     """Tension MUST cross the boundary as a continuous float."""
 
     def test_tension_in_emotion_vector_dict(self) -> None:
+
         ev = EmotionVector(energy=0.8, valence=-0.3, tension=0.75, intimacy=0.4, motion=0.6)
         d = ev.to_dict()
         assert "tension" in d
         assert d["tension"] == 0.75
 
     def test_tension_round_trip(self) -> None:
+
         ev = EmotionVector(tension=0.9)
         d = ev.to_dict()
         restored = EmotionVector.from_dict(d)
@@ -88,11 +91,13 @@ class TestRoleProfileSummary:
     }
 
     def test_summary_has_all_12_fields(self) -> None:
+
         rp = _make_role_profile()
         summary = rp.to_summary_dict()
         assert set(summary.keys()) == self.EXPECTED_FIELDS
 
     def test_summary_values_match_profile(self) -> None:
+
         rp = _make_role_profile(syncopation_ratio=0.42, swing_ratio=0.18)
         summary = rp.to_summary_dict()
         assert summary["syncopation_ratio"] == pytest.approx(0.42)
@@ -115,6 +120,7 @@ class TestGenerationConstraintsTransmission:
     }
 
     def test_constraints_from_emotion_vector(self) -> None:
+
         ev = EmotionVector(energy=0.8, valence=0.5, tension=0.7, intimacy=0.3, motion=0.9)
         gc = emotion_to_constraints(ev)
         gc_dict = {
@@ -136,6 +142,7 @@ class TestGenerationConstraintsTransmission:
         assert gc_dict["chord_extensions"] is True  # tension 0.7 > 0.5
 
     def test_constraints_deterministic(self) -> None:
+
         ev = EmotionVector(energy=0.5, tension=0.4)
         a = emotion_to_constraints(ev)
         b = emotion_to_constraints(ev)
@@ -149,12 +156,14 @@ class TestGenerationConstraintsTransmission:
 
 class TestObservabilityFields:
     def test_intent_hash_deterministic(self) -> None:
+
         ev = {"energy": 0.5, "valence": 0.0, "tension": 0.3, "intimacy": 0.5, "motion": 0.5}
         h1 = _build_intent_hash(ev, None, None, ["dark"])
         h2 = _build_intent_hash(ev, None, None, ["dark"])
         assert h1 == h2
 
     def test_intent_hash_changes_with_goals(self) -> None:
+
         ev = {"energy": 0.5, "valence": 0.0, "tension": 0.3, "intimacy": 0.5, "motion": 0.5}
         h1 = _build_intent_hash(ev, None, None, ["dark"])
         h2 = _build_intent_hash(ev, None, None, ["bright"])
@@ -169,6 +178,7 @@ class TestCoverageMatrix:
     """Validates that the contract transmits all computed vectors."""
 
     def test_emotion_vector_coverage(self) -> None:
+
         """All 5 EmotionVector axes must be in the payload."""
         ev = EmotionVector(energy=0.8, valence=-0.3, tension=0.7, intimacy=0.4, motion=0.6)
         d = ev.to_dict()
@@ -176,12 +186,14 @@ class TestCoverageMatrix:
         assert required.issubset(d.keys()), f"Missing axes: {required - set(d.keys())}"
 
     def test_role_profile_coverage(self) -> None:
+
         """At least 12 of 40 RoleProfile fields cross the boundary."""
         rp = _make_role_profile()
         summary = rp.to_summary_dict()
         assert len(summary) >= 12
 
     def test_generation_constraints_coverage(self) -> None:
+
         """All 12 GenerationConstraints fields are serializable."""
         ev = EmotionVector()
         gc = emotion_to_constraints(ev)
@@ -202,6 +214,7 @@ class TestCoverageMatrix:
         assert len(gc_dict) == 12
 
     def test_total_transmitted_fields(self) -> None:
+
         """Contract transmits 30 structured fields: 5 emotion + 12 role + 12 constraints + 1 tension."""
         total = 5 + 12 + 12
         assert total >= 29

@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import time
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional, cast
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    cast,
+)
 
 from app.config import settings
 from app.core.entity_context import build_entity_context_for_llm, format_project_context
@@ -50,12 +56,12 @@ async def _run_llm_tool_loop(
     llm: LLMClient,
     store: Any,
     trace: Any,
-    usage_tracker: Optional[UsageTracker],
+    usage_tracker: UsageTracker | None,
     conversation_history: list[dict[str, Any]],
-    is_cancelled: Optional[Callable[[], Awaitable[bool]]],
-    quality_preset: Optional[str],
+    is_cancelled: Callable[[], Awaitable[bool]] | None,
+    quality_preset: str | None,
     emit_sse: bool,
-    plan_tracker: Optional[_PlanTracker],
+    plan_tracker: _PlanTracker | None,
     collected: list[dict[str, Any]],
 ) -> AsyncIterator[str]:
     """Shared LLM iteration loop — dispatches tool calls and accumulates results.
@@ -73,7 +79,7 @@ async def _run_llm_tool_loop(
 
     _slots = getattr(route, "slots", None)
     _extras = getattr(_slots, "extras", None) if _slots is not None else None
-    parsed: Optional[ParsedPrompt] = _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
+    parsed: ParsedPrompt | None = _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
     if parsed is not None:
         sys_prompt += structured_prompt_context(parsed)
         if parsed.position is not None:
@@ -95,8 +101,8 @@ async def _run_llm_tool_loop(
     messages.append({"role": "user", "content": wrap_user_request(prompt)})
 
     is_composition = route.intent == Intent.GENERATE_MUSIC
-    llm_max_tokens: Optional[int] = settings.composition_max_tokens if is_composition else None
-    reasoning_fraction: Optional[float] = settings.composition_reasoning_fraction if is_composition else None
+    llm_max_tokens: int | None = settings.composition_max_tokens if is_composition else None
+    reasoning_fraction: float | None = settings.composition_reasoning_fraction if is_composition else None
 
     iteration = 0
     _add_notes_failures: dict[str, int] = {}
@@ -159,8 +165,6 @@ async def _run_llm_tool_loop(
                         response.usage.get("completion_tokens", 0),
                     )
 
-        if response is None:
-            break
         if route.force_stop_after:
             response = enforce_single_tool(response)
 
@@ -361,10 +365,10 @@ async def _handle_editing_apply(
     llm: LLMClient,
     store: Any,
     trace: Any,
-    usage_tracker: Optional[UsageTracker],
+    usage_tracker: UsageTracker | None,
     conversation_history: list[dict[str, Any]],
-    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
-    quality_preset: Optional[str] = None,
+    is_cancelled: Callable[[], Awaitable[bool]] | None = None,
+    quality_preset: str | None = None,
 ) -> AsyncIterator[str]:
     """Handle EDITING in apply mode — immediate mutation with plan tracking."""
     yield await sse_event({"type": "status", "message": "Processing..."})
@@ -372,9 +376,9 @@ async def _handle_editing_apply(
     is_composition = route.intent == Intent.GENERATE_MUSIC
     _slots = getattr(route, "slots", None)
     _extras = getattr(_slots, "extras", None) if _slots is not None else None
-    parsed: Optional[ParsedPrompt] = _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
+    parsed: ParsedPrompt | None = _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
 
-    plan_tracker: Optional[_PlanTracker] = None
+    plan_tracker: _PlanTracker | None = None
     if is_composition and parsed is not None:
         plan_tracker = _PlanTracker()
         plan_tracker.build_from_prompt(parsed, prompt, project_context or {})
@@ -444,10 +448,10 @@ async def _handle_editing_variation(
     llm: LLMClient,
     store: Any,
     trace: Any,
-    usage_tracker: Optional[UsageTracker],
+    usage_tracker: UsageTracker | None,
     conversation_history: list[dict[str, Any]],
-    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
-    quality_preset: Optional[str] = None,
+    is_cancelled: Callable[[], Awaitable[bool]] | None = None,
+    quality_preset: str | None = None,
 ) -> AsyncIterator[str]:
     """Handle EDITING in variation mode — compute + emit variation proposal."""
     yield await sse_event({"type": "status", "message": "Generating variation..."})
@@ -498,7 +502,7 @@ async def _handle_editing_variation(
     )
 
     from app.core.maestro_composing import _store_variation
-    _edit_region_metadata: dict[str, dict] = {}
+    _edit_region_metadata: dict[str, dict[str, Any]] = {}
     for _re in store.registry.list_regions():
         _rmeta: dict[str, Any] = {}
         if _re.metadata:
@@ -569,11 +573,11 @@ async def _handle_editing(
     llm: LLMClient,
     store: Any,
     trace: Any,
-    usage_tracker: Optional[UsageTracker],
+    usage_tracker: UsageTracker | None,
     conversation_history: list[dict[str, Any]],
     execution_mode: str = "apply",
-    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
-    quality_preset: Optional[str] = None,
+    is_cancelled: Callable[[], Awaitable[bool]] | None = None,
+    quality_preset: str | None = None,
 ) -> AsyncIterator[str]:
     """Dispatch to mode-specific handler — no branching inside."""
     if execution_mode == "variation":

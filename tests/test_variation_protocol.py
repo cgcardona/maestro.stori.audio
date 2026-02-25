@@ -14,7 +14,9 @@ invariants from the canonical v1 spec:
 8. Done payload includes status (ready|failed|discarded)
 9. Commit loads variation from store (no client-side data needed)
 """
+from __future__ import annotations
 
+from collections.abc import Generator
 import asyncio
 import json
 import uuid
@@ -58,7 +60,7 @@ from app.core.executor import apply_variation_phrases, VariationApplyResult
 # =============================================================================
 
 @pytest.fixture
-def vstore():
+def vstore() -> Generator[VariationStore, None, None]:
     """Fresh VariationStore per test."""
     store = VariationStore()
     yield store
@@ -66,7 +68,7 @@ def vstore():
 
 
 @pytest.fixture
-def broadcaster():
+def broadcaster() -> Generator[SSEBroadcaster, None, None]:
     """Fresh SSEBroadcaster per test."""
     b = SSEBroadcaster()
     yield b
@@ -74,17 +76,18 @@ def broadcaster():
 
 
 @pytest.fixture
-def project_id():
+def project_id() -> str:
     return str(uuid.uuid4())
 
 
 @pytest.fixture
-def base_state_id():
+def base_state_id() -> str:
     return str(uuid.uuid4())
 
 
 @pytest.fixture
-def ready_record(vstore, project_id, base_state_id):
+def ready_record(vstore: VariationStore, project_id: str, base_state_id: str) -> VariationRecord:
+
     """A variation record in READY state with two phrases."""
     record = vstore.create(
         project_id=project_id,
@@ -207,7 +210,8 @@ def _make_variation_with_removals() -> Variation:
 class TestStateMachineEnforcement:
     """Prove state transitions are enforced in VariationStore."""
 
-    def test_commit_only_from_ready(self, vstore, project_id, base_state_id):
+    def test_commit_only_from_ready(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+
         """INVARIANT: Commit is only allowed from READY."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="test")
 
@@ -227,7 +231,8 @@ class TestStateMachineEnforcement:
         record.transition_to(VariationStatus.COMMITTED)
         assert record.status == VariationStatus.COMMITTED
 
-    def test_discard_from_any_non_terminal(self, vstore, project_id, base_state_id):
+    def test_discard_from_any_non_terminal(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+
         """Discard allowed from CREATED, STREAMING, READY."""
         for source in [VariationStatus.CREATED, VariationStatus.STREAMING, VariationStatus.READY]:
             record = vstore.create(
@@ -245,7 +250,8 @@ class TestStateMachineEnforcement:
             record.transition_to(VariationStatus.DISCARDED)
             assert record.status == VariationStatus.DISCARDED
 
-    def test_terminal_states_are_final(self, vstore, project_id, base_state_id):
+    def test_terminal_states_are_final(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+
         """No transitions allowed from terminal states."""
         terminal_targets = [VariationStatus.STREAMING, VariationStatus.READY, VariationStatus.COMMITTED]
 
@@ -272,7 +278,8 @@ class TestStateMachineEnforcement:
 class TestCommitCorrectness:
     """Prove commit invariants."""
 
-    def test_can_commit_only_ready(self):
+    def test_can_commit_only_ready(self) -> None:
+
         """can_commit() returns True only for READY."""
         assert can_commit(VariationStatus.READY) is True
         for status in [VariationStatus.CREATED, VariationStatus.STREAMING,
@@ -280,13 +287,15 @@ class TestCommitCorrectness:
                         VariationStatus.FAILED, VariationStatus.EXPIRED]:
             assert can_commit(status) is False
 
-    def test_double_commit_blocked(self, ready_record):
+    def test_double_commit_blocked(self, ready_record: Any) -> None:
+
         """INVARIANT: Committed → Committed is invalid."""
         ready_record.transition_to(VariationStatus.COMMITTED)
         with pytest.raises(InvalidTransitionError):
             ready_record.transition_to(VariationStatus.COMMITTED)
 
-    def test_record_to_variation_roundtrip(self, ready_record):
+    def test_record_to_variation_roundtrip(self, ready_record: Any) -> None:
+
         """Phrases stored in record can be converted to Variation model."""
         from app.api.routes.variation import _record_to_variation
         variation = _record_to_variation(ready_record)
@@ -296,7 +305,8 @@ class TestCommitCorrectness:
         assert variation.phrases[0].phrase_id == "phrase-1"
         assert variation.phrases[1].phrase_id == "phrase-2"
 
-    def test_partial_acceptance(self, ready_record):
+    def test_partial_acceptance(self, ready_record: Any) -> None:
+
         """INVARIANT: Only accepted phrase IDs are applied."""
         from app.api.routes.variation import _record_to_variation
         variation = _record_to_variation(ready_record)
@@ -315,14 +325,16 @@ class TestCommitCorrectness:
         accepted_both = variation.get_accepted_notes(["phrase-1", "phrase-2"])
         assert len(accepted_both) == 2
 
-    def test_note_removals_tracked(self):
+    def test_note_removals_tracked(self) -> None:
+
         """INVARIANT: Removals are correctly identified."""
         variation = _make_variation_with_removals()
 
         removed_ids = variation.get_removed_note_ids(["p-remove"])
         assert "nc-remove" in removed_ids
 
-    def test_modified_notes_tracked(self):
+    def test_modified_notes_tracked(self) -> None:
+
         """Modified notes produce both removal and addition."""
         variation = _make_variation_with_removals()
 
@@ -343,7 +355,8 @@ class TestCommitCorrectness:
 class TestEventSequencing:
     """Prove strict sequence ordering invariants."""
 
-    def test_meta_is_sequence_one(self):
+    def test_meta_is_sequence_one(self) -> None:
+
         """INVARIANT: meta must be sequence=1."""
         env = build_meta_envelope(
             variation_id="v1", project_id="p1", base_state_id="s1",
@@ -354,13 +367,15 @@ class TestEventSequencing:
         assert env.sequence == 1
         assert env.type == "meta"
 
-    def test_sequence_counter_strict_monotonic(self):
+    def test_sequence_counter_strict_monotonic(self) -> None:
+
         """Sequence counter produces strictly increasing values."""
         counter = SequenceCounter()
         values = [counter.next() for _ in range(10)]
         assert values == list(range(1, 11))
 
-    def test_phrase_sequences_follow_meta(self):
+    def test_phrase_sequences_follow_meta(self) -> None:
+
         """Phrases must have sequence > 1."""
         counter = SequenceCounter()
         meta_seq = counter.next()  # 1
@@ -371,7 +386,8 @@ class TestEventSequencing:
         assert phrase_seqs == [2, 3, 4]
         assert done_seq == 5
 
-    def test_done_is_last(self):
+    def test_done_is_last(self) -> None:
+
         """Done must have the highest sequence number."""
         vid = "v1"
         counter = SequenceCounter()
@@ -388,13 +404,15 @@ class TestEventSequencing:
         assert events[-1].type == "done"
         assert events[-1].payload["status"] == "ready"
 
-    def test_done_includes_status(self):
+    def test_done_includes_status(self) -> None:
+
         """INVARIANT: done payload includes status field."""
         for status in ["ready", "failed", "discarded"]:
             env = build_done_envelope("v", "p", "s", 99, status=status)
             assert env.payload["status"] == status
 
-    def test_error_then_done_failed(self):
+    def test_error_then_done_failed(self) -> None:
+
         """Error flow: error event followed by done(status=failed)."""
         counter = SequenceCounter()
         meta = build_meta_envelope("v", "p", "s", "t", None, [], [], {}, counter.next())
@@ -415,7 +433,8 @@ class TestSSEBroadcasting:
     """Prove SSE broadcasting with replay."""
 
     @pytest.mark.anyio
-    async def test_publish_then_subscribe_gets_replay(self, broadcaster):
+    async def test_publish_then_subscribe_gets_replay(self, broadcaster: SSEBroadcaster) -> None:
+
         """Late-join subscriber receives historical events."""
         vid = "v-late"
         env1 = build_meta_envelope(vid, "p", "s", "test", None, [], [], {}, 1)
@@ -429,11 +448,12 @@ class TestSSEBroadcasting:
         # Should get both events replayed
         e1 = queue.get_nowait()
         e2 = queue.get_nowait()
-        assert e1.sequence == 1
-        assert e2.sequence == 2
+        assert e1 is not None and e1.sequence == 1
+        assert e2 is not None and e2.sequence == 2
 
     @pytest.mark.anyio
-    async def test_subscribe_from_sequence_skips_old(self, broadcaster):
+    async def test_subscribe_from_sequence_skips_old(self, broadcaster: SSEBroadcaster) -> None:
+
         """Replay only sends events after from_sequence."""
         vid = "v-skip"
         for seq in range(1, 6):
@@ -442,13 +462,16 @@ class TestSSEBroadcasting:
 
         queue = broadcaster.subscribe(vid, from_sequence=3)
         # Should only get seq 4 and 5
-        events = []
+        events: list[EventEnvelope] = []
         while not queue.empty():
-            events.append(queue.get_nowait())
+            evt = queue.get_nowait()
+            assert evt is not None
+            events.append(evt)
         assert [e.sequence for e in events] == [4, 5]
 
     @pytest.mark.anyio
-    async def test_close_stream_sends_sentinel(self, broadcaster):
+    async def test_close_stream_sends_sentinel(self, broadcaster: SSEBroadcaster) -> None:
+
         """close_stream sends None sentinel to subscribers."""
         vid = "v-close"
         queue = broadcaster.subscribe(vid)
@@ -459,7 +482,8 @@ class TestSSEBroadcasting:
         assert sentinel is None
 
     @pytest.mark.anyio
-    async def test_full_stream_lifecycle(self, broadcaster):
+    async def test_full_stream_lifecycle(self, broadcaster: SSEBroadcaster) -> None:
+
         """Simulate: meta → phrase → phrase → done, subscriber receives all."""
         vid = "v-full"
         queue = broadcaster.subscribe(vid)
@@ -502,7 +526,8 @@ class TestStreamRouter:
     """Prove stream_router.publish_event routes to SSE broadcaster."""
 
     @pytest.mark.anyio
-    async def test_publish_event_routes_to_sse(self):
+    async def test_publish_event_routes_to_sse(self) -> None:
+
         """publish_event() delivers to SSE subscribers."""
         from app.variation.streaming.sse_broadcaster import (
             get_sse_broadcaster,
@@ -531,14 +556,16 @@ class TestStreamRouter:
 class TestVariationStoreIntegration:
     """Integration tests for VariationStore lifecycle."""
 
-    def test_create_and_retrieve(self, vstore, project_id, base_state_id):
+    def test_create_and_retrieve(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+
         """Create → get returns the same record."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="test")
         retrieved = vstore.get(record.variation_id)
         assert retrieved is record
         assert retrieved.status == VariationStatus.CREATED
 
-    def test_full_happy_path_lifecycle(self, vstore, project_id, base_state_id):
+    def test_full_happy_path_lifecycle(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+
         """CREATED → STREAMING → READY → COMMITTED."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="test")
         record.transition_to(VariationStatus.STREAMING)
@@ -546,7 +573,8 @@ class TestVariationStoreIntegration:
         record.transition_to(VariationStatus.COMMITTED)
         assert record.status == VariationStatus.COMMITTED
 
-    def test_phrases_stored_in_sequence_order(self, vstore, project_id, base_state_id):
+    def test_phrases_stored_in_sequence_order(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+
         """Phrases are retrievable in sequence order."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="test")
         record.transition_to(VariationStatus.STREAMING)
@@ -568,12 +596,14 @@ class TestVariationStoreIntegration:
         ids = record.get_phrase_ids()
         assert ids == ["p-0", "p-1", "p-2"]
 
-    def test_get_or_raise_missing(self, vstore):
+    def test_get_or_raise_missing(self, vstore: VariationStore) -> None:
+
         """get_or_raise raises KeyError for missing ID."""
         with pytest.raises(KeyError):
             vstore.get_or_raise("nonexistent")
 
-    def test_cleanup_expired(self, vstore, project_id, base_state_id):
+    def test_cleanup_expired(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+
         """cleanup_expired transitions old non-terminal variations."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="old")
         # Manually set created_at to the past
@@ -593,7 +623,8 @@ class TestDiscardCancellation:
     """Prove discard cancels generation and emits terminal event."""
 
     @pytest.mark.anyio
-    async def test_discard_during_streaming(self, vstore, broadcaster, project_id, base_state_id):
+    async def test_discard_during_streaming(self, vstore: VariationStore, broadcaster: SSEBroadcaster, project_id: Any, base_state_id: Any) -> None:
+
         """Discard from STREAMING cancels and emits done(discarded)."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="cancel-test")
         record.transition_to(VariationStatus.STREAMING)
@@ -623,13 +654,15 @@ class TestDiscardCancellation:
         assert received[0].type == "done"
         assert received[0].payload["status"] == "discarded"
 
-    def test_discard_from_ready(self, ready_record):
+    def test_discard_from_ready(self, ready_record: Any) -> None:
+
         """Discard from READY succeeds."""
         assert can_discard(ready_record.status)
         ready_record.transition_to(VariationStatus.DISCARDED)
         assert ready_record.status == VariationStatus.DISCARDED
 
-    def test_discard_from_created(self, vstore, project_id, base_state_id):
+    def test_discard_from_created(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+
         """Discard from CREATED succeeds."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="test")
         assert can_discard(record.status)
@@ -644,7 +677,8 @@ class TestDiscardCancellation:
 class TestEnvelopeSerialization:
     """Prove envelope wire format is correct."""
 
-    def test_to_dict_has_all_fields(self):
+    def test_to_dict_has_all_fields(self) -> None:
+
         """Envelope dict contains all required protocol fields."""
         env = build_meta_envelope("v", "p", "s", "test", None, [], [], {}, 1)
         d = env.to_dict()
@@ -653,7 +687,8 @@ class TestEnvelopeSerialization:
                          "baseStateId", "payload", "timestampMs"}
         assert required_keys.issubset(d.keys())
 
-    def test_to_json_roundtrips(self):
+    def test_to_json_roundtrips(self) -> None:
+
         """JSON serialization roundtrips correctly."""
         env = build_phrase_envelope("v", "p", "s", 5, {"phraseId": "p1", "notes": []})
         j = env.to_json()
@@ -663,7 +698,8 @@ class TestEnvelopeSerialization:
         assert parsed["sequence"] == 5
         assert parsed["payload"]["phraseId"] == "p1"
 
-    def test_to_sse_format(self):
+    def test_to_sse_format(self) -> None:
+
         """SSE format has event: and data: lines."""
         env = build_done_envelope("v", "p", "s", 10, status="ready", phrase_count=3)
         sse = env.to_sse()

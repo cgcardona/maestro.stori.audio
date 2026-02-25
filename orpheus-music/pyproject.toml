@@ -1,8 +1,8 @@
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-check_untyped_defs = true
+strict = true
+warn_unreachable = true
+show_error_codes = true
 
 [[tool.mypy.overrides]]
 module = [

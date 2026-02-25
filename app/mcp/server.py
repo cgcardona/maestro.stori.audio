@@ -4,10 +4,17 @@ Stori MCP Server
 Model Context Protocol server for DAW control.
 Allows Claude, Cursor, and other MCP clients to control Stori DAW.
 """
+from __future__ import annotations
+
 import json
 import logging
 import asyncio
-from typing import Any, Optional, Callable, Awaitable, cast
+from typing import (
+    Any,
+    Callable,
+    Awaitable,
+    cast,
+)
 from dataclasses import dataclass, field
 
 from app.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, TOOL_CATEGORIES
@@ -30,8 +37,8 @@ class DAWConnection:
     """Represents a connected DAW instance."""
     id: str
     send_callback: Callable[[dict[str, Any]], Awaitable[None]]
-    project_state: Optional[dict[str, Any]] = None
-    pending_responses: dict[str, asyncio.Future] = field(default_factory=dict)
+    project_state: dict[str, Any] | None = None
+    pending_responses: dict[str, asyncio.Future[dict[str, Any]]] = field(default_factory=dict)
 
 
 class StoriMCPServer:
@@ -45,17 +52,17 @@ class StoriMCPServer:
     4. Returns results back to the MCP client (Claude, etc.)
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         from app.config import get_settings
         self.name = "stori-daw"
         self.version = get_settings().app_version
         # Lazy init on first generation call to avoid circular import when running stdio server standalone
-        self._generator = None
+        self._generator: Any = None
         self._daw_connections: dict[str, DAWConnection] = {}
-        self._active_connection: Optional[str] = None
+        self._active_connection: str | None = None
 
     @property
-    def generator(self):
+    def generator(self) -> Any:
         if self._generator is None:
             from app.services.music_generator import get_music_generator
             self._generator = get_music_generator()
@@ -78,7 +85,7 @@ class StoriMCPServer:
         }
     
     def list_tools(self) -> list[dict[str, Any]]:
-        """List all available MCP tools."""
+        """list all available MCP tools."""
         return MCP_TOOLS
     
     async def call_tool(
@@ -177,23 +184,8 @@ class StoriMCPServer:
     ) -> ToolCallResult:
         """Execute a music generation tool server-side."""
         
-        # Map tool names to instrument types
-        instrument_map = {
-            "stori_generate_drums": "drums",
-            "stori_generate_bass": "bass",
-            "stori_generate_melody": "lead",
-            "stori_generate_chords": "piano",
-        }
-        
-        instrument = instrument_map.get(name)
-        if not instrument:
-            return ToolCallResult(
-                success=False,
-                content=[{"type": "text", "text": f"Unknown generation tool: {name}"}],
-                is_error=True,
-            )
-        
-        # Use the pluggable music generator with fallbacks
+        instrument = arguments.get("role", "melody")
+
         result = await self.generator.generate(
             instrument=instrument,
             style=arguments.get("style", "boom_bap"),
@@ -201,7 +193,6 @@ class StoriMCPServer:
             bars=arguments.get("bars", 4),
             key=arguments.get("key"),
             chords=arguments.get("chords"),
-            complexity=arguments.get("complexity", 0.5),
         )
         
         if result.success:
@@ -251,7 +242,7 @@ class StoriMCPServer:
         
         # Create request ID and future for response
         request_id = f"{name}_{id(arguments)}"
-        response_future: asyncio.Future = asyncio.Future()
+        response_future: asyncio.Future[dict[str, Any]] = asyncio.Future()
         conn.pending_responses[request_id] = response_future
         
         try:
@@ -341,14 +332,13 @@ class StoriMCPServer:
     # Cleanup
     # =========================================================================
     
-    async def close(self):
+    async def close(self) -> None:
         """Clean up resources."""
-        # Generator manages its own cleanup
         pass
 
 
 # Singleton instance
-_server: Optional[StoriMCPServer] = None
+_server: StoriMCPServer | None = None
 
 
 def get_mcp_server() -> StoriMCPServer:

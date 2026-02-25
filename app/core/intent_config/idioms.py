@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 from app.core.intent_config.enums import Intent
 from app.core.intent_config.models import IdiomMatch
@@ -42,7 +41,7 @@ PRODUCER_IDIOMS: dict[str, IdiomMatch] = {
 }
 
 
-def match_producer_idiom(text: str) -> Optional[IdiomMatch]:
+def match_producer_idiom(text: str) -> IdiomMatch | None:
     """Match a producer idiom phrase in text. Returns the first match or None."""
     text_lower = text.lower()
     for phrase, match in PRODUCER_IDIOMS.items():
@@ -56,7 +55,7 @@ def match_weighted_vibes(vibes: list[tuple[str, int]]) -> list[IdiomMatch]:
     Match weighted vibes from a structured prompt against the idiom lexicon.
 
     Args:
-        vibes: List of (vibe_text, weight) tuples from ParsedPrompt.vibes
+        vibes: list of (vibe_text, weight) tuples from ParsedPrompt.vibes
 
     Returns:
         IdiomMatch objects with weights set, sorted by weight descending.

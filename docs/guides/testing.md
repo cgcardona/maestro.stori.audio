@@ -14,14 +14,18 @@ We run tests **in Docker** so everyone (Mac, Linux, CI) uses the same environmen
 > docker compose build maestro && docker compose up -d
 > ```
 
-**Type checking (mypy):** Config is in `pyproject.toml` under `[tool.mypy]`. Run against the app and tests from the container (with code and config mounted so you see current code):
+**Type checking (mypy):** Both services run mypy in `strict = true` mode (configured in each `pyproject.toml` under `[tool.mypy]`). Every function signature, parameter, and return type must be annotated. Every file starts with `from __future__ import annotations`.
 
 ```bash
-docker compose run --no-deps -v "$(pwd)/app:/app/app:ro" -v "$(pwd)/tests:/app/tests:ro" -v "$(pwd)/pyproject.toml:/app/pyproject.toml:ro" maestro sh -c "cd /app && python -m mypy -p app && python -m mypy -p tests"
+# Maestro (app + tests)
+docker compose exec maestro mypy app/ tests/
+
+# Orpheus
+docker compose exec orpheus mypy . --exclude venv
 ```
 
-- Subsets: `python -m mypy -p app.models -p app.auth` (single package: `-p app.config`).
-- CI runs `mypy -p app` and `mypy -p tests` before pytest.
+- Both commands must exit clean (zero errors) before committing.
+- CI runs mypy before pytest on both services.
 
 **Plain tests (rebuild + run):**
 ```bash
@@ -42,7 +46,7 @@ docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python
 
 When CI is enabled, run the same coverage command so the build fails if coverage drops below the threshold in `pyproject.toml`. Also add secret scanning (e.g. Gitleaks) and optionally a dependency audit (e.g. `pip-audit`); see [security.md](security.md).
 
-**Coverage target:** We aim for 80% over time. The report shows where to add tests: biggest gaps are often `maestro_handlers`, `executor`, `llm_client`, route handlers (maestro, conversations, MCP), and optional backends (Orpheus, HuggingFace, renderers). Raising coverage lets you bump `fail_under` in `pyproject.toml`.
+**Coverage target:** We aim for 80% over time. The report shows where to add tests: biggest gaps are often `maestro_handlers`, `executor`, `llm_client`, route handlers (maestro, conversations, MCP), and the Orpheus backend. Raising coverage lets you bump `fail_under` in `pyproject.toml`.
 
 ---
 

@@ -10,7 +10,7 @@ This file intentionally keeps macros small and composable.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from app.core.expansion import ToolCall
 

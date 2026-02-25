@@ -1,14 +1,15 @@
 """Bass scoring functions."""
+from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 def score_bass_notes(
-    notes: list[dict],
-    kick_beats: Optional[list[float]] = None,
+    notes: list[dict[str, Any]],
+    kick_beats: list[float] | None = None,
     *,
     window_beats: float = 0.25,
     anticipation_allowed: bool = True,

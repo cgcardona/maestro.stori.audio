@@ -2,6 +2,10 @@
 
 Covers backend priority, availability, coupled generation, and quality presets.
 """
+from __future__ import annotations
+
+from typing import Any
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from dataclasses import dataclass
@@ -24,18 +28,21 @@ from app.services.backends.base import GenerationResult
 
 class TestQualityPresets:
 
-    def test_fast_preset(self):
+    def test_fast_preset(self) -> None:
+
         p = QUALITY_PRESETS["fast"]
         assert p.num_candidates == 1
         assert p.use_critic is False
 
-    def test_balanced_preset(self):
+    def test_balanced_preset(self) -> None:
+
         p = QUALITY_PRESETS["balanced"]
         assert p.num_candidates == 2
         assert p.use_critic is True
         assert p.use_coupled_generation is True
 
-    def test_quality_preset(self):
+    def test_quality_preset(self) -> None:
+
         p = QUALITY_PRESETS["quality"]
         assert p.num_candidates == 4
         assert p.use_critic is True
@@ -48,13 +55,15 @@ class TestQualityPresets:
 
 class TestGenerationContext:
 
-    def test_defaults(self):
+    def test_defaults(self) -> None:
+
         ctx = GenerationContext()
         assert ctx.rhythm_spine is None
         assert ctx.drum_notes is None
         assert ctx.style == "trap"
 
-    def test_custom_values(self):
+    def test_custom_values(self) -> None:
+
         ctx = GenerationContext(style="jazz", tempo=100, bars=8)
         assert ctx.style == "jazz"
         assert ctx.tempo == 100
@@ -67,7 +76,8 @@ class TestGenerationContext:
 
 class TestMusicGenerator:
 
-    def test_singleton_pattern(self):
+    def test_singleton_pattern(self) -> None:
+
         reset_music_generator()
         g1 = get_music_generator()
         g2 = get_music_generator()
@@ -75,7 +85,8 @@ class TestMusicGenerator:
         reset_music_generator()
 
     @pytest.mark.anyio
-    async def test_generate_returns_result(self):
+    async def test_generate_returns_result(self) -> None:
+
         """Generate returns a GenerationResult."""
         mg = MusicGenerator()
 
@@ -91,13 +102,15 @@ class TestMusicGenerator:
             assert result.success is True
 
     @pytest.mark.anyio
-    async def test_backend_map_has_entries(self):
+    async def test_backend_map_has_entries(self) -> None:
+
         """MusicGenerator initializes with backend_map."""
         mg = MusicGenerator()
         assert isinstance(mg.backend_map, dict)
         assert len(mg.backend_map) > 0
 
-    def test_generation_context_management(self):
+    def test_generation_context_management(self) -> None:
+
         mg = MusicGenerator()
         ctx = GenerationContext(style="lofi", tempo=80, bars=16)
         mg.set_generation_context(ctx)
@@ -106,7 +119,8 @@ class TestMusicGenerator:
         assert mg._generation_context is None
 
     @pytest.mark.anyio
-    async def test_get_available_backends(self):
+    async def test_get_available_backends(self) -> None:
+
         """get_available_backends returns a list."""
         mg = MusicGenerator()
         backends = await mg.get_available_backends()
@@ -121,39 +135,45 @@ class TestMusicGenerator:
 class TestScorerForInstrument:
 
     def _mg(self) -> MusicGenerator:
+
         from app.services.backends.base import GeneratorBackend
         mg = MusicGenerator()
         mg._generation_context = None
         return mg
 
-    def test_drums_returns_scorer(self):
+    def test_drums_returns_scorer(self) -> None:
+
         """Drums role always gets a scorer (enables rejection sampling for Orpheus)."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         scorer = mg._scorer_for_instrument("drums", GeneratorBackend.ORPHEUS, bars=4, style="trap")
         assert scorer is not None
 
-    def test_bass_returns_scorer(self):
+    def test_bass_returns_scorer(self) -> None:
+
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         scorer = mg._scorer_for_instrument("bass", GeneratorBackend.ORPHEUS, bars=4, style="trap")
         assert scorer is not None
 
-    def test_organ_returns_scorer(self):
+    def test_organ_returns_scorer(self) -> None:
+
         """Melodic instruments (organ) also get a scorer — chord scoring."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         scorer = mg._scorer_for_instrument("organ", GeneratorBackend.ORPHEUS, bars=4, style="ska")
         assert scorer is not None
 
-    def test_unknown_role_returns_none(self):
+    def test_unknown_role_returns_none(self) -> None:
+
         """Unknown instrument roles return None (no scoring, single generation)."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         scorer = mg._scorer_for_instrument("theremin", GeneratorBackend.ORPHEUS, bars=4, style="lofi")
         assert scorer is None
 
-    def test_drum_ir_backend_overrides_role(self):
+    def test_drum_ir_backend_overrides_role(self) -> None:
+
         """DRUM_IR backend always uses drum scoring regardless of role name."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
@@ -169,42 +189,49 @@ class TestScorerForInstrument:
 class TestCandidatesForRole:
 
     def _mg(self) -> MusicGenerator:
+
         return MusicGenerator()
 
-    def test_drums_keeps_full_candidates(self):
+    def test_drums_keeps_full_candidates(self) -> None:
+
         """Drums keeps the full quality-preset candidate count."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]  # num_candidates=4
         assert mg._candidates_for_role("drums", config, GeneratorBackend.ORPHEUS) == 4
 
-    def test_bass_keeps_full_candidates(self):
+    def test_bass_keeps_full_candidates(self) -> None:
+
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]
         assert mg._candidates_for_role("bass", config, GeneratorBackend.ORPHEUS) == 4
 
-    def test_organ_capped_at_two_for_quality(self):
+    def test_organ_capped_at_two_for_quality(self) -> None:
+
         """Melodic instruments are capped at 2 candidates for quality preset."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]  # num_candidates=6
         assert mg._candidates_for_role("organ", config, GeneratorBackend.ORPHEUS) == 2
 
-    def test_guitar_capped_at_two_for_quality(self):
+    def test_guitar_capped_at_two_for_quality(self) -> None:
+
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]
         assert mg._candidates_for_role("guitar", config, GeneratorBackend.ORPHEUS) == 2
 
-    def test_non_orpheus_backend_untouched(self):
+    def test_non_orpheus_backend_untouched(self) -> None:
+
         """IR backends are not modified — they have their own scoring logic."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]
         assert mg._candidates_for_role("organ", config, GeneratorBackend.HARMONIC_IR) == 4
 
-    def test_balanced_preset_melodic_unchanged(self):
+    def test_balanced_preset_melodic_unchanged(self) -> None:
+
         """Balanced preset (2 candidates) is not further reduced for melodic tracks."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
@@ -220,7 +247,8 @@ class TestCandidatesForRole:
 class TestParallelCandidateGeneration:
 
     @pytest.mark.anyio
-    async def test_parallel_candidates_dispatched(self):
+    async def test_parallel_candidates_dispatched(self) -> None:
+
         """Quality preset dispatches all candidates concurrently (asyncio.gather)."""
         import asyncio
         from app.services.backends.base import GeneratorBackend, GenerationResult
@@ -231,7 +259,8 @@ class TestParallelCandidateGeneration:
         call_count = [0]
         call_times: list[float] = []
 
-        async def fake_generate(*args, **kwargs):
+        async def fake_generate(*args: Any, **kwargs: Any) -> Any:
+
             call_count[0] += 1
             call_times.append(asyncio.get_event_loop().time())
             return GenerationResult(
@@ -265,7 +294,8 @@ class TestParallelCandidateGeneration:
         assert "parallel_candidates" in result.metadata
 
     @pytest.mark.anyio
-    async def test_best_candidate_selected(self):
+    async def test_best_candidate_selected(self) -> None:
+
         """The candidate with the highest critic score is returned."""
         import asyncio
         from app.services.backends.base import GeneratorBackend, GenerationResult
@@ -276,7 +306,8 @@ class TestParallelCandidateGeneration:
         scores_assigned = [0.3, 0.8]  # second candidate is better
         call_idx = [0]
 
-        async def fake_generate(*args, **kwargs):
+        async def fake_generate(*args: Any, **kwargs: Any) -> Any:
+
             idx = call_idx[0]
             call_idx[0] += 1
             # Return notes with a recognisable marker so we can identify which candidate won
@@ -312,7 +343,8 @@ class TestParallelCandidateGeneration:
         assert result.metadata["critic_score"] == pytest.approx(0.8, abs=0.01)
 
     @pytest.mark.anyio
-    async def test_all_candidates_fail_falls_through(self):
+    async def test_all_candidates_fail_falls_through(self) -> None:
+
         """If all parallel candidates fail, falls through to single generation."""
         from app.services.backends.base import GeneratorBackend, GenerationResult
 
@@ -321,7 +353,8 @@ class TestParallelCandidateGeneration:
 
         call_idx = [0]
 
-        async def fake_generate(*args, **kwargs):
+        async def fake_generate(*args: Any, **kwargs: Any) -> Any:
+
             call_idx[0] += 1
             if call_idx[0] <= 2:
                 # First two calls (parallel candidates) fail

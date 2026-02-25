@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.core.prompt_parser import AfterSpec, PositionSpec
 
 
-def _tracks_matching(label: Optional[str], tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _tracks_matching(label: str | None, tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return tracks whose name or any region name contains label."""
     if not label:
         return tracks
@@ -84,8 +84,6 @@ def resolve_position(pos: "PositionSpec", project_context: dict[str, Any]) -> fl
             return end_of_ref + gap + pos.offset
         return end_of_ref + pos.offset
 
-    return 0.0
-
 
 def resolve_after_beat(after: "AfterSpec", project_context: dict[str, Any]) -> float:
     """Backwards-compatible wrapper — delegates to resolve_position."""
@@ -94,8 +92,8 @@ def resolve_after_beat(after: "AfterSpec", project_context: dict[str, Any]) -> f
 
 def sequential_context(
     start_beat: float,
-    section_name: Optional[str] = None,
-    pos: Optional["PositionSpec"] = None,
+    section_name: str | None = None,
+    pos: "PositionSpec" | None = None,
 ) -> str:
     """Return an LLM instruction block for arrangement placement.
 

@@ -1,4 +1,5 @@
 """Thresholds and weights for the critic scoring system."""
+from __future__ import annotations
 
 # Drum rubric weights (sum to 1.0)
 DRUM_WEIGHTS = {

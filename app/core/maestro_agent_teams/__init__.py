@@ -5,6 +5,7 @@ Architecture:
   Level 2 — Instrument Parent (agent.py)
   Level 3 — Section Child (section_agent.py)
 """
+from __future__ import annotations
 
 from app.core.maestro_agent_teams.constants import _CC_NAMES
 from app.core.maestro_agent_teams.agent import _run_instrument_agent

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,12 +19,12 @@ async def add_message(
     conversation_id: str,
     role: str,
     content: str,
-    model_used: Optional[str] = None,
-    tokens_used: Optional[dict] = None,
+    model_used: str | None = None,
+    tokens_used: dict[str, int] | None = None,
     cost_cents: int = 0,
-    tool_calls: Optional[list] = None,
-    sse_events: Optional[list] = None,
-    extra_metadata: Optional[dict] = None,
+    tool_calls: list[dict[str, Any]] | None = None,
+    sse_events: list[dict[str, Any]] | None = None,
+    extra_metadata: dict[str, Any] | None = None,
 ) -> ConversationMessage:
     message = ConversationMessage(
         conversation_id=conversation_id,
@@ -59,8 +59,8 @@ async def add_action(
     action_type: str,
     description: str,
     success: bool,
-    error_message: Optional[str] = None,
-    extra_metadata: Optional[dict] = None,
+    error_message: str | None = None,
+    extra_metadata: dict[str, Any] | None = None,
 ) -> MessageAction:
     action = MessageAction(
         message_id=message_id,

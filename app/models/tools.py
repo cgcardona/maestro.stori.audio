@@ -1,6 +1,8 @@
 """Tool-related models for the Stori Maestro."""
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
-from typing import Optional, Any
+from typing import Any
 
 
 class MidiNote(BaseModel):
@@ -39,8 +41,8 @@ class ToolResult(BaseModel):
     """Result from executing a tool."""
     tool_call_id: str = Field(..., description="ID of the tool call this responds to")
     success: bool = Field(..., description="Whether the tool executed successfully")
-    result: Optional[dict[str, Any]] = Field(default=None, description="Tool result data")
-    error: Optional[str] = Field(default=None, description="Error message if failed")
+    result: dict[str, Any] | None = Field(default=None, description="Tool result data")
+    error: str | None = Field(default=None, description="Error message if failed")
 
 
 class DAWToolCall(BaseModel):

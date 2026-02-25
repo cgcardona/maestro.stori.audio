@@ -26,6 +26,7 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 
 - **Docker-first:** Never run Python on the host. `docker compose exec <service> <cmd>`. Rebuild before testing: `docker compose build <service> && docker compose up -d`.
 - **Two containers:** `maestro` (`app/`, `tests/`) and `orpheus` (`orpheus-music/`). Both have mypy and pytest.
+- **Verification order: mypy → tests → docs.** Always run mypy first. Fix type errors before running tests so you only need one test pass.
 - **Mypy (both):** `docker compose exec maestro mypy app/ tests/` AND `docker compose exec orpheus mypy .`. Both pass before committing.
 - **Tests:** Run individual files yourself; user runs full suite. Regression test for every bug fix: `test_<what_broke>_<fixed_behavior>`.
 - **Show full output:** Never truncate, pipe through `head`/`tail`, or hide shell output.
@@ -33,7 +34,9 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 
 ## Code standards
 
+- **Every Python file** starts with `from __future__ import annotations`. No exceptions.
 - Black formatting. Type hints everywhere. `list[...]`/`dict[...]` style. No `# type: ignore` without reason.
+- **Mypy before tests:** Run `docker compose exec <service> mypy <file>` on every Python file you create or modify. Fix all type errors before running tests — this avoids needing to re-run the test suite after type fixes.
 - Async for all I/O. `logging.getLogger(__name__)` — never `print()`. `STORI_*` env vars via `app.config.settings`.
 - Sparse logs with emoji prefixes (❌ error, ⚠️ warning, ✅ success). No noise.
 - Docstrings on public modules/classes/functions. "Why" over "what." Update docs in the same commit as code changes.
@@ -53,11 +56,12 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 
 - `music_service.py` — FastAPI (port 10002), flat module layout. Proxies to HF Space Gradio API for inference.
 - **Instrument resolution:** `resolve_gm_program(role)` → GM program, `resolve_tmidix_name(role)` → TMIDIX string, `_resolve_melodic_index(role)` → channel (0=bass, 1=keys, 2=other).
-- **MIDI pipeline:** `select_seed()` (curated library) → Gradio → `parse_midi_to_notes()` → `filter_channels_for_instruments()` → `generate_tool_calls()` → DAW.
+- **MIDI pipeline:** `select_seed()` → transpose → control vector → Gradio → score candidates → post-process → `parse_midi_to_notes()` → `filter_channels_for_instruments()` → notes to Maestro.
 - When adding GM aliases: extend `_GM_ALIASES` AND add parametrized cases in `test_gm_resolution.py`.
 
 ## Anti-patterns (never do these)
 
+- **No legacy, no deprecated, no backwards compatibility.** Frontend and backend ship in lockstep. Remove dead code, dead fields, dead endpoints on sight. Never add fallback paths for old API shapes. If a field or function is unused, delete it — don't leave it "for backwards compatibility."
 - Business logic in route handlers. Global mutable state outside designated stores.
 - Hardcoded model IDs, secrets, URLs, or instrument dicts outside config/`_GM_ALIASES`.
 - Tests on live APIs without skip guards. `sleep()` in tests. Asserting implementation details instead of behavior.
@@ -72,6 +76,7 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 | Frontend/MCP/JWT | `docs/guides/integrate.md` |
 | API reference | `docs/reference/api.md` |
 | Architecture | `docs/reference/architecture.md` |
+| **Orpheus** | `docs/reference/orpheus.md` |
 | Muse VCS | `docs/architecture/muse-vcs.md` |
 | Testing | `docs/guides/testing.md` |
 | Security | `docs/guides/security.md` |

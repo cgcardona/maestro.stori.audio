@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.core.intent_config import Intent, match_producer_idiom
 from app.core.intent.models import IntentResult, Slots
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 def get_intent_result(
     prompt: str,
-    project_context: Optional[dict[str, Any]] = None,
+    project_context: dict[str, Any] | None = None,
 ) -> IntentResult:
     """
     Synchronous intent routing using patterns only.
@@ -156,9 +156,9 @@ def _category_to_result(
 
 async def get_intent_result_with_llm(
     prompt: str,
-    project_context: Optional[dict[str, Any]] = None,
+    project_context: dict[str, Any] | None = None,
     llm: Any = None,
-    conversation_history: Optional[list[dict[str, Any]]] = None,
+    conversation_history: list[dict[str, Any]] | None = None,
 ) -> IntentResult:
     """
     Comprehensive intent routing with LLM fallback.

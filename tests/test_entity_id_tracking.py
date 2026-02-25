@@ -5,6 +5,8 @@ This tests the critical fix for the backend - ensuring that entity IDs
 (trackId, regionId, busId) from previous tool calls are properly tracked
 and available to the LLM in subsequent turns.
 """
+from __future__ import annotations
+
 import pytest
 from unittest.mock import MagicMock
 from datetime import datetime, timezone
@@ -12,7 +14,7 @@ from datetime import datetime, timezone
 from app.api.routes.conversations import build_conversation_history_for_llm
 
 
-def test_build_conversation_history_basic():
+def test_build_conversation_history_basic() -> None:
     """Test basic conversation history building with user/assistant messages."""
     # Create mock messages
     messages = [
@@ -37,7 +39,7 @@ def test_build_conversation_history_basic():
     assert history[1]["content"] == "I'll create a drum track for you."
 
 
-def test_build_conversation_history_with_tool_calls():
+def test_build_conversation_history_with_tool_calls() -> None:
     """
     Test conversation history with tool calls - the CRITICAL case for entity ID tracking.
     
@@ -101,7 +103,7 @@ def test_build_conversation_history_with_tool_calls():
     assert "success" in history[2]["content"]
 
 
-def test_build_conversation_history_multi_turn_with_entity_reuse():
+def test_build_conversation_history_multi_turn_with_entity_reuse() -> None:
     """
     Test multi-turn conversation where entity IDs must be tracked and reused.
     
@@ -169,7 +171,7 @@ def test_build_conversation_history_multi_turn_with_entity_reuse():
     # and can reuse it in turn 2
 
 
-def test_build_conversation_history_with_region_ids():
+def test_build_conversation_history_with_region_ids() -> None:
     """
     Test entity ID tracking for regions (regionId).
     
@@ -247,13 +249,13 @@ def test_build_conversation_history_with_region_ids():
     assert notes_args["regionId"] == region_id  # Same regionId!
 
 
-def test_build_conversation_history_empty_messages():
+def test_build_conversation_history_empty_messages() -> None:
     """Test handling of empty message list."""
     history = build_conversation_history_for_llm([])
     assert history == []
 
 
-def test_build_conversation_history_no_tool_calls():
+def test_build_conversation_history_no_tool_calls() -> None:
     """Test conversation with only text, no tool calls."""
     messages = [
         MagicMock(role="user", content="What tempo should I use?", tool_calls=None),

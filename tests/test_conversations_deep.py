@@ -3,6 +3,10 @@
 Targets: _format_single_message, _extract_entity_summary, _build_context_summary,
 get_optimized_context, summarize_conversation_for_llm, get_conversation_preview.
 """
+from __future__ import annotations
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,7 +23,8 @@ from app.services.conversations import (
 USER_ID = "550e8400-e29b-41d4-a716-446655440000"
 
 
-def _make_msg(role, content, tool_calls=None, actions=None):
+def _make_msg(role: Any, content: Any, tool_calls: Any = None, actions: Any = None) -> MagicMock:
+
     """Create a minimal ConversationMessage-like object."""
     msg = MagicMock(spec=ConversationMessage)
     msg.role = role
@@ -39,7 +44,8 @@ class TestFormatSingleMessage:
     """Test formatting of individual messages through format_conversation_history."""
 
     @pytest.mark.anyio
-    async def test_user_message_formatted(self, db_session):
+    async def test_user_message_formatted(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Fmt user")
         await db_session.commit()
         await add_message(db_session, conv.id, "user", "hello world")
@@ -52,7 +58,8 @@ class TestFormatSingleMessage:
         assert history[0] == {"role": "user", "content": "hello world"}
 
     @pytest.mark.anyio
-    async def test_assistant_no_tools(self, db_session):
+    async def test_assistant_no_tools(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Fmt asst")
         await db_session.commit()
         await add_message(db_session, conv.id, "assistant", "Sure thing")
@@ -67,7 +74,8 @@ class TestFormatSingleMessage:
         assert "tool_calls" not in history[0]
 
     @pytest.mark.anyio
-    async def test_assistant_with_tool_calls(self, db_session):
+    async def test_assistant_with_tool_calls(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Fmt tools")
         await db_session.commit()
         await add_message(
@@ -91,7 +99,8 @@ class TestFormatSingleMessage:
         assert history[2]["role"] == "tool"
 
     @pytest.mark.anyio
-    async def test_duplicate_tool_ids_get_deduplicated(self, db_session):
+    async def test_duplicate_tool_ids_get_deduplicated(self, db_session: AsyncSession) -> None:
+
         """Duplicate tool_use IDs should be made unique."""
         conv = await create_conversation(db_session, USER_ID, title="Dedup")
         await db_session.commit()
@@ -111,7 +120,8 @@ class TestFormatSingleMessage:
         assert len(set(ids)) == 2, "Tool call IDs must be unique"
 
     @pytest.mark.anyio
-    async def test_missing_tool_id_generates_one(self, db_session):
+    async def test_missing_tool_id_generates_one(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Missing ID")
         await db_session.commit()
         await add_message(
@@ -136,7 +146,8 @@ class TestFormatSingleMessage:
 class TestGetOptimizedContext:
 
     @pytest.mark.anyio
-    async def test_short_conversation_returns_all(self, db_session):
+    async def test_short_conversation_returns_all(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Short")
         await db_session.commit()
         for i in range(5):
@@ -152,7 +163,8 @@ class TestGetOptimizedContext:
         assert entity_summary is None
 
     @pytest.mark.anyio
-    async def test_long_conversation_summarizes(self, db_session):
+    async def test_long_conversation_summarizes(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Long")
         await db_session.commit()
         for i in range(25):
@@ -169,7 +181,8 @@ class TestGetOptimizedContext:
         assert len(formatted) >= 5
 
     @pytest.mark.anyio
-    async def test_entity_summary_from_tool_calls(self, db_session):
+    async def test_entity_summary_from_tool_calls(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Entity")
         await db_session.commit()
         # Add enough messages to trigger summarization
@@ -221,7 +234,8 @@ class TestGetOptimizedContext:
 class TestSummarizeConversation:
 
     @pytest.mark.anyio
-    async def test_summarize_without_llm(self, db_session):
+    async def test_summarize_without_llm(self, db_session: AsyncSession) -> None:
+
         """Without LLM, falls back to extractive summary."""
         from app.services.conversations import summarize_conversation_for_llm
         conv = await create_conversation(db_session, USER_ID, title="Summarize")
@@ -236,7 +250,8 @@ class TestSummarizeConversation:
         assert isinstance(summary, str)
 
     @pytest.mark.anyio
-    async def test_summarize_with_llm(self, db_session):
+    async def test_summarize_with_llm(self, db_session: AsyncSession) -> None:
+
         """With LLM client, calls chat and returns content."""
         from app.services.conversations import summarize_conversation_for_llm
         conv = await create_conversation(db_session, USER_ID, title="LLM Sum")
@@ -262,7 +277,8 @@ class TestSummarizeConversation:
         mock_llm.chat.assert_called_once()
 
     @pytest.mark.anyio
-    async def test_summarize_with_llm_failure(self, db_session):
+    async def test_summarize_with_llm_failure(self, db_session: AsyncSession) -> None:
+
         """LLM failure falls back to extractive summary."""
         from app.services.conversations import summarize_conversation_for_llm
         conv = await create_conversation(db_session, USER_ID, title="LLM Fail")
@@ -288,16 +304,19 @@ class TestSummarizeConversation:
 
 class TestGenerateTitleEdgeCases:
 
-    def test_empty_prompt(self):
+    def test_empty_prompt(self) -> None:
+
         title = generate_title_from_prompt("")
         assert isinstance(title, str)
 
-    def test_very_long_prompt(self):
+    def test_very_long_prompt(self) -> None:
+
         long_prompt = "Create a " + "very " * 100 + "complex beat"
         title = generate_title_from_prompt(long_prompt, max_length=50)
         assert len(title) <= 60  # Some buffer
 
-    def test_special_characters(self):
+    def test_special_characters(self) -> None:
+
         title = generate_title_from_prompt("Make a 808 beat @ 140 BPM!!!")
         assert isinstance(title, str)
         assert len(title) > 0
@@ -311,7 +330,8 @@ class TestGenerateTitleEdgeCases:
 class TestGetConversationPreview:
 
     @pytest.mark.anyio
-    async def test_preview_with_messages(self, db_session):
+    async def test_preview_with_messages(self, db_session: AsyncSession) -> None:
+
         from app.services.conversations import get_conversation_preview
         conv = await create_conversation(db_session, USER_ID, title="Preview")
         await db_session.commit()
@@ -325,7 +345,8 @@ class TestGetConversationPreview:
         assert isinstance(preview, str)
 
     @pytest.mark.anyio
-    async def test_preview_empty_conversation(self, db_session):
+    async def test_preview_empty_conversation(self, db_session: AsyncSession) -> None:
+
         from app.services.conversations import get_conversation_preview
         conv = await create_conversation(db_session, USER_ID, title="Empty")
         await db_session.commit()

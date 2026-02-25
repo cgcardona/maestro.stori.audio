@@ -14,6 +14,7 @@ Usage:
     # Use HuggingFace embeddings (requires STORI_HF_API_KEY or --hf-key):
     python scripts/ingest_docs.py --docs-dir ./docs --hf-key your_key
 """
+from __future__ import annotations
 
 import argparse
 import asyncio
@@ -23,7 +24,6 @@ import sys
 import httpx
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 # Add app to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -61,7 +61,7 @@ class Chunk:
     chunk_index: int
 
 
-def parse_html_doc(html_file: Path) -> Optional[Document]:
+def parse_html_doc(html_file: Path) -> Document | None:
     """
     Parse an HTML documentation file into a Document.
     
@@ -171,7 +171,7 @@ def chunk_document(doc: Document, max_chunk_chars: int = 2000, overlap_chars: in
         overlap_chars: Overlap between chunks for context continuity
         
     Returns:
-        List of Chunk objects
+        list of Chunk objects
     """
     chunks = []
     chunk_index = 0
@@ -241,7 +241,7 @@ async def embed_chunks_hf(
         batch_size: Batch size for API calls
         
     Returns:
-        List of (chunk, embedding) tuples
+        list of (chunk, embedding) tuples
     """
     embeddings = []
     api_url = f"https://router.huggingface.co/hf-inference/models/{HF_EMBEDDING_MODEL}/pipeline/feature-extraction"
@@ -284,12 +284,12 @@ def store_in_qdrant(
     qdrant: QdrantClient,
     collection_name: str = "stori_docs",
     embedding_dim: int = HF_EMBEDDING_DIM,
-):
+) -> None:
     """
     Store embeddings in Qdrant vector database.
     
     Args:
-        embeddings: List of (chunk, embedding) tuples
+        embeddings: list of (chunk, embedding) tuples
         qdrant: Qdrant client
         collection_name: Name of collection
         embedding_dim: Dimension of embedding vectors
@@ -335,7 +335,7 @@ def store_in_qdrant(
     logger.info("  Stored %d chunks in Qdrant", len(points))
 
 
-async def main():
+async def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest HTML docs into Qdrant for RAG")
     parser.add_argument("--docs-dir", required=True, help="Path to docs directory")
     parser.add_argument("--qdrant-host", default="localhost", help="Qdrant host")
@@ -350,7 +350,7 @@ async def main():
 
     hf_key = args.hf_key or os.environ.get("HF_API_KEY") or os.environ.get("STORI_HF_API_KEY")
     if not hf_key:
-        logger.error("HuggingFace API key required. Set STORI_HF_API_KEY or use --hf-key")
+        logger.error("HuggingFace API key required. set STORI_HF_API_KEY or use --hf-key")
         sys.exit(1)
     embedding_dim = HF_EMBEDDING_DIM
     logger.info("Using HuggingFace embeddings (all-MiniLM-L6-v2)")

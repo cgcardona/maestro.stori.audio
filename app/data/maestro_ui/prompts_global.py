@@ -5,6 +5,7 @@ Ethio-jazz, Gnawa, North Indian raga, Balinese gamelan, Japanese zen,
 Korean sanjo, Qawwali, Arabic maqam, Anatolian psych rock,
 Polynesian/Taiko).
 """
+from __future__ import annotations
 
 from app.models.maestro_ui import PromptItem
 

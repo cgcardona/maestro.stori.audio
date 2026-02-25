@@ -3,12 +3,14 @@ Tests for database initialization and get_db dependency.
 
 Ensures get_db raises when DB is not initialized (fail-fast).
 """
+from __future__ import annotations
+
 import pytest
 from unittest.mock import patch, AsyncMock
 
 
 @pytest.mark.asyncio
-async def test_get_db_raises_when_not_initialized():
+async def test_get_db_raises_when_not_initialized() -> None:
     """get_db raises RuntimeError when init_db has not been called."""
     from app.db.database import get_db
 
@@ -19,7 +21,7 @@ async def test_get_db_raises_when_not_initialized():
 
 
 @pytest.mark.asyncio
-async def test_async_session_local_raises_when_not_initialized():
+async def test_async_session_local_raises_when_not_initialized() -> None:
     """AsyncSessionLocal() raises RuntimeError when init_db has not been called."""
     from app.db.database import AsyncSessionLocal
 

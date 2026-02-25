@@ -4,17 +4,19 @@ Unit tests for normalize_tool_arguments (Swift/client compatibility).
 Ensures all numeric values are converted to strings and booleans/nested
 structures are handled correctly.
 """
+from __future__ import annotations
+
 import pytest
 
 from app.api.routes.conversations import normalize_tool_arguments
 
 
-def test_empty_dict_unchanged():
+def test_empty_dict_unchanged() -> None:
     """Empty arguments returned as-is."""
     assert normalize_tool_arguments({}) == {}
 
 
-def test_flat_int_and_float_to_string():
+def test_flat_int_and_float_to_string() -> None:
     """Integers and floats become strings; booleans unchanged."""
     out = normalize_tool_arguments({
         "gmProgram": 38,
@@ -31,7 +33,7 @@ def test_flat_int_and_float_to_string():
     assert isinstance(out["enabled"], bool)
 
 
-def test_nested_dict():
+def test_nested_dict() -> None:
     """Nested dicts are normalized recursively."""
     out = normalize_tool_arguments({
         "a": 1,
@@ -43,8 +45,8 @@ def test_nested_dict():
     assert out["inner"]["c"] == "0.5"
 
 
-def test_list_of_numbers():
-    """List of int/float becomes list of strings."""
+def test_list_of_numbers() -> None:
+    """list of int/float becomes list of strings."""
     out = normalize_tool_arguments({
         "beats": [0, 4, 8, 12],
         "gains": [0.5, 1.0],
@@ -54,8 +56,8 @@ def test_list_of_numbers():
     assert out["gains"] == ["0.5", "1.0"]
 
 
-def test_list_of_dicts():
-    """List of dicts is normalized recursively."""
+def test_list_of_dicts() -> None:
+    """list of dicts is normalized recursively."""
     out = normalize_tool_arguments({
         "items": [{"x": 1}, {"y": 2.0}],
     })
@@ -64,7 +66,7 @@ def test_list_of_dicts():
     assert out["items"][1]["y"] == "2.0"
 
 
-def test_strings_and_none_unchanged():
+def test_strings_and_none_unchanged() -> None:
     """Strings and None pass through unchanged."""
     out = normalize_tool_arguments({
         "name": "Bass",
@@ -77,7 +79,7 @@ def test_strings_and_none_unchanged():
     assert out["optional"] is None
 
 
-def test_bool_in_list_unchanged():
+def test_bool_in_list_unchanged() -> None:
     """Booleans in lists are not converted to strings."""
     out = normalize_tool_arguments({
         "flags": [True, False, 1, 0],

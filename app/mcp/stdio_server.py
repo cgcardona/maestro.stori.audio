@@ -14,13 +14,17 @@ Usage:
     # With proxy (Cursor → backend → Stori WebSocket):
     STORI_MAESTRO_MCP_URL=http://localhost:10001 STORI_MCP_TOKEN=<jwt> python -m app.mcp.stdio_server
 """
+from __future__ import annotations
+
 import sys
 import json
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import httpx
+
+from app.mcp.server import ToolCallResult
 
 # Setup logging to stderr (stdout is for MCP protocol).
 # Cursor shows stderr as [error] in the MCP Output panel, so keep httpx at WARNING
@@ -37,7 +41,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 class StdioMCPServer:
     """MCP server that communicates via stdin/stdout."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         from app.mcp.server import get_mcp_server
         from app.mcp.tools import SERVER_SIDE_TOOLS
         from app.config import settings
@@ -50,7 +54,7 @@ class StdioMCPServer:
         if self._proxy_daw:
             logger.info("DAW tool calls will be proxied to %s", self._maestro_url)
     
-    async def run(self):
+    async def run(self) -> None:
         """Main loop - read from stdin, write to stdout."""
         logger.info("Stori MCP Server starting...")
         
@@ -77,12 +81,12 @@ class StdioMCPServer:
             except Exception as e:
                 logger.exception(f"Error handling message: {e}")
     
-    def send_response(self, message: dict[str, Any]):
+    def send_response(self, message: dict[str, Any]) -> None:
         """Send a response via stdout."""
         sys.stdout.write(json.dumps(message) + "\n")
         sys.stdout.flush()
 
-    async def _proxy_daw_tool(self, tool_name: str, arguments: dict[str, Any]):
+    async def _proxy_daw_tool(self, tool_name: str, arguments: dict[str, Any]) -> ToolCallResult:
         """Proxy a DAW tool call to the Maestro backend (which has the WebSocket)."""
         from app.mcp.server import ToolCallResult
         url = f"{self._maestro_url}/api/v1/mcp/tools/{tool_name}/call"
@@ -121,7 +125,7 @@ class StdioMCPServer:
                 is_error=True,
             )
 
-    async def handle_message(self, message: dict[str, Any]) -> Optional[dict[str, Any]]:
+    async def handle_message(self, message: dict[str, Any]) -> dict[str, Any] | None:
         """Handle an incoming MCP message."""
         method = message.get("method")
         msg_id = message.get("id")
@@ -197,7 +201,7 @@ class StdioMCPServer:
             }
 
 
-async def main():
+async def main() -> None:
     server = StdioMCPServer()
     await server.run()
 

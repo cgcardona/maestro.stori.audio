@@ -322,7 +322,7 @@ async def set_head(
     )
     await session.execute(clear_stmt)
 
-    # Set new HEAD
+    # set new HEAD
     values: dict[str, Any] = {"is_head": True}
     if commit_state_id is not None:
         values["commit_state_id"] = commit_state_id

@@ -23,8 +23,10 @@ Key principles:
 - A/B testable (swap policies, measure results)
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional, List, Literal, Tuple
+from typing import Any, Literal
 from enum import Enum
 
 
@@ -49,14 +51,14 @@ class GenerationControlVector:
     groove: float = 0.5              # Swing/humanization (→ velocity variation, timing)
     
     # Structural controls
-    section_type: Optional[str] = None      # "intro", "verse", "drop", "bridge"
+    section_type: str | None = None      # "intro", "verse", "drop", "bridge"
     loopable: bool = True                   # Should it loop seamlessly?
     build_intensity: bool = False           # Should it build/escalate?
     
     # Quality preset
     quality_preset: Literal["fast", "balanced", "quality"] = "balanced"
     
-    def clamp(self):
+    def clamp(self) -> None:
         """Ensure all values are in valid ranges."""
         for field in ["creativity", "density", "complexity", "brightness", "tension", "groove"]:
             value = getattr(self, field)
@@ -70,7 +72,7 @@ class GenerationControlVector:
 def intent_to_controls(
     genre: str,
     tempo: int,
-    musical_goals: Optional[List[str]] = None,
+    musical_goals: list[str] | None = None,
     tone_brightness: float = 0.0,      # -1 to 1 from IntentVector
     tone_warmth: float = 0.0,
     energy_intensity: float = 0.0,
@@ -86,7 +88,7 @@ def intent_to_controls(
     Args:
         genre: Base musical style
         tempo: BPM
-        musical_goals: List like ["dark", "energetic", "minimal"]
+        musical_goals: list like ["dark", "energetic", "minimal"]
         tone_brightness: -1 (dark) to +1 (bright)
         tone_warmth: -1 (cold) to +1 (warm)
         energy_intensity: -1 (calm) to +1 (intense)
@@ -227,7 +229,7 @@ def apply_complexity(controls: GenerationControlVector, complexity: float) -> Ge
     return controls
 
 
-def apply_musical_goals(controls: GenerationControlVector, goals: List[str]) -> GenerationControlVector:
+def apply_musical_goals(controls: GenerationControlVector, goals: list[str]) -> GenerationControlVector:
     """
     Apply musical goal modifiers.
     
@@ -310,10 +312,10 @@ def build_controls(
     *,
     genre: str,
     tempo: int,
-    emotion_vector: Optional[dict] = None,
-    role_profile_summary: Optional[dict] = None,
-    generation_constraints: Optional[dict] = None,
-    intent_goals: Optional[List[dict]] = None,
+    emotion_vector: dict[str, Any] | None = None,
+    role_profile_summary: dict[str, Any] | None = None,
+    generation_constraints: dict[str, Any] | None = None,
+    intent_goals: list[dict[str, Any]] | None = None,
     quality_preset: str = "balanced",
 ) -> GenerationControlVector:
     """Build a ``GenerationControlVector`` from the canonical Maestro payload.
@@ -410,11 +412,11 @@ def build_controls(
 
 
 def build_fulfillment_report(
-    notes: list,
+    notes: list[dict[str, Any]],
     bars: int,
     controls: GenerationControlVector,
-    generation_constraints: Optional[dict] = None,
-) -> dict:
+    generation_constraints: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Compute a fulfillment report comparing output against intent.
 
     Uses the existing ``rejection_score`` infrastructure and adds
@@ -474,25 +476,28 @@ def build_fulfillment_report(
 # Control Vector → Orpheus Params (Control → Generator)
 # =============================================================================
 
-# Orpheus Music Transformer proven-good defaults (from HF Space).
-# The model produces best results at these values; only deviate on
-# explicit user override.
+# Orpheus Music Transformer defaults.  The HF Space ships 0.9/0.96 and
+# our A/B testing confirmed these values produce the best output when
+# paired with high-quality seed MIDIs from the rebuilt seed library.
 DEFAULT_TEMPERATURE = 0.9
 DEFAULT_TOP_P = 0.96
 
 # HF Space UI caps gen tokens at 1024; prime at 6656.
+# The Space's default gen_tokens slider is 512 — using less produces sparse output.
 _MAX_PRIME_TOKENS = 6656
 _MAX_GEN_TOKENS = 1024
-_TOKENS_PER_BAR = 64
+_MIN_GEN_TOKENS = 512
+_TOKENS_PER_BAR = 128
 
 
-def allocate_token_budget(bars: int) -> Tuple[int, int]:
+def allocate_token_budget(bars: int) -> tuple[int, int]:
     """Return (num_prime_tokens, num_gen_tokens) for a generation request.
 
     Strategy: maximise prime context (the model is a continuation engine),
-    keep gen tokens within the HF Space's proven range.
+    keep gen tokens within the HF Space's proven range.  Floor at 512 to
+    match the Space's default — fewer tokens produce sparse, low-quality output.
     """
-    gen = min(bars * _TOKENS_PER_BAR, _MAX_GEN_TOKENS)
+    gen = min(max(bars * _TOKENS_PER_BAR, _MIN_GEN_TOKENS), _MAX_GEN_TOKENS)
     prime = _MAX_PRIME_TOKENS
     return (prime, gen)
 
@@ -525,6 +530,69 @@ POLICY_VERSION = "canonical-1.0"
 def get_policy_version() -> str:
     """Return current policy version for logging/analytics."""
     return POLICY_VERSION
+
+
+# ── Batch count by quality preset ──────────────────────────────────
+_BATCH_COUNTS: dict[str, int] = {
+    "fast": 1,
+    "balanced": 3,
+    "quality": 10,
+}
+
+
+def quality_preset_to_batch_count(preset: str) -> int:
+    """Map a quality preset to the number of batches to evaluate."""
+    return _BATCH_COUNTS.get(preset, 3)
+
+
+# ── Control vector → Gradio API parameter mapping ─────────────────
+
+# Orpheus temperature range: lower → more deterministic / repetitive,
+# higher → more creative / chaotic.  Space ships 0.9; safe range 0.7–1.0.
+_TEMP_MIN = 0.7
+_TEMP_MAX = 1.0
+
+# top_p range: lower → more focused sampling, higher → more diverse.
+# Space ships 0.96; safe range 0.90–0.98.
+_TOP_P_MIN = 0.90
+_TOP_P_MAX = 0.98
+
+
+def apply_controls_to_params(
+    controls: GenerationControlVector,
+    bars: int,
+) -> dict[str, Any]:
+    """Map the abstract control vector to concrete Gradio API parameters.
+
+    Returns a dict with:
+        - ``temperature`` (float)
+        - ``top_p`` (float)
+        - ``num_prime_tokens`` (int)
+        - ``num_gen_tokens`` (int)
+
+    The control vector's ``creativity`` drives temperature,
+    ``groove`` drives top_p, ``density`` scales gen tokens, and
+    ``complexity`` scales prime context.
+    """
+    temperature = lerp(_TEMP_MIN, _TEMP_MAX, controls.creativity)
+    top_p = lerp(_TOP_P_MIN, _TOP_P_MAX, controls.groove)
+
+    base_prime, base_gen = allocate_token_budget(bars)
+
+    gen_scale = lerp(0.8, 1.0, controls.density)
+    num_gen_tokens = int(base_gen * gen_scale)
+    num_gen_tokens = max(_MIN_GEN_TOKENS, min(_MAX_GEN_TOKENS, num_gen_tokens))
+
+    prime_scale = lerp(0.6, 1.0, controls.complexity)
+    num_prime_tokens = int(base_prime * prime_scale)
+    num_prime_tokens = max(2048, min(_MAX_PRIME_TOKENS, num_prime_tokens))
+
+    return {
+        "temperature": round(temperature, 3),
+        "top_p": round(top_p, 3),
+        "num_prime_tokens": num_prime_tokens,
+        "num_gen_tokens": num_gen_tokens,
+    }
 
 
 # =============================================================================

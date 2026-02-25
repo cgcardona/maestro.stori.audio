@@ -11,6 +11,8 @@ Usage:
     python scripts/batch_analyze.py --midi-dir /data/reference_midi --source symphonynet
     python scripts/batch_analyze.py --midi-dir /data/reference_midi --aggregate-only
 """
+from __future__ import annotations
+
 import argparse
 import json
 import logging

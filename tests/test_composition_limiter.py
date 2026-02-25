@@ -1,4 +1,5 @@
 """Tests for per-user concurrent composition limiter."""
+from __future__ import annotations
 
 import asyncio
 
@@ -12,7 +13,8 @@ from app.core.composition_limiter import (
 
 class TestCompositionLimiter:
     @pytest.mark.asyncio
-    async def test_allows_under_limit(self):
+    async def test_allows_under_limit(self) -> None:
+
         """User can start compositions up to the limit."""
         lim = CompositionLimiter(max_per_user=2)
         async with lim.acquire("user-1"):
@@ -22,7 +24,8 @@ class TestCompositionLimiter:
         assert lim.active_count("user-1") == 0
 
     @pytest.mark.asyncio
-    async def test_rejects_over_limit(self):
+    async def test_rejects_over_limit(self) -> None:
+
         """Third concurrent composition raises CompositionLimitExceeded."""
         lim = CompositionLimiter(max_per_user=2)
         async with lim.acquire("user-1"):
@@ -34,7 +37,8 @@ class TestCompositionLimiter:
                 assert exc.value.active == 2
 
     @pytest.mark.asyncio
-    async def test_releases_on_exception(self):
+    async def test_releases_on_exception(self) -> None:
+
         """Slot is released even if the composition raises an error."""
         lim = CompositionLimiter(max_per_user=1)
         with pytest.raises(RuntimeError):
@@ -45,7 +49,8 @@ class TestCompositionLimiter:
             assert lim.active_count("user-1") == 1
 
     @pytest.mark.asyncio
-    async def test_independent_users(self):
+    async def test_independent_users(self) -> None:
+
         """Different users have independent quotas."""
         lim = CompositionLimiter(max_per_user=1)
         async with lim.acquire("user-a"):
@@ -54,7 +59,8 @@ class TestCompositionLimiter:
                 assert lim.active_count("user-b") == 1
 
     @pytest.mark.asyncio
-    async def test_unlimited_when_zero(self):
+    async def test_unlimited_when_zero(self) -> None:
+
         """max_per_user=0 means unlimited."""
         lim = CompositionLimiter(max_per_user=0)
         async with lim.acquire("user-1"):
@@ -63,7 +69,8 @@ class TestCompositionLimiter:
                     assert lim.active_count("user-1") == 0  # not tracked
 
     @pytest.mark.asyncio
-    async def test_none_user_bypasses(self):
+    async def test_none_user_bypasses(self) -> None:
+
         """None user_id bypasses the limiter entirely."""
         lim = CompositionLimiter(max_per_user=1)
         async with lim.acquire(None):
@@ -71,7 +78,8 @@ class TestCompositionLimiter:
                 pass
 
     @pytest.mark.asyncio
-    async def test_snapshot(self):
+    async def test_snapshot(self) -> None:
+
         """Snapshot returns current active counts."""
         lim = CompositionLimiter(max_per_user=5)
         async with lim.acquire("a"):
@@ -81,12 +89,14 @@ class TestCompositionLimiter:
         assert lim.snapshot() == {}
 
     @pytest.mark.asyncio
-    async def test_concurrent_acquires_are_serialized(self):
+    async def test_concurrent_acquires_are_serialized(self) -> None:
+
         """Multiple concurrent acquire calls don't race past the limit."""
         lim = CompositionLimiter(max_per_user=1)
         results: list[str] = []
 
-        async def try_acquire(label: str):
+        async def try_acquire(label: str) -> None:
+
             try:
                 async with lim.acquire("user-1"):
                     results.append(f"{label}-ok")

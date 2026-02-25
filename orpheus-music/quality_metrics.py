@@ -11,22 +11,23 @@ Metrics tracked:
 - Repetition vs novelty
 - Velocity distribution
 """
+from __future__ import annotations
 
-from typing import List, Dict, Any
+from typing import Any
 import statistics
 
 
-def analyze_quality(notes: List[Dict[str, Any]], bars: int, tempo: int) -> Dict[str, float]:
+def analyze_quality(notes: list[dict[str, Any]], bars: int, tempo: int) -> dict[str, float]:
     """
     Analyze generation quality with objective metrics.
     
     Args:
-        notes: List of note dicts with pitch, startBeat, duration, velocity
+        notes: list of note dicts with pitch, startBeat, duration, velocity
         bars: Number of bars generated
         tempo: Tempo in BPM
         
     Returns:
-        Dict of quality metrics (0-1 normalized where applicable)
+        dict of quality metrics (0-1 normalized where applicable)
     """
     if not notes:
         return {
@@ -136,7 +137,7 @@ def analyze_quality(notes: List[Dict[str, Any]], bars: int, tempo: int) -> Dict[
     return metrics
 
 
-def rejection_score(notes: List[Dict[str, Any]], bars: int) -> float:
+def rejection_score(notes: list[dict[str, Any]], bars: int) -> float:
     """Fast rejection sampling score for candidate ranking.
 
     Combines four signals into a single 0–1 score:
@@ -179,7 +180,7 @@ def rejection_score(notes: List[Dict[str, Any]], bars: int) -> float:
 
     # ── Repetition penalty ──
     if len(notes) >= 4:
-        pattern_set: set = set()
+        pattern_set: set[tuple[int, int]] = set()
         repeated = 0
         for i in range(len(notes) - 1):
             p = (notes[i].get("pitch", 0), notes[i + 1].get("pitch", 0))
@@ -201,7 +202,7 @@ def rejection_score(notes: List[Dict[str, Any]], bars: int) -> float:
     ))
 
 
-def compare_generations(notes_a: List[dict], notes_b: List[dict], bars: int, tempo: int) -> Dict[str, Any]:
+def compare_generations(notes_a: list[dict[str, Any]], notes_b: list[dict[str, Any]], bars: int, tempo: int) -> dict[str, Any]:
     """
     Compare two generations to determine which is better.
     

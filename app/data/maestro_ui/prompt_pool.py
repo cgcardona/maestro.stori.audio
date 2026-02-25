@@ -4,6 +4,7 @@ The pool is assembled from regional modules so no single file becomes
 a monolith.  Each module exports a list[PromptItem]; this aggregator
 concatenates them and builds the ALL_PROMPT_IDS index.
 """
+from __future__ import annotations
 
 from app.data.maestro_ui.prompts_americas import PROMPTS_AMERICAS
 from app.data.maestro_ui.prompts_europe import PROMPTS_EUROPE

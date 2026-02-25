@@ -7,6 +7,7 @@ on I/O boundaries (tool execution, LLM).
 
 from __future__ import annotations
 
+from typing import Any
 import asyncio
 import hashlib
 import json
@@ -42,6 +43,7 @@ from app.core.tracing import TraceContext
 
 
 def _spec(name: str = "verse", index: int = 0, start: int = 0, beats: int = 16) -> SectionSpec:
+
     s = SectionSpec(
         section_id=f"{index}:{name}",
         name=name,
@@ -88,7 +90,8 @@ def _section_contract(
 class TestHashCanonicalization:
     """Prove hashes are deterministic and advisory-field-independent."""
 
-    def test_deterministic_hash_two_runs(self):
+    def test_deterministic_hash_two_runs(self) -> None:
+
         """Identical input → identical hash across two independent constructions."""
         spec = _spec()
 
@@ -115,7 +118,8 @@ class TestHashCanonicalization:
         assert sc1.contract_hash == sc2.contract_hash
         assert len(sc1.contract_hash) == 16
 
-    def test_advisory_field_does_not_change_hash(self):
+    def test_advisory_field_does_not_change_hash(self) -> None:
+
         """Changing l2_generate_prompt or region_name must NOT change hash."""
         spec = _spec()
 
@@ -141,7 +145,8 @@ class TestHashCanonicalization:
 class TestLineageChain:
     """Prove parent→child hash linkage across L1→L2→L3."""
 
-    def test_full_lineage_chain(self):
+    def test_full_lineage_chain(self) -> None:
+
         """Two-section, one-instrument lineage chain with CompositionContract root."""
         spec_intro = _spec("intro", index=0, start=0, beats=16)
         spec_verse = _spec("verse", index=1, start=16, beats=16)
@@ -204,7 +209,8 @@ class TestHashTamper:
     """Prove that tampered contracts halt execution."""
 
     @pytest.mark.anyio
-    async def test_tampered_tempo_raises(self):
+    async def test_tampered_tempo_raises(self) -> None:
+
         """Mutating tempo after sealing causes _run_section_child to raise."""
         spec = _spec()
         sc = _section_contract(spec)
@@ -217,7 +223,7 @@ class TestHashTamper:
         assert not verify_contract_hash(sc)
 
         store = StateStore(conversation_id="tamper-test")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         print("\n## HASH_TAMPER_TEST")
         print(f"Original tempo: 92.0")
@@ -243,7 +249,8 @@ class TestHashTamper:
         print("Execution HALTED. ✓")
 
     @pytest.mark.anyio
-    async def test_missing_hash_raises(self):
+    async def test_missing_hash_raises(self) -> None:
+
         """Contract with empty contract_hash is rejected."""
         spec = _spec()
         sc = SectionContract(
@@ -258,7 +265,7 @@ class TestHashTamper:
         )
 
         store = StateStore(conversation_id="no-hash-test")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         with pytest.raises(ValueError, match="Protocol violation.*no contract_hash"):
             await _run_section_child(
@@ -285,14 +292,16 @@ class TestSingleSectionLockdown:
     """Prove single-section uses _dispatch_section_children with contract override."""
 
     @pytest.mark.anyio
-    async def test_contract_overrides_llm_start_beat(self):
+    async def test_contract_overrides_llm_start_beat(self) -> None:
+
         """LLM proposes wrong startBeat; contract forces the correct value."""
         spec = _spec("verse", index=0, start=0, beats=16)
         sc = _section_contract(spec, parent_hash="test-parent")
 
-        captured_params: dict = {}
+        captured_params: dict[str, Any] = {}
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> Any:
+
             if tc_name == "stori_add_midi_region":
                 captured_params["region"] = dict(resolved_args)
                 return _ToolCallOutcome(
@@ -316,7 +325,7 @@ class TestSingleSectionLockdown:
             )
 
         store = StateStore(conversation_id="lockdown-test")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         bad_region_tc = ToolCall(
             id="r1", name="stori_add_midi_region",
@@ -366,7 +375,8 @@ class TestSingleSectionLockdown:
 class TestRuntimeContextFreeze:
     """Prove RuntimeContext.emotion_vector is deeply frozen."""
 
-    def test_emotion_vector_type_is_frozen_tuple(self):
+    def test_emotion_vector_type_is_frozen_tuple(self) -> None:
+
         """emotion_vector is stored as tuple[tuple[str, float], ...]."""
         from app.core.emotion_vector import EmotionVector
 
@@ -385,7 +395,8 @@ class TestRuntimeContextFreeze:
             assert isinstance(pair[0], str)
             assert isinstance(pair[1], float)
 
-    def test_frozen_tuple_mutation_raises(self):
+    def test_frozen_tuple_mutation_raises(self) -> None:
+
         """Attempting to mutate the frozen tuple raises TypeError."""
         from app.core.emotion_vector import EmotionVector
 
@@ -398,7 +409,8 @@ class TestRuntimeContextFreeze:
 
         print("Mutation ctx.emotion_vector[0][1] = 999 → TypeError ✓")
 
-    def test_composition_context_returns_mapping_proxy(self):
+    def test_composition_context_returns_mapping_proxy(self) -> None:
+
         """to_composition_context returns MappingProxyType — no dict mutation."""
         from app.core.emotion_vector import EmotionVector
 
@@ -414,7 +426,8 @@ class TestRuntimeContextFreeze:
 
         print("Mutation ctx['emotion_vector'] = 'hacked' → TypeError ✓")
 
-    def test_frozen_dataclass_attribute_mutation_raises(self):
+    def test_frozen_dataclass_attribute_mutation_raises(self) -> None:
+
         """RuntimeContext is frozen — field assignment raises."""
         ctx = RuntimeContext(raw_prompt="test")
 
@@ -432,7 +445,8 @@ class TestRuntimeContextFreeze:
 class TestHashFieldAudit:
     """Prove advisory fields are excluded from canonical dicts."""
 
-    def test_section_spec_keys(self):
+    def test_section_spec_keys(self) -> None:
+
         spec = _spec()
         canonical = canonical_contract_dict(spec)
         keys = sorted(canonical.keys())
@@ -445,7 +459,8 @@ class TestHashFieldAudit:
         for excluded in _HASH_EXCLUDED_FIELDS:
             assert excluded not in keys, f"Advisory field '{excluded}' leaked into hash"
 
-    def test_instrument_contract_keys(self):
+    def test_instrument_contract_keys(self) -> None:
+
         spec = _spec()
         ic = InstrumentContract(
             instrument_name="Drums", role="drums", style="neo-soul",
@@ -467,7 +482,8 @@ class TestHashFieldAudit:
         assert "parent_contract_hash" not in keys
         assert "contract_version" not in keys
 
-    def test_section_contract_keys(self):
+    def test_section_contract_keys(self) -> None:
+
         spec = _spec()
         sc = _section_contract(spec)
         canonical = canonical_contract_dict(sc)
@@ -482,7 +498,8 @@ class TestHashFieldAudit:
         assert "parent_contract_hash" not in keys
         assert "contract_version" not in keys
 
-    def test_full_exclusion_audit(self):
+    def test_full_exclusion_audit(self) -> None:
+
         """Every field in _HASH_EXCLUDED_FIELDS is absent from ALL canonical dicts."""
         spec = _spec()
         ic = InstrumentContract(
@@ -513,12 +530,14 @@ class TestExecutionAttestation:
     """Prove SectionResult carries correct lineage after execution."""
 
     @pytest.mark.anyio
-    async def test_result_carries_contract_lineage(self):
+    async def test_result_carries_contract_lineage(self) -> None:
+
         """SectionResult.contract_hash matches the contract that produced it."""
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-ic-hash")
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> Any:
+
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
@@ -534,7 +553,7 @@ class TestExecutionAttestation:
             )
 
         store = StateStore(conversation_id="attest-test")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",

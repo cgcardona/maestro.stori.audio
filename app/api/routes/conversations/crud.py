@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,9 +32,9 @@ logger = logging.getLogger(__name__)
 @router.post("/conversations", response_model=ConversationResponse, response_model_by_alias=True, status_code=status.HTTP_201_CREATED)
 async def create_conversation(
     request: ConversationCreateRequest,
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> ConversationResponse:
     """Create a new conversation."""
     user_id = token_claims.get("sub")
     if not user_id:
@@ -78,9 +78,9 @@ async def create_conversation(
 async def search_conversations(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=20, le=50),
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> SearchResponse:
     """Search conversations by title and message content."""
     user_id = token_claims.get("sub")
     if not user_id:
@@ -105,15 +105,15 @@ async def search_conversations(
 
 @router.get("/conversations", response_model=ConversationListResponse, response_model_by_alias=True)
 async def list_conversations(
-    project_id: Optional[str] = Query(default=None, description="Filter by project UUID, or 'null' for global conversations"),
+    project_id: str | None = Query(default=None, description="Filter by project UUID, or 'null' for global conversations"),
     include_global: bool = Query(default=False, description="Include global conversations when filtering by project"),
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
     include_archived: bool = Query(default=False),
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
-    """List user's conversations with pagination and project filtering."""
+) -> ConversationListResponse:
+    """list user's conversations with pagination and project filtering."""
     user_id = token_claims.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token does not contain user ID.")
@@ -147,9 +147,9 @@ async def list_conversations(
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponse, response_model_by_alias=True)
 async def get_conversation(
     conversation_id: str,
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> ConversationResponse:
     """Get a conversation with full message history."""
     user_id = token_claims.get("sub")
     if not user_id:
@@ -212,13 +212,13 @@ async def get_conversation(
     )
 
 
-@router.patch("/conversations/{conversation_id}", response_model=dict, response_model_by_alias=True)
+@router.patch("/conversations/{conversation_id}", response_model=dict[str, Any], response_model_by_alias=True)
 async def update_conversation(
     conversation_id: str,
     request: ConversationUpdateRequest,
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Update conversation metadata (title and/or project_id)."""
     user_id = token_claims.get("sub")
     if not user_id:
@@ -255,9 +255,9 @@ async def update_conversation(
 async def delete_conversation(
     conversation_id: str,
     hard_delete: bool = Query(default=False),
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> None:
     """Archive or delete a conversation."""
     user_id = token_claims.get("sub")
     if not user_id:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 _FILLER = {
     "please", "pls", "plz", "please can you", "please could you",
@@ -29,7 +28,7 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
-def _extract_quoted(text: str) -> Optional[str]:
+def _extract_quoted(text: str) -> str | None:
     """Extract the first quoted string from text."""
     m = re.search(r'"([^"]+)"', text)
     if m:
@@ -40,7 +39,7 @@ def _extract_quoted(text: str) -> Optional[str]:
     return None
 
 
-def _num(x: str) -> Optional[float]:
+def _num(x: str) -> float | None:
     """Parse a number from a string, returning None on failure."""
     try:
         return float(x)

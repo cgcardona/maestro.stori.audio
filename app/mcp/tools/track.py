@@ -1,4 +1,5 @@
 """Track-level MCP tool definitions."""
+from __future__ import annotations
 
 TRACK_TOOLS = [
     {
@@ -17,7 +18,7 @@ TRACK_TOOLS = [
     },
     {
         "name": "stori_set_track_volume",
-        "description": "Set the volume of a track. Linear scale: 0.0 = silent, 1.0 = unity gain, 1.5 = +50%.",
+        "description": "set the volume of a track. Linear scale: 0.0 = silent, 1.0 = unity gain, 1.5 = +50%.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -37,7 +38,7 @@ TRACK_TOOLS = [
     },
     {
         "name": "stori_set_track_pan",
-        "description": "Set the pan position of a track. 0.0 = hard left, 0.5 = center, 1.0 = hard right.",
+        "description": "set the pan position of a track. 0.0 = hard left, 0.5 = center, 1.0 = hard right.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -66,7 +67,7 @@ TRACK_TOOLS = [
     },
     {
         "name": "stori_set_midi_program",
-        "description": "Set the MIDI program (instrument voice) for a track. General MIDI 0-127 (e.g. 0=Piano, 33=Bass, 10=drums on channel 10).",
+        "description": "set the MIDI program (instrument voice) for a track. General MIDI 0-127 (e.g. 0=Piano, 33=Bass, 10=drums on channel 10).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -114,7 +115,7 @@ TRACK_TOOLS = [
     },
     {
         "name": "stori_set_track_color",
-        "description": "Set a track's color.",
+        "description": "set a track's color.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -130,7 +131,7 @@ TRACK_TOOLS = [
     },
     {
         "name": "stori_set_track_icon",
-        "description": "Set a track's icon (SF Symbol name, e.g. pianokeys, guitars, music.note).",
+        "description": "set a track's icon (SF Symbol name, e.g. pianokeys, guitars, music.note).",
         "inputSchema": {
             "type": "object",
             "properties": {

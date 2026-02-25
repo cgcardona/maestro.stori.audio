@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator
 
 from app.core.entity_context import format_project_context
 from app.core.intent import Intent
@@ -23,7 +23,7 @@ async def _handle_reasoning(
     route: Any,
     llm: LLMClient,
     trace: Any,
-    usage_tracker: Optional[UsageTracker],
+    usage_tracker: UsageTracker | None,
     conversation_history: list[dict[str, Any]],
 ) -> AsyncIterator[str]:
     """Handle REASONING state - answer questions without tools."""

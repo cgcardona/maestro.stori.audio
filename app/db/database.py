@@ -3,8 +3,10 @@ Async SQLAlchemy database setup.
 
 Supports PostgreSQL (production) and SQLite (development).
 """
+from __future__ import annotations
+
 import logging
-from typing import Any, AsyncGenerator, Optional
+from typing import Any, AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -14,7 +16,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
-from app.config import settings
+from app.config import settings as settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +27,8 @@ class Base(DeclarativeBase):
 
 
 # Global engine and session factory (initialized on startup)
-_engine: Optional[AsyncEngine] = None
-_async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
+_engine: AsyncEngine | None = None
+_async_session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def get_database_url() -> str:
@@ -40,15 +42,18 @@ def get_database_url() -> str:
 
 
 async def init_db() -> None:
-    """Initialize database connection and create tables."""
+    """Initialize database engine and session factory.
+
+    Schema is managed by Alembic (``alembic upgrade head`` runs in
+    the container entrypoint *before* the app starts).  This function
+    only creates the async engine and session factory.
+    """
     global _engine, _async_session_factory
     
     database_url = get_database_url()
     logger.info(f"Initializing database: {database_url.split('@')[-1] if '@' in database_url else database_url}")
     
-    # Create async engine
-    # For SQLite, we need check_same_thread=False
-    connect_args = {}
+    connect_args: dict[str, Any] = {}
     if database_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
     
@@ -58,20 +63,15 @@ async def init_db() -> None:
         connect_args=connect_args,
     )
     
-    # Create session factory
     _async_session_factory = async_sessionmaker(
         bind=_engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
     
-    # Import models to register them with Base
+    # Import models so relationships resolve even though Alembic owns DDL.
     from app.db import models  # noqa: F401
     from app.db import muse_models  # noqa: F401
-    
-    # Create all tables
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     
     logger.info("Database initialized successfully")
 

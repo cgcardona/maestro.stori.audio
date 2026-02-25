@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid as _uuid_mod
-from typing import Any, Optional
+from typing import Any
 
 from app.core.maestro_helpers import _human_label_for_tool, _humanize_style
 from app.core.maestro_plan_tracker.constants import (
@@ -30,7 +30,7 @@ class _PlanTracker:
         self.plan_id: str = str(_uuid_mod.uuid4())
         self.title: str = ""
         self.steps: list[_PlanStep] = []
-        self._active_step_id: Optional[str] = None
+        self._active_step_id: str | None = None
         self._active_step_ids: set[str] = set()
         self._next_id: int = 1
 
@@ -66,8 +66,8 @@ class _PlanTracker:
             1 for tc in tool_calls if tc.name in _TRACK_CREATION_NAMES
         )
 
-        style: Optional[str] = None
-        section: Optional[str] = None
+        style: str | None = None
+        section: str | None = None
 
         if prompt.startswith("STORI PROMPT"):
             for line in prompt.splitlines():
@@ -105,7 +105,7 @@ class _PlanTracker:
         return f"Building {short}" if len(short) < 40 else short
 
     @staticmethod
-    def _track_name_for_call(tc: Any) -> Optional[str]:
+    def _track_name_for_call(tc: Any) -> str | None:
         """Extract the track name a tool call targets (None for project-level)."""
         name = tc.name
         params = tc.params
@@ -130,7 +130,7 @@ class _PlanTracker:
           "Add MIDI CC to <TrackName>"   — CC curves
           "Add pitch bend to <TrackName>"— pitch bend events
           "Write automation for <TrackName>" — automation lanes
-          "Set up shared Reverb bus"     — project-level bus setup
+          "set up shared Reverb bus"     — project-level bus setup
 
         Project-level steps (tempo, key, bus) must NOT contain a
         preposition pattern — they fall into "Project Setup".
@@ -142,10 +142,10 @@ class _PlanTracker:
         while i < n and tool_calls[i].name in _PROJECT_SETUP_TOOL_NAMES:
             tc = tool_calls[i]
             if tc.name == "stori_set_tempo":
-                label = f"Set tempo to {tc.params.get('tempo', '?')} BPM"
+                label = f"set tempo to {tc.params.get('tempo', '?')} BPM"
             elif tc.name == "stori_set_key":
                 key_val = tc.params.get("key", "?")
-                label = f"Set key signature to {key_val}"
+                label = f"set key signature to {key_val}"
             else:
                 label = _human_label_for_tool(tc.name, tc.params)
             steps.append(_PlanStep(
@@ -307,7 +307,7 @@ class _PlanTracker:
                     i += 1
                 steps.append(_PlanStep(
                     step_id=str(self._next_id),
-                    label=f"Set up shared {bus_name} bus",
+                    label=f"set up shared {bus_name} bus",
                     tool_name="stori_ensure_bus",
                     tool_indices=bus_indices,
                 ))
@@ -421,14 +421,14 @@ class _PlanTracker:
         if parsed.tempo and parsed.tempo != current_tempo:
             self.steps.append(_PlanStep(
                 step_id=str(self._next_id),
-                label=f"Set tempo to {parsed.tempo} BPM",
+                label=f"set tempo to {parsed.tempo} BPM",
                 tool_name="stori_set_tempo",
             ))
             self._next_id += 1
         if parsed.key and parsed.key.strip().lower() != current_key:
             self.steps.append(_PlanStep(
                 step_id=str(self._next_id),
-                label=f"Set key signature to {parsed.key}",
+                label=f"set key signature to {parsed.key}",
                 tool_name="stori_set_key",
             ))
             self._next_id += 1
@@ -607,7 +607,7 @@ class _PlanTracker:
             if len(tracks_needing_reverb) >= 2:
                 self.steps.append(_PlanStep(
                     step_id=str(self._next_id),
-                    label="Set up shared Reverb bus",
+                    label="set up shared Reverb bus",
                     tool_name="stori_ensure_bus",
                 ))
                 self._next_id += 1
@@ -659,7 +659,7 @@ class _PlanTracker:
             ],
         }
 
-    def step_for_tool_index(self, index: int) -> Optional[_PlanStep]:
+    def step_for_tool_index(self, index: int) -> _PlanStep | None:
         """Find the step a tool-call index belongs to (first iteration only)."""
         for step in self.steps:
             if index in step.tool_indices:
@@ -671,7 +671,7 @@ class _PlanTracker:
         tc_name: str,
         tc_params: dict[str, Any],
         store: Any,
-    ) -> Optional[_PlanStep]:
+    ) -> _PlanStep | None:
         """Map a tool call to a plan step by name/context.
 
         Used for both subsequent iterations (reactive plan) and upfront-built
@@ -775,7 +775,7 @@ class _PlanTracker:
                     return step
         return None
 
-    def get_step(self, step_id: str) -> Optional[_PlanStep]:
+    def get_step(self, step_id: str) -> _PlanStep | None:
         for step in self.steps:
             if step.step_id == step_id:
                 return step
@@ -795,7 +795,7 @@ class _PlanTracker:
         }
         return d
 
-    def complete_active_step(self) -> Optional[dict[str, Any]]:
+    def complete_active_step(self) -> dict[str, Any] | None:
         """Complete the currently-active step; returns event dict or None."""
         if not self._active_step_id:
             return None
@@ -816,7 +816,7 @@ class _PlanTracker:
         return d
 
     def complete_step_by_id(
-        self, step_id: str, result: Optional[str] = None,
+        self, step_id: str, result: str | None = None,
     ) -> dict[str, Any]:
         step = self.get_step(step_id)
         if step:
@@ -856,7 +856,7 @@ class _PlanTracker:
         self._active_step_id = None
         return events
 
-    def find_active_step_for_track(self, track_name: str) -> Optional[_PlanStep]:
+    def find_active_step_for_track(self, track_name: str) -> _PlanStep | None:
         """Find the active step bound to a specific instrument track."""
         track_lower = track_name.lower()
         for step in self.steps:

@@ -9,11 +9,13 @@ before Maestro consumes the data.  Orpheus's internal tool names
 an implementation detail of the Orpheus service and must not leak into
 Maestro's core.
 """
+from __future__ import annotations
+
 import asyncio
 import httpx
 import logging
 import time as _time
-from typing import Optional, Any
+from typing import Any
 
 from app.config import settings
 
@@ -57,7 +59,7 @@ class _CircuitBreaker:
         self.threshold = threshold
         self.cooldown = cooldown
         self._failures = 0
-        self._opened_at: Optional[float] = None
+        self._opened_at: float | None = None
 
     @property
     def is_open(self) -> bool:
@@ -111,16 +113,16 @@ class OrpheusClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        timeout: Optional[int] = None,
-        hf_token: Optional[str] = None,
-        max_concurrent: Optional[int] = None,
+        base_url: str | None = None,
+        timeout: int | None = None,
+        hf_token: str | None = None,
+        max_concurrent: int | None = None,
     ):
         self.base_url = (base_url or settings.orpheus_base_url).rstrip("/")
         self.timeout = timeout or settings.orpheus_timeout
         # Use HF token if provided (for Gradio Spaces)
         self.hf_token = hf_token or getattr(settings, "hf_api_key", None)
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
         n = max_concurrent or settings.orpheus_max_concurrent
         self._semaphore = asyncio.Semaphore(n)
@@ -175,7 +177,7 @@ class OrpheusClient:
             # loudly with a clear error if it's still down when needed.
             logger.warning(f"Orpheus warmup failed (service may not be running): {exc}")
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client."""
         if self._client:
             await self._client.aclose()
@@ -216,19 +218,22 @@ class OrpheusClient:
         self,
         genre: str = "boom_bap",
         tempo: int = 120,
-        instruments: Optional[list[str]] = None,
+        instruments: list[str] | None = None,
         bars: int = 4,
-        key: Optional[str] = None,
+        key: str | None = None,
         quality_preset: str = "balanced",
-        composition_id: Optional[str] = None,
+        composition_id: str | None = None,
         # ── Canonical intent blocks ──
-        emotion_vector: Optional[dict[str, float]] = None,
-        role_profile_summary: Optional[dict[str, float]] = None,
-        generation_constraints: Optional[dict[str, Any]] = None,
-        intent_goals: Optional[list[dict[str, Any]]] = None,
-        seed: Optional[int] = None,
-        trace_id: Optional[str] = None,
-        intent_hash: Optional[str] = None,
+        emotion_vector: dict[str, float] | None = None,
+        role_profile_summary: dict[str, float] | None = None,
+        generation_constraints: dict[str, Any] | None = None,
+        intent_goals: list[dict[str, Any]] | None = None,
+        seed: int | None = None,
+        trace_id: str | None = None,
+        intent_hash: str | None = None,
+        # ── Unified generation ──
+        add_outro: bool = False,
+        unified_output: bool = False,
     ) -> dict[str, Any]:
         """Generate MIDI via Orpheus using the async submit + long-poll pattern.
 
@@ -268,6 +273,10 @@ class OrpheusClient:
             payload["trace_id"] = trace_id
         if intent_hash is not None:
             payload["intent_hash"] = intent_hash
+        if add_outro:
+            payload["add_outro"] = True
+        if unified_output:
+            payload["unified_output"] = True
 
         _log_prefix = f"[{composition_id[:8]}]" if composition_id else ""
 
@@ -313,7 +322,7 @@ class OrpheusClient:
 
             # ── Submit phase ──────────────────────────────────────────
             _submit_timeout = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
-            job_id: Optional[str] = None
+            job_id: str | None = None
 
             for attempt in range(_MAX_RETRIES):
                 try:
@@ -359,7 +368,7 @@ class OrpheusClient:
                         logger.info(
                             f"{_log_prefix}[Orpheus] ✅ Cache hit for {instruments} in {_elapsed:.1f}s"
                         )
-                        return {
+                        _cache_resp: dict[str, Any] = {
                             "success": result.get("success", False),
                             "notes": result.get("notes", []),
                             "tool_calls": result.get("tool_calls", []),
@@ -368,6 +377,9 @@ class OrpheusClient:
                                 "retry_count": attempt,
                             },
                         }
+                        if result.get("channel_notes"):
+                            _cache_resp["channel_notes"] = result["channel_notes"]
+                        return _cache_resp
 
                     job_id = data.get("jobId")
                     if not job_id:
@@ -470,7 +482,7 @@ class OrpheusClient:
                             f"{instruments} in {_elapsed:.1f}s "
                             f"(poll {poll_num + 1}/{max_polls})"
                         )
-                        return {
+                        _poll_resp: dict[str, Any] = {
                             "success": True,
                             "notes": result.get("notes", []),
                             "tool_calls": result.get("tool_calls", []),
@@ -479,6 +491,9 @@ class OrpheusClient:
                                 "retry_count": 0,
                             },
                         }
+                        if result.get("channel_notes"):
+                            _poll_resp["channel_notes"] = result["channel_notes"]
+                        return _poll_resp
 
                     logger.debug(
                         f"[Orpheus] Job {job_id[:8]} still {status} "
@@ -520,11 +535,6 @@ class OrpheusClient:
             }
 
 
-# ---------------------------------------------------------------------------
-# Orpheus response adapter — normalises tool_calls into flat note/CC lists
-# ---------------------------------------------------------------------------
-
-
 def normalize_orpheus_tool_calls(
     tool_calls: list[dict[str, Any]],
 ) -> dict[str, list[dict[str, Any]]]:
@@ -534,15 +544,6 @@ def normalize_orpheus_tool_calls(
     ``addPitchBend``, ``addAftertouch``).  This adapter extracts the
     musical content into plain lists keyed by data type so that callers
     never handle Orpheus-specific tool names.
-
-    Returns::
-
-        {
-            "notes": [...],
-            "cc_events": [...],
-            "pitch_bends": [...],
-            "aftertouch": [...],
-        }
     """
     notes: list[dict[str, Any]] = []
     cc_events: list[dict[str, Any]] = []
@@ -595,7 +596,7 @@ def normalize_orpheus_tool_calls(
 # connection pool is reused rather than recreated per-request.
 # ---------------------------------------------------------------------------
 
-_shared_client: Optional[OrpheusClient] = None
+_shared_client: OrpheusClient | None = None
 
 
 def get_orpheus_client() -> OrpheusClient:

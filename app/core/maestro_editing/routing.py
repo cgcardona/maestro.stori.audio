@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from app.core.intent import Intent, IntentResult, SSEState
 from app.core.intent_config import (
@@ -29,7 +29,7 @@ def _project_needs_structure(project_context: dict[str, Any]) -> bool:
 
 
 def _is_additive_composition(
-    parsed: Optional["ParsedPrompt"],
+    parsed: "ParsedPrompt" | None,
     project_context: dict[str, Any],
 ) -> bool:
     """Detect if a composition request creates a new section (EDITING, not COMPOSING).

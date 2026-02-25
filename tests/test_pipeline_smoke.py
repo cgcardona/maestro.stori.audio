@@ -13,6 +13,7 @@ Coverage:
   6. PipelineOutput fields — route always set
   7. Empty project state handled without error
 """
+from __future__ import annotations
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -26,12 +27,14 @@ from app.core.intent import SSEState, Intent
 # ---------------------------------------------------------------------------
 
 def _mock_llm(content: str = "ok") -> AsyncMock:
+
     llm = AsyncMock()
     llm.chat.return_value = MagicMock(content=content)
     return llm
 
 
 def _mock_llm_with_plan(bars: int = 4) -> AsyncMock:
+
     """LLM that returns a valid JSON plan for COMPOSING requests."""
     import json
     plan_json = json.dumps({
@@ -55,7 +58,8 @@ class TestReasoningPath:
     """A question or chat request routes to REASONING → LLM chat, no plan."""
 
     @pytest.mark.anyio
-    async def test_reasoning_returns_llm_response(self):
+    async def test_reasoning_returns_llm_response(self) -> None:
+
         llm = _mock_llm("Jazz is a genre originating in New Orleans.")
         output = await run_pipeline(
             user_prompt="What is jazz?",
@@ -67,7 +71,8 @@ class TestReasoningPath:
         assert output.plan is None
 
     @pytest.mark.anyio
-    async def test_reasoning_route_is_reasoning(self):
+    async def test_reasoning_route_is_reasoning(self) -> None:
+
         llm = _mock_llm("Here's how reverb works...")
         output = await run_pipeline(
             user_prompt="How does reverb work?",
@@ -77,7 +82,8 @@ class TestReasoningPath:
         assert output.route.sse_state == SSEState.REASONING
 
     @pytest.mark.anyio
-    async def test_reasoning_llm_called_with_no_tools(self):
+    async def test_reasoning_llm_called_with_no_tools(self) -> None:
+
         llm = _mock_llm()
         await run_pipeline(
             user_prompt="Explain chord progressions.",
@@ -89,7 +95,8 @@ class TestReasoningPath:
         assert call_kwargs.get("tool_choice") == "none"
 
     @pytest.mark.anyio
-    async def test_reasoning_route_set_on_output(self):
+    async def test_reasoning_route_set_on_output(self) -> None:
+
         llm = _mock_llm()
         output = await run_pipeline(
             user_prompt="What tempo should I use for lofi?",
@@ -107,7 +114,8 @@ class TestComposingPath:
     """A music generation request routes to COMPOSING → planner plan, no direct llm_response."""
 
     @pytest.mark.anyio
-    async def test_composing_returns_plan(self):
+    async def test_composing_returns_plan(self) -> None:
+
         llm = _mock_llm_with_plan()
         output = await run_pipeline(
             user_prompt="Make a boom bap beat at 90 BPM",
@@ -119,7 +127,8 @@ class TestComposingPath:
         assert output.plan is not None
 
     @pytest.mark.anyio
-    async def test_composing_route_state(self):
+    async def test_composing_route_state(self) -> None:
+
         llm = _mock_llm_with_plan()
         output = await run_pipeline(
             user_prompt="Generate a full lo-fi track",
@@ -129,7 +138,8 @@ class TestComposingPath:
         assert output.route.sse_state in (SSEState.COMPOSING,)
 
     @pytest.mark.anyio
-    async def test_composing_plan_has_tool_calls_or_notes(self):
+    async def test_composing_plan_has_tool_calls_or_notes(self) -> None:
+
         """A valid plan has tool_calls; an invalid response still returns an ExecutionPlan."""
         llm = _mock_llm_with_plan()
         output = await run_pipeline(
@@ -151,10 +161,11 @@ class TestEditingPath:
     """An editing command routes to EDITING → LLM with tool calls, no plan."""
 
     @pytest.mark.anyio
-    async def test_editing_returns_llm_response(self):
+    async def test_editing_returns_llm_response(self) -> None:
+
         llm = _mock_llm()
         output = await run_pipeline(
-            user_prompt="Set the tempo to 120 BPM",
+            user_prompt="set the tempo to 120 BPM",
             project_state={},
             llm=llm,
         )
@@ -165,7 +176,8 @@ class TestEditingPath:
             assert output.plan is None
 
     @pytest.mark.anyio
-    async def test_editing_llm_receives_tools(self):
+    async def test_editing_llm_receives_tools(self) -> None:
+
         """EDITING path passes allowed tools to the LLM."""
         llm = _mock_llm()
         output = await run_pipeline(
@@ -189,7 +201,8 @@ class TestStructuredPromptComposingFastPath:
     """A fully-specified structured prompt builds a plan deterministically."""
 
     @pytest.mark.anyio
-    async def test_deterministic_plan_skips_llm(self):
+    async def test_deterministic_plan_skips_llm(self) -> None:
+
         llm = AsyncMock()
         output = await run_pipeline(
             user_prompt=(
@@ -214,7 +227,8 @@ class TestStructuredPromptComposingFastPath:
         assert output.plan.is_valid
 
     @pytest.mark.anyio
-    async def test_deterministic_plan_has_region_calls(self):
+    async def test_deterministic_plan_has_region_calls(self) -> None:
+
         llm = AsyncMock()
         output = await run_pipeline(
             user_prompt=(
@@ -240,7 +254,8 @@ class TestStructuredPromptComposingFastPath:
         assert len(region_calls) >= 1
 
     @pytest.mark.anyio
-    async def test_structured_prompt_with_position_calls_llm_for_context(self):
+    async def test_structured_prompt_with_position_calls_llm_for_context(self) -> None:
+
         """
         A structured prompt with Position: but missing bars falls back to LLM.
         The system prompt injected must contain ARRANGEMENT POSITION.
@@ -282,7 +297,8 @@ class TestStructuredPromptEditingPath:
     """Mode: edit structured prompts route to EDITING."""
 
     @pytest.mark.anyio
-    async def test_edit_mode_routes_to_editing(self):
+    async def test_edit_mode_routes_to_editing(self) -> None:
+
         llm = _mock_llm()
         output = await run_pipeline(
             user_prompt=(
@@ -303,7 +319,8 @@ class TestStructuredPromptEditingPath:
         assert output.route.sse_state == SSEState.EDITING
 
     @pytest.mark.anyio
-    async def test_structured_context_injected_in_edit_system_prompt(self):
+    async def test_structured_context_injected_in_edit_system_prompt(self) -> None:
+
         llm = _mock_llm()
         await run_pipeline(
             user_prompt=(
@@ -330,18 +347,20 @@ class TestPipelineOutputInvariants:
     """route is always set; at most one of llm_response / plan is set."""
 
     @pytest.mark.anyio
-    async def test_route_always_set(self):
+    async def test_route_always_set(self) -> None:
+
         for prompt in [
             "What is a chord?",
             "Make a beat",
-            "Set tempo to 120",
+            "set tempo to 120",
         ]:
             llm = _mock_llm_with_plan()
             output = await run_pipeline(prompt, {}, llm)
             assert output.route is not None
 
     @pytest.mark.anyio
-    async def test_not_both_plan_and_llm_response_for_composing(self):
+    async def test_not_both_plan_and_llm_response_for_composing(self) -> None:
+
         llm = _mock_llm_with_plan()
         output = await run_pipeline("Generate a hip hop beat", {}, llm)
         # COMPOSING path: plan is set, llm_response is not (it's in the plan)
@@ -357,20 +376,23 @@ class TestPipelineEdgeCases:
     """Edge cases that must not crash the pipeline."""
 
     @pytest.mark.anyio
-    async def test_empty_project_state(self):
+    async def test_empty_project_state(self) -> None:
+
         llm = _mock_llm()
         output = await run_pipeline("What is reverb?", {}, llm)
         assert output is not None
 
     @pytest.mark.anyio
-    async def test_very_long_prompt(self):
+    async def test_very_long_prompt(self) -> None:
+
         llm = _mock_llm()
         long_prompt = "make a beat " * 200
         output = await run_pipeline(long_prompt, {}, llm)
         assert output is not None
 
     @pytest.mark.anyio
-    async def test_structured_prompt_ask_mode(self):
+    async def test_structured_prompt_ask_mode(self) -> None:
+
         """Mode: ask routes to REASONING."""
         llm = _mock_llm("Here's how EQ works...")
         output = await run_pipeline(

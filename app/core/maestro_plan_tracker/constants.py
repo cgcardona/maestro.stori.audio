@@ -55,8 +55,7 @@ _CONTENT_TOOL_NAMES: set[str] = {
 }
 _EXPRESSIVE_TOOL_NAMES: set[str] = _EXPRESSION_TOOL_NAMES
 _GENERATOR_TOOL_NAMES: set[str] = {
-    "stori_generate_midi", "stori_generate_drums", "stori_generate_bass",
-    "stori_generate_melody", "stori_generate_chords",
+    "stori_generate_midi",
 }
 
 # Tools whose track association can be determined from params
@@ -72,10 +71,6 @@ _INSTRUMENT_AGENT_TOOLS: frozenset[str] = frozenset({
     "stori_add_midi_region",
     "stori_add_notes",
     "stori_generate_midi",
-    "stori_generate_drums",
-    "stori_generate_bass",
-    "stori_generate_melody",
-    "stori_generate_chords",
     "stori_add_insert_effect",
     "stori_add_midi_cc",
     "stori_add_pitch_bend",

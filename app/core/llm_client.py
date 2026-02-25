@@ -17,7 +17,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator, Optional, cast
+from typing import Any, AsyncIterator
 
 from app.config import settings
 from app.core.expansion import ToolCall
@@ -33,10 +33,10 @@ class LLMProvider(str, Enum):
 @dataclass
 class LLMResponse:
     """Response from the LLM."""
-    content: Optional[str] = None
+    content: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
-    finish_reason: Optional[str] = None
-    usage: Optional[dict[str, Any]] = None
+    finish_reason: str | None = None
+    usage: dict[str, Any] | None = None
 
     @property
     def has_tool_calls(self) -> bool:
@@ -117,17 +117,17 @@ class LLMClient:
     
     def __init__(
         self,
-        provider: Optional[LLMProvider] = None,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
-        timeout: Optional[int] = None,
+        provider: LLMProvider | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+        timeout: int | None = None,
     ):
         self.provider = provider or settings.llm_provider
         self.api_key = api_key or self._get_api_key()
         self.model = model or settings.llm_model
         self.timeout = timeout or settings.llm_timeout
         self.base_url = self._get_base_url()
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
     
     def supports_reasoning(self) -> bool:
         """Check if current model supports extended reasoning."""
@@ -160,7 +160,7 @@ class LLMClient:
             self._client = httpx.AsyncClient(timeout=self.timeout, headers=headers)
         return self._client
     
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client."""
         if self._client:
             await self._client.aclose()
@@ -210,8 +210,8 @@ class LLMClient:
     def _enable_prompt_caching(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict]] = None,
-    ) -> tuple[list[dict[str, Any]], Optional[list[dict]], None]:
+        tools: list[dict[str, Any]] | None = None,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]] | None, None]:
         """
         Add Anthropic cache_control breakpoints to the system prompt and tools.
 
@@ -259,7 +259,7 @@ class LLMClient:
         # Anthropic requires the cacheable prefix to be ≥ 1024 tokens.
         # For COMPOSING (22 tools, ~2500+ tok) this fires reliably.
         # For EDITING (1 tool, ~200-800 tok) it is below threshold — accepted.
-        cached_tools: Optional[list[dict]] = None
+        cached_tools: list[dict[str, Any]] | None = None
         if tools:
             cached_tools = [dict(t) for t in tools]
             cached_tools[-1] = dict(cached_tools[-1])
@@ -275,10 +275,10 @@ class LLMClient:
     async def chat_completion(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
         max_retries: int = 2,
     ) -> LLMResponse:
         """Send a chat completion request with retry logic."""
@@ -298,7 +298,7 @@ class LLMClient:
         
         logger.debug(f"LLM request: {len(messages)} messages, {len(tools) if tools else 0} tools, caching={self._supports_caching()}")
         
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         for attempt in range(max_retries + 1):
             if attempt > 0:
                 backoff = 2 ** attempt
@@ -353,11 +353,11 @@ class LLMClient:
     async def chat_completion_stream(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        reasoning_fraction: Optional[float] = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        reasoning_fraction: float | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream chat completion with real-time reasoning."""
         logger.info(f"🚀 chat_completion_stream called: model={self.model}, supports_reasoning={self.supports_reasoning()}")

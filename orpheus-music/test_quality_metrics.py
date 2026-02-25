@@ -4,19 +4,21 @@ Tests for quality metrics system.
 Quality metrics provide objective measures for A/B testing and
 monitoring generation quality over time.
 """
+from __future__ import annotations
+
 import pytest
 from quality_metrics import analyze_quality, compare_generations
 from generation_policy import intent_to_controls
 
 
-def test_analyze_empty_notes():
+def test_analyze_empty_notes() -> None:
     """Test quality analysis with no notes."""
     result = analyze_quality([], bars=4, tempo=120)
     assert result["note_count"] == 0
     assert "error" in result
 
 
-def test_analyze_basic_notes():
+def test_analyze_basic_notes() -> None:
     """Test quality analysis with simple note pattern."""
     notes = [
         {"pitch": 60, "startBeat": 0.0, "duration": 0.5, "velocity": 80},
@@ -34,7 +36,7 @@ def test_analyze_basic_notes():
     assert "quality_score" in result
 
 
-def test_quality_score_reasonable_density():
+def test_quality_score_reasonable_density() -> None:
     """Test quality score favors reasonable note density."""
     # Good density (~8 notes per bar)
     good_notes = [
@@ -55,7 +57,7 @@ def test_quality_score_reasonable_density():
     assert good_result.get("quality_score", 0) > sparse_result.get("quality_score", 0)
 
 
-def test_velocity_variation_scoring():
+def test_velocity_variation_scoring() -> None:
     """Test that appropriate velocity variation scores well."""
     # Good variation (15% around mean of 80)
     good_notes = [
@@ -79,7 +81,7 @@ def test_velocity_variation_scoring():
     assert flat_result["velocity_variation"] < 0.01
 
 
-def test_pitch_range_scoring():
+def test_pitch_range_scoring() -> None:
     """Test that reasonable pitch ranges score better."""
     # Good range (2 octaves)
     good_notes = [
@@ -100,7 +102,7 @@ def test_pitch_range_scoring():
     assert narrow_result["pitch_range"] == 0
 
 
-def test_pattern_repetition():
+def test_pattern_repetition() -> None:
     """Test repetition analysis."""
     # Some repetition (musical)
     musical_notes = [
@@ -117,7 +119,7 @@ def test_pattern_repetition():
     assert 0.2 <= result["pattern_repetition_rate"] <= 0.6
 
 
-def test_compare_generations():
+def test_compare_generations() -> None:
     """Test comparison between two generations."""
     # Better generation (good density, variation)
     better_notes = [
@@ -138,7 +140,7 @@ def test_compare_generations():
     assert comparison["generation_a"]["note_count"] > comparison["generation_b"]["note_count"]
 
 
-def test_quality_metrics_all_fields():
+def test_quality_metrics_all_fields() -> None:
     """Test that all expected metrics are computed."""
     notes = [
         {"pitch": 60 + i, "startBeat": i * 0.5, "duration": 0.5, "velocity": 80 + i * 2}
@@ -160,7 +162,7 @@ def test_quality_metrics_all_fields():
         assert field in metrics, f"Missing metric: {field}"
 
 
-def test_quality_score_range():
+def test_quality_score_range() -> None:
     """Test quality score is always between 0 and 1."""
     test_cases = [
         # Various note patterns
@@ -175,7 +177,7 @@ def test_quality_score_range():
             assert 0.0 <= metrics["quality_score"] <= 1.0
 
 
-def test_tempo_adjustments():
+def test_tempo_adjustments() -> None:
     """Test tempo affects complexity."""
     # Slow tempo
     slow_controls = intent_to_controls(genre="trap", tempo=70)

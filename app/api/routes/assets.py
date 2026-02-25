@@ -4,8 +4,9 @@ On-demand asset delivery API (drum kits, GM soundfont).
 Returns presigned S3 URLs only; no file bytes stream through FastAPI.
 All routes require X-Device-ID header (UUID only; no JWT). Rate limited by device ID and IP.
 """
+from __future__ import annotations
+
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
@@ -38,7 +39,7 @@ limiter_by_ip = Limiter(key_func=get_remote_address)
     "/assets/drum-kits",
     response_model=None,
     responses={
-        200: {"description": "List of available drum kits"},
+        200: {"description": "list of available drum kits"},
         400: {"description": "Missing or invalid X-Device-ID"},
         429: {"description": "Rate limit exceeded"},
         503: {"description": "Asset service not configured"},
@@ -51,7 +52,7 @@ async def list_drum_kits(
     device_id: str = Depends(require_device_id),
 ) -> JSONResponse:
     """
-    List available drum kits.
+    list available drum kits.
 
     Each item includes: id, name, version, and optionally fileCount/sizeBytes.
     Use the id in GET /api/assets/drum-kits/{kit_id}/download-url to get a download URL.
@@ -84,7 +85,7 @@ async def list_drum_kits(
     "/assets/soundfonts",
     response_model=None,
     responses={
-        200: {"description": "List of available soundfonts"},
+        200: {"description": "list of available soundfonts"},
         400: {"description": "Missing or invalid X-Device-ID"},
         429: {"description": "Rate limit exceeded"},
         503: {"description": "Asset service not configured"},
@@ -97,7 +98,7 @@ async def list_soundfonts(
     device_id: str = Depends(require_device_id),
 ) -> JSONResponse:
     """
-    List available soundfonts (e.g. GM SoundFont).
+    list available soundfonts (e.g. GM SoundFont).
 
     Each item includes: id, name, filename.
     Use the id in GET /api/assets/soundfonts/{soundfont_id}/download-url to get a download URL.
@@ -143,7 +144,7 @@ async def get_drum_kit_download_url(
     request: Request,
     kit_id: str,
     device_id: str = Depends(require_device_id),
-    expires_in: Optional[int] = Query(None, ge=60, le=86400, description="URL expiry in seconds (default from config)"),
+    expires_in: int | None = Query(None, ge=60, le=86400, description="URL expiry in seconds (default from config)"),
 ) -> JSONResponse:
     """
     Get a presigned download URL for a drum kit zip.
@@ -213,7 +214,7 @@ async def get_soundfont_download_url(
     request: Request,
     soundfont_id: str,
     device_id: str = Depends(require_device_id),
-    expires_in: Optional[int] = Query(None, ge=60, le=86400, description="URL expiry in seconds (default from config)"),
+    expires_in: int | None = Query(None, ge=60, le=86400, description="URL expiry in seconds (default from config)"),
 ) -> JSONResponse:
     """
     Get a presigned download URL for a soundfont (.sf2) file.
@@ -281,7 +282,7 @@ async def get_soundfont_download_url(
 async def get_bundle_download_url(
     request: Request,
     device_id: str = Depends(require_device_id),
-    expires_in: Optional[int] = Query(None, ge=60, le=86400, description="URL expiry in seconds (default from config)"),
+    expires_in: int | None = Query(None, ge=60, le=86400, description="URL expiry in seconds (default from config)"),
 ) -> JSONResponse:
     """
     Get a presigned download URL for the full bundle (all drum kits + GM soundfont in one zip).

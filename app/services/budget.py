@@ -3,8 +3,10 @@ Budget management service.
 
 Handles budget checking, cost calculation, and usage logging.
 """
+from __future__ import annotations
+
 import logging
-from typing import Optional, cast
+from typing import cast
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -111,7 +113,7 @@ async def deduct_budget(
     db: AsyncSession,
     user_id: str,
     cost_cents: int,
-    prompt: Optional[str],
+    prompt: str | None,
     model: str,
     prompt_tokens: int,
     completion_tokens: int,
@@ -131,7 +133,7 @@ async def deduct_budget(
         store_prompt: Whether to store the prompt
         
     Returns:
-        Tuple of (updated User, UsageLog)
+        tuple of (updated User, UsageLog)
         
     Raises:
         BudgetError: If user not found
@@ -178,7 +180,7 @@ async def deduct_budget(
 async def get_user_budget(
     db: AsyncSession,
     user_id: str,
-) -> Optional[float]:
+) -> float | None:
     """
     Get user's remaining budget in dollars.
     
@@ -222,7 +224,7 @@ def validate_model(model: str) -> str:
     return model
 
 
-def get_model_or_default(model: Optional[str]) -> str:
+def get_model_or_default(model: str | None) -> str:
     """
     Get the model to use, falling back to default if not specified or invalid.
     
@@ -281,15 +283,15 @@ class BudgetReservation:
         self.db = db
         self.user_id = user_id
         self.reserved_cents = reserved_cents
-        self.actual_cost_cents: Optional[int] = None
+        self.actual_cost_cents: int | None = None
         self.model = model
         self._released = False
     
-    def set_actual_cost(self, cost_cents: int):
-        """Set the actual cost after LLM call completes."""
+    def set_actual_cost(self, cost_cents: int) -> None:
+        """set the actual cost after LLM call completes."""
         self.actual_cost_cents = cost_cents
     
-    async def release(self):
+    async def release(self) -> None:
         """Release unused reservation back to budget."""
         if self._released:
             return
@@ -306,7 +308,7 @@ class BudgetReservation:
         
         self._released = True
     
-    async def consume(self, prompt_tokens: int, completion_tokens: int, prompt: Optional[str] = None, store_prompt: bool = True):
+    async def consume(self, prompt_tokens: int, completion_tokens: int, prompt: str | None = None, store_prompt: bool = True) -> None:
         """Consume the reservation and log usage."""
         if self._released:
             raise BudgetError("Cannot consume already released reservation")
@@ -338,7 +340,7 @@ async def reserve_budget(
     db: AsyncSession,
     user_id: str,
     model: str,
-    estimated_cost_cents: Optional[int] = None,
+    estimated_cost_cents: int | None = None,
 ) -> BudgetReservation:
     """
     Optimistically reserve budget before making an LLM call.
@@ -395,7 +397,7 @@ async def _release_reservation(
     db: AsyncSession,
     user_id: str,
     release_cents: int,
-):
+) -> None:
     """Release reservation back to user budget."""
     result = await db.execute(
         select(User).where(User.id == user_id).with_for_update()

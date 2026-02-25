@@ -14,7 +14,7 @@ import asyncio
 import json
 import logging
 import uuid as _uuid_mod
-from typing import Any, Optional
+from typing import Any
 
 from app.config import settings
 from app.core.expansion import ToolCall
@@ -70,12 +70,13 @@ async def _run_instrument_agent(
     trace: Any,
     sse_queue: "asyncio.Queue[dict[str, Any]]",
     collected_tool_calls: list[dict[str, Any]],
-    existing_track_id: Optional[str] = None,
+    existing_track_id: str | None = None,
     start_beat: int = 0,
-    assigned_color: Optional[str] = None,
-    instrument_contract: Optional[InstrumentContract] = None,
-    runtime_context: Optional[RuntimeContext] = None,
-    execution_services: Optional[ExecutionServices] = None,
+    assigned_color: str | None = None,
+    instrument_contract: InstrumentContract | None = None,
+    runtime_context: RuntimeContext | None = None,
+    execution_services: ExecutionServices | None = None,
+    all_composition_instruments: list[str] | None = None,
 ) -> None:
     """Independent instrument agent: dedicated multi-turn LLM session per instrument.
 
@@ -135,6 +136,7 @@ async def _run_instrument_agent(
             instrument_contract=instrument_contract,
             runtime_context=runtime_context,
             execution_services=execution_services,
+            all_composition_instruments=all_composition_instruments,
         )
     except Exception as exc:
         logger.exception(f"{agent_log} Unhandled agent error: {exc}")
@@ -162,15 +164,16 @@ async def _run_instrument_agent_inner(
     trace: Any,
     sse_queue: "asyncio.Queue[dict[str, Any]]",
     collected_tool_calls: list[dict[str, Any]],
-    existing_track_id: Optional[str],
+    existing_track_id: str | None,
     start_beat: int,
     agent_log: str,
     agent_id: str,
     reusing: bool,
-    assigned_color: Optional[str] = None,
-    instrument_contract: Optional[InstrumentContract] = None,
-    runtime_context: Optional[RuntimeContext] = None,
-    execution_services: Optional[ExecutionServices] = None,
+    assigned_color: str | None = None,
+    instrument_contract: InstrumentContract | None = None,
+    runtime_context: RuntimeContext | None = None,
+    execution_services: ExecutionServices | None = None,
+    all_composition_instruments: list[str] | None = None,
 ) -> bool:
     """Inner implementation of a single instrument agent.
 
@@ -197,7 +200,7 @@ async def _run_instrument_agent_inner(
     _gm_guidance = _ic.gm_guidance if _ic else get_genre_gm_guidance(style, role)
     _gm_guidance_block = f"\n{_gm_guidance}\n" if _gm_guidance else ""
 
-    _sections: list[dict] = []
+    _sections: list[dict[str, Any]] = []
     if _ic:
         _sections = [
             {
@@ -407,7 +410,7 @@ async def _run_instrument_agent_inner(
     ]
 
     add_notes_failures: dict[str, int] = {}
-    active_step_id: Optional[str] = None
+    active_step_id: str | None = None
     all_tool_results: list[dict[str, Any]] = []
 
     # Server-owned retries handle *failed* section children inside
@@ -530,9 +533,9 @@ async def _run_instrument_agent_inner(
         logger.info(f"{agent_log} 🤖 LLM call starting (turn {turn})")
         _llm_start = asyncio.get_event_loop().time()
         try:
-            _resp_content: Optional[str] = None
+            _resp_content: str | None = None
             _resp_tool_calls: list[dict[str, Any]] = []
-            _resp_finish: Optional[str] = None
+            _resp_finish: str | None = None
             _resp_usage: dict[str, Any] = {}
             _rbuf = ReasoningBuffer()
             _had_reasoning = False
@@ -735,6 +738,7 @@ async def _run_instrument_agent_inner(
                     prior_generates_completed=_generates_completed,
                     sections_with_region=_sections_with_region,
                     sections_with_generate=_sections_with_generate,
+                    all_composition_instruments=all_composition_instruments,
                 )
 
         # ── Fallback: single tool-call retry turns (no region+generate pair) ──
@@ -888,8 +892,8 @@ async def _run_instrument_agent_inner(
 async def _dispatch_section_children(
     *,
     tool_calls: list[ToolCall],
-    sections: list[dict],
-    existing_track_id: Optional[str],
+    sections: list[dict[str, Any]],
+    existing_track_id: str | None,
     instrument_name: str,
     role: str,
     style: str,
@@ -902,15 +906,15 @@ async def _dispatch_section_children(
     store: StateStore,
     trace: Any,
     sse_queue: "asyncio.Queue[dict[str, Any]]",
-    instrument_contract: Optional[InstrumentContract] = None,
+    instrument_contract: InstrumentContract | None = None,
     collected_tool_calls: list[dict[str, Any]],
     all_tool_results: list[dict[str, Any]],
     add_notes_failures: dict[str, int],
-    runtime_context: Optional[RuntimeContext],
-    execution_services: Optional[ExecutionServices] = None,
+    runtime_context: RuntimeContext | None,
+    execution_services: ExecutionServices | None = None,
     plan_tracker: _PlanTracker,
     step_ids: list[str],
-    active_step_id: Optional[str],
+    active_step_id: str | None,
     llm: LLMClient,
     prior_stage_track: bool,
     prior_stage_effect: bool,
@@ -919,6 +923,7 @@ async def _dispatch_section_children(
     prior_generates_completed: int,
     sections_with_region: set[str] | None = None,
     sections_with_generate: set[str] | None = None,
+    all_composition_instruments: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], bool, bool, int, int, int]:
     """Group LLM tool calls and dispatch section children in parallel.
 
@@ -1095,9 +1100,12 @@ async def _dispatch_section_children(
     # When the LLM sends generates without same-turn regions (common when
     # regions were created on a prior turn), execute them directly.  The
     # regionId and trackId are resolved from all_tool_results via $refs.
-    _orphan_gen_ctx: dict[str, Any] | None = None
+    # Unified generation: attach section_key + all_instruments so the
+    # tool execution path routes through generate_for_section, producing
+    # coherent multi-instrument output via a shared Orpheus call.
+    _orphan_gen_base_ctx: dict[str, Any] | None = None
     if orphaned_generates and runtime_context:
-        _orphan_gen_ctx = {
+        _orphan_gen_base_ctx = {
             **runtime_context.to_composition_context(),
             "style": style,
             "tempo": tempo,
@@ -1111,9 +1119,16 @@ async def _dispatch_section_children(
                 evt = {**evt, "agentId": agent_id}
             await sse_queue.put(evt)
 
-    for tc in orphaned_generates:
+    for _oi, tc in enumerate(orphaned_generates):
         resolved_args = _resolve_variable_refs(tc.params, all_tool_results)
         resolved_args["trackId"] = real_track_id
+
+        _orphan_gen_ctx = dict(_orphan_gen_base_ctx) if _orphan_gen_base_ctx else None
+        if _orphan_gen_ctx and instrument_contract and all_composition_instruments:
+            _sec_offset = len(pairs) + _oi
+            if _sec_offset < len(instrument_contract.sections):
+                _orphan_gen_ctx["section_key"] = instrument_contract.sections[_sec_offset].section_id
+                _orphan_gen_ctx["all_instruments"] = list(all_composition_instruments)
 
         outcome = await _apply_single_tool_call(
             tc_id=tc.id,
@@ -1255,6 +1270,7 @@ async def _dispatch_section_children(
                     execution_services=execution_services,
                     llm=llm,
                     previous_notes=_chain_notes,
+                    all_section_instruments=all_composition_instruments,
                 ),
                 timeout=_child_timeout,
             )
@@ -1332,6 +1348,7 @@ async def _dispatch_section_children(
                         execution_services=execution_services,
                         llm=llm,
                         previous_notes=_retry_prev,
+                        all_section_instruments=all_composition_instruments,
                     ),
                     timeout=_child_timeout,
                 )

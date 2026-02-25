@@ -4,6 +4,7 @@ Tests for the EntityRegistry.
 The EntityRegistry is the authoritative source of entity IDs in a project,
 eliminating the "fabricated ID" failure mode where LLMs invent entity IDs.
 """
+from __future__ import annotations
 
 import pytest
 from app.core.entity_registry import (
@@ -17,7 +18,8 @@ from app.core.entity_registry import (
 class TestEntityRegistryBasics:
     """Test basic entity registry operations."""
     
-    def test_create_registry(self):
+    def test_create_registry(self) -> None:
+
         """Registry should initialize with empty collections."""
         registry = EntityRegistry()
         
@@ -26,12 +28,14 @@ class TestEntityRegistryBasics:
         assert len(registry.list_regions()) == 0
         assert len(registry.list_buses()) == 0
     
-    def test_create_registry_with_project_id(self):
+    def test_create_registry_with_project_id(self) -> None:
+
         """Registry should accept custom project ID."""
         registry = EntityRegistry(project_id="my-project-123")
         assert registry.project_id == "my-project-123"
     
-    def test_create_track(self):
+    def test_create_track(self) -> None:
+
         """Should create and register a track."""
         registry = EntityRegistry()
         
@@ -43,7 +47,8 @@ class TestEntityRegistryBasics:
         info = registry.get_track(track_id)
         assert info is not None and info.name == "Drums"
     
-    def test_create_track_with_custom_id(self):
+    def test_create_track_with_custom_id(self) -> None:
+
         """Should accept custom track ID."""
         registry = EntityRegistry()
         
@@ -52,7 +57,8 @@ class TestEntityRegistryBasics:
         assert track_id == "custom-track-id"
         assert registry.exists_track("custom-track-id")
     
-    def test_create_region(self):
+    def test_create_region(self) -> None:
+
         """Should create and register a region with parent track."""
         registry = EntityRegistry()
         
@@ -65,7 +71,8 @@ class TestEntityRegistryBasics:
         region = registry.get_region(region_id)
         assert region is not None and region.name == "Main Pattern" and region.parent_id == track_id
     
-    def test_create_region_idempotent_same_beat_range(self):
+    def test_create_region_idempotent_same_beat_range(self) -> None:
+
         """Duplicate stori_add_midi_region at same beat range returns existing ID."""
         registry = EntityRegistry()
         track_id = registry.create_track("Strings")
@@ -82,7 +89,8 @@ class TestEntityRegistryBasics:
         assert first_id == second_id
         assert len(registry.get_track_regions(track_id)) == 1
 
-    def test_create_region_different_beat_range_creates_new(self):
+    def test_create_region_different_beat_range_creates_new(self) -> None:
+
         """Different beat ranges create distinct regions (not idempotent)."""
         registry = EntityRegistry()
         track_id = registry.create_track("Strings")
@@ -99,14 +107,16 @@ class TestEntityRegistryBasics:
         assert first_id != second_id
         assert len(registry.get_track_regions(track_id)) == 2
 
-    def test_create_region_without_parent_fails(self):
+    def test_create_region_without_parent_fails(self) -> None:
+
         """Should fail to create region without valid parent track."""
         registry = EntityRegistry()
         
         with pytest.raises(ValueError, match="not found"):
             registry.create_region("Pattern", parent_track_id="nonexistent")
     
-    def test_create_bus(self):
+    def test_create_bus(self) -> None:
+
         """Should create and register a bus."""
         registry = EntityRegistry()
         
@@ -117,7 +127,8 @@ class TestEntityRegistryBasics:
         bus = registry.get_bus(bus_id)
         assert bus is not None and bus.name == "Reverb Bus"
 
-    def test_get_or_create_bus_new(self):
+    def test_get_or_create_bus_new(self) -> None:
+
         """Should create bus if it doesn't exist."""
         registry = EntityRegistry()
         
@@ -127,7 +138,8 @@ class TestEntityRegistryBasics:
         bus = registry.get_bus(bus_id)
         assert bus is not None and bus.name == "Delay Bus"
 
-    def test_get_or_create_bus_existing(self):
+    def test_get_or_create_bus_existing(self) -> None:
+
         """Should return existing bus if it exists."""
         registry = EntityRegistry()
         
@@ -140,7 +152,8 @@ class TestEntityRegistryBasics:
 class TestEntityResolution:
     """Test entity name → ID resolution."""
     
-    def test_resolve_track_by_id(self):
+    def test_resolve_track_by_id(self) -> None:
+
         """Should resolve exact ID match."""
         registry = EntityRegistry()
         
@@ -148,7 +161,8 @@ class TestEntityResolution:
         
         assert registry.resolve_track(track_id) == track_id
     
-    def test_resolve_track_by_name(self):
+    def test_resolve_track_by_name(self) -> None:
+
         """Should resolve by name (case-insensitive)."""
         registry = EntityRegistry()
         
@@ -158,7 +172,8 @@ class TestEntityResolution:
         assert registry.resolve_track("drums") == track_id
         assert registry.resolve_track("DRUMS") == track_id
     
-    def test_resolve_track_partial_match(self):
+    def test_resolve_track_partial_match(self) -> None:
+
         """Should resolve partial name matches."""
         registry = EntityRegistry()
         
@@ -167,7 +182,8 @@ class TestEntityResolution:
         # Partial match should work
         assert registry.resolve_track("drums") == track_id
     
-    def test_resolve_track_exact_mode_no_fuzzy(self):
+    def test_resolve_track_exact_mode_no_fuzzy(self) -> None:
+
         """With exact=True, should NOT do fuzzy matching."""
         registry = EntityRegistry()
         
@@ -180,7 +196,8 @@ class TestEntityResolution:
         assert registry.resolve_track("Phish Drums", exact=True) == track_id
         assert registry.resolve_track("phish drums", exact=True) == track_id
     
-    def test_similar_track_names_not_confused(self):
+    def test_similar_track_names_not_confused(self) -> None:
+
         """Different tracks with similar names should have different IDs."""
         registry = EntityRegistry()
         
@@ -198,13 +215,15 @@ class TestEntityResolution:
         # Fuzzy matching finds first match (but this is for lookups, not creation)
         # The important thing is that creation uses exact matching
     
-    def test_resolve_track_not_found(self):
+    def test_resolve_track_not_found(self) -> None:
+
         """Should return None for unknown tracks."""
         registry = EntityRegistry()
         
         assert registry.resolve_track("nonexistent") is None
     
-    def test_resolve_region_by_id(self):
+    def test_resolve_region_by_id(self) -> None:
+
         """Should resolve region by ID."""
         registry = EntityRegistry()
         
@@ -213,7 +232,8 @@ class TestEntityResolution:
         
         assert registry.resolve_region(region_id) == region_id
     
-    def test_resolve_region_by_name(self):
+    def test_resolve_region_by_name(self) -> None:
+
         """Should resolve region by name."""
         registry = EntityRegistry()
         
@@ -223,7 +243,8 @@ class TestEntityResolution:
         assert registry.resolve_region("Pattern A") == region_id
         assert registry.resolve_region("pattern a") == region_id
     
-    def test_resolve_region_with_parent_scope(self):
+    def test_resolve_region_with_parent_scope(self) -> None:
+
         """Should scope region resolution to parent track."""
         registry = EntityRegistry()
         
@@ -240,7 +261,8 @@ class TestEntityResolution:
         assert registry.resolve_region("Pattern", parent_track=track1_id) == region1_id
         assert registry.resolve_region("Pattern", parent_track="Drums") == region1_id
     
-    def test_resolve_bus(self):
+    def test_resolve_bus(self) -> None:
+
         """Should resolve bus by name or ID."""
         registry = EntityRegistry()
         
@@ -254,7 +276,8 @@ class TestEntityResolution:
 class TestTrackRegionRelationships:
     """Test track → region relationships."""
     
-    def test_get_track_regions(self):
+    def test_get_track_regions(self) -> None:
+
         """Should get all regions for a track."""
         registry = EntityRegistry()
         
@@ -268,7 +291,8 @@ class TestTrackRegionRelationships:
         assert len(regions) == 3
         assert {r.id for r in regions} == {region1, region2, region3}
     
-    def test_get_latest_region_for_track(self):
+    def test_get_latest_region_for_track(self) -> None:
+
         """Should get most recently created region."""
         registry = EntityRegistry()
         
@@ -279,7 +303,8 @@ class TestTrackRegionRelationships:
         
         assert registry.get_latest_region_for_track(track_id) == latest_id
     
-    def test_get_latest_region_empty(self):
+    def test_get_latest_region_empty(self) -> None:
+
         """Should return None if track has no regions."""
         registry = EntityRegistry()
         
@@ -291,7 +316,8 @@ class TestTrackRegionRelationships:
 class TestProjectStateSync:
     """Test synchronization with client project state."""
     
-    def test_sync_tracks_from_project_state(self):
+    def test_sync_tracks_from_project_state(self) -> None:
+
         """Should sync tracks from project state."""
         registry = EntityRegistry()
         
@@ -309,7 +335,8 @@ class TestProjectStateSync:
         assert registry.resolve_track("Drums") == "track-1"
         assert registry.resolve_track("Bass") == "track-2"
     
-    def test_sync_regions_from_project_state(self):
+    def test_sync_regions_from_project_state(self) -> None:
+
         """Should sync regions from project state."""
         registry = EntityRegistry()
         
@@ -333,7 +360,8 @@ class TestProjectStateSync:
         r1 = registry.get_region("region-1")
         assert r1 is not None and r1.parent_id == "track-1"
     
-    def test_sync_buses_from_project_state(self):
+    def test_sync_buses_from_project_state(self) -> None:
+
         """Should sync buses from project state."""
         registry = EntityRegistry()
         
@@ -350,7 +378,8 @@ class TestProjectStateSync:
         assert registry.exists_bus("bus-1")
         assert registry.exists_bus("bus-2")
     
-    def test_create_registry_from_context(self):
+    def test_create_registry_from_context(self) -> None:
+
         """Convenience function should create and sync."""
         project_state = {
             "tracks": [
@@ -366,7 +395,8 @@ class TestProjectStateSync:
 class TestSerialization:
     """Test registry serialization/deserialization."""
     
-    def test_to_dict(self):
+    def test_to_dict(self) -> None:
+
         """Should serialize registry to dict."""
         registry = EntityRegistry(project_id="test-project")
         
@@ -381,7 +411,8 @@ class TestSerialization:
         assert region_id in data["regions"]
         assert bus_id in data["buses"]
     
-    def test_from_dict(self):
+    def test_from_dict(self) -> None:
+
         """Should deserialize registry from dict."""
         original = EntityRegistry(project_id="test-project")
         

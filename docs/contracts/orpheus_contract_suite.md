@@ -41,7 +41,7 @@ This document defines every input/output boundary between the **Maestro** orches
 | R3 | RoleProfile reduced to single complexity float | **HIGH** | **RESOLVED** — 12-field role_profile_summary transmitted |
 | R4 | No deterministic seed propagation | **MEDIUM** | **RESOLVED** — seed parameter added |
 | R5 | GenerationConstraints never sent to Orpheus | **HIGH** | **RESOLVED** — full generation_constraints block forwarded |
-| R6 | Orpheus tool_calls coupled via string matching | **MEDIUM** | MITIGATED (adapter boundary exists) |
+| R6 | Orpheus tool_calls coupled via string matching | **MEDIUM** | **RESOLVED** — tool_calls removed; Orpheus returns flat notes directly |
 | R7 | No trace_id / request_id propagation | **MEDIUM** | **RESOLVED** — trace_id and intent_hash added |
 | R8 | 63-feature heuristic time-series does not exist | **INFO** | DESIGN GAP |
 | R9 | Emotional arcs (time-varying emotion) not implemented | **INFO** | DESIGN GAP |
@@ -837,20 +837,6 @@ This is the **actual payload** sent from Maestro to Orpheus:
   "required": ["success"],
   "properties": {
     "success": { "type": "boolean" },
-    "tool_calls": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "tool": {
-            "type": "string",
-            "enum": ["createProject", "addMidiTrack", "addMidiRegion", "addNotes", "addMidiCC", "addPitchBend", "addAftertouch"]
-          },
-          "params": { "type": "object" }
-        }
-      },
-      "description": "DAW-style tool calls (legacy path)"
-    },
     "notes": {
       "type": ["array", "null"],
       "items": {
@@ -863,7 +849,7 @@ This is the **actual payload** sent from Maestro to Orpheus:
           "velocity": { "type": "integer", "minimum": 0, "maximum": 127 }
         }
       },
-      "description": "MVP path: pre-flattened note list"
+      "description": "Flat note list — the canonical response format"
     },
     "error": { "type": ["string", "null"] },
     "metadata": {
@@ -887,7 +873,6 @@ This is the **actual payload** sent from Maestro to Orpheus:
 ```json
 {
   "success": true,
-  "tool_calls": [],
   "notes": [
     {"pitch": 60, "startBeat": 0.0, "durationBeats": 1.0, "velocity": 80}
   ],
@@ -900,44 +885,6 @@ This is the **actual payload** sent from Maestro to Orpheus:
 ```json
 {
   "success": true,
-  "tool_calls": [
-    {
-      "tool": "addNotes",
-      "params": {
-        "notes": [
-          {"pitch": 36, "startBeat": 0.0, "durationBeats": 0.5, "velocity": 100},
-          {"pitch": 38, "startBeat": 1.0, "durationBeats": 0.25, "velocity": 90}
-        ]
-      }
-    },
-    {
-      "tool": "addMidiCC",
-      "params": {
-        "cc": 11,
-        "events": [
-          {"beat": 0.0, "value": 80},
-          {"beat": 2.0, "value": 110}
-        ]
-      }
-    },
-    {
-      "tool": "addPitchBend",
-      "params": {
-        "events": [
-          {"beat": 3.85, "value": -4096},
-          {"beat": 4.0, "value": 0}
-        ]
-      }
-    },
-    {
-      "tool": "addAftertouch",
-      "params": {
-        "events": [
-          {"beat": 2.0, "value": 60, "pitch": 62}
-        ]
-      }
-    }
-  ],
   "notes": [
     {"pitch": 36, "startBeat": 0.0, "durationBeats": 0.5, "velocity": 100},
     {"pitch": 38, "startBeat": 1.0, "durationBeats": 0.25, "velocity": 90}
@@ -986,7 +933,7 @@ Known error codes (string values, not HTTP status):
 
 ### G.5 Normalized Output (Maestro-Side Adapter)
 
-After `normalize_orpheus_tool_calls()`, Maestro works with:
+Orpheus returns flat note data directly. Maestro works with:
 
 ```json
 {
@@ -1112,10 +1059,10 @@ Note field name asymmetry:
 |---------|------|-------------|
 | G1 | `test_minimal_request_accepted` | Minimal payload (genre, tempo, instruments, bars) succeeds |
 | G2 | `test_maximal_request_accepted` | All fields populated succeeds |
-| G3 | `test_response_has_notes_or_tool_calls` | Successful response contains `notes` and/or `tool_calls` |
+| G3 | `test_response_has_notes` | Successful response contains `notes` |
 | G4 | `test_note_schema_valid` | Every note has pitch [0-127], startBeat ≥ 0, durationBeats > 0, velocity [0-127] |
 | G5 | `test_notes_within_bar_range` | All note startBeats < bars × 4 |
-| G6 | `test_normalize_tool_calls_roundtrip` | `addNotes` → `normalize_orpheus_tool_calls` → notes match |
+| G6 | *removed* | tool_calls path deleted — Orpheus returns notes directly |
 | G7 | `test_emotion_to_orpheus_mapping` | EmotionVector axes correctly map to Orpheus fields |
 | G8 | `test_tension_dropped_warning` | Verify tension > 0 does NOT appear in request (documents the gap) |
 
@@ -1141,7 +1088,7 @@ Note field name asymmetry:
 | PF1 | `test_generation_under_5min` | Total time (submit + poll) < 300s |
 | PF2 | `test_cache_hit_under_1s` | Repeated identical request < 1000ms |
 | PF3 | `test_64_bar_generation` | 64-bar request completes without OOM |
-| PF4 | `test_normalize_tool_calls_performance` | 10,000 notes normalized in < 100ms |
+| PF4 | *removed* | tool_calls normalization deleted |
 
 ### I.4 Compatibility Tests
 
@@ -1150,8 +1097,7 @@ Note field name asymmetry:
 | C1 | `test_unknown_fields_ignored` | Extra fields in request don't cause errors |
 | C2 | `test_missing_optional_fields_ok` | Omitting optional fields uses defaults |
 | C3 | `test_snake_case_and_camel_case_notes` | Both `start_beat` and `startBeat` accepted |
-| C4 | `test_legacy_tool_calls_path` | Responses with only `tool_calls` (no `notes`) still work |
-| C5 | `test_mvp_notes_path` | Responses with `notes` directly still work |
+| C4 | `test_notes_path` | Responses with `notes` work |
 
 ### I.5 Test Suite JSON
 
@@ -1354,7 +1300,6 @@ The complete machine-readable contract follows. All JSON is valid and parseable.
     "GenerateResponse": {
       "fields": {
         "success": {"type": "boolean", "required": true},
-        "tool_calls": {"type": "array<ToolCall>", "default": []},
         "notes": {"type": "array<Note>?", "default": null},
         "error": {"type": "string?", "default": null},
         "metadata": {"type": "object?", "default": null}

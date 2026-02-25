@@ -4,8 +4,10 @@ Harmonic Spec IR backend: IR-based chord voicings.
 Renders HarmonicSpec + GlobalSpec → chord notes. Used for instrument in ("piano", "chords", "harmony").
 See docs/MIDI_SPEC_IR_SCHEMA.md.
 """
+from __future__ import annotations
+
 import logging
-from typing import Optional
+from typing import Any
 
 from app.services.backends.base import (
     MusicGeneratorBackend,
@@ -34,9 +36,9 @@ class HarmonicSpecBackend(MusicGeneratorBackend):
         style: str,
         tempo: int,
         bars: int,
-        key: Optional[str] = None,
-        chords: Optional[list[str]] = None,
-        **kwargs,
+        key: str | None = None,
+        chords: list[str] | None = None,
+        **kwargs: Any,
     ) -> GenerationResult:
         if instrument not in ("piano", "chords", "harmony", "keys"):
             return GenerationResult(

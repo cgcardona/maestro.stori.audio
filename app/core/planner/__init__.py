@@ -9,6 +9,7 @@ Public API:
     build_plan_from_dict(plan_dict, project_state) -> ExecutionPlan
     preview_plan(prompt, state, route, llm) -> dict
 """
+from __future__ import annotations
 
 from app.core.planner.models import ExecutionPlan
 from app.core.planner.effects import (

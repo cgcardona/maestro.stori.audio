@@ -11,7 +11,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable
 
 from app.config import settings
 from app.core.expansion import ToolCall
@@ -77,7 +77,7 @@ _VAR_REF_RE = re.compile(r"^\$(\d+)\.(\w+)$")
 # ---------------------------------------------------------------------------
 
 def _context_usage_fields(
-    usage_tracker: Optional["UsageTracker"], model: str
+    usage_tracker: "UsageTracker" | None, model: str
 ) -> dict[str, int]:
     """Return inputTokens / contextWindowTokens for SSE complete events."""
     from app.config import get_context_window_tokens
@@ -142,9 +142,9 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
     track = args.get("trackName") or args.get("name") or ""
     match name:
         case "stori_set_tempo":
-            return f"Set tempo to {args.get('tempo', '?')} BPM"
+            return f"set tempo to {args.get('tempo', '?')} BPM"
         case "stori_set_key":
-            return f"Set key signature to {args.get('key', '?')}"
+            return f"set key signature to {args.get('key', '?')}"
         case "stori_add_midi_track":
             return f"Create {args.get('name', 'track')} track"
         case "stori_add_midi_region":
@@ -167,25 +167,13 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
             tname = args.get("trackName") or role.capitalize()
             detail = f"{style} {role}" + (f", {bars} bars" if bars else "")
             return f"Add content to {tname}"
-        case "stori_generate_drums":
-            tname = args.get("trackName") or "Drums"
-            return f"Add content to {tname}"
-        case "stori_generate_bass":
-            tname = args.get("trackName") or "Bass"
-            return f"Add content to {tname}"
-        case "stori_generate_melody":
-            tname = args.get("trackName") or "Melody"
-            return f"Add content to {tname}"
-        case "stori_generate_chords":
-            tname = args.get("trackName") or "Chords"
-            return f"Add content to {tname}"
         case "stori_add_insert_effect":
             etype = args.get("type", "effect")
             if track:
                 return f"Add effects to {track}"
             return f"Adding {etype}"
         case "stori_ensure_bus":
-            return f"Set up shared {args.get('name', 'Bus')} bus"
+            return f"set up shared {args.get('name', 'Bus')} bus"
         case "stori_add_send":
             if track:
                 return f"Add effects for {track}"
@@ -211,7 +199,7 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
         case "stori_solo_track":
             return "Soloing track" if args.get("soloed", True) else "Unsoloing track"
         case "stori_set_track_color":
-            return f"Set track color"
+            return f"set track color"
         case "stori_set_track_icon":
             if track:
                 return f"Setting icon for {track}"
@@ -222,8 +210,8 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
         case "stori_set_midi_program":
             program = args.get("program", "")
             if track:
-                return f"Set instrument for {track}" if not program else f"Set {program} on {track}"
-            return f"Set instrument" if not program else f"Set instrument to {program}"
+                return f"set instrument for {track}" if not program else f"set {program} on {track}"
+            return f"set instrument" if not program else f"set instrument to {program}"
         case "stori_transpose_notes":
             semitones = args.get("semitones", "?")
             return f"Transpose notes by {semitones} semitones"
@@ -374,13 +362,13 @@ def _build_tool_result(
 
 async def _stream_llm_response(
     llm: LLMClient,
-    messages: list[dict],
-    tools: list[dict],
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
     tool_choice: str,
     trace: Any,
     emit_sse: Callable[[dict[str, Any]], Awaitable[str]],
-    max_tokens: Optional[int] = None,
-    reasoning_fraction: Optional[float] = None,
+    max_tokens: int | None = None,
+    reasoning_fraction: float | None = None,
     suppress_content: bool = False,
 ) -> Any:
     """Stream LLM response with thinking deltas. Yields SSE events and final response.
@@ -398,7 +386,7 @@ async def _stream_llm_response(
     """
     response_content = None
     response_tool_calls: list[dict[str, Any]] = []
-    finish_reason: Optional[str] = None
+    finish_reason: str | None = None
     usage: dict[str, Any] = {}
     reasoning_buf = ReasoningBuffer()
 

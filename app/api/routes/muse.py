@@ -159,7 +159,7 @@ async def set_head(
     req: SetHeadRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    """Set the HEAD pointer for a project to a specific variation."""
+    """set the HEAD pointer for a project to a specific variation."""
     await muse_repository.set_head(db, req.variation_id)
     await db.commit()
     return {"head": req.variation_id}

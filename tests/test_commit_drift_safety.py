@@ -7,11 +7,13 @@ Verifies:
 - force=True bypasses drift check.
 - Commit route boundary seal (AST).
 """
+from __future__ import annotations
 
 import ast
 import uuid
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -27,11 +29,13 @@ from app.services.muse_drift import (
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _note(pitch: int, start: float) -> dict:
+def _note(pitch: int, start: float) -> dict[str, Any]:
+
     return {"pitch": pitch, "start_beat": start, "duration_beats": 1.0, "velocity": 100, "channel": 0}
 
 
-def _cc(cc_num: int, beat: float, value: int) -> dict:
+def _cc(cc_num: int, beat: float, value: int) -> dict[str, Any]:
+
     return {"kind": "cc", "cc": cc_num, "beat": beat, "value": value}
 
 
@@ -42,7 +46,8 @@ def _cc(cc_num: int, beat: float, value: int) -> dict:
 
 class TestCleanCommitAllowed:
 
-    def test_clean_drift_does_not_require_action(self):
+    def test_clean_drift_does_not_require_action(self) -> None:
+
         report = compute_drift_report(
             project_id="p1",
             head_variation_id="v1",
@@ -54,7 +59,8 @@ class TestCleanCommitAllowed:
         assert report.requires_user_action() is False
         assert report.severity == DriftSeverity.CLEAN
 
-    def test_clean_drift_with_controllers(self):
+    def test_clean_drift_with_controllers(self) -> None:
+
         cc_events = [_cc(64, 0.0, 127)]
         report = compute_drift_report(
             project_id="p1",
@@ -75,7 +81,8 @@ class TestCleanCommitAllowed:
 
 class TestDirtyNotesBlocked:
 
-    def test_dirty_drift_requires_action(self):
+    def test_dirty_drift_requires_action(self) -> None:
+
         report = compute_drift_report(
             project_id="p1",
             head_variation_id="v1",
@@ -87,7 +94,8 @@ class TestDirtyNotesBlocked:
         assert report.requires_user_action() is True
         assert report.severity == DriftSeverity.DIRTY
 
-    def test_conflict_payload_from_dirty_report(self):
+    def test_conflict_payload_from_dirty_report(self) -> None:
+
         report = compute_drift_report(
             project_id="p1",
             head_variation_id="v1",
@@ -100,7 +108,8 @@ class TestDirtyNotesBlocked:
         assert conflict.total_changes == 1
         assert "r1" in conflict.changed_regions
 
-    def test_conflict_payload_serializable(self):
+    def test_conflict_payload_serializable(self) -> None:
+
         report = compute_drift_report(
             project_id="p1",
             head_variation_id="v1",
@@ -114,7 +123,8 @@ class TestDirtyNotesBlocked:
         assert payload["total_changes"] == 1
         assert "error" not in payload
 
-    def test_conflict_payload_error_field(self):
+    def test_conflict_payload_error_field(self) -> None:
+
         """The 409 detail must include 'error': 'WORKING_TREE_DIRTY'."""
         report = compute_drift_report(
             project_id="p1",
@@ -140,7 +150,8 @@ class TestDirtyNotesBlocked:
 
 class TestDirtyControllersBlocked:
 
-    def test_cc_change_requires_action(self):
+    def test_cc_change_requires_action(self) -> None:
+
         report = compute_drift_report(
             project_id="p1",
             head_variation_id="v1",
@@ -154,7 +165,8 @@ class TestDirtyControllersBlocked:
         conflict = CommitConflictPayload.from_drift_report(report)
         assert conflict.total_changes == 1
 
-    def test_pb_change_requires_action(self):
+    def test_pb_change_requires_action(self) -> None:
+
         report = compute_drift_report(
             project_id="p1",
             head_variation_id="v1",
@@ -174,7 +186,8 @@ class TestDirtyControllersBlocked:
 
 class TestForceCommitAllowed:
 
-    def test_force_field_exists_on_request_model(self):
+    def test_force_field_exists_on_request_model(self) -> None:
+
         from app.models.requests import CommitVariationRequest
         req = CommitVariationRequest(
             project_id="p1",
@@ -185,7 +198,8 @@ class TestForceCommitAllowed:
         )
         assert req.force is True
 
-    def test_force_default_is_false(self):
+    def test_force_default_is_false(self) -> None:
+
         from app.models.requests import CommitVariationRequest
         req = CommitVariationRequest(
             project_id="p1",
@@ -195,7 +209,8 @@ class TestForceCommitAllowed:
         )
         assert req.force is False
 
-    def test_requires_user_action_still_true_with_force(self):
+    def test_requires_user_action_still_true_with_force(self) -> None:
+
         """Force doesn't change the drift report — only the commit route checks it."""
         report = compute_drift_report(
             project_id="p1",
@@ -214,7 +229,8 @@ class TestForceCommitAllowed:
 
 class TestCommitConflictPayload:
 
-    def test_fingerprint_delta_only_dirty_regions(self):
+    def test_fingerprint_delta_only_dirty_regions(self) -> None:
+
         report = compute_drift_report(
             project_id="p1",
             head_variation_id="v1",
@@ -232,7 +248,8 @@ class TestCommitConflictPayload:
         assert "r2" in conflict.fingerprint_delta
         assert "r1" not in conflict.fingerprint_delta
 
-    def test_payload_excludes_sample_changes(self):
+    def test_payload_excludes_sample_changes(self) -> None:
+
         report = compute_drift_report(
             project_id="p1",
             head_variation_id="v1",
@@ -253,7 +270,8 @@ class TestCommitConflictPayload:
 
 class TestCommitRouteBoundary:
 
-    def test_no_drift_internal_imports(self):
+    def test_no_drift_internal_imports(self) -> None:
+
         """Commit route may only import compute_drift_report and CommitConflictPayload from drift."""
         filepath = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "variation" / "commit.py"
         tree = ast.parse(filepath.read_text())
@@ -265,7 +283,8 @@ class TestCommitRouteBoundary:
                         f"commit.py imports drift internal: {alias.name}"
                     )
 
-    def test_commit_route_imports_only_public_drift_api(self):
+    def test_commit_route_imports_only_public_drift_api(self) -> None:
+
         """Only compute_drift_report and CommitConflictPayload are used from muse_drift."""
         filepath = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "variation" / "commit.py"
         tree = ast.parse(filepath.read_text())
@@ -278,7 +297,8 @@ class TestCommitRouteBoundary:
         for name in drift_imports:
             assert name in allowed, f"commit.py imports non-public drift symbol: {name}"
 
-    def test_commit_route_does_not_import_state_store_internals(self):
+    def test_commit_route_does_not_import_state_store_internals(self) -> None:
+
         """Commit route uses get_or_create_store (allowed) but not StateStore class directly."""
         filepath = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "variation" / "commit.py"
         tree = ast.parse(filepath.read_text())

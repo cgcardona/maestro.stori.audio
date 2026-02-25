@@ -21,6 +21,7 @@ What we do NOT do:
   - HTML/URL encoding — not relevant for LLM prompts
   - Truncation — max_length is enforced at the Pydantic layer before this runs
 """
+from __future__ import annotations
 
 import re
 import unicodedata

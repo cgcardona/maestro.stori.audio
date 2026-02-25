@@ -4,13 +4,19 @@ MCP HTTP Endpoints
 HTTP-based MCP protocol endpoints for web clients.
 For stdio-based clients (Cursor, Claude Desktop), use the standalone MCP server.
 """
+from __future__ import annotations
+
 import json
 import logging
 import time
 import uuid
-from typing import Any, Optional
+from collections.abc import AsyncIterator
+from typing import Any
+
+import asyncio
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Query
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.models.base import CamelModel
 
@@ -68,9 +74,9 @@ class MCPToolCallResponse(CamelModel):
 
 @router.get("/tools")
 async def list_tools(
-    token_claims: dict = Depends(require_valid_token),
-):
-    """List all available MCP tools. Requires authentication."""
+    token_claims: dict[str, Any] = Depends(require_valid_token),
+) -> dict[str, Any]:
+    """list all available MCP tools. Requires authentication."""
     server = get_mcp_server()
     return {
         "tools": server.list_tools()
@@ -80,8 +86,8 @@ async def list_tools(
 @router.get("/tools/{tool_name}")
 async def get_tool(
     tool_name: str,
-    token_claims: dict = Depends(require_valid_token),
-):
+    token_claims: dict[str, Any] = Depends(require_valid_token),
+) -> dict[str, Any]:
     """Get details about a specific tool. Requires authentication."""
     server = get_mcp_server()
     for tool in server.list_tools():
@@ -94,8 +100,8 @@ async def get_tool(
 async def call_tool(
     tool_name: str,
     request: MCPToolCallRequest,
-    token_claims: dict = Depends(require_valid_token),
-):
+    token_claims: dict[str, Any] = Depends(require_valid_token),
+) -> MCPToolCallResponse:
     """Call an MCP tool. Requires authentication. Returns 400 on validation failure."""
     server = get_mcp_server()
     result = await server.call_tool(tool_name, request.arguments)
@@ -111,8 +117,8 @@ async def call_tool(
 
 @router.get("/info")
 async def server_info(
-    token_claims: dict = Depends(require_valid_token),
-):
+    token_claims: dict[str, Any] = Depends(require_valid_token),
+) -> dict[str, Any]:
     """Get MCP server information. Requires authentication."""
     server = get_mcp_server()
     return server.get_server_info()
@@ -125,8 +131,8 @@ async def server_info(
 @router.websocket("/daw")
 async def daw_websocket(
     websocket: WebSocket,
-    token: Optional[str] = Query(None),
-):
+    token: str | None = Query(None),
+) -> None:
     """
     WebSocket endpoint for DAW connection.
 
@@ -152,7 +158,7 @@ async def daw_websocket(
     connection_id = str(id(websocket))
     server = get_mcp_server()
 
-    async def send_to_daw(message: dict[str, Any]):
+    async def send_to_daw(message: dict[str, Any]) -> None:
         await websocket.send_json(message)
 
     server.register_daw(connection_id, send_to_daw)
@@ -207,8 +213,8 @@ async def daw_websocket(
 
 @router.post("/connection")
 async def create_connection(
-    token_claims: dict = Depends(require_valid_token),
-):
+    token_claims: dict[str, Any] = Depends(require_valid_token),
+) -> dict[str, str]:
     """
     Obtain a server-issued connection ID for the SSE flow.
     Use this ID in GET /stream/{connection_id} and POST /response/{connection_id}.
@@ -221,8 +227,8 @@ async def create_connection(
 @router.get("/stream/{connection_id}")
 async def tool_stream(
     connection_id: str,
-    token_claims: dict = Depends(require_valid_token),
-):
+    token_claims: dict[str, Any] = Depends(require_valid_token),
+) -> StreamingResponse:
     """
     SSE endpoint for receiving tool calls. Requires authentication.
     connection_id must have been obtained from POST /mcp/connection first.
@@ -233,15 +239,12 @@ async def tool_stream(
             status_code=404,
             detail="Invalid or expired connection_id. Obtain one from POST /api/v1/mcp/connection first.",
         )
-    from fastapi.responses import StreamingResponse
-    import asyncio
-
-    async def event_generator():
+    async def event_generator() -> AsyncIterator[str]:
         server = get_mcp_server()
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         guard = ProtocolGuard()
 
-        async def send_to_queue(message: dict[str, Any]):
+        async def send_to_queue(message: dict[str, Any]) -> None:
             await queue.put(message)
 
         server.register_daw(connection_id, send_to_queue)
@@ -281,8 +284,8 @@ async def tool_stream(
 async def post_tool_response(
     connection_id: str,
     data: dict[str, Any],
-    token_claims: dict = Depends(require_valid_token),
-):
+    token_claims: dict[str, Any] = Depends(require_valid_token),
+) -> dict[str, str]:
     """
     Endpoint for DAW to post tool execution results. Requires authentication.
     connection_id must have been obtained from POST /mcp/connection.

@@ -1,4 +1,5 @@
 """Region-level MCP tool definitions."""
+from __future__ import annotations
 
 REGION_TOOLS = [
     {

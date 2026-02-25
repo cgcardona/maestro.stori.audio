@@ -2,6 +2,9 @@
 
 Covers: stream endpoint, preview endpoint, validate-token endpoint.
 """
+from __future__ import annotations
+
+from httpx import AsyncClient
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 
@@ -9,7 +12,8 @@ from unittest.mock import patch, MagicMock, AsyncMock
 class TestComposeStreamRoute:
 
     @pytest.mark.anyio
-    async def test_requires_auth(self, client):
+    async def test_requires_auth(self, client: AsyncClient) -> None:
+
         resp = await client.post(
             "/api/v1/maestro/stream",
             json={"prompt": "make drums"},
@@ -17,7 +21,8 @@ class TestComposeStreamRoute:
         assert resp.status_code in (401, 403)
 
     @pytest.mark.anyio
-    async def test_empty_prompt(self, client, auth_headers):
+    async def test_empty_prompt(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         resp = await client.post(
             "/api/v1/maestro/stream",
             json={"prompt": ""},
@@ -30,7 +35,8 @@ class TestComposeStreamRoute:
 class TestComposePreview:
 
     @pytest.mark.anyio
-    async def test_preview_requires_auth(self, client):
+    async def test_preview_requires_auth(self, client: AsyncClient) -> None:
+
         resp = await client.post(
             "/api/v1/maestro/preview",
             json={"prompt": "make drums"},
@@ -38,7 +44,8 @@ class TestComposePreview:
         assert resp.status_code in (401, 403, 404, 405)
 
     @pytest.mark.anyio
-    async def test_preview_endpoint(self, client, auth_headers):
+    async def test_preview_endpoint(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         resp = await client.post(
             "/api/v1/maestro/preview",
             json={"prompt": "set tempo to 120"},
@@ -51,7 +58,8 @@ class TestComposePreview:
 class TestValidateToken:
 
     @pytest.mark.anyio
-    async def test_validate_good_token(self, client, auth_headers):
+    async def test_validate_good_token(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         resp = await client.get(
             "/api/v1/validate-token",
             headers=auth_headers,
@@ -61,12 +69,14 @@ class TestValidateToken:
         assert data.get("valid") is True
 
     @pytest.mark.anyio
-    async def test_validate_no_token(self, client):
+    async def test_validate_no_token(self, client: AsyncClient) -> None:
+
         resp = await client.get("/api/v1/validate-token")
         assert resp.status_code in (200, 401)
 
     @pytest.mark.anyio
-    async def test_validate_bad_token(self, client):
+    async def test_validate_bad_token(self, client: AsyncClient) -> None:
+
         resp = await client.get(
             "/api/v1/validate-token",
             headers={"Authorization": "Bearer invalid-token"},

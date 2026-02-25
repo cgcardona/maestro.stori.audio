@@ -7,6 +7,7 @@ Tests cover:
 3. Executor variation mode - execution without mutation
 4. API endpoints - /variation/* spec-compliant endpoints
 """
+from __future__ import annotations
 
 import pytest
 import uuid
@@ -31,13 +32,13 @@ from app.services.variation import (
 # =============================================================================
 
 @pytest.fixture
-def variation_service():
+def variation_service() -> VariationService:
     """Create a fresh variation service for each test."""
     return VariationService(bars_per_phrase=4, beats_per_bar=4)
 
 
 @pytest.fixture
-def simple_notes():
+def simple_notes() -> list[dict[str, Any]]:
     """Simple test notes for basic matching."""
     return [
         {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100},
@@ -48,7 +49,7 @@ def simple_notes():
 
 
 @pytest.fixture
-def drum_pattern():
+def drum_pattern() -> list[dict[str, Any]]:
     """A simple drum pattern for testing."""
     return [
         # Kick
@@ -72,7 +73,8 @@ def drum_pattern():
 class TestMidiNoteSnapshot:
     """Tests for MidiNoteSnapshot model."""
     
-    def test_from_note_dict_standard_fields(self):
+    def test_from_note_dict_standard_fields(self) -> None:
+
         """Test creating snapshot from standard note dict (start_beat/duration_beats)."""
         note = {"pitch": 60, "start_beat": 2.0, "duration_beats": 0.5, "velocity": 80}
         snapshot = MidiNoteSnapshot.from_note_dict(note)
@@ -82,7 +84,8 @@ class TestMidiNoteSnapshot:
         assert snapshot.duration_beats == 0.5
         assert snapshot.velocity == 80
     
-    def test_from_note_dict_alternate_fields(self):
+    def test_from_note_dict_alternate_fields(self) -> None:
+
         """Test creating snapshot with canonical field names."""
         note = {"pitch": 64, "start_beat": 1.0, "duration_beats": 0.75, "velocity": 90}
         snapshot = MidiNoteSnapshot.from_note_dict(note)
@@ -92,7 +95,8 @@ class TestMidiNoteSnapshot:
         assert snapshot.duration_beats == 0.75
         assert snapshot.velocity == 90
     
-    def test_to_note_dict(self):
+    def test_to_note_dict(self) -> None:
+
         """Test converting snapshot back to dict."""
         snapshot = MidiNoteSnapshot(
             pitch=62,
@@ -117,7 +121,8 @@ class TestMidiNoteSnapshot:
 class TestNoteChange:
     """Tests for NoteChange model validation."""
     
-    def test_added_note_valid(self):
+    def test_added_note_valid(self) -> None:
+
         """Added notes must have after, no before."""
         nv = NoteChange(
             note_id="test-1",
@@ -129,7 +134,8 @@ class TestNoteChange:
         assert nv.before is None
         assert nv.after is not None
     
-    def test_added_note_invalid_with_before(self):
+    def test_added_note_invalid_with_before(self) -> None:
+
         """Added notes cannot have before."""
         with pytest.raises(ValueError, match="'added' notes must have before=None"):
             NoteChange(
@@ -139,7 +145,8 @@ class TestNoteChange:
                 after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
             )
     
-    def test_removed_note_valid(self):
+    def test_removed_note_valid(self) -> None:
+
         """Removed notes must have before, no after."""
         nv = NoteChange(
             note_id="test-1",
@@ -151,7 +158,8 @@ class TestNoteChange:
         assert nv.before is not None
         assert nv.after is None
     
-    def test_removed_note_invalid_with_after(self):
+    def test_removed_note_invalid_with_after(self) -> None:
+
         """Removed notes cannot have after."""
         with pytest.raises(ValueError, match="'removed' notes must have after=None"):
             NoteChange(
@@ -161,7 +169,8 @@ class TestNoteChange:
                 after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
             )
     
-    def test_modified_note_valid(self):
+    def test_modified_note_valid(self) -> None:
+
         """Modified notes must have both before and after."""
         nv = NoteChange(
             note_id="test-1",
@@ -173,7 +182,8 @@ class TestNoteChange:
         assert nv.before is not None
         assert nv.after is not None
     
-    def test_modified_note_invalid_missing_before(self):
+    def test_modified_note_invalid_missing_before(self) -> None:
+
         """Modified notes must have before."""
         with pytest.raises(ValueError, match="'modified' notes must have both"):
             NoteChange(
@@ -191,7 +201,8 @@ class TestNoteChange:
 class TestNoteMatching:
     """Tests for note matching algorithm."""
     
-    def test_identical_notes_match(self, simple_notes):
+    def test_identical_notes_match(self, simple_notes: Any) -> None:
+
         """Identical note lists should all match."""
         matches = match_notes(simple_notes, simple_notes.copy())
         
@@ -202,7 +213,8 @@ class TestNoteMatching:
             assert m.proposed_note is not None
             assert m.is_unchanged
     
-    def test_added_notes_detected(self, simple_notes):
+    def test_added_notes_detected(self, simple_notes: Any) -> None:
+
         """New notes in proposed should be detected as added."""
         proposed = simple_notes.copy()
         new_note = {"pitch": 67, "start_beat": 4.0, "duration_beats": 1.0, "velocity": 100}
@@ -215,7 +227,8 @@ class TestNoteMatching:
         pn = added[0].proposed_note
         assert pn is not None and pn["pitch"] == 67
     
-    def test_removed_notes_detected(self, simple_notes):
+    def test_removed_notes_detected(self, simple_notes: Any) -> None:
+
         """Missing notes in proposed should be detected as removed."""
         proposed = simple_notes[:-1]  # Remove last note
         
@@ -226,7 +239,8 @@ class TestNoteMatching:
         bn = removed[0].base_note
         assert bn is not None and bn["pitch"] == 65  # Last note was F
     
-    def test_modified_notes_detected(self, simple_notes):
+    def test_modified_notes_detected(self, simple_notes: Any) -> None:
+
         """Changed notes should be detected as modified."""
         proposed = [n.copy() for n in simple_notes]
         proposed[1]["velocity"] = 50  # Change velocity of second note
@@ -239,7 +253,8 @@ class TestNoteMatching:
         assert m0bn is not None and m0bn["velocity"] == 100
         assert m0pn is not None and m0pn["velocity"] == 50
     
-    def test_pitch_change_detected(self, simple_notes):
+    def test_pitch_change_detected(self, simple_notes: Any) -> None:
+
         """Pitch changes should result in remove + add."""
         proposed = [n.copy() for n in simple_notes]
         proposed[0]["pitch"] = 61  # Change C4 to C#4
@@ -265,7 +280,8 @@ class TestNoteMatching:
 class TestVariationService:
     """Tests for the VariationService."""
     
-    def test_empty_to_notes_all_added(self, variation_service):
+    def test_empty_to_notes_all_added(self, variation_service: Any) -> None:
+
         """Adding notes to empty region = all added."""
         notes = [
             {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
@@ -285,7 +301,8 @@ class TestVariationService:
         assert variation.phrases[0].added_count == 2
         assert variation.phrases[0].removed_count == 0
     
-    def test_notes_to_empty_all_removed(self, variation_service, simple_notes):
+    def test_notes_to_empty_all_removed(self, variation_service: Any, simple_notes: Any) -> None:
+
         """Removing all notes = all removed."""
         variation = variation_service.compute_variation(
             base_notes=simple_notes,
@@ -299,7 +316,8 @@ class TestVariationService:
         for phrase in variation.phrases:
             assert phrase.added_count == 0
     
-    def test_no_changes_empty_variation(self, variation_service, simple_notes):
+    def test_no_changes_empty_variation(self, variation_service: Any, simple_notes: Any) -> None:
+
         """No changes = empty variation."""
         variation = variation_service.compute_variation(
             base_notes=simple_notes,
@@ -312,7 +330,8 @@ class TestVariationService:
         assert variation.is_empty
         assert variation.total_changes == 0
     
-    def test_phrases_grouped_by_bar(self, variation_service):
+    def test_phrases_grouped_by_bar(self, variation_service: Any) -> None:
+
         """Changes in different bar ranges should be in different phrases."""
         # With bars_per_phrase=4 and beats_per_bar=4, each phrase covers 16 beats
         # So we need notes at beat 0 (phrase 0) and beat 16 (phrase 1)
@@ -336,7 +355,8 @@ class TestVariationService:
         # Should have 2 phrases (different 4-bar ranges)
         assert len(variation.phrases) == 2
     
-    def test_phrase_labels_generated(self, variation_service):
+    def test_phrase_labels_generated(self, variation_service: Any) -> None:
+
         """Phrases should have human-readable labels."""
         notes = [
             {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
@@ -353,7 +373,8 @@ class TestVariationService:
         assert len(variation.phrases) == 1
         assert "Bar" in variation.phrases[0].label
     
-    def test_change_tags_detected(self, variation_service):
+    def test_change_tags_detected(self, variation_service: Any) -> None:
+
         """Appropriate tags should be detected for changes."""
         # Velocity change is detected as "modified" since pitch+timing match
         base_notes = [
@@ -375,7 +396,8 @@ class TestVariationService:
         # Velocity change is detected for modified notes
         assert "velocityChange" in variation.phrases[0].tags
     
-    def test_pitch_change_results_in_density_change(self, variation_service):
+    def test_pitch_change_results_in_density_change(self, variation_service: Any) -> None:
+
         """Pitch changes result in remove+add, tagged as density change."""
         # Note: Pitch changes don't match (different pitch = different note)
         # So they become remove+add pairs, tagged as densityChange
@@ -400,7 +422,8 @@ class TestVariationService:
         assert variation.phrases[0].added_count == 1
         assert variation.phrases[0].removed_count == 1
     
-    def test_variation_metadata(self, variation_service, simple_notes):
+    def test_variation_metadata(self, variation_service: Any, simple_notes: Any) -> None:
+
         """Variation should include correct metadata."""
         proposed = [n.copy() for n in simple_notes]
         proposed[0]["velocity"] = 50
@@ -427,7 +450,8 @@ class TestVariationService:
 class TestVariation:
     """Tests for Variation model."""
     
-    def test_get_phrase_found(self):
+    def test_get_phrase_found(self) -> None:
+
         """get_phrase should find existing phrase."""
         phrase = Phrase(
             phrase_id="phrase-123",
@@ -449,7 +473,8 @@ class TestVariation:
         assert found is not None
         assert found.phrase_id == "phrase-123"
     
-    def test_get_phrase_not_found(self):
+    def test_get_phrase_not_found(self) -> None:
+
         """get_phrase should return None for missing phrase."""
         variation = Variation(
             variation_id="var-1",
@@ -461,7 +486,8 @@ class TestVariation:
         found = variation.get_phrase("nonexistent")
         assert found is None
     
-    def test_get_accepted_notes(self):
+    def test_get_accepted_notes(self) -> None:
+
         """get_accepted_notes should return notes from accepted phrases only."""
         phrase1 = Phrase(
             phrase_id="phrase-1",
@@ -506,7 +532,8 @@ class TestVariation:
         assert len(notes) == 1
         assert notes[0]["pitch"] == 60
     
-    def test_serialization_round_trip(self, variation_service):
+    def test_serialization_round_trip(self, variation_service: Any) -> None:
+
         """Variation should serialize and deserialize correctly."""
         base = [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}]
         proposed = [{"pitch": 63, "start_beat": 0, "duration_beats": 1, "velocity": 80}]
@@ -536,7 +563,8 @@ class TestVariation:
 class TestMultiRegionVariation:
     """Tests for multi-region variation computation."""
     
-    def test_multi_region_variation(self, variation_service):
+    def test_multi_region_variation(self, variation_service: Any) -> None:
+
         """Should handle changes across multiple regions."""
         base_regions = {
             "region-1": [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
@@ -567,18 +595,21 @@ class TestVariationIntegration:
     """Integration tests for the variation system."""
     
     @pytest.mark.asyncio
-    async def test_apply_variation_phrases_imports(self):
+    async def test_apply_variation_phrases_imports(self) -> None:
+
         """Verify apply_variation_phrases can be imported."""
         from app.core.executor import apply_variation_phrases
         assert callable(apply_variation_phrases)
     
     @pytest.mark.asyncio
-    async def test_execute_plan_variation_imports(self):
+    async def test_execute_plan_variation_imports(self) -> None:
+
         """Verify execute_plan_variation can be imported."""
         from app.core.executor import execute_plan_variation
         assert callable(execute_plan_variation)
     
-    def test_singleton_variation_service(self):
+    def test_singleton_variation_service(self) -> None:
+
         """get_variation_service should return singleton."""
         service1 = get_variation_service()
         service2 = get_variation_service()
@@ -592,7 +623,8 @@ class TestVariationIntegration:
 class TestSSEVariationEvents:
     """Tests for SSE variation event format and content."""
     
-    def test_variation_meta_event_structure(self, variation_service):
+    def test_variation_meta_event_structure(self, variation_service: Any) -> None:
+
         """meta event should have correct structure."""
         base = [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}]
         proposed = [{"pitch": 63, "start_beat": 0, "duration_beats": 1, "velocity": 80}]
@@ -646,7 +678,8 @@ class TestSSEVariationEvents:
         assert "note_changes" in phrase
         assert "tags" in phrase
     
-    def test_variation_hunk_serialization(self, variation_service):
+    def test_variation_hunk_serialization(self, variation_service: Any) -> None:
+
         """Hunks should serialize correctly for SSE."""
         base = [
             {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
@@ -695,7 +728,8 @@ class TestSSEVariationEvents:
 class TestExecutionModeRemoved:
     """Verify execution_mode is no longer on MaestroRequest (backend-owned)."""
     
-    def test_maestro_request_has_no_execution_mode(self):
+    def test_maestro_request_has_no_execution_mode(self) -> None:
+
         """MaestroRequest should not have an execution_mode field."""
         from app.models.requests import MaestroRequest
         
@@ -710,7 +744,8 @@ class TestExecutionModeRemoved:
 class TestNoteExtraction:
     """Tests for note extraction from variations."""
     
-    def test_get_accepted_notes_from_added(self):
+    def test_get_accepted_notes_from_added(self) -> None:
+
         """Get accepted notes should extract added notes."""
         phrase = Phrase(
             phrase_id="phrase-1",
@@ -746,7 +781,8 @@ class TestNoteExtraction:
         assert notes[0]["pitch"] == 60
         assert notes[1]["pitch"] == 62
     
-    def test_get_removed_note_ids(self):
+    def test_get_removed_note_ids(self) -> None:
+
         """Get removed note IDs should extract removed note identifiers."""
         phrase = Phrase(
             phrase_id="phrase-1",
@@ -776,7 +812,8 @@ class TestNoteExtraction:
         assert len(note_ids) == 1
         assert note_ids[0] == "n1"
     
-    def test_get_modified_notes(self):
+    def test_get_modified_notes(self) -> None:
+
         """Modified notes should be extractable as both removed and added."""
         phrase = Phrase(
             phrase_id="phrase-1",

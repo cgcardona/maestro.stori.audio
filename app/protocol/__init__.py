@@ -4,6 +4,7 @@ Public re-exports for convenience:
 
     from app.protocol import STORI_VERSION, STORI_PROTOCOL_VERSION, emit, serialize_event, StoriEvent
 """
+from __future__ import annotations
 
 from app.protocol.version import STORI_VERSION, STORI_PROTOCOL_VERSION
 from app.protocol.events import StoriEvent

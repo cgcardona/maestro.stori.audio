@@ -3,9 +3,10 @@ Token management service.
 
 Handles token registration, revocation checking, and cleanup.
 """
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -175,7 +176,7 @@ async def get_user_active_tokens(
         user_id: User UUID
         
     Returns:
-        List of active AccessToken records
+        list of active AccessToken records
     """
     now = datetime.now(timezone.utc)
     

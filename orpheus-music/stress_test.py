@@ -25,6 +25,7 @@ Usage:
 Results are written to stress_results_{timestamp}.json with a human-readable
 summary printed to stdout.
 """
+from __future__ import annotations
 
 import argparse
 import asyncio
@@ -34,7 +35,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -115,17 +116,17 @@ class RequestResult:
     bars: int
     quality_preset: str
     intent_profile: str
-    key: Optional[str]
+    key: str | None
 
     success: bool = False
-    error: Optional[str] = None
+    error: str | None = None
     latency_ms: float = 0.0
     note_count: int = 0
     tool_call_count: int = 0
     track_count: int = 0
     region_count: int = 0
     cache_hit: bool = False
-    policy_version: Optional[str] = None
+    policy_version: str | None = None
     tokens_requested: int = 0
     http_status: int = 0
 
@@ -142,7 +143,7 @@ class StressReport:
     successful: int = 0
     failed: int = 0
     cache_hits: int = 0
-    errors: dict = field(default_factory=dict)
+    errors: dict[str, int] = field(default_factory=dict)
 
     latency_p50_ms: float = 0.0
     latency_p95_ms: float = 0.0
@@ -155,14 +156,14 @@ class StressReport:
     avg_notes_per_request: float = 0.0
     total_notes_generated: int = 0
 
-    per_genre: dict = field(default_factory=dict)
-    per_preset: dict = field(default_factory=dict)
-    per_bar_count: dict = field(default_factory=dict)
-    per_intent: dict = field(default_factory=dict)
-    per_instrument_combo: dict = field(default_factory=dict)
-    concurrency_results: list = field(default_factory=list)
+    per_genre: dict[str, dict[str, Any]] = field(default_factory=dict)
+    per_preset: dict[str, dict[str, Any]] = field(default_factory=dict)
+    per_bar_count: dict[str, dict[str, Any]] = field(default_factory=dict)
+    per_intent: dict[str, dict[str, Any]] = field(default_factory=dict)
+    per_instrument_combo: dict[str, dict[str, Any]] = field(default_factory=dict)
+    concurrency_results: list[dict[str, Any]] = field(default_factory=list)
 
-    results: list = field(default_factory=list)
+    results: list[dict[str, Any]] = field(default_factory=list)
 
 
 def build_payload(
@@ -171,10 +172,10 @@ def build_payload(
     bars: int,
     quality_preset: str,
     intent_profile: str,
-    key: Optional[str] = None,
-    temperature_override: Optional[float] = None,
-    top_p_override: Optional[float] = None,
-) -> dict:
+    key: str | None = None,
+    temperature_override: float | None = None,
+    top_p_override: float | None = None,
+) -> dict[str, Any]:
     intent = INTENT_VECTORS.get(intent_profile, INTENT_VECTORS["neutral"])
     payload: dict[str, Any] = {
         "genre": genre,
@@ -198,7 +199,7 @@ def build_payload(
 
 async def send_request(
     client: httpx.AsyncClient,
-    payload: dict,
+    payload: dict[str, Any],
     intent_profile: str,
     timeout: float = 300.0,
 ) -> RequestResult:
@@ -270,13 +271,13 @@ def compute_percentile(values: list[float], p: float) -> float:
     return sorted_vals[lower] * (1 - weight) + sorted_vals[upper] * weight
 
 
-def group_stats(results: list[RequestResult], key_fn) -> dict:
+def group_stats(results: list[RequestResult], key_fn: Any) -> dict[str, dict[str, Any]]:
     groups: dict[str, list[RequestResult]] = {}
     for r in results:
         k = key_fn(r)
         groups.setdefault(k, []).append(r)
 
-    stats = {}
+    stats: dict[str, dict[str, Any]] = {}
     for k, items in sorted(groups.items()):
         successful = [r for r in items if r.success]
         latencies = [r.latency_ms for r in successful]
@@ -372,7 +373,7 @@ def print_report(report: StressReport) -> None:
     print(f"  Avg notes/bar:         {report.avg_notes_per_bar}")
     print()
 
-    def _print_breakdown(title: str, data: dict) -> None:
+    def _print_breakdown(title: str, data: dict[str, dict[str, Any]]) -> None:
         print("─" * W)
         print(f"  {title}")
         print("─" * W)
@@ -420,7 +421,7 @@ def print_report(report: StressReport) -> None:
 # ── Test scenario builders ───────────────────────────────────────────
 
 
-def build_quick_scenarios() -> list[tuple[dict, str]]:
+def build_quick_scenarios() -> list[tuple[dict[str, Any], str]]:
     """One request per genre, fast preset, 4 bars, drums+bass, neutral intent."""
     scenarios = []
     for genre in GENRES:
@@ -435,7 +436,7 @@ def build_quick_scenarios() -> list[tuple[dict, str]]:
     return scenarios
 
 
-def build_standard_scenarios() -> list[tuple[dict, str]]:
+def build_standard_scenarios() -> list[tuple[dict[str, Any], str]]:
     """Every genre × every bar count × every preset. Drums+bass, neutral."""
     scenarios = []
     for genre in GENRES:
@@ -452,7 +453,7 @@ def build_standard_scenarios() -> list[tuple[dict, str]]:
     return scenarios
 
 
-def build_full_scenarios() -> list[tuple[dict, str]]:
+def build_full_scenarios() -> list[tuple[dict[str, Any], str]]:
     """Full matrix: genres × instruments × bars × presets × intent vectors."""
     scenarios = []
     for genre in GENRES:
@@ -472,7 +473,7 @@ def build_full_scenarios() -> list[tuple[dict, str]]:
     return scenarios
 
 
-def build_parameter_sweep_scenarios() -> list[tuple[dict, str]]:
+def build_parameter_sweep_scenarios() -> list[tuple[dict[str, Any], str]]:
     """Sweep temperature and top_p extremes to find quality boundaries."""
     scenarios = []
     temperatures = [0.70, 0.80, 0.90, 1.00, 1.10]
@@ -494,7 +495,7 @@ def build_parameter_sweep_scenarios() -> list[tuple[dict, str]]:
 
 async def run_concurrency_test(
     url: str, max_concurrent: int = 16
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Send increasing numbers of parallel requests to find the throughput ceiling."""
     concurrency_levels = [1, 2, 4, 8, 12, max_concurrent]
     results = []
@@ -539,7 +540,7 @@ async def run_concurrency_test(
 
 async def run_scenarios(
     url: str,
-    scenarios: list[tuple[dict, str]],
+    scenarios: list[tuple[dict[str, Any], str]],
     max_parallel: int = 4,
     timeout: float = 300.0,
 ) -> list[RequestResult]:
@@ -549,7 +550,7 @@ async def run_scenarios(
     total = len(scenarios)
     completed = 0
 
-    async def _run(payload: dict, intent: str, idx: int) -> RequestResult:
+    async def _run(payload: dict[str, Any], intent: str, idx: int) -> RequestResult:
         nonlocal completed
         async with sem:
             async with httpx.AsyncClient(base_url=url) as client:
@@ -587,7 +588,7 @@ async def check_health(url: str) -> bool:
         return False
 
 
-async def check_diagnostics(url: str) -> Optional[dict[Any, Any]]:
+async def check_diagnostics(url: str) -> dict[Any, Any] | None:
     try:
         async with httpx.AsyncClient(base_url=url) as client:
             resp = await client.get("/diagnostics", timeout=10.0)
@@ -628,7 +629,7 @@ async def main() -> None:
     print()
 
     # Build scenario list
-    scenarios: list[tuple[dict, str]] = []
+    scenarios: list[tuple[dict[str, Any], str]] = []
     mode = "standard"
 
     if args.quick:

@@ -4,12 +4,13 @@ Tracks active compositions per user_id in memory. Use as an async context
 manager around the composition lifecycle to automatically acquire/release
 slots.  Raises ``CompositionLimitExceeded`` when a user exceeds their quota.
 """
+from __future__ import annotations
 
 import asyncio
 import logging
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator
 
 from app.config import settings
 
@@ -38,7 +39,7 @@ class CompositionLimiter:
         self._lock = asyncio.Lock()
 
     @asynccontextmanager
-    async def acquire(self, user_id: Optional[str]) -> AsyncIterator[None]:
+    async def acquire(self, user_id: str | None) -> AsyncIterator[None]:
         """Acquire a composition slot. Raises CompositionLimitExceeded if full."""
         if not user_id or self._max <= 0:
             yield
@@ -65,7 +66,7 @@ class CompositionLimiter:
         return dict(self._active)
 
 
-_limiter: Optional[CompositionLimiter] = None
+_limiter: CompositionLimiter | None = None
 
 
 def get_composition_limiter() -> CompositionLimiter:

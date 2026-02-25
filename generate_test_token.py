@@ -3,6 +3,7 @@
 Generate a valid JWT token for testing.
 Usage: python3 generate_test_token.py <secret>
 """
+from __future__ import annotations
 
 import logging
 import jwt

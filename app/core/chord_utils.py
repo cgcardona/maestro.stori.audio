@@ -2,7 +2,8 @@
 Chord name → pitch utilities for bass, harmonic, and melody renderers.
 Supports common symbols: Cm, Eb, F#m, G7, etc.
 """
-from typing import Tuple
+from __future__ import annotations
+
 
 # Root name -> pitch class (C=0, C#=1, ... B=11)
 _ROOT_PC = {
@@ -34,7 +35,7 @@ def chord_root_pitch_class(chord_name: str) -> int:
     return _ROOT_PC.get(root, 0)
 
 
-def chord_to_root_and_fifth_midi(chord_name: str, root_octave: int) -> Tuple[int, int]:
+def chord_to_root_and_fifth_midi(chord_name: str, root_octave: int) -> tuple[int, int]:
     """Return (root_midi, fifth_midi) for bass. Fifth is perfect 5th (7 semitones)."""
     pc = chord_root_pitch_class(chord_name)
     root_midi = root_octave * 12 + pc

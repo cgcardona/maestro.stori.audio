@@ -6,9 +6,11 @@ Run manually with HF_TOKEN set: python tests/test_text2midi_duration_mapping.py
 Use this to build a mapping table for beats_to_max_length().
 Not collected by pytest (no test_ prefix).
 """
+from __future__ import annotations
 
 import sys
 import logging
+from typing import Any
 from gradio_client import Client
 import mido
 
@@ -16,7 +18,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def run_max_length_to_beats_mapping(hf_token: str):
+def run_max_length_to_beats_mapping(hf_token: str) -> list[dict[str, Any]]:
+
     """
     Test various max_length values to find the relationship to beat count.
     

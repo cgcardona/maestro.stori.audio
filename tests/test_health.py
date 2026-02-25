@@ -1,9 +1,13 @@
 """Tests for health endpoints."""
+from __future__ import annotations
+
+from httpx import AsyncClient
 import pytest
 
 
 @pytest.mark.anyio
-async def test_health_check(client):
+async def test_health_check(client: AsyncClient) -> None:
+
     """Test basic health check endpoint."""
     response = await client.get("/api/v1/health")
     assert response.status_code == 200
@@ -15,7 +19,8 @@ async def test_health_check(client):
 
 
 @pytest.mark.anyio
-async def test_health_response_structure(client):
+async def test_health_response_structure(client: AsyncClient) -> None:
+
     """Health response has expected keys for probes."""
     response = await client.get("/api/v1/health")
     assert response.status_code == 200
@@ -28,7 +33,8 @@ async def test_health_response_structure(client):
 
 
 @pytest.mark.anyio
-async def test_root_endpoint(client):
+async def test_root_endpoint(client: AsyncClient) -> None:
+
     """Test root endpoint."""
     response = await client.get("/")
     assert response.status_code == 200

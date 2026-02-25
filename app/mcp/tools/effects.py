@@ -1,4 +1,5 @@
 """Effects and routing MCP tool definitions."""
+from __future__ import annotations
 
 EFFECTS_TOOLS = [
     {

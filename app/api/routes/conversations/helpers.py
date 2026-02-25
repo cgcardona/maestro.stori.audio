@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 
-def build_conversation_history_for_llm(messages: list) -> list[dict[str, Any]]:
+def build_conversation_history_for_llm(messages: list[Any]) -> list[dict[str, Any]]:
     """
     Build conversation history in OpenAI format for LLM context.
 
@@ -27,7 +27,7 @@ def build_conversation_history_for_llm(messages: list) -> list[dict[str, Any]]:
                 "content": msg.content or "",
             }
 
-            openai_tool_calls: list[dict] = []
+            openai_tool_calls: list[dict[str, Any]] = []
             if msg.tool_calls:
                 seen_ids: set[str] = set()
                 for tc in msg.tool_calls:

@@ -6,11 +6,12 @@ This service powers the "thinking" state by:
 2. Using retrieved context to generate helpful answers
 3. Streaming responses via SSE
 """
+from __future__ import annotations
 
 import logging
 import httpx
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Optional, cast
+from typing import Any, AsyncGenerator, cast
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter
@@ -48,7 +49,7 @@ class RAGService:
         self,
         qdrant_host: str = "qdrant",
         qdrant_port: int = 6333,
-        llm_client: Optional[LLMClient] = None,
+        llm_client: LLMClient | None = None,
     ):
         """
         Initialize RAG service.
@@ -64,10 +65,10 @@ class RAGService:
             check_compatibility=False,  # Skip version check
         )
         self.llm_client = llm_client
-        self._hf_api_key: Optional[str] = None
+        self._hf_api_key: str | None = None
         
     @property
-    def hf_api_key(self) -> Optional[str]:
+    def hf_api_key(self) -> str | None:
         """Get HuggingFace API key."""
         if self._hf_api_key is None:
             settings = get_settings()
@@ -122,7 +123,7 @@ class RAGService:
             score_threshold: Minimum similarity score
             
         Returns:
-            List of relevant documentation chunks
+            list of relevant documentation chunks
         """
         try:
             # Generate query embedding
@@ -288,10 +289,10 @@ Please provide a clear, helpful answer. Use the documentation context when it's 
 
 
 # Singleton instance
-_rag_service: Optional[RAGService] = None
+_rag_service: RAGService | None = None
 
 
-def get_rag_service(llm_client: Optional[LLMClient] = None) -> RAGService:
+def get_rag_service(llm_client: LLMClient | None = None) -> RAGService:
     """Get or create the RAG service singleton."""
     global _rag_service
     

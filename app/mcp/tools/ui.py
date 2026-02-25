@@ -1,4 +1,5 @@
 """UI control MCP tool definitions."""
+from __future__ import annotations
 
 UI_TOOLS = [
     {
@@ -15,7 +16,7 @@ UI_TOOLS = [
     },
     {
         "name": "stori_set_zoom",
-        "description": "Set editor zoom (percent).",
+        "description": "set editor zoom (percent).",
         "inputSchema": {
             "type": "object",
             "properties": {

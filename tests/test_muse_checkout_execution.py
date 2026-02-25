@@ -8,10 +8,13 @@ Verifies:
 - Force override.
 - Boundary seal (AST).
 """
+from __future__ import annotations
 
 import ast
 import uuid
+from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -54,7 +57,7 @@ def trace() -> TraceContext:
 
 
 @pytest.fixture
-async def async_session():
+async def async_session() -> AsyncGenerator[AsyncSession, None]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -67,17 +70,19 @@ async def async_session():
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict:
+def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict[str, Any]:
+
     return {"pitch": pitch, "start_beat": start, "duration_beats": dur, "velocity": vel, "channel": 0}
 
 
-def _cc(cc_num: int, beat: float, value: int) -> dict:
+def _cc(cc_num: int, beat: float, value: int) -> dict[str, Any]:
+
     return {"kind": "cc", "cc": cc_num, "beat": beat, "value": value}
 
 
 def _make_variation(
-    notes: list[dict],
-    controllers: list[dict] | None = None,
+    notes: list[dict[str, Any]],
+    controllers: list[dict[str, Any]] | None = None,
     region_id: str = "region-1",
     track_id: str = "track-1",
 ) -> Variation:
@@ -113,6 +118,7 @@ def _make_variation(
 
 
 def _setup_region(store: StateStore, region_id: str = "region-1", track_id: str = "track-1") -> None:
+
     """Create track + region in StateStore so add_notes works."""
     txn = store.begin_transaction("setup")
     store.create_track("Track", track_id=track_id, transaction=txn)
@@ -127,7 +133,8 @@ def _setup_region(store: StateStore, region_id: str = "region-1", track_id: str 
 
 class TestNoOpExecution:
 
-    def test_noop_plan_executes_zero_calls(self, store: StateStore, trace: TraceContext):
+    def test_noop_plan_executes_zero_calls(self, store: StateStore, trace: TraceContext) -> None:
+
         plan = build_checkout_plan(
             project_id="p1", target_variation_id="v1",
             target_notes={"r1": [_note(60, 0.0)]},
@@ -154,7 +161,8 @@ class TestNoOpExecution:
 
 class TestUndoExecution:
 
-    def test_clear_and_add_notes_applied(self, store: StateStore, trace: TraceContext):
+    def test_clear_and_add_notes_applied(self, store: StateStore, trace: TraceContext) -> None:
+
         _setup_region(store, "r1", "t1")
         txn = store.begin_transaction("add-working")
         store.add_notes("r1", [_note(60, 0.0), _note(72, 2.0)], transaction=txn)
@@ -183,7 +191,8 @@ class TestUndoExecution:
         assert len(final_notes) == 1
         assert final_notes[0]["pitch"] == 60
 
-    def test_sse_events_emitted(self, store: StateStore, trace: TraceContext):
+    def test_sse_events_emitted(self, store: StateStore, trace: TraceContext) -> None:
+
         _setup_region(store, "r1", "t1")
         txn = store.begin_transaction("add")
         store.add_notes("r1", [_note(60, 0.0), _note(72, 2.0)], transaction=txn)
@@ -215,7 +224,8 @@ class TestUndoExecution:
 
 class TestRedoExecution:
 
-    def test_redo_produces_same_plan_hash(self, store: StateStore, trace: TraceContext):
+    def test_redo_produces_same_plan_hash(self, store: StateStore, trace: TraceContext) -> None:
+
         plan1 = build_checkout_plan(
             project_id="p1", target_variation_id="v2",
             target_notes={"r1": [_note(60, 0.0), _note(72, 2.0)]},
@@ -236,7 +246,8 @@ class TestRedoExecution:
         )
         assert plan1.plan_hash() == plan2.plan_hash()
 
-    def test_redo_adds_missing_notes(self, store: StateStore, trace: TraceContext):
+    def test_redo_adds_missing_notes(self, store: StateStore, trace: TraceContext) -> None:
+
         _setup_region(store, "r1", "t1")
         txn = store.begin_transaction("initial")
         store.add_notes("r1", [_note(60, 0.0)], transaction=txn)
@@ -259,7 +270,8 @@ class TestRedoExecution:
         final = store.get_region_notes("r1")
         assert len(final) == 2
 
-    def test_controller_restore(self, store: StateStore, trace: TraceContext):
+    def test_controller_restore(self, store: StateStore, trace: TraceContext) -> None:
+
         _setup_region(store, "r1", "t1")
         txn = store.begin_transaction("initial")
         store.add_notes("r1", [_note(60, 0.0)], transaction=txn)
@@ -290,7 +302,8 @@ class TestRedoExecution:
 class TestDriftBlock:
 
     @pytest.mark.anyio
-    async def test_dirty_working_tree_blocks_checkout(self, async_session: AsyncSession):
+    async def test_dirty_working_tree_blocks_checkout(self, async_session: AsyncSession) -> None:
+
         store = StateStore(conversation_id="cb-test", project_id="proj-cb")
         _setup_region(store, "region-1", "track-1")
         trace = TraceContext(trace_id="test-drift-block")
@@ -328,7 +341,8 @@ class TestDriftBlock:
 class TestForceOverride:
 
     @pytest.mark.anyio
-    async def test_force_bypasses_drift_check(self, async_session: AsyncSession):
+    async def test_force_bypasses_drift_check(self, async_session: AsyncSession) -> None:
+
         store = StateStore(conversation_id="force-test", project_id="proj-force")
         _setup_region(store, "region-1", "track-1")
         trace = TraceContext(trace_id="test-force")
@@ -365,7 +379,8 @@ class TestForceOverride:
 
 class TestCheckoutExecutorBoundary:
 
-    def test_no_handler_imports(self):
+    def test_no_handler_imports(self) -> None:
+
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout_executor.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"maestro_handlers", "maestro_editing", "maestro_composing"}
@@ -376,7 +391,8 @@ class TestCheckoutExecutorBoundary:
                         f"muse_checkout_executor imports forbidden: {node.module}"
                     )
 
-    def test_no_variation_service_import(self):
+    def test_no_variation_service_import(self) -> None:
+
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout_executor.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):
@@ -386,7 +402,8 @@ class TestCheckoutExecutorBoundary:
                         "muse_checkout_executor imports VariationService"
                     )
 
-    def test_no_replay_internals_import(self):
+    def test_no_replay_internals_import(self) -> None:
+
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout_executor.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):

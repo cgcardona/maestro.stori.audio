@@ -2,6 +2,9 @@
 
 Tests the IR-based MIDI generation backends end-to-end with real rendering.
 """
+from __future__ import annotations
+
+from typing import Any
 import pytest
 from app.services.backends.drum_ir import DrumSpecBackend
 from app.services.backends.bass_ir import BassSpecBackend
@@ -18,18 +21,22 @@ from app.services.backends.base import GeneratorBackend, GenerationResult
 class TestDrumSpecBackend:
 
     @pytest.fixture
-    def backend(self):
+    def backend(self) -> DrumSpecBackend:
+
         return DrumSpecBackend()
 
-    def test_backend_type(self, backend):
+    def test_backend_type(self, backend: Any) -> None:
+
         assert backend.backend_type == GeneratorBackend.DRUM_IR
 
     @pytest.mark.anyio
-    async def test_is_available(self, backend):
+    async def test_is_available(self, backend: Any) -> None:
+
         assert await backend.is_available() is True
 
     @pytest.mark.anyio
-    async def test_generate_drums_trap(self, backend):
+    async def test_generate_drums_trap(self, backend: Any) -> None:
+
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4
         )
@@ -39,7 +46,8 @@ class TestDrumSpecBackend:
         assert "source" in result.metadata
 
     @pytest.mark.anyio
-    async def test_generate_drums_boom_bap(self, backend):
+    async def test_generate_drums_boom_bap(self, backend: Any) -> None:
+
         result = await backend.generate(
             instrument="drums", style="boom_bap", tempo=90, bars=4
         )
@@ -47,14 +55,16 @@ class TestDrumSpecBackend:
         assert len(result.notes) > 0
 
     @pytest.mark.anyio
-    async def test_generate_drums_house(self, backend):
+    async def test_generate_drums_house(self, backend: Any) -> None:
+
         result = await backend.generate(
             instrument="drums", style="house", tempo=128, bars=4
         )
         assert result.success is True
 
     @pytest.mark.anyio
-    async def test_generate_wrong_instrument(self, backend):
+    async def test_generate_wrong_instrument(self, backend: Any) -> None:
+
         result = await backend.generate(
             instrument="bass", style="trap", tempo=120, bars=4
         )
@@ -62,7 +72,8 @@ class TestDrumSpecBackend:
         assert "only handles drums" in result.error
 
     @pytest.mark.anyio
-    async def test_generate_with_music_spec(self, backend):
+    async def test_generate_with_music_spec(self, backend: Any) -> None:
+
         from app.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="trap", tempo=120, bars=4)
         result = await backend.generate(
@@ -72,7 +83,8 @@ class TestDrumSpecBackend:
         assert result.success is True
 
     @pytest.mark.anyio
-    async def test_note_format(self, backend):
+    async def test_note_format(self, backend: Any) -> None:
+
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4
         )
@@ -92,18 +104,22 @@ class TestDrumSpecBackend:
 class TestBassSpecBackend:
 
     @pytest.fixture
-    def backend(self):
+    def backend(self) -> BassSpecBackend:
+
         return BassSpecBackend()
 
-    def test_backend_type(self, backend):
+    def test_backend_type(self, backend: Any) -> None:
+
         assert backend.backend_type == GeneratorBackend.BASS_IR
 
     @pytest.mark.anyio
-    async def test_is_available(self, backend):
+    async def test_is_available(self, backend: Any) -> None:
+
         assert await backend.is_available() is True
 
     @pytest.mark.anyio
-    async def test_generate_bass(self, backend):
+    async def test_generate_bass(self, backend: Any) -> None:
+
         result = await backend.generate(
             instrument="bass", style="trap", tempo=120, bars=4, key="Cm"
         )
@@ -112,14 +128,16 @@ class TestBassSpecBackend:
         assert result.backend_used == GeneratorBackend.BASS_IR
 
     @pytest.mark.anyio
-    async def test_generate_wrong_instrument(self, backend):
+    async def test_generate_wrong_instrument(self, backend: Any) -> None:
+
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4
         )
         assert result.success is False
 
     @pytest.mark.anyio
-    async def test_generate_with_music_spec(self, backend):
+    async def test_generate_with_music_spec(self, backend: Any) -> None:
+
         from app.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="trap", tempo=120, bars=4, key="Cm")
         result = await backend.generate(
@@ -137,18 +155,22 @@ class TestBassSpecBackend:
 class TestHarmonicSpecBackend:
 
     @pytest.fixture
-    def backend(self):
+    def backend(self) -> HarmonicSpecBackend:
+
         return HarmonicSpecBackend()
 
-    def test_backend_type(self, backend):
+    def test_backend_type(self, backend: Any) -> None:
+
         assert backend.backend_type == GeneratorBackend.HARMONIC_IR
 
     @pytest.mark.anyio
-    async def test_is_available(self, backend):
+    async def test_is_available(self, backend: Any) -> None:
+
         assert await backend.is_available() is True
 
     @pytest.mark.anyio
-    async def test_generate_chords(self, backend):
+    async def test_generate_chords(self, backend: Any) -> None:
+
         result = await backend.generate(
             instrument="piano", style="jazz", tempo=120, bars=4, key="Cm"
         )
@@ -156,14 +178,16 @@ class TestHarmonicSpecBackend:
         assert len(result.notes) > 0
 
     @pytest.mark.anyio
-    async def test_generate_wrong_instrument(self, backend):
+    async def test_generate_wrong_instrument(self, backend: Any) -> None:
+
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4
         )
         assert result.success is False
 
     @pytest.mark.anyio
-    async def test_generate_with_music_spec(self, backend):
+    async def test_generate_with_music_spec(self, backend: Any) -> None:
+
         from app.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="jazz", tempo=120, bars=8, key="Cm")
         result = await backend.generate(
@@ -181,18 +205,22 @@ class TestHarmonicSpecBackend:
 class TestMelodySpecBackend:
 
     @pytest.fixture
-    def backend(self):
+    def backend(self) -> MelodySpecBackend:
+
         return MelodySpecBackend()
 
-    def test_backend_type(self, backend):
+    def test_backend_type(self, backend: Any) -> None:
+
         assert backend.backend_type == GeneratorBackend.MELODY_IR
 
     @pytest.mark.anyio
-    async def test_is_available(self, backend):
+    async def test_is_available(self, backend: Any) -> None:
+
         assert await backend.is_available() is True
 
     @pytest.mark.anyio
-    async def test_generate_melody(self, backend):
+    async def test_generate_melody(self, backend: Any) -> None:
+
         result = await backend.generate(
             instrument="lead", style="jazz", tempo=120, bars=4, key="Cm"
         )
@@ -200,14 +228,16 @@ class TestMelodySpecBackend:
         assert len(result.notes) > 0
 
     @pytest.mark.anyio
-    async def test_generate_wrong_instrument(self, backend):
+    async def test_generate_wrong_instrument(self, backend: Any) -> None:
+
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4
         )
         assert result.success is False
 
     @pytest.mark.anyio
-    async def test_generate_with_music_spec(self, backend):
+    async def test_generate_with_music_spec(self, backend: Any) -> None:
+
         from app.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="jazz", tempo=120, bars=8, key="Cm")
         result = await backend.generate(
@@ -224,7 +254,8 @@ class TestMelodySpecBackend:
 
 class TestGenerationResult:
 
-    def test_success_result(self):
+    def test_success_result(self) -> None:
+
         result = GenerationResult(
             success=True,
             notes=[{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
@@ -233,7 +264,8 @@ class TestGenerationResult:
         )
         assert result.error is None
 
-    def test_failure_result(self):
+    def test_failure_result(self) -> None:
+
         result = GenerationResult(
             success=False,
             notes=[],

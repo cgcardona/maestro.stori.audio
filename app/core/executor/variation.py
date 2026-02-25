@@ -22,7 +22,7 @@ import asyncio
 import logging
 import time
 import uuid as uuid_module
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable
 
 from app.core.expansion import ToolCall, dedupe_tool_calls
 from app.core.tool_names import ToolName
@@ -67,8 +67,8 @@ async def _process_call_for_variation(
     call: ToolCall,
     var_ctx: VariationContext,
     exec_ctx: VariationExecutionContext,
-    quality_preset: Optional[str] = None,
-    emotion_vector: Optional[EmotionVector] = None,
+    quality_preset: str | None = None,
+    emotion_vector: EmotionVector | None = None,
 ) -> dict[str, Any]:
     """
     Process a tool call to extract proposed notes for variation.
@@ -311,7 +311,7 @@ def compute_variation_from_context(
     proposed_aftertouch: dict[str, list[dict[str, Any]]],
     region_start_beats: dict[str, float],
     intent: str,
-    explanation: Optional[str] = None,
+    explanation: str | None = None,
 ) -> Variation:
     """Muse computation — produce a Variation diff from collected musical data.
 
@@ -363,12 +363,12 @@ def compute_variation_from_context(
 async def execute_tools_for_variation(
     tool_calls: list[ToolCall],
     project_state: dict[str, Any],
-    conversation_id: Optional[str] = None,
-    explanation: Optional[str] = None,
-    quality_preset: Optional[str] = None,
-    tool_event_callback: Optional[Callable[..., Awaitable[None]]] = None,
-    pre_tool_callback: Optional[Callable[..., Awaitable[None]]] = None,
-    post_tool_callback: Optional[Callable[..., Awaitable[None]]] = None,
+    conversation_id: str | None = None,
+    explanation: str | None = None,
+    quality_preset: str | None = None,
+    tool_event_callback: Callable[..., Awaitable[None]] | None = None,
+    pre_tool_callback: Callable[..., Awaitable[None]] | None = None,
+    post_tool_callback: Callable[..., Awaitable[None]] | None = None,
 ) -> VariationContext:
     """Maestro orchestration — dispatch tool calls, collect base/proposed state.
 
@@ -394,7 +394,7 @@ async def execute_tools_for_variation(
     logger.info(f"🎭 Variation mode: {len(tool_calls)} tool calls")
     _extract_notes_from_project(project_state, var_ctx, exec_ctx)
 
-    emotion_vector: Optional[EmotionVector] = None
+    emotion_vector: EmotionVector | None = None
     if explanation:
         emotion_vector = emotion_vector_from_stori_prompt(explanation)
         logger.info(f"🎭 Emotion vector derived: {emotion_vector}")
@@ -464,12 +464,12 @@ async def execute_plan_variation(
     tool_calls: list[ToolCall],
     project_state: dict[str, Any],
     intent: str,
-    conversation_id: Optional[str] = None,
-    explanation: Optional[str] = None,
-    quality_preset: Optional[str] = None,
-    tool_event_callback: Optional[Callable[..., Awaitable[None]]] = None,
-    pre_tool_callback: Optional[Callable[..., Awaitable[None]]] = None,
-    post_tool_callback: Optional[Callable[..., Awaitable[None]]] = None,
+    conversation_id: str | None = None,
+    explanation: str | None = None,
+    quality_preset: str | None = None,
+    tool_event_callback: Callable[..., Awaitable[None]] | None = None,
+    pre_tool_callback: Callable[..., Awaitable[None]] | None = None,
+    post_tool_callback: Callable[..., Awaitable[None]] | None = None,
 ) -> Variation:
     """Convenience wrapper — runs Maestro orchestration then Muse computation.
 

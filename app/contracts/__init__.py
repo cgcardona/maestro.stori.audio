@@ -1,4 +1,5 @@
 """Contract hashing and lineage verification utilities."""
+from __future__ import annotations
 
 from app.contracts.hash_utils import (
     canonical_contract_dict,

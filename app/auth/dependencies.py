@@ -4,9 +4,11 @@ FastAPI Authentication Dependencies
 Provides dependency injection for protecting endpoints with access token validation
 and for asset endpoints with device-ID-only (X-Device-ID) validation.
 """
+from __future__ import annotations
+
 import logging
 import uuid
-from typing import Optional
+from typing import Any
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -23,7 +25,7 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer(auto_error=False)
 
 
-async def _check_and_register_token(token: str, claims: dict) -> bool:
+async def _check_and_register_token(token: str, claims: dict[str, Any]) -> bool:
     """
     Check if a token has been revoked, registering it if not found.
 
@@ -80,8 +82,8 @@ async def _check_and_register_token(token: str, claims: dict) -> bool:
 
 
 async def require_valid_token(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-) -> dict:
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> dict[str, Any]:
     """
     FastAPI dependency that validates access tokens.
     
@@ -153,7 +155,7 @@ async def require_valid_token(
 
 
 async def require_device_id(
-    x_device_id: Optional[str] = Header(None, alias="X-Device-ID"),
+    x_device_id: str | None = Header(None, alias="X-Device-ID"),
 ) -> str:
     """
     FastAPI dependency for asset endpoints: require a valid X-Device-ID header (UUID).

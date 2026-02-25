@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 from app.core.intent_config import Intent
 from app.core.intent.models import Rule, Slots
@@ -60,7 +59,7 @@ RULES: list[Rule] = [
 ]
 
 
-def _extract_slots(rule: Rule, m: re.Match, raw: str, norm: str) -> Slots:
+def _extract_slots(rule: Rule, m: re.Match[str], raw: str, norm: str) -> Slots:
     """Extract slots from a matched rule."""
     if rule.intent == Intent.PROJECT_SET_TEMPO:
         bpm = m.group("bpm") or m.groupdict().get("bpm2")

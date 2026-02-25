@@ -1,4 +1,7 @@
 """MCP tool registry — combines all category lists into the master lists."""
+from __future__ import annotations
+
+from typing import Any
 
 from app.mcp.tools.project import PROJECT_TOOLS
 from app.mcp.tools.track import TRACK_TOOLS
@@ -24,7 +27,7 @@ MCP_TOOLS = (
     + UI_TOOLS
 )
 
-_CATEGORY_LISTS: list[tuple[str, list[dict]]] = [
+_CATEGORY_LISTS: list[tuple[str, list[dict[str, Any]]]] = [
     ("project", PROJECT_TOOLS),
     ("track", TRACK_TOOLS),
     ("region", REGION_TOOLS),

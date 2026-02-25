@@ -46,9 +46,9 @@ logger = logging.getLogger(__name__)
 async def propose_variation(
     request: Request,
     propose_request: ProposeVariationRequest,
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> ProposeVariationResponse:
     """
     Propose a variation — create record, launch background generation.
 

@@ -1,6 +1,8 @@
 """Response models for the Stori Maestro API."""
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
-from typing import Optional, Any, Literal, Union
+from typing import Any, Literal
 from enum import Enum
 
 
@@ -40,7 +42,7 @@ class SSEGenerated(BaseModel):
     type: Literal["generated"] = "generated"
     tool: str
     noteCount: int
-    metadata: Optional[dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
 
 
 class SSEToolCall(BaseModel):
@@ -55,7 +57,7 @@ class SSEToolResult(BaseModel):
     type: Literal["tool_result"] = "tool_result"
     tool: str
     success: bool
-    result: Optional[dict[str, Any]] = None
+    result: dict[str, Any] | None = None
 
 
 class SSEComplete(BaseModel):
@@ -63,32 +65,23 @@ class SSEComplete(BaseModel):
     type: Literal["complete"] = "complete"
     success: bool
     tool_calls: list[dict[str, Any]]
-    summary: Optional[str] = None
+    summary: str | None = None
 
 
 class SSEError(BaseModel):
     """Error message."""
     type: Literal["error"] = "error"
     message: str
-    code: Optional[str] = None
+    code: str | None = None
 
 
 # Union type for all SSE messages
-SSEMessage = Union[
-    SSEStatus,
-    SSEReasoning,
-    SSEGenerating,
-    SSEGenerated,
-    SSEToolCall,
-    SSEToolResult,
-    SSEComplete,
-    SSEError,
-]
+SSEMessage = SSEStatus | SSEReasoning | SSEGenerating | SSEGenerated | SSEToolCall | SSEToolResult | SSEComplete | SSEError
 
 
 class MaestroResponse(BaseModel):
     """Non-streaming maestro response."""
     success: bool
     tool_calls: list[dict[str, Any]]
-    raw_response: Optional[str] = None
-    error: Optional[str] = None
+    raw_response: str | None = None
+    error: str | None = None

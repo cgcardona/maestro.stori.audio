@@ -3,6 +3,10 @@
 Covers: list_drum_kits, list_soundfonts, get_drum_kit_download_url,
 get_soundfont_download_url, get_bundle_download_url, require_device_id.
 """
+from __future__ import annotations
+
+from httpx import AsyncClient
+from typing import Any
 import pytest
 import uuid
 from unittest.mock import patch, MagicMock
@@ -20,13 +24,15 @@ DEVICE_HEADERS = {"X-Device-ID": DEVICE_ID}
 class TestDeviceIDValidation:
 
     @pytest.mark.anyio
-    async def test_missing_device_id(self, client):
+    async def test_missing_device_id(self, client: AsyncClient) -> None:
+
         resp = await client.get("/api/v1/assets/drum-kits")
         assert resp.status_code == 400
         assert "X-Device-ID" in resp.json()["detail"]
 
     @pytest.mark.anyio
-    async def test_invalid_device_id(self, client):
+    async def test_invalid_device_id(self, client: AsyncClient) -> None:
+
         resp = await client.get(
             "/api/v1/assets/drum-kits",
             headers={"X-Device-ID": "not-a-uuid"},
@@ -34,7 +40,8 @@ class TestDeviceIDValidation:
         assert resp.status_code == 400
 
     @pytest.mark.anyio
-    async def test_empty_device_id(self, client):
+    async def test_empty_device_id(self, client: AsyncClient) -> None:
+
         resp = await client.get(
             "/api/v1/assets/drum-kits",
             headers={"X-Device-ID": ""},
@@ -43,7 +50,7 @@ class TestDeviceIDValidation:
 
 
 # ---------------------------------------------------------------------------
-# List drum kits
+# list drum kits
 # ---------------------------------------------------------------------------
 
 
@@ -51,7 +58,8 @@ class TestListDrumKitsRoute:
 
     @pytest.mark.anyio
     @patch("app.api.routes.assets.settings")
-    async def test_no_bucket_503(self, mock_settings, client):
+    async def test_no_bucket_503(self, mock_settings: Any, client: AsyncClient) -> None:
+
         mock_settings.aws_s3_asset_bucket = ""
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -61,7 +69,8 @@ class TestListDrumKitsRoute:
     @pytest.mark.anyio
     @patch("app.api.routes.assets.asset_service.list_drum_kits")
     @patch("app.api.routes.assets.settings")
-    async def test_happy_path(self, mock_settings, mock_list, client):
+    async def test_happy_path(self, mock_settings: Any, mock_list: Any, client: AsyncClient) -> None:
+
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -72,7 +81,7 @@ class TestListDrumKitsRoute:
 
 
 # ---------------------------------------------------------------------------
-# List soundfonts
+# list soundfonts
 # ---------------------------------------------------------------------------
 
 
@@ -80,7 +89,8 @@ class TestListSoundfontsRoute:
 
     @pytest.mark.anyio
     @patch("app.api.routes.assets.settings")
-    async def test_no_bucket_503(self, mock_settings, client):
+    async def test_no_bucket_503(self, mock_settings: Any, client: AsyncClient) -> None:
+
         mock_settings.aws_s3_asset_bucket = ""
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -97,7 +107,8 @@ class TestDrumKitDownloadURL:
 
     @pytest.mark.anyio
     @patch("app.api.routes.assets.settings")
-    async def test_no_bucket_503(self, mock_settings, client):
+    async def test_no_bucket_503(self, mock_settings: Any, client: AsyncClient) -> None:
+
         mock_settings.aws_s3_asset_bucket = ""
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -110,7 +121,8 @@ class TestDrumKitDownloadURL:
     @pytest.mark.anyio
     @patch("app.api.routes.assets.asset_service.get_drum_kit_download_url")
     @patch("app.api.routes.assets.settings")
-    async def test_happy_path(self, mock_settings, mock_url, client):
+    async def test_happy_path(self, mock_settings: Any, mock_url: Any, client: AsyncClient) -> None:
+
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -126,7 +138,8 @@ class TestDrumKitDownloadURL:
     @pytest.mark.anyio
     @patch("app.api.routes.assets.asset_service.get_drum_kit_download_url")
     @patch("app.api.routes.assets.settings")
-    async def test_not_found(self, mock_settings, mock_url, client):
+    async def test_not_found(self, mock_settings: Any, mock_url: Any, client: AsyncClient) -> None:
+
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -141,7 +154,8 @@ class TestDrumKitDownloadURL:
     @pytest.mark.anyio
     @patch("app.api.routes.assets.asset_service.get_drum_kit_download_url")
     @patch("app.api.routes.assets.settings")
-    async def test_s3_unavailable(self, mock_settings, mock_url, client):
+    async def test_s3_unavailable(self, mock_settings: Any, mock_url: Any, client: AsyncClient) -> None:
+
         from app.services.assets import AssetServiceUnavailableError
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
@@ -165,7 +179,8 @@ class TestSoundfontDownloadURL:
     @pytest.mark.anyio
     @patch("app.api.routes.assets.asset_service.get_soundfont_download_url")
     @patch("app.api.routes.assets.settings")
-    async def test_happy_path(self, mock_settings, mock_url, client):
+    async def test_happy_path(self, mock_settings: Any, mock_url: Any, client: AsyncClient) -> None:
+
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -180,7 +195,8 @@ class TestSoundfontDownloadURL:
     @pytest.mark.anyio
     @patch("app.api.routes.assets.asset_service.get_soundfont_download_url")
     @patch("app.api.routes.assets.settings")
-    async def test_not_found(self, mock_settings, mock_url, client):
+    async def test_not_found(self, mock_settings: Any, mock_url: Any, client: AsyncClient) -> None:
+
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -195,7 +211,8 @@ class TestSoundfontDownloadURL:
     @pytest.mark.anyio
     @patch("app.api.routes.assets.asset_service.get_soundfont_download_url")
     @patch("app.api.routes.assets.settings")
-    async def test_s3_unavailable(self, mock_settings, mock_url, client):
+    async def test_s3_unavailable(self, mock_settings: Any, mock_url: Any, client: AsyncClient) -> None:
+
         from app.services.assets import AssetServiceUnavailableError
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
@@ -219,7 +236,8 @@ class TestBundleDownloadURL:
     @pytest.mark.anyio
     @patch("app.api.routes.assets.asset_service.get_bundle_download_url")
     @patch("app.api.routes.assets.settings")
-    async def test_happy_path(self, mock_settings, mock_url, client):
+    async def test_happy_path(self, mock_settings: Any, mock_url: Any, client: AsyncClient) -> None:
+
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -234,7 +252,8 @@ class TestBundleDownloadURL:
     @pytest.mark.anyio
     @patch("app.api.routes.assets.asset_service.get_bundle_download_url")
     @patch("app.api.routes.assets.settings")
-    async def test_not_found(self, mock_settings, mock_url, client):
+    async def test_not_found(self, mock_settings: Any, mock_url: Any, client: AsyncClient) -> None:
+
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -249,7 +268,8 @@ class TestBundleDownloadURL:
     @pytest.mark.anyio
     @patch("app.api.routes.assets.asset_service.get_bundle_download_url")
     @patch("app.api.routes.assets.settings")
-    async def test_s3_unavailable(self, mock_settings, mock_url, client):
+    async def test_s3_unavailable(self, mock_settings: Any, mock_url: Any, client: AsyncClient) -> None:
+
         from app.services.assets import AssetServiceUnavailableError
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"

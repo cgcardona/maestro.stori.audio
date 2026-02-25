@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.core.maestro_handlers import UsageTracker
@@ -41,15 +41,15 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class PipelineOutput:
     route: IntentResult
-    llm_response: Optional[LLMResponse] = None
-    plan: Optional[ExecutionPlan] = None
+    llm_response: LLMResponse | None = None
+    plan: ExecutionPlan | None = None
 
 
 async def run_pipeline(
     user_prompt: str,
     project_state: dict[str, Any],
     llm: LLMClient,
-    usage_tracker: Optional["UsageTracker"] = None,
+    usage_tracker: "UsageTracker" | None = None,
 ) -> PipelineOutput:
     """
     Main runtime entrypoint.
@@ -77,7 +77,7 @@ async def run_pipeline(
         return PipelineOutput(route=route, llm_response=resp)
 
     # Extract parsed prompt from slots if present (structured prompt fast path)
-    parsed: Optional[ParsedPrompt] = route.slots.extras.get("parsed_prompt")
+    parsed: ParsedPrompt | None = route.slots.extras.get("parsed_prompt")
 
     # COMPOSING: planner path
     if route.sse_state == SSEState.COMPOSING or route.intent == Intent.GENERATE_MUSIC:

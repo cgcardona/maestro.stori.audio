@@ -13,7 +13,7 @@
         "artist": "Steppenwolf",
         "token_count": 1679,
         "score": 0.8483,
-        "sha256": "aeac30e3b71b681c"
+        "sha256": "28245ff733c4bc6b"
       },
       {
         "file": "seeds/rock/rock_01.mid",
@@ -23,7 +23,7 @@
         "artist": "Steppenwolf",
         "token_count": 1671,
         "score": 0.845,
-        "sha256": "e6e002cc21fcb598"
+        "sha256": "be9317f9fcbc1348"
       },
       {
         "file": "seeds/rock/rock_02.mid",
@@ -33,7 +33,7 @@
         "artist": "Steppenwolf",
         "token_count": 1675,
         "score": 0.844,
-        "sha256": "c02fa8b4ad578088"
+        "sha256": "f3b205772fe392c4"
       },
       {
         "file": "seeds/rock/rock_03.mid",
@@ -43,7 +43,7 @@
         "artist": "Lee Ann Womack",
         "token_count": 1666,
         "score": 0.828,
-        "sha256": "ee1828005a782e9d"
+        "sha256": "570231d9681ccb0f"
       },
       {
         "file": "seeds/rock/rock_04.mid",
@@ -53,7 +53,7 @@
         "artist": "Brown Bobby",
         "token_count": 1421,
         "score": 0.7968,
-        "sha256": "17cb77eb188b5fe4"
+        "sha256": "fa790b4ea3951f48"
       },
       {
         "file": "seeds/rock/rock_05.mid",
@@ -63,7 +63,7 @@
         "artist": "Brown Bobby",
         "token_count": 1487,
         "score": 0.7872,
-        "sha256": "468d2a26d2bfdf45"
+        "sha256": "c8d34ca1631c82af"
       },
       {
         "file": "seeds/rock/rock_06.mid",
@@ -73,7 +73,7 @@
         "artist": "All Saints",
         "token_count": 1485,
         "score": 0.7757,
-        "sha256": "6ca026843f24bcd6"
+        "sha256": "22784b9d6c37304b"
       },
       {
         "file": "seeds/rock/rock_07.mid",
@@ -83,7 +83,7 @@
         "artist": "All Saints",
         "token_count": 1485,
         "score": 0.7757,
-        "sha256": "6ca026843f24bcd6"
+        "sha256": "22784b9d6c37304b"
       },
       {
         "file": "seeds/rock/rock_08.mid",
@@ -93,7 +93,7 @@
         "artist": "Brown Bobby",
         "token_count": 1511,
         "score": 0.775,
-        "sha256": "fcfe56978fec0c3e"
+        "sha256": "cf91958c9c27f39d"
       },
       {
         "file": "seeds/rock/rock_09.mid",
@@ -103,7 +103,7 @@
         "artist": "Brown Bobby",
         "token_count": 1511,
         "score": 0.775,
-        "sha256": "fcfe56978fec0c3e"
+        "sha256": "cf91958c9c27f39d"
       }
     ],
     "general": [
@@ -115,7 +115,7 @@
         "artist": "Pink Floyd",
         "token_count": 1640,
         "score": 0.928,
-        "sha256": "836475d0c2c63600"
+        "sha256": "e45c2388caaad097"
       },
       {
         "file": "seeds/general/general_01.mid",
@@ -125,7 +125,7 @@
         "artist": "Pink Floyd",
         "token_count": 1640,
         "score": 0.928,
-        "sha256": "836475d0c2c63600"
+        "sha256": "e45c2388caaad097"
       },
       {
         "file": "seeds/general/general_02.mid",
@@ -135,7 +135,7 @@
         "artist": "Pink Floyd",
         "token_count": 1640,
         "score": 0.928,
-        "sha256": "836475d0c2c63600"
+        "sha256": "e45c2388caaad097"
       },
       {
         "file": "seeds/general/general_03.mid",
@@ -145,7 +145,7 @@
         "artist": "Pink Floyd",
         "token_count": 1640,
         "score": 0.928,
-        "sha256": "836475d0c2c63600"
+        "sha256": "e45c2388caaad097"
       },
       {
         "file": "seeds/general/general_04.mid",
@@ -155,7 +155,7 @@
         "artist": "Pink Floyd",
         "token_count": 1640,
         "score": 0.928,
-        "sha256": "836475d0c2c63600"
+        "sha256": "e45c2388caaad097"
       },
       {
         "file": "seeds/general/general_05.mid",
@@ -165,7 +165,7 @@
         "artist": "Pink Floyd",
         "token_count": 1640,
         "score": 0.928,
-        "sha256": "836475d0c2c63600"
+        "sha256": "e45c2388caaad097"
       },
       {
         "file": "seeds/general/general_06.mid",
@@ -175,7 +175,7 @@
         "artist": "Pink Floyd",
         "token_count": 1640,
         "score": 0.928,
-        "sha256": "836475d0c2c63600"
+        "sha256": "e45c2388caaad097"
       },
       {
         "file": "seeds/general/general_07.mid",
@@ -185,7 +185,7 @@
         "artist": "Pink Floyd",
         "token_count": 1640,
         "score": 0.928,
-        "sha256": "836475d0c2c63600"
+        "sha256": "e45c2388caaad097"
       },
       {
         "file": "seeds/general/general_08.mid",
@@ -195,7 +195,7 @@
         "artist": "Pink Floyd",
         "token_count": 1640,
         "score": 0.928,
-        "sha256": "836475d0c2c63600"
+        "sha256": "e45c2388caaad097"
       },
       {
         "file": "seeds/general/general_09.mid",
@@ -205,7 +205,7 @@
         "artist": "Pink Floyd",
         "token_count": 1640,
         "score": 0.928,
-        "sha256": "836475d0c2c63600"
+        "sha256": "e45c2388caaad097"
       }
     ],
     "arabic_maqam": [
@@ -217,7 +217,7 @@
         "artist": "Celine Dion",
         "token_count": 1781,
         "score": 0.875,
-        "sha256": "6c9ac91d2cc912c3"
+        "sha256": "02b6cf36585827ae"
       },
       {
         "file": "seeds/arabic_maqam/arabic_maqam_01.mid",
@@ -227,7 +227,7 @@
         "artist": "Whitney Houston",
         "token_count": 1425,
         "score": 0.8307,
-        "sha256": "f6d24e6771dcfb88"
+        "sha256": "3d66ff5da8c32a1b"
       },
       {
         "file": "seeds/arabic_maqam/arabic_maqam_02.mid",
@@ -237,7 +237,7 @@
         "artist": "Whitney Houston",
         "token_count": 1425,
         "score": 0.8307,
-        "sha256": "f6d24e6771dcfb88"
+        "sha256": "3d66ff5da8c32a1b"
       },
       {
         "file": "seeds/arabic_maqam/arabic_maqam_03.mid",
@@ -247,7 +247,7 @@
         "artist": "Whitney Houston",
         "token_count": 1457,
         "score": 0.8256,
-        "sha256": "3dc24c3ccc2279d7"
+        "sha256": "71579f6146354a33"
       },
       {
         "file": "seeds/arabic_maqam/arabic_maqam_04.mid",
@@ -257,7 +257,7 @@
         "artist": "Whitney Houston",
         "token_count": 1457,
         "score": 0.8256,
-        "sha256": "3dc24c3ccc2279d7"
+        "sha256": "71579f6146354a33"
       },
       {
         "file": "seeds/arabic_maqam/arabic_maqam_05.mid",
@@ -267,7 +267,7 @@
         "artist": "Whitney Houston",
         "token_count": 1407,
         "score": 0.8254,
-        "sha256": "3b2919278dc5409f"
+        "sha256": "4ac7a76613f75cd7"
       },
       {
         "file": "seeds/arabic_maqam/arabic_maqam_06.mid",
@@ -277,7 +277,7 @@
         "artist": "Whitney Houston",
         "token_count": 1407,
         "score": 0.8254,
-        "sha256": "3b2919278dc5409f"
+        "sha256": "4ac7a76613f75cd7"
       },
       {
         "file": "seeds/arabic_maqam/arabic_maqam_07.mid",
@@ -287,7 +287,7 @@
         "artist": "Whitney Houston",
         "token_count": 1405,
         "score": 0.8233,
-        "sha256": "27db784695b9a126"
+        "sha256": "186fa7653f63d911"
       },
       {
         "file": "seeds/arabic_maqam/arabic_maqam_08.mid",
@@ -297,7 +297,7 @@
         "artist": "Whitney Houston",
         "token_count": 1405,
         "score": 0.8233,
-        "sha256": "27db784695b9a126"
+        "sha256": "186fa7653f63d911"
       },
       {
         "file": "seeds/arabic_maqam/arabic_maqam_09.mid",
@@ -307,7 +307,7 @@
         "artist": "Journey",
         "token_count": 1393,
         "score": 0.8205,
-        "sha256": "647b078214307dc4"
+        "sha256": "4824167e12ba2ebc"
       }
     ],
     "drum_and_bass": [
@@ -319,7 +319,7 @@
         "artist": "Techno",
         "token_count": 1710,
         "score": 0.8021,
-        "sha256": "9b9633c23c89d4cf"
+        "sha256": "cc6becea4deb8035"
       },
       {
         "file": "seeds/drum_and_bass/drum_and_bass_01.mid",
@@ -329,7 +329,7 @@
         "artist": "Guns N Roses",
         "token_count": 1541,
         "score": 0.7332,
-        "sha256": "080a178ddfb630e9"
+        "sha256": "9cca073c3b30a5bf"
       },
       {
         "file": "seeds/drum_and_bass/drum_and_bass_02.mid",
@@ -339,7 +339,7 @@
         "artist": "Guns N Roses",
         "token_count": 1541,
         "score": 0.7332,
-        "sha256": "080a178ddfb630e9"
+        "sha256": "9cca073c3b30a5bf"
       },
       {
         "file": "seeds/drum_and_bass/drum_and_bass_03.mid",
@@ -349,7 +349,7 @@
         "artist": "Jungle",
         "token_count": 1364,
         "score": 0.7094,
-        "sha256": "5e8e93244d745f33"
+        "sha256": "447532265a35553f"
       },
       {
         "file": "seeds/drum_and_bass/drum_and_bass_04.mid",
@@ -359,7 +359,7 @@
         "artist": "Techno",
         "token_count": 1351,
         "score": 0.7052,
-        "sha256": "4dca6312f1d6198b"
+        "sha256": "ae059e2aa847704a"
       },
       {
         "file": "seeds/drum_and_bass/drum_and_bass_05.mid",
@@ -369,7 +369,7 @@
         "artist": "Jungle",
         "token_count": 1428,
         "score": 0.7014,
-        "sha256": "f3bc8772db416a9d"
+        "sha256": "dd4b54173fe89d05"
       },
       {
         "file": "seeds/drum_and_bass/drum_and_bass_06.mid",
@@ -379,7 +379,7 @@
         "artist": "The Jungle Book",
         "token_count": 1662,
         "score": 0.6899,
-        "sha256": "21ebfbf4e6f2c40b"
+        "sha256": "519760217ed0b66f"
       },
       {
         "file": "seeds/drum_and_bass/drum_and_bass_07.mid",
@@ -389,7 +389,7 @@
         "artist": "Jungle",
         "token_count": 1316,
         "score": 0.685,
-        "sha256": "c2bb832985ee0698"
+        "sha256": "9e2c2097bdc4166a"
       },
       {
         "file": "seeds/drum_and_bass/drum_and_bass_08.mid",
@@ -399,7 +399,7 @@
         "artist": "Jungle",
         "token_count": 1388,
         "score": 0.6818,
-        "sha256": "b599aaa95f215578"
+        "sha256": "8c4f4c6cb246822b"
       },
       {
         "file": "seeds/drum_and_bass/drum_and_bass_09.mid",
@@ -409,7 +409,7 @@
         "artist": "Bruce Springsteen",
         "token_count": 1085,
         "score": 0.6794,
-        "sha256": "b0dae4573d2016e4"
+        "sha256": "7784f8ff9c805bab"
       }
     ],
     "house": [
@@ -421,7 +421,7 @@
         "artist": "Big House",
         "token_count": 1483,
         "score": 0.8286,
-        "sha256": "ddec4cb0dcec73f0"
+        "sha256": "8a5d412cd4ce08b8"
       },
       {
         "file": "seeds/house/house_01.mid",
@@ -431,7 +431,7 @@
         "artist": "Big House",
         "token_count": 1488,
         "score": 0.8125,
-        "sha256": "c2240866a9cf99c4"
+        "sha256": "118fe3585eb2eb1a"
       },
       {
         "file": "seeds/house/house_02.mid",
@@ -441,7 +441,7 @@
         "artist": "Williams Hank",
         "token_count": 1552,
         "score": 0.8076,
-        "sha256": "eb327f5be7753215"
+        "sha256": "dfa8df7d05864df7"
       },
       {
         "file": "seeds/house/house_03.mid",
@@ -451,7 +451,7 @@
         "artist": "Williams Hank",
         "token_count": 1554,
         "score": 0.8075,
-        "sha256": "978b1313804692ff"
+        "sha256": "1dec6866222345ea"
       },
       {
         "file": "seeds/house/house_04.mid",
@@ -461,7 +461,7 @@
         "artist": "Williams Hank",
         "token_count": 1549,
         "score": 0.7993,
-        "sha256": "1de2bcc48b0f32f5"
+        "sha256": "de4b830ba2bf42ef"
       },
       {
         "file": "seeds/house/house_05.mid",
@@ -471,7 +471,7 @@
         "artist": "Williams Hank",
         "token_count": 1549,
         "score": 0.7993,
-        "sha256": "1de2bcc48b0f32f5"
+        "sha256": "de4b830ba2bf42ef"
       },
       {
         "file": "seeds/house/house_06.mid",
@@ -481,7 +481,7 @@
         "artist": "Williams Hank",
         "token_count": 1554,
         "score": 0.7988,
-        "sha256": "07338f1f41456a18"
+        "sha256": "14a3cd1e8781a134"
       },
       {
         "file": "seeds/house/house_07.mid",
@@ -491,7 +491,7 @@
         "artist": "Williams Hank",
         "token_count": 1554,
         "score": 0.7988,
-        "sha256": "07338f1f41456a18"
+        "sha256": "14a3cd1e8781a134"
       },
       {
         "file": "seeds/house/house_08.mid",
@@ -501,7 +501,7 @@
         "artist": "Madness",
         "token_count": 1490,
         "score": 0.7986,
-        "sha256": "39df003e5e234c8e"
+        "sha256": "c20e6d57659c2cc9"
       },
       {
         "file": "seeds/house/house_09.mid",
@@ -511,7 +511,7 @@
         "artist": "Williams Hank",
         "token_count": 1528,
         "score": 0.7984,
-        "sha256": "9ffba439c57ce549"
+        "sha256": "28b565906e550d34"
       }
     ],
     "reggae": [
@@ -523,7 +523,7 @@
         "artist": "Nataliya Mogilevskaya",
         "token_count": 1351,
         "score": 0.8539,
-        "sha256": "567476256a0223fd"
+        "sha256": "c7e946760bd6f74a"
       },
       {
         "file": "seeds/reggae/reggae_01.mid",
@@ -533,7 +533,7 @@
         "artist": "Skank",
         "token_count": 1653,
         "score": 0.8259,
-        "sha256": "6fc3e128525b1928"
+        "sha256": "3b271283d8db2d3c"
       },
       {
         "file": "seeds/reggae/reggae_02.mid",
@@ -543,7 +543,7 @@
         "artist": "Virtual Sound Canvas",
         "token_count": 1508,
         "score": 0.8247,
-        "sha256": "c58ef56f8b24c9b2"
+        "sha256": "7dc181cedfbf0e05"
       },
       {
         "file": "seeds/reggae/reggae_03.mid",
@@ -553,7 +553,7 @@
         "artist": "Oleg Gazmanov",
         "token_count": 1929,
         "score": 0.8145,
-        "sha256": "611718c919f6d0e3"
+        "sha256": "f6f1014205b8bc56"
       },
       {
         "file": "seeds/reggae/reggae_04.mid",
@@ -563,7 +563,7 @@
         "artist": "Oleg Gazmanov",
         "token_count": 1845,
         "score": 0.8128,
-        "sha256": "49b82e3117048add"
+        "sha256": "4d9572220af6d665"
       },
       {
         "file": "seeds/reggae/reggae_05.mid",
@@ -573,7 +573,7 @@
         "artist": "Oleg Gazmanov",
         "token_count": 1845,
         "score": 0.8128,
-        "sha256": "49b82e3117048add"
+        "sha256": "4d9572220af6d665"
       },
       {
         "file": "seeds/reggae/reggae_06.mid",
@@ -583,7 +583,7 @@
         "artist": "Virtual Sound Canvas",
         "token_count": 1506,
         "score": 0.8058,
-        "sha256": "462fd52c213b41f8"
+        "sha256": "aca31033f8c4a008"
       },
       {
         "file": "seeds/reggae/reggae_07.mid",
@@ -593,7 +593,7 @@
         "artist": "Tatyana Bulanova",
         "token_count": 1657,
         "score": 0.8011,
-        "sha256": "38934e02b0f0dfce"
+        "sha256": "82a41369df25b377"
       },
       {
         "file": "seeds/reggae/reggae_08.mid",
@@ -603,7 +603,7 @@
         "artist": "Lyubov Uspenskaya",
         "token_count": 1657,
         "score": 0.7951,
-        "sha256": "0989db3fc0d2b235"
+        "sha256": "9df448d81de73184"
       },
       {
         "file": "seeds/reggae/reggae_09.mid",
@@ -613,7 +613,7 @@
         "artist": "Oleg Gazmanov",
         "token_count": 1840,
         "score": 0.7924,
-        "sha256": "a78c4a2314a601d6"
+        "sha256": "a4cd843a5a1c1d1d"
       }
     ],
     "country": [
@@ -625,7 +625,7 @@
         "artist": "Israel Folk",
         "token_count": 1752,
         "score": 0.896,
-        "sha256": "e4e72d662a1fc066"
+        "sha256": "de58fb4860d8b837"
       },
       {
         "file": "seeds/country/country_01.mid",
@@ -635,7 +635,7 @@
         "artist": "Israel Folk",
         "token_count": 1758,
         "score": 0.8957,
-        "sha256": "048418e66cce16e5"
+        "sha256": "c3bd77384b225407"
       },
       {
         "file": "seeds/country/country_02.mid",
@@ -645,7 +645,7 @@
         "artist": "Israel Folk",
         "token_count": 1691,
         "score": 0.8777,
-        "sha256": "d038f114402074f2"
+        "sha256": "50c00453c208c9df"
       },
       {
         "file": "seeds/country/country_03.mid",
@@ -655,7 +655,7 @@
         "artist": "Israel Folk",
         "token_count": 1750,
         "score": 0.8742,
-        "sha256": "3e5de14f96b76a8b"
+        "sha256": "d2ca733f0053c907"
       },
       {
         "file": "seeds/country/country_04.mid",
@@ -665,7 +665,7 @@
         "artist": "Israel Folk",
         "token_count": 1363,
         "score": 0.8639,
-        "sha256": "0f5e70552c52d412"
+        "sha256": "342c4021d2fbee9f"
       },
       {
         "file": "seeds/country/country_05.mid",
@@ -675,7 +675,7 @@
         "artist": "Israel Folk",
         "token_count": 1734,
         "score": 0.8604,
-        "sha256": "10bac262dc28e68e"
+        "sha256": "cf9a3ccd37338831"
       },
       {
         "file": "seeds/country/country_06.mid",
@@ -685,7 +685,7 @@
         "artist": "Israel Folk",
         "token_count": 1758,
         "score": 0.8545,
-        "sha256": "3b7d55452ad9c402"
+        "sha256": "c1a44f2efed26db7"
       },
       {
         "file": "seeds/country/country_07.mid",
@@ -695,7 +695,7 @@
         "artist": "Israel Folk",
         "token_count": 1758,
         "score": 0.8545,
-        "sha256": "3b7d55452ad9c402"
+        "sha256": "c1a44f2efed26db7"
       },
       {
         "file": "seeds/country/country_08.mid",
@@ -705,7 +705,7 @@
         "artist": "Israel Folk",
         "token_count": 1758,
         "score": 0.8545,
-        "sha256": "3b7d55452ad9c402"
+        "sha256": "c1a44f2efed26db7"
       },
       {
         "file": "seeds/country/country_09.mid",
@@ -715,7 +715,7 @@
         "artist": "Israel Folk",
         "token_count": 1669,
         "score": 0.8465,
-        "sha256": "d015b54da496e955"
+        "sha256": "8a3f2f110d13577a"
       }
     ],
     "classical": [
@@ -727,7 +727,7 @@
         "artist": "Dallara",
         "token_count": 1519,
         "score": 0.7951,
-        "sha256": "3e12f86f81a7ffb2"
+        "sha256": "6009a82e1fd2ec4d"
       },
       {
         "file": "seeds/classical/classical_01.mid",
@@ -737,7 +737,7 @@
         "artist": "Dallara",
         "token_count": 1526,
         "score": 0.7894,
-        "sha256": "666e89434d0db0cc"
+        "sha256": "74daba1c88d8c5b6"
       },
       {
         "file": "seeds/classical/classical_02.mid",
@@ -747,7 +747,7 @@
         "artist": "Dallara",
         "token_count": 1578,
         "score": 0.7806,
-        "sha256": "60ed0d91746f65f6"
+        "sha256": "4218c741bac558c0"
       },
       {
         "file": "seeds/classical/classical_03.mid",
@@ -757,7 +757,7 @@
         "artist": "Dallara",
         "token_count": 1363,
         "score": 0.7516,
-        "sha256": "9d9cb7406d6e9d7e"
+        "sha256": "bd0987d6c6c09830"
       },
       {
         "file": "seeds/classical/classical_04.mid",
@@ -767,7 +767,7 @@
         "artist": "Dallara",
         "token_count": 1331,
         "score": 0.7412,
-        "sha256": "61de65e45b8be40d"
+        "sha256": "1b55ef72f708baf0"
       },
       {
         "file": "seeds/classical/classical_05.mid",
@@ -777,7 +777,7 @@
         "artist": "Dallara",
         "token_count": 1331,
         "score": 0.7412,
-        "sha256": "61de65e45b8be40d"
+        "sha256": "1b55ef72f708baf0"
       },
       {
         "file": "seeds/classical/classical_06.mid",
@@ -787,7 +787,7 @@
         "artist": "Dallara",
         "token_count": 1331,
         "score": 0.7412,
-        "sha256": "61de65e45b8be40d"
+        "sha256": "1b55ef72f708baf0"
       },
       {
         "file": "seeds/classical/classical_07.mid",
@@ -797,7 +797,7 @@
         "artist": "Verve",
         "token_count": 1399,
         "score": 0.7275,
-        "sha256": "7897defd39f0048e"
+        "sha256": "7c256a28a0ae79d3"
       },
       {
         "file": "seeds/classical/classical_08.mid",
@@ -807,7 +807,7 @@
         "artist": "The Verve",
         "token_count": 1399,
         "score": 0.7275,
-        "sha256": "7897defd39f0048e"
+        "sha256": "7c256a28a0ae79d3"
       },
       {
         "file": "seeds/classical/classical_09.mid",
@@ -817,7 +817,7 @@
         "artist": "Verve",
         "token_count": 1352,
         "score": 0.719,
-        "sha256": "e318e83db903e4e3"
+        "sha256": "1329ec634881c29e"
       }
     ],
     "funk": [
@@ -829,7 +829,7 @@
         "artist": "Kylie Minogue",
         "token_count": 1521,
         "score": 0.8475,
-        "sha256": "e72eaffffa0e2a5e"
+        "sha256": "e270a473d9416396"
       },
       {
         "file": "seeds/funk/funk_01.mid",
@@ -839,7 +839,7 @@
         "artist": "Funky",
         "token_count": 1613,
         "score": 0.8382,
-        "sha256": "4b7b8b19a705fd26"
+        "sha256": "be0bbdd7b921e56f"
       },
       {
         "file": "seeds/funk/funk_02.mid",
@@ -849,7 +849,7 @@
         "artist": "Michael George",
         "token_count": 1646,
         "score": 0.8191,
-        "sha256": "df01001fd2bb21f6"
+        "sha256": "1f88b924d9d08fd5"
       },
       {
         "file": "seeds/funk/funk_03.mid",
@@ -859,7 +859,7 @@
         "artist": "Michael George",
         "token_count": 1646,
         "score": 0.8191,
-        "sha256": "df01001fd2bb21f6"
+        "sha256": "1f88b924d9d08fd5"
       },
       {
         "file": "seeds/funk/funk_04.mid",
@@ -869,7 +869,7 @@
         "artist": "Perfume",
         "token_count": 1666,
         "score": 0.8177,
-        "sha256": "68a11a3c1c7244a9"
+        "sha256": "83405d92eaa69065"
       },
       {
         "file": "seeds/funk/funk_05.mid",
@@ -879,7 +879,7 @@
         "artist": "Michael George",
         "token_count": 1655,
         "score": 0.8171,
-        "sha256": "3ca4d0bf92b55302"
+        "sha256": "01211c4a98bb7c8b"
       },
       {
         "file": "seeds/funk/funk_06.mid",
@@ -889,7 +889,7 @@
         "artist": "Michael George",
         "token_count": 1655,
         "score": 0.8171,
-        "sha256": "3ca4d0bf92b55302"
+        "sha256": "01211c4a98bb7c8b"
       },
       {
         "file": "seeds/funk/funk_07.mid",
@@ -899,7 +899,7 @@
         "artist": "Kool & The Gang",
         "token_count": 1720,
         "score": 0.8163,
-        "sha256": "d64125f464367b24"
+        "sha256": "d9381d3b3ab08afe"
       },
       {
         "file": "seeds/funk/funk_08.mid",
@@ -909,7 +909,7 @@
         "artist": "Kool  The Gang",
         "token_count": 1720,
         "score": 0.8163,
-        "sha256": "d64125f464367b24"
+        "sha256": "d9381d3b3ab08afe"
       },
       {
         "file": "seeds/funk/funk_09.mid",
@@ -919,7 +919,7 @@
         "artist": "Simon  Garfunkel",
         "token_count": 1732,
         "score": 0.8157,
-        "sha256": "acbf7d891a881bcf"
+        "sha256": "031678d757dc236c"
       }
     ],
     "cinematic": [
@@ -931,7 +931,7 @@
         "artist": "Richard Dudeney",
         "token_count": 1629,
         "score": 0.8947,
-        "sha256": "6e78e4cdb9195d9a"
+        "sha256": "991659cf636ee5b2"
       },
       {
         "file": "seeds/cinematic/cinematic_01.mid",
@@ -941,7 +941,7 @@
         "artist": "FilmTv divers",
         "token_count": 1787,
         "score": 0.8704,
-        "sha256": "19123d00baf07a5f"
+        "sha256": "adb4d237802ca676"
       },
       {
         "file": "seeds/cinematic/cinematic_02.mid",
@@ -951,7 +951,7 @@
         "artist": "FilmTv divers",
         "token_count": 1579,
         "score": 0.8038,
-        "sha256": "52db9a11d1a027ed"
+        "sha256": "1dfcdda5fbbb93cf"
       },
       {
         "file": "seeds/cinematic/cinematic_03.mid",
@@ -961,7 +961,7 @@
         "artist": "Mihail Boyarskiy",
         "token_count": 1574,
         "score": 0.8018,
-        "sha256": "ff5ad3117088e710"
+        "sha256": "24047345527a74dc"
       },
       {
         "file": "seeds/cinematic/cinematic_04.mid",
@@ -971,7 +971,7 @@
         "artist": "FilmTv divers",
         "token_count": 1485,
         "score": 0.7903,
-        "sha256": "3469d4ed1125db04"
+        "sha256": "95bdb3c8cbd3d404"
       },
       {
         "file": "seeds/cinematic/cinematic_05.mid",
@@ -981,7 +981,7 @@
         "artist": "FilmTv divers",
         "token_count": 1503,
         "score": 0.7785,
-        "sha256": "c2f981cf504f0c68"
+        "sha256": "5e310d6abdacafa6"
       },
       {
         "file": "seeds/cinematic/cinematic_06.mid",
@@ -991,7 +991,7 @@
         "artist": "Limahl",
         "token_count": 1373,
         "score": 0.7783,
-        "sha256": "3f21a69d550622fe"
+        "sha256": "b453b6cae11ef1f2"
       },
       {
         "file": "seeds/cinematic/cinematic_07.mid",
@@ -1001,7 +1001,7 @@
         "artist": "Limahl",
         "token_count": 1373,
         "score": 0.7783,
-        "sha256": "3f21a69d550622fe"
+        "sha256": "b453b6cae11ef1f2"
       },
       {
         "file": "seeds/cinematic/cinematic_08.mid",
@@ -1011,7 +1011,7 @@
         "artist": "Valentina Tolkunova",
         "token_count": 1345,
         "score": 0.7755,
-        "sha256": "33b1fc857f65cdaa"
+        "sha256": "89167002eb1fc085"
       },
       {
         "file": "seeds/cinematic/cinematic_09.mid",
@@ -1021,7 +1021,7 @@
         "artist": "Valentina Tolkunova",
         "token_count": 1345,
         "score": 0.7744,
-        "sha256": "d81ddc450729f1cb"
+        "sha256": "20402fd69e850bd5"
       }
     ],
     "techno": [
@@ -1033,7 +1033,7 @@
         "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
         "token_count": 1565,
         "score": 0.801,
-        "sha256": "5db076574264d4c6"
+        "sha256": "c23dec38d4f1240f"
       },
       {
         "file": "seeds/techno/techno_01.mid",
@@ -1043,7 +1043,7 @@
         "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
         "token_count": 1556,
         "score": 0.773,
-        "sha256": "b729c45a437ad941"
+        "sha256": "6650f2d44e9b0c4a"
       },
       {
         "file": "seeds/techno/techno_02.mid",
@@ -1053,7 +1053,7 @@
         "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
         "token_count": 1606,
         "score": 0.7648,
-        "sha256": "7382b3b5df0383de"
+        "sha256": "2fd6c4403788f180"
       },
       {
         "file": "seeds/techno/techno_03.mid",
@@ -1063,7 +1063,7 @@
         "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
         "token_count": 1565,
         "score": 0.7642,
-        "sha256": "ae49c641b771bdeb"
+        "sha256": "91522d5efeec4af5"
       },
       {
         "file": "seeds/techno/techno_04.mid",
@@ -1073,7 +1073,7 @@
         "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
         "token_count": 1659,
         "score": 0.7628,
-        "sha256": "81c35db1abb8d063"
+        "sha256": "b4be5bc2a4127182"
       },
       {
         "file": "seeds/techno/techno_05.mid",
@@ -1083,7 +1083,7 @@
         "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
         "token_count": 1566,
         "score": 0.7522,
-        "sha256": "a1f8e0208f8b708a"
+        "sha256": "b99f1af618b08624"
       },
       {
         "file": "seeds/techno/techno_06.mid",
@@ -1093,7 +1093,7 @@
         "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
         "token_count": 1652,
         "score": 0.7519,
-        "sha256": "cafafbd4f1e90339"
+        "sha256": "ccf54dc83269f3a8"
       },
       {
         "file": "seeds/techno/techno_07.mid",
@@ -1103,7 +1103,7 @@
         "artist": "Technotronic",
         "token_count": 1638,
         "score": 0.7478,
-        "sha256": "506c4519f2dac50c"
+        "sha256": "f957764adc75c733"
       },
       {
         "file": "seeds/techno/techno_08.mid",
@@ -1113,7 +1113,7 @@
         "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
         "token_count": 1647,
         "score": 0.7474,
-        "sha256": "5ae023f4cf47bec7"
+        "sha256": "1ce87d2168fdc1c0"
       },
       {
         "file": "seeds/techno/techno_09.mid",
@@ -1123,7 +1123,7 @@
         "artist": "Tantsevalnaya Dance I Tehno Techno - Muzyika",
         "token_count": 1568,
         "score": 0.7474,
-        "sha256": "8ee488874391d97b"
+        "sha256": "74db3c6f4a8a6964"
       }
     ],
     "hip_hop": [
@@ -1135,7 +1135,7 @@
         "artist": "Jovanotti",
         "token_count": 1858,
         "score": 0.8395,
-        "sha256": "be0323609723be10"
+        "sha256": "5cc6a3736c0a1a14"
       },
       {
         "file": "seeds/hip_hop/hip_hop_01.mid",
@@ -1145,7 +1145,7 @@
         "artist": "Jovanotti",
         "token_count": 1858,
         "score": 0.8395,
-        "sha256": "be0323609723be10"
+        "sha256": "5cc6a3736c0a1a14"
       },
       {
         "file": "seeds/hip_hop/hip_hop_02.mid",
@@ -1155,7 +1155,7 @@
         "artist": "Jovanotti",
         "token_count": 1855,
         "score": 0.8308,
-        "sha256": "0dd7593627cf53f2"
+        "sha256": "c2acbdb48549280a"
       },
       {
         "file": "seeds/hip_hop/hip_hop_03.mid",
@@ -1165,7 +1165,7 @@
         "artist": "Jovanotti",
         "token_count": 1746,
         "score": 0.814,
-        "sha256": "91ce9882d10a01c8"
+        "sha256": "da902e20a2306d36"
       },
       {
         "file": "seeds/hip_hop/hip_hop_04.mid",
@@ -1175,7 +1175,7 @@
         "artist": "Jovanotti",
         "token_count": 1746,
         "score": 0.814,
-        "sha256": "91ce9882d10a01c8"
+        "sha256": "da902e20a2306d36"
       },
       {
         "file": "seeds/hip_hop/hip_hop_05.mid",
@@ -1185,7 +1185,7 @@
         "artist": "Jovanotti",
         "token_count": 1746,
         "score": 0.814,
-        "sha256": "91ce9882d10a01c8"
+        "sha256": "da902e20a2306d36"
       },
       {
         "file": "seeds/hip_hop/hip_hop_06.mid",
@@ -1195,7 +1195,7 @@
         "artist": "Jovanotti",
         "token_count": 1743,
         "score": 0.8133,
-        "sha256": "700744422d327a35"
+        "sha256": "206360d71de385b4"
       },
       {
         "file": "seeds/hip_hop/hip_hop_07.mid",
@@ -1205,7 +1205,7 @@
         "artist": "Jovanotti",
         "token_count": 1743,
         "score": 0.8133,
-        "sha256": "700744422d327a35"
+        "sha256": "206360d71de385b4"
       },
       {
         "file": "seeds/hip_hop/hip_hop_08.mid",
@@ -1215,7 +1215,7 @@
         "artist": "Jovanotti",
         "token_count": 1743,
         "score": 0.8133,
-        "sha256": "700744422d327a35"
+        "sha256": "206360d71de385b4"
       },
       {
         "file": "seeds/hip_hop/hip_hop_09.mid",
@@ -1225,7 +1225,7 @@
         "artist": "Jovanotti",
         "token_count": 1687,
         "score": 0.8123,
-        "sha256": "b4b7520c52f03ba4"
+        "sha256": "0736800f648ef52d"
       }
     ],
     "jazz": [
@@ -1237,7 +1237,7 @@
         "artist": "VanBasco Karaoke Player",
         "token_count": 1566,
         "score": 0.8532,
-        "sha256": "948e3f5b3c1518a0"
+        "sha256": "1c81cf0e8ff3d41c"
       },
       {
         "file": "seeds/jazz/jazz_01.mid",
@@ -1247,7 +1247,7 @@
         "artist": "VanBasco Karaoke Player",
         "token_count": 1569,
         "score": 0.838,
-        "sha256": "dd4c06f98f57c9a0"
+        "sha256": "80c6c0e9e2ea391a"
       },
       {
         "file": "seeds/jazz/jazz_02.mid",
@@ -1257,7 +1257,7 @@
         "artist": "VanBasco Karaoke Player",
         "token_count": 1557,
         "score": 0.8231,
-        "sha256": "4bcfbd0508502c76"
+        "sha256": "0c0d1a85d3b6d33f"
       },
       {
         "file": "seeds/jazz/jazz_03.mid",
@@ -1267,7 +1267,7 @@
         "artist": "Jazz Standards suite",
         "token_count": 1714,
         "score": 0.8034,
-        "sha256": "5cfb5a2e5f55726f"
+        "sha256": "6bd14ed6c403ee6b"
       },
       {
         "file": "seeds/jazz/jazz_04.mid",
@@ -1277,7 +1277,7 @@
         "artist": "Jazz Standards suite",
         "token_count": 1714,
         "score": 0.8034,
-        "sha256": "5cfb5a2e5f55726f"
+        "sha256": "6bd14ed6c403ee6b"
       },
       {
         "file": "seeds/jazz/jazz_05.mid",
@@ -1287,7 +1287,7 @@
         "artist": "VanBasco Karaoke Player",
         "token_count": 1610,
         "score": 0.8025,
-        "sha256": "ee1722aa4a71a95c"
+        "sha256": "a7a2e3b207df9dd9"
       },
       {
         "file": "seeds/jazz/jazz_06.mid",
@@ -1297,7 +1297,7 @@
         "artist": "Jazz Rock",
         "token_count": 1585,
         "score": 0.7982,
-        "sha256": "1d75e97c42910f60"
+        "sha256": "c1c1c4583d840513"
       },
       {
         "file": "seeds/jazz/jazz_07.mid",
@@ -1307,7 +1307,7 @@
         "artist": "VanBasco Karaoke Player",
         "token_count": 1617,
         "score": 0.7953,
-        "sha256": "9f53b71e8b765c2e"
+        "sha256": "d01dc87716de0d6d"
       },
       {
         "file": "seeds/jazz/jazz_08.mid",
@@ -1317,7 +1317,7 @@
         "artist": "Jazz Standards suite",
         "token_count": 1496,
         "score": 0.7879,
-        "sha256": "5dd7d166200a086b"
+        "sha256": "b94d7face75e7242"
       },
       {
         "file": "seeds/jazz/jazz_09.mid",
@@ -1327,7 +1327,7 @@
         "artist": "Jazz Standards suite",
         "token_count": 1610,
         "score": 0.7845,
-        "sha256": "e362c78674f43bfa"
+        "sha256": "cb851176d2a55970"
       }
     ],
     "blues": [
@@ -1339,7 +1339,7 @@
         "artist": "Eric Clapton",
         "token_count": 1744,
         "score": 0.8062,
-        "sha256": "11f47150db1a8b52"
+        "sha256": "6174d7d736234a1d"
       },
       {
         "file": "seeds/blues/blues_01.mid",
@@ -1349,7 +1349,7 @@
         "artist": "Eric Clapton",
         "token_count": 1683,
         "score": 0.8037,
-        "sha256": "66d098f1da026e58"
+        "sha256": "fe2ae36ef2981097"
       },
       {
         "file": "seeds/blues/blues_02.mid",
@@ -1359,7 +1359,7 @@
         "artist": "Eric Clapton",
         "token_count": 1683,
         "score": 0.8037,
-        "sha256": "66d098f1da026e58"
+        "sha256": "fe2ae36ef2981097"
       },
       {
         "file": "seeds/blues/blues_03.mid",
@@ -1369,7 +1369,7 @@
         "artist": "Moody Blues The",
         "token_count": 1495,
         "score": 0.7957,
-        "sha256": "4e10867d90a4d33d"
+        "sha256": "c0109a8a29335415"
       },
       {
         "file": "seeds/blues/blues_04.mid",
@@ -1379,7 +1379,7 @@
         "artist": "Moody Blues The",
         "token_count": 1499,
         "score": 0.7925,
-        "sha256": "ebf34f2425e02813"
+        "sha256": "b20aca0544344096"
       },
       {
         "file": "seeds/blues/blues_05.mid",
@@ -1389,7 +1389,7 @@
         "artist": "The Moody Blues",
         "token_count": 1499,
         "score": 0.7885,
-        "sha256": "aae5ce35f6aaf577"
+        "sha256": "43eae7eaf2c24109"
       },
       {
         "file": "seeds/blues/blues_06.mid",
@@ -1399,7 +1399,7 @@
         "artist": "The Moody Blues",
         "token_count": 1499,
         "score": 0.7885,
-        "sha256": "aae5ce35f6aaf577"
+        "sha256": "43eae7eaf2c24109"
       },
       {
         "file": "seeds/blues/blues_07.mid",
@@ -1409,7 +1409,7 @@
         "artist": "The Moody Blues",
         "token_count": 1499,
         "score": 0.7885,
-        "sha256": "aae5ce35f6aaf577"
+        "sha256": "43eae7eaf2c24109"
       },
       {
         "file": "seeds/blues/blues_08.mid",
@@ -1419,7 +1419,7 @@
         "artist": "The Moody Blues",
         "token_count": 1499,
         "score": 0.7885,
-        "sha256": "aae5ce35f6aaf577"
+        "sha256": "43eae7eaf2c24109"
       },
       {
         "file": "seeds/blues/blues_09.mid",
@@ -1429,7 +1429,7 @@
         "artist": "The Moody Blues",
         "token_count": 1499,
         "score": 0.7885,
-        "sha256": "aae5ce35f6aaf577"
+        "sha256": "43eae7eaf2c24109"
       }
     ],
     "neo_soul": [
@@ -1441,7 +1441,7 @@
         "artist": "Michael Bolton",
         "token_count": 1616,
         "score": 0.8024,
-        "sha256": "080a472bbbfe0c80"
+        "sha256": "42fae7e667529dcf"
       },
       {
         "file": "seeds/neo_soul/neo_soul_01.mid",
@@ -1451,7 +1451,7 @@
         "artist": "Gospel",
         "token_count": 1624,
         "score": 0.8008,
-        "sha256": "fd7f30278fc8b404"
+        "sha256": "958390fd8af29f05"
       },
       {
         "file": "seeds/neo_soul/neo_soul_02.mid",
@@ -1461,7 +1461,7 @@
         "artist": "Alex Volkov",
         "token_count": 1624,
         "score": 0.7985,
-        "sha256": "a74b09e2fb61494a"
+        "sha256": "e42d5022b9cbe34d"
       },
       {
         "file": "seeds/neo_soul/neo_soul_03.mid",
@@ -1471,7 +1471,7 @@
         "artist": "Michael Bolton",
         "token_count": 1555,
         "score": 0.7976,
-        "sha256": "091666d94a8fb31d"
+        "sha256": "b4fb634ca46ee633"
       },
       {
         "file": "seeds/neo_soul/neo_soul_04.mid",
@@ -1481,7 +1481,7 @@
         "artist": "David Bowie",
         "token_count": 1686,
         "score": 0.7963,
-        "sha256": "004be4e44a286b49"
+        "sha256": "0f4cbe76cdb1411a"
       },
       {
         "file": "seeds/neo_soul/neo_soul_05.mid",
@@ -1491,7 +1491,7 @@
         "artist": "Michael Bolton",
         "token_count": 1647,
         "score": 0.7957,
-        "sha256": "74898b706e9d9375"
+        "sha256": "4afb325f85ed676b"
       },
       {
         "file": "seeds/neo_soul/neo_soul_06.mid",
@@ -1501,7 +1501,7 @@
         "artist": "Michael Bolton",
         "token_count": 1647,
         "score": 0.7957,
-        "sha256": "74898b706e9d9375"
+        "sha256": "4afb325f85ed676b"
       },
       {
         "file": "seeds/neo_soul/neo_soul_07.mid",
@@ -1511,7 +1511,7 @@
         "artist": "Michael Bolton",
         "token_count": 1647,
         "score": 0.7957,
-        "sha256": "74898b706e9d9375"
+        "sha256": "4afb325f85ed676b"
       },
       {
         "file": "seeds/neo_soul/neo_soul_08.mid",
@@ -1521,7 +1521,7 @@
         "artist": "Michael Bolton",
         "token_count": 1647,
         "score": 0.7957,
-        "sha256": "74898b706e9d9375"
+        "sha256": "4afb325f85ed676b"
       },
       {
         "file": "seeds/neo_soul/neo_soul_09.mid",
@@ -1531,7 +1531,7 @@
         "artist": "Michael Bolton",
         "token_count": 1547,
         "score": 0.7942,
-        "sha256": "f94669d4bb3ed31b"
+        "sha256": "81e548c46768d80c"
       }
     ],
     "celtic": [
@@ -1543,7 +1543,7 @@
         "artist": "Jigsaw",
         "token_count": 1571,
         "score": 0.7974,
-        "sha256": "46bfdce2480fa3bf"
+        "sha256": "c5a6892b26d912dd"
       },
       {
         "file": "seeds/celtic/celtic_01.mid",
@@ -1553,7 +1553,7 @@
         "artist": "Jigsaw",
         "token_count": 1591,
         "score": 0.7827,
-        "sha256": "415753ccc8f40978"
+        "sha256": "37b5c394691e8734"
       },
       {
         "file": "seeds/celtic/celtic_02.mid",
@@ -1563,7 +1563,7 @@
         "artist": "Jigsaw",
         "token_count": 1552,
         "score": 0.7732,
-        "sha256": "ff78ffd9a06fa520"
+        "sha256": "f550244e396e3b3a"
       },
       {
         "file": "seeds/celtic/celtic_03.mid",
@@ -1573,7 +1573,7 @@
         "artist": "Jigsaw",
         "token_count": 1584,
         "score": 0.7116,
-        "sha256": "3a4e04a2c734ecbd"
+        "sha256": "3dcb136e358d2106"
       },
       {
         "file": "seeds/celtic/celtic_04.mid",
@@ -1583,7 +1583,7 @@
         "artist": "Jigsaw",
         "token_count": 1584,
         "score": 0.7116,
-        "sha256": "3a4e04a2c734ecbd"
+        "sha256": "3dcb136e358d2106"
       },
       {
         "file": "seeds/celtic/celtic_05.mid",
@@ -1593,7 +1593,7 @@
         "artist": "Jigsaw",
         "token_count": 1584,
         "score": 0.7116,
-        "sha256": "3a4e04a2c734ecbd"
+        "sha256": "3dcb136e358d2106"
       },
       {
         "file": "seeds/celtic/celtic_06.mid",
@@ -1603,7 +1603,7 @@
         "artist": "Jigsaw",
         "token_count": 1584,
         "score": 0.7116,
-        "sha256": "3a4e04a2c734ecbd"
+        "sha256": "3dcb136e358d2106"
       },
       {
         "file": "seeds/celtic/celtic_07.mid",
@@ -1613,7 +1613,7 @@
         "artist": "Rolling Stones",
         "token_count": 1507,
         "score": 0.6942,
-        "sha256": "81c085b3f85bab36"
+        "sha256": "f30195c9001db3e0"
       },
       {
         "file": "seeds/celtic/celtic_08.mid",
@@ -1623,7 +1623,7 @@
         "artist": "Rolling Stones",
         "token_count": 1507,
         "score": 0.6912,
-        "sha256": "908937f3858ef322"
+        "sha256": "2b79bcae5c54ce9e"
       },
       {
         "file": "seeds/celtic/celtic_09.mid",
@@ -1633,7 +1633,7 @@
         "artist": "Jigsaw",
         "token_count": 1584,
         "score": 0.6911,
-        "sha256": "4258253e970f123f"
+        "sha256": "ef007dde3bffe741"
       }
     ],
     "pop": [
@@ -1645,7 +1645,7 @@
         "artist": "Chordettes",
         "token_count": 1655,
         "score": 0.8138,
-        "sha256": "425cb0c2f3939601"
+        "sha256": "6761afafd9f7e09b"
       },
       {
         "file": "seeds/pop/pop_01.mid",
@@ -1655,7 +1655,7 @@
         "artist": "Art Popular",
         "token_count": 1549,
         "score": 0.7716,
-        "sha256": "cd166cc6f0318e52"
+        "sha256": "f9eae29b7384e7c1"
       },
       {
         "file": "seeds/pop/pop_02.mid",
@@ -1665,7 +1665,7 @@
         "artist": "Chordettes",
         "token_count": 1624,
         "score": 0.7695,
-        "sha256": "34bb007f7388810e"
+        "sha256": "cf71ba7ce31ce779"
       },
       {
         "file": "seeds/pop/pop_03.mid",
@@ -1675,7 +1675,7 @@
         "artist": "Chordettes",
         "token_count": 1624,
         "score": 0.7695,
-        "sha256": "34bb007f7388810e"
+        "sha256": "cf71ba7ce31ce779"
       },
       {
         "file": "seeds/pop/pop_04.mid",
@@ -1685,7 +1685,7 @@
         "artist": "John Mellencamp",
         "token_count": 1493,
         "score": 0.7656,
-        "sha256": "da8298510fc67719"
+        "sha256": "04ec111bff0835bf"
       },
       {
         "file": "seeds/pop/pop_05.mid",
@@ -1695,7 +1695,7 @@
         "artist": "John Mellencamp",
         "token_count": 1418,
         "score": 0.7611,
-        "sha256": "02b65bcc30b7deb5"
+        "sha256": "f592db16699a93f4"
       },
       {
         "file": "seeds/pop/pop_06.mid",
@@ -1705,7 +1705,7 @@
         "artist": "Chordettes",
         "token_count": 1493,
         "score": 0.751,
-        "sha256": "d7236130b71c9c67"
+        "sha256": "0a380ee12b6d209a"
       },
       {
         "file": "seeds/pop/pop_07.mid",
@@ -1715,7 +1715,7 @@
         "artist": "",
         "token_count": 1275,
         "score": 0.7342,
-        "sha256": "37af83299f7c7e93"
+        "sha256": "293f7455c2358e0b"
       },
       {
         "file": "seeds/pop/pop_08.mid",
@@ -1725,7 +1725,7 @@
         "artist": "Pop",
         "token_count": 1561,
         "score": 0.7075,
-        "sha256": "b56fc134fa96aead"
+        "sha256": "66d99aebc38a8efa"
       },
       {
         "file": "seeds/pop/pop_09.mid",
@@ -1735,7 +1735,7 @@
         "artist": "Lunapop",
         "token_count": 1607,
         "score": 0.7045,
-        "sha256": "2742cb02b2f12677"
+        "sha256": "ce3ee2c1c57b9a79"
       }
     ],
     "ambient": [
@@ -1747,7 +1747,7 @@
         "artist": "Jo Vally",
         "token_count": 1386,
         "score": 0.8056,
-        "sha256": "6c8b7e61839f86b5"
+        "sha256": "fe7d1c4bf4d04bb5"
       },
       {
         "file": "seeds/ambient/ambient_01.mid",
@@ -1757,7 +1757,7 @@
         "artist": "Katzenjammer",
         "token_count": 1637,
         "score": 0.7964,
-        "sha256": "00a82124a0fc6a01"
+        "sha256": "7760144dc2fd4160"
       },
       {
         "file": "seeds/ambient/ambient_02.mid",
@@ -1767,7 +1767,7 @@
         "artist": "Willy Sommers",
         "token_count": 1707,
         "score": 0.7928,
-        "sha256": "ff30ed513faec359"
+        "sha256": "a32fda1014271c51"
       },
       {
         "file": "seeds/ambient/ambient_03.mid",
@@ -1777,7 +1777,7 @@
         "artist": "Jo Vally",
         "token_count": 1413,
         "score": 0.7638,
-        "sha256": "22b8a0f424c9ba17"
+        "sha256": "500ea58be8ecc04d"
       },
       {
         "file": "seeds/ambient/ambient_04.mid",
@@ -1787,7 +1787,7 @@
         "artist": "Jo Vally",
         "token_count": 1413,
         "score": 0.7638,
-        "sha256": "22b8a0f424c9ba17"
+        "sha256": "500ea58be8ecc04d"
       },
       {
         "file": "seeds/ambient/ambient_05.mid",
@@ -1797,7 +1797,7 @@
         "artist": "Jo Vally",
         "token_count": 1413,
         "score": 0.7638,
-        "sha256": "22b8a0f424c9ba17"
+        "sha256": "500ea58be8ecc04d"
       },
       {
         "file": "seeds/ambient/ambient_06.mid",
@@ -1807,7 +1807,7 @@
         "artist": "Katzenjammer",
         "token_count": 1569,
         "score": 0.7546,
-        "sha256": "ab9a00c574367ad0"
+        "sha256": "da2e50c533670970"
       },
       {
         "file": "seeds/ambient/ambient_07.mid",
@@ -1817,7 +1817,7 @@
         "artist": "Jo Vally",
         "token_count": 1392,
         "score": 0.7494,
-        "sha256": "d09ab2ae6a10537f"
+        "sha256": "afa4598cc6216e64"
       },
       {
         "file": "seeds/ambient/ambient_08.mid",
@@ -1827,7 +1827,7 @@
         "artist": "Jo Vally",
         "token_count": 1392,
         "score": 0.7461,
-        "sha256": "bf2c5e93a4a6f1d7"
+        "sha256": "50f7903384241a9e"
       },
       {
         "file": "seeds/ambient/ambient_09.mid",
@@ -1837,7 +1837,7 @@
         "artist": "Marco Borsato",
         "token_count": 1642,
         "score": 0.743,
-        "sha256": "a0db4971f2e2e68d"
+        "sha256": "ba0748bf8dde7070"
       }
     ],
     "afro_cuban": [
@@ -1849,7 +1849,7 @@
         "artist": "Salsa",
         "token_count": 1694,
         "score": 0.7923,
-        "sha256": "6c04dea0d98171b9"
+        "sha256": "3457d1bab77e35db"
       },
       {
         "file": "seeds/afro_cuban/afro_cuban_01.mid",
@@ -1859,7 +1859,7 @@
         "artist": "Salsa",
         "token_count": 1510,
         "score": 0.777,
-        "sha256": "a5c244de00688539"
+        "sha256": "3eb4e6f2ad3029eb"
       },
       {
         "file": "seeds/afro_cuban/afro_cuban_02.mid",
@@ -1869,7 +1869,7 @@
         "artist": "Salsa",
         "token_count": 1637,
         "score": 0.7463,
-        "sha256": "1025b02f0e990fe9"
+        "sha256": "c054fabdb43dd9e5"
       },
       {
         "file": "seeds/afro_cuban/afro_cuban_03.mid",
@@ -1879,7 +1879,7 @@
         "artist": "Rumbas",
         "token_count": 1505,
         "score": 0.7341,
-        "sha256": "764b6b2d96aa2f19"
+        "sha256": "c1668d0e870a255e"
       },
       {
         "file": "seeds/afro_cuban/afro_cuban_04.mid",
@@ -1889,7 +1889,7 @@
         "artist": "Salsa",
         "token_count": 1581,
         "score": 0.7307,
-        "sha256": "d9edb3cf84e9eb3a"
+        "sha256": "0875b59b12eb29bd"
       },
       {
         "file": "seeds/afro_cuban/afro_cuban_05.mid",
@@ -1899,7 +1899,7 @@
         "artist": "Salsa",
         "token_count": 1581,
         "score": 0.7307,
-        "sha256": "d9edb3cf84e9eb3a"
+        "sha256": "0875b59b12eb29bd"
       },
       {
         "file": "seeds/afro_cuban/afro_cuban_06.mid",
@@ -1909,7 +1909,7 @@
         "artist": "Rumbas",
         "token_count": 1626,
         "score": 0.7301,
-        "sha256": "646f5627c6df6395"
+        "sha256": "155965292f4a92a2"
       },
       {
         "file": "seeds/afro_cuban/afro_cuban_07.mid",
@@ -1919,7 +1919,7 @@
         "artist": "Rumbas",
         "token_count": 1466,
         "score": 0.7275,
-        "sha256": "e92b930190dfbf23"
+        "sha256": "a654cb332787ea17"
       },
       {
         "file": "seeds/afro_cuban/afro_cuban_08.mid",
@@ -1929,7 +1929,7 @@
         "artist": "Salsa",
         "token_count": 1642,
         "score": 0.7245,
-        "sha256": "177183b7e584f467"
+        "sha256": "137893ae89034369"
       },
       {
         "file": "seeds/afro_cuban/afro_cuban_09.mid",
@@ -1939,7 +1939,7 @@
         "artist": "Salsa",
         "token_count": 1317,
         "score": 0.7193,
-        "sha256": "0fce961bd768fd6d"
+        "sha256": "3eb63f3033191ed1"
       }
     ],
     "gregorian": [
@@ -1951,7 +1951,7 @@
         "artist": "Jay And The Americans",
         "token_count": 1477,
         "score": 0.7759,
-        "sha256": "1656d90e5a7fcc53"
+        "sha256": "6e8b8aaf2c19430c"
       },
       {
         "file": "seeds/gregorian/gregorian_01.mid",
@@ -1961,7 +1961,7 @@
         "artist": "Jerry Lee Lewis",
         "token_count": 1647,
         "score": 0.7496,
-        "sha256": "e0fe8f675c1ab53a"
+        "sha256": "941824f9efffe998"
       },
       {
         "file": "seeds/gregorian/gregorian_02.mid",
@@ -1971,7 +1971,7 @@
         "artist": "Jerry Lee Lewis",
         "token_count": 1641,
         "score": 0.7135,
-        "sha256": "4137c44114cd113f"
+        "sha256": "4c3a7dedd067481a"
       },
       {
         "file": "seeds/gregorian/gregorian_03.mid",
@@ -1981,7 +1981,7 @@
         "artist": "Lewis Jerry Lee",
         "token_count": 1641,
         "score": 0.7135,
-        "sha256": "4137c44114cd113f"
+        "sha256": "4c3a7dedd067481a"
       },
       {
         "file": "seeds/gregorian/gregorian_04.mid",
@@ -1991,7 +1991,7 @@
         "artist": "Rune",
         "token_count": 1446,
         "score": 0.6985,
-        "sha256": "1ac466d08bf131da"
+        "sha256": "f1dc9c82060e0a66"
       },
       {
         "file": "seeds/gregorian/gregorian_05.mid",
@@ -2001,7 +2001,7 @@
         "artist": "Cotugno Toto",
         "token_count": 1130,
         "score": 0.6972,
-        "sha256": "8870193b4f1358eb"
+        "sha256": "950ed447186a639d"
       },
       {
         "file": "seeds/gregorian/gregorian_06.mid",
@@ -2011,7 +2011,7 @@
         "artist": "Rune",
         "token_count": 1446,
         "score": 0.6967,
-        "sha256": "6c7753833197208c"
+        "sha256": "8a2dd7fbc1acc2d6"
       },
       {
         "file": "seeds/gregorian/gregorian_07.mid",
@@ -2021,7 +2021,7 @@
         "artist": "Cotugno Toto",
         "token_count": 1135,
         "score": 0.6912,
-        "sha256": "831726009e7af7a2"
+        "sha256": "b6752776fc80fbdf"
       },
       {
         "file": "seeds/gregorian/gregorian_08.mid",
@@ -2031,7 +2031,7 @@
         "artist": "Jerry Lee Lewis",
         "token_count": 1542,
         "score": 0.6781,
-        "sha256": "3861ec0f883f377a"
+        "sha256": "ddfef4435cd5b67e"
       },
       {
         "file": "seeds/gregorian/gregorian_09.mid",
@@ -2041,7 +2041,7 @@
         "artist": "Cotugno Toto",
         "token_count": 1152,
         "score": 0.6764,
-        "sha256": "7548c1e868671d3b"
+        "sha256": "b2760b43d8c3d0d7"
       }
     ],
     "bossa_nova": [
@@ -2053,7 +2053,7 @@
         "artist": "Corea Chick",
         "token_count": 985,
         "score": 0.5744,
-        "sha256": "3ba348958fc7f5f1"
+        "sha256": "a9acc38a514dda07"
       },
       {
         "file": "seeds/bossa_nova/bossa_nova_01.mid",
@@ -2063,7 +2063,7 @@
         "artist": "Corea Chick",
         "token_count": 1036,
         "score": 0.5641,
-        "sha256": "e32b6ee742c1e908"
+        "sha256": "e9c484185f61ceb9"
       },
       {
         "file": "seeds/bossa_nova/bossa_nova_02.mid",
@@ -2073,7 +2073,7 @@
         "artist": "Samba titres B",
         "token_count": 729,
         "score": 0.5307,
-        "sha256": "2d6a2bc3775920d9"
+        "sha256": "e2189a37c61f2f5e"
       },
       {
         "file": "seeds/bossa_nova/bossa_nova_03.mid",
@@ -2083,7 +2083,7 @@
         "artist": "Samba titres B",
         "token_count": 773,
         "score": 0.5267,
-        "sha256": "d2476789e67514d0"
+        "sha256": "1622adfa3546ce8a"
       },
       {
         "file": "seeds/bossa_nova/bossa_nova_04.mid",
@@ -2093,7 +2093,7 @@
         "artist": "Samba titres B",
         "token_count": 772,
         "score": 0.5103,
-        "sha256": "e8bde765bcd5f658"
+        "sha256": "93a020037a4a84df"
       },
       {
         "file": "seeds/bossa_nova/bossa_nova_05.mid",
@@ -2103,7 +2103,7 @@
         "artist": "Manuela",
         "token_count": 523,
         "score": 0.5085,
-        "sha256": "40df5ce09cf7489e"
+        "sha256": "c501c0963940d9c1"
       },
       {
         "file": "seeds/bossa_nova/bossa_nova_06.mid",
@@ -2113,7 +2113,7 @@
         "artist": "Samba titres B",
         "token_count": 773,
         "score": 0.5055,
-        "sha256": "8ba1e1af43ff982d"
+        "sha256": "b547e99007fa6920"
       },
       {
         "file": "seeds/bossa_nova/bossa_nova_07.mid",
@@ -2123,7 +2123,7 @@
         "artist": "Samba titres B",
         "token_count": 773,
         "score": 0.5055,
-        "sha256": "8ba1e1af43ff982d"
+        "sha256": "b547e99007fa6920"
       },
       {
         "file": "seeds/bossa_nova/bossa_nova_08.mid",
@@ -2133,7 +2133,7 @@
         "artist": "Samba titres B",
         "token_count": 729,
         "score": 0.5046,
-        "sha256": "3ee50d31d43a948b"
+        "sha256": "47e681af523f52b2"
       },
       {
         "file": "seeds/bossa_nova/bossa_nova_09.mid",
@@ -2143,7 +2143,7 @@
         "artist": "Samba titres B",
         "token_count": 729,
         "score": 0.5046,
-        "sha256": "3ee50d31d43a948b"
+        "sha256": "47e681af523f52b2"
       }
     ],
     "hindustani": [
@@ -2155,7 +2155,7 @@
         "artist": "Gianni Bella",
         "token_count": 1282,
         "score": 0.785,
-        "sha256": "666eadcf588f29ee"
+        "sha256": "daec3a437bf1adf3"
       },
       {
         "file": "seeds/hindustani/hindustani_01.mid",
@@ -2165,7 +2165,7 @@
         "artist": "Gianni Bella",
         "token_count": 1245,
         "score": 0.7589,
-        "sha256": "e397c91f33f8dee8"
+        "sha256": "c30200e768c31eea"
       },
       {
         "file": "seeds/hindustani/hindustani_02.mid",
@@ -2175,7 +2175,7 @@
         "artist": "Gianni Bella",
         "token_count": 1245,
         "score": 0.7589,
-        "sha256": "e397c91f33f8dee8"
+        "sha256": "c30200e768c31eea"
       },
       {
         "file": "seeds/hindustani/hindustani_03.mid",
@@ -2185,7 +2185,7 @@
         "artist": "Gianni Bella",
         "token_count": 1158,
         "score": 0.7585,
-        "sha256": "10c3b2cf20e161f8"
+        "sha256": "1f4e106fd1447a54"
       },
       {
         "file": "seeds/hindustani/hindustani_04.mid",
@@ -2195,7 +2195,7 @@
         "artist": "Biagio Antonacci",
         "token_count": 1485,
         "score": 0.7266,
-        "sha256": "5ba9b1640db70e47"
+        "sha256": "dfa5935b4fd09244"
       },
       {
         "file": "seeds/hindustani/hindustani_05.mid",
@@ -2205,7 +2205,7 @@
         "artist": "Biagio Antonacci",
         "token_count": 1468,
         "score": 0.7244,
-        "sha256": "b7ce47d9b0b44f30"
+        "sha256": "a14bba2b54ef963d"
       },
       {
         "file": "seeds/hindustani/hindustani_06.mid",
@@ -2215,7 +2215,7 @@
         "artist": "Morandi",
         "token_count": 1306,
         "score": 0.7182,
-        "sha256": "734972f64c1133cf"
+        "sha256": "da22fef663d244e8"
       },
       {
         "file": "seeds/hindustani/hindustani_07.mid",
@@ -2225,7 +2225,7 @@
         "artist": "Morandi",
         "token_count": 1306,
         "score": 0.7182,
-        "sha256": "734972f64c1133cf"
+        "sha256": "da22fef663d244e8"
       },
       {
         "file": "seeds/hindustani/hindustani_08.mid",
@@ -2235,7 +2235,7 @@
         "artist": "Morandi",
         "token_count": 1306,
         "score": 0.7182,
-        "sha256": "734972f64c1133cf"
+        "sha256": "da22fef663d244e8"
       },
       {
         "file": "seeds/hindustani/hindustani_09.mid",
@@ -2245,7 +2245,7 @@
         "artist": "Morandi",
         "token_count": 1306,
         "score": 0.7182,
-        "sha256": "734972f64c1133cf"
+        "sha256": "da22fef663d244e8"
       }
     ],
     "japanese": [
@@ -2257,7 +2257,7 @@
         "artist": "Igor Kornelyuk",
         "token_count": 1100,
         "score": 0.6736,
-        "sha256": "cf6ff5dc6b42af3c"
+        "sha256": "89bb67f6a523a12c"
       },
       {
         "file": "seeds/japanese/japanese_01.mid",
@@ -2267,7 +2267,7 @@
         "artist": "Igor Kornelyuk",
         "token_count": 910,
         "score": 0.5529,
-        "sha256": "8f045bb9e07beb9b"
+        "sha256": "190c9a8e0afa646e"
       },
       {
         "file": "seeds/japanese/japanese_02.mid",
@@ -2277,7 +2277,7 @@
         "artist": "Liz Phair",
         "token_count": 936,
         "score": 0.5352,
-        "sha256": "555cf20aea469986"
+        "sha256": "6700dbb644a30f65"
       },
       {
         "file": "seeds/japanese/japanese_03.mid",
@@ -2287,7 +2287,7 @@
         "artist": "Liz Phair",
         "token_count": 936,
         "score": 0.5334,
-        "sha256": "569f641c11210362"
+        "sha256": "a66f7368e0e413d5"
       },
       {
         "file": "seeds/japanese/japanese_04.mid",
@@ -2297,7 +2297,7 @@
         "artist": "Liz Phair",
         "token_count": 922,
         "score": 0.5307,
-        "sha256": "5a13c2a740605c62"
+        "sha256": "c33735c148a89d20"
       },
       {
         "file": "seeds/japanese/japanese_05.mid",
@@ -2307,7 +2307,7 @@
         "artist": "Liz Phair",
         "token_count": 865,
         "score": 0.5241,
-        "sha256": "238b83ae1d759ac8"
+        "sha256": "d66fdf258aa13fab"
       },
       {
         "file": "seeds/japanese/japanese_06.mid",
@@ -2317,7 +2317,7 @@
         "artist": "Liz Phair",
         "token_count": 932,
         "score": 0.5187,
-        "sha256": "cb786841ac9bec07"
+        "sha256": "60b78f18b6158bfd"
       },
       {
         "file": "seeds/japanese/japanese_07.mid",
@@ -2327,7 +2327,7 @@
         "artist": "Liz Phair",
         "token_count": 838,
         "score": 0.5173,
-        "sha256": "d0ad40b7c9993e6b"
+        "sha256": "d10c3e48d401cc9b"
       },
       {
         "file": "seeds/japanese/japanese_08.mid",
@@ -2337,7 +2337,7 @@
         "artist": "Liz Phair",
         "token_count": 838,
         "score": 0.5173,
-        "sha256": "d0ad40b7c9993e6b"
+        "sha256": "d10c3e48d401cc9b"
       },
       {
         "file": "seeds/japanese/japanese_09.mid",
@@ -2347,7 +2347,7 @@
         "artist": "Igor Kornelyuk",
         "token_count": 691,
         "score": 0.5159,
-        "sha256": "648ca47c205759dc"
+        "sha256": "523ea6322f407df4"
       }
     ],
     "polynesian": [
@@ -2359,7 +2359,7 @@
         "artist": "Khan Chaka",
         "token_count": 1462,
         "score": 0.7901,
-        "sha256": "c0a23a2c3ac26168"
+        "sha256": "2ac376dfadbe4d4d"
       },
       {
         "file": "seeds/polynesian/polynesian_01.mid",
@@ -2369,7 +2369,7 @@
         "artist": "Chaka Khan",
         "token_count": 1462,
         "score": 0.7901,
-        "sha256": "c0a23a2c3ac26168"
+        "sha256": "2ac376dfadbe4d4d"
       },
       {
         "file": "seeds/polynesian/polynesian_02.mid",
@@ -2379,7 +2379,7 @@
         "artist": "Chaka Khan",
         "token_count": 1400,
         "score": 0.7864,
-        "sha256": "18c75fbb7247c168"
+        "sha256": "9bfada873f86de0e"
       },
       {
         "file": "seeds/polynesian/polynesian_03.mid",
@@ -2389,7 +2389,7 @@
         "artist": "Chaka Khan",
         "token_count": 1400,
         "score": 0.7864,
-        "sha256": "18c75fbb7247c168"
+        "sha256": "9bfada873f86de0e"
       },
       {
         "file": "seeds/polynesian/polynesian_04.mid",
@@ -2399,7 +2399,7 @@
         "artist": "Chaka Khan",
         "token_count": 1400,
         "score": 0.7864,
-        "sha256": "18c75fbb7247c168"
+        "sha256": "9bfada873f86de0e"
       },
       {
         "file": "seeds/polynesian/polynesian_05.mid",
@@ -2409,7 +2409,7 @@
         "artist": "Chaka Khan",
         "token_count": 1400,
         "score": 0.7864,
-        "sha256": "18c75fbb7247c168"
+        "sha256": "9bfada873f86de0e"
       },
       {
         "file": "seeds/polynesian/polynesian_06.mid",
@@ -2419,7 +2419,7 @@
         "artist": "ChakaKhan",
         "token_count": 1400,
         "score": 0.7864,
-        "sha256": "18c75fbb7247c168"
+        "sha256": "9bfada873f86de0e"
       },
       {
         "file": "seeds/polynesian/polynesian_07.mid",
@@ -2429,7 +2429,7 @@
         "artist": "Chaka Khan",
         "token_count": 1471,
         "score": 0.7841,
-        "sha256": "0e0b21cef0b35cd5"
+        "sha256": "0a8037cac9db444b"
       },
       {
         "file": "seeds/polynesian/polynesian_08.mid",
@@ -2439,7 +2439,7 @@
         "artist": "Khan Chaka",
         "token_count": 1471,
         "score": 0.7841,
-        "sha256": "0e0b21cef0b35cd5"
+        "sha256": "0a8037cac9db444b"
       },
       {
         "file": "seeds/polynesian/polynesian_09.mid",
@@ -2449,7 +2449,7 @@
         "artist": "Khan Chaka",
         "token_count": 1451,
         "score": 0.7747,
-        "sha256": "196810557c8ab6a2"
+        "sha256": "0466ffc26b4ec97d"
       }
     ],
     "minimalist": [
@@ -2461,7 +2461,7 @@
         "artist": "Heavy Competition 11",
         "token_count": 1381,
         "score": 0.6522,
-        "sha256": "aea46f1c82104a45"
+        "sha256": "34333137bdc05b0c"
       },
       {
         "file": "seeds/minimalist/minimalist_01.mid",
@@ -2471,7 +2471,7 @@
         "artist": "Heavy Competition 11",
         "token_count": 1381,
         "score": 0.6522,
-        "sha256": "aea46f1c82104a45"
+        "sha256": "34333137bdc05b0c"
       },
       {
         "file": "seeds/minimalist/minimalist_02.mid",
@@ -2481,7 +2481,7 @@
         "artist": "Heavy Competition 11",
         "token_count": 1381,
         "score": 0.6504,
-        "sha256": "c798f67c32702053"
+        "sha256": "ced4230cbd9d67fa"
       },
       {
         "file": "seeds/minimalist/minimalist_03.mid",
@@ -2491,7 +2491,7 @@
         "artist": "Heavy Competition 11",
         "token_count": 1481,
         "score": 0.632,
-        "sha256": "77281c34be6cd12c"
+        "sha256": "afe8cdd731d42b99"
       },
       {
         "file": "seeds/minimalist/minimalist_04.mid",
@@ -2501,7 +2501,7 @@
         "artist": "Heavy Competition 11",
         "token_count": 1481,
         "score": 0.632,
-        "sha256": "77281c34be6cd12c"
+        "sha256": "afe8cdd731d42b99"
       },
       {
         "file": "seeds/minimalist/minimalist_05.mid",
@@ -2511,7 +2511,7 @@
         "artist": "Heavy Competition 11",
         "token_count": 1481,
         "score": 0.632,
-        "sha256": "77281c34be6cd12c"
+        "sha256": "afe8cdd731d42b99"
       },
       {
         "file": "seeds/minimalist/minimalist_06.mid",
@@ -2521,7 +2521,7 @@
         "artist": "Heavy Competition 11",
         "token_count": 1481,
         "score": 0.632,
-        "sha256": "77281c34be6cd12c"
+        "sha256": "afe8cdd731d42b99"
       },
       {
         "file": "seeds/minimalist/minimalist_07.mid",
@@ -2531,7 +2531,7 @@
         "artist": "Heavy Competition 11",
         "token_count": 1481,
         "score": 0.632,
-        "sha256": "77281c34be6cd12c"
+        "sha256": "afe8cdd731d42b99"
       },
       {
         "file": "seeds/minimalist/minimalist_08.mid",
@@ -2541,7 +2541,7 @@
         "artist": "Heavy Competition 11",
         "token_count": 1481,
         "score": 0.632,
-        "sha256": "77281c34be6cd12c"
+        "sha256": "afe8cdd731d42b99"
       },
       {
         "file": "seeds/minimalist/minimalist_09.mid",
@@ -2551,7 +2551,7 @@
         "artist": "Heavy Competition 11",
         "token_count": 1481,
         "score": 0.6302,
-        "sha256": "98e7feeacd157b0d"
+        "sha256": "53fca68b6be78ade"
       }
     ],
     "trance": [
@@ -2563,7 +2563,7 @@
         "artist": "N Trance Feat Rod Stewart",
         "token_count": 1410,
         "score": 0.8017,
-        "sha256": "5459a21d869cc6bd"
+        "sha256": "fffc47df69a8996a"
       },
       {
         "file": "seeds/trance/trance_01.mid",
@@ -2573,7 +2573,7 @@
         "artist": "N-Trance",
         "token_count": 1465,
         "score": 0.7554,
-        "sha256": "235a4a4a8c7ab7de"
+        "sha256": "97d93766f2b8d58f"
       },
       {
         "file": "seeds/trance/trance_02.mid",
@@ -2583,7 +2583,7 @@
         "artist": "N-Trance",
         "token_count": 1465,
         "score": 0.7554,
-        "sha256": "235a4a4a8c7ab7de"
+        "sha256": "97d93766f2b8d58f"
       },
       {
         "file": "seeds/trance/trance_03.mid",
@@ -2593,7 +2593,7 @@
         "artist": "N-Trance",
         "token_count": 1527,
         "score": 0.7251,
-        "sha256": "4be0e9fdab86ca38"
+        "sha256": "a86a130ceff01544"
       },
       {
         "file": "seeds/trance/trance_04.mid",
@@ -2603,7 +2603,7 @@
         "artist": "N-Trance",
         "token_count": 1527,
         "score": 0.7251,
-        "sha256": "4be0e9fdab86ca38"
+        "sha256": "a86a130ceff01544"
       },
       {
         "file": "seeds/trance/trance_05.mid",
@@ -2613,7 +2613,7 @@
         "artist": "N-Trance",
         "token_count": 1527,
         "score": 0.7251,
-        "sha256": "4be0e9fdab86ca38"
+        "sha256": "a86a130ceff01544"
       },
       {
         "file": "seeds/trance/trance_06.mid",
@@ -2623,7 +2623,7 @@
         "artist": "N-Trance",
         "token_count": 1527,
         "score": 0.7251,
-        "sha256": "4be0e9fdab86ca38"
+        "sha256": "a86a130ceff01544"
       },
       {
         "file": "seeds/trance/trance_07.mid",
@@ -2633,7 +2633,7 @@
         "artist": "Culture Beat",
         "token_count": 1605,
         "score": 0.7198,
-        "sha256": "30ad555d8682f8de"
+        "sha256": "29b817023f250d41"
       },
       {
         "file": "seeds/trance/trance_08.mid",
@@ -2643,7 +2643,7 @@
         "artist": "Culture Beat",
         "token_count": 1605,
         "score": 0.7198,
-        "sha256": "30ad555d8682f8de"
+        "sha256": "29b817023f250d41"
       },
       {
         "file": "seeds/trance/trance_09.mid",
@@ -2653,7 +2653,7 @@
         "artist": "Culture Beat",
         "token_count": 1605,
         "score": 0.7198,
-        "sha256": "30ad555d8682f8de"
+        "sha256": "29b817023f250d41"
       }
     ],
     "trap": [
@@ -2665,7 +2665,7 @@
         "artist": "Phaze1",
         "token_count": 1518,
         "score": 0.6965,
-        "sha256": "0400c96c2586fc63"
+        "sha256": "e2c02af5961823d2"
       },
       {
         "file": "seeds/trap/trap_01.mid",
@@ -2675,7 +2675,7 @@
         "artist": "Phaze1",
         "token_count": 1599,
         "score": 0.6847,
-        "sha256": "ef53bd41db9e6756"
+        "sha256": "8c89bbbb862fbfb8"
       },
       {
         "file": "seeds/trap/trap_02.mid",
@@ -2685,7 +2685,7 @@
         "artist": "Metallica",
         "token_count": 1634,
         "score": 0.6801,
-        "sha256": "d87d8a0490584935"
+        "sha256": "36714f3c5c09756b"
       },
       {
         "file": "seeds/trap/trap_03.mid",
@@ -2695,7 +2695,7 @@
         "artist": "Phaze1",
         "token_count": 1598,
         "score": 0.6795,
-        "sha256": "d4cbc3863d308cfc"
+        "sha256": "13aaa1336b711825"
       },
       {
         "file": "seeds/trap/trap_04.mid",
@@ -2705,7 +2705,7 @@
         "artist": "Phaze1",
         "token_count": 1363,
         "score": 0.6329,
-        "sha256": "f9940e0a27cf57f4"
+        "sha256": "c5c9f1a233b35a0e"
       },
       {
         "file": "seeds/trap/trap_05.mid",
@@ -2715,7 +2715,7 @@
         "artist": "Metal Molly",
         "token_count": 1356,
         "score": 0.621,
-        "sha256": "be4dbecd6b336bcc"
+        "sha256": "db42f074e29a12a6"
       },
       {
         "file": "seeds/trap/trap_06.mid",
@@ -2725,7 +2725,7 @@
         "artist": "Metallica",
         "token_count": 1380,
         "score": 0.6187,
-        "sha256": "f10ec4ad46eb3a2c"
+        "sha256": "8718e176690e0b0f"
       },
       {
         "file": "seeds/trap/trap_07.mid",
@@ -2735,7 +2735,7 @@
         "artist": "Phaze1",
         "token_count": 1316,
         "score": 0.6147,
-        "sha256": "47645ccd890c0293"
+        "sha256": "a5d77700051ae417"
       },
       {
         "file": "seeds/trap/trap_08.mid",
@@ -2745,7 +2745,7 @@
         "artist": "Metal Molly",
         "token_count": 1297,
         "score": 0.6144,
-        "sha256": "3cc99a89601ce8a7"
+        "sha256": "4736cbf2832595ac"
       },
       {
         "file": "seeds/trap/trap_09.mid",
@@ -2755,7 +2755,7 @@
         "artist": "Metal Molly",
         "token_count": 1297,
         "score": 0.6127,
-        "sha256": "3ebcbc703cec8682"
+        "sha256": "a3c9a326d2a5f903"
       }
     ],
     "nordic": [
@@ -2767,7 +2767,7 @@
         "artist": "Nordica",
         "token_count": 1261,
         "score": 0.6247,
-        "sha256": "e49a2f2aeb8814a7"
+        "sha256": "a0a7c99be99fbb6d"
       },
       {
         "file": "seeds/nordic/nordic_01.mid",
@@ -2777,7 +2777,7 @@
         "artist": "Nordica",
         "token_count": 1261,
         "score": 0.6247,
-        "sha256": "e49a2f2aeb8814a7"
+        "sha256": "a0a7c99be99fbb6d"
       },
       {
         "file": "seeds/nordic/nordic_02.mid",
@@ -2787,7 +2787,7 @@
         "artist": "Nordica",
         "token_count": 1261,
         "score": 0.6247,
-        "sha256": "e49a2f2aeb8814a7"
+        "sha256": "a0a7c99be99fbb6d"
       },
       {
         "file": "seeds/nordic/nordic_03.mid",
@@ -2797,7 +2797,7 @@
         "artist": "Nordica",
         "token_count": 1261,
         "score": 0.6229,
-        "sha256": "4a63150cdfe1ae17"
+        "sha256": "41c2f0a5ea6d12ef"
       },
       {
         "file": "seeds/nordic/nordic_04.mid",
@@ -2807,7 +2807,7 @@
         "artist": "Nordica",
         "token_count": 1145,
         "score": 0.6225,
-        "sha256": "fb9e848cde478a93"
+        "sha256": "78c9c2e8ee5aa464"
       },
       {
         "file": "seeds/nordic/nordic_05.mid",
@@ -2817,7 +2817,7 @@
         "artist": "Nordica",
         "token_count": 1257,
         "score": 0.6204,
-        "sha256": "ec14ee805c5d0a17"
+        "sha256": "dfc78729bce6bcc0"
       },
       {
         "file": "seeds/nordic/nordic_06.mid",
@@ -2827,7 +2827,7 @@
         "artist": "Nordica",
         "token_count": 1260,
         "score": 0.6192,
-        "sha256": "203773a4c59b5ef8"
+        "sha256": "7c74745a5cd1efcf"
       },
       {
         "file": "seeds/nordic/nordic_07.mid",
@@ -2837,7 +2837,7 @@
         "artist": "Nordica",
         "token_count": 1198,
         "score": 0.6121,
-        "sha256": "a6fd0809f32d4012"
+        "sha256": "af8090b96f77fd5c"
       },
       {
         "file": "seeds/nordic/nordic_08.mid",
@@ -2847,7 +2847,7 @@
         "artist": "Nordica",
         "token_count": 1198,
         "score": 0.6035,
-        "sha256": "4523cd055a51e039"
+        "sha256": "6fbe7d942c8e9307"
       },
       {
         "file": "seeds/nordic/nordic_09.mid",
@@ -2857,7 +2857,7 @@
         "artist": "Nordica",
         "token_count": 1198,
         "score": 0.6035,
-        "sha256": "4523cd055a51e039"
+        "sha256": "6fbe7d942c8e9307"
       }
     ],
     "anatolian": [
@@ -2869,7 +2869,7 @@
         "artist": "Turkish Delight",
         "token_count": 1396,
         "score": 0.6307,
-        "sha256": "52a4a02d42938139"
+        "sha256": "3584b3e2e7f609b2"
       },
       {
         "file": "seeds/anatolian/anatolian_01.mid",
@@ -2879,7 +2879,7 @@
         "artist": "5th Prokurator",
         "token_count": 1145,
         "score": 0.5927,
-        "sha256": "d2c242c866c11115"
+        "sha256": "655f87835193acb5"
       },
       {
         "file": "seeds/anatolian/anatolian_02.mid",
@@ -2889,7 +2889,7 @@
         "artist": "5th Prokurator",
         "token_count": 1145,
         "score": 0.5927,
-        "sha256": "d2c242c866c11115"
+        "sha256": "655f87835193acb5"
       },
       {
         "file": "seeds/anatolian/anatolian_03.mid",
@@ -2899,7 +2899,7 @@
         "artist": "5th Prokurator",
         "token_count": 1145,
         "score": 0.5927,
-        "sha256": "b1092eb89a35d2a9"
+        "sha256": "51172b40738ba096"
       },
       {
         "file": "seeds/anatolian/anatolian_04.mid",
@@ -2909,7 +2909,7 @@
         "artist": "5th Prokurator",
         "token_count": 1145,
         "score": 0.5927,
-        "sha256": "d2c242c866c11115"
+        "sha256": "655f87835193acb5"
       },
       {
         "file": "seeds/anatolian/anatolian_05.mid",
@@ -2919,7 +2919,7 @@
         "artist": "5th Prokurator",
         "token_count": 1144,
         "score": 0.582,
-        "sha256": "f05bb8bbc63e85ea"
+        "sha256": "fbcc29163fe4b559"
       },
       {
         "file": "seeds/anatolian/anatolian_06.mid",
@@ -2929,7 +2929,7 @@
         "artist": "5th Prokurator",
         "token_count": 956,
         "score": 0.5678,
-        "sha256": "d5d8b67c05a4a596"
+        "sha256": "a0fbbd22abc8b11e"
       },
       {
         "file": "seeds/anatolian/anatolian_07.mid",
@@ -2939,7 +2939,7 @@
         "artist": "5th Prokurator",
         "token_count": 961,
         "score": 0.5524,
-        "sha256": "c6997227bf41b6ac"
+        "sha256": "8c02dcc3d2814c10"
       },
       {
         "file": "seeds/anatolian/anatolian_08.mid",
@@ -2949,7 +2949,7 @@
         "artist": "5th Prokurator",
         "token_count": 961,
         "score": 0.5524,
-        "sha256": "a3cc8e89e3ef265a"
+        "sha256": "9825e6407073d9bc"
       },
       {
         "file": "seeds/anatolian/anatolian_09.mid",
@@ -2959,7 +2959,7 @@
         "artist": "5th Prokurator",
         "token_count": 961,
         "score": 0.5524,
-        "sha256": "a3cc8e89e3ef265a"
+        "sha256": "9825e6407073d9bc"
       }
     ],
     "soca": [
@@ -2971,7 +2971,7 @@
         "artist": "Jarre Jean Michel",
         "token_count": 1602,
         "score": 0.7026,
-        "sha256": "b9d5cbc5bef1f32a"
+        "sha256": "3aa674c90122a624"
       },
       {
         "file": "seeds/soca/soca_01.mid",
@@ -2981,7 +2981,7 @@
         "artist": "Jean Michel Jarre",
         "token_count": 1602,
         "score": 0.7026,
-        "sha256": "b9d5cbc5bef1f32a"
+        "sha256": "3aa674c90122a624"
       },
       {
         "file": "seeds/soca/soca_02.mid",
@@ -2991,7 +2991,7 @@
         "artist": "Zhan Mishel Zharr Jean Michel Jarre",
         "token_count": 1602,
         "score": 0.7026,
-        "sha256": "b9d5cbc5bef1f32a"
+        "sha256": "3aa674c90122a624"
       },
       {
         "file": "seeds/soca/soca_03.mid",
@@ -3001,7 +3001,7 @@
         "artist": "Jarre Jean Michel",
         "token_count": 1604,
         "score": 0.6941,
-        "sha256": "0e4f4eb21cbc67ae"
+        "sha256": "62e18e92e0ff0167"
       },
       {
         "file": "seeds/soca/soca_04.mid",
@@ -3011,7 +3011,7 @@
         "artist": "Jean Michel Jarre",
         "token_count": 1604,
         "score": 0.6941,
-        "sha256": "0e4f4eb21cbc67ae"
+        "sha256": "62e18e92e0ff0167"
       },
       {
         "file": "seeds/soca/soca_05.mid",
@@ -3021,7 +3021,7 @@
         "artist": "Zhan Mishel Zharr Jean Michel Jarre",
         "token_count": 1604,
         "score": 0.6941,
-        "sha256": "0e4f4eb21cbc67ae"
+        "sha256": "62e18e92e0ff0167"
       },
       {
         "file": "seeds/soca/soca_06.mid",
@@ -3031,7 +3031,7 @@
         "artist": "CHRISTIE,TONY",
         "token_count": 1467,
         "score": 0.689,
-        "sha256": "5f183b6a3b05128f"
+        "sha256": "afeadbab236fcf77"
       },
       {
         "file": "seeds/soca/soca_07.mid",
@@ -3041,7 +3041,7 @@
         "artist": "Trinidad Express",
         "token_count": 1540,
         "score": 0.688,
-        "sha256": "a7423f9f73eaff33"
+        "sha256": "e913204da5e1e853"
       },
       {
         "file": "seeds/soca/soca_08.mid",
@@ -3051,7 +3051,7 @@
         "artist": "Christie Tony",
         "token_count": 1435,
         "score": 0.686,
-        "sha256": "5e894227855f0432"
+        "sha256": "82c3938826ce751d"
       },
       {
         "file": "seeds/soca/soca_09.mid",
@@ -3061,7 +3061,7 @@
         "artist": "CHRISTIE,TONY",
         "token_count": 1449,
         "score": 0.6778,
-        "sha256": "bb4a79d18d42d771"
+        "sha256": "4fd63aff49134c1f"
       }
     ],
     "new_orleans": [
@@ -3073,7 +3073,7 @@
         "artist": "Fats Domino",
         "token_count": 1477,
         "score": 0.7502,
-        "sha256": "ebdf84af2210acd6"
+        "sha256": "709ce3f9401b5722"
       },
       {
         "file": "seeds/new_orleans/new_orleans_01.mid",
@@ -3083,7 +3083,7 @@
         "artist": "Various",
         "token_count": 1554,
         "score": 0.7258,
-        "sha256": "51512e7d44bf902a"
+        "sha256": "e530dd212469c332"
       },
       {
         "file": "seeds/new_orleans/new_orleans_02.mid",
@@ -3093,7 +3093,7 @@
         "artist": "The Ventures",
         "token_count": 1656,
         "score": 0.6985,
-        "sha256": "41c0154d8327af2b"
+        "sha256": "b2ecfd9059ff8f42"
       },
       {
         "file": "seeds/new_orleans/new_orleans_03.mid",
@@ -3103,7 +3103,7 @@
         "artist": "The Ventures",
         "token_count": 1656,
         "score": 0.6985,
-        "sha256": "41c0154d8327af2b"
+        "sha256": "b2ecfd9059ff8f42"
       },
       {
         "file": "seeds/new_orleans/new_orleans_04.mid",
@@ -3113,7 +3113,7 @@
         "artist": "Alabama",
         "token_count": 1359,
         "score": 0.695,
-        "sha256": "ed003db2ea3079c1"
+        "sha256": "0f77440b4015c957"
       },
       {
         "file": "seeds/new_orleans/new_orleans_05.mid",
@@ -3123,7 +3123,7 @@
         "artist": "Alabama",
         "token_count": 1267,
         "score": 0.6902,
-        "sha256": "4342db8fcbb41e8e"
+        "sha256": "c7da0ed3331b3e44"
       },
       {
         "file": "seeds/new_orleans/new_orleans_06.mid",
@@ -3133,7 +3133,7 @@
         "artist": "Alabama",
         "token_count": 1326,
         "score": 0.6877,
-        "sha256": "8726a47a6868855f"
+        "sha256": "7486c879824be8d4"
       },
       {
         "file": "seeds/new_orleans/new_orleans_07.mid",
@@ -3143,7 +3143,7 @@
         "artist": "The Ventures",
         "token_count": 1649,
         "score": 0.6848,
-        "sha256": "ce8f895216ac1c7d"
+        "sha256": "02a754b43f6059be"
       },
       {
         "file": "seeds/new_orleans/new_orleans_08.mid",
@@ -3153,7 +3153,7 @@
         "artist": "Alabama",
         "token_count": 1144,
         "score": 0.6658,
-        "sha256": "92ca2c98efe41bce"
+        "sha256": "abd090ed6996a589"
       },
       {
         "file": "seeds/new_orleans/new_orleans_09.mid",
@@ -3163,7 +3163,7 @@
         "artist": "Kandis",
         "token_count": 1010,
         "score": 0.6396,
-        "sha256": "53e58b9f7a65c85b"
+        "sha256": "527e8ad815902033"
       }
     ],
     "tango": [
@@ -3175,7 +3175,7 @@
         "artist": "Kristina Bach",
         "token_count": 1512,
         "score": 0.7511,
-        "sha256": "874810f2029ab763"
+        "sha256": "62f63c808e15928d"
       },
       {
         "file": "seeds/tango/tango_01.mid",
@@ -3185,7 +3185,7 @@
         "artist": "Kristina Bach",
         "token_count": 1512,
         "score": 0.7511,
-        "sha256": "874810f2029ab763"
+        "sha256": "62f63c808e15928d"
       },
       {
         "file": "seeds/tango/tango_02.mid",
@@ -3195,7 +3195,7 @@
         "artist": "Kristina Bach",
         "token_count": 1475,
         "score": 0.742,
-        "sha256": "4fc899fcdb2a7904"
+        "sha256": "ac484d85c57b0cb4"
       },
       {
         "file": "seeds/tango/tango_03.mid",
@@ -3205,7 +3205,7 @@
         "artist": "Kristina Bach",
         "token_count": 1475,
         "score": 0.742,
-        "sha256": "4fc899fcdb2a7904"
+        "sha256": "ac484d85c57b0cb4"
       },
       {
         "file": "seeds/tango/tango_04.mid",
@@ -3215,7 +3215,7 @@
         "artist": "Shadows The",
         "token_count": 1581,
         "score": 0.7384,
-        "sha256": "23b2db75d8200eb7"
+        "sha256": "c80bd67006ee6868"
       },
       {
         "file": "seeds/tango/tango_05.mid",
@@ -3225,7 +3225,7 @@
         "artist": "Shadows The",
         "token_count": 1551,
         "score": 0.7341,
-        "sha256": "2ac5f9cff186af97"
+        "sha256": "4afac5d612b67e49"
       },
       {
         "file": "seeds/tango/tango_06.mid",
@@ -3235,7 +3235,7 @@
         "artist": "Kristina Bach",
         "token_count": 1457,
         "score": 0.7267,
-        "sha256": "0ad58e814ee0a5a2"
+        "sha256": "bc1278b6170f666f"
       },
       {
         "file": "seeds/tango/tango_07.mid",
@@ -3245,7 +3245,7 @@
         "artist": "Kristina Bach",
         "token_count": 1457,
         "score": 0.7267,
-        "sha256": "0ad58e814ee0a5a2"
+        "sha256": "bc1278b6170f666f"
       },
       {
         "file": "seeds/tango/tango_08.mid",
@@ -3255,7 +3255,7 @@
         "artist": "Kristina Bach",
         "token_count": 1453,
         "score": 0.7265,
-        "sha256": "b0cc369b56edae7a"
+        "sha256": "649d6e9065c79cdd"
       },
       {
         "file": "seeds/tango/tango_09.mid",
@@ -3265,7 +3265,7 @@
         "artist": "Kristina Bach",
         "token_count": 1453,
         "score": 0.7265,
-        "sha256": "b0cc369b56edae7a"
+        "sha256": "649d6e9065c79cdd"
       }
     ],
     "korean": [
@@ -3277,7 +3277,7 @@
         "artist": "Koreana",
         "token_count": 843,
         "score": 0.5157,
-        "sha256": "a236c020bddd851c"
+        "sha256": "ff83d5ad4372f35d"
       },
       {
         "file": "seeds/korean/korean_01.mid",
@@ -3287,7 +3287,7 @@
         "artist": "Koreana",
         "token_count": 865,
         "score": 0.511,
-        "sha256": "f29f75f0e160ca52"
+        "sha256": "4740cf4cdd874c4b"
       },
       {
         "file": "seeds/korean/korean_02.mid",
@@ -3297,7 +3297,7 @@
         "artist": "Koreana",
         "token_count": 779,
         "score": 0.4929,
-        "sha256": "29ef1541e95bfddf"
+        "sha256": "5e37a7d7b45e9e2d"
       },
       {
         "file": "seeds/korean/korean_03.mid",
@@ -3307,7 +3307,7 @@
         "artist": "Koreana",
         "token_count": 687,
         "score": 0.4815,
-        "sha256": "aa5669ba5ac86b1f"
+        "sha256": "75ae39bbb34f82f6"
       }
     ],
     "drill": [
@@ -3319,7 +3319,7 @@
         "artist": "Big Mr",
         "token_count": 837,
         "score": 0.5866,
-        "sha256": "d5183ab22826bc43"
+        "sha256": "e7860915599a093d"
       },
       {
         "file": "seeds/drill/drill_01.mid",
@@ -3329,7 +3329,7 @@
         "artist": "Big Mr",
         "token_count": 837,
         "score": 0.5866,
-        "sha256": "d5183ab22826bc43"
+        "sha256": "e7860915599a093d"
       },
       {
         "file": "seeds/drill/drill_02.mid",
@@ -3339,7 +3339,7 @@
         "artist": "Big Mr",
         "token_count": 837,
         "score": 0.5866,
-        "sha256": "d5183ab22826bc43"
+        "sha256": "e7860915599a093d"
       },
       {
         "file": "seeds/drill/drill_03.mid",
@@ -3349,7 +3349,7 @@
         "artist": "Big Mr",
         "token_count": 832,
         "score": 0.5642,
-        "sha256": "91ec7bfb7fb92bb4"
+        "sha256": "f04b2e037bd72661"
       },
       {
         "file": "seeds/drill/drill_04.mid",
@@ -3359,7 +3359,7 @@
         "artist": "Big Mr",
         "token_count": 832,
         "score": 0.5642,
-        "sha256": "91ec7bfb7fb92bb4"
+        "sha256": "f04b2e037bd72661"
       },
       {
         "file": "seeds/drill/drill_05.mid",
@@ -3369,7 +3369,7 @@
         "artist": "Big Mr",
         "token_count": 832,
         "score": 0.5642,
-        "sha256": "91ec7bfb7fb92bb4"
+        "sha256": "f04b2e037bd72661"
       },
       {
         "file": "seeds/drill/drill_06.mid",
@@ -3379,7 +3379,7 @@
         "artist": "Big Mr",
         "token_count": 832,
         "score": 0.5642,
-        "sha256": "91ec7bfb7fb92bb4"
+        "sha256": "f04b2e037bd72661"
       },
       {
         "file": "seeds/drill/drill_07.mid",
@@ -3389,7 +3389,7 @@
         "artist": "Big Mr",
         "token_count": 675,
         "score": 0.5518,
-        "sha256": "87feb858b2cce242"
+        "sha256": "9a215f95da6ad0c9"
       },
       {
         "file": "seeds/drill/drill_08.mid",
@@ -3399,7 +3399,7 @@
         "artist": "Big Mr",
         "token_count": 675,
         "score": 0.5518,
-        "sha256": "87feb858b2cce242"
+        "sha256": "9a215f95da6ad0c9"
       },
       {
         "file": "seeds/drill/drill_09.mid",
@@ -3409,7 +3409,7 @@
         "artist": "Big Mr",
         "token_count": 675,
         "score": 0.5518,
-        "sha256": "87feb858b2cce242"
+        "sha256": "9a215f95da6ad0c9"
       }
     ],
     "flamenco": [
@@ -3421,7 +3421,7 @@
         "artist": "Guns N Roses",
         "token_count": 1670,
         "score": 0.747,
-        "sha256": "c888838c00c7e01a"
+        "sha256": "8a50007fc7b2c840"
       },
       {
         "file": "seeds/flamenco/flamenco_01.mid",
@@ -3431,7 +3431,7 @@
         "artist": "Guns N Roses",
         "token_count": 1308,
         "score": 0.6479,
-        "sha256": "d3e09d6247937ebf"
+        "sha256": "6ba43ab70210aced"
       },
       {
         "file": "seeds/flamenco/flamenco_02.mid",
@@ -3441,7 +3441,7 @@
         "artist": "Cher",
         "token_count": 1148,
         "score": 0.6252,
-        "sha256": "f346c8d696355d0b"
+        "sha256": "7c7c8f9cfd384e76"
       },
       {
         "file": "seeds/flamenco/flamenco_03.mid",
@@ -3451,7 +3451,7 @@
         "artist": "Cher",
         "token_count": 1148,
         "score": 0.6252,
-        "sha256": "f346c8d696355d0b"
+        "sha256": "7c7c8f9cfd384e76"
       },
       {
         "file": "seeds/flamenco/flamenco_04.mid",
@@ -3461,7 +3461,7 @@
         "artist": "Cher",
         "token_count": 1155,
         "score": 0.6195,
-        "sha256": "14e3ce413fee5968"
+        "sha256": "232a75d7bd79e5eb"
       },
       {
         "file": "seeds/flamenco/flamenco_05.mid",
@@ -3471,7 +3471,7 @@
         "artist": "Cher",
         "token_count": 1155,
         "score": 0.6195,
-        "sha256": "14e3ce413fee5968"
+        "sha256": "232a75d7bd79e5eb"
       },
       {
         "file": "seeds/flamenco/flamenco_06.mid",
@@ -3481,7 +3481,7 @@
         "artist": "Guns N Roses",
         "token_count": 1277,
         "score": 0.6115,
-        "sha256": "a79f027dd620030a"
+        "sha256": "9ba9f36888683961"
       },
       {
         "file": "seeds/flamenco/flamenco_07.mid",
@@ -3491,7 +3491,7 @@
         "artist": "Guns N Roses",
         "token_count": 1162,
         "score": 0.6102,
-        "sha256": "f61b1544436cd356"
+        "sha256": "61f5554e9a942f0f"
       },
       {
         "file": "seeds/flamenco/flamenco_08.mid",
@@ -3501,7 +3501,7 @@
         "artist": "Cake Walk",
         "token_count": 1105,
         "score": 0.5882,
-        "sha256": "702966be2fb9b260"
+        "sha256": "0bfb366290f013eb"
       },
       {
         "file": "seeds/flamenco/flamenco_09.mid",
@@ -3511,7 +3511,7 @@
         "artist": "Cake Walk",
         "token_count": 1100,
         "score": 0.5873,
-        "sha256": "764835ba18147523"
+        "sha256": "478c206a13a680a6"
       }
     ],
     "indie_folk": [
@@ -3523,7 +3523,7 @@
         "artist": "Acoustic Alchemy",
         "token_count": 1101,
         "score": 0.7141,
-        "sha256": "1010d77c3b026436"
+        "sha256": "28ec7eb250015c78"
       },
       {
         "file": "seeds/indie_folk/indie_folk_01.mid",
@@ -3533,7 +3533,7 @@
         "artist": "Alex Volkov",
         "token_count": 1535,
         "score": 0.7119,
-        "sha256": "a2e4da30bbeafc0d"
+        "sha256": "fea468bcf2462904"
       },
       {
         "file": "seeds/indie_folk/indie_folk_02.mid",
@@ -3543,7 +3543,7 @@
         "artist": "Acoustic Alchemy",
         "token_count": 1125,
         "score": 0.7075,
-        "sha256": "a9d2e66c6eb8b705"
+        "sha256": "a6cd21447656a821"
       },
       {
         "file": "seeds/indie_folk/indie_folk_03.mid",
@@ -3553,7 +3553,7 @@
         "artist": "Corrs",
         "token_count": 1520,
         "score": 0.6608,
-        "sha256": "18435229f9b3bece"
+        "sha256": "1998e8b10905ddd9"
       },
       {
         "file": "seeds/indie_folk/indie_folk_04.mid",
@@ -3563,7 +3563,7 @@
         "artist": "Alex Volkov",
         "token_count": 1255,
         "score": 0.66,
-        "sha256": "71055b03b9cff575"
+        "sha256": "14ffd7d3f4cca1f1"
       },
       {
         "file": "seeds/indie_folk/indie_folk_05.mid",
@@ -3573,7 +3573,7 @@
         "artist": "PapaRoacher",
         "token_count": 1386,
         "score": 0.6462,
-        "sha256": "0df373c4653cbffb"
+        "sha256": "17d477b062ce4e07"
       },
       {
         "file": "seeds/indie_folk/indie_folk_06.mid",
@@ -3583,7 +3583,7 @@
         "artist": "PapaRoacher",
         "token_count": 1386,
         "score": 0.6444,
-        "sha256": "232a3a8e05dac078"
+        "sha256": "ebc7a53f09a22361"
       },
       {
         "file": "seeds/indie_folk/indie_folk_07.mid",
@@ -3593,7 +3593,7 @@
         "artist": "Corrs",
         "token_count": 1372,
         "score": 0.6434,
-        "sha256": "cdb8d65651ee479d"
+        "sha256": "16de75c35bb948bf"
       },
       {
         "file": "seeds/indie_folk/indie_folk_08.mid",
@@ -3603,7 +3603,7 @@
         "artist": "Corrs",
         "token_count": 1496,
         "score": 0.6366,
-        "sha256": "3771ac4ff5a54b42"
+        "sha256": "f65214473e04b5c5"
       },
       {
         "file": "seeds/indie_folk/indie_folk_09.mid",
@@ -3613,7 +3613,7 @@
         "artist": "Corrs",
         "token_count": 1495,
         "score": 0.6365,
-        "sha256": "1ad48e7b54866710"
+        "sha256": "4848225e6c6c6b68"
       }
     ],
     "balkan": [
@@ -3625,7 +3625,7 @@
         "artist": "Azra",
         "token_count": 1269,
         "score": 0.6399,
-        "sha256": "cdf749c28b8986cf"
+        "sha256": "831da04117d86c9f"
       },
       {
         "file": "seeds/balkan/balkan_01.mid",
@@ -3635,7 +3635,7 @@
         "artist": "Azra",
         "token_count": 1227,
         "score": 0.6337,
-        "sha256": "6d769eb9da64675b"
+        "sha256": "88d084a4be0003e7"
       },
       {
         "file": "seeds/balkan/balkan_02.mid",
@@ -3645,7 +3645,7 @@
         "artist": "Azra",
         "token_count": 1227,
         "score": 0.6337,
-        "sha256": "6d769eb9da64675b"
+        "sha256": "88d084a4be0003e7"
       },
       {
         "file": "seeds/balkan/balkan_03.mid",
@@ -3655,7 +3655,7 @@
         "artist": "Azra",
         "token_count": 1269,
         "score": 0.6266,
-        "sha256": "988ccb26b8ac6488"
+        "sha256": "6cdb35551f2aed1b"
       },
       {
         "file": "seeds/balkan/balkan_04.mid",
@@ -3665,7 +3665,7 @@
         "artist": "Azra",
         "token_count": 1135,
         "score": 0.5837,
-        "sha256": "d5b2a1cfa484d1f9"
+        "sha256": "ad1daba7bc00342d"
       },
       {
         "file": "seeds/balkan/balkan_05.mid",
@@ -3675,7 +3675,7 @@
         "artist": "Azra",
         "token_count": 1125,
         "score": 0.5695,
-        "sha256": "5121c73245b1a163"
+        "sha256": "996060f8b1f0b3ed"
       },
       {
         "file": "seeds/balkan/balkan_06.mid",
@@ -3685,7 +3685,7 @@
         "artist": "Azra",
         "token_count": 1091,
         "score": 0.5487,
-        "sha256": "2d7ce56d9cee4fcb"
+        "sha256": "86645b7ae987fa30"
       },
       {
         "file": "seeds/balkan/balkan_07.mid",
@@ -3695,7 +3695,7 @@
         "artist": "Cascada",
         "token_count": 421,
         "score": 0.4059,
-        "sha256": "7d38c2ea32d89a34"
+        "sha256": "e384089abaf7fc0c"
       }
     ],
     "bossa_cumbia": [
@@ -3707,7 +3707,7 @@
         "artist": "Cumbia",
         "token_count": 1662,
         "score": 0.7897,
-        "sha256": "f428792dd4bfc896"
+        "sha256": "8448d2f5bf421c1e"
       },
       {
         "file": "seeds/bossa_cumbia/bossa_cumbia_01.mid",
@@ -3717,7 +3717,7 @@
         "artist": "Cumbia",
         "token_count": 1623,
         "score": 0.7442,
-        "sha256": "4f44c9dde159f8c7"
+        "sha256": "d3cd70a9aa6af5ac"
       },
       {
         "file": "seeds/bossa_cumbia/bossa_cumbia_02.mid",
@@ -3727,7 +3727,7 @@
         "artist": "Cumbia",
         "token_count": 1623,
         "score": 0.7388,
-        "sha256": "fafd9ae380255205"
+        "sha256": "45ad374086fa1865"
       },
       {
         "file": "seeds/bossa_cumbia/bossa_cumbia_03.mid",
@@ -3737,7 +3737,7 @@
         "artist": "Cumbia",
         "token_count": 1355,
         "score": 0.6542,
-        "sha256": "9a0028eb59f91eaa"
+        "sha256": "2432cff87f20de86"
       },
       {
         "file": "seeds/bossa_cumbia/bossa_cumbia_04.mid",
@@ -3747,7 +3747,7 @@
         "artist": "Cumbia",
         "token_count": 1233,
         "score": 0.6349,
-        "sha256": "d65d1ff6403330b7"
+        "sha256": "dd9a12378a50ffa5"
       },
       {
         "file": "seeds/bossa_cumbia/bossa_cumbia_05.mid",
@@ -3757,7 +3757,7 @@
         "artist": "Cumbia",
         "token_count": 1458,
         "score": 0.6341,
-        "sha256": "e0950686562def46"
+        "sha256": "8438f9cf4748363f"
       },
       {
         "file": "seeds/bossa_cumbia/bossa_cumbia_06.mid",
@@ -3767,7 +3767,7 @@
         "artist": "Cumbia",
         "token_count": 1015,
         "score": 0.5818,
-        "sha256": "f800da152e1651d2"
+        "sha256": "942c6028e0b5136c"
       }
     ],
     "reggaeton": [
@@ -3779,7 +3779,7 @@
         "artist": "Pimpinela",
         "token_count": 1260,
         "score": 0.6925,
-        "sha256": "dfc4eba0d14b67b9"
+        "sha256": "15982727d4b5644e"
       },
       {
         "file": "seeds/reggaeton/reggaeton_01.mid",
@@ -3789,7 +3789,7 @@
         "artist": "David Bisbal",
         "token_count": 605,
         "score": 0.5024,
-        "sha256": "2efdad47708a06ba"
+        "sha256": "0fdada980f3431ab"
       }
     ]
   }

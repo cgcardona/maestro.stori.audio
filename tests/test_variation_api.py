@@ -7,7 +7,13 @@ Tests the spec-compliant endpoints:
 - POST /variation/commit
 - POST /variation/discard
 """
+from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from typing import Any
+
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 import pytest
 import pytest_asyncio
 import uuid
@@ -28,9 +34,10 @@ from app.models.requests import (
 # =============================================================================
 
 @pytest_asyncio.fixture
-async def variation_client(client, db_session, mock_auth_token):
+async def variation_client(client: AsyncClient, db_session: AsyncSession, mock_auth_token: Any) -> AsyncGenerator[AsyncClient, None]:
+
     """Client with auth and db overridden so variation endpoints accept requests."""
-    async def override_require_valid_token():
+    async def override_require_valid_token() -> Any:
         return mock_auth_token
 
     app.dependency_overrides[require_valid_token] = override_require_valid_token
@@ -41,25 +48,25 @@ async def variation_client(client, db_session, mock_auth_token):
 
 
 @pytest.fixture
-def mock_user_id():
+def mock_user_id() -> str:
     """Mock user ID for auth."""
     return "user-123"
 
 
 @pytest.fixture
-def mock_project_id():
+def mock_project_id() -> str:
     """Mock project ID."""
     return "proj-456"
 
 
 @pytest.fixture
-def mock_state_id():
+def mock_state_id() -> str:
     """Mock state ID."""
     return "42"
 
 
 @pytest.fixture
-def sample_variation():
+def sample_variation() -> Variation:
     """Create a sample variation for testing."""
     phrase = Phrase(
         phrase_id="phrase-1",
@@ -96,7 +103,7 @@ def sample_variation():
 
 
 @pytest.fixture
-def mock_auth_token():
+def mock_auth_token() -> dict[str, str]:
     """Mock auth token dependency."""
     return {"sub": "user-123"}
 
@@ -111,12 +118,17 @@ class TestProposeVariation:
     @pytest.mark.asyncio
     async def test_propose_variation_success(
         self,
-        variation_client,
-        mock_project_id,
-        mock_state_id,
-        sample_variation,
-        mock_auth_token,
-    ):
+        variation_client: Any,
+
+        mock_project_id: Any,
+
+        mock_state_id: Any,
+
+        sample_variation: Any,
+
+        mock_auth_token: Any,
+
+    ) -> None:
         """Test successful variation proposal returns 200 with variation_id and stream_url."""
         with patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock), \
              patch("app.api.routes.variation.propose.get_or_create_store") as mock_store, \
@@ -165,9 +177,11 @@ class TestProposeVariation:
     @pytest.mark.asyncio
     async def test_propose_variation_state_conflict(
         self,
-        variation_client,
-        mock_project_id,
-    ):
+        variation_client: Any,
+
+        mock_project_id: Any,
+
+    ) -> None:
         """Test variation proposal with state conflict."""
         with \
              patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock), \
@@ -200,10 +214,13 @@ class TestProposeVariation:
     @pytest.mark.asyncio
     async def test_propose_variation_invalid_intent(
         self,
-        variation_client,
-        mock_project_id,
-        mock_state_id,
-    ):
+        variation_client: Any,
+
+        mock_project_id: Any,
+
+        mock_state_id: Any,
+
+    ) -> None:
         """Test variation proposal with non-COMPOSING intent returns 200.
 
         Since v1 supercharge, propose returns 200 immediately and launches
@@ -256,11 +273,15 @@ class TestCommitVariation:
     @pytest.mark.asyncio
     async def test_commit_variation_not_found(
         self,
-        variation_client,
-        mock_project_id,
-        mock_state_id,
-        sample_variation,
-    ):
+        variation_client: Any,
+
+        mock_project_id: Any,
+
+        mock_state_id: Any,
+
+        sample_variation: Any,
+
+    ) -> None:
         """When variation is not in store, commit returns 404."""
         with patch("app.api.routes.variation.commit.get_variation_store") as mock_vstore:
             mock_vstore_instance = MagicMock()
@@ -294,9 +315,11 @@ class TestDiscardVariation:
     @pytest.mark.asyncio
     async def test_discard_variation_success(
         self,
-        variation_client,
-        mock_project_id,
-    ):
+        variation_client: Any,
+
+        mock_project_id: Any,
+
+    ) -> None:
         """Test successful variation discard."""
         request_data = {
             "project_id": mock_project_id,
@@ -324,8 +347,9 @@ class TestStreamVariation:
     @pytest.mark.asyncio
     async def test_stream_variation_not_found(
         self,
-        variation_client,
-    ):
+        variation_client: Any,
+
+    ) -> None:
         """Test streaming returns 404 for unknown variation_id."""
         response = await variation_client.get(
             "/api/v1/variation/stream?variation_id=nonexistent-999",
@@ -346,12 +370,17 @@ class TestVariationWorkflow:
     @pytest.mark.asyncio
     async def test_full_variation_workflow(
         self,
-        client,
-        mock_project_id,
-        mock_state_id,
-        sample_variation,
-        mock_auth_token,
-    ):
+        client: AsyncClient,
+
+        mock_project_id: Any,
+
+        mock_state_id: Any,
+
+        sample_variation: Any,
+
+        mock_auth_token: Any,
+
+    ) -> None:
         """Test complete workflow: propose -> commit."""
         # This would test the full flow in an integration test
         # For now, we verify the endpoints exist and have correct signatures
@@ -365,7 +394,8 @@ class TestVariationWorkflow:
 class TestStateStoreIntegration:
     """Tests for StateStore version tracking integration."""
     
-    def test_get_state_id(self):
+    def test_get_state_id(self) -> None:
+
         """Test get_state_id returns string version."""
         from app.core.state_store import StateStore
         
@@ -375,7 +405,8 @@ class TestStateStoreIntegration:
         assert isinstance(state_id, str)
         assert state_id == "0"  # Initial version
     
-    def test_check_state_id_match(self):
+    def test_check_state_id_match(self) -> None:
+
         """Test check_state_id with matching version."""
         from app.core.state_store import StateStore
         
@@ -384,7 +415,8 @@ class TestStateStoreIntegration:
         # Should match initial version
         assert store.check_state_id("0") is True
     
-    def test_check_state_id_mismatch(self):
+    def test_check_state_id_mismatch(self) -> None:
+
         """Test check_state_id with mismatched version."""
         from app.core.state_store import StateStore
         
@@ -393,7 +425,8 @@ class TestStateStoreIntegration:
         # Should not match wrong version
         assert store.check_state_id("100") is False
     
-    def test_check_state_id_invalid_format(self):
+    def test_check_state_id_invalid_format(self) -> None:
+
         """Test check_state_id with invalid format."""
         from app.core.state_store import StateStore
         
@@ -410,7 +443,8 @@ class TestStateStoreIntegration:
 class TestVariationModelExtensions:
     """Tests for variation model extensions."""
     
-    def test_note_counts_property(self, sample_variation):
+    def test_note_counts_property(self, sample_variation: Any) -> None:
+
         """Test note_counts property returns correct counts."""
         counts = sample_variation.note_counts
         
@@ -418,7 +452,8 @@ class TestVariationModelExtensions:
         assert counts["removed"] == 0
         assert counts["modified"] == 1
     
-    def test_note_counts_empty_variation(self):
+    def test_note_counts_empty_variation(self) -> None:
+
         """Test note_counts for empty variation."""
         variation = Variation(
             variation_id="var-1",

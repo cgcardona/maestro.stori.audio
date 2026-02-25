@@ -3,10 +3,11 @@ Stori Maestro Configuration
 
 Environment-based configuration for the Maestro service.
 """
+from __future__ import annotations
+
 import logging
 import os
 from functools import lru_cache
-from typing import Optional
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,7 +30,7 @@ ALLOWED_MODEL_IDS: list[str] = [
 
 # Pricing catalogue (cost per 1M tokens in dollars, sourced from OpenRouter).
 # Includes models not in ALLOWED_MODEL_IDS so internal LLM routing still works.
-APPROVED_MODELS: dict[str, dict] = {
+APPROVED_MODELS: dict[str, dict[str, str | float]] = {
     # Anthropic Claude models (reasoning enabled via API parameter)
     "anthropic/claude-sonnet-4.6": {
         "name": "Claude Sonnet 4.6",
@@ -94,8 +95,8 @@ class Settings(BaseSettings):
     # Database Configuration
     # PostgreSQL: postgresql+asyncpg://user:pass@localhost:5432/stori
     # SQLite (dev): sqlite+aiosqlite:///./stori.db
-    database_url: Optional[str] = None
-    stori_db_password: Optional[str] = None  # PostgreSQL password
+    database_url: str | None = None
+    stori_db_password: str | None = None  # PostgreSQL password
     
     # Budget Configuration
     default_budget_cents: int = 500  # $5.00 default budget for new users
@@ -107,7 +108,7 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 4096
     
     # API Keys for Cloud Providers
-    openrouter_api_key: Optional[str] = None
+    openrouter_api_key: str | None = None
     
     # Qdrant Vector Database (for RAG)
     qdrant_host: str = "qdrant"
@@ -130,7 +131,7 @@ class Settings(BaseSettings):
     skip_expressiveness: bool = True              # MVP: bypass post-processing until raw path is proven
     max_concurrent_compositions_per_user: int = 2  # per-user composition concurrency limit (0 = unlimited)
     
-    hf_api_key: Optional[str] = None  # HuggingFace API key
+    hf_api_key: str | None = None  # HuggingFace API key
     hf_timeout: int = 120  # seconds (HF can be slow on cold starts)
     
     # Maestro Service Configuration
@@ -155,7 +156,7 @@ class Settings(BaseSettings):
     bass_signal_wait_timeout: int = 240  # 4 min waiting for drum section signal before giving up
     
     # CORS Settings (fail closed: no default origins)
-    # Set STORI_CORS_ORIGINS (JSON array) in .env. Local dev: ["http://localhost:5173", "stori://"].
+    # set STORI_CORS_ORIGINS (JSON array) in .env. Local dev: ["http://localhost:5173", "stori://"].
     # Production: exact origins only, e.g. ["https://your-domain.com", "stori://"]. Never use "*" in production.
     cors_origins: list[str] = []
 
@@ -165,13 +166,13 @@ class Settings(BaseSettings):
         if not self.debug and self.cors_origins and "*" in self.cors_origins:
             logging.getLogger(__name__).warning(
                 "CORS allows all origins (*) with STORI_DEBUG=false. "
-                "Set STORI_CORS_ORIGINS to exact origins in production."
+                "set STORI_CORS_ORIGINS to exact origins in production."
             )
         return self
 
     # Access Token Settings
     # Generate secret with: openssl rand -hex 32
-    access_token_secret: Optional[str] = None
+    access_token_secret: str | None = None
     access_token_algorithm: str = "HS256"
     # In-memory revocation cache TTL (seconds). Reduces DB hits; revocation visible within at most this window.
     token_revocation_cache_ttl_seconds: int = 60
@@ -180,8 +181,8 @@ class Settings(BaseSettings):
     # Region MUST match the bucket's region (S3 returns 301 if URL uses wrong region).
     # Override with STORI_AWS_REGION if your bucket is in a different region.
     aws_region: str = "eu-west-1"  # stori-assets bucket region; set STORI_AWS_REGION if different
-    aws_s3_asset_bucket: Optional[str] = None  # e.g. stori-assets
-    aws_cloudfront_domain: Optional[str] = None  # e.g. assets.example.com (optional)
+    aws_s3_asset_bucket: str | None = None  # e.g. stori-assets
+    aws_cloudfront_domain: str | None = None  # e.g. assets.example.com (optional)
     presign_expiry_seconds: int = 1800  # 30 min default for presigned download URLs (leaked URLs die faster)
     
     # Asset endpoint rate limits (UUID-only auth, no JWT)
@@ -191,8 +192,8 @@ class Settings(BaseSettings):
 
     # Stdio MCP server: proxy DAW tools to Maestro backend (so Cursor sees the same DAW as the app)
     # When set, stdio server forwards DAW tool calls to this URL with the token; backend has the WebSocket.
-    maestro_mcp_url: Optional[str] = None  # e.g. http://localhost:10001
-    mcp_token: Optional[str] = None  # JWT for Authorization: Bearer when proxying
+    maestro_mcp_url: str | None = None  # e.g. http://localhost:10001
+    mcp_token: str | None = None  # JWT for Authorization: Bearer when proxying
 
     model_config = SettingsConfigDict(
         env_prefix="STORI_",

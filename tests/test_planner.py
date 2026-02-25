@@ -1,4 +1,6 @@
 """Tests for planner (ExecutionPlan, build_execution_plan, preview_plan)."""
+from __future__ import annotations
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -15,25 +17,29 @@ from app.core.intent import IntentResult, Intent, Slots, SSEState
 class TestExecutionPlan:
     """Test ExecutionPlan properties and to_dict."""
 
-    def test_is_valid_true_when_safety_validated_and_has_calls(self):
+    def test_is_valid_true_when_safety_validated_and_has_calls(self) -> None:
+
         plan = ExecutionPlan(
             tool_calls=[ToolCall("stori_play", {})],
             safety_validated=True,
         )
         assert plan.is_valid is True
 
-    def test_is_valid_false_when_not_validated(self):
+    def test_is_valid_false_when_not_validated(self) -> None:
+
         plan = ExecutionPlan(
             tool_calls=[ToolCall("stori_play", {})],
             safety_validated=False,
         )
         assert plan.is_valid is False
 
-    def test_is_valid_false_when_no_tool_calls(self):
+    def test_is_valid_false_when_no_tool_calls(self) -> None:
+
         plan = ExecutionPlan(tool_calls=[], safety_validated=True)
         assert plan.is_valid is False
 
-    def test_generation_count(self):
+    def test_generation_count(self) -> None:
+
         plan = ExecutionPlan(
             tool_calls=[
                 ToolCall("stori_add_midi_track", {"name": "Drums"}),
@@ -44,7 +50,8 @@ class TestExecutionPlan:
         )
         assert plan.generation_count == 2
 
-    def test_edit_count(self):
+    def test_edit_count(self) -> None:
+
         plan = ExecutionPlan(
             tool_calls=[
                 ToolCall("stori_add_midi_track", {"name": "Drums"}),
@@ -55,7 +62,8 @@ class TestExecutionPlan:
         )
         assert plan.edit_count == 2
 
-    def test_to_dict(self):
+    def test_to_dict(self) -> None:
+
         plan = ExecutionPlan(
             tool_calls=[ToolCall("stori_play", {})],
             notes=["note1"],
@@ -72,7 +80,8 @@ class TestBuildExecutionPlan:
     """Test build_execution_plan with mocked LLM."""
 
     @pytest.mark.asyncio
-    async def test_validation_failure_returns_plan_with_notes(self):
+    async def test_validation_failure_returns_plan_with_notes(self) -> None:
+
         """When LLM returns invalid JSON, plan has validation notes."""
         llm = AsyncMock()
         llm.chat = AsyncMock(return_value=MagicMock(content="No JSON here at all."))
@@ -100,7 +109,8 @@ class TestBuildExecutionPlan:
         assert len(plan.tool_calls) == 0
 
     @pytest.mark.asyncio
-    async def test_valid_json_returns_plan_with_tool_calls(self):
+    async def test_valid_json_returns_plan_with_tool_calls(self) -> None:
+
         """When LLM returns valid plan JSON, we get tool_calls."""
         llm = AsyncMock()
         llm.chat = AsyncMock(return_value=MagicMock(content="""
@@ -142,7 +152,8 @@ class TestPreviewPlan:
     """Test preview_plan."""
 
     @pytest.mark.asyncio
-    async def test_preview_returns_summary_dict(self):
+    async def test_preview_returns_summary_dict(self) -> None:
+
         """preview_plan returns valid/total_steps/generations/edits/tool_calls/notes."""
         llm = AsyncMock()
         llm.chat = AsyncMock(return_value=MagicMock(content="""

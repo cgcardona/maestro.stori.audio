@@ -13,7 +13,7 @@ Key concepts:
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 from pydantic import Field
 
 from app.models.base import CamelModel as _CamelModel
@@ -62,16 +62,16 @@ class NoteChange(_CamelModel):
     """
     note_id: str = Field(..., description="Unique identifier for this note change")
     change_type: ChangeType = Field(..., description="Type of change: added, removed, or modified")
-    before: Optional[MidiNoteSnapshot] = Field(
+    before: MidiNoteSnapshot | None = Field(
         default=None,
         description="Original note state (None for 'added')"
     )
-    after: Optional[MidiNoteSnapshot] = Field(
+    after: MidiNoteSnapshot | None = Field(
         default=None,
         description="Proposed note state (None for 'removed')"
     )
     
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context: Any) -> None:
         """Validate that before/after match change_type."""
         if self.change_type == "added" and self.before is not None:
             raise ValueError("'added' notes must have before=None")
@@ -113,14 +113,14 @@ class Phrase(_CamelModel):
     
     note_changes: list[NoteChange] = Field(
         default_factory=list,
-        description="List of note changes in this phrase"
+        description="list of note changes in this phrase"
     )
     controller_changes: list[dict[str, Any]] = Field(
         default_factory=list,
         description="MIDI CC, pitch bend, and aftertouch changes in this phrase",
     )
     
-    explanation: Optional[str] = Field(
+    explanation: str | None = Field(
         default=None,
         description="Muse-generated explanation of the changes"
     )
@@ -160,18 +160,18 @@ class Variation(_CamelModel):
     """
     variation_id: str = Field(..., description="Unique identifier for this variation")
     intent: str = Field(..., description="The user intent that generated this variation")
-    ai_explanation: Optional[str] = Field(
+    ai_explanation: str | None = Field(
         default=None,
         description="Muse-generated summary of what the variation does"
     )
     
     affected_tracks: list[str] = Field(
         default_factory=list,
-        description="List of track IDs affected by this variation"
+        description="list of track IDs affected by this variation"
     )
     affected_regions: list[str] = Field(
         default_factory=list,
-        description="List of region IDs affected by this variation"
+        description="list of region IDs affected by this variation"
     )
     beat_range: tuple[float, float] = Field(
         ...,
@@ -180,7 +180,7 @@ class Variation(_CamelModel):
     
     phrases: list[Phrase] = Field(
         default_factory=list,
-        description="List of musical phrases containing the changes"
+        description="list of musical phrases containing the changes"
     )
     
     @property
@@ -216,14 +216,14 @@ class Variation(_CamelModel):
         """Check if variation has no changes."""
         return all(p.is_empty for p in self.phrases)
     
-    def get_phrase(self, phrase_id: str) -> Optional[Phrase]:
+    def get_phrase(self, phrase_id: str) -> Phrase | None:
         """Get a phrase by ID."""
         for phrase in self.phrases:
             if phrase.phrase_id == phrase_id:
                 return phrase
         return None
     
-    def get_accepted_notes(self, accepted_phrase_ids: list[str]) -> list[dict]:
+    def get_accepted_notes(self, accepted_phrase_ids: list[str]) -> list[dict[str, Any]]:
         """
         Get the proposed notes from accepted phrases.
         
@@ -264,7 +264,7 @@ class ProposeVariationResponse(_CamelModel):
     project_id: str = Field(..., description="UUID of the project")
     base_state_id: str = Field(..., description="Base state version used")
     intent: str = Field(..., description="User intent")
-    ai_explanation: Optional[str] = Field(
+    ai_explanation: str | None = Field(
         default=None,
         description="Muse-generated explanation (may be null initially)"
     )
@@ -299,15 +299,15 @@ class UpdatedRegionPayload(_CamelModel):
         default_factory=list,
         description="MIDI aftertouch events (channel pressure and poly key pressure)",
     )
-    start_beat: Optional[float] = Field(
+    start_beat: float | None = Field(
         default=None,
         description="Region start in beats — present only for new regions",
     )
-    duration_beats: Optional[float] = Field(
+    duration_beats: float | None = Field(
         default=None,
         description="Region duration in beats — present only for new regions",
     )
-    name: Optional[str] = Field(
+    name: str | None = Field(
         default=None,
         description="Region display name — present only for new regions",
     )

@@ -7,9 +7,10 @@ making neural generation available through the standard MusicGenerator pipeline.
 This is the primary generation backend for Stori - uses the amaai-lab/text2midi
 model via HuggingFace Spaces to generate high-quality MIDI from natural language.
 """
+from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any
 
 from app.services.backends.base import (
     MusicGeneratorBackend,
@@ -87,8 +88,8 @@ class Text2MidiGeneratorBackend(MusicGeneratorBackend):
     4. Returns notes in standard format
     """
     
-    def __init__(self):
-        self._backend: Optional[Text2MidiBackend] = None
+    def __init__(self) -> None:
+        self._backend: Text2MidiBackend | None = None
     
     @property
     def backend(self) -> Text2MidiBackend:
@@ -115,9 +116,9 @@ class Text2MidiGeneratorBackend(MusicGeneratorBackend):
         style: str,
         tempo: int,
         bars: int,
-        key: Optional[str] = None,
-        chords: Optional[list[str]] = None,
-        **kwargs,
+        key: str | None = None,
+        chords: list[str] | None = None,
+        **kwargs: Any,
     ) -> GenerationResult:
         """
         Generate MIDI using text2midi.

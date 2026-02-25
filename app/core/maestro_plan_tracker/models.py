@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -11,13 +11,13 @@ class _PlanStep:
     """Internal state for one plan step."""
     step_id: str
     label: str
-    detail: Optional[str] = None
+    detail: str | None = None
     status: str = "pending"
-    result: Optional[str] = None
-    track_name: Optional[str] = None
-    tool_name: Optional[str] = None  # canonical tool name for frontend icon/color rendering
+    result: str | None = None
+    track_name: str | None = None
+    tool_name: str | None = None  # canonical tool name for frontend icon/color rendering
     tool_indices: list[int] = field(default_factory=list)
-    parallel_group: Optional[str] = None  # steps sharing a group run concurrently
+    parallel_group: str | None = None  # steps sharing a group run concurrently
     phase: str = "composition"  # setup | composition | arrangement | soundDesign | expression | mixing
 
 

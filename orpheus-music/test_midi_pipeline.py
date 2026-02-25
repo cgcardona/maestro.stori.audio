@@ -1,12 +1,13 @@
-"""
-Tests for the MIDI parsing and tool call generation pipeline.
+"""Tests for the MIDI parsing pipeline.
 
-Covers: parse_midi_to_notes, generate_tool_calls, filter_channels_for_instruments,
+Covers: parse_midi_to_notes, filter_channels_for_instruments,
 _channels_to_keep, rejection_score.
 
 These functions are the critical path between Orpheus output and Maestro input.
 If they break, every generation silently produces garbage.
 """
+from __future__ import annotations
+
 import os
 import tempfile
 from typing import Any
@@ -16,7 +17,6 @@ from midiutil import MIDIFile
 
 from music_service import (
     parse_midi_to_notes,
-    generate_tool_calls,
     filter_channels_for_instruments,
     _channels_to_keep,
 )
@@ -76,7 +76,7 @@ def _make_midi(
 class TestParseMidiToNotes:
     """Unit tests for MIDI file → note dict parsing."""
 
-    def test_single_note(self):
+    def test_single_note(self) -> None:
         """Parse a single note."""
         path = _make_midi([(0, 60, 0.0, 1.0, 80)])
         result = parse_midi_to_notes(path, tempo=120)
@@ -88,7 +88,7 @@ class TestParseMidiToNotes:
         assert notes[0]["pitch"] == 60
         assert notes[0]["velocity"] == 80
 
-    def test_multiple_channels(self):
+    def test_multiple_channels(self) -> None:
         """Notes on different channels are separated."""
         path = _make_midi([
             (0, 60, 0.0, 1.0, 80),
@@ -102,7 +102,7 @@ class TestParseMidiToNotes:
         assert 1 in result["notes"]
         assert 9 in result["notes"]
 
-    def test_program_changes_captured(self):
+    def test_program_changes_captured(self) -> None:
         """Program change messages are captured per channel."""
         path = _make_midi(
             [(0, 60, 0.0, 1.0, 80)],
@@ -114,7 +114,7 @@ class TestParseMidiToNotes:
         assert result["program_changes"].get(0) == 33
         assert result["program_changes"].get(1) == 40
 
-    def test_cc_events_captured(self):
+    def test_cc_events_captured(self) -> None:
         """Control change events are parsed."""
         path = _make_midi(
             [(0, 60, 0.0, 1.0, 80)],
@@ -127,7 +127,7 @@ class TestParseMidiToNotes:
         assert result["cc_events"][0][0]["cc"] == 64
         assert result["cc_events"][0][0]["value"] == 127
 
-    def test_empty_result_structure(self):
+    def test_empty_result_structure(self) -> None:
         """An empty MIDI file returns the correct dict shape."""
         midi = MIDIFile(1)
         midi.addTempo(0, 0, 120)
@@ -144,7 +144,7 @@ class TestParseMidiToNotes:
         assert "aftertouch" in result
         assert "program_changes" in result
 
-    def test_note_duration_calculated(self):
+    def test_note_duration_calculated(self) -> None:
         """Note duration is calculated from note_on/note_off delta."""
         path = _make_midi([(0, 60, 0.0, 2.0, 80)])
         result = parse_midi_to_notes(path, tempo=120)
@@ -162,44 +162,44 @@ class TestParseMidiToNotes:
 class TestChannelsToKeep:
     """Unit tests for channel selection logic."""
 
-    def test_empty_instruments_keeps_all(self):
+    def test_empty_instruments_keeps_all(self) -> None:
         """No instrument filter → keep all channels."""
         channels = {0, 1, 9}
         assert _channels_to_keep(channels, []) == channels
 
-    def test_drums_keeps_channel_9(self):
+    def test_drums_keeps_channel_9(self) -> None:
         """Requesting drums keeps channel 9."""
         channels = {0, 1, 9}
         result = _channels_to_keep(channels, ["drums"])
         assert 9 in result
 
-    def test_bass_keeps_melodic_channel_0(self):
+    def test_bass_keeps_melodic_channel_0(self) -> None:
         """Bass (melodic index 0) maps to first melodic channel."""
         channels = {0, 1, 9}
         result = _channels_to_keep(channels, ["bass"])
         assert 0 in result
 
-    def test_piano_keeps_melodic_channel_1(self):
+    def test_piano_keeps_melodic_channel_1(self) -> None:
         """Piano (melodic index 1) maps to second melodic channel."""
         channels = {0, 1, 2, 9}
         result = _channels_to_keep(channels, ["piano"])
         assert 1 in result
 
-    def test_fallback_when_preferred_channel_missing(self):
+    def test_fallback_when_preferred_channel_missing(self) -> None:
         """When preferred melodic index doesn't exist, falls back gracefully."""
         channels = {0, 9}
         result = _channels_to_keep(channels, ["guitar"])
         assert len(result) > 0
         assert 9 not in result or "drums" in ["guitar"]
 
-    def test_multiple_instruments(self):
+    def test_multiple_instruments(self) -> None:
         """Multiple instruments select multiple channels."""
         channels = {0, 1, 9}
         result = _channels_to_keep(channels, ["drums", "bass"])
         assert 9 in result
         assert 0 in result
 
-    def test_empty_result_falls_back_to_all(self):
+    def test_empty_result_falls_back_to_all(self) -> None:
         """If filtering produces empty set, return all channels."""
         channels = {0, 1}
         result = _channels_to_keep(channels, ["xyzzy_nonexistent"])
@@ -214,7 +214,7 @@ class TestChannelsToKeep:
 class TestFilterChannelsForInstruments:
     """Integration tests for parsed-dict filtering."""
 
-    def test_filters_notes_by_instrument(self):
+    def test_filters_notes_by_instrument(self) -> None:
         """Only notes on kept channels survive filtering."""
         parsed: dict[str, Any] = {
             "notes": {0: [{"pitch": 60}], 1: [{"pitch": 64}], 9: [{"pitch": 36}]},
@@ -227,7 +227,7 @@ class TestFilterChannelsForInstruments:
         assert 0 not in result["notes"]
         assert 1 not in result["notes"]
 
-    def test_preserves_all_sub_dicts(self):
+    def test_preserves_all_sub_dicts(self) -> None:
         """Filtering preserves the dict shape for all event types."""
         parsed: dict[str, Any] = {
             "notes": {0: [{"pitch": 60}]},
@@ -241,144 +241,6 @@ class TestFilterChannelsForInstruments:
 
 
 # =============================================================================
-# generate_tool_calls
-# =============================================================================
-
-
-class TestGenerateToolCalls:
-    """Unit tests for parsed MIDI → Stori tool call conversion."""
-
-    def _simple_parsed(self) -> dict[str, Any]:
-        return {
-            "notes": {
-                9: [
-                    {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.5, "velocity": 100},
-                    {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.5, "velocity": 90},
-                ],
-                0: [
-                    {"pitch": 33, "start_beat": 0.0, "duration_beats": 2.0, "velocity": 80},
-                ],
-            },
-            "cc_events": {},
-            "pitch_bends": {},
-            "aftertouch": {},
-            "program_changes": {},
-        }
-
-    def test_creates_project(self):
-        """First tool call is always createProject."""
-        calls = generate_tool_calls(self._simple_parsed(), 120, ["drums", "bass"])
-        assert calls[0]["tool"] == "createProject"
-        assert calls[0]["params"]["tempo"] == 120
-
-    def test_creates_tracks_per_channel(self):
-        """Each MIDI channel gets an addMidiTrack call."""
-        calls = generate_tool_calls(self._simple_parsed(), 120, ["drums", "bass"])
-        track_calls = [c for c in calls if c["tool"] == "addMidiTrack"]
-        assert len(track_calls) == 2
-
-    def test_drum_track_is_marked_drum(self):
-        """Channel 9 → isDrum=True."""
-        calls = generate_tool_calls(self._simple_parsed(), 120, ["drums", "bass"])
-        drum_track = [c for c in calls if c["tool"] == "addMidiTrack" and c["params"]["isDrum"]]
-        assert len(drum_track) == 1
-        assert drum_track[0]["params"]["name"] == "Drums"
-
-    def test_creates_regions(self):
-        """Each track gets an addMidiRegion call."""
-        calls = generate_tool_calls(self._simple_parsed(), 120, ["drums", "bass"])
-        region_calls = [c for c in calls if c["tool"] == "addMidiRegion"]
-        assert len(region_calls) == 2
-
-    def test_adds_notes(self):
-        """Notes are emitted as addNotes calls."""
-        calls = generate_tool_calls(self._simple_parsed(), 120, ["drums", "bass"])
-        note_calls = [c for c in calls if c["tool"] == "addNotes"]
-        assert len(note_calls) == 2
-
-    def test_variable_references(self):
-        """Track/region IDs use variable references ($N.trackId / $N.regionId)."""
-        calls = generate_tool_calls(self._simple_parsed(), 120, ["drums", "bass"])
-        region_calls = [c for c in calls if c["tool"] == "addMidiRegion"]
-        for rc in region_calls:
-            assert rc["params"]["trackId"].startswith("$")
-            assert ".trackId" in rc["params"]["trackId"]
-
-    def test_cc_events_emitted(self):
-        """CC events are converted to addMidiCC tool calls."""
-        parsed: dict[str, Any] = {
-            "notes": {0: [{"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80}]},
-            "cc_events": {0: [
-                {"cc": 64, "beat": 0.0, "value": 127},
-                {"cc": 64, "beat": 2.0, "value": 0},
-            ]},
-            "pitch_bends": {},
-            "aftertouch": {},
-            "program_changes": {},
-        }
-        calls = generate_tool_calls(parsed, 120, ["piano"])
-        cc_calls = [c for c in calls if c["tool"] == "addMidiCC"]
-        assert len(cc_calls) >= 1
-
-    def test_pitch_bends_emitted(self):
-        """Pitch bend events are converted to addPitchBend tool calls."""
-        parsed: dict[str, Any] = {
-            "notes": {0: [{"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80}]},
-            "cc_events": {},
-            "pitch_bends": {0: [{"beat": 0.0, "value": 4096}]},
-            "aftertouch": {},
-            "program_changes": {},
-        }
-        calls = generate_tool_calls(parsed, 120, ["piano"])
-        pb_calls = [c for c in calls if c["tool"] == "addPitchBend"]
-        assert len(pb_calls) == 1
-
-    def test_empty_notes_no_add_notes(self):
-        """Channels with no notes don't get addNotes calls."""
-        parsed: dict[str, Any] = {
-            "notes": {},
-            "cc_events": {0: [{"cc": 1, "beat": 0.0, "value": 64}]},
-            "pitch_bends": {},
-            "aftertouch": {},
-            "program_changes": {},
-        }
-        calls = generate_tool_calls(parsed, 120, [])
-        note_calls = [c for c in calls if c["tool"] == "addNotes"]
-        assert len(note_calls) == 0
-
-    def test_region_length_padded_to_4_bar_boundary(self):
-        """Region length is padded up to the nearest 4-bar boundary."""
-        parsed: dict[str, Any] = {
-            "notes": {0: [
-                {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80},
-                {"pitch": 64, "start_beat": 5.0, "duration_beats": 1.0, "velocity": 80},
-            ]},
-            "cc_events": {},
-            "pitch_bends": {},
-            "aftertouch": {},
-            "program_changes": {},
-        }
-        calls = generate_tool_calls(parsed, 120, ["piano"])
-        region = [c for c in calls if c["tool"] == "addMidiRegion"][0]
-        bars = region["params"]["lengthBars"]
-        assert bars >= 4
-        assert bars % 4 == 0
-
-    def test_instrument_name_sets_track_name(self):
-        """Track names come from the requested instrument list."""
-        parsed: dict[str, Any] = {
-            "notes": {0: [{"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80}]},
-            "cc_events": {},
-            "pitch_bends": {},
-            "aftertouch": {},
-            "program_changes": {},
-        }
-        calls = generate_tool_calls(parsed, 120, ["violin"])
-        track = [c for c in calls if c["tool"] == "addMidiTrack"][0]
-        assert track["params"]["name"] == "Violin"
-
-
-# =============================================================================
 # rejection_score
 # =============================================================================
 
@@ -386,10 +248,10 @@ class TestGenerateToolCalls:
 class TestRejectionScore:
     """Unit tests for the fast rejection sampling scorer."""
 
-    def test_empty_notes_returns_zero(self):
+    def test_empty_notes_returns_zero(self) -> None:
         assert rejection_score([], bars=4) == 0.0
 
-    def test_good_generation_scores_high(self):
+    def test_good_generation_scores_high(self) -> None:
         """A musically reasonable generation scores above 0.5."""
         notes = [
             {"pitch": 60 + (i % 12), "startBeat": float(i * 0.5), "velocity": 80}
@@ -398,7 +260,7 @@ class TestRejectionScore:
         score = rejection_score(notes, bars=4)
         assert score > 0.5
 
-    def test_single_repeated_note_scores_lower(self):
+    def test_single_repeated_note_scores_lower(self) -> None:
         """Degenerate single-note repetition scores lower than varied notes."""
         varied = [
             {"pitch": 60 + (i % 7), "startBeat": float(i * 0.5), "velocity": 80}
@@ -410,7 +272,7 @@ class TestRejectionScore:
         ]
         assert rejection_score(varied, bars=4) > rejection_score(repeated, bars=4)
 
-    def test_score_in_0_1_range(self):
+    def test_score_in_0_1_range(self) -> None:
         """Score is always between 0 and 1."""
         for note_count in (1, 4, 16, 64, 256):
             notes = [
@@ -420,7 +282,7 @@ class TestRejectionScore:
             score = rejection_score(notes, bars=max(note_count // 8, 1))
             assert 0.0 <= score <= 1.0
 
-    def test_sparse_bars_penalized(self):
+    def test_sparse_bars_penalized(self) -> None:
         """Notes clustered in one bar are penalized vs evenly distributed."""
         clustered = [
             {"pitch": 60 + i, "startBeat": float(i * 0.1), "velocity": 80}
@@ -441,11 +303,11 @@ class TestRejectionScore:
 class TestFuzzyCache:
     """Tests for fuzzy (epsilon) cache matching."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         from music_service import _result_cache
         _result_cache.clear()
 
-    def test_exact_match_returns_result(self):
+    def test_exact_match_returns_result(self) -> None:
         from music_service import (
             cache_result, fuzzy_cache_lookup, get_cache_key,
             GenerateRequest, _cache_key_data, EmotionVectorPayload,
@@ -463,7 +325,7 @@ class TestFuzzyCache:
         assert result is not None
         assert result["success"] is True
 
-    def test_near_miss_returns_approximate(self):
+    def test_near_miss_returns_approximate(self) -> None:
         from music_service import (
             cache_result, fuzzy_cache_lookup, get_cache_key,
             GenerateRequest, _cache_key_data, EmotionVectorPayload,
@@ -485,7 +347,7 @@ class TestFuzzyCache:
         assert result is not None
         assert result.get("metadata", {}).get("approximate") is True
 
-    def test_different_genre_no_match(self):
+    def test_different_genre_no_match(self) -> None:
         from music_service import (
             cache_result, fuzzy_cache_lookup, get_cache_key,
             GenerateRequest, _cache_key_data,
@@ -500,7 +362,7 @@ class TestFuzzyCache:
         result = fuzzy_cache_lookup(req2)
         assert result is None
 
-    def test_empty_cache_returns_none(self):
+    def test_empty_cache_returns_none(self) -> None:
         from music_service import fuzzy_cache_lookup, GenerateRequest
         req = GenerateRequest(genre="trap", tempo=140)
         assert fuzzy_cache_lookup(req) is None
@@ -514,11 +376,11 @@ class TestFuzzyCache:
 class TestCachePersistence:
     """Tests for save/load cache to disk."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         from music_service import _result_cache
         _result_cache.clear()
 
-    def test_save_and_load_roundtrip(self, tmp_path: Any):
+    def test_save_and_load_roundtrip(self, tmp_path: Any) -> None:
         from music_service import (
             _result_cache, _save_cache_to_disk, _load_cache_from_disk,
             cache_result, _CACHE_FILE, CacheEntry,
@@ -540,7 +402,7 @@ class TestCachePersistence:
         finally:
             music_service._CACHE_FILE = original_cache_file
 
-    def test_load_skips_expired_entries(self, tmp_path: Any):
+    def test_load_skips_expired_entries(self, tmp_path: Any) -> None:
         from music_service import (
             _result_cache, _save_cache_to_disk, _load_cache_from_disk,
             CacheEntry, CACHE_TTL_SECONDS,

@@ -3,6 +3,11 @@
 Targets: normalize_tool_arguments, build_conversation_history_for_llm,
 sse_event, search, update (PATCH), delete (hard/soft), message posting detail.
 """
+from __future__ import annotations
+
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any
 import pytest
 from unittest.mock import MagicMock
 
@@ -20,30 +25,36 @@ from app.core.sse_utils import sse_event
 
 class TestNormalizeToolArguments:
 
-    def test_empty_dict(self):
+    def test_empty_dict(self) -> None:
+
         assert normalize_tool_arguments({}) == {}
 
-    def test_none(self):
+    def test_none(self) -> None:
+
         assert normalize_tool_arguments(None) is None
 
-    def test_int_to_string(self):
+    def test_int_to_string(self) -> None:
+
         result = normalize_tool_arguments({"tempo": 120, "name": "Drums"})
         assert result is not None
         assert result["tempo"] == "120"
         assert result["name"] == "Drums"
 
-    def test_float_to_string(self):
+    def test_float_to_string(self) -> None:
+
         result = normalize_tool_arguments({"volume": 0.8})
         assert result is not None
         assert result["volume"] == "0.8"
 
-    def test_bool_unchanged(self):
+    def test_bool_unchanged(self) -> None:
+
         result = normalize_tool_arguments({"muted": True, "solo": False})
         assert result is not None
         assert result["muted"] is True
         assert result["solo"] is False
 
-    def test_nested_dict(self):
+    def test_nested_dict(self) -> None:
+
         result = normalize_tool_arguments({
             "track": {"volume": 0.5, "name": "Bass"},
         })
@@ -51,7 +62,8 @@ class TestNormalizeToolArguments:
         assert result["track"]["volume"] == "0.5"
         assert result["track"]["name"] == "Bass"
 
-    def test_list_with_numbers(self):
+    def test_list_with_numbers(self) -> None:
+
         result = normalize_tool_arguments({
             "notes": [{"pitch": 60, "velocity": 100}],
         })
@@ -59,7 +71,8 @@ class TestNormalizeToolArguments:
         assert result["notes"][0]["pitch"] == "60"
         assert result["notes"][0]["velocity"] == "100"
 
-    def test_list_with_mixed_types(self):
+    def test_list_with_mixed_types(self) -> None:
+
         result = normalize_tool_arguments({
             "items": [42, "hello", 3.14, True],
         })
@@ -74,20 +87,23 @@ class TestNormalizeToolArguments:
 
 class TestBuildConversationHistoryForLLM:
 
-    def _make_msg(self, role, content, tool_calls=None):
+    def _make_msg(self, role: Any, content: Any, tool_calls: Any = None) -> MagicMock:
+
         msg = MagicMock()
         msg.role = role
         msg.content = content
         msg.tool_calls = tool_calls
         return msg
 
-    def test_user_message(self):
+    def test_user_message(self) -> None:
+
         msgs = [self._make_msg("user", "Hello")]
         history = build_conversation_history_for_llm(msgs)
         assert len(history) == 1
         assert history[0] == {"role": "user", "content": "Hello"}
 
-    def test_assistant_no_tools(self):
+    def test_assistant_no_tools(self) -> None:
+
         msgs = [self._make_msg("assistant", "Hi there")]
         history = build_conversation_history_for_llm(msgs)
         assert len(history) == 1
@@ -95,7 +111,8 @@ class TestBuildConversationHistoryForLLM:
         assert history[0]["content"] == "Hi there"
         assert "tool_calls" not in history[0]
 
-    def test_assistant_with_tool_calls(self):
+    def test_assistant_with_tool_calls(self) -> None:
+
         msgs = [self._make_msg("assistant", "Done", tool_calls=[
             {"id": "tc-1", "name": "stori_set_tempo", "arguments": {"tempo": 120}},
         ])]
@@ -106,7 +123,8 @@ class TestBuildConversationHistoryForLLM:
         assert history[0]["tool_calls"][0]["function"]["name"] == "stori_set_tempo"
         assert history[1]["role"] == "tool"
 
-    def test_duplicate_ids_deduplicated(self):
+    def test_duplicate_ids_deduplicated(self) -> None:
+
         msgs = [self._make_msg("assistant", "Dupes", tool_calls=[
             {"id": "dup", "name": "stori_set_tempo", "arguments": {"tempo": 80}},
             {"id": "dup", "name": "stori_add_midi_track", "arguments": {"name": "X"}},
@@ -115,7 +133,8 @@ class TestBuildConversationHistoryForLLM:
         ids = [tc["id"] for tc in history[0]["tool_calls"]]
         assert len(set(ids)) == 2
 
-    def test_empty_id_generates(self):
+    def test_empty_id_generates(self) -> None:
+
         msgs = [self._make_msg("assistant", "No ID", tool_calls=[
             {"name": "stori_set_tempo", "arguments": {}},
         ])]
@@ -123,9 +142,10 @@ class TestBuildConversationHistoryForLLM:
         tc_id = history[0]["tool_calls"][0]["id"]
         assert tc_id.startswith("call_")
 
-    def test_mixed_messages(self):
+    def test_mixed_messages(self) -> None:
+
         msgs = [
-            self._make_msg("user", "Set tempo"),
+            self._make_msg("user", "set tempo"),
             self._make_msg("assistant", "Done", tool_calls=[
                 {"id": "tc-1", "name": "stori_set_tempo", "arguments": {"tempo": 100}},
             ]),
@@ -137,12 +157,14 @@ class TestBuildConversationHistoryForLLM:
         assert history[2]["role"] == "tool"
         assert history[3]["role"] == "user"
 
-    def test_none_content_handled(self):
+    def test_none_content_handled(self) -> None:
+
         msgs = [self._make_msg("user", None)]
         history = build_conversation_history_for_llm(msgs)
         assert history[0]["content"] == ""
 
-    def test_empty_list(self):
+    def test_empty_list(self) -> None:
+
         history = build_conversation_history_for_llm([])
         assert history == []
 
@@ -155,7 +177,8 @@ class TestBuildConversationHistoryForLLM:
 class TestSSEEvent:
 
     @pytest.mark.anyio
-    async def test_format(self):
+    async def test_format(self) -> None:
+
         """sse_event validates through protocol models and returns SSE format."""
         result = await sse_event({"type": "content", "content": "hello"})
         assert result.startswith("data: ")
@@ -171,7 +194,8 @@ class TestSSEEvent:
 class TestConversationSearchAPI:
 
     @pytest.mark.anyio
-    async def test_search_endpoint(self, client, auth_headers, db_session):
+    async def test_search_endpoint(self, client: AsyncClient, auth_headers: dict[str, str], db_session: AsyncSession) -> None:
+
         from app.services.conversations import create_conversation
         user_id = (await client.get("/api/v1/users/me", headers=auth_headers)).json().get("userId")
         if not user_id:
@@ -187,7 +211,8 @@ class TestConversationSearchAPI:
         assert "results" in data
 
     @pytest.mark.anyio
-    async def test_search_no_query(self, client, auth_headers):
+    async def test_search_no_query(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         resp = await client.get(
             "/api/v1/conversations/search",
             headers=auth_headers,
@@ -198,7 +223,8 @@ class TestConversationSearchAPI:
 class TestConversationUpdateAPI:
 
     @pytest.mark.anyio
-    async def test_update_title(self, client, auth_headers):
+    async def test_update_title(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         # Create
         resp = await client.post(
             "/api/v1/conversations",
@@ -218,7 +244,8 @@ class TestConversationUpdateAPI:
         assert resp.json()["title"] == "New Title"
 
     @pytest.mark.anyio
-    async def test_update_project_id(self, client, auth_headers):
+    async def test_update_project_id(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         resp = await client.post(
             "/api/v1/conversations",
             json={"title": "Linked"},
@@ -245,7 +272,8 @@ class TestConversationUpdateAPI:
         assert resp.json()["projectId"] is None
 
     @pytest.mark.anyio
-    async def test_update_nonexistent_404(self, client, auth_headers):
+    async def test_update_nonexistent_404(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         resp = await client.patch(
             "/api/v1/conversations/nonexistent-id",
             json={"title": "Ghost"},
@@ -257,7 +285,8 @@ class TestConversationUpdateAPI:
 class TestConversationDeleteAPI:
 
     @pytest.mark.anyio
-    async def test_soft_delete(self, client, auth_headers):
+    async def test_soft_delete(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         resp = await client.post(
             "/api/v1/conversations",
             json={"title": "Soft Del"},
@@ -268,7 +297,8 @@ class TestConversationDeleteAPI:
         assert resp.status_code == 204
 
     @pytest.mark.anyio
-    async def test_hard_delete(self, client, auth_headers):
+    async def test_hard_delete(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         resp = await client.post(
             "/api/v1/conversations",
             json={"title": "Hard Del"},
@@ -282,7 +312,8 @@ class TestConversationDeleteAPI:
         assert resp.status_code == 204
 
     @pytest.mark.anyio
-    async def test_delete_nonexistent_404(self, client, auth_headers):
+    async def test_delete_nonexistent_404(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         resp = await client.delete(
             "/api/v1/conversations/nonexistent-id",
             headers=auth_headers,
@@ -293,7 +324,8 @@ class TestConversationDeleteAPI:
 class TestConversationGetDetail:
 
     @pytest.mark.anyio
-    async def test_get_with_messages(self, client, auth_headers, db_session):
+    async def test_get_with_messages(self, client: AsyncClient, auth_headers: dict[str, str], db_session: AsyncSession) -> None:
+
         # Create conv
         resp = await client.post(
             "/api/v1/conversations",
@@ -319,7 +351,8 @@ class TestConversationGetDetail:
         assert len(data["messages"]) >= 1
 
     @pytest.mark.anyio
-    async def test_get_with_tool_calls_normalized(self, client, auth_headers, db_session):
+    async def test_get_with_tool_calls_normalized(self, client: AsyncClient, auth_headers: dict[str, str], db_session: AsyncSession) -> None:
+
         resp = await client.post(
             "/api/v1/conversations",
             json={"title": "Tool Normalize"},
@@ -354,7 +387,8 @@ class TestConversationGetDetail:
 class TestConversationListFiltering:
 
     @pytest.mark.anyio
-    async def test_list_with_project_filter(self, client, auth_headers):
+    async def test_list_with_project_filter(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         await client.post(
             "/api/v1/conversations",
             json={"title": "P1", "project_id": "proj-1"},
@@ -374,7 +408,8 @@ class TestConversationListFiltering:
         assert data["total"] >= 1
 
     @pytest.mark.anyio
-    async def test_list_pagination(self, client, auth_headers):
+    async def test_list_pagination(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         for i in range(5):
             await client.post(
                 "/api/v1/conversations",

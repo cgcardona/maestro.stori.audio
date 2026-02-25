@@ -9,9 +9,11 @@ Tables:
 - conversation_messages: Messages within conversations
 - message_actions: Actions performed during message execution
 """
+from __future__ import annotations
+
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -142,7 +144,7 @@ class UsageLog(Base):
     )
     
     # Request details
-    prompt: Mapped[Optional[str]] = mapped_column(
+    prompt: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,  # Null if user opted out
     )
@@ -275,7 +277,7 @@ class Conversation(Base):
     )
     
     # Foreign key to project (nullable for global conversations)
-    project_id: Mapped[Optional[str]] = mapped_column(
+    project_id: Mapped[str | None] = mapped_column(
         String(36),
         nullable=True,
         index=True,
@@ -296,7 +298,7 @@ class Conversation(Base):
     )
     
     # Project context at conversation start (JSON works for both PostgreSQL and SQLite)
-    project_context: Mapped[Optional[dict]] = mapped_column(
+    project_context: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
         nullable=True,
     )
@@ -363,12 +365,12 @@ class ConversationMessage(Base):
     )
     
     # Model and token tracking (only for assistant messages)
-    model_used: Mapped[Optional[str]] = mapped_column(
+    model_used: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
     )
     
-    tokens_used: Mapped[Optional[dict]] = mapped_column(
+    tokens_used: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
         nullable=True,
     )  # {"prompt": 1234, "completion": 567}
@@ -381,20 +383,20 @@ class ConversationMessage(Base):
     )
     
     # Tool calls made during this message
-    tool_calls: Mapped[Optional[list]] = mapped_column(
+    tool_calls: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON,
         nullable=True,
     )
     
     # Complete SSE event stream for full replay capability
     # Each event: {"type": "...", "data": {...}, "timestamp": "..."}
-    sse_events: Mapped[Optional[list]] = mapped_column(
+    sse_events: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON,
         nullable=True,
     )
     
     # Additional message metadata (renamed from 'metadata' - reserved by SQLAlchemy)
-    extra_metadata: Mapped[Optional[dict]] = mapped_column(
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
         nullable=True,
     )
@@ -467,13 +469,13 @@ class MessageAction(Base):
         nullable=False,
     )
     
-    error_message: Mapped[Optional[str]] = mapped_column(
+    error_message: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
     
     # Additional context (renamed from 'metadata' - reserved by SQLAlchemy)
-    extra_metadata: Mapped[Optional[dict]] = mapped_column(
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
         nullable=True,
     )  # Track ID, region ID, etc.

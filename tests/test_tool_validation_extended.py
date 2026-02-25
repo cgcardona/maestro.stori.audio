@@ -12,7 +12,9 @@ Covers:
   7.  Icon validation (stori_set_track_icon)
   8.  validate_tool_calls_batch helpers (all_valid, collect_errors)
 """
+from __future__ import annotations
 
+from typing import Any
 import pytest
 
 from app.core.entity_registry import EntityRegistry
@@ -35,19 +37,22 @@ from app.core.tool_validation import (
 # ===========================================================================
 
 class TestValidationErrorModel:
-    def test_str_contains_field_and_message(self):
+    def test_str_contains_field_and_message(self) -> None:
+
         err = ValidationError(field="tempo", message="out of range", code="VALUE_OUT_OF_RANGE")
         s = str(err)
         assert "tempo" in s
         assert "out of range" in s
 
-    def test_code_stored(self):
+    def test_code_stored(self) -> None:
+
         err = ValidationError(field="f", message="m", code="MY_CODE")
         assert err.code == "MY_CODE"
 
 
 class TestValidationResultModel:
     def _make_result(self, valid: bool, errors: list[ValidationError]) -> ValidationResult:
+
         return ValidationResult(
             valid=valid,
             tool_name="stori_play",
@@ -57,11 +62,13 @@ class TestValidationResultModel:
             warnings=[],
         )
 
-    def test_error_message_empty_when_no_errors(self):
+    def test_error_message_empty_when_no_errors(self) -> None:
+
         result = self._make_result(True, [])
         assert result.error_message == ""
 
-    def test_error_message_combines_errors(self):
+    def test_error_message_combines_errors(self) -> None:
+
         errors = [
             ValidationError(field="a", message="bad a", code="E1"),
             ValidationError(field="b", message="bad b", code="E2"),
@@ -71,7 +78,8 @@ class TestValidationResultModel:
         assert "a: bad a" in msg
         assert "b: bad b" in msg
 
-    def test_error_message_single_error(self):
+    def test_error_message_single_error(self) -> None:
+
         errors = [ValidationError(field="x", message="fail", code="E")]
         result = self._make_result(False, errors)
         assert result.error_message == "x: fail"
@@ -82,38 +90,47 @@ class TestValidationResultModel:
 # ===========================================================================
 
 class TestFindClosestMatch:
-    def test_empty_candidates_returns_none(self):
+    def test_empty_candidates_returns_none(self) -> None:
+
         assert _find_closest_match("bass", []) is None
 
-    def test_exact_prefix_match(self):
+    def test_exact_prefix_match(self) -> None:
+
         result = _find_closest_match("bass", ["Bass Track", "Drums", "Piano"])
         assert result == "Bass Track"
 
-    def test_prefix_case_insensitive(self):
+    def test_prefix_case_insensitive(self) -> None:
+
         result = _find_closest_match("BASS", ["bass guitar", "Drums"])
         assert result == "bass guitar"
 
-    def test_substring_match(self):
+    def test_substring_match(self) -> None:
+
         result = _find_closest_match("guitar", ["Acoustic Guitar Track", "Drums"])
         assert result == "Acoustic Guitar Track"
 
-    def test_query_is_substring_of_candidate(self):
+    def test_query_is_substring_of_candidate(self) -> None:
+
         result = _find_closest_match("drum", ["Drum Loop", "Bass"])
         assert result == "Drum Loop"
 
-    def test_no_match_below_threshold_returns_none(self):
+    def test_no_match_below_threshold_returns_none(self) -> None:
+
         result = _find_closest_match("xyz", ["abcde", "fghij"])
         # Jaccard similarity on completely disjoint character sets → None
         assert result is None
 
-    def test_single_candidate_prefix(self):
+    def test_single_candidate_prefix(self) -> None:
+
         assert _find_closest_match("ba", ["bass"]) == "bass"
 
-    def test_returns_string_or_none(self):
+    def test_returns_string_or_none(self) -> None:
+
         result = _find_closest_match("anything", ["maybe"])
         assert result is None or isinstance(result, str)
 
-    def test_character_overlap_high_score(self):
+    def test_character_overlap_high_score(self) -> None:
+
         """'reverb' vs 'Reverb Bus' — character overlap should match."""
         result = _find_closest_match("reverb", ["Reverb Bus", "Delay Bus"])
         assert result == "Reverb Bus"
@@ -124,63 +141,79 @@ class TestFindClosestMatch:
 # ===========================================================================
 
 class TestValidateType:
-    def test_string_valid(self):
+    def test_string_valid(self) -> None:
+
         assert _validate_type("name", "hello", "string") is None
 
-    def test_string_invalid(self):
+    def test_string_invalid(self) -> None:
+
         err = _validate_type("name", 123, "string")
         assert err is not None
         assert err.code == "TYPE_MISMATCH"
         assert "string" in err.message
 
-    def test_integer_valid(self):
+    def test_integer_valid(self) -> None:
+
         assert _validate_type("tempo", 120, "integer") is None
 
-    def test_integer_invalid_float(self):
+    def test_integer_invalid_float(self) -> None:
+
         err = _validate_type("tempo", 120.5, "integer")
         assert err is not None
         assert err.code == "TYPE_MISMATCH"
 
-    def test_number_accepts_int(self):
+    def test_number_accepts_int(self) -> None:
+
         assert _validate_type("volume", 1, "number") is None
 
-    def test_number_accepts_float(self):
+    def test_number_accepts_float(self) -> None:
+
         assert _validate_type("volume", 0.8, "number") is None
 
-    def test_number_invalid(self):
+    def test_number_invalid(self) -> None:
+
         err = _validate_type("volume", "loud", "number")
         assert err is not None
 
-    def test_boolean_valid(self):
+    def test_boolean_valid(self) -> None:
+
         assert _validate_type("muted", True, "boolean") is None
 
-    def test_boolean_invalid(self):
+    def test_boolean_invalid(self) -> None:
+
         err = _validate_type("muted", 1, "boolean")
         assert err is not None
 
-    def test_array_valid(self):
+    def test_array_valid(self) -> None:
+
         assert _validate_type("notes", [], "array") is None
 
-    def test_array_invalid(self):
+    def test_array_invalid(self) -> None:
+
         err = _validate_type("notes", {}, "array")
         assert err is not None
 
-    def test_object_valid(self):
+    def test_object_valid(self) -> None:
+
         assert _validate_type("params", {}, "object") is None
 
-    def test_object_invalid(self):
+    def test_object_invalid(self) -> None:
+
         err = _validate_type("params", [], "object")
         assert err is not None
 
-    def test_unknown_type_passes(self):
+    def test_unknown_type_passes(self) -> None:
+
         """Unknown JSON schema types are not validated — must not crash."""
         assert _validate_type("x", "anything", "xyzzy") is None
 
-    def test_returns_none_on_match(self):
+    def test_returns_none_on_match(self) -> None:
+
         result = _validate_type("s", "hello", "string")
         assert result is None
 
-    def test_returns_validation_error_on_mismatch(self):
+    def test_returns_validation_error_on_mismatch(self) -> None:
+
         result = _validate_type("s", 99, "string")
         assert isinstance(result, ValidationError)
 
@@ -192,85 +225,107 @@ class TestValidateType:
 class TestValidateValueRanges:
     """_validate_value_ranges catches out-of-range scalars and per-note ranges."""
 
-    def test_tempo_in_range(self):
+    def test_tempo_in_range(self) -> None:
+
         assert _validate_value_ranges({"tempo": 120}) == []
 
-    def test_tempo_below_min(self):
+    def test_tempo_below_min(self) -> None:
+
         errors = _validate_value_ranges({"tempo": 19})
         assert any(e.code == "VALUE_OUT_OF_RANGE" for e in errors)
 
-    def test_tempo_above_max(self):
+    def test_tempo_above_max(self) -> None:
+
         errors = _validate_value_ranges({"tempo": 301})
         assert any(e.code == "VALUE_OUT_OF_RANGE" for e in errors)
 
-    def test_bars_in_range(self):
+    def test_bars_in_range(self) -> None:
+
         assert _validate_value_ranges({"bars": 8}) == []
 
-    def test_bars_zero(self):
+    def test_bars_zero(self) -> None:
+
         errors = _validate_value_ranges({"bars": 0})
         assert any(e.code == "VALUE_OUT_OF_RANGE" for e in errors)
 
-    def test_bars_max(self):
+    def test_bars_max(self) -> None:
+
         assert _validate_value_ranges({"bars": 64}) == []
 
-    def test_bars_above_max(self):
+    def test_bars_above_max(self) -> None:
+
         errors = _validate_value_ranges({"bars": 65})
         assert any(e.code == "VALUE_OUT_OF_RANGE" for e in errors)
 
-    def test_velocity_in_range(self):
+    def test_velocity_in_range(self) -> None:
+
         assert _validate_value_ranges({"velocity": 100}) == []
 
-    def test_velocity_zero(self):
+    def test_velocity_zero(self) -> None:
+
         errors = _validate_value_ranges({"velocity": 0})
         assert any(e.code == "VALUE_OUT_OF_RANGE" for e in errors)
 
-    def test_velocity_above_max(self):
+    def test_velocity_above_max(self) -> None:
+
         errors = _validate_value_ranges({"velocity": 128})
         assert any(e.code == "VALUE_OUT_OF_RANGE" for e in errors)
 
-    def test_pitch_in_range(self):
+    def test_pitch_in_range(self) -> None:
+
         assert _validate_value_ranges({"pitch": 60}) == []
 
-    def test_pitch_below_min(self):
+    def test_pitch_below_min(self) -> None:
+
         errors = _validate_value_ranges({"pitch": -1})
         assert any(e.code == "VALUE_OUT_OF_RANGE" for e in errors)
 
-    def test_pitch_above_max(self):
+    def test_pitch_above_max(self) -> None:
+
         errors = _validate_value_ranges({"pitch": 128})
         assert any(e.code == "VALUE_OUT_OF_RANGE" for e in errors)
 
-    def test_notes_array_pitch_out_of_range(self):
+    def test_notes_array_pitch_out_of_range(self) -> None:
+
         notes = [{"pitch": 200, "velocity": 100}]
         errors = _validate_value_ranges({"notes": notes})
         assert any("notes[0].pitch" in e.field for e in errors)
 
-    def test_notes_array_velocity_out_of_range(self):
+    def test_notes_array_velocity_out_of_range(self) -> None:
+
         notes = [{"pitch": 60, "velocity": 200}]
         errors = _validate_value_ranges({"notes": notes})
         assert any("notes[0].velocity" in e.field for e in errors)
 
-    def test_notes_array_valid(self):
+    def test_notes_array_valid(self) -> None:
+
         notes = [{"pitch": 60, "velocity": 100}]
         assert _validate_value_ranges({"notes": notes}) == []
 
-    def test_notes_array_not_list_no_crash(self):
+    def test_notes_array_not_list_no_crash(self) -> None:
+
         """If notes is not a list, range validation skips it."""
         _validate_value_ranges({"notes": "not a list"})  # must not raise
 
-    def test_start_beat_zero_ok(self):
+    def test_start_beat_zero_ok(self) -> None:
+
         assert _validate_value_ranges({"startBeat": 0}) == []
 
-    def test_duration_beats_min_boundary(self):
+    def test_duration_beats_min_boundary(self) -> None:
+
         assert _validate_value_ranges({"durationBeats": 0.01}) == []
 
-    def test_duration_beats_below_min(self):
+    def test_duration_beats_below_min(self) -> None:
+
         errors = _validate_value_ranges({"durationBeats": 0.001})
         assert any(e.code == "VALUE_OUT_OF_RANGE" for e in errors)
 
-    def test_empty_params_no_errors(self):
+    def test_empty_params_no_errors(self) -> None:
+
         assert _validate_value_ranges({}) == []
 
-    def test_non_numeric_value_skipped(self):
+    def test_non_numeric_value_skipped(self) -> None:
+
         """Non-numeric values in range fields must not crash."""
         _validate_value_ranges({"tempo": "fast"})  # must not raise
 
@@ -282,19 +337,22 @@ class TestValidateValueRanges:
 class TestValidateToolSpecificNotes:
     """stori_add_notes note-level validation."""
 
-    def _valid_note(self, **overrides) -> dict:
+    def _valid_note(self, **overrides: Any) -> dict[str, Any]:
+
         note = {"pitch": 60, "startBeat": 0, "durationBeats": 0.5, "velocity": 100}
         note.update(overrides)
         return note
 
-    def test_valid_notes_no_errors(self):
+    def test_valid_notes_no_errors(self) -> None:
+
         errors = _validate_tool_specific(
             "stori_add_notes",
             {"notes": [self._valid_note()]},
         )
         assert errors == []
 
-    def test_pitch_out_of_range(self):
+    def test_pitch_out_of_range(self) -> None:
+
         errors = _validate_tool_specific(
             "stori_add_notes",
             {"notes": [self._valid_note(pitch=200)]},
@@ -302,14 +360,16 @@ class TestValidateToolSpecificNotes:
         assert any("pitch" in e.field for e in errors)
         assert any(e.code == "INVALID_PITCH" for e in errors)
 
-    def test_pitch_negative(self):
+    def test_pitch_negative(self) -> None:
+
         errors = _validate_tool_specific(
             "stori_add_notes",
             {"notes": [self._valid_note(pitch=-1)]},
         )
         assert any("pitch" in e.field for e in errors)
 
-    def test_velocity_zero_rejected(self):
+    def test_velocity_zero_rejected(self) -> None:
+
         errors = _validate_tool_specific(
             "stori_add_notes",
             {"notes": [self._valid_note(velocity=0)]},
@@ -317,14 +377,16 @@ class TestValidateToolSpecificNotes:
         assert any("velocity" in e.field for e in errors)
         assert any(e.code == "INVALID_VELOCITY" for e in errors)
 
-    def test_velocity_128_rejected(self):
+    def test_velocity_128_rejected(self) -> None:
+
         errors = _validate_tool_specific(
             "stori_add_notes",
             {"notes": [self._valid_note(velocity=128)]},
         )
         assert any("velocity" in e.field for e in errors)
 
-    def test_start_beat_negative(self):
+    def test_start_beat_negative(self) -> None:
+
         errors = _validate_tool_specific(
             "stori_add_notes",
             {"notes": [self._valid_note(startBeat=-0.5)]},
@@ -332,7 +394,8 @@ class TestValidateToolSpecificNotes:
         assert any("startBeat" in e.field for e in errors)
         assert any(e.code == "INVALID_START" for e in errors)
 
-    def test_duration_too_short(self):
+    def test_duration_too_short(self) -> None:
+
         errors = _validate_tool_specific(
             "stori_add_notes",
             {"notes": [self._valid_note(durationBeats=0.001)]},
@@ -340,14 +403,16 @@ class TestValidateToolSpecificNotes:
         assert any("durationBeats" in e.field for e in errors)
         assert any(e.code == "INVALID_DURATION" for e in errors)
 
-    def test_duration_too_long(self):
+    def test_duration_too_long(self) -> None:
+
         errors = _validate_tool_specific(
             "stori_add_notes",
             {"notes": [self._valid_note(durationBeats=9999)]},
         )
         assert any("durationBeats" in e.field for e in errors)
 
-    def test_multiple_notes_errors_indexed(self):
+    def test_multiple_notes_errors_indexed(self) -> None:
+
         """Error fields reference the correct note index."""
         errors = _validate_tool_specific(
             "stori_add_notes",
@@ -356,11 +421,13 @@ class TestValidateToolSpecificNotes:
         assert any("notes[1]" in e.field for e in errors)
         assert not any("notes[0]" in e.field for e in errors)
 
-    def test_notes_not_a_list(self):
+    def test_notes_not_a_list(self) -> None:
+
         errors = _validate_tool_specific("stori_add_notes", {"notes": "bad"})
         assert any(e.code == "TYPE_MISMATCH" for e in errors)
 
-    def test_empty_notes_invalid(self):
+    def test_empty_notes_invalid(self) -> None:
+
         errors = _validate_tool_specific("stori_add_notes", {"notes": []})
         assert any(e.code == "INVALID_VALUE" for e in errors)
 
@@ -370,7 +437,8 @@ class TestValidateToolSpecificNotes:
 # ===========================================================================
 
 class TestBusEntityResolution:
-    def test_valid_bus_id_passes(self):
+    def test_valid_bus_id_passes(self) -> None:
+
         registry = EntityRegistry()
         bus_id = registry.create_bus("Reverb")
 
@@ -384,7 +452,8 @@ class TestBusEntityResolution:
         bus_errors = [e for e in result.errors if e.field == "busId"]
         assert bus_errors == []
 
-    def test_unknown_bus_id_fails(self):
+    def test_unknown_bus_id_fails(self) -> None:
+
         registry = EntityRegistry()
         result = validate_tool_call(
             "stori_add_send",
@@ -395,7 +464,8 @@ class TestBusEntityResolution:
         assert any(e.field == "busId" for e in result.errors)
         assert any(e.code == "ENTITY_NOT_FOUND" for e in result.errors)
 
-    def test_bus_entity_creating_tool_skips_bus_id(self):
+    def test_bus_entity_creating_tool_skips_bus_id(self) -> None:
+
         """stori_ensure_bus should not validate its own busId."""
         registry = EntityRegistry()
         result = validate_tool_call(
@@ -407,7 +477,8 @@ class TestBusEntityResolution:
         bus_errors = [e for e in result.errors if e.field == "busId"]
         assert bus_errors == []
 
-    def test_bus_name_resolves_to_id(self):
+    def test_bus_name_resolves_to_id(self) -> None:
+
         """If busId is a name string matching a bus name, it should resolve."""
         registry = EntityRegistry()
         bus_id = registry.create_bus("Reverb")
@@ -422,7 +493,8 @@ class TestBusEntityResolution:
 # ===========================================================================
 
 class TestIconValidation:
-    def test_valid_icon_passes(self):
+    def test_valid_icon_passes(self) -> None:
+
         registry = EntityRegistry()
         track_id = registry.create_track("Piano")
         result = validate_tool_call(
@@ -434,7 +506,8 @@ class TestIconValidation:
         icon_errors = [e for e in result.errors if e.field == "icon"]
         assert icon_errors == []
 
-    def test_invalid_icon_fails(self):
+    def test_invalid_icon_fails(self) -> None:
+
         registry = EntityRegistry()
         track_id = registry.create_track("Piano")
         result = validate_tool_call(
@@ -454,7 +527,8 @@ class TestIconValidation:
         "instrument.trumpet", "instrument.violin", "instrument.saxophone",
         "instrument.flute", "instrument.drum", "instrument.harp", "instrument.xylophone",
     ])
-    def test_curated_icons_pass(self, icon):
+    def test_curated_icons_pass(self, icon: Any) -> None:
+
         errors = _validate_tool_specific("stori_set_track_icon", {"icon": icon})
         icon_errors = [e for e in errors if e.field == "icon"]
         assert icon_errors == [], f"Expected '{icon}' to be valid"
@@ -464,13 +538,15 @@ class TestIconValidation:
         "wind", "lungs.fill", "bell.fill", "waveform.badge.plus",
         "person.3.fill", "circle.hexagongrid.fill",
     ])
-    def test_removed_icons_rejected(self, icon):
+    def test_removed_icons_rejected(self, icon: Any) -> None:
+
         """Icons removed from the frontend allowlist must be rejected."""
         errors = _validate_tool_specific("stori_set_track_icon", {"icon": icon})
         icon_errors = [e for e in errors if e.field == "icon"]
         assert icon_errors, f"Expected removed icon '{icon}' to be rejected"
 
-    def test_empty_icon_no_error(self):
+    def test_empty_icon_no_error(self) -> None:
+
         """Empty string icon skips validation (optional field)."""
         errors = _validate_tool_specific("stori_set_track_icon", {"icon": ""})
         assert errors == []
@@ -481,31 +557,36 @@ class TestIconValidation:
 # ===========================================================================
 
 class TestBatchHelpers:
-    def test_all_valid_true_when_empty(self):
+    def test_all_valid_true_when_empty(self) -> None:
+
         assert all_valid([]) is True
 
-    def test_all_valid_true(self):
+    def test_all_valid_true(self) -> None:
+
         results = validate_tool_calls_batch(
             [("stori_play", {}), ("stori_stop", {})],
             allowed_tools={"stori_play", "stori_stop"},
         )
         assert all_valid(results)
 
-    def test_all_valid_false_when_any_invalid(self):
+    def test_all_valid_false_when_any_invalid(self) -> None:
+
         results = validate_tool_calls_batch(
             [("stori_play", {}), ("stori_bad", {})],
             allowed_tools={"stori_play"},
         )
         assert not all_valid(results)
 
-    def test_collect_errors_empty_when_all_valid(self):
+    def test_collect_errors_empty_when_all_valid(self) -> None:
+
         results = validate_tool_calls_batch(
             [("stori_play", {})],
             allowed_tools={"stori_play"},
         )
         assert collect_errors(results) == []
 
-    def test_collect_errors_includes_tool_name(self):
+    def test_collect_errors_includes_tool_name(self) -> None:
+
         results = validate_tool_calls_batch(
             [("stori_bad_tool", {})],
             allowed_tools={"stori_play"},
@@ -514,7 +595,8 @@ class TestBatchHelpers:
         assert len(errors) == 1
         assert "stori_bad_tool" in errors[0]
 
-    def test_collect_errors_multiple_bad_tools(self):
+    def test_collect_errors_multiple_bad_tools(self) -> None:
+
         results = validate_tool_calls_batch(
             [("bad_a", {}), ("bad_b", {})],
             allowed_tools=set(),

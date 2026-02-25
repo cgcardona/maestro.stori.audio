@@ -6,6 +6,7 @@ Verifies:
 - Deterministic JSON output.
 - Boundary seal (AST).
 """
+from __future__ import annotations
 
 import ast
 import json
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.database import Base
@@ -36,7 +38,7 @@ from app.services.muse_log_graph import (
 
 
 @pytest.fixture
-async def async_session():
+async def async_session() -> AsyncGenerator[AsyncSession, None]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -50,6 +52,7 @@ async def async_session():
 
 
 def _note(pitch: int, start: float) -> dict[str, Any]:
+
     return {"pitch": pitch, "start_beat": start, "duration_beats": 1.0, "velocity": 100, "channel": 0}
 
 
@@ -119,7 +122,8 @@ async def _save(
 class TestLinearHistory:
 
     @pytest.mark.anyio
-    async def test_linear_order_preserved(self, async_session: AsyncSession):
+    async def test_linear_order_preserved(self, async_session: AsyncSession) -> None:
+
         """C0 -> C1 -> C2  — nodes must appear in that order."""
         c0 = _make_variation([_note(60, 0.0)], intent="init")
         c0_id = await _save(async_session, c0, "proj-lin")
@@ -139,7 +143,8 @@ class TestLinearHistory:
         assert ids == [c0_id, c1_id, c2_id]
 
     @pytest.mark.anyio
-    async def test_head_detected(self, async_session: AsyncSession):
+    async def test_head_detected(self, async_session: AsyncSession) -> None:
+
         c0 = _make_variation([_note(60, 0.0)])
         c0_id = await _save(async_session, c0, "proj-head", is_head=True)
         await async_session.commit()
@@ -149,13 +154,15 @@ class TestLinearHistory:
         assert graph.nodes[0].is_head
 
     @pytest.mark.anyio
-    async def test_empty_project(self, async_session: AsyncSession):
+    async def test_empty_project(self, async_session: AsyncSession) -> None:
+
         graph = await build_muse_log_graph(async_session, "proj-empty")
         assert graph.head is None
         assert len(graph.nodes) == 0
 
     @pytest.mark.anyio
-    async def test_parent_field_set(self, async_session: AsyncSession):
+    async def test_parent_field_set(self, async_session: AsyncSession) -> None:
+
         c0 = _make_variation([_note(60, 0.0)])
         c0_id = await _save(async_session, c0, "proj-par")
         c1 = _make_variation([_note(64, 2.0)])
@@ -175,7 +182,8 @@ class TestLinearHistory:
 class TestBranchMergeGraph:
 
     @pytest.mark.anyio
-    async def test_merge_parent2_serialized(self, async_session: AsyncSession):
+    async def test_merge_parent2_serialized(self, async_session: AsyncSession) -> None:
+
         """
         C0
         ├── C1 (bass)
@@ -218,7 +226,8 @@ class TestBranchMergeGraph:
         assert c2_idx < c3_idx
 
     @pytest.mark.anyio
-    async def test_regions_extracted(self, async_session: AsyncSession):
+    async def test_regions_extracted(self, async_session: AsyncSession) -> None:
+
         c0 = _make_variation([_note(60, 0.0)], region_id="r-drums", intent="drums")
         await _save(async_session, c0, "proj-reg")
         await async_session.commit()
@@ -235,7 +244,8 @@ class TestBranchMergeGraph:
 class TestDeterminism:
 
     @pytest.mark.anyio
-    async def test_repeated_calls_identical_json(self, async_session: AsyncSession):
+    async def test_repeated_calls_identical_json(self, async_session: AsyncSession) -> None:
+
         c0 = _make_variation([_note(60, 0.0)], intent="root")
         c0_id = await _save(async_session, c0, "proj-det")
 
@@ -255,7 +265,8 @@ class TestDeterminism:
         assert j1 == j2
 
     @pytest.mark.anyio
-    async def test_to_dict_field_names(self, async_session: AsyncSession):
+    async def test_to_dict_field_names(self, async_session: AsyncSession) -> None:
+
         c0 = _make_variation([_note(60, 0.0)], intent="init")
         await _save(async_session, c0, "proj-fields", is_head=True)
         await async_session.commit()
@@ -284,7 +295,8 @@ class TestDeterminism:
 
 class TestLogGraphBoundary:
 
-    def test_no_state_store_import(self):
+    def test_no_state_store_import(self) -> None:
+
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_log_graph.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {
@@ -298,7 +310,8 @@ class TestLogGraphBoundary:
                         f"muse_log_graph imports forbidden module: {node.module}"
                     )
 
-    def test_no_forbidden_names(self):
+    def test_no_forbidden_names(self) -> None:
+
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_log_graph.py"
         tree = ast.parse(filepath.read_text())
         forbidden_names = {"StateStore", "get_or_create_store", "VariationService"}

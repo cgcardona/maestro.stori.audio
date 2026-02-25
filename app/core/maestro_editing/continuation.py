@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.core.state_store import StateStore
@@ -46,7 +46,7 @@ def _get_incomplete_tracks(
 
 
 def _get_missing_expressive_steps(
-    parsed: Optional["ParsedPrompt"],
+    parsed: "ParsedPrompt" | None,
     tool_calls_collected: list[dict[str, Any]],
 ) -> list[str]:
     """Return human-readable descriptions of expressive steps not yet executed.

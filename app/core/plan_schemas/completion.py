@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from app.core.plan_schemas.models import EditStep, ExecutionPlanSchema, GenerationStep
 
@@ -29,7 +28,7 @@ def infer_edits_from_generations(generations: list[GenerationStep]) -> list[Edit
     return edits
 
 
-def _find_track_for_role(role: str, existing_tracks: set[str]) -> Optional[str]:
+def _find_track_for_role(role: str, existing_tracks: set[str]) -> str | None:
     """Find an existing track that fuzzy-matches a generation role."""
     role_lower = role.lower()
     if role_lower in existing_tracks:

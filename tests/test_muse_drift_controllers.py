@@ -8,9 +8,12 @@ Verifies:
 - HEAD snapshot reconstruction fidelity for controllers.
 - Controller matching boundary isolation.
 """
+from __future__ import annotations
 
 import ast
 import uuid
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -41,7 +44,7 @@ from app.services.variation.note_matching import (
 
 
 @pytest.fixture
-async def async_session():
+async def async_session() -> AsyncGenerator[AsyncSession, None]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -54,28 +57,32 @@ async def async_session():
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _cc(cc_num: int, beat: float, value: int) -> dict:
+def _cc(cc_num: int, beat: float, value: int) -> dict[str, Any]:
+
     return {"kind": "cc", "cc": cc_num, "beat": beat, "value": value}
 
 
-def _pb(beat: float, value: int) -> dict:
+def _pb(beat: float, value: int) -> dict[str, Any]:
+
     return {"kind": "pitch_bend", "beat": beat, "value": value}
 
 
-def _at(beat: float, value: int, pitch: int | None = None) -> dict:
-    d: dict = {"kind": "aftertouch", "beat": beat, "value": value}
+def _at(beat: float, value: int, pitch: int | None = None) -> dict[str, Any]:
+
+    d: dict[str, Any] = {"kind": "aftertouch", "beat": beat, "value": value}
     if pitch is not None:
         d["pitch"] = pitch
     return d
 
 
-def _note(pitch: int, start: float) -> dict:
+def _note(pitch: int, start: float) -> dict[str, Any]:
+
     return {"pitch": pitch, "start_beat": start, "duration_beats": 1.0, "velocity": 100, "channel": 0}
 
 
 def _make_variation_with_controllers(
-    notes: list[dict],
-    controller_changes: list[dict],
+    notes: list[dict[str, Any]],
+    controller_changes: list[dict[str, Any]],
     region_id: str = "region-1",
     track_id: str = "track-1",
 ) -> Variation:
@@ -117,7 +124,8 @@ def _make_variation_with_controllers(
 
 class TestCleanControllerState:
 
-    def test_identical_cc_is_clean(self):
+    def test_identical_cc_is_clean(self) -> None:
+
         cc = [_cc(64, 0.0, 127)]
         report = compute_drift_report(
             project_id="p", head_variation_id="v",
@@ -130,7 +138,8 @@ class TestCleanControllerState:
         assert report.severity == DriftSeverity.CLEAN
         assert report.region_summaries["r1"].cc_added == 0
 
-    def test_identical_all_controllers_is_clean(self):
+    def test_identical_all_controllers_is_clean(self) -> None:
+
         cc = [_cc(64, 0.0, 127)]
         pb = [_pb(1.0, 4096)]
         at = [_at(2.0, 80)]
@@ -147,7 +156,8 @@ class TestCleanControllerState:
         assert report.total_changes == 0
 
     @pytest.mark.anyio
-    async def test_reconstructed_head_clean(self, async_session: AsyncSession):
+    async def test_reconstructed_head_clean(self, async_session: AsyncSession) -> None:
+
         """Persist with CC, reconstruct HEAD, drift against identical data → CLEAN."""
         notes = [_note(60, 0.0)]
         ccs = [_cc(64, 0.0, 127), _cc(1, 2.0, 64)]
@@ -184,7 +194,8 @@ class TestCleanControllerState:
 
 class TestSustainPedalDrift:
 
-    def test_cc_added_in_working(self):
+    def test_cc_added_in_working(self) -> None:
+
         report = compute_drift_report(
             project_id="p", head_variation_id="v",
             head_snapshot_notes={"r1": [_note(60, 0.0)]},
@@ -198,7 +209,8 @@ class TestSustainPedalDrift:
         assert s.cc_added == 1
         assert s.cc_removed == 0
 
-    def test_cc_removed_from_working(self):
+    def test_cc_removed_from_working(self) -> None:
+
         report = compute_drift_report(
             project_id="p", head_variation_id="v",
             head_snapshot_notes={"r1": [_note(60, 0.0)]},
@@ -211,7 +223,8 @@ class TestSustainPedalDrift:
         s = report.region_summaries["r1"]
         assert s.cc_removed == 1
 
-    def test_cc_value_modified(self):
+    def test_cc_value_modified(self) -> None:
+
         report = compute_drift_report(
             project_id="p", head_variation_id="v",
             head_snapshot_notes={"r1": [_note(60, 0.0)]},
@@ -232,7 +245,8 @@ class TestSustainPedalDrift:
 
 class TestPitchBendDrift:
 
-    def test_pb_same_beat_different_value(self):
+    def test_pb_same_beat_different_value(self) -> None:
+
         report = compute_drift_report(
             project_id="p", head_variation_id="v",
             head_snapshot_notes={"r1": [_note(60, 0.0)]},
@@ -245,7 +259,8 @@ class TestPitchBendDrift:
         s = report.region_summaries["r1"]
         assert s.pb_modified == 1
 
-    def test_pb_added(self):
+    def test_pb_added(self) -> None:
+
         report = compute_drift_report(
             project_id="p", head_variation_id="v",
             head_snapshot_notes={"r1": [_note(60, 0.0)]},
@@ -257,7 +272,8 @@ class TestPitchBendDrift:
         s = report.region_summaries["r1"]
         assert s.pb_added == 1
 
-    def test_pb_removed(self):
+    def test_pb_removed(self) -> None:
+
         report = compute_drift_report(
             project_id="p", head_variation_id="v",
             head_snapshot_notes={"r1": [_note(60, 0.0)]},
@@ -277,7 +293,8 @@ class TestPitchBendDrift:
 
 class TestAftertouchDrift:
 
-    def test_at_added(self):
+    def test_at_added(self) -> None:
+
         report = compute_drift_report(
             project_id="p", head_variation_id="v",
             head_snapshot_notes={"r1": [_note(60, 0.0)]},
@@ -289,7 +306,8 @@ class TestAftertouchDrift:
         s = report.region_summaries["r1"]
         assert s.at_added == 1
 
-    def test_at_removed(self):
+    def test_at_removed(self) -> None:
+
         report = compute_drift_report(
             project_id="p", head_variation_id="v",
             head_snapshot_notes={"r1": [_note(60, 0.0)]},
@@ -301,7 +319,8 @@ class TestAftertouchDrift:
         s = report.region_summaries["r1"]
         assert s.at_removed == 1
 
-    def test_at_modified_value(self):
+    def test_at_modified_value(self) -> None:
+
         report = compute_drift_report(
             project_id="p", head_variation_id="v",
             head_snapshot_notes={"r1": [_note(60, 0.0)]},
@@ -313,7 +332,8 @@ class TestAftertouchDrift:
         s = report.region_summaries["r1"]
         assert s.at_modified == 1
 
-    def test_poly_aftertouch_pitch_discriminated(self):
+    def test_poly_aftertouch_pitch_discriminated(self) -> None:
+
         """Poly aftertouch on different pitches → add + remove, not modify."""
         report = compute_drift_report(
             project_id="p", head_variation_id="v",
@@ -337,7 +357,8 @@ class TestAftertouchDrift:
 class TestReplayFidelity:
 
     @pytest.mark.anyio
-    async def test_cc_roundtrip(self, async_session: AsyncSession):
+    async def test_cc_roundtrip(self, async_session: AsyncSession) -> None:
+
         notes = [_note(60, 0.0)]
         ccs = [_cc(64, 0.0, 127), _cc(1, 4.0, 64)]
         var = _make_variation_with_controllers(notes, ccs)
@@ -357,7 +378,8 @@ class TestReplayFidelity:
         assert cc_vals == [1, 64]
 
     @pytest.mark.anyio
-    async def test_pb_roundtrip(self, async_session: AsyncSession):
+    async def test_pb_roundtrip(self, async_session: AsyncSession) -> None:
+
         notes = [_note(60, 0.0)]
         pbs = [_pb(1.0, 4096), _pb(3.0, 8192)]
         var = _make_variation_with_controllers(notes, pbs)
@@ -375,7 +397,8 @@ class TestReplayFidelity:
         assert len(snap.pitch_bends.get("region-1", [])) == 2
 
     @pytest.mark.anyio
-    async def test_at_roundtrip(self, async_session: AsyncSession):
+    async def test_at_roundtrip(self, async_session: AsyncSession) -> None:
+
         notes = [_note(60, 0.0)]
         ats = [_at(2.0, 80), _at(4.0, 100, pitch=60)]
         var = _make_variation_with_controllers(notes, ats)
@@ -393,7 +416,8 @@ class TestReplayFidelity:
         assert len(snap.aftertouch.get("region-1", [])) == 2
 
     @pytest.mark.anyio
-    async def test_mixed_controllers_roundtrip(self, async_session: AsyncSession):
+    async def test_mixed_controllers_roundtrip(self, async_session: AsyncSession) -> None:
+
         """All three controller types persist and reconstruct correctly."""
         notes = [_note(60, 0.0)]
         controllers = [_cc(64, 0.0, 127), _pb(1.0, 4096), _at(2.0, 80)]
@@ -421,7 +445,8 @@ class TestReplayFidelity:
 
 class TestEventMatching:
 
-    def test_cc_match_same_cc_and_beat(self):
+    def test_cc_match_same_cc_and_beat(self) -> None:
+
         matches = match_cc_events(
             [{"cc": 64, "beat": 0.0, "value": 127}],
             [{"cc": 64, "beat": 0.0, "value": 127}],
@@ -429,7 +454,8 @@ class TestEventMatching:
         assert len(matches) == 1
         assert matches[0].is_unchanged
 
-    def test_cc_no_match_different_cc_number(self):
+    def test_cc_no_match_different_cc_number(self) -> None:
+
         matches = match_cc_events(
             [{"cc": 64, "beat": 0.0, "value": 127}],
             [{"cc": 1, "beat": 0.0, "value": 127}],
@@ -439,7 +465,8 @@ class TestEventMatching:
         assert len(added) == 1
         assert len(removed) == 1
 
-    def test_pb_match_same_beat(self):
+    def test_pb_match_same_beat(self) -> None:
+
         matches = match_pitch_bends(
             [{"beat": 1.0, "value": 4096}],
             [{"beat": 1.0, "value": 4096}],
@@ -447,7 +474,8 @@ class TestEventMatching:
         assert len(matches) == 1
         assert matches[0].is_unchanged
 
-    def test_pb_modified_different_value(self):
+    def test_pb_modified_different_value(self) -> None:
+
         matches = match_pitch_bends(
             [{"beat": 1.0, "value": 4096}],
             [{"beat": 1.0, "value": 8192}],
@@ -455,7 +483,8 @@ class TestEventMatching:
         assert len(matches) == 1
         assert matches[0].is_modified
 
-    def test_at_match_with_pitch(self):
+    def test_at_match_with_pitch(self) -> None:
+
         matches = match_aftertouch(
             [{"beat": 2.0, "value": 80, "pitch": 60}],
             [{"beat": 2.0, "value": 80, "pitch": 60}],
@@ -463,7 +492,8 @@ class TestEventMatching:
         assert len(matches) == 1
         assert matches[0].is_unchanged
 
-    def test_at_no_match_different_pitch(self):
+    def test_at_no_match_different_pitch(self) -> None:
+
         matches = match_aftertouch(
             [{"beat": 2.0, "value": 80, "pitch": 60}],
             [{"beat": 2.0, "value": 80, "pitch": 72}],
@@ -481,7 +511,8 @@ class TestEventMatching:
 
 class TestControllerMatchingBoundary:
 
-    def test_note_matching_no_forbidden_imports(self):
+    def test_note_matching_no_forbidden_imports(self) -> None:
+
         from pathlib import Path
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "variation" / "note_matching.py"
         tree = ast.parse(filepath.read_text())

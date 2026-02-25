@@ -4,6 +4,7 @@ Covers: lo-fi boom bap, dark trap, funk, neo-soul, jazz, bossa nova,
 New Orleans brass, indie folk, reggaeton, and future additions
 (bluegrass, gospel, hip-hop, cumbia, tango, huayno, dancehall, calypso).
 """
+from __future__ import annotations
 
 from app.models.maestro_ui import PromptItem
 

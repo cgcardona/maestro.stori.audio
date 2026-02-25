@@ -8,9 +8,11 @@ Verifies:
 - Determinism (same inputs → same plan hash).
 - Boundary seal (AST).
 """
+from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -24,20 +26,24 @@ from app.services.muse_checkout import (
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict:
+def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict[str, Any]:
+
     return {"pitch": pitch, "start_beat": start, "duration_beats": dur, "velocity": vel, "channel": 0}
 
 
-def _cc(cc_num: int, beat: float, value: int) -> dict:
+def _cc(cc_num: int, beat: float, value: int) -> dict[str, Any]:
+
     return {"kind": "cc", "cc": cc_num, "beat": beat, "value": value}
 
 
-def _pb(beat: float, value: int) -> dict:
+def _pb(beat: float, value: int) -> dict[str, Any]:
+
     return {"kind": "pitch_bend", "beat": beat, "value": value}
 
 
-def _at(beat: float, value: int, pitch: int | None = None) -> dict:
-    d: dict = {"kind": "aftertouch", "beat": beat, "value": value}
+def _at(beat: float, value: int, pitch: int | None = None) -> dict[str, Any]:
+
+    d: dict[str, Any] = {"kind": "aftertouch", "beat": beat, "value": value}
     if pitch is not None:
         d["pitch"] = pitch
     return d
@@ -45,16 +51,16 @@ def _at(beat: float, value: int, pitch: int | None = None) -> dict:
 
 def _empty_plan_args(
     *,
-    target_notes: dict | None = None,
-    working_notes: dict | None = None,
-    target_cc: dict | None = None,
-    working_cc: dict | None = None,
-    target_pb: dict | None = None,
-    working_pb: dict | None = None,
-    target_at: dict | None = None,
-    working_at: dict | None = None,
-    track_regions: dict | None = None,
-) -> dict:
+    target_notes: dict[str, Any] | None = None,
+    working_notes: dict[str, Any] | None = None,
+    target_cc: dict[str, Any] | None = None,
+    working_cc: dict[str, Any] | None = None,
+    target_pb: dict[str, Any] | None = None,
+    working_pb: dict[str, Any] | None = None,
+    target_at: dict[str, Any] | None = None,
+    working_at: dict[str, Any] | None = None,
+    track_regions: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "project_id": "proj-1",
         "target_variation_id": "var-1",
@@ -77,7 +83,8 @@ def _empty_plan_args(
 
 class TestNoOpCheckout:
 
-    def test_identical_state_produces_no_calls(self):
+    def test_identical_state_produces_no_calls(self) -> None:
+
         notes = {"r1": [_note(60, 0.0), _note(64, 1.0)]}
         cc = {"r1": [_cc(64, 0.0, 127)]}
         plan = build_checkout_plan(**_empty_plan_args(
@@ -89,11 +96,13 @@ class TestNoOpCheckout:
         assert plan.tool_calls == ()
         assert plan.regions_reset == ()
 
-    def test_empty_state_is_noop(self):
+    def test_empty_state_is_noop(self) -> None:
+
         plan = build_checkout_plan(**_empty_plan_args())
         assert plan.is_noop
 
-    def test_fingerprint_target_still_populated(self):
+    def test_fingerprint_target_still_populated(self) -> None:
+
         notes = {"r1": [_note(60, 0.0)]}
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes=notes, working_notes=notes,
@@ -110,7 +119,8 @@ class TestNoOpCheckout:
 
 class TestNoteAddCheckout:
 
-    def test_missing_note_produces_add(self):
+    def test_missing_note_produces_add(self) -> None:
+
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": [_note(60, 0.0), _note(72, 2.0)]},
             working_notes={"r1": [_note(60, 0.0)]},
@@ -122,7 +132,8 @@ class TestNoteAddCheckout:
         assert len(add_calls[0]["arguments"]["notes"]) == 1
         assert add_calls[0]["arguments"]["notes"][0]["pitch"] == 72
 
-    def test_region_with_removals_triggers_reset(self):
+    def test_region_with_removals_triggers_reset(self) -> None:
+
         """Removing a note requires clear+add because no individual remove tool exists."""
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": [_note(60, 0.0)]},
@@ -133,7 +144,8 @@ class TestNoteAddCheckout:
         clear_calls = [c for c in plan.tool_calls if c["tool"] == "stori_clear_notes"]
         assert len(clear_calls) == 1
 
-    def test_modified_note_triggers_reset(self):
+    def test_modified_note_triggers_reset(self) -> None:
+
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": [_note(60, 0.0, vel=80)]},
             working_notes={"r1": [_note(60, 0.0, vel=120)]},
@@ -141,7 +153,8 @@ class TestNoteAddCheckout:
         ))
         assert "r1" in plan.regions_reset
 
-    def test_add_to_empty_region_no_clear(self):
+    def test_add_to_empty_region_no_clear(self) -> None:
+
         """Adding notes to an empty region should not produce a clear call."""
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": [_note(60, 0.0)]},
@@ -161,7 +174,8 @@ class TestNoteAddCheckout:
 
 class TestControllerRestore:
 
-    def test_missing_pb_produces_add_pitch_bend(self):
+    def test_missing_pb_produces_add_pitch_bend(self) -> None:
+
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": [_note(60, 0.0)]},
             working_notes={"r1": [_note(60, 0.0)]},
@@ -173,7 +187,8 @@ class TestControllerRestore:
         assert len(pb_calls) == 1
         assert pb_calls[0]["arguments"]["events"][0]["value"] == 4096
 
-    def test_missing_cc_produces_add_midi_cc(self):
+    def test_missing_cc_produces_add_midi_cc(self) -> None:
+
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": [_note(60, 0.0)]},
             working_notes={"r1": [_note(60, 0.0)]},
@@ -185,7 +200,8 @@ class TestControllerRestore:
         assert len(cc_calls) == 1
         assert cc_calls[0]["arguments"]["cc"] == 64
 
-    def test_missing_at_produces_add_aftertouch(self):
+    def test_missing_at_produces_add_aftertouch(self) -> None:
+
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": [_note(60, 0.0)]},
             working_notes={"r1": [_note(60, 0.0)]},
@@ -197,7 +213,8 @@ class TestControllerRestore:
         assert len(at_calls) == 1
         assert at_calls[0]["arguments"]["events"][0]["pitch"] == 60
 
-    def test_modified_cc_value_produces_call(self):
+    def test_modified_cc_value_produces_call(self) -> None:
+
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": [_note(60, 0.0)]},
             working_notes={"r1": [_note(60, 0.0)]},
@@ -209,7 +226,8 @@ class TestControllerRestore:
         assert len(cc_calls) == 1
         assert cc_calls[0]["arguments"]["events"][0]["value"] == 0
 
-    def test_multiple_cc_numbers_grouped(self):
+    def test_multiple_cc_numbers_grouped(self) -> None:
+
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": [_note(60, 0.0)]},
             working_notes={"r1": [_note(60, 0.0)]},
@@ -230,7 +248,8 @@ class TestControllerRestore:
 
 class TestLargeDriftFallback:
 
-    def test_many_additions_trigger_reset(self):
+    def test_many_additions_trigger_reset(self) -> None:
+
         target_notes = [_note(p, float(p - 40)) for p in range(40, 40 + REGION_RESET_THRESHOLD + 5)]
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": target_notes},
@@ -244,7 +263,8 @@ class TestLargeDriftFallback:
         assert len(add_calls) == 1
         assert len(add_calls[0]["arguments"]["notes"]) == len(target_notes)
 
-    def test_below_threshold_pure_additions_no_reset(self):
+    def test_below_threshold_pure_additions_no_reset(self) -> None:
+
         target_notes = [_note(60, 0.0), _note(62, 1.0)]
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": target_notes},
@@ -261,7 +281,8 @@ class TestLargeDriftFallback:
 
 class TestDeterminism:
 
-    def test_same_inputs_produce_same_hash(self):
+    def test_same_inputs_produce_same_hash(self) -> None:
+
         args = _empty_plan_args(
             target_notes={"r1": [_note(60, 0.0), _note(72, 2.0)]},
             working_notes={"r1": [_note(60, 0.0)]},
@@ -273,7 +294,8 @@ class TestDeterminism:
         plan2 = build_checkout_plan(**args)
         assert plan1.plan_hash() == plan2.plan_hash()
 
-    def test_different_inputs_produce_different_hash(self):
+    def test_different_inputs_produce_different_hash(self) -> None:
+
         args1 = _empty_plan_args(
             target_notes={"r1": [_note(60, 0.0)]},
             working_notes={"r1": []},
@@ -288,7 +310,8 @@ class TestDeterminism:
         plan2 = build_checkout_plan(**args2)
         assert plan1.plan_hash() != plan2.plan_hash()
 
-    def test_tool_call_ordering_deterministic(self):
+    def test_tool_call_ordering_deterministic(self) -> None:
+
         """Calls are ordered: clear → add_notes → cc → pb → at per region."""
         plan = build_checkout_plan(**_empty_plan_args(
             target_notes={"r1": [_note(60, 0.0, vel=80)]},
@@ -318,7 +341,8 @@ class TestDeterminism:
 
 class TestCheckoutBoundary:
 
-    def test_no_state_store_or_executor_import(self):
+    def test_no_state_store_or_executor_import(self) -> None:
+
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
@@ -329,7 +353,8 @@ class TestCheckoutBoundary:
                         f"muse_checkout imports forbidden module: {node.module}"
                     )
 
-    def test_no_forbidden_names(self):
+    def test_no_forbidden_names(self) -> None:
+
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout.py"
         tree = ast.parse(filepath.read_text())
         forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
@@ -340,7 +365,8 @@ class TestCheckoutBoundary:
                         f"muse_checkout imports forbidden name: {alias.name}"
                     )
 
-    def test_no_get_or_create_store_call(self):
+    def test_no_get_or_create_store_call(self) -> None:
+
         filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):

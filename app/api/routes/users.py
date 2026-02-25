@@ -3,9 +3,11 @@ User management endpoints.
 
 Handles user registration, profile info, budget tracking, and model listing.
 """
+from __future__ import annotations
+
 import logging
 import uuid
-from typing import Optional, cast
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import Field
@@ -45,8 +47,8 @@ class UserResponse(CamelModel):
     user_id: str
     budget_remaining: float = Field(description="Remaining budget in dollars")
     budget_limit: float = Field(description="Total budget limit in dollars")
-    usage_count: Optional[int] = Field(default=None, description="Number of requests made")
-    created_at: Optional[str] = Field(default=None, description="Account creation timestamp")
+    usage_count: int | None = Field(default=None, description="Number of requests made")
+    created_at: str | None = Field(default=None, description="Account creation timestamp")
 
 
 class ModelInfo(CamelModel):
@@ -81,7 +83,7 @@ class BudgetUpdateRequest(CamelModel):
 async def register_user(
     request: UserRegisterRequest,
     db: AsyncSession = Depends(get_db),
-):
+) -> UserResponse:
     """
     Register a new user with the default budget.
 
@@ -143,9 +145,9 @@ async def register_user(
 
 @router.get("/users/me", response_model=UserResponse, response_model_by_alias=True)
 async def get_current_user(
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> UserResponse:
     """
     Get the current user's profile and budget info.
     
@@ -186,9 +188,9 @@ async def get_current_user(
 
 
 @router.get("/models", response_model=ModelsResponse, response_model_by_alias=True)
-async def list_models():
+async def list_models() -> ModelsResponse:
     """
-    List available models with pricing information.
+    list available models with pricing information.
 
     Returns only models in ALLOWED_MODEL_IDS, sorted cheapest-first.
     Falls back to all Claude models in APPROVED_MODELS if the allowlist
@@ -229,9 +231,9 @@ async def list_models():
 async def update_user_budget(
     user_id: str,
     request: BudgetUpdateRequest,
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> UserResponse:
     """
     Update a user's budget (admin endpoint).
     
@@ -300,7 +302,7 @@ class TokenInfo(CamelModel):
 
 
 class TokenListResponse(CamelModel):
-    """List of active tokens."""
+    """list of active tokens."""
     tokens: list[TokenInfo]
     count: int
 
@@ -314,11 +316,11 @@ class RevokeResponse(CamelModel):
 
 @router.get("/users/me/tokens", response_model=TokenListResponse, response_model_by_alias=True)
 async def list_my_tokens(
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> TokenListResponse:
     """
-    List all active tokens for the current user.
+    list all active tokens for the current user.
     
     Requires a valid access token.
     """
@@ -347,9 +349,9 @@ async def list_my_tokens(
 
 @router.post("/users/me/tokens/revoke-all", response_model=RevokeResponse, response_model_by_alias=True)
 async def revoke_my_tokens(
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> RevokeResponse:
     """
     Revoke all tokens for the current user.
     
@@ -375,9 +377,9 @@ async def revoke_my_tokens(
 @router.post("/users/{user_id}/tokens/revoke-all", response_model=RevokeResponse, response_model_by_alias=True)
 async def admin_revoke_user_tokens(
     user_id: str,
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> RevokeResponse:
     """
     Revoke all tokens for a specific user (admin endpoint).
     

@@ -10,6 +10,7 @@ Tests proving the four protocol upgrades:
 
 from __future__ import annotations
 
+from typing import Any
 import asyncio
 import json
 from unittest.mock import patch
@@ -44,6 +45,7 @@ from app.core.tracing import TraceContext
 
 
 def _spec(name: str = "verse", index: int = 0, start: int = 0, beats: int = 16) -> SectionSpec:
+
     s = SectionSpec(
         section_id=f"{index}:{name}",
         name=name,
@@ -90,7 +92,8 @@ def _section_contract(
 class TestCompositionRootLineage:
     """Prove CompositionContract is the root anchor for all lineage."""
 
-    def test_composition_contract_seals(self):
+    def test_composition_contract_seals(self) -> None:
+
         """CompositionContract gets a deterministic hash after sealing."""
         spec_a = _spec("intro", 0, 0, 16)
         spec_b = _spec("verse", 1, 16, 16)
@@ -108,7 +111,8 @@ class TestCompositionRootLineage:
         assert len(cc.contract_hash) == 16
         assert verify_contract_hash(cc)
 
-    def test_instrument_parent_hash_equals_composition_hash(self):
+    def test_instrument_parent_hash_equals_composition_hash(self) -> None:
+
         """InstrumentContract.parent_contract_hash == CompositionContract.contract_hash."""
         spec_a = _spec("intro", 0, 0, 16)
         spec_b = _spec("verse", 1, 16, 16)
@@ -143,7 +147,8 @@ class TestCompositionRootLineage:
 
         assert ic.parent_contract_hash == cc.contract_hash
 
-    def test_full_root_lineage_chain(self):
+    def test_full_root_lineage_chain(self) -> None:
+
         """Composition → Instrument → Section → full chain verified."""
         spec_intro = _spec("intro", 0, 0, 16)
         spec_verse = _spec("verse", 1, 16, 16)
@@ -188,7 +193,8 @@ class TestCompositionRootLineage:
         assert verify_contract_hash(ic)
         assert verify_contract_hash(sc)
 
-    def test_composition_canonical_dict_uses_section_hashes(self):
+    def test_composition_canonical_dict_uses_section_hashes(self) -> None:
+
         """CompositionContract canonical dict serializes sections as sorted hashes."""
         spec_a = _spec("intro", 0, 0, 16)
         spec_b = _spec("verse", 1, 16, 16)
@@ -222,7 +228,8 @@ class TestCompositionRootLineage:
 class TestCanonicalParentHash:
     """Prove hash_list_canonical is order-independent and collision-proof."""
 
-    def test_two_permutations_same_hash(self):
+    def test_two_permutations_same_hash(self) -> None:
+
         """Reversed order of section hashes produces the same parent hash."""
         hash_a = "aaaa1111bbbb2222"
         hash_b = "cccc3333dddd4444"
@@ -237,7 +244,8 @@ class TestCanonicalParentHash:
         assert result_ab == result_ba
         assert len(result_ab) == 16
 
-    def test_three_permutations_same_hash(self):
+    def test_three_permutations_same_hash(self) -> None:
+
         """Any ordering of three hashes produces the same parent hash."""
         hashes = ["aaa111", "bbb222", "ccc333"]
         import itertools
@@ -248,14 +256,16 @@ class TestCanonicalParentHash:
 
         assert len(results) == 1
 
-    def test_different_content_different_hash(self):
+    def test_different_content_different_hash(self) -> None:
+
         """Different hash lists produce different parent hashes."""
         result_1 = hash_list_canonical(["aaa", "bbb"])
         result_2 = hash_list_canonical(["aaa", "ccc"])
 
         assert result_1 != result_2
 
-    def test_no_delimiter_collision(self):
+    def test_no_delimiter_collision(self) -> None:
+
         """Old "A:B" pattern was vulnerable — new JSON encoding is not."""
         result_a = hash_list_canonical(["a:b", "c"])
         result_b = hash_list_canonical(["a", "b:c"])
@@ -271,7 +281,8 @@ class TestCanonicalParentHash:
 class TestExecutionAttestation:
     """Prove execution_hash binds result to contract + session."""
 
-    def test_same_contract_different_trace_different_hash(self):
+    def test_same_contract_different_trace_different_hash(self) -> None:
+
         """Same contract hash + different trace_id → different execution_hash."""
         contract_hash = "abcdef1234567890"
 
@@ -286,7 +297,8 @@ class TestExecutionAttestation:
         assert exec_1 != exec_2
         assert len(exec_1) == 16
 
-    def test_same_trace_different_contract_different_hash(self):
+    def test_same_trace_different_contract_different_hash(self) -> None:
+
         """Different contract hash + same trace_id → different execution_hash."""
         trace_id = "trace-fixed"
 
@@ -295,19 +307,22 @@ class TestExecutionAttestation:
 
         assert exec_1 != exec_2
 
-    def test_deterministic(self):
+    def test_deterministic(self) -> None:
+
         """Same inputs → same execution_hash (deterministic)."""
         a = compute_execution_hash("hash1", "trace1")
         b = compute_execution_hash("hash1", "trace1")
         assert a == b
 
     @pytest.mark.anyio
-    async def test_result_carries_execution_hash(self):
+    async def test_result_carries_execution_hash(self) -> None:
+
         """SectionResult.execution_hash is populated after section execution."""
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-ic")
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> Any:
+
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
@@ -323,7 +338,7 @@ class TestExecutionAttestation:
             )
 
         store = StateStore(conversation_id="exec-attest")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         trace = TraceContext(trace_id="exec-trace-001")
 
         with patch(
@@ -361,7 +376,8 @@ class TestExecutionAttestation:
 class TestSignalLineageBinding:
     """Prove SectionSignals enforces contract_hash binding."""
 
-    def test_signal_with_contract_hash(self):
+    def test_signal_with_contract_hash(self) -> None:
+
         """Signal stores contract_hash and bass receives it."""
         spec = _spec("verse", 0, 0, 16)
         signals = SectionSignals.from_section_ids(
@@ -379,7 +395,8 @@ class TestSignalLineageBinding:
         assert signals._results[key].contract_hash == spec.contract_hash
 
     @pytest.mark.anyio
-    async def test_bass_rejects_mismatched_contract_hash(self):
+    async def test_bass_rejects_mismatched_contract_hash(self) -> None:
+
         """Signal with wrong contract_hash is invisible to the correct consumer.
 
         When drums signal with hash A but the registered key uses hash B,
@@ -412,7 +429,8 @@ class TestSignalLineageBinding:
         print("\n## SIGNAL_LINEAGE_PROOF — Wrong hash invisible to consumer ✓")
 
     @pytest.mark.anyio
-    async def test_signal_hash_verification_on_stored_mismatch(self):
+    async def test_signal_hash_verification_on_stored_mismatch(self) -> None:
+
         """ProtocolViolationError when stored result has wrong contract_hash.
 
         This tests the internal verification path: signal was stored
@@ -435,7 +453,8 @@ class TestSignalLineageBinding:
         print("\n## SIGNAL_LINEAGE_PROOF — Tampered hash rejected ✓")
 
     @pytest.mark.anyio
-    async def test_bass_accepts_matching_contract_hash(self):
+    async def test_bass_accepts_matching_contract_hash(self) -> None:
+
         """Bass accepts signal when contract_hash matches."""
         spec = _spec("verse", 0, 0, 16)
         signals = SectionSignals.from_section_ids(
@@ -457,7 +476,8 @@ class TestSignalLineageBinding:
         assert result.success is True
         assert result.contract_hash == spec.contract_hash
 
-    def test_lineage_bound_keys(self):
+    def test_lineage_bound_keys(self) -> None:
+
         """from_section_ids with contract_hashes creates bound keys."""
         specs = [_spec("intro", 0), _spec("verse", 1, 16)]
         signals = SectionSignals.from_section_ids(
@@ -481,12 +501,14 @@ class TestReplayAttackPrevention:
     """Prove SectionResult from one composition cannot replay in another."""
 
     @pytest.mark.anyio
-    async def test_replay_across_compositions_fails(self):
+    async def test_replay_across_compositions_fails(self) -> None:
+
         """Same contract in different traces → different execution_hash."""
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-A")
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> Any:
+
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
@@ -502,7 +524,7 @@ class TestReplayAttackPrevention:
             )
 
         store = StateStore(conversation_id="replay-test")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
@@ -519,7 +541,7 @@ class TestReplayAttackPrevention:
                 sse_queue=queue,
             )
 
-        queue2: asyncio.Queue[dict] = asyncio.Queue()
+        queue2: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
@@ -559,11 +581,13 @@ class TestReplayAttackPrevention:
 class TestHashScopeEnforcement:
     """Prove advisory fields never affect structural hashes."""
 
-    def test_execution_hash_excluded(self):
+    def test_execution_hash_excluded(self) -> None:
+
         """execution_hash is in _HASH_EXCLUDED_FIELDS."""
         assert "execution_hash" in _HASH_EXCLUDED_FIELDS
 
-    def test_advisory_changes_do_not_affect_hash(self):
+    def test_advisory_changes_do_not_affect_hash(self) -> None:
+
         """Changing every advisory field produces the same contract_hash."""
         spec = _spec()
 
@@ -598,7 +622,8 @@ class TestHashScopeEnforcement:
         print(f"SectionContract: {sc_a.contract_hash} == {sc_b.contract_hash} ✓")
         print(f"InstrumentContract: {ic_a.contract_hash} == {ic_b.contract_hash} ✓")
 
-    def test_composition_contract_excludes_advisory(self):
+    def test_composition_contract_excludes_advisory(self) -> None:
+
         """CompositionContract canonical dict excludes advisory/meta fields."""
         spec = _spec()
         cc = CompositionContract(
@@ -616,7 +641,8 @@ class TestHashScopeEnforcement:
                 f"Advisory field '{excluded}' leaked into CompositionContract canonical dict"
             )
 
-    def test_all_excluded_fields_verified(self):
+    def test_all_excluded_fields_verified(self) -> None:
+
         """Every field in _HASH_EXCLUDED_FIELDS is absent from ALL canonical dicts."""
         expected = {
             "contract_version", "contract_hash", "parent_contract_hash",

@@ -4,8 +4,10 @@ Melody Spec IR backend: IR-based melody (phrase, contour, chord resolution).
 Renders MelodySpec + GlobalSpec + HarmonicSpec → melody notes. Used for instrument in ("lead", "melody", "synth").
 See docs/MIDI_SPEC_IR_SCHEMA.md.
 """
+from __future__ import annotations
+
 import logging
-from typing import Optional
+from typing import Any
 
 from app.services.backends.base import (
     MusicGeneratorBackend,
@@ -34,9 +36,9 @@ class MelodySpecBackend(MusicGeneratorBackend):
         style: str,
         tempo: int,
         bars: int,
-        key: Optional[str] = None,
-        chords: Optional[list[str]] = None,
-        **kwargs,
+        key: str | None = None,
+        chords: list[str] | None = None,
+        **kwargs: Any,
     ) -> GenerationResult:
         if instrument not in ("lead", "melody", "synth", "vocal"):
             return GenerationResult(

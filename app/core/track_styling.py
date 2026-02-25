@@ -4,9 +4,9 @@ Track styling utilities for automatic color and icon assignment.
 Provides intelligent defaults for track colors and icons based on
 track names and instrument types.
 """
+from __future__ import annotations
 
 import re
-from typing import Optional
 
 
 # Named colors accepted by the macOS client (SwiftUI adaptive colors).
@@ -171,7 +171,7 @@ _ICON_KEYWORD_LIST: list[tuple[str, str]] = [
 DEFAULT_ICON = "music.note"
 
 
-def normalize_color(raw: Optional[str]) -> Optional[str]:
+def normalize_color(raw: str | None) -> str | None:
     """Validate and pass through a client-safe color value.
 
     Returns the color unchanged if it's a recognised named color or
@@ -223,7 +223,7 @@ def allocate_colors(instrument_names: list[str]) -> dict[str, str]:
     }
 
 
-def is_valid_icon(icon: Optional[str]) -> bool:
+def is_valid_icon(icon: str | None) -> bool:
     """Return True if the icon is in the curated SF Symbol allowlist."""
     if not icon:
         return False
@@ -261,7 +261,7 @@ def get_track_styling(
         rotation_index: Index into the palette rotation for fallback color.
         
     Returns:
-        Dict with 'color' and 'icon' keys
+        dict with 'color' and 'icon' keys
     """
     return {
         "color": color_for_role(track_name, rotation_index),

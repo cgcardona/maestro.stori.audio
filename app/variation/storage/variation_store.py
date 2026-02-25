@@ -20,7 +20,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from app.variation.core.state_machine import (
     VariationStatus,
@@ -198,7 +198,7 @@ class VariationStore:
         project_id: str,
         status: VariationStatus | None = None,
     ) -> list[VariationRecord]:
-        """List variations for a project, optionally filtered by status."""
+        """list variations for a project, optionally filtered by status."""
         results = [
             r for r in self._records.values()
             if r.project_id == project_id

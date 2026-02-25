@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from app.core.tool_validation.models import ValidationError
 from app.core.tool_validation.constants import TOOL_REQUIRED_FIELDS
 
 
-def _validate_type(field: str, value: Any, expected_type: str) -> Optional[ValidationError]:
+def _validate_type(field: str, value: Any, expected_type: str) -> ValidationError | None:
     """Validate a value against an expected JSON Schema type."""
     type_map: dict[str, type | tuple[type, ...]] = {
         "string": str,

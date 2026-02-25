@@ -1,4 +1,8 @@
 """Tests for the Cursor-of-DAWs executor and tool registry."""
+from __future__ import annotations
+
+from collections.abc import Generator
+
 import pytest
 
 from app.core.executor import ExecutionContext
@@ -16,7 +20,7 @@ from app.core.tools import (
 
 
 @pytest.fixture(autouse=True)
-def cleanup_stores():
+def cleanup_stores() -> Generator[None, None, None]:
     """Clean up stores before and after each test."""
     clear_all_stores()
     clear_trace_context()
@@ -28,19 +32,22 @@ def cleanup_stores():
 class TestToolCategories:
     """Test tool categorization in the registry."""
 
-    def test_tier1_tools_defined(self):
+    def test_tier1_tools_defined(self) -> None:
+
         """Test that Tier 1 tools exist in the registry."""
         reg = build_tool_registry()
         tier1_names = [n for n, m in reg.items() if m.tier == ToolTier.TIER1]
         assert len(tier1_names) > 0
 
-    def test_tier2_tools_defined(self):
+    def test_tier2_tools_defined(self) -> None:
+
         """Test that Tier 2 tools exist in the registry."""
         reg = build_tool_registry()
         tier2_names = [n for n, m in reg.items() if m.tier == ToolTier.TIER2]
         assert len(tier2_names) > 0
 
-    def test_generator_tools_are_tier1(self):
+    def test_generator_tools_are_tier1(self) -> None:
+
         """Generator tools should be Tier 1."""
         reg = build_tool_registry()
         generators = [n for n, m in reg.items() if m.kind == ToolKind.GENERATOR]
@@ -48,7 +55,8 @@ class TestToolCategories:
             meta = reg[name]
             assert meta.tier == ToolTier.TIER1, f"{name} should be TIER1"
 
-    def test_primitive_tools_are_tier2(self):
+    def test_primitive_tools_are_tier2(self) -> None:
+
         """Primitive DAW tools should be Tier 2."""
         reg = build_tool_registry()
         primitives = [n for n, m in reg.items() if m.kind == ToolKind.PRIMITIVE]
@@ -60,7 +68,8 @@ class TestToolCategories:
 class TestToolRegistry:
     """Test tool registry functions."""
 
-    def test_build_tool_registry(self):
+    def test_build_tool_registry(self) -> None:
+
         """Registry should contain all tool metadata."""
         reg = build_tool_registry()
         assert len(reg) > 0
@@ -68,13 +77,15 @@ class TestToolRegistry:
             assert hasattr(meta, "kind")
             assert hasattr(meta, "tier")
 
-    def test_get_tool_meta(self):
+    def test_get_tool_meta(self) -> None:
+
         """get_tool_meta should return metadata for known tools."""
         meta = get_tool_meta("stori_play")
         assert meta is not None
         assert meta.kind == ToolKind.PRIMITIVE
 
-    def test_get_tool_meta_unknown(self):
+    def test_get_tool_meta_unknown(self) -> None:
+
         """get_tool_meta should return None for unknown tools."""
         meta = get_tool_meta("unknown_tool_xyz")
         assert meta is None
@@ -83,7 +94,8 @@ class TestToolRegistry:
 class TestExecutionContext:
     """Tests for ExecutionContext dataclass."""
 
-    def test_empty_context(self):
+    def test_empty_context(self) -> None:
+
         """New context should have empty results."""
         store = StateStore()
         tx = store.begin_transaction("test")
@@ -92,7 +104,8 @@ class TestExecutionContext:
         assert ctx.results == []
         store.rollback(tx)
 
-    def test_add_result(self):
+    def test_add_result(self) -> None:
+
         """Adding results should append to list."""
         store = StateStore()
         tx = store.begin_transaction("test")
@@ -105,7 +118,8 @@ class TestExecutionContext:
         assert ctx.results[0].output["trackId"] == "uuid-123"
         store.rollback(tx)
 
-    def test_multiple_results(self):
+    def test_multiple_results(self) -> None:
+
         """Multiple results should accumulate."""
         store = StateStore()
         tx = store.begin_transaction("test")
@@ -117,7 +131,8 @@ class TestExecutionContext:
         assert len(ctx.results) == 2
         store.rollback(tx)
 
-    def test_all_successful_false_when_one_fails(self):
+    def test_all_successful_false_when_one_fails(self) -> None:
+
         """all_successful is False and failed_tools lists failed tool."""
         store = StateStore()
         tx = store.begin_transaction("test")
@@ -129,7 +144,8 @@ class TestExecutionContext:
         assert "stori_set_tempo" in ctx.failed_tools
         store.rollback(tx)
 
-    def test_created_entities_mapping(self):
+    def test_created_entities_mapping(self) -> None:
+
         """created_entities returns tool_name -> entity_id for entity-creating results."""
         store = StateStore()
         tx = store.begin_transaction("test")
@@ -151,7 +167,8 @@ class TestExecutionContext:
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_apply_variation_phrases_empty_list(cleanup_stores):
+async def test_apply_variation_phrases_empty_list(cleanup_stores: None) -> None:
+
     """Applying empty accepted_phrase_ids returns success with zero counts."""
     from app.core.executor import apply_variation_phrases
     from app.models.variation import Variation
@@ -175,7 +192,8 @@ async def test_apply_variation_phrases_empty_list(cleanup_stores):
 
 
 @pytest.mark.asyncio
-async def test_apply_variation_phrases_invalid_phrase_ids_skipped(cleanup_stores):
+async def test_apply_variation_phrases_invalid_phrase_ids_skipped(cleanup_stores: None) -> None:
+
     """Invalid phrase IDs are skipped; result still success with zero applied."""
     from app.core.executor import apply_variation_phrases
     from app.models.variation import Variation
@@ -203,7 +221,8 @@ async def test_apply_variation_phrases_invalid_phrase_ids_skipped(cleanup_stores
 class TestExecutionContextAddEvent:
     """ExecutionContext.add_event records events."""
 
-    def test_add_event_appends(self):
+    def test_add_event_appends(self) -> None:
+
         store = StateStore()
         tx = store.begin_transaction("test")
         trace = create_trace_context()
@@ -219,7 +238,8 @@ class TestExecutionContextAddEvent:
 class TestExecutionContextProperties:
     """ExecutionContext all_successful, failed_tools, created_entities."""
 
-    def test_all_successful_true_when_all_ok(self):
+    def test_all_successful_true_when_all_ok(self) -> None:
+
         store = StateStore()
         tx = store.begin_transaction("test")
         trace = create_trace_context()
@@ -230,7 +250,8 @@ class TestExecutionContextProperties:
         assert ctx.failed_tools == []
         store.rollback(tx)
 
-    def test_all_successful_false_and_failed_tools(self):
+    def test_all_successful_false_and_failed_tools(self) -> None:
+
         store = StateStore()
         tx = store.begin_transaction("test")
         trace = create_trace_context()
@@ -241,7 +262,8 @@ class TestExecutionContextProperties:
         assert ctx.failed_tools == ["stori_add_midi_track"]
         store.rollback(tx)
 
-    def test_created_entities_mapping(self):
+    def test_created_entities_mapping(self) -> None:
+
         store = StateStore()
         tx = store.begin_transaction("test")
         trace = create_trace_context()

@@ -8,7 +8,9 @@ Proves correctness of apply_variation_phrases() including:
 - Partial acceptance only applies selected phrases
 - Empty acceptance produces no-op
 """
+from __future__ import annotations
 
+from typing import Any
 import uuid
 from unittest.mock import MagicMock, patch, AsyncMock
 
@@ -109,7 +111,7 @@ def _make_test_variation(
     )
 
 
-def _mock_store():
+def _mock_store() -> MagicMock:
     """Create a mock StateStore with add_notes, remove_notes, begin_transaction, commit."""
     store = MagicMock()
     store.begin_transaction.return_value = MagicMock()
@@ -124,7 +126,7 @@ def _mock_store():
 
 
 @pytest.fixture
-def mock_store():
+def mock_store() -> MagicMock:
     return _mock_store()
 
 
@@ -132,7 +134,8 @@ class TestApplyVariationPhrases:
     """Test the commit engine."""
 
     @pytest.mark.anyio
-    async def test_adds_only(self, mock_store):
+    async def test_adds_only(self, mock_store: Any) -> None:
+
         """Added notes call store.add_notes."""
         variation = _make_test_variation(include_adds=True, include_removes=False, include_modifies=False)
 
@@ -159,7 +162,8 @@ class TestApplyVariationPhrases:
         assert notes[1]["pitch"] == 64
 
     @pytest.mark.anyio
-    async def test_removals_applied(self, mock_store):
+    async def test_removals_applied(self, mock_store: Any) -> None:
+
         """INVARIANT: Removed notes call store.remove_notes with before snapshot."""
         variation = _make_test_variation(include_adds=False, include_removes=True, include_modifies=False)
 
@@ -185,7 +189,8 @@ class TestApplyVariationPhrases:
         assert criteria[0]["start_beat"] == 4.0
 
     @pytest.mark.anyio
-    async def test_modified_notes_remove_old_add_new(self, mock_store):
+    async def test_modified_notes_remove_old_add_new(self, mock_store: Any) -> None:
+
         """INVARIANT: Modified notes produce remove(before) + add(after)."""
         variation = _make_test_variation(include_adds=False, include_removes=False, include_modifies=True)
 
@@ -213,7 +218,8 @@ class TestApplyVariationPhrases:
         assert add_notes[0]["duration_beats"] == 1.5
 
     @pytest.mark.anyio
-    async def test_partial_acceptance_subset(self, mock_store):
+    async def test_partial_acceptance_subset(self, mock_store: Any) -> None:
+
         """INVARIANT: Only accepted phrases are applied."""
         variation = _make_test_variation(include_adds=True, include_removes=True, include_modifies=True)
 
@@ -234,7 +240,8 @@ class TestApplyVariationPhrases:
         mock_store.remove_notes.assert_not_called()
 
     @pytest.mark.anyio
-    async def test_all_change_types_in_one_commit(self, mock_store):
+    async def test_all_change_types_in_one_commit(self, mock_store: Any) -> None:
+
         """All three change types applied in one transaction."""
         variation = _make_test_variation()
 
@@ -264,7 +271,8 @@ class TestApplyVariationPhrases:
         assert len(add_notes) == 3
 
     @pytest.mark.anyio
-    async def test_empty_acceptance_is_noop(self, mock_store):
+    async def test_empty_acceptance_is_noop(self, mock_store: Any) -> None:
+
         """Empty accepted_phrase_ids applies nothing."""
         variation = _make_test_variation()
 
@@ -282,7 +290,8 @@ class TestApplyVariationPhrases:
         assert result.notes_modified == 0
 
     @pytest.mark.anyio
-    async def test_unknown_phrase_id_skipped(self, mock_store):
+    async def test_unknown_phrase_id_skipped(self, mock_store: Any) -> None:
+
         """Unknown phrase IDs are skipped with warning."""
         variation = _make_test_variation(include_adds=True, include_removes=False, include_modifies=False)
 
@@ -299,7 +308,8 @@ class TestApplyVariationPhrases:
         assert result.notes_added == 2
 
     @pytest.mark.anyio
-    async def test_multi_region_changes(self, mock_store):
+    async def test_multi_region_changes(self, mock_store: Any) -> None:
+
         """Changes across multiple regions are handled correctly."""
         variation = Variation(
             variation_id=str(uuid.uuid4()),
@@ -365,14 +375,15 @@ class TestUpdatedRegions:
     """Test that updated_regions returns full note state after commit."""
 
     @pytest.mark.anyio
-    async def test_updated_regions_returned_with_notes(self):
+    async def test_updated_regions_returned_with_notes(self) -> None:
+
         """Commit should return updated_regions with full note data for affected regions."""
         from app.core.state_store import StateStore, clear_all_stores
 
         clear_all_stores()
         store = StateStore(conversation_id="test-updated-regions")
 
-        # Set up a track + region with pre-existing notes
+        # set up a track + region with pre-existing notes
         track_id = store.create_track("Bass", track_id="track-bass")
         region_id = store.create_region("Line", track_id, region_id="region-bass")
         store.add_notes(region_id, [
@@ -424,7 +435,8 @@ class TestUpdatedRegions:
         clear_all_stores()
 
     @pytest.mark.anyio
-    async def test_updated_regions_after_removal(self):
+    async def test_updated_regions_after_removal(self) -> None:
+
         """Commit with removals should return updated_regions minus removed notes."""
         from app.core.state_store import StateStore, clear_all_stores
 

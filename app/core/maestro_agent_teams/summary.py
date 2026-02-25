@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from app.core.maestro_agent_teams.constants import _CC_NAMES
 
 
 def _build_composition_summary(
     tool_calls_collected: list[dict[str, Any]],
-    tempo: Optional[float] = None,
-    key: Optional[str] = None,
-    style: Optional[str] = None,
+    tempo: float | None = None,
+    key: str | None = None,
+    style: str | None = None,
 ) -> dict[str, Any]:
     """Aggregate composition metadata for the summary.final SSE event.
 
@@ -85,9 +85,9 @@ def _build_composition_summary(
 
 def _compose_summary_text(
     summary: dict[str, Any],
-    tempo: Optional[float] = None,
-    key: Optional[str] = None,
-    style: Optional[str] = None,
+    tempo: float | None = None,
+    key: str | None = None,
+    style: str | None = None,
 ) -> str:
     """Build a concise natural-language summary of a completed composition."""
     all_tracks = summary.get("tracksCreated", []) + summary.get("tracksReused", [])

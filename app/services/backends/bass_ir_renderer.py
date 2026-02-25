@@ -7,10 +7,12 @@ chord follow (root/fifth), anticipation, octave jump.
 Uses RhythmSpine for proper kick coupling from actual drum output.
 Supports anticipation slots and response slots for groove feel.
 """
+from __future__ import annotations
+
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from app.core.music_spec_ir import (
     BassSpec,
@@ -31,10 +33,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class BassRenderResult:
     """Result of bass rendering with coupling metrics."""
-    notes: list[dict] = field(default_factory=list)
+    notes: list[dict[str, Any]] = field(default_factory=list)
     kick_alignment_ratio: float = 0.0
     anticipation_count: int = 0
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def _chord_at_bar(schedule: list[ChordScheduleEntry], bar: int) -> str:
@@ -78,8 +80,8 @@ def render_bass_spec(
     global_spec: GlobalSpec,
     harmonic_spec: HarmonicSpec,
     drum_groove_template: str = "trap_straight",
-    drum_kick_beats: Optional[list[float]] = None,
-    rhythm_spine: Optional[RhythmSpine] = None,
+    drum_kick_beats: list[float] | None = None,
+    rhythm_spine: RhythmSpine | None = None,
     *,
     apply_humanize: bool = True,
     return_result: bool = False,
@@ -108,7 +110,7 @@ def render_bass_spec(
         return_result: If True, return BassRenderResult with metrics
     
     Returns:
-        List of notes, or BassRenderResult if return_result=True
+        list of notes, or BassRenderResult if return_result=True
     """
     notes = []
     schedule = harmonic_spec.chord_schedule

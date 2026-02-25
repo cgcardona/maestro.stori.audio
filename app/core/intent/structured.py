@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from app.core.intent_config import Intent, IdiomMatch, match_producer_idiom
 from app.core.intent.models import IntentResult, Slots
@@ -21,7 +21,7 @@ _EDIT_DEFAULT_INTENT = Intent.MIX_ENERGY
 def _infer_edit_intent(parsed: ParsedPrompt) -> Intent:
     """Pick the most appropriate edit intent from vibes/constraints."""
     if parsed.vibes:
-        best_match: Optional[IdiomMatch] = None
+        best_match: IdiomMatch | None = None
         best_weight = 0
         for vw in parsed.vibes:
             idiom = match_producer_idiom(vw.vibe)
@@ -46,8 +46,8 @@ def _route_from_parsed_prompt(parsed: ParsedPrompt) -> IntentResult:
     """
     extras: dict[str, Any] = {"parsed_prompt": parsed}
 
-    target_type: Optional[str] = None
-    target_name: Optional[str] = None
+    target_type: str | None = None
+    target_name: str | None = None
     if parsed.target:
         target_type = parsed.target.kind
         target_name = parsed.target.name

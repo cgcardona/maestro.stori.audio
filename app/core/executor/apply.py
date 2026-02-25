@@ -43,12 +43,12 @@ async def apply_variation_phrases(
             notes_modified = 0
             applied_phrases: list[str] = []
 
-            region_adds: dict[str, list[dict]] = {}
-            region_removals: dict[str, list[dict]] = {}
+            region_adds: dict[str, list[dict[str, Any]]] = {}
+            region_removals: dict[str, list[dict[str, Any]]] = {}
             region_track_map: dict[str, str] = {}
-            region_cc: dict[str, list[dict]] = {}
-            region_pitch_bends: dict[str, list[dict]] = {}
-            region_aftertouch: dict[str, list[dict]] = {}
+            region_cc: dict[str, list[dict[str, Any]]] = {}
+            region_pitch_bends: dict[str, list[dict[str, Any]]] = {}
+            region_aftertouch: dict[str, list[dict[str, Any]]] = {}
 
             for phrase_id in accepted_phrase_ids:
                 phrase = variation.get_phrase(phrase_id)

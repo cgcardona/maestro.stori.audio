@@ -3,6 +3,9 @@ Tests for the maestro pipeline (run_pipeline).
 
 Ensures REASONING, COMPOSING, and EDITING branches return correct PipelineOutput.
 """
+from __future__ import annotations
+
+from typing import Any
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,7 +14,7 @@ from app.core.intent import IntentResult, Intent, SSEState, Slots
 
 
 @pytest.fixture
-def mock_llm():
+def mock_llm() -> MagicMock:
     """Mock LLM client."""
     llm = MagicMock()
     llm.chat = AsyncMock(return_value=MagicMock(content="Here is your answer."))
@@ -20,7 +23,8 @@ def mock_llm():
 
 
 @pytest.mark.asyncio
-async def test_run_pipeline_reasoning_returns_llm_response(mock_llm):
+async def test_run_pipeline_reasoning_returns_llm_response(mock_llm: Any) -> None:
+
     """REASONING route returns PipelineOutput with llm_response, no plan."""
     route = IntentResult(
         intent=Intent.ASK_GENERAL,
@@ -44,7 +48,8 @@ async def test_run_pipeline_reasoning_returns_llm_response(mock_llm):
 
 
 @pytest.mark.asyncio
-async def test_run_pipeline_composing_returns_plan(mock_llm):
+async def test_run_pipeline_composing_returns_plan(mock_llm: Any) -> None:
+
     """COMPOSING route returns PipelineOutput with plan."""
     from app.core.planner import ExecutionPlan
     from app.core.expansion import ToolCall
@@ -76,7 +81,8 @@ async def test_run_pipeline_composing_returns_plan(mock_llm):
 
 
 @pytest.mark.asyncio
-async def test_run_pipeline_editing_returns_llm_response(mock_llm):
+async def test_run_pipeline_editing_returns_llm_response(mock_llm: Any) -> None:
+
     """EDITING route returns PipelineOutput with llm_response (tool allowlist)."""
     route = IntentResult(
         intent=Intent.TRACK_SET_VOLUME,

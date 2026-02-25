@@ -115,6 +115,8 @@ The backend serves the frontend via SSE streaming and tool calls. The SSE event 
 
 ## Code Generation Rules
 
+- **Every Python file** must start with `from __future__ import annotations` as the first import. No exceptions.
+- **Mypy before tests:** Run mypy on every Python file you create or modify. Fix all type errors before running tests — this avoids needing to re-run the test suite after type fixes.
 - **Editing existing files:** Only modify necessary sections. Preserve formatting, structure, and surrounding code.
 - **Creating new files:** Write complete, self-contained modules. Include imports, type hints, and docstrings.
 - **Before finishing any task:** Confirm types pass (mypy), tests pass, imports resolve, no orphaned code.
@@ -123,12 +125,12 @@ The backend serves the frontend via SSE streaming and tool calls. The SSE event 
 
 ## Verification Checklist
 
-Before considering work complete:
+Before considering work complete, run in this order (mypy first so type fixes don't force a re-run of tests):
 
-- [ ] `docker compose exec maestro mypy app/ tests/` — clean
-- [ ] `docker compose exec orpheus mypy .` — clean
-- [ ] Relevant test file passes: `docker compose exec <service> pytest <file> -v`
-- [ ] Regression test added (if bug fix)
-- [ ] Affected docs updated
-- [ ] No secrets, no `print()`, no dead code
-- [ ] If API contract changed → handoff prompt produced
+1. [ ] `docker compose exec maestro mypy app/ tests/` — clean
+2. [ ] `docker compose exec orpheus mypy .` — clean
+3. [ ] Relevant test file passes: `docker compose exec <service> pytest <file> -v`
+4. [ ] Regression test added (if bug fix)
+5. [ ] Affected docs updated
+6. [ ] No secrets, no `print()`, no dead code
+7. [ ] If API contract changed → handoff prompt produced

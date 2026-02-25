@@ -3,6 +3,8 @@ Stori Maestro Authentication Module
 
 Provides JWT-based access token generation and validation.
 """
+from __future__ import annotations
+
 from app.auth.tokens import (
     generate_access_code,
     validate_access_code,

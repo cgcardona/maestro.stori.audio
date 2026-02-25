@@ -4,7 +4,9 @@ Tests for the Variation Store.
 Covers record creation, state transitions, phrase storage,
 lifecycle management, and cleanup per the v1 canonical spec.
 """
+from __future__ import annotations
 
+from collections.abc import Generator
 import pytest
 from datetime import datetime, timezone, timedelta
 
@@ -27,7 +29,7 @@ from app.variation.storage.variation_store import (
 
 
 @pytest.fixture
-def store():
+def store() -> Generator[VariationStore, None, None]:
     """Fresh variation store for each test."""
     s = VariationStore()
     yield s
@@ -35,7 +37,7 @@ def store():
 
 
 @pytest.fixture(autouse=True)
-def reset_singleton():
+def reset_singleton() -> Generator[None, None, None]:
     """Reset singleton between tests."""
     yield
     reset_variation_store()
@@ -49,7 +51,8 @@ def reset_singleton():
 class TestRecordCreation:
     """Test creating variation records."""
 
-    def test_create_record(self, store):
+    def test_create_record(self, store: VariationStore) -> None:
+
         """Creating a record returns it in CREATED state."""
         record = store.create(
             project_id="proj-1",
@@ -64,7 +67,8 @@ class TestRecordCreation:
         assert isinstance(record.variation_id, str)
         assert len(record.variation_id) > 0
 
-    def test_create_with_explicit_id(self, store):
+    def test_create_with_explicit_id(self, store: VariationStore) -> None:
+
         """Can create with a pre-generated variation_id."""
         record = store.create(
             project_id="proj-1",
@@ -75,7 +79,8 @@ class TestRecordCreation:
 
         assert record.variation_id == "my-custom-id"
 
-    def test_create_duplicate_raises(self, store):
+    def test_create_duplicate_raises(self, store: VariationStore) -> None:
+
         """Cannot create two records with the same variation_id."""
         store.create(
             project_id="proj-1",
@@ -92,7 +97,8 @@ class TestRecordCreation:
                 variation_id="dup-id",
             )
 
-    def test_create_increments_count(self, store):
+    def test_create_increments_count(self, store: VariationStore) -> None:
+
         """Store count increases with each creation."""
         assert store.count == 0
         store.create(project_id="p", base_state_id="0", intent="a")
@@ -109,7 +115,8 @@ class TestRecordCreation:
 class TestRecordRetrieval:
     """Test getting variation records."""
 
-    def test_get_existing(self, store):
+    def test_get_existing(self, store: VariationStore) -> None:
+
         """get() returns the record if it exists."""
         created = store.create(project_id="p", base_state_id="0", intent="test")
         found = store.get(created.variation_id)
@@ -117,18 +124,21 @@ class TestRecordRetrieval:
         assert found is not None
         assert found.variation_id == created.variation_id
 
-    def test_get_missing_returns_none(self, store):
+    def test_get_missing_returns_none(self, store: VariationStore) -> None:
+
         """get() returns None for missing records."""
         assert store.get("nonexistent") is None
 
-    def test_get_or_raise_existing(self, store):
+    def test_get_or_raise_existing(self, store: VariationStore) -> None:
+
         """get_or_raise() returns the record if it exists."""
         created = store.create(project_id="p", base_state_id="0", intent="test")
         found = store.get_or_raise(created.variation_id)
 
         assert found.variation_id == created.variation_id
 
-    def test_get_or_raise_missing_raises(self, store):
+    def test_get_or_raise_missing_raises(self, store: VariationStore) -> None:
+
         """get_or_raise() raises KeyError for missing records."""
         with pytest.raises(KeyError, match="not found"):
             store.get_or_raise("nonexistent")
@@ -142,33 +152,40 @@ class TestRecordRetrieval:
 class TestStoreTransitions:
     """Test state transitions through the store."""
 
-    def test_transition_happy_path(self, store):
+    def test_transition_happy_path(self, store: VariationStore) -> None:
+
         """CREATED → STREAMING → READY → COMMITTED."""
         record = store.create(project_id="p", base_state_id="0", intent="test")
         vid = record.variation_id
 
         store.transition(vid, VariationStatus.STREAMING)
-        assert store.get(vid).status == VariationStatus.STREAMING
+        r1 = store.get(vid)
+        assert r1 is not None and r1.status == VariationStatus.STREAMING
 
         store.transition(vid, VariationStatus.READY)
-        assert store.get(vid).status == VariationStatus.READY
+        r2 = store.get(vid)
+        assert r2 is not None and r2.status == VariationStatus.READY
 
         store.transition(vid, VariationStatus.COMMITTED)
-        assert store.get(vid).status == VariationStatus.COMMITTED
+        r3 = store.get(vid)
+        assert r3 is not None and r3.status == VariationStatus.COMMITTED
 
-    def test_transition_invalid_raises(self, store):
+    def test_transition_invalid_raises(self, store: VariationStore) -> None:
+
         """Invalid transitions raise InvalidTransitionError."""
         record = store.create(project_id="p", base_state_id="0", intent="test")
 
         with pytest.raises(InvalidTransitionError):
             store.transition(record.variation_id, VariationStatus.COMMITTED)
 
-    def test_transition_missing_raises(self, store):
+    def test_transition_missing_raises(self, store: VariationStore) -> None:
+
         """Transitioning a missing record raises KeyError."""
         with pytest.raises(KeyError):
             store.transition("nonexistent", VariationStatus.STREAMING)
 
-    def test_transition_updates_timestamp(self, store):
+    def test_transition_updates_timestamp(self, store: VariationStore) -> None:
+
         """Transitions update the updated_at field."""
         record = store.create(project_id="p", base_state_id="0", intent="test")
         created_at = record.updated_at
@@ -186,7 +203,8 @@ class TestStoreTransitions:
 class TestPhraseManagement:
     """Test phrase storage on VariationRecord."""
 
-    def test_add_phrase(self):
+    def test_add_phrase(self) -> None:
+
         """Can add phrases to a record."""
         record = VariationRecord(
             variation_id="v-1",
@@ -211,7 +229,8 @@ class TestPhraseManagement:
         assert len(record.phrases) == 1
         assert record.phrases[0].phrase_id == "p-1"
 
-    def test_get_phrase_by_id(self):
+    def test_get_phrase_by_id(self) -> None:
+
         """Can find a phrase by ID."""
         record = VariationRecord(
             variation_id="v-1",
@@ -238,7 +257,8 @@ class TestPhraseManagement:
         assert found.phrase_id == "p-2"
         assert found.label == "Bars 5-8"
 
-    def test_get_phrase_missing_returns_none(self):
+    def test_get_phrase_missing_returns_none(self) -> None:
+
         """get_phrase returns None for missing IDs."""
         record = VariationRecord(
             variation_id="v-1",
@@ -249,7 +269,8 @@ class TestPhraseManagement:
 
         assert record.get_phrase("nonexistent") is None
 
-    def test_get_phrase_ids_ordered(self):
+    def test_get_phrase_ids_ordered(self) -> None:
+
         """get_phrase_ids returns IDs sorted by sequence."""
         record = VariationRecord(
             variation_id="v-1",
@@ -290,7 +311,8 @@ class TestPhraseManagement:
 class TestRecordSequence:
     """Test per-variation sequence counter."""
 
-    def test_next_sequence_starts_at_one(self):
+    def test_next_sequence_starts_at_one(self) -> None:
+
         """First next_sequence() returns 1."""
         record = VariationRecord(
             variation_id="v-1",
@@ -301,7 +323,8 @@ class TestRecordSequence:
 
         assert record.next_sequence() == 1
 
-    def test_next_sequence_increments(self):
+    def test_next_sequence_increments(self) -> None:
+
         """Sequence increases monotonically."""
         record = VariationRecord(
             variation_id="v-1",
@@ -314,7 +337,8 @@ class TestRecordSequence:
         assert record.next_sequence() == 2
         assert record.next_sequence() == 3
 
-    def test_last_sequence_tracks(self):
+    def test_last_sequence_tracks(self) -> None:
+
         """last_sequence returns the most recent value."""
         record = VariationRecord(
             variation_id="v-1",
@@ -336,7 +360,8 @@ class TestRecordSequence:
 class TestProjectListing:
     """Test listing variations for a project."""
 
-    def test_list_for_project(self, store):
+    def test_list_for_project(self, store: VariationStore) -> None:
+
         """list_for_project returns only matching project's variations."""
         store.create(project_id="proj-A", base_state_id="0", intent="a")
         store.create(project_id="proj-A", base_state_id="0", intent="b")
@@ -346,7 +371,8 @@ class TestProjectListing:
         assert len(results) == 2
         assert all(r.project_id == "proj-A" for r in results)
 
-    def test_list_with_status_filter(self, store):
+    def test_list_with_status_filter(self, store: VariationStore) -> None:
+
         """list_for_project can filter by status."""
         r1 = store.create(project_id="p", base_state_id="0", intent="a")
         r2 = store.create(project_id="p", base_state_id="0", intent="b")
@@ -368,7 +394,8 @@ class TestProjectListing:
 class TestCleanup:
     """Test record deletion and TTL cleanup."""
 
-    def test_delete_existing(self, store):
+    def test_delete_existing(self, store: VariationStore) -> None:
+
         """delete() removes the record and returns True."""
         record = store.create(project_id="p", base_state_id="0", intent="test")
 
@@ -376,11 +403,13 @@ class TestCleanup:
         assert store.get(record.variation_id) is None
         assert store.count == 0
 
-    def test_delete_missing(self, store):
+    def test_delete_missing(self, store: VariationStore) -> None:
+
         """delete() returns False for missing records."""
         assert store.delete("nonexistent") is False
 
-    def test_clear(self, store):
+    def test_clear(self, store: VariationStore) -> None:
+
         """clear() removes all records."""
         store.create(project_id="p", base_state_id="0", intent="a")
         store.create(project_id="p", base_state_id="0", intent="b")
@@ -388,7 +417,8 @@ class TestCleanup:
         store.clear()
         assert store.count == 0
 
-    def test_cleanup_expired(self, store):
+    def test_cleanup_expired(self, store: VariationStore) -> None:
+
         """cleanup_expired expires old non-terminal records."""
         record = store.create(project_id="p", base_state_id="0", intent="test")
 
@@ -400,7 +430,8 @@ class TestCleanup:
         assert expired_count == 1
         assert record.status == VariationStatus.EXPIRED
 
-    def test_cleanup_skips_terminal(self, store):
+    def test_cleanup_skips_terminal(self, store: VariationStore) -> None:
+
         """cleanup_expired does not touch terminal records."""
         record = store.create(project_id="p", base_state_id="0", intent="test")
         store.transition(record.variation_id, VariationStatus.DISCARDED)
@@ -412,7 +443,8 @@ class TestCleanup:
         assert expired_count == 0
         assert record.status == VariationStatus.DISCARDED
 
-    def test_cleanup_skips_recent(self, store):
+    def test_cleanup_skips_recent(self, store: VariationStore) -> None:
+
         """cleanup_expired does not touch recent records."""
         store.create(project_id="p", base_state_id="0", intent="test")
 
@@ -428,13 +460,15 @@ class TestCleanup:
 class TestSingleton:
     """Test singleton access."""
 
-    def test_singleton_returns_same_instance(self):
+    def test_singleton_returns_same_instance(self) -> None:
+
         """get_variation_store returns the same instance."""
         store1 = get_variation_store()
         store2 = get_variation_store()
         assert store1 is store2
 
-    def test_reset_clears_singleton(self):
+    def test_reset_clears_singleton(self) -> None:
+
         """reset_variation_store clears the singleton."""
         store1 = get_variation_store()
         store1.create(project_id="p", base_state_id="0", intent="test")
@@ -454,7 +488,8 @@ class TestSingleton:
 class TestVariationRecord:
     """Test VariationRecord behavior directly."""
 
-    def test_transition_to_valid(self):
+    def test_transition_to_valid(self) -> None:
+
         """transition_to works for valid transitions."""
         record = VariationRecord(
             variation_id="v-1",
@@ -466,7 +501,8 @@ class TestVariationRecord:
         record.transition_to(VariationStatus.STREAMING)
         assert record.status == VariationStatus.STREAMING
 
-    def test_transition_to_invalid_raises(self):
+    def test_transition_to_invalid_raises(self) -> None:
+
         """transition_to raises for invalid transitions."""
         record = VariationRecord(
             variation_id="v-1",
@@ -478,7 +514,8 @@ class TestVariationRecord:
         with pytest.raises(InvalidTransitionError):
             record.transition_to(VariationStatus.COMMITTED)
 
-    def test_base_state_id_preserved(self):
+    def test_base_state_id_preserved(self) -> None:
+
         """base_state_id is set at creation and doesn't change."""
         record = VariationRecord(
             variation_id="v-1",

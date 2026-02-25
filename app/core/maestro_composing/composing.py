@@ -7,7 +7,12 @@ import json
 import logging
 import time
 import uuid as _uuid_mod
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+)
 
 from app.core.entity_context import format_project_context
 from app.core.llm_client import LLMClient
@@ -37,9 +42,9 @@ async def _handle_composing(
     llm: LLMClient,
     store: StateStore,
     trace: Any,
-    usage_tracker: Optional[UsageTracker],
-    conversation_id: Optional[str],
-    quality_preset: Optional[str] = None,
+    usage_tracker: UsageTracker | None,
+    conversation_id: str | None,
+    quality_preset: str | None = None,
 ) -> AsyncIterator[str]:
     """Handle COMPOSING state - generate music via planner.
 
@@ -55,12 +60,12 @@ async def _handle_composing(
 
     _slots = getattr(route, "slots", None)
     _extras = getattr(_slots, "extras", None) if _slots is not None else None
-    parsed: Optional[ParsedPrompt] = (
+    parsed: ParsedPrompt | None = (
         _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
     )
 
     # ── Streaming planner: yields reasoning SSE events, then the plan ──
-    plan: Optional[ExecutionPlan] = None
+    plan: ExecutionPlan | None = None
     with trace_span(trace, "planner"):
         async for item in build_execution_plan_stream(
             user_prompt=prompt,
@@ -237,7 +242,7 @@ async def _handle_composing(
                         f"Proposed notes captured: {sum(len(n) for n in getattr(variation, '_proposed_notes', {}).values()) if hasattr(variation, '_proposed_notes') else 'N/A'}"
                     )
 
-                _region_metadata: dict[str, dict] = {}
+                _region_metadata: dict[str, dict[str, Any]] = {}
                 for _re in store.registry.list_regions():
                     _rmeta: dict[str, Any] = {}
                     if _re.metadata:
@@ -382,9 +387,9 @@ async def _handle_composing_with_agent_teams(
     llm: LLMClient,
     store: StateStore,
     trace: Any,
-    usage_tracker: Optional[UsageTracker],
-    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
-    quality_preset: Optional[str] = None,
+    usage_tracker: UsageTracker | None,
+    is_cancelled: Callable[[], Awaitable[bool]] | None = None,
+    quality_preset: str | None = None,
 ) -> AsyncIterator[str]:
     """Agent Teams composition with Variation capture.
 
@@ -411,7 +416,7 @@ async def _handle_composing_with_agent_teams(
 
     # ── 1. Snapshot base notes before Agent Teams runs ──
     _base_snapshot = capture_base_snapshot(store)
-    _base_notes: dict[str, list[dict]] = {}
+    _base_notes: dict[str, list[dict[str, Any]]] = {}
     _track_regions: dict[str, str] = {}
     for track in project_context.get("tracks", []):
         track_id = track.get("id", "")
@@ -447,7 +452,7 @@ async def _handle_composing_with_agent_teams(
 
     # ── 3. Collect proposed notes via snapshot (never read live StateStore) ──
     _proposed_snapshot = capture_proposed_snapshot(store)
-    _proposed_notes: dict[str, list[dict]] = {}
+    _proposed_notes: dict[str, list[dict[str, Any]]] = {}
     _region_start_beats: dict[str, float] = {}
 
     for region_entity in store.registry.list_regions():
@@ -512,7 +517,7 @@ async def _handle_composing_with_agent_teams(
     )
 
     # ── 5. Store variation for commit/discard ──
-    _at_region_metadata: dict[str, dict] = {}
+    _at_region_metadata: dict[str, dict[str, Any]] = {}
     for _re in store.registry.list_regions():
         _rmeta_at: dict[str, Any] = {}
         if _re.metadata:

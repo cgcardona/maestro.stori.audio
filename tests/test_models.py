@@ -1,4 +1,6 @@
 """Tests for Pydantic models."""
+from __future__ import annotations
+
 import pytest
 from pydantic import ValidationError
 
@@ -9,21 +11,24 @@ from app.models.tools import MidiNote, AutomationPoint
 class TestMaestroRequest:
     """Tests for MaestroRequest model."""
     
-    def test_valid_request(self):
+    def test_valid_request(self) -> None:
+
         """Test creating a valid request."""
         req = MaestroRequest(prompt="Make a beat")
         assert req.prompt == "Make a beat"
         assert req.mode == "generate"
         assert req.project is None
     
-    def test_with_project(self):
+    def test_with_project(self) -> None:
+
         """Test request with project context."""
         project = {"id": "proj-1", "name": "Test", "tempo": 120}
         req = MaestroRequest(prompt="Add drums", mode="edit", project=project)
         assert req.mode == "edit"
         assert req.project is not None and req.project["tempo"] == 120
     
-    def test_empty_prompt(self):
+    def test_empty_prompt(self) -> None:
+
         """Empty prompt is rejected — MaestroRequest enforces min_length=1."""
         import pytest
         from pydantic import ValidationError
@@ -34,14 +39,16 @@ class TestMaestroRequest:
 class TestGenerateRequest:
     """Tests for GenerateRequest model."""
     
-    def test_defaults(self):
+    def test_defaults(self) -> None:
+
         """Test default values."""
         req = GenerateRequest()
         assert req.genre == "boom_bap"
         assert req.tempo == 90
         assert req.bars == 4
     
-    def test_tempo_range(self):
+    def test_tempo_range(self) -> None:
+
         """Test tempo validation."""
         req = GenerateRequest(tempo=120)
         assert req.tempo == 120
@@ -52,7 +59,8 @@ class TestGenerateRequest:
         with pytest.raises(ValidationError):
             GenerateRequest(tempo=20)  # Too slow
     
-    def test_bars_range(self):
+    def test_bars_range(self) -> None:
+
         """Test bars validation."""
         req = GenerateRequest(bars=16)
         assert req.bars == 16
@@ -64,13 +72,15 @@ class TestGenerateRequest:
 class TestMidiNote:
     """Tests for MidiNote model."""
     
-    def test_valid_note(self):
+    def test_valid_note(self) -> None:
+
         """Test creating a valid note."""
         note = MidiNote(pitch=60, start_beat=0, duration_beats=1.0, velocity=100)
         assert note.pitch == 60
         assert note.velocity == 100
     
-    def test_pitch_range(self):
+    def test_pitch_range(self) -> None:
+
         """Test pitch validation."""
         MidiNote(pitch=0, start_beat=0, duration_beats=1.0)  # Lowest
         MidiNote(pitch=127, start_beat=0, duration_beats=1.0)  # Highest
@@ -81,7 +91,8 @@ class TestMidiNote:
         with pytest.raises(ValidationError):
             MidiNote(pitch=-1, start_beat=0, duration_beats=1.0)
     
-    def test_velocity_range(self):
+    def test_velocity_range(self) -> None:
+
         """Test velocity validation."""
         MidiNote(pitch=60, start_beat=0, duration_beats=1.0, velocity=0)
         MidiNote(pitch=60, start_beat=0, duration_beats=1.0, velocity=127)
@@ -93,14 +104,16 @@ class TestMidiNote:
 class TestAutomationPoint:
     """Tests for AutomationPoint model."""
     
-    def test_valid_point(self):
+    def test_valid_point(self) -> None:
+
         """Test creating a valid automation point."""
         point = AutomationPoint(beat=0, value=0.5)
         assert point.beat == 0
         assert point.value == 0.5
         assert point.curve == "Linear"
     
-    def test_value_range(self):
+    def test_value_range(self) -> None:
+
         """Test value validation."""
         AutomationPoint(beat=0, value=0)
         AutomationPoint(beat=0, value=1)

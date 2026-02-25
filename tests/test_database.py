@@ -8,6 +8,9 @@ Tests:
 - Data integrity
 - PostgreSQL-specific features
 """
+from __future__ import annotations
+
+from sqlalchemy.ext.asyncio import AsyncSession
 import pytest
 from datetime import datetime, timezone
 from sqlalchemy import select
@@ -29,7 +32,8 @@ from app.db.models import (
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_user_creation(db_session):
+async def test_user_creation(db_session: AsyncSession) -> None:
+
     """Test creating a user with all fields."""
     user = User(
         id="test-user-db-123",
@@ -48,7 +52,8 @@ async def test_user_creation(db_session):
 
 
 @pytest.mark.asyncio
-async def test_user_budget_properties(db_session):
+async def test_user_budget_properties(db_session: AsyncSession) -> None:
+
     """Test user budget calculation properties."""
     user = User(
         id="test-user-props",
@@ -68,7 +73,8 @@ async def test_user_budget_properties(db_session):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_conversation_creation(db_session):
+async def test_conversation_creation(db_session: AsyncSession) -> None:
+
     """Test creating a conversation."""
     user = User(id="conv-test-user", budget_cents=500, budget_limit_cents=500)
     db_session.add(user)
@@ -90,7 +96,8 @@ async def test_conversation_creation(db_session):
 
 
 @pytest.mark.asyncio
-async def test_conversation_cascade_delete(db_session):
+async def test_conversation_cascade_delete(db_session: AsyncSession) -> None:
+
     """Test that deleting user cascades to conversations."""
     user = User(id="cascade-user", budget_cents=500, budget_limit_cents=500)
     conversation = Conversation(user_id=user.id, title="Test")
@@ -117,7 +124,8 @@ async def test_conversation_cascade_delete(db_session):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_message_creation(db_session):
+async def test_message_creation(db_session: AsyncSession) -> None:
+
     """Test creating a message."""
     user = User(id="msg-user", budget_cents=500, budget_limit_cents=500)
     conversation = Conversation(user_id=user.id, title="Test")
@@ -143,7 +151,8 @@ async def test_message_creation(db_session):
 
 
 @pytest.mark.asyncio
-async def test_message_with_tokens_and_tools(db_session):
+async def test_message_with_tokens_and_tools(db_session: AsyncSession) -> None:
+
     """Test message with token usage and tool calls."""
     user = User(id="tools-user", budget_cents=500, budget_limit_cents=500)
     conversation = Conversation(user_id=user.id, title="Test")
@@ -176,7 +185,8 @@ async def test_message_with_tokens_and_tools(db_session):
 
 
 @pytest.mark.asyncio
-async def test_message_cascade_from_conversation(db_session):
+async def test_message_cascade_from_conversation(db_session: AsyncSession) -> None:
+
     """Test that deleting conversation cascades to messages."""
     user = User(id="cascade-msg-user", budget_cents=500, budget_limit_cents=500)
     conversation = Conversation(user_id=user.id, title="Test")
@@ -209,7 +219,8 @@ async def test_message_cascade_from_conversation(db_session):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_action_creation(db_session):
+async def test_action_creation(db_session: AsyncSession) -> None:
+
     """Test creating an action."""
     user = User(id="action-user", budget_cents=500, budget_limit_cents=500)
     conversation = Conversation(user_id=user.id, title="Test")
@@ -242,7 +253,8 @@ async def test_action_creation(db_session):
 
 
 @pytest.mark.asyncio
-async def test_action_failure_recording(db_session):
+async def test_action_failure_recording(db_session: AsyncSession) -> None:
+
     """Test recording a failed action."""
     user = User(id="fail-action-user", budget_cents=500, budget_limit_cents=500)
     conversation = Conversation(user_id=user.id, title="Test")
@@ -271,7 +283,8 @@ async def test_action_failure_recording(db_session):
 
 
 @pytest.mark.asyncio
-async def test_action_cascade_from_message(db_session):
+async def test_action_cascade_from_message(db_session: AsyncSession) -> None:
+
     """Test that deleting message cascades to actions."""
     user = User(id="cascade-action-user", budget_cents=500, budget_limit_cents=500)
     conversation = Conversation(user_id=user.id, title="Test")
@@ -312,7 +325,8 @@ async def test_action_cascade_from_message(db_session):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_user_conversation_relationship(db_session):
+async def test_user_conversation_relationship(db_session: AsyncSession) -> None:
+
     """Test user-conversation relationship loading."""
     user = User(id="rel-user", budget_cents=500, budget_limit_cents=500)
     conv1 = Conversation(user_id=user.id, title="Conv 1")
@@ -330,7 +344,8 @@ async def test_user_conversation_relationship(db_session):
 
 
 @pytest.mark.asyncio
-async def test_conversation_message_relationship(db_session):
+async def test_conversation_message_relationship(db_session: AsyncSession) -> None:
+
     """Test conversation-message relationship loading."""
     user = User(id="conv-msg-user", budget_cents=500, budget_limit_cents=500)
     conversation = Conversation(user_id=user.id, title="Test")
@@ -360,7 +375,8 @@ async def test_conversation_message_relationship(db_session):
 
 
 @pytest.mark.asyncio
-async def test_message_action_relationship(db_session):
+async def test_message_action_relationship(db_session: AsyncSession) -> None:
+
     """Test message-action relationship loading."""
     user = User(id="msg-action-user", budget_cents=500, budget_limit_cents=500)
     conversation = Conversation(user_id=user.id, title="Test")
@@ -403,7 +419,8 @@ async def test_message_action_relationship(db_session):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_usage_log_creation(db_session):
+async def test_usage_log_creation(db_session: AsyncSession) -> None:
+
     """Test creating a usage log."""
     user = User(id="usage-user", budget_cents=500, budget_limit_cents=500)
     db_session.add(user)
@@ -428,7 +445,8 @@ async def test_usage_log_creation(db_session):
 
 
 @pytest.mark.asyncio
-async def test_access_token_creation(db_session):
+async def test_access_token_creation(db_session: AsyncSession) -> None:
+
     """Test creating an access token."""
     user = User(id="token-user", budget_cents=500, budget_limit_cents=500)
     db_session.add(user)

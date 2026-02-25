@@ -43,7 +43,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 from copy import deepcopy
 
 from app.core.entity_registry import EntityRegistry, EntityInfo, EntityType
@@ -84,12 +84,12 @@ class StateEvent:
     """A single state mutation event."""
     id: str
     event_type: EventType
-    entity_type: Optional[EntityType]
-    entity_id: Optional[str]
+    entity_type: EntityType | None
+    entity_id: str | None
     data: dict[str, Any]
     timestamp: datetime
     version: int
-    transaction_id: Optional[str] = None
+    transaction_id: str | None = None
     
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -170,7 +170,7 @@ class CompositionState:
     """
     composition_id: str
     session_id: str
-    accumulated_midi_path: Optional[str] = None
+    accumulated_midi_path: str | None = None
     last_token_estimate: int = 0
     created_at: float = 0.0
     call_count: int = 0
@@ -206,8 +206,8 @@ class StateStore:
     
     def __init__(
         self,
-        conversation_id: Optional[str] = None,
-        project_id: Optional[str] = None,
+        conversation_id: str | None = None,
+        project_id: str | None = None,
     ):
         self.conversation_id = conversation_id or str(uuid.uuid4())
         self.project_id = project_id or str(uuid.uuid4())
@@ -217,7 +217,7 @@ class StateStore:
         self._version: int = 0
         self._events: list[StateEvent] = []
         self._snapshots: list[StateSnapshot] = []
-        self._active_transaction: Optional[Transaction] = None
+        self._active_transaction: Transaction | None = None
         
         # Materialized note store: region_id -> list of note dicts
         # Maintained by add_notes/remove_notes; queryable after commit
@@ -366,9 +366,9 @@ class StateStore:
     def create_track(
         self,
         name: str,
-        track_id: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
-        transaction: Optional[Transaction] = None,
+        track_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        transaction: Transaction | None = None,
     ) -> str:
         """Create a new track and record the event."""
         track_id = self._registry.create_track(name, track_id, metadata)
@@ -387,9 +387,9 @@ class StateStore:
         self,
         name: str,
         parent_track_id: str,
-        region_id: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
-        transaction: Optional[Transaction] = None,
+        region_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        transaction: Transaction | None = None,
     ) -> str:
         """Create a new region and record the event."""
         region_id = self._registry.create_region(name, parent_track_id, region_id, metadata)
@@ -411,9 +411,9 @@ class StateStore:
     def create_bus(
         self,
         name: str,
-        bus_id: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
-        transaction: Optional[Transaction] = None,
+        bus_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        transaction: Transaction | None = None,
     ) -> str:
         """Create a new bus and record the event."""
         bus_id = self._registry.create_bus(name, bus_id, metadata)
@@ -431,7 +431,7 @@ class StateStore:
     def get_or_create_bus(
         self,
         name: str,
-        transaction: Optional[Transaction] = None,
+        transaction: Transaction | None = None,
     ) -> str:
         """Get existing bus by name or create a new one."""
         existing = self._registry.resolve_bus(name)
@@ -446,9 +446,9 @@ class StateStore:
     def set_tempo(
         self,
         tempo: int,
-        transaction: Optional[Transaction] = None,
+        transaction: Transaction | None = None,
     ) -> None:
-        """Set project tempo."""
+        """set project tempo."""
         old_tempo = self._tempo
         self._tempo = tempo
         
@@ -463,9 +463,9 @@ class StateStore:
     def set_key(
         self,
         key: str,
-        transaction: Optional[Transaction] = None,
+        transaction: Transaction | None = None,
     ) -> None:
-        """Set project key."""
+        """set project key."""
         old_key = self._key
         self._key = key
         
@@ -481,7 +481,7 @@ class StateStore:
         self,
         region_id: str,
         notes: list[dict[str, Any]],
-        transaction: Optional[Transaction] = None,
+        transaction: Transaction | None = None,
     ) -> None:
         """Add notes to a region (event + materialized view).
 
@@ -505,7 +505,7 @@ class StateStore:
         self,
         region_id: str,
         note_criteria: list[dict[str, Any]],
-        transaction: Optional[Transaction] = None,
+        transaction: Transaction | None = None,
     ) -> None:
         """
         Remove notes from a region (event + materialized view).
@@ -532,7 +532,7 @@ class StateStore:
         self,
         track_id: str,
         effect_type: str,
-        transaction: Optional[Transaction] = None,
+        transaction: Transaction | None = None,
     ) -> None:
         """Record effect added to a track."""
         self._append_event(
@@ -551,12 +551,12 @@ class StateStore:
         """Return the current materialized note list for a region."""
         return deepcopy(self._region_notes.get(region_id, []))
     
-    def get_region_track_id(self, region_id: str) -> Optional[str]:
+    def get_region_track_id(self, region_id: str) -> str | None:
         """Return the parent track ID for a region (from registry)."""
         entity = self._registry.get_region(region_id)
         return entity.parent_id if entity else None
 
-    def get_track_name(self, track_id: str) -> Optional[str]:
+    def get_track_name(self, track_id: str) -> str | None:
         """Return the name of a track by ID, or None if not found."""
         entity = self._registry.get_track(track_id)
         return entity.name if entity else None
@@ -611,7 +611,7 @@ class StateStore:
     # Composition State (Orpheus session continuity)
     # =========================================================================
 
-    def get_composition_state(self, composition_id: str) -> Optional[CompositionState]:
+    def get_composition_state(self, composition_id: str) -> CompositionState | None:
         """Return the composition state for a given composition, if any."""
         return self._composition_states.get(composition_id)
 
@@ -620,7 +620,7 @@ class StateStore:
         composition_id: str,
         session_id: str,
         token_estimate: int = 0,
-        midi_path: Optional[str] = None,
+        midi_path: str | None = None,
     ) -> CompositionState:
         """Create or update the composition state for session continuity."""
         import time as _time
@@ -699,10 +699,10 @@ class StateStore:
     def _append_event(
         self,
         event_type: EventType,
-        entity_type: Optional[EntityType],
-        entity_id: Optional[str],
+        entity_type: EntityType | None,
+        entity_id: str | None,
         data: dict[str, Any],
-        transaction: Optional[Transaction],
+        transaction: Transaction | None,
     ) -> StateEvent:
         """Append an event to the log."""
         self._version += 1
@@ -826,7 +826,7 @@ _stores: dict[str, StateStore] = {}
 
 def get_or_create_store(
     conversation_id: str,
-    project_id: Optional[str] = None,
+    project_id: str | None = None,
 ) -> StateStore:
     """
     Get existing store for conversation or create new one.

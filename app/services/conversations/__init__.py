@@ -4,6 +4,7 @@ Conversation management service package.
 Handles CRUD operations for conversations, messages, and actions,
 plus context optimization for long conversation histories.
 """
+from __future__ import annotations
 
 from app.services.conversations.crud import (
     create_conversation,

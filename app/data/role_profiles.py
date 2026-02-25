@@ -15,7 +15,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,7 @@ class RoleProfile:
         )
 
 
-def _build_profile(role: str, data: dict) -> RoleProfile:
+def _build_profile(role: str, data: dict[str, Any]) -> RoleProfile:
     """Construct a RoleProfile from the raw heuristics JSON for one role."""
     track_count = data.get("track_count", 0)
 
@@ -287,7 +287,7 @@ def _load_profiles() -> dict[str, RoleProfile]:
 ROLE_PROFILES: dict[str, RoleProfile] = _load_profiles()
 
 
-def get_role_profile(role: str) -> Optional[RoleProfile]:
+def get_role_profile(role: str) -> RoleProfile | None:
     """Look up a role profile with fuzzy matching.
 
     Accepts canonical names (``"lead"``, ``"bass"``, ``"chords"``,

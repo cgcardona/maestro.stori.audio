@@ -18,6 +18,8 @@ Environment:
   STORI_ASSET_AUTHOR  Optional; default "Stori Maestro"
   STORI_ASSET_LICENSE Optional; default "CC0"
 """
+from __future__ import annotations
+
 import argparse
 import io
 import json
@@ -64,7 +66,7 @@ def kit_json_payload(kit_id: str, name: str) -> dict:
     }
 
 
-def main():
+def main() -> None:
     p = argparse.ArgumentParser(description="Upload placeholder drum kit zips to S3")
     p.add_argument("--bucket", "-b", required=True, help="S3 bucket name")
     p.add_argument("--region", "-r", default="eu-west-1", help="AWS region")

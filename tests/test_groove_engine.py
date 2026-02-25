@@ -8,6 +8,8 @@ Tests verify:
 4. Velocity shaping follows accent maps
 5. Hat arcs are applied correctly
 """
+from __future__ import annotations
+
 import pytest
 import random
 from app.services.groove_engine import (
@@ -35,7 +37,8 @@ from app.services.groove_engine import (
 class TestGrooveProfiles:
     """Test groove profile definitions."""
     
-    def test_boom_bap_profile_exists(self):
+    def test_boom_bap_profile_exists(self) -> None:
+
         """Boom bap profile should have correct characteristics."""
         assert BOOM_BAP.name == "boom_bap"
         assert BOOM_BAP.swing_amount > 0.3  # Should have swing
@@ -46,22 +49,26 @@ class TestGrooveProfiles:
         snare_lo, snare_hi = BOOM_BAP.role_offset_ms["snare"]
         assert kick_hi < snare_lo  # Kick max < snare min (kick early, snare late)
     
-    def test_trap_straight_is_straight(self):
+    def test_trap_straight_is_straight(self) -> None:
+
         """Trap straight should have no swing."""
         assert TRAP_STRAIGHT.swing_amount == 0.0
         assert TRAP_STRAIGHT.swing_grid == "16th"
     
-    def test_trap_triplet_has_some_swing(self):
+    def test_trap_triplet_has_some_swing(self) -> None:
+
         """Trap triplet should have triplet feel."""
         assert TRAP_TRIPLET.swing_amount > 0.2
         assert TRAP_TRIPLET.swing_grid == "16th"
     
-    def test_house_has_tight_kick(self):
+    def test_house_has_tight_kick(self) -> None:
+
         """House/four-on-floor should have tight kick timing."""
         kick_lo, kick_hi = HOUSE_FOUR_ON_FLOOR.role_offset_ms["kick"]
         assert abs(kick_lo) <= 5 and abs(kick_hi) <= 5  # Very tight
     
-    def test_all_profiles_have_required_fields(self):
+    def test_all_profiles_have_required_fields(self) -> None:
+
         """All profiles should have complete configuration."""
         for name, profile in GROOVE_PROFILES.items():
             assert profile.name, f"Profile {name} missing name"
@@ -75,31 +82,36 @@ class TestGrooveProfiles:
 class TestRoleDetection:
     """Test pitch to role mapping."""
     
-    def test_kick_pitches(self):
+    def test_kick_pitches(self) -> None:
+
         """Kick pitches should map to kick role."""
         assert get_role_for_pitch(36) == "kick"
         assert get_role_for_pitch(35) == "kick"
     
-    def test_snare_pitches(self):
+    def test_snare_pitches(self) -> None:
+
         """Snare pitches should map to snare role."""
         assert get_role_for_pitch(38) == "snare"
         assert get_role_for_pitch(39) == "snare"
         assert get_role_for_pitch(40) == "snare"
     
-    def test_hat_pitches(self):
+    def test_hat_pitches(self) -> None:
+
         """Hat pitches should map to hat role."""
         assert get_role_for_pitch(42) == "hat"
         assert get_role_for_pitch(44) == "hat"
         assert get_role_for_pitch(46) == "hat"
     
-    def test_ghost_detection_by_velocity(self):
+    def test_ghost_detection_by_velocity(self) -> None:
+
         """Low velocity snare should be detected as ghost."""
         # High velocity = snare
         assert get_role_for_pitch(38, velocity=100) == "snare"
         # Low velocity = ghost
         assert get_role_for_pitch(38, velocity=50) == "ghost"
     
-    def test_layer_override(self):
+    def test_layer_override(self) -> None:
+
         """Layer parameter should override pitch-based detection."""
         assert get_role_for_pitch(38, velocity=100, layer="ghost_layer") == "ghost"
         assert get_role_for_pitch(42, velocity=100, layer="fills") == "fill"
@@ -108,7 +120,8 @@ class TestRoleDetection:
 class TestSwingCalculation:
     """Test swing offset calculation."""
     
-    def test_offbeat_detection_8th(self):
+    def test_offbeat_detection_8th(self) -> None:
+
         """8th note offbeats should be at 0.5, 1.5, 2.5, 3.5."""
         assert is_offbeat_for_grid(0.5, "8th")
         assert is_offbeat_for_grid(1.5, "8th")
@@ -120,7 +133,8 @@ class TestSwingCalculation:
         assert not is_offbeat_for_grid(1.0, "8th")
         assert not is_offbeat_for_grid(2.0, "8th")
     
-    def test_offbeat_detection_16th(self):
+    def test_offbeat_detection_16th(self) -> None:
+
         """16th note offbeats should be at 0.25, 0.75, 1.25, etc."""
         assert is_offbeat_for_grid(0.25, "16th")
         assert is_offbeat_for_grid(0.75, "16th")
@@ -131,7 +145,8 @@ class TestSwingCalculation:
         assert not is_offbeat_for_grid(0.5, "16th")
         assert not is_offbeat_for_grid(1.0, "16th")
     
-    def test_swing_only_affects_offbeats(self):
+    def test_swing_only_affects_offbeats(self) -> None:
+
         """Swing should only affect offbeat positions."""
         # On-beat should have no swing offset
         assert calculate_swing_offset(0.0, BOOM_BAP, 120) == 0.0
@@ -141,7 +156,8 @@ class TestSwingCalculation:
         offset = calculate_swing_offset(0.5, BOOM_BAP, 120)
         assert offset > 0  # Should be delayed
     
-    def test_no_swing_with_zero_amount(self):
+    def test_no_swing_with_zero_amount(self) -> None:
+
         """Profile with swing_amount=0 should have no swing offset."""
         assert calculate_swing_offset(0.5, TRAP_STRAIGHT, 120) == 0.0
 
@@ -149,7 +165,8 @@ class TestSwingCalculation:
 class TestGrooveApplication:
     """Test apply_groove_map function."""
     
-    def test_applies_timing_offsets(self):
+    def test_applies_timing_offsets(self) -> None:
+
         """Notes should have timing offsets applied."""
         notes = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
@@ -167,7 +184,8 @@ class TestGrooveApplication:
             assert n["start_beat"] >= -0.1  # Not too early
             assert n["start_beat"] <= 2.0  # Not too late
     
-    def test_applies_velocity_shaping(self):
+    def test_applies_velocity_shaping(self) -> None:
+
         """Velocity should be shaped by accent map."""
         notes = [
             {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80}
@@ -182,7 +200,8 @@ class TestGrooveApplication:
         assert max(velocities) > min(velocities)  # Not all same
         assert all(1 <= v <= 127 for v in velocities)  # In MIDI range
     
-    def test_hat_arc_applied(self):
+    def test_hat_arc_applied(self) -> None:
+
         """Hat notes should have velocity arc applied."""
         # Create hats at different positions in bar
         notes = [
@@ -198,7 +217,8 @@ class TestGrooveApplication:
         velocities = [n["velocity"] for n in result]
         assert len(set(velocities)) > 1  # Not all same
     
-    def test_deterministic_with_seed(self):
+    def test_deterministic_with_seed(self) -> None:
+
         """Same seed should produce same result."""
         notes = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
@@ -215,7 +235,8 @@ class TestGrooveApplication:
             assert n1["start_beat"] == n2["start_beat"]
             assert n1["velocity"] == n2["velocity"]
     
-    def test_empty_notes(self):
+    def test_empty_notes(self) -> None:
+
         """Empty notes list should return empty list."""
         result = apply_groove_map([], tempo=120, style="trap")
         assert result == []
@@ -224,7 +245,8 @@ class TestGrooveApplication:
 class TestOnsetExtraction:
     """Test onset extraction functions."""
     
-    def test_extract_kick_onsets(self):
+    def test_extract_kick_onsets(self) -> None:
+
         """Should extract kick onset times."""
         notes = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
@@ -236,7 +258,8 @@ class TestOnsetExtraction:
         kicks = extract_kick_onsets(notes)
         assert kicks == [0.0, 2.0]
     
-    def test_extract_snare_onsets(self):
+    def test_extract_snare_onsets(self) -> None:
+
         """Should extract snare onset times."""
         notes = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
@@ -247,7 +270,8 @@ class TestOnsetExtraction:
         snares = extract_snare_onsets(notes)
         assert snares == [1.0, 3.0]
     
-    def test_extract_hat_grid(self):
+    def test_extract_hat_grid(self) -> None:
+
         """Should extract hat onset times."""
         notes = [
             {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80}
@@ -263,7 +287,8 @@ class TestOnsetExtraction:
 class TestRhythmSpine:
     """Test RhythmSpine for coupled generation."""
     
-    def test_create_from_drum_notes(self):
+    def test_create_from_drum_notes(self) -> None:
+
         """Should create rhythm spine from drum notes."""
         notes = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
@@ -282,7 +307,8 @@ class TestRhythmSpine:
         assert spine.tempo == 120
         assert spine.bars == 1
     
-    def test_anticipation_slots(self):
+    def test_anticipation_slots(self) -> None:
+
         """Should calculate anticipation slots before kicks."""
         spine = RhythmSpine(
             kick_onsets=[0.0, 2.0, 4.0],
@@ -300,7 +326,8 @@ class TestRhythmSpine:
         assert 1.875 in slots or round(1.875, 4) in slots
         assert 3.875 in slots or round(3.875, 4) in slots
     
-    def test_response_slots(self):
+    def test_response_slots(self) -> None:
+
         """Should calculate response slots after snares."""
         spine = RhythmSpine(
             kick_onsets=[0.0, 2.0],
@@ -321,23 +348,27 @@ class TestRhythmSpine:
 class TestProfileSelection:
     """Test get_groove_profile function."""
     
-    def test_get_by_style(self):
+    def test_get_by_style(self) -> None:
+
         """Should get profile by style name."""
         assert get_groove_profile("boom_bap").name == "boom_bap"
         assert get_groove_profile("trap").name == "trap_straight"
         assert get_groove_profile("house").name == "house"
     
-    def test_humanize_profile_override(self):
+    def test_humanize_profile_override(self) -> None:
+
         """Humanize profile should override style."""
         profile = get_groove_profile("trap", humanize_profile="laid_back")
         assert profile.name == "laid_back"
     
-    def test_default_fallback(self):
+    def test_default_fallback(self) -> None:
+
         """Unknown style should fall back to trap."""
         profile = get_groove_profile("unknown_style_xyz")
         assert profile.name == "trap_straight"
     
-    def test_style_aliases(self):
+    def test_style_aliases(self) -> None:
+
         """Style aliases should work."""
         assert get_groove_profile("hip_hop").name == "boom_bap"
         assert get_groove_profile("boom_bap_swing").name == "boom_bap"

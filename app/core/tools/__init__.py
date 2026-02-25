@@ -10,6 +10,7 @@ And by tier:
   * Tier 1: server-side generation/execution
   * Tier 2: client-side DAW control (Swift)
 """
+from __future__ import annotations
 
 from app.core.tools.metadata import ToolTier, ToolKind, ToolMeta
 from app.core.tools.definitions import TIER1_TOOLS, TIER2_TOOLS, ALL_TOOLS

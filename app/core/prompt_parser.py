@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import yaml
 
@@ -72,7 +72,7 @@ _POS_KEYWORDS = ("after", "before", "alongside", "between", "within", "last")
 @dataclass
 class TargetSpec:
     kind: Literal["project", "selection", "track", "region"]
-    name: Optional[str] = None
+    name: str | None = None
 
 
 @dataclass
@@ -90,10 +90,10 @@ class PositionSpec:
     last        after all existing content in the project
     """
     kind: Literal["after", "before", "alongside", "between", "within", "absolute", "last"]
-    ref: Optional[str] = None
-    ref2: Optional[str] = None
+    ref: str | None = None
+    ref2: str | None = None
     offset: float = 0.0
-    beat: Optional[float] = None
+    beat: float | None = None
 
 
 # Backwards-compatible alias
@@ -116,20 +116,20 @@ class ParsedPrompt:
     raw: str
     mode: Literal["compose", "edit", "ask"]
     request: str
-    section: Optional[str] = None
-    position: Optional[PositionSpec] = None
-    target: Optional[TargetSpec] = None
-    style: Optional[str] = None
-    key: Optional[str] = None
-    tempo: Optional[int] = None
-    energy: Optional[str] = None
+    section: str | None = None
+    position: PositionSpec | None = None
+    target: TargetSpec | None = None
+    style: str | None = None
+    key: str | None = None
+    tempo: int | None = None
+    energy: str | None = None
     roles: list[str] = field(default_factory=list)
     constraints: dict[str, Any] = field(default_factory=dict)
     vibes: list[VibeWeight] = field(default_factory=list)
     extensions: dict[str, Any] = field(default_factory=dict)
 
     @property
-    def after(self) -> Optional[PositionSpec]:
+    def after(self) -> PositionSpec | None:
         """Backwards-compatible alias for position."""
         return self.position
 
@@ -141,7 +141,7 @@ class ParsedPrompt:
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 
-def parse_prompt(text: str) -> Optional[ParsedPrompt]:
+def parse_prompt(text: str) -> ParsedPrompt | None:
     """Parse a Stori Structured Prompt.
 
     Returns ParsedPrompt on success, None to fall through to the NL pipeline.
@@ -229,7 +229,7 @@ def parse_prompt(text: str) -> Optional[ParsedPrompt]:
 # ─── Field parsers ────────────────────────────────────────────────────────────
 
 
-def _str(v: Any, lower: bool = False) -> Optional[str]:
+def _str(v: Any, lower: bool = False) -> str | None:
     """Coerce a YAML scalar to a stripped string, or None."""
     if v is None:
         return None
@@ -237,7 +237,7 @@ def _str(v: Any, lower: bool = False) -> Optional[str]:
     return (s.lower() if lower else s) or None
 
 
-def _parse_target(val: Optional[str]) -> Optional[TargetSpec]:
+def _parse_target(val: str | None) -> TargetSpec | None:
     if not val:
         return None
     v = val.lower().strip()
@@ -252,7 +252,7 @@ def _parse_target(val: Optional[str]) -> Optional[TargetSpec]:
     return None
 
 
-def _parse_tempo(v: Any) -> Optional[int]:
+def _parse_tempo(v: Any) -> int | None:
     """Accept integer, float, or string like '92 bpm'."""
     if v is None:
         return None
@@ -338,7 +338,7 @@ def _parse_vibes(v: Any) -> list[VibeWeight]:
     return vibes
 
 
-def _parse_position(val: Optional[str], after_alias: bool = False) -> Optional[PositionSpec]:
+def _parse_position(val: str | None, after_alias: bool = False) -> PositionSpec | None:
     if not val:
         return None
     val = val.strip()

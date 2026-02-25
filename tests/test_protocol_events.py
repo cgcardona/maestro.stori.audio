@@ -7,6 +7,7 @@ serialize_event and ProtocolGuard integration.
 
 from __future__ import annotations
 
+from httpx import AsyncClient
 import inspect
 import json
 import re
@@ -54,27 +55,32 @@ from app.protocol.schemas.project import ProjectSnapshot
 
 
 class TestProtocolVersion:
-    def test_version_format(self):
+    def test_version_format(self) -> None:
+
         """Version string is semver."""
         assert re.match(r"^\d+\.\d+\.\d+", STORI_PROTOCOL_VERSION)
 
-    def test_version_matches_pyproject(self):
+    def test_version_matches_pyproject(self) -> None:
+
         """Protocol version reads from pyproject.toml — single source of truth."""
         from app.protocol.version import STORI_VERSION
         assert STORI_PROTOCOL_VERSION == STORI_VERSION
 
-    def test_compatible_same_major(self):
+    def test_compatible_same_major(self) -> None:
+
         from app.protocol.version import STORI_VERSION_MAJOR
         assert is_compatible(f"{STORI_VERSION_MAJOR}.0.0")
         assert is_compatible(f"{STORI_VERSION_MAJOR}.5.3")
 
-    def test_incompatible_different_major(self):
+    def test_incompatible_different_major(self) -> None:
+
         from app.protocol.version import STORI_VERSION_MAJOR
         assert not is_compatible(f"{STORI_VERSION_MAJOR + 1}.0.0")
         if STORI_VERSION_MAJOR > 0:
             assert not is_compatible(f"{STORI_VERSION_MAJOR - 1}.0.0")
 
-    def test_incompatible_garbage(self):
+    def test_incompatible_garbage(self) -> None:
+
         assert not is_compatible("abc")
         assert not is_compatible("")
 
@@ -85,7 +91,8 @@ class TestProtocolVersion:
 
 
 class TestEventRegistry:
-    def test_all_event_types_registered(self):
+    def test_all_event_types_registered(self) -> None:
+
         """Every StoriEvent subclass in events.py has a registry entry."""
         from app.protocol import events as events_module
 
@@ -104,13 +111,15 @@ class TestEventRegistry:
             f"StoriEvent subclasses not in registry: {[c.__name__ for c in missing]}"
         )
 
-    def test_registry_type_keys_match_model_type(self):
+    def test_registry_type_keys_match_model_type(self) -> None:
+
         """Registry key matches the model's Literal type value."""
         for event_type, model_class in EVENT_REGISTRY.items():
             instance = _make_minimal(model_class)
             assert instance.type == event_type
 
-    def test_all_event_types_frozenset(self):
+    def test_all_event_types_frozenset(self) -> None:
+
         assert ALL_EVENT_TYPES == frozenset(EVENT_REGISTRY.keys())
 
 
@@ -120,7 +129,8 @@ class TestEventRegistry:
 
 
 class TestEventSerialization:
-    def test_all_events_serialize_camel_case(self):
+    def test_all_events_serialize_camel_case(self) -> None:
+
         """No snake_case keys in wire-format output."""
         snake_re = re.compile(r"[a-z]+_[a-z]")
         for event_type, model_class in EVENT_REGISTRY.items():
@@ -132,7 +142,8 @@ class TestEventSerialization:
                     f"in JSON schema. CamelModel alias should convert this."
                 )
 
-    def test_state_event_wire_format(self):
+    def test_state_event_wire_format(self) -> None:
+
         """StateEvent serializes with exact camelCase keys."""
         event = StateEvent(
             state="editing",
@@ -149,7 +160,8 @@ class TestEventSerialization:
         assert "trace_id" not in data
         assert "execution_mode" not in data
 
-    def test_exclude_none_removes_optional_fields(self):
+    def test_exclude_none_removes_optional_fields(self) -> None:
+
         """Optional fields not set are excluded from wire output."""
         event = ErrorEvent(message="boom")
         data = event.model_dump(by_alias=True, exclude_none=True)
@@ -157,7 +169,8 @@ class TestEventSerialization:
         assert "code" not in data
         assert data["message"] == "boom"
 
-    def test_emit_produces_sse_format(self):
+    def test_emit_produces_sse_format(self) -> None:
+
         """emit() returns data: {json}\\n\\n."""
         event = ContentEvent(content="hello")
         sse = emit(event)
@@ -167,7 +180,8 @@ class TestEventSerialization:
         assert payload["type"] == "content"
         assert payload["content"] == "hello"
 
-    def test_emit_compact_json(self):
+    def test_emit_compact_json(self) -> None:
+
         """emit() uses compact separators (no spaces after : or ,)."""
         event = StateEvent(
             state="reasoning",
@@ -188,18 +202,21 @@ class TestEventSerialization:
 
 
 class TestEmitter:
-    def test_emit_rejects_raw_dict(self):
+    def test_emit_rejects_raw_dict(self) -> None:
+
         with pytest.raises(TypeError, match="StoriEvent"):
             emit({"type": "state"})  # type: ignore[arg-type]
 
-    def test_emit_rejects_unregistered_type(self):
+    def test_emit_rejects_unregistered_type(self) -> None:
+
         class FakeEvent(StoriEvent):
             type: str = "fake_event_xyz"
 
         with pytest.raises(ValueError, match="Unknown event type"):
             emit(FakeEvent())
 
-    def test_emit_rejects_pre_set_seq(self):
+    def test_emit_rejects_pre_set_seq(self) -> None:
+
         """emit() does not allow stale seq values to leak through."""
         event = ContentEvent(content="test")
         sse = emit(event)
@@ -213,7 +230,8 @@ class TestEmitter:
 
 
 class TestSerializeEvent:
-    def test_valid_event_dict_validates_and_serializes(self):
+    def test_valid_event_dict_validates_and_serializes(self) -> None:
+
         """serialize_event produces model-validated SSE output."""
         sse = serialize_event({"type": "content", "content": "hello"})
         assert sse.startswith("data: ")
@@ -223,13 +241,15 @@ class TestSerializeEvent:
         assert payload["protocolVersion"] == STORI_PROTOCOL_VERSION
         assert payload["seq"] == -1
 
-    def test_injects_protocol_version(self):
+    def test_injects_protocol_version(self) -> None:
+
         """protocolVersion is auto-injected even when not in source dict."""
         sse = serialize_event({"type": "status", "message": "ok"})
         payload = json.loads(sse[6:].strip())
         assert payload["protocolVersion"] == STORI_PROTOCOL_VERSION
 
-    def test_camel_case_aliases_accepted(self):
+    def test_camel_case_aliases_accepted(self) -> None:
+
         """Handler dicts using camelCase keys validate correctly."""
         sse = serialize_event({
             "type": "state",
@@ -243,26 +263,31 @@ class TestSerializeEvent:
         assert payload["traceId"] == "test-trace"
         assert payload["executionMode"] == "apply"
 
-    def test_missing_type_raises(self):
+    def test_missing_type_raises(self) -> None:
+
         with pytest.raises(ProtocolSerializationError, match="missing 'type'"):
             serialize_event({"content": "no type"})
 
-    def test_unregistered_type_raises(self):
+    def test_unregistered_type_raises(self) -> None:
+
         """Unregistered event types always raise (no production fallback)."""
         with pytest.raises(ProtocolSerializationError, match="Unregistered"):
             serialize_event({"type": "totally_unknown_xyz"})
 
-    def test_invalid_dict_raises(self):
+    def test_invalid_dict_raises(self) -> None:
+
         """A dict that fails model validation always raises."""
         with pytest.raises(ProtocolSerializationError, match="failed protocol validation"):
             serialize_event({"type": "content"})
 
-    def test_compact_json_output(self):
+    def test_compact_json_output(self) -> None:
+
         sse = serialize_event({"type": "content", "content": "hi"})
         json_part = sse[6:].strip()
         assert '" : ' not in json_part
 
-    def test_exclude_none(self):
+    def test_exclude_none(self) -> None:
+
         """Optional None fields are excluded from wire output."""
         sse = serialize_event({"type": "error", "message": "boom"})
         payload = json.loads(sse[6:].strip())
@@ -276,12 +301,14 @@ class TestSerializeEvent:
 
 
 class TestExtraFieldsPolicy:
-    def test_events_forbid_extra(self):
+    def test_events_forbid_extra(self) -> None:
+
         """Event models reject unexpected fields."""
         with pytest.raises(ValidationError):
             ContentEvent(content="hi", bogus_field="nope")  # type: ignore[call-arg]
 
-    def test_project_snapshot_allows_extra(self):
+    def test_project_snapshot_allows_extra(self) -> None:
+
         """ProjectSnapshot allows unknown fields from FE."""
         p = ProjectSnapshot.model_validate({
             "id": "proj-1",
@@ -297,7 +324,8 @@ class TestExtraFieldsPolicy:
 
 
 class TestStateEvent:
-    def test_has_execution_mode_default(self):
+    def test_has_execution_mode_default(self) -> None:
+
         event = StateEvent(
             state="editing",
             intent="track.add",
@@ -309,7 +337,8 @@ class TestStateEvent:
         assert "executionMode" in data
         assert data["executionMode"] == "apply"
 
-    def test_execution_mode_variation(self):
+    def test_execution_mode_variation(self) -> None:
+
         event = StateEvent(
             state="composing",
             intent="compose.generate_music",
@@ -320,7 +349,8 @@ class TestStateEvent:
         data = event.model_dump(by_alias=True)
         assert data["executionMode"] == "variation"
 
-    def test_execution_mode_reasoning(self):
+    def test_execution_mode_reasoning(self) -> None:
+
         event = StateEvent(
             state="reasoning",
             intent="ask.general",
@@ -338,15 +368,18 @@ class TestStateEvent:
 
 
 class TestCompleteEvent:
-    def test_requires_success_and_trace_id(self):
+    def test_requires_success_and_trace_id(self) -> None:
+
         with pytest.raises(ValidationError):
             CompleteEvent()  # type: ignore[call-arg]
 
-    def test_success_true(self):
+    def test_success_true(self) -> None:
+
         event = CompleteEvent(success=True, trace_id="t")
         assert event.success is True
 
-    def test_success_false_with_error(self):
+    def test_success_false_with_error(self) -> None:
+
         event = CompleteEvent(success=False, trace_id="t", error="boom")
         data = event.model_dump(by_alias=True, exclude_none=True)
         assert data["success"] is False
@@ -359,7 +392,8 @@ class TestCompleteEvent:
 
 
 class TestPhraseEvent:
-    def test_note_changes_typed(self):
+    def test_note_changes_typed(self) -> None:
+
         """PhraseEvent.note_changes uses NoteChangeSchema, not raw dicts."""
         event = PhraseEvent(
             phrase_id="p1",
@@ -383,13 +417,15 @@ class TestPhraseEvent:
 
 
 class TestProjectSnapshot:
-    def test_minimal_project(self):
+    def test_minimal_project(self) -> None:
+
         p = ProjectSnapshot.model_validate({"id": "proj-1"})
         assert p.id == "proj-1"
         assert p.tracks == []
         assert p.tempo is None
 
-    def test_full_project(self):
+    def test_full_project(self) -> None:
+
         p = ProjectSnapshot.model_validate({
             "id": "proj-1",
             "name": "My Beat",
@@ -410,7 +446,8 @@ class TestProjectSnapshot:
         assert len(p.tracks) == 1
         assert p.tracks[0].drum_kit_id == "TR-808"
 
-    def test_extra_fields_allowed(self):
+    def test_extra_fields_allowed(self) -> None:
+
         p = ProjectSnapshot.model_validate({
             "id": "proj-1",
             "futureField": "unknown",
@@ -418,11 +455,13 @@ class TestProjectSnapshot:
         })
         assert p.id == "proj-1"
 
-    def test_invalid_tempo_rejected(self):
+    def test_invalid_tempo_rejected(self) -> None:
+
         with pytest.raises(ValidationError):
             ProjectSnapshot.model_validate({"id": "proj-1", "tempo": -10})
 
-    def test_invalid_pitch_rejected(self):
+    def test_invalid_pitch_rejected(self) -> None:
+
         with pytest.raises(ValidationError):
             ProjectSnapshot.model_validate({
                 "id": "proj-1",
@@ -442,7 +481,8 @@ class TestProjectSnapshot:
 
 
 class TestProtocolHash:
-    def test_hash_is_deterministic(self):
+    def test_hash_is_deterministic(self) -> None:
+
         """Same code → same hash on repeated calls."""
         from app.protocol.hash import compute_protocol_hash
 
@@ -450,19 +490,22 @@ class TestProtocolHash:
         h2 = compute_protocol_hash()
         assert h1 == h2
 
-    def test_hash_is_64_hex_chars(self):
+    def test_hash_is_64_hex_chars(self) -> None:
+
         from app.protocol.hash import compute_protocol_hash
 
         h = compute_protocol_hash()
         assert re.match(r"^[0-9a-f]{64}$", h)
 
-    def test_short_hash_is_16_chars(self):
+    def test_short_hash_is_16_chars(self) -> None:
+
         from app.protocol.hash import compute_protocol_hash_short
 
         h = compute_protocol_hash_short()
         assert len(h) == 16
 
-    def test_golden_hash_stable(self):
+    def test_golden_hash_stable(self) -> None:
+
         """Protocol hash matches the committed golden hash.
 
         If this fails, the protocol surface changed. Update GOLDEN_HASH:
@@ -488,25 +531,29 @@ class TestProtocolHash:
 
 
 class TestProtocolGuard:
-    def test_first_event_must_be_state(self):
+    def test_first_event_must_be_state(self) -> None:
+
         guard = ProtocolGuard()
         violations = guard.check_event("reasoning", {"type": "reasoning", "content": "..."})
         assert any("First event must be 'state'" in v for v in violations)
 
-    def test_no_events_after_complete(self):
+    def test_no_events_after_complete(self) -> None:
+
         guard = ProtocolGuard()
         guard.check_event("state", {"type": "state", "state": "reasoning"})
         guard.check_event("complete", {"type": "complete", "success": True})
         violations = guard.check_event("content", {"type": "content", "content": "late"})
         assert any("after 'complete'" in v for v in violations)
 
-    def test_complete_requires_success(self):
+    def test_complete_requires_success(self) -> None:
+
         guard = ProtocolGuard()
         guard.check_event("state", {"type": "state", "state": "editing"})
         violations = guard.check_event("complete", {"type": "complete"})
         assert any("missing 'success'" in v for v in violations)
 
-    def test_happy_path_no_violations(self):
+    def test_happy_path_no_violations(self) -> None:
+
         guard = ProtocolGuard()
         v1 = guard.check_event("state", {"type": "state", "state": "editing"})
         v2 = guard.check_event("content", {"type": "content", "content": "hi"})
@@ -516,7 +563,8 @@ class TestProtocolGuard:
         assert v3 == []
         assert guard.terminated
 
-    def test_unregistered_event_type(self):
+    def test_unregistered_event_type(self) -> None:
+
         guard = ProtocolGuard()
         guard.check_event("state", {"type": "state", "state": "editing"})
         violations = guard.check_event("nonexistent_xyz", {"type": "nonexistent_xyz"})
@@ -560,7 +608,7 @@ def _extract_event_types_from_source() -> set[str]:
     return types_found
 
 
-def test_all_emitted_types_registered():
+def test_all_emitted_types_registered() -> None:
     """Every event type found in handler source code is in EVENT_REGISTRY."""
     emitted = _extract_event_types_from_source()
     unregistered = emitted - ALL_EVENT_TYPES - _NON_EVENT_TYPES
@@ -576,7 +624,8 @@ def test_all_emitted_types_registered():
 
 
 @pytest.mark.anyio
-async def test_protocol_info_endpoint(client):
+async def test_protocol_info_endpoint(client: AsyncClient) -> None:
+
     """GET /api/v1/protocol returns version and hash."""
     response = await client.get("/api/v1/protocol")
     assert response.status_code == 200
@@ -589,7 +638,8 @@ async def test_protocol_info_endpoint(client):
 
 
 @pytest.mark.anyio
-async def test_protocol_events_endpoint(client):
+async def test_protocol_events_endpoint(client: AsyncClient) -> None:
+
     """GET /api/v1/protocol/events.json returns JSON schemas."""
     response = await client.get("/api/v1/protocol/events.json")
     assert response.status_code == 200
@@ -604,7 +654,8 @@ async def test_protocol_events_endpoint(client):
 
 
 @pytest.mark.anyio
-async def test_protocol_tools_endpoint(client):
+async def test_protocol_tools_endpoint(client: AsyncClient) -> None:
+
     """GET /api/v1/protocol/tools.json returns tool schemas."""
     response = await client.get("/api/v1/protocol/tools.json")
     assert response.status_code == 200
@@ -616,7 +667,8 @@ async def test_protocol_tools_endpoint(client):
 
 
 @pytest.mark.anyio
-async def test_protocol_schema_unified_endpoint(client):
+async def test_protocol_schema_unified_endpoint(client: AsyncClient) -> None:
+
     """GET /api/v1/protocol/schema.json returns everything in one response."""
     response = await client.get("/api/v1/protocol/schema.json")
     assert response.status_code == 200
@@ -639,7 +691,8 @@ class TestPhase2RuntimeIntegration:
     """Prove that protocol enforcement is wired into the runtime path."""
 
     @pytest.mark.anyio
-    async def test_sse_event_uses_protocol_serializer(self):
+    async def test_sse_event_uses_protocol_serializer(self) -> None:
+
         """sse_event() validates through protocol models at runtime."""
         from app.core.sse_utils import sse_event
 
@@ -649,7 +702,8 @@ class TestPhase2RuntimeIntegration:
         assert payload["seq"] == -1
 
     @pytest.mark.anyio
-    async def test_sse_event_rejects_unknown_type(self):
+    async def test_sse_event_rejects_unknown_type(self) -> None:
+
         """Unregistered event types always raise (no production fallback)."""
         from app.core.sse_utils import sse_event
 
@@ -657,14 +711,16 @@ class TestPhase2RuntimeIntegration:
             await sse_event({"type": "nonexistent_event_type"})
 
     @pytest.mark.anyio
-    async def test_sse_event_validates_model_fields(self):
+    async def test_sse_event_validates_model_fields(self) -> None:
+
         """Missing required fields always raise."""
         from app.core.sse_utils import sse_event
 
         with pytest.raises(ProtocolSerializationError, match="failed protocol validation"):
             await sse_event({"type": "state"})
 
-    def test_all_registered_events_roundtrip_via_serialize(self):
+    def test_all_registered_events_roundtrip_via_serialize(self) -> None:
+
         """Every event in the registry can be built from a dict and serialized."""
         for event_type, model_class in EVENT_REGISTRY.items():
             instance = _make_minimal(model_class)
@@ -684,24 +740,28 @@ class TestProtocolGuardEnforcedGlobally:
 
     @staticmethod
     def _has_guard(text: str) -> bool:
+
         """Return True if the source uses ProtocolGuard directly or via SSESequencer."""
         return "ProtocolGuard()" in text or "SSESequencer()" in text
 
     @staticmethod
     def _has_guard_import(text: str) -> bool:
+
         return (
             "from app.protocol.validation import ProtocolGuard" in text
             or "from app.core.sse_utils import" in text
         )
 
-    def test_maestro_route_has_guard(self):
+    def test_maestro_route_has_guard(self) -> None:
+
         """maestro.py uses ProtocolGuard (directly or via SSESequencer)."""
         source = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "maestro.py"
         text = source.read_text()
         assert self._has_guard(text)
         assert self._has_guard_import(text)
 
-    def test_messages_route_has_guard(self):
+    def test_messages_route_has_guard(self) -> None:
+
         """messages.py uses ProtocolGuard (directly or via SSESequencer)."""
         source = (
             Path(__file__).resolve().parent.parent
@@ -711,14 +771,16 @@ class TestProtocolGuardEnforcedGlobally:
         assert self._has_guard(text)
         assert self._has_guard_import(text)
 
-    def test_mcp_route_has_guard(self):
+    def test_mcp_route_has_guard(self) -> None:
+
         """mcp.py instantiates ProtocolGuard in event_generator."""
         source = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "mcp.py"
         text = source.read_text()
         assert self._has_guard(text)
         assert self._has_guard_import(text)
 
-    def test_variation_stream_has_guard(self):
+    def test_variation_stream_has_guard(self) -> None:
+
         """variation/stream.py instantiates ProtocolGuard."""
         source = (
             Path(__file__).resolve().parent.parent
@@ -728,7 +790,8 @@ class TestProtocolGuardEnforcedGlobally:
         assert self._has_guard(text)
         assert self._has_guard_import(text)
 
-    def test_protocol_guard_enforced_globally(self):
+    def test_protocol_guard_enforced_globally(self) -> None:
+
         """All four streaming routes use ProtocolGuard (directly or via SSESequencer)."""
         base = Path(__file__).resolve().parent.parent
         routes = [
@@ -748,24 +811,28 @@ class TestProtocolGuardEnforcedGlobally:
 class TestPhase2ProjectSnapshotValidation:
     """Prove ProjectSnapshot validation is wired into MaestroRequest."""
 
-    def test_valid_project_passes(self):
+    def test_valid_project_passes(self) -> None:
+
         from app.models.requests import MaestroRequest
         req = MaestroRequest(prompt="test", project={"id": "p1", "tempo": 90})
         assert req.project is not None
         assert req.project["id"] == "p1"
 
-    def test_invalid_project_nullified(self):
+    def test_invalid_project_nullified(self) -> None:
+
         """Invalid project payload is set to None (not 422)."""
         from app.models.requests import MaestroRequest
         req = MaestroRequest(prompt="test", project={"id": "p1", "tempo": -10})
         assert req.project is None
 
-    def test_project_none_passes(self):
+    def test_project_none_passes(self) -> None:
+
         from app.models.requests import MaestroRequest
         req = MaestroRequest(prompt="test", project=None)
         assert req.project is None
 
-    def test_extra_fields_preserved(self):
+    def test_extra_fields_preserved(self) -> None:
+
         """ProjectSnapshot extra='allow' does not reject unknown FE fields."""
         from app.models.requests import MaestroRequest
         req = MaestroRequest(
@@ -779,7 +846,8 @@ class TestPhase2ProjectSnapshotValidation:
 class TestPhase2NoDuplicateHelpers:
     """Prove the duplicate sse_event helper was removed."""
 
-    def test_conversations_helpers_has_no_sse_event(self):
+    def test_conversations_helpers_has_no_sse_event(self) -> None:
+
         source = (
             Path(__file__).resolve().parent.parent
             / "app" / "api" / "routes" / "conversations" / "helpers.py"
@@ -795,6 +863,7 @@ class TestPhase2NoDuplicateHelpers:
 
 
 def _make_minimal(model_class: type) -> Any:
+
     """Construct a minimal valid instance of an event model."""
     _MINIMAL: dict[str, dict[str, Any]] = {
         "state": {"state": "editing", "intent": "track.add", "confidence": 0.9, "trace_id": "t"},
@@ -838,7 +907,8 @@ def _make_minimal(model_class: type) -> Any:
 class TestProtocolConvergenceFinal:
     """Final convergence cutover — ONE envelope, ONE emitter, ONE registry."""
 
-    def test_serialize_event_never_emits_raw(self):
+    def test_serialize_event_never_emits_raw(self) -> None:
+
         """serialize_event() raises on invalid events, never emits raw dicts."""
         with pytest.raises(ProtocolSerializationError):
             serialize_event({"type": "nonexistent_type_xyz"})
@@ -849,7 +919,8 @@ class TestProtocolConvergenceFinal:
         with pytest.raises(ProtocolSerializationError):
             serialize_event({"type": "content"})
 
-    def test_no_raw_sse_fallback_in_emitter(self):
+    def test_no_raw_sse_fallback_in_emitter(self) -> None:
+
         """emitter.py must not contain _raw_sse or production fallback logic."""
         source = Path(__file__).resolve().parent.parent / "app" / "protocol" / "emitter.py"
         text = source.read_text()
@@ -857,7 +928,8 @@ class TestProtocolConvergenceFinal:
         assert "emitting raw dict" not in text, "Raw dict fallback message must be removed"
         assert "settings.debug" not in text, "No debug/prod branching — always strict"
 
-    def test_all_stream_routes_use_protocol_emitter(self):
+    def test_all_stream_routes_use_protocol_emitter(self) -> None:
+
         """All streaming routes must use sse_event() or emit(), not json.dumps for SSE."""
         base = Path(__file__).resolve().parent.parent
         routes = [
@@ -870,7 +942,8 @@ class TestProtocolConvergenceFinal:
                 f"{route.name} still uses json.dumps — all SSE must go through protocol emitter"
             )
 
-    def test_mcp_stream_emits_registered_event_types(self):
+    def test_mcp_stream_emits_registered_event_types(self) -> None:
+
         """MCP stream uses mcp.message and mcp.ping (both registered)."""
         assert "mcp.message" in ALL_EVENT_TYPES
         assert "mcp.ping" in ALL_EVENT_TYPES
@@ -889,12 +962,14 @@ class TestProtocolConvergenceFinal:
         ping_sse = emit(ping)
         assert "mcp.ping" in ping_sse
 
-    def test_variation_stream_emits_registered_event_types(self):
+    def test_variation_stream_emits_registered_event_types(self) -> None:
+
         """Variation stream uses meta, phrase, done (all registered)."""
         for event_type in ("meta", "phrase", "done"):
             assert event_type in ALL_EVENT_TYPES
 
-    def test_variation_stream_no_event_envelope_to_sse(self):
+    def test_variation_stream_no_event_envelope_to_sse(self) -> None:
+
         """variation/stream.py must not call EventEnvelope.to_sse()."""
         source = (
             Path(__file__).resolve().parent.parent
@@ -904,7 +979,8 @@ class TestProtocolConvergenceFinal:
         assert ".to_sse()" not in text, "EventEnvelope.to_sse() must be replaced by sse_event()"
         assert "EventEnvelope.to_sse" not in text
 
-    def test_mcp_route_no_raw_json_dumps_sse(self):
+    def test_mcp_route_no_raw_json_dumps_sse(self) -> None:
+
         """mcp.py must not use json.dumps for SSE emission."""
         source = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "mcp.py"
         text = source.read_text()
@@ -914,7 +990,8 @@ class TestProtocolConvergenceFinal:
             f"mcp.py still has raw json.dumps SSE emission: {sse_json_dumps}"
         )
 
-    def test_no_direct_json_serialization_in_streams(self):
+    def test_no_direct_json_serialization_in_streams(self) -> None:
+
         """Source-scan: no f'data: {{json.dumps(...)}}' outside protocol emitter."""
         base = Path(__file__).resolve().parent.parent
         import re

@@ -117,7 +117,7 @@ def _extract_json_candidates(text: str) -> list[str]:
     return candidates
 
 
-def _looks_like_plan(obj: dict) -> bool:
+def _looks_like_plan(obj: dict[str, Any]) -> bool:
     """Check whether a dict looks like an execution plan."""
     plan_keys = {"generations", "edits", "mix"}
     if set(obj.keys()) & plan_keys:

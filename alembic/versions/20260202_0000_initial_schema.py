@@ -12,6 +12,8 @@ Canonical initial migration for Stori Maestro. Creates:
 Fresh install: drop the database (or delete SQLite file), then run:
   alembic upgrade head
 """
+from __future__ import annotations
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql

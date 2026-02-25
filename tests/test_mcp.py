@@ -1,4 +1,8 @@
 """Tests for MCP server functionality."""
+from __future__ import annotations
+
+from collections.abc import AsyncGenerator
+from httpx import AsyncClient
 from typing import Any
 
 import pytest
@@ -10,6 +14,7 @@ from app.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, DAW_TOOLS, TOOL_CATEGORI
 
 
 def _tool_dict(tool: Any) -> dict[str, Any]:
+
     """Ensure we have a dict for a single tool (MCP_TOOLS is list of dicts)."""
     if isinstance(tool, dict):
         return tool
@@ -19,7 +24,8 @@ def _tool_dict(tool: Any) -> dict[str, Any]:
 class TestMCPTools:
     """Tests for MCP tool definitions."""
 
-    def test_all_tools_have_required_fields(self):
+    def test_all_tools_have_required_fields(self) -> None:
+
         """Verify all tools have name, description, and inputSchema."""
         for tool in MCP_TOOLS:
             t = _tool_dict(tool)
@@ -27,36 +33,39 @@ class TestMCPTools:
             assert "description" in t, f"Tool {t.get('name')} missing description"
             assert "inputSchema" in t, f"Tool {t.get('name')} missing inputSchema"
 
-    def test_tool_names_are_prefixed(self):
+    def test_tool_names_are_prefixed(self) -> None:
+
         """All MCP tools should be prefixed with 'stori_'."""
         for tool in MCP_TOOLS:
             t = _tool_dict(tool)
             name = str(t.get("name", ""))
             assert name.startswith("stori_"), f"Tool {name} should start with 'stori_'"
 
-    def test_tool_categories_complete(self):
+    def test_tool_categories_complete(self) -> None:
+
         """Every tool should be in a category."""
         for tool in MCP_TOOLS:
             t = _tool_dict(tool)
             name = str(t.get("name", ""))
             assert name in TOOL_CATEGORIES, f"Tool {name} not in TOOL_CATEGORIES"
     
-    def test_server_side_and_daw_tools_disjoint(self):
+    def test_server_side_and_daw_tools_disjoint(self) -> None:
+
         """Server-side and DAW tools should not overlap."""
         overlap = SERVER_SIDE_TOOLS.intersection(DAW_TOOLS)
         assert len(overlap) == 0, f"Overlapping tools: {overlap}"
     
-    def test_generation_tools_are_server_side(self):
+    def test_generation_tools_are_server_side(self) -> None:
+
         """Generation tools should be marked as server-side."""
-        gen_tools = ["stori_generate_drums", "stori_generate_bass", "stori_generate_melody", "stori_generate_chords"]
-        for tool_name in gen_tools:
-            assert tool_name in SERVER_SIDE_TOOLS, f"{tool_name} should be server-side"
+        assert "stori_generate_midi" in SERVER_SIDE_TOOLS
 
 
 class TestMCPServer:
     """Tests for MCP server."""
     
-    def test_get_server_info(self):
+    def test_get_server_info(self) -> None:
+
         """Test server info response."""
         server = StoriMCPServer()
         info = server.get_server_info()
@@ -66,7 +75,8 @@ class TestMCPServer:
         assert "protocolVersion" in info
         assert "capabilities" in info
     
-    def test_list_tools(self):
+    def test_list_tools(self) -> None:
+
         """Test listing tools."""
         server = StoriMCPServer()
         tools = server.list_tools()
@@ -75,7 +85,8 @@ class TestMCPServer:
         assert len(tools) == len(MCP_TOOLS)
     
     @pytest.mark.anyio
-    async def test_call_unknown_tool(self):
+    async def test_call_unknown_tool(self) -> None:
+
         """Test calling an unknown tool."""
         server = StoriMCPServer()
         result = await server.call_tool("unknown_tool", {})
@@ -84,7 +95,8 @@ class TestMCPServer:
         assert not result.success
     
     @pytest.mark.anyio
-    async def test_call_daw_tool_without_connection(self):
+    async def test_call_daw_tool_without_connection(self) -> None:
+
         """Test calling DAW tool without connected DAW."""
         server = StoriMCPServer()
         result = await server.call_tool("stori_add_midi_track", {"name": "Test"})
@@ -96,7 +108,8 @@ class TestMCPServer:
 class TestToolCallResult:
     """Tests for ToolCallResult."""
     
-    def test_success_result(self):
+    def test_success_result(self) -> None:
+
         """Test successful result."""
         result = ToolCallResult(
             success=True,
@@ -105,7 +118,8 @@ class TestToolCallResult:
         assert result.success
         assert not result.is_error
     
-    def test_error_result(self):
+    def test_error_result(self) -> None:
+
         """Test error result."""
         result = ToolCallResult(
             success=False,
@@ -120,9 +134,10 @@ class TestMCPEndpoints:
     """Tests for MCP HTTP endpoints (require auth via dependency override)."""
 
     @pytest_asyncio.fixture
-    async def mcp_client(self, client):
+    async def mcp_client(self, client: AsyncClient) -> AsyncGenerator[AsyncClient, None]:
+
         """Client with auth overridden so MCP endpoints accept requests."""
-        async def override_require_valid_token():
+        async def override_require_valid_token() -> dict[str, str]:
             return {"sub": "test-mcp-user"}
 
         app.dependency_overrides[require_valid_token] = override_require_valid_token
@@ -132,7 +147,8 @@ class TestMCPEndpoints:
             app.dependency_overrides.pop(require_valid_token, None)
 
     @pytest.mark.anyio
-    async def test_list_tools_endpoint(self, mcp_client):
+    async def test_list_tools_endpoint(self, mcp_client: Any) -> None:
+
         """Test /mcp/tools endpoint."""
         response = await mcp_client.get("/api/v1/mcp/tools")
         assert response.status_code == 200
@@ -142,7 +158,8 @@ class TestMCPEndpoints:
         assert len(data["tools"]) > 0
 
     @pytest.mark.anyio
-    async def test_server_info_endpoint(self, mcp_client):
+    async def test_server_info_endpoint(self, mcp_client: Any) -> None:
+
         """Test /mcp/info endpoint."""
         response = await mcp_client.get("/api/v1/mcp/info")
         assert response.status_code == 200
@@ -151,7 +168,8 @@ class TestMCPEndpoints:
         assert data["name"] == "stori-daw"
 
     @pytest.mark.anyio
-    async def test_get_specific_tool(self, mcp_client):
+    async def test_get_specific_tool(self, mcp_client: Any) -> None:
+
         """Test getting a specific tool."""
         response = await mcp_client.get("/api/v1/mcp/tools/stori_add_midi_track")
         assert response.status_code == 200
@@ -160,7 +178,8 @@ class TestMCPEndpoints:
         assert data["name"] == "stori_add_midi_track"
 
     @pytest.mark.anyio
-    async def test_get_unknown_tool(self, mcp_client):
+    async def test_get_unknown_tool(self, mcp_client: Any) -> None:
+
         """Test getting an unknown tool."""
         response = await mcp_client.get("/api/v1/mcp/tools/unknown_tool")
         assert response.status_code == 200
@@ -169,7 +188,8 @@ class TestMCPEndpoints:
         assert "error" in data
 
     @pytest.mark.anyio
-    async def test_call_tool_endpoint(self, mcp_client):
+    async def test_call_tool_endpoint(self, mcp_client: Any) -> None:
+
         """POST /tools/{tool_name}/call invokes tool and returns success/content."""
         # MCPToolCallRequest requires "name" and "arguments"
         response = await mcp_client.post(

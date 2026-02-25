@@ -3,6 +3,9 @@
 Covers: LLMClient init, chat, chat_completion, chat_completion_stream,
 _parse_response, _enable_prompt_caching, enforce_single_tool.
 """
+from __future__ import annotations
+
+from typing import Any
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -24,17 +27,20 @@ from app.core.llm_client import (
 
 class TestEnforceSingleTool:
 
-    def test_zero_tool_calls(self):
+    def test_zero_tool_calls(self) -> None:
+
         resp = LLMResponse(content="Hello", tool_calls=[])
         result = enforce_single_tool(resp)
         assert len(result.tool_calls) == 0
 
-    def test_one_tool_call(self):
+    def test_one_tool_call(self) -> None:
+
         resp = LLMResponse(tool_calls=[ToolCall(name="foo", params={})])
         result = enforce_single_tool(resp)
         assert len(result.tool_calls) == 1
 
-    def test_multiple_tool_calls_truncated(self):
+    def test_multiple_tool_calls_truncated(self) -> None:
+
         calls = [
             ToolCall(name="first", params={}),
             ToolCall(name="second", params={}),
@@ -53,11 +59,13 @@ class TestEnforceSingleTool:
 
 class TestLLMResponse:
 
-    def test_has_tool_calls_true(self):
+    def test_has_tool_calls_true(self) -> None:
+
         resp = LLMResponse(tool_calls=[ToolCall(name="foo", params={})])
         assert resp.has_tool_calls is True
 
-    def test_has_tool_calls_false(self):
+    def test_has_tool_calls_false(self) -> None:
+
         resp = LLMResponse(content="text only")
         assert resp.has_tool_calls is False
 
@@ -70,7 +78,8 @@ class TestLLMResponse:
 class TestLLMClientInit:
 
     @patch("app.core.llm_client.settings")
-    def test_default_init(self, mock_settings):
+    def test_default_init(self, mock_settings: Any) -> None:
+
         mock_settings.llm_provider = "openrouter"
         mock_settings.openrouter_api_key = "sk-test"
         mock_settings.llm_model = "anthropic/claude-sonnet-4.6"
@@ -80,7 +89,8 @@ class TestLLMClientInit:
         assert client.api_key == "sk-test"
         assert client.model == "anthropic/claude-sonnet-4.6"
 
-    def test_custom_init(self):
+    def test_custom_init(self) -> None:
+
         client = LLMClient(
             provider=LLMProvider.OPENROUTER,
             api_key="custom-key",
@@ -91,7 +101,8 @@ class TestLLMClientInit:
         assert client.model == "openai/o1-mini"
         assert client.timeout == 30
 
-    def test_supports_reasoning(self):
+    def test_supports_reasoning(self) -> None:
+
         """Only SUPPORTED_MODELS (sonnet-4.6 and opus-4.6) support reasoning."""
         for model in ("anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.6"):
             client = LLMClient(
@@ -109,7 +120,8 @@ class TestLLMClientInit:
             )
             assert client.supports_reasoning() is False, f"{model} should not support reasoning"
 
-    def test_base_url_openrouter(self):
+    def test_base_url_openrouter(self) -> None:
+
         client = LLMClient(
             provider=LLMProvider.OPENROUTER,
             api_key="k",
@@ -125,7 +137,8 @@ class TestLLMClientInit:
 
 class TestParseResponse:
 
-    def test_parse_content_only(self):
+    def test_parse_content_only(self) -> None:
+
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test"
         )
@@ -141,7 +154,8 @@ class TestParseResponse:
         assert result.finish_reason == "stop"
         assert len(result.tool_calls) == 0
 
-    def test_parse_with_tool_calls(self):
+    def test_parse_with_tool_calls(self) -> None:
+
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test"
         )
@@ -167,7 +181,8 @@ class TestParseResponse:
         assert result.tool_calls[0].params == {"tempo": 120}
         assert result.tool_calls[0].id == "call_abc"
 
-    def test_parse_empty_response(self):
+    def test_parse_empty_response(self) -> None:
+
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test"
         )
@@ -176,7 +191,8 @@ class TestParseResponse:
         assert result.content is None
         assert len(result.tool_calls) == 0
 
-    def test_parse_malformed_tool_call(self):
+    def test_parse_malformed_tool_call(self) -> None:
+
         """Malformed tool calls should be skipped gracefully."""
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test"
@@ -211,7 +227,8 @@ class TestPromptCaching:
 
     CLAUDE_MODEL = "anthropic/claude-sonnet-4.6"
 
-    def test_returns_three_tuple(self):
+    def test_returns_three_tuple(self) -> None:
+
         """_enable_prompt_caching always returns a 3-tuple."""
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
@@ -221,7 +238,8 @@ class TestPromptCaching:
         )
         assert len(result) == 3
 
-    def test_system_blocks_always_none(self):
+    def test_system_blocks_always_none(self) -> None:
+
         """Third element (system_blocks) is always None — no top-level system injection."""
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
@@ -230,7 +248,8 @@ class TestPromptCaching:
         _, _, system_blocks = client._enable_prompt_caching(messages, tools=None)
         assert system_blocks is None
 
-    def test_non_claude_model_passthrough(self):
+    def test_non_claude_model_passthrough(self) -> None:
+
         """Non-caching models return messages and tools unchanged — no cache_control added."""
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="openai/gpt-4o"
@@ -246,7 +265,8 @@ class TestPromptCaching:
         assert "cache_control" not in returned_tools[0]
         assert system_blocks is None
 
-    def test_system_messages_unchanged_for_claude(self):
+    def test_system_messages_unchanged_for_claude(self) -> None:
+
         """System messages are NOT modified — they stay in the messages array as-is.
 
         OpenRouter doesn't forward the Anthropic-native top-level system array,
@@ -264,7 +284,8 @@ class TestPromptCaching:
         assert returned_msgs[0] == {"role": "system", "content": "You are a music AI"}
         assert returned_msgs[1] == {"role": "user", "content": "Hello"}
 
-    def test_multiple_system_messages_all_preserved(self):
+    def test_multiple_system_messages_all_preserved(self) -> None:
+
         """Multiple role:system messages (base + project context + entity context) survive."""
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
@@ -278,7 +299,8 @@ class TestPromptCaching:
         returned_msgs, _, _ = client._enable_prompt_caching(messages, tools=None)
         assert returned_msgs == messages
 
-    def test_last_tool_gets_cache_control(self):
+    def test_last_tool_gets_cache_control(self) -> None:
+
         """cache_control is placed on the last tool definition only."""
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
@@ -296,7 +318,8 @@ class TestPromptCaching:
         assert "cache_control" not in cached_tools[1]
         assert cached_tools[2]["cache_control"] == {"type": "ephemeral"}
 
-    def test_no_tools_returns_none_for_cached_tools(self):
+    def test_no_tools_returns_none_for_cached_tools(self) -> None:
+
         """When no tools are provided, cached_tools is None."""
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
@@ -306,7 +329,8 @@ class TestPromptCaching:
         )
         assert cached_tools is None
 
-    def test_original_tools_not_mutated(self):
+    def test_original_tools_not_mutated(self) -> None:
+
         """The original tools list is not mutated — caching returns copies."""
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
@@ -320,7 +344,8 @@ class TestPromptCaching:
         assert cached_tools is not None
         assert cached_tools[0]["cache_control"] == {"type": "ephemeral"}
 
-    def test_conversation_history_preserved(self):
+    def test_conversation_history_preserved(self) -> None:
+
         """Tool result messages and conversation history pass through unchanged."""
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
@@ -343,7 +368,8 @@ class TestPromptCaching:
 class TestChatCompletion:
 
     @pytest.mark.anyio
-    async def test_successful_completion(self):
+    async def test_successful_completion(self) -> None:
+
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test-model"
         )
@@ -366,7 +392,8 @@ class TestChatCompletion:
         await client.close()
 
     @pytest.mark.anyio
-    async def test_retry_on_500(self):
+    async def test_retry_on_500(self) -> None:
+
         import httpx
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test-model"
@@ -406,7 +433,8 @@ class TestChatCompletion:
 class TestChat:
 
     @pytest.mark.anyio
-    async def test_chat_with_context(self):
+    async def test_chat_with_context(self) -> None:
+
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test-model"
         )
@@ -425,7 +453,7 @@ class TestChat:
 
         result = await client.chat(
             system="You are a music AI",
-            user="Set tempo to 120",
+            user="set tempo to 120",
             tools=[{"type": "function", "function": {"name": "stori_set_tempo"}}],
             tool_choice="required",
             context={"project_state": {"tempo": 100}},
@@ -443,7 +471,8 @@ class TestGetLLMClient:
 
     @pytest.mark.anyio
     @patch("app.core.llm_client.settings")
-    async def test_returns_client(self, mock_settings):
+    async def test_returns_client(self, mock_settings: Any) -> None:
+
         mock_settings.llm_provider = "openrouter"
         mock_settings.openrouter_api_key = "sk-test"
         mock_settings.llm_model = "test"

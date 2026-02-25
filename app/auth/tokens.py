@@ -4,10 +4,12 @@ Access Token Generation and Validation
 Provides cryptographically signed JWT tokens for time-limited access control.
 Tokens are self-contained and don't require database storage.
 """
+from __future__ import annotations
+
 import hashlib
 import jwt
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any
 
 from app.config import settings
 
@@ -43,10 +45,10 @@ def hash_token(token: str) -> str:
 
 
 def generate_access_code(
-    user_id: Optional[str] = None,
-    duration_hours: Optional[int] = None,
-    duration_days: Optional[int] = None,
-    duration_minutes: Optional[int] = None,
+    user_id: str | None = None,
+    duration_hours: int | None = None,
+    duration_days: int | None = None,
+    duration_minutes: int | None = None,
     is_admin: bool = False,
 ) -> str:
     """
@@ -108,9 +110,9 @@ def generate_access_code(
 
 
 def create_access_token(
-    user_id: Optional[str] = None,
-    expires_hours: Optional[int] = None,
-    expires_days: Optional[int] = None,
+    user_id: str | None = None,
+    expires_hours: int | None = None,
+    expires_days: int | None = None,
     is_admin: bool = False,
 ) -> str:
     """
@@ -125,7 +127,7 @@ def create_access_token(
     )
 
 
-def validate_access_code(token: str) -> dict:
+def validate_access_code(token: str) -> dict[str, Any]:
     """
     Validate an access code and return its claims.
     
@@ -159,7 +161,7 @@ def validate_access_code(token: str) -> dict:
         raise AccessCodeError(f"Invalid access code: {e}")
 
 
-def get_user_id_from_token(token: str) -> Optional[str]:
+def get_user_id_from_token(token: str) -> str | None:
     """
     Extract the user ID from a token without full validation.
 

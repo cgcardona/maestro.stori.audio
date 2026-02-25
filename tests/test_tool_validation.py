@@ -7,6 +7,9 @@ Tool validation ensures:
 3. Entity references are valid
 4. Values are in expected ranges
 """
+from __future__ import annotations
+
+from typing import Any
 
 import pytest
 from app.core.entity_registry import EntityRegistry
@@ -24,7 +27,8 @@ from app.core.tool_validation import (
 class TestAllowlistValidation:
     """Test tool allowlist validation."""
     
-    def test_allowed_tool_passes(self):
+    def test_allowed_tool_passes(self) -> None:
+
         """Should pass for allowed tool."""
         result = validate_tool_call(
             tool_name="stori_play",
@@ -35,7 +39,8 @@ class TestAllowlistValidation:
         assert result.valid
         assert len(result.errors) == 0
     
-    def test_disallowed_tool_fails(self):
+    def test_disallowed_tool_fails(self) -> None:
+
         """Should fail for tool not in allowlist."""
         result = validate_tool_call(
             tool_name="stori_add_midi_track",
@@ -46,7 +51,8 @@ class TestAllowlistValidation:
         assert not result.valid
         assert any("not allowed" in str(e).lower() for e in result.errors)
     
-    def test_generator_tool_blocked_by_allowlist(self):
+    def test_generator_tool_blocked_by_allowlist(self) -> None:
+
         """Allowlist is the single source of truth; generator not in allowlist is rejected."""
         result = validate_tool_call(
             tool_name="stori_generate_midi",
@@ -60,7 +66,8 @@ class TestAllowlistValidation:
 class TestSchemaValidation:
     """Test tool schema validation."""
     
-    def test_missing_required_field(self):
+    def test_missing_required_field(self) -> None:
+
         """Should fail when required field is missing."""
         result = validate_tool_call(
             tool_name="stori_set_tempo",
@@ -71,7 +78,8 @@ class TestSchemaValidation:
         assert not result.valid
         assert any("tempo" in str(e).lower() for e in result.errors)
     
-    def test_valid_params(self):
+    def test_valid_params(self) -> None:
+
         """Should pass with valid parameters."""
         result = validate_tool_call(
             tool_name="stori_set_tempo",
@@ -85,7 +93,8 @@ class TestSchemaValidation:
 class TestEntityResolution:
     """Test entity reference resolution."""
     
-    def test_resolve_track_name_to_id(self):
+    def test_resolve_track_name_to_id(self) -> None:
+
         """Should resolve trackName to trackId."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -100,7 +109,8 @@ class TestEntityResolution:
         assert result.valid
         assert result.resolved_params["trackId"] == track_id
     
-    def test_unknown_track_fails(self):
+    def test_unknown_track_fails(self) -> None:
+
         """Should fail for unknown track reference."""
         registry = EntityRegistry()
         
@@ -114,7 +124,8 @@ class TestEntityResolution:
         assert not result.valid
         assert any("not found" in str(e).lower() for e in result.errors)
     
-    def test_validate_track_id_exists(self):
+    def test_validate_track_id_exists(self) -> None:
+
         """Should validate that trackId exists."""
         registry = EntityRegistry()
         registry.create_track("Drums")
@@ -129,7 +140,8 @@ class TestEntityResolution:
         assert not result.valid
         assert any("not found" in str(e).lower() for e in result.errors)
     
-    def test_valid_track_id_passes(self):
+    def test_valid_track_id_passes(self) -> None:
+
         """Should pass for valid trackId."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -143,7 +155,8 @@ class TestEntityResolution:
         
         assert result.valid
     
-    def test_validate_region_id(self):
+    def test_validate_region_id(self) -> None:
+
         """Should validate regionId exists."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -169,7 +182,8 @@ class TestEntityResolution:
         
         assert not result.valid
 
-    def test_track_id_used_as_region_id_gives_targeted_error(self):
+    def test_track_id_used_as_region_id_gives_targeted_error(self) -> None:
+
         """When LLM passes a trackId as regionId, error message identifies the mistake."""
         registry = EntityRegistry()
         track_id = registry.create_track("Bass")
@@ -188,7 +202,8 @@ class TestEntityResolution:
         assert "regionId" in msg
         assert f"Bass Line (regionId: {region_id})" in msg
 
-    def test_region_not_found_includes_id_in_suggestions(self):
+    def test_region_not_found_includes_id_in_suggestions(self) -> None:
+
         """Region not-found suggestions include regionId so the LLM can self-correct."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -205,7 +220,8 @@ class TestEntityResolution:
         msg = result.errors[0].message
         assert region_id in msg
 
-    def test_entity_creating_tool_skips_primary_id_validation(self):
+    def test_entity_creating_tool_skips_primary_id_validation(self) -> None:
+
         """stori_add_midi_track should not reject hallucinated trackId."""
         registry = EntityRegistry()
         # LLM hallucinated a trackId for a CREATE operation — should not fail
@@ -218,7 +234,8 @@ class TestEntityResolution:
         # Validation passes — server will replace the ID later
         assert result.valid
 
-    def test_entity_creating_region_skips_regionid_but_validates_trackid(self):
+    def test_entity_creating_region_skips_regionid_but_validates_trackid(self) -> None:
+
         """stori_add_midi_region skips regionId validation but still validates trackId."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -258,7 +275,8 @@ class TestEntityResolution:
 class TestValueRangeValidation:
     """Test value range validation."""
     
-    def test_volume_in_range(self):
+    def test_volume_in_range(self) -> None:
+
         """Should accept volume in valid linear range 0.0–1.5."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -272,7 +290,8 @@ class TestValueRangeValidation:
         
         assert result.valid
     
-    def test_volume_out_of_range(self):
+    def test_volume_out_of_range(self) -> None:
+
         """Should reject volume outside 0.0–1.5."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -287,7 +306,8 @@ class TestValueRangeValidation:
         assert not result.valid
         assert any("out of range" in str(e).lower() for e in result.errors)
     
-    def test_pan_in_range(self):
+    def test_pan_in_range(self) -> None:
+
         """Should accept pan in valid range 0.0–1.0."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -301,7 +321,8 @@ class TestValueRangeValidation:
         
         assert result.valid
     
-    def test_pan_out_of_range(self):
+    def test_pan_out_of_range(self) -> None:
+
         """Should reject pan outside 0.0–1.0."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -319,7 +340,8 @@ class TestValueRangeValidation:
 class TestToolSpecificValidation:
     """Test tool-specific validation rules."""
     
-    def test_valid_effect_type(self):
+    def test_valid_effect_type(self) -> None:
+
         """Should accept valid effect type."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -333,7 +355,8 @@ class TestToolSpecificValidation:
         
         assert result.valid
     
-    def test_invalid_effect_type(self):
+    def test_invalid_effect_type(self) -> None:
+
         """Should reject unknown effect type."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -348,7 +371,8 @@ class TestToolSpecificValidation:
         assert not result.valid
         assert any("effect" in str(e).lower() for e in result.errors)
     
-    def test_valid_quantize_grid(self):
+    def test_valid_quantize_grid(self) -> None:
+
         """Should accept valid quantize gridSize (numeric beats)."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -363,7 +387,8 @@ class TestToolSpecificValidation:
         
         assert result.valid
     
-    def test_invalid_quantize_grid(self):
+    def test_invalid_quantize_grid(self) -> None:
+
         """Should reject invalid quantize gridSize."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -378,7 +403,8 @@ class TestToolSpecificValidation:
         
         assert not result.valid
     
-    def test_region_start_beat_negative(self):
+    def test_region_start_beat_negative(self) -> None:
+
         """Should reject negative startBeat."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -392,7 +418,8 @@ class TestToolSpecificValidation:
         
         assert not result.valid
     
-    def test_empty_notes_array(self):
+    def test_empty_notes_array(self) -> None:
+
         """Should reject empty notes array."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -412,7 +439,8 @@ class TestToolSpecificValidation:
 class TestBatchValidation:
     """Test batch validation of multiple tool calls."""
     
-    def test_all_valid(self):
+    def test_all_valid(self) -> None:
+
         """Should pass when all tools are valid."""
         registry = EntityRegistry()
         track_id = registry.create_track("Drums")
@@ -429,7 +457,8 @@ class TestBatchValidation:
         assert all_valid(results)
         assert len(collect_errors(results)) == 0
     
-    def test_some_invalid(self):
+    def test_some_invalid(self) -> None:
+
         """Should report errors for invalid tools."""
         results = validate_tool_calls_batch(
             [
@@ -448,7 +477,8 @@ class TestBatchValidation:
 class TestSimpleValidation:
     """Test simple validation interface."""
     
-    def test_simple_valid(self):
+    def test_simple_valid(self) -> None:
+
         """Simple interface should return (True, '') for valid."""
         valid, error = validate_tool_call_simple(
             "stori_play",
@@ -459,7 +489,8 @@ class TestSimpleValidation:
         assert valid
         assert error == ""
     
-    def test_simple_invalid(self):
+    def test_simple_invalid(self) -> None:
+
         """Simple interface should return (False, message) for invalid."""
         valid, error = validate_tool_call_simple(
             "stori_disallowed",
@@ -474,7 +505,8 @@ class TestSimpleValidation:
 class TestTargetScopeCheck:
     """Target scope advisory warnings from structured prompt Target field."""
 
-    def test_project_scope_never_warns(self):
+    def test_project_scope_never_warns(self) -> None:
+
         """Target: project — everything is in scope."""
         result = validate_tool_call(
             "stori_set_track_volume",
@@ -484,7 +516,8 @@ class TestTargetScopeCheck:
         )
         assert result.warnings == []
 
-    def test_track_scope_matching_name_no_warning(self):
+    def test_track_scope_matching_name_no_warning(self) -> None:
+
         """Tool call matches the target track — no warning."""
         result = validate_tool_call(
             "stori_add_insert_effect",
@@ -494,7 +527,8 @@ class TestTargetScopeCheck:
         )
         assert result.warnings == []
 
-    def test_track_scope_different_name_warns(self):
+    def test_track_scope_different_name_warns(self) -> None:
+
         """Tool call references a different track — advisory warning."""
         result = validate_tool_call(
             "stori_add_insert_effect",
@@ -508,7 +542,8 @@ class TestTargetScopeCheck:
         # Warning only — validation still passes
         assert result.valid
 
-    def test_track_scope_case_insensitive(self):
+    def test_track_scope_case_insensitive(self) -> None:
+
         """Track name comparison is case-insensitive."""
         result = validate_tool_call(
             "stori_add_insert_effect",
@@ -518,7 +553,8 @@ class TestTargetScopeCheck:
         )
         assert result.warnings == []
 
-    def test_no_target_scope_no_warnings(self):
+    def test_no_target_scope_no_warnings(self) -> None:
+
         """Without target_scope, no scope warnings are emitted."""
         result = validate_tool_call(
             "stori_set_track_volume",
@@ -528,7 +564,8 @@ class TestTargetScopeCheck:
         )
         assert result.warnings == []
 
-    def test_region_scope_different_name_warns(self):
+    def test_region_scope_different_name_warns(self) -> None:
+
         """Tool call references a different region name — warning."""
         result = validate_tool_call(
             "stori_add_midi_region",
@@ -551,7 +588,8 @@ class TestAddAutomationValidation:
     VALID_POINTS = [{"beat": 0, "value": 0.5}, {"beat": 8, "value": 1.0}]
     ALLOWED = {"stori_add_automation"}
 
-    def test_valid_automation_call_passes(self):
+    def test_valid_automation_call_passes(self) -> None:
+
         """Well-formed call with trackId + canonical parameter + points is valid."""
         registry = EntityRegistry()
         track_id = registry.create_track("Piano")
@@ -563,7 +601,8 @@ class TestAddAutomationValidation:
         )
         assert result.valid, result.errors
 
-    def test_all_canonical_parameters_accepted(self):
+    def test_all_canonical_parameters_accepted(self) -> None:
+
         """Every canonical parameter string must be accepted."""
         from app.core.tool_validation import AUTOMATION_CANONICAL_PARAMETERS
         registry = EntityRegistry()
@@ -577,7 +616,8 @@ class TestAddAutomationValidation:
             )
             assert result.valid, f"Canonical parameter '{param}' was rejected: {result.errors}"
 
-    def test_target_instead_of_trackId_is_rejected(self):
+    def test_target_instead_of_trackId_is_rejected(self) -> None:
+
         """Using 'target' instead of 'trackId' must fail with WRONG_PARAM_NAME."""
         registry = EntityRegistry()
         track_id = registry.create_track("Piano")
@@ -591,7 +631,8 @@ class TestAddAutomationValidation:
         codes = [e.code for e in result.errors]
         assert "WRONG_PARAM_NAME" in codes
 
-    def test_missing_parameter_field_is_rejected(self):
+    def test_missing_parameter_field_is_rejected(self) -> None:
+
         """Omitting 'parameter' entirely must fail with MISSING_REQUIRED."""
         registry = EntityRegistry()
         track_id = registry.create_track("Piano")
@@ -605,7 +646,8 @@ class TestAddAutomationValidation:
         codes = [e.code for e in result.errors]
         assert "MISSING_REQUIRED" in codes
 
-    def test_invalid_parameter_string_is_rejected(self):
+    def test_invalid_parameter_string_is_rejected(self) -> None:
+
         """Non-canonical parameter values like 'reverb_wet' must fail with INVALID_VALUE."""
         registry = EntityRegistry()
         track_id = registry.create_track("Piano")
@@ -620,7 +662,8 @@ class TestAddAutomationValidation:
             codes = [e.code for e in result.errors]
             assert "INVALID_VALUE" in codes, f"Expected INVALID_VALUE for '{bad_param}'"
 
-    def test_missing_trackId_and_parameter_both_reported(self):
+    def test_missing_trackId_and_parameter_both_reported(self) -> None:
+
         """A call with only points should report both missing fields."""
         result = validate_tool_call(
             "stori_add_automation",
@@ -643,7 +686,8 @@ class TestGenerateMidiSchemaRegression:
 
     ALLOWED = {"stori_generate_midi"}
 
-    def _valid_params(self, **overrides) -> dict:
+    def _valid_params(self, **overrides: Any) -> dict[str, Any]:
+
         base = {
             "trackId": "00000000-0000-0000-0000-000000000001",
             "regionId": "00000000-0000-0000-0000-000000000002",
@@ -657,14 +701,16 @@ class TestGenerateMidiSchemaRegression:
         base.update(overrides)
         return base
 
-    def test_full_valid_params_accepted(self):
+    def test_full_valid_params_accepted(self) -> None:
+
         """A complete stori_generate_midi call with all required fields passes validation."""
         result = validate_tool_call(
             "stori_generate_midi", self._valid_params(), self.ALLOWED
         )
         assert result.valid, result.errors
 
-    def test_missing_region_id_rejected(self):
+    def test_missing_region_id_rejected(self) -> None:
+
         """Regression: omitting regionId must fail — previously it was silently ignored."""
         params = self._valid_params()
         del params["regionId"]
@@ -673,7 +719,8 @@ class TestGenerateMidiSchemaRegression:
         fields = [e.field for e in result.errors]
         assert "regionId" in fields
 
-    def test_missing_track_id_rejected(self):
+    def test_missing_track_id_rejected(self) -> None:
+
         """Regression: omitting trackId must fail — agent must pass it explicitly."""
         params = self._valid_params()
         del params["trackId"]
@@ -682,7 +729,8 @@ class TestGenerateMidiSchemaRegression:
         fields = [e.field for e in result.errors]
         assert "trackId" in fields
 
-    def test_missing_start_beat_rejected(self):
+    def test_missing_start_beat_rejected(self) -> None:
+
         """Regression: omitting start_beat must fail — previously drums received this error."""
         params = self._valid_params()
         del params["start_beat"]
@@ -691,7 +739,8 @@ class TestGenerateMidiSchemaRegression:
         fields = [e.field for e in result.errors]
         assert "start_beat" in fields
 
-    def test_optional_prompt_field_accepted(self):
+    def test_optional_prompt_field_accepted(self) -> None:
+
         """The new prompt field is optional; including it must not break validation."""
         params = self._valid_params(
             prompt=(
@@ -702,7 +751,8 @@ class TestGenerateMidiSchemaRegression:
         result = validate_tool_call("stori_generate_midi", params, self.ALLOWED)
         assert result.valid, result.errors
 
-    def test_legacy_call_without_new_fields_fails(self):
+    def test_legacy_call_without_new_fields_fails(self) -> None:
+
         """A legacy call with only role/style/tempo/bars (the old required set) now fails."""
         legacy_params = {"role": "drums", "style": "trap", "tempo": 140, "bars": 8}
         result = validate_tool_call("stori_generate_midi", legacy_params, self.ALLOWED)

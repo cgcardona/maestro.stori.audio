@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -29,20 +30,20 @@ class SectionTelemetry:
     velocity_variance: float
 
 
-def _note_start(n: dict) -> float:
+def _note_start(n: dict[str, Any]) -> float:
     return float(n.get("start_beat", n.get("startBeat", 0)))
 
 
-def _note_velocity(n: dict) -> int:
+def _note_velocity(n: dict[str, Any]) -> int:
     return int(n.get("velocity", 80))
 
 
-def _note_pitch(n: dict) -> int:
+def _note_pitch(n: dict[str, Any]) -> int:
     return int(n.get("pitch", 0))
 
 
 def compute_section_telemetry(
-    notes: list[dict],
+    notes: list[dict[str, Any]],
     tempo: float,
     instrument: str,
     section_name: str,

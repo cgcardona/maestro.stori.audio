@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -44,7 +43,7 @@ class GMInstrument:
 
 
 # =============================================================================
-# Complete GM Instrument List (128 programs)
+# Complete GM Instrument list (128 programs)
 # =============================================================================
 
 GM_INSTRUMENTS: list[GMInstrument] = [
@@ -245,7 +244,7 @@ GM_INSTRUMENTS: list[GMInstrument] = [
 _PROGRAM_TO_INSTRUMENT: dict[int, GMInstrument] = {inst.program: inst for inst in GM_INSTRUMENTS}
 
 
-def get_instrument_by_program(program: int) -> Optional[GMInstrument]:
+def get_instrument_by_program(program: int) -> GMInstrument | None:
     """Get GM instrument by program number (0-127)."""
     return _PROGRAM_TO_INSTRUMENT.get(program)
 
@@ -275,8 +274,8 @@ def _tokenize(text: str) -> set[str]:
 
 def infer_gm_program(
     text: str,
-    default_program: Optional[int] = None
-) -> Optional[int]:
+    default_program: int | None = None
+) -> int | None:
     """
     Infer the best GM program number from natural language text.
     
@@ -313,7 +312,7 @@ def infer_gm_program(
     if text_tokens & drum_keywords:
         return None  # Drums use channel 10
     
-    best_match: Optional[GMInstrument] = None
+    best_match: GMInstrument | None = None
     best_score = 0
     
     for inst in GM_INSTRUMENTS:
@@ -1533,7 +1532,7 @@ def get_genre_gm_guidance(style: str, role: str) -> str:
     return "\n".join(lines)
 
 
-def get_default_program_for_role(role: str) -> Optional[int]:
+def get_default_program_for_role(role: str) -> int | None:
     """
     Get a sensible default GM program for a musical role.
     
@@ -1547,7 +1546,7 @@ def get_default_program_for_role(role: str) -> Optional[int]:
     """
     role_lower = role.lower().strip()
     
-    role_to_program: dict[str, Optional[int]] = {
+    role_to_program: dict[str, int | None] = {
         # Drums - no program (channel 10)
         "drums": None,
         "drum": None,
@@ -1584,7 +1583,7 @@ def get_default_program_for_role(role: str) -> Optional[int]:
 @dataclass
 class GMInferenceResult:
     """Result of GM program inference with context."""
-    program: Optional[int]  # GM program (0-127) or None for drums
+    program: int | None  # GM program (0-127) or None for drums
     instrument_name: str    # Human-readable name
     confidence: str         # "high", "medium", "low", "none"
     is_drums: bool          # True if this should use channel 10
@@ -1596,9 +1595,9 @@ class GMInferenceResult:
 
 
 def infer_gm_program_with_context(
-    track_name: Optional[str] = None,
-    instrument: Optional[str] = None,
-    role: Optional[str] = None,
+    track_name: str | None = None,
+    instrument: str | None = None,
+    role: str | None = None,
 ) -> GMInferenceResult:
     """
     Infer GM program from multiple context sources.

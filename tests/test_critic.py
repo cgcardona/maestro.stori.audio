@@ -9,6 +9,9 @@ Tests verify:
 5. Ghost plausibility scoring detects correct velocity/position
 6. Rejection sampling works correctly
 """
+from __future__ import annotations
+
+from typing import Any
 import pytest
 from app.services.critic import (
     score_drum_notes,
@@ -36,8 +39,8 @@ def make_drum_notes(
     include_hats: bool = True,
     include_fills: bool = True,
     include_ghosts: bool = False,
-    fill_bars: list | None = None,
-) -> list[dict]:
+    fill_bars: list[int] | None = None,
+) -> list[dict[str, Any]]:
     """Helper to create drum notes for testing."""
     fill_bars = fill_bars or [3]
     notes = []
@@ -102,7 +105,8 @@ def make_drum_notes(
 class TestDrumWeights:
     """Test drum scoring weight configuration."""
     
-    def test_weights_sum_to_one(self):
+    def test_weights_sum_to_one(self) -> None:
+
         """Drum weights should sum to approximately 1.0."""
         total = sum(DRUM_WEIGHTS.values())
         assert abs(total - 1.0) < 0.01
@@ -111,13 +115,15 @@ class TestDrumWeights:
 class TestGroovePocketScoring:
     """Test groove pocket scoring."""
     
-    def test_good_pocket_scores_high(self):
+    def test_good_pocket_scores_high(self) -> None:
+
         """Well-timed drums should score high."""
         notes = make_drum_notes(bars=4)
         score, repairs = _score_groove_pocket(notes, style="trap")
         assert score >= 0.6
     
-    def test_empty_notes_score_zero(self):
+    def test_empty_notes_score_zero(self) -> None:
+
         """Empty notes should score 0."""
         score, repairs = _score_groove_pocket([])
         assert score == 0.0
@@ -127,13 +133,15 @@ class TestGroovePocketScoring:
 class TestHatArticulationScoring:
     """Test hat articulation scoring."""
     
-    def test_varied_hats_score_high(self):
+    def test_varied_hats_score_high(self) -> None:
+
         """Hats with closed/open variety should score high."""
         notes = make_drum_notes(bars=4, include_kicks=False, include_snares=False)
         score, repairs = _score_hat_articulation(notes, bars=4)
         assert score >= 0.6
     
-    def test_monotone_hats_score_low(self):
+    def test_monotone_hats_score_low(self) -> None:
+
         """All closed hats should score lower."""
         notes = [
             {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80, "layer": "timekeepers"}
@@ -144,7 +152,8 @@ class TestHatArticulationScoring:
         # Should suggest adding open hats
         assert any("open" in r.lower() for r in repairs) or score >= 0.6
     
-    def test_no_hats(self):
+    def test_no_hats(self) -> None:
+
         """No hats should return base score with repair suggestion."""
         notes = make_drum_notes(bars=4, include_hats=False)
         score, repairs = _score_hat_articulation(notes, bars=4)
@@ -154,13 +163,15 @@ class TestHatArticulationScoring:
 class TestFillLocalizationScoring:
     """Test fill localization scoring."""
     
-    def test_fills_in_correct_bars_score_high(self):
+    def test_fills_in_correct_bars_score_high(self) -> None:
+
         """Fills in fill bars should score high."""
         notes = make_drum_notes(bars=4, fill_bars=[3])
         score, repairs = _score_fill_localization(notes, fill_bars=[3], bars=4)
         assert score >= 0.7
     
-    def test_scattered_fills_score_lower(self):
+    def test_scattered_fills_score_lower(self) -> None:
+
         """Fills scattered across all bars should score lower."""
         notes = []
         for bar in range(4):
@@ -176,7 +187,8 @@ class TestFillLocalizationScoring:
         # Only 1/4 of fills are in the correct bar
         assert score < 0.8
     
-    def test_no_fills(self):
+    def test_no_fills(self) -> None:
+
         """No fills should return base score with suggestion."""
         notes = make_drum_notes(bars=4, include_fills=False)
         score, repairs = _score_fill_localization(notes, fill_bars=[3], bars=4)
@@ -186,7 +198,8 @@ class TestFillLocalizationScoring:
 class TestGhostPlausibilityScoring:
     """Test ghost note plausibility scoring."""
     
-    def test_good_ghosts_score_high(self):
+    def test_good_ghosts_score_high(self) -> None:
+
         """Properly placed quiet ghosts should score high."""
         notes = [
             # Ghost before beat 2 (near backbeat)
@@ -197,7 +210,8 @@ class TestGhostPlausibilityScoring:
         score, repairs = _score_ghost_plausibility(notes)
         assert score >= 0.7
     
-    def test_loud_ghosts_score_lower(self):
+    def test_loud_ghosts_score_lower(self) -> None:
+
         """Loud ghosts should score lower."""
         notes = [
             {"pitch": 37, "start_beat": 0.75, "duration_beats": 0.25, "velocity": 100, "layer": "ghost_layer"},
@@ -207,7 +221,8 @@ class TestGhostPlausibilityScoring:
         assert score < 0.8
         assert any("loud" in r.lower() for r in repairs) or score <= 0.7
     
-    def test_no_ghosts(self):
+    def test_no_ghosts(self) -> None:
+
         """No ghosts should return neutral score (ghosts are optional)."""
         notes = make_drum_notes(bars=4, include_ghosts=False)
         score, repairs = _score_ghost_plausibility(notes)
@@ -217,20 +232,23 @@ class TestGhostPlausibilityScoring:
 class TestLayerBalanceScoring:
     """Test layer balance scoring."""
     
-    def test_full_kit_scores_high(self):
+    def test_full_kit_scores_high(self) -> None:
+
         """Full drum kit should score high."""
         notes = make_drum_notes(bars=4, include_ghosts=True)
         score, repairs = _score_layer_balance(notes)
         assert score >= 0.8
     
-    def test_kick_snare_only_scores_lower(self):
+    def test_kick_snare_only_scores_lower(self) -> None:
+
         """Only core layer should score lower."""
         notes = make_drum_notes(bars=4, include_hats=False, include_fills=False)
         score, repairs = _score_layer_balance(notes)
         assert score < 0.9
         assert any("hat" in r.lower() for r in repairs)
     
-    def test_no_core_fails(self):
+    def test_no_core_fails(self) -> None:
+
         """Missing core layer should fail."""
         notes = make_drum_notes(bars=4, include_kicks=False, include_snares=False)
         score, repairs = _score_layer_balance(notes)
@@ -240,13 +258,15 @@ class TestLayerBalanceScoring:
 class TestRepetitionStructureScoring:
     """Test repetition structure scoring."""
     
-    def test_varied_bars_score_high(self):
+    def test_varied_bars_score_high(self) -> None:
+
         """Varied bar patterns should score high."""
         notes = make_drum_notes(bars=4)
         score, repairs = _score_repetition_structure(notes, bars=4)
         assert score >= 0.5
     
-    def test_identical_bars_score_lower(self):
+    def test_identical_bars_score_lower(self) -> None:
+
         """Identical bars should score lower."""
         # Create identical pattern in every bar
         notes = []
@@ -266,13 +286,15 @@ class TestRepetitionStructureScoring:
 class TestVelocityDynamicsScoring:
     """Test velocity dynamics scoring."""
     
-    def test_dynamic_velocity_scores_high(self):
+    def test_dynamic_velocity_scores_high(self) -> None:
+
         """Dynamic velocity range should score high."""
         notes = make_drum_notes(bars=4)
         score, repairs = _score_velocity_dynamics(notes, bars=4)
         assert score >= 0.5
     
-    def test_flat_velocity_scores_lower(self):
+    def test_flat_velocity_scores_lower(self) -> None:
+
         """All same velocity should score lower."""
         notes = [
             {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80}
@@ -285,19 +307,22 @@ class TestVelocityDynamicsScoring:
 class TestOverallDrumScoring:
     """Test the main score_drum_notes function."""
     
-    def test_good_drums_score_above_threshold(self):
+    def test_good_drums_score_above_threshold(self) -> None:
+
         """Well-constructed drums should score above threshold."""
         notes = make_drum_notes(bars=4, include_ghosts=True)
         score, repairs = score_drum_notes(notes, bars=4, fill_bars=[3])
         assert score >= ACCEPT_THRESHOLD_DRUM
     
-    def test_accepts_good_drums(self):
+    def test_accepts_good_drums(self) -> None:
+
         """Good drums should be accepted."""
         notes = make_drum_notes(bars=4, include_ghosts=True)
         score, _ = score_drum_notes(notes, bars=4, fill_bars=[3])
         assert accept_drum(score) or score >= 0.5
     
-    def test_layer_map_used(self):
+    def test_layer_map_used(self) -> None:
+
         """Layer map should be used for scoring."""
         notes = make_drum_notes(bars=4)
         layer_map = {i: n.get("layer", "unknown") for i, n in enumerate(notes)}
@@ -310,7 +335,8 @@ class TestOverallDrumScoring:
 class TestBassScoring:
     """Test bass scoring."""
     
-    def test_kick_aligned_bass_scores_high(self):
+    def test_kick_aligned_bass_scores_high(self) -> None:
+
         """Bass aligned to kicks should score high."""
         bass_notes = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.5, "velocity": 100},
@@ -321,7 +347,8 @@ class TestBassScoring:
         score, repairs = score_bass_notes(bass_notes, kick_beats=kick_beats)
         assert score >= 0.8
     
-    def test_unaligned_bass_scores_lower(self):
+    def test_unaligned_bass_scores_lower(self) -> None:
+
         """Bass not aligned to kicks should score lower."""
         bass_notes = [
             {"pitch": 36, "start_beat": 0.5, "duration_beats": 0.5, "velocity": 100},
@@ -332,7 +359,8 @@ class TestBassScoring:
         score, repairs = score_bass_notes(bass_notes, kick_beats=kick_beats)
         assert score < 0.8
     
-    def test_anticipation_counted(self):
+    def test_anticipation_counted(self) -> None:
+
         """Anticipation notes should contribute to score."""
         bass_notes = [
             # Anticipation: 1/8 before kick
@@ -346,7 +374,8 @@ class TestBassScoring:
         # Should still get partial credit for anticipation
         assert score > 0
     
-    def test_empty_bass(self):
+    def test_empty_bass(self) -> None:
+
         """Empty bass should return 0 with repair suggestion."""
         score, repairs = score_bass_notes([])
         assert score == 0.0
@@ -356,17 +385,19 @@ class TestBassScoring:
 class TestRejectionSampling:
     """Test rejection sampling helper."""
     
-    def test_early_stop_on_excellent_score(self):
+    def test_early_stop_on_excellent_score(self) -> None:
+
         """Should stop early when excellent score is reached."""
         call_count = 0
         
-        def generate_fn():
+        def generate_fn() -> tuple[dict[str, Any], list[dict[str, Any]]]:
             nonlocal call_count
             call_count += 1
-            notes = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
+            notes: list[dict[str, Any]] = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
             return {"notes": notes}, notes
         
-        def scorer_fn(notes):
+        def scorer_fn(notes: Any) -> tuple[float, list[str]]:
+
             return 0.9, []  # Always excellent
         
         result = rejection_sample(
@@ -379,17 +410,19 @@ class TestRejectionSampling:
         assert result.attempts == 1  # Should stop after first
         assert result.best_score == 0.9
     
-    def test_tries_all_candidates_when_needed(self):
+    def test_tries_all_candidates_when_needed(self) -> None:
+
         """Should try all candidates if scores are below threshold."""
         call_count = 0
         
-        def generate_fn():
+        def generate_fn() -> tuple[dict[str, Any], list[dict[str, Any]]]:
             nonlocal call_count
             call_count += 1
-            notes = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
+            notes: list[dict[str, Any]] = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
             return {"notes": notes}, notes
         
-        def scorer_fn(notes):
+        def scorer_fn(notes: Any) -> tuple[float, list[str]]:
+
             return 0.5, []  # Always mediocre
         
         result = rejection_sample(
@@ -402,19 +435,21 @@ class TestRejectionSampling:
         assert result.attempts == 4  # Should try all
         assert not result.accepted  # 0.5 < 0.75
     
-    def test_keeps_best_result(self):
+    def test_keeps_best_result(self) -> None:
+
         """Should keep the best result from all attempts."""
         attempt = 0
         
-        def generate_fn():
+        def generate_fn() -> tuple[dict[str, Any], list[dict[str, Any]]]:
             nonlocal attempt
             attempt += 1
-            notes = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
+            notes: list[dict[str, Any]] = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
             return {"attempt": attempt, "notes": notes}, notes
         
         scores = [0.5, 0.7, 0.6, 0.65]
         
-        def scorer_fn(notes):
+        def scorer_fn(notes: Any) -> tuple[float, list[str]]:
+
             return scores[attempt - 1] if attempt <= len(scores) else 0.5, []
         
         result = rejection_sample(
@@ -430,17 +465,20 @@ class TestRejectionSampling:
 class TestAcceptThresholds:
     """Test acceptance threshold functions."""
     
-    def test_accept_drum_balanced(self):
+    def test_accept_drum_balanced(self) -> None:
+
         """Test drum acceptance at balanced preset."""
         assert accept_drum(0.7, quality_preset="balanced")
         assert not accept_drum(0.5, quality_preset="balanced")
     
-    def test_accept_drum_quality(self):
+    def test_accept_drum_quality(self) -> None:
+
         """Test drum acceptance at quality preset."""
         assert accept_drum(0.8, quality_preset="quality")
         assert not accept_drum(0.7, quality_preset="quality")
     
-    def test_accept_bass_balanced(self):
+    def test_accept_bass_balanced(self) -> None:
+
         """Test bass acceptance at balanced preset."""
         assert accept_bass(0.6, quality_preset="balanced")
         assert not accept_bass(0.4, quality_preset="balanced")

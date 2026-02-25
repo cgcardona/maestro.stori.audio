@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ class ReasoningBuffer:
     def __init__(self) -> None:
         self._buffer: str = ""
 
-    def add(self, text: str) -> Optional[str]:
+    def add(self, text: str) -> str | None:
         """Add a BPE token.  Returns sanitized text to emit, or None if still buffering."""
         if not text:
             return None
@@ -95,7 +95,7 @@ class ReasoningBuffer:
         self._buffer += text
         return None
 
-    def flush(self) -> Optional[str]:
+    def flush(self) -> str | None:
         """Flush remaining buffer.  Call at end of reasoning / transition to content."""
         if self._buffer:
             result = sanitize_reasoning(self._buffer)

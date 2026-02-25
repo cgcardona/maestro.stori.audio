@@ -5,6 +5,13 @@ Covers:
 - POST /api/v1/maestro/preview (plan preview)
 - GET /api/v1/validate-token (token validation)
 """
+from __future__ import annotations
+
+from typing import Any
+
+from app.db.models import User
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 import json
 import pytest
 import pytest_asyncio
@@ -16,7 +23,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # ---------------------------------------------------------------------------
 
 
-def parse_sse_events(body: str) -> list[dict]:
+def parse_sse_events(body: str) -> list[dict[str, Any]]:
+
     """Parse SSE event stream body into list of dicts."""
     events = []
     for line in body.split("\n"):
@@ -29,7 +37,8 @@ def parse_sse_events(body: str) -> list[dict]:
     return events
 
 
-def _make_maestro_body(**overrides) -> dict:
+def _make_maestro_body(**overrides: Any) -> dict[str, Any]:
+
     base = {"prompt": "make a beat", "mode": "generate"}
     base.update(overrides)
     return base
@@ -44,7 +53,8 @@ class TestValidateToken:
     """GET /api/v1/validate-token"""
 
     @pytest.mark.anyio
-    async def test_validate_token_returns_valid(self, client, auth_headers, test_user):
+    async def test_validate_token_returns_valid(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
+
         resp = await client.get("/api/v1/validate-token", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
@@ -54,7 +64,8 @@ class TestValidateToken:
         assert "budgetRemaining" in data
 
     @pytest.mark.anyio
-    async def test_validate_token_no_auth_401(self, client, db_session):
+    async def test_validate_token_no_auth_401(self, client: AsyncClient, db_session: AsyncSession) -> None:
+
         resp = await client.get("/api/v1/validate-token")
         assert resp.status_code in (401, 403)
 
@@ -68,9 +79,11 @@ class TestComposeStreamEndpoint:
     """POST /api/v1/maestro/stream"""
 
     @pytest.mark.anyio
-    async def test_maestro_stream_returns_sse_content_type(self, client, auth_headers, test_user):
+    async def test_maestro_stream_returns_sse_content_type(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
+
         """Stream endpoint returns text/event-stream with expected headers."""
-        async def fake_orchestrate(*args, **kwargs):
+        async def fake_orchestrate(*args: Any, **kwargs: Any) -> Any:
+
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "composing"})
             yield await sse_event({"type": "complete", "success": True, "toolCalls": []})
@@ -85,9 +98,11 @@ class TestComposeStreamEndpoint:
         assert "text/event-stream" in resp.headers.get("content-type", "")
 
     @pytest.mark.anyio
-    async def test_maestro_stream_yields_state_and_complete(self, client, auth_headers, test_user):
+    async def test_maestro_stream_yields_state_and_complete(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
+
         """Happy-path: orchestrate yields SSE events that are forwarded."""
-        async def fake_orchestrate(*args, **kwargs):
+        async def fake_orchestrate(*args: Any, **kwargs: Any) -> Any:
+
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
             yield await sse_event({"type": "toolCall", "id": "tc-1", "name": "stori_set_tempo", "params": {"tempo": 120}})
@@ -106,7 +121,8 @@ class TestComposeStreamEndpoint:
         assert "complete" in types
 
     @pytest.mark.anyio
-    async def test_maestro_stream_budget_insufficient_402(self, client, auth_headers, test_user, db_session):
+    async def test_maestro_stream_budget_insufficient_402(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User, db_session: AsyncSession) -> None:
+
         """When budget is insufficient, return 402."""
         from app.services.budget import InsufficientBudgetError
 
@@ -122,11 +138,13 @@ class TestComposeStreamEndpoint:
         assert "Insufficient budget" in data["detail"]["message"]
 
     @pytest.mark.anyio
-    async def test_maestro_stream_budget_deduction(self, client, auth_headers, test_user, db_session):
+    async def test_maestro_stream_budget_deduction(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User, db_session: AsyncSession) -> None:
+
         """Budget deduction runs after successful streaming; no budgetUpdate SSE event is emitted."""
         mock_deduct = AsyncMock(return_value=(test_user, MagicMock()))
 
-        async def fake_orchestrate(*args, **kwargs):
+        async def fake_orchestrate(*args: Any, **kwargs: Any) -> Any:
+
             usage_tracker = kwargs.get("usage_tracker")
             if usage_tracker:
                 usage_tracker.add(100, 50)
@@ -153,9 +171,11 @@ class TestComposeStreamEndpoint:
         assert "x-budget-remaining" not in {k.lower() for k in resp.headers}
 
     @pytest.mark.anyio
-    async def test_maestro_stream_error_yields_error_event(self, client, auth_headers, test_user):
+    async def test_maestro_stream_error_yields_error_event(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
+
         """When orchestration raises, the stream yields an error event."""
-        async def failing_orchestrate(*args, **kwargs):
+        async def failing_orchestrate(*args: Any, **kwargs: Any) -> Any:
+
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
             raise RuntimeError("backend exploded")
@@ -172,7 +192,8 @@ class TestComposeStreamEndpoint:
         assert "backend exploded" in error_events[0].get("message", "")
 
     @pytest.mark.anyio
-    async def test_maestro_stream_loads_conversation_history(self, client, auth_headers, test_user, db_session):
+    async def test_maestro_stream_loads_conversation_history(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User, db_session: AsyncSession) -> None:
+
         """When conversation_id is provided, loads history from DB."""
         from app.db.models import Conversation, ConversationMessage
 
@@ -195,7 +216,8 @@ class TestComposeStreamEndpoint:
 
         captured_history = {}
 
-        async def spy_orchestrate(*args, **kwargs):
+        async def spy_orchestrate(*args: Any, **kwargs: Any) -> Any:
+
             captured_history["history"] = kwargs.get("conversation_history", [])
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
@@ -212,14 +234,17 @@ class TestComposeStreamEndpoint:
         assert captured_history["history"][0]["content"] == "previous prompt"
 
     @pytest.mark.anyio
-    async def test_maestro_stream_no_auth_401(self, client, db_session):
+    async def test_maestro_stream_no_auth_401(self, client: AsyncClient, db_session: AsyncSession) -> None:
+
         resp = await client.post("/api/v1/maestro/stream", json=_make_maestro_body())
         assert resp.status_code in (401, 403)
 
     @pytest.mark.anyio
-    async def test_maestro_stream_no_budget_header(self, client, auth_headers, test_user):
+    async def test_maestro_stream_no_budget_header(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
+
         """X-Budget-Remaining header is not emitted; frontend polls /budget/status instead."""
-        async def fake_orchestrate(*args, **kwargs):
+        async def fake_orchestrate(*args: Any, **kwargs: Any) -> Any:
+
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
             yield await sse_event({"type": "complete", "success": True, "traceId": "t-1"})
@@ -243,7 +268,8 @@ class TestComposePreviewEndpoint:
     """POST /api/v1/maestro/preview"""
 
     @pytest.mark.anyio
-    async def test_preview_composing_returns_plan(self, client, auth_headers, test_user):
+    async def test_preview_composing_returns_plan(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
+
         """COMPOSING intent returns preview_available=True with plan."""
         from app.core.intent import IntentResult, Intent, Slots, SSEState
 
@@ -280,7 +306,8 @@ class TestComposePreviewEndpoint:
         assert data["sseState"] == "composing"
 
     @pytest.mark.anyio
-    async def test_preview_non_composing_returns_unavailable(self, client, auth_headers, test_user):
+    async def test_preview_non_composing_returns_unavailable(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
+
         """Non-COMPOSING intent returns preview_available=False."""
         from app.core.intent import IntentResult, Intent, Slots, SSEState
 

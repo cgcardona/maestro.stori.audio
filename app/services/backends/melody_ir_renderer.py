@@ -5,6 +5,8 @@ Renders MelodySpec + GlobalSpec + HarmonicSpec; uses chord_schedule for
 resolution on chord boundaries and tensions near change points.
 See docs/MIDI_SPEC_IR_SCHEMA.md.
 """
+from __future__ import annotations
+
 import logging
 import random
 from typing import Any

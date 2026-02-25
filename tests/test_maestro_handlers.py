@@ -1,4 +1,6 @@
 """Tests for maestro handlers (orchestration, UsageTracker, fallback route)."""
+from __future__ import annotations
+
 from typing import Any
 
 import pytest
@@ -20,7 +22,8 @@ from app.core.intent_config import (
 )
 
 
-async def _fake_plan_stream(plan):
+async def _fake_plan_stream(plan: Any) -> Any:
+
     """Async generator yielding a single ExecutionPlan (simulates build_execution_plan_stream)."""
     yield plan
 
@@ -41,13 +44,15 @@ _NON_EMPTY_PROJECT = {
 class TestUsageTracker:
     """Test UsageTracker."""
 
-    def test_init_zero(self):
+    def test_init_zero(self) -> None:
+
         t = UsageTracker()
         assert t.prompt_tokens == 0
         assert t.completion_tokens == 0
         assert t.last_input_tokens == 0
 
-    def test_add_accumulates(self):
+    def test_add_accumulates(self) -> None:
+
         t = UsageTracker()
         t.add(10, 20)
         assert t.prompt_tokens == 10
@@ -56,7 +61,8 @@ class TestUsageTracker:
         assert t.prompt_tokens == 15
         assert t.completion_tokens == 35
 
-    def test_last_input_tokens_tracks_most_recent_call(self):
+    def test_last_input_tokens_tracks_most_recent_call(self) -> None:
+
         """last_input_tokens is overwritten each call, not accumulated."""
         t = UsageTracker()
         t.add(100, 50)
@@ -66,7 +72,8 @@ class TestUsageTracker:
         assert t.last_input_tokens == 250
         assert t.prompt_tokens == 350  # accumulated, unchanged
 
-    def test_last_input_tokens_reflects_growing_context(self):
+    def test_last_input_tokens_reflects_growing_context(self) -> None:
+
         """Each iteration of an agentic loop sends more context; last call wins."""
         t = UsageTracker()
         for tokens in [1000, 1500, 2100]:
@@ -77,13 +84,15 @@ class TestUsageTracker:
 class TestGetContextWindowTokens:
     """Test get_context_window_tokens helper in config."""
 
-    def test_known_models_return_200k(self):
+    def test_known_models_return_200k(self) -> None:
+
         """Both supported Claude models return 200 000."""
         from app.config import get_context_window_tokens
         assert get_context_window_tokens("anthropic/claude-sonnet-4.6") == 200_000
         assert get_context_window_tokens("anthropic/claude-opus-4.6") == 200_000
 
-    def test_unknown_model_returns_zero(self):
+    def test_unknown_model_returns_zero(self) -> None:
+
         """Unknown models return 0 so the frontend keeps its previous ring value."""
         from app.config import get_context_window_tokens
         assert get_context_window_tokens("openai/gpt-4o") == 0
@@ -94,7 +103,8 @@ class TestGetContextWindowTokens:
 class TestCreateEditingFallbackRoute:
     """Test _create_editing_fallback_route."""
 
-    def test_returns_editing_state_with_primitives(self):
+    def test_returns_editing_state_with_primitives(self) -> None:
+
         """Fallback route should be EDITING with track+region primitives."""
         route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -117,7 +127,8 @@ class TestCreateEditingFallbackRoute:
         assert out.requires_planner is False
         assert "Fallback" in out.reasons[0]
 
-    def test_preserves_slots(self):
+    def test_preserves_slots(self) -> None:
+
         """Slots from original route are preserved."""
         route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -138,20 +149,24 @@ class TestCreateEditingFallbackRoute:
 class TestProjectNeedsStructure:
     """Test _project_needs_structure helper."""
 
-    def test_empty_context_needs_structure(self):
+    def test_empty_context_needs_structure(self) -> None:
+
         """Empty project context (no tracks key) needs structure."""
         assert _project_needs_structure({}) is True
 
-    def test_empty_tracks_needs_structure(self):
+    def test_empty_tracks_needs_structure(self) -> None:
+
         """Project with empty tracks list needs structure."""
         assert _project_needs_structure({"tracks": []}) is True
 
-    def test_project_with_tracks_does_not_need_structure(self):
+    def test_project_with_tracks_does_not_need_structure(self) -> None:
+
         """Project with at least one track does not need structure."""
         ctx = {"tracks": [{"id": "t1", "name": "Drums"}]}
         assert _project_needs_structure(ctx) is False
 
-    def test_project_with_multiple_tracks(self):
+    def test_project_with_multiple_tracks(self) -> None:
+
         """Project with multiple tracks does not need structure."""
         ctx = {"tracks": [{"id": "t1"}, {"id": "t2"}, {"id": "t3"}]}
         assert _project_needs_structure(ctx) is False
@@ -160,18 +175,21 @@ class TestProjectNeedsStructure:
 class TestGetIncompleteTracks:
     """Test _get_incomplete_tracks helper."""
 
-    def _make_store(self):
+    def _make_store(self) -> Any:
+
         from app.core.state_store import StateStore
         return StateStore(project_id="test")
 
-    def test_track_without_region_is_incomplete(self):
+    def test_track_without_region_is_incomplete(self) -> None:
+
         """A track with no regions should be detected as incomplete."""
         store = self._make_store()
         store.create_track("Guitar")
         result = _get_incomplete_tracks(store)
         assert "Guitar" in result
 
-    def test_track_with_region_but_no_notes_is_incomplete(self):
+    def test_track_with_region_but_no_notes_is_incomplete(self) -> None:
+
         """A track that has a region but no stori_add_notes call is incomplete."""
         store = self._make_store()
         tid = store.create_track("Piano")
@@ -180,7 +198,8 @@ class TestGetIncompleteTracks:
         result = _get_incomplete_tracks(store, tool_calls_collected=[])
         assert "Piano" in result
 
-    def test_track_with_region_and_notes_is_complete(self):
+    def test_track_with_region_and_notes_is_complete(self) -> None:
+
         """A track whose region received stori_add_notes is complete."""
         store = self._make_store()
         tid = store.create_track("Bass")
@@ -189,7 +208,8 @@ class TestGetIncompleteTracks:
         result = _get_incomplete_tracks(store, tool_calls_collected=tc)
         assert "Bass" not in result
 
-    def test_mixed_complete_and_incomplete(self):
+    def test_mixed_complete_and_incomplete(self) -> None:
+
         """Only incomplete tracks are returned."""
         store = self._make_store()
         tid1 = store.create_track("Guitar")
@@ -201,7 +221,8 @@ class TestGetIncompleteTracks:
         assert "Guitar" not in result
         assert "Drums" in result
 
-    def test_no_tool_calls_treats_all_regions_as_noteless(self):
+    def test_no_tool_calls_treats_all_regions_as_noteless(self) -> None:
+
         """Without tool_calls_collected, tracks with regions are still incomplete (no notes)."""
         store = self._make_store()
         tid = store.create_track("Keys")
@@ -209,7 +230,8 @@ class TestGetIncompleteTracks:
         result = _get_incomplete_tracks(store)
         assert "Keys" in result
 
-    def test_notes_from_prior_iteration_count_as_complete(self):
+    def test_notes_from_prior_iteration_count_as_complete(self) -> None:
+
         """Regression: notes persisted to StateStore in a prior iteration must
         satisfy the completeness check even when tool_calls_collected is empty.
         Without this, the continuation prompt falsely tells the model a region
@@ -231,7 +253,8 @@ class TestGetIncompleteTracks:
 class TestCreateEditingCompositionRoute:
     """Test _create_editing_composition_route helper."""
 
-    def test_returns_editing_state(self):
+    def test_returns_editing_state(self) -> None:
+
         """Composition route override should produce EDITING state."""
         route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -253,7 +276,8 @@ class TestCreateEditingCompositionRoute:
         assert out.tool_choice == "auto"
         assert "empty_project_override" in out.reasons
 
-    def test_includes_all_structural_tools(self):
+    def test_includes_all_structural_tools(self) -> None:
+
         """Composition route should include track, region, FX, and mixing primitives."""
         route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -281,7 +305,8 @@ class TestCreateEditingCompositionRoute:
         assert set(_PRIMITIVES_REGION).issubset(out.allowed_tool_names)
         assert set(_PRIMITIVES_FX).issubset(out.allowed_tool_names)
 
-    def test_preserves_slots_and_confidence(self):
+    def test_preserves_slots_and_confidence(self) -> None:
+
         """Slots and confidence from original route are preserved."""
         route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -304,7 +329,8 @@ class TestOrchestrateStream:
     """Test orchestrate() yields expected SSE events (mocked intent + LLM)."""
 
     @pytest.mark.anyio
-    async def test_yields_state_then_complete_for_reasoning(self):
+    async def test_yields_state_then_complete_for_reasoning(self) -> None:
+
         """When intent is REASONING, we get state event and then complete with no tools."""
         fake_route = IntentResult(
             intent=Intent.UNKNOWN,
@@ -356,7 +382,8 @@ class TestOrchestrateStream:
                 assert last_payload.get("toolCalls") == []
 
     @pytest.mark.anyio
-    async def test_complete_event_includes_context_window_fields(self):
+    async def test_complete_event_includes_context_window_fields(self) -> None:
+
         """complete event always contains inputTokens and contextWindowTokens."""
         fake_route = IntentResult(
             intent=Intent.ASK_GENERAL,
@@ -398,7 +425,8 @@ class TestOrchestrateStream:
                 assert complete["contextWindowTokens"] == 200_000
 
     @pytest.mark.anyio
-    async def test_complete_event_context_window_zero_for_unknown_model(self):
+    async def test_complete_event_context_window_zero_for_unknown_model(self) -> None:
+
         """contextWindowTokens is 0 for unrecognised models."""
         fake_route = IntentResult(
             intent=Intent.ASK_GENERAL,
@@ -439,7 +467,8 @@ class TestOrchestrateStream:
                 assert complete["contextWindowTokens"] == 0
 
     @pytest.mark.anyio
-    async def test_yields_state_then_complete_for_composing_with_empty_plan(self):
+    async def test_yields_state_then_complete_for_composing_with_empty_plan(self) -> None:
+
         """When intent is COMPOSING on a non-empty project and pipeline returns empty plan, we get state then content then complete."""
         from app.core.planner import ExecutionPlan
 
@@ -477,7 +506,8 @@ class TestOrchestrateStream:
                     assert last.get("success") is True
 
     @pytest.mark.anyio
-    async def test_orchestrate_yields_error_event_on_exception(self):
+    async def test_orchestrate_yields_error_event_on_exception(self) -> None:
+
         """When orchestration raises, we yield error then complete(success=false)."""
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
             m_intent.side_effect = RuntimeError("intent service down")
@@ -503,7 +533,8 @@ class TestOrchestrateStream:
                 assert payloads[-1]["success"] is False
 
     @pytest.mark.anyio
-    async def test_reasoning_with_rag_ask_stori_docs(self):
+    async def test_reasoning_with_rag_ask_stori_docs(self) -> None:
+
         """When intent is ASK_STORI_DOCS and RAG exists, we stream RAG answer then complete."""
         from app.core.intent import Intent
 
@@ -521,7 +552,8 @@ class TestOrchestrateStream:
         )
         mock_rag = MagicMock()
         mock_rag.collection_exists = MagicMock(return_value=True)
-        async def fake_answer(*args, **kwargs):
+        async def fake_answer(*args: Any, **kwargs: Any) -> Any:
+
             yield "RAG chunk 1"
             yield "RAG chunk 2"
         mock_rag.answer = fake_answer
@@ -547,7 +579,8 @@ class TestOrchestrateStream:
                     assert any("RAG chunk" in p.get("content", "") for p in content_events)
 
     @pytest.mark.anyio
-    async def test_reasoning_streaming_path_when_supports_reasoning(self):
+    async def test_reasoning_streaming_path_when_supports_reasoning(self) -> None:
+
         """When model supports reasoning, handler uses chat_completion_stream and yields reasoning + content."""
         fake_route = IntentResult(
             intent=Intent.UNKNOWN,
@@ -561,12 +594,14 @@ class TestOrchestrateStream:
             requires_planner=False,
             reasons=(),
         )
-        async def stream_chunks(*args, **kwargs):
+        async def stream_chunks(*args: Any, **kwargs: Any) -> Any:
+
             yield {"type": "reasoning_delta", "text": "Thinking..."}
             yield {"type": "content_delta", "text": "Answer."}
             yield {"type": "done", "content": "Answer.", "usage": {"prompt_tokens": 1, "completion_tokens": 2}}
 
-        def make_stream(*args, **kwargs):
+        def make_stream(*args: Any, **kwargs: Any) -> Any:
+
             return stream_chunks(*args, **kwargs)
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
@@ -590,7 +625,8 @@ class TestOrchestrateStream:
                 assert any(p.get("type") == "content" and "Answer" in p.get("content", "") for p in payloads)
 
     @pytest.mark.anyio
-    async def test_composing_with_non_empty_plan_apply_mode(self):
+    async def test_composing_with_non_empty_plan_apply_mode(self) -> None:
+
         """When COMPOSING on a non-empty project and pipeline returns a plan with tool_calls, we stream plan then complete."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
@@ -632,7 +668,8 @@ class TestOrchestrateStream:
                     assert "planSummary" not in types
 
     @pytest.mark.anyio
-    async def test_composing_empty_plan_with_stori_in_response_fallback_to_editing(self):
+    async def test_composing_empty_plan_with_stori_in_response_fallback_to_editing(self) -> None:
+
         """When plan has no tool_calls but llm_response_text contains 'stori_', we retry as EDITING."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
@@ -679,7 +716,8 @@ class TestOrchestrateStream:
                     assert any(p.get("type") == "status" and "Retrying" in p.get("message", "") for p in payloads)
 
     @pytest.mark.anyio
-    async def test_empty_project_overrides_composing_to_editing(self):
+    async def test_empty_project_overrides_composing_to_editing(self) -> None:
+
         """When COMPOSING intent hits an empty project, orchestrate overrides to EDITING with tool_call events."""
         from app.core.expansion import ToolCall
         from app.core.llm_client import LLMResponse
@@ -741,7 +779,8 @@ class TestOrchestrateStream:
                 assert "complete" in types
 
     @pytest.mark.anyio
-    async def test_non_empty_project_stays_on_composing(self):
+    async def test_non_empty_project_stays_on_composing(self) -> None:
+
         """When COMPOSING intent hits a project with tracks, it stays on COMPOSING path (variation review)."""
         from app.core.planner import ExecutionPlan
 
@@ -782,7 +821,8 @@ class TestOrchestrateStream:
                     )
 
     @pytest.mark.anyio
-    async def test_orchestrate_accepts_quality_preset_param(self):
+    async def test_orchestrate_accepts_quality_preset_param(self) -> None:
+
         """quality_preset parameter is accepted by orchestrate without TypeError."""
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
             m_intent.side_effect = RuntimeError("abort early")
@@ -807,7 +847,8 @@ class TestComposingUnifiedSSE:
     """Tests for the unified SSE UX across all three phases."""
 
     @pytest.mark.anyio
-    async def test_composing_emits_reasoning_events(self):
+    async def test_composing_emits_reasoning_events(self) -> None:
+
         """Phase 1: COMPOSING path emits reasoning events from the streaming planner."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
@@ -830,7 +871,8 @@ class TestComposingUnifiedSSE:
             safety_validated=True,
         )
 
-        async def _stream_with_reasoning(*args, **kwargs):
+        async def _stream_with_reasoning(*args: Any, **kwargs: Any) -> Any:
+
             yield await sse_event({"type": "reasoning", "content": "Planning the beat..."})
             yield plan
 
@@ -854,7 +896,8 @@ class TestComposingUnifiedSSE:
                     assert "Planning" in reasoning_ev["content"]
 
     @pytest.mark.anyio
-    async def test_composing_emits_plan_event(self):
+    async def test_composing_emits_plan_event(self) -> None:
+
         """COMPOSING path emits a 'plan' event with steps."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
@@ -902,7 +945,8 @@ class TestComposingUnifiedSSE:
                     assert "planSummary" not in types
 
     @pytest.mark.anyio
-    async def test_composing_emits_proposal_tool_calls(self):
+    async def test_composing_emits_proposal_tool_calls(self) -> None:
+
         """COMPOSING path emits proposal toolCalls (phase 1), then real execution toolCalls (phase 2)."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
@@ -924,7 +968,8 @@ class TestComposingUnifiedSSE:
             safety_validated=True,
         )
 
-        async def _mock_execute(**kwargs):
+        async def _mock_execute(**kwargs: Any) -> Any:
+
             pre_cb = kwargs.get("pre_tool_callback")
             post_cb = kwargs.get("post_tool_callback")
             prog_cb = kwargs.get("progress_callback")
@@ -973,7 +1018,8 @@ class TestComposingUnifiedSSE:
                         assert execution_calls[0].get("id") != "", "Execution toolCall must have a real UUID"
 
     @pytest.mark.anyio
-    async def test_composing_plan_step_updates(self):
+    async def test_composing_plan_step_updates(self) -> None:
+
         """COMPOSING execution phase emits planStepUpdate active/complete events (not during proposal phase)."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
@@ -1000,7 +1046,8 @@ class TestComposingUnifiedSSE:
 
         call_idx = 0
 
-        async def _mock_execute(**kwargs):
+        async def _mock_execute(**kwargs: Any) -> Any:
+
             nonlocal call_idx
             pre_cb = kwargs.get("pre_tool_callback")
             post_cb = kwargs.get("post_tool_callback")
@@ -1058,6 +1105,7 @@ class TestAgentTeamsVariationRouting:
     """Verify that Mode: compose routes through Agent Teams + Variation."""
 
     def _make_parsed_prompt(self, roles: list[str]) -> Any:
+
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT\nMode: compose",
@@ -1070,6 +1118,7 @@ class TestAgentTeamsVariationRouting:
         )
 
     def _make_composing_route(self, parsed: Any) -> IntentResult:
+
         return IntentResult(
             intent=Intent.GENERATE_MUSIC,
             sse_state=SSEState.COMPOSING,
@@ -1084,12 +1133,14 @@ class TestAgentTeamsVariationRouting:
         )
 
     @pytest.mark.anyio
-    async def test_explicit_compose_multi_role_routes_to_agent_teams_variation(self):
+    async def test_explicit_compose_multi_role_routes_to_agent_teams_variation(self) -> None:
+
         """Mode: compose with 3 roles routes to _handle_composing_with_agent_teams."""
         parsed = self._make_parsed_prompt(["drums", "bass", "keys"])
         fake_route = self._make_composing_route(parsed)
 
         async def _fake_at_gen(*args: Any, **kwargs: Any) -> Any:
+
             yield 'data: {"type": "status", "message": "test"}\n\n'
             yield 'data: {"type": "complete", "success": true}\n\n'
 
@@ -1115,12 +1166,14 @@ class TestAgentTeamsVariationRouting:
             assert call_args[0][2] is parsed
 
     @pytest.mark.anyio
-    async def test_single_instrument_compose_routes_to_agent_teams_variation(self):
+    async def test_single_instrument_compose_routes_to_agent_teams_variation(self) -> None:
+
         """Mode: compose with 1 role also routes to Agent Teams + Variation."""
         parsed = self._make_parsed_prompt(["melody"])
         fake_route = self._make_composing_route(parsed)
 
         async def _fake_at_gen(*args: Any, **kwargs: Any) -> Any:
+
             yield 'data: {"type": "complete", "success": true}\n\n'
 
         mock_llm = MagicMock()
@@ -1143,7 +1196,8 @@ class TestAgentTeamsVariationRouting:
             mock_at.assert_called_once()
 
     @pytest.mark.anyio
-    async def test_compose_without_parsed_prompt_uses_standard_composing(self):
+    async def test_compose_without_parsed_prompt_uses_standard_composing(self) -> None:
+
         """When no parsed prompt (freeform compose), standard _handle_composing is used."""
         from app.core.planner import ExecutionPlan
 
@@ -1182,7 +1236,8 @@ class TestAgentTeamsVariationRouting:
             mock_at.assert_not_called()
 
     @pytest.mark.anyio
-    async def test_agent_teams_variation_emits_variation_events(self):
+    async def test_agent_teams_variation_emits_variation_events(self) -> None:
+
         """The wrapper intercepts Agent Teams complete and emits meta/phrase/done/complete."""
         import json
         from app.core.maestro_composing.composing import (
@@ -1245,6 +1300,7 @@ class TestAgentTeamsVariationRouting:
         )
 
         async def _fake_agent_teams(*args: Any, **kwargs: Any) -> Any:
+
             yield 'data: {"type": "status", "message": "Preparing..."}\n\n'
             yield 'data: {"type": "reasoning", "content": "Thinking about drums", "agentId": "drums"}\n\n'
             yield 'data: {"type": "summary", "tracks": ["Drums"], "regions": 1, "notes": 2}\n\n'

@@ -11,7 +11,7 @@ _NOTE_KEY_MAP: dict[str, str] = {
 }
 
 
-def _normalize_note(note: dict) -> dict:
+def _normalize_note(note: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of *note* with canonical snake_case field names."""
     out: dict[str, Any] = {}
     for k, v in note.items():

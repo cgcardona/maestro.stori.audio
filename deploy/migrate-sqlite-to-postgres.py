@@ -12,6 +12,8 @@ Usage:
         --sqlite sqlite:///path/to/stori.db \
         --postgres postgresql://user:pass@host/db
 """
+from __future__ import annotations
+
 import argparse
 import asyncio
 import logging
@@ -170,7 +172,7 @@ def main():
     
     if not args.postgres or not args.postgres.strip():
         logger.error(
-            "PostgreSQL URL required. Set STORI_DATABASE_URL or pass --postgres "
+            "PostgreSQL URL required. set STORI_DATABASE_URL or pass --postgres "
             "(e.g. postgresql+asyncpg://stori:YOUR_PASSWORD@localhost:5432/stori)."
         )
         sys.exit(1)

@@ -1,4 +1,8 @@
 """Health check endpoints."""
+from __future__ import annotations
+
+from typing import Any
+
 from fastapi import APIRouter
 
 from app.config import settings
@@ -14,7 +18,7 @@ def _llm_configured() -> bool:
 
 
 @router.get("/health")
-async def health_check():
+async def health_check() -> dict[str, str]:
     """Basic health check."""
     return {
         "status": "ok",
@@ -25,7 +29,7 @@ async def health_check():
 
 
 @router.get("/health/full")
-async def full_health_check():
+async def full_health_check() -> dict[str, Any]:
     """
     Full health check including dependencies.
 

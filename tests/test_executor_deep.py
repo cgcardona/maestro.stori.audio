@@ -6,6 +6,9 @@ Supplements test_executor.py with:
 - _extract_notes_from_project with midiRegions
 - Generator timeout handling
 """
+from __future__ import annotations
+
+from typing import Any
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -38,9 +41,9 @@ from app.models.variation import (
 
 
 def _make_variation(
-    phrases=None,
-    variation_id="var-test-1",
-    intent="test",
+    phrases: list[Phrase] | None = None,
+    variation_id: str = "var-test-1",
+    intent: str = "test",
 ) -> Variation:
     if phrases is None:
         phrases = []
@@ -55,10 +58,10 @@ def _make_variation(
 
 
 def _make_phrase(
-    phrase_id="p1",
-    note_changes=None,
-    region_id="r1",
-    track_id="t1",
+    phrase_id: str = "p1",
+    note_changes: list[NoteChange] | None = None,
+    region_id: str = "r1",
+    track_id: str = "t1",
 ) -> Phrase:
     return Phrase(
         phrase_id=phrase_id,
@@ -71,7 +74,8 @@ def _make_phrase(
     )
 
 
-def _note_add(pitch=60, start=0.0, dur=1.0, vel=100) -> NoteChange:
+def _note_add(pitch: Any = 60, start: Any = 0.0, dur: Any = 1.0, vel: Any = 100) -> NoteChange:
+
     return NoteChange(
         note_id=f"nc-add-{pitch}-{start}",
         change_type="added",
@@ -79,7 +83,8 @@ def _note_add(pitch=60, start=0.0, dur=1.0, vel=100) -> NoteChange:
     )
 
 
-def _note_remove(pitch=60, start=0.0, dur=1.0, vel=100) -> NoteChange:
+def _note_remove(pitch: Any = 60, start: Any = 0.0, dur: Any = 1.0, vel: Any = 100) -> NoteChange:
+
     return NoteChange(
         note_id=f"nc-rm-{pitch}-{start}",
         change_type="removed",
@@ -87,7 +92,8 @@ def _note_remove(pitch=60, start=0.0, dur=1.0, vel=100) -> NoteChange:
     )
 
 
-def _note_modify(old_pitch=60, new_pitch=63, start=0.0, dur=1.0) -> NoteChange:
+def _note_modify(old_pitch: Any = 60, new_pitch: Any = 63, start: Any = 0.0, dur: Any = 1.0) -> NoteChange:
+
     return NoteChange(
         note_id=f"nc-mod-{old_pitch}-{new_pitch}",
         change_type="modified",
@@ -104,7 +110,8 @@ def _note_modify(old_pitch=60, new_pitch=63, start=0.0, dur=1.0) -> NoteChange:
 class TestExecutePlanVariation:
 
     @pytest.mark.anyio
-    async def test_empty_tool_calls_returns_empty_variation(self):
+    async def test_empty_tool_calls_returns_empty_variation(self) -> None:
+
         """No tool calls produces an empty variation."""
         variation = await execute_plan_variation(
             tool_calls=[],
@@ -116,7 +123,8 @@ class TestExecutePlanVariation:
         assert variation.variation_id  # should still have an ID
 
     @pytest.mark.anyio
-    async def test_add_notes_produces_variation(self):
+    async def test_add_notes_produces_variation(self) -> None:
+
         """stori_add_notes tool call produces a variation with phrases."""
         calls = [ToolCall("stori_add_notes", {
             "regionId": "r1",
@@ -145,11 +153,13 @@ class TestExecutePlanVariation:
         assert len(variation.phrases) >= 1
 
     @pytest.mark.anyio
-    async def test_tool_event_callback_called_before_processing(self):
-        """tool_event_callback is invoked before each tool call is processed."""
-        captured: list[tuple[str, str, dict]] = []
+    async def test_tool_event_callback_called_before_processing(self) -> None:
 
-        async def _on_tool(call_id, name, params):
+        """tool_event_callback is invoked before each tool call is processed."""
+        captured: list[tuple[str, str, dict[str, Any]]] = []
+
+        async def _on_tool(call_id: Any, name: Any, params: Any) -> None:
+
             captured.append((call_id, name, params))
 
         calls = [
@@ -168,7 +178,8 @@ class TestExecutePlanVariation:
         assert captured[1] == ("tc-2", "stori_set_key", {"key": "Am"})
 
     @pytest.mark.anyio
-    async def test_no_mutation_of_canonical_state(self):
+    async def test_no_mutation_of_canonical_state(self) -> None:
+
         """Variation execution must not modify the project_state dict."""
         project_state = {
             "tracks": [{
@@ -204,7 +215,8 @@ class TestExecutePlanVariation:
 class TestApplyVariationPhrases:
 
     @pytest.mark.anyio
-    async def test_apply_added_notes(self):
+    async def test_apply_added_notes(self) -> None:
+
         """Applying phrases with added notes creates notes in store."""
         phrase = _make_phrase(
             phrase_id="p1",
@@ -226,7 +238,8 @@ class TestApplyVariationPhrases:
         assert result.applied_phrase_ids == ["p1"]
 
     @pytest.mark.anyio
-    async def test_apply_removed_notes(self):
+    async def test_apply_removed_notes(self) -> None:
+
         """Applying phrases with removed notes triggers removals."""
         phrase = _make_phrase(
             phrase_id="p1",
@@ -246,7 +259,8 @@ class TestApplyVariationPhrases:
         assert result.notes_removed == 1
 
     @pytest.mark.anyio
-    async def test_apply_modified_notes(self):
+    async def test_apply_modified_notes(self) -> None:
+
         """Modified notes count as remove old + add new."""
         phrase = _make_phrase(
             phrase_id="p1",
@@ -266,7 +280,8 @@ class TestApplyVariationPhrases:
         assert result.notes_modified == 1
 
     @pytest.mark.anyio
-    async def test_partial_acceptance(self):
+    async def test_partial_acceptance(self) -> None:
+
         """Only accepted phrase_ids are applied."""
         p1 = _make_phrase(phrase_id="p1", note_changes=[_note_add(60, 0.0)])
         p2 = _make_phrase(phrase_id="p2", note_changes=[_note_add(72, 4.0)])
@@ -285,7 +300,8 @@ class TestApplyVariationPhrases:
         assert result.notes_added == 1  # only p1's note
 
     @pytest.mark.anyio
-    async def test_unknown_phrase_id_skipped(self):
+    async def test_unknown_phrase_id_skipped(self) -> None:
+
         """Unknown phrase IDs are silently skipped."""
         phrase = _make_phrase(phrase_id="p1", note_changes=[_note_add(60, 0.0)])
         variation = _make_variation(phrases=[phrase])
@@ -302,7 +318,8 @@ class TestApplyVariationPhrases:
         assert result.applied_phrase_ids == ["p1"]
 
     @pytest.mark.anyio
-    async def test_empty_accepted_ids(self):
+    async def test_empty_accepted_ids(self) -> None:
+
         """Empty accepted list is a no-op."""
         phrase = _make_phrase(phrase_id="p1", note_changes=[_note_add(60)])
         variation = _make_variation(phrases=[phrase])
@@ -326,7 +343,8 @@ class TestApplyVariationPhrases:
 
 class TestExecutionContextExtended:
 
-    def test_all_successful_true(self):
+    def test_all_successful_true(self) -> None:
+
         store = MagicMock(spec=StateStore)
         tx = MagicMock()
         trace = TraceContext(trace_id="test")
@@ -335,7 +353,8 @@ class TestExecutionContextExtended:
         ctx.add_result("tool2", True, {})
         assert ctx.all_successful is True
 
-    def test_all_successful_false(self):
+    def test_all_successful_false(self) -> None:
+
         store = MagicMock(spec=StateStore)
         tx = MagicMock()
         trace = TraceContext(trace_id="test")
@@ -344,7 +363,8 @@ class TestExecutionContextExtended:
         ctx.add_result("tool2", False, {}, error="failed")
         assert ctx.all_successful is False
 
-    def test_failed_tools(self):
+    def test_failed_tools(self) -> None:
+
         store = MagicMock(spec=StateStore)
         tx = MagicMock()
         trace = TraceContext(trace_id="test")
@@ -353,7 +373,8 @@ class TestExecutionContextExtended:
         ctx.add_result("tool2", False, {}, error="oops")
         assert ctx.failed_tools == ["tool2"]
 
-    def test_created_entities(self):
+    def test_created_entities(self) -> None:
+
         store = MagicMock(spec=StateStore)
         tx = MagicMock()
         trace = TraceContext(trace_id="test")
@@ -361,7 +382,8 @@ class TestExecutionContextExtended:
         ctx.add_result("stori_add_midi_track", True, {}, entity_created="track-123")
         assert ctx.created_entities == {"stori_add_midi_track": "track-123"}
 
-    def test_add_event(self):
+    def test_add_event(self) -> None:
+
         store = MagicMock(spec=StateStore)
         tx = MagicMock()
         trace = TraceContext(trace_id="test")
@@ -377,7 +399,8 @@ class TestExecutionContextExtended:
 
 class TestExtractNotesFromProject:
 
-    def test_extracts_from_regions_key(self):
+    def test_extracts_from_regions_key(self) -> None:
+
         """Standard 'regions' key is extracted."""
         store = StateStore(conversation_id="test-extract")
         trace = TraceContext(trace_id="test")
@@ -395,7 +418,8 @@ class TestExtractNotesFromProject:
         assert "r1" in var_ctx.base.notes
         assert len(var_ctx.base.notes["r1"]) == 1
 
-    def test_falls_back_to_store_when_no_notes(self):
+    def test_falls_back_to_store_when_no_notes(self) -> None:
+
         """When region has no notes array, falls back to StateStore."""
         store = StateStore(conversation_id="test-fallback")
         store.add_notes("r1", [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}])
@@ -421,7 +445,8 @@ class TestExtractNotesFromProject:
 class TestGeneratorTimeout:
 
     @pytest.mark.anyio
-    async def test_generator_timeout_does_not_crash(self):
+    async def test_generator_timeout_does_not_crash(self) -> None:
+
         """A generator that exceeds the 30s timeout should be caught, not crash."""
         store = StateStore(conversation_id="test-timeout")
         tid = store.create_track("Drums")
@@ -437,7 +462,8 @@ class TestGeneratorTimeout:
             "bars": 4,
         })
 
-        async def slow_generate(**kwargs):
+        async def slow_generate(**kwargs: Any) -> None:
+
             await asyncio.sleep(100)
 
         mock_mg = MagicMock()
@@ -454,7 +480,8 @@ class TestGeneratorTimeout:
         assert len(var_ctx.proposed.notes) == 0
 
     @pytest.mark.anyio
-    async def test_generator_exception_does_not_crash(self):
+    async def test_generator_exception_does_not_crash(self) -> None:
+
         """A generator that raises an exception should be caught gracefully."""
         store = StateStore(conversation_id="test-gen-err")
         tid = store.create_track("Bass")
@@ -488,7 +515,8 @@ class TestEmotionVectorIntegration:
     """Tests that execute_plan_variation derives and passes emotion_vector to mg.generate."""
 
     @pytest.mark.anyio
-    async def test_emotion_vector_derived_from_stori_prompt(self):
+    async def test_emotion_vector_derived_from_stori_prompt(self) -> None:
+
         """When explanation contains a STORI PROMPT, emotion_vector is derived and passed."""
         stori_prompt = (
             "STORI PROMPT\n"
@@ -498,12 +526,12 @@ class TestEmotionVectorIntegration:
             "Energy: Low"
         )
 
-        captured_kwargs: dict = {}
+        captured_kwargs: dict[str, Any] = {}
 
-        async def mock_generate(**kwargs):
+        async def mock_generate(**kwargs: Any) -> Any:
+
             captured_kwargs.update(kwargs)
-            from app.services.music_generator import GenerationResult
-            from app.services.backends.base import GeneratorBackend
+            from app.services.backends.base import GenerationResult, GeneratorBackend
             return GenerationResult(
                 success=True,
                 notes=[{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 80}],
@@ -571,14 +599,15 @@ class TestEmotionVectorIntegration:
         assert ev.intimacy > 0.5
 
     @pytest.mark.anyio
-    async def test_no_explanation_skips_emotion_vector(self):
-        """When explanation is None, emotion_vector is not passed (or is None)."""
-        captured_kwargs: dict = {}
+    async def test_no_explanation_skips_emotion_vector(self) -> None:
 
-        async def mock_generate(**kwargs):
+        """When explanation is None, emotion_vector is not passed (or is None)."""
+        captured_kwargs: dict[str, Any] = {}
+
+        async def mock_generate(**kwargs: Any) -> Any:
+
             captured_kwargs.update(kwargs)
-            from app.services.music_generator import GenerationResult
-            from app.services.backends.base import GeneratorBackend
+            from app.services.backends.base import GenerationResult, GeneratorBackend
             return GenerationResult(
                 success=True,
                 notes=[],
@@ -641,14 +670,15 @@ class TestEmotionVectorIntegration:
         assert captured_kwargs.get("emotion_vector") is None
 
     @pytest.mark.anyio
-    async def test_quality_preset_forwarded_to_generator(self):
-        """quality_preset passed to execute_plan_variation reaches mg.generate."""
-        captured_kwargs: dict = {}
+    async def test_quality_preset_forwarded_to_generator(self) -> None:
 
-        async def mock_generate(**kwargs):
+        """quality_preset passed to execute_plan_variation reaches mg.generate."""
+        captured_kwargs: dict[str, Any] = {}
+
+        async def mock_generate(**kwargs: Any) -> Any:
+
             captured_kwargs.update(kwargs)
-            from app.services.music_generator import GenerationResult
-            from app.services.backends.base import GeneratorBackend
+            from app.services.backends.base import GenerationResult, GeneratorBackend
             return GenerationResult(
                 success=True,
                 notes=[],
@@ -718,7 +748,8 @@ class TestEmotionVectorIntegration:
 class TestParallelGeneratorDispatch:
     """Verify the 3-phase execution model in execute_plan_variation."""
 
-    def _make_store_mock(self):
+    def _make_store_mock(self) -> MagicMock:
+
         store = MagicMock()
         store.registry = MagicMock()
         store.registry.resolve_track = MagicMock(return_value=None)
@@ -728,7 +759,8 @@ class TestParallelGeneratorDispatch:
         store.conversation_id = "test"
         return store
 
-    def _make_variation(self):
+    def _make_variation(self) -> Variation:
+
         from app.models.variation import Variation
         return Variation(
             variation_id="v1",
@@ -740,6 +772,7 @@ class TestParallelGeneratorDispatch:
         )
 
     def _make_gen_call(self, role: str) -> ToolCall:
+
         """Create a stori_generate_midi ToolCall for the given role."""
         return ToolCall(
             id=f"call-{role}",
@@ -748,14 +781,16 @@ class TestParallelGeneratorDispatch:
         )
 
     @pytest.mark.anyio
-    async def test_independent_generators_run_in_parallel(self):
+    async def test_independent_generators_run_in_parallel(self) -> None:
+
         """Organ, guitar, and horns dispatch concurrently (Phase 3), not sequentially."""
         import asyncio
 
         call_order: list[str] = []
         in_flight: list[str] = []
 
-        async def fake_generate(*args, **kwargs):
+        async def fake_generate(*args: Any, **kwargs: Any) -> MagicMock:
+
             role = kwargs.get("instrument", "unknown")
             in_flight.append(role)
             await asyncio.sleep(0)  # yield so all tasks are in-flight together
@@ -799,11 +834,13 @@ class TestParallelGeneratorDispatch:
         assert set(call_order) == {"organ", "guitar", "horns"}
 
     @pytest.mark.anyio
-    async def test_drums_before_bass_before_parallel(self):
+    async def test_drums_before_bass_before_parallel(self) -> None:
+
         """Phase ordering: setup → drums → bass → parallel melodic."""
         execution_order: list[str] = []
 
-        async def track_call(call_id, tool_name, params):
+        async def track_call(call_id: Any, tool_name: Any, params: Any) -> None:
+
             execution_order.append(params.get("role", tool_name))
 
         # Setup call (track creation)
@@ -845,7 +882,8 @@ class TestParallelGeneratorDispatch:
         assert execution_order.index("bass") < execution_order.index("organ")
 
     @pytest.mark.anyio
-    async def test_no_generators_runs_setup_only(self):
+    async def test_no_generators_runs_setup_only(self) -> None:
+
         """Plans with no generator calls work fine (no parallel phase)."""
         call = ToolCall(
             id="c1",
@@ -878,7 +916,8 @@ class TestParallelGeneratorDispatch:
 class TestPhraseAbsoluteBeats:
     """Phrase start_beat/end_beat must be absolute project positions, not region-relative."""
 
-    def test_phrases_offset_by_region_start_beat(self):
+    def test_phrases_offset_by_region_start_beat(self) -> None:
+
         """Variation service adds region_start_beat to phrase positions."""
         from app.services.variation import VariationService
 
@@ -902,7 +941,8 @@ class TestPhraseAbsoluteBeats:
         assert p0.start_beat == 16.0, f"Expected absolute start 16.0, got {p0.start_beat}"
         assert p0.end_beat == 32.0, f"Expected absolute end 32.0, got {p0.end_beat}"
 
-    def test_bar_labels_reflect_absolute_position(self):
+    def test_bar_labels_reflect_absolute_position(self) -> None:
+
         """Bar labels should use absolute project bar numbers, not region-relative."""
         from app.services.variation import VariationService
 
@@ -922,7 +962,8 @@ class TestPhraseAbsoluteBeats:
         # Region starts at beat 16 = bar 5, phrase covers bars 5-8
         assert "5" in variation.phrases[0].label
 
-    def test_note_start_beat_stays_region_relative(self):
+    def test_note_start_beat_stays_region_relative(self) -> None:
+
         """Note startBeat inside noteChanges must remain region-relative (Bug 6)."""
         from app.services.variation import VariationService
 
@@ -945,7 +986,8 @@ class TestPhraseAbsoluteBeats:
             f"Note startBeat should be region-relative (2.5), got {nc.after.start_beat}"
         )
 
-    def test_multi_region_absolute_beats(self):
+    def test_multi_region_absolute_beats(self) -> None:
+
         """compute_multi_region_variation uses per-region offsets."""
         from app.services.variation import VariationService
 
@@ -965,7 +1007,8 @@ class TestPhraseAbsoluteBeats:
                 f"Phrase start_beat={phrase.start_beat} should be >= 16 (absolute)"
             )
 
-    def test_zero_offset_backwards_compatible(self):
+    def test_zero_offset_backwards_compatible(self) -> None:
+
         """With region_start_beat=0 (default), behaviour is unchanged."""
         from app.services.variation import VariationService
 
@@ -993,7 +1036,8 @@ class TestApplyVariationUpdatedRegions:
     """apply_variation_phrases must return non-empty updatedRegions with notes."""
 
     @pytest.mark.anyio
-    async def test_updated_regions_contain_notes_after_commit(self):
+    async def test_updated_regions_contain_notes_after_commit(self) -> None:
+
         """After commit, updatedRegions should include the applied notes."""
         phrase = Phrase(
             phrase_id="p1",
@@ -1045,7 +1089,8 @@ class TestApplyVariationUpdatedRegions:
         assert len(ur["notes"]) == 2, f"Expected 2 notes, got {len(ur['notes'])}"
 
     @pytest.mark.anyio
-    async def test_updated_regions_include_metadata(self):
+    async def test_updated_regions_include_metadata(self) -> None:
+
         """updatedRegions should include start_beat, duration_beats, name."""
         phrase = Phrase(
             phrase_id="p1",
@@ -1088,7 +1133,8 @@ class TestApplyVariationUpdatedRegions:
         assert ur["name"] == "Verse"
 
     @pytest.mark.anyio
-    async def test_updated_regions_fallback_to_adds(self):
+    async def test_updated_regions_fallback_to_adds(self) -> None:
+
         """When store.get_region_notes is empty, fall back to region_adds."""
         phrase = Phrase(
             phrase_id="p1",
@@ -1136,24 +1182,28 @@ class TestApplyVariationUpdatedRegions:
 class TestVariationContextCC:
     """VariationContext records CC and pitch bend data."""
 
-    def test_record_proposed_cc(self):
+    def test_record_proposed_cc(self) -> None:
+
         ctx = VariationContext(trace=TraceContext(trace_id="test"))
         cc_events = [{"cc": 64, "beat": 0.0, "value": 127}]
         ctx.record_proposed_cc("r1", cc_events)
         assert ctx.proposed.cc["r1"] == cc_events
 
-    def test_record_proposed_pitch_bends(self):
+    def test_record_proposed_pitch_bends(self) -> None:
+
         ctx = VariationContext(trace=TraceContext(trace_id="test"))
         pb_events = [{"beat": 1.0, "value": 4096}]
         ctx.record_proposed_pitch_bends("r1", pb_events)
         assert ctx.proposed.pitch_bends["r1"] == pb_events
 
-    def test_empty_cc_not_recorded(self):
+    def test_empty_cc_not_recorded(self) -> None:
+
         ctx = VariationContext(trace=TraceContext(trace_id="test"))
         ctx.record_proposed_cc("r1", [])
         assert "r1" not in ctx.proposed.cc
 
-    def test_cc_accumulates_across_calls(self):
+    def test_cc_accumulates_across_calls(self) -> None:
+
         ctx = VariationContext(trace=TraceContext(trace_id="test"))
         ctx.record_proposed_cc("r1", [{"cc": 64, "beat": 0, "value": 127}])
         ctx.record_proposed_cc("r1", [{"cc": 11, "beat": 1, "value": 80}])
@@ -1163,29 +1213,34 @@ class TestVariationContextCC:
 class TestStateStoreCCPitchBend:
     """StateStore CC and pitch bend storage."""
 
-    def test_add_and_get_cc(self):
+    def test_add_and_get_cc(self) -> None:
+
         store = StateStore(conversation_id="s1", project_id="p")
         store.add_cc("r1", [{"cc": 64, "beat": 0, "value": 127}])
         result = store.get_region_cc("r1")
         assert len(result) == 1
         assert result[0]["cc"] == 64
 
-    def test_add_and_get_pitch_bends(self):
+    def test_add_and_get_pitch_bends(self) -> None:
+
         store = StateStore(conversation_id="s2", project_id="p")
         store.add_pitch_bends("r1", [{"beat": 0.5, "value": 2048}])
         result = store.get_region_pitch_bends("r1")
         assert len(result) == 1
         assert result[0]["value"] == 2048
 
-    def test_get_empty_cc_returns_empty_list(self):
+    def test_get_empty_cc_returns_empty_list(self) -> None:
+
         store = StateStore(conversation_id="s3", project_id="p")
         assert store.get_region_cc("nonexistent") == []
 
-    def test_get_empty_pitch_bends_returns_empty_list(self):
+    def test_get_empty_pitch_bends_returns_empty_list(self) -> None:
+
         store = StateStore(conversation_id="s4", project_id="p")
         assert store.get_region_pitch_bends("nonexistent") == []
 
-    def test_cc_survives_snapshot_restore(self):
+    def test_cc_survives_snapshot_restore(self) -> None:
+
         store = StateStore(conversation_id="s5", project_id="p")
         store.add_cc("r1", [{"cc": 64, "beat": 0, "value": 127}])
         store.add_pitch_bends("r1", [{"beat": 1.0, "value": 8191}])
@@ -1201,10 +1256,11 @@ class TestStateStoreCCPitchBend:
 class TestVariationServiceCC:
     """Variation service propagates CC/pitch bend to phrases."""
 
-    def test_cc_events_appear_in_phrase_controller_changes(self):
+    def test_cc_events_appear_in_phrase_controller_changes(self) -> None:
+
         from app.services.variation import VariationService
         svc = VariationService()
-        base_notes: list[dict] = []
+        base_notes: list[dict[str, Any]] = []
         proposed_notes = [
             {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
         ]
@@ -1228,7 +1284,8 @@ class TestVariationServiceCC:
         assert cc_changes[0]["cc"] == 64
         assert cc_changes[0]["value"] == 127
 
-    def test_pitch_bends_appear_in_phrase_controller_changes(self):
+    def test_pitch_bends_appear_in_phrase_controller_changes(self) -> None:
+
         from app.services.variation import VariationService
         svc = VariationService()
         proposed_notes = [
@@ -1251,11 +1308,12 @@ class TestVariationServiceCC:
         assert len(pb_changes) == 1
         assert pb_changes[0]["value"] == 4096
 
-    def test_multi_region_cc_per_region(self):
+    def test_multi_region_cc_per_region(self) -> None:
+
         from app.services.variation import VariationService
         svc = VariationService()
 
-        base_regions: dict[str, list[dict]] = {"r1": [], "r2": []}
+        base_regions: dict[str, list[dict[str, Any]]] = {"r1": [], "r2": []}
         proposed_regions = {
             "r1": [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
             "r2": [{"pitch": 64, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
@@ -1274,7 +1332,7 @@ class TestVariationServiceCC:
             region_cc=region_cc,
         )
         # Each region should have its own CC in controller_changes
-        cc_by_region: dict[str, list[dict]] = {}
+        cc_by_region: dict[str, list[dict[str, Any]]] = {}
         for phrase in variation.phrases:
             for c in phrase.controller_changes:
                 cc_by_region.setdefault(phrase.region_id, []).append(c)
@@ -1286,7 +1344,8 @@ class TestApplyVariationCC:
     """apply_variation_phrases stores CC data and returns it in updated_regions."""
 
     @pytest.mark.anyio
-    async def test_cc_in_commit_response(self):
+    async def test_cc_in_commit_response(self) -> None:
+
         """CC data from phrase controller_changes flows to updated_regions."""
         phrase = Phrase(
             phrase_id="p1",
@@ -1335,7 +1394,8 @@ class TestApplyVariationCC:
 class TestGenerationResultCC:
     """GenerationResult carries CC and pitch bend data."""
 
-    def test_defaults_to_empty_lists(self):
+    def test_defaults_to_empty_lists(self) -> None:
+
         from app.services.backends.base import GenerationResult, GeneratorBackend
         r = GenerationResult(
             success=True,
@@ -1346,7 +1406,8 @@ class TestGenerationResultCC:
         assert r.cc_events == []
         assert r.pitch_bends == []
 
-    def test_explicit_cc_and_pitch_bends(self):
+    def test_explicit_cc_and_pitch_bends(self) -> None:
+
         from app.services.backends.base import GenerationResult, GeneratorBackend
         r = GenerationResult(
             success=True,
@@ -1364,7 +1425,8 @@ class TestOrpheusBackendCC:
     """Orpheus backend extracts CC and pitch bend from tool_calls."""
 
     @pytest.mark.anyio
-    async def test_extract_cc_and_pitch_bend(self):
+    async def test_extract_cc_and_pitch_bend(self) -> None:
+
         from app.services.backends.orpheus import OrpheusBackend
 
         mock_client = AsyncMock()
@@ -1417,7 +1479,8 @@ class TestOrpheusBackendCC:
         assert result.pitch_bends[0] == {"beat": 1.5, "value": 4096}
 
     @pytest.mark.anyio
-    async def test_no_cc_when_absent(self):
+    async def test_no_cc_when_absent(self) -> None:
+
         """When Orpheus returns only addNotes, CC/PB should be empty."""
         from app.services.backends.orpheus import OrpheusBackend
 
@@ -1459,18 +1522,21 @@ class TestOrpheusBackendCC:
 class TestAftertouchPipeline:
     """Aftertouch data flows through the entire pipeline."""
 
-    def test_variation_context_records_aftertouch(self):
+    def test_variation_context_records_aftertouch(self) -> None:
+
         ctx = VariationContext(trace=TraceContext(trace_id="test"))
         at_events = [{"beat": 0.5, "value": 80}]
         ctx.record_proposed_aftertouch("r1", at_events)
         assert ctx.proposed.aftertouch["r1"] == at_events
 
-    def test_empty_aftertouch_not_recorded(self):
+    def test_empty_aftertouch_not_recorded(self) -> None:
+
         ctx = VariationContext(trace=TraceContext(trace_id="test"))
         ctx.record_proposed_aftertouch("r1", [])
         assert "r1" not in ctx.proposed.aftertouch
 
-    def test_state_store_aftertouch(self):
+    def test_state_store_aftertouch(self) -> None:
+
         store = StateStore(conversation_id="at3", project_id="p")
         store.add_aftertouch("r1", [{"beat": 0, "value": 64, "pitch": 60}])
         result = store.get_region_aftertouch("r1")
@@ -1478,7 +1544,8 @@ class TestAftertouchPipeline:
         assert result[0]["pitch"] == 60
         assert store.get_region_aftertouch("nonexistent") == []
 
-    def test_aftertouch_survives_snapshot_restore(self):
+    def test_aftertouch_survives_snapshot_restore(self) -> None:
+
         store = StateStore(conversation_id="at4", project_id="p")
         store.add_aftertouch("r1", [{"beat": 0, "value": 100}])
         snap = store._take_snapshot()
@@ -1487,7 +1554,8 @@ class TestAftertouchPipeline:
         store._restore_snapshot(snap)
         assert len(store.get_region_aftertouch("r1")) == 1
 
-    def test_variation_service_aftertouch_in_phrases(self):
+    def test_variation_service_aftertouch_in_phrases(self) -> None:
+
         from app.services.variation import VariationService
         svc = VariationService()
         proposed = [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}]
@@ -1509,7 +1577,8 @@ class TestAftertouchPipeline:
         assert at_changes[0]["pitch"] == 60
         assert at_changes[0]["value"] == 80
 
-    def test_generation_result_aftertouch_default(self):
+    def test_generation_result_aftertouch_default(self) -> None:
+
         from app.services.backends.base import GenerationResult, GeneratorBackend
         r = GenerationResult(
             success=True, notes=[], backend_used=GeneratorBackend.ORPHEUS, metadata={}
@@ -1517,7 +1586,8 @@ class TestAftertouchPipeline:
         assert r.aftertouch == []
 
     @pytest.mark.anyio
-    async def test_orpheus_extracts_aftertouch(self):
+    async def test_orpheus_extracts_aftertouch(self) -> None:
+
         from app.services.backends.orpheus import OrpheusBackend
         mock_client = AsyncMock()
         mock_client.generate.return_value = {
@@ -1543,7 +1613,8 @@ class TestAftertouchPipeline:
         assert "pitch" not in result.aftertouch[1]
 
     @pytest.mark.anyio
-    async def test_commit_includes_aftertouch(self):
+    async def test_commit_includes_aftertouch(self) -> None:
+
         """Aftertouch in controller_changes flows to updated_regions."""
         phrase = Phrase(
             phrase_id="p1",

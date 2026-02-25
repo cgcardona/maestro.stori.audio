@@ -6,9 +6,16 @@ Supplements test_variation_api.py with deeper coverage of:
 - Variation polling endpoint
 - Generation background task lifecycle
 """
+from __future__ import annotations
+
+from collections.abc import AsyncGenerator
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
 from app.auth.dependencies import require_valid_token
@@ -22,9 +29,10 @@ from app.variation.storage.variation_store import VariationRecord, PhraseRecord,
 
 
 @pytest_asyncio.fixture
-async def var_client(client, db_session):
+async def var_client(client: AsyncClient, db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+
     """Client with auth overridden."""
-    async def override_auth():
+    async def override_auth() -> dict[str, str]:
         return {"sub": "test-user-1"}
 
     app.dependency_overrides[require_valid_token] = override_auth
@@ -35,12 +43,12 @@ async def var_client(client, db_session):
 
 
 def _make_vrecord(
-    variation_id="var-test-1",
-    status=VariationStatus.READY,
-    project_id="proj-1",
-    base_state_id="0",
-    intent="test intent",
-    **kwargs,
+    variation_id: str = "var-test-1",
+    status: VariationStatus = VariationStatus.READY,
+    project_id: str = "proj-1",
+    base_state_id: str = "0",
+    intent: str = "test intent",
+    **kwargs: Any,
 ) -> VariationRecord:
     """Build a VariationRecord for testing."""
     return VariationRecord(
@@ -53,7 +61,8 @@ def _make_vrecord(
     )
 
 
-def _make_phrase(phrase_id="p1", sequence=2, region_id="r1", track_id="t1", variation_id="var-test-1"):
+def _make_phrase(phrase_id: Any = "p1", sequence: Any = 2, region_id: Any = "r1", track_id: Any = "t1", variation_id: Any = "var-test-1") -> PhraseRecord:
+
     return PhraseRecord(
         phrase_id=phrase_id,
         variation_id=variation_id,
@@ -77,7 +86,8 @@ def _make_phrase(phrase_id="p1", sequence=2, region_id="r1", track_id="t1", vari
 class TestGetVariation:
 
     @pytest.mark.anyio
-    async def test_get_variation_returns_status_and_phrases(self, var_client):
+    async def test_get_variation_returns_status_and_phrases(self, var_client: Any) -> None:
+
         """Poll endpoint returns status, phrases, and metadata."""
         rec = _make_vrecord()
         rec.phrases = [_make_phrase()]
@@ -95,7 +105,8 @@ class TestGetVariation:
         assert data["phrases"][0]["phraseId"] == "p1"
 
     @pytest.mark.anyio
-    async def test_get_variation_not_found_404(self, var_client):
+    async def test_get_variation_not_found_404(self, var_client: Any) -> None:
+
         with patch("app.api.routes.variation.retrieve.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = None
             resp = await var_client.get("/api/v1/variation/nonexistent")
@@ -111,7 +122,8 @@ class TestGetVariation:
 class TestCommitVariationStoreBased:
 
     @pytest.mark.anyio
-    async def test_commit_from_store_happy_path(self, var_client):
+    async def test_commit_from_store_happy_path(self, var_client: Any) -> None:
+
         """When VariationStore has the record in READY state, commit succeeds."""
         from app.core.executor import VariationApplyResult
         from app.models.variation import Variation
@@ -150,7 +162,8 @@ class TestCommitVariationStoreBased:
         assert "undoLabel" in data
 
     @pytest.mark.anyio
-    async def test_commit_not_ready_409(self, var_client):
+    async def test_commit_not_ready_409(self, var_client: Any) -> None:
+
         """Commit when variation is still STREAMING returns 409."""
         rec = _make_vrecord(status=VariationStatus.STREAMING)
 
@@ -167,7 +180,8 @@ class TestCommitVariationStoreBased:
         assert resp.status_code == 409
 
     @pytest.mark.anyio
-    async def test_commit_already_committed_409(self, var_client):
+    async def test_commit_already_committed_409(self, var_client: Any) -> None:
+
         """Double commit returns 409."""
         rec = _make_vrecord(status=VariationStatus.COMMITTED)
 
@@ -184,7 +198,8 @@ class TestCommitVariationStoreBased:
         assert resp.status_code == 409
 
     @pytest.mark.anyio
-    async def test_commit_baseline_mismatch_409(self, var_client):
+    async def test_commit_baseline_mismatch_409(self, var_client: Any) -> None:
+
         """Commit with wrong base_state_id returns 409."""
         rec = _make_vrecord(status=VariationStatus.READY)
         rec.phrases = [_make_phrase()]
@@ -207,7 +222,8 @@ class TestCommitVariationStoreBased:
         assert resp.status_code == 409
 
     @pytest.mark.anyio
-    async def test_commit_not_found_returns_404(self, var_client):
+    async def test_commit_not_found_returns_404(self, var_client: Any) -> None:
+
         """When variation not in store, returns 404."""
         with patch("app.api.routes.variation.commit.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = None
@@ -230,7 +246,8 @@ class TestCommitVariationStoreBased:
 class TestDiscardVariation:
 
     @pytest.mark.anyio
-    async def test_discard_ready_variation(self, var_client):
+    async def test_discard_ready_variation(self, var_client: Any) -> None:
+
         """Discard a READY variation transitions to DISCARDED."""
         rec = _make_vrecord(status=VariationStatus.READY)
 
@@ -247,7 +264,8 @@ class TestDiscardVariation:
         assert resp.json()["ok"] is True
 
     @pytest.mark.anyio
-    async def test_discard_already_committed_409(self, var_client):
+    async def test_discard_already_committed_409(self, var_client: Any) -> None:
+
         """Cannot discard a committed variation."""
         rec = _make_vrecord(status=VariationStatus.COMMITTED)
 
@@ -263,7 +281,8 @@ class TestDiscardVariation:
         assert resp.status_code in (409, 200)  # depends on implementation
 
     @pytest.mark.anyio
-    async def test_discard_not_found_ok(self, var_client):
+    async def test_discard_not_found_ok(self, var_client: Any) -> None:
+
         """Discard of unknown variation returns ok (idempotent)."""
         with patch("app.api.routes.variation.discard.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = None
@@ -284,14 +303,16 @@ class TestDiscardVariation:
 class TestStreamVariation:
 
     @pytest.mark.anyio
-    async def test_stream_not_found_404(self, var_client):
+    async def test_stream_not_found_404(self, var_client: Any) -> None:
+
         with patch("app.api.routes.variation.stream.get_variation_store") as mock_vs:
             mock_vs.return_value.get.return_value = None
             resp = await var_client.get("/api/v1/variation/stream?variation_id=nope")
         assert resp.status_code == 404
 
     @pytest.mark.anyio
-    async def test_stream_terminal_returns_200(self, var_client):
+    async def test_stream_terminal_returns_200(self, var_client: Any) -> None:
+
         """Terminal variation stream returns 200 with SSE content type."""
         from app.variation.core.event_envelope import EventEnvelope
 
@@ -324,7 +345,8 @@ class TestStreamVariation:
 class TestProposeVariation:
 
     @pytest.mark.anyio
-    async def test_propose_returns_variation_id(self, var_client):
+    async def test_propose_returns_variation_id(self, var_client: Any) -> None:
+
         """Propose creates record and returns variation_id + stream_url."""
         with (
             patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock),
@@ -347,7 +369,8 @@ class TestProposeVariation:
         assert data["intent"] == "make it funky"
 
     @pytest.mark.anyio
-    async def test_propose_state_conflict_409(self, var_client):
+    async def test_propose_state_conflict_409(self, var_client: Any) -> None:
+
         with (
             patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock),
             patch("app.api.routes.variation.propose.get_or_create_store") as mock_ss,

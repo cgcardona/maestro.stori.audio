@@ -30,7 +30,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional, Generator
+from typing import Any, Generator
 
 logger = logging.getLogger(__name__)
 
@@ -47,18 +47,18 @@ class Span:
     name: str
     trace_id: str
     span_id: str
-    parent_span_id: Optional[str]
+    parent_span_id: str | None
     start_time: float
-    end_time: Optional[float] = None
+    end_time: float | None = None
     status: SpanStatus = SpanStatus.OK
     attributes: dict[str, Any] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
     
     def set_attribute(self, key: str, value: Any) -> None:
-        """Set a span attribute."""
+        """set a span attribute."""
         self.attributes[key] = value
     
-    def add_event(self, name: str, attributes: Optional[dict[str, Any]] = None) -> None:
+    def add_event(self, name: str, attributes: dict[str, Any] | None = None) -> None:
         """Add an event to the span."""
         self.events.append({
             "name": name,
@@ -73,7 +73,7 @@ class Span:
         self.set_attribute("error.message", str(error))
     
     @property
-    def duration_ms(self) -> Optional[float]:
+    def duration_ms(self) -> float | None:
         """Get span duration in milliseconds."""
         if self.end_time is None:
             return None
@@ -98,10 +98,10 @@ class Span:
 class TraceContext:
     """Context for a traced request."""
     trace_id: str
-    conversation_id: Optional[str] = None
-    user_id: Optional[str] = None
+    conversation_id: str | None = None
+    user_id: str | None = None
     spans: list[Span] = field(default_factory=list)
-    current_span: Optional[Span] = None
+    current_span: Span | None = None
     _span_stack: list[Span] = field(default_factory=list)
     
     def to_dict(self) -> dict[str, Any]:
@@ -114,12 +114,12 @@ class TraceContext:
 
 
 # Context variable for request-scoped trace context
-_trace_context: ContextVar[Optional[TraceContext]] = ContextVar("trace_context", default=None)
+_trace_context: ContextVar[TraceContext | None] = ContextVar("trace_context", default=None)
 
 
 def create_trace_context(
-    conversation_id: Optional[str] = None,
-    user_id: Optional[str] = None,
+    conversation_id: str | None = None,
+    user_id: str | None = None,
 ) -> TraceContext:
     """Create a new trace context for a request."""
     ctx = TraceContext(
@@ -153,7 +153,7 @@ def clear_trace_context() -> None:
 def trace_span(
     ctx: TraceContext,
     name: str,
-    attributes: Optional[dict[str, Any]] = None,
+    attributes: dict[str, Any] | None = None,
 ) -> Generator[Span, None, None]:
     """
     Context manager for tracing a span.
@@ -241,7 +241,7 @@ def log_tool_call(
     tool_name: str,
     params: dict[str, Any],
     success: bool,
-    error: Optional[str] = None,
+    error: str | None = None,
 ) -> None:
     """Log tool call execution."""
     level = logging.INFO if success else logging.WARNING
@@ -313,7 +313,7 @@ def log_validation_error(
     trace_id: str,
     tool_name: str,
     errors: list[str],
-    suggestions: Optional[list[str]] = None,
+    suggestions: list[str] | None = None,
 ) -> None:
     """Log validation error with suggestions."""
     logger.warning(

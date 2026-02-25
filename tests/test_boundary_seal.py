@@ -30,7 +30,8 @@ ROOT = Path(__file__).resolve().parent.parent
 class TestMuseComputeBoundary:
     """compute_variation_from_context must be a pure function of data."""
 
-    def test_signature_has_no_store_param(self):
+    def test_signature_has_no_store_param(self) -> None:
+
         """The function must not accept a StateStore parameter."""
         from app.core.executor.variation import compute_variation_from_context
 
@@ -38,7 +39,8 @@ class TestMuseComputeBoundary:
         param_names = set(sig.parameters.keys())
         assert "store" not in param_names
 
-    def test_variation_service_has_no_state_store_import(self):
+    def test_variation_service_has_no_state_store_import(self) -> None:
+
         """app/services/variation/ must not import StateStore or EntityRegistry."""
         variation_dir = ROOT / "app" / "services" / "variation"
         forbidden = {"app.core.state_store", "app.core.entity_registry"}
@@ -54,7 +56,8 @@ class TestMuseComputeBoundary:
 
         assert violations == [], f"Forbidden imports found: {violations}"
 
-    def test_compute_function_body_has_no_store_imports(self):
+    def test_compute_function_body_has_no_store_imports(self) -> None:
+
         """The function body must not contain lazy imports of StateStore."""
         filepath = ROOT / "app" / "core" / "executor" / "variation.py"
         tree = ast.parse(filepath.read_text())
@@ -77,12 +80,14 @@ class TestMuseComputeBoundary:
 class TestVariationContextDataOnly:
     """VariationContext must not contain a StateStore reference."""
 
-    def test_variation_context_has_no_store_field(self):
+    def test_variation_context_has_no_store_field(self) -> None:
+
         from app.core.executor.models import VariationContext
         field_names = {f.name for f in VariationContext.__dataclass_fields__.values()}
         assert "store" not in field_names, "VariationContext must not have a 'store' field"
 
-    def test_variation_context_uses_snapshot_bundle(self):
+    def test_variation_context_uses_snapshot_bundle(self) -> None:
+
         from app.core.executor.models import VariationContext, SnapshotBundle
         ctx = VariationContext.__dataclass_fields__
         assert "base" in {f for f in ctx}, "VariationContext must have 'base' field"
@@ -99,7 +104,8 @@ class TestApplyVariationBoundary:
     """apply_variation_phrases must never call get_or_create_store."""
 
     @pytest.mark.anyio
-    async def test_apply_never_calls_get_or_create_store(self):
+    async def test_apply_never_calls_get_or_create_store(self) -> None:
+
         """Monkeypatch get_or_create_store to raise; apply must still succeed."""
         from app.core.executor import apply_variation_phrases
 
@@ -138,6 +144,7 @@ class TestApplyVariationBoundary:
         )
 
         def _boom(*a: Any, **kw: Any) -> None:
+
             raise AssertionError("apply_variation_phrases called get_or_create_store!")
 
         with patch("app.core.state_store.get_or_create_store", side_effect=_boom):
@@ -150,7 +157,8 @@ class TestApplyVariationBoundary:
 
         assert result.success is True
 
-    def test_apply_module_does_not_import_get_or_create_store(self):
+    def test_apply_module_does_not_import_get_or_create_store(self) -> None:
+
         """The apply module must not import get_or_create_store at all."""
         filepath = ROOT / "app" / "core" / "executor" / "apply.py"
         source = filepath.read_text()
@@ -162,7 +170,8 @@ class TestApplyVariationBoundary:
                 f"apply.py:{i} references get_or_create_store"
             )
 
-    def test_apply_does_not_access_store_registry(self):
+    def test_apply_does_not_access_store_registry(self) -> None:
+
         """apply.py must not contain store.registry references."""
         filepath = ROOT / "app" / "core" / "executor" / "apply.py"
         source = filepath.read_text()
@@ -181,7 +190,8 @@ class TestApplyVariationBoundary:
 class TestMuseRepositoryBoundary:
     """muse_repository must not import StateStore or executor."""
 
-    def test_no_state_store_import(self):
+    def test_no_state_store_import(self) -> None:
+
         filepath = ROOT / "app" / "services" / "muse_repository.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):
@@ -189,7 +199,8 @@ class TestMuseRepositoryBoundary:
                 assert "state_store" not in node.module
                 assert "executor" not in node.module
 
-    def test_no_variation_service_import(self):
+    def test_no_variation_service_import(self) -> None:
+
         filepath = ROOT / "app" / "services" / "muse_repository.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):
@@ -201,7 +212,8 @@ class TestMuseRepositoryBoundary:
 class TestMuseReplayBoundary:
     """muse_replay must not import StateStore, executor, or LLM handlers."""
 
-    def test_no_state_store_or_executor_import(self):
+    def test_no_state_store_or_executor_import(self) -> None:
+
         filepath = ROOT / "app" / "services" / "muse_replay.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
@@ -212,7 +224,8 @@ class TestMuseReplayBoundary:
                         f"muse_replay imports forbidden module: {node.module}"
                     )
 
-    def test_no_forbidden_names(self):
+    def test_no_forbidden_names(self) -> None:
+
         filepath = ROOT / "app" / "services" / "muse_replay.py"
         tree = ast.parse(filepath.read_text())
         forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
@@ -227,7 +240,8 @@ class TestMuseReplayBoundary:
 class TestMuseDriftBoundary:
     """muse_drift must not import StateStore, executor, or LLM handlers."""
 
-    def test_no_state_store_or_executor_import(self):
+    def test_no_state_store_or_executor_import(self) -> None:
+
         filepath = ROOT / "app" / "services" / "muse_drift.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
@@ -238,7 +252,8 @@ class TestMuseDriftBoundary:
                         f"muse_drift imports forbidden module: {node.module}"
                     )
 
-    def test_no_forbidden_names(self):
+    def test_no_forbidden_names(self) -> None:
+
         filepath = ROOT / "app" / "services" / "muse_drift.py"
         tree = ast.parse(filepath.read_text())
         forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
@@ -249,7 +264,8 @@ class TestMuseDriftBoundary:
                         f"muse_drift imports forbidden name: {alias.name}"
                     )
 
-    def test_no_get_or_create_store_call(self):
+    def test_no_get_or_create_store_call(self) -> None:
+
         filepath = ROOT / "app" / "services" / "muse_drift.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):
@@ -271,7 +287,8 @@ class TestMuseDriftBoundary:
 class TestGoldenShapes:
     """Lock down key payload structures to prevent silent contract drift."""
 
-    def test_updated_region_shape(self):
+    def test_updated_region_shape(self) -> None:
+
         """updated_regions dicts must contain the expected keys."""
         required_keys = {
             "region_id", "track_id", "notes",
@@ -284,7 +301,8 @@ class TestGoldenShapes:
         for key in required_keys:
             assert key in model_fields, f"UpdatedRegionPayload missing field: {key}"
 
-    def test_tool_call_outcome_shape(self):
+    def test_tool_call_outcome_shape(self) -> None:
+
         """_ToolCallOutcome must have the expected fields."""
         from app.core.maestro_plan_tracker.models import _ToolCallOutcome
 
@@ -295,37 +313,8 @@ class TestGoldenShapes:
         actual = {f.name for f in _ToolCallOutcome.__dataclass_fields__.values()}
         assert expected.issubset(actual), f"Missing fields: {expected - actual}"
 
-    def test_orpheus_normalization_output_shape(self):
-        """normalize_orpheus_tool_calls must return the canonical key set."""
-        from app.services.orpheus import normalize_orpheus_tool_calls
+    def test_snapshot_bundle_shape(self) -> None:
 
-        result = normalize_orpheus_tool_calls([])
-        assert set(result.keys()) == {"notes", "cc_events", "pitch_bends", "aftertouch"}
-        for v in result.values():
-            assert isinstance(v, list)
-
-    def test_orpheus_normalization_with_data(self):
-        """Verify normalization parses all four data types correctly."""
-        from app.services.orpheus import normalize_orpheus_tool_calls
-
-        tool_calls = [
-            {"tool": "addNotes", "params": {"notes": [{"pitch": 60}]}},
-            {"tool": "addMidiCC", "params": {"cc": 64, "events": [{"beat": 0, "value": 127}]}},
-            {"tool": "addPitchBend", "params": {"events": [{"beat": 1, "value": 4096}]}},
-            {"tool": "addAftertouch", "params": {"events": [{"beat": 2, "value": 80}]}},
-        ]
-        result = normalize_orpheus_tool_calls(tool_calls)
-
-        assert len(result["notes"]) == 1
-        assert result["notes"][0]["pitch"] == 60
-        assert len(result["cc_events"]) == 1
-        assert result["cc_events"][0]["cc"] == 64
-        assert len(result["pitch_bends"]) == 1
-        assert result["pitch_bends"][0]["value"] == 4096
-        assert len(result["aftertouch"]) == 1
-        assert result["aftertouch"][0]["value"] == 80
-
-    def test_snapshot_bundle_shape(self):
         """SnapshotBundle must expose the canonical attribute set."""
         from app.core.executor.models import SnapshotBundle
 
@@ -336,7 +325,8 @@ class TestGoldenShapes:
         for attr in expected_attrs:
             assert isinstance(getattr(bundle, attr), dict)
 
-    def test_snapshot_bundle_from_capture(self):
+    def test_snapshot_bundle_from_capture(self) -> None:
+
         """capture_base_snapshot must return a SnapshotBundle."""
         from app.core.executor.snapshots import capture_base_snapshot
         from app.core.executor.models import SnapshotBundle

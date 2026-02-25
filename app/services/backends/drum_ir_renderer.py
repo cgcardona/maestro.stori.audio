@@ -5,10 +5,12 @@ Renders DrumSpec + GlobalSpec to a list of {pitch, start_beat, duration_beats, v
 with groove templates, layers, salience cap, fill bars, and variation.
 Includes layer labels in output for critic scoring.
 """
+from __future__ import annotations
+
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from app.core.music_spec_ir import (
     DrumSpec,
@@ -33,15 +35,15 @@ class DrumRenderResult:
     Result of drum rendering with notes and metadata.
     
     Attributes:
-        notes: List of {pitch, start_beat, duration_beats, velocity, layer}
-        layer_map: Dict mapping note index → layer name
+        notes: list of {pitch, start_beat, duration_beats, velocity, layer}
+        layer_map: dict mapping note index → layer name
         rhythm_spine: RhythmSpine for bass/melody coupling
         metadata: Additional render metadata
     """
-    notes: list[dict] = field(default_factory=list)
-    layer_map: dict = field(default_factory=dict)
-    rhythm_spine: Optional[RhythmSpine] = None
-    metadata: dict = field(default_factory=dict)
+    notes: list[dict[str, Any]] = field(default_factory=list)
+    layer_map: dict[int, str] = field(default_factory=dict)
+    rhythm_spine: RhythmSpine | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # -----------------------------------------------------------------------------
@@ -95,7 +97,7 @@ def _syncopation_probability(groove_template: str) -> float:
 # Salience: compute and enforce max_salience_per_beat
 # -----------------------------------------------------------------------------
 
-def _salience_at_beat(pairs: list[tuple[dict, str]], beat: float, salience_weight: dict) -> float:
+def _salience_at_beat(pairs: list[tuple[dict[str, Any], str]], beat: float, salience_weight: dict[str, float]) -> float:
     """Sum salience of all notes overlapping beat (by layer)."""
     total = 0.0
     for n, layer in pairs:
@@ -107,16 +109,16 @@ def _salience_at_beat(pairs: list[tuple[dict, str]], beat: float, salience_weigh
 
 
 def _apply_salience_cap(
-    notes: list[dict],
-    layer_of: dict,
-    salience_weight: dict,
+    notes: list[dict[str, Any]],
+    layer_of: dict[int, str],
+    salience_weight: dict[str, float],
     max_salience_per_beat: float,
     beat_resolution: float = 0.25,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Drop lowest-salience hits when a beat exceeds max_salience_per_beat."""
     if not notes:
         return notes
-    pairs: list[tuple[dict, str]] = [(n, layer_of.get(id(n), "timekeepers")) for n in notes]
+    pairs: list[tuple[dict[str, Any], str]] = [(n, layer_of.get(id(n), "timekeepers")) for n in notes]
     beats_to_check = set()
     for n in notes:
         start = n["start_beat"]
@@ -353,10 +355,10 @@ def render_drum_spec(
         return_result: If True, return DrumRenderResult with metadata; else just notes
     
     Returns:
-        List of notes, or DrumRenderResult if return_result=True
+        list of notes, or DrumRenderResult if return_result=True
     """
     notes: list[dict[str, Any]] = []
-    layer_of: dict = {}  # id(note) -> layer_name for salience
+    layer_of: dict[int, str] = {}
     salience_weight = drum_spec.salience_weight
     bars = global_spec.bars
 

@@ -3,6 +3,8 @@ Tests for asset API (drum kits, soundfonts, bundle).
 
 Ensures X-Device-ID is required and validated; rate limiting is applied.
 """
+from __future__ import annotations
+
 import pytest
 import uuid
 from typing import Any, cast
@@ -12,14 +14,15 @@ from app.main import app
 
 
 @pytest.fixture
-def asset_client():
+def asset_client() -> AsyncClient:
     """Client for asset endpoints (no auth required, but X-Device-ID required)."""
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")
 
 
 @pytest.mark.asyncio
-async def test_drum_kits_missing_x_device_id(asset_client):
+async def test_drum_kits_missing_x_device_id(asset_client: Any) -> None:
+
     """GET /api/v1/assets/drum-kits without X-Device-ID returns 400."""
     response = await asset_client.get("/api/v1/assets/drum-kits")
     assert response.status_code == 400
@@ -28,7 +31,8 @@ async def test_drum_kits_missing_x_device_id(asset_client):
 
 
 @pytest.mark.asyncio
-async def test_drum_kits_invalid_x_device_id(asset_client):
+async def test_drum_kits_invalid_x_device_id(asset_client: Any) -> None:
+
     """GET /api/v1/assets/drum-kits with non-UUID X-Device-ID returns 400."""
     response = await asset_client.get(
         "/api/v1/assets/drum-kits",
@@ -40,7 +44,8 @@ async def test_drum_kits_invalid_x_device_id(asset_client):
 
 
 @pytest.mark.asyncio
-async def test_drum_kits_valid_x_device_id(asset_client):
+async def test_drum_kits_valid_x_device_id(asset_client: Any) -> None:
+
     """GET /api/v1/assets/drum-kits with valid UUID passes dependency (503 if bucket not set)."""
     device_id = str(uuid.uuid4())
     response = await asset_client.get(
@@ -54,21 +59,24 @@ async def test_drum_kits_valid_x_device_id(asset_client):
 
 
 @pytest.mark.asyncio
-async def test_soundfonts_missing_x_device_id(asset_client):
+async def test_soundfonts_missing_x_device_id(asset_client: Any) -> None:
+
     """GET /api/v1/assets/soundfonts without X-Device-ID returns 400."""
     response = await asset_client.get("/api/v1/assets/soundfonts")
     assert response.status_code == 400
 
 
 @pytest.mark.asyncio
-async def test_soundfont_download_url_missing_x_device_id(asset_client):
+async def test_soundfont_download_url_missing_x_device_id(asset_client: Any) -> None:
+
     """GET download-url without X-Device-ID returns 400."""
     response = await asset_client.get("/api/v1/assets/soundfonts/some-id/download-url")
     assert response.status_code == 400
 
 
 @pytest.mark.asyncio
-async def test_bundle_download_url_valid_uuid(asset_client):
+async def test_bundle_download_url_valid_uuid(asset_client: Any) -> None:
+
     """GET bundle download-url with valid X-Device-ID passes (503 or 200)."""
     response = await asset_client.get(
         "/api/v1/assets/bundle/download-url",
@@ -78,7 +86,8 @@ async def test_bundle_download_url_valid_uuid(asset_client):
 
 
 @pytest.mark.asyncio
-async def test_asset_endpoint_returns_429_when_rate_limited(asset_client):
+async def test_asset_endpoint_returns_429_when_rate_limited(asset_client: Any) -> None:
+
     """When rate limit is exceeded, asset endpoint returns 429."""
     from types import SimpleNamespace
     from unittest.mock import patch

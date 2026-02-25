@@ -3,6 +3,9 @@
 Tests CRUD operations, message management, search, title generation,
 and conversation history formatting directly against the service functions.
 """
+from __future__ import annotations
+
+from sqlalchemy.ext.asyncio import AsyncSession
 import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -34,7 +37,8 @@ USER_ID = "550e8400-e29b-41d4-a716-446655440000"
 class TestCreateConversation:
 
     @pytest.mark.anyio
-    async def test_create_basic(self, db_session):
+    async def test_create_basic(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Test")
         await db_session.commit()
         assert conv.id is not None
@@ -42,7 +46,8 @@ class TestCreateConversation:
         assert conv.user_id == USER_ID
 
     @pytest.mark.anyio
-    async def test_create_with_project(self, db_session):
+    async def test_create_with_project(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(
             db_session, USER_ID,
             title="Project conv",
@@ -56,7 +61,8 @@ class TestCreateConversation:
 class TestGetConversation:
 
     @pytest.mark.anyio
-    async def test_get_existing(self, db_session):
+    async def test_get_existing(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Get me")
         await db_session.commit()
         fetched = await get_conversation(db_session, conv.id, USER_ID)
@@ -64,14 +70,16 @@ class TestGetConversation:
         assert fetched.id == conv.id
 
     @pytest.mark.anyio
-    async def test_get_wrong_user_returns_none(self, db_session):
+    async def test_get_wrong_user_returns_none(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Secret")
         await db_session.commit()
         fetched = await get_conversation(db_session, conv.id, "other-user-id")
         assert fetched is None
 
     @pytest.mark.anyio
-    async def test_get_nonexistent_returns_none(self, db_session):
+    async def test_get_nonexistent_returns_none(self, db_session: AsyncSession) -> None:
+
         fetched = await get_conversation(db_session, "nonexistent-id", USER_ID)
         assert fetched is None
 
@@ -79,7 +87,8 @@ class TestGetConversation:
 class TestListConversations:
 
     @pytest.mark.anyio
-    async def test_list_returns_user_conversations(self, db_session):
+    async def test_list_returns_user_conversations(self, db_session: AsyncSession) -> None:
+
         await create_conversation(db_session, USER_ID, title="Conv 1")
         await create_conversation(db_session, USER_ID, title="Conv 2")
         await db_session.commit()
@@ -88,7 +97,8 @@ class TestListConversations:
         assert len(convs) == 2
 
     @pytest.mark.anyio
-    async def test_list_pagination(self, db_session):
+    async def test_list_pagination(self, db_session: AsyncSession) -> None:
+
         for i in range(5):
             await create_conversation(db_session, USER_ID, title=f"Conv {i}")
         await db_session.commit()
@@ -97,7 +107,8 @@ class TestListConversations:
         assert len(convs) == 2
 
     @pytest.mark.anyio
-    async def test_list_excludes_archived(self, db_session):
+    async def test_list_excludes_archived(self, db_session: AsyncSession) -> None:
+
         c1 = await create_conversation(db_session, USER_ID, title="Active")
         c2 = await create_conversation(db_session, USER_ID, title="Archived")
         c2.is_archived = True
@@ -107,7 +118,8 @@ class TestListConversations:
         assert convs[0].id == c1.id
 
     @pytest.mark.anyio
-    async def test_list_includes_archived(self, db_session):
+    async def test_list_includes_archived(self, db_session: AsyncSession) -> None:
+
         await create_conversation(db_session, USER_ID, title="Active")
         c2 = await create_conversation(db_session, USER_ID, title="Archived")
         c2.is_archived = True
@@ -116,7 +128,8 @@ class TestListConversations:
         assert total == 2
 
     @pytest.mark.anyio
-    async def test_list_filter_by_project(self, db_session):
+    async def test_list_filter_by_project(self, db_session: AsyncSession) -> None:
+
         await create_conversation(db_session, USER_ID, title="P1", project_id="proj-1")
         await create_conversation(db_session, USER_ID, title="P2", project_id="proj-2")
         await db_session.commit()
@@ -128,7 +141,8 @@ class TestListConversations:
 class TestUpdateConversationTitle:
 
     @pytest.mark.anyio
-    async def test_update_title(self, db_session):
+    async def test_update_title(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Old title")
         await db_session.commit()
         updated = await update_conversation_title(db_session, conv.id, USER_ID, "New title")
@@ -136,7 +150,8 @@ class TestUpdateConversationTitle:
         assert updated.title == "New title"
 
     @pytest.mark.anyio
-    async def test_update_title_wrong_user(self, db_session):
+    async def test_update_title_wrong_user(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Title")
         await db_session.commit()
         result = await update_conversation_title(db_session, conv.id, "wrong-user", "Hacked")
@@ -146,14 +161,16 @@ class TestUpdateConversationTitle:
 class TestArchiveConversation:
 
     @pytest.mark.anyio
-    async def test_archive(self, db_session):
+    async def test_archive(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="To archive")
         await db_session.commit()
         result = await archive_conversation(db_session, conv.id, USER_ID)
         assert result is True
 
     @pytest.mark.anyio
-    async def test_archive_nonexistent(self, db_session):
+    async def test_archive_nonexistent(self, db_session: AsyncSession) -> None:
+
         result = await archive_conversation(db_session, "nope", USER_ID)
         assert result is False
 
@@ -161,7 +178,8 @@ class TestArchiveConversation:
 class TestDeleteConversation:
 
     @pytest.mark.anyio
-    async def test_delete(self, db_session):
+    async def test_delete(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Delete me")
         await db_session.commit()
         result = await delete_conversation(db_session, conv.id, USER_ID)
@@ -170,7 +188,8 @@ class TestDeleteConversation:
         assert fetched is None
 
     @pytest.mark.anyio
-    async def test_delete_wrong_user(self, db_session):
+    async def test_delete_wrong_user(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Keep")
         await db_session.commit()
         result = await delete_conversation(db_session, conv.id, "attacker")
@@ -185,7 +204,8 @@ class TestDeleteConversation:
 class TestAddMessage:
 
     @pytest.mark.anyio
-    async def test_add_user_message(self, db_session):
+    async def test_add_user_message(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Chat")
         await db_session.commit()
         msg = await add_message(db_session, conv.id, "user", "Hello!")
@@ -195,7 +215,8 @@ class TestAddMessage:
         assert msg.conversation_id == conv.id
 
     @pytest.mark.anyio
-    async def test_add_assistant_message_with_metadata(self, db_session):
+    async def test_add_assistant_message_with_metadata(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Chat")
         await db_session.commit()
         msg = await add_message(
@@ -213,7 +234,8 @@ class TestAddMessage:
 class TestAddAction:
 
     @pytest.mark.anyio
-    async def test_add_action_to_message(self, db_session):
+    async def test_add_action_to_message(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Chat")
         await db_session.commit()
         msg = await add_message(db_session, conv.id, "assistant", "Action!")
@@ -236,7 +258,8 @@ class TestAddAction:
 class TestSearchConversations:
 
     @pytest.mark.anyio
-    async def test_search_by_title(self, db_session):
+    async def test_search_by_title(self, db_session: AsyncSession) -> None:
+
         await create_conversation(db_session, USER_ID, title="Drum pattern session")
         await create_conversation(db_session, USER_ID, title="Bass line ideas")
         await db_session.commit()
@@ -252,7 +275,8 @@ class TestSearchConversations:
 
 class TestGenerateTitle:
 
-    def test_generate_title(self):
+    def test_generate_title(self) -> None:
+
         """generate_title_from_prompt is sync and returns a short string."""
         title = generate_title_from_prompt("Make a funky bass line at 100 BPM")
         assert isinstance(title, str)
@@ -268,7 +292,8 @@ class TestGenerateTitle:
 class TestFormatConversationHistory:
 
     @pytest.mark.anyio
-    async def test_format_empty_messages(self, db_session):
+    async def test_format_empty_messages(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Empty")
         await db_session.commit()
         _loaded = await get_conversation(db_session, conv.id, USER_ID)
@@ -278,7 +303,8 @@ class TestFormatConversationHistory:
         assert history == []
 
     @pytest.mark.anyio
-    async def test_format_user_assistant_messages(self, db_session):
+    async def test_format_user_assistant_messages(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Chat")
         await db_session.commit()
         await add_message(db_session, conv.id, "user", "Hello")
@@ -294,7 +320,8 @@ class TestFormatConversationHistory:
         assert history[1]["role"] == "assistant"
 
     @pytest.mark.anyio
-    async def test_format_with_tool_calls(self, db_session):
+    async def test_format_with_tool_calls(self, db_session: AsyncSession) -> None:
+
         conv = await create_conversation(db_session, USER_ID, title="Tools")
         await db_session.commit()
         await add_message(

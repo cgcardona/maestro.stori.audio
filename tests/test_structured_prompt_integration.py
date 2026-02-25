@@ -7,7 +7,9 @@ Covers:
 - Weighted vibe matching
 - Partial structured prompts falling back to LLM
 """
+from __future__ import annotations
 
+from typing import Any
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -25,7 +27,8 @@ class TestDeterministicPlan:
     """When all required fields are present, planner skips LLM."""
 
     @pytest.mark.asyncio
-    async def test_full_structured_prompt_produces_deterministic_plan(self):
+    async def test_full_structured_prompt_produces_deterministic_plan(self) -> None:
+
         """Style + tempo + roles + bars → deterministic plan, no LLM call."""
         parsed = ParsedPrompt(
             raw="STORI PROMPT...",
@@ -63,7 +66,8 @@ class TestDeterministicPlan:
         assert "deterministic_plan" in plan.notes[0]
 
     @pytest.mark.asyncio
-    async def test_partial_structured_prompt_falls_back_to_llm(self):
+    async def test_partial_structured_prompt_falls_back_to_llm(self) -> None:
+
         """Missing bars → can't build deterministic plan → uses LLM."""
         parsed = ParsedPrompt(
             raw="STORI PROMPT...",
@@ -91,7 +95,8 @@ class TestDeterministicPlan:
         llm.chat.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_no_parsed_prompt_uses_llm(self):
+    async def test_no_parsed_prompt_uses_llm(self) -> None:
+
         """Without parsed prompt, normal LLM-based planning."""
         llm = AsyncMock()
         llm.chat = AsyncMock(return_value=MagicMock(content='{"generations": [{"role": "drums", "style": "boom_bap", "tempo": 90, "bars": 8}], "edits": [], "mix": []}'))
@@ -108,7 +113,8 @@ class TestDeterministicPlan:
         llm.chat.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_deterministic_plan_respects_key(self):
+    async def test_deterministic_plan_respects_key(self) -> None:
+
         """Key from parsed prompt should be in the generation steps."""
         parsed = ParsedPrompt(
             raw="...",
@@ -136,7 +142,8 @@ class TestDeterministicPlan:
         assert plan.is_valid
 
     @pytest.mark.asyncio
-    async def test_constraints_passed_through(self):
+    async def test_constraints_passed_through(self) -> None:
+
         """Non-bars constraints should appear in the plan."""
         parsed = ParsedPrompt(
             raw="...",
@@ -169,7 +176,8 @@ class TestDeterministicPlan:
 class TestStructuredPromptContext:
     """Test the LLM system prompt injection from parsed fields."""
 
-    def test_full_context_output(self):
+    def test_full_context_output(self) -> None:
+
         parsed = ParsedPrompt(
             raw="...",
             mode="compose",
@@ -197,7 +205,8 @@ class TestStructuredPromptContext:
         assert "hypnotic (weight 3)" in ctx
         assert "Do not re-infer" in ctx
 
-    def test_minimal_context_output(self):
+    def test_minimal_context_output(self) -> None:
+
         parsed = ParsedPrompt(
             raw="...",
             mode="ask",
@@ -210,7 +219,8 @@ class TestStructuredPromptContext:
         assert "Tempo:" not in ctx
         assert "Roles:" not in ctx
 
-    def test_target_with_name(self):
+    def test_target_with_name(self) -> None:
+
         parsed = ParsedPrompt(
             raw="...",
             mode="edit",
@@ -221,7 +231,8 @@ class TestStructuredPromptContext:
 
         assert "Target: track:Bass" in ctx
 
-    def test_unweighted_vibe_no_weight_label(self):
+    def test_unweighted_vibe_no_weight_label(self) -> None:
+
         parsed = ParsedPrompt(
             raw="...",
             mode="edit",
@@ -239,14 +250,16 @@ class TestStructuredPromptContext:
 class TestWeightedVibes:
     """Test match_weighted_vibes from intent_config."""
 
-    def test_single_vibe_match(self):
+    def test_single_vibe_match(self) -> None:
+
         matches = match_weighted_vibes([("darker", 2)])
         assert len(matches) == 1
         assert matches[0].intent == Intent.MIX_TONALITY
         assert matches[0].weight == 2
         assert matches[0].phrase == "darker"
 
-    def test_multiple_vibes_sorted_by_weight(self):
+    def test_multiple_vibes_sorted_by_weight(self) -> None:
+
         matches = match_weighted_vibes([
             ("wider", 1),
             ("punchier", 3),
@@ -257,7 +270,8 @@ class TestWeightedVibes:
         assert matches[1].weight == 2  # darker
         assert matches[2].weight == 1  # wider
 
-    def test_unknown_vibe_skipped(self):
+    def test_unknown_vibe_skipped(self) -> None:
+
         matches = match_weighted_vibes([
             ("darker", 2),
             ("totally_unknown_vibe", 5),
@@ -265,17 +279,20 @@ class TestWeightedVibes:
         assert len(matches) == 1
         assert matches[0].phrase == "darker"
 
-    def test_all_unknown_returns_empty(self):
+    def test_all_unknown_returns_empty(self) -> None:
+
         matches = match_weighted_vibes([("zzz_invalid", 1)])
         assert matches == []
 
-    def test_unweighted_defaults_to_1(self):
+    def test_unweighted_defaults_to_1(self) -> None:
+
         matches = match_weighted_vibes([("brighter", 1)])
         assert len(matches) == 1
         assert matches[0].weight == 1
         assert matches[0].intent == Intent.MIX_TONALITY
 
-    def test_weight_field_on_idiom_match(self):
+    def test_weight_field_on_idiom_match(self) -> None:
+
         m = IdiomMatch(
             intent=Intent.MIX_DYNAMICS,
             phrase="punchier",
@@ -285,7 +302,8 @@ class TestWeightedVibes:
         )
         assert m.weight == 3
 
-    def test_idiom_match_default_weight(self):
+    def test_idiom_match_default_weight(self) -> None:
+
         m = IdiomMatch(
             intent=Intent.MIX_DYNAMICS,
             phrase="punchier",
@@ -297,7 +315,8 @@ class TestWeightedVibes:
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 
-def _make_composing_route(parsed=None):
+def _make_composing_route(parsed: Any = None) -> IntentResult:
+
     """Build a minimal COMPOSING IntentResult for testing."""
     extras = {}
     if parsed:

@@ -10,7 +10,6 @@ are Optional with sensible defaults.
 
 from __future__ import annotations
 
-from typing import Optional
 
 from pydantic import ConfigDict, Field
 
@@ -22,7 +21,7 @@ class NoteSnapshot(CamelModel):
 
     model_config = ConfigDict(extra="allow")
 
-    id: Optional[str] = None
+    id: str | None = None
     pitch: int = Field(ge=0, le=127)
     start_beat: float = Field(ge=0)
     duration_beats: float = Field(gt=0)
@@ -36,11 +35,11 @@ class RegionSnapshot(CamelModel):
     model_config = ConfigDict(extra="allow")
 
     id: str
-    name: Optional[str] = None
+    name: str | None = None
     start_beat: float = Field(default=0.0, ge=0)
-    duration_beats: Optional[float] = Field(default=None, gt=0)
-    note_count: Optional[int] = None
-    notes: Optional[list[NoteSnapshot]] = None
+    duration_beats: float | None = Field(default=None, gt=0)
+    note_count: int | None = None
+    notes: list[NoteSnapshot] | None = None
 
 
 class TrackSnapshot(CamelModel):
@@ -49,16 +48,16 @@ class TrackSnapshot(CamelModel):
     model_config = ConfigDict(extra="allow")
 
     id: str
-    name: Optional[str] = None
-    gm_program: Optional[int] = Field(default=None, ge=0, le=127)
-    drum_kit_id: Optional[str] = None
-    is_drums: Optional[bool] = None
-    volume: Optional[float] = Field(default=None, ge=0.0, le=1.5)
-    pan: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    muted: Optional[bool] = None
-    solo: Optional[bool] = None
-    color: Optional[str] = None
-    icon: Optional[str] = None
+    name: str | None = None
+    gm_program: int | None = Field(default=None, ge=0, le=127)
+    drum_kit_id: str | None = None
+    is_drums: bool | None = None
+    volume: float | None = Field(default=None, ge=0.0, le=1.5)
+    pan: float | None = Field(default=None, ge=0.0, le=1.0)
+    muted: bool | None = None
+    solo: bool | None = None
+    color: str | None = None
+    icon: str | None = None
     regions: list[RegionSnapshot] = Field(default_factory=list)
 
 
@@ -68,7 +67,7 @@ class BusSnapshot(CamelModel):
     model_config = ConfigDict(extra="allow")
 
     id: str
-    name: Optional[str] = None
+    name: str | None = None
 
 
 class ProjectSnapshot(CamelModel):
@@ -81,10 +80,10 @@ class ProjectSnapshot(CamelModel):
     model_config = ConfigDict(extra="allow")
 
     id: str
-    name: Optional[str] = None
-    tempo: Optional[float] = Field(default=None, ge=40, le=240)
-    key: Optional[str] = None
-    time_signature: Optional[str] = None
-    schema_version: Optional[int] = None
+    name: str | None = None
+    tempo: float | None = Field(default=None, ge=40, le=240)
+    key: str | None = None
+    time_signature: str | None = None
+    schema_version: int | None = None
     tracks: list[TrackSnapshot] = Field(default_factory=list)
     buses: list[BusSnapshot] = Field(default_factory=list)

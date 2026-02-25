@@ -16,6 +16,8 @@ Usage:
 Environment:
     STORI_ACCESS_TOKEN_SECRET must be set (generate with: openssl rand -hex 32)
 """
+from __future__ import annotations
+
 import argparse
 import logging
 import sys
@@ -31,7 +33,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate time-limited access codes for Stori Maestro",
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -6,6 +6,7 @@ Single source of truth for:
 2. Intent → SSE State routing
 3. Intent → Execution policy (force_stop, tool_choice)
 """
+from __future__ import annotations
 
 from app.core.intent_config.enums import SSEState, Intent
 from app.core.intent_config.models import IntentConfig, IdiomMatch

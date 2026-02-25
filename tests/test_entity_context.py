@@ -1,11 +1,15 @@
 """Tests for entity context builder (LLM prompt injection)."""
+from __future__ import annotations
+
+from typing import Any
 from unittest.mock import MagicMock
 import pytest
 
 from app.core.entity_context import build_entity_context_for_llm, format_project_context, infer_track_role
 
 
-def _make_entity(id: str, name: str, parent_id: str | None = None, metadata: dict | None = None):
+def _make_entity(id: str, name: str, parent_id: str | None = None, metadata: dict[str, Any] | None = None) -> Any:
+
     e = MagicMock()
     e.id = id
     e.name = name
@@ -17,7 +21,8 @@ def _make_entity(id: str, name: str, parent_id: str | None = None, metadata: dic
 class TestBuildEntityContextForLlm:
     """Test build_entity_context_for_llm."""
 
-    def test_empty_registry(self):
+    def test_empty_registry(self) -> None:
+
         """No tracks/regions/buses produces (none) and example placeholder."""
         registry = MagicMock()
         registry.list_tracks.return_value = []
@@ -36,7 +41,8 @@ class TestBuildEntityContextForLlm:
         assert "abc-123" in out
         assert "My Track" in out
 
-    def test_with_tracks_and_regions(self):
+    def test_with_tracks_and_regions(self) -> None:
+
         """Tracks and regions appear in context with ids."""
         registry = MagicMock()
         registry.list_tracks.return_value = [
@@ -65,7 +71,8 @@ class TestBuildEntityContextForLlm:
         assert "bus-1" in out
         assert "noteCount" in out
 
-    def test_regions_include_note_count(self):
+    def test_regions_include_note_count(self) -> None:
+
         """Regions in entity context must include noteCount to prevent re-add loops."""
         registry = MagicMock()
         region = _make_entity("r-1", "Pattern", parent_id="t-1",
@@ -84,7 +91,8 @@ class TestBuildEntityContextForLlm:
         assert "'noteCount': 2" in out or "noteCount" in out
         store.get_region_notes.assert_called_with("r-1")
 
-    def test_notecount_check_instruction_present(self):
+    def test_notecount_check_instruction_present(self) -> None:
+
         """Entity context must include instruction to check noteCount before adding."""
         registry = MagicMock()
         registry.list_tracks.return_value = []
@@ -97,7 +105,8 @@ class TestBuildEntityContextForLlm:
         assert "noteCount" in out
         assert "re-add" in out.lower() or "do not" in out.lower()
 
-    def test_example_uses_first_track_when_present(self):
+    def test_example_uses_first_track_when_present(self) -> None:
+
         """Example at end uses first track id and name."""
         registry = MagicMock()
         registry.list_tracks.return_value = [_make_entity("my-id-99", "Piano")]
@@ -115,7 +124,8 @@ class TestBuildEntityContextForLlm:
 class TestFormatProjectContext:
     """Test format_project_context produces clean, human-readable LLM context."""
 
-    def test_empty_project(self):
+    def test_empty_project(self) -> None:
+
         """Empty project (no tracks) produces clear instruction to create from scratch."""
         project = {
             "name": "New Project",
@@ -132,7 +142,8 @@ class TestFormatProjectContext:
         assert "empty project" in out.lower()
         assert "create tracks from scratch" in out.lower()
 
-    def test_project_with_tracks_and_regions(self):
+    def test_project_with_tracks_and_regions(self) -> None:
+
         """Tracks with regions include IDs, instruments, and note counts."""
         project = {
             "name": "Bluegrass Jam",
@@ -182,7 +193,8 @@ class TestFormatProjectContext:
         # Instruction to use IDs
         assert "Use the track IDs" in out
 
-    def test_track_with_gm_program_only(self):
+    def test_track_with_gm_program_only(self) -> None:
+
         """Track with gmProgram but no drumKitId shows instrument name."""
         project = {
             "name": "Test",
@@ -201,7 +213,8 @@ class TestFormatProjectContext:
         out = format_project_context(project)
         assert "Electric Bass (finger)" in out
 
-    def test_track_with_unknown_gm_program(self):
+    def test_track_with_unknown_gm_program(self) -> None:
+
         """Unknown GM program falls back to 'GM #N'."""
         project = {
             "name": "Test",
@@ -220,7 +233,8 @@ class TestFormatProjectContext:
         out = format_project_context(project)
         assert "GM #127" in out
 
-    def test_time_signature_dict_format(self):
+    def test_time_signature_dict_format(self) -> None:
+
         """Time signature as dict {numerator, denominator} is handled."""
         project = {
             "name": "Waltz",
@@ -232,7 +246,8 @@ class TestFormatProjectContext:
         out = format_project_context(project)
         assert "3/4" in out
 
-    def test_multiple_regions_on_track(self):
+    def test_multiple_regions_on_track(self) -> None:
+
         """Multiple regions on a single track are listed with semicolons."""
         project = {
             "name": "Multi-region",
@@ -270,7 +285,8 @@ class TestFormatProjectContext:
         assert "id=r1" in out
         assert "id=r2" in out
 
-    def test_no_raw_json_in_output(self):
+    def test_no_raw_json_in_output(self) -> None:
+
         """Output is human-readable, not a JSON dump."""
         project = {
             "name": "Test",
@@ -292,43 +308,52 @@ class TestFormatProjectContext:
 class TestInferTrackRole:
     """infer_track_role maps track metadata to a musical role."""
 
-    def test_drum_kit_always_drums(self):
+    def test_drum_kit_always_drums(self) -> None:
+
         """A track with drumKitId → role=drums regardless of name or program."""
         assert infer_track_role("My Beat", None, "acoustic") == "drums"
         assert infer_track_role("Piano", 0, "TR-808") == "drums"
 
-    def test_bass_by_name(self):
+    def test_bass_by_name(self) -> None:
+
         assert infer_track_role("Bass", None, None) == "bass"
         assert infer_track_role("Electric Bass", 33, None) == "bass"
 
-    def test_bass_by_gm_program(self):
+    def test_bass_by_gm_program(self) -> None:
+
         """GM programs 32-39 are bass family."""
         assert infer_track_role("Track", 33, None) == "bass"
         assert infer_track_role("Track", 38, None) == "bass"
 
-    def test_pads_by_name(self):
+    def test_pads_by_name(self) -> None:
+
         """'Cathedral Pad' resolves to pads role."""
         assert infer_track_role("Cathedral Pad", 19, None) == "pads"
         assert infer_track_role("Atmosphere", None, None) == "pads"
 
-    def test_pads_by_gm_organ(self):
+    def test_pads_by_gm_organ(self) -> None:
+
         """A generic track name with Organ GM program resolves to pads via GM range.
         Name-keyword match wins over GM range, so use a neutral name."""
         assert infer_track_role("Track", 19, None) == "pads"
 
-    def test_chords_by_name(self):
+    def test_chords_by_name(self) -> None:
+
         assert infer_track_role("Rhodes", 4, None) == "chords"
         assert infer_track_role("Piano", 0, None) == "chords"
 
-    def test_melody_default(self):
+    def test_melody_default(self) -> None:
+
         """Unknown track falls back to melody."""
         assert infer_track_role("Misc", None, None) == "melody"
 
-    def test_melody_by_gm_strings(self):
+    def test_melody_by_gm_strings(self) -> None:
+
         """GM 40-55 strings/orchestral → melody."""
         assert infer_track_role("Track", 48, None) == "melody"
 
-    def test_lead_by_gm_synth(self):
+    def test_lead_by_gm_synth(self) -> None:
+
         """GM 80-87 synth leads → lead."""
         assert infer_track_role("Track", 80, None) == "lead"
 
@@ -336,21 +361,24 @@ class TestInferTrackRole:
 class TestFormatProjectContextRole:
     """format_project_context includes role field for each track."""
 
-    def test_role_shown_for_drum_track(self):
+    def test_role_shown_for_drum_track(self) -> None:
+
         project = {
             "tracks": [{"id": "t1", "name": "Drums", "drumKitId": "acoustic", "regions": []}]
         }
         out = format_project_context(project)
         assert "role=drums" in out
 
-    def test_role_shown_for_bass_track(self):
+    def test_role_shown_for_bass_track(self) -> None:
+
         project = {
             "tracks": [{"id": "t1", "name": "Bass", "gmProgram": 33, "regions": []}]
         }
         out = format_project_context(project)
         assert "role=bass" in out
 
-    def test_cathedral_pad_inferred_as_pads(self):
+    def test_cathedral_pad_inferred_as_pads(self) -> None:
+
         """'Cathedral Pad' track (Church Organ GM 19) should show role=pads."""
         project = {
             "tracks": [{"id": "t1", "name": "Cathedral Pad", "gmProgram": 19, "regions": []}]
@@ -358,7 +386,8 @@ class TestFormatProjectContextRole:
         out = format_project_context(project)
         assert "role=pads" in out
 
-    def test_new_section_rule_shown_when_tracks_exist(self):
+    def test_new_section_rule_shown_when_tracks_exist(self) -> None:
+
         """NEW SECTION RULE instruction appears when project has tracks."""
         project = {
             "tracks": [{"id": "t1", "name": "Drums", "drumKitId": "acoustic", "regions": []}]
@@ -366,7 +395,8 @@ class TestFormatProjectContextRole:
         out = format_project_context(project)
         assert "NEW SECTION RULE" in out
 
-    def test_new_section_rule_absent_for_empty_project(self):
+    def test_new_section_rule_absent_for_empty_project(self) -> None:
+
         """No NEW SECTION RULE when project has no tracks."""
         project: dict[str, list[str]] = {"tracks": []}
         out = format_project_context(project)
@@ -380,34 +410,40 @@ class TestFormatProjectContextRole:
 class TestAddNotesValidation:
     """stori_add_notes rejects fake shorthand params with a clear error."""
 
-    def _validate(self, params):
+    def _validate(self, params: Any) -> Any:
+
         from app.core.tool_validation import validate_tool_call
         return validate_tool_call("stori_add_notes", params, {"stori_add_notes"}, registry=None)
 
-    def test_fake_note_count_param_rejected(self):
+    def test_fake_note_count_param_rejected(self) -> None:
+
         """_noteCount is a known fake param — validation must fail with clear message."""
         result = self._validate({"regionId": "r1", "_noteCount": 192})
         assert not result.valid
         assert "_noteCount" in result.error_message
 
-    def test_beat_range_param_rejected(self):
+    def test_beat_range_param_rejected(self) -> None:
+
         """_beatRange is a known fake param — validation must fail."""
         result = self._validate({"regionId": "r1", "_beatRange": "0-64"})
         assert not result.valid
         assert "_beatRange" in result.error_message or "notes" in result.error_message
 
-    def test_placeholder_param_rejected(self):
+    def test_placeholder_param_rejected(self) -> None:
+
         """_placeholder is a known fake param — validation must fail."""
         result = self._validate({"regionId": "r1", "_placeholder": True})
         assert not result.valid
 
-    def test_empty_notes_array_rejected(self):
+    def test_empty_notes_array_rejected(self) -> None:
+
         """An empty notes array must fail with a helpful message."""
         result = self._validate({"regionId": "r1", "notes": []})
         assert not result.valid
         assert "notes" in result.error_message.lower()
 
-    def test_valid_notes_accepted(self):
+    def test_valid_notes_accepted(self) -> None:
+
         """A proper notes array passes validation."""
         result = self._validate({
             "regionId": "r1",
@@ -415,7 +451,8 @@ class TestAddNotesValidation:
         })
         assert result.valid
 
-    def test_missing_notes_key_rejected(self):
+    def test_missing_notes_key_rejected(self) -> None:
+
         """Missing notes key (only regionId provided) fails validation."""
         result = self._validate({"regionId": "r1"})
         assert not result.valid

@@ -45,6 +45,12 @@ One backend, two entry points (Stori app + MCP). Request flow (intent → REASON
 
 ---
 
+## 4b. [reference/orpheus.md](reference/orpheus.md)
+
+**Orpheus operational reference.** Everything about the Orpheus Music Transformer integration: Gradio API, token encoding, generation parameters, seed library, instrument resolution, MIDI pipeline, quality controls, session management, and 8 hard-won lessons to prevent regressions.
+
+---
+
 ## 5. [guides/testing.md](guides/testing.md)
 
 Run tests, intent-based QA, quick prompts.

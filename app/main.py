@@ -3,6 +3,8 @@ Stori Maestro API
 
 FastAPI application for AI-powered music composition.
 """
+from __future__ import annotations
+
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, Callable, cast
@@ -25,7 +27,7 @@ from app.services.orpheus import get_orpheus_client, close_orpheus_client
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
     
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
         response = await call_next(request)
         
         # Prevent clickjacking
@@ -51,7 +53,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         )
         
         # HSTS (only when behind HTTPS proxy)
-        # Set via nginx/reverse proxy in production
+        # set via nginx/reverse proxy in production
         
         return response
 
@@ -67,7 +69,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> Any:
     """Application lifespan handler."""
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"LLM provider: {settings.llm_provider}")
@@ -128,7 +130,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 if "*" in settings.cors_origins:
     logger.warning(
         "SECURITY WARNING: CORS allows all origins. "
-        "Set STORI_CORS_ORIGINS to specific domains in production."
+        "set STORI_CORS_ORIGINS to specific domains in production."
     )
 app.add_middleware(
     CORSMiddleware,
@@ -154,7 +156,7 @@ app.include_router(protocol_router, prefix="/api/v1", tags=["protocol"])
 
 
 @app.get("/")
-async def root():
+async def root() -> dict[str, str]:
     """Root endpoint with service info."""
     return {
         "service": settings.app_name,

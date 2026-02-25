@@ -4,6 +4,7 @@ Verifies that structured prompts bypass the NL pipeline and route
 deterministically via Mode, while non-structured prompts continue to
 use the existing pattern/LLM pipeline unchanged.
 """
+from __future__ import annotations
 
 import pytest
 
@@ -19,23 +20,27 @@ from app.core.intent import (
 
 
 class TestMaestroRouting:
-    def test_compose_routes_to_composing(self):
+    def test_compose_routes_to_composing(self) -> None:
+
         prompt = "STORI PROMPT\nMode: compose\nRequest: make a beat"
         result = get_intent_result(prompt)
         assert result.intent == Intent.GENERATE_MUSIC
         assert result.sse_state == SSEState.COMPOSING
 
-    def test_compose_high_confidence(self):
+    def test_compose_high_confidence(self) -> None:
+
         prompt = "STORI PROMPT\nMode: compose\nRequest: make a beat"
         result = get_intent_result(prompt)
         assert result.confidence == 0.99
 
-    def test_compose_has_structured_prompt_reason(self):
+    def test_compose_has_structured_prompt_reason(self) -> None:
+
         prompt = "STORI PROMPT\nMode: compose\nRequest: make a beat"
         result = get_intent_result(prompt)
         assert "structured_prompt" in result.reasons
 
-    def test_compose_requires_planner(self):
+    def test_compose_requires_planner(self) -> None:
+
         prompt = "STORI PROMPT\nMode: compose\nRequest: make a beat"
         result = get_intent_result(prompt)
         assert result.requires_planner is True
@@ -45,12 +50,14 @@ class TestMaestroRouting:
 
 
 class TestEditRouting:
-    def test_edit_routes_to_editing(self):
+    def test_edit_routes_to_editing(self) -> None:
+
         prompt = "STORI PROMPT\nMode: edit\nTarget: track:Bass\nRequest: tighten it"
         result = get_intent_result(prompt)
         assert result.sse_state == SSEState.EDITING
 
-    def test_edit_with_vibe_matches_idiom(self):
+    def test_edit_with_vibe_matches_idiom(self) -> None:
+
         prompt = (
             "STORI PROMPT\nMode: edit\nTarget: track:Bass\n"
             "Vibe:\n- punchier:3\n"
@@ -59,7 +66,8 @@ class TestEditRouting:
         result = get_intent_result(prompt)
         assert result.intent == Intent.MIX_DYNAMICS
 
-    def test_edit_with_darker_vibe(self):
+    def test_edit_with_darker_vibe(self) -> None:
+
         prompt = (
             "STORI PROMPT\nMode: edit\n"
             "Vibe:\n- darker:2\n"
@@ -68,7 +76,8 @@ class TestEditRouting:
         result = get_intent_result(prompt)
         assert result.intent == Intent.MIX_TONALITY
 
-    def test_edit_with_wider_vibe(self):
+    def test_edit_with_wider_vibe(self) -> None:
+
         prompt = (
             "STORI PROMPT\nMode: edit\n"
             "Vibe:\n- wider:1\n"
@@ -77,7 +86,8 @@ class TestEditRouting:
         result = get_intent_result(prompt)
         assert result.intent == Intent.MIX_SPACE
 
-    def test_edit_with_compressor_constraint(self):
+    def test_edit_with_compressor_constraint(self) -> None:
+
         prompt = (
             "STORI PROMPT\nMode: edit\nTarget: track:Drums\n"
             "Constraints:\n- compressor: analog\n"
@@ -86,7 +96,8 @@ class TestEditRouting:
         result = get_intent_result(prompt)
         assert result.intent == Intent.FX_ADD_INSERT
 
-    def test_edit_default_intent_when_no_vibes(self):
+    def test_edit_default_intent_when_no_vibes(self) -> None:
+
         prompt = "STORI PROMPT\nMode: edit\nRequest: fix something"
         result = get_intent_result(prompt)
         assert result.sse_state == SSEState.EDITING
@@ -96,13 +107,15 @@ class TestEditRouting:
 
 
 class TestAskRouting:
-    def test_ask_routes_to_reasoning(self):
+    def test_ask_routes_to_reasoning(self) -> None:
+
         prompt = "STORI PROMPT\nMode: ask\nRequest: why does reverb cause latency?"
         result = get_intent_result(prompt)
         assert result.intent == Intent.ASK_GENERAL
         assert result.sse_state == SSEState.REASONING
 
-    def test_ask_no_tools(self):
+    def test_ask_no_tools(self) -> None:
+
         prompt = "STORI PROMPT\nMode: ask\nRequest: explain quantization"
         result = get_intent_result(prompt)
         assert len(result.allowed_tool_names) == 0
@@ -112,18 +125,21 @@ class TestAskRouting:
 
 
 class TestSlotsPopulation:
-    def test_target_in_slots(self):
+    def test_target_in_slots(self) -> None:
+
         prompt = "STORI PROMPT\nMode: edit\nTarget: track:Lead\nRequest: eq it"
         result = get_intent_result(prompt)
         assert result.slots.target_type == "track"
         assert result.slots.target_name == "Lead"
 
-    def test_request_in_value_str(self):
+    def test_request_in_value_str(self) -> None:
+
         prompt = "STORI PROMPT\nMode: compose\nRequest: lay down some funk"
         result = get_intent_result(prompt)
         assert result.slots.value_str == "lay down some funk"
 
-    def test_parsed_prompt_in_extras(self):
+    def test_parsed_prompt_in_extras(self) -> None:
+
         prompt = (
             "STORI PROMPT\nMode: compose\n"
             "Style: jazz\nKey: Cm\nTempo: 90\n"
@@ -144,7 +160,8 @@ class TestModeOverridesPatterns:
     """Structured prompts whose Request text would normally match
     a pattern rule must still route via the Mode field."""
 
-    def test_compose_with_tempo_in_request(self):
+    def test_compose_with_tempo_in_request(self) -> None:
+
         """'set tempo to 120' would match the tempo pattern rule,
         but Mode: compose must win."""
         prompt = (
@@ -155,14 +172,16 @@ class TestModeOverridesPatterns:
         assert result.intent == Intent.GENERATE_MUSIC
         assert result.sse_state == SSEState.COMPOSING
 
-    def test_ask_with_play_in_request(self):
+    def test_ask_with_play_in_request(self) -> None:
+
         """'play' alone would match the transport rule."""
         prompt = "STORI PROMPT\nMode: ask\nRequest: why does play feel laggy?"
         result = get_intent_result(prompt)
         assert result.intent == Intent.ASK_GENERAL
         assert result.sse_state == SSEState.REASONING
 
-    def test_edit_with_generation_phrase_in_request(self):
+    def test_edit_with_generation_phrase_in_request(self) -> None:
+
         """'make a beat' would match generation detection."""
         prompt = "STORI PROMPT\nMode: edit\nRequest: make a beat sound punchier"
         result = get_intent_result(prompt)
@@ -175,24 +194,29 @@ class TestModeOverridesPatterns:
 class TestNonStructuredUnchanged:
     """Verify the existing NL pipeline is not affected."""
 
-    def test_natural_language_generation(self):
+    def test_natural_language_generation(self) -> None:
+
         result = get_intent_result("make a boom bap beat")
         assert result.intent == Intent.GENERATE_MUSIC
         assert "structured_prompt" not in result.reasons
 
-    def test_question_routing(self):
+    def test_question_routing(self) -> None:
+
         result = get_intent_result("what is quantization?")
         assert result.sse_state == SSEState.REASONING
 
-    def test_transport_play(self):
+    def test_transport_play(self) -> None:
+
         result = get_intent_result("play")
         assert result.intent == Intent.PLAY
 
-    def test_tempo_command(self):
+    def test_tempo_command(self) -> None:
+
         result = get_intent_result("set tempo to 120")
         assert result.intent == Intent.PROJECT_SET_TEMPO
 
-    def test_producer_idiom(self):
+    def test_producer_idiom(self) -> None:
+
         result = get_intent_result("make it darker")
         assert result.intent == Intent.MIX_TONALITY
         assert "structured_prompt" not in result.reasons
@@ -204,7 +228,8 @@ class TestNonStructuredUnchanged:
 class TestSpecExamples:
     """One test per full example from docs/protocol/stori-prompt-spec.md."""
 
-    def test_example_1_compose_advanced(self):
+    def test_example_1_compose_advanced(self) -> None:
+
         prompt = (
             "STORI PROMPT\n"
             "Mode: compose\n"
@@ -242,7 +267,8 @@ class TestSpecExamples:
         assert parsed.tempo == 126
         assert parsed.roles == ["kick", "bass", "arp", "pad"]
 
-    def test_example_2_edit_track(self):
+    def test_example_2_edit_track(self) -> None:
+
         prompt = (
             "STORI PROMPT\n"
             "Mode: edit\n"
@@ -263,7 +289,8 @@ class TestSpecExamples:
         assert result.slots.target_type == "track"
         assert result.slots.target_name == "Bass"
 
-    def test_example_3_ask_reasoning(self):
+    def test_example_3_ask_reasoning(self) -> None:
+
         prompt = (
             "STORI PROMPT\n"
             "Mode: ask\n"

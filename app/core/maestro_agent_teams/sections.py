@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import logging
-from typing import Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +239,7 @@ def parse_sections(
     prompt: str,
     bars: int,
     roles: list[str],
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Parse a STORI PROMPT into musical sections with beat ranges.
 
     Args:
@@ -248,7 +248,7 @@ def parse_sections(
         roles: Instrument roles being generated (e.g. ['drums', 'bass', 'chords']).
 
     Returns:
-        List of section dicts, each containing:
+        list of section dicts, each containing:
           - name: str (e.g. 'verse')
           - start_beat: float
           - length_beats: float
@@ -319,12 +319,12 @@ def _build_sections(
     ordered: list[str],
     beats_total: float,
     roles: list[str],
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Distribute *beats_total* across *ordered* section names proportionally."""
     # Distribute total beats across sections proportionally using default weights.
     weights = {name: w for _, name, w in _SECTION_KEYWORDS}
     total_weight = sum(weights.get(n, 0.2) for n in ordered)
-    sections: list[dict] = []
+    sections: list[dict[str, Any]] = []
     current_beat: float = 0.0
 
     for i, name in enumerate(ordered):
@@ -358,7 +358,7 @@ def _build_sections(
     return sections
 
 
-def _single_section(beats_total: float, roles: list[str]) -> list[dict]:
+def _single_section(beats_total: float, roles: list[str]) -> list[dict[str, Any]]:
     """Return a single full-arrangement section."""
     per_track: dict[str, str] = {}
     for role in roles:

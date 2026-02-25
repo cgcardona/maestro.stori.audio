@@ -5,6 +5,7 @@ parse_sections() correctly detects named sections, assigns beat ranges that
 cover the full arrangement, and returns a single full-arrangement section when
 no structural keywords are found.
 """
+from __future__ import annotations
 
 import pytest
 
@@ -23,7 +24,8 @@ ROLES = ["drums", "bass", "chords", "lead"]
 # =============================================================================
 
 class TestSectionDetection:
-    def test_no_sections_returns_single_full_section(self):
+    def test_no_sections_returns_single_full_section(self) -> None:
+
         """A prompt with no section keywords returns one section covering all beats."""
         prompt = "Make a reggaeton track at 96 BPM in Bm, 24 bars"
         sections = parse_sections(prompt, bars=24, roles=ROLES)
@@ -32,7 +34,8 @@ class TestSectionDetection:
         assert sections[0]["start_beat"] == 0.0
         assert sections[0]["length_beats"] == 96.0  # 24 bars × 4 beats
 
-    def test_intro_verse_chorus_detected(self):
+    def test_intro_verse_chorus_detected(self) -> None:
+
         """Explicit intro/verse/chorus keywords create 3 sections."""
         prompt = "Reggaeton with an intro, a verse, and a chorus. 32 bars."
         sections = parse_sections(prompt, bars=32, roles=ROLES)
@@ -42,21 +45,24 @@ class TestSectionDetection:
         assert "chorus" in names
         assert len(sections) == 3
 
-    def test_sections_are_ordered_by_appearance_in_prompt(self):
+    def test_sections_are_ordered_by_appearance_in_prompt(self) -> None:
+
         """Sections appear in the order they are mentioned in the prompt."""
         prompt = "Start with an intro, then the verse, then the chorus, then the outro."
         sections = parse_sections(prompt, bars=32, roles=ROLES)
         names = [s["name"] for s in sections]
         assert names == ["intro", "verse", "chorus", "outro"]
 
-    def test_single_section_keyword_returns_full_section(self):
+    def test_single_section_keyword_returns_full_section(self) -> None:
+
         """Only one keyword found — not enough for a meaningful split; return full."""
         prompt = "Heavy chorus energy throughout, 16 bars."
         sections = parse_sections(prompt, bars=16, roles=ROLES)
         # Single keyword → single section
         assert len(sections) == 1
 
-    def test_duplicate_keywords_deduplicated(self):
+    def test_duplicate_keywords_deduplicated(self) -> None:
+
         """Repeated section keywords produce one section per unique name."""
         prompt = "verse, verse, chorus, verse"
         sections = parse_sections(prompt, bars=16, roles=ROLES)
@@ -70,7 +76,8 @@ class TestSectionDetection:
 # =============================================================================
 
 class TestSectionBeatRanges:
-    def test_sections_cover_full_arrangement(self):
+    def test_sections_cover_full_arrangement(self) -> None:
+
         """All section lengths sum exactly to bars × 4 beats."""
         prompt = "intro verse chorus outro — 32 bars"
         bars = 32
@@ -78,7 +85,8 @@ class TestSectionBeatRanges:
         total = sum(s["length_beats"] for s in sections)
         assert total == bars * 4, f"Expected {bars * 4} total beats, got {total}"
 
-    def test_sections_are_contiguous(self):
+    def test_sections_are_contiguous(self) -> None:
+
         """Each section starts exactly where the previous one ends."""
         prompt = "intro, build, verse, chorus, outro — 40 bars"
         sections = parse_sections(prompt, bars=40, roles=ROLES)
@@ -90,13 +98,15 @@ class TestSectionBeatRanges:
                 f"prev_end={prev_end}, curr_start={curr_start}"
             )
 
-    def test_first_section_starts_at_beat_zero(self):
+    def test_first_section_starts_at_beat_zero(self) -> None:
+
         """The first section always starts at beat 0."""
         prompt = "intro verse chorus — 24 bars"
         sections = parse_sections(prompt, bars=24, roles=ROLES)
         assert sections[0]["start_beat"] == 0.0
 
-    def test_each_section_has_minimum_one_bar(self):
+    def test_each_section_has_minimum_one_bar(self) -> None:
+
         """No section should be shorter than 4 beats (1 bar)."""
         prompt = "intro verse chorus bridge outro — 16 bars"
         sections = parse_sections(prompt, bars=16, roles=ROLES)
@@ -105,7 +115,8 @@ class TestSectionBeatRanges:
                 f"Section '{s['name']}' is shorter than 1 bar: {s['length_beats']} beats"
             )
 
-    def test_single_full_section_covers_all_beats(self):
+    def test_single_full_section_covers_all_beats(self) -> None:
+
         """No-section prompt returns exactly one section of bars × 4 beats."""
         for bars in [4, 8, 16, 24, 32]:
             sections = parse_sections("funky track", bars=bars, roles=["drums", "bass"])
@@ -118,7 +129,8 @@ class TestSectionBeatRanges:
 # =============================================================================
 
 class TestPerTrackDescriptions:
-    def test_per_track_descriptions_populated_for_known_roles(self):
+    def test_per_track_descriptions_populated_for_known_roles(self) -> None:
+
         """Section parser generates per-track descriptions for standard instrument roles."""
         prompt = "intro verse chorus — 32 bars"
         sections = parse_sections(prompt, bars=32, roles=["drums", "bass", "chords"])
@@ -131,7 +143,8 @@ class TestPerTrackDescriptions:
             assert isinstance(per_track["drums"], str)
             assert len(per_track["drums"]) > 10
 
-    def test_chorus_drums_description_is_high_energy(self):
+    def test_chorus_drums_description_is_high_energy(self) -> None:
+
         """Chorus drum description must convey high energy (not sparse/minimal)."""
         desc = _get_section_role_description("chorus", "drums")
         assert desc  # non-empty
@@ -140,7 +153,8 @@ class TestPerTrackDescriptions:
             f"Chorus drum description should be energetic, got: {desc!r}"
         )
 
-    def test_breakdown_drums_description_is_sparse(self):
+    def test_breakdown_drums_description_is_sparse(self) -> None:
+
         """Breakdown drum description must convey low energy."""
         desc = _get_section_role_description("breakdown", "drums")
         assert desc
@@ -149,7 +163,8 @@ class TestPerTrackDescriptions:
             f"Breakdown drum description should be sparse, got: {desc!r}"
         )
 
-    def test_unknown_role_returns_empty_string(self):
+    def test_unknown_role_returns_empty_string(self) -> None:
+
         """An unrecognised role name returns an empty string (no crash)."""
         desc = _get_section_role_description("verse", "theremin")
         assert isinstance(desc, str)  # may be empty, must not raise
@@ -160,27 +175,31 @@ class TestPerTrackDescriptions:
 # =============================================================================
 
 class TestSectionEdgeCases:
-    def test_empty_prompt_returns_full_section(self):
+    def test_empty_prompt_returns_full_section(self) -> None:
+
         """Empty prompt string returns a single full-arrangement section."""
         sections = parse_sections("", bars=8, roles=["drums"])
         assert len(sections) == 1
         assert sections[0]["name"] == "full"
 
-    def test_inferred_drop_keyword_detected(self):
+    def test_inferred_drop_keyword_detected(self) -> None:
+
         """'drop' is treated as a synonym for chorus."""
         prompt = "build into the drop, 16 bars"
         sections = parse_sections(prompt, bars=16, roles=ROLES)
         names = [s["name"] for s in sections]
         assert "chorus" in names or "build" in names  # at least one detected
 
-    def test_large_bar_count_preserved(self):
+    def test_large_bar_count_preserved(self) -> None:
+
         """parse_sections handles large bar counts without overflow or rounding errors."""
         prompt = "intro verse chorus outro"
         sections = parse_sections(prompt, bars=128, roles=["drums", "bass"])
         total = sum(s["length_beats"] for s in sections)
         assert total == 128 * 4
 
-    def test_section_descriptions_field_present(self):
+    def test_section_descriptions_field_present(self) -> None:
+
         """Every section has a non-empty 'description' field."""
         prompt = "intro verse chorus outro — 32 bars"
         sections = parse_sections(prompt, bars=32, roles=ROLES)
@@ -196,7 +215,8 @@ class TestSectionEdgeCases:
 class TestExpandedKeywords:
     """Ensure exhaustive section keyword recognition across genres."""
 
-    def test_jazz_head_solo_detected(self):
+    def test_jazz_head_solo_detected(self) -> None:
+
         """Jazz 'head' and 'solo' map to verse and solo sections."""
         prompt = "Head statement, then a solo, then the head returns. 32 bars."
         sections = parse_sections(prompt, bars=32, roles=ROLES)
@@ -204,56 +224,64 @@ class TestExpandedKeywords:
         assert "verse" in names, f"'head' should map to verse, got {names}"
         assert "solo" in names, f"'solo' should be detected, got {names}"
 
-    def test_refrain_maps_to_chorus(self):
+    def test_refrain_maps_to_chorus(self) -> None:
+
         """'refrain' is a synonym for chorus."""
         prompt = "A verse followed by the refrain, 16 bars."
         sections = parse_sections(prompt, bars=16, roles=ROLES)
         names = [s["name"] for s in sections]
         assert "chorus" in names, f"'refrain' should map to chorus, got {names}"
 
-    def test_coda_maps_to_outro(self):
+    def test_coda_maps_to_outro(self) -> None:
+
         """Classical 'coda' maps to outro."""
         prompt = "Exposition, then a development, then a coda. 32 bars."
         sections = parse_sections(prompt, bars=32, roles=ROLES)
         names = [s["name"] for s in sections]
         assert "outro" in names, f"'coda' should map to outro, got {names}"
 
-    def test_interlude_detected(self):
+    def test_interlude_detected(self) -> None:
+
         """'interlude' is detected as its own section type."""
         prompt = "Verse, then an interlude, then the chorus. 24 bars."
         sections = parse_sections(prompt, bars=24, roles=ROLES)
         names = [s["name"] for s in sections]
         assert "interlude" in names, f"'interlude' should be detected, got {names}"
 
-    def test_groove_vamp_detected(self):
+    def test_groove_vamp_detected(self) -> None:
+
         """'vamp' or 'groove section' triggers groove section."""
         prompt = "An intro, then a vamp, then the outro. 24 bars."
         sections = parse_sections(prompt, bars=24, roles=ROLES)
         names = [s["name"] for s in sections]
         assert "groove" in names, f"'vamp' should map to groove, got {names}"
 
-    def test_middle_eight_maps_to_bridge(self):
+    def test_middle_eight_maps_to_bridge(self) -> None:
+
         """British 'middle eight' maps to bridge."""
         prompt = "Verse, then the middle eight, then the chorus. 24 bars."
         sections = parse_sections(prompt, bars=24, roles=ROLES)
         names = [s["name"] for s in sections]
         assert "bridge" in names, f"'middle eight' should map to bridge, got {names}"
 
-    def test_climax_maps_to_chorus(self):
+    def test_climax_maps_to_chorus(self) -> None:
+
         """'climax' or 'peak' maps to chorus energy."""
         prompt = "A slow build, then the climax. 16 bars."
         sections = parse_sections(prompt, bars=16, roles=ROLES)
         names = [s["name"] for s in sections]
         assert "chorus" in names, f"'climax' should map to chorus, got {names}"
 
-    def test_riser_maps_to_build(self):
+    def test_riser_maps_to_build(self) -> None:
+
         """'riser' maps to build section."""
         prompt = "Verse groove, then a riser, then the drop. 24 bars."
         sections = parse_sections(prompt, bars=24, roles=ROLES)
         names = [s["name"] for s in sections]
         assert "build" in names, f"'riser' should map to build, got {names}"
 
-    def test_exposition_development_detected(self):
+    def test_exposition_development_detected(self) -> None:
+
         """Classical form: exposition/development map to verse/bridge."""
         prompt = "Exposition of the theme, development section, then recapitulation. 32 bars."
         sections = parse_sections(prompt, bars=32, roles=ROLES)
@@ -262,35 +290,40 @@ class TestExpandedKeywords:
         assert "bridge" in names, f"'development' should map to bridge, got {names}"
         assert len(sections) >= 2
 
-    def test_reprise_maps_to_verse(self):
+    def test_reprise_maps_to_verse(self) -> None:
+
         """'reprise' maps to verse (return of theme)."""
         prompt = "Theme statement, a solo, then the reprise. 24 bars."
         sections = parse_sections(prompt, bars=24, roles=ROLES)
         names = [s["name"] for s in sections]
         assert names.count("verse") >= 1, f"'reprise' should map to verse, got {names}"
 
-    def test_inferred_crescendo_maps_to_build(self):
+    def test_inferred_crescendo_maps_to_build(self) -> None:
+
         """Descriptive 'crescendo' infers a build section."""
         prompt = "A quiet intro, then a long crescendo, then full energy. 24 bars."
         sections = parse_sections(prompt, bars=24, roles=ROLES)
         names = [s["name"] for s in sections]
         assert "build" in names, f"'crescendo' should infer build, got {names}"
 
-    def test_inferred_soloist_maps_to_solo(self):
+    def test_inferred_soloist_maps_to_solo(self) -> None:
+
         """'takes a solo' descriptive language infers solo section."""
         prompt = "The band grooves, then the sax takes a solo, then the outro. 24 bars."
         sections = parse_sections(prompt, bars=24, roles=ROLES)
         names = [s["name"] for s in sections]
         assert "solo" in names, f"'takes a solo' should infer solo, got {names}"
 
-    def test_inferred_fade_away_maps_to_outro(self):
+    def test_inferred_fade_away_maps_to_outro(self) -> None:
+
         """'fades away' descriptive language infers outro."""
         prompt = "Full chorus energy, then everything fades away. 16 bars."
         sections = parse_sections(prompt, bars=16, roles=ROLES)
         names = [s["name"] for s in sections]
         assert "outro" in names, f"'fades away' should infer outro, got {names}"
 
-    def test_solo_section_has_role_templates(self):
+    def test_solo_section_has_role_templates(self) -> None:
+
         """Solo section has per-track descriptions for standard roles."""
         prompt = "Head, then a solo section, then the outro. 24 bars."
         sections = parse_sections(prompt, bars=24, roles=["drums", "bass", "lead"])
@@ -301,7 +334,8 @@ class TestExpandedKeywords:
         assert "lead" in pt
         assert len(pt["lead"]) > 10
 
-    def test_groove_section_has_role_templates(self):
+    def test_groove_section_has_role_templates(self) -> None:
+
         """Groove/vamp section has per-track descriptions."""
         prompt = "Intro, then a locked groove, then the outro. 24 bars."
         sections = parse_sections(prompt, bars=24, roles=["drums", "bass"])
@@ -311,7 +345,8 @@ class TestExpandedKeywords:
         assert "drums" in pt
         assert "bass" in pt
 
-    def test_ethio_jazz_intro_groove_solo_detected(self):
+    def test_ethio_jazz_intro_groove_solo_detected(self) -> None:
+
         """The Ethio-jazz prompt that triggered this fix: intro/groove/solo."""
         prompt = (
             "8-bar intro with vibraphone alone. 8-bar groove where drums enter "
@@ -332,37 +367,43 @@ class TestExpandedKeywords:
 class TestFormStructureParsing:
     """Regression tests: Form.structure field takes priority over keyword scan."""
 
-    def test_parse_form_structure_basic(self):
+    def test_parse_form_structure_basic(self) -> None:
+
         """_parse_form_structure extracts dash-separated section names."""
         prompt = "Some text\nForm:\n  structure: intro-verse-chorus\n  more stuff"
         result = _parse_form_structure(prompt)
         assert result == ["intro", "verse", "chorus"]
 
-    def test_parse_form_structure_two_sections(self):
+    def test_parse_form_structure_two_sections(self) -> None:
+
         """Two-section structure is parsed correctly."""
         prompt = "STORI PROMPT\nForm:\n  structure: intro-groove\n  development:"
         result = _parse_form_structure(prompt)
         assert result == ["intro", "groove"]
 
-    def test_parse_form_structure_nonstandard_names(self):
+    def test_parse_form_structure_nonstandard_names(self) -> None:
+
         """Non-standard names like alap-jor-gat-jhala are preserved."""
         prompt = "Form:\n  structure: alap-jor-gat-jhala\n"
         result = _parse_form_structure(prompt)
         assert result == ["alap", "jor", "gat", "jhala"]
 
-    def test_parse_form_structure_absent(self):
+    def test_parse_form_structure_absent(self) -> None:
+
         """Returns None when no Form.structure field is present."""
         prompt = "Just a regular prompt with no Form section."
         result = _parse_form_structure(prompt)
         assert result is None
 
-    def test_parse_form_structure_single_name(self):
+    def test_parse_form_structure_single_name(self) -> None:
+
         """Single section name is not enough for a split."""
         prompt = "Form:\n  structure: full\n"
         result = _parse_form_structure(prompt)
         assert result is None
 
-    def test_form_structure_overrides_keyword_scan(self):
+    def test_form_structure_overrides_keyword_scan(self) -> None:
+
         """Form.structure takes priority — narrative 'chorus' is ignored."""
         prompt = """\
 STORI PROMPT
@@ -392,14 +433,16 @@ Form:
             f"(keyword scanner likely picked up 'chorus' from Effects)"
         )
 
-    def test_form_structure_sections_fit_within_bars(self):
+    def test_form_structure_sections_fit_within_bars(self) -> None:
+
         """Sections produced from Form.structure don't exceed total bars."""
         prompt = "Form:\n  structure: intro-groove\n"
         sections = parse_sections(prompt, bars=8, roles=["drums"])
         total_beats = sum(s["length_beats"] for s in sections)
         assert total_beats == 32.0, f"8 bars = 32 beats, got {total_beats}"
 
-    def test_e2e_pocket_groove_no_phantom_sections(self):
+    def test_e2e_pocket_groove_no_phantom_sections(self) -> None:
+
         """The e2e_pocket_groove prompt must produce exactly 2 sections.
 
         Previously, keyword scanning found 7 phantom sections from narrative

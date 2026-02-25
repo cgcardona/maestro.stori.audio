@@ -8,6 +8,7 @@ Tests:
 4. MelodyNeuralBackend integration
 5. HuggingFace backend integration
 """
+from __future__ import annotations
 
 import pytest
 from app.core.emotion_vector import (
@@ -36,7 +37,8 @@ from app.services.neural.text2midi_backend import (
 class TestEmotionVector:
     """Test EmotionVector schema and operations."""
     
-    def test_default_values(self):
+    def test_default_values(self) -> None:
+
         """Should have sensible defaults."""
         ev = EmotionVector()
         assert ev.energy == 0.5
@@ -45,7 +47,8 @@ class TestEmotionVector:
         assert ev.intimacy == 0.5
         assert ev.motion == 0.5
     
-    def test_clamping(self):
+    def test_clamping(self) -> None:
+
         """Should clamp values to valid ranges."""
         ev = EmotionVector(
             energy=2.0,  # Should clamp to 1.0
@@ -59,14 +62,16 @@ class TestEmotionVector:
         assert ev.tension == 0.0
         assert ev.intimacy == 1.0
     
-    def test_to_conditioning_vector(self):
+    def test_to_conditioning_vector(self) -> None:
+
         """Should convert to list for model input."""
         ev = EmotionVector(energy=0.8, valence=0.5, tension=0.3, intimacy=0.2, motion=0.9)
         vec = ev.to_conditioning_vector()
         assert len(vec) == 5
         assert vec == [0.8, 0.5, 0.3, 0.2, 0.9]
     
-    def test_apply_delta(self):
+    def test_apply_delta(self) -> None:
+
         """Should apply delta mutations correctly."""
         ev = EmotionVector(energy=0.5, valence=0.0, tension=0.3, intimacy=0.5, motion=0.5)
         
@@ -79,7 +84,8 @@ class TestEmotionVector:
         very_sad = ev.apply_delta({"valence": -2.0})
         assert very_sad.valence == -1.0
     
-    def test_distance(self):
+    def test_distance(self) -> None:
+
         """Should calculate euclidean distance."""
         ev1 = EmotionVector(energy=0.0, valence=0.0, tension=0.0, intimacy=0.0, motion=0.0)
         ev2 = EmotionVector(energy=1.0, valence=0.0, tension=0.0, intimacy=0.0, motion=0.0)
@@ -87,7 +93,8 @@ class TestEmotionVector:
         assert ev1.distance(ev2) == 1.0
         assert ev1.distance(ev1) == 0.0
     
-    def test_serialization(self):
+    def test_serialization(self) -> None:
+
         """Should serialize and deserialize correctly."""
         ev = EmotionVector(energy=0.7, valence=-0.3, tension=0.5, intimacy=0.8, motion=0.4)
         
@@ -104,7 +111,8 @@ class TestEmotionVector:
 class TestEmotionPresets:
     """Test emotion presets and refinement mappings."""
     
-    def test_presets_exist(self):
+    def test_presets_exist(self) -> None:
+
         """Should have expected presets."""
         assert "happy" in EMOTION_PRESETS
         assert "sad" in EMOTION_PRESETS
@@ -112,7 +120,8 @@ class TestEmotionPresets:
         assert "verse" in EMOTION_PRESETS
         assert "indie_folk" in EMOTION_PRESETS
     
-    def test_get_preset(self):
+    def test_get_preset(self) -> None:
+
         """Should retrieve presets correctly."""
         happy = get_emotion_preset("happy")
         assert happy.valence > 0.5
@@ -122,13 +131,15 @@ class TestEmotionPresets:
         assert sad.valence < 0.0
         assert sad.energy < 0.5
     
-    def test_get_preset_unknown(self):
+    def test_get_preset_unknown(self) -> None:
+
         """Should return neutral for unknown preset."""
         unknown = get_emotion_preset("unknown_preset_xyz")
         neutral = EMOTION_PRESETS["neutral"]
         assert unknown.energy == neutral.energy
     
-    def test_refinement_deltas(self):
+    def test_refinement_deltas(self) -> None:
+
         """Should have expected refinement deltas."""
         delta = get_refinement_delta("sadder")
         assert delta is not None
@@ -138,7 +149,8 @@ class TestEmotionPresets:
         assert delta is not None
         assert delta["energy"] > 0
     
-    def test_refinement_delta_unknown(self):
+    def test_refinement_delta_unknown(self) -> None:
+
         """Should return None for unknown command."""
         assert get_refinement_delta("make it purple") is None
 
@@ -146,7 +158,8 @@ class TestEmotionPresets:
 class TestEmotionToConstraints:
     """Test emotion vector to generation constraints mapping."""
     
-    def test_high_energy_high_density(self):
+    def test_high_energy_high_density(self) -> None:
+
         """High energy + motion should produce high density."""
         ev = EmotionVector(energy=0.9, motion=0.9)
         constraints = emotion_to_constraints(ev)
@@ -154,7 +167,8 @@ class TestEmotionToConstraints:
         assert constraints.drum_density > 0.7
         assert constraints.velocity_floor > 70
     
-    def test_low_energy_low_density(self):
+    def test_low_energy_low_density(self) -> None:
+
         """Low energy + motion should produce low density."""
         ev = EmotionVector(energy=0.2, motion=0.2)
         constraints = emotion_to_constraints(ev)
@@ -162,7 +176,8 @@ class TestEmotionToConstraints:
         assert constraints.drum_density < 0.3
         assert constraints.velocity_floor < 60
     
-    def test_positive_valence_high_register(self):
+    def test_positive_valence_high_register(self) -> None:
+
         """Positive valence should raise register center."""
         bright = EmotionVector(valence=0.8)
         dark = EmotionVector(valence=-0.8)
@@ -172,7 +187,8 @@ class TestEmotionToConstraints:
         
         assert bright_c.register_center > dark_c.register_center
     
-    def test_high_tension_extensions(self):
+    def test_high_tension_extensions(self) -> None:
+
         """High tension should enable chord extensions."""
         tense = EmotionVector(tension=0.8)
         relaxed = EmotionVector(tension=0.2)
@@ -187,20 +203,23 @@ class TestEmotionToConstraints:
 class TestMidiTokenizer:
     """Test REMI tokenization."""
     
-    def test_vocab_size(self):
+    def test_vocab_size(self) -> None:
+
         """Should have reasonable vocab size."""
         tokenizer = MidiTokenizer()
         assert tokenizer.get_vocab_size() > 100
         assert tokenizer.get_vocab_size() < 500
     
-    def test_special_tokens(self):
+    def test_special_tokens(self) -> None:
+
         """Should have special token IDs."""
         tokenizer = MidiTokenizer()
         assert tokenizer.get_pad_token_id() == 0
         assert tokenizer.get_bos_token_id() == 1
         assert tokenizer.get_eos_token_id() == 2
     
-    def test_encode_decode_roundtrip(self):
+    def test_encode_decode_roundtrip(self) -> None:
+
         """Should roundtrip notes through tokenization."""
         tokenizer = MidiTokenizer()
         
@@ -225,7 +244,8 @@ class TestMidiTokenizer:
         decoded_pitches = sorted([n["pitch"] for n in decoded_notes])
         assert original_pitches == decoded_pitches
     
-    def test_encode_multi_bar(self):
+    def test_encode_multi_bar(self) -> None:
+
         """Should handle multi-bar sequences."""
         tokenizer = MidiTokenizer()
         
@@ -245,7 +265,8 @@ class TestMidiTokenizer:
         assert 4 <= decoded[1]["start_beat"] < 8
         assert decoded[2]["start_beat"] >= 8
     
-    def test_encode_to_tokens_readable(self):
+    def test_encode_to_tokens_readable(self) -> None:
+
         """Should produce readable token strings."""
         tokenizer = MidiTokenizer()
         
@@ -261,13 +282,15 @@ class TestNeuralMelodyGenerator:
     """Test neural melody generator."""
     
     @pytest.mark.asyncio
-    async def test_generator_available(self):
+    async def test_generator_available(self) -> None:
+
         """Mock backend should always be available."""
         generator = NeuralMelodyGenerator()
         assert await generator.is_available()
     
     @pytest.mark.asyncio
-    async def test_generate_basic(self):
+    async def test_generate_basic(self) -> None:
+
         """Should generate notes with basic parameters."""
         generator = NeuralMelodyGenerator()
         
@@ -283,7 +306,8 @@ class TestNeuralMelodyGenerator:
         assert result.model_used == "mock_neural"
     
     @pytest.mark.asyncio
-    async def test_generate_with_emotion(self):
+    async def test_generate_with_emotion(self) -> None:
+
         """Should condition on emotion vector."""
         generator = NeuralMelodyGenerator()
         
@@ -313,7 +337,8 @@ class TestNeuralMelodyGenerator:
         assert len(result_high.notes) >= len(result_low.notes) * 0.5
     
     @pytest.mark.asyncio
-    async def test_generate_metadata(self):
+    async def test_generate_metadata(self) -> None:
+
         """Should include emotion vector in metadata."""
         generator = NeuralMelodyGenerator()
         ev = EmotionVector(energy=0.7, valence=0.3)
@@ -334,7 +359,8 @@ class TestMockNeuralBackend:
     """Test the mock neural backend directly."""
     
     @pytest.mark.asyncio
-    async def test_respects_register_constraints(self):
+    async def test_respects_register_constraints(self) -> None:
+
         """Should respect register center from emotion."""
         backend = MockNeuralMelodyBackend()
         
@@ -373,19 +399,22 @@ class TestMockNeuralBackend:
 class TestHuggingFaceBackend:
     """Test HuggingFace melody backend."""
     
-    def test_models_defined(self):
+    def test_models_defined(self) -> None:
+
         """Should have models configured."""
         assert "skytnt" in HF_MODELS
         assert "giant" in HF_MODELS
         assert "orpheus" in HF_MODELS
     
-    def test_model_config(self):
+    def test_model_config(self) -> None:
+
         """Should have valid model configurations."""
         config = HF_MODELS["skytnt"]
         assert config.model_id == "skytnt/midi-model-tv2o-medium"
         assert config.max_tokens > 0
     
-    def test_emotion_to_params_high_energy(self):
+    def test_emotion_to_params_high_energy(self) -> None:
+
         """High energy should increase temperature."""
         backend = HuggingFaceMelodyBackend(api_key=None)
         
@@ -398,7 +427,8 @@ class TestHuggingFaceBackend:
         # Higher energy/tension should mean higher temperature
         assert high_params["temperature"] > low_params["temperature"]
     
-    def test_emotion_to_params_motion_affects_tokens(self):
+    def test_emotion_to_params_motion_affects_tokens(self) -> None:
+
         """Higher motion should request more tokens."""
         backend = HuggingFaceMelodyBackend(api_key=None)
         
@@ -410,7 +440,8 @@ class TestHuggingFaceBackend:
         
         assert high_params["max_tokens"] > low_params["max_tokens"]
     
-    def test_emotion_to_params_intimacy_affects_top_p(self):
+    def test_emotion_to_params_intimacy_affects_top_p(self) -> None:
+
         """Higher intimacy should lower top_p (more focused)."""
         backend = HuggingFaceMelodyBackend(api_key=None)
         
@@ -424,7 +455,8 @@ class TestHuggingFaceBackend:
         assert intimate_params["top_p"] < distant_params["top_p"]
     
     @pytest.mark.asyncio
-    async def test_fallback_when_no_api_key(self):
+    async def test_fallback_when_no_api_key(self) -> None:
+
         """Should fall back to mock when no API key."""
         backend = HuggingFaceMelodyBackend(api_key=None)
         
@@ -444,12 +476,14 @@ class TestHuggingFaceBackend:
         assert len(result.notes) > 0
     
     @pytest.mark.asyncio
-    async def test_is_available_without_key(self):
+    async def test_is_available_without_key(self) -> None:
+
         """Should report unavailable without API key."""
         backend = HuggingFaceMelodyBackend(api_key=None)
         assert await backend.is_available() is False
     
-    def test_chord_to_midi(self):
+    def test_chord_to_midi(self) -> None:
+
         """Should convert chord symbols to MIDI notes."""
         backend = HuggingFaceMelodyBackend(api_key=None)
         
@@ -459,7 +493,8 @@ class TestHuggingFaceBackend:
         assert backend._chord_to_midi("F#m") == 66
         assert backend._chord_to_midi("Bb") == 70
     
-    def test_apply_emotion_postprocess(self):
+    def test_apply_emotion_postprocess(self) -> None:
+
         """Should adjust notes based on emotion."""
         backend = HuggingFaceMelodyBackend(api_key=None)
         
@@ -482,7 +517,8 @@ class TestNeuralGeneratorWithHuggingFace:
     """Test NeuralMelodyGenerator with HuggingFace backend."""
     
     @pytest.mark.asyncio
-    async def test_generator_with_hf_backend(self):
+    async def test_generator_with_hf_backend(self) -> None:
+
         """Should work with HuggingFace backend."""
         hf_backend = HuggingFaceMelodyBackend(api_key=None)  # Will use fallback
         generator = NeuralMelodyGenerator(backend=hf_backend)
@@ -502,7 +538,8 @@ class TestNeuralGeneratorWithHuggingFace:
 class TestText2MidiBackend:
     """Test text2midi emotion-to-text conversion."""
     
-    def test_emotion_to_text_high_energy(self):
+    def test_emotion_to_text_high_energy(self) -> None:
+
         """High energy should produce Presto tempo description."""
         high_energy = EmotionVector(energy=0.9)
         text = emotion_to_text_description(high_energy, key="C", tempo=140)
@@ -510,7 +547,8 @@ class TestText2MidiBackend:
         assert "Presto" in text
         assert "energetic" in text.lower()
     
-    def test_emotion_to_text_low_energy(self):
+    def test_emotion_to_text_low_energy(self) -> None:
+
         """Low energy should produce Adagio tempo description."""
         low_energy = EmotionVector(energy=0.1)
         text = emotion_to_text_description(low_energy, key="Am", tempo=60)
@@ -518,7 +556,8 @@ class TestText2MidiBackend:
         assert "Adagio" in text
         assert "contemplative" in text.lower()
     
-    def test_emotion_to_text_positive_valence(self):
+    def test_emotion_to_text_positive_valence(self) -> None:
+
         """Positive valence should indicate major and joyful."""
         happy = EmotionVector(valence=0.8)
         text = emotion_to_text_description(happy, key="G", tempo=120)
@@ -526,7 +565,8 @@ class TestText2MidiBackend:
         assert "major" in text.lower()
         assert "joyful" in text.lower() or "hopeful" in text.lower()
     
-    def test_emotion_to_text_negative_valence(self):
+    def test_emotion_to_text_negative_valence(self) -> None:
+
         """Negative valence should indicate minor and melancholic."""
         sad = EmotionVector(valence=-0.7)
         text = emotion_to_text_description(sad, key="Dm", tempo=80)
@@ -534,21 +574,24 @@ class TestText2MidiBackend:
         assert "minor" in text.lower()
         assert "melancholic" in text.lower() or "dark" in text.lower()
     
-    def test_emotion_to_text_high_tension(self):
+    def test_emotion_to_text_high_tension(self) -> None:
+
         """High tension should indicate dramatic moments."""
         tense = EmotionVector(tension=0.8)
         text = emotion_to_text_description(tense, key="Em", tempo=100)
         
         assert "tension" in text.lower() or "dramatic" in text.lower()
     
-    def test_emotion_to_text_high_intimacy(self):
+    def test_emotion_to_text_high_intimacy(self) -> None:
+
         """High intimacy should indicate sparse arrangement."""
         intimate = EmotionVector(intimacy=0.9)
         text = emotion_to_text_description(intimate, key="F", tempo=90)
         
         assert "sparse" in text.lower() or "intimate" in text.lower()
     
-    def test_emotion_to_text_includes_key_and_tempo(self):
+    def test_emotion_to_text_includes_key_and_tempo(self) -> None:
+
         """Should include the provided key and tempo."""
         ev = EmotionVector()
         text = emotion_to_text_description(ev, key="Bb", tempo=128)
@@ -556,14 +599,16 @@ class TestText2MidiBackend:
         assert "Bb" in text
         assert "128" in text
     
-    def test_emotion_to_text_includes_style(self):
+    def test_emotion_to_text_includes_style(self) -> None:
+
         """Should include the provided style."""
         ev = EmotionVector()
         text = emotion_to_text_description(ev, key="C", tempo=120, style="jazz")
         
         assert "jazz" in text.lower()
     
-    def test_emotion_to_text_includes_instrument(self):
+    def test_emotion_to_text_includes_instrument(self) -> None:
+
         """Should include the provided instrument."""
         ev = EmotionVector()
         text = emotion_to_text_description(ev, key="C", tempo=120, instrument="guitar")
@@ -579,68 +624,79 @@ class TestText2MidiBackend:
 class TestEmotionVectorFromStoriPrompt:
     """Tests for the STORI PROMPT → EmotionVector parser."""
 
-    def test_empty_string_returns_neutral(self):
+    def test_empty_string_returns_neutral(self) -> None:
+
         """Empty input returns the neutral preset."""
         ev = emotion_vector_from_stori_prompt("")
         neutral = EMOTION_PRESETS["neutral"]
         assert abs(ev.energy - neutral.energy) < 0.01
 
-    def test_none_equivalent_empty_string(self):
+    def test_none_equivalent_empty_string(self) -> None:
+
         """Empty input does not raise and returns a valid EmotionVector."""
         ev = emotion_vector_from_stori_prompt("")
         assert 0.0 <= ev.energy <= 1.0
         assert -1.0 <= ev.valence <= 1.0
 
-    def test_section_verse_lowers_energy(self):
+    def test_section_verse_lowers_energy(self) -> None:
+
         """A Verse section preset has lower energy than the Chorus preset."""
         verse_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nSection: Verse")
         chorus_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nSection: Chorus")
         assert verse_ev.energy < chorus_ev.energy
 
-    def test_section_drop_raises_energy_and_motion(self):
+    def test_section_drop_raises_energy_and_motion(self) -> None:
+
         """Drop section should produce high energy and motion."""
         ev = emotion_vector_from_stori_prompt("STORI PROMPT\nSection: Drop")
         assert ev.energy > 0.7
         assert ev.motion > 0.7
 
-    def test_dark_vibe_lowers_valence(self):
+    def test_dark_vibe_lowers_valence(self) -> None:
+
         """'dark' in Vibe should push valence below neutral."""
         ev = emotion_vector_from_stori_prompt("STORI PROMPT\nVibe: Dark")
         assert ev.valence < 0.0
 
-    def test_euphoric_vibe_raises_energy_and_valence(self):
+    def test_euphoric_vibe_raises_energy_and_valence(self) -> None:
+
         """'euphoric' in Vibe should push energy and valence well above neutral."""
         neutral = emotion_vector_from_stori_prompt("")
         ev = emotion_vector_from_stori_prompt("STORI PROMPT\nVibe: Euphoric")
         assert ev.energy > neutral.energy + 0.1
         assert ev.valence > neutral.valence + 0.2
 
-    def test_energy_low_lowers_energy_axis(self):
+    def test_energy_low_lowers_energy_axis(self) -> None:
+
         """'Energy: Low' should produce a lower energy than 'Energy: High'."""
         low_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nEnergy: Low")
         high_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nEnergy: High")
         assert low_ev.energy < high_ev.energy
         assert low_ev.motion < high_ev.motion
 
-    def test_energy_very_high_exceeds_high(self):
+    def test_energy_very_high_exceeds_high(self) -> None:
+
         """'Energy: Very High' should produce higher energy than 'Energy: High'."""
         high_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nEnergy: High")
         very_high_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nEnergy: Very High")
         assert very_high_ev.energy >= high_ev.energy
 
-    def test_genre_lofi_raises_intimacy(self):
+    def test_genre_lofi_raises_intimacy(self) -> None:
+
         """Lofi style should yield higher intimacy than a generic prompt."""
         lofi_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nStyle: Lofi Hip-Hop")
         neutral_ev = emotion_vector_from_stori_prompt("")
         assert lofi_ev.intimacy > neutral_ev.intimacy
 
-    def test_genre_edm_raises_energy(self):
+    def test_genre_edm_raises_energy(self) -> None:
+
         """EDM style should yield higher energy than lofi."""
         edm_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nStyle: EDM")
         lofi_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nStyle: Lofi")
         assert edm_ev.energy > lofi_ev.energy
 
-    def test_multiple_vibe_keywords_blend(self):
+    def test_multiple_vibe_keywords_blend(self) -> None:
+
         """Multiple vibe keywords should blend — result between individual extremes."""
         dark_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nVibe: Dark")
         bright_ev = emotion_vector_from_stori_prompt("STORI PROMPT\nVibe: Bright")
@@ -649,7 +705,8 @@ class TestEmotionVectorFromStoriPrompt:
         lo, hi = sorted([dark_ev.valence, bright_ev.valence])
         assert lo <= blend_ev.valence <= hi + 0.15  # small tolerance for blending math
 
-    def test_full_stori_prompt_melancholic_verse(self):
+    def test_full_stori_prompt_melancholic_verse(self) -> None:
+
         """A full lofi verse prompt should produce low energy, high intimacy, negative valence."""
         ev = emotion_vector_from_stori_prompt(
             "STORI PROMPT\n"
@@ -665,7 +722,8 @@ class TestEmotionVectorFromStoriPrompt:
         assert ev.intimacy > 0.5
         assert ev.valence < 0.2  # warm+nostalgic+melancholic blend is slightly negative
 
-    def test_full_stori_prompt_euphoric_drop(self):
+    def test_full_stori_prompt_euphoric_drop(self) -> None:
+
         """A euphoric EDM drop prompt should produce high energy, high motion, positive valence."""
         ev = emotion_vector_from_stori_prompt(
             "STORI PROMPT\n"
@@ -678,7 +736,8 @@ class TestEmotionVectorFromStoriPrompt:
         assert ev.motion > 0.7
         assert ev.valence > 0.3
 
-    def test_contrasting_prompts_are_distinct(self):
+    def test_contrasting_prompts_are_distinct(self) -> None:
+
         """Two opposed prompts must produce clearly different vectors."""
         melancholic = emotion_vector_from_stori_prompt(
             "STORI PROMPT\nVibe: Melancholic\nEnergy: Low"
@@ -688,7 +747,8 @@ class TestEmotionVectorFromStoriPrompt:
         )
         assert melancholic.distance(triumphant) > 0.3
 
-    def test_output_always_in_valid_range(self):
+    def test_output_always_in_valid_range(self) -> None:
+
         """All axes should always be within their valid ranges regardless of input."""
         prompts = [
             "STORI PROMPT\nVibe: Explosive, euphoric, driving\nEnergy: Very High",
@@ -705,14 +765,16 @@ class TestEmotionVectorFromStoriPrompt:
             assert 0.0 <= ev.intimacy <= 1.0, f"intimacy out of range for: {text!r}"
             assert 0.0 <= ev.motion <= 1.0, f"motion out of range for: {text!r}"
 
-    def test_unknown_fields_ignored_gracefully(self):
+    def test_unknown_fields_ignored_gracefully(self) -> None:
+
         """Unrecognised STORI PROMPT fields do not crash the parser."""
         ev = emotion_vector_from_stori_prompt(
             "STORI PROMPT\nBPM: 120\nKey: Cm\nBars: 8\nRequest: |"
         )
         assert isinstance(ev, EmotionVector)
 
-    def test_case_insensitive_keys(self):
+    def test_case_insensitive_keys(self) -> None:
+
         """Field keys are matched case-insensitively."""
         ev1 = emotion_vector_from_stori_prompt("STORI PROMPT\nVibe: Calm")
         ev2 = emotion_vector_from_stori_prompt("STORI PROMPT\nvibe: calm")

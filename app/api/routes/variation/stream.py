@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Depends, Query
@@ -77,8 +78,8 @@ def _envelope_to_protocol_dict(envelope: EventEnvelope) -> dict[str, Any]:
 async def stream_variation(
     variation_id: str,
     from_sequence: int = Query(default=0, ge=0, description="Resume from sequence"),
-    token_claims: dict = Depends(require_valid_token),
-):
+    token_claims: dict[str, Any] = Depends(require_valid_token),
+) -> StreamingResponse:
     """
     Stream variation events via SSE using Stori Protocol.
 
@@ -98,7 +99,7 @@ async def stream_variation(
     guard = ProtocolGuard()
 
     if is_terminal(record.status):
-        async def replay_stream():
+        async def replay_stream() -> AsyncIterator[str]:
             broadcaster = get_sse_broadcaster()
             for envelope in broadcaster.get_history(variation_id, from_sequence):
                 try:
@@ -121,7 +122,7 @@ async def stream_variation(
     broadcaster = get_sse_broadcaster()
     queue = broadcaster.subscribe(variation_id, from_sequence=from_sequence)
 
-    async def live_stream():
+    async def live_stream() -> AsyncIterator[str]:
         try:
             while True:
                 try:

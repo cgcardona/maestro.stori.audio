@@ -1,4 +1,6 @@
 """Tests for music generation service (Orpheus required; no pattern fallback)."""
+from __future__ import annotations
+
 import pytest
 from app.services.music_generator import MusicGenerator
 from app.services.backends.base import GeneratorBackend, GenerationResult
@@ -8,7 +10,8 @@ class TestMusicGenerator:
     """Tests for the main generator (Orpheus-first)."""
 
     @pytest.mark.anyio
-    async def test_can_force_specific_backend(self):
+    async def test_can_force_specific_backend(self) -> None:
+
         """Should be able to force a specific backend (e.g. drum IR)."""
         generator = MusicGenerator()
         result = await generator.generate(
@@ -22,7 +25,8 @@ class TestMusicGenerator:
         assert result.backend_used == GeneratorBackend.DRUM_IR
 
     @pytest.mark.anyio
-    async def test_drums_use_drum_ir_when_available(self):
+    async def test_drums_use_drum_ir_when_available(self) -> None:
+
         """Drums should use DrumSpecBackend (IR layers, groove, salience) when available."""
         generator = MusicGenerator()
         result = await generator.generate(
@@ -44,7 +48,8 @@ class TestMusicGenerator:
 class TestGenerationResult:
     """Tests for GenerationResult dataclass."""
 
-    def test_success_result(self):
+    def test_success_result(self) -> None:
+
         """Test successful result."""
         result = GenerationResult(
             success=True,
@@ -56,7 +61,8 @@ class TestGenerationResult:
         assert len(result.notes) == 1
         assert result.error is None
 
-    def test_error_result(self):
+    def test_error_result(self) -> None:
+
         """Test error result."""
         result = GenerationResult(
             success=False,

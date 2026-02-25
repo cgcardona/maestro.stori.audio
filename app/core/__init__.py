@@ -25,6 +25,7 @@ Core orchestration pipeline modules:
 
 Main entrypoint: run_pipeline() from pipeline.py
 """
+from __future__ import annotations
 
 from app.core.tools import ALL_TOOLS, TIER1_TOOLS, TIER2_TOOLS, ToolKind, ToolTier, ToolMeta
 from app.core.tools import build_tool_registry, get_tool_meta, tools_by_kind

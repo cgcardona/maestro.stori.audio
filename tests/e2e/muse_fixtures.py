@@ -37,6 +37,7 @@ _REGION_TRACK_MAP: dict[str, str] = {
 
 
 def _track_for(region_id: str) -> str:
+
     return _REGION_TRACK_MAP.get(region_id, region_id.replace("r_", "t_"))
 
 
@@ -123,6 +124,7 @@ def cc_sustain_branch_b() -> dict[str, list[dict[str, Any]]]:
 
 
 def _note_key(n: dict[str, Any]) -> tuple[int, float]:
+
     return (n.get("pitch", 0), n.get("start_beat", 0.0))
 
 

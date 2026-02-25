@@ -86,9 +86,9 @@ logger = logging.getLogger(__name__)
 async def commit_variation(
     request: Request,
     commit_request: CommitVariationRequest,
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> CommitVariationResponse:
     """
     Commit accepted phrases from a variation.
 
@@ -193,7 +193,7 @@ async def commit_variation(
                 })
 
             # ── 5. Collect region metadata ───────────────────────────────
-            commit_region_meta: dict[str, dict] = {}
+            commit_region_meta: dict[str, dict[str, Any]] = {}
             for phrase in variation.phrases:
                 if phrase.region_id not in commit_region_meta:
                     entity = project_store.registry.get_region(phrase.region_id)

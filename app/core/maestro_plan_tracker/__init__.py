@@ -1,4 +1,5 @@
 """Plan tracker for Maestro EDITING sessions."""
+from __future__ import annotations
 
 from app.core.maestro_plan_tracker.constants import (
     _AGENT_TEAM_PHASE3_TOOLS,

@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from app.core.telemetry import SectionTelemetry
 
@@ -182,7 +182,7 @@ class SectionState:
             f"density={telemetry.density_score:.2f}"
         )
 
-    async def get(self, key: str) -> Optional[SectionTelemetry]:
+    async def get(self, key: str) -> SectionTelemetry | None:
         async with self._lock:
             return self._data.get(key)
 

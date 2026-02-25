@@ -1,4 +1,5 @@
 """MIDI CC, pitch bend, and aftertouch MCP tool definitions."""
+from __future__ import annotations
 
 MIDI_CONTROL_TOOLS = [
     {
@@ -11,7 +12,7 @@ MIDI_CONTROL_TOOLS = [
                 "cc": {"type": "integer", "description": "CC number 0-127", "minimum": 0, "maximum": 127},
                 "events": {
                     "type": "array",
-                    "description": "List of {beat, value} events",
+                    "description": "list of {beat, value} events",
                     "items": {"type": "object", "properties": {"beat": {"type": "number"}, "value": {"type": "integer", "minimum": 0, "maximum": 127}}}
                 }
             },
@@ -27,7 +28,7 @@ MIDI_CONTROL_TOOLS = [
                 "regionId": {"type": "string", "description": "Region ID"},
                 "events": {
                     "type": "array",
-                    "description": "List of {beat, value} events (value typically -8192 to 8191)"
+                    "description": "list of {beat, value} events (value typically -8192 to 8191)"
                 }
             },
             "required": ["regionId", "events"]
@@ -42,7 +43,7 @@ MIDI_CONTROL_TOOLS = [
                 "regionId": {"type": "string", "description": "Region ID"},
                 "events": {
                     "type": "array",
-                    "description": "List of aftertouch events. Each: {beat, value} for channel, {beat, value, pitch} for polyphonic.",
+                    "description": "list of aftertouch events. Each: {beat, value} for channel, {beat, value, pitch} for polyphonic.",
                     "items": {
                         "type": "object",
                         "properties": {

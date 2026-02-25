@@ -7,6 +7,10 @@ Ensures that:
 - Budget limits are enforced
 - Budget updates are persisted
 """
+from __future__ import annotations
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -22,7 +26,8 @@ from app.services import budget
 # =============================================================================
 
 @pytest_asyncio.fixture
-async def test_user(db_session):
+async def test_user(db_session: AsyncSession) -> User:
+
     """Create a test user with limited budget."""
     user = User(
         id="budget-test-user",
@@ -36,7 +41,8 @@ async def test_user(db_session):
 
 
 @pytest.fixture
-def auth_token(test_user):
+def auth_token(test_user: Any) -> str:
+
     """Generate JWT token for test user."""
     return create_access_token(
         user_id=test_user.id,
@@ -45,7 +51,8 @@ def auth_token(test_user):
 
 
 @pytest.fixture
-def auth_headers(auth_token):
+def auth_headers(auth_token: Any) -> dict[str, str]:
+
     """Headers with authentication."""
     return {
         "Authorization": f"Bearer {auth_token}",
@@ -58,7 +65,7 @@ def auth_headers(auth_token):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_calculate_cost_cents():
+async def test_calculate_cost_cents() -> None:
     """Test cost calculation with different token counts."""
     # Use a model from APPROVED_MODELS (e.g. claude-3.7-sonnet: $3/M input, $15/M output)
     cost = budget.calculate_cost_cents(
@@ -72,7 +79,7 @@ async def test_calculate_cost_cents():
 
 
 @pytest.mark.asyncio
-async def test_calculate_cost_cents_zero_tokens():
+async def test_calculate_cost_cents_zero_tokens() -> None:
     """Test cost calculation with zero tokens (minimum 1 cent per request)."""
     cost = budget.calculate_cost_cents(
         model="anthropic/claude-3.7-sonnet",
@@ -88,14 +95,16 @@ async def test_calculate_cost_cents_zero_tokens():
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_check_budget_sufficient(db_session, test_user):
+async def test_check_budget_sufficient(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test budget check passes when user has sufficient budget."""
     # Should not raise
     await budget.check_budget(db_session, test_user.id)
 
 
 @pytest.mark.asyncio
-async def test_check_budget_insufficient(db_session):
+async def test_check_budget_insufficient(db_session: AsyncSession) -> None:
+
     """Test budget check fails when user has insufficient budget."""
     # Create user with zero budget
     user = User(
@@ -113,7 +122,8 @@ async def test_check_budget_insufficient(db_session):
 
 
 @pytest.mark.asyncio
-async def test_check_budget_nonexistent_user(db_session):
+async def test_check_budget_nonexistent_user(db_session: AsyncSession) -> None:
+
     """Test budget check with non-existent user."""
     with pytest.raises(budget.BudgetError) as exc_info:
         await budget.check_budget(db_session, "nonexistent-user")
@@ -122,7 +132,8 @@ async def test_check_budget_nonexistent_user(db_session):
 
 
 @pytest.mark.asyncio
-async def test_check_budget_minimum_cents(db_session, test_user):
+async def test_check_budget_minimum_cents(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test check_budget with custom minimum_cents."""
     await budget.check_budget(db_session, test_user.id, minimum_cents=1)
     await budget.check_budget(db_session, test_user.id, minimum_cents=100)
@@ -135,7 +146,8 @@ async def test_check_budget_minimum_cents(db_session, test_user):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_reserve_budget_success_and_release(db_session, test_user):
+async def test_reserve_budget_success_and_release(db_session: AsyncSession, test_user: Any) -> None:
+
     """Reserve budget then release unused portion."""
     initial = test_user.budget_cents
     res = await budget.reserve_budget(db_session, test_user.id, model="anthropic/claude-3.7-sonnet")
@@ -149,7 +161,8 @@ async def test_reserve_budget_success_and_release(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_reserve_budget_insufficient(db_session):
+async def test_reserve_budget_insufficient(db_session: AsyncSession) -> None:
+
     """reserve_budget raises InsufficientBudgetError when budget too low."""
     user = User(id="reserve-low", budget_cents=5, budget_limit_cents=500)
     db_session.add(user)
@@ -160,7 +173,8 @@ async def test_reserve_budget_insufficient(db_session):
 
 
 @pytest.mark.asyncio
-async def test_reserve_budget_user_not_found(db_session):
+async def test_reserve_budget_user_not_found(db_session: AsyncSession) -> None:
+
     """reserve_budget raises BudgetError when user does not exist."""
     with pytest.raises(budget.BudgetError) as exc_info:
         await budget.reserve_budget(db_session, "nonexistent-user", model="anthropic/claude-3.7-sonnet")
@@ -168,7 +182,8 @@ async def test_reserve_budget_user_not_found(db_session):
 
 
 @pytest.mark.asyncio
-async def test_reserve_budget_consume(db_session, test_user):
+async def test_reserve_budget_consume(db_session: AsyncSession, test_user: Any) -> None:
+
     """Reserve then consume with actual cost; unused portion released."""
     initial = test_user.budget_cents
     res = await budget.reserve_budget(db_session, test_user.id, model="anthropic/claude-3.7-sonnet")
@@ -186,7 +201,8 @@ async def test_reserve_budget_consume(db_session, test_user):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_deduct_budget(db_session, test_user):
+async def test_deduct_budget(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test deducting budget and logging usage."""
     original_budget = test_user.budget_cents
     
@@ -220,7 +236,8 @@ async def test_deduct_budget(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_deduct_budget_without_storing_prompt(db_session, test_user):
+async def test_deduct_budget_without_storing_prompt(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test deducting budget without storing the prompt."""
     await budget.deduct_budget(
         db=db_session,
@@ -245,7 +262,8 @@ async def test_deduct_budget_without_storing_prompt(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_deduct_budget_user_not_found(db_session):
+async def test_deduct_budget_user_not_found(db_session: AsyncSession) -> None:
+
     """deduct_budget raises BudgetError when user does not exist."""
     with pytest.raises(budget.BudgetError) as exc_info:
         await budget.deduct_budget(
@@ -261,7 +279,8 @@ async def test_deduct_budget_user_not_found(db_session):
 
 
 @pytest.mark.asyncio
-async def test_deduct_budget_insufficient_funds(db_session):
+async def test_deduct_budget_insufficient_funds(db_session: AsyncSession) -> None:
+
     """Test that deduction fails when budget is insufficient."""
     user = User(
         id="low-budget-user",
@@ -289,14 +308,14 @@ async def test_deduct_budget_insufficient_funds(db_session):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_get_model_or_default_with_model():
+async def test_get_model_or_default_with_model() -> None:
     """Test that specified model is returned when it is in APPROVED_MODELS."""
     model = budget.get_model_or_default("anthropic/claude-3.7-sonnet")
     assert model == "anthropic/claude-3.7-sonnet"
 
 
 @pytest.mark.asyncio
-async def test_get_model_or_default_without_model():
+async def test_get_model_or_default_without_model() -> None:
     """Test that default model is returned when none specified."""
     model = budget.get_model_or_default(None)
     # Should return settings.llm_model (configured in test settings)
@@ -304,7 +323,8 @@ async def test_get_model_or_default_without_model():
 
 
 @pytest.mark.asyncio
-async def test_get_user_budget_found(db_session, test_user):
+async def test_get_user_budget_found(db_session: AsyncSession, test_user: Any) -> None:
+
     """get_user_budget returns remaining budget in dollars when user exists."""
     remaining = await budget.get_user_budget(db_session, test_user.id)
     assert remaining is not None
@@ -312,27 +332,28 @@ async def test_get_user_budget_found(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_get_user_budget_not_found(db_session):
+async def test_get_user_budget_not_found(db_session: AsyncSession) -> None:
+
     """get_user_budget returns None when user does not exist."""
     remaining = await budget.get_user_budget(db_session, "nonexistent-user")
     assert remaining is None
 
 
 @pytest.mark.asyncio
-async def test_estimate_request_cost():
+async def test_estimate_request_cost() -> None:
     """estimate_request_cost returns higher for composing."""
     normal = budget.estimate_request_cost("anthropic/claude-3.7-sonnet", is_composing=False)
     composing = budget.estimate_request_cost("anthropic/claude-3.7-sonnet", is_composing=True)
     assert composing >= normal
 
 
-def test_validate_model_approved():
+def test_validate_model_approved() -> None:
     """validate_model returns model name when in APPROVED_MODELS."""
     result = budget.validate_model("anthropic/claude-3.7-sonnet")
     assert result == "anthropic/claude-3.7-sonnet"
 
 
-def test_validate_model_invalid_raises():
+def test_validate_model_invalid_raises() -> None:
     """validate_model raises ValueError for unknown model."""
     with pytest.raises(ValueError) as exc_info:
         budget.validate_model("unknown/model-name")
@@ -344,7 +365,8 @@ def test_validate_model_invalid_raises():
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_conversation_message_budget_integration(db_session, test_user, auth_headers):
+async def test_conversation_message_budget_integration(db_session: AsyncSession, test_user: Any, auth_headers: Any) -> None:
+
     """Test that sending a message properly tracks budget."""
     # Create conversation first
     transport = ASGITransport(app=app)
@@ -367,7 +389,8 @@ async def test_conversation_message_budget_integration(db_session, test_user, au
 
 
 @pytest.mark.asyncio
-async def test_budget_exceeded_error_in_api(db_session, auth_headers):
+async def test_budget_exceeded_error_in_api(db_session: AsyncSession, auth_headers: Any) -> None:
+
     """Test that API returns 402 when budget is exceeded."""
     # Create user with zero budget
     user = User(
@@ -405,7 +428,8 @@ async def test_budget_exceeded_error_in_api(db_session, auth_headers):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_usage_log_creation(db_session, test_user):
+async def test_usage_log_creation(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test that usage logs are properly created."""
     await budget.deduct_budget(
         db=db_session,
@@ -430,7 +454,8 @@ async def test_usage_log_creation(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_multiple_usage_logs(db_session, test_user):
+async def test_multiple_usage_logs(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test that multiple usage logs can be created for one user."""
     for i in range(3):
         await budget.deduct_budget(
@@ -459,7 +484,8 @@ async def test_multiple_usage_logs(db_session, test_user):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_get_user_budget_info(test_user, auth_headers):
+async def test_get_user_budget_info(test_user: Any, auth_headers: Any) -> None:
+
     """Test that user endpoint returns budget information."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

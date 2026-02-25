@@ -7,6 +7,7 @@ Scores candidate outputs (drums, bass, melody, chords) with metrics:
 - Melody: phrase structure, motif reuse
 - Chords: voicing quality
 """
+from __future__ import annotations
 
 from app.services.critic.constants import (
     DRUM_WEIGHTS,

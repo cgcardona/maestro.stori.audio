@@ -9,6 +9,7 @@ Tables:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -30,8 +31,8 @@ class Variation(Base):
     intent: Mapped[str] = mapped_column(Text, nullable=False)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="created")
-    affected_tracks: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    affected_regions: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    affected_tracks: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    affected_regions: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     beat_range_start: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     beat_range_end: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
@@ -92,9 +93,9 @@ class Phrase(Base):
     start_beat: Mapped[float] = mapped_column(Float, nullable=False)
     end_beat: Mapped[float] = mapped_column(Float, nullable=False)
     label: Mapped[str] = mapped_column(String(255), nullable=False)
-    tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
-    controller_changes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    controller_changes: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
     region_start_beat: Mapped[float | None] = mapped_column(Float, nullable=True)
     region_duration_beats: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -124,8 +125,8 @@ class NoteChange(Base):
         index=True,
     )
     change_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    before_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    after_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    before_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    after_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     phrase: Mapped["Phrase"] = relationship("Phrase", back_populates="note_changes")
 

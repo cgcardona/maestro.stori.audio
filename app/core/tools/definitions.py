@@ -16,8 +16,6 @@ from __future__ import annotations
 from typing import Any
 
 # ---- Tier 1: Generators ------------------------------------------------------
-# Prefer 1 general generator tool over N specialized tools.
-# Older specific generators kept for backwards compatibility but marked deprecated.
 TIER1_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -73,73 +71,6 @@ TIER1_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
-    # Back-compat specialized generators
-    {
-        "type": "function",
-        "function": {
-            "name": "stori_generate_drums",
-            "description": "Generate a drum pattern using AI. Returns MIDI notes for drums.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "style": {"type": "string", "description": "Drum style: boom_bap, trap, house, lofi, jazz"},
-                    "tempo": {"type": "integer", "description": "Tempo in BPM"},
-                    "bars": {"type": "integer", "description": "Number of bars to generate (1-16)"},
-                },
-                "required": ["style", "tempo", "bars"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "stori_generate_bass",
-            "description": "Generate a bass line using AI. Returns MIDI notes for bass.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "style": {"type": "string", "description": "Bass style: boom_bap, trap, house, lofi, funk"},
-                    "tempo": {"type": "integer", "description": "Tempo in BPM"},
-                    "bars": {"type": "integer", "description": "Number of bars to generate (1-16)"},
-                },
-                "required": ["style", "tempo", "bars"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "stori_generate_chords",
-            "description": "Generate chord progression using AI. Returns MIDI notes for chords.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "style": {"type": "string", "description": "Chord style: lofi, jazz, pop, house, trap"},
-                    "tempo": {"type": "integer", "description": "Tempo in BPM"},
-                    "bars": {"type": "integer", "description": "Number of bars to generate (1-16)"},
-                    "key": {"type": "string", "description": "Key like Cm, F# minor"},
-                },
-                "required": ["style", "tempo", "bars", "key"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "stori_generate_melody",
-            "description": "Generate a melody using AI. Returns MIDI notes for melody.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "style": {"type": "string", "description": "Melody style: lofi, trap, house, jazz, pop"},
-                    "tempo": {"type": "integer", "description": "Tempo in BPM"},
-                    "bars": {"type": "integer", "description": "Number of bars to generate (1-16)"},
-                    "key": {"type": "string", "description": "Key like Cm, F# minor"},
-                },
-                "required": ["style", "tempo", "bars", "key"],
-            },
-        },
-    },
 ]
 
 
@@ -162,7 +93,7 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_set_tempo",
-            "description": "Set project tempo in BPM.",
+            "description": "set project tempo in BPM.",
             "parameters": {
                 "type": "object",
                 "properties": {"tempo": {"type": "integer", "description": "Tempo in BPM"}},
@@ -174,7 +105,7 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_set_key",
-            "description": "Set project key signature (e.g. Cm, F# minor).",
+            "description": "set project key signature (e.g. Cm, F# minor).",
             "parameters": {
                 "type": "object",
                 "properties": {"key": {"type": "string", "description": "Key string"}},
@@ -220,7 +151,7 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_set_zoom",
-            "description": "Set editor zoom (percent).",
+            "description": "set editor zoom (percent).",
             "parameters": {
                 "type": "object",
                 "properties": {"zoomPercent": {"type": "number"}},
@@ -257,7 +188,7 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_set_midi_program",
-            "description": "Set the MIDI program (instrument voice) for a track. Uses General MIDI standard (0-127).",
+            "description": "set the MIDI program (instrument voice) for a track. Uses General MIDI standard (0-127).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -297,7 +228,7 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_set_track_volume",
-            "description": "Set track volume. Linear scale: 0.0 = silent, 1.0 = unity gain, 1.5 = +50%.",
+            "description": "set track volume. Linear scale: 0.0 = silent, 1.0 = unity gain, 1.5 = +50%.",
             "parameters": {"type": "object", "properties": {"trackId": {"type": "string"}, "volume": {"type": "number", "description": "Linear volume 0.0–1.5 (1.0 = unity)"}}, "required": ["trackId", "volume"]},
         },
     },
@@ -305,7 +236,7 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_set_track_pan",
-            "description": "Set track pan. 0.0 = hard left, 0.5 = center, 1.0 = hard right.",
+            "description": "set track pan. 0.0 = hard left, 0.5 = center, 1.0 = hard right.",
             "parameters": {"type": "object", "properties": {"trackId": {"type": "string"}, "pan": {"type": "number", "description": "Pan position 0.0 (left) to 1.0 (right), 0.5 = center"}}, "required": ["trackId", "pan"]},
         },
     },
@@ -313,7 +244,7 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_set_track_color",
-            "description": "Set track color.",
+            "description": "set track color.",
             "parameters": {"type": "object", "properties": {"trackId": {"type": "string"}, "color": {"type": "string"}}, "required": ["trackId", "color"]},
         },
     },
@@ -321,7 +252,7 @@ TIER2_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stori_set_track_icon",
-            "description": "Set track icon.",
+            "description": "set track icon.",
             "parameters": {"type": "object", "properties": {"trackId": {"type": "string"}, "icon": {"type": "string"}}, "required": ["trackId", "icon"]},
         },
     },

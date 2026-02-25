@@ -28,7 +28,7 @@ def editing_composition_prompt() -> str:
     return (
         "COMPOSITION MODE: Create the full project structure and musical content.\n\n"
         "Build the song step by step using the available tools:\n"
-        "1. Set tempo and key signature for the project\n"
+        "1. set tempo and key signature for the project\n"
         "2. Create ALL tracks with descriptive names (stori_add_midi_track)\n"
         "3. For EACH track: create a region (stori_add_midi_region), then add notes (stori_add_notes)\n"
         "4. Add insert effects (stori_add_insert_effect) and routing (stori_ensure_bus, stori_add_send)\n"

@@ -4,12 +4,14 @@ Transmits the full EmotionVector, RoleProfile summary, and
 GenerationConstraints so Orpheus consumes structured intent without
 re-derivation.
 """
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
 import os
 import uuid
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from app.services.backends.base import (
     MusicGeneratorBackend,
@@ -79,9 +81,9 @@ def _rescale_beats(
 
 
 def _build_intent_hash(
-    emotion_vector: Optional[dict[str, float]],
-    role_profile_summary: Optional[dict[str, float]],
-    generation_constraints: Optional[dict[str, Any]],
+    emotion_vector: dict[str, float] | None,
+    role_profile_summary: dict[str, float] | None,
+    generation_constraints: dict[str, Any] | None,
     musical_goals: list[str],
 ) -> str:
     """Stable hash of the full intent payload for idempotency tracking."""
@@ -121,16 +123,16 @@ class OrpheusBackend(MusicGeneratorBackend):
         style: str,
         tempo: int,
         bars: int,
-        key: Optional[str] = None,
-        chords: Optional[list[str]] = None,
+        key: str | None = None,
+        chords: list[str] | None = None,
         **kwargs: Any,
     ) -> GenerationResult:
-        emotion_vector: Optional["EmotionVector"] = kwargs.get("emotion_vector")
+        emotion_vector: "EmotionVector" | None = kwargs.get("emotion_vector")
         quality_preset: str = kwargs.get("quality_preset", "quality")
 
-        ev_dict: Optional[dict[str, float]] = None
-        rp_dict: Optional[dict[str, float]] = None
-        gc_dict: Optional[dict[str, Any]] = None
+        ev_dict: dict[str, float] | None = None
+        rp_dict: dict[str, float] | None = None
+        gc_dict: dict[str, Any] | None = None
         musical_goals: list[str] = []
 
         if emotion_vector is not None:
@@ -191,8 +193,9 @@ class OrpheusBackend(MusicGeneratorBackend):
         trace_id = kwargs.get("trace_id") or str(uuid.uuid4())
         intent_hash = _build_intent_hash(ev_dict, rp_dict, gc_dict, musical_goals)
 
-        logger.debug(
-            f"Orpheus ({instrument}): "
+        logger.info(
+            f"⚠️ Orpheus SINGLE-instrument generate({instrument}): "
+            f"This path uses seed MIDI + ignores prime_instruments. "
             f"ev={ev_dict is not None} rp={rp_dict is not None} "
             f"gc={gc_dict is not None} "
             f"goals={musical_goals} trace={trace_id[:8]}"
@@ -225,7 +228,7 @@ class OrpheusBackend(MusicGeneratorBackend):
                 logger.info(f"✅ Orpheus: {len(mvp_notes)} notes (direct)")
                 return GenerationResult(
                     success=True,
-                    notes=mvp_notes,
+                    notes=[_normalize_note_keys(n) for n in mvp_notes],
                     backend_used=self.backend_type,
                     metadata=meta,
                 )
@@ -275,4 +278,141 @@ class OrpheusBackend(MusicGeneratorBackend):
                 backend_used=self.backend_type,
                 metadata={},
                 error=result.get("error", "Orpheus generation failed"),
+            )
+
+    async def generate_unified(
+        self,
+        instruments: list[str],
+        style: str,
+        tempo: int,
+        bars: int,
+        key: str | None = None,
+        **kwargs: Any,
+    ) -> GenerationResult:
+        """Generate all instruments together — coherent multi-instrument output.
+
+        Sends every instrument in a single Orpheus call with unified_output=True.
+        The response includes channel_notes keyed by instrument label (bass, keys,
+        drums, melody, etc.) so the caller can distribute to tracks.
+        """
+        emotion_vector: "EmotionVector" | None = kwargs.get("emotion_vector")
+        quality_preset: str = kwargs.get("quality_preset", "quality")
+
+        ev_dict: dict[str, float] | None = None
+        rp_dict: dict[str, float] | None = None
+        gc_dict: dict[str, Any] | None = None
+        musical_goals: list[str] = []
+
+        if emotion_vector is not None:
+            ev_dict = emotion_vector.to_dict()
+            if emotion_vector.energy > 0.7:
+                musical_goals.append("energetic")
+            elif emotion_vector.energy < 0.3:
+                musical_goals.append("sparse")
+            if emotion_vector.valence < -0.3:
+                musical_goals.append("dark")
+            elif emotion_vector.valence > 0.3:
+                musical_goals.append("bright")
+            if emotion_vector.tension > 0.6:
+                musical_goals.append("tense")
+            if emotion_vector.intimacy > 0.7:
+                musical_goals.append("intimate")
+            if emotion_vector.motion > 0.7:
+                musical_goals.append("driving")
+            elif emotion_vector.motion < 0.25:
+                musical_goals.append("sustained")
+
+        # Merge role profiles for all instruments
+        from app.data.role_profiles import get_role_profile
+        for inst in instruments:
+            rp = get_role_profile(inst)
+            if rp is not None and rp_dict is None:
+                rp_dict = rp.to_summary_dict()
+
+        if emotion_vector is not None:
+            from app.core.emotion_vector import emotion_to_constraints
+            constraints = emotion_to_constraints(emotion_vector)
+            gc_dict = {
+                "drum_density": constraints.drum_density,
+                "subdivision": constraints.subdivision,
+                "swing_amount": constraints.swing_amount,
+                "register_center": constraints.register_center,
+                "register_spread": constraints.register_spread,
+                "rest_density": constraints.rest_density,
+                "leap_probability": constraints.leap_probability,
+                "chord_extensions": constraints.chord_extensions,
+                "borrowed_chord_probability": constraints.borrowed_chord_probability,
+                "harmonic_rhythm_bars": constraints.harmonic_rhythm_bars,
+                "velocity_floor": constraints.velocity_floor,
+                "velocity_ceiling": constraints.velocity_ceiling,
+            }
+
+        intent_goals = [
+            {"name": g, "weight": 1.0, "constraint_type": "soft"}
+            for g in musical_goals
+        ]
+        trace_id = kwargs.get("trace_id") or str(uuid.uuid4())
+        intent_hash = _build_intent_hash(ev_dict, rp_dict, gc_dict, musical_goals)
+
+        logger.info(
+            f"🎼 Unified generation: {instruments} in {style} at {tempo} BPM "
+            f"({bars} bars) trace={trace_id[:8]}"
+        )
+
+        result = await self.client.generate(
+            genre=style,
+            tempo=tempo,
+            instruments=instruments,
+            bars=bars,
+            key=key,
+            quality_preset=quality_preset,
+            composition_id=kwargs.get("composition_id"),
+            emotion_vector=ev_dict,
+            role_profile_summary=rp_dict,
+            generation_constraints=gc_dict,
+            intent_goals=intent_goals,
+            seed=kwargs.get("seed"),
+            trace_id=trace_id,
+            intent_hash=intent_hash,
+            add_outro=kwargs.get("add_outro", False),
+            unified_output=True,
+        )
+
+        if result.get("success"):
+            meta = result.get("metadata", {})
+            meta["trace_id"] = trace_id
+            meta["intent_hash"] = intent_hash
+            meta["unified_instruments"] = instruments
+
+            mvp_notes = result.get("notes", [])
+            channel_notes = result.get("channel_notes")
+
+            if mvp_notes or channel_notes:
+                logger.info(
+                    f"✅ Unified: {len(mvp_notes or [])} flat notes, "
+                    f"channels={list(channel_notes.keys()) if channel_notes else 'none'}"
+                )
+                return GenerationResult(
+                    success=True,
+                    notes=[_normalize_note_keys(n) for n in (mvp_notes or [])],
+                    backend_used=self.backend_type,
+                    metadata=meta,
+                    channel_notes=channel_notes,
+                )
+            else:
+                logger.warning("Unified generation returned no notes")
+                return GenerationResult(
+                    success=False,
+                    notes=[],
+                    backend_used=self.backend_type,
+                    metadata=meta,
+                    error="Unified generation produced no notes",
+                )
+        else:
+            return GenerationResult(
+                success=False,
+                notes=[],
+                backend_used=self.backend_type,
+                metadata={},
+                error=result.get("error", "Unified Orpheus generation failed"),
             )

@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any
 
 from app.core.entity_registry import EntityRegistry
 
 
 def _check_target_scope(
     tool_name: str,
-    params: dict,
-    target_scope: tuple[str, Optional[str]],
-    registry: Optional[EntityRegistry],
+    params: dict[str, Any],
+    target_scope: tuple[str, str | None],
+    registry: EntityRegistry | None,
 ) -> list[str]:
     """
     Emit advisory warnings when a tool call operates outside the structured

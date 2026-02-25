@@ -15,6 +15,7 @@ Post-approval:
 - **Phrase application** (``apply_variation_phrases``): applies accepted
   variation phrases to canonical state after human approval.
 """
+from __future__ import annotations
 
 from app.core.executor.note_utils import _NOTE_KEY_MAP, _normalize_note
 from app.core.executor.models import (

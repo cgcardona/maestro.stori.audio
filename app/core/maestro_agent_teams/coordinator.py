@@ -14,7 +14,12 @@ import asyncio
 import logging
 import re
 import uuid as _uuid_mod
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+)
 
 from app.config import settings
 from app.core.emotion_vector import emotion_vector_from_stori_prompt
@@ -58,7 +63,7 @@ logger = logging.getLogger(__name__)
 _BARS_RE = re.compile(r"\b(\d{1,3})[\s-]*bars?\b", re.IGNORECASE)
 
 
-def _parse_bars_from_text(text: str) -> Optional[int]:
+def _parse_bars_from_text(text: str) -> int | None:
     """Extract an explicit bar count from natural language (e.g. '24-bar bridge')."""
     m = _BARS_RE.search(text)
     if m:
@@ -76,8 +81,8 @@ async def _handle_composition_agent_team(
     llm: LLMClient,
     store: StateStore,
     trace: Any,
-    usage_tracker: Optional["UsageTracker"],
-    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
+    usage_tracker: "UsageTracker" | None,
+    is_cancelled: Callable[[], Awaitable[bool]] | None = None,
 ) -> AsyncIterator[str]:
     """Agent Teams coordinator for multi-instrument STORI PROMPT compositions.
 
@@ -137,7 +142,7 @@ async def _handle_composition_agent_team(
             if tempo_step:
                 yield await sse_event(
                     plan_tracker.complete_step_by_id(
-                        tempo_step.step_id, f"Set tempo to {parsed.tempo} BPM"
+                        tempo_step.step_id, f"set tempo to {parsed.tempo} BPM"
                     )
                 )
 
@@ -165,7 +170,7 @@ async def _handle_composition_agent_team(
             if key_step:
                 yield await sse_event(
                     plan_tracker.complete_step_by_id(
-                        key_step.step_id, f"Set key to {parsed.key}"
+                        key_step.step_id, f"set key to {parsed.key}"
                     )
                 )
 
@@ -257,7 +262,7 @@ async def _handle_composition_agent_team(
 
     sse_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     agent_tool_calls: list[dict[str, Any]] = []
-    tasks: list[asyncio.Task] = []
+    tasks: list[asyncio.Task[None]] = []
 
     # ── GPU warm-up: fire a lightweight health probe before spawning agents ──
     # This primes the Gradio Space GPU pod so the first real generation call
@@ -441,7 +446,7 @@ async def _handle_composition_agent_team(
             f"ids={_reused_ids}"
         )
 
-    def _spawn_agent(role: str) -> asyncio.Task:
+    def _spawn_agent(role: str) -> asyncio.Task[None]:
         role_info = _role_track_info[role]
         instrument_name = role_info["instrument_name"]
         step_ids_for_role = instrument_step_ids.get(instrument_name.lower(), [])
@@ -513,6 +518,7 @@ async def _handle_composition_agent_team(
                     instrument_contract=_instrument_contract,
                     runtime_context=_runtime_context,
                     execution_services=_execution_services,
+                    all_composition_instruments=list(parsed.roles),
                 ),
                 timeout=_agent_timeout,
             ),
@@ -529,7 +535,7 @@ async def _handle_composition_agent_team(
     # bass) start at the same time so bass LLM planning runs in parallel
     # with drums.
 
-    async def _handle_task_failure(task: asyncio.Task) -> None:
+    async def _handle_task_failure(task: asyncio.Task[None]) -> None:
         """Emit plan step failures for a crashed agent task."""
         if task.cancelled() or task.exception() is None:
             return
@@ -552,7 +558,7 @@ async def _handle_composition_agent_team(
                         "agentId": role_for_step,
                     })
 
-    all_tasks: list[asyncio.Task] = []
+    all_tasks: list[asyncio.Task[None]] = []
     for role in parsed.roles:
         all_tasks.append(_spawn_agent(role))
 
@@ -571,7 +577,7 @@ async def _handle_composition_agent_team(
         f"({', '.join(parsed.roles)})"
     )
 
-    pending: set[asyncio.Task] = set(all_tasks)
+    pending: set[asyncio.Task[None]] = set(all_tasks)
     while pending:
         done, pending = await asyncio.wait(pending, timeout=0.05)
 

@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class TokenizerConfig:
 class Token:
     """A single REMI token."""
     type: TokenType
-    value: Optional[int] = None
+    value: int | None = None
     
     def to_string(self) -> str:
         if self.value is not None:
@@ -89,11 +89,11 @@ class MidiTokenizer:
     Converts between note lists and token sequences.
     """
     
-    def __init__(self, config: Optional[TokenizerConfig] = None):
+    def __init__(self, config: TokenizerConfig | None = None):
         self.config = config or TokenizerConfig()
         self._build_vocab()
     
-    def _build_vocab(self):
+    def _build_vocab(self) -> None:
         """Build vocabulary mapping."""
         self.token_to_id: dict[str, int] = {}
         self.id_to_token: dict[int, str] = {}
@@ -174,7 +174,7 @@ class MidiTokenizer:
     
     def encode(
         self,
-        notes: list[dict],
+        notes: list[dict[str, Any]],
         bars: int,
         add_special_tokens: bool = True,
     ) -> list[int]:
@@ -182,12 +182,12 @@ class MidiTokenizer:
         Encode a list of notes to REMI token IDs.
         
         Args:
-            notes: List of {pitch, start_beat, duration_beats, velocity}
+            notes: list of {pitch, start_beat, duration_beats, velocity}
             bars: Number of bars in the sequence
             add_special_tokens: Whether to add BOS/EOS tokens
             
         Returns:
-            List of token IDs
+            list of token IDs
         """
         tokens: list[str] = []
         
@@ -247,18 +247,18 @@ class MidiTokenizer:
         self,
         token_ids: list[int],
         tempo: int = 120,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Decode REMI token IDs back to notes.
         
         Args:
-            token_ids: List of token IDs
+            token_ids: list of token IDs
             tempo: Tempo for timing conversion
             
         Returns:
-            List of {pitch, start_beat, duration_beats, velocity}
+            list of {pitch, start_beat, duration_beats, velocity}
         """
-        notes: list[dict] = []
+        notes: list[dict[str, Any]] = []
         
         current_bar = -1
         current_position = 0
@@ -309,7 +309,7 @@ class MidiTokenizer:
         
         return notes
     
-    def encode_to_tokens(self, notes: list[dict], bars: int) -> list[str]:
+    def encode_to_tokens(self, notes: list[dict[str, Any]], bars: int) -> list[str]:
         """Encode notes to token strings (for debugging)."""
         token_ids = self.encode(notes, bars, add_special_tokens=False)
         return [self.id_to_token.get(tid, "<UNK>") for tid in token_ids]

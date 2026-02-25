@@ -1,4 +1,5 @@
 """Acceptance threshold checks for drum and bass scores."""
+from __future__ import annotations
 
 from app.services.critic.constants import (
     ACCEPT_THRESHOLD_DRUM,

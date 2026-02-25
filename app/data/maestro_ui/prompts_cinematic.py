@@ -5,6 +5,7 @@ additions (Sufi ney meditation, Gregorian chant ambient, progressive
 rock 5/4, Afro-Cuban rumba, minimalist phasing, through-composed
 cinematic score).
 """
+from __future__ import annotations
 
 from app.models.maestro_ui import PromptItem
 
@@ -2267,7 +2268,7 @@ Expression:
     silence, the silence is earned. Hans Zimmer's scale. John Williams's
     heart. Ennio Morricone's soul.
   character: Hans Zimmer's Interstellar. John Williams's Schindler's
-    List. Ennio Morricone's The Mission. Howard Shore's Lord of the
+    list. Ennio Morricone's The Mission. Howard Shore's Lord of the
     Rings. The cinema is dark. The music is light.
 
 Texture:

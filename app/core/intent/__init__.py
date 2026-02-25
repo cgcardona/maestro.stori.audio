@@ -9,6 +9,7 @@ Public API:
 
 Re-exports Intent and SSEState for backward compatibility.
 """
+from __future__ import annotations
 
 from app.core.intent.models import IntentResult, Slots, Rule
 from app.core.intent.normalization import normalize, _extract_quoted, _num
@@ -45,6 +46,8 @@ __all__ = [
     "Rule",
     # Normalization
     "normalize",
+    "_extract_quoted",
+    "_num",
     # Detection
     "_is_question",
     "_is_stori_question",
@@ -64,6 +67,7 @@ __all__ = [
     # Routing (main entrypoints)
     "get_intent_result",
     "classify_with_llm",
+    "_category_to_result",
     "get_intent_result_with_llm",
     # Backward compat
     "Intent",

@@ -27,6 +27,7 @@ Muse MUST NOT:
     - Access ``EntityRegistry`` — region metadata is provided by the caller.
     - Depend on ``conversation_id`` for StateStore lookups.
 """
+from __future__ import annotations
 
 from app.core.maestro_composing.storage import _store_variation
 from app.core.maestro_composing.fallback import (

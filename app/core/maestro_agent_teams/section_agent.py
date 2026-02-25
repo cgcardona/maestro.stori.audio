@@ -28,7 +28,7 @@ import logging
 import re
 import uuid as _uuid_mod
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from app.core.expansion import ToolCall
 from app.core.llm_client import LLMClient
@@ -120,8 +120,9 @@ async def _run_section_child(
     sse_queue: asyncio.Queue[dict[str, Any]],
     runtime_ctx: RuntimeContext | None = None,
     execution_services: ExecutionServices | None = None,
-    llm: Optional[LLMClient] = None,
+    llm: LLMClient | None = None,
     previous_notes: list[dict[str, Any]] | None = None,
+    all_section_instruments: list[str] | None = None,
 ) -> SectionResult:
     """Execute one section's region + generate pipeline against a contract.
 
@@ -188,6 +189,9 @@ async def _run_section_child(
         }
         if previous_notes:
             ctx["previous_notes"] = previous_notes
+        if all_section_instruments:
+            ctx["section_key"] = contract.section.section_id
+            ctx["all_instruments"] = all_section_instruments
         return ctx
 
     try:
@@ -427,7 +431,7 @@ async def _run_section_child(
             )
 
         # ── Extract generated notes from SSE events ──
-        generated_notes: list[dict] = []
+        generated_notes: list[dict[str, Any]] = []
         for evt in gen_outcome.sse_events:
             if evt.get("name") == "stori_add_notes":
                 generated_notes = evt.get("params", {}).get("notes", [])
@@ -536,7 +540,7 @@ async def _reason_before_generate(
     llm: LLMClient,
     sse_queue: asyncio.Queue[dict[str, Any]],
     child_log: str,
-) -> Optional[str]:
+) -> str | None:
     """Brief LLM reasoning about a section's musical approach (Level 3 CoT).
 
     All context comes from the frozen ``SectionContract``.  The L3 is allowed
@@ -581,7 +585,7 @@ async def _reason_before_generate(
         from app.config import settings
 
         rbuf = ReasoningBuffer()
-        _refined: Optional[str] = None
+        _refined: str | None = None
         _had_reasoning = False
 
         async for chunk in llm.chat_completion_stream(

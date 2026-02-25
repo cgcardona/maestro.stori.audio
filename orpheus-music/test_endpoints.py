@@ -4,6 +4,9 @@ Tests for Orpheus HTTP endpoint contracts.
 Validates response shapes, status codes, and API behavior for all endpoints
 beyond the basic /generate flow (already tested in test_job_queue.py).
 """
+from __future__ import annotations
+
+from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -25,7 +28,7 @@ from music_service import (
 
 
 @pytest_asyncio.fixture
-async def client():  # type: ignore[misc]
+async def client() -> AsyncGenerator[AsyncClient, None]:
     """ASGI test client with a mocked job queue."""
     queue = JobQueue(max_queue=16, max_workers=1)
     await queue.start()
@@ -34,7 +37,7 @@ async def client():  # type: ignore[misc]
         with patch("music_service._do_generate", new_callable=AsyncMock, return_value=GenerateResponse(
             success=True, tool_calls=[], metadata={"mocked": True},
         )):
-            transport = ASGITransport(app=app)  # type: ignore[arg-type]
+            transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as c:
                 yield c
     finally:
@@ -43,7 +46,7 @@ async def client():  # type: ignore[misc]
 
 
 @pytest.fixture(autouse=True)
-def _clear_caches() -> None:  # type: ignore[misc]
+def _clear_caches() -> None:
     """Clear caches before each test."""
     _result_cache.clear()
 
@@ -57,12 +60,12 @@ class TestHealthEndpoint:
     """Contract tests for /health."""
 
     @pytest.mark.asyncio
-    async def test_health_returns_200(self, client: AsyncClient):
+    async def test_health_returns_200(self, client: AsyncClient) -> None:
         resp = await client.get("/health")
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_health_response_shape(self, client: AsyncClient):
+    async def test_health_response_shape(self, client: AsyncClient) -> None:
         resp = await client.get("/health")
         data = resp.json()
         assert data["status"] == "ok"
@@ -78,12 +81,12 @@ class TestDiagnosticsEndpoint:
     """Contract tests for /diagnostics."""
 
     @pytest.mark.asyncio
-    async def test_diagnostics_returns_200(self, client: AsyncClient):
+    async def test_diagnostics_returns_200(self, client: AsyncClient) -> None:
         resp = await client.get("/diagnostics")
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_diagnostics_response_shape(self, client: AsyncClient):
+    async def test_diagnostics_response_shape(self, client: AsyncClient) -> None:
         data = (await client.get("/diagnostics")).json()
         assert "service" in data
         assert data["service"] == "orpheus-music"
@@ -103,7 +106,7 @@ class TestCacheStatsEndpoint:
     """Contract tests for /cache/stats."""
 
     @pytest.mark.asyncio
-    async def test_cache_stats_empty(self, client: AsyncClient):
+    async def test_cache_stats_empty(self, client: AsyncClient) -> None:
         data = (await client.get("/cache/stats")).json()
         assert data["result_cache_size"] == 0
         assert data["result_cache_max"] > 0
@@ -111,7 +114,7 @@ class TestCacheStatsEndpoint:
         assert "policy_version" in data
 
     @pytest.mark.asyncio
-    async def test_cache_stats_with_entries(self, client: AsyncClient):
+    async def test_cache_stats_with_entries(self, client: AsyncClient) -> None:
         cache_result("key1", {"success": True, "tool_calls": []})
         cache_result("key2", {"success": True, "tool_calls": []})
         data = (await client.get("/cache/stats")).json()
@@ -128,7 +131,7 @@ class TestCacheClearEndpoint:
     """Contract tests for /cache/clear."""
 
     @pytest.mark.asyncio
-    async def test_clear_empties_caches(self, client: AsyncClient):
+    async def test_clear_empties_caches(self, client: AsyncClient) -> None:
         cache_result("key1", {"success": True, "tool_calls": []})
         assert len(_result_cache) == 1
 
@@ -148,7 +151,7 @@ class TestQualityEvaluateEndpoint:
     """Contract tests for /quality/evaluate."""
 
     @pytest.mark.asyncio
-    async def test_evaluate_returns_metrics(self, client: AsyncClient):
+    async def test_evaluate_returns_metrics(self, client: AsyncClient) -> None:
         resp = await client.post("/quality/evaluate", json={
             "tool_calls": [
                 {
@@ -170,7 +173,7 @@ class TestQualityEvaluateEndpoint:
         assert "note_count" in data
 
     @pytest.mark.asyncio
-    async def test_evaluate_empty_notes(self, client: AsyncClient):
+    async def test_evaluate_empty_notes(self, client: AsyncClient) -> None:
         resp = await client.post("/quality/evaluate", json={
             "tool_calls": [],
             "bars": 4,
@@ -188,7 +191,7 @@ class TestQueueStatusEndpoint:
     """Contract tests for /queue/status."""
 
     @pytest.mark.asyncio
-    async def test_queue_status_shape(self, client: AsyncClient):
+    async def test_queue_status_shape(self, client: AsyncClient) -> None:
         data = (await client.get("/queue/status")).json()
         assert "depth" in data
         assert "running" in data
@@ -205,7 +208,7 @@ class TestGenerateContract:
     """API contract tests for /generate beyond basic queueing."""
 
     @pytest.mark.asyncio
-    async def test_generate_accepts_full_intent(self, client: AsyncClient):
+    async def test_generate_accepts_full_intent(self, client: AsyncClient) -> None:
         """Full canonical intent payload is accepted without error."""
         with (
             patch("music_service.get_cached_result", return_value=None),
@@ -236,7 +239,7 @@ class TestGenerateContract:
         assert data["status"] in ("queued", "complete")
 
     @pytest.mark.asyncio
-    async def test_generate_minimal_payload(self, client: AsyncClient):
+    async def test_generate_minimal_payload(self, client: AsyncClient) -> None:
         """Minimal payload (just genre) is accepted with defaults."""
         with (
             patch("music_service.get_cached_result", return_value=None),

@@ -4,7 +4,10 @@ Covers: SectionSignals, SectionResult, _run_section_child, and
 _dispatch_section_children.  Edge cases: single-section, no-drums,
 no-bass, section child failure, missing regionId.
 """
+from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from typing import Any
 import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -34,12 +37,13 @@ def _trace() -> TraceContext:
     return TraceContext(trace_id="test-section-agent")
 
 
-def _section(name: str = "verse", start_beat: int = 0, length_beats: int = 16):
+def _section(name: str = "verse", start_beat: int = 0, length_beats: int = 16) -> dict[str, Any]:
+
     return {"name": name, "start_beat": start_beat, "length_beats": length_beats}
 
 
 def _instrument_contract(
-    sections: list[dict],
+    sections: list[dict[str, Any]],
     instrument_name: str = "Drums",
     role: str = "drums",
     style: str = "house",
@@ -122,6 +126,7 @@ def _contract(
 
 
 def _region_tc(tc_id: str = "r1", start_beat: int = 0, duration: int = 16) -> ToolCall:
+
     return ToolCall(
         id=tc_id,
         name="stori_add_midi_region",
@@ -130,6 +135,7 @@ def _region_tc(tc_id: str = "r1", start_beat: int = 0, duration: int = 16) -> To
 
 
 def _generate_tc(tc_id: str = "g1", role: str = "drums") -> ToolCall:
+
     return ToolCall(
         id=tc_id,
         name="stori_generate_midi",
@@ -138,6 +144,7 @@ def _generate_tc(tc_id: str = "g1", role: str = "drums") -> ToolCall:
 
 
 def _ok_region_outcome(tc_id: str = "r1", region_id: str = "reg-001") -> _ToolCallOutcome:
+
     return _ToolCallOutcome(
         enriched_params={"startBeat": 0, "durationBeats": 16, "trackId": "trk-1"},
         tool_result={"regionId": region_id, "trackId": "trk-1"},
@@ -149,6 +156,7 @@ def _ok_region_outcome(tc_id: str = "r1", region_id: str = "reg-001") -> _ToolCa
 
 
 def _ok_generate_outcome(tc_id: str = "g1", notes_count: int = 24) -> _ToolCallOutcome:
+
     return _ToolCallOutcome(
         enriched_params={"role": "drums", "regionId": "reg-001", "trackId": "trk-1"},
         tool_result={"notesAdded": notes_count, "regionId": "reg-001", "trackId": "trk-1"},
@@ -167,6 +175,7 @@ def _ok_generate_outcome(tc_id: str = "g1", notes_count: int = 24) -> _ToolCallO
 
 
 def _failed_generate_outcome(tc_id: str = "g1") -> _ToolCallOutcome:
+
     return _ToolCallOutcome(
         enriched_params={"role": "drums"},
         tool_result={"error": "GPU unavailable"},
@@ -188,7 +197,8 @@ _H3 = "h_test_00000003"
 
 
 class TestSectionSignals:
-    def test_from_sections_creates_events(self):
+    def test_from_sections_creates_events(self) -> None:
+
         """One asyncio.Event per section_id:contract_hash key."""
         signals = SectionSignals.from_section_ids(
             ["0:intro", "0:verse", "0:chorus"], [_H, _H2, _H3],
@@ -197,14 +207,16 @@ class TestSectionSignals:
         for evt in signals.events.values():
             assert not evt.is_set()
 
-    def test_signal_complete_sets_event(self):
+    def test_signal_complete_sets_event(self) -> None:
+
         signals = SectionSignals.from_section_ids(["0:intro"], [_H])
         signals.signal_complete("0:intro", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
         key = f"0:intro:{_H}"
         assert signals.events[key].is_set()
         assert signals._results[key].drum_notes == [{"pitch": 36}]
 
-    def test_signal_complete_without_notes(self):
+    def test_signal_complete_without_notes(self) -> None:
+
         """Signaling with no notes sets the event but stores no drum_notes."""
         signals = SectionSignals.from_section_ids(["0:intro"], [_H])
         signals.signal_complete("0:intro", contract_hash=_H, success=True)
@@ -213,17 +225,19 @@ class TestSectionSignals:
         assert signals._results[key].success is True
         assert signals._results[key].drum_notes is None
 
-    def test_signal_unknown_section_no_raise(self):
+    def test_signal_unknown_section_no_raise(self) -> None:
+
         """Signaling a section that doesn't exist does not raise — no event set."""
         signals = SectionSignals.from_section_ids(["0:intro"], [_H])
         signals.signal_complete("nonexistent", contract_hash="nohash", success=True)
 
     @pytest.mark.anyio
-    async def test_wait_for_returns_data(self):
+    async def test_wait_for_returns_data(self) -> None:
+
         """wait_for blocks until signaled, then returns SectionSignalResult."""
         signals = SectionSignals.from_section_ids(["0:verse"], [_H])
 
-        async def _signal_later():
+        async def _signal_later() -> None:
             await asyncio.sleep(0.01)
             signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 38}])
 
@@ -234,14 +248,16 @@ class TestSectionSignals:
         assert data.drum_notes == [{"pitch": 38}]
 
     @pytest.mark.anyio
-    async def test_wait_for_unknown_returns_none(self):
+    async def test_wait_for_unknown_returns_none(self) -> None:
+
         """Waiting for a key not in the events dict returns None immediately."""
         signals = SectionSignals.from_section_ids(["0:intro"], [_H])
         result = await signals.wait_for("nonexistent", contract_hash="nohash")
         assert result is None
 
     @pytest.mark.anyio
-    async def test_wait_for_already_set(self):
+    async def test_wait_for_already_set(self) -> None:
+
         """wait_for returns immediately if the event is already set."""
         signals = SectionSignals.from_section_ids(["0:intro"], [_H])
         signals.signal_complete("0:intro", contract_hash=_H, success=True, drum_notes=[{"pitch": 42}])
@@ -255,7 +271,8 @@ class TestSectionSignals:
 
 
 class TestSectionResult:
-    def test_defaults(self):
+    def test_defaults(self) -> None:
+
         r = SectionResult(success=False, section_name="intro")
         assert not r.success
         assert r.region_id is None
@@ -263,7 +280,8 @@ class TestSectionResult:
         assert r.tool_results == []
         assert r.error is None
 
-    def test_successful_result(self):
+    def test_successful_result(self) -> None:
+
         r = SectionResult(
             success=True,
             section_name="verse",
@@ -281,13 +299,15 @@ class TestSectionResult:
 
 class TestRunSectionChild:
     @pytest.mark.anyio
-    async def test_successful_region_and_generate(self):
+    async def test_successful_region_and_generate(self) -> None:
+
         """Happy path: region creates regionId, generate succeeds."""
         store = StateStore(conversation_id="test-sc")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         call_count = 0
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             nonlocal call_count
             call_count += 1
             if tc_name == "stori_add_midi_region":
@@ -317,10 +337,11 @@ class TestRunSectionChild:
         assert len(result.tool_result_msgs) == 2
 
     @pytest.mark.anyio
-    async def test_region_failure_returns_early(self):
+    async def test_region_failure_returns_early(self) -> None:
+
         """When region creation returns no regionId, section fails gracefully."""
         store = StateStore(conversation_id="test-sc-fail")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         bad_region = _ToolCallOutcome(
             enriched_params={},
@@ -331,7 +352,8 @@ class TestRunSectionChild:
             skipped=False,
         )
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             return bad_region
 
         with patch(
@@ -355,12 +377,14 @@ class TestRunSectionChild:
         assert "Region creation failed" in (result.error or "")
 
     @pytest.mark.anyio
-    async def test_generate_failure_returns_error(self):
+    async def test_generate_failure_returns_error(self) -> None:
+
         """When generate is skipped (GPU error), section reports failure."""
         store = StateStore(conversation_id="test-sc-gen-fail")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _failed_generate_outcome(tc_id)
@@ -386,13 +410,15 @@ class TestRunSectionChild:
         assert "GPU unavailable" in (result.error or "")
 
     @pytest.mark.anyio
-    async def test_track_id_injected(self):
+    async def test_track_id_injected(self) -> None:
+
         """Section child injects the parent's trackId into region and generate params."""
         store = StateStore(conversation_id="test-sc-tid")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
-        captured_args: list[dict] = []
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        captured_args: list[dict[str, Any]] = []
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             captured_args.append({"name": tc_name, "args": resolved_args})
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
@@ -426,15 +452,17 @@ class TestRunSectionChild:
 
 class TestSectionChildDrumSignaling:
     @pytest.mark.anyio
-    async def test_drum_child_signals_on_success(self):
+    async def test_drum_child_signals_on_success(self) -> None:
+
         """A drum section child signals SectionSignals after generate completes."""
         store = StateStore(conversation_id="test-sig")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         contract = _contract(role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id, notes_count=12)
@@ -465,10 +493,11 @@ class TestSectionChildDrumSignaling:
         assert len(_drum_notes) == 12
 
     @pytest.mark.anyio
-    async def test_drum_child_signals_on_region_failure(self):
+    async def test_drum_child_signals_on_region_failure(self) -> None:
+
         """Drum still signals even when region fails — prevents bass from hanging."""
         store = StateStore(conversation_id="test-sig-fail")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         contract = _contract(name="chorus", role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:chorus"], [ch])
@@ -481,7 +510,8 @@ class TestSectionChildDrumSignaling:
             msg_result={},
         )
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             return bad_region
 
         with patch(
@@ -505,15 +535,17 @@ class TestSectionChildDrumSignaling:
         assert signals.events[f"0:chorus:{ch}"].is_set()
 
     @pytest.mark.anyio
-    async def test_drum_child_signals_on_generate_failure(self):
+    async def test_drum_child_signals_on_generate_failure(self) -> None:
+
         """Drum still signals even when generate fails."""
         store = StateStore(conversation_id="test-sig-gen-fail")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         contract = _contract(role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _failed_generate_outcome(tc_id)
@@ -546,23 +578,25 @@ class TestSectionChildDrumSignaling:
 
 class TestSectionChildBassWaiting:
     @pytest.mark.anyio
-    async def test_bass_waits_for_drum_signal(self):
+    async def test_bass_waits_for_drum_signal(self) -> None:
+
         """Bass section child blocks until the drum signal fires."""
         store = StateStore(conversation_id="test-bass-wait")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         contract = _contract(instrument_name="Bass", role="bass")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
         bass_started = False
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             nonlocal bass_started
             bass_started = True
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
 
-        async def _signal_drum():
+        async def _signal_drum() -> None:
             await asyncio.sleep(0.05)
             assert not bass_started, "Bass should not have started before drum signal"
             signals.signal_complete("0:verse", contract_hash=ch, success=True, drum_notes=[{"pitch": 36}])
@@ -590,12 +624,14 @@ class TestSectionChildBassWaiting:
         assert bass_started
 
     @pytest.mark.anyio
-    async def test_bass_proceeds_without_signals(self):
+    async def test_bass_proceeds_without_signals(self) -> None:
+
         """Bass without execution_services runs immediately (no-drums edge case)."""
         store = StateStore(conversation_id="test-bass-nosig")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -627,12 +663,14 @@ class TestSectionChildBassWaiting:
 
 class TestSectionChildSSE:
     @pytest.mark.anyio
-    async def test_sse_events_tagged_with_agent_and_section(self):
+    async def test_sse_events_tagged_with_agent_and_section(self) -> None:
+
         """SSE events from tool outcomes are tagged with agentId and sectionName."""
         store = StateStore(conversation_id="test-sse")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -671,12 +709,14 @@ class TestSectionChildSSE:
 
 class TestSectionChildException:
     @pytest.mark.anyio
-    async def test_exception_caught_returns_error_result(self):
+    async def test_exception_caught_returns_error_result(self) -> None:
+
         """An unhandled exception inside the child returns a failed SectionResult."""
         store = StateStore(conversation_id="test-exc")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> None:
+
             raise RuntimeError("unexpected crash")
 
         with patch(
@@ -699,15 +739,17 @@ class TestSectionChildException:
         assert "unexpected crash" in (result.error or "")
 
     @pytest.mark.anyio
-    async def test_drum_signals_on_exception(self):
+    async def test_drum_signals_on_exception(self) -> None:
+
         """Drum child still signals on unhandled exception to unblock bass."""
         store = StateStore(conversation_id="test-exc-sig")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         contract = _contract(role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> None:
+
             raise RuntimeError("boom")
 
         with patch(
@@ -740,14 +782,15 @@ class TestDispatchSectionChildren:
     """Tests for _dispatch_section_children in agent.py."""
 
     @pytest.mark.anyio
-    async def test_groups_tool_calls_correctly(self):
+    async def test_groups_tool_calls_correctly(self) -> None:
+
         """Track creation, region+gen pairs, and effect calls are categorized."""
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-dispatch")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
-        all_results: list[dict] = []
-        collected: list[dict] = []
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        all_results: list[dict[str, Any]] = []
+        collected: list[dict[str, Any]] = []
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
         r1 = _region_tc("r1", start_beat=0, duration=16)
@@ -766,7 +809,8 @@ class TestDispatchSectionChildren:
 
         call_log: list[str] = []
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             call_log.append(tc_name)
             if tc_name == "stori_add_midi_track":
                 return track_outcome
@@ -852,12 +896,13 @@ class TestDispatchSectionChildren:
         assert len(msgs) > 0
 
     @pytest.mark.anyio
-    async def test_no_track_id_returns_error(self):
+    async def test_no_track_id_returns_error(self) -> None:
+
         """If no trackId is resolved, all remaining calls get error results."""
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-no-tid")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         r1 = _region_tc("r1")
         g1 = _generate_tc("g1")
@@ -905,17 +950,19 @@ class TestDispatchSectionChildren:
         assert len(error_msgs) == 2
 
     @pytest.mark.anyio
-    async def test_reused_track_id_skips_creation(self):
+    async def test_reused_track_id_skips_creation(self) -> None:
+
         """When existing_track_id is set, track creation calls are absent."""
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-reuse")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         r1 = _region_tc("r1")
         g1 = _generate_tc("g1")
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -973,7 +1020,8 @@ class TestDispatchSectionChildren:
         assert gc == 1
 
     @pytest.mark.anyio
-    async def test_planstep_completed_emitted_after_children_finish(self):
+    async def test_planstep_completed_emitted_after_children_finish(self) -> None:
+
         """planStepUpdate(completed) is queued for content_step_id after children finish.
 
         Regression for P2: before the fix _dispatch_section_children activated
@@ -984,14 +1032,15 @@ class TestDispatchSectionChildren:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-planstep-completed")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
-        all_results: list[dict] = []
-        collected: list[dict] = []
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        all_results: list[dict[str, Any]] = []
+        collected: list[dict[str, Any]] = []
 
         r1 = _region_tc("r1", start_beat=0, duration=16)
         g1 = _generate_tc("g1", role="drums")
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -1054,7 +1103,7 @@ class TestDispatchSectionChildren:
             )
 
         # Drain the queue and look for planStepUpdate(completed) for step s2.
-        events: list[dict] = []
+        events: list[dict[str, Any]] = []
         while not queue.empty():
             events.append(queue.get_nowait())
 
@@ -1069,7 +1118,8 @@ class TestDispatchSectionChildren:
         assert completed_events[0].get("agentId") == "drums"
 
     @pytest.mark.anyio
-    async def test_generator_events_tagged_with_agentid_via_emit(self):
+    async def test_generator_events_tagged_with_agentid_via_emit(self) -> None:
+
         """generatorStart and generatorComplete events in section children carry agentId.
 
         The _emit() helper in section_agent tags all _AGENT_TAGGED_EVENTS with
@@ -1078,7 +1128,7 @@ class TestDispatchSectionChildren:
         instrument card.
         """
         store = StateStore(conversation_id="test-agentid-tag")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         # Generate outcome whose sse_events include generatorStart / generatorComplete
         gen_outcome = _ok_generate_outcome("g1", notes_count=16)
@@ -1086,7 +1136,8 @@ class TestDispatchSectionChildren:
         event_types = {e["type"] for e in gen_outcome.sse_events}
         assert "generatorStart" in event_types or "generatorComplete" in event_types
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return gen_outcome
@@ -1109,7 +1160,7 @@ class TestDispatchSectionChildren:
                 runtime_ctx=None,
             )
 
-        events: list[dict] = []
+        events: list[dict[str, Any]] = []
         while not queue.empty():
             events.append(queue.get_nowait())
 
@@ -1131,12 +1182,14 @@ class TestDispatchSectionChildren:
 
 class TestEdgeCases:
     @pytest.mark.anyio
-    async def test_single_section_uses_sequential_path(self):
+    async def test_single_section_uses_sequential_path(self) -> None:
+
         """With only one section, the parent uses the sequential execution path."""
         signals = SectionSignals.from_section_ids(["0:full"], [_H])
         assert len(signals.events) == 1
 
-    def test_no_drums_no_signals_needed(self):
+    def test_no_drums_no_signals_needed(self) -> None:
+
         """When there are no drums, section_signals is harmless."""
         signals = SectionSignals.from_section_ids(["0:verse"], [_H])
         signals.signal_complete("0:verse", contract_hash=_H, success=True)
@@ -1144,7 +1197,8 @@ class TestEdgeCases:
         assert signals.events[key].is_set()
         assert signals._results[key].drum_notes is None
 
-    def test_no_bass_drum_signals_fire_unused(self):
+    def test_no_bass_drum_signals_fire_unused(self) -> None:
+
         """Drum signals that no bass listens to are harmless."""
         signals = SectionSignals.from_section_ids(["0:verse"], [_H])
         signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
@@ -1161,12 +1215,14 @@ class TestEdgeCases:
 class TestSectionIdCollisionPrevention:
     """Regression: duplicate section names must not collide when keyed by section_id."""
 
-    def test_duplicate_section_names_get_unique_ids(self):
+    def test_duplicate_section_names_get_unique_ids(self) -> None:
+
         """Two 'verse' sections with different indices get separate events."""
         signals = SectionSignals.from_section_ids(["0:verse", "1:verse"], [_H, _H2])
         assert len(signals.events) == 2
 
-    def test_signal_first_verse_does_not_affect_second(self):
+    def test_signal_first_verse_does_not_affect_second(self) -> None:
+
         """Signaling section 0:verse does not set 1:verse."""
         signals = SectionSignals.from_section_ids(["0:verse", "1:verse"], [_H, _H2])
         signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
@@ -1174,12 +1230,13 @@ class TestSectionIdCollisionPrevention:
         assert not signals.events[f"1:verse:{_H2}"].is_set()
 
     @pytest.mark.anyio
-    async def test_wait_for_correct_verse(self):
+    async def test_wait_for_correct_verse(self) -> None:
+
         """Bass waiting on 1:verse does not receive 0:verse data."""
         signals = SectionSignals.from_section_ids(["0:verse", "1:verse"], [_H, _H2])
         signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
 
-        async def _signal_later():
+        async def _signal_later() -> None:
             await asyncio.sleep(0.01)
             signals.signal_complete("1:verse", contract_hash=_H2, success=True, drum_notes=[{"pitch": 38}])
 
@@ -1193,7 +1250,8 @@ class TestSectionIdCollisionPrevention:
 class TestSignalIdempotency:
     """Regression: signal_complete called twice must not corrupt state."""
 
-    def test_double_signal_is_idempotent(self):
+    def test_double_signal_is_idempotent(self) -> None:
+
         """Second call to signal_complete is silently ignored."""
         signals = SectionSignals.from_section_ids(["0:verse"], [_H])
         key = f"0:verse:{_H}"
@@ -1201,7 +1259,8 @@ class TestSignalIdempotency:
         signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 99}])
         assert signals._results[key].drum_notes == [{"pitch": 36}]
 
-    def test_failure_then_success_keeps_failure(self):
+    def test_failure_then_success_keeps_failure(self) -> None:
+
         """First signal wins — even if failure followed by success attempt."""
         signals = SectionSignals.from_section_ids(["0:verse"], [_H])
         key = f"0:verse:{_H}"
@@ -1215,11 +1274,12 @@ class TestFailureSignaling:
     """Regression: wait_for returns SectionSignalResult(success=False) when drums fail."""
 
     @pytest.mark.anyio
-    async def test_wait_for_returns_failure_result(self):
+    async def test_wait_for_returns_failure_result(self) -> None:
+
         """Bass receives explicit failure signal — not None or timeout."""
         signals = SectionSignals.from_section_ids(["0:verse"], [_H])
 
-        async def _fail_drums():
+        async def _fail_drums() -> None:
             await asyncio.sleep(0.01)
             signals.signal_complete("0:verse", contract_hash=_H, success=False)
 
@@ -1231,7 +1291,8 @@ class TestFailureSignaling:
         assert result.drum_notes is None
 
     @pytest.mark.anyio
-    async def test_wait_for_timeout_raises(self):
+    async def test_wait_for_timeout_raises(self) -> None:
+
         """If no signal arrives within timeout, asyncio.TimeoutError is raised."""
         signals = SectionSignals.from_section_ids(["0:verse"], [_H])
         with pytest.raises(asyncio.TimeoutError):
@@ -1242,12 +1303,13 @@ class TestContractHardError:
     """Regression: L2 fallback SectionSpec rebuild is a hard error."""
 
     @pytest.mark.anyio
-    async def test_dispatch_raises_without_instrument_contract(self):
+    async def test_dispatch_raises_without_instrument_contract(self) -> None:
+
         """_dispatch_section_children raises ValueError when contract is missing."""
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-hard-err")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         with pytest.raises(ValueError, match="Contract violation"):
             await _dispatch_section_children(
@@ -1296,7 +1358,8 @@ class TestOrphanedRegionHandling:
     """
 
     @pytest.mark.anyio
-    async def test_orphaned_regions_increment_regions_completed(self):
+    async def test_orphaned_regions_increment_regions_completed(self) -> None:
+
         """Regions sent without generates are executed and counted."""
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
@@ -1307,7 +1370,7 @@ class TestOrphanedRegionHandling:
         ic = _instrument_contract(sections, role="drums")
 
         store = StateStore(conversation_id="test-orphaned")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         region_tcs = [
             _region_tc("r1", start_beat=0, duration=16),
@@ -1375,20 +1438,23 @@ class TestOrphanedRegionHandling:
 class TestExecutionServicesSeparation:
     """Regression: RuntimeContext is pure data; mutable services are in ExecutionServices."""
 
-    def test_runtime_context_has_no_signals(self):
+    def test_runtime_context_has_no_signals(self) -> None:
+
         """RuntimeContext must not carry section_signals or section_state."""
         import dataclasses
         field_names = {f.name for f in dataclasses.fields(RuntimeContext)}
         assert "section_signals" not in field_names
         assert "section_state" not in field_names
 
-    def test_execution_services_carries_signals(self):
+    def test_execution_services_carries_signals(self) -> None:
+
         """ExecutionServices carries the mutable coordination primitives."""
         signals = SectionSignals.from_section_ids(["0:verse"], [_H])
         svc = ExecutionServices(section_signals=signals)
         assert svc.section_signals is signals
 
-    def test_mapping_proxy_is_readonly(self):
+    def test_mapping_proxy_is_readonly(self) -> None:
+
         """to_composition_context returns a read-only mapping."""
         import types
         ctx = RuntimeContext(raw_prompt="test", quality_preset="quality")
@@ -1404,7 +1470,8 @@ class TestExecutionServicesSeparation:
 
 
 class TestExtractExpressivenessBlocks:
-    def test_extracts_midi_expressiveness(self):
+    def test_extracts_midi_expressiveness(self) -> None:
+
         """Extracts MidiExpressiveness: block from raw prompt."""
         from app.core.maestro_agent_teams.section_agent import (
             _extract_expressiveness_blocks,
@@ -1423,7 +1490,8 @@ class TestExtractExpressivenessBlocks:
         assert "modulation:" in result
         assert "depth: strong" in result
 
-    def test_extracts_automation(self):
+    def test_extracts_automation(self) -> None:
+
         """Extracts Automation: block from raw prompt."""
         from app.core.maestro_agent_teams.section_agent import (
             _extract_expressiveness_blocks,
@@ -1440,7 +1508,8 @@ class TestExtractExpressivenessBlocks:
         assert "Automation:" in result
         assert "filter_sweep:" in result
 
-    def test_extracts_both_blocks(self):
+    def test_extracts_both_blocks(self) -> None:
+
         """Extracts both MidiExpressiveness and Automation blocks."""
         from app.core.maestro_agent_teams.section_agent import (
             _extract_expressiveness_blocks,
@@ -1461,7 +1530,8 @@ class TestExtractExpressivenessBlocks:
         assert "MidiExpressiveness:" in result
         assert "Automation:" in result
 
-    def test_no_blocks_returns_empty(self):
+    def test_no_blocks_returns_empty(self) -> None:
+
         """Returns empty string when no expressiveness blocks found."""
         from app.core.maestro_agent_teams.section_agent import (
             _extract_expressiveness_blocks,
@@ -1479,12 +1549,14 @@ class TestExtractExpressivenessBlocks:
 
 class TestSectionChildStatusEvents:
     @pytest.mark.anyio
-    async def test_emits_start_status(self):
+    async def test_emits_start_status(self) -> None:
+
         """Section child emits a 'Starting' status event at the beginning."""
         store = StateStore(conversation_id="test-status")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -1520,12 +1592,14 @@ class TestSectionChildStatusEvents:
         assert start_evt["sectionName"] == "verse"
 
     @pytest.mark.anyio
-    async def test_emits_completion_status_with_note_count(self):
+    async def test_emits_completion_status_with_note_count(self) -> None:
+
         """Section child emits a notes-generated status event after generation."""
         store = StateStore(conversation_id="test-status-done")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id, notes_count=42)
@@ -1565,18 +1639,20 @@ class TestSectionChildStatusEvents:
 
 class TestExpressionRefinementStreaming:
     @pytest.mark.anyio
-    async def test_refinement_streams_reasoning_events(self):
+    async def test_refinement_streams_reasoning_events(self) -> None:
+
         """Expression refinement streams reasoning SSE events with sectionName."""
         from app.core.maestro_agent_teams.section_agent import (
             _maybe_refine_expression,
         )
 
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         store = StateStore(conversation_id="test-expr")
 
         mock_llm = MagicMock()
 
-        async def _mock_stream(**kwargs):
+        async def _mock_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+
             yield {"type": "reasoning_delta", "text": "Adding modulation "}
             yield {"type": "reasoning_delta", "text": "sweep for warmth."}
             yield {
@@ -1664,13 +1740,14 @@ class TestExpressionRefinementStreaming:
         assert len(expr_status) >= 1
 
     @pytest.mark.anyio
-    async def test_refinement_skipped_without_expressiveness(self):
+    async def test_refinement_skipped_without_expressiveness(self) -> None:
+
         """No LLM call when the prompt lacks MidiExpressiveness/Automation."""
         from app.core.maestro_agent_teams.section_agent import (
             _maybe_refine_expression,
         )
 
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         store = StateStore(conversation_id="test-no-expr")
         mock_llm = MagicMock()
 
@@ -1699,19 +1776,21 @@ class TestExpressionRefinementStreaming:
         mock_llm.chat_completion_stream.assert_not_called()
 
     @pytest.mark.anyio
-    async def test_refinement_includes_expr_blocks_in_prompt(self):
+    async def test_refinement_includes_expr_blocks_in_prompt(self) -> None:
+
         """Refinement LLM call includes extracted MidiExpressiveness content."""
         from app.core.maestro_agent_teams.section_agent import (
             _maybe_refine_expression,
         )
 
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         store = StateStore(conversation_id="test-expr-ctx")
 
-        captured_messages: list[dict] = []
+        captured_messages: list[dict[str, Any]] = []
         mock_llm = MagicMock()
 
-        async def _capture_stream(**kwargs):
+        async def _capture_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+
             captured_messages.extend(kwargs.get("messages", []))
             yield {
                 "type": "done",
@@ -1769,14 +1848,15 @@ class TestServerOwnedRetries:
     """Regression tests for server-owned section retries (no LLM on retry)."""
 
     @pytest.mark.anyio
-    async def test_failed_section_retried_server_side(self):
+    async def test_failed_section_retried_server_side(self) -> None:
+
         """A section that fails on first attempt is retried without LLM."""
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-server-retry")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
-        all_results: list[dict] = []
-        collected: list[dict] = []
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        all_results: list[dict[str, Any]] = []
+        collected: list[dict[str, Any]] = []
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
         r1 = _region_tc("r1", start_beat=0, duration=16)
@@ -1795,7 +1875,8 @@ class TestServerOwnedRetries:
 
         _gen_attempts = 0
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             nonlocal _gen_attempts
             if tc_name == "stori_add_midi_track":
                 return track_outcome
@@ -1886,12 +1967,13 @@ class TestServerOwnedRetries:
         assert _gen_attempts == 2, "Generate should be called twice (fail + retry)"
 
     @pytest.mark.anyio
-    async def test_circuit_breaker_skips_section_retries(self):
+    async def test_circuit_breaker_skips_section_retries(self) -> None:
+
         """Server retries are skipped when Orpheus circuit breaker is open."""
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-cb-skip")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
         r1 = _region_tc("r1", start_beat=0, duration=16)
@@ -1905,7 +1987,8 @@ class TestServerOwnedRetries:
             msg_result={},
         )
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_track":
                 return track_outcome
             if tc_name == "stori_add_midi_region":
@@ -1980,12 +2063,13 @@ class TestServerOwnedRetries:
         assert gc == 1, "Section dispatched (counted as completed) even though generate failed — server already retried"
 
     @pytest.mark.anyio
-    async def test_summary_message_replaces_individual_tool_results(self):
+    async def test_summary_message_replaces_individual_tool_results(self) -> None:
+
         """Dispatch returns collapsed summary instead of N individual tool results."""
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-summary")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
         r1 = _region_tc("r1", start_beat=0, duration=16)
@@ -2001,7 +2085,8 @@ class TestServerOwnedRetries:
             msg_result={},
         )
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_track":
                 return track_outcome
             if tc_name == "stori_add_midi_region":
@@ -2105,7 +2190,8 @@ class TestPreEmitGeneratorEvents:
     """
 
     @pytest.mark.anyio
-    async def test_pre_emit_callback_receives_generator_start_events(self):
+    async def test_pre_emit_callback_receives_generator_start_events(self) -> None:
+
         """pre_emit_callback fires with toolStart + generatorStart before generate."""
         from app.core.maestro_editing.tool_execution import _execute_agent_generator
         from app.core.tracing import TraceContext
@@ -2131,9 +2217,10 @@ class TestPreEmitGeneratorEvents:
         mock_mg = MagicMock()
         mock_mg.generate = AsyncMock(return_value=ok_result)
 
-        pre_emitted: list[dict] = []
+        pre_emitted: list[dict[str, Any]] = []
 
-        async def _capture_pre(events: list[dict]) -> None:
+        async def _capture_pre(events: list[dict[str, Any]]) -> None:
+
             pre_emitted.extend(events)
 
         with patch(
@@ -2176,7 +2263,8 @@ class TestPreEmitGeneratorEvents:
         assert "toolCall" in outcome_types
 
     @pytest.mark.anyio
-    async def test_no_callback_preserves_old_behavior(self):
+    async def test_no_callback_preserves_old_behavior(self) -> None:
+
         """Without pre_emit_callback, all events stay in sse_events (backward compat)."""
         from app.core.maestro_editing.tool_execution import _execute_agent_generator
         from app.core.tracing import TraceContext
@@ -2232,16 +2320,18 @@ class TestPreEmitGeneratorEvents:
         assert "toolCall" in types
 
     @pytest.mark.anyio
-    async def test_section_child_streams_generator_start_to_queue_before_generate(self):
+    async def test_section_child_streams_generator_start_to_queue_before_generate(self) -> None:
+
         """End-to-end: _run_section_child puts generatorStart in the queue
         BEFORE mg.generate() returns — the fix that prevents frontend timeout.
         """
         store = StateStore(conversation_id="test-e2e-pre-emit")
-        queue: asyncio.Queue[dict] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        events_at_generate_time: list[dict] = []
+        events_at_generate_time: list[dict[str, Any]] = []
 
-        async def _mock_apply(*, tc_id, tc_name, resolved_args, pre_emit_callback=None, **kw):
+        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, pre_emit_callback: Any = None, **kw: Any) -> _ToolCallOutcome:
+
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
 

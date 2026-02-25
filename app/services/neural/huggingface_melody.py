@@ -17,7 +17,7 @@ import logging
 import httpx
 import re
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Any
 
 from app.core.emotion_vector import EmotionVector, emotion_to_constraints
 from app.services.neural.melody_generator import (
@@ -78,12 +78,12 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
     def __init__(
         self,
         model_name: str = "skytnt",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
     ):
         self.model_config = HF_MODELS.get(model_name, HF_MODELS["skytnt"])
         self.api_key = api_key or getattr(settings, "hf_api_key", None)
         self.api_url = "https://api-inference.huggingface.co/models"
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
         self.tokenizer = MidiTokenizer()
     
     @property
@@ -197,7 +197,7 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
             logger.exception(f"HuggingFace generation failed: {e}")
             return await self._fallback_generate(request)
     
-    def _emotion_to_hf_params(self, ev: EmotionVector, bars: int) -> dict:
+    def _emotion_to_hf_params(self, ev: EmotionVector, bars: int) -> dict[str, Any]:
         """
         Map emotion vector to HuggingFace generation parameters.
         
@@ -267,7 +267,7 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
                 midi -= 1
         return midi
     
-    def _parse_output(self, data: Any, request: MelodyGenerationRequest) -> list[dict]:
+    def _parse_output(self, data: Any, request: MelodyGenerationRequest) -> list[dict[str, Any]]:
         """Parse HuggingFace model output into notes."""
         notes = []
         
@@ -280,7 +280,7 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
         
         return notes
     
-    def _parse_midi_tokens(self, text: str, tempo: int, bars: int) -> list[dict]:
+    def _parse_midi_tokens(self, text: str, tempo: int, bars: int) -> list[dict[str, Any]]:
         """Parse MIDI tokens from generated text."""
         notes = []
         max_beat = bars * 4
@@ -350,9 +350,9 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
     
     def _apply_emotion_postprocess(
         self,
-        notes: list[dict],
+        notes: list[dict[str, Any]],
         emotion_vector: EmotionVector,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Apply emotion-based post-processing to generated notes.
         
@@ -396,7 +396,7 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
         result.model_used = "mock_neural (hf_fallback)"
         return result
     
-    async def close(self):
+    async def close(self) -> None:
         """Close HTTP client."""
         if self._client:
             await self._client.aclose()

@@ -20,9 +20,12 @@ writes through. Zero test coverage previously. This file covers:
  14.  Store registry — get_or_create_store, clear_store, clear_all_stores
  15.  get_region_track_id, get_track_name, get_or_create_bus
 """
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import Any
 
 import pytest
-from copy import deepcopy
 
 from app.core.state_store import (
     StateStore,
@@ -47,7 +50,8 @@ def _fresh() -> StateStore:
     return StateStore(conversation_id=str(uuid.uuid4()), project_id=str(uuid.uuid4()))
 
 
-def _note(pitch: int = 60, start: float = 0.0, dur: float = 1.0, vel: int = 100) -> dict:
+def _note(pitch: int = 60, start: float = 0.0, dur: float = 1.0, vel: int = 100) -> dict[str, Any]:
+
     return {
         "pitch": pitch,
         "start_beat": start,
@@ -63,33 +67,41 @@ def _note(pitch: int = 60, start: float = 0.0, dur: float = 1.0, vel: int = 100)
 class TestInitialization:
     """StateStore initializes with correct defaults."""
 
-    def test_default_tempo(self):
+    def test_default_tempo(self) -> None:
+
         assert _fresh().tempo == 120
 
-    def test_default_key(self):
+    def test_default_key(self) -> None:
+
         assert _fresh().key == "C"
 
-    def test_default_time_signature(self):
+    def test_default_time_signature(self) -> None:
+
         assert _fresh().time_signature == (4, 4)
 
-    def test_default_version_zero(self):
+    def test_default_version_zero(self) -> None:
+
         assert _fresh().version == 0
 
-    def test_registry_is_empty(self):
+    def test_registry_is_empty(self) -> None:
+
         store = _fresh()
         assert store.registry.list_tracks() == []
         assert store.registry.list_regions() == []
         assert store.registry.list_buses() == []
 
-    def test_conversation_id_stored(self):
+    def test_conversation_id_stored(self) -> None:
+
         store = StateStore(conversation_id="conv-abc")
         assert store.conversation_id == "conv-abc"
 
-    def test_project_id_stored(self):
+    def test_project_id_stored(self) -> None:
+
         store = StateStore(project_id="proj-xyz")
         assert store.project_id == "proj-xyz"
 
-    def test_auto_generated_ids(self):
+    def test_auto_generated_ids(self) -> None:
+
         store = StateStore()
         assert len(store.conversation_id) > 8
         assert len(store.project_id) > 8
@@ -102,65 +114,76 @@ class TestInitialization:
 class TestEntityCreation:
     """create_track / create_region / create_bus record events and update registry."""
 
-    def test_create_track_returns_id(self):
+    def test_create_track_returns_id(self) -> None:
+
         store = _fresh()
         tid = store.create_track("Drums")
         assert isinstance(tid, str) and len(tid) > 8
 
-    def test_create_track_registers_entity(self):
+    def test_create_track_registers_entity(self) -> None:
+
         store = _fresh()
         tid = store.create_track("Drums")
         assert store.registry.exists_track(tid)
 
-    def test_create_track_appends_event(self):
+    def test_create_track_appends_event(self) -> None:
+
         store = _fresh()
         tid = store.create_track("Drums")
         events = store.get_entity_events(tid)
         assert len(events) == 1
         assert events[0].event_type == EventType.TRACK_CREATED
 
-    def test_create_track_increments_version(self):
+    def test_create_track_increments_version(self) -> None:
+
         store = _fresh()
         assert store.version == 0
         store.create_track("Drums")
         assert store.version == 1
 
-    def test_create_region_returns_id(self):
+    def test_create_region_returns_id(self) -> None:
+
         store = _fresh()
         tid = store.create_track("Drums")
         rid = store.create_region("Pattern", parent_track_id=tid)
         assert isinstance(rid, str)
 
-    def test_create_region_registers_entity(self):
+    def test_create_region_registers_entity(self) -> None:
+
         store = _fresh()
         tid = store.create_track("Drums")
         rid = store.create_region("Pattern", parent_track_id=tid)
         assert store.registry.exists_region(rid)
 
-    def test_create_region_appends_event(self):
+    def test_create_region_appends_event(self) -> None:
+
         store = _fresh()
         tid = store.create_track("Drums")
         rid = store.create_region("Pattern", parent_track_id=tid)
         events = store.get_entity_events(rid)
         assert any(e.event_type == EventType.REGION_CREATED for e in events)
 
-    def test_create_bus_returns_id(self):
+    def test_create_bus_returns_id(self) -> None:
+
         store = _fresh()
         bid = store.create_bus("Reverb")
         assert isinstance(bid, str)
 
-    def test_create_bus_registers_entity(self):
+    def test_create_bus_registers_entity(self) -> None:
+
         store = _fresh()
         bid = store.create_bus("Reverb")
         assert store.registry.exists_bus(bid)
 
-    def test_create_bus_appends_event(self):
+    def test_create_bus_appends_event(self) -> None:
+
         store = _fresh()
         bid = store.create_bus("Reverb")
         events = store.get_entity_events(bid)
         assert any(e.event_type == EventType.BUS_CREATED for e in events)
 
-    def test_get_or_create_bus_idempotent(self):
+    def test_get_or_create_bus_idempotent(self) -> None:
+
         store = _fresh()
         bid1 = store.get_or_create_bus("Delay")
         bid2 = store.get_or_create_bus("Delay")
@@ -168,24 +191,29 @@ class TestEntityCreation:
         # Only one bus should exist
         assert len(store.registry.list_buses()) == 1
 
-    def test_get_region_track_id(self):
+    def test_get_region_track_id(self) -> None:
+
         store = _fresh()
         tid = store.create_track("Bass")
         rid = store.create_region("Intro", parent_track_id=tid)
         assert store.get_region_track_id(rid) == tid
 
-    def test_get_region_track_id_unknown_returns_none(self):
+    def test_get_region_track_id_unknown_returns_none(self) -> None:
+
         assert _fresh().get_region_track_id("nonexistent") is None
 
-    def test_get_track_name_returns_name(self):
+    def test_get_track_name_returns_name(self) -> None:
+
         store = _fresh()
         tid = store.create_track("Guitar Lead")
         assert store.get_track_name(tid) == "Guitar Lead"
 
-    def test_get_track_name_unknown_returns_none(self):
+    def test_get_track_name_unknown_returns_none(self) -> None:
+
         assert _fresh().get_track_name("nonexistent") is None
 
-    def test_multiple_tracks_all_registered(self):
+    def test_multiple_tracks_all_registered(self) -> None:
+
         store = _fresh()
         ids = [store.create_track(f"Track{i}") for i in range(5)]
         assert len(store.registry.list_tracks()) == 5
@@ -200,20 +228,23 @@ class TestEntityCreation:
 class TestTransactionLifecycle:
     """begin_transaction / commit / rollback happy paths."""
 
-    def test_begin_returns_transaction(self):
+    def test_begin_returns_transaction(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction("test")
         assert isinstance(tx, Transaction)
         assert tx.is_active
 
-    def test_commit_marks_transaction_committed(self):
+    def test_commit_marks_transaction_committed(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction()
         store.commit(tx)
         assert tx.committed
         assert not tx.is_active
 
-    def test_commit_clears_active_transaction(self):
+    def test_commit_clears_active_transaction(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction()
         store.commit(tx)
@@ -222,14 +253,16 @@ class TestTransactionLifecycle:
         assert tx2.is_active
         store.rollback(tx2)
 
-    def test_rollback_marks_transaction_rolled_back(self):
+    def test_rollback_marks_transaction_rolled_back(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction()
         store.rollback(tx)
         assert tx.rolled_back
         assert not tx.is_active
 
-    def test_transaction_start_event_recorded(self):
+    def test_transaction_start_event_recorded(self) -> None:
+
         store = _fresh()
         v_before = store.version
         tx = store.begin_transaction("my tx")
@@ -241,7 +274,8 @@ class TestTransactionLifecycle:
         assert len(start_events) == 1
         store.rollback(tx)
 
-    def test_commit_event_recorded(self):
+    def test_commit_event_recorded(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction()
         store.commit(tx)
@@ -251,7 +285,8 @@ class TestTransactionLifecycle:
         ]
         assert len(commit_events) == 1
 
-    def test_rollback_event_recorded(self):
+    def test_rollback_event_recorded(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction()
         store.rollback(tx)
@@ -261,7 +296,8 @@ class TestTransactionLifecycle:
         ]
         assert len(rb_events) == 1
 
-    def test_mutations_within_transaction_linked_to_tx_id(self):
+    def test_mutations_within_transaction_linked_to_tx_id(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction()
         tid = store.create_track("Drums", transaction=tx)
@@ -269,14 +305,16 @@ class TestTransactionLifecycle:
         assert all(e.transaction_id == tx.id for e in events)
         store.commit(tx)
 
-    def test_commit_without_transaction_raises(self):
+    def test_commit_without_transaction_raises(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction()
         store.commit(tx)
         with pytest.raises(ValueError):
             store.commit(tx)  # already committed
 
-    def test_rollback_without_transaction_raises(self):
+    def test_rollback_without_transaction_raises(self) -> None:
+
         store = _fresh()
         with pytest.raises(ValueError):
             # No active transaction
@@ -296,7 +334,8 @@ class TestTransactionLifecycle:
 class TestTransactionAtomicity:
     """Rollback must restore registry entities and note state precisely."""
 
-    def test_rollback_removes_created_track(self):
+    def test_rollback_removes_created_track(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction()
         tid = store.create_track("Drums", transaction=tx)
@@ -304,7 +343,8 @@ class TestTransactionAtomicity:
         store.rollback(tx)
         assert not store.registry.exists_track(tid)
 
-    def test_rollback_removes_created_region(self):
+    def test_rollback_removes_created_region(self) -> None:
+
         store = _fresh()
         # Create track outside transaction (committed)
         tid = store.create_track("Drums")
@@ -314,7 +354,8 @@ class TestTransactionAtomicity:
         store.rollback(tx)
         assert not store.registry.exists_region(rid)
 
-    def test_rollback_restores_notes(self):
+    def test_rollback_restores_notes(self) -> None:
+
         store = _fresh()
         tid = store.create_track("Bass")
         rid = store.create_region("Verse", parent_track_id=tid)
@@ -329,7 +370,8 @@ class TestTransactionAtomicity:
         # Notes must revert to 1
         assert len(store.get_region_notes(rid)) == 1
 
-    def test_rollback_restores_tempo(self):
+    def test_rollback_restores_tempo(self) -> None:
+
         store = _fresh()
         store.set_tempo(120)  # committed
         tx = store.begin_transaction()
@@ -338,7 +380,8 @@ class TestTransactionAtomicity:
         store.rollback(tx)
         assert store.tempo == 120
 
-    def test_rollback_restores_key(self):
+    def test_rollback_restores_key(self) -> None:
+
         store = _fresh()
         store.set_key("Am")
         tx = store.begin_transaction()
@@ -347,7 +390,8 @@ class TestTransactionAtomicity:
         store.rollback(tx)
         assert store.key == "Am"
 
-    def test_committed_entities_survive_next_rollback(self):
+    def test_committed_entities_survive_next_rollback(self) -> None:
+
         """Entities committed in tx1 must survive a rollback in tx2."""
         store = _fresh()
         tx1 = store.begin_transaction()
@@ -371,14 +415,16 @@ class TestTransactionAtomicity:
 class TestTransactionGuards:
     """Double begin raises; wrong transaction errors are raised."""
 
-    def test_double_begin_raises(self):
+    def test_double_begin_raises(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction()
         with pytest.raises(RuntimeError, match="already active"):
             store.begin_transaction()
         store.rollback(tx)
 
-    def test_commit_wrong_transaction_raises(self):
+    def test_commit_wrong_transaction_raises(self) -> None:
+
         store = _fresh()
         tx1 = store.begin_transaction()
         # Build a fake transaction object
@@ -392,7 +438,8 @@ class TestTransactionGuards:
             store.commit(fake_tx)
         store.rollback(tx1)
 
-    def test_commit_already_committed_tx_raises(self):
+    def test_commit_already_committed_tx_raises(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction()
         store.commit(tx)
@@ -402,7 +449,8 @@ class TestTransactionGuards:
             store.commit(tx)  # old tx, wrong id
         store.rollback(tx2)
 
-    def test_new_transaction_after_commit(self):
+    def test_new_transaction_after_commit(self) -> None:
+
         store = _fresh()
         tx1 = store.begin_transaction()
         store.commit(tx1)
@@ -410,7 +458,8 @@ class TestTransactionGuards:
         assert tx2.is_active
         store.commit(tx2)
 
-    def test_new_transaction_after_rollback(self):
+    def test_new_transaction_after_rollback(self) -> None:
+
         store = _fresh()
         tx1 = store.begin_transaction()
         store.rollback(tx1)
@@ -426,12 +475,14 @@ class TestTransactionGuards:
 class TestStateModification:
     """State setters update the store and record events."""
 
-    def test_set_tempo_updates_property(self):
+    def test_set_tempo_updates_property(self) -> None:
+
         store = _fresh()
         store.set_tempo(140)
         assert store.tempo == 140
 
-    def test_set_tempo_records_old_and_new(self):
+    def test_set_tempo_records_old_and_new(self) -> None:
+
         store = _fresh()
         store.set_tempo(140)
         events = [e for e in store._events if e.event_type == EventType.TEMPO_CHANGED]
@@ -439,19 +490,22 @@ class TestStateModification:
         assert events[0].data["old_tempo"] == 120
         assert events[0].data["new_tempo"] == 140
 
-    def test_set_key_updates_property(self):
+    def test_set_key_updates_property(self) -> None:
+
         store = _fresh()
         store.set_key("Dm")
         assert store.key == "Dm"
 
-    def test_set_key_records_event(self):
+    def test_set_key_records_event(self) -> None:
+
         store = _fresh()
         store.set_key("Am")
         events = [e for e in store._events if e.event_type == EventType.KEY_CHANGED]
         assert len(events) == 1
         assert events[0].data["new_key"] == "Am"
 
-    def test_add_effect_records_event(self):
+    def test_add_effect_records_event(self) -> None:
+
         store = _fresh()
         tid = store.create_track("Drums")
         store.add_effect(tid, "reverb")
@@ -471,24 +525,28 @@ class TestNoteMaterialization:
     """add_notes / remove_notes / get_region_notes work correctly."""
 
     def _setup(self) -> tuple[StateStore, str, str]:
+
         store = _fresh()
         tid = store.create_track("Bass")
         rid = store.create_region("Verse", parent_track_id=tid)
         return store, tid, rid
 
-    def test_add_notes_materializes(self):
+    def test_add_notes_materializes(self) -> None:
+
         store, _, rid = self._setup()
         store.add_notes(rid, [_note(60), _note(62)])
         notes = store.get_region_notes(rid)
         assert len(notes) == 2
 
-    def test_add_notes_accumulates(self):
+    def test_add_notes_accumulates(self) -> None:
+
         store, _, rid = self._setup()
         store.add_notes(rid, [_note(60)])
         store.add_notes(rid, [_note(62)])
         assert len(store.get_region_notes(rid)) == 2
 
-    def test_add_notes_records_event(self):
+    def test_add_notes_records_event(self) -> None:
+
         store, _, rid = self._setup()
         store.add_notes(rid, [_note(60)])
         events = [
@@ -498,7 +556,8 @@ class TestNoteMaterialization:
         assert len(events) == 1
         assert events[0].data["notes_count"] == 1
 
-    def test_get_region_notes_returns_deep_copy(self):
+    def test_get_region_notes_returns_deep_copy(self) -> None:
+
         """Mutating the returned list must not affect the store."""
         store, _, rid = self._setup()
         store.add_notes(rid, [_note(60)])
@@ -506,14 +565,17 @@ class TestNoteMaterialization:
         notes.clear()
         assert len(store.get_region_notes(rid)) == 1
 
-    def test_get_region_notes_empty_region_returns_empty(self):
+    def test_get_region_notes_empty_region_returns_empty(self) -> None:
+
         store, _, rid = self._setup()
         assert store.get_region_notes(rid) == []
 
-    def test_get_region_notes_unknown_region_returns_empty(self):
+    def test_get_region_notes_unknown_region_returns_empty(self) -> None:
+
         assert _fresh().get_region_notes("nonexistent") == []
 
-    def test_remove_notes_by_pitch_and_beat(self):
+    def test_remove_notes_by_pitch_and_beat(self) -> None:
+
         store, _, rid = self._setup()
         store.add_notes(rid, [_note(60, 0.0, 1.0), _note(62, 1.0, 1.0)])
         store.remove_notes(rid, [_note(60, 0.0, 1.0)])
@@ -521,13 +583,15 @@ class TestNoteMaterialization:
         assert len(remaining) == 1
         assert remaining[0]["pitch"] == 62
 
-    def test_remove_notes_non_matching_criteria_leaves_all(self):
+    def test_remove_notes_non_matching_criteria_leaves_all(self) -> None:
+
         store, _, rid = self._setup()
         store.add_notes(rid, [_note(60), _note(62)])
         store.remove_notes(rid, [_note(99, 99.0, 99.0)])  # no match
         assert len(store.get_region_notes(rid)) == 2
 
-    def test_remove_notes_records_event(self):
+    def test_remove_notes_records_event(self) -> None:
+
         store, _, rid = self._setup()
         store.add_notes(rid, [_note(60)])
         store.remove_notes(rid, [_note(60)])
@@ -537,14 +601,16 @@ class TestNoteMaterialization:
         ]
         assert len(events) == 1
 
-    def test_remove_all_notes(self):
+    def test_remove_all_notes(self) -> None:
+
         store, _, rid = self._setup()
         notes = [_note(p) for p in [60, 62, 64, 65, 67]]
         store.add_notes(rid, notes)
         store.remove_notes(rid, notes)
         assert store.get_region_notes(rid) == []
 
-    def test_add_notes_to_unknown_region_does_not_raise(self):
+    def test_add_notes_to_unknown_region_does_not_raise(self) -> None:
+
         """add_notes to an unregistered region ID works (creates entry)."""
         store = _fresh()
         store.add_notes("phantom-region-id", [_note(60)])
@@ -558,43 +624,51 @@ class TestNoteMaterialization:
 class TestNotesMatch:
     """_notes_match uses pitch + start_beat + duration_beats with float tolerance."""
 
-    def test_exact_match(self):
+    def test_exact_match(self) -> None:
+
         n = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
         assert _notes_match(n, n.copy())
 
-    def test_pitch_mismatch(self):
+    def test_pitch_mismatch(self) -> None:
+
         n = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
         c = {"pitch": 62, "start_beat": 0.0, "duration_beats": 1.0}
         assert not _notes_match(n, c)
 
-    def test_start_beat_mismatch(self):
+    def test_start_beat_mismatch(self) -> None:
+
         n = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
         c = {"pitch": 60, "start_beat": 0.5, "duration_beats": 1.0}
         assert not _notes_match(n, c)
 
-    def test_duration_mismatch(self):
+    def test_duration_mismatch(self) -> None:
+
         n = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
         c = {"pitch": 60, "start_beat": 0.0, "duration_beats": 2.0}
         assert not _notes_match(n, c)
 
-    def test_float_tolerance_passes(self):
+    def test_float_tolerance_passes(self) -> None:
+
         """Differences within 1e-6 are treated as equal."""
         n = {"pitch": 60, "start_beat": 0.0,       "duration_beats": 1.0}
         c = {"pitch": 60, "start_beat": 1e-7,      "duration_beats": 1.0 + 1e-7}
         assert _notes_match(n, c)
 
-    def test_float_outside_tolerance_fails(self):
+    def test_float_outside_tolerance_fails(self) -> None:
+
         n = {"pitch": 60, "start_beat": 0.0,  "duration_beats": 1.0}
         c = {"pitch": 60, "start_beat": 1e-5, "duration_beats": 1.0}
         assert not _notes_match(n, c)
 
-    def test_velocity_not_matched(self):
+    def test_velocity_not_matched(self) -> None:
+
         """velocity difference must NOT prevent a match."""
         n = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100}
         c = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 50}
         assert _notes_match(n, c)
 
-    def test_missing_fields_default_to_zero(self):
+    def test_missing_fields_default_to_zero(self) -> None:
+
         n = {"pitch": 60}
         c = {"pitch": 60}
         assert _notes_match(n, c)
@@ -607,7 +681,8 @@ class TestNotesMatch:
 class TestSyncFromClient:
     """sync_from_client replaces registry and note store with client snapshot."""
 
-    def _project(self) -> dict:
+    def _project(self) -> dict[str, Any]:
+
         return {
             "tempo": 140,
             "key": "Dm",
@@ -633,47 +708,55 @@ class TestSyncFromClient:
             "buses": [{"id": "b1", "name": "Reverb"}],
         }
 
-    def test_sync_populates_tracks(self):
+    def test_sync_populates_tracks(self) -> None:
+
         store = _fresh()
         store.sync_from_client(self._project())
         assert store.registry.exists_track("t1")
         assert store.registry.exists_track("t2")
 
-    def test_sync_populates_regions(self):
+    def test_sync_populates_regions(self) -> None:
+
         store = _fresh()
         store.sync_from_client(self._project())
         assert store.registry.exists_region("r1")
 
-    def test_sync_populates_notes(self):
+    def test_sync_populates_notes(self) -> None:
+
         store = _fresh()
         store.sync_from_client(self._project())
         notes = store.get_region_notes("r1")
         assert len(notes) == 1
         assert notes[0]["pitch"] == 36
 
-    def test_sync_sets_tempo(self):
+    def test_sync_sets_tempo(self) -> None:
+
         store = _fresh()
         store.sync_from_client(self._project())
         assert store.tempo == 140
 
-    def test_sync_sets_key(self):
+    def test_sync_sets_key(self) -> None:
+
         store = _fresh()
         store.sync_from_client(self._project())
         assert store.key == "Dm"
 
-    def test_sync_sets_time_signature_string(self):
+    def test_sync_sets_time_signature_string(self) -> None:
+
         store = _fresh()
         store.sync_from_client(self._project())
         assert store.time_signature == (3, 4)
 
-    def test_sync_sets_time_signature_dict(self):
+    def test_sync_sets_time_signature_dict(self) -> None:
+
         store = _fresh()
         store.sync_from_client({
             "timeSignature": {"numerator": 6, "denominator": 8}
         })
         assert store.time_signature == (6, 8)
 
-    def test_sync_clears_stale_tracks(self):
+    def test_sync_clears_stale_tracks(self) -> None:
+
         """Stale tracks from a previous sync must not survive."""
         store = _fresh()
         # First sync: old project
@@ -689,7 +772,8 @@ class TestSyncFromClient:
         assert not store.registry.exists_track("old-t")
         assert store.registry.exists_track("new-t")
 
-    def test_sync_clears_stale_notes(self):
+    def test_sync_clears_stale_notes(self) -> None:
+
         """Notes from a previous sync must not survive into the new sync."""
         store = _fresh()
         store.sync_from_client({
@@ -706,7 +790,8 @@ class TestSyncFromClient:
         })
         assert store.get_region_notes("r1") == []
 
-    def test_sync_preserves_notes_when_key_absent(self):
+    def test_sync_preserves_notes_when_key_absent(self) -> None:
+
         """When the client reports a region without a 'notes' key, keep prior notes."""
         store = _fresh()
         store.sync_from_client({
@@ -724,14 +809,16 @@ class TestSyncFromClient:
         assert len(store.get_region_notes("r1")) == 1
         assert store.get_region_notes("r1")[0]["pitch"] == 60
 
-    def test_sync_is_idempotent(self):
+    def test_sync_is_idempotent(self) -> None:
+
         project = self._project()
         store = _fresh()
         store.sync_from_client(project)
         store.sync_from_client(project)
         assert len(store.registry.list_tracks()) == 2
 
-    def test_sync_empty_project_no_error(self):
+    def test_sync_empty_project_no_error(self) -> None:
+
         store = _fresh()
         store.sync_from_client({})
         assert store.registry.list_tracks() == []
@@ -744,7 +831,8 @@ class TestSyncFromClient:
 class TestEventLog:
     """Event log records every mutation in order."""
 
-    def test_version_increments_per_event(self):
+    def test_version_increments_per_event(self) -> None:
+
         store = _fresh()
         v0 = store.version
         store.create_track("T1")
@@ -754,7 +842,8 @@ class TestEventLog:
         assert v1 == v0 + 1
         assert v2 == v0 + 2
 
-    def test_get_events_since_returns_only_newer(self):
+    def test_get_events_since_returns_only_newer(self) -> None:
+
         store = _fresh()
         store.create_track("T1")
         v1 = store.version
@@ -763,14 +852,16 @@ class TestEventLog:
         newer = store.get_events_since(v1)
         assert all(e.version > v1 for e in newer)
 
-    def test_get_events_since_zero_returns_all(self):
+    def test_get_events_since_zero_returns_all(self) -> None:
+
         store = _fresh()
         store.create_track("T")
         store.set_tempo(100)
         events = store.get_events_since(0)
         assert len(events) >= 2
 
-    def test_get_entity_events_filters_by_entity(self):
+    def test_get_entity_events_filters_by_entity(self) -> None:
+
         store = _fresh()
         tid1 = store.create_track("Drums")
         tid2 = store.create_track("Bass")
@@ -779,7 +870,8 @@ class TestEventLog:
         assert all(e.entity_id == tid1 for e in e1)
         assert all(e.entity_id == tid2 for e in e2)
 
-    def test_events_have_correct_type(self):
+    def test_events_have_correct_type(self) -> None:
+
         store = _fresh()
         tid = store.create_track("Drums")
         rid = store.create_region("P", parent_track_id=tid)
@@ -789,13 +881,15 @@ class TestEventLog:
         assert EventType.REGION_CREATED in types
         assert EventType.TEMPO_CHANGED in types
 
-    def test_events_have_timestamps(self):
+    def test_events_have_timestamps(self) -> None:
+
         store = _fresh()
         store.create_track("T")
         for e in store._events:
             assert e.timestamp is not None
 
-    def test_transaction_events_have_tx_id(self):
+    def test_transaction_events_have_tx_id(self) -> None:
+
         store = _fresh()
         tx = store.begin_transaction()
         tid = store.create_track("T", transaction=tx)
@@ -811,7 +905,8 @@ class TestEventLog:
 class TestSerialization:
     """to_dict produces a complete snapshot."""
 
-    def test_to_dict_has_required_keys(self):
+    def test_to_dict_has_required_keys(self) -> None:
+
         store = _fresh()
         d = store.to_dict()
         assert "conversation_id" in d
@@ -821,20 +916,23 @@ class TestSerialization:
         assert "events" in d
         assert "project_metadata" in d
 
-    def test_to_dict_version_matches(self):
+    def test_to_dict_version_matches(self) -> None:
+
         store = _fresh()
         store.create_track("Drums")
         d = store.to_dict()
         assert d["version"] == store.version
 
-    def test_to_dict_registry_has_tracks(self):
+    def test_to_dict_registry_has_tracks(self) -> None:
+
         store = _fresh()
         store.create_track("Drums")
         d = store.to_dict()
         assert "tracks" in d["registry"]
         assert len(d["registry"]["tracks"]) == 1
 
-    def test_to_dict_project_metadata_has_tempo_and_key(self):
+    def test_to_dict_project_metadata_has_tempo_and_key(self) -> None:
+
         store = _fresh()
         store.set_tempo(140)
         store.set_key("Am")
@@ -842,7 +940,8 @@ class TestSerialization:
         assert d["project_metadata"]["tempo"] == 140
         assert d["project_metadata"]["key"] == "Am"
 
-    def test_state_event_to_dict(self):
+    def test_state_event_to_dict(self) -> None:
+
         store = _fresh()
         tid = store.create_track("T")
         events = store.get_entity_events(tid)
@@ -860,31 +959,37 @@ class TestSerialization:
 class TestOptimisticConcurrency:
     """get_state_id / check_state_id for variation commit safety."""
 
-    def test_initial_state_id_is_zero(self):
+    def test_initial_state_id_is_zero(self) -> None:
+
         store = _fresh()
         assert store.get_state_id() == "0"
 
-    def test_state_id_increments_with_mutations(self):
+    def test_state_id_increments_with_mutations(self) -> None:
+
         store = _fresh()
         store.create_track("T")
         assert store.get_state_id() == str(store.version)
         assert store.get_state_id() != "0"
 
-    def test_check_state_id_matches_current(self):
+    def test_check_state_id_matches_current(self) -> None:
+
         store = _fresh()
         sid = store.get_state_id()
         assert store.check_state_id(sid)
 
-    def test_check_state_id_fails_after_mutation(self):
+    def test_check_state_id_fails_after_mutation(self) -> None:
+
         store = _fresh()
         sid = store.get_state_id()  # "0"
         store.create_track("T")
         assert not store.check_state_id(sid)
 
-    def test_check_state_id_invalid_string_returns_false(self):
+    def test_check_state_id_invalid_string_returns_false(self) -> None:
+
         assert not _fresh().check_state_id("not-a-number")
 
-    def test_check_state_id_empty_string_returns_false(self):
+    def test_check_state_id_empty_string_returns_false(self) -> None:
+
         assert not _fresh().check_state_id("")
 
 
@@ -895,46 +1000,55 @@ class TestOptimisticConcurrency:
 class TestStoreRegistry:
     """Module-level store registry is correct."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
+
         clear_all_stores()
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
+
         clear_all_stores()
 
-    def test_get_or_create_returns_store(self):
+    def test_get_or_create_returns_store(self) -> None:
+
         store = get_or_create_store("conv-1")
         assert isinstance(store, StateStore)
 
-    def test_get_or_create_same_conv_returns_same_store(self):
+    def test_get_or_create_same_conv_returns_same_store(self) -> None:
+
         s1 = get_or_create_store("conv-1")
         s2 = get_or_create_store("conv-1")
         assert s1 is s2
 
-    def test_different_conv_different_stores(self):
+    def test_different_conv_different_stores(self) -> None:
+
         s1 = get_or_create_store("conv-1")
         s2 = get_or_create_store("conv-2")
         assert s1 is not s2
 
-    def test_clear_store_removes_it(self):
+    def test_clear_store_removes_it(self) -> None:
+
         get_or_create_store("conv-1")
         clear_store("conv-1")
         # Creating again gives a fresh store
         s_new = get_or_create_store("conv-1")
         assert s_new.version == 0
 
-    def test_clear_all_stores_removes_all(self):
+    def test_clear_all_stores_removes_all(self) -> None:
+
         get_or_create_store("conv-a")
         get_or_create_store("conv-b")
         clear_all_stores()
         s = get_or_create_store("conv-a")
         assert s.version == 0
 
-    def test_store_retains_state_across_calls(self):
+    def test_store_retains_state_across_calls(self) -> None:
+
         store = get_or_create_store("conv-persist")
         tid = store.create_track("Drums")
         same_store = get_or_create_store("conv-persist")
         assert same_store.registry.exists_track(tid)
 
-    def test_project_id_passed_to_new_store(self):
+    def test_project_id_passed_to_new_store(self) -> None:
+
         store = get_or_create_store("conv-new", project_id="my-project")
         assert store.project_id == "my-project"

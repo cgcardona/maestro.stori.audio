@@ -7,6 +7,9 @@ contributors can rely on the contract.
 
 Uses client and auth_headers from conftest (in-memory DB).
 """
+from __future__ import annotations
+
+from httpx import AsyncClient
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -19,12 +22,14 @@ class TestRootEndpoint:
     """GET / — service info."""
 
     @pytest.mark.anyio
-    async def test_status_200(self, client):
+    async def test_status_200(self, client: AsyncClient) -> None:
+
         response = await client.get("/")
         assert response.status_code == 200
 
     @pytest.mark.anyio
-    async def test_response_has_required_keys(self, client):
+    async def test_response_has_required_keys(self, client: AsyncClient) -> None:
+
         response = await client.get("/")
         assert response.status_code == 200
         data = response.json()
@@ -37,12 +42,14 @@ class TestHealthEndpoint:
     """GET /api/v1/health — basic liveness."""
 
     @pytest.mark.anyio
-    async def test_status_200(self, client):
+    async def test_status_200(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/health")
         assert response.status_code == 200
 
     @pytest.mark.anyio
-    async def test_response_has_required_keys(self, client):
+    async def test_response_has_required_keys(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/health")
         assert response.status_code == 200
         data = response.json()
@@ -61,7 +68,8 @@ class TestHealthFullEndpoint:
     """
 
     @pytest.mark.anyio
-    async def test_status_200_or_503(self, client):
+    async def test_status_200_or_503(self, client: AsyncClient) -> None:
+
         with patch(
             "app.services.orpheus.OrpheusClient.health_check",
             new_callable=AsyncMock,
@@ -71,7 +79,8 @@ class TestHealthFullEndpoint:
         assert response.status_code in (200, 503)
 
     @pytest.mark.anyio
-    async def test_response_has_status_and_dependencies(self, client):
+    async def test_response_has_status_and_dependencies(self, client: AsyncClient) -> None:
+
         with patch(
             "app.services.orpheus.OrpheusClient.health_check",
             new_callable=AsyncMock,
@@ -88,12 +97,14 @@ class TestModelsEndpoint:
     """GET /api/v1/models — list models (no auth)."""
 
     @pytest.mark.anyio
-    async def test_status_200(self, client):
+    async def test_status_200(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/models")
         assert response.status_code == 200
 
     @pytest.mark.anyio
-    async def test_response_has_models_and_default(self, client):
+    async def test_response_has_models_and_default(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/models")
         assert response.status_code == 200
         data = response.json()
@@ -116,7 +127,8 @@ class TestComposeStreamRequiresAuth:
     """POST /api/v1/maestro/stream."""
 
     @pytest.mark.anyio
-    async def test_no_auth_returns_401(self, client):
+    async def test_no_auth_returns_401(self, client: AsyncClient) -> None:
+
         response = await client.post(
             "/api/v1/maestro/stream",
             json={"prompt": "play", "project": {}},
@@ -124,7 +136,8 @@ class TestComposeStreamRequiresAuth:
         assert response.status_code == 401
 
     @pytest.mark.anyio
-    async def test_invalid_token_returns_401(self, client):
+    async def test_invalid_token_returns_401(self, client: AsyncClient) -> None:
+
         response = await client.post(
             "/api/v1/maestro/stream",
             headers={"Authorization": "Bearer invalid-token"},
@@ -137,7 +150,8 @@ class TestValidateTokenRequiresAuth:
     """GET /api/v1/validate-token."""
 
     @pytest.mark.anyio
-    async def test_no_auth_returns_401(self, client):
+    async def test_no_auth_returns_401(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/validate-token")
         assert response.status_code == 401
 
@@ -146,7 +160,8 @@ class TestConversationsRequireAuth:
     """Conversation endpoints require JWT."""
 
     @pytest.mark.anyio
-    async def test_post_conversations_401_without_auth(self, client):
+    async def test_post_conversations_401_without_auth(self, client: AsyncClient) -> None:
+
         response = await client.post(
             "/api/v1/conversations",
             json={"title": "Test"},
@@ -154,12 +169,14 @@ class TestConversationsRequireAuth:
         assert response.status_code == 401
 
     @pytest.mark.anyio
-    async def test_get_conversations_401_without_auth(self, client):
+    async def test_get_conversations_401_without_auth(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/conversations")
         assert response.status_code == 401
 
     @pytest.mark.anyio
-    async def test_get_conversations_search_401_without_auth(self, client):
+    async def test_get_conversations_search_401_without_auth(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/conversations/search?q=test")
         assert response.status_code == 401
 
@@ -168,7 +185,8 @@ class TestVariationRequireAuth:
     """Variation endpoints require JWT."""
 
     @pytest.mark.anyio
-    async def test_post_variation_propose_401_without_auth(self, client):
+    async def test_post_variation_propose_401_without_auth(self, client: AsyncClient) -> None:
+
         response = await client.post(
             "/api/v1/variation/propose",
             json={
@@ -181,12 +199,14 @@ class TestVariationRequireAuth:
         assert response.status_code == 401
 
     @pytest.mark.anyio
-    async def test_get_variation_stream_401_without_auth(self, client):
+    async def test_get_variation_stream_401_without_auth(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/variation/stream?variation_id=v1")
         assert response.status_code == 401
 
     @pytest.mark.anyio
-    async def test_post_variation_commit_401_without_auth(self, client):
+    async def test_post_variation_commit_401_without_auth(self, client: AsyncClient) -> None:
+
         response = await client.post(
             "/api/v1/variation/commit",
             json={
@@ -199,7 +219,8 @@ class TestVariationRequireAuth:
         assert response.status_code == 401
 
     @pytest.mark.anyio
-    async def test_post_variation_discard_401_without_auth(self, client):
+    async def test_post_variation_discard_401_without_auth(self, client: AsyncClient) -> None:
+
         response = await client.post(
             "/api/v1/variation/discard",
             json={"variation_id": "v1", "project_id": "p1"},
@@ -211,7 +232,8 @@ class TestUsersMeRequiresAuth:
     """GET /api/v1/users/me requires JWT."""
 
     @pytest.mark.anyio
-    async def test_no_auth_returns_401(self, client):
+    async def test_no_auth_returns_401(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/users/me")
         assert response.status_code == 401
 
@@ -220,17 +242,20 @@ class TestMcpRequireAuth:
     """MCP HTTP endpoints require JWT (prefix /api/v1/mcp)."""
 
     @pytest.mark.anyio
-    async def test_get_tools_401_without_auth(self, client):
+    async def test_get_tools_401_without_auth(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/mcp/tools")
         assert response.status_code == 401
 
     @pytest.mark.anyio
-    async def test_get_tool_by_name_401_without_auth(self, client):
+    async def test_get_tool_by_name_401_without_auth(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/mcp/tools/stori_play")
         assert response.status_code == 401
 
     @pytest.mark.anyio
-    async def test_post_tool_call_401_without_auth(self, client):
+    async def test_post_tool_call_401_without_auth(self, client: AsyncClient) -> None:
+
         response = await client.post(
             "/api/v1/mcp/tools/stori_play/call",
             json={"name": "stori_play", "arguments": {}},
@@ -238,7 +263,8 @@ class TestMcpRequireAuth:
         assert response.status_code == 401
 
     @pytest.mark.anyio
-    async def test_get_info_401_without_auth(self, client):
+    async def test_get_info_401_without_auth(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/mcp/info")
         assert response.status_code == 401
 
@@ -251,7 +277,8 @@ class TestConversationsWithAuth:
     """Conversation CRUD with valid JWT."""
 
     @pytest.mark.anyio
-    async def test_create_conversation_201_and_shape(self, client, auth_headers):
+    async def test_create_conversation_201_and_shape(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         response = await client.post(
             "/api/v1/conversations",
             headers=auth_headers,
@@ -268,7 +295,8 @@ class TestConversationsWithAuth:
         assert isinstance(data["messages"], list)
 
     @pytest.mark.anyio
-    async def test_list_conversations_200_and_shape(self, client, auth_headers):
+    async def test_list_conversations_200_and_shape(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         response = await client.get("/api/v1/conversations", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
@@ -279,7 +307,8 @@ class TestConversationsWithAuth:
         assert isinstance(data["conversations"], list)
 
     @pytest.mark.anyio
-    async def test_search_conversations_200_and_shape(self, client, auth_headers):
+    async def test_search_conversations_200_and_shape(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         response = await client.get(
             "/api/v1/conversations/search?q=test",
             headers=auth_headers,
@@ -290,7 +319,8 @@ class TestConversationsWithAuth:
         assert isinstance(data["results"], list)
 
     @pytest.mark.anyio
-    async def test_get_conversation_200_and_shape(self, client, auth_headers):
+    async def test_get_conversation_200_and_shape(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         # Create one first
         create = await client.post(
             "/api/v1/conversations",
@@ -320,7 +350,8 @@ class TestUsersRegister:
     """POST /api/v1/users/register — no auth."""
 
     @pytest.mark.anyio
-    async def test_register_200_or_201_and_shape(self, client):
+    async def test_register_200_or_201_and_shape(self, client: AsyncClient) -> None:
+
         import uuid
         uid = str(uuid.uuid4())
         response = await client.post(
@@ -336,7 +367,8 @@ class TestUsersRegister:
         assert "usageCount" in data or "createdAt" in data
 
     @pytest.mark.anyio
-    async def test_register_invalid_uuid_400(self, client):
+    async def test_register_invalid_uuid_400(self, client: AsyncClient) -> None:
+
         response = await client.post(
             "/api/v1/users/register",
             json={"user_id": "not-a-uuid"},
@@ -350,7 +382,8 @@ class TestUsersMeWithAuth:
     """GET /api/v1/users/me — with JWT."""
 
     @pytest.mark.anyio
-    async def test_me_200_and_shape(self, client, auth_headers):
+    async def test_me_200_and_shape(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         response = await client.get("/api/v1/users/me", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
@@ -369,8 +402,8 @@ class TestVariationProposeWithAuth:
 
     @pytest.mark.anyio
     async def test_propose_accepts_request_and_returns_structured_response(
-        self, client, auth_headers
-    ):
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
         response = await client.post(
             "/api/v1/variation/propose",
             headers=auth_headers,
@@ -400,19 +433,22 @@ class TestAssetsRequireDeviceId:
     """Asset routes require X-Device-ID header (UUID)."""
 
     @pytest.mark.anyio
-    async def test_list_drum_kits_400_without_device_id(self, client):
+    async def test_list_drum_kits_400_without_device_id(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/assets/drum-kits")
         assert response.status_code == 400
         data = response.json()
         assert "detail" in data
 
     @pytest.mark.anyio
-    async def test_list_soundfonts_400_without_device_id(self, client):
+    async def test_list_soundfonts_400_without_device_id(self, client: AsyncClient) -> None:
+
         response = await client.get("/api/v1/assets/soundfonts")
         assert response.status_code == 400
 
     @pytest.mark.anyio
-    async def test_list_drum_kits_200_or_503_with_device_id(self, client):
+    async def test_list_drum_kits_200_or_503_with_device_id(self, client: AsyncClient) -> None:
+
         response = await client.get(
             "/api/v1/assets/drum-kits",
             headers={"X-Device-ID": "550e8400-e29b-41d4-a716-446655440000"},
@@ -423,7 +459,8 @@ class TestAssetsRequireDeviceId:
             assert isinstance(data, list)
 
     @pytest.mark.anyio
-    async def test_list_soundfonts_200_or_503_with_device_id(self, client):
+    async def test_list_soundfonts_200_or_503_with_device_id(self, client: AsyncClient) -> None:
+
         response = await client.get(
             "/api/v1/assets/soundfonts",
             headers={"X-Device-ID": "550e8400-e29b-41d4-a716-446655440000"},
@@ -442,7 +479,8 @@ class TestMcpWithAuth:
     """MCP endpoints with valid JWT."""
 
     @pytest.mark.anyio
-    async def test_get_tools_200_and_shape(self, client, auth_headers):
+    async def test_get_tools_200_and_shape(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         response = await client.get("/api/v1/mcp/tools", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
@@ -453,14 +491,16 @@ class TestMcpWithAuth:
             assert "name" in t
 
     @pytest.mark.anyio
-    async def test_get_info_200_and_shape(self, client, auth_headers):
+    async def test_get_info_200_and_shape(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         response = await client.get("/api/v1/mcp/info", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert "name" in data or "version" in data or "server" in data
 
     @pytest.mark.anyio
-    async def test_get_tool_by_name_200_or_error_shape(self, client, auth_headers):
+    async def test_get_tool_by_name_200_or_error_shape(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         response = await client.get(
             "/api/v1/mcp/tools/stori_play",
             headers=auth_headers,
@@ -473,7 +513,8 @@ class TestMcpWithAuth:
             assert "name" in data
 
     @pytest.mark.anyio
-    async def test_post_tool_call_200_and_shape(self, client, auth_headers):
+    async def test_post_tool_call_200_and_shape(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
+
         response = await client.post(
             "/api/v1/mcp/tools/stori_play/call",
             headers=auth_headers,
@@ -494,7 +535,8 @@ class TestUnauthorizedResponseShape:
     """401 responses have a consistent shape for clients."""
 
     @pytest.mark.anyio
-    async def test_401_has_detail(self, client):
+    async def test_401_has_detail(self, client: AsyncClient) -> None:
+
         response = await client.post(
             "/api/v1/maestro/stream",
             json={"prompt": "play", "project": {}},
@@ -508,7 +550,8 @@ class TestValidationErrorShape:
     """422 validation errors have a structured body."""
 
     @pytest.mark.anyio
-    async def test_validation_error_422_has_detail(self, client):
+    async def test_validation_error_422_has_detail(self, client: AsyncClient) -> None:
+
         response = await client.post(
             "/api/v1/users/register",
             json={},

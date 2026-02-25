@@ -1,4 +1,5 @@
 """Automation MCP tool definitions."""
+from __future__ import annotations
 
 AUTOMATION_TOOLS = [
     {

@@ -148,7 +148,7 @@ services:
     environment:
       # Gradio Client needs HF token for Space GPU quota; use same key as Maestro
       HF_TOKEN: ${STORI_HF_API_KEY:-}
-      STORI_ORPHEUS_SPACE: ${STORI_ORPHEUS_SPACE:-asigalov61/Orpheus-Music-Transformer}
+      STORI_ORPHEUS_SPACE: ${STORI_ORPHEUS_SPACE:-cgcardona/Orpheus-Music-Transformer}
       ORPHEUS_CACHE_DIR: /data/cache
     volumes:
       - orpheus_cache:/data/cache

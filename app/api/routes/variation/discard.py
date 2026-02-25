@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 
 from app.models.requests import DiscardVariationRequest
@@ -28,8 +30,8 @@ logger = logging.getLogger(__name__)
 async def discard_variation(
     request: Request,
     discard_request: DiscardVariationRequest,
-    token_claims: dict = Depends(require_valid_token),
-):
+    token_claims: dict[str, Any] = Depends(require_valid_token),
+) -> dict[str, bool]:
     """Discard a variation — cancel generation if streaming, transition to DISCARDED."""
     vstore = get_variation_store()
     record = vstore.get(discard_request.variation_id)

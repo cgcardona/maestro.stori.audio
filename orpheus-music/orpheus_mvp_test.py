@@ -11,6 +11,7 @@ This script does EXACTLY what the HF Gradio GUI does:
 If this produces high-quality output, the issue is in our pipeline.
 If this produces poor output, the issue is in how we call Orpheus.
 """
+from __future__ import annotations
 
 import os
 import sys
@@ -53,7 +54,7 @@ def create_minimal_seed(tempo: int = 120) -> str:
     return path
 
 
-def analyze_midi(path: str) -> dict:
+def analyze_midi(path: str) -> dict[str, Any]:
     """Analyze a MIDI file using mido and print summary."""
     import mido
 
@@ -113,11 +114,11 @@ def analyze_midi(path: str) -> dict:
     }
 
 
-def main():
+def main() -> None:
     from gradio_client import Client, handle_file
 
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
-    space_id = os.environ.get("STORI_ORPHEUS_SPACE", "asigalov61/Orpheus-Music-Transformer")
+    space_id = os.environ.get("STORI_ORPHEUS_SPACE", "cgcardona/Orpheus-Music-Transformer")
 
     instruments = ["Acoustic Grand", "Electric Bass(finger)"]
     num_prime = 6656

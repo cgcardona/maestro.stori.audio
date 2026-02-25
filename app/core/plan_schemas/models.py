@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -24,13 +24,13 @@ class GenerationStep(BaseModel):
     style: str = Field(..., min_length=1, max_length=100, description="Style tag: boom_bap, trap, house, lofi, jazz, funk, etc")
     tempo: int = Field(..., ge=30, le=300, description="Tempo in BPM (30-300)")
     bars: int = Field(..., ge=1, le=64, description="Number of bars to generate (1-64)")
-    key: Optional[str] = Field(default=None, description="Musical key (e.g., 'Cm', 'F#', 'G minor'). Required for melodic instruments.")
-    constraints: Optional[dict[str, Any]] = Field(default=None, description="Additional constraints (density, syncopation, swing, etc.)")
-    trackName: Optional[str] = Field(default=None, description="Override track name (e.g. 'Banjo') when role is a generic category like 'melody'")
+    key: str | None = Field(default=None, description="Musical key (e.g., 'Cm', 'F#', 'G minor'). Required for melodic instruments.")
+    constraints: dict[str, Any] | None = Field(default=None, description="Additional constraints (density, syncopation, swing, etc.)")
+    trackName: str | None = Field(default=None, description="Override track name (e.g. 'Banjo') when role is a generic category like 'melody'")
 
     @field_validator('key')
     @classmethod
-    def validate_key(cls, v: Optional[str], info) -> Optional[str]:
+    def validate_key(cls, v: str | None, info: Any) -> str | None:
         if v is None:
             role = info.data.get('role', '')
             if role in ('bass', 'chords', 'melody', 'arp', 'pads', 'lead'):
@@ -52,10 +52,10 @@ class EditStep(BaseModel):
         {"action": "add_region", "track": "Drums", "barStart": 0, "bars": 8}
     """
     action: Literal["add_track", "add_region"] = Field(..., description="Edit action type")
-    name: Optional[str] = Field(default=None, description="Name for the entity (track or region)")
-    track: Optional[str] = Field(default=None, description="Track name/ID (for add_region)")
-    barStart: Optional[int] = Field(default=0, ge=0, description="Start bar for region (0-indexed)")
-    bars: Optional[int] = Field(default=None, ge=1, le=64, description="Duration in bars (for add_region)")
+    name: str | None = Field(default=None, description="Name for the entity (track or region)")
+    track: str | None = Field(default=None, description="Track name/ID (for add_region)")
+    barStart: int | None = Field(default=0, ge=0, description="Start bar for region (0-indexed)")
+    bars: int | None = Field(default=None, ge=1, le=64, description="Duration in bars (for add_region)")
 
     @model_validator(mode='after')
     def validate_action_params(self) -> "EditStep":
@@ -79,13 +79,13 @@ class MixStep(BaseModel):
     """
     action: Literal["add_insert", "add_send", "set_volume", "set_pan"] = Field(..., description="Mix action type")
     track: str = Field(..., description="Target track name/ID")
-    type: Optional[str] = Field(default=None, description="Effect type for add_insert: compressor, eq, reverb, delay, chorus, etc.")
-    bus: Optional[str] = Field(default=None, description="Bus name/ID for add_send")
-    value: Optional[float] = Field(default=None, description="Value for set_volume (dB) or set_pan (-100 to 100)")
+    type: str | None = Field(default=None, description="Effect type for add_insert: compressor, eq, reverb, delay, chorus, etc.")
+    bus: str | None = Field(default=None, description="Bus name/ID for add_send")
+    value: float | None = Field(default=None, description="Value for set_volume (dB) or set_pan (-100 to 100)")
 
     @field_validator('type')
     @classmethod
-    def validate_effect_type(cls, v: Optional[str]) -> Optional[str]:
+    def validate_effect_type(cls, v: str | None) -> str | None:
         if v is None:
             return v
         valid_effects = {
@@ -114,7 +114,7 @@ class ExecutionPlanSchema(BaseModel):
     generations: list[GenerationStep] = Field(default_factory=list, description="MIDI generation steps")
     edits: list[EditStep] = Field(default_factory=list, description="DAW editing steps (track/region creation)")
     mix: list[MixStep] = Field(default_factory=list, description="Mixing/effects steps")
-    explanation: Optional[str] = Field(default=None, description="LLM's explanation of the plan (ignored in execution)")
+    explanation: str | None = Field(default=None, description="LLM's explanation of the plan (ignored in execution)")
 
     @model_validator(mode='after')
     def validate_tempo_consistency(self) -> "ExecutionPlanSchema":
@@ -160,7 +160,7 @@ class ExecutionPlanSchema(BaseModel):
 class PlanValidationResult(BaseModel):
     """Result of plan validation."""
     valid: bool
-    plan: Optional[ExecutionPlanSchema] = None
+    plan: ExecutionPlanSchema | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    raw_json: Optional[dict] = None
+    raw_json: dict[str, Any] | None = None

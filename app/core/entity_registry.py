@@ -19,7 +19,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +42,11 @@ class EntityInfo:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     # For regions: which track they belong to
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
 
     # Namespace scoping: which agent run created this entity.
     # Used to filter agent_manifest() so agents only see their own entities.
-    owner_agent_id: Optional[str] = None
+    owner_agent_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -86,7 +86,7 @@ class EntityRegistry:
             ...
     """
     
-    def __init__(self, project_id: Optional[str] = None):
+    def __init__(self, project_id: str | None = None):
         """
         Initialize a new entity registry.
         
@@ -136,9 +136,9 @@ class EntityRegistry:
     def create_track(
         self,
         name: str,
-        track_id: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
-        owner_agent_id: Optional[str] = None,
+        track_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        owner_agent_id: str | None = None,
     ) -> str:
         """
         Create and register a new track.
@@ -174,7 +174,7 @@ class EntityRegistry:
         parent_track_id: str,
         start_beat: int | float,
         duration_beats: int | float,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Return the ID of an existing region that occupies the same beat range, or None."""
         for rid in self._track_regions.get(parent_track_id, []):
             existing = self._regions.get(rid)
@@ -190,9 +190,9 @@ class EntityRegistry:
         self,
         name: str,
         parent_track_id: str,
-        region_id: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
-        owner_agent_id: Optional[str] = None,
+        region_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        owner_agent_id: str | None = None,
     ) -> str:
         """
         Create and register a new region.
@@ -253,8 +253,8 @@ class EntityRegistry:
     def create_bus(
         self,
         name: str,
-        bus_id: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        bus_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Create and register a new bus.
@@ -286,7 +286,7 @@ class EntityRegistry:
     # Entity Resolution (Name/ID → ID)
     # =========================================================================
     
-    def resolve_track(self, name_or_id: str, exact: bool = False) -> Optional[str]:
+    def resolve_track(self, name_or_id: str, exact: bool = False) -> str | None:
         """
         Resolve a track reference to its ID.
         
@@ -324,8 +324,8 @@ class EntityRegistry:
     def resolve_region(
         self,
         name_or_id: str,
-        parent_track: Optional[str] = None,
-    ) -> Optional[str]:
+        parent_track: str | None = None,
+    ) -> str | None:
         """
         Resolve a region reference to its ID.
         
@@ -369,7 +369,7 @@ class EntityRegistry:
         
         return None
     
-    def resolve_bus(self, name_or_id: str) -> Optional[str]:
+    def resolve_bus(self, name_or_id: str) -> str | None:
         """
         Resolve a bus reference to its ID.
         
@@ -427,15 +427,15 @@ class EntityRegistry:
     # Entity Retrieval
     # =========================================================================
     
-    def get_track(self, track_id: str) -> Optional[EntityInfo]:
+    def get_track(self, track_id: str) -> EntityInfo | None:
         """Get track info by ID."""
         return self._tracks.get(track_id)
     
-    def get_region(self, region_id: str) -> Optional[EntityInfo]:
+    def get_region(self, region_id: str) -> EntityInfo | None:
         """Get region info by ID."""
         return self._regions.get(region_id)
     
-    def get_bus(self, bus_id: str) -> Optional[EntityInfo]:
+    def get_bus(self, bus_id: str) -> EntityInfo | None:
         """Get bus info by ID."""
         return self._buses.get(bus_id)
     
@@ -444,7 +444,7 @@ class EntityRegistry:
         region_ids = self._track_regions.get(track_id, [])
         return [self._regions[rid] for rid in region_ids if rid in self._regions]
     
-    def get_latest_region_for_track(self, track_id: str) -> Optional[str]:
+    def get_latest_region_for_track(self, track_id: str) -> str | None:
         """Get the most recently created region for a track."""
         region_ids = self._track_regions.get(track_id, [])
         if not region_ids:
@@ -456,21 +456,21 @@ class EntityRegistry:
     # =========================================================================
     
     def list_tracks(self) -> list[EntityInfo]:
-        """List all registered tracks."""
+        """list all registered tracks."""
         return list(self._tracks.values())
     
     def list_regions(self) -> list[EntityInfo]:
-        """List all registered regions."""
+        """list all registered regions."""
         return list(self._regions.values())
     
     def list_buses(self) -> list[EntityInfo]:
-        """List all registered buses."""
+        """list all registered buses."""
         return list(self._buses.values())
     
     def agent_manifest(
         self,
-        track_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
+        track_id: str | None = None,
+        agent_id: str | None = None,
     ) -> str:
         """Compact text manifest of entities for injection into LLM context.
 
@@ -642,7 +642,7 @@ class EntityRegistry:
 # Convenience Functions
 # =============================================================================
 
-def create_registry_from_context(project_state: Optional[dict[str, Any]] = None) -> EntityRegistry:
+def create_registry_from_context(project_state: dict[str, Any] | None = None) -> EntityRegistry:
     """
     Create a new registry and optionally sync with project state.
     

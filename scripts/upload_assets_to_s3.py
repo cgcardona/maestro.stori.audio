@@ -29,6 +29,8 @@ Environment:
   STORI_ASSET_AUTHOR  Optional; default "Stori Maestro" (used when kit.json omits author)
   STORI_ASSET_LICENSE Optional; default "CC0" (used when kit.json omits license)
 """
+from __future__ import annotations
+
 import argparse
 import json
 import logging
@@ -145,7 +147,7 @@ def upload_soundfonts(client, bucket: str, source_dir: Path) -> list[dict]:
     return manifest_sf
 
 
-def upload_manifests(client, bucket: str, drum_kits: list[dict], soundfonts: list[dict]):
+def upload_manifests(client, bucket: str, drum_kits: list[dict], soundfonts: list[dict]) -> None:
     if drum_kits:
         body = json.dumps({"kits": drum_kits}, indent=2)
         client.put_object(
@@ -190,7 +192,7 @@ def build_bundle_zip(source_dir: Path, kit_ids: list[str]) -> bytes:
     return buf.getvalue()
 
 
-def upload_bundle(client, bucket: str, source_dir: Path, kit_ids: list[str]):
+def upload_bundle(client, bucket: str, source_dir: Path, kit_ids: list[str]) -> None:
     zip_bytes = build_bundle_zip(source_dir, kit_ids)
     from io import BytesIO
     client.upload_fileobj(
@@ -200,7 +202,7 @@ def upload_bundle(client, bucket: str, source_dir: Path, kit_ids: list[str]):
     logger.info("  Uploaded bundle -> s3://%s/%s", bucket, BUNDLE_KEY)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Upload drum kits and soundfonts to S3 for on-demand delivery",
     )
@@ -215,7 +217,7 @@ def main():
         sys.exit(1)
     bucket = args.bucket or os.environ.get("STORI_AWS_S3_ASSET_BUCKET")
     if not bucket:
-        logger.error("Set --bucket or STORI_AWS_S3_ASSET_BUCKET")
+        logger.error("set --bucket or STORI_AWS_S3_ASSET_BUCKET")
         sys.exit(1)
     client = get_s3_client(args.region)
     try:

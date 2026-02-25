@@ -16,9 +16,11 @@ Key safety features:
 - force_stop_after prevents over-completion
 - Tool allowlist + argument validation enforced server-side
 """
+from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
 
@@ -64,9 +66,9 @@ limiter = Limiter(key_func=get_remote_address)
 
 @router.get("/validate-token")
 async def validate_token(
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Validate access token and return budget info."""
     exp_timestamp = token_claims.get("exp", 0)
     expires_at = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
@@ -100,9 +102,9 @@ async def validate_token(
 async def stream_maestro(
     request: Request,
     maestro_request: MaestroRequest,
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> StreamingResponse:
     """
     Streaming composition endpoint (SSE).
 
@@ -170,7 +172,7 @@ async def stream_maestro(
         except Exception as e:
             logger.warning(f"Failed to load conversation history: {e}")
 
-    async def stream_with_budget():
+    async def stream_with_budget() -> AsyncIterator[str]:
         sequencer = SSESequencer()
         import time as _time
         _stream_start = _time.monotonic()
@@ -273,9 +275,9 @@ async def stream_maestro(
 async def preview_maestro(
     request: Request,
     maestro_request: MaestroRequest,
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Preview a composition plan without executing.
 

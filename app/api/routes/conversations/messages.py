@@ -6,8 +6,9 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
@@ -25,7 +26,7 @@ from app.services.budget import (
     InsufficientBudgetError,
 )
 from app.models.requests import MaestroRequest
-from app.api.routes.maestro import orchestrate, UsageTracker
+from app.core.maestro_handlers import orchestrate, UsageTracker
 from app.core.sse_utils import sse_event, SSESequencer
 from app.protocol.emitter import ProtocolSerializationError
 
@@ -38,9 +39,9 @@ async def add_message_to_conversation(
     conversation_id: str,
     maestro_request: MaestroRequest,
     request: Request,
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> StreamingResponse:
     """
     Add a message to a conversation and generate AI response.
 
@@ -81,14 +82,14 @@ async def add_message_to_conversation(
     )
     await db.commit()
 
-    async def stream_with_save():
+    async def stream_with_save() -> AsyncIterator[str]:
         usage_tracker = UsageTracker()
         sequencer = SSESequencer()
         assistant_content_parts: list[str] = []
-        tool_calls_made: list[dict] = []
-        sse_events_captured: list[dict] = []
+        tool_calls_made: list[dict[str, Any]] = []
+        sse_events_captured: list[dict[str, Any]] = []
         tool_actions: dict[str, Any] = {}
-        assistant_message_id: Optional[str] = None
+        assistant_message_id: str | None = None
 
         try:
             conversation_history: list[dict[str, Any]] = []

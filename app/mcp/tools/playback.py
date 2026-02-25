@@ -1,4 +1,5 @@
 """Playback control MCP tool definitions."""
+from __future__ import annotations
 
 PLAYBACK_TOOLS = [
     {

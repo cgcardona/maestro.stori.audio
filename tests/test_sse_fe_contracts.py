@@ -25,6 +25,7 @@ from app.core.tool_validation.constants import (
 # ---------------------------------------------------------------------------
 
 def _parse_sse(raw: str) -> dict[str, Any]:
+
     """Strip ``data: `` prefix and parse JSON payload."""
     assert raw.startswith("data: ")
     result: dict[str, Any] = json.loads(raw[6:].strip())
@@ -40,13 +41,15 @@ class TestCompleteEventContract:
     """complete: success (required)."""
 
     @pytest.mark.anyio
-    async def test_success_field_required(self):
+    async def test_success_field_required(self) -> None:
+
         event = await sse_event({"type": "complete", "success": True, "traceId": "t-1"})
         payload = _parse_sse(event)
         assert "success" in payload
 
     @pytest.mark.anyio
-    async def test_success_false_on_failure(self):
+    async def test_success_false_on_failure(self) -> None:
+
         event = await sse_event({"type": "complete", "success": False, "error": "timeout", "traceId": "t-1"})
         payload = _parse_sse(event)
         assert payload["success"] is False
@@ -56,7 +59,8 @@ class TestPreflightEventContract:
     """preflight: agentId, stepId, agentRole, label, toolName (required)."""
 
     @pytest.mark.anyio
-    async def test_required_fields_present(self):
+    async def test_required_fields_present(self) -> None:
+
         event = await sse_event({
             "type": "preflight",
             "agentId": "drums",
@@ -74,7 +78,8 @@ class TestPlanEventContract:
     """plan: planId (required, non-empty), steps[].stepId (required per step)."""
 
     @pytest.mark.anyio
-    async def test_plan_id_required(self):
+    async def test_plan_id_required(self) -> None:
+
         event = await sse_event({
             "type": "plan",
             "planId": "plan-abc",
@@ -91,7 +96,8 @@ class TestPlanStepUpdateContract:
     """planStepUpdate: stepId, status (both required)."""
 
     @pytest.mark.anyio
-    async def test_required_fields(self):
+    async def test_required_fields(self) -> None:
+
         event = await sse_event({
             "type": "planStepUpdate",
             "stepId": "step-1",
@@ -106,7 +112,8 @@ class TestToolCallEventContract:
     """toolCall: name, params (both required)."""
 
     @pytest.mark.anyio
-    async def test_required_fields(self):
+    async def test_required_fields(self) -> None:
+
         event = await sse_event({
             "type": "toolCall",
             "name": "stori_set_tempo",
@@ -122,7 +129,8 @@ class TestToolStartEventContract:
     """toolStart: name (required, non-empty)."""
 
     @pytest.mark.anyio
-    async def test_name_required(self):
+    async def test_name_required(self) -> None:
+
         event = await sse_event({
             "type": "toolStart",
             "name": "stori_add_midi_track",
@@ -136,7 +144,8 @@ class TestToolErrorEventContract:
     """toolError: name, error (both required, non-empty)."""
 
     @pytest.mark.anyio
-    async def test_required_fields(self):
+    async def test_required_fields(self) -> None:
+
         event = await sse_event({
             "type": "toolError",
             "name": "stori_add_notes",
@@ -147,7 +156,8 @@ class TestToolErrorEventContract:
         assert payload["error"]
 
     @pytest.mark.anyio
-    async def test_error_never_empty_string(self):
+    async def test_error_never_empty_string(self) -> None:
+
         """toolError must never have an empty error string."""
         event = await sse_event({
             "type": "toolError",
@@ -162,7 +172,8 @@ class TestSummaryEventContract:
     """summary: tracks, regions, notes (all required)."""
 
     @pytest.mark.anyio
-    async def test_required_fields(self):
+    async def test_required_fields(self) -> None:
+
         event = await sse_event({
             "type": "summary",
             "tracks": ["Drums", "Bass"],
@@ -180,7 +191,8 @@ class TestSummaryFinalEventContract:
     """summary.final: tracksCreated (required)."""
 
     @pytest.mark.anyio
-    async def test_tracks_created_required(self):
+    async def test_tracks_created_required(self) -> None:
+
         event = await sse_event({
             "type": "summary.final",
             "tracksCreated": [{"name": "Drums", "trackId": "abc"}],
@@ -195,7 +207,8 @@ class TestDoneEventContract:
     """done: variationId (required, non-empty)."""
 
     @pytest.mark.anyio
-    async def test_variation_id_required_nonempty(self):
+    async def test_variation_id_required_nonempty(self) -> None:
+
         vid = str(uuid.uuid4())
         event = await sse_event({
             "type": "done",
@@ -207,7 +220,8 @@ class TestDoneEventContract:
         assert payload["variationId"] != ""
 
     @pytest.mark.anyio
-    async def test_failure_done_still_has_variation_id(self):
+    async def test_failure_done_still_has_variation_id(self) -> None:
+
         """Even on failure, done must have a non-empty variationId."""
         vid = str(uuid.uuid4())
         event = await sse_event({
@@ -224,7 +238,8 @@ class TestGeneratorStartContract:
     """generatorStart: role, agentId, style, bars, startBeat, label (all required)."""
 
     @pytest.mark.anyio
-    async def test_required_fields(self):
+    async def test_required_fields(self) -> None:
+
         event = await sse_event({
             "type": "generatorStart",
             "role": "drums",
@@ -244,7 +259,8 @@ class TestGeneratorCompleteContract:
     """generatorComplete: role, agentId, noteCount, durationMs (all required)."""
 
     @pytest.mark.anyio
-    async def test_required_fields(self):
+    async def test_required_fields(self) -> None:
+
         event = await sse_event({
             "type": "generatorComplete",
             "role": "drums",
@@ -262,13 +278,15 @@ class TestErrorEventContract:
     """error: message (required)."""
 
     @pytest.mark.anyio
-    async def test_message_field(self):
+    async def test_message_field(self) -> None:
+
         event = await sse_event({"type": "error", "message": "Something went wrong"})
         payload = _parse_sse(event)
         assert "message" in payload
 
     @pytest.mark.anyio
-    async def test_message_on_internal_failure(self):
+    async def test_message_on_internal_failure(self) -> None:
+
         event = await sse_event({"type": "error", "message": "Internal failure"})
         payload = _parse_sse(event)
         assert payload["message"] == "Internal failure"
@@ -278,7 +296,8 @@ class TestReasoningEventContract:
     """reasoning: content (required)."""
 
     @pytest.mark.anyio
-    async def test_content_required(self):
+    async def test_content_required(self) -> None:
+
         event = await sse_event({"type": "reasoning", "content": "Analyzing..."})
         payload = _parse_sse(event)
         assert "content" in payload
@@ -288,7 +307,8 @@ class TestReasoningEndEventContract:
     """reasoningEnd: agentId required; sectionName present when applicable."""
 
     @pytest.mark.anyio
-    async def test_instrument_agent_has_agentid(self):
+    async def test_instrument_agent_has_agentid(self) -> None:
+
         """reasoningEnd for an instrument agent carries agentId, no sectionName."""
         event = await sse_event({"type": "reasoningEnd", "agentId": "brass"})
         payload = _parse_sse(event)
@@ -296,7 +316,8 @@ class TestReasoningEndEventContract:
         assert payload["agentId"] == "brass"
 
     @pytest.mark.anyio
-    async def test_section_agent_has_agentid_and_sectionname(self):
+    async def test_section_agent_has_agentid_and_sectionname(self) -> None:
+
         """reasoningEnd for a section child carries both agentId and sectionName."""
         event = await sse_event({
             "type": "reasoningEnd",
@@ -309,13 +330,15 @@ class TestReasoningEndEventContract:
         assert payload["sectionName"] == "verse"
 
     @pytest.mark.anyio
-    async def test_no_content_field(self):
+    async def test_no_content_field(self) -> None:
+
         """reasoningEnd carries no content — it is a lifecycle marker only."""
         event = await sse_event({"type": "reasoningEnd", "agentId": "piano"})
         payload = _parse_sse(event)
         assert "content" not in payload
 
-    def test_reasoning_end_emitted_after_reasoning_tokens(self):
+    def test_reasoning_end_emitted_after_reasoning_tokens(self) -> None:
+
         """reasoningEnd must follow all reasoning events; order is enforced by
         the _had_reasoning gate — it only fires when at least one token was
         buffered and emitted in the same LLM turn."""
@@ -335,7 +358,8 @@ class TestContentEventContract:
     """content: content (required)."""
 
     @pytest.mark.anyio
-    async def test_content_required(self):
+    async def test_content_required(self) -> None:
+
         event = await sse_event({"type": "content", "content": "Here is the plan"})
         payload = _parse_sse(event)
         assert "content" in payload
@@ -345,7 +369,8 @@ class TestStateEventContract:
     """state: state, intent, confidence, traceId (required)."""
 
     @pytest.mark.anyio
-    async def test_state_required(self):
+    async def test_state_required(self) -> None:
+
         event = await sse_event({
             "type": "state",
             "state": "composing",
@@ -361,7 +386,8 @@ class TestStatusEventContract:
     """status: message (required)."""
 
     @pytest.mark.anyio
-    async def test_message_required(self):
+    async def test_message_required(self) -> None:
+
         event = await sse_event({"type": "status", "message": "Processing..."})
         payload = _parse_sse(event)
         assert "message" in payload
@@ -375,73 +401,91 @@ class TestStatusEventContract:
 class TestToolRequiredFieldsCompleteness:
     """Verify TOOL_REQUIRED_FIELDS covers all FE-required tools."""
 
-    def test_add_midi_track_requires_name(self):
+    def test_add_midi_track_requires_name(self) -> None:
+
         assert "name" in TOOL_REQUIRED_FIELDS["stori_add_midi_track"]
 
-    def test_add_notes_requires_regionid_notes(self):
+    def test_add_notes_requires_regionid_notes(self) -> None:
+
         assert "regionId" in TOOL_REQUIRED_FIELDS["stori_add_notes"]
         assert "notes" in TOOL_REQUIRED_FIELDS["stori_add_notes"]
 
-    def test_add_midi_region_requires_trackid_startbeat_durationbeats(self):
+    def test_add_midi_region_requires_trackid_startbeat_durationbeats(self) -> None:
+
         assert "trackId" in TOOL_REQUIRED_FIELDS["stori_add_midi_region"]
         assert "startBeat" in TOOL_REQUIRED_FIELDS["stori_add_midi_region"]
         assert "durationBeats" in TOOL_REQUIRED_FIELDS["stori_add_midi_region"]
 
-    def test_set_tempo_requires_tempo(self):
+    def test_set_tempo_requires_tempo(self) -> None:
+
         assert "tempo" in TOOL_REQUIRED_FIELDS["stori_set_tempo"]
 
-    def test_set_key_requires_key(self):
+    def test_set_key_requires_key(self) -> None:
+
         assert "key" in TOOL_REQUIRED_FIELDS["stori_set_key"]
 
-    def test_set_track_volume_requires_fields(self):
+    def test_set_track_volume_requires_fields(self) -> None:
+
         assert "trackId" in TOOL_REQUIRED_FIELDS["stori_set_track_volume"]
         assert "volume" in TOOL_REQUIRED_FIELDS["stori_set_track_volume"]
 
-    def test_set_track_pan_requires_fields(self):
+    def test_set_track_pan_requires_fields(self) -> None:
+
         assert "trackId" in TOOL_REQUIRED_FIELDS["stori_set_track_pan"]
         assert "pan" in TOOL_REQUIRED_FIELDS["stori_set_track_pan"]
 
-    def test_set_track_name_requires_fields(self):
+    def test_set_track_name_requires_fields(self) -> None:
+
         assert "trackId" in TOOL_REQUIRED_FIELDS["stori_set_track_name"]
         assert "name" in TOOL_REQUIRED_FIELDS["stori_set_track_name"]
 
-    def test_set_track_color_requires_fields(self):
+    def test_set_track_color_requires_fields(self) -> None:
+
         assert "trackId" in TOOL_REQUIRED_FIELDS["stori_set_track_color"]
         assert "color" in TOOL_REQUIRED_FIELDS["stori_set_track_color"]
 
-    def test_set_track_icon_requires_fields(self):
+    def test_set_track_icon_requires_fields(self) -> None:
+
         assert "trackId" in TOOL_REQUIRED_FIELDS["stori_set_track_icon"]
         assert "icon" in TOOL_REQUIRED_FIELDS["stori_set_track_icon"]
 
-    def test_set_playhead_requires_beat(self):
+    def test_set_playhead_requires_beat(self) -> None:
+
         assert "beat" in TOOL_REQUIRED_FIELDS["stori_set_playhead"]
 
-    def test_add_insert_effect_requires_fields(self):
+    def test_add_insert_effect_requires_fields(self) -> None:
+
         assert "trackId" in TOOL_REQUIRED_FIELDS["stori_add_insert_effect"]
         assert "type" in TOOL_REQUIRED_FIELDS["stori_add_insert_effect"]
 
-    def test_add_send_requires_fields(self):
+    def test_add_send_requires_fields(self) -> None:
+
         assert "trackId" in TOOL_REQUIRED_FIELDS["stori_add_send"]
         assert "busName" in TOOL_REQUIRED_FIELDS["stori_add_send"]
 
-    def test_ensure_bus_requires_name(self):
+    def test_ensure_bus_requires_name(self) -> None:
+
         assert "name" in TOOL_REQUIRED_FIELDS["stori_ensure_bus"]
 
-    def test_move_region_requires_fields(self):
+    def test_move_region_requires_fields(self) -> None:
+
         assert "regionId" in TOOL_REQUIRED_FIELDS["stori_move_region"]
         assert "startBeat" in TOOL_REQUIRED_FIELDS["stori_move_region"]
 
-    def test_add_automation_requires_fields(self):
+    def test_add_automation_requires_fields(self) -> None:
+
         assert "trackId" in TOOL_REQUIRED_FIELDS["stori_add_automation"]
         assert "parameter" in TOOL_REQUIRED_FIELDS["stori_add_automation"]
         assert "points" in TOOL_REQUIRED_FIELDS["stori_add_automation"]
 
-    def test_add_midi_cc_requires_fields(self):
+    def test_add_midi_cc_requires_fields(self) -> None:
+
         assert "regionId" in TOOL_REQUIRED_FIELDS["stori_add_midi_cc"]
         assert "cc" in TOOL_REQUIRED_FIELDS["stori_add_midi_cc"]
         assert "events" in TOOL_REQUIRED_FIELDS["stori_add_midi_cc"]
 
-    def test_add_pitch_bend_requires_fields(self):
+    def test_add_pitch_bend_requires_fields(self) -> None:
+
         assert "regionId" in TOOL_REQUIRED_FIELDS["stori_add_pitch_bend"]
         assert "events" in TOOL_REQUIRED_FIELDS["stori_add_pitch_bend"]
 
@@ -483,7 +527,8 @@ class TestIconAllowlistParity:
     ]
 
     @pytest.mark.parametrize("icon", FE_ICON_LIST)
-    def test_fe_icon_in_backend_allowlist(self, icon: str):
+    def test_fe_icon_in_backend_allowlist(self, icon: str) -> None:
+
         """Every icon from the FE curated list must be in VALID_SF_SYMBOL_ICONS."""
         assert icon in VALID_SF_SYMBOL_ICONS, (
             f"Icon '{icon}' is in the FE curated list but missing from "
@@ -499,7 +544,8 @@ class TestIconAllowlistParity:
 class TestBudgetExhaustedResponseShape:
     """402 responses must be JSON decodable as BudgetExhaustedError."""
 
-    def test_structured_detail_has_message_and_budget(self):
+    def test_structured_detail_has_message_and_budget(self) -> None:
+
         """FE expects detail: {message: str, budgetRemaining: float}."""
         detail = {
             "message": "Insufficient budget",
@@ -508,7 +554,8 @@ class TestBudgetExhaustedResponseShape:
         assert "message" in detail
         assert isinstance(detail["budgetRemaining"], (int, float))
 
-    def test_detail_uses_message_not_error_key(self):
+    def test_detail_uses_message_not_error_key(self) -> None:
+
         """FE decodes BudgetExhaustedError using 'message', not 'error'."""
         detail = {
             "message": "Insufficient budget",
@@ -527,7 +574,8 @@ class TestToolOrderingRegression:
     """Regression: instrument agent must sort tool calls so
     stori_add_midi_region always executes before stori_generate_midi."""
 
-    def test_tool_call_sorting_region_before_generator(self):
+    def test_tool_call_sorting_region_before_generator(self) -> None:
+
         """Tool calls batched by LLM are re-sorted: region < generator < effect."""
         from app.core.maestro_plan_tracker.constants import (
             _TRACK_CREATION_NAMES,
@@ -563,7 +611,8 @@ class TestAgentIdTaggingRegression:
     """Regression: generatorStart and generatorComplete SSE events
     must include agentId so the FE routes them to the correct sub-agent."""
 
-    def test_generator_events_in_tagged_set(self):
+    def test_generator_events_in_tagged_set(self) -> None:
+
         """generatorStart and generatorComplete are in the agent-tagged event set."""
         tagged = {
             "toolCall", "toolStart", "toolError",
@@ -573,7 +622,8 @@ class TestAgentIdTaggingRegression:
         assert "generatorStart" in tagged
         assert "generatorComplete" in tagged
 
-    def test_reasoning_in_tagged_set(self):
+    def test_reasoning_in_tagged_set(self) -> None:
+
         """reasoning events are tagged with agentId for correct sub-agent routing."""
         tagged = {
             "toolCall", "toolStart", "toolError",
@@ -583,7 +633,8 @@ class TestAgentIdTaggingRegression:
         assert "reasoning" in tagged
 
     @pytest.mark.anyio
-    async def test_generator_start_event_contains_agentid_at_source(self):
+    async def test_generator_start_event_contains_agentid_at_source(self) -> None:
+
         """generatorStart emitted by _execute_agent_generator carries agentId = role.
 
         Regression for P2 (generatorStart/generatorComplete missing agentId):
@@ -657,7 +708,8 @@ class TestAgentIdTaggingRegression:
 class TestEffectPersistenceRegression:
     """Regression: stori_add_insert_effect must persist to StateStore."""
 
-    def test_add_effect_method_exists(self):
+    def test_add_effect_method_exists(self) -> None:
+
         """StateStore.add_effect exists and is callable."""
         from app.core.state_store import StateStore
         store = StateStore()
@@ -673,7 +725,8 @@ class TestCompleteEventSuccessField:
     The complete event must NOT report success=true in this case.
     """
 
-    def _make_summary(self, notes: int, regions: int) -> dict:
+    def _make_summary(self, notes: int, regions: int) -> dict[str, Any]:
+
         """Build a minimal summary dict as _build_composition_summary would."""
         return {
             "notesGenerated": notes,
@@ -690,26 +743,32 @@ class TestCompleteEventSuccessField:
         }
 
     def _success_for(self, notes: int, regions: int) -> bool:
+
         """Mirror the coordinator's success logic."""
         return notes > 0 or regions == 0
 
-    def test_zero_notes_with_regions_is_failure(self):
+    def test_zero_notes_with_regions_is_failure(self) -> None:
+
         """0 notes + regions > 0 means generation was attempted but failed."""
         assert self._success_for(notes=0, regions=4) is False
 
-    def test_notes_present_is_success(self):
+    def test_notes_present_is_success(self) -> None:
+
         """Any notes produced = success."""
         assert self._success_for(notes=120, regions=4) is True
 
-    def test_zero_notes_zero_regions_is_success(self):
+    def test_zero_notes_zero_regions_is_success(self) -> None:
+
         """No regions means generation was never attempted — not a failure."""
         assert self._success_for(notes=0, regions=0) is True
 
-    def test_single_note_is_success(self):
+    def test_single_note_is_success(self) -> None:
+
         """Even one note is enough to call the composition successful."""
         assert self._success_for(notes=1, regions=1) is True
 
-    def test_regression_four_track_all_failed(self):
+    def test_regression_four_track_all_failed(self) -> None:
+
         """4-track composition, all stori_generate_midi calls failed → success=false.
 
         Regression for: summary.final reports notesGenerated=0 but complete event
@@ -723,7 +782,8 @@ class TestCompleteEventSuccessField:
             "must produce success=false in the complete event"
         )
 
-    def test_tool_errors_with_zero_notes_is_failure(self):
+    def test_tool_errors_with_zero_notes_is_failure(self) -> None:
+
         """toolErrors > 0 AND notesGenerated == 0 → success=false."""
         notes, regions, tool_errors = 0, 4, 4
         base = self._success_for(notes=notes, regions=regions)
@@ -741,13 +801,15 @@ class TestSeqFieldRegression:
     """Regression: SSE events must carry monotonically increasing seq (0-based)."""
 
     @pytest.mark.anyio
-    async def test_seq_starts_at_zero(self):
+    async def test_seq_starts_at_zero(self) -> None:
+
         """The _with_seq wrapper must produce seq=0 for the first event."""
         import json as _json
 
         _seq = -1
 
         def _with_seq(event_str: str) -> str:
+
             nonlocal _seq
             if not event_str.startswith("data: "):
                 return event_str
@@ -762,13 +824,15 @@ class TestSeqFieldRegression:
         assert payload["seq"] == 0, f"First event should have seq=0, got {payload['seq']}"
 
     @pytest.mark.anyio
-    async def test_seq_increments_monotonically(self):
+    async def test_seq_increments_monotonically(self) -> None:
+
         """Sequential events must get seq 0, 1, 2, ..."""
         import json as _json
 
         _seq = -1
 
         def _with_seq(event_str: str) -> str:
+
             nonlocal _seq
             if not event_str.startswith("data: "):
                 return event_str
@@ -792,26 +856,30 @@ class TestSeqFieldRegression:
 class TestPhaseFieldRegression:
     """Regression: toolStart, toolCall, and planStepUpdate events must include phase."""
 
-    def test_phase_for_tool_setup(self):
+    def test_phase_for_tool_setup(self) -> None:
+
         """Setup tools (tempo, key) map to phase 'setup'."""
         from app.core.maestro_editing.tool_execution import phase_for_tool
         assert phase_for_tool("stori_set_tempo") == "setup"
         assert phase_for_tool("stori_set_key") == "setup"
 
-    def test_phase_for_tool_composition(self):
+    def test_phase_for_tool_composition(self) -> None:
+
         """Composition tools (generate, notes) map to phase 'composition'."""
         from app.core.maestro_editing.tool_execution import phase_for_tool
         assert phase_for_tool("stori_generate_midi") == "composition"
         assert phase_for_tool("stori_add_notes") == "composition"
 
-    def test_phase_for_tool_setup_includes_track_creation(self):
+    def test_phase_for_tool_setup_includes_track_creation(self) -> None:
+
         """Track creation and region creation are setup (session scaffolding)."""
         from app.core.maestro_editing.tool_execution import phase_for_tool
         assert phase_for_tool("stori_add_midi_track") == "setup"
         assert phase_for_tool("stori_add_midi_region") == "setup"
         assert phase_for_tool("stori_set_midi_program") == "setup"
 
-    def test_phase_for_tool_arrangement(self):
+    def test_phase_for_tool_arrangement(self) -> None:
+
         """Structural editing tools map to phase 'arrangement'."""
         from app.core.maestro_editing.tool_execution import phase_for_tool
         assert phase_for_tool("stori_move_region") == "arrangement"
@@ -820,19 +888,22 @@ class TestPhaseFieldRegression:
         assert phase_for_tool("stori_apply_swing") == "arrangement"
         assert phase_for_tool("stori_clear_notes") == "arrangement"
 
-    def test_phase_for_tool_sound_design(self):
+    def test_phase_for_tool_sound_design(self) -> None:
+
         """Insert effects map to phase 'soundDesign'."""
         from app.core.maestro_editing.tool_execution import phase_for_tool
         assert phase_for_tool("stori_add_insert_effect") == "soundDesign"
 
-    def test_phase_for_tool_expression(self):
+    def test_phase_for_tool_expression(self) -> None:
+
         """Performance data tools map to phase 'expression'."""
         from app.core.maestro_editing.tool_execution import phase_for_tool
         assert phase_for_tool("stori_add_midi_cc") == "expression"
         assert phase_for_tool("stori_add_pitch_bend") == "expression"
         assert phase_for_tool("stori_add_aftertouch") == "expression"
 
-    def test_phase_for_tool_mixing(self):
+    def test_phase_for_tool_mixing(self) -> None:
+
         """Mixing tools (volume, pan, sends, buses, automation) map to phase 'mixing'."""
         from app.core.maestro_editing.tool_execution import phase_for_tool
         assert phase_for_tool("stori_set_track_volume") == "mixing"
@@ -842,7 +913,8 @@ class TestPhaseFieldRegression:
         assert phase_for_tool("stori_add_automation") == "mixing"
 
     @pytest.mark.anyio
-    async def test_tool_start_includes_phase(self):
+    async def test_tool_start_includes_phase(self) -> None:
+
         """toolStart events must include a phase field."""
         from unittest.mock import MagicMock
         from app.core.maestro_editing.tool_execution import _apply_single_tool_call
@@ -866,7 +938,8 @@ class TestPhaseFieldRegression:
         assert tool_start_events[0]["phase"] == "setup"
 
     @pytest.mark.anyio
-    async def test_tool_call_includes_phase_and_label(self):
+    async def test_tool_call_includes_phase_and_label(self) -> None:
+
         """toolCall events must include phase and label fields."""
         from app.core.maestro_editing.tool_execution import _apply_single_tool_call
         from app.core.tracing import TraceContext
@@ -897,7 +970,8 @@ class TestLabelOnToolCallRegression:
     """Regression: toolCall events must repeat the label from the preceding toolStart."""
 
     @pytest.mark.anyio
-    async def test_tool_call_label_matches_tool_start(self):
+    async def test_tool_call_label_matches_tool_start(self) -> None:
+
         """The label on toolCall must match the label on toolStart."""
         from app.core.maestro_editing.tool_execution import _apply_single_tool_call
         from app.core.tracing import TraceContext
@@ -928,7 +1002,8 @@ class TestAgentCompleteEventContract:
     """agentComplete: agentId, success (both required)."""
 
     @pytest.mark.anyio
-    async def test_required_fields_present(self):
+    async def test_required_fields_present(self) -> None:
+
         event = await sse_event({
             "type": "agentComplete",
             "agentId": "drums",
@@ -938,7 +1013,8 @@ class TestAgentCompleteEventContract:
         assert payload["agentId"]
         assert isinstance(payload["success"], bool)
 
-    def test_agent_complete_in_tagged_set(self):
+    def test_agent_complete_in_tagged_set(self) -> None:
+
         """agentComplete must be in the agent-tagged event set for proper routing."""
         from app.core.maestro_agent_teams.section_agent import _AGENT_TAGGED_EVENTS
         assert "agentComplete" in _AGENT_TAGGED_EVENTS
@@ -948,7 +1024,8 @@ class TestPreflightTrackColorRegression:
     """Regression: preflight events should include trackColor from curated palette."""
 
     @pytest.mark.anyio
-    async def test_preflight_with_track_color(self):
+    async def test_preflight_with_track_color(self) -> None:
+
         event = await sse_event({
             "type": "preflight",
             "stepId": "step-1",
@@ -962,17 +1039,20 @@ class TestPreflightTrackColorRegression:
         assert "trackColor" in payload
         assert payload["trackColor"].startswith("#")
 
-    def test_composition_palette_has_12_colors(self):
+    def test_composition_palette_has_12_colors(self) -> None:
+
         """The palette must have 12 high-hue-separation colors."""
         from app.core.track_styling import COMPOSITION_PALETTE
         assert len(COMPOSITION_PALETTE) == 12
 
-    def test_no_duplicate_colors_in_palette(self):
+    def test_no_duplicate_colors_in_palette(self) -> None:
+
         """All palette colors must be unique."""
         from app.core.track_styling import COMPOSITION_PALETTE
         assert len(set(COMPOSITION_PALETTE)) == len(COMPOSITION_PALETTE)
 
-    def test_allocate_colors_cycles_palette(self):
+    def test_allocate_colors_cycles_palette(self) -> None:
+
         """allocate_colors assigns distinct colors and cycles after exhaustion."""
         from app.core.track_styling import allocate_colors, COMPOSITION_PALETTE
         names = [f"Inst{i}" for i in range(14)]
@@ -986,8 +1066,9 @@ class TestPreflightTrackColorRegression:
 class TestOrpheusMetadataNoneRegression:
     """Regression: Orpheus returning metadata: null must not crash the client."""
 
-    def test_metadata_none_unpacking(self):
-        """Dict unpacking with None metadata must not raise TypeError.
+    def test_metadata_none_unpacking(self) -> None:
+
+        """dict unpacking with None metadata must not raise TypeError.
 
         Regression for P0: 'NoneType' object is not a mapping when
         Orpheus returns {"metadata": null} in its response JSON.
@@ -1000,13 +1081,15 @@ class TestOrpheusMetadataNoneRegression:
         out = {**(data.get("metadata") or {}), "retry_count": 0}
         assert out == {"retry_count": 0}
 
-    def test_metadata_missing_key(self):
+    def test_metadata_missing_key(self) -> None:
+
         """Missing metadata key falls back to empty dict."""
         data: dict[str, Any] = {"success": True, "notes": []}
         out = {**(data.get("metadata") or {}), "retry_count": 1}
         assert out == {"retry_count": 1}
 
-    def test_metadata_present(self):
+    def test_metadata_present(self) -> None:
+
         """Valid metadata dict is preserved."""
         data: dict[str, Any] = {
             "success": True,
@@ -1020,13 +1103,15 @@ class TestOrpheusMetadataNoneRegression:
 class TestCircuitBreakerContract:
     """Orpheus circuit breaker behavior: trip, fast-fail, reset."""
 
-    def test_circuit_breaker_starts_closed(self):
+    def test_circuit_breaker_starts_closed(self) -> None:
+
         """New circuit breaker is closed (not open)."""
         from app.services.orpheus import _CircuitBreaker
         cb = _CircuitBreaker(threshold=3, cooldown=60)
         assert not cb.is_open
 
-    def test_circuit_breaker_trips_after_threshold(self):
+    def test_circuit_breaker_trips_after_threshold(self) -> None:
+
         """Circuit opens after `threshold` consecutive failures."""
         from app.services.orpheus import _CircuitBreaker
         cb = _CircuitBreaker(threshold=2, cooldown=60)
@@ -1035,7 +1120,8 @@ class TestCircuitBreakerContract:
         cb.record_failure()
         assert cb.is_open
 
-    def test_circuit_breaker_success_resets(self):
+    def test_circuit_breaker_success_resets(self) -> None:
+
         """A successful call resets the failure counter and closes the circuit."""
         from app.services.orpheus import _CircuitBreaker
         cb = _CircuitBreaker(threshold=2, cooldown=60)
@@ -1045,7 +1131,8 @@ class TestCircuitBreakerContract:
         cb.record_failure()
         assert not cb.is_open, "Counter should have reset — one failure is below threshold"
 
-    def test_circuit_breaker_cooldown_half_open(self):
+    def test_circuit_breaker_cooldown_half_open(self) -> None:
+
         """After cooldown, is_open returns False (half-open allows probe)."""
         import time
         from app.services.orpheus import _CircuitBreaker
@@ -1055,7 +1142,8 @@ class TestCircuitBreakerContract:
         time.sleep(0.02)
         assert not cb.is_open, "Cooldown expired — should be half-open"
 
-    def test_circuit_open_error_message_format(self):
+    def test_circuit_open_error_message_format(self) -> None:
+
         """Fast-fail result has the expected error key for downstream detection."""
         result: dict[str, Any] = {
             "success": False,
@@ -1069,7 +1157,8 @@ class TestCircuitBreakerContract:
 class TestL2ReasoningGuidanceContract:
     """Level 2 agent reasoning guidance prevents verbose section-level CoT."""
 
-    def test_reasoning_guidance_prohibits_section_reasoning(self):
+    def test_reasoning_guidance_prohibits_section_reasoning(self) -> None:
+
         """The L2 system prompt must contain instructions against per-section reasoning."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1077,7 +1166,8 @@ class TestL2ReasoningGuidanceContract:
         assert "Do NOT reason about individual sections" in source
         assert "section agents handle" in source
 
-    def test_reasoning_guidance_limits_length(self):
+    def test_reasoning_guidance_limits_length(self) -> None:
+
         """The L2 system prompt must cap reasoning at 1-2 sentences."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1088,7 +1178,8 @@ class TestL2ReasoningGuidanceContract:
 class TestL3SectionReasoningContract:
     """Level 3 section child emits reasoning events with sectionName."""
 
-    def test_section_child_has_reasoning_function(self):
+    def test_section_child_has_reasoning_function(self) -> None:
+
         """_reason_before_generate uses SectionContract instead of loose params."""
         import inspect
         from app.core.maestro_agent_teams.section_agent import _reason_before_generate
@@ -1100,7 +1191,8 @@ class TestL3SectionReasoningContract:
         assert "section" not in params, "Old loose 'section' dict param must be gone"
         assert "generate_prompt" not in params, "L2 prompt comes via contract now"
 
-    def test_section_reasoning_returns_optional_string(self):
+    def test_section_reasoning_returns_optional_string(self) -> None:
+
         """_reason_before_generate return type allows None (fallback to original prompt)."""
         import inspect
         from app.core.maestro_agent_teams.section_agent import _reason_before_generate
@@ -1111,7 +1203,8 @@ class TestL3SectionReasoningContract:
 class TestAgentCircuitBreakerAbort:
     """Level 2 agent stops retrying when Orpheus circuit breaker is open."""
 
-    def test_agent_imports_orpheus_client(self):
+    def test_agent_imports_orpheus_client(self) -> None:
+
         """agent.py imports get_orpheus_client for circuit breaker checks."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1130,7 +1223,8 @@ class TestRegionCollisionCanonicalOverride:
     the frozen SectionContract, preventing region collisions when the
     L2 LLM invents overlapping start/duration values."""
 
-    def test_contract_enforces_canonical_beats(self):
+    def test_contract_enforces_canonical_beats(self) -> None:
+
         """SectionContract carries canonical beats; L2 tool-call params are ignored."""
         from app.core.maestro_agent_teams.contracts import SectionContract, SectionSpec
         spec = SectionSpec(
@@ -1147,7 +1241,8 @@ class TestRegionCollisionCanonicalOverride:
         assert contract.is_bass is True
         assert contract.is_drum is False
 
-    def test_contract_is_frozen(self):
+    def test_contract_is_frozen(self) -> None:
+
         """SectionContract must be immutable — no field mutation allowed."""
         from app.core.maestro_agent_teams.contracts import SectionContract, SectionSpec
         spec = SectionSpec(
@@ -1165,7 +1260,8 @@ class TestRegionCollisionCanonicalOverride:
         with pytest.raises(AttributeError):
             contract.section = spec  # type: ignore[misc]
 
-    def test_section_child_uses_contract_not_tc_params(self):
+    def test_section_child_uses_contract_not_tc_params(self) -> None:
+
         """Section child must build region params from contract, not region_tc."""
         import inspect
         from app.core.maestro_agent_teams.section_agent import _run_section_child
@@ -1178,7 +1274,8 @@ class TestRegionCollisionCanonicalOverride:
             "Must not copy L2's tool-call params — use contract fields"
         )
 
-    def test_sections_non_overlapping_layout(self):
+    def test_sections_non_overlapping_layout(self) -> None:
+
         """parse_sections must produce non-overlapping beat ranges."""
         from app.core.maestro_agent_teams.sections import parse_sections
         sections = parse_sections(
@@ -1201,7 +1298,8 @@ class TestFailedRegionSkipsGenerator:
     stori_generate_midi must be skipped with a clear error, not called
     with a phantom regionId."""
 
-    def test_generator_skipped_when_no_region(self):
+    def test_generator_skipped_when_no_region(self) -> None:
+
         """Single-section path: generator call produces skip result when regions_ok == 0."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1210,7 +1308,8 @@ class TestFailedRegionSkipsGenerator:
         assert "Skipping" in source or "skipped" in source
         assert "fix the region collision" in source.lower() or "Do NOT retry" in source
 
-    def test_section_child_returns_early_on_region_failure(self):
+    def test_section_child_returns_early_on_region_failure(self) -> None:
+
         """Section child returns early when region creation produces no regionId."""
         import inspect
         from app.core.maestro_agent_teams.section_agent import _run_section_child
@@ -1224,7 +1323,8 @@ class TestTruncatedResultGuidance:
     truncation is no longer a risk.  The truncation guidance was removed from
     the system prompt — verify the replacement architecture instead."""
 
-    def test_collapsed_summary_replaces_truncation_guidance(self):
+    def test_collapsed_summary_replaces_truncation_guidance(self) -> None:
+
         """Server-owned retries + collapsed summaries eliminate truncation risk."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1232,14 +1332,16 @@ class TestTruncatedResultGuidance:
         assert "batch_complete" in source
         assert "_section_summaries" in source
 
-    def test_entity_manifest_stripped_from_tool_results(self):
+    def test_entity_manifest_stripped_from_tool_results(self) -> None:
+
         """Tool results fed back to LLM context use _compact_tool_result to strip bulky fields."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
         source = inspect.getsource(agent_mod._run_instrument_agent_inner)
         assert "_compact_tool_result" in source
 
-    def test_build_tool_result_no_entities_key(self):
+    def test_build_tool_result_no_entities_key(self) -> None:
+
         """_build_tool_result must NOT embed an 'entities' dict — manifests are injected separately."""
         from app.core.maestro_helpers import _build_tool_result
         from app.core.state_store import StateStore
@@ -1259,14 +1361,16 @@ class TestGenreGMVoiceGuidance:
     """BUG 4 regression: genre-specific GM program guidance must be available
     and injected into instrument agent prompts for dancehall and other genres."""
 
-    def test_dancehall_organ_not_church_organ(self):
+    def test_dancehall_organ_not_church_organ(self) -> None:
+
         """Dancehall organ must recommend Drawbar Organ (16), not Church Organ (19)."""
         from app.core.gm_instruments import get_genre_gm_guidance
         guidance = get_genre_gm_guidance("dancehall", "chords")
         assert "16" in guidance, "Dancehall chords should recommend gmProgram=16 (Drawbar Organ)"
         assert "Church" not in guidance, "Dancehall must not suggest Church Organ"
 
-    def test_dancehall_synth_not_sawtooth(self):
+    def test_dancehall_synth_not_sawtooth(self) -> None:
+
         """Dancehall lead must recommend Square Lead (80) or Voice (85), not Sawtooth (81)."""
         from app.core.gm_instruments import get_genre_gm_guidance
         guidance = get_genre_gm_guidance("dancehall", "lead")
@@ -1274,18 +1378,21 @@ class TestGenreGMVoiceGuidance:
             "Dancehall lead should recommend Square Lead (80) or Voice Lead (85)"
         )
 
-    def test_genre_guidance_empty_for_unknown_genre(self):
+    def test_genre_guidance_empty_for_unknown_genre(self) -> None:
+
         """Unknown genres return empty guidance (no crash, graceful fallback)."""
         from app.core.gm_instruments import get_genre_gm_guidance
         assert get_genre_gm_guidance("polka", "bass") == ""
 
-    def test_genre_guidance_empty_for_drums(self):
+    def test_genre_guidance_empty_for_drums(self) -> None:
+
         """Drums should have no GM program guidance (channel 10)."""
         from app.core.gm_instruments import get_genre_gm_guidance
         guidance = get_genre_gm_guidance("dancehall", "drums")
         assert guidance == "", "Drums use channel 10, no GM program guidance needed"
 
-    def test_genre_guidance_injected_into_agent_prompt(self):
+    def test_genre_guidance_injected_into_agent_prompt(self) -> None:
+
         """L2 agent system prompt builder imports and uses genre guidance."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1293,18 +1400,21 @@ class TestGenreGMVoiceGuidance:
         assert "get_genre_gm_guidance" in source
         assert "_gm_guidance" in source
 
-    def test_genre_guidance_substring_match(self):
+    def test_genre_guidance_substring_match(self) -> None:
+
         """'jamaican dancehall' should match the 'dancehall' genre guidance."""
         from app.core.gm_instruments import get_genre_gm_guidance
         guidance = get_genre_gm_guidance("jamaican dancehall", "chords")
         assert "Drawbar Organ" in guidance
 
-    def test_multiple_genres_covered(self):
+    def test_multiple_genres_covered(self) -> None:
+
         """All 50 example prompt genres have GM guidance coverage."""
         from app.core.gm_instruments import GENRE_GM_GUIDANCE
         assert len(GENRE_GM_GUIDANCE) >= 40
 
-    def test_all_prompt_genres_matched(self):
+    def test_all_prompt_genres_matched(self) -> None:
+
         """Every genre from the 50 example prompts must match GM guidance."""
         from app.core.gm_instruments import get_genre_gm_guidance
 
@@ -1346,7 +1456,8 @@ class TestSectionBriefMismatchFix:
     frozen SectionContract, never re-importing or reinterpreting them.
     The L2 prompt is explicitly marked ADVISORY ONLY."""
 
-    def test_section_reasoning_uses_contract_character(self):
+    def test_section_reasoning_uses_contract_character(self) -> None:
+
         """_reason_before_generate must read canonical descriptions from contract."""
         import inspect
         from app.core.maestro_agent_teams.section_agent import _reason_before_generate
@@ -1354,21 +1465,24 @@ class TestSectionBriefMismatchFix:
         assert "contract.section.character" in source
         assert "contract.section.role_brief" in source
 
-    def test_section_reasoning_labels_l2_prompt_advisory(self):
+    def test_section_reasoning_labels_l2_prompt_advisory(self) -> None:
+
         """The L3 system prompt must label the parent prompt as ADVISORY ONLY."""
         import inspect
         from app.core.maestro_agent_teams.section_agent import _reason_before_generate
         source = inspect.getsource(_reason_before_generate)
         assert "ADVISORY ONLY" in source
 
-    def test_contract_character_labels_authoritative(self):
+    def test_contract_character_labels_authoritative(self) -> None:
+
         """Contract-sourced fields must be labelled AUTHORITATIVE in the prompt."""
         import inspect
         from app.core.maestro_agent_teams.section_agent import _reason_before_generate
         source = inspect.getsource(_reason_before_generate)
         assert "AUTHORITATIVE" in source
 
-    def test_canonical_section_descriptions_differ_by_section(self):
+    def test_canonical_section_descriptions_differ_by_section(self) -> None:
+
         """Verse and chorus canonical descriptions must be meaningfully different."""
         from app.core.maestro_agent_teams.sections import (
             _get_section_role_description,
@@ -1386,7 +1500,8 @@ class TestSectionBriefMismatchFix:
             "Verse and chorus bass descriptions must differ"
         )
 
-    def test_canonical_role_description_for_dancehall_drums(self):
+    def test_canonical_role_description_for_dancehall_drums(self) -> None:
+
         """Section role templates must exist for drums in verse/chorus/groove."""
         from app.core.maestro_agent_teams.sections import _get_section_role_description
         for section in ("verse", "chorus", "groove"):
@@ -1404,7 +1519,8 @@ class TestAgentContractProtocol:
     protocol drift.  Contracts are frozen, structural fields are
     immutable, and advisory fields are clearly labelled."""
 
-    def test_section_spec_frozen(self):
+    def test_section_spec_frozen(self) -> None:
+
         """SectionSpec must be frozen — no mutation after construction."""
         from app.core.maestro_agent_teams.contracts import SectionSpec
         import pytest
@@ -1417,13 +1533,14 @@ class TestAgentContractProtocol:
         with pytest.raises(AttributeError):
             spec.name = "hacked"  # type: ignore[misc]
 
-    def test_section_contract_frozen(self):
+    def test_section_contract_frozen(self) -> None:
+
         """SectionContract must be frozen — child agents cannot mutate it."""
         from app.core.maestro_agent_teams.contracts import SectionContract, SectionSpec
         import pytest
         spec = SectionSpec(
             section_id="0:intro", name="intro", index=0, start_beat=0, duration_beats=16,
-            bars=4, character="Sparse intro", role_brief="Set the mood",
+            bars=4, character="Sparse intro", role_brief="set the mood",
         )
         contract = SectionContract(
             section=spec, track_id="trk-1", instrument_name="Chords",
@@ -1435,7 +1552,8 @@ class TestAgentContractProtocol:
         with pytest.raises(AttributeError):
             contract.tempo = 200.0  # type: ignore[misc]
 
-    def test_contract_derived_properties(self):
+    def test_contract_derived_properties(self) -> None:
+
         """Derived properties (is_drum, is_bass, bars, etc.) compute correctly."""
         from app.core.maestro_agent_teams.contracts import SectionContract, SectionSpec
         spec = SectionSpec(
@@ -1469,7 +1587,8 @@ class TestAgentContractProtocol:
         assert bass.section_index == 1
         assert bass.bars == 8
 
-    def test_contract_l2_prompt_defaults_empty(self):
+    def test_contract_l2_prompt_defaults_empty(self) -> None:
+
         """l2_generate_prompt defaults to empty string when not provided."""
         from app.core.maestro_agent_teams.contracts import SectionContract, SectionSpec
         spec = SectionSpec(
@@ -1483,7 +1602,8 @@ class TestAgentContractProtocol:
         )
         assert contract.l2_generate_prompt == ""
 
-    def test_dispatch_builds_contracts(self):
+    def test_dispatch_builds_contracts(self) -> None:
+
         """_dispatch_section_children must build SectionContract for each section."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1491,7 +1611,8 @@ class TestAgentContractProtocol:
         assert "SectionContract(" in source
         assert "instrument_contract.sections[i]" in source
 
-    def test_section_child_signature_uses_contract(self):
+    def test_section_child_signature_uses_contract(self) -> None:
+
         """_run_section_child must accept 'contract' as first parameter."""
         import inspect
         from app.core.maestro_agent_teams.section_agent import _run_section_child
@@ -1506,7 +1627,8 @@ class TestAgentContractProtocol:
         assert "instrument_name" not in param_names, "instrument_name in contract"
         assert "track_id" not in param_names, "track_id in contract"
 
-    def test_no_sections_import_in_section_agent(self):
+    def test_no_sections_import_in_section_agent(self) -> None:
+
         """section_agent.py must NOT import from sections.py — canonical
         descriptions are baked into the contract at build time."""
         import inspect
@@ -1517,7 +1639,8 @@ class TestAgentContractProtocol:
             "not by re-importing sections.py (which would allow reinterpretation)"
         )
 
-    def test_gen_params_built_from_contract(self):
+    def test_gen_params_built_from_contract(self) -> None:
+
         """Generate MIDI params must come from contract, not from generate_tc.params."""
         import inspect
         from app.core.maestro_agent_teams.section_agent import _run_section_child
@@ -1534,7 +1657,8 @@ class TestInstrumentContractProtocol:
     """L1 → L2 contract: InstrumentContract carries all structural decisions
     from the coordinator to the instrument parent agent."""
 
-    def test_instrument_contract_frozen(self):
+    def test_instrument_contract_frozen(self) -> None:
+
         """InstrumentContract must be frozen — L2 cannot mutate it."""
         from app.core.maestro_agent_teams.contracts import InstrumentContract, SectionSpec
         import pytest
@@ -1553,7 +1677,8 @@ class TestInstrumentContractProtocol:
         with pytest.raises(AttributeError):
             contract.tempo = 200.0  # type: ignore[misc]
 
-    def test_instrument_contract_derived_properties(self):
+    def test_instrument_contract_derived_properties(self) -> None:
+
         """Derived properties compute correctly from role."""
         from app.core.maestro_agent_teams.contracts import InstrumentContract, SectionSpec
         spec = SectionSpec(
@@ -1580,7 +1705,8 @@ class TestInstrumentContractProtocol:
         assert bass.multi_section is True
         assert bass.reusing_track is True
 
-    def test_coordinator_builds_instrument_contract(self):
+    def test_coordinator_builds_instrument_contract(self) -> None:
+
         """Coordinator must build InstrumentContract for each instrument agent."""
         import inspect
         from app.core.maestro_agent_teams import coordinator
@@ -1588,14 +1714,16 @@ class TestInstrumentContractProtocol:
         assert "InstrumentContract(" in source
         assert "instrument_contract=" in source
 
-    def test_agent_accepts_instrument_contract(self):
+    def test_agent_accepts_instrument_contract(self) -> None:
+
         """L2 agent must accept instrument_contract param."""
         import inspect
         from app.core.maestro_agent_teams.agent import _run_instrument_agent
         sig = inspect.signature(_run_instrument_agent)
         assert "instrument_contract" in sig.parameters
 
-    def test_instrument_contract_carries_gm_guidance(self):
+    def test_instrument_contract_carries_gm_guidance(self) -> None:
+
         """InstrumentContract must carry pre-computed GM guidance."""
         from app.core.maestro_agent_teams.contracts import InstrumentContract, SectionSpec
         spec = SectionSpec(
@@ -1610,7 +1738,8 @@ class TestInstrumentContractProtocol:
         )
         assert "Drawbar Organ" in contract.gm_guidance
 
-    def test_instrument_contract_sections_are_tuple(self):
+    def test_instrument_contract_sections_are_tuple(self) -> None:
+
         """Sections must be a tuple (immutable), not a list."""
         from app.core.maestro_agent_teams.contracts import InstrumentContract, SectionSpec
         spec = SectionSpec(
@@ -1630,7 +1759,8 @@ class TestRuntimeContextProtocol:
     """RuntimeContext replaces the dict[str, Any] catch-all bag with
     frozen, typed fields for dynamic state."""
 
-    def test_runtime_context_frozen(self):
+    def test_runtime_context_frozen(self) -> None:
+
         """RuntimeContext must be frozen — no mutation during execution."""
         from app.core.maestro_agent_teams.contracts import RuntimeContext
         import pytest
@@ -1638,7 +1768,8 @@ class TestRuntimeContextProtocol:
         with pytest.raises(AttributeError):
             ctx.raw_prompt = "hacked"  # type: ignore[misc]
 
-    def test_with_drum_telemetry_returns_new_instance(self):
+    def test_with_drum_telemetry_returns_new_instance(self) -> None:
+
         """with_drum_telemetry creates a NEW context, not a mutation."""
         from app.core.maestro_agent_teams.contracts import RuntimeContext
         original = RuntimeContext(raw_prompt="test", quality_preset="quality")
@@ -1647,7 +1778,8 @@ class TestRuntimeContextProtocol:
         assert updated.drum_telemetry == (("energy_level", 0.8),)
         assert original.drum_telemetry is None
 
-    def test_to_composition_context_bridge(self):
+    def test_to_composition_context_bridge(self) -> None:
+
         """to_composition_context produces a dict compatible with legacy code."""
         from app.core.emotion_vector import EmotionVector
         from app.core.maestro_agent_teams.contracts import RuntimeContext
@@ -1667,7 +1799,8 @@ class TestRuntimeContextProtocol:
         assert reconstructed.energy == 0.8
         assert reconstructed.valence == 0.3
 
-    def test_coordinator_builds_runtime_context(self):
+    def test_coordinator_builds_runtime_context(self) -> None:
+
         """Coordinator must build RuntimeContext alongside contracts."""
         import inspect
         from app.core.maestro_agent_teams import coordinator
@@ -1682,7 +1815,8 @@ class TestL2ToolCallValidation:
     """L2 tool calls are validated against the section plan before dispatch.
     Drift is logged but the contract at L3 overrides bad params."""
 
-    def test_dispatch_validates_region_start_beat(self):
+    def test_dispatch_validates_region_start_beat(self) -> None:
+
         """_dispatch_section_children must check startBeat against section plan."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1691,14 +1825,16 @@ class TestL2ToolCallValidation:
         assert "startBeat" in source
         assert "contract will override" in source
 
-    def test_dispatch_validates_region_duration(self):
+    def test_dispatch_validates_region_duration(self) -> None:
+
         """_dispatch_section_children must check durationBeats against section plan."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
         source = inspect.getsource(agent_mod._dispatch_section_children)
         assert "durationBeats" in source
 
-    def test_dispatch_uses_instrument_contract_specs(self):
+    def test_dispatch_uses_instrument_contract_specs(self) -> None:
+
         """When InstrumentContract is available, dispatch uses its pre-built SectionSpecs."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1717,7 +1853,8 @@ class TestIdempotentRegionCreation:
     if a region at the same beat range already exists on the track, return
     the existing region ID instead of creating a duplicate."""
 
-    def test_duplicate_region_returns_existing_id(self):
+    def test_duplicate_region_returns_existing_id(self) -> None:
+
         """Second create_region with same beat range returns existing ID."""
         from app.core.entity_registry import EntityRegistry
         reg = EntityRegistry()
@@ -1735,7 +1872,8 @@ class TestIdempotentRegionCreation:
         )
         assert first_id == second_id, "Idempotent: same beat range must return same region ID"
 
-    def test_different_beat_range_creates_new_region(self):
+    def test_different_beat_range_creates_new_region(self) -> None:
+
         """Different beat ranges must create distinct regions."""
         from app.core.entity_registry import EntityRegistry
         reg = EntityRegistry()
@@ -1747,7 +1885,8 @@ class TestIdempotentRegionCreation:
         id_b = reg.create_region("Verse", track_id, metadata={"startBeat": 16, "durationBeats": 32})
         assert id_a != id_b, "Different beat ranges must create separate regions"
 
-    def test_find_overlapping_region(self):
+    def test_find_overlapping_region(self) -> None:
+
         """find_overlapping_region returns the correct ID for an existing region."""
         from app.core.entity_registry import EntityRegistry
         reg = EntityRegistry()
@@ -1768,7 +1907,8 @@ class TestRegionCollisionRecovery:
     (e.g. track not found), the error body should include existingRegionId if
     a region at that beat range exists on another resolution path."""
 
-    def test_tool_execution_returns_existing_region_on_error(self):
+    def test_tool_execution_returns_existing_region_on_error(self) -> None:
+
         """tool_execution.py region error handler includes existingRegionId recovery."""
         import inspect
         from app.core.maestro_editing import tool_execution as te_mod
@@ -1786,7 +1926,8 @@ class TestCompactToolResults:
     results before feeding them back to the L2 LLM to prevent '...' truncation
     that the pipeline checker misinterprets as failure."""
 
-    def test_compact_tool_result_strips_entities(self):
+    def test_compact_tool_result_strips_entities(self) -> None:
+
         """_compact_tool_result strips 'entities' and 'notes' keys."""
         from app.core.maestro_agent_teams.section_agent import _compact_tool_result
 
@@ -1805,7 +1946,8 @@ class TestCompactToolResults:
         assert compact["regionId"] == "reg-001"
         assert compact["notesAdded"] == 116
 
-    def test_compact_preserves_error_fields(self):
+    def test_compact_preserves_error_fields(self) -> None:
+
         """Error-related fields must survive compaction."""
         from app.core.maestro_agent_teams.section_agent import _compact_tool_result
 
@@ -1818,14 +1960,16 @@ class TestCompactToolResults:
         assert compact["error"] == "Region collision"
         assert compact["existingRegionId"] == "reg-existing"
 
-    def test_section_child_uses_compact_results(self):
+    def test_section_child_uses_compact_results(self) -> None:
+
         """Section child tool_result_msgs must use _compact_tool_result."""
         import inspect
         from app.core.maestro_agent_teams.section_agent import _run_section_child
         source = inspect.getsource(_run_section_child)
         assert "_compact_tool_result" in source
 
-    def test_retry_reminder_mentions_completed_stages(self):
+    def test_retry_reminder_mentions_completed_stages(self) -> None:
+
         """Multi-turn retry reminder must list completed stages so LLM skips them."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1838,7 +1982,8 @@ class TestCompleteEventAlwaysFlushed:
     """BUG 5 regression (cumbia session): the SSE stream must always yield
     the .complete event, even if the client appears disconnected."""
 
-    def test_stream_always_yields_complete(self):
+    def test_stream_always_yields_complete(self) -> None:
+
         """stream_with_budget must not skip type=complete events on disconnect."""
         import inspect
         from app.api.routes import maestro as maestro_route
@@ -1846,7 +1991,8 @@ class TestCompleteEventAlwaysFlushed:
         assert "_is_terminal" in source or "complete" in source
         assert "is_disconnected" in source
 
-    def test_coordinator_drain_delay(self):
+    def test_coordinator_drain_delay(self) -> None:
+
         """Coordinator must sleep briefly after .complete to let ASGI flush."""
         import inspect
         from app.core.maestro_agent_teams import coordinator as coord_mod
@@ -1859,14 +2005,16 @@ class TestLowNoteCountGuard:
     """BUG 4 regression (cumbia session): stori_generate_midi must flag
     near-empty results (< 4 notes) as a potential generation failure."""
 
-    def test_generator_logs_low_note_count(self):
+    def test_generator_logs_low_note_count(self) -> None:
+
         """_execute_agent_generator must warn when notes < 4."""
         import inspect
         from app.core.maestro_editing import tool_execution as te_mod
         source = inspect.getsource(te_mod._execute_agent_generator)
         assert "_MIN_NOTES_THRESHOLD" in source or "< 4" in source or "notes_generated" in source.lower()
 
-    def test_section_child_emits_error_on_low_notes(self):
+    def test_section_child_emits_error_on_low_notes(self) -> None:
+
         """Section child must emit toolError SSE event when notes < 4."""
         import inspect
         from app.core.maestro_agent_teams.section_agent import _run_section_child
@@ -1874,7 +2022,8 @@ class TestLowNoteCountGuard:
         assert "_MIN_NOTES" in source
         assert "Low note count" in source or "near-empty" in source
 
-    def test_percussion_roles_recognised_by_scorer(self):
+    def test_percussion_roles_recognised_by_scorer(self) -> None:
+
         """Latin percussion instruments must match the drum scorer."""
         from app.services.music_generator import MusicGenerator
         from app.services.backends.base import GeneratorBackend
@@ -1884,7 +2033,8 @@ class TestLowNoteCountGuard:
             scorer = mg._scorer_for_instrument(role, GeneratorBackend.ORPHEUS, 8, "cumbia")
             assert scorer is not None, f"'{role}' must be recognised as percussion by scorer"
 
-    def test_harmonic_roles_recognised_by_scorer(self):
+    def test_harmonic_roles_recognised_by_scorer(self) -> None:
+
         """Latin melodic/harmonic instruments must match the chord scorer."""
         from app.services.music_generator import MusicGenerator
         from app.services.backends.base import GeneratorBackend
@@ -1898,7 +2048,8 @@ class TestLowNoteCountGuard:
 class TestServerOwnedRetryContracts:
     """Server-owned retries: the server retries failed sections without LLM."""
 
-    def test_dispatch_has_server_owned_retry_loop(self):
+    def test_dispatch_has_server_owned_retry_loop(self) -> None:
+
         """_dispatch_section_children retries failed sections server-side."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1908,7 +2059,8 @@ class TestServerOwnedRetryContracts:
         assert "_failed_indices" in source
         assert "_retry_round" in source
 
-    def test_dispatch_returns_collapsed_summary(self):
+    def test_dispatch_returns_collapsed_summary(self) -> None:
+
         """Dispatch returns a batch_complete summary instead of per-call tool results."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
@@ -1916,7 +2068,8 @@ class TestServerOwnedRetryContracts:
         assert "batch_complete" in source
         assert "_section_summaries" in source
 
-    def test_missing_stages_checks_all_tool_types(self):
+    def test_missing_stages_checks_all_tool_types(self) -> None:
+
         """_missing_stages checks track, region, generate, and effect.
 
         Region/generate checks ensure the LLM is prompted to produce
@@ -1942,7 +2095,8 @@ class TestServerOwnedRetryContracts:
         assert "stori_add_midi_region" in func_body
         assert "stori_generate_midi" in func_body
 
-    def test_dispatched_sections_prevent_useless_retry_turns(self):
+    def test_dispatched_sections_prevent_useless_retry_turns(self) -> None:
+
         """Once _dispatch_section_children handles all sections (including failures),
         _missing_stages() must NOT trigger retry turns.  The LLM cannot fix
         Orpheus failures and server-owned retries already ran.
@@ -1970,14 +2124,16 @@ class TestServerOwnedRetryContracts:
             "regardless of success"
         )
 
-    def test_no_entity_manifest_injection_on_retry(self):
+    def test_no_entity_manifest_injection_on_retry(self) -> None:
+
         """Retry turns must NOT inject entity manifest (regionIds not needed)."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
         source = inspect.getsource(agent_mod._run_instrument_agent_inner)
         assert "agent_manifest" not in source
 
-    def test_entity_registry_supports_agent_scoping(self):
+    def test_entity_registry_supports_agent_scoping(self) -> None:
+
         """EntityRegistry.agent_manifest accepts agent_id for namespace scoping."""
         import inspect
         from app.core.entity_registry import EntityRegistry

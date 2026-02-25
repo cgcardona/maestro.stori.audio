@@ -1,7 +1,9 @@
 """Request models for the Stori Maestro API."""
+from __future__ import annotations
+
 import logging
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Any
+from typing import Any
 
 from app.models.base import CamelModel
 
@@ -30,24 +32,24 @@ class MaestroRequest(CamelModel):
         default="generate",
         description="Composition mode: 'generate' for new, 'edit' for modifications"
     )
-    project: Optional[dict[str, Any]] = Field(
+    project: dict[str, Any] | None = Field(
         default=None,
         description="Current project state (for edit mode)"
     )
-    model: Optional[str] = Field(
+    model: str | None = Field(
         default=None,
         description="LLM model to use (e.g., 'anthropic/claude-3.5-sonnet'). Uses default if not specified."
     )
     store_prompt: bool = Field(
         default=True,
-        description="Whether to store the prompt for training data. Set to False to opt out."
+        description="Whether to store the prompt for training data. set to False to opt out."
     )
-    conversation_id: Optional[str] = Field(
+    conversation_id: str | None = Field(
         default=None,
         pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
         description="Conversation ID for multi-turn sessions. State persists across requests with same ID."
     )
-    quality_preset: Optional[str] = Field(
+    quality_preset: str | None = Field(
         default=None,
         pattern=r'^(fast|balanced|quality)$',
         description="Orpheus quality preset: 'fast', 'balanced', or 'quality'. Default 'quality'. Use 'fast' or 'balanced' only for rapid iteration.",
@@ -104,7 +106,7 @@ class GenerateRequest(BaseModel):
         le=64,
         description="Number of bars to generate"
     )
-    key: Optional[str] = Field(
+    key: str | None = Field(
         default=None,
         description="Musical key (e.g., 'Am', 'C', 'F#m')"
     )
@@ -129,25 +131,25 @@ class ProposeVariationRequest(CamelModel):
         ...,
         description="User intent describing the desired transformation"
     )
-    scope: Optional[dict[str, Any]] = Field(
+    scope: dict[str, Any] | None = Field(
         default=None,
         description=(
             "Optional scope limiting the variation to specific tracks/regions/beat_range. "
             "Keys: trackIds (list), regionIds (list), beatRange (tuple of floats)"
         )
     )
-    options: Optional[dict[str, Any]] = Field(
+    options: dict[str, Any] | None = Field(
         default=None,
         description=(
             "Optional execution options. "
             "Keys: phraseGrouping (str), barSize (int), stream (bool)"
         )
     )
-    request_id: Optional[str] = Field(
+    request_id: str | None = Field(
         default=None,
         description="Idempotency key for the request"
     )
-    model: Optional[str] = Field(
+    model: str | None = Field(
         default=None,
         description="LLM model to use. Uses default if not specified."
     )
@@ -174,9 +176,9 @@ class CommitVariationRequest(CamelModel):
     )
     accepted_phrase_ids: list[str] = Field(
         ...,
-        description="List of phrase IDs to apply (order does not matter)"
+        description="list of phrase IDs to apply (order does not matter)"
     )
-    request_id: Optional[str] = Field(
+    request_id: str | None = Field(
         default=None,
         description="Idempotency key for the request"
     )
@@ -201,7 +203,7 @@ class DiscardVariationRequest(CamelModel):
         ...,
         description="ID of the variation being discarded"
     )
-    request_id: Optional[str] = Field(
+    request_id: str | None = Field(
         default=None,
         description="Idempotency key for the request"
     )

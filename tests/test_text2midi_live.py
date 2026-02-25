@@ -7,6 +7,7 @@ Run with: pytest tests/test_text2midi_live.py -v -s
 Note: This test requires internet access and may take 30-60 seconds
 as the Space may need to wake up.
 """
+from __future__ import annotations
 
 import logging
 
@@ -27,7 +28,8 @@ class TestText2MidiLive:
     """Live tests against text2midi HuggingFace Space."""
     
     @pytest.mark.asyncio
-    async def test_backend_availability(self):
+    async def test_backend_availability(self) -> None:
+
         """Check if text2midi Space is reachable."""
         backend = Text2MidiBackend()
         
@@ -41,7 +43,8 @@ class TestText2MidiLive:
             pytest.skip("gradio_client not installed")
     
     @pytest.mark.asyncio
-    async def test_generate_simple_melody(self):
+    async def test_generate_simple_melody(self) -> None:
+
         """Generate a simple melody using text2midi."""
         backend = Text2MidiBackend()
         
@@ -91,7 +94,8 @@ class TestText2MidiLive:
             assert len(result.notes) > 0
     
     @pytest.mark.asyncio
-    async def test_generate_with_different_emotions(self):
+    async def test_generate_with_different_emotions(self) -> None:
+
         """Test generation with contrasting emotions."""
         backend = Text2MidiBackend()
         
@@ -140,7 +144,8 @@ class TestText2MidiMelodyBackendLive:
     """Test the melody generator interface wrapper."""
     
     @pytest.mark.asyncio
-    async def test_melody_backend_interface(self):
+    async def test_melody_backend_interface(self) -> None:
+
         """Test that Text2MidiMelodyBackend works with generator interface."""
         backend = Text2MidiMelodyBackend()
         
@@ -170,7 +175,7 @@ class TestText2MidiMelodyBackendLive:
 
 if __name__ == "__main__":
     # Quick manual test
-    async def main():
+    async def main() -> None:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
         backend = Text2MidiBackend()
         logger.info("Available: %s", await backend.is_available())

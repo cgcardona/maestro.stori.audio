@@ -94,7 +94,7 @@ INTENT_CONFIGS: dict[Intent, IntentConfig] = {
         allowed_tools=frozenset({"stori_set_zoom"}),
         force_stop_after=True,
         tool_choice="required",
-        description="Set zoom level",
+        description="set zoom level",
     ),
 
     # Project settings - single action
@@ -104,7 +104,7 @@ INTENT_CONFIGS: dict[Intent, IntentConfig] = {
         allowed_tools=frozenset({"stori_set_tempo"}),
         force_stop_after=True,
         tool_choice="required",
-        description="Set project tempo",
+        description="set project tempo",
     ),
     Intent.PROJECT_SET_KEY: IntentConfig(
         intent=Intent.PROJECT_SET_KEY,
@@ -112,7 +112,7 @@ INTENT_CONFIGS: dict[Intent, IntentConfig] = {
         allowed_tools=frozenset({"stori_set_key"}),
         force_stop_after=True,
         tool_choice="required",
-        description="Set project key",
+        description="set project key",
     ),
 
     # Track operations
@@ -154,7 +154,7 @@ INTENT_CONFIGS: dict[Intent, IntentConfig] = {
         allowed_tools=frozenset({"stori_set_track_volume"}),
         force_stop_after=True,
         tool_choice="required",
-        description="Set track volume",
+        description="set track volume",
     ),
     Intent.TRACK_SET_PAN: IntentConfig(
         intent=Intent.TRACK_SET_PAN,
@@ -162,7 +162,7 @@ INTENT_CONFIGS: dict[Intent, IntentConfig] = {
         allowed_tools=frozenset({"stori_set_track_pan"}),
         force_stop_after=True,
         tool_choice="required",
-        description="Set track pan",
+        description="set track pan",
     ),
     Intent.TRACK_SET_COLOR: IntentConfig(
         intent=Intent.TRACK_SET_COLOR,
@@ -170,7 +170,7 @@ INTENT_CONFIGS: dict[Intent, IntentConfig] = {
         allowed_tools=frozenset({"stori_set_track_color"}),
         force_stop_after=True,
         tool_choice="required",
-        description="Set track color",
+        description="set track color",
     ),
     Intent.TRACK_SET_ICON: IntentConfig(
         intent=Intent.TRACK_SET_ICON,
@@ -178,7 +178,7 @@ INTENT_CONFIGS: dict[Intent, IntentConfig] = {
         allowed_tools=frozenset({"stori_set_track_icon"}),
         force_stop_after=True,
         tool_choice="required",
-        description="Set track icon",
+        description="set track icon",
     ),
 
     # Region/Notes - may need multi-step

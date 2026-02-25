@@ -3,19 +3,18 @@ Music Generation Service for Maestro.
 
 Primary backend: Orpheus (required for composing). No pattern fallback;
 other backends (IR, HuggingFace, LLM) can be used when explicitly requested
-or configured in priority. Coupled generation: drums first, then bass locked to kick map.
+or configured in priority.
 
-Performance notes:
-- Candidate generation is parallelised with asyncio.gather so all N candidates
-  are dispatched to Orpheus simultaneously instead of sequentially.
-- Rejection-sampling scoring is now instrument-role-based (not backend-type-based),
-  which means Orpheus finally benefits from the quality-preset candidate selection.
-- Melodic/pad instruments get fewer candidates than drums/bass because their
-  output variance is lower and the critic adds less marginal value.
+Unified generation: all instruments for a section are generated in a single
+Orpheus call so the model produces coherent, musically-related parts.  A
+per-section cache ensures that concurrent instrument agents sharing the same
+section only trigger ONE GPU call; subsequent agents read from cache.
 """
+from __future__ import annotations
+
 import asyncio
 import logging
-from typing import Optional, Any
+from typing import Any, Callable
 from dataclasses import dataclass, field
 
 from app.services.backends.base import GeneratorBackend, GenerationResult, MusicGeneratorBackend
@@ -25,13 +24,113 @@ from app.services.backends.bass_ir import BassSpecBackend
 from app.services.backends.harmonic_ir import HarmonicSpecBackend
 from app.services.backends.melody_ir import MelodySpecBackend
 from app.services.backends.orpheus import OrpheusBackend
-from app.services.backends.huggingface import HuggingFaceBackend
-from app.services.backends.llm import LLMGeneratorBackend
 from app.services.groove_engine import RhythmSpine, extract_kick_onsets
 from app.services.expressiveness import apply_expressiveness
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Role → channel family mapping for unified generation channel extraction.
+#
+# Orpheus labels channels by GM family (e.g. "piano", "bass", "drums",
+# "guitar", "strings") while the LLM uses musical role names (e.g. "keys",
+# "chords", "rhythm guitar", "pad").  This map bridges the two vocabularies.
+# ---------------------------------------------------------------------------
+_ROLE_TO_FAMILIES: dict[str, list[str]] = {
+    # Piano / keys roles → piano family
+    "keys": ["piano", "organ", "chromatic_perc"],
+    "chords": ["piano", "organ", "guitar", "strings", "ensemble"],
+    "piano": ["piano"],
+    "rhodes": ["piano"],
+    "electric piano": ["piano"],
+    "keyboard": ["piano", "organ"],
+    "organ": ["organ"],
+    "synth": ["synth_lead", "synth_pad"],
+    "synth lead": ["synth_lead"],
+    "synth pad": ["synth_pad"],
+    "pad": ["synth_pad", "ensemble", "strings"],
+    # Bass roles → bass family
+    "bass": ["bass"],
+    "sub bass": ["bass"],
+    "synth bass": ["bass"],
+    # Drums roles → drums
+    "drums": ["drums"],
+    "percussion": ["drums", "percussive"],
+    # Guitar roles
+    "guitar": ["guitar"],
+    "rhythm guitar": ["guitar"],
+    "lead guitar": ["guitar"],
+    "acoustic guitar": ["guitar"],
+    # Strings / ensemble
+    "strings": ["strings", "ensemble"],
+    "violin": ["strings"],
+    "cello": ["strings"],
+    "orchestral": ["strings", "ensemble", "brass"],
+    # Brass / reed / wind
+    "brass": ["brass"],
+    "horns": ["brass"],
+    "trumpet": ["brass"],
+    "saxophone": ["reed"],
+    "sax": ["reed"],
+    "woodwinds": ["reed", "pipe"],
+    "flute": ["pipe"],
+    # Melody (generic)
+    "melody": ["piano", "synth_lead", "guitar", "reed", "pipe", "brass"],
+    "lead": ["synth_lead", "piano", "guitar"],
+}
+
+
+def _extract_channel_for_role(
+    role_key: str,
+    channel_notes: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Extract notes for a musical role from Orpheus channel labels.
+
+    Tries, in order:
+    1. Exact match (role_key == channel label)
+    2. Substring match (either direction)
+    3. Family alias match (role_key maps to GM families that match channel labels)
+    4. Returns empty list if no match (caller decides fallback)
+    """
+    if not channel_notes:
+        return []
+
+    # 1. Exact match
+    if role_key in channel_notes:
+        logger.info(f"🔍 Channel match (exact): '{role_key}'")
+        return channel_notes[role_key]
+
+    # 2. Substring match (e.g. "bass" in "bass_0", or "piano" in "electric piano")
+    for ch_label, ch_notes in channel_notes.items():
+        if role_key in ch_label.lower() or ch_label.lower() in role_key:
+            logger.info(
+                f"🔍 Channel match (substring): '{role_key}' → '{ch_label}' "
+                f"({len(ch_notes)} notes)"
+            )
+            return ch_notes
+
+    # 3. Family alias match
+    target_families = _ROLE_TO_FAMILIES.get(role_key, [])
+    if target_families:
+        for family in target_families:
+            for ch_label, ch_notes in channel_notes.items():
+                ch_lower = ch_label.lower()
+                # "piano_1" starts with "piano", "bass_0" starts with "bass"
+                if ch_lower.startswith(family) or ch_lower == family:
+                    logger.info(
+                        f"🔍 Channel match (family alias): '{role_key}' → "
+                        f"family '{family}' → channel '{ch_label}' "
+                        f"({len(ch_notes)} notes)"
+                    )
+                    return ch_notes
+
+    logger.warning(
+        f"🔍 No channel match for role '{role_key}' in {list(channel_notes.keys())} "
+        f"(tried families: {target_families})"
+    )
+    return []
 
 
 # -----------------------------------------------------------------------------
@@ -80,11 +179,22 @@ QUALITY_PRESETS = {
 @dataclass
 class GenerationContext:
     """Context shared across coupled generation calls."""
-    rhythm_spine: Optional[RhythmSpine] = None
-    drum_notes: Optional[list[dict]] = None
+    rhythm_spine: RhythmSpine | None = None
+    drum_notes: list[dict[str, Any]] | None = None
     style: str = "trap"
     tempo: int = 120
     bars: int = 16
+
+
+@dataclass
+class _SectionCacheEntry:
+    """Cached unified generation result for one section.
+
+    Concurrent instrument agents sharing the same section wait on the lock;
+    the first to acquire it performs the Orpheus call and stores the result.
+    """
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    result: GenerationResult | None = None
 
 
 class MusicGenerator:
@@ -95,7 +205,7 @@ class MusicGenerator:
     if Orpheus is unavailable, generation fails with a clear error.
     """
     
-    def __init__(self, backend_priority: Optional[list[GeneratorBackend]] = None):
+    def __init__(self, backend_priority: list[GeneratorBackend] | None = None):
         """
         Initialize with custom backend priority.
         
@@ -116,21 +226,21 @@ class MusicGenerator:
             GeneratorBackend.HARMONIC_IR: HarmonicSpecBackend(),
             GeneratorBackend.MELODY_IR: MelodySpecBackend(),
             GeneratorBackend.ORPHEUS: OrpheusBackend(),
-            GeneratorBackend.HUGGINGFACE: HuggingFaceBackend(),
-            GeneratorBackend.LLM: LLMGeneratorBackend(),
         }
         
         self.priority = backend_priority
         self._availability_cache: dict[str, bool] = {}
         
         # Cached context for coupled generation
-        self._generation_context: Optional[GenerationContext] = None
+        self._generation_context: GenerationContext | None = None
+        # Per-section unified generation cache
+        self._section_cache: dict[str, _SectionCacheEntry] = {}
     
-    def set_generation_context(self, context: GenerationContext):
-        """Set context for coupled generation (e.g., rhythm spine from drums)."""
+    def set_generation_context(self, context: GenerationContext) -> None:
+        """set context for coupled generation (e.g., rhythm spine from drums)."""
         self._generation_context = context
     
-    def clear_generation_context(self):
+    def clear_generation_context(self) -> None:
         """Clear the generation context."""
         self._generation_context = None
     
@@ -140,10 +250,10 @@ class MusicGenerator:
         style: str,
         tempo: int,
         bars: int,
-        key: Optional[str] = None,
-        chords: Optional[list[str]] = None,
-        preferred_backend: Optional[GeneratorBackend] = None,
-        **kwargs,
+        key: str | None = None,
+        chords: list[str] | None = None,
+        preferred_backend: GeneratorBackend | None = None,
+        **kwargs: Any,
     ) -> GenerationResult:
         """
         Generate MIDI notes (default: Orpheus; no pattern fallback).
@@ -183,7 +293,7 @@ class MusicGenerator:
                 logger.warning(f"Requested backend not available: {preferred_backend}")
         
         # Try backends in priority order
-        last_failure: Optional[GenerationResult] = None
+        last_failure: GenerationResult | None = None
         for backend_type in self.priority:
             backend = self.backend_map.get(backend_type)
             if not backend:
@@ -228,11 +338,142 @@ class MusicGenerator:
             error=error_msg,
         )
     
+    async def generate_unified(
+        self,
+        instruments: list[str],
+        style: str,
+        tempo: int,
+        bars: int,
+        key: str | None = None,
+        **kwargs: Any,
+    ) -> GenerationResult:
+        """Generate all instruments together in one Orpheus call.
+
+        Produces coherent multi-instrument output where all parts are
+        generated simultaneously, yielding better musical coherence than
+        generating each instrument independently.
+        """
+        quality_preset = kwargs.pop("quality_preset", "quality")
+        kwargs["quality_preset"] = quality_preset
+
+        for backend_type in self.priority:
+            backend = self.backend_map.get(backend_type)
+            if not backend:
+                continue
+            if not await self._is_backend_available(backend):
+                continue
+
+            result = await backend.generate_unified(
+                instruments=instruments,
+                style=style,
+                tempo=tempo,
+                bars=bars,
+                key=key,
+                **kwargs,
+            )
+            if result.success:
+                return result
+            else:
+                logger.warning(f"Unified generation via {backend_type.value} failed: {result.error}")
+
+        return GenerationResult(
+            success=False,
+            notes=[],
+            backend_used=GeneratorBackend.ORPHEUS,
+            metadata={},
+            error="No backend available for unified generation",
+        )
+
+    async def generate_for_section(
+        self,
+        section_key: str,
+        instrument: str,
+        all_instruments: list[str],
+        style: str,
+        tempo: int,
+        bars: int,
+        key: str | None = None,
+        **kwargs: Any,
+    ) -> GenerationResult:
+        """Generate notes for one instrument within a section using unified caching.
+
+        The first call for a section triggers a single Orpheus call with all
+        instruments. Concurrent callers for the same section wait on the lock
+        and read from cache, extracting only their channel's notes.
+        """
+        if section_key not in self._section_cache:
+            self._section_cache[section_key] = _SectionCacheEntry()
+        entry = self._section_cache[section_key]
+
+        async with entry.lock:
+            if entry.result is None:
+                logger.info(
+                    f"🎼 Section {section_key}: FIRST call ({instrument}), "
+                    f"triggering unified Orpheus call for ALL {all_instruments}"
+                )
+                entry.result = await self.generate_unified(
+                    instruments=all_instruments,
+                    style=style,
+                    tempo=tempo,
+                    bars=bars,
+                    key=key,
+                    **kwargs,
+                )
+            else:
+                logger.info(
+                    f"🎼 Section {section_key}: CACHE HIT ({instrument}), "
+                    f"extracting from unified result"
+                )
+
+        unified = entry.result
+        if not unified.success:
+            return unified
+
+        channel_notes = unified.channel_notes or {}
+        role_notes: list[dict[str, Any]] = []
+        role_key = instrument.lower().strip()
+
+        logger.info(
+            f"🔍 Section {section_key}: extracting '{instrument}' (key='{role_key}') "
+            f"from channels={list(channel_notes.keys())} "
+            f"flat_notes={len(unified.notes) if unified.notes else 0}"
+        )
+
+        role_notes = _extract_channel_for_role(role_key, channel_notes)
+
+        if not role_notes and unified.notes:
+            logger.warning(
+                f"⚠️ No channel match for '{instrument}' in {list(channel_notes.keys())} — "
+                f"falling back to ALL flat notes ({len(unified.notes)} notes)"
+            )
+            role_notes = unified.notes
+
+        return GenerationResult(
+            success=True,
+            notes=role_notes,
+            backend_used=unified.backend_used,
+            metadata={
+                **(unified.metadata or {}),
+                "unified_section": section_key,
+                "extracted_channel": instrument,
+            },
+            cc_events=unified.cc_events,
+            pitch_bends=unified.pitch_bends,
+            aftertouch=unified.aftertouch,
+        )
+
+    def clear_section_cache(self, section_key: str | None = None) -> None:
+        """Clear the unified generation cache for a section or all sections."""
+        if section_key:
+            self._section_cache.pop(section_key, None)
+        else:
+            self._section_cache.clear()
+
     @staticmethod
-    def _ensure_snake_keys(notes: list[dict]) -> list[dict]:
+    def _ensure_snake_keys(notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Return a shallow copy of notes with snake_case beat keys for critics."""
         _MAP = {"startBeat": "start_beat", "durationBeats": "duration_beats"}
-        out: list[dict] = []
+        out: list[dict[str, Any]] = []
         for n in notes:
             converted = {_MAP.get(k, k): v for k, v in n.items()}
             out.append(converted)
@@ -244,7 +485,7 @@ class MusicGenerator:
         backend_type: GeneratorBackend,
         bars: int,
         style: str,
-    ):
+    ) -> Callable[[list[dict[str, Any]]], tuple[float, list[str]]] | None:
         """
         Return a scorer function for the given instrument role.
 
@@ -321,11 +562,11 @@ class MusicGenerator:
         style: str,
         tempo: int,
         bars: int,
-        key: Optional[str],
-        chords: Optional[list[str]],
+        key: str | None,
+        chords: list[str] | None,
         preset_config: QualityPresetConfig,
         num_candidates: int,
-        **kwargs,
+        **kwargs: Any,
     ) -> GenerationResult:
         """
         Generate with coupled generation and parallel rejection sampling.
@@ -360,7 +601,7 @@ class MusicGenerator:
             ]
             candidates = await asyncio.gather(*tasks, return_exceptions=True)
 
-            best_result: Optional[GenerationResult] = None
+            best_result: GenerationResult | None = None
             best_score = -1.0
             all_scores: list[float] = []
 
@@ -420,7 +661,7 @@ class MusicGenerator:
         result.pitch_bends = (result.pitch_bends or []) + expr.get("pitch_bends", [])
         return result
 
-    def _capture_drum_context(self, notes: list[dict], style: str, tempo: int, bars: int):
+    def _capture_drum_context(self, notes: list[dict[str, Any]], style: str, tempo: int, bars: int) -> None:
         """Capture rhythm spine from drum generation for bass coupling."""
         snake_notes = self._ensure_snake_keys(notes)
         rhythm_spine = RhythmSpine.from_drum_notes(snake_notes, tempo=tempo, bars=bars, style=style)
@@ -447,7 +688,7 @@ class MusicGenerator:
             self._availability_cache[cache_key] = True
         return available
     
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """Clear availability cache to force re-check."""
         self._availability_cache.clear()
     
@@ -462,10 +703,10 @@ class MusicGenerator:
 
 
 # Singleton instance
-_generator: Optional[MusicGenerator] = None
+_generator: MusicGenerator | None = None
 
 
-def get_music_generator(backend_priority: Optional[list[GeneratorBackend]] = None) -> MusicGenerator:
+def get_music_generator(backend_priority: list[GeneratorBackend] | None = None) -> MusicGenerator:
     """Get the singleton music generator instance."""
     global _generator
     if _generator is None:
@@ -473,7 +714,7 @@ def get_music_generator(backend_priority: Optional[list[GeneratorBackend]] = Non
     return _generator
 
 
-def reset_music_generator():
+def reset_music_generator() -> None:
     """Reset the singleton (useful for testing)."""
     global _generator
     _generator = None

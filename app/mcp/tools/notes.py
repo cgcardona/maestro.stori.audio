@@ -1,4 +1,5 @@
 """Note-level MCP tool definitions."""
+from __future__ import annotations
 
 NOTE_TOOLS = [
     {

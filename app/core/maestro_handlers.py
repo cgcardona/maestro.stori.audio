@@ -13,7 +13,12 @@ This module is the public API surface: it exports ``orchestrate`` and
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+)
 
 from app.core.intent import Intent, IntentResult, SSEState, get_intent_result_with_llm
 from app.core.llm_client import LLMClient
@@ -45,19 +50,21 @@ from app.core.maestro_composing import (
 from app.core.maestro_agent_teams import _handle_composition_agent_team
 from app.core.maestro_helpers import _context_usage_fields
 
+__all__ = ["orchestrate", "UsageTracker", "StreamFinalResponse"]
+
 logger = logging.getLogger(__name__)
 
 
 async def orchestrate(
     prompt: str,
-    project_context: Optional[dict[str, Any]] = None,
-    model: Optional[str] = None,
-    usage_tracker: Optional[UsageTracker] = None,
-    conversation_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    conversation_history: Optional[list[dict[str, Any]]] = None,
-    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
-    quality_preset: Optional[str] = None,
+    project_context: dict[str, Any] | None = None,
+    model: str | None = None,
+    usage_tracker: UsageTracker | None = None,
+    conversation_id: str | None = None,
+    user_id: str | None = None,
+    conversation_history: list[dict[str, Any]] | None = None,
+    is_cancelled: Callable[[], Awaitable[bool]] | None = None,
+    quality_preset: str | None = None,
 ) -> AsyncIterator[str]:
     """Main orchestration using Cursor-of-DAWs architecture.
 
@@ -99,7 +106,7 @@ async def orchestrate(
 
                 _orch_slots = getattr(route, "slots", None)
                 _orch_extras = getattr(_orch_slots, "extras", None) if _orch_slots is not None else None
-                _orch_parsed: Optional[ParsedPrompt] = (
+                _orch_parsed: ParsedPrompt | None = (
                     _orch_extras.get("parsed_prompt") if isinstance(_orch_extras, dict) else None
                 )
 

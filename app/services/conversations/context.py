@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.db.models import Conversation, ConversationMessage
 from app.services.conversations.formatting import _format_single_message
@@ -97,7 +97,7 @@ async def get_optimized_context(
     messages: list[ConversationMessage],
     max_messages: int = MAX_CONTEXT_MESSAGES,
     include_entity_summary: bool = True,
-) -> tuple[list[dict], Optional[str]]:
+) -> tuple[list[dict[str, Any]], str | None]:
     """Get optimized conversation context for LLM.
 
     Short conversations: return all messages.

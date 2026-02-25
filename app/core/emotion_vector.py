@@ -12,7 +12,6 @@ See NEURAL_MIDI_ROADMAP.md for full specification.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 import json
 
 
@@ -37,7 +36,7 @@ class EmotionVector:
     intimacy: float = 0.5
     motion: float = 0.5
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate and clamp values to valid ranges."""
         self.energy = self._clamp(self.energy, 0.0, 1.0)
         self.valence = self._clamp(self.valence, -1.0, 1.0)
@@ -53,7 +52,7 @@ class EmotionVector:
         """Return as a list for model input."""
         return [self.energy, self.valence, self.tension, self.intimacy, self.motion]
     
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, float]:
         """Serialize to dict for JSON output."""
         return {
             "energy": self.energy,
@@ -64,7 +63,7 @@ class EmotionVector:
         }
     
     @classmethod
-    def from_dict(cls, data: dict) -> EmotionVector:
+    def from_dict(cls, data: dict[str, float]) -> EmotionVector:
         """Deserialize from dict."""
         return cls(
             energy=data.get("energy", 0.5),
@@ -74,7 +73,7 @@ class EmotionVector:
             motion=data.get("motion", 0.5),
         )
     
-    def apply_delta(self, delta: dict) -> EmotionVector:
+    def apply_delta(self, delta: dict[str, float]) -> EmotionVector:
         """
         Apply a mutation delta and return new EmotionVector.
         
@@ -189,7 +188,7 @@ REFINEMENT_DELTAS: dict[str, dict[str, float]] = {
 }
 
 
-def get_refinement_delta(command: str) -> Optional[dict[str, float]]:
+def get_refinement_delta(command: str) -> dict[str, float] | None:
     """
     Get the emotion delta for a refinement command.
     

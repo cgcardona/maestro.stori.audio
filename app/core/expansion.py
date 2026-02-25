@@ -9,7 +9,7 @@ This module should be dependency-free so it can run in worker contexts.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 import hashlib
 import json
 

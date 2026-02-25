@@ -1,6 +1,6 @@
 """
 Orpheus Music Service
-Generates MIDI using Orpheus Music Transformer and converts to Stori tool calls
+Generates MIDI using Orpheus Music Transformer with expressiveness layer
 
 Architecture:
 - Policy Layer: Translates musical intent → generation controls
@@ -9,11 +9,16 @@ Architecture:
 
 This is where UX philosophy and musical taste live.
 """
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
+
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import List, Optional
+
 from gradio_client import Client, handle_file
 from dataclasses import dataclass, field
 from collections import OrderedDict
@@ -31,6 +36,7 @@ import json
 import hashlib
 import logging
 import pathlib
+import shutil
 
 # Import our policy layer and quality metrics
 from generation_policy import (
@@ -40,15 +46,20 @@ from generation_policy import (
     get_policy_version,
     build_controls,
     build_fulfillment_report,
+    quality_preset_to_batch_count,
+    apply_controls_to_params,
 )
 from quality_metrics import analyze_quality, compare_generations, rejection_score
-from seed_selector import select_seed
+from seed_selector import select_seed, select_seed_with_key, SeedSelection
+from midi_transforms import transpose_midi
+from candidate_scorer import score_candidate, select_best_candidate, CandidateScore
+from post_processing import build_post_processor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
-async def _lifespan(application: FastAPI):
+async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
     """Start job queue workers and keepalive; drain on shutdown."""
     global _job_queue
     _job_queue = JobQueue(max_queue=_MAX_QUEUE_DEPTH, max_workers=_MAX_CONCURRENT)
@@ -71,7 +82,7 @@ app = FastAPI(title="Orpheus Music Service", lifespan=_lifespan)
 _last_keepalive: float = 0.0
 _last_successful_gen: float = 0.0
 
-_DEFAULT_SPACE = "asigalov61/Orpheus-Music-Transformer"
+_DEFAULT_SPACE = "cgcardona/Orpheus-Music-Transformer"
 _KEEPALIVE_INTERVAL = int(os.environ.get("ORPHEUS_KEEPALIVE_INTERVAL", "600"))
 _MAX_CONCURRENT = int(os.environ.get("ORPHEUS_MAX_CONCURRENT", "1"))
 _MAX_QUEUE_DEPTH = int(os.environ.get("ORPHEUS_MAX_QUEUE_DEPTH", "20"))
@@ -127,7 +138,7 @@ class _ClientPool:
         self._clients[worker_id] = client
         return client
 
-    def get_loops(self, worker_id: int) -> Optional[Client]:
+    def get_loops(self, worker_id: int) -> Client | None:
         loops_space = os.environ.get("STORI_ORPHEUS_LOOPS_SPACE", "")
         if not loops_space:
             return None
@@ -137,7 +148,7 @@ class _ClientPool:
             self._loops_clients[worker_id] = Client(loops_space, hf_token=hf_token)
         return self._loops_clients[worker_id]
 
-    def fresh_loops(self, worker_id: int) -> Optional[Client]:
+    def fresh_loops(self, worker_id: int) -> Client | None:
         """Return a brand-new Loops client, discarding previous session."""
         loops_space = os.environ.get("STORI_ORPHEUS_LOOPS_SPACE", "")
         if not loops_space:
@@ -167,16 +178,6 @@ class _ClientPool:
 _client_pool = _ClientPool()
 
 
-def get_client() -> Client:
-    """Legacy accessor — returns worker-0 client for non-worker callers."""
-    return _client_pool.get(0)
-
-
-def get_loops_client() -> Optional[Client]:
-    """Legacy accessor — returns worker-0 Loops client."""
-    return _client_pool.get_loops(0)
-
-
 def reset_client() -> None:
     """Reset all pooled clients (called on catastrophic connection failure)."""
     logger.warning("🔄 Resetting all Gradio clients — will reconnect on next request")
@@ -201,7 +202,7 @@ async def _keepalive_loop() -> None:
             _client_pool.reset_all()
 
 
-_job_queue: Optional["JobQueue"] = None
+_job_queue: "JobQueue" | None = None
 
 
 # ============================================================================
@@ -218,10 +219,10 @@ CACHE_TTL_SECONDS = 86400  # 24 hours
 @dataclass
 class CacheEntry:
     """Cache entry with TTL support and key data for fuzzy matching."""
-    result: dict
+    result: dict[str, Any]
     timestamp: float
     hits: int = 0
-    key_data: Optional[dict] = None
+    key_data: dict[str, Any] | None = None
 
 # Result cache: stores complete generation results (LRU with TTL)
 _result_cache: OrderedDict[str, CacheEntry] = OrderedDict()
@@ -232,7 +233,7 @@ def _quantize(value: float, step: float = _INTENT_QUANT_STEP) -> float:
     return round(round(value / step) * step, 4)
 
 
-def _canonical_instruments(instruments: List[str]) -> List[str]:
+def _canonical_instruments(instruments: list[str]) -> list[str]:
     """Normalize and sort instruments for deterministic cache keys."""
     canonical_order = ["drums", "bass", "electric_bass", "synth_bass",
                        "piano", "electric_piano", "guitar", "acoustic_guitar",
@@ -242,7 +243,7 @@ def _canonical_instruments(instruments: List[str]) -> List[str]:
 
 
 
-def _cache_key_data(request) -> dict:
+def _cache_key_data(request: GenerateRequest) -> dict[str, Any]:
     """Build a canonical, quantized dict of the request's cache-relevant fields."""
     ev = request.emotion_vector
     return {
@@ -261,20 +262,20 @@ def _cache_key_data(request) -> dict:
     }
 
 
-def get_cache_key(request) -> str:
+def get_cache_key(request: GenerateRequest) -> str:
     """Generate a deterministic cache key from a canonicalized + quantized request."""
     key_data = _cache_key_data(request)
     key_str = json.dumps(key_data, sort_keys=True)
     return hashlib.md5(key_str.encode()).hexdigest()
 
 
-def _intent_distance(a: dict, b: dict) -> float:
+def _intent_distance(a: dict[str, Any], b: dict[str, Any]) -> float:
     """Euclidean distance between two cache-key dicts on emotion vector axes."""
     axes = ["energy", "valence", "tension", "intimacy", "motion"]
     return math.sqrt(sum((a.get(k, 0) - b.get(k, 0)) ** 2 for k in axes))
 
 
-def get_cached_result(cache_key: str) -> Optional[dict]:
+def get_cached_result(cache_key: str) -> dict[str, Any] | None:
     """
     Get cached generation result if available and not expired.
     
@@ -301,7 +302,7 @@ def get_cached_result(cache_key: str) -> Optional[dict]:
     return copy.deepcopy(entry.result)
 
 
-def cache_result(cache_key: str, result: dict, key_data: Optional[dict] = None):
+def cache_result(cache_key: str, result: dict[str, Any], key_data: dict[str, Any] | None = None) -> None:
     """
     Cache a generation result with LRU eviction + disk persistence.
 
@@ -321,7 +322,7 @@ def cache_result(cache_key: str, result: dict, key_data: Optional[dict] = None):
     _save_cache_to_disk()
 
 
-def fuzzy_cache_lookup(request, epsilon: float = _FUZZY_EPSILON) -> Optional[dict]:
+def fuzzy_cache_lookup(request: GenerateRequest, epsilon: float = _FUZZY_EPSILON) -> dict[str, Any] | None:
     """
     Find the nearest cached result within ε distance on intent vector axes.
 
@@ -334,7 +335,7 @@ def fuzzy_cache_lookup(request, epsilon: float = _FUZZY_EPSILON) -> Optional[dic
     now = time()
     req_data = _cache_key_data(request)
     best_dist = float("inf")
-    best_entry: Optional[CacheEntry] = None
+    best_entry: CacheEntry | None = None
 
     for key, entry in _result_cache.items():
         if now - entry.timestamp > CACHE_TTL_SECONDS:
@@ -484,41 +485,41 @@ class GenerateRequest(BaseModel):
     # ── Core ──
     genre: str = "boom_bap"
     tempo: int = 90
-    instruments: List[str] = ["drums", "bass"]
+    instruments: list[str] = ["drums", "bass"]
     bars: int = 4
-    key: Optional[str] = None
+    key: str | None = None
 
     # ── Canonical intent blocks ──
-    emotion_vector: Optional[EmotionVectorPayload] = None
-    role_profile_summary: Optional[RoleProfileSummary] = None
-    generation_constraints: Optional[GenerationConstraintsPayload] = None
-    intent_goals: Optional[List[IntentGoal]] = None
+    emotion_vector: EmotionVectorPayload | None = None
+    role_profile_summary: RoleProfileSummary | None = None
+    generation_constraints: GenerationConstraintsPayload | None = None
+    intent_goals: list[IntentGoal] | None = None
 
     # ── Observability ──
-    seed: Optional[int] = None
-    trace_id: Optional[str] = None
-    intent_hash: Optional[str] = None
+    seed: int | None = None
+    trace_id: str | None = None
+    intent_hash: str | None = None
 
     # ── Quality / overrides ──
     quality_preset: str = "balanced"
-    temperature: Optional[float] = None
-    top_p: Optional[float] = None
+    temperature: float | None = None
+    top_p: float | None = None
 
     # ── Correlation ──
-    composition_id: Optional[str] = None
+    composition_id: str | None = None
 
-
-class ToolCall(BaseModel):
-    tool: str
-    params: dict
+    # ── Unified generation ──
+    add_outro: bool = False
+    unified_output: bool = False
 
 
 class GenerateResponse(BaseModel):
     success: bool
-    tool_calls: List[dict]
-    notes: Optional[List[dict]] = None
-    error: Optional[str] = None
-    metadata: Optional[dict] = None
+    notes: list[dict[str, Any]] | None = None
+    channel_notes: dict[str, list[dict[str, Any]]] | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+    error: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 # ============================================================================
@@ -543,15 +544,15 @@ class Job:
     id: str
     request: GenerateRequest
     status: JobStatus = JobStatus.QUEUED
-    result: Optional[GenerateResponse] = None
-    error: Optional[str] = None
+    result: GenerateResponse | None = None
+    error: str | None = None
     created_at: float = 0.0
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
+    started_at: float | None = None
+    completed_at: float | None = None
     event: asyncio.Event = field(default_factory=asyncio.Event)
     position: int = 0
-    dedupe_key: Optional[str] = None
-    composition_id: Optional[str] = None
+    dedupe_key: str | None = None
+    composition_id: str | None = None
 
 
 class JobQueue:
@@ -561,14 +562,14 @@ class JobQueue:
     instead of blocking on a single long HTTP request.
     """
 
-    def __init__(self, max_queue: int = 20, max_workers: int = 2):
+    def __init__(self, max_queue: int = 20, max_workers: int = 2) -> None:
         self._queue: asyncio.Queue[Job] = asyncio.Queue(maxsize=max_queue)
         self._jobs: dict[str, Job] = {}
         self._dedupe: dict[str, str] = {}  # dedupe_key -> job_id
         self._max_workers = max_workers
         self._max_queue = max_queue
-        self._workers: list[asyncio.Task] = []  # type: ignore[type-arg]
-        self._cleanup_task: Optional[asyncio.Task] = None  # type: ignore[type-arg]
+        self._workers: list[asyncio.Task[None]] = []
+        self._cleanup_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         for i in range(self._max_workers):
@@ -592,7 +593,7 @@ class JobQueue:
         self._workers.clear()
         logger.info("🛑 JobQueue shut down")
 
-    def submit(self, request: GenerateRequest, dedupe_key: Optional[str] = None) -> Job:
+    def submit(self, request: GenerateRequest, dedupe_key: str | None = None) -> Job:
         """Enqueue a generation request. Raises QueueFullError when at capacity.
 
         If *dedupe_key* is provided and an in-flight job with the same key
@@ -631,7 +632,7 @@ class JobQueue:
         logger.info(f"📥{_cid} Job {job.id[:8]} queued (position {job.position})")
         return job
 
-    def get_job(self, job_id: str) -> Optional[Job]:
+    def get_job(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
 
     @property
@@ -642,7 +643,7 @@ class JobQueue:
     def running_count(self) -> int:
         return sum(1 for j in self._jobs.values() if j.status == JobStatus.RUNNING)
 
-    def status_snapshot(self) -> dict:
+    def status_snapshot(self) -> dict[str, Any]:
         return {
             "depth": self.depth,
             "running": self.running_count,
@@ -653,7 +654,7 @@ class JobQueue:
 
     # ── internal ────────────────────────────────────────────────────────
 
-    def cancel(self, job_id: str) -> Optional[Job]:
+    def cancel(self, job_id: str) -> Job | None:
         """Cancel a job. Queued jobs are skipped by workers; running jobs are
         marked canceled and their result is dropped."""
         job = self._jobs.get(job_id)
@@ -686,7 +687,7 @@ class JobQueue:
                 job.status = JobStatus.FAILED
                 job.error = str(exc)
                 job.result = GenerateResponse(
-                    success=False, tool_calls=[], error=str(exc),
+                    success=False, error=str(exc),
                 )
             finally:
                 job.completed_at = time()
@@ -724,8 +725,7 @@ class JobQueue:
 # =============================================================================
 # GM instrument resolution — full 128-program coverage
 #
-# Replaces the former hardcoded INSTRUMENT_PROGRAMS and
-# _ROLE_TO_ORPHEUS_INSTRUMENT dicts.  Everything is keyed by GM program
+# Full 128-program GM table.  Everything is keyed by GM program
 # number (0-127); string names are only produced at the Gradio boundary
 # via _TMIDIX_PATCH_NAMES.
 # =============================================================================
@@ -911,7 +911,7 @@ _GM_ALIASES: dict[str, int] = {
     "pan flute": 75, "pan pipes": 75, "zampona": 75, "zampoña": 75,
     "quena": 75,
     "blown bottle": 76, "bottle": 76,
-    "shakuhachi": 77,
+    "shakuhachi": 77, "skakuhachi": 77,
     "whistle": 78, "tin whistle": 78,
     "ocarina": 79,
     # --- Synth Lead (80-87) ---
@@ -979,7 +979,7 @@ _GM_ALIASES: dict[str, int] = {
 }
 
 
-def resolve_gm_program(role: str) -> Optional[int]:
+def resolve_gm_program(role: str) -> int | None:
     """Resolve a Maestro instrument role to a GM program number (0-127).
 
     Returns None for drums/percussion (channel 10, no program change).
@@ -998,7 +998,7 @@ def resolve_gm_program(role: str) -> Optional[int]:
     return None
 
 
-def resolve_tmidix_name(role: str) -> Optional[str]:
+def resolve_tmidix_name(role: str) -> str | None:
     """Resolve a Maestro role to the TMIDIX Number2patch string.
 
     Returns "Drums" for drum/percussion roles.
@@ -1013,7 +1013,72 @@ def resolve_tmidix_name(role: str) -> Optional[str]:
     return None
 
 
-def _resolve_melodic_index(role: str) -> Optional[int]:
+# GM family groups for human-readable channel labels (program → family name).
+_GM_FAMILY: tuple[tuple[int, int, str], ...] = (
+    (0,   7,  "piano"),
+    (8,  15,  "chromatic_perc"),
+    (16, 23,  "organ"),
+    (24, 31,  "guitar"),
+    (32, 39,  "bass"),
+    (40, 47,  "strings"),
+    (48, 55,  "ensemble"),
+    (56, 63,  "brass"),
+    (64, 71,  "reed"),
+    (72, 79,  "pipe"),
+    (80, 87,  "synth_lead"),
+    (88, 95,  "synth_pad"),
+    (96, 103, "synth_fx"),
+    (104, 111, "ethnic"),
+    (112, 119, "percussive"),
+    (120, 127, "sfx"),
+)
+
+
+def _gm_family_for_program(program: int) -> str:
+    """Return the GM family label for a program number (0-127)."""
+    for lo, hi, family in _GM_FAMILY:
+        if lo <= program <= hi:
+            return family
+    return "unknown"
+
+
+def _channel_label(
+    ch: int | str,
+    program_changes: dict[int, int] | None = None,
+) -> str:
+    """Human-readable label for a MIDI channel.
+
+    When ``program_changes`` is provided, the actual GM program number
+    for the channel is used to derive the family label (bass, piano,
+    guitar, etc.).  This produces correct labels for multi-instrument
+    output where the model assigns distinct programs per channel.
+
+    Falls back to channel-index heuristics when no program info is
+    available (legacy single-instrument path).
+    """
+    if isinstance(ch, str):
+        return ch
+    if ch == 9:
+        return "drums"
+
+    if program_changes and ch in program_changes:
+        prog = program_changes[ch]
+        family = _gm_family_for_program(prog)
+        seen: dict[str, int] = {}
+        for c in sorted(program_changes):
+            if c == 9:
+                continue
+            f = _gm_family_for_program(program_changes[c])
+            seen[f] = seen.get(f, 0) + 1
+        if seen.get(family, 0) > 1:
+            return f"{family}_{ch}"
+        return family
+
+    _MELODIC_LABELS: dict[int, str] = {0: "bass", 1: "keys"}
+    return _MELODIC_LABELS.get(ch, f"melody_{ch}" if ch > 2 else "melody")
+
+
+def _resolve_melodic_index(role: str) -> int | None:
     """Map a role to a preferred melodic channel index (0-based, excluding ch9).
 
     Channel assignment by GM category:
@@ -1036,29 +1101,6 @@ def _resolve_melodic_index(role: str) -> Optional[int]:
     return 2  # everything else
 
 
-# Legacy compatibility: INSTRUMENT_PROGRAMS dict interface for call sites
-# that do `INSTRUMENT_PROGRAMS.get(role)`.
-class _InstrumentProgramsCompat:
-    """Dict-like accessor that resolves roles via the GM alias table."""
-
-    def get(self, role: str, default: Optional[int] = None) -> Optional[int]:
-        result = resolve_gm_program(role)
-        return result if result is not None else default
-
-    def __getitem__(self, role: str) -> int:
-        result = resolve_gm_program(role)
-        if result is None:
-            raise KeyError(role)
-        return result
-
-    def __contains__(self, role: str) -> bool:
-        return resolve_gm_program(role) is not None
-
-
-INSTRUMENT_PROGRAMS = _InstrumentProgramsCompat()
-
-# Note: Musical parameter inference moved to generation_policy.py
-# This keeps the policy logic separate and testable
 
 
 # ---------------------------------------------------------------------------
@@ -1069,7 +1111,7 @@ _MIN_SEED_NOTES = 8
 _MIN_SEED_BYTES = 200
 
 
-def analyze_seed(path: str) -> dict:
+def analyze_seed(path: str) -> dict[str, Any]:
     """Analyze a seed MIDI file and return a provenance report.
 
     Cheap pre-check: note count, pitch range, polyphony, density, drum hits.
@@ -1141,34 +1183,62 @@ def analyze_seed(path: str) -> dict:
     }
 
 
+@dataclass
+class ResolvedSeed:
+    """Encapsulates a resolved seed with transposition metadata."""
+    path: str
+    source_type: str
+    source_uri: str | None
+    transpose_semitones: int = 0
+    detected_key: str | None = None
+    key_confidence: float = 0.0
+
+
 def _resolve_seed(
     genre: str,
-) -> tuple[str, str, Optional[str]]:
+    target_key: str | None = None,
+) -> ResolvedSeed:
     """Select a curated seed MIDI from the seed library.
 
-    Returns (path, source_type, source_uri).
+    When *target_key* is provided (e.g. ``"Am"``), prefers seeds whose
+    detected key is closest and returns transposition info so the caller
+    can shift the seed into the exact target key before generation.
+
     Raises RuntimeError if no suitable seed is available.
     """
-    curated = select_seed(genre, randomize=True)
-    if curated is not None:
-        report = analyze_seed(curated)
+    selection = select_seed_with_key(
+        genre, target_key=target_key, randomize=True,
+    )
+    if selection is not None:
+        report = analyze_seed(selection.path)
         if report.get("quality_ok"):
             logger.info(
-                f"🌱 Using curated seed: {curated} "
-                f"({report['seed_notes']} notes, ~{report['seed_token_count_estimate']} tokens)"
+                f"🌱 Using curated seed: {selection.path} "
+                f"({report['seed_notes']} notes, ~{report['seed_token_count_estimate']} tokens, "
+                f"key={selection.detected_key or '?'}, transpose={selection.transpose_semitones:+d})"
             )
-            return curated, "curated_library", curated
+            return ResolvedSeed(
+                path=selection.path,
+                source_type="curated_library",
+                source_uri=selection.path,
+                transpose_semitones=selection.transpose_semitones,
+                detected_key=selection.detected_key,
+                key_confidence=selection.key_confidence,
+            )
         else:
             logger.warning(
-                f"⚠️ Curated seed quality check failed ({curated}): "
+                f"⚠️ Curated seed quality check failed ({selection.path}): "
                 f"{report.get('seed_notes', 0)} notes, {report.get('seed_bytes', 0)} bytes"
             )
 
-    # Fall back to any available genre — select_seed maps unknown genres to "general"
     fallback = select_seed("general", randomize=True)
     if fallback is not None:
         logger.warning(f"⚠️ No seed for genre '{genre}', using general fallback")
-        return fallback, "curated_library", fallback
+        return ResolvedSeed(
+            path=fallback,
+            source_type="curated_library",
+            source_uri=fallback,
+        )
 
     raise RuntimeError(
         f"No curated seed available for genre '{genre}' or general fallback. "
@@ -1176,7 +1246,7 @@ def _resolve_seed(
     )
 
 
-def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
+def parse_midi_to_notes(midi_path: str, tempo: int) -> dict[str, Any]:
     """
     Parse MIDI file into notes AND expressive events grouped by channel.
 
@@ -1187,11 +1257,11 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
     mid = mido.MidiFile(midi_path)
     ticks_per_beat = mid.ticks_per_beat
 
-    notes: dict = {}
-    cc_events: dict = {}
-    pitch_bends: dict = {}
-    aftertouch: dict = {}
-    program_changes: dict = {}
+    notes: dict[int, list[dict[str, Any]]] = {}
+    cc_events: dict[int, list[dict[str, Any]]] = {}
+    pitch_bends: dict[int, list[dict[str, Any]]] = {}
+    aftertouch: dict[int, list[dict[str, Any]]] = {}
+    program_changes: dict[int, int] = {}
 
     for track in mid.tracks:
         time = 0
@@ -1261,25 +1331,9 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
     }
 
 
-# Map requested instrument to preferred melodic channel index.
-# Seed MIDI has: ch9=drums, ch0=first melodic (bass), ch1=second (piano/melody), etc.
-# Uses _resolve_melodic_index() for dynamic resolution from the full GM table.
-# Dict-like wrapper for call sites that do `MELODIC_INDEX_BY_INSTRUMENT.get(role)`.
-class _MelodicIndexCompat:
-    """Dict-like accessor that resolves roles to melodic channel indices."""
-
-    def get(self, role: str, default: Optional[int] = None) -> Optional[int]:
-        result = _resolve_melodic_index(role)
-        return result if result is not None else default
-
-    def __contains__(self, role: str) -> bool:
-        return _resolve_melodic_index(role) is not None
 
 
-MELODIC_INDEX_BY_INSTRUMENT = _MelodicIndexCompat()
-
-
-def _channels_to_keep(channel_keys: set, instruments: List[str]) -> set:
+def _channels_to_keep(channel_keys: set[int], instruments: list[str]) -> set[int]:
     """Determine which MIDI channels to keep for the requested instruments.
 
     When the preferred channel index doesn't exist in the generated MIDI,
@@ -1289,7 +1343,7 @@ def _channels_to_keep(channel_keys: set, instruments: List[str]) -> set:
     if not instruments:
         return channel_keys
     requested = [i.lower().strip() for i in instruments]
-    keep: set = set()
+    keep: set[int] = set()
     melodic_channels = sorted(c for c in channel_keys if c != 9)
 
     for inst in requested:
@@ -1298,7 +1352,7 @@ def _channels_to_keep(channel_keys: set, instruments: List[str]) -> set:
                 keep.add(9)
             continue
 
-        preferred_idx = MELODIC_INDEX_BY_INSTRUMENT.get(inst)
+        preferred_idx = _resolve_melodic_index(inst)
         if preferred_idx is not None and preferred_idx < len(melodic_channels):
             keep.add(melodic_channels[preferred_idx])
         elif melodic_channels:
@@ -1313,14 +1367,14 @@ def _channels_to_keep(channel_keys: set, instruments: List[str]) -> set:
     return keep if keep else channel_keys
 
 
-def filter_channels_for_instruments(parsed: dict, instruments: List[str]) -> dict:
+def filter_channels_for_instruments(parsed: dict[str, Any], instruments: list[str]) -> dict[str, Any]:
     """
     Keep only channels that correspond to the requested instruments.
 
     Accepts the full parsed dict (notes, cc_events, pitch_bends, aftertouch)
     returned by ``parse_midi_to_notes`` and filters every sub-dict.
     """
-    all_chs: set = set()
+    all_chs: set[int] = set()
     for sub in ("notes", "cc_events", "pitch_bends", "aftertouch"):
         all_chs.update(parsed.get(sub, {}).keys())
 
@@ -1332,119 +1386,46 @@ def filter_channels_for_instruments(parsed: dict, instruments: List[str]) -> dic
     }
 
 
-def generate_tool_calls(parsed: dict, tempo: int, instruments: List[str]) -> List[dict]:
-    """Convert parsed MIDI (notes + expressive events) to Stori tool calls."""
-    channels_notes = parsed.get("notes", {})
-    channels_cc = parsed.get("cc_events", {})
-    channels_pb = parsed.get("pitch_bends", {})
-    channels_at = parsed.get("aftertouch", {})
-
-    all_chs = sorted(set(channels_notes) | set(channels_cc) | set(channels_pb) | set(channels_at))
-
-    tool_calls: List[dict] = []
-
-    tool_calls.append({
-        "tool": "createProject",
-        "params": {"name": "AI Composition", "tempo": tempo},
-    })
-
-    track_refs: dict = {}
-
-    for ch in all_chs:
-        notes = channels_notes.get(ch, [])
-        if ch == 9:
-            track_name = "Drums"
-            program = 0
-            is_drum = True
-        else:
-            if instruments:
-                melodic_instruments = [i for i in instruments if i.lower() != "drums"]
-                if melodic_instruments:
-                    idx = len([c for c in track_refs if c != 9]) % len(melodic_instruments)
-                    inst = melodic_instruments[idx]
-                else:
-                    inst = "bass"
-            else:
-                inst = "piano"
-            track_name = inst.replace("_", " ").title()
-            program = INSTRUMENT_PROGRAMS.get(inst.lower()) or 33
-            is_drum = False
-
-        track_idx = len(tool_calls)
-        track_refs[ch] = track_idx
-
-        tool_calls.append({
-            "tool": "addMidiTrack",
-            "params": {"name": track_name, "instrument": program if not is_drum else 0, "isDrum": is_drum},
-        })
-
-        # Region length from notes + expressive events
-        max_beat = 0.0
-        if notes:
-            max_beat = max(n["start_beat"] + n["duration_beats"] for n in notes)
-        for evts in (channels_cc.get(ch, []), channels_pb.get(ch, []), channels_at.get(ch, [])):
-            for ev in evts:
-                max_beat = max(max_beat, ev.get("beat", 0))
-        bars = max(int((max_beat / 4) + 1), 4)
-        bars = ((bars + 3) // 4) * 4
-
-        region_idx = len(tool_calls)
-        tool_calls.append({
-            "tool": "addMidiRegion",
-            "params": {
-                "trackId": f"${track_idx}.trackId",
-                "name": f"{track_name} Pattern",
-                "startBar": 1,
-                "lengthBars": bars,
-            },
-        })
-
-        region_ref = f"${region_idx}.regionId"
-
-        if notes:
-            tool_calls.append({
-                "tool": "addNotes",
-                "params": {"regionId": region_ref, "notes": notes},
-            })
-
-        # CC events — group by CC number for cleaner tool calls
-        cc_evts = channels_cc.get(ch, [])
-        if cc_evts:
-            by_cc: dict = {}
-            for ev in cc_evts:
-                by_cc.setdefault(ev["cc"], []).append({"beat": ev["beat"], "value": ev["value"]})
-            for cc_num, events in sorted(by_cc.items()):
-                tool_calls.append({
-                    "tool": "addMidiCC",
-                    "params": {"regionId": region_ref, "cc": cc_num, "events": events},
-                })
-
-        # Pitch bends
-        pb_evts = channels_pb.get(ch, [])
-        if pb_evts:
-            tool_calls.append({
-                "tool": "addPitchBend",
-                "params": {"regionId": region_ref, "events": pb_evts},
-            })
-
-        # Aftertouch
-        at_evts = channels_at.get(ch, [])
-        if at_evts:
-            tool_calls.append({
-                "tool": "addAftertouch",
-                "params": {"regionId": region_ref, "events": at_evts},
-            })
-
-    return tool_calls
-
-
 @app.get("/health")
-async def health():
+async def health() -> dict[str, str]:
     return {"status": "ok", "service": "orpheus-music"}
 
 
+# ── Artifact download endpoints ──
+
+@app.get("/artifacts/{comp_id}", response_model=None)
+async def list_artifacts(comp_id: str) -> dict[str, Any] | JSONResponse:
+    """list artifact files for a composition."""
+    from fastapi.responses import JSONResponse
+    artifacts_dir = pathlib.Path(
+        os.environ.get("ORPHEUS_CACHE_DIR", "/tmp")
+    ) / "artifacts" / comp_id
+    if not artifacts_dir.is_dir():
+        return JSONResponse({"files": []}, status_code=200)
+    files = sorted(f.name for f in artifacts_dir.iterdir() if f.is_file())
+    return {"files": files, "path": str(artifacts_dir)}
+
+
+@app.get("/artifacts/{comp_id}/{filename}", response_model=None)
+async def download_artifact(comp_id: str, filename: str) -> Any:
+    """Download a single artifact file."""
+    from fastapi.responses import FileResponse
+    artifacts_dir = pathlib.Path(
+        os.environ.get("ORPHEUS_CACHE_DIR", "/tmp")
+    ) / "artifacts" / comp_id
+    fpath = artifacts_dir / filename
+    if not fpath.is_file():
+        return {"error": f"Not found: {filename}"}
+    media_types = {
+        ".mp3": "audio/mpeg", ".wav": "audio/wav", ".mid": "audio/midi",
+        ".midi": "audio/midi", ".webp": "image/webp", ".png": "image/png",
+    }
+    mt = media_types.get(fpath.suffix.lower(), "application/octet-stream")
+    return FileResponse(str(fpath), media_type=mt, filename=filename)
+
+
 @app.get("/diagnostics")
-async def diagnostics():
+async def diagnostics() -> dict[str, Any]:
     """Structured diagnostics for the Orpheus service pipeline."""
     now = time()
     space_id = os.environ.get("STORI_ORPHEUS_SPACE", _DEFAULT_SPACE)
@@ -1497,7 +1478,7 @@ async def diagnostics():
 
 
 @app.get("/cache/stats")
-async def cache_stats():
+async def cache_stats() -> dict[str, Any]:
     """
     Get cache statistics with LRU + TTL metrics.
     
@@ -1536,7 +1517,7 @@ async def cache_stats():
 
 
 @app.post("/cache/warm")
-async def warm_cache():
+async def warm_cache() -> dict[str, Any]:
     """
     Pre-generate common genre × tempo combos in the background.
 
@@ -1561,11 +1542,11 @@ async def warm_cache():
         else:
             to_generate.append(req)
 
-    async def _warm():
+    async def _warm() -> None:
         ok, fail = 0, 0
         for req in to_generate:
             try:
-                resp = await generate(req)
+                resp = await _do_generate(req)
                 if resp.success:
                     ok += 1
                 else:
@@ -1583,7 +1564,7 @@ async def warm_cache():
 
 
 @app.delete("/cache/clear")
-async def clear_cache():
+async def clear_cache() -> dict[str, Any]:
     """Clear all caches."""
     _result_cache.clear()
     if _CACHE_FILE.exists():
@@ -1602,29 +1583,25 @@ async def clear_cache():
 
 class QualityEvaluationRequest(BaseModel):
     """Request to evaluate generation quality."""
-    tool_calls: List[dict]
+    tool_calls: list[dict[str, Any]]
     bars: int
     tempo: int
 
 
 @app.post("/quality/evaluate")
-async def evaluate_quality(request: QualityEvaluationRequest):
+async def evaluate_quality(request: QualityEvaluationRequest) -> dict[str, Any]:
+    """Evaluate the quality of generated music.
+
+    Used for A/B testing policies, monitoring quality over time,
+    and automated quality gates.
     """
-    Evaluate the quality of generated music.
-    
-    Used for:
-    - A/B testing different policies
-    - Monitoring quality over time
-    - Automated quality gates
-    """
-    # Extract notes from tool calls
-    all_notes = []
+    all_notes: list[dict[str, Any]] = []
     for tool_call in request.tool_calls:
         if tool_call.get("tool") == "addNotes":
             all_notes.extend(tool_call.get("params", {}).get("notes", []))
-    
+
     metrics = analyze_quality(all_notes, request.bars, request.tempo)
-    
+
     return {
         "metrics": metrics,
         "quality_score": metrics.get("quality_score", 0.0),
@@ -1639,16 +1616,15 @@ class ABTestRequest(BaseModel):
 
 
 @app.post("/quality/ab-test")
-async def ab_test(request: ABTestRequest):
+async def ab_test(request: ABTestRequest) -> dict[str, Any]:
     """
     A/B test two generation configurations.
     
     Generates music with both configs and compares quality metrics.
     Useful for testing policy changes before deploying.
     """
-    # Generate with both configs
-    result_a = await generate(request.config_a)
-    result_b = await generate(request.config_b)
+    result_a = await _do_generate(request.config_a)
+    result_b = await _do_generate(request.config_b)
     
     if not result_a.success or not result_b.success:
         return {
@@ -1656,19 +1632,10 @@ async def ab_test(request: ABTestRequest):
             "result_a_success": result_a.success,
             "result_b_success": result_b.success,
         }
+
+    notes_a = result_a.notes or []
+    notes_b = result_b.notes or []
     
-    # Extract notes
-    notes_a = []
-    for tc in result_a.tool_calls:
-        if tc.get("tool") == "addNotes":
-            notes_a.extend(tc.get("params", {}).get("notes", []))
-    
-    notes_b = []
-    for tc in result_b.tool_calls:
-        if tc.get("tool") == "addNotes":
-            notes_b.extend(tc.get("params", {}).get("notes", []))
-    
-    # Compare
     comparison = compare_generations(notes_a, notes_b, request.config_a.bars, request.config_a.tempo)
     
     return {
@@ -1687,7 +1654,7 @@ class CompositionState:
     """Tracks evolving composition state across sections and instruments."""
     composition_id: str
     session_id: str
-    accumulated_midi_path: Optional[str] = None
+    accumulated_midi_path: str | None = None
     last_token_estimate: int = 0
     created_at: float = field(default_factory=time)
     call_count: int = 0
@@ -1696,7 +1663,7 @@ _composition_states: dict[str, CompositionState] = {}
 _COMPOSITION_STATE_TTL = 3600  # 1 hour
 
 
-def _get_or_create_session(composition_id: Optional[str]) -> tuple[str, CompositionState]:
+def _get_or_create_session(composition_id: str | None) -> tuple[str, CompositionState]:
     """Return (session_hash, CompositionState) for the composition.
 
     If the composition already has accumulated state, reuse the same
@@ -1763,9 +1730,21 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         else:
             client = _client_pool.fresh(worker_id)
 
-        seed_path, seed_source_type, seed_uri = _resolve_seed(
+        resolved = _resolve_seed(
             genre=request.genre,
+            target_key=request.key,
         )
+        seed_path = resolved.path
+        seed_source_type = resolved.source_type
+        seed_uri = resolved.source_uri
+
+        # Apply key transposition if needed
+        if resolved.transpose_semitones != 0:
+            seed_path = str(transpose_midi(seed_path, resolved.transpose_semitones))
+            logger.info(
+                f"{_log_prefix} 🎹 Transposed seed by {resolved.transpose_semitones:+d} semitones "
+                f"({resolved.detected_key} → {request.key})"
+            )
 
         seed_report = analyze_seed(seed_path)
         seed_hash = hashlib.sha256(open(seed_path, "rb").read()).hexdigest()[:16]
@@ -1812,10 +1791,35 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             f"🎹 Instrument mapping: {request.instruments} → {orpheus_instruments}"
         )
 
-        temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
-        top_p = request.top_p if request.top_p is not None else DEFAULT_TOP_P
+        # ── Derive params from control vector (activated) ──
+        _pre_controls = build_controls(
+            genre=request.genre,
+            tempo=request.tempo,
+            emotion_vector=(
+                request.emotion_vector.model_dump()
+                if request.emotion_vector else None
+            ),
+            role_profile_summary=(
+                request.role_profile_summary.model_dump()
+                if request.role_profile_summary else None
+            ),
+            generation_constraints=(
+                request.generation_constraints.model_dump()
+                if request.generation_constraints else None
+            ),
+            intent_goals=(
+                [g.model_dump() for g in request.intent_goals]
+                if request.intent_goals else None
+            ),
+            quality_preset=request.quality_preset,
+        )
+        _derived = apply_controls_to_params(_pre_controls, request.bars)
 
-        num_prime_tokens, num_gen_tokens = allocate_token_budget(bars=request.bars)
+        # Explicit overrides from the request take precedence
+        temperature = request.temperature if request.temperature is not None else _derived["temperature"]
+        top_p = request.top_p if request.top_p is not None else _derived["top_p"]
+        num_prime_tokens = _derived["num_prime_tokens"]
+        num_gen_tokens = _derived["num_gen_tokens"]
 
         # Check if prime token budget vastly exceeds seed content
         effective_prime_tokens = min(
@@ -1845,7 +1849,25 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         _predict_timeout = float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "180"))
         session_hash, comp_state = _get_or_create_session(request.composition_id)
 
-        add_drums = "drums" in [i.lower() for i in request.instruments]
+        # Section seeding: override seed with accumulated MIDI for section continuity
+        if comp_state.accumulated_midi_path and os.path.exists(comp_state.accumulated_midi_path):
+            seed_path = comp_state.accumulated_midi_path
+            seed_source_type = "accumulated_composition"
+            seed_uri = seed_path
+            seed_report = analyze_seed(seed_path)
+            seed_hash = hashlib.sha256(open(seed_path, "rb").read()).hexdigest()[:16]
+            logger.info(
+                f"{_log_prefix} 🔗 Using accumulated MIDI as seed for section continuity "
+                f"(notes={seed_report.get('seed_notes', '?')}, hash={seed_hash})"
+            )
+
+        # Seed MIDI already provides drum context when present.  The HF Space's
+        # add_drums flag appends a random drum-pitch token that conflicts with
+        # seeds that already contain percussion.  Only enable when there is no
+        # seed MIDI to provide drum context.
+        _has_drums = "drums" in [i.lower() for i in request.instruments]
+        _is_multi_instrument = request.unified_output and len(request.instruments) > 1
+        add_drums = _has_drums and seed_path is None
         max_beat = request.bars * 4
 
         # Deterministic seed: if provided, control batch selection
@@ -1861,18 +1883,47 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             "temperature": temperature,
             "top_p": top_p,
             "add_drums": add_drums,
-            "add_outro": False,
+            "add_outro": request.add_outro,
         }
         logger.info(
             f"{_log_prefix} 🔧 Gradio inputs: {json.dumps(_gradio_inputs)}"
         )
 
-        # ── GPU inference ──
+        # ── Seed-first mode ──
+        # The HF Space is a continuation model: seed MIDI provides 1000-2000
+        # tokens of genre-appropriate context; prime_instruments alone produces
+        # only ~8 tokens.  Always prefer seed MIDI for quality.  When seed MIDI
+        # is provided the Space ignores prime_instruments (mutually exclusive
+        # code paths in app.py), which is fine — we rely on channel extraction
+        # (_extract_channel_for_role) to pick instruments from the output.
+        _input_midi = handle_file(seed_path) if seed_path else None
+
+        if _input_midi is not None:
+            logger.info(
+                f"{_log_prefix} 🌱 SEED-FIRST MODE: seed MIDI provides context, "
+                f"prime_instruments={orpheus_instruments} (advisory, "
+                f"Space uses seed tokens instead) | "
+                f"multi_instrument={_is_multi_instrument}"
+            )
+            _gradio_inputs["mode"] = "seed_first"
+        else:
+            logger.info(
+                f"{_log_prefix} 🎛️ PRIME-ONLY MODE (no seed available): "
+                f"prime_instruments={orpheus_instruments}"
+            )
+            _gradio_inputs["mode"] = "prime_instruments_only"
+
+        _client_id = id(client)
+        logger.info(
+            f"{_log_prefix} 🔌 Gradio client={_client_id} | "
+            f"calling /generate_music_and_state"
+        )
+
         try:
-            await asyncio.wait_for(
+            _gen_result = await asyncio.wait_for(
                 asyncio.to_thread(
                     client.predict,
-                    input_midi=handle_file(seed_path),
+                    input_midi=_input_midi,
                     apply_sustains=True,
                     remove_duplicate_pitches=True,
                     remove_overlapping_durations=True,
@@ -1882,7 +1933,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                     model_temperature=temperature,
                     model_top_p=top_p,
                     add_drums=add_drums,
-                    add_outro=False,
+                    add_outro=request.add_outro,
                     api_name="/generate_music_and_state",
                 ),
                 timeout=_predict_timeout,
@@ -1891,65 +1942,260 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
             logger.error(f"❌ Gradio /generate_music_and_state {kind} after {_predict_timeout}s")
             return GenerateResponse(
-                success=False, tool_calls=[],
+                success=False,
                 error=f"Orpheus generation {kind} after {_predict_timeout}s",
             )
 
-        batch_idx = rng.randint(0, 9)
-        try:
-            midi_result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    client.predict, batch_number=batch_idx, api_name="/add_batch"
-                ),
-                timeout=60,
+        # Log what the Space returned (State is auto-managed by gradio_client)
+        _gen_type = type(_gen_result).__name__
+        _gen_len = len(_gen_result) if isinstance(_gen_result, (list, tuple)) else "N/A"
+        logger.info(
+            f"{_log_prefix} 📦 /generate_music_and_state returned: "
+            f"type={_gen_type} len={_gen_len}"
+        )
+
+        # ── Batch selection with rejection sampling ──
+        # The HF Space generates 10 parallel stochastic batches per
+        # /generate_music_and_state call.  We pick a random batch index
+        # (0-9) for variety, then score the result.  For non-fast presets,
+        # we can retry with a fresh generation if the score is poor.
+        _num_candidates = quality_preset_to_batch_count(request.quality_preset)
+        _rejection_threshold = float(os.environ.get("ORPHEUS_REJECTION_THRESHOLD", "0.3"))
+
+        # Extract scoring params from constraints for candidate scoring
+        _gc = request.generation_constraints
+        _scoring_kwargs: dict[str, Any] = {
+            "bars": request.bars,
+            "target_key": request.key,
+            "expected_channels": len(request.instruments),
+            "target_density": _pre_controls.density * 100.0,
+        }
+        if _gc:
+            _scoring_kwargs.update({
+                "register_center": _gc.register_center,
+                "register_spread": _gc.register_spread,
+                "velocity_floor": _gc.velocity_floor,
+                "velocity_ceiling": _gc.velocity_ceiling,
+            })
+
+        best_candidate: dict[str, Any] | None = None
+        best_score: CandidateScore | None = None
+        all_candidate_scores: list[dict[str, Any]] = []
+
+        for _attempt in range(_num_candidates):
+            batch_idx = rng.randint(0, 9)
+
+            if _attempt > 0:
+                client = _client_pool.fresh(worker_id)
+                logger.info(
+                    f"{_log_prefix} 🔄 Rejection retry {_attempt}/{_num_candidates}: "
+                    f"fresh client, batch_idx={batch_idx}"
+                )
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(
+                            client.predict,
+                            input_midi=_input_midi,
+                            apply_sustains=True,
+                            remove_duplicate_pitches=True,
+                            remove_overlapping_durations=True,
+                            prime_instruments=orpheus_instruments,
+                            num_prime_tokens=num_prime_tokens,
+                            num_gen_tokens=num_gen_tokens,
+                            model_temperature=temperature,
+                            model_top_p=top_p,
+                            add_drums=add_drums,
+                            add_outro=request.add_outro,
+                            api_name="/generate_music_and_state",
+                        ),
+                        timeout=_predict_timeout,
+                    )
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    logger.warning(f"⚠️ Rejection retry {_attempt} timed out, using best so far")
+                    break
+                except Exception as exc:
+                    logger.warning(f"⚠️ Rejection retry {_attempt} failed: {exc}")
+                    break
+
+            try:
+                midi_result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.predict,
+                        batch_number=batch_idx,
+                        api_name="/add_batch",
+                    ),
+                    timeout=60,
+                )
+                logger.info(f"{_log_prefix} ✅ /add_batch({batch_idx}) ok")
+            except Exception as exc:
+                logger.error(f"❌ /add_batch({batch_idx}) failed: {exc}")
+                if best_candidate is None:
+                    return GenerateResponse(
+                        success=False,
+                        error=f"Orpheus add_batch failed on batch {batch_idx}: {exc}",
+                    )
+                logger.warning(f"⚠️ Using best candidate from previous attempt")
+                break
+
+            if midi_result is None:
+                continue
+
+            _attempt_midi_path: str = midi_result[2]
+            _attempt_parsed = await asyncio.to_thread(
+                parse_midi_to_notes, _attempt_midi_path, request.tempo,
             )
-        except Exception as exc:
-            logger.error(f"❌ /add_batch({batch_idx}) failed: {exc}")
+
+            for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
+                sub = _attempt_parsed.get(sub_key, {})
+                beat_field = "start_beat" if sub_key == "notes" else "beat"
+                for ch in list(sub):
+                    sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
+                    if not sub[ch]:
+                        del sub[ch]
+
+            _attempt_flat: list[dict[str, Any]] = []
+            for ch_notes in _attempt_parsed.get("notes", {}).values():
+                for n in ch_notes:
+                    _attempt_flat.append({
+                        "pitch": n["pitch"],
+                        "start_beat": n["start_beat"],
+                        "duration_beats": n["duration_beats"],
+                        "velocity": n["velocity"],
+                    })
+
+            if not _attempt_flat:
+                logger.warning(f"⚠️ Batch {batch_idx} produced zero notes, skipping")
+                all_candidate_scores.append({"batch": batch_idx, "score": 0.0, "notes": 0})
+                continue
+
+            candidate_score = score_candidate(
+                _attempt_flat,
+                _attempt_parsed.get("notes", {}),
+                batch_index=batch_idx,
+                **_scoring_kwargs,
+            )
+
+            all_candidate_scores.append({
+                "batch": batch_idx,
+                "score": candidate_score.total_score,
+                "notes": candidate_score.note_count,
+                "key": candidate_score.detected_key,
+                "dims": candidate_score.dimensions,
+            })
+
+            logger.info(
+                f"🎲 Candidate {_attempt}: batch={batch_idx} "
+                f"score={candidate_score.total_score:.3f} "
+                f"notes={candidate_score.note_count} "
+                f"key={candidate_score.detected_key or '?'}"
+            )
+
+            if best_score is None or candidate_score.total_score > best_score.total_score:
+                best_score = candidate_score
+                best_candidate = {
+                    "midi_result": midi_result,
+                    "midi_path": _attempt_midi_path,
+                    "parsed": _attempt_parsed,
+                    "flat_notes": _attempt_flat,
+                    "batch_idx": batch_idx,
+                }
+
+            if candidate_score.total_score >= (1.0 - _rejection_threshold):
+                logger.info(f"✅ Score {candidate_score.total_score:.3f} above threshold, accepting")
+                break
+
+        if best_candidate is None:
             return GenerateResponse(
-                success=False, tool_calls=[],
-                error=f"Orpheus add_batch failed: {exc}",
+                success=False,
+                error="All candidates produced zero usable notes",
             )
 
-        midi_path = midi_result[2]
-        parsed = await asyncio.to_thread(parse_midi_to_notes, midi_path, request.tempo)
-
-        for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
-            sub = parsed.get(sub_key, {})
-            beat_field = "start_beat" if sub_key == "notes" else "beat"
-            for ch in list(sub):
-                sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
-                if not sub[ch]:
-                    del sub[ch]
-
-        # ── MVP: flatten all channels ──
-        mvp_notes: list[dict] = []
-        for ch_notes in parsed.get("notes", {}).values():
-            for n in ch_notes:
-                mvp_notes.append({
-                    "pitch": n["pitch"],
-                    "startBeat": n["start_beat"],
-                    "durationBeats": n["duration_beats"],
-                    "velocity": n["velocity"],
-                })
+        midi_result = best_candidate["midi_result"]
+        midi_path = best_candidate["midi_path"]
+        parsed = best_candidate["parsed"]
+        batch_idx = best_candidate["batch_idx"]
+        mvp_notes: list[dict[str, Any]] = [
+            {"pitch": n["pitch"], "startBeat": n["start_beat"],
+             "durationBeats": n["duration_beats"], "velocity": n["velocity"]}
+            for n in best_candidate["flat_notes"]
+        ]
+        snake_notes = best_candidate["flat_notes"]
 
         all_channels = set(parsed.get("notes", {}).keys())
         pitches = [n["pitch"] for n in mvp_notes] if mvp_notes else []
+        _best_total = best_score.total_score if best_score else 0.0
         logger.info(
-            f"🎲 Batch {batch_idx}/10: {len(mvp_notes)} notes, "
-            f"channels={sorted(all_channels)}, "
-            f"pitch=[{min(pitches) if pitches else 0}-{max(pitches) if pitches else 0}]"
+            f"🏆 Best candidate: batch={batch_idx} "
+            f"score={_best_total:.3f} "
+            f"notes={len(mvp_notes)} "
+            f"channels={sorted(all_channels)} "
+            f"pitch=[{min(pitches) if pitches else 0}-{max(pitches) if pitches else 0}] "
+            f"(evaluated {len(all_candidate_scores)} candidates)"
         )
 
-        if not mvp_notes:
-            return GenerateResponse(
-                success=False, tool_calls=[],
-                error="Orpheus batch produced zero usable notes",
-            )
+        # ── Capture all Gradio artifacts (WAV, plot, MIDI) ──
+        wav_path: str | None = None
+        plot_path: str | None = None
+        _comp_id = request.composition_id or "ephemeral"
+        _artifacts_dir = (
+            pathlib.Path(os.environ.get("ORPHEUS_CACHE_DIR", "/tmp"))
+            / "artifacts"
+            / _comp_id
+        )
+        _artifacts_dir.mkdir(parents=True, exist_ok=True)
+        _artifact_id = f"b{batch_idx}_{request.trace_id[:8] if request.trace_id else 'notrace'}"
+        try:
+            audio_raw = midi_result[0]
+            if audio_raw and isinstance(audio_raw, str) and os.path.exists(audio_raw):
+                ext = pathlib.Path(audio_raw).suffix or ".mp3"
+                wav_path = str(_artifacts_dir / f"{_artifact_id}{ext}")
+                shutil.copy2(audio_raw, wav_path)
+                logger.info(f"🔊 Audio artifact saved: {wav_path}")
+        except Exception as exc:
+            logger.warning(f"⚠️ Failed to capture audio artifact: {exc}")
+        try:
+            plot_raw = midi_result[1]
+            if isinstance(plot_raw, dict) and "plot" in plot_raw:
+                import base64 as _b64
+                data_uri: str = plot_raw["plot"]
+                _header, _, b64_data = data_uri.partition(",")
+                img_ext = ".webp" if "webp" in _header else ".png"
+                plot_path = str(_artifacts_dir / f"{_artifact_id}{img_ext}")
+                pathlib.Path(plot_path).write_bytes(_b64.b64decode(b64_data))
+                logger.info(f"📊 Plot artifact saved: {plot_path}")
+            elif plot_raw and isinstance(plot_raw, str) and os.path.exists(plot_raw):
+                plot_path = str(_artifacts_dir / f"{_artifact_id}.png")
+                shutil.copy2(plot_raw, plot_path)
+                logger.info(f"📊 Plot artifact saved: {plot_path}")
+        except Exception as exc:
+            logger.warning(f"⚠️ Failed to capture plot artifact: {exc}")
+        try:
+            midi_copy = str(_artifacts_dir / f"{_artifact_id}.mid")
+            shutil.copy2(midi_path, midi_copy)
+            logger.info(f"🎵 MIDI artifact saved: {midi_copy}")
+        except Exception as exc:
+            logger.warning(f"⚠️ Failed to copy MIDI artifact: {exc}")
 
-        snake_notes = [
-            {"pitch": n["pitch"], "start_beat": n["startBeat"],
-             "duration_beats": n["durationBeats"], "velocity": n["velocity"]}
-            for n in mvp_notes
+        # ── Post-processing pipeline ──
+        _pp_gc = (
+            request.generation_constraints.model_dump()
+            if request.generation_constraints else None
+        )
+        _pp_rp = (
+            request.role_profile_summary.model_dump()
+            if request.role_profile_summary else None
+        )
+        _post_processor = build_post_processor(
+            generation_constraints=_pp_gc,
+            role_profile_summary=_pp_rp,
+        )
+        snake_notes = _post_processor.process(snake_notes)
+
+        # Rebuild mvp_notes from post-processed snake_notes
+        mvp_notes = [
+            {"pitch": n["pitch"], "startBeat": n["start_beat"],
+             "durationBeats": n["duration_beats"], "velocity": n["velocity"]}
+            for n in snake_notes
         ]
 
         score = rejection_score(snake_notes, request.bars)
@@ -1988,7 +2234,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             quality_preset=request.quality_preset,
         )
 
-        metadata: dict = {
+        metadata: dict[str, Any] = {
             "policy_version": get_policy_version(),
             "params_used": {
                 "temperature": temperature,
@@ -2010,15 +2256,36 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             "fulfillment_report": build_fulfillment_report(
                 snake_notes, request.bars, controls, gc_dict,
             ),
+            "candidate_selection": {
+                "candidates_evaluated": len(all_candidate_scores),
+                "quality_preset": request.quality_preset,
+                "selected_batch": batch_idx,
+                "selected_score": best_score.total_score if best_score else 0.0,
+                "selected_key": best_score.detected_key if best_score else None,
+                "score_dimensions": best_score.dimensions if best_score else {},
+                "all_scores": all_candidate_scores,
+            },
+            "post_processing": {
+                "transforms_applied": _post_processor.transforms_applied,
+            },
             "seed_provenance": {
                 "seed_source_type": seed_source_type,
                 "seed_file_path": seed_path,
                 "seed_uri": seed_uri,
                 "seed_hash": seed_hash,
+                "seed_detected_key": resolved.detected_key,
+                "seed_key_confidence": resolved.key_confidence,
+                "seed_transpose_semitones": resolved.transpose_semitones,
+                "target_key": request.key,
                 **{k: v for k, v in seed_report.items() if k != "quality_ok"},
             },
             "gradio_inputs": _gradio_inputs,
         }
+        if wav_path:
+            metadata["wav_path"] = wav_path
+        if plot_path:
+            metadata["plot_path"] = plot_path
+        metadata["midi_path"] = midi_path
         if _trace:
             metadata["trace_id"] = _trace
         if request.intent_hash:
@@ -2026,18 +2293,43 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         if request.seed is not None:
             metadata["seed"] = request.seed
 
-        response_data: dict = {
+        # ── Build notes: unified (labeled by channel) or flat ──
+        if request.unified_output:
+            _prog_changes = parsed.get("program_changes", {})
+            channel_notes: dict[str, list[dict[str, Any]]] = {}
+            for ch_key, ch_notes in parsed.get("notes", {}).items():
+                ch_int = int(ch_key) if isinstance(ch_key, str) and ch_key.isdigit() else ch_key
+                label = _channel_label(ch_int, program_changes=_prog_changes)
+                channel_notes[label] = [
+                    {
+                        "pitch": n["pitch"],
+                        "startBeat": n["start_beat"],
+                        "durationBeats": n["duration_beats"],
+                        "velocity": n["velocity"],
+                    }
+                    for n in ch_notes
+                ]
+            metadata["unified_channels"] = list(channel_notes.keys())
+            metadata["program_changes"] = {
+                str(k): v for k, v in _prog_changes.items()
+            }
+            response_notes_unified = channel_notes
+        else:
+            response_notes_unified = None
+
+        response_data: dict[str, Any] = {
             "success": True,
-            "tool_calls": [],
             "notes": mvp_notes,
             "error": None,
             "metadata": metadata,
         }
+        if response_notes_unified is not None:
+            response_data["channel_notes"] = response_notes_unified
 
         cache_result(cache_key, response_data, key_data=_cache_key_data(request))
         _last_successful_gen = time()
 
-        return GenerateResponse(**response_data)  # type: ignore[arg-type]
+        return GenerateResponse(**response_data)
 
     except (Exception, asyncio.CancelledError) as e:
         err_msg = str(e) or type(e).__name__
@@ -2053,14 +2345,13 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             logger.info(f"🔄 Reset client for worker {worker_id} after transient error")
         return GenerateResponse(
             success=False,
-            tool_calls=[],
             error=err_msg,
         )
 
 
-def _job_response(job: Job) -> dict:
+def _job_response(job: Job) -> dict[str, Any]:
     """Serialize a Job to the wire format used by /generate and /jobs endpoints."""
-    resp: dict = {
+    resp: dict[str, Any] = {
         "jobId": job.id,
         "status": job.status.value,
     }
@@ -2075,8 +2366,8 @@ def _job_response(job: Job) -> dict:
     return resp
 
 
-@app.post("/generate")
-async def generate(request: GenerateRequest):
+@app.post("/generate", response_model=None)
+async def generate(request: GenerateRequest) -> dict[str, Any] | JSONResponse:
     """Submit a generation job.  Cache hits return immediately; misses enqueue."""
     assert _job_queue is not None, "JobQueue not initialized"
 
@@ -2110,8 +2401,8 @@ async def generate(request: GenerateRequest):
     return _job_response(job)
 
 
-@app.get("/jobs/{job_id}")
-async def get_job(job_id: str):
+@app.get("/jobs/{job_id}", response_model=None)
+async def get_job(job_id: str) -> dict[str, Any] | JSONResponse:
     """Return current status of a submitted job."""
     assert _job_queue is not None
     job = _job_queue.get_job(job_id)
@@ -2120,11 +2411,11 @@ async def get_job(job_id: str):
     return _job_response(job)
 
 
-@app.get("/jobs/{job_id}/wait")
+@app.get("/jobs/{job_id}/wait", response_model=None)
 async def wait_for_job(
     job_id: str,
     timeout: float = Query(default=30, ge=1, le=120),
-):
+) -> dict[str, Any] | JSONResponse:
     """Long-poll until the job completes or *timeout* seconds elapse."""
     assert _job_queue is not None
     job = _job_queue.get_job(job_id)
@@ -2140,8 +2431,8 @@ async def wait_for_job(
     return _job_response(job)
 
 
-@app.post("/jobs/{job_id}/cancel")
-async def cancel_job(job_id: str):
+@app.post("/jobs/{job_id}/cancel", response_model=None)
+async def cancel_job(job_id: str) -> dict[str, Any] | JSONResponse:
     """Cancel a queued or running job."""
     assert _job_queue is not None
     job = _job_queue.cancel(job_id)
@@ -2151,7 +2442,7 @@ async def cancel_job(job_id: str):
 
 
 @app.get("/queue/status")
-async def queue_status():
+async def queue_status() -> dict[str, Any]:
     """Diagnostics: current queue depth, running workers, limits."""
     if _job_queue is None:
         return {"error": "JobQueue not initialized"}

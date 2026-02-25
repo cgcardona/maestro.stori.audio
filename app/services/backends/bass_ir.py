@@ -4,8 +4,10 @@ Bass Spec IR backend: IR-based bass (kick follow, chord follow).
 Renders BassSpec + GlobalSpec + HarmonicSpec → MIDI notes. Used for instrument="bass".
 Supports coupled generation with RhythmSpine from drum output.
 """
+from __future__ import annotations
+
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.services.backends.base import (
     MusicGeneratorBackend,
@@ -41,9 +43,9 @@ class BassSpecBackend(MusicGeneratorBackend):
         style: str,
         tempo: int,
         bars: int,
-        key: Optional[str] = None,
-        chords: Optional[list[str]] = None,
-        **kwargs,
+        key: str | None = None,
+        chords: list[str] | None = None,
+        **kwargs: Any,
     ) -> GenerationResult:
         if instrument != "bass":
             return GenerationResult(
@@ -55,8 +57,8 @@ class BassSpecBackend(MusicGeneratorBackend):
             )
         try:
             # Extract coupling parameters
-            rhythm_spine: Optional[RhythmSpine] = kwargs.pop("rhythm_spine", None)
-            drum_kick_beats: Optional[list[float]] = kwargs.pop("drum_kick_beats", None)
+            rhythm_spine: RhythmSpine | None = kwargs.pop("rhythm_spine", None)
+            drum_kick_beats: list[float] | None = kwargs.pop("drum_kick_beats", None)
             
             music_spec = kwargs.get("music_spec")
             if music_spec and music_spec.bass_spec and music_spec.harmonic_spec and music_spec.global_spec:

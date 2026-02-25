@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any
 
 from sqlalchemy import select, func, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,8 +19,8 @@ async def create_conversation(
     db: AsyncSession,
     user_id: str,
     title: str = "New Conversation",
-    project_id: Optional[str] = None,
-    project_context: Optional[dict] = None,
+    project_id: str | None = None,
+    project_context: dict[str, Any] | None = None,
 ) -> Conversation:
     conversation = Conversation(
         user_id=user_id,
@@ -38,7 +38,7 @@ async def get_conversation(
     db: AsyncSession,
     conversation_id: str,
     user_id: str,
-) -> Optional[Conversation]:
+) -> Conversation | None:
     result = await db.execute(
         select(Conversation)
         .options(selectinload(Conversation.messages).selectinload(ConversationMessage.actions))
@@ -53,7 +53,7 @@ async def get_conversation(
 async def list_conversations(
     db: AsyncSession,
     user_id: str,
-    project_id: Optional[str] = None,
+    project_id: str | None = None,
     include_global: bool = False,
     limit: int = 50,
     offset: int = 0,
@@ -93,7 +93,7 @@ async def update_conversation_title(
     conversation_id: str,
     user_id: str,
     title: str,
-) -> Optional[Conversation]:
+) -> Conversation | None:
     conversation = await get_conversation(db, conversation_id, user_id)
     if not conversation:
         return None

@@ -4,6 +4,8 @@ Harmonic Spec IR → MIDI chord notes renderer.
 Renders HarmonicSpec + GlobalSpec to chord voicings (root, third, fifth, seventh)
 at chord_schedule bar positions. See docs/MIDI_SPEC_IR_SCHEMA.md.
 """
+from __future__ import annotations
+
 import logging
 import random
 from typing import Any

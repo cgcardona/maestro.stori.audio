@@ -4,6 +4,10 @@ API endpoint tests for conversation history system.
 Tests all REST endpoints with authentication, authorization,
 and error handling.
 """
+from __future__ import annotations
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any
 import pytest
 import pytest_asyncio
 import jwt
@@ -21,7 +25,8 @@ from app.auth.tokens import create_access_token
 # =============================================================================
 
 @pytest_asyncio.fixture
-async def test_user(db_session):
+async def test_user(db_session: AsyncSession) -> User:
+
     """Create a test user with budget."""
     user = User(
         id="test-user-api-123",
@@ -35,7 +40,8 @@ async def test_user(db_session):
 
 
 @pytest.fixture
-def auth_token(test_user):
+def auth_token(test_user: Any) -> str:
+
     """Generate JWT token for test user."""
     return create_access_token(
         user_id=test_user.id,
@@ -44,7 +50,8 @@ def auth_token(test_user):
 
 
 @pytest.fixture
-def auth_headers(auth_token):
+def auth_headers(auth_token: Any) -> dict[str, str]:
+
     """Headers with authentication."""
     return {
         "Authorization": f"Bearer {auth_token}",
@@ -53,7 +60,8 @@ def auth_headers(auth_token):
 
 
 @pytest_asyncio.fixture
-async def test_conversation(db_session, test_user):
+async def test_conversation(db_session: AsyncSession, test_user: Any) -> Conversation:
+
     """Create a test conversation."""
     conversation = Conversation(
         user_id=test_user.id,
@@ -71,7 +79,8 @@ async def test_conversation(db_session, test_user):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_create_conversation(test_user, auth_headers):
+async def test_create_conversation(test_user: Any, auth_headers: Any) -> None:
+
     """Test creating a new conversation."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -94,7 +103,8 @@ async def test_create_conversation(test_user, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_register_then_create_conversation(db_session):
+async def test_register_then_create_conversation(db_session: AsyncSession) -> None:
+
     """
     Test the complete flow: register user, then create conversation.
     
@@ -151,7 +161,7 @@ async def test_register_then_create_conversation(db_session):
 
 
 @pytest.mark.asyncio
-async def test_create_conversation_without_auth():
+async def test_create_conversation_without_auth() -> None:
     """Test that creating conversation requires authentication."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -164,7 +174,8 @@ async def test_create_conversation_without_auth():
 
 
 @pytest.mark.asyncio
-async def test_create_conversation_default_title(auth_headers):
+async def test_create_conversation_default_title(auth_headers: Any) -> None:
+
     """Test creating conversation with default title."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -180,11 +191,12 @@ async def test_create_conversation_default_title(auth_headers):
 
 
 # =============================================================================
-# GET /conversations - List Conversations
+# GET /conversations - list Conversations
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_list_conversations(db_session, test_user, auth_headers):
+async def test_list_conversations(db_session: AsyncSession, test_user: Any, auth_headers: Any) -> None:
+
     """Test listing conversations."""
     # Create multiple conversations
     for i in range(3):
@@ -211,7 +223,8 @@ async def test_list_conversations(db_session, test_user, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_list_conversations_pagination(db_session, test_user, auth_headers):
+async def test_list_conversations_pagination(db_session: AsyncSession, test_user: Any, auth_headers: Any) -> None:
+
     """Test conversation list pagination."""
     # Create 5 conversations
     for i in range(5):
@@ -239,7 +252,8 @@ async def test_list_conversations_pagination(db_session, test_user, auth_headers
 
 
 @pytest.mark.asyncio
-async def test_list_conversations_empty(auth_headers):
+async def test_list_conversations_empty(auth_headers: Any) -> None:
+
     """Test listing when user has no conversations."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -259,7 +273,8 @@ async def test_list_conversations_empty(auth_headers):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_get_conversation(test_conversation, auth_headers):
+async def test_get_conversation(test_conversation: Any, auth_headers: Any) -> None:
+
     """Test retrieving a specific conversation."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -277,7 +292,8 @@ async def test_get_conversation(test_conversation, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_get_conversation_not_found(auth_headers):
+async def test_get_conversation_not_found(auth_headers: Any) -> None:
+
     """Test getting non-existent conversation."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -290,7 +306,8 @@ async def test_get_conversation_not_found(auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_get_conversation_wrong_user(db_session, test_conversation):
+async def test_get_conversation_wrong_user(db_session: AsyncSession, test_conversation: Any) -> None:
+
     """Test that users can't access other users' conversations."""
     # Create another user
     other_user = User(
@@ -322,7 +339,8 @@ async def test_get_conversation_wrong_user(db_session, test_conversation):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_update_conversation_title(test_conversation, auth_headers):
+async def test_update_conversation_title(test_conversation: Any, auth_headers: Any) -> None:
+
     """Test updating conversation title."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -339,7 +357,8 @@ async def test_update_conversation_title(test_conversation, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_update_conversation_not_found(auth_headers):
+async def test_update_conversation_not_found(auth_headers: Any) -> None:
+
     """Test updating non-existent conversation."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -357,7 +376,8 @@ async def test_update_conversation_not_found(auth_headers):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_archive_conversation(test_conversation, auth_headers):
+async def test_archive_conversation(test_conversation: Any, auth_headers: Any) -> None:
+
     """Test archiving (soft delete) a conversation."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -370,7 +390,8 @@ async def test_archive_conversation(test_conversation, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_hard_delete_conversation(test_conversation, auth_headers):
+async def test_hard_delete_conversation(test_conversation: Any, auth_headers: Any) -> None:
+
     """Test permanently deleting a conversation."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -397,7 +418,8 @@ async def test_hard_delete_conversation(test_conversation, auth_headers):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_search_conversations(db_session, test_user, auth_headers):
+async def test_search_conversations(db_session: AsyncSession, test_user: Any, auth_headers: Any) -> None:
+
     """Test searching conversations."""
     # Create conversations
     conv1 = Conversation(
@@ -426,7 +448,8 @@ async def test_search_conversations(db_session, test_user, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_search_conversations_no_results(db_session, auth_headers):
+async def test_search_conversations_no_results(db_session: AsyncSession, auth_headers: Any) -> None:
+
     """Test search with no matches."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -441,7 +464,8 @@ async def test_search_conversations_no_results(db_session, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_search_conversations_missing_query(db_session, auth_headers):
+async def test_search_conversations_missing_query(db_session: AsyncSession, auth_headers: Any) -> None:
+
     """Test search without query parameter."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -458,7 +482,7 @@ async def test_search_conversations_missing_query(db_session, auth_headers):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_expired_token():
+async def test_expired_token() -> None:
     """Test that expired tokens are rejected."""
     # create_access_token requires positive duration; build an expired JWT manually
     secret = settings.access_token_secret or "test_secret_32chars_for_unit_tests!!"
@@ -485,7 +509,7 @@ async def test_expired_token():
 
 
 @pytest.mark.asyncio
-async def test_invalid_token():
+async def test_invalid_token() -> None:
     """Test that invalid tokens are rejected."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -498,7 +522,7 @@ async def test_invalid_token():
 
 
 @pytest.mark.asyncio
-async def test_missing_authorization_header():
+async def test_missing_authorization_header() -> None:
     """Test that requests without auth header are rejected."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -512,7 +536,8 @@ async def test_missing_authorization_header():
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_numeric_arguments_string_conversion(db_session, test_user, auth_headers):
+async def test_numeric_arguments_string_conversion(db_session: AsyncSession, test_user: Any, auth_headers: Any) -> None:
+
     """Test that ALL numeric arguments are converted to strings for Swift compatibility."""
     from app.db.models import ConversationMessage
     
@@ -597,7 +622,8 @@ async def test_numeric_arguments_string_conversion(db_session, test_user, auth_h
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_entity_id_tracking_across_turns(test_user, auth_headers):
+async def test_entity_id_tracking_across_turns(test_user: Any, auth_headers: Any) -> None:
+
     """
     Test that entity IDs (trackId, regionId) are properly tracked across
     multiple conversation turns.

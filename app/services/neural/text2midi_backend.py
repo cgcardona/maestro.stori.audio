@@ -15,7 +15,7 @@ import logging
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from app.core.emotion_vector import EmotionVector
 
@@ -25,14 +25,14 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Text2MidiResult:
     """Result from text2midi generation."""
-    notes: list[dict]
+    notes: list[dict[str, Any]]
     success: bool
-    midi_path: Optional[str] = None
+    midi_path: str | None = None
     model_used: str = "text2midi"
-    metadata: Optional[dict] = None
-    error: Optional[str] = None
+    metadata: dict[str, Any] | None = None
+    error: str | None = None
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.metadata is None:
             self.metadata = {}
 
@@ -41,7 +41,7 @@ def emotion_to_text_description(
     emotion_vector: EmotionVector,
     key: str = "C",
     tempo: int = 120,
-    style: Optional[str] = None,
+    style: str | None = None,
     instrument: str = "piano",
 ) -> str:
     """
@@ -49,7 +49,7 @@ def emotion_to_text_description(
     
     text2midi accepts descriptions like:
     "A melodic electronic song with ambient elements, featuring piano,
-     acoustic guitar, alto saxophone. Set in G minor with a 4/4 time signature,
+     acoustic guitar, alto saxophone. set in G minor with a 4/4 time signature,
      it moves at a lively Presto tempo. The composition evokes a blend of
      relaxation and darkness, with hints of happiness and a meditative quality."
     """
@@ -112,7 +112,7 @@ def emotion_to_text_description(
     parts = [
         f"A {arrangement} {style or 'melodic'} piece",
         f"featuring {instrument}",
-        f"Set in {key} {mode} with a 4/4 time signature",
+        f"set in {key} {mode} with a 4/4 time signature",
         f"moving at a {tempo_desc} tempo around {tempo} BPM",
         f"The composition is {mood}",
         f"{tension_desc}",
@@ -132,11 +132,11 @@ class Text2MidiBackend:
     
     SPACE_NAME = "amaai-lab/text2midi"
     
-    def __init__(self):
-        self._client = None
+    def __init__(self) -> None:
+        self._client: Any = None
     
     @property
-    def client(self):
+    def client(self) -> Any:
         """Lazy load the Gradio client."""
         if self._client is None:
             try:
@@ -234,10 +234,10 @@ class Text2MidiBackend:
         tempo: int,
         key: str,
         emotion_vector: EmotionVector,
-        style: Optional[str] = None,
+        style: str | None = None,
         instrument: str = "piano",
         temperature: float = 1.0,
-        **kwargs,
+        **kwargs: Any,
     ) -> Text2MidiResult:
         """
         Generate MIDI using text2midi.
@@ -310,7 +310,7 @@ class Text2MidiBackend:
         description: str,
         temperature: float,
         max_length: int,
-    ) -> Optional[tuple[str, list[dict]]]:
+    ) -> tuple[str, list[dict[str, Any]]] | None:
         """
         Call the Gradio API synchronously.
         
@@ -363,7 +363,7 @@ class Text2MidiBackend:
             logger.error(f"[text2midi] Gradio call failed: {e}")
             return None
     
-    def _parse_midi_file(self, midi_path: str) -> list[dict]:
+    def _parse_midi_file(self, midi_path: str) -> list[dict[str, Any]]:
         """
         Parse a MIDI file into our note format.
         
@@ -390,7 +390,7 @@ class Text2MidiBackend:
             # Parse all tracks
             for track in mid.tracks:
                 current_tick = 0
-                active_notes = {}  # pitch -> (start_tick, velocity)
+                active_notes: dict[int, tuple[int, int]] = {}
                 
                 for msg in track:
                     current_tick += msg.time
@@ -432,7 +432,7 @@ class Text2MidiMelodyBackend:
     Wrapper that makes Text2MidiBackend compatible with MelodyModelBackend interface.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self._backend = Text2MidiBackend()
     
     async def is_available(self) -> bool:

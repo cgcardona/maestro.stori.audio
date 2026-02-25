@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.core.gm_instruments import DRUM_ICON, icon_for_gm_program
 from app.core.sse_utils import sse_event
@@ -65,13 +65,12 @@ async def _execute_agent_generator(
     trace: Any,
     composition_context: dict[str, Any],
     emit_sse: bool,
-    pre_emit_callback: Optional[Any] = None,
-) -> Optional[_ToolCallOutcome]:
+    pre_emit_callback: Any | None = None,
+) -> _ToolCallOutcome | None:
     """Route a generator tool call through MusicGenerator (Orpheus).
 
     Called from ``_apply_single_tool_call`` when the tool is a generator
-    (``stori_generate_midi``, ``stori_generate_drums``, etc.) and
-    ``composition_context`` is available.
+    (``stori_generate_midi``) and ``composition_context`` is available.
 
     Returns a complete ``_ToolCallOutcome`` on success, or ``None`` to
     fall through to normal tool handling.
@@ -81,13 +80,7 @@ async def _execute_agent_generator(
 
     role = enriched_params.get("role", "")
     if not role:
-        name_to_role = {
-            "stori_generate_drums": "drums",
-            "stori_generate_bass": "bass",
-            "stori_generate_melody": "melody",
-            "stori_generate_chords": "chords",
-        }
-        role = name_to_role.get(tc_name, "melody")
+        role = "melody"
 
     style = enriched_params.get("style") or composition_context.get("style", "")
     tempo = int(enriched_params.get("tempo") or composition_context.get("tempo", 120))
@@ -182,14 +175,40 @@ async def _execute_agent_generator(
 
     try:
         mg = get_music_generator()
-        result = await mg.generate(
-            instrument=role,
-            style=style,
-            tempo=tempo,
-            bars=bars,
-            key=key,
-            **gen_kwargs,
-        )
+        _section_key = composition_context.get("section_key") if composition_context else None
+        _all_instruments = composition_context.get("all_instruments") if composition_context else None
+
+        if _section_key and _all_instruments:
+            logger.info(
+                f"🎼 [{trace.trace_id[:8]}] UNIFIED path: "
+                f"section={_section_key} role={role} "
+                f"all_instruments={_all_instruments}"
+            )
+            result = await mg.generate_for_section(
+                section_key=_section_key,
+                instrument=role,
+                all_instruments=_all_instruments,
+                style=style,
+                tempo=tempo,
+                bars=bars,
+                key=key,
+                **gen_kwargs,
+            )
+        else:
+            logger.warning(
+                f"⚠️ [{trace.trace_id[:8]}] PER-INSTRUMENT path (no unified): "
+                f"role={role} section_key={_section_key} "
+                f"all_instruments={_all_instruments} "
+                f"context_keys={list(composition_context.keys()) if composition_context else 'None'}"
+            )
+            result = await mg.generate(
+                instrument=role,
+                style=style,
+                tempo=tempo,
+                bars=bars,
+                key=key,
+                **gen_kwargs,
+            )
     except Exception as exc:
         logger.error(f"❌ [{trace.trace_id[:8]}] Generator {tc_name} failed: {exc}")
         error_result = {"error": str(exc)}
@@ -331,6 +350,111 @@ async def _execute_agent_generator(
     )
 
 
+async def execute_unified_generation(
+    instruments: list[str],
+    style: str,
+    tempo: int,
+    bars: int,
+    key: str | None,
+    region_map: dict[str, tuple[str, str]],
+    store: Any,
+    trace: Any,
+    composition_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Generate all instruments together in one Orpheus call, distribute to regions.
+
+    Args:
+        instruments: All instrument roles for this section (e.g. ["drums", "bass", "keys"]).
+        style: Musical style / genre.
+        tempo: BPM.
+        bars: Number of bars.
+        key: Musical key.
+        region_map: {role: (track_id, region_id)} — pre-created regions for each instrument.
+        store: StateStore for persisting notes.
+        trace: Trace context.
+        composition_context: Emotion vector, quality preset, etc.
+
+    Returns:
+        dict with per-role results: {role: {"notes_added": int, "success": bool}}.
+    """
+    import time as _time
+    _gen_start = _time.monotonic()
+
+    gen_kwargs: dict[str, Any] = {}
+    if composition_context:
+        gen_kwargs["quality_preset"] = composition_context.get("quality_preset", "quality")
+        ev = composition_context.get("emotion_vector")
+        if ev is not None:
+            gen_kwargs["emotion_vector"] = ev
+    if trace and hasattr(trace, "trace_id"):
+        gen_kwargs["composition_id"] = trace.trace_id
+
+    mg = get_music_generator()
+    result = await mg.generate_unified(
+        instruments=instruments,
+        style=style,
+        tempo=tempo,
+        bars=bars,
+        key=key,
+        **gen_kwargs,
+    )
+
+    _gen_duration_ms = int((_time.monotonic() - _gen_start) * 1000)
+    per_role: dict[str, Any] = {}
+
+    if not result.success:
+        logger.error(
+            f"❌ Unified generation failed after {_gen_duration_ms}ms: {result.error}"
+        )
+        for role in instruments:
+            per_role[role] = {"notes_added": 0, "success": False, "error": result.error}
+        return per_role
+
+    channel_notes = result.channel_notes or {}
+
+    # Distribute per-channel notes to their respective regions
+    for role in instruments:
+        track_id, region_id = region_map.get(role, ("", ""))
+        if not region_id:
+            per_role[role] = {"notes_added": 0, "success": False, "error": "no region"}
+            continue
+
+        role_notes = channel_notes.get(role, [])
+        if not role_notes:
+            role_key = role.lower()
+            for ch_label, ch_notes in channel_notes.items():
+                if role_key in ch_label.lower() or ch_label.lower() in role_key:
+                    role_notes = ch_notes
+                    break
+
+        if not role_notes and result.notes:
+            role_notes = result.notes
+
+        store.add_notes(region_id, role_notes)
+        if result.cc_events:
+            store.add_cc(region_id, result.cc_events)
+        if result.pitch_bends:
+            store.add_pitch_bends(region_id, result.pitch_bends)
+
+        per_role[role] = {
+            "notes_added": len(role_notes),
+            "success": True,
+            "track_id": track_id,
+            "region_id": region_id,
+        }
+        logger.info(
+            f"✅ Unified → {role}: {len(role_notes)} notes → region {region_id[:8]}"
+        )
+
+    logger.info(
+        f"✅ Unified generation complete: {_gen_duration_ms}ms, "
+        f"{sum(r.get('notes_added', 0) for r in per_role.values())} total notes"
+    )
+    per_role["_metadata"] = result.metadata or {}
+    per_role["_duration_ms"] = _gen_duration_ms
+    return per_role
+
+
 async def _apply_single_tool_call(
     tc_id: str,
     tc_name: str,
@@ -340,8 +464,8 @@ async def _apply_single_tool_call(
     trace: Any,
     add_notes_failures: dict[str, int],
     emit_sse: bool = True,
-    composition_context: Optional[dict[str, Any]] = None,
-    pre_emit_callback: Optional[Any] = None,
+    composition_context: dict[str, Any] | None = None,
+    pre_emit_callback: Any | None = None,
 ) -> _ToolCallOutcome:
     """Validate, enrich, persist, and return results for one tool call.
 
@@ -482,7 +606,7 @@ async def _apply_single_tool_call(
             enriched_params["gmProgram"] = 0
 
     elif tc_name == "stori_add_midi_region":
-        midi_region_track_id: Optional[str] = enriched_params.get("trackId")
+        midi_region_track_id: str | None = enriched_params.get("trackId")
         region_name: str = str(enriched_params.get("name", "Region"))
         if midi_region_track_id:
             _req_start = enriched_params.get("startBeat", 0)
@@ -648,7 +772,7 @@ async def _apply_single_tool_call(
         _is_drums = enriched_params.get("_isDrums", False)
         _gm_program = enriched_params.get("gmProgram")
         if _drum_kit or _is_drums:
-            _track_icon: Optional[str] = DRUM_ICON
+            _track_icon: str | None = DRUM_ICON
         elif _icon_from_llm:
             _track_icon = enriched_params.get("icon")
         elif _gm_program is not None:

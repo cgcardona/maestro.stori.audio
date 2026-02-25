@@ -4,6 +4,8 @@ Tests for FastAPI auth dependencies: require_device_id and require_valid_token.
 Ensures asset endpoints reject bad device IDs and protected endpoints
 reject missing/expired/revoked tokens.
 """
+from __future__ import annotations
+
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
@@ -20,7 +22,7 @@ from app.auth.dependencies import require_device_id, require_valid_token
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_require_device_id_missing():
+async def test_require_device_id_missing() -> None:
     """Missing X-Device-ID raises 400."""
     with pytest.raises(HTTPException) as exc_info:
         await require_device_id(x_device_id=None)
@@ -29,7 +31,7 @@ async def test_require_device_id_missing():
 
 
 @pytest.mark.asyncio
-async def test_require_device_id_empty_string():
+async def test_require_device_id_empty_string() -> None:
     """Empty X-Device-ID raises 400."""
     with pytest.raises(HTTPException) as exc_info:
         await require_device_id(x_device_id="   ")
@@ -38,7 +40,7 @@ async def test_require_device_id_empty_string():
 
 
 @pytest.mark.asyncio
-async def test_require_device_id_invalid_uuid():
+async def test_require_device_id_invalid_uuid() -> None:
     """Non-UUID X-Device-ID raises 400."""
     with pytest.raises(HTTPException) as exc_info:
         await require_device_id(x_device_id="not-a-uuid")
@@ -47,7 +49,7 @@ async def test_require_device_id_invalid_uuid():
 
 
 @pytest.mark.asyncio
-async def test_require_device_id_valid_uuid():
+async def test_require_device_id_valid_uuid() -> None:
     """Valid UUID returns the stripped value."""
     device_id = str(uuid.uuid4())
     result = await require_device_id(x_device_id=f"  {device_id}  ")
@@ -55,7 +57,7 @@ async def test_require_device_id_valid_uuid():
 
 
 @pytest.mark.asyncio
-async def test_require_device_id_valid_uuid_no_whitespace():
+async def test_require_device_id_valid_uuid_no_whitespace() -> None:
     """Valid UUID with no whitespace returns as-is."""
     device_id = str(uuid.uuid4())
     result = await require_device_id(x_device_id=device_id)
@@ -67,7 +69,7 @@ async def test_require_device_id_valid_uuid_no_whitespace():
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_require_valid_token_missing_credentials():
+async def test_require_valid_token_missing_credentials() -> None:
     """Missing Authorization header raises 401."""
     with pytest.raises(HTTPException) as exc_info:
         await require_valid_token(credentials=None)
@@ -76,7 +78,7 @@ async def test_require_valid_token_missing_credentials():
 
 
 @pytest.mark.asyncio
-async def test_require_valid_token_invalid_token():
+async def test_require_valid_token_invalid_token() -> None:
     """Invalid token string raises 401."""
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="invalid.jwt.here")
     with pytest.raises(HTTPException) as exc_info:
@@ -85,7 +87,7 @@ async def test_require_valid_token_invalid_token():
 
 
 @pytest.mark.asyncio
-async def test_require_valid_token_expired_token():
+async def test_require_valid_token_expired_token() -> None:
     """Expired token raises 401."""
     import jwt
     from app.config import settings
@@ -102,7 +104,7 @@ async def test_require_valid_token_expired_token():
 
 
 @pytest.mark.asyncio
-async def test_require_valid_token_revoked_returns_401():
+async def test_require_valid_token_revoked_returns_401() -> None:
     """Revoked token raises 401 when revocation check returns True."""
     from app.auth.tokens import generate_access_code
 

@@ -11,6 +11,7 @@ Implements the Muse/Variation protocol:
 Public re-exports for test imports:
     _record_to_variation — used by test_variation_protocol.py
 """
+from __future__ import annotations
 
 from fastapi import APIRouter
 

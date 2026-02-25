@@ -1,6 +1,7 @@
 """Request/response Pydantic models for conversation routes."""
+from __future__ import annotations
 
-from typing import Optional
+from typing import Any
 
 from pydantic import Field
 
@@ -10,14 +11,14 @@ from app.models.base import CamelModel
 class ConversationCreateRequest(CamelModel):
     """Request to create a new conversation."""
     title: str = Field(default="New Conversation", max_length=255)
-    project_id: Optional[str] = Field(default=None, description="Project UUID to link conversation to")
-    project_context: Optional[dict] = Field(default=None)
+    project_id: str | None = Field(default=None, description="Project UUID to link conversation to")
+    project_context: dict[str, Any] | None = Field(default=None)
 
 
 class ConversationUpdateRequest(CamelModel):
     """Request to update conversation metadata."""
-    title: Optional[str] = Field(None, max_length=255)
-    project_id: Optional[str] = Field(None, description="Project UUID (set to 'null' string to unlink)")
+    title: str | None = Field(None, max_length=255)
+    project_id: str | None = Field(None, description="Project UUID (set to 'null' string to unlink)")
 
 
 class ToolCallInfo(CamelModel):
@@ -27,10 +28,10 @@ class ToolCallInfo(CamelModel):
     Storage format: {id, type, name, arguments} - flat for easy API consumption
     LLM format: {id, type, function: {name, arguments}} - nested OpenAI standard
     """
-    id: Optional[str] = None
+    id: str | None = None
     type: str = "function"
     name: str
-    arguments: dict
+    arguments: dict[str, Any]
 
 
 class MessageInfo(CamelModel):
@@ -41,23 +42,23 @@ class MessageInfo(CamelModel):
     role: str
     content: str
     timestamp: str
-    model_used: Optional[str] = None
-    tokens_used: Optional[dict] = None
+    model_used: str | None = None
+    tokens_used: dict[str, Any] | None = None
     cost: float
-    tool_calls: Optional[list[ToolCallInfo]] = None
-    sse_events: Optional[list[dict]] = None
-    actions: Optional[list[dict]] = None
+    tool_calls: list[ToolCallInfo] | None = None
+    sse_events: list[dict[str, Any]] | None = None
+    actions: list[dict[str, Any]] | None = None
 
 
 class ConversationResponse(CamelModel):
     """Full conversation with messages."""
     id: str
     title: str
-    project_id: Optional[str] = None
+    project_id: str | None = None
     created_at: str
     updated_at: str
     is_archived: bool
-    project_context: Optional[dict] = None
+    project_context: dict[str, Any] | None = None
     messages: list[MessageInfo] = []
 
 
@@ -65,7 +66,7 @@ class ConversationListItem(CamelModel):
     """Conversation list item (without messages)."""
     id: str
     title: str
-    project_id: Optional[str] = None
+    project_id: str | None = None
     created_at: str
     updated_at: str
     is_archived: bool

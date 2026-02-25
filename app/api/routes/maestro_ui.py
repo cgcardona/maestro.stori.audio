@@ -6,9 +6,11 @@ Serves the creative launchpad data consumed by the macOS client:
   - Individual prompt template lookup
   - Focused budget / Creative Fuel status
 """
+from __future__ import annotations
 
 import logging
 import random
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, func
@@ -65,7 +67,7 @@ def _derive_budget_state(remaining: float) -> BudgetState:
     response_model=PlaceholdersResponse,
     response_model_by_alias=True,
 )
-async def get_placeholders():
+async def get_placeholders() -> PlaceholdersResponse:
     """Rotating placeholder strings for the hero prompt input field.
 
     Returns at least 3 strings; the client cycles through them every 4 seconds.
@@ -84,7 +86,7 @@ async def get_placeholders():
     response_model=PromptsResponse,
     response_model_by_alias=True,
 )
-async def get_prompts():
+async def get_prompts() -> PromptsResponse:
     """Return 4 randomly sampled STORI PROMPT inspiration cards.
 
     Each call returns a different random set drawn from a curated pool of
@@ -112,7 +114,7 @@ async def get_prompts():
     response_model=PromptItem,
     response_model_by_alias=True,
 )
-async def get_prompt_by_id(prompt_id: str):
+async def get_prompt_by_id(prompt_id: str) -> PromptItem:
     """Fetch a single STORI PROMPT inspiration card by its slug ID.
 
     IDs are stable slugs from the curated pool, e.g.:
@@ -145,9 +147,9 @@ async def get_prompt_by_id(prompt_id: str):
     response_model_by_alias=True,
 )
 async def get_budget_status(
-    token_claims: dict = Depends(require_valid_token),
+    token_claims: dict[str, Any] = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-):
+) -> BudgetStatusResponse:
     """Focused budget status for the Creative Fuel UI.
 
     Returns remaining/total budget, the derived fuel state, and the number of

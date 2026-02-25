@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.services.variation.note_matching import TIMING_TOLERANCE_BEATS
 
 
@@ -17,7 +19,7 @@ def _generate_bar_label(start_bar: int, end_bar: int) -> str:
     return f"Bars {start_bar}-{end_bar}"
 
 
-def _detect_change_tags(note_changes: list) -> list[str]:
+def _detect_change_tags(note_changes: list[Any]) -> list[str]:
     """Detect what types of changes are present in a phrase."""
     tags: set[str] = set()
 

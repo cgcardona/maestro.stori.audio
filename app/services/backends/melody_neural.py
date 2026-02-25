@@ -6,9 +6,10 @@ the rule-based melody_ir_renderer.
 
 This is the MVP integration point for neural melody generation.
 """
+from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any
 
 from app.services.backends.base import (
     MusicGeneratorBackend,
@@ -31,8 +32,8 @@ class MelodyNeuralBackend(MusicGeneratorBackend):
     Handles: lead, melody, synth, vocal instruments.
     """
     
-    def __init__(self):
-        self._generator: Optional[NeuralMelodyGenerator] = None
+    def __init__(self) -> None:
+        self._generator: NeuralMelodyGenerator | None = None
     
     @property
     def generator(self) -> NeuralMelodyGenerator:
@@ -57,9 +58,9 @@ class MelodyNeuralBackend(MusicGeneratorBackend):
         style: str,
         tempo: int,
         bars: int,
-        key: Optional[str] = None,
-        chords: Optional[list[str]] = None,
-        **kwargs,
+        key: str | None = None,
+        chords: list[str] | None = None,
+        **kwargs: Any,
     ) -> GenerationResult:
         """
         Generate melody using neural model.
@@ -151,7 +152,7 @@ class MelodyNeuralBackend(MusicGeneratorBackend):
                 error=str(e),
             )
     
-    def _resolve_emotion_vector(self, kwargs: dict, style: str) -> EmotionVector:
+    def _resolve_emotion_vector(self, kwargs: dict[str, Any], style: str) -> EmotionVector:
         """
         Resolve emotion vector from kwargs or derive from context.
         

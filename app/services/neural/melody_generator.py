@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Any
 import random
 
 from app.core.emotion_vector import EmotionVector, emotion_to_constraints, GenerationConstraints
@@ -36,7 +36,7 @@ class MelodyGenerationRequest:
     emotion_vector: EmotionVector
     
     # Optional conditioning
-    seed_notes: Optional[list[dict]] = None  # Prime with these notes
+    seed_notes: list[dict[str, Any]] | None = None  # Prime with these notes
     temperature: float = 1.0
     top_p: float = 0.9
 
@@ -44,10 +44,10 @@ class MelodyGenerationRequest:
 @dataclass
 class MelodyGenerationResult:
     """Result of melody generation."""
-    notes: list[dict]  # {pitch, start_beat, duration_beats, velocity}
+    notes: list[dict[str, Any]]
     success: bool
     model_used: str
-    metadata: dict
+    metadata: dict[str, Any]
 
 
 class MelodyModelBackend(ABC):
@@ -72,7 +72,7 @@ class MockNeuralMelodyBackend(MelodyModelBackend):
     Replace this with real model integration.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.tokenizer = MidiTokenizer()
     
     async def is_available(self) -> bool:
@@ -115,14 +115,14 @@ class MockNeuralMelodyBackend(MelodyModelBackend):
         self,
         request: MelodyGenerationRequest,
         constraints: GenerationConstraints,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Generate notes using constraints derived from emotion vector.
         
         This placeholder generates more musical output than the old
         rule-based system by using emotion constraints.
         """
-        notes: list[dict] = []
+        notes: list[dict[str, Any]] = []
         rng = random.Random()
         
         # Parse key for scale
@@ -267,7 +267,7 @@ class NeuralMelodyGenerator:
     - Tokenization (when using token-based models)
     """
     
-    def __init__(self, backend: Optional[MelodyModelBackend] = None):
+    def __init__(self, backend: MelodyModelBackend | None = None):
         self.backend = backend or MockNeuralMelodyBackend()
         self.tokenizer = MidiTokenizer()
     
@@ -276,10 +276,10 @@ class NeuralMelodyGenerator:
         bars: int,
         tempo: int,
         key: str,
-        chords: Optional[list[str]] = None,
-        emotion_vector: Optional[EmotionVector] = None,
+        chords: list[str] | None = None,
+        emotion_vector: EmotionVector | None = None,
         temperature: float = 1.0,
-        **kwargs,
+        **kwargs: Any,
     ) -> MelodyGenerationResult:
         """
         Generate a melody.

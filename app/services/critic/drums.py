@@ -1,7 +1,8 @@
 """Drum scoring functions."""
+from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any
 
 from app.services.critic.constants import DRUM_WEIGHTS
 from app.services.critic.helpers import _offbeat_ratio, _get_notes_by_layer
@@ -10,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 def _score_groove_pocket(
-    notes: list[dict],
-    layer_map: Optional[dict] = None,
+    notes: list[dict[str, Any]],
+    layer_map: dict[int, str] | None = None,
     style: str = "trap",
 ) -> tuple[float, list[str]]:
     """Score timing consistency per instrument role (kick vs snare, hat regularity)."""
@@ -58,8 +59,8 @@ def _score_groove_pocket(
 
 
 def _score_hat_articulation(
-    notes: list[dict],
-    layer_map: Optional[dict] = None,
+    notes: list[dict[str, Any]],
+    layer_map: dict[int, str] | None = None,
     bars: int = 16,
 ) -> tuple[float, list[str]]:
     """Score hi-hat articulation variety (closed/open mix, velocity arcs, bar-to-bar variation)."""
@@ -103,7 +104,7 @@ def _score_hat_articulation(
             scores.append(0.4)
             repair.append("hats_flat_velocity: add velocity arc within bars")
 
-    bar_patterns: list[tuple] = []
+    bar_patterns: list[tuple[float, ...]] = []
     for b in range(bars):
         bar_start = b * 4.0
         bar_hats = [n for n in hat_notes if bar_start <= n.get("start_beat", 0) < bar_start + 4.0]
@@ -123,9 +124,9 @@ def _score_hat_articulation(
 
 
 def _score_fill_localization(
-    notes: list[dict],
-    layer_map: Optional[dict] = None,
-    fill_bars: Optional[list[int]] = None,
+    notes: list[dict[str, Any]],
+    layer_map: dict[int, str] | None = None,
+    fill_bars: list[int] | None = None,
     bars: int = 16,
 ) -> tuple[float, list[str]]:
     """Score whether fills occur in the correct phrase-end bars."""
@@ -163,8 +164,8 @@ def _score_fill_localization(
 
 
 def _score_ghost_plausibility(
-    notes: list[dict],
-    layer_map: Optional[dict] = None,
+    notes: list[dict[str, Any]],
+    layer_map: dict[int, str] | None = None,
 ) -> tuple[float, list[str]]:
     """Score ghost note placement (near backbeats) and velocity (quiet)."""
     repair: list[str] = []
@@ -199,8 +200,8 @@ def _score_ghost_plausibility(
 
 
 def _score_layer_balance(
-    notes: list[dict],
-    layer_map: Optional[dict] = None,
+    notes: list[dict[str, Any]],
+    layer_map: dict[int, str] | None = None,
 ) -> tuple[float, list[str]]:
     """Score layer presence: core (kick/snare), timekeepers (hats), accent layers."""
     repair: list[str] = []
@@ -233,13 +234,13 @@ def _score_layer_balance(
     return sum(scores) / max(1, len(scores)) if scores else 0.5, repair
 
 
-def _score_repetition_structure(notes: list[dict], bars: int = 16) -> tuple[float, list[str]]:
+def _score_repetition_structure(notes: list[dict[str, Any]], bars: int = 16) -> tuple[float, list[str]]:
     """Score repetition structure: A/A' patterns OK, identical bars not OK."""
     repair: list[str] = []
     if not notes or bars < 2:
         return 0.5, []
 
-    bar_rhythms: list[tuple] = []
+    bar_rhythms: list[tuple[float, ...]] = []
     for b in range(bars):
         bar_start = b * 4.0
         onsets = tuple(sorted(
@@ -272,7 +273,7 @@ def _score_repetition_structure(notes: list[dict], bars: int = 16) -> tuple[floa
     return score, repair
 
 
-def _score_velocity_dynamics(notes: list[dict], bars: int = 16) -> tuple[float, list[str]]:
+def _score_velocity_dynamics(notes: list[dict[str, Any]], bars: int = 16) -> tuple[float, list[str]]:
     """Score velocity dynamics: backbeat accents, overall dynamic range."""
     repair: list[str] = []
     if not notes:
@@ -306,10 +307,10 @@ def _score_velocity_dynamics(notes: list[dict], bars: int = 16) -> tuple[float, 
 
 
 def score_drum_notes(
-    notes: list[dict],
+    notes: list[dict[str, Any]],
     *,
-    layer_map: Optional[dict] = None,
-    fill_bars: Optional[list[int]] = None,
+    layer_map: dict[int, str] | None = None,
+    fill_bars: list[int] | None = None,
     bars: int = 16,
     style: str = "trap",
     max_salience_per_beat: float = 2.5,

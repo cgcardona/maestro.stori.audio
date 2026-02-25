@@ -3,6 +3,7 @@
 Serves prompt inspiration cards, placeholder strings, and budget status —
 all consumed by the macOS client's creative launchpad view.
 """
+from __future__ import annotations
 
 from typing import Literal
 

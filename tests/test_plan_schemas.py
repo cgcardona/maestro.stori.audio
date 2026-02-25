@@ -5,7 +5,11 @@ validate_plan_json, extract_and_validate_plan, _extract_json_candidates,
 _looks_like_plan, _fix_common_json_issues, infer_edits_from_generations,
 complete_plan.
 """
+from __future__ import annotations
+
 import json
+from typing import Any
+
 import pytest
 
 from app.core.plan_schemas import (
@@ -28,41 +32,48 @@ from app.core.plan_schemas import (
 
 class TestGenerationStep:
 
-    def test_valid_drums(self):
+    def test_valid_drums(self) -> None:
+
         step = GenerationStep(
             role="drums", style="trap", tempo=120, bars=4
         )
         assert step.role == "drums"
         assert step.style == "trap"
 
-    def test_style_normalized(self):
+    def test_style_normalized(self) -> None:
+
         step = GenerationStep(
             role="drums", style="  Boom Bap  ", tempo=90, bars=8
         )
         assert step.style == "boom_bap"
 
-    def test_melodic_without_key_warns(self):
+    def test_melodic_without_key_warns(self) -> None:
+
         # Should succeed but log a warning
         step = GenerationStep(
             role="bass", style="funk", tempo=100, bars=4
         )
         assert step.key is None
 
-    def test_with_key(self):
+    def test_with_key(self) -> None:
+
         step = GenerationStep(
             role="melody", style="jazz", tempo=120, bars=8, key="Cm"
         )
         assert step.key == "Cm"
 
-    def test_invalid_tempo_too_low(self):
+    def test_invalid_tempo_too_low(self) -> None:
+
         with pytest.raises(Exception):
             GenerationStep(role="drums", style="trap", tempo=5, bars=4)
 
-    def test_invalid_tempo_too_high(self):
+    def test_invalid_tempo_too_high(self) -> None:
+
         with pytest.raises(Exception):
             GenerationStep(role="drums", style="trap", tempo=500, bars=4)
 
-    def test_invalid_bars_too_high(self):
+    def test_invalid_bars_too_high(self) -> None:
+
         with pytest.raises(Exception):
             GenerationStep(role="drums", style="trap", tempo=120, bars=100)
 
@@ -74,12 +85,14 @@ class TestGenerationStep:
 
 class TestEditStep:
 
-    def test_add_track(self):
+    def test_add_track(self) -> None:
+
         step = EditStep(action="add_track", name="Drums")
         assert step.action == "add_track"
         assert step.name == "Drums"
 
-    def test_add_region(self):
+    def test_add_region(self) -> None:
+
         step = EditStep(
             action="add_region", track="Drums",
             barStart=0, bars=8, name="Intro",
@@ -95,11 +108,13 @@ class TestEditStep:
 
 class TestExecutionPlanSchema:
 
-    def test_empty_plan(self):
+    def test_empty_plan(self) -> None:
+
         plan = ExecutionPlanSchema()
         assert plan.is_empty() is True
 
-    def test_plan_with_generations(self):
+    def test_plan_with_generations(self) -> None:
+
         plan = ExecutionPlanSchema(
             generations=[
                 GenerationStep(role="drums", style="trap", tempo=120, bars=4),
@@ -107,7 +122,8 @@ class TestExecutionPlanSchema:
         )
         assert plan.is_empty() is False
 
-    def test_plan_with_edits(self):
+    def test_plan_with_edits(self) -> None:
+
         plan = ExecutionPlanSchema(
             edits=[EditStep(action="add_track", name="Piano")]
         )
@@ -121,7 +137,8 @@ class TestExecutionPlanSchema:
 
 class TestValidatePlanJSON:
 
-    def test_valid_plan(self):
+    def test_valid_plan(self) -> None:
+
         raw = {
             "generations": [
                 {"role": "drums", "style": "trap", "tempo": 120, "bars": 4},
@@ -131,7 +148,8 @@ class TestValidatePlanJSON:
         assert result.valid is True
         assert result.plan is not None
 
-    def test_invalid_role(self):
+    def test_invalid_role(self) -> None:
+
         raw = {
             "generations": [
                 {"role": "invalid_role", "style": "trap", "tempo": 120, "bars": 4},
@@ -141,14 +159,16 @@ class TestValidatePlanJSON:
         assert result.valid is False
         assert len(result.errors) > 0
 
-    def test_empty_plan_warns(self):
-        raw: dict = {}
+    def test_empty_plan_warns(self) -> None:
+
+        raw: dict[str, Any] = {}
         result = validate_plan_json(raw)
         assert result.valid is True
         assert len(result.warnings) > 0
 
-    def test_multiple_generations(self):
-        raw: dict = {
+    def test_multiple_generations(self) -> None:
+
+        raw: dict[str, Any] = {
             "generations": [
                 {"role": "drums", "style": "trap", "tempo": 120, "bars": 4},
                 {"role": "bass", "style": "trap", "tempo": 120, "bars": 4, "key": "Cm"},
@@ -166,7 +186,8 @@ class TestValidatePlanJSON:
 
 class TestExtractAndValidatePlan:
 
-    def test_pure_json(self):
+    def test_pure_json(self) -> None:
+
         text = json.dumps({
             "generations": [
                 {"role": "drums", "style": "boom_bap", "tempo": 90, "bars": 4},
@@ -175,7 +196,8 @@ class TestExtractAndValidatePlan:
         result = extract_and_validate_plan(text)
         assert result.valid is True
 
-    def test_json_in_code_fence(self):
+    def test_json_in_code_fence(self) -> None:
+
         text = """Here's the plan:
 ```json
 {
@@ -188,7 +210,8 @@ Let me know if you'd like changes."""
         result = extract_and_validate_plan(text)
         assert result.valid is True
 
-    def test_json_with_preamble(self):
+    def test_json_with_preamble(self) -> None:
+
         text = """Sure, I'll create a plan for you:
 
 {"generations": [{"role": "drums", "style": "house", "tempo": 128, "bars": 4}]}
@@ -197,16 +220,19 @@ That should work well."""
         result = extract_and_validate_plan(text)
         assert result.valid is True
 
-    def test_empty_response(self):
+    def test_empty_response(self) -> None:
+
         result = extract_and_validate_plan("")
         assert result.valid is False
         assert "Empty" in result.errors[0]
 
-    def test_no_json_found(self):
+    def test_no_json_found(self) -> None:
+
         result = extract_and_validate_plan("This is just text with no JSON")
         assert result.valid is False
 
-    def test_invalid_json(self):
+    def test_invalid_json(self) -> None:
+
         result = extract_and_validate_plan("{invalid json}")
         assert result.valid is False
 
@@ -218,14 +244,16 @@ That should work well."""
 
 class TestInferEdits:
 
-    def test_infer_track_and_region(self):
+    def test_infer_track_and_region(self) -> None:
+
         gens = [
             GenerationStep(role="drums", style="trap", tempo=120, bars=4),
         ]
         edits = infer_edits_from_generations(gens)
         assert len(edits) >= 1  # Should create at least a track edit
 
-    def test_multiple_roles(self):
+    def test_multiple_roles(self) -> None:
+
         gens = [
             GenerationStep(role="drums", style="trap", tempo=120, bars=4),
             GenerationStep(role="bass", style="trap", tempo=120, bars=4, key="Cm"),
@@ -241,7 +269,8 @@ class TestInferEdits:
 
 class TestCompletePlan:
 
-    def test_infers_edits(self):
+    def test_infers_edits(self) -> None:
+
         plan = ExecutionPlanSchema(
             generations=[
                 GenerationStep(role="drums", style="trap", tempo=120, bars=4),
@@ -250,7 +279,8 @@ class TestCompletePlan:
         completed = complete_plan(plan)
         assert len(completed.edits) >= 1
 
-    def test_preserves_existing_edits(self):
+    def test_preserves_existing_edits(self) -> None:
+
         plan = ExecutionPlanSchema(
             edits=[EditStep(action="add_track", name="Custom")],
             generations=[

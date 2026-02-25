@@ -10,6 +10,10 @@ Tests cover:
 - Title auto-generation
 - Pagination
 """
+from __future__ import annotations
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any
 import pytest
 import pytest_asyncio
 from datetime import datetime, timezone
@@ -29,7 +33,8 @@ from app.services import conversations as conv_service
 # =============================================================================
 
 @pytest_asyncio.fixture
-async def test_user(db_session):
+async def test_user(db_session: AsyncSession) -> User:
+
     """Create a test user."""
     user = User(
         id="test-user-123",
@@ -43,7 +48,8 @@ async def test_user(db_session):
 
 
 @pytest_asyncio.fixture
-async def test_conversation(db_session, test_user):
+async def test_conversation(db_session: AsyncSession, test_user: Any) -> Conversation:
+
     """Create a test conversation."""
     conversation = await conv_service.create_conversation(
         db=db_session,
@@ -57,7 +63,8 @@ async def test_conversation(db_session, test_user):
 
 
 @pytest_asyncio.fixture
-async def conversation_with_messages(db_session, test_conversation):
+async def conversation_with_messages(db_session: AsyncSession, test_conversation: Conversation) -> Conversation:
+
     """Create a conversation with messages."""
     # Add user message
     user_msg = await conv_service.add_message(
@@ -99,7 +106,8 @@ async def conversation_with_messages(db_session, test_conversation):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_create_conversation(db_session, test_user):
+async def test_create_conversation(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test creating a new conversation."""
     conversation = await conv_service.create_conversation(
         db=db_session,
@@ -118,7 +126,8 @@ async def test_create_conversation(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_get_conversation(db_session, test_user, conversation_with_messages):
+async def test_get_conversation(db_session: AsyncSession, test_user: Any, conversation_with_messages: Any) -> None:
+
     """Test retrieving a conversation with messages."""
     conversation = await conv_service.get_conversation(
         db=db_session,
@@ -140,7 +149,8 @@ async def test_get_conversation(db_session, test_user, conversation_with_message
 
 
 @pytest.mark.asyncio
-async def test_get_conversation_wrong_user(db_session, conversation_with_messages):
+async def test_get_conversation_wrong_user(db_session: AsyncSession, conversation_with_messages: Any) -> None:
+
     """Test that users can't access other users' conversations."""
     conversation = await conv_service.get_conversation(
         db=db_session,
@@ -152,7 +162,8 @@ async def test_get_conversation_wrong_user(db_session, conversation_with_message
 
 
 @pytest.mark.asyncio
-async def test_list_conversations(db_session, test_user):
+async def test_list_conversations(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test listing conversations with pagination."""
     # Create multiple conversations
     for i in range(5):
@@ -163,7 +174,7 @@ async def test_list_conversations(db_session, test_user):
         )
     await db_session.commit()
     
-    # List first 3
+    # list first 3
     conversations, total = await conv_service.list_conversations(
         db=db_session,
         user_id=test_user.id,
@@ -174,7 +185,7 @@ async def test_list_conversations(db_session, test_user):
     assert len(conversations) == 3
     assert total == 5
     
-    # List next 2
+    # list next 2
     conversations, total = await conv_service.list_conversations(
         db=db_session,
         user_id=test_user.id,
@@ -187,7 +198,8 @@ async def test_list_conversations(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_list_conversations_excludes_archived(db_session, test_user):
+async def test_list_conversations_excludes_archived(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test that archived conversations are excluded by default."""
     # Create normal conversation
     conv1 = await conv_service.create_conversation(
@@ -209,7 +221,7 @@ async def test_list_conversations_excludes_archived(db_session, test_user):
     )
     await db_session.commit()
     
-    # List without archived
+    # list without archived
     conversations, total = await conv_service.list_conversations(
         db=db_session,
         user_id=test_user.id,
@@ -219,7 +231,7 @@ async def test_list_conversations_excludes_archived(db_session, test_user):
     assert len(conversations) == 1
     assert conversations[0].title == "Active"
     
-    # List with archived
+    # list with archived
     conversations, total = await conv_service.list_conversations(
         db=db_session,
         user_id=test_user.id,
@@ -230,7 +242,8 @@ async def test_list_conversations_excludes_archived(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_update_conversation_title(db_session, test_user, test_conversation):
+async def test_update_conversation_title(db_session: AsyncSession, test_user: Any, test_conversation: Any) -> None:
+
     """Test updating conversation title."""
     updated = await conv_service.update_conversation_title(
         db=db_session,
@@ -246,7 +259,8 @@ async def test_update_conversation_title(db_session, test_user, test_conversatio
 
 
 @pytest.mark.asyncio
-async def test_archive_conversation(db_session, test_user, test_conversation):
+async def test_archive_conversation(db_session: AsyncSession, test_user: Any, test_conversation: Any) -> None:
+
     """Test archiving a conversation."""
     success = await conv_service.archive_conversation(
         db=db_session,
@@ -266,7 +280,8 @@ async def test_archive_conversation(db_session, test_user, test_conversation):
 
 
 @pytest.mark.asyncio
-async def test_delete_conversation(db_session, test_user, test_conversation):
+async def test_delete_conversation(db_session: AsyncSession, test_user: Any, test_conversation: Any) -> None:
+
     """Test permanently deleting a conversation."""
     success = await conv_service.delete_conversation(
         db=db_session,
@@ -290,7 +305,8 @@ async def test_delete_conversation(db_session, test_user, test_conversation):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_add_message(db_session, test_conversation):
+async def test_add_message(db_session: AsyncSession, test_conversation: Any) -> None:
+
     """Test adding a message to a conversation."""
     message = await conv_service.add_message(
         db=db_session,
@@ -308,7 +324,8 @@ async def test_add_message(db_session, test_conversation):
 
 
 @pytest.mark.asyncio
-async def test_add_assistant_message_with_metadata(db_session, test_conversation):
+async def test_add_assistant_message_with_metadata(db_session: AsyncSession, test_conversation: Any) -> None:
+
     """Test adding an assistant message with full metadata."""
     message = await conv_service.add_message(
         db=db_session,
@@ -338,9 +355,11 @@ async def test_add_assistant_message_with_metadata(db_session, test_conversation
 
 @pytest.mark.asyncio
 async def test_add_message_updates_conversation_timestamp(
-    db_session,
-    test_conversation,
-):
+    db_session: AsyncSession,
+
+    test_conversation: Any,
+
+) -> None:
     """Test that adding a message updates conversation timestamp."""
     from datetime import timezone
     original_updated_at = test_conversation.updated_at
@@ -373,7 +392,8 @@ async def test_add_message_updates_conversation_timestamp(
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_add_action(db_session, test_conversation):
+async def test_add_action(db_session: AsyncSession, test_conversation: Any) -> None:
+
     """Test adding an action to a message."""
     # First add a message
     message = await conv_service.add_message(
@@ -402,7 +422,8 @@ async def test_add_action(db_session, test_conversation):
 
 
 @pytest.mark.asyncio
-async def test_add_failed_action(db_session, test_conversation):
+async def test_add_failed_action(db_session: AsyncSession, test_conversation: Any) -> None:
+
     """Test recording a failed action."""
     message = await conv_service.add_message(
         db=db_session,
@@ -430,7 +451,8 @@ async def test_add_failed_action(db_session, test_conversation):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_search_conversations_by_title(db_session, test_user):
+async def test_search_conversations_by_title(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test searching conversations by title."""
     await conv_service.create_conversation(
         db=db_session,
@@ -455,7 +477,8 @@ async def test_search_conversations_by_title(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_search_conversations_by_message_content(db_session, test_user):
+async def test_search_conversations_by_message_content(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test searching conversations by message content."""
     conv = await conv_service.create_conversation(
         db=db_session,
@@ -485,7 +508,7 @@ async def test_search_conversations_by_message_content(db_session, test_user):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_generate_title_from_prompt():
+async def test_generate_title_from_prompt() -> None:
     """Test automatic title generation."""
     # Test basic cleanup
     title = conv_service.generate_title_from_prompt("create a beat in C major")
@@ -509,7 +532,8 @@ async def test_generate_title_from_prompt():
 
 
 @pytest.mark.asyncio
-async def test_get_conversation_preview(db_session, conversation_with_messages):
+async def test_get_conversation_preview(db_session: AsyncSession, conversation_with_messages: Any) -> None:
+
     """Test getting conversation preview."""
     from sqlalchemy.orm import selectinload
     result = await db_session.execute(
@@ -525,7 +549,8 @@ async def test_get_conversation_preview(db_session, conversation_with_messages):
 
 
 @pytest.mark.asyncio
-async def test_get_conversation_preview_empty(db_session, test_conversation):
+async def test_get_conversation_preview_empty(db_session: AsyncSession, test_conversation: Any) -> None:
+
     """Test getting preview from empty conversation."""
     from sqlalchemy.orm import selectinload
     result = await db_session.execute(
@@ -540,7 +565,8 @@ async def test_get_conversation_preview_empty(db_session, test_conversation):
 
 
 @pytest.mark.asyncio
-async def test_get_conversation_preview_no_user_message(db_session, test_user):
+async def test_get_conversation_preview_no_user_message(db_session: AsyncSession, test_user: Any) -> None:
+
     """Preview is empty when conversation has only assistant messages."""
     from sqlalchemy.orm import selectinload
     conv = await conv_service.create_conversation(
@@ -563,7 +589,8 @@ async def test_get_conversation_preview_no_user_message(db_session, test_user):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_full_conversation_flow(db_session, test_user):
+async def test_full_conversation_flow(db_session: AsyncSession, test_user: Any) -> None:
+
     """Test complete conversation workflow."""
     # 1. Create conversation
     conversation = await conv_service.create_conversation(
@@ -624,7 +651,8 @@ async def test_full_conversation_flow(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_cascade_delete_messages_and_actions(db_session, test_user, conversation_with_messages):
+async def test_cascade_delete_messages_and_actions(db_session: AsyncSession, test_user: Any, conversation_with_messages: Any) -> None:
+
     """Test that deleting conversation cascades to messages and actions."""
     conversation_id = conversation_with_messages.id
     
