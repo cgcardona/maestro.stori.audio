@@ -12,6 +12,7 @@
 |-----------|---------|
 | **[guides/](guides/)** | How-to: setup, integrate, testing, assets, security. |
 | **[reference/](reference/)** | API and architecture reference. |
+| **[architecture/](architecture/)** | Deep architecture docs: Muse VCS, boundary rules, system evolution analysis. |
 | **[protocol/](protocol/)** | Normative specs: Muse/Variation terminology, wire contract, end-to-end spec. |
 | **[roadmaps/](roadmaps/)** | Roadmaps and future work (e.g. neural MIDI). |
 
@@ -73,7 +74,19 @@ Frontend integration guide for project state serialization: how to build the `pr
 
 ---
 
-## 9. [guides/security.md](guides/security.md)
+## 9. Muse VCS — Musical Version Control
+
+| Doc | Description |
+|-----|-------------|
+| [architecture/muse-vcs.md](architecture/muse-vcs.md) | **Canonical Muse VCS reference:** module map, HTTP API, VCS primitives, boundary rules. Start here. |
+| [architecture/muse_e2e_demo.md](architecture/muse_e2e_demo.md) | E2E tour de force: run the full VCS lifecycle demo and read the expected output. |
+| [architecture/boundary_rules.md](architecture/boundary_rules.md) | 17 AST-enforced import boundary rules (variation + Muse VCS). |
+| [architecture/maestro-muse-evolution.md](architecture/maestro-muse-evolution.md) | Phase 1 analysis: layered architecture decomposition (historical; see `muse-vcs.md` for current state). |
+| [architecture/muse-persistent-history-bridge.md](architecture/muse-persistent-history-bridge.md) | Phase 2 conceptual spec: authority model and abstractions (historical; now implemented). |
+
+---
+
+## 10. [guides/security.md](guides/security.md)
 
 Security audit summary, go-live checklist, and service exposure (Qdrant, DB, nginx SSL).
 
