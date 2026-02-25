@@ -53,7 +53,7 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 
 - `music_service.py` — FastAPI (port 10002), flat module layout. Proxies to HF Space Gradio API for inference.
 - **Instrument resolution:** `resolve_gm_program(role)` → GM program, `resolve_tmidix_name(role)` → TMIDIX string, `_resolve_melodic_index(role)` → channel (0=bass, 1=keys, 2=other).
-- **MIDI pipeline:** `create_seed_midi()` → Gradio → `parse_midi_to_notes()` → `filter_channels_for_instruments()` → `generate_tool_calls()` → DAW.
+- **MIDI pipeline:** `select_seed()` (curated library) → Gradio → `parse_midi_to_notes()` → `filter_channels_for_instruments()` → `generate_tool_calls()` → DAW.
 - When adding GM aliases: extend `_GM_ALIASES` AND add parametrized cases in `test_gm_resolution.py`.
 
 ## Anti-patterns (never do these)

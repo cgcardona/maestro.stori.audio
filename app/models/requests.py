@@ -180,6 +180,10 @@ class CommitVariationRequest(CamelModel):
         default=None,
         description="Idempotency key for the request"
     )
+    force: bool = Field(
+        default=False,
+        description="Bypass drift safety check (use when working tree divergence is intentional)"
+    )
 
 
 class DiscardVariationRequest(CamelModel):

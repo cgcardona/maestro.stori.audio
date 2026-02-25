@@ -1428,8 +1428,7 @@ Tests: `tests/test_orpheus_client.py` (`TestGpuColdStartRetry`).
 | **Genre expressiveness profiles (14 genres)** | Done | `app/services/expressiveness.py` (PROFILES) |
 | **Orpheus MIDI parser: full CC/PB/AT extraction** | Done | `orpheus-music/music_service.py` (parse\_midi\_to\_notes) |
 | **Orpheus token budget raised (1024 max, 24-64/bar)** | Done | `orpheus-music/music_service.py`, `orpheus-music/generation_policy.py` |
-| **Key-aware seed transposition** | Done | `orpheus-music/music_service.py` (create\_seed\_midi) |
-| **Genre seed library (16 genres with CC + velocity curves)** | Done | `orpheus-music/music_service.py` (\_GENRE\_SEEDS) |
+| **Curated seed library (genre-matched seeds from 230K Loops dataset)** | Done | `orpheus-music/seed_selector.py`, `orpheus-music/build_seed_library.py` |
 | **Time signature-aware region calculation** | Done | `app/core/planner/conversion.py` (\_beats\_per\_bar) |
 | **MIDI analysis tooling (reference corpus)** | Done | `scripts/analyze_midi.py`, `scripts/download_reference_midi.py` |
 | **Auto-section parsing (single-prompt multi-part)** | Done | `app/core/maestro_agent_teams/sections.py` |

@@ -64,55 +64,37 @@ KEYS = [None, "C", "Am", "F#", "Bb", "Em"]
 
 INTENT_VECTORS: dict[str, dict[str, Any]] = {
     "neutral": {
-        "tone_brightness": 0.0, "tone_warmth": 0.0,
-        "energy_intensity": 0.0, "energy_excitement": 0.0,
-        "complexity": 0.5,
+        "emotion_vector": {"energy": 0.5, "valence": 0.0, "tension": 0.3, "intimacy": 0.5, "motion": 0.5},
     },
     "dark_intense": {
-        "tone_brightness": -0.9, "tone_warmth": -0.5,
-        "energy_intensity": 0.9, "energy_excitement": 0.7,
-        "complexity": 0.8,
-        "musical_goals": ["dark", "energetic", "intense"],
+        "emotion_vector": {"energy": 0.9, "valence": -0.9, "tension": 0.8, "intimacy": 0.2, "motion": 0.7},
+        "intent_goals": [{"name": "dark"}, {"name": "energetic"}, {"name": "intense"}],
     },
     "bright_chill": {
-        "tone_brightness": 0.8, "tone_warmth": 0.7,
-        "energy_intensity": -0.6, "energy_excitement": -0.3,
-        "complexity": 0.3,
-        "musical_goals": ["bright", "chill", "peaceful"],
+        "emotion_vector": {"energy": 0.2, "valence": 0.8, "tension": 0.1, "intimacy": 0.7, "motion": 0.3},
+        "intent_goals": [{"name": "bright"}, {"name": "chill"}, {"name": "peaceful"}],
     },
     "cinematic_build": {
-        "tone_brightness": 0.2, "tone_warmth": 0.4,
-        "energy_intensity": 0.6, "energy_excitement": 0.8,
-        "complexity": 0.9,
-        "musical_goals": ["cinematic", "dense", "intense"],
+        "emotion_vector": {"energy": 0.7, "valence": 0.2, "tension": 0.6, "intimacy": 0.4, "motion": 0.8},
+        "intent_goals": [{"name": "cinematic"}, {"name": "dense"}, {"name": "intense"}],
     },
     "minimal_sparse": {
-        "tone_brightness": -0.2, "tone_warmth": 0.1,
-        "energy_intensity": -0.8, "energy_excitement": -0.7,
-        "complexity": 0.1,
-        "musical_goals": ["minimal", "calm"],
+        "emotion_vector": {"energy": 0.1, "valence": -0.2, "tension": 0.1, "intimacy": 0.6, "motion": 0.15},
+        "intent_goals": [{"name": "minimal"}, {"name": "calm"}],
     },
     "club_ready": {
-        "tone_brightness": 0.3, "tone_warmth": -0.2,
-        "energy_intensity": 0.7, "energy_excitement": 0.9,
-        "complexity": 0.4,
-        "musical_goals": ["club", "energetic"],
+        "emotion_vector": {"energy": 0.85, "valence": 0.3, "tension": 0.4, "intimacy": 0.1, "motion": 0.9},
+        "intent_goals": [{"name": "club"}, {"name": "energetic"}],
     },
     "max_complexity": {
-        "tone_brightness": 0.0, "tone_warmth": 0.0,
-        "energy_intensity": 0.5, "energy_excitement": 0.5,
-        "complexity": 1.0,
-        "musical_goals": ["dense", "maximal"],
+        "emotion_vector": {"energy": 0.7, "valence": 0.0, "tension": 0.5, "intimacy": 0.3, "motion": 0.7},
+        "intent_goals": [{"name": "dense"}, {"name": "maximal"}],
     },
     "extreme_low": {
-        "tone_brightness": -1.0, "tone_warmth": -1.0,
-        "energy_intensity": -1.0, "energy_excitement": -1.0,
-        "complexity": 0.0,
+        "emotion_vector": {"energy": 0.0, "valence": -1.0, "tension": 0.0, "intimacy": 0.0, "motion": 0.0},
     },
     "extreme_high": {
-        "tone_brightness": 1.0, "tone_warmth": 1.0,
-        "energy_intensity": 1.0, "energy_excitement": 1.0,
-        "complexity": 1.0,
+        "emotion_vector": {"energy": 1.0, "valence": 1.0, "tension": 1.0, "intimacy": 1.0, "motion": 1.0},
     },
 }
 
@@ -194,22 +176,19 @@ def build_payload(
     top_p_override: Optional[float] = None,
 ) -> dict:
     intent = INTENT_VECTORS.get(intent_profile, INTENT_VECTORS["neutral"])
-    payload = {
+    payload: dict[str, Any] = {
         "genre": genre,
         "tempo": TEMPO_MAP.get(genre, 120),
         "instruments": instruments,
         "bars": bars,
         "quality_preset": quality_preset,
-        "tone_brightness": intent["tone_brightness"],
-        "tone_warmth": intent["tone_warmth"],
-        "energy_intensity": intent["energy_intensity"],
-        "energy_excitement": intent["energy_excitement"],
-        "complexity": intent["complexity"],
     }
     if key:
         payload["key"] = key
-    if intent.get("musical_goals"):
-        payload["musical_goals"] = intent["musical_goals"]
+    if "emotion_vector" in intent:
+        payload["emotion_vector"] = intent["emotion_vector"]
+    if "intent_goals" in intent:
+        payload["intent_goals"] = intent["intent_goals"]
     if temperature_override is not None:
         payload["temperature"] = temperature_override
     if top_p_override is not None:

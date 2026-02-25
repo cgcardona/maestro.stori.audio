@@ -1,9 +1,11 @@
-"""Tests for Muse persistent variation storage — roundtrip + commit replay.
+"""Tests for Muse persistent variation storage, lineage, and replay.
 
 Verifies:
 - Variation → DB → domain model roundtrip fidelity.
 - Commit-from-DB produces identical results to commit-from-memory.
-- muse_repository module respects boundary rules.
+- Lineage graph formation and HEAD tracking.
+- Replay plan construction and determinism.
+- muse_repository and muse_replay module boundary rules.
 """
 
 import ast
@@ -20,7 +22,9 @@ from app.models.variation import (
     Phrase,
     Variation,
 )
-from app.services import muse_repository
+from app.services import muse_repository, muse_replay
+from app.services.muse_repository import HistoryNode
+from app.services.muse_replay import ReplayPlan
 
 
 @pytest.fixture
@@ -302,6 +306,278 @@ async def test_commit_replay_from_db(async_session: AsyncSession):
 
 
 # ---------------------------------------------------------------------------
+# Phase 5 — Lineage graph tests
+# ---------------------------------------------------------------------------
+
+
+def _make_child_variation(parent_id: str, intent: str = "child") -> Variation:
+    """Build a simple variation for lineage tests."""
+    vid = str(uuid.uuid4())
+    pid = str(uuid.uuid4())
+    return Variation(
+        variation_id=vid,
+        intent=intent,
+        ai_explanation=f"explanation for {intent}",
+        affected_tracks=["track-1"],
+        affected_regions=["region-1"],
+        beat_range=(0.0, 4.0),
+        phrases=[
+            Phrase(
+                phrase_id=pid,
+                track_id="track-1",
+                region_id="region-1",
+                start_beat=0.0,
+                end_beat=4.0,
+                label=f"Phrase for {intent}",
+                note_changes=[
+                    NoteChange(
+                        note_id=str(uuid.uuid4()),
+                        change_type="added",
+                        after=MidiNoteSnapshot(
+                            pitch=60, start_beat=0.0, duration_beats=1.0,
+                            velocity=100, channel=0,
+                        ),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+@pytest.mark.anyio
+async def test_set_and_get_head(async_session: AsyncSession):
+    """set_head marks a variation as HEAD, get_head retrieves it."""
+    var = _make_variation()
+    await muse_repository.save_variation(
+        async_session, var,
+        project_id="proj-head", base_state_id="s1", conversation_id="c",
+        region_metadata={},
+    )
+    await async_session.commit()
+
+    head = await muse_repository.get_head(async_session, "proj-head")
+    assert head is None
+
+    await muse_repository.set_head(
+        async_session, var.variation_id, commit_state_id="state-99",
+    )
+    await async_session.commit()
+
+    head = await muse_repository.get_head(async_session, "proj-head")
+    assert head is not None
+    assert head.variation_id == var.variation_id
+    assert head.commit_state_id == "state-99"
+
+
+@pytest.mark.anyio
+async def test_set_head_clears_previous(async_session: AsyncSession):
+    """Setting HEAD on one variation clears HEAD from another."""
+    var_a = _make_variation()
+    var_b = _make_child_variation(var_a.variation_id, "second")
+
+    for var in [var_a, var_b]:
+        await muse_repository.save_variation(
+            async_session, var,
+            project_id="proj-swap", base_state_id="s1", conversation_id="c",
+            region_metadata={},
+        )
+    await async_session.commit()
+
+    await muse_repository.set_head(async_session, var_a.variation_id)
+    await async_session.commit()
+
+    head = await muse_repository.get_head(async_session, "proj-swap")
+    assert head is not None
+    assert head.variation_id == var_a.variation_id
+
+    await muse_repository.set_head(async_session, var_b.variation_id)
+    await async_session.commit()
+
+    head = await muse_repository.get_head(async_session, "proj-swap")
+    assert head is not None
+    assert head.variation_id == var_b.variation_id
+
+
+@pytest.mark.anyio
+async def test_move_head(async_session: AsyncSession):
+    """move_head moves HEAD pointer without any StateStore involvement."""
+    var_a = _make_variation()
+    var_b = _make_child_variation(var_a.variation_id, "b")
+
+    for var in [var_a, var_b]:
+        await muse_repository.save_variation(
+            async_session, var,
+            project_id="proj-move", base_state_id="s1", conversation_id="c",
+            region_metadata={},
+        )
+    await async_session.commit()
+
+    await muse_repository.set_head(async_session, var_a.variation_id)
+    await async_session.commit()
+
+    await muse_repository.move_head(async_session, "proj-move", var_b.variation_id)
+    await async_session.commit()
+
+    head = await muse_repository.get_head(async_session, "proj-move")
+    assert head is not None
+    assert head.variation_id == var_b.variation_id
+
+
+@pytest.mark.anyio
+async def test_get_children(async_session: AsyncSession):
+    """get_children returns child variations."""
+    parent = _make_variation()
+    child_a = _make_child_variation(parent.variation_id, "child-a")
+    child_b = _make_child_variation(parent.variation_id, "child-b")
+
+    await muse_repository.save_variation(
+        async_session, parent,
+        project_id="proj-c", base_state_id="s1", conversation_id="c",
+        region_metadata={},
+    )
+    for child in [child_a, child_b]:
+        await muse_repository.save_variation(
+            async_session, child,
+            project_id="proj-c", base_state_id="s1", conversation_id="c",
+            region_metadata={},
+            parent_variation_id=parent.variation_id,
+        )
+    await async_session.commit()
+
+    children = await muse_repository.get_children(async_session, parent.variation_id)
+    assert len(children) == 2
+    child_ids = {c.variation_id for c in children}
+    assert child_a.variation_id in child_ids
+    assert child_b.variation_id in child_ids
+
+
+@pytest.mark.anyio
+async def test_get_lineage(async_session: AsyncSession):
+    """get_lineage returns root-first path."""
+    root = _make_variation()
+    mid = _make_child_variation(root.variation_id, "mid")
+    leaf = _make_child_variation(mid.variation_id, "leaf")
+
+    await muse_repository.save_variation(
+        async_session, root,
+        project_id="proj-l", base_state_id="s1", conversation_id="c",
+        region_metadata={},
+    )
+    await muse_repository.save_variation(
+        async_session, mid,
+        project_id="proj-l", base_state_id="s1", conversation_id="c",
+        region_metadata={},
+        parent_variation_id=root.variation_id,
+    )
+    await muse_repository.save_variation(
+        async_session, leaf,
+        project_id="proj-l", base_state_id="s1", conversation_id="c",
+        region_metadata={},
+        parent_variation_id=mid.variation_id,
+    )
+    await async_session.commit()
+
+    lineage = await muse_repository.get_lineage(async_session, leaf.variation_id)
+    assert len(lineage) == 3
+    assert lineage[0].variation_id == root.variation_id
+    assert lineage[1].variation_id == mid.variation_id
+    assert lineage[2].variation_id == leaf.variation_id
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Replay plan tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_replay_plan_linear(async_session: AsyncSession):
+    """build_replay_plan reconstructs A → B lineage correctly."""
+    var_a = _make_variation()
+    var_b = _make_child_variation(var_a.variation_id, "child-b")
+
+    await muse_repository.save_variation(
+        async_session, var_a,
+        project_id="proj-rp", base_state_id="s1", conversation_id="c",
+        region_metadata={},
+    )
+    await muse_repository.save_variation(
+        async_session, var_b,
+        project_id="proj-rp", base_state_id="s1", conversation_id="c",
+        region_metadata={},
+        parent_variation_id=var_a.variation_id,
+    )
+    await async_session.commit()
+
+    plan = await muse_replay.build_replay_plan(
+        async_session, "proj-rp", var_b.variation_id,
+    )
+    assert plan is not None
+    assert plan.ordered_variation_ids == [var_a.variation_id, var_b.variation_id]
+    assert len(plan.ordered_phrase_ids) == len(var_a.phrases) + len(var_b.phrases)
+    assert len(plan.region_updates) >= 1
+
+
+@pytest.mark.anyio
+async def test_replay_plan_single_variation(async_session: AsyncSession):
+    """Replay plan for a root variation (no parent) works correctly."""
+    var = _make_variation()
+    await muse_repository.save_variation(
+        async_session, var,
+        project_id="proj-single", base_state_id="s1", conversation_id="c",
+        region_metadata={},
+    )
+    await async_session.commit()
+
+    plan = await muse_replay.build_replay_plan(
+        async_session, "proj-single", var.variation_id,
+    )
+    assert plan is not None
+    assert plan.ordered_variation_ids == [var.variation_id]
+    assert len(plan.ordered_phrase_ids) == len(var.phrases)
+
+
+@pytest.mark.anyio
+async def test_replay_plan_nonexistent_returns_none(async_session: AsyncSession):
+    """Replay plan for nonexistent variation returns None."""
+    plan = await muse_replay.build_replay_plan(
+        async_session, "proj-x", "nonexistent",
+    )
+    assert plan is None
+
+
+@pytest.mark.anyio
+async def test_replay_preserves_phrase_ordering(async_session: AsyncSession):
+    """Restart safety: persist, reload, build plan — phrase order is stable."""
+    var_a = _make_variation()
+    var_b = _make_child_variation(var_a.variation_id, "after-restart")
+
+    await muse_repository.save_variation(
+        async_session, var_a,
+        project_id="proj-restart", base_state_id="s1", conversation_id="c",
+        region_metadata={},
+    )
+    await muse_repository.save_variation(
+        async_session, var_b,
+        project_id="proj-restart", base_state_id="s1", conversation_id="c",
+        region_metadata={},
+        parent_variation_id=var_a.variation_id,
+    )
+    await async_session.commit()
+
+    plan = await muse_replay.build_replay_plan(
+        async_session, "proj-restart", var_b.variation_id,
+    )
+    assert plan is not None
+
+    expected_phrases = [
+        p.phrase_id for p in var_a.phrases
+    ] + [
+        p.phrase_id for p in var_b.phrases
+    ]
+    assert plan.ordered_phrase_ids == expected_phrases
+
+
+# ---------------------------------------------------------------------------
 # Boundary check — muse_repository must not import StateStore
 # ---------------------------------------------------------------------------
 
@@ -331,4 +607,36 @@ def test_muse_repository_boundary():
                 for alias in node.names:
                     assert alias.name not in forbidden, (
                         f"muse_repository imports forbidden name: {alias.name}"
+                    )
+
+
+# ---------------------------------------------------------------------------
+# Boundary check — muse_replay must be pure data (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+def test_muse_replay_boundary():
+    """muse_replay must not import StateStore, executor, or LLM handlers."""
+    import importlib
+    spec = importlib.util.find_spec("app.services.muse_replay")
+    assert spec is not None and spec.origin is not None
+
+    with open(spec.origin) as f:
+        source = f.read()
+
+    tree = ast.parse(source)
+    forbidden_modules = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
+    forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            module = getattr(node, "module", "") or ""
+            for fb in forbidden_modules:
+                assert fb not in module, (
+                    f"muse_replay imports forbidden module: {module}"
+                )
+            if hasattr(node, "names"):
+                for alias in node.names:
+                    assert alias.name not in forbidden_names, (
+                        f"muse_replay imports forbidden name: {alias.name}"
                     )

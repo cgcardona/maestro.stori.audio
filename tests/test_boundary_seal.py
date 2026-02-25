@@ -198,6 +198,73 @@ class TestMuseRepositoryBoundary:
                 assert "services.variation" not in node.module
 
 
+class TestMuseReplayBoundary:
+    """muse_replay must not import StateStore, executor, or LLM handlers."""
+
+    def test_no_state_store_or_executor_import(self):
+        filepath = ROOT / "app" / "services" / "muse_replay.py"
+        tree = ast.parse(filepath.read_text())
+        forbidden = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                for fb in forbidden:
+                    assert fb not in node.module, (
+                        f"muse_replay imports forbidden module: {node.module}"
+                    )
+
+    def test_no_forbidden_names(self):
+        filepath = ROOT / "app" / "services" / "muse_replay.py"
+        tree = ast.parse(filepath.read_text())
+        forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    assert alias.name not in forbidden_names, (
+                        f"muse_replay imports forbidden name: {alias.name}"
+                    )
+
+
+class TestMuseDriftBoundary:
+    """muse_drift must not import StateStore, executor, or LLM handlers."""
+
+    def test_no_state_store_or_executor_import(self):
+        filepath = ROOT / "app" / "services" / "muse_drift.py"
+        tree = ast.parse(filepath.read_text())
+        forbidden = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                for fb in forbidden:
+                    assert fb not in node.module, (
+                        f"muse_drift imports forbidden module: {node.module}"
+                    )
+
+    def test_no_forbidden_names(self):
+        filepath = ROOT / "app" / "services" / "muse_drift.py"
+        tree = ast.parse(filepath.read_text())
+        forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    assert alias.name not in forbidden_names, (
+                        f"muse_drift imports forbidden name: {alias.name}"
+                    )
+
+    def test_no_get_or_create_store_call(self):
+        filepath = ROOT / "app" / "services" / "muse_drift.py"
+        tree = ast.parse(filepath.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                func = node.func
+                name = ""
+                if isinstance(func, ast.Name):
+                    name = func.id
+                elif isinstance(func, ast.Attribute):
+                    name = func.attr
+                assert name != "get_or_create_store", (
+                    "muse_drift calls get_or_create_store"
+                )
+
+
 # ── 3.3  Golden shape tests ──
 
 

@@ -356,7 +356,7 @@ Independent instruments (keys, melody, guitar, pads, etc.) ignore `SectionSignal
    - Section-specific musical decisions are delegated to Level 3
 2. Parent executes `create_track` immediately, captures real `trackId`
 3. Groups remaining calls into section pairs `(region, generate_midi)`
-4. Runs section children **sequentially** for cross-section musical continuity — each section uses the previous section's generated notes as a continuation seed for Orpheus, so the transformer extends from familiar harmonic context instead of starting cold from the genre seed every time. Bass children additionally self-gate via drum signals.
+4. Runs section children **sequentially** for cross-section musical continuity. Bass children additionally self-gate via drum signals.
 5. **Server-owned retries** — `_dispatch_section_children` automatically retries failed sections (up to 2 retries per section, 2s/5s delays). Retries re-use the original frozen `SectionContract`, skip region creation if the region already exists (idempotent), pass continuity notes from the preceding section, and check the Orpheus circuit breaker before each retry round. No LLM involvement — the server replays the contract deterministically.
 6. Results are collapsed into **one summary tool-result message** per dispatch batch (plus `"..."` stubs for remaining `tool_call_id`s), keeping the LLM conversation small regardless of section count.
 7. Executes `effect` call at the end
@@ -373,8 +373,8 @@ For single-section compositions, the parent uses the sequential execution path (
 5. Execute `stori_add_midi_region` — all structural params (`trackId`, `startBeat`, `durationBeats`) come **exclusively from the frozen contract**, never from LLM-proposed values. LLM drift is silently corrected. **Idempotent:** if a region already exists at the same (trackId, startBeat, durationBeats) location, the existing region's ID is returned with `skipped: true` and no `toolCall` event is emitted to the frontend — preventing duplicate-region errors when agents retry after context truncation.
 6. Capture `regionId` from result
 7. **Section reasoning**: brief streamed LLM call (`_reason_before_generate`) — reasons about section-specific musical approach (density, register, rhythmic choices). Emits `type: "reasoning"` events tagged with `agentId` + `sectionName` so the frontend can nest section-specific thinking under the correct section header. Returns a refined prompt for the generate call, or falls back to the parent's prompt on failure.
-8. Execute `stori_generate_midi` — structural params (`trackId`, `regionId`, `role`, `bars`, `key`, `start_beat`, `tempo`) also come from the frozen contract. If `previous_notes` were passed from the preceding section, they are threaded through the composition context to the Orpheus proxy, which uses them to build a continuation seed instead of the generic genre seed.
-9. Extract generated notes from SSE events and store them on `SectionResult.generated_notes` for the next section's continuity seed
+8. Execute `stori_generate_midi` — structural params (`trackId`, `regionId`, `role`, `bars`, `key`, `start_beat`, `tempo`) also come from the frozen contract. Orpheus selects a curated seed MIDI from the pre-built seed library (`select_seed()`) matched to the request genre.
+9. Extract generated notes from SSE events and store them on `SectionResult.generated_notes`
 10. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
 11. If drums: call `section_signals.signal_complete(section_id, contract_hash=..., success=True, drum_notes=...)`
 12. Emit `status` SSE event: `"{instrument} / {section}: N notes generated"`
@@ -556,16 +556,11 @@ Key functions in `orpheus-music/music_service.py`:
 - `resolve_tmidix_name(role)` — role name → TMIDIX string for the Gradio `prime_instruments` parameter
 - `_resolve_melodic_index(role)` — role → preferred MIDI channel index by GM category (bass=0, keys=1, everything else=2)
 
-If none of the requested instruments resolve, the fallback is `["Drums", "Electric Bass(finger)"]` with a warning. Unresolved individual instruments are logged but don't block generation. The seed MIDI embeds GM program change events matching the resolved instruments so the TMIDIX tokenizer on the HF Space encodes the correct instrument identity into the token stream.
+If none of the requested instruments resolve, the fallback is `["Drums", "Electric Bass(finger)"]` with a warning. Unresolved individual instruments are logged but don't block generation. The curated seed MIDI files contain multi-instrument content; the TMIDIX tokenizer on the HF Space encodes instrument identity from GM program change events in the token stream.
 
-### Cross-section musical continuity
+### Seed selection
 
-Sections within an instrument execute sequentially. The first section generates from a genre-specific seed MIDI. Subsequent sections receive the previous section's generated notes as a **multi-channel continuation seed** — the proxy builds a new MIDI file preserving original MIDI channels, program changes, and track separation from 8–16 bars (dynamic context window) of the prior section's output. This gives Orpheus ~1500+ tokens of prime context instead of ~100, producing coherent harmonic arcs across verse/chorus/bridge boundaries.
-
-The continuation seed preserves:
-- Original MIDI channel assignments (never collapsed to channel 0)
-- Per-channel GM program change events (patch numbers)
-- Track separation between instruments
+Every Orpheus generation is primed with a curated seed MIDI from the pre-built seed library (`seed_library/seeds/`). Seeds are selected by genre via `select_seed()`, which picks a random high-quality seed from the genre bucket (or falls back to the `general` bucket). Each seed contains ~500 notes / ~1,500 tokens from the Orpheus 230K Loops dataset, giving the transformer rich harmonic and rhythmic context for continuation. Seed quality is validated at selection time via `analyze_seed()` — seeds below minimum note/byte thresholds are rejected.
 
 ### Persistent composition sessions
 

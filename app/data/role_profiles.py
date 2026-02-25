@@ -133,6 +133,23 @@ class RoleProfile:
     orpheus_complexity: float
     orpheus_density_hint: str
 
+    def to_summary_dict(self) -> dict[str, float]:
+        """Return the 12-field expressive subset transmitted to Orpheus v2."""
+        return {
+            "rest_ratio": self.rest_ratio,
+            "syncopation_ratio": self.syncopation_ratio,
+            "swing_ratio": self.swing_ratio,
+            "pitch_range_semitones": self.pitch_range_semitones,
+            "contour_complexity": self.contour_complexity,
+            "velocity_entropy": self.velocity_entropy,
+            "staccato_ratio": self.staccato_ratio,
+            "legato_ratio": self.legato_ratio,
+            "sustained_ratio": self.sustained_ratio,
+            "motif_pitch_trigram_repeat": self.motif_pitch_trigram_repeat,
+            "polyphony_mean": self.polyphony_mean,
+            "register_mean_pitch": self.register_mean_pitch,
+        }
+
     def prompt_block(self) -> str:
         """Render a compact Musical DNA block for LLM system prompts."""
         poly_desc = (

@@ -208,6 +208,55 @@ async def commit_variation(
                     db, commit_request.variation_id,
                 )
 
+            # ── 5b. Drift safety check ────────────────────────────────
+            try:
+                from app.services.muse_replay import reconstruct_head_snapshot
+                from app.services.muse_drift import compute_drift_report, CommitConflictPayload
+
+                head_snap = await reconstruct_head_snapshot(db, commit_request.project_id)
+                if head_snap is not None:
+                    from app.core.executor.snapshots import capture_base_snapshot
+                    working = capture_base_snapshot(project_store)
+                    drift = compute_drift_report(
+                        project_id=commit_request.project_id,
+                        head_variation_id=head_snap.variation_id,
+                        head_snapshot_notes=head_snap.notes,
+                        working_snapshot_notes=working.notes,
+                        track_regions=head_snap.track_regions,
+                        head_cc=head_snap.cc,
+                        working_cc=working.cc,
+                        head_pb=head_snap.pitch_bends,
+                        working_pb=working.pitch_bends,
+                        head_at=head_snap.aftertouch,
+                        working_at=working.aftertouch,
+                    )
+                    if drift.requires_user_action() and not commit_request.force:
+                        import dataclasses
+                        conflict = CommitConflictPayload.from_drift_report(drift)
+                        raise HTTPException(
+                            status_code=409,
+                            detail={
+                                "error": "WORKING_TREE_DIRTY",
+                                "message": (
+                                    f"Working tree has diverged from HEAD ({drift.severity.value}). "
+                                    f"{drift.total_changes} change(s) across "
+                                    f"{len(drift.changed_regions) + len(drift.added_regions) + len(drift.deleted_regions)} region(s). "
+                                    f"Use force=true to bypass."
+                                ),
+                                "drift": dataclasses.asdict(conflict),
+                            },
+                        )
+                    if not drift.is_clean:
+                        logger.warning(
+                            "⚠️ Drift detected (force=True): %s (%d changes)",
+                            drift.severity.value,
+                            drift.total_changes,
+                        )
+            except HTTPException:
+                raise
+            except Exception:
+                logger.debug("Drift safety check skipped", exc_info=True)
+
             # ── 6. Apply variation phrases ───────────────────────────────
             result = await apply_variation_phrases(
                 variation=variation,
@@ -223,9 +272,16 @@ async def commit_variation(
                     "message": result.error or "Unknown error",
                 })
 
-            # ── 7. Mark committed in DB + in-memory ──────────────────────
+            # ── 7. Mark committed in DB + in-memory, set HEAD ────────────
+            new_state_id = project_store.get_state_id()
+
             if from_db:
                 await muse_repository.mark_committed(db, commit_request.variation_id)
+                await muse_repository.set_head(
+                    db,
+                    commit_request.variation_id,
+                    commit_state_id=new_state_id,
+                )
 
             vstore = get_variation_store()
             mem_record = vstore.get(commit_request.variation_id)
@@ -235,8 +291,6 @@ async def commit_variation(
                     mem_record.transition_to(VariationStatus.COMMITTED)
                 except InvalidTransitionError:
                     pass
-
-            new_state_id = project_store.get_state_id()
 
             logger.info(
                 "Variation committed",

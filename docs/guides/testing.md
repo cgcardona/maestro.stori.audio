@@ -56,7 +56,7 @@ docker compose build orpheus && docker compose up -d orpheus
 docker compose exec orpheus sh -c "pytest test_*.py -v"
 ```
 
-Tests cover: GM instrument resolution (`test_gm_resolution.py` — role → GM program → TMIDIX name, 56 tests), MIDI pipeline (`test_midi_pipeline.py` — seed MIDI, parse, tool call generation, fuzzy cache, 77 tests), API contracts (`test_endpoints.py` — all endpoints, 13 tests), cache system (LRU + TTL), generation policy (intent-to-controls mapping, token budget allocation), quality metrics, and job queue (submit/cancel/dedupe/cleanup).
+Tests cover: GM instrument resolution (`test_gm_resolution.py` — role → GM program → TMIDIX name), MIDI pipeline (`test_midi_pipeline.py` — parse, tool call generation, fuzzy cache), API contracts (`test_endpoints.py` — all endpoints), cache system (LRU + TTL), generation policy (intent-to-controls mapping, token budget allocation), quality metrics, and job queue (submit/cancel/dedupe/cleanup).
 
 ---
 

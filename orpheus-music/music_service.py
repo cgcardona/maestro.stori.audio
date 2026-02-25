@@ -15,7 +15,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from gradio_client import Client, handle_file
-from midiutil import MIDIFile
 from dataclasses import dataclass, field
 from collections import OrderedDict
 from enum import Enum
@@ -26,7 +25,6 @@ import math
 import mido
 import random
 import traceback
-import tempfile
 import os
 import copy
 import json
@@ -40,8 +38,11 @@ from generation_policy import (
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_P,
     get_policy_version,
+    build_controls,
+    build_fulfillment_report,
 )
 from quality_metrics import analyze_quality, compare_generations, rejection_score
+from seed_selector import select_seed
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -225,8 +226,6 @@ class CacheEntry:
 # Result cache: stores complete generation results (LRU with TTL)
 _result_cache: OrderedDict[str, CacheEntry] = OrderedDict()
 
-# Seed MIDI cache: reuses seed files for same genre/tempo
-_seed_cache: dict[str, str] = {}
 
 def _quantize(value: float, step: float = _INTENT_QUANT_STEP) -> float:
     """Snap a continuous value to the nearest grid step for cache-friendly quantization."""
@@ -242,24 +241,22 @@ def _canonical_instruments(instruments: List[str]) -> List[str]:
     return sorted(lowered, key=lambda x: canonical_order.index(x) if x in canonical_order else 999)
 
 
-def _canonical_goals(goals: Optional[List[str]]) -> List[str]:
-    return sorted(set(g.lower().strip() for g in (goals or [])))
-
 
 def _cache_key_data(request) -> dict:
     """Build a canonical, quantized dict of the request's cache-relevant fields."""
+    ev = request.emotion_vector
     return {
         "genre": request.genre.lower().strip(),
         "tempo": request.tempo,
         "key": (request.key or "").lower().strip(),
         "instruments": _canonical_instruments(request.instruments),
         "bars": request.bars,
-        "musical_goals": _canonical_goals(request.musical_goals),
-        "tone_brightness": _quantize(request.tone_brightness),
-        "tone_warmth": _quantize(request.tone_warmth),
-        "energy_intensity": _quantize(request.energy_intensity),
-        "energy_excitement": _quantize(request.energy_excitement),
-        "complexity": _quantize(request.complexity),
+        "intent_goals": sorted(g.name.lower() for g in (request.intent_goals or [])),
+        "energy": _quantize(ev.energy if ev else 0.5),
+        "valence": _quantize(ev.valence if ev else 0.0),
+        "tension": _quantize(ev.tension if ev else 0.3),
+        "intimacy": _quantize(ev.intimacy if ev else 0.5),
+        "motion": _quantize(ev.motion if ev else 0.5),
         "quality_preset": request.quality_preset,
     }
 
@@ -272,9 +269,8 @@ def get_cache_key(request) -> str:
 
 
 def _intent_distance(a: dict, b: dict) -> float:
-    """Euclidean distance between two cache-key dicts on intent vector axes only."""
-    axes = ["tone_brightness", "tone_warmth", "energy_intensity",
-            "energy_excitement", "complexity"]
+    """Euclidean distance between two cache-key dicts on emotion vector axes."""
+    axes = ["energy", "valence", "tension", "intimacy", "motion"]
     return math.sqrt(sum((a.get(k, 0) - b.get(k, 0)) ** 2 for k in axes))
 
 
@@ -419,44 +415,97 @@ def _load_cache_from_disk() -> int:
         return 0
 
 
+class RoleProfileSummary(BaseModel):
+    """Expressive subset of the 222K-track heuristic profile for one instrument role.
+
+    Transmitted by Maestro so Orpheus can use data-driven priors
+    without re-deriving them from scratch.
+    """
+    rest_ratio: float = 0.0
+    syncopation_ratio: float = 0.0
+    swing_ratio: float = 0.0
+    pitch_range_semitones: float = 0.0
+    contour_complexity: float = 0.0
+    velocity_entropy: float = 0.0
+    staccato_ratio: float = 0.0
+    legato_ratio: float = 0.0
+    sustained_ratio: float = 0.0
+    motif_pitch_trigram_repeat: float = 0.0
+    polyphony_mean: float = 1.0
+    register_mean_pitch: float = 60.0
+
+
+class EmotionVectorPayload(BaseModel):
+    """Full 5-axis emotion vector as computed by Maestro.
+
+    Transmitted losslessly so Orpheus never has to guess emotion.
+    """
+    energy: float = 0.5         # [0, 1]
+    valence: float = 0.0        # [-1, 1]
+    tension: float = 0.3        # [0, 1]
+    intimacy: float = 0.5       # [0, 1]
+    motion: float = 0.5         # [0, 1]
+
+
+class GenerationConstraintsPayload(BaseModel):
+    """Hard controls derived from the emotion vector by Maestro.
+
+    When present Orpheus must treat these as authoritative and skip
+    its own parallel derivation.
+    """
+    drum_density: float = 0.5
+    subdivision: int = 8
+    swing_amount: float = 0.0
+    register_center: int = 60
+    register_spread: int = 12
+    rest_density: float = 0.3
+    leap_probability: float = 0.2
+    chord_extensions: bool = False
+    borrowed_chord_probability: float = 0.0
+    harmonic_rhythm_bars: float = 1.0
+    velocity_floor: int = 60
+    velocity_ceiling: int = 100
+
+
+class IntentGoal(BaseModel):
+    """A single weighted goal in the intent specification."""
+    name: str
+    weight: float = 1.0
+    constraint_type: str = "soft"  # "hard" | "soft"
+
+
 class GenerateRequest(BaseModel):
+    """Music generation request.
+
+    Carries the full canonical intent from Maestro: emotion_vector,
+    role_profile_summary, generation_constraints, and weighted intent_goals.
+    Orpheus consumes these directly — no parallel re-derivation.
     """
-    Music generation request with rich intent support.
-    
-    Can be called with simple params (genre, tempo) or rich intent data
-    from the LLM intent system (musical_goals, tone/energy vectors).
-    """
-    # Basic params
+    # ── Core ──
     genre: str = "boom_bap"
     tempo: int = 90
     instruments: List[str] = ["drums", "bass"]
     bars: int = 4
     key: Optional[str] = None
-    
-    # Intent system outputs (from LLM classification)
-    musical_goals: Optional[List[str]] = None          # ["dark", "energetic", "minimal"]
-    tone_brightness: float = 0.0                       # -1 (dark) to +1 (bright)
-    tone_warmth: float = 0.0                           # -1 (cold) to +1 (warm)
-    energy_intensity: float = 0.0                      # -1 (calm) to +1 (intense)
-    energy_excitement: float = 0.0                     # -1 (laid back) to +1 (exciting)
-    complexity: float = 0.5                            # 0 (simple) to 1 (complex)
-    
-    # Quality control
-    quality_preset: str = "balanced"                   # "fast" | "balanced" | "quality"
-    
-    # Advanced overrides (for power users / testing)
-    temperature: Optional[float] = None                # Override computed temperature
-    top_p: Optional[float] = None                      # Override computed top_p
-    
-    # Correlation
-    composition_id: Optional[str] = None               # Cross-service correlation ID from Maestro
 
-    # Section continuity: previous section's notes used to build a
-    # continuation seed instead of the generic genre seed.
-    previous_notes: Optional[List[dict]] = None
+    # ── Canonical intent blocks ──
+    emotion_vector: Optional[EmotionVectorPayload] = None
+    role_profile_summary: Optional[RoleProfileSummary] = None
+    generation_constraints: Optional[GenerationConstraintsPayload] = None
+    intent_goals: Optional[List[IntentGoal]] = None
 
-    # Legacy support
-    style_hints: Optional[List[str]] = None            # Deprecated: use musical_goals
+    # ── Observability ──
+    seed: Optional[int] = None
+    trace_id: Optional[str] = None
+    intent_hash: Optional[str] = None
+
+    # ── Quality / overrides ──
+    quality_preset: str = "balanced"
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+
+    # ── Correlation ──
+    composition_id: Optional[str] = None
 
 
 class ToolCall(BaseModel):
@@ -1013,561 +1062,118 @@ INSTRUMENT_PROGRAMS = _InstrumentProgramsCompat()
 
 
 # ---------------------------------------------------------------------------
-# Seed MIDI: genre-specific patterns with full expressiveness
-#
-# Reference heuristics (200 MAESTRO performances + orchestral concerto):
-#   CC density:   ~27 CC events per bar (pedal-heavy classical)
-#   Velocity:     mean 64, stdev 17, full 5-127 range
-#   Timing:       92.7% of notes off 16th grid (0.06 beat deviation)
-#   Key CCs:      CC 64 (sustain), CC 67 (soft pedal), CC 11 (expression),
-#                 CC 1 (mod wheel), CC 91 (reverb)
+# Seed provenance + quality analysis
 # ---------------------------------------------------------------------------
 
-# Semitone offset from C for each key root (for transposition)
-_KEY_OFFSETS: dict[str, int] = {
-    "C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3,
-    "E": 4, "F": 5, "F#": 6, "Gb": 6, "G": 7, "G#": 8,
-    "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11,
-}
+_MIN_SEED_NOTES = 8
+_MIN_SEED_BYTES = 200
 
 
-def _key_offset(key: Optional[str]) -> int:
-    """Semitone transposition from C for a key string like 'Am', 'F#', 'Eb'."""
-    if not key:
-        return 0
-    root = key.rstrip("mM# ").rstrip("b")
-    if len(key) > 1 and key[1] in ("#", "b"):
-        root = key[:2]
-    return _KEY_OFFSETS.get(root, 0)
+def analyze_seed(path: str) -> dict:
+    """Analyze a seed MIDI file and return a provenance report.
+
+    Cheap pre-check: note count, pitch range, polyphony, density, drum hits.
+    """
+    try:
+        file_bytes = os.path.getsize(path)
+        mid = mido.MidiFile(path)
+    except Exception as e:
+        return {"error": str(e), "seed_bytes": 0, "quality_ok": False}
+
+    ppq = mid.ticks_per_beat
+    has_tempo_meta = False
+    note_count = 0
+    drum_hits = 0
+    track_count = 0
+    pitches: list[int] = []
+    simultaneous: dict[float, int] = {}
+
+    for track in mid.tracks:
+        track_has_notes = False
+        abs_tick = 0
+        for msg in track:
+            abs_tick += msg.time
+            if msg.type == "set_tempo":
+                has_tempo_meta = True
+            if msg.type == "note_on" and msg.velocity > 0:
+                note_count += 1
+                track_has_notes = True
+                beat = abs_tick / ppq if ppq else 0
+                simultaneous[round(beat, 2)] = simultaneous.get(round(beat, 2), 0) + 1
+                if msg.channel == 9:
+                    drum_hits += 1
+                else:
+                    pitches.append(msg.note)
+        if track_has_notes:
+            track_count += 1
+
+    max_beat = max(simultaneous.keys()) if simultaneous else 0
+    bars_estimate = round(max_beat / 4, 1) if max_beat > 0 else 0
+    density_per_bar = note_count / max(bars_estimate, 0.25)
+
+    pitch_range = (max(pitches) - min(pitches)) if pitches else 0
+    polyphony_mean = (
+        sum(simultaneous.values()) / len(simultaneous)
+        if simultaneous else 0
+    )
+
+    # Rough token estimate: TMIDIX uses ~3 tokens per note + program changes
+    token_estimate = note_count * 3 + track_count * 2
+
+    quality_ok = (
+        note_count >= _MIN_SEED_NOTES
+        and file_bytes >= _MIN_SEED_BYTES
+    )
+
+    return {
+        "seed_bytes": file_bytes,
+        "seed_tracks": track_count,
+        "seed_notes": note_count,
+        "seed_drum_hits": drum_hits,
+        "seed_bars_estimate": bars_estimate,
+        "seed_ppq": ppq,
+        "seed_has_tempo_meta": has_tempo_meta,
+        "seed_token_count_estimate": token_estimate,
+        "seed_pitch_range": pitch_range,
+        "seed_density_per_bar": round(density_per_bar, 1),
+        "seed_polyphony_mean": round(polyphony_mean, 2),
+        "quality_ok": quality_ok,
+    }
 
 
-def _add_sustain_pedal(midi: MIDIFile, track: int, channel: int, bars: int = 1):
-    """Add sustain pedal down/up per bar — the single most common CC in pro MIDI."""
-    for bar in range(bars):
-        beat = bar * 4
-        midi.addControllerEvent(track, channel, beat, 64, 127)
-        midi.addControllerEvent(track, channel, beat + 3.75, 64, 0)
-
-
-def _add_expression_curve(midi: MIDIFile, track: int, channel: int, bars: int = 1,
-                          low: int = 80, high: int = 120):
-    """CC 11 swell: rise to bar midpoint, fall back. ~8 events per bar."""
-    for bar in range(bars):
-        base = bar * 4
-        steps = 8
-        for i in range(steps):
-            t = i / (steps - 1)
-            # Triangle wave: 0→1→0
-            shape = 1.0 - abs(2.0 * t - 1.0)
-            val = int(low + (high - low) * shape)
-            midi.addControllerEvent(track, channel, base + i * 4 / steps, 11, min(val, 127))
-
-
-def _add_mod_wheel(midi: MIDIFile, track: int, channel: int, bars: int = 1,
-                   depth: int = 40):
-    """CC 1 (mod wheel / vibrato) — gentle rise on sustained passages."""
-    for bar in range(bars):
-        base = bar * 4
-        midi.addControllerEvent(track, channel, base, 1, 0)
-        midi.addControllerEvent(track, channel, base + 1, 1, depth // 3)
-        midi.addControllerEvent(track, channel, base + 2, 1, depth)
-        midi.addControllerEvent(track, channel, base + 3, 1, depth // 2)
-
-
-# ---------------------------------------------------------------------------
-# Genre seed definitions
-# ---------------------------------------------------------------------------
-
-def _seed_boom_bap(midi: MIDIFile, offset: int):
-    # Drums — swung kick/snare with ghost hats
-    midi.addNote(0, 9, 36, 0, 0.5, 105)
-    midi.addNote(0, 9, 42, 0, 0.25, 75)
-    midi.addNote(0, 9, 42, 0.5, 0.25, 55)        # ghost hat
-    midi.addNote(0, 9, 38, 1, 0.5, 95)
-    midi.addNote(0, 9, 42, 1.5, 0.25, 65)
-    midi.addNote(0, 9, 36, 2, 0.5, 100)
-    midi.addNote(0, 9, 42, 2, 0.25, 70)
-    midi.addNote(0, 9, 42, 2.5, 0.25, 50)        # ghost hat
-    midi.addNote(0, 9, 38, 3, 0.5, 90)
-    midi.addNote(0, 9, 42, 3, 0.25, 60)
-    midi.addNote(0, 9, 42, 3.5, 0.25, 72)
-    # Bass (ch 0)
-    midi.addNote(1, 0, 48 + offset, 0, 1.0, 100)
-    midi.addNote(1, 0, 48 + offset, 2, 0.75, 90)
-    midi.addNote(1, 0, 50 + offset, 2.75, 0.25, 80)
-    # Melody (ch 1)
-    midi.addNote(2, 1, 60 + offset, 0.5, 0.5, 85)
-    midi.addNote(2, 1, 63 + offset, 1, 0.75, 75)
-    midi.addNote(2, 1, 65 + offset, 2.5, 0.5, 70)
-    _add_sustain_pedal(midi, 2, 1, 1)
-
-
-def _seed_trap(midi: MIDIFile, offset: int):
-    # Drums — 808 kick + rapid hats with velocity ramps
-    midi.addNote(0, 9, 36, 0, 0.25, 115)
-    midi.addNote(0, 9, 36, 0.75, 0.25, 105)
-    midi.addNote(0, 9, 38, 1, 0.5, 95)
-    midi.addNote(0, 9, 39, 1, 0.5, 55)           # clap layer
-    for i in range(8):
-        vel = 60 + (i % 3) * 12
-        midi.addNote(0, 9, 42, i * 0.5, 0.125, vel)
-    # Bass
-    midi.addNote(1, 0, 48 + offset, 0, 1.5, 115)
-    midi.addNote(1, 0, 50 + offset, 1.5, 0.5, 100)
-    midi.addNote(1, 0, 46 + offset, 2, 1.5, 110)
-    _add_expression_curve(midi, 1, 0, 1, 90, 127)
-    # Melody — staccato high
-    midi.addNote(2, 1, 72 + offset, 0, 0.25, 95)
-    midi.addNote(2, 1, 74 + offset, 0.5, 0.25, 85)
-    midi.addNote(2, 1, 72 + offset, 1.5, 0.5, 90)
-
-
-def _seed_house(midi: MIDIFile, offset: int):
-    # Drums — four on the floor + off-beat hats
-    for beat in range(4):
-        midi.addNote(0, 9, 36, beat, 0.5, 105 - beat * 3)
-    for beat in range(4):
-        midi.addNote(0, 9, 42, beat + 0.5, 0.25, 78 + beat * 2)
-    midi.addNote(0, 9, 38, 1, 0.5, 90)
-    midi.addNote(0, 9, 38, 3, 0.5, 85)
-    # Bass — octave pumping
-    midi.addNote(1, 0, 36 + offset, 0, 0.75, 105)
-    midi.addNote(1, 0, 48 + offset, 1, 0.5, 85)
-    midi.addNote(1, 0, 36 + offset, 2, 0.75, 100)
-    midi.addNote(1, 0, 48 + offset, 3, 0.5, 80)
-    # Chords (ch 1) — off-beat stabs
-    for beat in range(4):
-        midi.addNote(2, 1, 60 + offset, beat + 0.5, 0.25, 75 + beat * 3)
-        midi.addNote(2, 1, 64 + offset, beat + 0.5, 0.25, 70 + beat * 3)
-        midi.addNote(2, 1, 67 + offset, beat + 0.5, 0.25, 68 + beat * 3)
-
-
-def _seed_techno(midi: MIDIFile, offset: int):
-    for beat in range(4):
-        midi.addNote(0, 9, 36, beat, 0.5, 110)
-    for i in range(8):
-        midi.addNote(0, 9, 42, i * 0.5, 0.125, 70 + (i % 2) * 15)
-    midi.addNote(0, 9, 39, 1, 0.5, 85)
-    midi.addNote(0, 9, 39, 3, 0.5, 80)
-    # Acid bass line
-    midi.addNote(1, 0, 36 + offset, 0, 0.25, 110)
-    midi.addNote(1, 0, 36 + offset, 0.5, 0.25, 90)
-    midi.addNote(1, 0, 39 + offset, 1, 0.5, 100)
-    midi.addNote(1, 0, 36 + offset, 2, 0.25, 105)
-    midi.addNote(1, 0, 41 + offset, 2.75, 0.25, 85)
-    _add_expression_curve(midi, 1, 0, 1, 70, 127)
-    # Sparse stab (ch 1)
-    midi.addNote(2, 1, 60 + offset, 0.5, 0.125, 90)
-    midi.addNote(2, 1, 63 + offset, 2, 0.125, 85)
-
-
-def _seed_jazz(midi: MIDIFile, offset: int):
-    # Drums — ride + kick/snare comping
-    midi.addNote(0, 9, 51, 0, 0.5, 80)           # ride
-    midi.addNote(0, 9, 51, 1, 0.5, 75)
-    midi.addNote(0, 9, 51, 2, 0.5, 82)
-    midi.addNote(0, 9, 51, 3, 0.5, 70)
-    midi.addNote(0, 9, 36, 0, 0.5, 70)
-    midi.addNote(0, 9, 36, 2.5, 0.5, 60)
-    midi.addNote(0, 9, 38, 1.5, 0.25, 50)        # ghost snare
-    midi.addNote(0, 9, 44, 1, 0.25, 55)          # pedal hh
-    midi.addNote(0, 9, 44, 3, 0.25, 50)
-    # Walking bass (ch 0) — chromatic passing
-    midi.addNote(1, 0, 48 + offset, 0, 0.9, 85)
-    midi.addNote(1, 0, 50 + offset, 1, 0.9, 80)
-    midi.addNote(1, 0, 52 + offset, 2, 0.9, 82)
-    midi.addNote(1, 0, 53 + offset, 3, 0.9, 78)
-    # Chord voicing (ch 1) — rootless Dm9
-    midi.addNote(2, 1, 64 + offset, 0, 3.5, 65)
-    midi.addNote(2, 1, 67 + offset, 0, 3.5, 60)
-    midi.addNote(2, 1, 72 + offset, 0, 3.5, 58)
-    midi.addNote(2, 1, 74 + offset, 0, 3.5, 55)
-    _add_sustain_pedal(midi, 2, 1, 1)
-    _add_mod_wheel(midi, 2, 1, 1, 25)
-
-
-def _seed_neosoul(midi: MIDIFile, offset: int):
-    # Drums — lazy pocket
-    midi.addNote(0, 9, 36, 0, 0.5, 90)
-    midi.addNote(0, 9, 38, 1, 0.5, 70)
-    midi.addNote(0, 9, 36, 2.5, 0.5, 85)
-    midi.addNote(0, 9, 38, 3, 0.5, 65)
-    for i in [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]:
-        midi.addNote(0, 9, 42, i, 0.25, 50 + int(i * 4) % 20)
-    # Bass — Erykah-style
-    midi.addNote(1, 0, 43 + offset, 0, 1.0, 90)
-    midi.addNote(1, 0, 46 + offset, 1.5, 0.5, 80)
-    midi.addNote(1, 0, 48 + offset, 2, 1.25, 85)
-    midi.addNote(1, 0, 46 + offset, 3.5, 0.5, 75)
-    # Rhodes chord (ch 1)
-    for p in [60, 63, 67, 70]:
-        midi.addNote(2, 1, p + offset, 0, 3.5, 55 + (p % 5) * 3)
-    _add_sustain_pedal(midi, 2, 1, 1)
-    _add_expression_curve(midi, 2, 1, 1, 60, 100)
-
-
-def _seed_classical(midi: MIDIFile, offset: int):
-    # Piano seed — Alberti bass + melody + heavy pedal (matches MAESTRO heuristics)
-    # Left hand — Alberti (ch 0)
-    pattern = [48, 55, 52, 55]  # C-G-E-G
-    for i, p in enumerate(pattern):
-        midi.addNote(1, 0, p + offset, i * 0.5, 0.45, 60 + (i % 2) * 8)
-    pattern2 = [47, 55, 50, 55]
-    for i, p in enumerate(pattern2):
-        midi.addNote(1, 0, p + offset, 2 + i * 0.5, 0.45, 58 + (i % 2) * 10)
-    # Right hand melody (ch 1)
-    melody = [(67, 0, 0.75, 80), (65, 0.75, 0.25, 65), (64, 1, 1.0, 75),
-              (62, 2, 0.5, 70), (64, 2.5, 0.5, 72), (67, 3, 1.0, 78)]
-    for p, t, d, v in melody:
-        midi.addNote(2, 1, p + offset, t, d, v)
-    _add_sustain_pedal(midi, 1, 0, 1)
-    _add_sustain_pedal(midi, 2, 1, 1)
-    _add_expression_curve(midi, 2, 1, 1, 70, 110)
-
-
-def _seed_cinematic(midi: MIDIFile, offset: int):
-    # Strings pad + timpani + French horn melody
-    midi.addNote(0, 9, 47, 0, 0.5, 100)          # timpani low-mid tom
-    midi.addNote(0, 9, 49, 3, 0.5, 90)           # crash
-    # Low strings (ch 0) — sustained fifths
-    midi.addNote(1, 0, 36 + offset, 0, 4.0, 70)
-    midi.addNote(1, 0, 43 + offset, 0, 4.0, 65)
-    # Horn melody (ch 1)
-    midi.addNote(2, 1, 60 + offset, 0, 1.5, 80)
-    midi.addNote(2, 1, 64 + offset, 1.5, 1.0, 85)
-    midi.addNote(2, 1, 67 + offset, 2.5, 1.5, 90)
-    _add_expression_curve(midi, 1, 0, 1, 50, 100)
-    _add_expression_curve(midi, 2, 1, 1, 60, 110)
-    _add_mod_wheel(midi, 2, 1, 1, 50)
-
-
-def _seed_ambient(midi: MIDIFile, offset: int):
-    # Pads — very slow, sustained, soft
-    midi.addNote(1, 0, 48 + offset, 0, 4.0, 45)
-    midi.addNote(1, 0, 55 + offset, 0, 4.0, 40)
-    midi.addNote(1, 0, 60 + offset, 0, 4.0, 38)
-    midi.addNote(2, 1, 67 + offset, 1, 3.0, 50)
-    midi.addNote(2, 1, 72 + offset, 2, 2.0, 45)
-    _add_expression_curve(midi, 1, 0, 1, 30, 80)
-    _add_mod_wheel(midi, 1, 0, 1, 60)
-    _add_mod_wheel(midi, 2, 1, 1, 50)
-
-
-def _seed_reggae(midi: MIDIFile, offset: int):
-    # One-drop drums
-    midi.addNote(0, 9, 38, 1, 0.5, 100)          # snare on 3 (half-time)
-    midi.addNote(0, 9, 36, 1, 0.5, 95)           # kick on 3
-    midi.addNote(0, 9, 42, 0, 0.25, 70)
-    midi.addNote(0, 9, 42, 0.5, 0.25, 60)
-    midi.addNote(0, 9, 42, 1.5, 0.25, 65)
-    midi.addNote(0, 9, 42, 2, 0.25, 70)
-    midi.addNote(0, 9, 42, 2.5, 0.25, 55)
-    midi.addNote(0, 9, 42, 3, 0.25, 68)
-    midi.addNote(0, 9, 42, 3.5, 0.25, 58)
-    # Bass (ch 0) — syncopated roots
-    midi.addNote(1, 0, 48 + offset, 0, 0.75, 100)
-    midi.addNote(1, 0, 48 + offset, 1.5, 0.5, 85)
-    midi.addNote(1, 0, 53 + offset, 2, 0.75, 90)
-    midi.addNote(1, 0, 48 + offset, 3, 0.75, 80)
-    # Skank organ (ch 1) — off-beats
-    for beat in range(4):
-        midi.addNote(2, 1, 60 + offset, beat + 0.5, 0.2, 65)
-        midi.addNote(2, 1, 64 + offset, beat + 0.5, 0.2, 60)
-        midi.addNote(2, 1, 67 + offset, beat + 0.5, 0.2, 58)
-
-
-def _seed_funk(midi: MIDIFile, offset: int):
-    # Drums — 16th note groove
-    for i in range(16):
-        beat = i * 0.25
-        if i in (0, 4, 10):                       # kick
-            midi.addNote(0, 9, 36, beat, 0.25, 105 - (i % 3) * 5)
-        if i in (4, 12):                          # snare
-            midi.addNote(0, 9, 38, beat, 0.25, 95)
-        vel = 55 + (i % 4) * 10 if i not in (0, 4, 8, 12) else 80
-        midi.addNote(0, 9, 42, beat, 0.125, vel)
-    # Slap bass (ch 0)
-    midi.addNote(1, 0, 48 + offset, 0, 0.2, 115)
-    midi.addNote(1, 0, 48 + offset, 0.5, 0.2, 95)
-    midi.addNote(1, 0, 50 + offset, 1, 0.25, 100)
-    midi.addNote(1, 0, 53 + offset, 1.75, 0.2, 90)
-    midi.addNote(1, 0, 48 + offset, 2, 0.2, 110)
-    midi.addNote(1, 0, 55 + offset, 2.75, 0.2, 85)
-    midi.addNote(1, 0, 53 + offset, 3, 0.5, 95)
-    # Clavinet stab (ch 1)
-    for beat in [0.5, 1.5, 2.5, 3.5]:
-        midi.addNote(2, 1, 60 + offset, beat, 0.15, 90)
-        midi.addNote(2, 1, 64 + offset, beat, 0.15, 85)
-
-
-def _seed_dnb(midi: MIDIFile, offset: int):
-    # Drums — broken beat at high tempo
-    midi.addNote(0, 9, 36, 0, 0.25, 110)
-    midi.addNote(0, 9, 38, 0.5, 0.25, 100)
-    midi.addNote(0, 9, 36, 1.25, 0.25, 100)
-    midi.addNote(0, 9, 38, 2, 0.25, 105)
-    midi.addNote(0, 9, 36, 2.75, 0.25, 95)
-    midi.addNote(0, 9, 38, 3.5, 0.25, 98)
-    for i in range(8):
-        midi.addNote(0, 9, 42, i * 0.5, 0.125, 65 + (i % 3) * 8)
-    # Reese bass (ch 0) — sustained + movement
-    midi.addNote(1, 0, 36 + offset, 0, 2.0, 110)
-    midi.addNote(1, 0, 39 + offset, 2, 1.5, 100)
-    midi.addNote(1, 0, 34 + offset, 3.5, 0.5, 105)
-    _add_expression_curve(midi, 1, 0, 1, 80, 127)
-    # Pad (ch 1)
-    midi.addNote(2, 1, 60 + offset, 0, 4.0, 55)
-    midi.addNote(2, 1, 63 + offset, 0, 4.0, 50)
-    midi.addNote(2, 1, 67 + offset, 0, 4.0, 48)
-    _add_mod_wheel(midi, 2, 1, 1, 40)
-
-
-def _seed_dubstep(midi: MIDIFile, offset: int):
-    midi.addNote(0, 9, 36, 0, 0.5, 115)
-    midi.addNote(0, 9, 38, 1, 0.5, 105)
-    midi.addNote(0, 9, 36, 2, 0.5, 110)
-    midi.addNote(0, 9, 38, 3, 0.5, 100)
-    for i in range(8):
-        midi.addNote(0, 9, 42, i * 0.5, 0.125, 60 + (i % 2) * 20)
-    # Wobble bass (ch 0)
-    midi.addNote(1, 0, 36 + offset, 0, 2.0, 120)
-    midi.addNote(1, 0, 34 + offset, 2, 2.0, 115)
-    _add_expression_curve(midi, 1, 0, 1, 60, 127)
-    # Stab (ch 1)
-    midi.addNote(2, 1, 60 + offset, 0, 0.25, 100)
-    midi.addNote(2, 1, 63 + offset, 0, 0.25, 95)
-    midi.addNote(2, 1, 67 + offset, 0, 0.25, 90)
-
-
-def _seed_drill(midi: MIDIFile, offset: int):
-    # Sliding 808 + rapid hats
-    midi.addNote(0, 9, 36, 0, 0.5, 115)
-    midi.addNote(0, 9, 36, 1.5, 0.25, 105)
-    midi.addNote(0, 9, 38, 1, 0.5, 95)
-    midi.addNote(0, 9, 39, 1, 0.5, 60)
-    midi.addNote(0, 9, 38, 3, 0.5, 90)
-    for i in range(16):
-        vel = 50 + (i % 4) * 10
-        midi.addNote(0, 9, 42, i * 0.25, 0.1, vel)
-    midi.addNote(1, 0, 36 + offset, 0, 1.5, 120)
-    midi.addNote(1, 0, 38 + offset, 1.5, 1.0, 110)
-    midi.addNote(1, 0, 34 + offset, 2.5, 1.5, 115)
-    _add_expression_curve(midi, 1, 0, 1, 80, 127)
-    midi.addNote(2, 1, 72 + offset, 0, 0.5, 90)
-    midi.addNote(2, 1, 70 + offset, 0.75, 0.5, 80)
-    midi.addNote(2, 1, 67 + offset, 1.5, 1.0, 85)
-
-
-def _seed_lofi(midi: MIDIFile, offset: int):
-    # Drums — dusty, low velocity
-    midi.addNote(0, 9, 36, 0, 0.5, 75)
-    midi.addNote(0, 9, 38, 1, 0.5, 60)
-    midi.addNote(0, 9, 36, 2, 0.5, 70)
-    midi.addNote(0, 9, 38, 3, 0.5, 55)
-    for i in range(8):
-        midi.addNote(0, 9, 42, i * 0.5, 0.25, 40 + (i % 3) * 8)
-    # Muted bass (ch 0)
-    midi.addNote(1, 0, 48 + offset, 0, 0.75, 70)
-    midi.addNote(1, 0, 46 + offset, 1.5, 0.5, 60)
-    midi.addNote(1, 0, 48 + offset, 2, 1.0, 65)
-    midi.addNote(1, 0, 50 + offset, 3.25, 0.5, 55)
-    # Piano/Rhodes chords (ch 1)
-    for p in [60, 64, 67, 71]:
-        midi.addNote(2, 1, p + offset, 0, 3.0, 45 + (p % 5) * 3)
-    _add_sustain_pedal(midi, 2, 1, 1)
-    _add_expression_curve(midi, 2, 1, 1, 40, 80)
-
-
-_GENRE_SEEDS = {
-    "boom_bap":   _seed_boom_bap,
-    "hip_hop":    _seed_boom_bap,
-    "trap":       _seed_trap,
-    "house":      _seed_house,
-    "techno":     _seed_techno,
-    "jazz":       _seed_jazz,
-    "neo_soul":   _seed_neosoul,
-    "r_and_b":    _seed_neosoul,
-    "classical":  _seed_classical,
-    "cinematic":  _seed_cinematic,
-    "ambient":    _seed_ambient,
-    "reggae":     _seed_reggae,
-    "funk":       _seed_funk,
-    "drum_and_bass": _seed_dnb,
-    "dnb":        _seed_dnb,
-    "dubstep":    _seed_dubstep,
-    "drill":      _seed_drill,
-    "lofi":       _seed_lofi,
-    "lo-fi":      _seed_lofi,
-}
-
-
-def create_seed_midi(
-    tempo: int,
+def _resolve_seed(
     genre: str,
-    key: Optional[str] = None,
-    instruments: Optional[List[str]] = None,
-) -> str:
+) -> tuple[str, str, Optional[str]]:
+    """Select a curated seed MIDI from the seed library.
+
+    Returns (path, source_type, source_uri).
+    Raises RuntimeError if no suitable seed is available.
     """
-    Create genre-appropriate seed MIDI with expressive CC, velocity curves,
-    optional key transposition, and GM program changes matching the requested
-    instruments.
-
-    The seed quality directly affects Orpheus output quality.
-    When ``instruments`` is provided, each melodic track in the seed gets a
-    program change event corresponding to the closest GM instrument, so the
-    TMIDIX tokenizer on the HF Space encodes the correct instrument identity.
-    """
-    offset = _key_offset(key)
-    inst_key = "_".join(sorted(i.lower() for i in instruments)) if instruments else "default"
-    cache_key = f"{genre}_{tempo}_{offset}_{inst_key}"
-    if cache_key in _seed_cache:
-        logger.info(f"Seed cache hit for {cache_key}")
-        return _seed_cache[cache_key]
-
-    midi = MIDIFile(3)
-    midi.addTempo(0, 0, tempo)
-
-    # Embed GM program changes for the requested instruments so the TMIDIX
-    # tokenizer encodes correct instrument identity into the token stream.
-    if instruments:
-        for inst in instruments:
-            role = inst.lower().strip()
-            gm_program = resolve_gm_program(role)
-            if gm_program is None:
-                continue  # drums (ch10) or unresolvable
-            idx = _resolve_melodic_index(role)
-            if idx is None:
-                continue
-            track = idx + 1
-            channel = idx
-            if track < 3:
-                midi.addProgramChange(track, channel, 0, gm_program)
-
-    # Look up genre seed builder; fall back to boom_bap for unknown genres
-    genre_key = genre.lower().replace(" ", "_").replace("-", "_")
-    seed_fn = _GENRE_SEEDS.get(genre_key)
-
-    # Fuzzy fallback: try substring matching
-    if seed_fn is None:
-        for gk, fn in _GENRE_SEEDS.items():
-            if gk in genre_key or genre_key in gk:
-                seed_fn = fn
-                break
-
-    if seed_fn is None:
-        seed_fn = _seed_boom_bap
-
-    seed_fn(midi, offset)
-
-    fd, path = tempfile.mkstemp(suffix=".mid")
-    with os.fdopen(fd, 'wb') as f:
-        midi.writeFile(f)
-
-    _seed_cache[cache_key] = path
-    logger.info(f"Seed created: {genre} key_offset={offset} instruments={inst_key} ({cache_key})")
-    return path
-
-
-def _create_continuation_seed(
-    previous_notes: List[dict],
-    tempo: int,
-    instruments: Optional[List[str]] = None,
-) -> str:
-    """Build a multi-channel seed MIDI from the previous section for continuity.
-
-    Preserves original MIDI channels, program changes, and track separation
-    so the Orpheus transformer receives genuine multi-instrument context
-    instead of a channel-0 monophonic collapse.
-
-    Uses a dynamic context window of 8–16 bars (32–64 beats in 4/4) to give
-    Orpheus ~1500+ tokens of prime context rather than the previous ~100.
-    """
-    # Up to 16 unique tracks: 0=drums (ch9), 1–15=melodic channels
-    num_tracks = 16
-    midi = MIDIFile(num_tracks)
-    midi.addTempo(0, 0, tempo)
-
-    # Write program changes for every requested instrument on its native channel
-    if instruments:
-        _seen_channels: set = set()
-        for inst in instruments:
-            role = inst.lower().strip()
-            gm_program = resolve_gm_program(role)
-            if gm_program is None:
-                continue  # drums (ch10) or unresolvable
-            idx = _resolve_melodic_index(role)
-            if idx is None:
-                continue
-            channel = idx
-            track = idx + 1
-            if channel not in _seen_channels and track < num_tracks:
-                midi.addProgramChange(track, channel, 0, gm_program)
-                _seen_channels.add(channel)
-
-    if not previous_notes:
-        fd, path = tempfile.mkstemp(suffix=".mid")
-        with os.fdopen(fd, 'wb') as f:
-            midi.writeFile(f)
-        return path
-
-    max_beat = max(
-        (n.get("start_beat", 0) + n.get("duration_beats", 0.5)) for n in previous_notes
-    )
-    available_bars = max_beat / 4.0
-    target_context_bars = min(16, max(8, available_bars))
-    target_context_beats = target_context_bars * 4
-    context_start = max(0, max_beat - target_context_beats)
-
-    tail_notes = [
-        n for n in previous_notes
-        if n.get("start_beat", 0) >= context_start
-    ]
-
-    # Collect per-note program changes for patch consistency verification
-    _patch_log: dict = {}
-
-    for note in tail_notes:
-        pitch = note.get("pitch", 60)
-        start = note.get("start_beat", 0) - context_start
-        dur = note.get("duration_beats", 0.5)
-        vel = note.get("velocity", 80)
-        is_drum = note.get("is_drum", False)
-
-        if is_drum:
-            midi.addNote(0, 9, pitch, max(0, start), max(0.01, dur), vel)
-            _patch_log.setdefault(9, "drums")
+    curated = select_seed(genre, randomize=True)
+    if curated is not None:
+        report = analyze_seed(curated)
+        if report.get("quality_ok"):
+            logger.info(
+                f"🌱 Using curated seed: {curated} "
+                f"({report['seed_notes']} notes, ~{report['seed_token_count_estimate']} tokens)"
+            )
+            return curated, "curated_library", curated
         else:
-            channel = note.get("channel", 0)
-            patch = note.get("patch", None)
-            track = channel + 1 if channel < 9 else channel
-            if track >= num_tracks:
-                track = min(channel, num_tracks - 1)
+            logger.warning(
+                f"⚠️ Curated seed quality check failed ({curated}): "
+                f"{report.get('seed_notes', 0)} notes, {report.get('seed_bytes', 0)} bytes"
+            )
 
-            # Preserve original program change per channel
-            if patch is not None and channel not in _patch_log:
-                midi.addProgramChange(track, channel, 0, patch)
-                _patch_log[channel] = patch
+    # Fall back to any available genre — select_seed maps unknown genres to "general"
+    fallback = select_seed("general", randomize=True)
+    if fallback is not None:
+        logger.warning(f"⚠️ No seed for genre '{genre}', using general fallback")
+        return fallback, "curated_library", fallback
 
-            midi.addNote(track, channel, pitch, max(0, start), max(0.01, dur), vel)
-
-    fd, path = tempfile.mkstemp(suffix=".mid")
-    with os.fdopen(fd, 'wb') as f:
-        midi.writeFile(f)
-
-    unique_channels = len(set(
-        n.get("channel", 9 if n.get("is_drum") else 0) for n in tail_notes
-    ))
-    logger.info(
-        f"🔗 Continuation seed: {len(tail_notes)} notes, "
-        f"{unique_channels} channels, "
-        f"context={target_context_bars:.0f} bars "
-        f"(beat {context_start:.1f}–{max_beat:.1f})"
+    raise RuntimeError(
+        f"No curated seed available for genre '{genre}' or general fallback. "
+        "Ensure the seed library is built (run build_seed_library.py)."
     )
-    # GM patch verification
-    if _patch_log:
-        logger.debug(f"🎹 Seed program changes: {_patch_log}")
-
-    return path
 
 
 def parse_midi_to_notes(midi_path: str, tempo: int) -> dict:
@@ -1923,7 +1529,7 @@ async def cache_stats():
         "total_hits": total_hits,
         "expired_entries": expired_count,
         "ttl_seconds": CACHE_TTL_SECONDS,
-        "seed_cache_size": len(_seed_cache),
+
         "top_entries": entries_info,
         "policy_version": get_policy_version(),
     }
@@ -1980,7 +1586,6 @@ async def warm_cache():
 async def clear_cache():
     """Clear all caches."""
     _result_cache.clear()
-    _seed_cache.clear()
     if _CACHE_FILE.exists():
         _CACHE_FILE.unlink()
     logger.info("🗑️ Caches cleared")
@@ -2134,17 +1739,19 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
     """Core GPU generation logic — called by JobQueue workers."""
     global _last_successful_gen
 
+    _trace = request.trace_id or ""
+    _log_prefix = ""
+    if request.composition_id:
+        _log_prefix += f"[{request.composition_id[:8]}]"
+    if _trace:
+        _log_prefix += f"[t:{_trace[:8]}]"
+
     cache_key = get_cache_key(request)
 
     try:
-        # Fresh client per generation — the Gradio session's
-        # final_composition state is cumulative across /add_batch calls.
-        # Reusing a client would cause each instrument to see all
-        # previously accumulated MIDI content, producing identical regions.
         _use_loops = (
             os.environ.get("STORI_ORPHEUS_USE_LOOPS_MODEL", "").lower() in ("1", "true", "yes")
             and request.bars <= 8
-            and not request.previous_notes
         )
         if _use_loops:
             _loops = _client_pool.fresh_loops(worker_id)
@@ -2156,22 +1763,28 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         else:
             client = _client_pool.fresh(worker_id)
 
-        if request.previous_notes:
-            seed_path = _create_continuation_seed(
-                request.previous_notes, request.tempo,
-                instruments=request.instruments,
+        seed_path, seed_source_type, seed_uri = _resolve_seed(
+            genre=request.genre,
+        )
+
+        seed_report = analyze_seed(seed_path)
+        seed_hash = hashlib.sha256(open(seed_path, "rb").read()).hexdigest()[:16]
+
+        if not seed_report.get("quality_ok"):
+            logger.warning(
+                f"⚠️ Seed quality below threshold: "
+                f"{seed_report.get('seed_notes', 0)} notes, "
+                f"{seed_report.get('seed_bytes', 0)} bytes "
+                f"(source={seed_source_type})"
             )
-            logger.info(
-                f"🔗 Using continuation seed from {len(request.previous_notes)} "
-                f"previous notes"
-            )
-        else:
-            # MVP: always use minimal programmatic seed so Orpheus
-            # generates cleanly for the requested instrument(s) only.
-            seed_path = create_seed_midi(
-                request.tempo, request.genre,
-                key=request.key, instruments=request.instruments,
-            )
+
+        logger.info(
+            f"{_log_prefix} 🌱 Seed: source={seed_source_type} "
+            f"notes={seed_report.get('seed_notes', '?')} "
+            f"tokens≈{seed_report.get('seed_token_count_estimate', '?')} "
+            f"bytes={seed_report.get('seed_bytes', '?')} "
+            f"hash={seed_hash}"
+        )
 
         orpheus_instruments: list[str] = []
         _unresolved: list[str] = []
@@ -2204,12 +1817,29 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
 
         num_prime_tokens, num_gen_tokens = allocate_token_budget(bars=request.bars)
 
+        # Check if prime token budget vastly exceeds seed content
+        effective_prime_tokens = min(
+            num_prime_tokens,
+            seed_report.get("seed_token_count_estimate", num_prime_tokens),
+        )
         _ctx_util = (num_prime_tokens + num_gen_tokens) / 8192 * 100
+        _prime_utilization = (
+            effective_prime_tokens / num_prime_tokens * 100
+            if num_prime_tokens > 0 else 0
+        )
+
+        if _prime_utilization < 10:
+            logger.warning(
+                f"⚠️ Prime utilization critically low: "
+                f"~{effective_prime_tokens} seed tokens vs "
+                f"{num_prime_tokens} requested ({_prime_utilization:.0f}%)"
+            )
+
         logger.info(
-            f"🎵 Generating {request.genre} @ {request.tempo} BPM | "
+            f"{_log_prefix} 🎵 Generating {request.genre} @ {request.tempo} BPM | "
             f"temp={temperature:.2f} top_p={top_p:.2f} "
-            f"prime={num_prime_tokens} gen={num_gen_tokens} "
-            f"ctx={_ctx_util:.0f}%"
+            f"prime={num_prime_tokens} (effective≈{effective_prime_tokens}) "
+            f"gen={num_gen_tokens} ctx={_ctx_util:.0f}%"
         )
 
         _predict_timeout = float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "180"))
@@ -2218,7 +1848,26 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         add_drums = "drums" in [i.lower() for i in request.instruments]
         max_beat = request.bars * 4
 
-        # ── GPU inference: generate 10 stochastic batches in one forward pass ──
+        # Deterministic seed: if provided, control batch selection
+        rng = random.Random(request.seed) if request.seed is not None else random
+
+        # ── Log Gradio inputs for audit trail ──
+        _gradio_inputs = {
+            "input_midi_hash": seed_hash,
+            "prime_instruments": orpheus_instruments,
+            "num_prime_tokens": num_prime_tokens,
+            "effective_prime_tokens_estimate": effective_prime_tokens,
+            "num_gen_tokens": num_gen_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "add_drums": add_drums,
+            "add_outro": False,
+        }
+        logger.info(
+            f"{_log_prefix} 🔧 Gradio inputs: {json.dumps(_gradio_inputs)}"
+        )
+
+        # ── GPU inference ──
         try:
             await asyncio.wait_for(
                 asyncio.to_thread(
@@ -2246,10 +1895,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                 error=f"Orpheus generation {kind} after {_predict_timeout}s",
             )
 
-        # Pick one of the 10 stochastically-generated batches at random.
-        # /add_batch is cumulative (appends to composition state), so we
-        # call it exactly once to avoid corrupting the MIDI output.
-        batch_idx = random.randint(0, 9)
+        batch_idx = rng.randint(0, 9)
         try:
             midi_result = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -2275,9 +1921,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                 if not sub[ch]:
                     del sub[ch]
 
-        # ── MVP: flatten all channels into a single camelCase note list ──
-        # No channel filtering, no generate_tool_calls overhead.
-        # The DAW already has tracks/regions; we just need the notes.
+        # ── MVP: flatten all channels ──
         mvp_notes: list[dict] = []
         for ch_notes in parsed.get("notes", {}).values():
             for n in ch_notes:
@@ -2302,12 +1946,13 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                 error="Orpheus batch produced zero usable notes",
             )
 
-        score = rejection_score(
-            [{"pitch": n["pitch"], "start_beat": n["startBeat"],
-              "duration_beats": n["durationBeats"], "velocity": n["velocity"]}
-             for n in mvp_notes],
-            request.bars,
-        )
+        snake_notes = [
+            {"pitch": n["pitch"], "start_beat": n["startBeat"],
+             "duration_beats": n["durationBeats"], "velocity": n["velocity"]}
+            for n in mvp_notes
+        ]
+
+        score = rejection_score(snake_notes, request.bars)
 
         comp_state.last_token_estimate += num_gen_tokens
         comp_state.accumulated_midi_path = midi_path
@@ -2319,29 +1964,80 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             f"ctx={_ctx_pct:.0f}%, batch={batch_idx}"
         )
 
-        response_data = {
+        # ── Build metadata ──
+        gc_dict = (
+            request.generation_constraints.model_dump()
+            if request.generation_constraints else None
+        )
+        controls = build_controls(
+            genre=request.genre,
+            tempo=request.tempo,
+            emotion_vector=(
+                request.emotion_vector.model_dump()
+                if request.emotion_vector else None
+            ),
+            role_profile_summary=(
+                request.role_profile_summary.model_dump()
+                if request.role_profile_summary else None
+            ),
+            generation_constraints=gc_dict,
+            intent_goals=(
+                [g.model_dump() for g in request.intent_goals]
+                if request.intent_goals else None
+            ),
+            quality_preset=request.quality_preset,
+        )
+
+        metadata: dict = {
+            "policy_version": get_policy_version(),
+            "params_used": {
+                "temperature": temperature,
+                "top_p": top_p,
+                "prime_tokens": num_prime_tokens,
+                "gen_tokens": num_gen_tokens,
+            },
+            "cache_hit": False,
+            "note_count": len(mvp_notes),
+            "rejection_score": round(score, 3),
+            "controls_used": {
+                "creativity": round(controls.creativity, 3),
+                "density": round(controls.density, 3),
+                "complexity": round(controls.complexity, 3),
+                "brightness": round(controls.brightness, 3),
+                "tension": round(controls.tension, 3),
+                "groove": round(controls.groove, 3),
+            },
+            "fulfillment_report": build_fulfillment_report(
+                snake_notes, request.bars, controls, gc_dict,
+            ),
+            "seed_provenance": {
+                "seed_source_type": seed_source_type,
+                "seed_file_path": seed_path,
+                "seed_uri": seed_uri,
+                "seed_hash": seed_hash,
+                **{k: v for k, v in seed_report.items() if k != "quality_ok"},
+            },
+            "gradio_inputs": _gradio_inputs,
+        }
+        if _trace:
+            metadata["trace_id"] = _trace
+        if request.intent_hash:
+            metadata["intent_hash"] = request.intent_hash
+        if request.seed is not None:
+            metadata["seed"] = request.seed
+
+        response_data: dict = {
             "success": True,
             "tool_calls": [],
             "notes": mvp_notes,
             "error": None,
-            "metadata": {
-                "policy_version": get_policy_version(),
-                "params_used": {
-                    "temperature": temperature,
-                    "top_p": top_p,
-                    "prime_tokens": num_prime_tokens,
-                    "gen_tokens": num_gen_tokens,
-                },
-                "cache_hit": False,
-                "note_count": len(mvp_notes),
-                "rejection_score": round(score, 3),
-            },
+            "metadata": metadata,
         }
 
         cache_result(cache_key, response_data, key_data=_cache_key_data(request))
         _last_successful_gen = time()
 
-        return GenerateResponse(**response_data)  # type: ignore[arg-type]  # dict values are correctly typed at runtime
+        return GenerateResponse(**response_data)  # type: ignore[arg-type]
 
     except (Exception, asyncio.CancelledError) as e:
         err_msg = str(e) or type(e).__name__

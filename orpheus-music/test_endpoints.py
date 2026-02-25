@@ -15,7 +15,6 @@ import music_service
 from music_service import (
     app,
     _result_cache,
-    _seed_cache,
     JobQueue,
     GenerateRequest,
     GenerateResponse,
@@ -47,7 +46,6 @@ async def client():  # type: ignore[misc]
 def _clear_caches() -> None:  # type: ignore[misc]
     """Clear caches before each test."""
     _result_cache.clear()
-    _seed_cache.clear()
 
 
 # =============================================================================
@@ -139,7 +137,6 @@ class TestCacheClearEndpoint:
         data = resp.json()
         assert data["status"] == "ok"
         assert len(_result_cache) == 0
-        assert len(_seed_cache) == 0
 
 
 # =============================================================================
@@ -209,7 +206,7 @@ class TestGenerateContract:
 
     @pytest.mark.asyncio
     async def test_generate_accepts_full_intent(self, client: AsyncClient):
-        """Full intent payload is accepted without error."""
+        """Full canonical intent payload is accepted without error."""
         with (
             patch("music_service.get_cached_result", return_value=None),
             patch("music_service.fuzzy_cache_lookup", return_value=None),
@@ -220,13 +217,19 @@ class TestGenerateContract:
                 "instruments": ["drums", "bass", "synth lead"],
                 "bars": 8,
                 "key": "Dm",
-                "musical_goals": ["dark", "energetic"],
-                "tone_brightness": -0.7,
-                "tone_warmth": -0.3,
-                "energy_intensity": 0.8,
-                "energy_excitement": 0.6,
-                "complexity": 0.7,
+                "emotion_vector": {
+                    "energy": 0.8,
+                    "valence": -0.7,
+                    "tension": 0.6,
+                    "intimacy": 0.35,
+                    "motion": 0.7,
+                },
+                "intent_goals": [
+                    {"name": "dark", "weight": 1.0},
+                    {"name": "energetic", "weight": 0.8},
+                ],
                 "quality_preset": "quality",
+                "trace_id": "test-trace-001",
             })
         assert resp.status_code == 200
         data = resp.json()

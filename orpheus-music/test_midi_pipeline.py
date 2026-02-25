@@ -2,7 +2,7 @@
 Tests for the MIDI parsing and tool call generation pipeline.
 
 Covers: parse_midi_to_notes, generate_tool_calls, filter_channels_for_instruments,
-_channels_to_keep, create_seed_midi, rejection_score.
+_channels_to_keep, rejection_score.
 
 These functions are the critical path between Orpheus output and Maestro input.
 If they break, every generation silently produces garbage.
@@ -19,9 +19,6 @@ from music_service import (
     generate_tool_calls,
     filter_channels_for_instruments,
     _channels_to_keep,
-    create_seed_midi,
-    _seed_cache,
-    _GENRE_SEEDS,
 )
 from quality_metrics import rejection_score
 
@@ -382,73 +379,6 @@ class TestGenerateToolCalls:
 
 
 # =============================================================================
-# create_seed_midi
-# =============================================================================
-
-
-class TestCreateSeedMidi:
-    """Tests for genre-specific seed MIDI generation."""
-
-    def setup_method(self):
-        _seed_cache.clear()
-
-    def test_returns_valid_file_path(self):
-        """create_seed_midi returns a path to an existing .mid file."""
-        path = create_seed_midi(tempo=120, genre="trap")
-        assert os.path.isfile(path)
-        assert path.endswith(".mid")
-
-    def test_seed_is_parseable(self):
-        """Generated seed MIDI can be parsed back into notes."""
-        path = create_seed_midi(tempo=120, genre="house")
-        result = parse_midi_to_notes(path, tempo=120)
-        assert "notes" in result
-
-    def test_seed_cache_hit(self):
-        """Same params → cached file path returned."""
-        path1 = create_seed_midi(tempo=120, genre="jazz")
-        path2 = create_seed_midi(tempo=120, genre="jazz")
-        assert path1 == path2
-
-    def test_different_genres_produce_different_seeds(self):
-        """Different genres produce different seed files."""
-        path1 = create_seed_midi(tempo=120, genre="trap")
-        path2 = create_seed_midi(tempo=120, genre="jazz")
-        assert path1 != path2
-
-    @pytest.mark.parametrize("genre", list(_GENRE_SEEDS.keys()))
-    def test_every_genre_seed_produces_valid_midi(self, genre: str):
-        """Every registered genre seed produces a parseable MIDI file."""
-        path = create_seed_midi(tempo=120, genre=genre)
-        assert os.path.isfile(path)
-        result = parse_midi_to_notes(path, tempo=120)
-        total_notes = sum(len(ch_notes) for ch_notes in result["notes"].values())
-        assert total_notes > 0, f"Genre '{genre}' seed produced 0 notes"
-
-    def test_unknown_genre_falls_back_to_boom_bap(self):
-        """Unknown genres fall back to boom_bap seed."""
-        path = create_seed_midi(tempo=120, genre="xyzzy_unknown")
-        assert os.path.isfile(path)
-        result = parse_midi_to_notes(path, tempo=120)
-        assert len(result["notes"]) > 0
-
-    def test_instrument_program_changes_embedded(self):
-        """When instruments are provided, GM program changes are in the seed."""
-        path = create_seed_midi(
-            tempo=120, genre="jazz", instruments=["piano", "bass"]
-        )
-        result = parse_midi_to_notes(path, tempo=120)
-        progs = result["program_changes"]
-        assert len(progs) > 0
-
-    def test_key_transposition(self):
-        """Different keys produce different seed files."""
-        path_c = create_seed_midi(tempo=120, genre="jazz", key="C")
-        path_d = create_seed_midi(tempo=120, genre="jazz", key="D")
-        assert path_c != path_d
-
-
-# =============================================================================
 # rejection_score
 # =============================================================================
 
@@ -518,11 +448,11 @@ class TestFuzzyCache:
     def test_exact_match_returns_result(self):
         from music_service import (
             cache_result, fuzzy_cache_lookup, get_cache_key,
-            GenerateRequest, _cache_key_data,
+            GenerateRequest, _cache_key_data, EmotionVectorPayload,
         )
         req = GenerateRequest(
             genre="trap", tempo=140, instruments=["drums", "bass"],
-            bars=4, tone_brightness=-0.5,
+            bars=4, emotion_vector=EmotionVectorPayload(valence=-0.5),
         )
         cache_result(
             get_cache_key(req),
@@ -536,21 +466,20 @@ class TestFuzzyCache:
     def test_near_miss_returns_approximate(self):
         from music_service import (
             cache_result, fuzzy_cache_lookup, get_cache_key,
-            GenerateRequest, _cache_key_data,
+            GenerateRequest, _cache_key_data, EmotionVectorPayload,
         )
         req1 = GenerateRequest(
             genre="trap", tempo=140, instruments=["drums", "bass"],
-            bars=4, tone_brightness=-0.5, energy_intensity=0.0,
+            bars=4, emotion_vector=EmotionVectorPayload(valence=-0.5, energy=0.5),
         )
         cache_result(
             get_cache_key(req1),
             {"success": True, "tool_calls": [], "metadata": {"original": True}},
             key_data=_cache_key_data(req1),
         )
-        # Different enough to miss exact cache but within epsilon
         req2 = GenerateRequest(
             genre="trap", tempo=140, instruments=["drums", "bass"],
-            bars=4, tone_brightness=-0.1, energy_intensity=0.3,
+            bars=4, emotion_vector=EmotionVectorPayload(valence=-0.1, energy=0.8),
         )
         result = fuzzy_cache_lookup(req2, epsilon=1.0)
         assert result is not None

@@ -326,10 +326,10 @@ The MCP tool vocabulary defines the boundary. Formalized:
 | Aspect | Specification |
 |--------|---------------|
 | **Transport** | HTTP POST to `{ORPHEUS_BASE_URL}/generate` |
-| **Request** | `GenerateRequest(genre, tempo, instruments, bars, key, musical_goals, tone_brightness, tone_warmth, energy_intensity, energy_excitement, complexity, quality_preset, temperature, top_p, composition_id, previous_notes)` |
+| **Request** | `GenerateRequest(genre, tempo, instruments, bars, key, emotion_vector, role_profile_summary, generation_constraints, intent_goals, quality_preset, temperature, top_p, composition_id, seed, trace_id, intent_hash)` |
 | **Response** | `GenerateResponse(success, tool_calls, notes, error, metadata)` |
-| **Stochasticity sources** | (1) Gradio model inference (temperature/top_p), (2) random batch selection (`random.randint(0, 9)` over 10 batches), (3) seed MIDI genre templates (deterministic per genre/tempo/key) |
-| **Determinism gaps** | Two identical requests may produce different MIDI. No seed parameter for reproducibility. Cache lookup provides determinism only on cache hit. |
+| **Stochasticity sources** | (1) Gradio model inference (temperature/top_p), (2) random batch selection, (3) curated seed MIDI selection (randomized within genre bucket) |
+| **Determinism** | Optional `seed` parameter for reproducible generation. Cache lookup provides determinism on cache hit. `trace_id` + `intent_hash` for full observability. |
 | **Error model** | Circuit breaker (3 failures → 60s cooldown → half-open probe). Retries: 4 attempts with exponential backoff (2s, 5s, 10s, 20s) for GPU cold-start errors. |
 | **Latency** | 10–180 seconds depending on GPU cold-start state and generation length. |
 

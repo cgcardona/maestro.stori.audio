@@ -1,9 +1,9 @@
-"""Note matching between base and proposed states."""
+"""Note and controller event matching between base and proposed states."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 # Matching tolerances
 TIMING_TOLERANCE_BEATS = 0.05  # Notes within 0.05 beats are considered same timing
@@ -153,3 +153,112 @@ def match_notes(
             ))
 
     return matches
+
+
+# ── Controller event matching ─────────────────────────────────────────────
+
+
+@dataclass
+class EventMatch:
+    """A matched pair of controller events (base and proposed)."""
+
+    base_event: Optional[dict]
+    proposed_event: Optional[dict]
+
+    @property
+    def is_added(self) -> bool:
+        return self.base_event is None and self.proposed_event is not None
+
+    @property
+    def is_removed(self) -> bool:
+        return self.base_event is not None and self.proposed_event is None
+
+    @property
+    def is_modified(self) -> bool:
+        if self.base_event is None or self.proposed_event is None:
+            return False
+        return self.base_event.get("value") != self.proposed_event.get("value")
+
+    @property
+    def is_unchanged(self) -> bool:
+        if self.base_event is None or self.proposed_event is None:
+            return False
+        return not self.is_modified
+
+
+def _events_match_by_beat(base: dict, proposed: dict) -> bool:
+    """Two events are the same if they occur at the same beat (within tolerance)."""
+    b_beat: float = base.get("beat", 0)
+    p_beat: float = proposed.get("beat", 0)
+    return abs(b_beat - p_beat) <= TIMING_TOLERANCE_BEATS
+
+
+def _cc_events_match(base: dict, proposed: dict) -> bool:
+    """CC events match if same CC number and same beat."""
+    if base.get("cc") != proposed.get("cc"):
+        return False
+    return _events_match_by_beat(base, proposed)
+
+
+def _aftertouch_events_match(base: dict, proposed: dict) -> bool:
+    """Aftertouch events match if same pitch (if poly) and same beat."""
+    if base.get("pitch") != proposed.get("pitch"):
+        return False
+    return _events_match_by_beat(base, proposed)
+
+
+def _match_events(
+    base_events: list[dict],
+    proposed_events: list[dict],
+    match_fn: Callable[[dict, dict], bool],
+) -> list[EventMatch]:
+    """Generic event matcher using a pluggable identity function."""
+    matches: list[EventMatch] = []
+    base_matched: set[int] = set()
+    proposed_matched: set[int] = set()
+
+    for bi, base in enumerate(base_events):
+        if bi in base_matched:
+            continue
+        for pi, proposed in enumerate(proposed_events):
+            if pi in proposed_matched:
+                continue
+            if match_fn(base, proposed):
+                matches.append(EventMatch(base_event=base, proposed_event=proposed))
+                base_matched.add(bi)
+                proposed_matched.add(pi)
+                break
+
+    for bi, base in enumerate(base_events):
+        if bi not in base_matched:
+            matches.append(EventMatch(base_event=base, proposed_event=None))
+
+    for pi, proposed in enumerate(proposed_events):
+        if pi not in proposed_matched:
+            matches.append(EventMatch(base_event=None, proposed_event=proposed))
+
+    return matches
+
+
+def match_cc_events(
+    base_events: list[dict],
+    proposed_events: list[dict],
+) -> list[EventMatch]:
+    """Match CC events by CC number + beat timing."""
+    return _match_events(base_events, proposed_events, _cc_events_match)
+
+
+def match_pitch_bends(
+    base_events: list[dict],
+    proposed_events: list[dict],
+) -> list[EventMatch]:
+    """Match pitch bend events by beat timing."""
+    return _match_events(base_events, proposed_events, _events_match_by_beat)
+
+
+def match_aftertouch(
+    base_events: list[dict],
+    proposed_events: list[dict],
+) -> list[EventMatch]:
+    """Match aftertouch events by pitch (if poly) + beat timing."""
+    return _match_events(base_events, proposed_events, _aftertouch_events_match)

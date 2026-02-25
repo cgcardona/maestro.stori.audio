@@ -131,12 +131,17 @@ def upgrade() -> None:
         sa.Column("affected_regions", sa.JSON(), nullable=True),
         sa.Column("beat_range_start", sa.Float(), nullable=False, server_default="0"),
         sa.Column("beat_range_end", sa.Float(), nullable=False, server_default="0"),
+        sa.Column("parent_variation_id", sa.String(36), sa.ForeignKey("variations.variation_id", ondelete="SET NULL"), nullable=True),
+        sa.Column("parent2_variation_id", sa.String(36), sa.ForeignKey("variations.variation_id", ondelete="SET NULL"), nullable=True),
+        sa.Column("commit_state_id", sa.String(36), nullable=True),
+        sa.Column("is_head", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.PrimaryKeyConstraint("variation_id"),
     )
     op.create_index("ix_variations_project_id", "variations", ["project_id"])
     op.create_index("ix_variations_status", "variations", ["status"])
+    op.create_index("ix_variations_parent_variation_id", "variations", ["parent_variation_id"])
 
     op.create_table(
         "phrases",

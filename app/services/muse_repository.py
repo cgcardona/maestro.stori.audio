@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, cast
 
 from sqlalchemy import select, update
@@ -34,6 +36,16 @@ from app.models.variation import (
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class HistoryNode:
+    """Lightweight lineage node — used by replay engine to traverse history."""
+
+    variation_id: str
+    parent_variation_id: str | None
+    commit_state_id: str | None
+    created_at: datetime
+
+
 async def save_variation(
     session: AsyncSession,
     variation: DomainVariation,
@@ -43,6 +55,8 @@ async def save_variation(
     conversation_id: str,
     region_metadata: dict[str, dict[str, Any]],
     status: str = "ready",
+    parent_variation_id: str | None = None,
+    parent2_variation_id: str | None = None,
 ) -> None:
     """Persist a domain Variation and all its phrases/note_changes to Postgres."""
     row = db.Variation(
@@ -57,6 +71,8 @@ async def save_variation(
         affected_regions=variation.affected_regions,
         beat_range_start=variation.beat_range[0],
         beat_range_end=variation.beat_range[1],
+        parent_variation_id=parent_variation_id,
+        parent2_variation_id=parent2_variation_id,
     )
     session.add(row)
 
@@ -241,3 +257,145 @@ async def mark_discarded(session: AsyncSession, variation_id: str) -> None:
     )
     await session.execute(stmt)
     logger.info("Variation %s marked discarded", variation_id[:8])
+
+
+# ── Lineage / History Graph (Phase 5) ────────────────────────────────────
+
+
+async def get_head(session: AsyncSession, project_id: str) -> HistoryNode | None:
+    """Return the current HEAD variation for a project, or None."""
+    stmt = (
+        select(db.Variation)
+        .where(db.Variation.project_id == project_id, db.Variation.is_head.is_(True))
+    )
+    result = await session.execute(stmt)
+    row = result.scalar_one_or_none()
+    if row is None:
+        return None
+    return HistoryNode(
+        variation_id=row.variation_id,
+        parent_variation_id=row.parent_variation_id,
+        commit_state_id=row.commit_state_id,
+        created_at=row.created_at,
+    )
+
+
+async def set_head(
+    session: AsyncSession,
+    variation_id: str,
+    *,
+    commit_state_id: str | None = None,
+) -> None:
+    """Mark a variation as HEAD for its project, clearing any previous HEAD.
+
+    Only call this when a variation is committed — HEAD tracks the latest
+    committed point in the project timeline.
+    """
+    # Find the project_id for this variation
+    proj_stmt = select(db.Variation.project_id).where(
+        db.Variation.variation_id == variation_id
+    )
+    proj_result = await session.execute(proj_stmt)
+    project_id = proj_result.scalar_one_or_none()
+    if project_id is None:
+        logger.warning("⚠️ set_head: variation %s not found", variation_id[:8])
+        return
+
+    # Clear existing HEAD(s) for this project
+    clear_stmt = (
+        update(db.Variation)
+        .where(db.Variation.project_id == project_id, db.Variation.is_head.is_(True))
+        .values(is_head=False)
+    )
+    await session.execute(clear_stmt)
+
+    # Set new HEAD
+    values: dict[str, Any] = {"is_head": True}
+    if commit_state_id is not None:
+        values["commit_state_id"] = commit_state_id
+    set_stmt = (
+        update(db.Variation)
+        .where(db.Variation.variation_id == variation_id)
+        .values(**values)
+    )
+    await session.execute(set_stmt)
+    logger.info("✅ HEAD set: %s (project %s)", variation_id[:8], project_id[:8])
+
+
+async def move_head(
+    session: AsyncSession,
+    project_id: str,
+    variation_id: str,
+) -> None:
+    """Move HEAD pointer without mutating StateStore.
+
+    This is a soft undo/redo primitive. Future endpoints will combine this
+    with a replay plan to reconstruct the target state.
+    """
+    # Clear existing HEAD(s)
+    clear_stmt = (
+        update(db.Variation)
+        .where(db.Variation.project_id == project_id, db.Variation.is_head.is_(True))
+        .values(is_head=False)
+    )
+    await session.execute(clear_stmt)
+
+    # Move HEAD to target
+    set_stmt = (
+        update(db.Variation)
+        .where(db.Variation.variation_id == variation_id)
+        .values(is_head=True)
+    )
+    await session.execute(set_stmt)
+    logger.info("✅ HEAD moved to %s (project %s)", variation_id[:8], project_id[:8])
+
+
+async def get_children(
+    session: AsyncSession,
+    variation_id: str,
+) -> list[HistoryNode]:
+    """Return child HistoryNodes (variations whose parent is variation_id)."""
+    stmt = (
+        select(db.Variation)
+        .where(db.Variation.parent_variation_id == variation_id)
+        .order_by(db.Variation.created_at)
+    )
+    result = await session.execute(stmt)
+    return [
+        HistoryNode(
+            variation_id=row.variation_id,
+            parent_variation_id=row.parent_variation_id,
+            commit_state_id=row.commit_state_id,
+            created_at=row.created_at,
+        )
+        for row in result.scalars().all()
+    ]
+
+
+async def get_lineage(
+    session: AsyncSession,
+    variation_id: str,
+) -> list[HistoryNode]:
+    """Walk parent_variation_id chain from variation_id to root.
+
+    Returns nodes in root-first order: [root, ..., target].
+    """
+    chain: list[HistoryNode] = []
+    current_id: str | None = variation_id
+
+    while current_id is not None:
+        stmt = select(db.Variation).where(db.Variation.variation_id == current_id)
+        result = await session.execute(stmt)
+        row = result.scalar_one_or_none()
+        if row is None:
+            break
+        chain.append(HistoryNode(
+            variation_id=row.variation_id,
+            parent_variation_id=row.parent_variation_id,
+            commit_state_id=row.commit_state_id,
+            created_at=row.created_at,
+        ))
+        current_id = row.parent_variation_id
+
+    chain.reverse()
+    return chain

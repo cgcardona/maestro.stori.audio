@@ -302,6 +302,175 @@ def apply_tempo_adjustments(controls: GenerationControlVector, tempo: int) -> Ge
 
 
 # =============================================================================
+# Canonical control builder — consumes structured Maestro intent directly
+# =============================================================================
+
+
+def build_controls(
+    *,
+    genre: str,
+    tempo: int,
+    emotion_vector: Optional[dict] = None,
+    role_profile_summary: Optional[dict] = None,
+    generation_constraints: Optional[dict] = None,
+    intent_goals: Optional[List[dict]] = None,
+    quality_preset: str = "balanced",
+) -> GenerationControlVector:
+    """Build a ``GenerationControlVector`` from the canonical Maestro payload.
+
+    Consumes structured blocks (emotion_vector, role_profile_summary,
+    generation_constraints) computed by Maestro and only fills gaps when
+    a block is absent.
+
+    Fallback order:
+        1. generation_constraints (hard controls — authoritative)
+        2. emotion_vector (continuous axes — used to derive missing controls)
+        3. role_profile_summary (data-driven priors)
+        4. genre/tempo heuristic baseline (last resort)
+    """
+    ev = emotion_vector or {}
+    rp = role_profile_summary or {}
+    gc = generation_constraints or {}
+    goals = intent_goals or []
+
+    controls = GenerationControlVector(quality_preset=quality_preset)  # type: ignore[arg-type]
+
+    # ── Tension: from emotion_vector (Maestro is authoritative) ──
+    if "tension" in ev:
+        controls.tension = ev["tension"]
+
+    # ── Density: from generation_constraints first, else emotion-derived ──
+    if "drum_density" in gc:
+        controls.density = gc["drum_density"]
+    elif "energy" in ev and "motion" in ev:
+        controls.density = ev["energy"] * ev["motion"]
+    elif "rest_ratio" in rp:
+        controls.density = max(0.0, 1.0 - rp["rest_ratio"])
+
+    # ── Complexity: from role profile first ──
+    if "contour_complexity" in rp:
+        controls.complexity = rp["contour_complexity"]
+    elif gc:
+        controls.complexity = 0.5  # neutral when constraints drive everything
+
+    # ── Brightness: from emotion valence ──
+    if "valence" in ev:
+        controls.brightness = normalize_signed(ev["valence"])
+
+    # ── Groove: from role profile swing ──
+    if "swing_ratio" in rp:
+        controls.groove = rp["swing_ratio"]
+    elif "swing_amount" in gc:
+        controls.groove = min(1.0, gc["swing_amount"] * 4.0)  # 0-0.25 → 0-1
+
+    # ── Creativity: emotion-derived ──
+    if "motion" in ev:
+        controls.creativity = normalize_signed(ev.get("motion", 0.5) * 2 - 1)
+
+    # ── Apply weighted goal modifiers ──
+    for goal in goals:
+        name = goal.get("name", "") if isinstance(goal, dict) else str(goal)
+        weight = goal.get("weight", 1.0) if isinstance(goal, dict) else 1.0
+        name_lower = name.lower()
+
+        if name_lower in ("dark", "moody", "ominous"):
+            controls.brightness *= max(0.5, 1.0 - 0.3 * weight)
+            controls.tension *= min(1.5, 1.0 + 0.3 * weight)
+        elif name_lower in ("bright", "happy", "uplifting"):
+            controls.brightness *= min(1.5, 1.0 + 0.3 * weight)
+            controls.tension *= max(0.5, 1.0 - 0.3 * weight)
+        elif name_lower in ("energetic", "intense", "aggressive"):
+            controls.density *= min(1.5, 1.0 + 0.2 * weight)
+            controls.tension *= min(1.5, 1.0 + 0.2 * weight)
+        elif name_lower in ("calm", "chill", "relaxed", "peaceful"):
+            controls.density *= max(0.5, 1.0 - 0.2 * weight)
+            controls.tension *= max(0.4, 1.0 - 0.4 * weight)
+        elif name_lower == "minimal":
+            controls.complexity *= max(0.5, 1.0 - 0.3 * weight)
+            controls.density *= max(0.5, 1.0 - 0.25 * weight)
+        elif name_lower in ("dense", "maximal", "thick", "full"):
+            controls.density *= min(1.5, 1.0 + 0.3 * weight)
+        elif name_lower == "cinematic":
+            controls.build_intensity = True
+            controls.loopable = False
+        elif name_lower in ("tense",):
+            controls.tension *= min(1.5, 1.0 + 0.3 * weight)
+        elif name_lower in ("driving",):
+            controls.groove *= min(1.5, 1.0 + 0.2 * weight)
+        elif name_lower in ("sustained",):
+            controls.density *= max(0.6, 1.0 - 0.15 * weight)
+        elif name_lower in ("syncopated",):
+            controls.groove *= min(1.5, 1.0 + 0.25 * weight)
+
+    # Only apply genre/tempo as a final light adjustment, not a full derivation
+    controls = apply_genre_baseline(controls, genre)
+    controls = apply_tempo_adjustments(controls, tempo)
+    controls.clamp()
+    return controls
+
+
+def build_fulfillment_report(
+    notes: list,
+    bars: int,
+    controls: GenerationControlVector,
+    generation_constraints: Optional[dict] = None,
+) -> dict:
+    """Compute a fulfillment report comparing output against intent.
+
+    Uses the existing ``rejection_score`` infrastructure and adds
+    constraint violation detection.
+    """
+    gc = generation_constraints or {}
+    violations: list[str] = []
+    goal_scores: dict[str, float] = {}
+
+    if not notes:
+        return {
+            "goal_scores": {},
+            "constraint_violations": ["no_notes_generated"],
+            "coverage_pct": 0.0,
+        }
+
+    pitches = [n.get("pitch", 60) for n in notes]
+    velocities = [n.get("velocity", 80) for n in notes]
+
+    # Pitch range constraint check
+    if "register_center" in gc and "register_spread" in gc:
+        center = gc["register_center"]
+        spread = gc["register_spread"]
+        low, high = center - spread, center + spread
+        out_of_range = sum(1 for p in pitches if p < low or p > high)
+        pct = out_of_range / len(pitches) if pitches else 0
+        goal_scores["register_compliance"] = round(1.0 - pct, 3)
+        if pct > 0.3:
+            violations.append(f"register_violation: {pct:.0%} notes outside [{low}, {high}]")
+
+    # Velocity range constraint check
+    if "velocity_floor" in gc and "velocity_ceiling" in gc:
+        floor_v, ceil_v = gc["velocity_floor"], gc["velocity_ceiling"]
+        out_vel = sum(1 for v in velocities if v < floor_v or v > ceil_v)
+        pct_v = out_vel / len(velocities) if velocities else 0
+        goal_scores["velocity_compliance"] = round(1.0 - pct_v, 3)
+        if pct_v > 0.3:
+            violations.append(f"velocity_violation: {pct_v:.0%} notes outside [{floor_v}, {ceil_v}]")
+
+    # Density check
+    density_score = len(notes) / max(bars * 4, 1)
+    goal_scores["density"] = round(min(1.0, density_score / 4.0), 3)
+
+    # Overall coverage: how many constraint fields were satisfiable
+    total_checks = max(len(goal_scores), 1)
+    passing = sum(1 for s in goal_scores.values() if s >= 0.7)
+    coverage_pct = round(passing / total_checks * 100, 1)
+
+    return {
+        "goal_scores": goal_scores,
+        "constraint_violations": violations,
+        "coverage_pct": coverage_pct,
+    }
+
+
+# =============================================================================
 # Control Vector → Orpheus Params (Control → Generator)
 # =============================================================================
 
@@ -348,10 +517,10 @@ def denormalize_signed(value: float) -> float:
 
 
 # =============================================================================
-# Policy Versioning (for A/B testing)
+# Policy Identity (for A/B testing and analytics)
 # =============================================================================
 
-POLICY_VERSION = "v2.0"
+POLICY_VERSION = "canonical-1.0"
 
 def get_policy_version() -> str:
     """Return current policy version for logging/analytics."""

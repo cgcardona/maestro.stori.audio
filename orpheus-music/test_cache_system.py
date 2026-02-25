@@ -25,13 +25,14 @@ def setup_function():
 
 def test_cache_key_generation():
     """Test that cache keys are deterministic."""
+    from music_service import IntentGoal, EmotionVectorPayload
     req1 = GenerateRequest(
         genre="trap",
         tempo=140,
         bars=4,
         instruments=["drums"],
-        musical_goals=["dark"],
-        tone_brightness=-0.7,
+        intent_goals=[IntentGoal(name="dark")],
+        emotion_vector=EmotionVectorPayload(valence=-0.7),
     )
     
     req2 = GenerateRequest(
@@ -39,8 +40,8 @@ def test_cache_key_generation():
         tempo=140,
         bars=4,
         instruments=["drums"],
-        musical_goals=["dark"],
-        tone_brightness=-0.7,
+        intent_goals=[IntentGoal(name="dark")],
+        emotion_vector=EmotionVectorPayload(valence=-0.7),
     )
     
     key1 = get_cache_key(req1)
@@ -169,9 +170,9 @@ def test_cache_ttl_not_expired():
 
 def test_cache_key_rounding():
     """Test that similar continuous values produce same cache key."""
-    # Values within the same 0.2 quantization bucket should match
-    req1 = GenerateRequest(tone_brightness=-0.61)
-    req2 = GenerateRequest(tone_brightness=-0.59)  # Both snap to -0.6 on 0.2 grid
+    from music_service import EmotionVectorPayload
+    req1 = GenerateRequest(emotion_vector=EmotionVectorPayload(valence=-0.61))
+    req2 = GenerateRequest(emotion_vector=EmotionVectorPayload(valence=-0.59))
     
     key1 = get_cache_key(req1)
     key2 = get_cache_key(req2)
@@ -179,15 +180,15 @@ def test_cache_key_rounding():
     assert key1 == key2
 
 
-def test_cache_musical_goals_order():
-    """Test that musical goals order doesn't affect cache key."""
-    req1 = GenerateRequest(musical_goals=["dark", "energetic"])
-    req2 = GenerateRequest(musical_goals=["energetic", "dark"])  # Reversed
+def test_cache_intent_goals_order():
+    """Test that intent goal order doesn't affect cache key."""
+    from music_service import IntentGoal
+    req1 = GenerateRequest(intent_goals=[IntentGoal(name="dark"), IntentGoal(name="energetic")])
+    req2 = GenerateRequest(intent_goals=[IntentGoal(name="energetic"), IntentGoal(name="dark")])
     
     key1 = get_cache_key(req1)
     key2 = get_cache_key(req2)
     
-    # Should be same (sorted internally)
     assert key1 == key2
 
 

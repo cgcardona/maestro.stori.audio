@@ -95,6 +95,9 @@ async def _store_variation(
         from app.services import muse_repository
 
         async with AsyncSessionLocal() as session:
+            head = await muse_repository.get_head(session, project_id)
+            parent_id = head.variation_id if head else None
+
             await muse_repository.save_variation(
                 session,
                 variation,
@@ -102,6 +105,7 @@ async def _store_variation(
                 base_state_id=base_state_id,
                 conversation_id=conversation_id,
                 region_metadata=region_metadata,
+                parent_variation_id=parent_id,
             )
             await session.commit()
     except Exception:

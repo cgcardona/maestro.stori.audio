@@ -298,23 +298,20 @@ class TestOrpheusBackendEmotionMapping:
         return mock
 
     @pytest.mark.asyncio
-    async def test_no_emotion_vector_uses_defaults(self):
-        """Without an emotion_vector kwarg, tone values default to zero but
-        heuristic-derived musical_goals may still be present."""
+    async def test_no_emotion_vector_sends_none(self):
+        """Without an emotion_vector kwarg, the canonical blocks are None."""
         mock_client = self._make_mock_client()
         backend = self._make_backend(mock_client)
 
         await backend.generate("drums", "lofi", 85, 4, key="Am")
 
         call_kwargs = mock_client.generate.call_args[1]
-        assert call_kwargs["tone_brightness"] == 0.0
-        assert call_kwargs["energy_intensity"] == 0.0
-        assert call_kwargs["tone_warmth"] == 0.0
-        assert call_kwargs["energy_excitement"] == 0.0
+        assert call_kwargs["emotion_vector"] is None
+        assert call_kwargs["generation_constraints"] is None
 
     @pytest.mark.asyncio
-    async def test_dark_emotion_vector_sets_negative_brightness(self):
-        """High negative valence → negative tone_brightness."""
+    async def test_dark_emotion_vector_sends_full_ev(self):
+        """High negative valence → full emotion_vector transmitted, dark goal derived."""
         from app.core.emotion_vector import EmotionVector
         mock_client = self._make_mock_client()
         backend = self._make_backend(mock_client)
@@ -323,12 +320,14 @@ class TestOrpheusBackendEmotionMapping:
         await backend.generate("bass", "lofi", 85, 4, emotion_vector=ev)
 
         call_kwargs = mock_client.generate.call_args[1]
-        assert call_kwargs["tone_brightness"] < 0
-        assert "dark" in (call_kwargs.get("musical_goals") or [])
+        assert call_kwargs["emotion_vector"]["valence"] == pytest.approx(-0.8)
+        assert call_kwargs["emotion_vector"]["tension"] == pytest.approx(0.5)
+        goals = [g["name"] for g in (call_kwargs.get("intent_goals") or [])]
+        assert "dark" in goals
 
     @pytest.mark.asyncio
-    async def test_euphoric_emotion_vector_sets_positive_values(self):
-        """High energy/valence → positive brightness and intensity, energetic goal."""
+    async def test_euphoric_emotion_vector_sends_canonical_blocks(self):
+        """High energy/valence → full emotion_vector and constraints transmitted."""
         from app.core.emotion_vector import EmotionVector
         mock_client = self._make_mock_client()
         backend = self._make_backend(mock_client)
@@ -337,9 +336,10 @@ class TestOrpheusBackendEmotionMapping:
         await backend.generate("lead", "edm", 140, 4, emotion_vector=ev)
 
         call_kwargs = mock_client.generate.call_args[1]
-        assert call_kwargs["tone_brightness"] > 0
-        assert call_kwargs["energy_intensity"] > 0
-        goals = call_kwargs.get("musical_goals") or []
+        assert call_kwargs["emotion_vector"]["energy"] == pytest.approx(0.95)
+        assert call_kwargs["emotion_vector"]["valence"] == pytest.approx(0.9)
+        assert call_kwargs["generation_constraints"] is not None
+        goals = [g["name"] for g in (call_kwargs.get("intent_goals") or [])]
         assert "energetic" in goals
         assert "bright" in goals
         assert "driving" in goals
@@ -355,7 +355,7 @@ class TestOrpheusBackendEmotionMapping:
         await backend.generate("piano", "ambient", 60, 4, emotion_vector=ev)
 
         call_kwargs = mock_client.generate.call_args[1]
-        goals = call_kwargs.get("musical_goals") or []
+        goals = [g["name"] for g in (call_kwargs.get("intent_goals") or [])]
         assert "intimate" in goals
         assert "sustained" in goals
 
@@ -716,7 +716,7 @@ class TestSemaphore:
         assert c._semaphore._value == 1, "Semaphore must be released after error"
 
 
-class TestMusicalGoalsPayload:
+class TestIntentGoalsPayload:
     """Regression: musical_goals=None must not appear as null in the HTTP payload."""
 
     def _make_client(self) -> OrpheusClient:
@@ -725,38 +725,39 @@ class TestMusicalGoalsPayload:
             return OrpheusClient()
 
     @pytest.mark.asyncio
-    async def test_musical_goals_none_omitted_from_payload(self):
-        """When musical_goals=None, the key must not appear in the POST body."""
+    async def test_intent_goals_none_omitted_from_payload(self):
+        """When intent_goals=None, the key must not appear in the POST body."""
         c = self._make_client()
         c._client = MagicMock()
         c._client.post = AsyncMock(
             return_value=_submit_resp(status="complete", result=_ok_gen_result())
         )
 
-        await c.generate(genre="jazz", tempo=100, bars=4, musical_goals=None)
+        await c.generate(genre="jazz", tempo=100, bars=4, intent_goals=None)
 
         _, kwargs = c._client.post.call_args
         payload = kwargs["json"]
-        assert "musical_goals" not in payload
+        assert "intent_goals" not in payload
 
     @pytest.mark.asyncio
-    async def test_musical_goals_present_when_provided(self):
-        """When musical_goals has values they ARE included in the payload."""
+    async def test_intent_goals_present_when_provided(self):
+        """When intent_goals has values they ARE included in the payload."""
         c = self._make_client()
         c._client = MagicMock()
         c._client.post = AsyncMock(
             return_value=_submit_resp(status="complete", result=_ok_gen_result())
         )
 
-        await c.generate(genre="jazz", tempo=100, bars=4, musical_goals=["dark", "energetic"])
+        goals = [{"name": "dark", "weight": 1.0}, {"name": "energetic", "weight": 0.8}]
+        await c.generate(genre="jazz", tempo=100, bars=4, intent_goals=goals)
 
         _, kwargs = c._client.post.call_args
         payload = kwargs["json"]
-        assert payload["musical_goals"] == ["dark", "energetic"]
+        assert payload["intent_goals"] == goals
 
     @pytest.mark.asyncio
-    async def test_default_call_omits_musical_goals(self):
-        """A bare generate() call (no musical_goals arg) must not include the key."""
+    async def test_default_call_omits_intent_goals(self):
+        """A bare generate() call (no intent_goals arg) must not include the key."""
         c = self._make_client()
         c._client = MagicMock()
         c._client.post = AsyncMock(
@@ -767,22 +768,7 @@ class TestMusicalGoalsPayload:
 
         _, kwargs = c._client.post.call_args
         payload = kwargs["json"]
-        assert "musical_goals" not in payload
-
-    @pytest.mark.asyncio
-    async def test_empty_list_omitted_from_payload(self):
-        """An empty musical_goals list is falsy and must also be omitted."""
-        c = self._make_client()
-        c._client = MagicMock()
-        c._client.post = AsyncMock(
-            return_value=_submit_resp(status="complete", result=_ok_gen_result())
-        )
-
-        await c.generate(genre="pop", tempo=110, bars=4, musical_goals=[])
-
-        _, kwargs = c._client.post.call_args
-        payload = kwargs["json"]
-        assert "musical_goals" not in payload
+        assert "intent_goals" not in payload
 
 
 # =============================================================================

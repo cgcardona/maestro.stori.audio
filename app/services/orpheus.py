@@ -219,15 +219,16 @@ class OrpheusClient:
         instruments: Optional[list[str]] = None,
         bars: int = 4,
         key: Optional[str] = None,
-        musical_goals: Optional[list[str]] = None,
-        tone_brightness: float = 0.0,
-        tone_warmth: float = 0.0,
-        energy_intensity: float = 0.0,
-        energy_excitement: float = 0.0,
-        complexity: float = 0.5,
         quality_preset: str = "balanced",
         composition_id: Optional[str] = None,
-        previous_notes: Optional[list[dict]] = None,
+        # ── Canonical intent blocks ──
+        emotion_vector: Optional[dict[str, float]] = None,
+        role_profile_summary: Optional[dict[str, float]] = None,
+        generation_constraints: Optional[dict[str, Any]] = None,
+        intent_goals: Optional[list[dict[str, Any]]] = None,
+        seed: Optional[int] = None,
+        trace_id: Optional[str] = None,
+        intent_hash: Optional[str] = None,
     ) -> dict[str, Any]:
         """Generate MIDI via Orpheus using the async submit + long-poll pattern.
 
@@ -235,8 +236,9 @@ class OrpheusClient:
            Cache hits arrive pre-completed (no queue slot used).
         2. GET /jobs/{jobId}/wait?timeout=30 in a loop until complete/failed.
 
-        Jobs survive HTTP disconnects — if a poll times out, the GPU work
-        continues and the next poll picks up the result.
+        The full canonical intent blocks (emotion_vector, role_profile_summary,
+        generation_constraints, intent_goals) are included so Orpheus
+        consumes them directly.
         """
         if instruments is None:
             instruments = ["drums", "bass"]
@@ -246,21 +248,26 @@ class OrpheusClient:
             "tempo": tempo,
             "instruments": instruments,
             "bars": bars,
-            "tone_brightness": tone_brightness,
-            "tone_warmth": tone_warmth,
-            "energy_intensity": energy_intensity,
-            "energy_excitement": energy_excitement,
-            "complexity": complexity,
             "quality_preset": quality_preset,
         }
         if key:
             payload["key"] = key
-        if musical_goals:
-            payload["musical_goals"] = musical_goals
         if composition_id:
             payload["composition_id"] = composition_id
-        if previous_notes:
-            payload["previous_notes"] = previous_notes
+        if emotion_vector is not None:
+            payload["emotion_vector"] = emotion_vector
+        if role_profile_summary is not None:
+            payload["role_profile_summary"] = role_profile_summary
+        if generation_constraints is not None:
+            payload["generation_constraints"] = generation_constraints
+        if intent_goals is not None:
+            payload["intent_goals"] = intent_goals
+        if seed is not None:
+            payload["seed"] = seed
+        if trace_id is not None:
+            payload["trace_id"] = trace_id
+        if intent_hash is not None:
+            payload["intent_hash"] = intent_hash
 
         _log_prefix = f"[{composition_id[:8]}]" if composition_id else ""
 
@@ -276,8 +283,6 @@ class OrpheusClient:
             }
 
         logger.info(f"{_log_prefix} Generating {instruments} in {genre} style at {tempo} BPM")
-        if musical_goals:
-            logger.info(f"  Musical goals: {musical_goals}")
         if not self.hf_token:
             logger.warning(
                 "⚠️ Orpheus request without HF token; Gradio Space may return GPU quota errors"

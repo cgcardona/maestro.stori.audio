@@ -262,6 +262,256 @@ def check_compute_no_executor_imports() -> None:
         print("  ✅ Clean")
 
 
+# ── Rule 9: muse_replay must not import StateStore, executor, or LLM ──
+
+def check_muse_replay_isolation() -> None:
+    print("\n[Rule 9] muse_replay must not import StateStore, executor, or LLM handlers")
+    filepath = ROOT / "app" / "services" / "muse_replay.py"
+    if not filepath.exists():
+        print("  ⚠️ File not found (skipping)")
+        return
+
+    imports = _collect_imports(filepath)
+    forbidden_fragments = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
+    for imp in imports:
+        for fb in forbidden_fragments:
+            if fb in imp:
+                _error(f"muse_replay.py imports {imp} (contains '{fb}')")
+
+    names = _collect_import_names(filepath)
+    forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
+    for n in names:
+        if n in forbidden_names:
+            _error(f"muse_replay.py imports forbidden name: {n}")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
+# ── Rule 10: muse_drift must not import StateStore, executor, or LLM ──
+
+def check_muse_drift_isolation() -> None:
+    print("\n[Rule 10] muse_drift must not import StateStore, executor, or LLM handlers")
+    filepath = ROOT / "app" / "services" / "muse_drift.py"
+    if not filepath.exists():
+        print("  ⚠️ File not found (skipping)")
+        return
+
+    imports = _collect_imports(filepath)
+    forbidden_fragments = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
+    for imp in imports:
+        for fb in forbidden_fragments:
+            if fb in imp:
+                _error(f"muse_drift.py imports {imp} (contains '{fb}')")
+
+    names = _collect_import_names(filepath)
+    forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
+    for n in names:
+        if n in forbidden_names:
+            _error(f"muse_drift.py imports forbidden name: {n}")
+
+    tree = ast.parse(filepath.read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            name = ""
+            if isinstance(func, ast.Name):
+                name = func.id
+            elif isinstance(func, ast.Attribute):
+                name = func.attr
+            if name == "get_or_create_store":
+                _error("muse_drift.py calls get_or_create_store")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
+# ── Rule 11: controller matching must not import handlers ──
+
+def check_controller_matching_isolation() -> None:
+    print("\n[Rule 11] note_matching must not import handlers or StateStore")
+    filepath = ROOT / "app" / "services" / "variation" / "note_matching.py"
+    if not filepath.exists():
+        print("  ⚠️ File not found (skipping)")
+        return
+
+    imports = _collect_imports(filepath)
+    forbidden_fragments = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
+    for imp in imports:
+        for fb in forbidden_fragments:
+            if fb in imp:
+                _error(f"note_matching.py imports {imp} (contains '{fb}')")
+
+    names = _collect_import_names(filepath)
+    forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
+    for n in names:
+        if n in forbidden_names:
+            _error(f"note_matching.py imports forbidden name: {n}")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
+# ── Rule 12: commit route must stay orchestration-thin ──
+
+def check_commit_route_thinness() -> None:
+    print("\n[Rule 12] commit route must not import drift internals (only public API)")
+    filepath = ROOT / "app" / "api" / "routes" / "variation" / "commit.py"
+    if not filepath.exists():
+        print("  ⚠️ File not found (skipping)")
+        return
+
+    imports = _collect_imports(filepath)
+
+    allowed_drift = {"app.services.muse_drift", "app.services.muse_replay"}
+    allowed_executor = {
+        "app.core.executor",
+        "app.core.executor.snapshots",
+    }
+    allowed_state = {"app.core.state_store"}
+
+    for imp in imports:
+        if "muse_drift" in imp or "muse_replay" in imp:
+            if imp not in allowed_drift:
+                _error(f"commit.py imports drift internal: {imp}")
+
+        if "executor" in imp and imp not in allowed_executor:
+            _error(f"commit.py imports executor internal: {imp}")
+
+    names = _collect_import_names(filepath)
+    allowed_drift_names = {
+        "compute_drift_report", "CommitConflictPayload",
+        "reconstruct_head_snapshot",
+        "capture_base_snapshot",
+    }
+    forbidden_drift_internals = {"_fingerprint", "_combined_fingerprint", "RegionDriftSummary"}
+    for n in names:
+        if n in forbidden_drift_internals:
+            _error(f"commit.py imports drift internal name: {n}")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
+# ── Rule 13: muse_checkout must not import StateStore, executor, or handlers ──
+
+def check_muse_checkout_isolation() -> None:
+    print("\n[Rule 13] muse_checkout must not import StateStore, executor, or handlers")
+    filepath = ROOT / "app" / "services" / "muse_checkout.py"
+    if not filepath.exists():
+        print("  ⚠️ File not found (skipping)")
+        return
+
+    imports = _collect_imports(filepath)
+    forbidden_fragments = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
+    for imp in imports:
+        for fb in forbidden_fragments:
+            if fb in imp:
+                _error(f"muse_checkout.py imports {imp} (contains '{fb}')")
+
+    names = _collect_import_names(filepath)
+    forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
+    for n in names:
+        if n in forbidden_names:
+            _error(f"muse_checkout.py imports forbidden name: {n}")
+
+    tree = ast.parse(filepath.read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            name = ""
+            if isinstance(func, ast.Name):
+                name = func.id
+            elif isinstance(func, ast.Attribute):
+                name = func.attr
+            if name == "get_or_create_store":
+                _error("muse_checkout.py calls get_or_create_store")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
+# ── Rule 14: muse_checkout_executor must not import handlers or VariationService ──
+
+def check_muse_checkout_executor_isolation() -> None:
+    print("\n[Rule 14] muse_checkout_executor must not import handlers or VariationService")
+    filepath = ROOT / "app" / "services" / "muse_checkout_executor.py"
+    if not filepath.exists():
+        print("  ⚠️ File not found (skipping)")
+        return
+
+    imports = _collect_imports(filepath)
+    forbidden_fragments = {
+        "maestro_handlers", "maestro_editing", "maestro_composing",
+        "muse_replay", "variation.service", "variation.compute",
+    }
+    for imp in imports:
+        for fb in forbidden_fragments:
+            if fb in imp:
+                _error(f"muse_checkout_executor.py imports {imp} (contains '{fb}')")
+
+    names = _collect_import_names(filepath)
+    forbidden_names = {"VariationService", "compute_variation_from_context"}
+    for n in names:
+        if n in forbidden_names:
+            _error(f"muse_checkout_executor.py imports forbidden name: {n}")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
+# ── Rule 15: muse_merge_base must not import StateStore, executor, or handlers ──
+
+def check_muse_merge_base_isolation() -> None:
+    print("\n[Rule 15] muse_merge_base must not import StateStore, executor, or handlers")
+    filepath = ROOT / "app" / "services" / "muse_merge_base.py"
+    if not filepath.exists():
+        print("  ⚠️ File not found (skipping)")
+        return
+
+    imports = _collect_imports(filepath)
+    forbidden_fragments = {
+        "state_store", "executor", "maestro_handlers", "maestro_editing",
+        "maestro_composing", "mcp",
+    }
+    for imp in imports:
+        for fb in forbidden_fragments:
+            if fb in imp:
+                _error(f"muse_merge_base.py imports {imp} (contains '{fb}')")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
+# ── Rule 16: muse_merge must not import StateStore, executor, or handlers ──
+
+def check_muse_merge_isolation() -> None:
+    print("\n[Rule 16] muse_merge must not import StateStore, executor, MCP, or handlers")
+    filepath = ROOT / "app" / "services" / "muse_merge.py"
+    if not filepath.exists():
+        print("  ⚠️ File not found (skipping)")
+        return
+
+    imports = _collect_imports(filepath)
+    forbidden_fragments = {
+        "state_store", "executor", "maestro_handlers", "maestro_editing",
+        "maestro_composing", "mcp", "tool_names",
+    }
+    for imp in imports:
+        for fb in forbidden_fragments:
+            if fb in imp:
+                _error(f"muse_merge.py imports {imp} (contains '{fb}')")
+
+    names = _collect_import_names(filepath)
+    forbidden_names = {"StateStore", "get_or_create_store"}
+    for n in names:
+        if n in forbidden_names:
+            _error(f"muse_merge.py imports forbidden name: {n}")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
 def main() -> int:
     print("=" * 60)
     print("Stori Maestro — Architectural Boundary Check")
@@ -275,6 +525,14 @@ def main() -> int:
     check_variation_context_data_only()
     check_muse_repository_isolation()
     check_compute_no_executor_imports()
+    check_muse_replay_isolation()
+    check_muse_drift_isolation()
+    check_controller_matching_isolation()
+    check_commit_route_thinness()
+    check_muse_checkout_isolation()
+    check_muse_checkout_executor_isolation()
+    check_muse_merge_base_isolation()
+    check_muse_merge_isolation()
 
     print()
     if ERRORS:

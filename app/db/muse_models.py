@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for Muse persistent variation history.
 
 Tables:
-- variations: Top-level variation proposals
+- variations: Top-level variation proposals with lineage tracking
 - phrases: Independently reviewable musical phrases within a variation
 - note_changes: Individual note-level diffs within a phrase
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -19,7 +19,7 @@ from app.db.models import generate_uuid, utc_now
 
 
 class Variation(Base):
-    """A persisted variation proposal."""
+    """A persisted variation proposal with lineage tracking."""
 
     __tablename__ = "variations"
 
@@ -35,6 +35,21 @@ class Variation(Base):
     beat_range_start: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     beat_range_end: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
+    # ── Lineage (Phase 5) ────────────────────────────────────────────
+    parent_variation_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("variations.variation_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    parent2_variation_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("variations.variation_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    commit_state_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    is_head: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False,
     )
@@ -48,9 +63,15 @@ class Variation(Base):
         cascade="all, delete-orphan",
         order_by="Phrase.sequence",
     )
+    children: Mapped[list["Variation"]] = relationship(
+        "Variation",
+        backref="parent",
+        remote_side=[variation_id],
+        foreign_keys=[parent_variation_id],
+    )
 
     def __repr__(self) -> str:
-        return f"<Variation {self.variation_id[:8]} status={self.status}>"
+        return f"<Variation {self.variation_id[:8]} status={self.status} head={self.is_head}>"
 
 
 class Phrase(Base):

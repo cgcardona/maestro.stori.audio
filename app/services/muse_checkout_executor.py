@@ -1,0 +1,186 @@
+"""Muse Checkout Executor — apply a CheckoutPlan to StateStore.
+
+Dispatches each tool call in the plan through the existing StateStore
+mutation methods, producing SSE-compatible events that the DAW
+processes identically to normal editing execution.
+
+Boundary rules:
+  - Must NOT import LLM handlers or maestro_* modules.
+  - Must NOT import VariationService.
+  - Must NOT import muse_replay internals.
+  - May import tool_names, state_store, tracing, muse_checkout, muse_drift.
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from dataclasses import dataclass, field
+from typing import Any
+
+from app.core.tool_names import ToolName
+from app.core.tracing import TraceContext, trace_span
+from app.services.muse_checkout import CheckoutPlan
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CheckoutExecutionResult:
+    """Summary of a checkout execution."""
+
+    project_id: str
+    target_variation_id: str
+    executed: int
+    failed: int
+    plan_hash: str
+    events: tuple[dict[str, Any], ...] = ()
+
+    @property
+    def success(self) -> bool:
+        return self.failed == 0 and self.executed > 0
+
+    @property
+    def is_noop(self) -> bool:
+        return self.executed == 0 and self.failed == 0
+
+
+def execute_checkout_plan(
+    *,
+    checkout_plan: CheckoutPlan,
+    store: Any,
+    trace: TraceContext,
+    emit_sse: bool = True,
+) -> CheckoutExecutionResult:
+    """Execute a CheckoutPlan by dispatching tool calls to StateStore.
+
+    Each tool call in the plan is applied in deterministic order:
+    ``stori_clear_notes`` → ``stori_add_notes`` → controllers.
+
+    The ``store`` parameter is typed as ``Any`` to avoid importing
+    ``StateStore`` directly — the caller passes a concrete store
+    instance.  The executor calls its public methods only.
+
+    Args:
+        checkout_plan: The plan to execute (pure data).
+        store: StateStore instance (duck-typed).
+        trace: TraceContext for logging and spans.
+        emit_sse: When True, collect SSE-compatible events.
+    """
+    if checkout_plan.is_noop:
+        logger.info("✅ Checkout is no-op — nothing to execute")
+        return CheckoutExecutionResult(
+            project_id=checkout_plan.project_id,
+            target_variation_id=checkout_plan.target_variation_id,
+            executed=0,
+            failed=0,
+            plan_hash=checkout_plan.plan_hash(),
+        )
+
+    executed = 0
+    failed = 0
+    events: list[dict[str, Any]] = []
+
+    txn = store.begin_transaction(
+        f"checkout:{checkout_plan.target_variation_id[:8]}",
+    )
+
+    try:
+        with trace_span(trace, "checkout_execution", {
+            "target": checkout_plan.target_variation_id,
+            "call_count": len(checkout_plan.tool_calls),
+        }):
+            for call in checkout_plan.tool_calls:
+                tool = call["tool"]
+                args = call["arguments"]
+                call_id = str(uuid.uuid4())
+
+                try:
+                    with trace_span(trace, f"checkout_tool:{tool}"):
+                        _dispatch_tool(tool, args, store, txn)
+
+                    if emit_sse:
+                        events.append({
+                            "type": "toolCall",
+                            "id": call_id,
+                            "tool": tool,
+                            "params": args,
+                        })
+                    executed += 1
+
+                except Exception as e:
+                    failed += 1
+                    logger.error("❌ Checkout tool failed: %s — %s", tool, e)
+                    if emit_sse:
+                        events.append({
+                            "type": "toolError",
+                            "id": call_id,
+                            "tool": tool,
+                            "error": str(e),
+                        })
+
+        if failed == 0:
+            store.commit(txn)
+            logger.info(
+                "✅ Checkout executed: %d calls, target=%s",
+                executed, checkout_plan.target_variation_id[:8],
+            )
+        else:
+            store.rollback(txn)
+            logger.warning(
+                "⚠️ Checkout rolled back: %d executed, %d failed",
+                executed, failed,
+            )
+
+    except Exception:
+        store.rollback(txn)
+        raise
+
+    return CheckoutExecutionResult(
+        project_id=checkout_plan.project_id,
+        target_variation_id=checkout_plan.target_variation_id,
+        executed=executed,
+        failed=failed,
+        plan_hash=checkout_plan.plan_hash(),
+        events=tuple(events),
+    )
+
+
+def _dispatch_tool(
+    tool: str,
+    args: dict[str, Any],
+    store: Any,
+    txn: Any,
+) -> None:
+    """Dispatch a single checkout tool call to StateStore methods."""
+    region_id = args.get("regionId", "")
+
+    if tool == ToolName.CLEAR_NOTES.value:
+        current = store.get_region_notes(region_id)
+        if current:
+            store.remove_notes(region_id, current, transaction=txn)
+
+    elif tool == ToolName.ADD_NOTES.value:
+        notes = args.get("notes", [])
+        if notes:
+            store.add_notes(region_id, notes, transaction=txn)
+
+    elif tool == ToolName.ADD_MIDI_CC.value:
+        cc_num = args.get("cc", 0)
+        raw_events = args.get("events", [])
+        cc_events = [{"cc": cc_num, **e} for e in raw_events]
+        if cc_events:
+            store.add_cc(region_id, cc_events)
+
+    elif tool == ToolName.ADD_PITCH_BEND.value:
+        pb_events = args.get("events", [])
+        if pb_events:
+            store.add_pitch_bends(region_id, pb_events)
+
+    elif tool == ToolName.ADD_AFTERTOUCH.value:
+        at_events = args.get("events", [])
+        if at_events:
+            store.add_aftertouch(region_id, at_events)
+
+    else:
+        raise ValueError(f"Unsupported checkout tool: {tool}")
