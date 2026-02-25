@@ -220,6 +220,105 @@ All models use OpenRouter's `reasoning` parameter for Chain of Thought. Two even
 
 ---
 
+## Muse VCS API
+
+Production endpoints for the musical version control system. All routes require JWT auth (`Authorization: Bearer <token>`). Prefix: `/api/v1/muse/`.
+
+See [muse-vcs.md](../architecture/muse-vcs.md) for the full architecture reference.
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/muse/variations` | Save a variation (commit) into the history DAG |
+| `POST` | `/muse/head` | Set HEAD pointer to a specific variation |
+| `GET` | `/muse/log?project_id=X` | Return the full commit DAG as `MuseLogGraph` JSON |
+| `POST` | `/muse/checkout` | Checkout to a variation (time travel — reconstructs state) |
+| `POST` | `/muse/merge` | Three-way merge of two branch tips |
+
+### `POST /muse/variations`
+
+Save a variation directly into the persistent history.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `project_id` | string | yes | Project ID |
+| `variation_id` | string | yes | Unique variation ID |
+| `intent` | string | yes | Description of changes |
+| `parent_variation_id` | string | no | Primary parent (lineage) |
+| `parent2_variation_id` | string | no | Second parent (merge) |
+| `phrases` | array | no | Phrase objects with note changes |
+| `affected_tracks` | array | no | Track IDs affected |
+| `affected_regions` | array | no | Region IDs affected |
+| `beat_range` | tuple | no | `[start, end]` (default `[0.0, 8.0]`) |
+
+**Response:** `{ "status": "saved", "variation_id": "..." }`
+
+### `POST /muse/head`
+
+**Request body:** `{ "project_id": "...", "variation_id": "..." }`
+**Response:** `{ "status": "head_set", "variation_id": "..." }`
+
+### `GET /muse/log`
+
+**Query params:** `project_id` (required)
+**Response:** `MuseLogGraph` JSON with `nodes` array. Each node:
+
+```json
+{
+  "variationId": "...",
+  "parent": "..." | null,
+  "parent2": "..." | null,
+  "intent": "...",
+  "isHead": true | false,
+  "timestamp": "2026-02-24T..."
+}
+```
+
+Nodes are topologically sorted (Kahn's algorithm, deterministic tie-breaking).
+
+### `POST /muse/checkout`
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `project_id` | string | yes | Project ID |
+| `target_variation_id` | string | yes | Variation to checkout |
+| `conversation_id` | string | no | StateStore key (default `"default"`) |
+| `force` | bool | no | Force checkout despite drift (default `false`) |
+
+**Response (200):** `{ "status": "checked_out", "executed": N, "plan_hash": "..." }`
+**Response (409):** `{ "error": "checkout_blocked", "severity": "dirty", "total_changes": N }`
+
+### `POST /muse/merge`
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `project_id` | string | yes | Project ID |
+| `left_id` | string | yes | Left branch tip variation ID |
+| `right_id` | string | yes | Right branch tip variation ID |
+| `conversation_id` | string | no | StateStore key (default `"default"`) |
+| `force` | bool | no | Force merge despite drift (default `false`) |
+
+**Response (200):** `{ "status": "merged", "merge_variation_id": "...", "executed": N }`
+**Response (409):** Merge conflict:
+
+```json
+{
+  "error": "merge_conflict",
+  "conflicts": [
+    { "region_id": "...", "type": "note_conflict", "description": "..." }
+  ]
+}
+```
+
+---
+
 ## MCP tool routing
 
 - **Server-side (Maestro):** Generation tools (`stori_generate_*`) run in the Maestro backend and return MIDI/result payloads.

@@ -1,10 +1,16 @@
 # Stori — Muse Persistent History Bridge
 
-> **Status:** Architectural Evolution Specification (v1)
+> **Status:** Historical Conceptual Specification (Phase 2) — most concepts defined here have been implemented.
+> **Superseded by:** [`muse-vcs.md`](muse-vcs.md) — the canonical Muse VCS implementation reference.
 > **Date:** February 2026
 > **Companion to:** [`maestro-muse-evolution.md`](maestro-muse-evolution.md) (Phase 1 — Current State Analysis)
 > **Audience:** Distributed systems engineers, music technology researchers, AI infrastructure teams, open-source contributors
 > **Scope:** Conceptual contracts and authority model only — no implementation proposals, no code, no storage schemas
+>
+> **Implementation note (Feb 2026):** Since this spec was written, the persistent commit lineage (commit objects
+> in Postgres with parent references), drift detection (working tree projection), checkout (state reconstruction
+> from any commit), three-way merge with conflict detection, and log graph serialization have all been
+> implemented. See `muse-vcs.md` for the current implementation reference.
 
 ---
 

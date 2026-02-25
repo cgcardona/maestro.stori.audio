@@ -133,8 +133,9 @@ Automated guardrails prevent architectural regression across the Maestro/Muse bo
 docker compose exec maestro python scripts/check_boundaries.py
 ```
 
-Uses AST parsing to enforce 8 import and access rules. Fails with a non-zero exit code if any violation is found. Checks:
+Uses AST parsing to enforce 17 import and access rules (8 original variation boundaries + 9 Muse VCS module isolation rules). Fails with a non-zero exit code if any violation is found. Checks include:
 
+**Variation boundaries (rules 1–8):**
 1. `app/services/variation/**` must not import `state_store` or `entity_registry`
 2. `compute_variation_from_context` must have no `store` parameter and no store imports
 3. `apply_variation_phrases` must not import or reference `get_or_create_store` or access `store.registry`
@@ -143,7 +144,8 @@ Uses AST parsing to enforce 8 import and access rules. Fails with a non-zero exi
 6. `muse_repository` must not import `StateStore` or executor modules
 7. `compute_variation_from_context` must not import executor modules
 
-Run locally or add to CI. See `docs/architecture/boundary_rules.md` for the full rule set.
+**Muse VCS isolation (rules 9–17):**
+Each VCS module (`muse_replay`, `muse_drift`, `muse_checkout`, `muse_checkout_executor`, `muse_merge`, `muse_merge_base`, `muse_log_graph`, `note_matching`) has enforced forbidden imports preventing coupling to StateStore, executor, LLM handlers, or MCP layers. See `docs/architecture/boundary_rules.md` and [muse-vcs.md](../architecture/muse-vcs.md) for details.
 
 **Boundary seal tests (`tests/test_boundary_seal.py`):**
 
@@ -165,3 +167,28 @@ Tests for the persistent variation storage layer:
 - `test_region_metadata_roundtrip` — Region metadata stored on phrases is retrievable.
 - `test_commit_replay_from_db` — Simulate memory loss: persist, reload, verify commit-ready data matches original.
 - `test_muse_repository_boundary` — AST check that `muse_repository` respects import boundaries.
+
+**Muse VCS test suite:**
+
+The Muse VCS engine has dedicated tests for each module:
+
+| Test file | Module under test | What it covers |
+|-----------|------------------|----------------|
+| `test_muse_persistence.py` | `muse_repository` | Roundtrip, lifecycle, lineage, replay |
+| `test_muse_drift.py` | `muse_drift` | Note/CC/PB/AT drift, severity, CLEAN state |
+| `test_muse_drift_controllers.py` | `muse_drift` | Controller-specific drift edge cases |
+| `test_commit_drift_safety.py` | commit route | 409 enforcement on stale base state |
+| `test_muse_checkout.py` | `muse_checkout` | Checkout plan builder, tool call generation |
+| `test_muse_checkout_execution.py` | `muse_checkout_executor` | Plan execution against StateStore |
+| `test_muse_merge.py` | `muse_merge` | Three-way merge, auto-merge, conflict detection |
+| `test_muse_log_graph.py` | `muse_log_graph` | DAG serialization, topological sort, camelCase |
+
+**E2E Muse harness (`tests/e2e/test_muse_e2e_harness.py`):**
+
+Full VCS lifecycle test exercising every Muse primitive through real HTTP routes and real Postgres:
+
+```bash
+docker compose exec maestro pytest tests/e2e/test_muse_e2e_harness.py -v -s
+```
+
+Covers: root commit → mainline → branch A → branch B → merge → conflict detection → checkout traversal. Produces ASCII graph visualization, JSON dump, and summary table. See [muse_e2e_demo.md](../architecture/muse_e2e_demo.md) for expected output.

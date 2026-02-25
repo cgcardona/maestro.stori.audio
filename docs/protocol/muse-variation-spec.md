@@ -11,6 +11,7 @@
 > For backend wire contract, state machine, and terminology, these docs are authoritative:
 > - [variation-api.md](variation-api.md) — Wire contract, endpoints, SSE events, error codes
 > - [terminology.md](terminology.md) — Canonical vocabulary (normative)
+> - [muse-vcs.md](../architecture/muse-vcs.md) — Muse VCS architecture (persistent history, checkout, merge, log graph)
 
 ---
 

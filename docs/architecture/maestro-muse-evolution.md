@@ -1,9 +1,14 @@
 # Stori — Maestro Architectural Decomposition & Muse Contract Elevation
 
-> **Status:** Canonical Architectural Reference (v1)
+> **Status:** Historical Analysis (Phase 1) — many items described as "does not exist" have since been implemented.
+> **Superseded by:** [`muse-vcs.md`](muse-vcs.md) — the canonical Muse VCS implementation reference.
 > **Date:** February 2026
 > **Audience:** Distributed systems engineers, music technology researchers, AI infrastructure teams, open-source contributors
 > **Scope:** Analysis and contract definition only — no implementation proposals
+>
+> **Implementation note (Feb 2026):** Since this analysis was written, Phases 5–13 have been completed.
+> The persistent commit lineage, drift detection, checkout engine, merge engine, log graph serializer,
+> and production HTTP API all now exist. See `muse-vcs.md` for the current state.
 
 ---
 

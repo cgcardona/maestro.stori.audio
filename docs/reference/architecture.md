@@ -516,7 +516,7 @@ Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/co
 
 Automated guardrails prevent regression in the Maestro/Muse separation.
 
-**Boundary check script:** `scripts/check_boundaries.py` uses AST parsing to enforce 8 import and access rules across the codebase. Run locally (`python scripts/check_boundaries.py`) or in CI — fails with non-zero exit code on any violation. Rules are documented in `docs/architecture/boundary_rules.md`.
+**Boundary check script:** `scripts/check_boundaries.py` uses AST parsing to enforce 17 import and access rules across the codebase (8 original variation boundaries + 9 Muse VCS module isolation rules). Run locally (`python scripts/check_boundaries.py`) or in CI — fails with non-zero exit code on any violation. Rules are documented in `docs/architecture/boundary_rules.md`.
 
 **Boundary seal tests:** `tests/test_boundary_seal.py` enforces the same contracts at the pytest level — signature checks, forbidden-import assertions, `VariationContext` data-only verification, `muse_repository` isolation, and golden shape tests for `UpdatedRegionPayload`, `_ToolCallOutcome`, Orpheus normalization output, and `SnapshotBundle`.
 
@@ -530,6 +530,23 @@ Key invariants enforced:
 - Variation service modules do not import `state_store` or `entity_registry`.
 
 **Persistent Muse Core:** Variations are durably stored in Postgres (`variations`, `phrases`, `note_changes` tables) via `app/services/muse_repository.py`. The commit path reads from Postgres first, falling back to in-memory `VariationStore` for pre-persistence variations. Persistence tests in `tests/test_muse_persistence.py` verify roundtrip fidelity, status lifecycle, and commit replay safety.
+
+**Muse VCS Engine (Git for Music):** Beyond persistence, Muse implements a full VCS stack with 10 modules in `app/services/`:
+
+| Module | Responsibility |
+|--------|---------------|
+| `muse_repository` | DB persistence adapter (lineage, HEAD, children) |
+| `muse_replay` | History reconstruction — walk lineage to build snapshots |
+| `muse_drift` | Drift detection — compare HEAD vs working state |
+| `muse_checkout` | Pure-data checkout plan builder (tool calls for state reconstruction) |
+| `muse_checkout_executor` | Apply checkout plan to StateStore |
+| `muse_merge_base` | Merge base finder (LCA in the DAG) |
+| `muse_merge` | Three-way merge engine with conflict detection |
+| `muse_history_controller` | Orchestrator for checkout + merge workflows |
+| `muse_log_graph` | DAG serializer (Kahn's sort → camelCase JSON for Swift) |
+| `muse_log_render` | ASCII graph + JSON + summary table renderer |
+
+HTTP API: 5 production endpoints at `/api/v1/muse/` (routes in `app/api/routes/muse.py`). See [api.md](api.md#muse-vcs-api) for the full endpoint reference and [muse-vcs.md](../architecture/muse-vcs.md) for the architecture reference.
 
 ---
 

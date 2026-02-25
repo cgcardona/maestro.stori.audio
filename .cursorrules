@@ -72,6 +72,7 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 | Frontend/MCP/JWT | `docs/guides/integrate.md` |
 | API reference | `docs/reference/api.md` |
 | Architecture | `docs/reference/architecture.md` |
+| Muse VCS | `docs/architecture/muse-vcs.md` |
 | Testing | `docs/guides/testing.md` |
 | Security | `docs/guides/security.md` |
 | Protocol specs | `docs/protocol/` |
@@ -97,3 +98,6 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 | Agent Teams | `app/core/maestro_agent_teams/` | `tests/test_section_agent.py` |
 | Orpheus | `orpheus-music/music_service.py` | `orpheus-music/test_*.py` |
 | MCP | `app/mcp/` | `tests/test_mcp.py` |
+| Muse VCS | `app/services/muse_*.py` | `tests/test_muse_*.py` |
+| Muse Routes | `app/api/routes/muse.py` | `tests/e2e/test_muse_e2e_harness.py` |
+| Muse Render | `app/services/muse_log_render.py` | `tests/e2e/test_muse_e2e_harness.py` |

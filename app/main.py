@@ -16,7 +16,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
-from app.api.routes import maestro, maestro_ui, health, users, conversations, assets, variation
+from app.api.routes import maestro, maestro_ui, health, users, conversations, assets, variation, muse
 from app.api.routes import mcp as mcp_routes
 from app.db import init_db, close_db
 from app.services.orpheus import get_orpheus_client, close_orpheus_client
@@ -146,6 +146,7 @@ app.include_router(variation.router, prefix="/api/v1", tags=["variation"])
 app.include_router(users.router, prefix="/api/v1", tags=["users"])
 app.include_router(conversations.router, prefix="/api/v1", tags=["conversations"])
 app.include_router(assets.router, prefix="/api/v1", tags=["assets"])
+app.include_router(muse.router, prefix="/api/v1", tags=["muse"])
 app.include_router(mcp_routes.router, prefix="/api/v1/mcp", tags=["mcp"])
 
 from app.protocol.endpoints import router as protocol_router
