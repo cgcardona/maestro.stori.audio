@@ -46,6 +46,19 @@ class HistoryNode:
     created_at: datetime
 
 
+@dataclass(frozen=True)
+class VariationSummary:
+    """Lightweight variation metadata for log graph serialization."""
+
+    variation_id: str
+    parent_variation_id: str | None
+    parent2_variation_id: str | None
+    is_head: bool
+    created_at: datetime
+    intent: str
+    affected_regions: tuple[str, ...]
+
+
 async def save_variation(
     session: AsyncSession,
     variation: DomainVariation,
@@ -399,3 +412,40 @@ async def get_lineage(
 
     chain.reverse()
     return chain
+
+
+# ── Bulk queries (Phase 13) ───────────────────────────────────────────────
+
+
+async def get_variations_for_project(
+    session: AsyncSession,
+    project_id: str,
+) -> list[VariationSummary]:
+    """Fetch all variations for a project in a single query.
+
+    Eagerly loads phrases to extract affected region IDs.
+    Returned in creation order (earliest first).
+    """
+    stmt = (
+        select(db.Variation)
+        .options(selectinload(db.Variation.phrases))
+        .where(db.Variation.project_id == project_id)
+        .order_by(db.Variation.created_at)
+    )
+    result = await session.execute(stmt)
+    rows = result.scalars().all()
+
+    summaries: list[VariationSummary] = []
+    for row in rows:
+        region_ids = tuple(sorted({p.region_id for p in row.phrases}))
+        summaries.append(VariationSummary(
+            variation_id=row.variation_id,
+            parent_variation_id=row.parent_variation_id,
+            parent2_variation_id=row.parent2_variation_id,
+            is_head=row.is_head,
+            created_at=row.created_at,
+            intent=row.intent,
+            affected_regions=region_ids,
+        ))
+
+    return summaries

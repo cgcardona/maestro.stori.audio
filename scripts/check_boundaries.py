@@ -512,6 +512,36 @@ def check_muse_merge_isolation() -> None:
         print("  ✅ Clean")
 
 
+# ── Rule 17: muse_log_graph must be a pure projection layer ──
+
+def check_muse_log_graph_isolation() -> None:
+    print("\n[Rule 17] muse_log_graph must not import StateStore, executor, handlers, or engines")
+    filepath = ROOT / "app" / "services" / "muse_log_graph.py"
+    if not filepath.exists():
+        print("  ⚠️ File not found (skipping)")
+        return
+
+    imports = _collect_imports(filepath)
+    forbidden_fragments = {
+        "state_store", "executor", "maestro_handlers", "maestro_editing",
+        "maestro_composing", "mcp", "muse_drift", "muse_merge",
+        "muse_checkout", "muse_replay",
+    }
+    for imp in imports:
+        for fb in forbidden_fragments:
+            if fb in imp:
+                _error(f"muse_log_graph.py imports {imp} (contains '{fb}')")
+
+    names = _collect_import_names(filepath)
+    forbidden_names = {"StateStore", "get_or_create_store"}
+    for n in names:
+        if n in forbidden_names:
+            _error(f"muse_log_graph.py imports forbidden name: {n}")
+
+    if not ERRORS:
+        print("  ✅ Clean")
+
+
 def main() -> int:
     print("=" * 60)
     print("Stori Maestro — Architectural Boundary Check")
@@ -533,6 +563,7 @@ def main() -> int:
     check_muse_checkout_executor_isolation()
     check_muse_merge_base_isolation()
     check_muse_merge_isolation()
+    check_muse_log_graph_isolation()
 
     print()
     if ERRORS:
