@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import statistics
 
-from orpheus_types import GenerationComparison, OrpheusNoteDict
+from storpheus_types import GenerationComparison, StorpheusNoteDict
 
 
-def analyze_quality(notes: list[OrpheusNoteDict], bars: int, tempo: int) -> dict[str, float]:
+def analyze_quality(notes: list[StorpheusNoteDict], bars: int, tempo: int) -> dict[str, float]:
     """
     Analyze generation quality with objective metrics.
     
@@ -138,7 +138,7 @@ def analyze_quality(notes: list[OrpheusNoteDict], bars: int, tempo: int) -> dict
     return metrics
 
 
-def rejection_score(notes: list[OrpheusNoteDict], bars: int) -> float:
+def rejection_score(notes: list[StorpheusNoteDict], bars: int) -> float:
     """Fast rejection sampling score for candidate ranking.
 
     Combines four signals into a single 0–1 score:
@@ -203,7 +203,7 @@ def rejection_score(notes: list[OrpheusNoteDict], bars: int) -> float:
     ))
 
 
-def compare_generations(notes_a: list[OrpheusNoteDict], notes_b: list[OrpheusNoteDict], bars: int, tempo: int) -> GenerationComparison:
+def compare_generations(notes_a: list[StorpheusNoteDict], notes_b: list[StorpheusNoteDict], bars: int, tempo: int) -> GenerationComparison:
     """
     Compare two generations to determine which is better.
     

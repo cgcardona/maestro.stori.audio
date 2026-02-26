@@ -69,7 +69,7 @@ class TestHealthEndpoint:
         resp = await client.get("/health")
         data = resp.json()
         assert data["status"] == "ok"
-        assert data["service"] == "orpheus-music"
+        assert data["service"] == "storpheus"
 
 
 # =============================================================================
@@ -94,7 +94,7 @@ class TestDiagnosticsEndpoint:
     async def test_diagnostics_response_shape(self, client: AsyncClient) -> None:
         data = (await client.get("/diagnostics")).json()
         assert "service" in data
-        assert data["service"] == "orpheus-music"
+        assert data["service"] == "storpheus"
         assert "space_id" in data
         assert "gradio_client" in data
         assert "hf_space" in data

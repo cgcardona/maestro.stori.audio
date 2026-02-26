@@ -663,7 +663,7 @@ class TestAgentIdTaggingRegression:
         ok_result = GenerationResult(
             success=True,
             notes=ok_notes,
-            backend_used=GeneratorBackend.ORPHEUS,
+            backend_used=GeneratorBackend.STORPHEUS,
             metadata={},
         )
 
@@ -724,7 +724,7 @@ class TestEffectPersistenceRegression:
 class TestCompleteEventSuccessField:
     """Regression: complete event must set success=false when 0 notes were generated.
 
-    When stori_generate_midi fails for all tracks (e.g. Orpheus returns a
+    When stori_generate_midi fails for all tracks (e.g. Storpheus returns a
     NoneType error), the composition finishes with empty regions.
     The complete event must NOT report success=true in this case.
     """
@@ -1069,15 +1069,15 @@ class TestPreflightTrackColorRegression:
         assert result["Inst12"] == COMPOSITION_PALETTE[0]
 
 
-class TestOrpheusMetadataNoneRegression:
-    """Regression: Orpheus returning metadata: null must not crash the client."""
+class TestStorpheusMetadataNoneRegression:
+    """Regression: Storpheus returning metadata: null must not crash the client."""
 
     def test_metadata_none_unpacking(self) -> None:
 
         """dict unpacking with None metadata must not raise TypeError.
 
         Regression for P0: 'NoneType' object is not a mapping when
-        Orpheus returns {"metadata": null} in its response JSON.
+        Storpheus returns {"metadata": null} in its response JSON.
         """
         data: dict[str, Any] = {
             "success": True,
@@ -1107,19 +1107,19 @@ class TestOrpheusMetadataNoneRegression:
 
 
 class TestCircuitBreakerContract:
-    """Orpheus circuit breaker behavior: trip, fast-fail, reset."""
+    """Storpheus circuit breaker behavior: trip, fast-fail, reset."""
 
     def test_circuit_breaker_starts_closed(self) -> None:
 
         """New circuit breaker is closed (not open)."""
-        from app.services.orpheus import _CircuitBreaker
+        from app.services.storpheus import _CircuitBreaker
         cb = _CircuitBreaker(threshold=3, cooldown=60)
         assert not cb.is_open
 
     def test_circuit_breaker_trips_after_threshold(self) -> None:
 
         """Circuit opens after `threshold` consecutive failures."""
-        from app.services.orpheus import _CircuitBreaker
+        from app.services.storpheus import _CircuitBreaker
         cb = _CircuitBreaker(threshold=2, cooldown=60)
         cb.record_failure()
         assert not cb.is_open
@@ -1129,7 +1129,7 @@ class TestCircuitBreakerContract:
     def test_circuit_breaker_success_resets(self) -> None:
 
         """A successful call resets the failure counter and closes the circuit."""
-        from app.services.orpheus import _CircuitBreaker
+        from app.services.storpheus import _CircuitBreaker
         cb = _CircuitBreaker(threshold=2, cooldown=60)
         cb.record_failure()
         cb.record_success()
@@ -1141,7 +1141,7 @@ class TestCircuitBreakerContract:
 
         """After cooldown, is_open returns False (half-open allows probe)."""
         import time
-        from app.services.orpheus import _CircuitBreaker
+        from app.services.storpheus import _CircuitBreaker
         cb = _CircuitBreaker(threshold=1, cooldown=0.01)
         cb.record_failure()
         assert cb.is_open
@@ -1153,10 +1153,10 @@ class TestCircuitBreakerContract:
         """Fast-fail result has the expected error key for downstream detection."""
         result: dict[str, Any] = {
             "success": False,
-            "error": "orpheus_circuit_open",
-            "message": "Orpheus music service is unavailable (circuit breaker open).",
+            "error": "storpheus_circuit_open",
+            "message": "Storpheus music service is unavailable (circuit breaker open).",
         }
-        assert result["error"] == "orpheus_circuit_open"
+        assert result["error"] == "storpheus_circuit_open"
         assert "circuit breaker" in result["message"].lower()
 
 
@@ -1207,15 +1207,15 @@ class TestL3SectionReasoningContract:
 
 
 class TestAgentCircuitBreakerAbort:
-    """Level 2 agent stops retrying when Orpheus circuit breaker is open."""
+    """Level 2 agent stops retrying when Storpheus circuit breaker is open."""
 
-    def test_agent_imports_orpheus_client(self) -> None:
+    def test_agent_imports_storpheus_client(self) -> None:
 
-        """agent.py imports get_orpheus_client for circuit breaker checks."""
+        """agent.py imports get_storpheus_client for circuit breaker checks."""
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod
         source = inspect.getsource(agent_mod)
-        assert "get_orpheus_client" in source
+        assert "get_storpheus_client" in source
         assert "circuit_breaker_open" in source
 
 
@@ -1944,7 +1944,7 @@ class TestCompactToolResults:
             "totalNotes": 116,
             "entities": [{"id": "e1"}, {"id": "e2"}],
             "notes": notes_sample,
-            "backend": "orpheus",
+            "backend": "storpheus",
         }
         compact = _compact_tool_result(full_result)
         assert "entities" not in compact
@@ -2036,7 +2036,7 @@ class TestLowNoteCountGuard:
 
         mg = MusicGenerator()
         for role in ("guacharaca", "tumbadora", "congas", "bongos", "djembe"):
-            scorer = mg._scorer_for_instrument(role, GeneratorBackend.ORPHEUS, 8, "cumbia")
+            scorer = mg._scorer_for_instrument(role, GeneratorBackend.STORPHEUS, 8, "cumbia")
             assert scorer is not None, f"'{role}' must be recognised as percussion by scorer"
 
     def test_harmonic_roles_recognised_by_scorer(self) -> None:
@@ -2047,7 +2047,7 @@ class TestLowNoteCountGuard:
 
         mg = MusicGenerator()
         for role in ("accordion", "gaita", "marimba"):
-            scorer = mg._scorer_for_instrument(role, GeneratorBackend.ORPHEUS, 8, "cumbia")
+            scorer = mg._scorer_for_instrument(role, GeneratorBackend.STORPHEUS, 8, "cumbia")
             assert scorer is not None, f"'{role}' must be recognised by scorer"
 
 
@@ -2105,7 +2105,7 @@ class TestServerOwnedRetryContracts:
 
         """Once _dispatch_section_children handles all sections (including failures),
         _missing_stages() must NOT trigger retry turns.  The LLM cannot fix
-        Orpheus failures and server-owned retries already ran.
+        Storpheus failures and server-owned retries already ran.
         """
         import inspect
         from app.core.maestro_agent_teams import agent as agent_mod

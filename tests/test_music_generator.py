@@ -1,4 +1,4 @@
-"""Tests for music generation service (Orpheus required; no pattern fallback)."""
+"""Tests for music generation service (Storpheus required; no pattern fallback)."""
 from __future__ import annotations
 
 import pytest
@@ -8,7 +8,7 @@ from app.services.backends.base import GeneratorBackend, GenerationResult
 
 
 class TestMusicGenerator:
-    """Tests for the main generator (Orpheus-first)."""
+    """Tests for the main generator (Storpheus-first)."""
 
     @pytest.mark.anyio
     async def test_can_force_specific_backend(self) -> None:
@@ -55,8 +55,8 @@ class TestGenerationResult:
         result = GenerationResult(
             success=True,
             notes=[NoteDict(pitch=60, start_beat=0.0, duration_beats=1.0, velocity=100)],
-            backend_used=GeneratorBackend.ORPHEUS,
-            metadata={"source": "orpheus"},
+            backend_used=GeneratorBackend.STORPHEUS,
+            metadata={"source": "storpheus"},
         )
         assert result.success
         assert len(result.notes) == 1
@@ -68,7 +68,7 @@ class TestGenerationResult:
         result = GenerationResult(
             success=False,
             notes=[],
-            backend_used=GeneratorBackend.ORPHEUS,
+            backend_used=GeneratorBackend.STORPHEUS,
             metadata={},
             error="Connection failed",
         )

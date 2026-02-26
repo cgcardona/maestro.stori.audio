@@ -46,7 +46,7 @@ docker compose exec maestro pytest tests/ -v
 | **Auth** | `STORI_ACCESS_TOKEN_SECRET` — `openssl rand -hex 32`; required for protected endpoints |
 | **LLM** | `STORI_LLM_PROVIDER=openrouter`, `STORI_OPENROUTER_API_KEY`, `STORI_LLM_MODEL` (supported: `anthropic/claude-sonnet-4.6` · `anthropic/claude-opus-4.6` — no other models) |
 | **DB** | `STORI_DB_PASSWORD` or `STORI_DATABASE_URL`. Reset: see **Reset database (Postgres)** below. |
-| **Music** | `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`), `STORI_HF_API_KEY`, `STORI_ORPHEUS_MAX_CONCURRENT` (default `2` — max parallel submit+poll cycles), `STORI_ORPHEUS_TIMEOUT` (default `180`s — fallback max read timeout), `STORI_ORPHEUS_POLL_TIMEOUT` (default `30`s — long-poll timeout per `/jobs/{id}/wait` request), `STORI_ORPHEUS_POLL_MAX_ATTEMPTS` (default `10` — max polls before giving up, ~5 min total), `STORI_ORPHEUS_CB_THRESHOLD` (default `3` — consecutive failures before circuit breaker trips), `STORI_ORPHEUS_CB_COOLDOWN` (default `60`s — probe interval after trip), `STORI_ORPHEUS_REQUIRED` (default `true` — abort composition if Orpheus is unreachable). **Docker:** `docker-compose.yml` overrides to `http://orpheus:10002` so the maestro container can reach Orpheus. See **HuggingFace token (Orpheus)** below. |
+| **Music** | `STORI_STORPHEUS_BASE_URL` (default `http://localhost:10002`), `STORI_HF_API_KEY`, `STORI_ORPHEUS_MAX_CONCURRENT` (default `2` — max parallel submit+poll cycles), `STORI_ORPHEUS_TIMEOUT` (default `180`s — fallback max read timeout), `STORI_ORPHEUS_POLL_TIMEOUT` (default `30`s — long-poll timeout per `/jobs/{id}/wait` request), `STORI_ORPHEUS_POLL_MAX_ATTEMPTS` (default `10` — max polls before giving up, ~5 min total), `STORI_ORPHEUS_CB_THRESHOLD` (default `3` — consecutive failures before circuit breaker trips), `STORI_ORPHEUS_CB_COOLDOWN` (default `60`s — probe interval after trip), `STORI_ORPHEUS_REQUIRED` (default `true` — abort composition if Orpheus is unreachable). **Docker:** `docker-compose.yml` overrides to `http://storpheus:10002` so the maestro container can reach Orpheus. See **HuggingFace token (Orpheus)** below. |
 | **Agent watchdogs** | `STORI_SECTION_CHILD_TIMEOUT` (default `300`s), `STORI_INSTRUMENT_AGENT_TIMEOUT` (default `600`s), `STORI_BASS_SIGNAL_WAIT_TIMEOUT` (default `240`s). Prevents orphaned subagents. See [architecture.md](../reference/architecture.md#agent-safety-nets). |
 | **S3** | `STORI_AWS_S3_ASSET_BUCKET`, `STORI_AWS_REGION`, plus AWS keys for presigned URLs |
 
@@ -54,7 +54,7 @@ Local: `NGINX_CONF_DIR=conf.d-local`. Full list: `.env.example`.
 
 ### HuggingFace token (Orpheus)
 
-Orpheus (when backed by a Hugging Face Gradio Space) needs a Hugging Face API token so the Space can attribute GPU usage to your account. Maestro reads `STORI_HF_API_KEY` and sends it as `Authorization: Bearer <token>` on every request to Orpheus; the Orpheus service forwards it to the Space.
+Orpheus (when backed by a Hugging Face Gradio Space) needs a Hugging Face API token so the Space can attribute GPU usage to your account. Maestro reads `STORI_HF_API_KEY` and sends it as `Authorization: Bearer <token>` on every request to Orpheus; the Storpheus service forwards it to the Space.
 
 - **Set the token:** In `.env`, set `STORI_HF_API_KEY` to your token (no quotes). With Docker Compose, the maestro service loads `.env`, so restart the stack after changing it.
 - **Verify it’s sent:** With `STORI_DEBUG=true`, Maestro logs at debug level whether an HF token is present for each Orpheus request (value is never logged).

@@ -9,12 +9,12 @@ from __future__ import annotations
 import pytest
 from quality_metrics import analyze_quality, compare_generations
 from generation_policy import intent_to_controls
-from orpheus_types import OrpheusNoteDict
+from storpheus_types import StorpheusNoteDict
 
 
-def _note(pitch: int, start_beat: float, duration_beats: float, velocity: int) -> OrpheusNoteDict:
+def _note(pitch: int, start_beat: float, duration_beats: float, velocity: int) -> StorpheusNoteDict:
     """Construct a fully-typed note dict for tests."""
-    return OrpheusNoteDict(
+    return StorpheusNoteDict(
         pitch=pitch,
         start_beat=start_beat,
         duration_beats=duration_beats,
@@ -157,7 +157,7 @@ def test_quality_metrics_all_fields() -> None:
 
 def test_quality_score_range() -> None:
     """Test quality score is always between 0 and 1."""
-    test_cases: list[list[OrpheusNoteDict]] = [
+    test_cases: list[list[StorpheusNoteDict]] = [
         [_note(60, 0.0, 0.5, 80)],
         [_note(60 + i, i * 0.25, 0.25, 80) for i in range(64)],
         [_note(60, float(i), 0.5, 80) for i in range(8)],

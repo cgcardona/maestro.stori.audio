@@ -1908,8 +1908,8 @@ class TestServerOwnedRetries:
         mock_plan.activate_step = MagicMock(return_value={"type": "planStepUpdate"})
         mock_plan.get_step = MagicMock(return_value=None)
 
-        mock_orpheus = MagicMock()
-        mock_orpheus.circuit_breaker_open = False
+        mock_storpheus = MagicMock()
+        mock_storpheus.circuit_breaker_open = False
 
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
@@ -1918,8 +1918,8 @@ class TestServerOwnedRetries:
             "app.core.maestro_agent_teams.agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ), patch(
-            "app.core.maestro_agent_teams.agent.get_orpheus_client",
-            return_value=mock_orpheus,
+            "app.core.maestro_agent_teams.agent.get_storpheus_client",
+            return_value=mock_storpheus,
         ), patch(
             "asyncio.sleep", new_callable=AsyncMock,
         ):
@@ -1965,7 +1965,7 @@ class TestServerOwnedRetries:
     @pytest.mark.anyio
     async def test_circuit_breaker_skips_section_retries(self) -> None:
 
-        """Server retries are skipped when Orpheus circuit breaker is open."""
+        """Server retries are skipped when Storpheus circuit breaker is open."""
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-cb-skip")
@@ -2008,8 +2008,8 @@ class TestServerOwnedRetries:
         mock_plan.activate_step = MagicMock(return_value={"type": "planStepUpdate"})
         mock_plan.get_step = MagicMock(return_value=None)
 
-        mock_orpheus = MagicMock()
-        mock_orpheus.circuit_breaker_open = True
+        mock_storpheus = MagicMock()
+        mock_storpheus.circuit_breaker_open = True
 
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
@@ -2018,8 +2018,8 @@ class TestServerOwnedRetries:
             "app.core.maestro_agent_teams.agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ), patch(
-            "app.core.maestro_agent_teams.agent.get_orpheus_client",
-            return_value=mock_orpheus,
+            "app.core.maestro_agent_teams.agent.get_storpheus_client",
+            return_value=mock_storpheus,
         ):
             msgs, st, se, rc, ro, gc = await _dispatch_section_children(
                 tool_calls=[track_tc, r1, g1],
@@ -2182,7 +2182,7 @@ class TestPreEmitGeneratorEvents:
     """Regression for SSE relay bug where generatorStart/toolStart were
     accumulated in a local list inside _execute_agent_generator and only
     returned after mg.generate() completed.  This starved the SSE queue
-    during long Orpheus calls, causing the frontend to time out.
+    during long Storpheus calls, causing the frontend to time out.
 
     The fix adds a ``pre_emit_callback`` that flushes toolStart and
     generatorStart to the SSE queue BEFORE generation blocks.
@@ -2206,7 +2206,7 @@ class TestPreEmitGeneratorEvents:
         ok_result = GenerationResult(
             success=True,
             notes=[NoteDict(pitch=36, startBeat=0, durationBeats=1, velocity=80)] * 12,
-            backend_used=GeneratorBackend.ORPHEUS,
+            backend_used=GeneratorBackend.STORPHEUS,
             metadata={},
         )
 
@@ -2276,7 +2276,7 @@ class TestPreEmitGeneratorEvents:
         ok_result = GenerationResult(
             success=True,
             notes=[NoteDict(pitch=40, startBeat=0, durationBeats=1, velocity=80)] * 8,
-            backend_used=GeneratorBackend.ORPHEUS,
+            backend_used=GeneratorBackend.STORPHEUS,
             metadata={},
         )
 
@@ -2341,7 +2341,7 @@ class TestPreEmitGeneratorEvents:
                     {"type": "generatorStart", "role": "drums", "agentId": "drums"},
                 ])
 
-            # Snapshot the queue at the moment generate would block on Orpheus.
+            # Snapshot the queue at the moment generate would block on Storpheus.
             # In the old code, the queue would be empty here.
             while not queue.empty():
                 events_at_generate_time.append(queue.get_nowait())

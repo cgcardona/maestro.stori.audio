@@ -91,8 +91,8 @@ services:
     environment:
       # REQUIRED: Set STORI_DB_PASSWORD in .env. Same value as postgres service.
       STORI_DATABASE_URL: "postgresql+asyncpg://stori:${STORI_DB_PASSWORD}@postgres:5432/stori"
-      # Orpheus: from inside the container use service name (not localhost)
-      STORI_ORPHEUS_BASE_URL: "http://orpheus:10002"
+      # Storpheus: from inside the container use service name (not localhost)
+      STORI_STORPHEUS_BASE_URL: "http://storpheus:10002"
       # S3 asset delivery: set in .env (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, STORI_AWS_S3_ASSET_BUCKET, STORI_AWS_REGION)
       # Pass-through so container has them; boto3 reads AWS_*, app reads STORI_AWS_*
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
@@ -108,7 +108,7 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
-      orpheus:
+      storpheus:
         condition: service_started
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:10001/api/v1/health')"]
@@ -135,23 +135,23 @@ services:
           memory: 256M
 
   # ==========================================================================
-  # Orpheus Music Service
+  # Storpheus Music Service (proxies to Orpheus on HuggingFace/Gradio)
   # ==========================================================================
-  orpheus:
+  storpheus:
     build:
-      context: ./orpheus-music
+      context: ./storpheus
       dockerfile: Dockerfile
-    container_name: maestro-stori-orpheus
+    container_name: maestro-stori-storpheus
     restart: unless-stopped
     env_file:
       - .env
     environment:
       # Gradio Client needs HF token for Space GPU quota; use same key as Maestro
       HF_TOKEN: ${STORI_HF_API_KEY:-}
-      STORI_ORPHEUS_SPACE: ${STORI_ORPHEUS_SPACE:-cgcardona/Orpheus-Music-Transformer}
-      ORPHEUS_CACHE_DIR: /data/cache
+      STORI_STORPHEUS_SPACE: ${STORI_STORPHEUS_SPACE:-cgcardona/Orpheus-Music-Transformer}
+      STORPHEUS_CACHE_DIR: /data/cache
     volumes:
-      - orpheus_cache:/data/cache
+      - storpheus_cache:/data/cache
     networks:
       - maestro-stori-net
     healthcheck:
@@ -234,8 +234,8 @@ volumes:
   certbot_certs:
     name: maestro-stori-certbot-certs
     external: true
-  orpheus_cache:
-    name: maestro-stori-orpheus-cache
+  storpheus_cache:
+    name: maestro-stori-storpheus-cache
 
 networks:
   maestro-stori-net:

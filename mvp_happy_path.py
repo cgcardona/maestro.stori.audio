@@ -27,7 +27,7 @@ import httpx
 
 JWT = os.environ.get("STORI_JWT", "")
 MAESTRO_URL = "http://localhost:10001/api/v1/maestro/stream"
-ORPHEUS_URL = "http://orpheus:10002"
+ORPHEUS_URL = "http://storpheus:10002"
 OUTPUT_DIR = Path("/data/mvp_output")
 
 PROMPT = """\

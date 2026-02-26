@@ -23,7 +23,7 @@ from app.config import settings
 from app.api.routes import maestro, maestro_ui, health, users, conversations, assets, variation, muse
 from app.api.routes import mcp as mcp_routes
 from app.db import init_db, close_db
-from app.services.orpheus import get_orpheus_client, close_orpheus_client
+from app.services.storpheus import get_storpheus_client, close_storpheus_client
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"LLM provider: {settings.llm_provider}")
     logger.info(f"LLM model: {settings.llm_model}")
-    logger.info(f"Orpheus service: {settings.orpheus_base_url}")
+    logger.info(f"Storpheus service: {settings.storpheus_base_url}")
     
     # Initialize database
     try:
@@ -97,16 +97,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "Do not use 'changeme123' or leave it unset. Generate with: openssl rand -hex 16"
             )
 
-    # Warm up Orpheus connection pool so the first generation request incurs
+    # Warm up Storpheus connection pool so the first generation request incurs
     # no cold-start TCP/TLS handshake cost.
-    await get_orpheus_client().warmup()
+    await get_storpheus_client().warmup()
 
     yield
 
     # Cleanup
     logger.info("Shutting down...")
     await close_db()
-    await close_orpheus_client()
+    await close_storpheus_client()
 
 
 app = FastAPI(

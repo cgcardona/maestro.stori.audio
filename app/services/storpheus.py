@@ -2,7 +2,7 @@
 
 Client for communicating with the Orpheus music generation service.
 
-The ``normalize_orpheus_tool_calls`` function is the adapter boundary:
+The ``normalize_storpheus_tool_calls`` function is the adapter boundary:
 all Orpheus responses that contain ``tool_calls`` MUST pass through it
 before Maestro consumes the data.  Orpheus's internal tool names
 (``addNotes``, ``addMidiCC``, ``addPitchBend``, ``addAftertouch``) are
@@ -24,12 +24,12 @@ from app.contracts.json_types import (
     CCEventDict,
     JSONValue,
     NoteDict,
-    OrpheusResultBucket,
+    StorpheusResultBucket,
     PitchBendDict,
 )
 
 
-class OrpheusRawResponse(TypedDict, total=False):
+class StorpheusRawResponse(TypedDict, total=False):
     """Raw HTTP response shape returned by generate_async.
 
     On success: ``success`` is True plus notes/tool_calls/metadata.
@@ -128,9 +128,9 @@ _CONNECTION_LIMITS = httpx.Limits(
 )
 
 
-class OrpheusClient:
+class StorpheusClient:
     """
-    Async client for the Orpheus Music Service.
+    Async client for the Storpheus Music Service.
 
     Uses a long-lived httpx.AsyncClient with keepalive connection pooling so
     the TCP/TLS handshake cost is paid once per worker process rather than on
@@ -145,19 +145,19 @@ class OrpheusClient:
         hf_token: str | None = None,
         max_concurrent: int | None = None,
     ):
-        self.base_url = (base_url or settings.orpheus_base_url).rstrip("/")
-        self.timeout = timeout or settings.orpheus_timeout
+        self.base_url = (base_url or settings.storpheus_base_url).rstrip("/")
+        self.timeout = timeout or settings.storpheus_timeout
         # Use HF token if provided (for Gradio Spaces)
         self.hf_token = hf_token or getattr(settings, "hf_api_key", None)
         self._client: httpx.AsyncClient | None = None
 
-        n = max_concurrent or settings.orpheus_max_concurrent
+        n = max_concurrent or settings.storpheus_max_concurrent
         self._semaphore = asyncio.Semaphore(n)
         self._max_concurrent = n
 
         self._cb = _CircuitBreaker(
-            threshold=settings.orpheus_cb_threshold,
-            cooldown=float(settings.orpheus_cb_cooldown),
+            threshold=settings.storpheus_cb_threshold,
+            cooldown=float(settings.storpheus_cb_cooldown),
         )
 
     @property
@@ -261,7 +261,7 @@ class OrpheusClient:
         # ── Unified generation ──
         add_outro: bool = False,
         unified_output: bool = False,
-    ) -> OrpheusRawResponse:
+    ) -> StorpheusRawResponse:
         """Generate MIDI via Orpheus using the async submit + long-poll pattern.
 
         1. POST /generate → returns immediately with {jobId, status}.
@@ -310,7 +310,7 @@ class OrpheusClient:
         if self._cb.is_open:
             return {
                 "success": False,
-                "error": "orpheus_circuit_open",
+                "error": "storpheus_circuit_open",
                 "message": (
                     "Orpheus music service is unavailable (circuit breaker open). "
                     "Do not retry — the service will be probed automatically."
@@ -396,7 +396,7 @@ class OrpheusClient:
                             f"{_log_prefix}[Orpheus] ✅ Cache hit for {instruments} in {_elapsed:.1f}s"
                         )
                         _raw_meta = result.get("metadata")
-                        _cache_resp = OrpheusRawResponse(
+                        _cache_resp = StorpheusRawResponse(
                             success=bool(result.get("success", False)),
                             notes=result.get("notes", []),
                             tool_calls=result.get("tool_calls", []),
@@ -467,8 +467,8 @@ class OrpheusClient:
                 }
 
             # ── Poll phase ────────────────────────────────────────────
-            poll_timeout = settings.orpheus_poll_timeout
-            max_polls = settings.orpheus_poll_max_attempts
+            poll_timeout = settings.storpheus_poll_timeout
+            max_polls = settings.storpheus_poll_max_attempts
             _poll_httpx_timeout = httpx.Timeout(
                 connect=5.0,
                 read=float(poll_timeout + 5),
@@ -511,7 +511,7 @@ class OrpheusClient:
                             f"(poll {poll_num + 1}/{max_polls})"
                         )
                         _poll_meta = result.get("metadata")
-                        _poll_resp = OrpheusRawResponse(
+                        _poll_resp = StorpheusRawResponse(
                             success=True,
                             notes=result.get("notes", []),
                             tool_calls=result.get("tool_calls", []),
@@ -564,18 +564,18 @@ class OrpheusClient:
             }
 
 
-def normalize_orpheus_tool_calls(
+def normalize_storpheus_tool_calls(
     tool_calls: list[dict[str, object]],
-) -> OrpheusResultBucket:
+) -> StorpheusResultBucket:
     """Translate Orpheus-format tool_calls into Maestro-internal flat lists.
 
     Orpheus returns DAW-style tool names (``addNotes``, ``addMidiCC``,
     ``addPitchBend``, ``addAftertouch``).  This adapter extracts the
     musical content into plain lists keyed by data type so that callers
-    never handle Orpheus-specific tool names.
+    never handle Storpheus-specific tool names.
 
-    This is the quarantine boundary: raw ``dict[str, Any]`` from Orpheus
-    enters, typed ``OrpheusResultBucket`` exits.
+    This is the quarantine boundary: raw ``dict[str, Any]`` from Storpheus
+    enters, typed ``StorpheusResultBucket`` exits.
     """
     notes: list[NoteDict] = []
     cc_events: list[CCEventDict] = []
@@ -629,7 +629,7 @@ def normalize_orpheus_tool_calls(
                     entry["pitch"] = ev["pitch"]
                 aftertouch.append(entry)
 
-    return OrpheusResultBucket(
+    return StorpheusResultBucket(
         notes=notes,
         cc_events=cc_events,
         pitch_bends=pitch_bends,
@@ -638,22 +638,22 @@ def normalize_orpheus_tool_calls(
 
 
 # ---------------------------------------------------------------------------
-# Module-level singleton — shared across all OrpheusBackend instances so the
+# Module-level singleton — shared across all StorpheusBackend instances so the
 # connection pool is reused rather than recreated per-request.
 # ---------------------------------------------------------------------------
 
-_shared_client: OrpheusClient | None = None
+_shared_client: StorpheusClient | None = None
 
 
-def get_orpheus_client() -> OrpheusClient:
-    """Return the process-wide OrpheusClient singleton."""
+def get_storpheus_client() -> StorpheusClient:
+    """Return the process-wide StorpheusClient singleton."""
     global _shared_client
     if _shared_client is None:
-        _shared_client = OrpheusClient()
+        _shared_client = StorpheusClient()
     return _shared_client
 
 
-async def close_orpheus_client() -> None:
+async def close_storpheus_client() -> None:
     """Close the singleton client (call from FastAPI lifespan shutdown)."""
     global _shared_client
     if _shared_client is not None:

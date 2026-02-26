@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from app.config import settings
-from app.services.orpheus import OrpheusClient
+from app.services.storpheus import StorpheusClient
 from app.services.assets import check_s3_reachable
 
 router = APIRouter()
@@ -35,25 +35,25 @@ async def full_health_check() -> dict[str, Any]:
 
     Reports:
     - LLM: configured (OpenRouter API key present)
-    - Orpheus music service (if reachable)
+    - Storpheus music service (if reachable)
     - S3 asset delivery (if configured)
     """
-    orpheus = OrpheusClient()
+    storpheus = StorpheusClient()
     try:
         llm_ok = _llm_configured()
-        orpheus_ok = await orpheus.health_check()
+        storpheus_ok = await storpheus.health_check()
         s3_ok = check_s3_reachable() if settings.aws_s3_asset_bucket else None  # None = not configured
 
-        all_ok = llm_ok and orpheus_ok
+        all_ok = llm_ok and storpheus_ok
 
         deps = {
             "llm": {
                 "status": "ok" if llm_ok else "unconfigured",
                 "provider": settings.llm_provider,
             },
-            "orpheus": {
-                "status": "ok" if orpheus_ok else "unavailable",
-                "url": settings.orpheus_base_url,
+            "storpheus": {
+                "status": "ok" if storpheus_ok else "unavailable",
+                "url": settings.storpheus_base_url,
             },
         }
         if settings.aws_s3_asset_bucket:
@@ -70,4 +70,4 @@ async def full_health_check() -> dict[str, Any]:
             "dependencies": deps,
         }
     finally:
-        await orpheus.close()
+        await storpheus.close()

@@ -20,7 +20,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 
-from orpheus_types import OrpheusNoteDict, ScoringParams
+from storpheus_types import StorpheusNoteDict, ScoringParams
 from key_detection import (
     MAJOR_PROFILE,
     MINOR_PROFILE,
@@ -98,7 +98,7 @@ _ORPHEUS_TYPICAL_NOTES_PER_BAR = 50.0
 
 
 def _density_match(
-    notes: list[OrpheusNoteDict],
+    notes: list[StorpheusNoteDict],
     bars: int,
     target_density: float | None,
 ) -> float:
@@ -150,7 +150,7 @@ def _register_compliance(
 
 
 def _velocity_compliance(
-    notes: list[OrpheusNoteDict],
+    notes: list[StorpheusNoteDict],
     velocity_floor: int | None,
     velocity_ceiling: int | None,
 ) -> float:
@@ -166,7 +166,7 @@ def _velocity_compliance(
     return in_range / len(velocities)
 
 
-def _pattern_diversity(notes: list[OrpheusNoteDict]) -> float:
+def _pattern_diversity(notes: list[StorpheusNoteDict]) -> float:
     """Score melodic diversity using 2-note pattern entropy.
 
     Higher diversity → higher score.  Penalizes both total randomness
@@ -205,7 +205,7 @@ def _pattern_diversity(notes: list[OrpheusNoteDict]) -> float:
 
 
 def _coverage_score(
-    channel_notes: dict[int, list[OrpheusNoteDict]],
+    channel_notes: dict[int, list[StorpheusNoteDict]],
     expected_channels: int,
 ) -> float:
     """Score whether output has notes on expected number of channels."""
@@ -216,7 +216,7 @@ def _coverage_score(
     return min(1.0, active / expected_channels)
 
 
-def _silence_score(notes: list[OrpheusNoteDict], bars: int) -> float:
+def _silence_score(notes: list[StorpheusNoteDict], bars: int) -> float:
     """Score based on fraction of bars that contain at least one note."""
     if bars <= 0 or not notes:
         return 0.0
@@ -232,8 +232,8 @@ def _silence_score(notes: list[OrpheusNoteDict], bars: int) -> float:
 
 
 def score_candidate(
-    notes: list[OrpheusNoteDict],
-    channel_notes: dict[int, list[OrpheusNoteDict]],
+    notes: list[StorpheusNoteDict],
+    channel_notes: dict[int, list[StorpheusNoteDict]],
     batch_index: int,
     params: ScoringParams,
     weights: dict[str, float] | None = None,

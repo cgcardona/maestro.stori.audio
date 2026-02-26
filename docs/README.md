@@ -45,9 +45,9 @@ One backend, two entry points (Stori app + MCP). Request flow (intent → REASON
 
 ---
 
-## 4b. [reference/orpheus.md](reference/orpheus.md)
+## 4b. [reference/storpheus.md](reference/storpheus.md)
 
-**Orpheus operational reference.** Everything about the Orpheus Music Transformer integration: Gradio API, token encoding, generation parameters, seed library, instrument resolution, MIDI pipeline, quality controls, session management, and 8 hard-won lessons to prevent regressions.
+**Storpheus operational reference.** Everything about the Storpheus service and its Orpheus Music Transformer integration: Maestro-side client and backend classes, HTTP API, Gradio API, token encoding, generation parameters, seed library, instrument resolution, MIDI pipeline, quality controls, session management, and 8 hard-won lessons to prevent regressions.
 
 ---
 
@@ -63,7 +63,7 @@ Drum kits and soundfonts; upload to S3.
 
 ---
 
-## 7. [guides/fe-project-state-sync.md](guides/fe-project-state-sync.md)
+## 7. [guides/fe_project_state_sync.md](guides/fe_project_state_sync.md)
 
 Frontend integration guide for project state serialization: how to build the `project` snapshot sent on every compose request, capture server-assigned entity IDs from `toolCall` events, and handle the `plan` / `planStepUpdate` display events. Includes the critical round-trip example for sequential composition (e.g. `Position: after intro`).
 
@@ -73,9 +73,9 @@ Frontend integration guide for project state serialization: how to build the `pr
 
 | Doc | Description |
 |-----|-------------|
-| [protocol/stori-prompt-spec.md](protocol/stori-prompt-spec.md) | **Stori Structured Prompt:** prompt format for expert-level control. |
-| [protocol/muse-variation-spec.md](protocol/muse-variation-spec.md) | Muse / Variation: end-to-end UX + technical contract. |
-| [protocol/variation-api.md](protocol/variation-api.md) | **Variation API:** wire contract, endpoints, SSE events, error codes. |
+| [protocol/stori_prompt_spec.md](protocol/stori_prompt_spec.md) | **Stori Structured Prompt:** prompt format for expert-level control. |
+| [protocol/muse_variation_spec.md](protocol/muse_variation_spec.md) | Muse / Variation: end-to-end UX + technical contract. |
+| [protocol/variation_api.md](protocol/variation_api.md) | **Variation API:** wire contract, endpoints, SSE events, error codes. |
 | [protocol/terminology.md](protocol/terminology.md) | Canonical vocabulary for Muse/Variations (normative). |
 | [roadmaps/neural-midi-roadmap.md](roadmaps/neural-midi-roadmap.md) | Neural MIDI generation roadmap and status. |
 
@@ -85,7 +85,7 @@ Frontend integration guide for project state serialization: how to build the `pr
 
 | Doc | Description |
 |-----|-------------|
-| [architecture/muse-vcs.md](architecture/muse-vcs.md) | **Canonical Muse VCS reference:** module map, HTTP API, VCS primitives, boundary rules. Start here. |
+| [architecture/muse_vcs.md](architecture/muse_vcs.md) | **Canonical Muse VCS reference:** module map, HTTP API, VCS primitives, boundary rules. Start here. |
 | [architecture/muse_e2e_demo.md](architecture/muse_e2e_demo.md) | E2E tour de force: run the full VCS lifecycle demo and read the expected output. |
 | [architecture/boundary_rules.md](architecture/boundary_rules.md) | 17 AST-enforced import boundary rules (variation + Muse VCS). |
 

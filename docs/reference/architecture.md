@@ -41,7 +41,7 @@ The backend owns the execution mode decision.
 
 This enforces the "Cursor of DAWs" paradigm: all AI-generated musical content (COMPOSING) requires human review before becoming canonical state. Structural operations (EDITING) apply immediately because they are low-risk and reversible.
 
-See [muse-variation-spec.md](../protocol/muse-variation-spec.md) for the full Variation protocol.  
+See [muse_variation_spec.md](../protocol/muse_variation_spec.md) for the full Variation protocol.  
 See [api.md](api.md) for the full SSE event reference and wire format.
 
 ---
@@ -84,7 +84,7 @@ Classify first, then execute. **REASONING** = questions, no tools. **EDITING** =
 
 ## Structured prompts
 
-Power users can bypass NL classification entirely with a structured prompt format. See [stori-prompt-spec.md](../protocol/stori-prompt-spec.md).
+Power users can bypass NL classification entirely with a structured prompt format. See [stori_prompt_spec.md](../protocol/stori_prompt_spec.md).
 
 ```
 User prompt arrives
@@ -414,15 +414,15 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 **Track color pre-allocation:**
 - Before Phase 2 starts, the coordinator calls `allocate_colors(instrument_names)` (`app/core/track_styling.py`) to assign one distinct hex color per instrument from a fixed 12-entry perceptually-spaced palette (`COMPOSITION_PALETTE`). Colors are chosen in role order so adjacent tracks always contrast. Each instrument agent receives its pre-assigned color and is instructed to pass it verbatim in `stori_add_midi_track` — the agent cannot override it. This prevents the LLM from hallucinating repeated colors (the original bug was all tracks receiving amber/orange).
 
-**Orpheus pre-flight health check (hard gate):**
-- Before Phase 2 starts, the coordinator calls `OrpheusClient.health_check()`. When `STORI_ORPHEUS_REQUIRED=true` (default), an unhealthy probe aborts the composition immediately with `complete(success=false)` instead of wasting 45+ seconds of LLM reasoning that would inevitably fail at generation time. When `STORI_ORPHEUS_REQUIRED=false` (development/testing), it falls back to a soft warning and continues with retry logic active.
+**Storpheus pre-flight health check (hard gate):**
+- Before Phase 2 starts, the coordinator calls `StorpheusClient.health_check()`. When `STORI_STORPHEUS_REQUIRED=true` (default), an unhealthy probe aborts the composition immediately with `complete(success=false)` instead of wasting 45+ seconds of LLM reasoning that would inevitably fail at generation time. When `STORI_STORPHEUS_REQUIRED=false` (development/testing), it falls back to a soft warning and continues with retry logic active.
 
-**Orpheus async job queue (submit + poll):**
-- `OrpheusClient.generate()` uses a two-phase pattern: (1) **Submit** — `POST /generate` returns immediately with `{jobId, status}`. Cache hits arrive pre-completed (`status: "complete"`) without consuming a queue slot. Cache misses enqueue a job and return `{status: "queued", position}`. (2) **Poll** — `GET /jobs/{jobId}/wait?timeout=30` long-polls until the job completes or fails. Max `orpheus_poll_max_attempts` polls (default 10 = ~5 min total). Jobs survive HTTP disconnects — if a poll times out, the GPU work continues server-side and the next poll picks up the result. This eliminates the timeout cascade that occurred when 9 agents queued behind a semaphore in a single blocking HTTP request.
-- Submit retries: up to 4 attempts (delays: 2 s / 5 s / 10 s / 20 s) on 503 (queue full), `ReadTimeout`, or `HTTPStatusError`. Poll retries: `ReadTimeout` during a poll is non-fatal — the job keeps running; only `ConnectError` (Orpheus down) fails immediately.
+**Storpheus async job queue (submit + poll):**
+- `StorpheusClient.generate()` uses a two-phase pattern: (1) **Submit** — `POST /generate` returns immediately with `{jobId, status}`. Cache hits arrive pre-completed (`status: "complete"`) without consuming a queue slot. Cache misses enqueue a job and return `{status: "queued", position}`. (2) **Poll** — `GET /jobs/{jobId}/wait?timeout=30` long-polls until the job completes or fails. Max `storpheus_poll_max_attempts` polls (default 10 = ~5 min total). Jobs survive HTTP disconnects — if a poll times out, the GPU work continues server-side and the next poll picks up the result. This eliminates the timeout cascade that occurred when 9 agents queued behind a semaphore in a single blocking HTTP request.
+- Submit retries: up to 4 attempts (delays: 2 s / 5 s / 10 s / 20 s) on 503 (queue full), `ReadTimeout`, or `HTTPStatusError`. Poll retries: `ReadTimeout` during a poll is non-fatal — the job keeps running; only `ConnectError` (Storpheus down) fails immediately.
 
-**Orpheus circuit breaker:**
-- After `orpheus_cb_threshold` (default 3) consecutive failed `generate()` calls (across requests — not retries within a single call), the circuit breaker trips. While tripped, all subsequent `generate()` calls fail immediately with `error: "orpheus_circuit_open"` — no HTTP request is made, no tokens are wasted on retries that will also fail. The circuit automatically allows one probe request after `orpheus_cb_cooldown` seconds (default 60). If the probe succeeds, the circuit closes and normal operation resumes; if it fails, the circuit re-opens for another cooldown period. Server-owned section retries check `circuit_breaker_open` before each retry round — if the breaker is open, retries are skipped immediately.
+**Storpheus circuit breaker:**
+- After `storpheus_cb_threshold` (default 3) consecutive failed `generate()` calls (across requests — not retries within a single call), the circuit breaker trips. While tripped, all subsequent `generate()` calls fail immediately with `error: "storpheus_circuit_open"` — no HTTP request is made, no tokens are wasted on retries that will also fail. The circuit automatically allows one probe request after `storpheus_cb_cooldown` seconds (default 60). If the probe succeeds, the circuit closes and normal operation resumes; if it fails, the circuit re-opens for another cooldown period. Server-owned section retries check `circuit_breaker_open` before each retry round — if the breaker is open, retries are skipped immediately.
 
 **SSE keepalive (heartbeat monitoring):**
 - The coordinator emits an SSE comment (`: heartbeat\n\n`) every 8 seconds when no real events are flowing. This prevents proxies and HTTP clients from interpreting GPU-bound silence as a dead connection.
@@ -451,14 +451,14 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 | `STORI_BASS_SIGNAL_WAIT_TIMEOUT` | 240 | Bass waiting for drum signal (seconds) |
 | `STORI_ORPHEUS_MAX_CONCURRENT` | 2 | Max parallel submit+poll cycles (serializes GPU access) |
 | `STORI_ORPHEUS_TIMEOUT` | 180 | Fallback max read timeout (seconds) |
-| `STORI_ORPHEUS_POLL_TIMEOUT` | 30 | Long-poll timeout per `/jobs/{id}/wait` request (seconds) |
-| `STORI_ORPHEUS_POLL_MAX_ATTEMPTS` | 10 | Max polls before giving up (~5 min total) |
-| `STORI_ORPHEUS_CB_THRESHOLD` | 3 | Consecutive failures before circuit breaker trips |
-| `STORI_ORPHEUS_CB_COOLDOWN` | 60 | Seconds before tripped circuit allows a probe |
-| `STORI_ORPHEUS_REQUIRED` | true | Abort composition if pre-flight health check fails |
-| `STORI_ORPHEUS_PRESERVE_ALL_CHANNELS` | true | Return all MIDI channels (DAW handles routing) |
-| `STORI_ORPHEUS_ENABLE_BEAT_RESCALING` | false | Disable beat rescaling for raw model timing |
-| `STORI_ORPHEUS_REJECTION_CANDIDATES` | 4 | Candidates for rejection sampling (quality preset) |
+| `STORI_STORPHEUS_POLL_TIMEOUT` | 30 | Long-poll timeout per `/jobs/{id}/wait` request (seconds) |
+| `STORI_STORPHEUS_POLL_MAX_ATTEMPTS` | 10 | Max polls before giving up (~5 min total) |
+| `STORI_STORPHEUS_CB_THRESHOLD` | 3 | Consecutive failures before circuit breaker trips |
+| `STORI_STORPHEUS_CB_COOLDOWN` | 60 | Seconds before tripped circuit allows a probe |
+| `STORI_STORPHEUS_REQUIRED` | true | Abort composition if pre-flight health check fails |
+| `STORI_STORPHEUS_PRESERVE_ALL_CHANNELS` | true | Return all MIDI channels (DAW handles routing) |
+| `STORI_STORPHEUS_ENABLE_BEAT_RESCALING` | false | Disable beat rescaling for raw model timing |
+| `STORI_STORPHEUS_REJECTION_CANDIDATES` | 4 | Candidates for rejection sampling (quality preset) |
 | `STORI_ORPHEUS_MAX_SESSION_TOKENS` | 4096 | Token cap before session rotation |
 
 ### SectionState — deterministic musical telemetry
@@ -546,7 +546,7 @@ Key invariants enforced:
 | `muse_log_graph` | DAG serializer (Kahn's sort → camelCase JSON for Swift) |
 | `muse_log_render` | ASCII graph + JSON + summary table renderer |
 
-HTTP API: 5 production endpoints at `/api/v1/muse/` (routes in `app/api/routes/muse.py`). See [api.md](api.md#muse-vcs-api) for the full endpoint reference and [muse-vcs.md](../architecture/muse-vcs.md) for the architecture reference.
+HTTP API: 5 production endpoints at `/api/v1/muse/` (routes in `app/api/routes/muse.py`). See [api.md](api.md#muse-vcs-api) for the full endpoint reference and [muse_vcs.md](../architecture/muse_vcs.md) for the architecture reference.
 
 ---
 
@@ -562,13 +562,13 @@ HTTP API: 5 production endpoints at `/api/v1/muse/` (routes in `app/api/routes/m
 
 ## Music generation
 
-**Orpheus required** for composing. No pattern fallback; if Orpheus is down, generation fails with a clear error. Config: `STORI_ORPHEUS_BASE_URL` (default `http://localhost:10002`). Full health requires Orpheus. See [setup.md](../guides/setup.md) for config.
+**Orpheus required** for composing. No pattern fallback; if Orpheus is down, generation fails with a clear error. Config: `STORI_STORPHEUS_BASE_URL` (default `http://localhost:10002`). Full health requires Orpheus. See [setup.md](../guides/setup.md) for config.
 
-### Orpheus instrument mapping
+### Storpheus instrument mapping
 
 The proxy resolves Maestro instrument roles to GM program numbers (0-127) via a comprehensive alias table (`_GM_ALIASES`), then converts to TMIDIX `Number2patch` string names at the Gradio call boundary. This covers all 128 GM programs plus world/ethnic instrument proxies (e.g. `"sitar"` → GM 104, `"koto"` → GM 107, `"shakuhachi"` → GM 77, `"oud"` → GM 111, `"banjo"` → GM 105). Drums and percussion variants resolve to channel 10 automatically.
 
-Key functions in `orpheus-music/music_service.py`:
+Key functions in `storpheus/music_service.py`:
 - `resolve_gm_program(role)` — role name → GM program number (or `None` for drums)
 - `resolve_tmidix_name(role)` — role name → TMIDIX string for the Gradio `prime_instruments` parameter
 - `_resolve_melodic_index(role)` — role → preferred MIDI channel index by GM category (bass=0, keys=1, everything else=2)
@@ -649,12 +649,12 @@ emotion_vector_from_stori_prompt()          ← app/core/emotion_vector.py
 EmotionVector(energy, valence, tension, intimacy, motion)
     │
     ▼
-OrpheusBackend.generate()                   ← app/services/backends/orpheus.py
+StorpheusBackend.generate()                   ← app/services/backends/orpheus.py
     │  maps:  valence → tone_brightness
     │         energy → energy_intensity
     │         salient axes → musical_goals list
     ▼
-OrpheusClient.generate()                    ← app/services/orpheus.py
+StorpheusClient.generate()                    ← app/services/orpheus.py
     │  submit: POST /generate → {jobId, status}
     │  poll:   GET /jobs/{id}/wait?timeout=30
     ▼
@@ -668,13 +668,13 @@ For **STORI PROMPTs**: `Vibe`, `Section`, `Style`, and `Energy` fields contribut
 
 For **natural language** prompts: the EmotionVector is not derived (no structured fields to parse). The LLM's plan and tool parameters carry the full expressive brief.
 
-### Orpheus async job queue
+### Storpheus async job queue
 
-`OrpheusClient` is a process-wide singleton (see `app/services/orpheus.get_orpheus_client()`). The `httpx.AsyncClient` is created once at startup with explicit connection limits and keepalive settings, and `warmup()` is called in the FastAPI lifespan to pre-establish the TCP connection before the first user request.
+`StorpheusClient` is a process-wide singleton (see `app/services/orpheus.get_storpheus_client()`). The `httpx.AsyncClient` is created once at startup with explicit connection limits and keepalive settings, and `warmup()` is called in the FastAPI lifespan to pre-establish the TCP connection before the first user request.
 
 **Submit + poll pattern:** `POST /generate` returns immediately with `{jobId, status}`. Cache hits arrive pre-completed (no queue slot used). Cache misses enqueue a job in a bounded `asyncio.Queue` (max depth 20, configurable via `ORPHEUS_MAX_QUEUE_DEPTH`). A fixed-size worker pool (`ORPHEUS_MAX_CONCURRENT`, default 2) pulls jobs from the queue and runs `_do_generate()` (the extracted GPU generation logic). Callers poll `GET /jobs/{jobId}/wait?timeout=30` until the job completes or fails. Jobs survive HTTP disconnects — if a poll times out, the GPU work continues and the result is retrievable on the next poll. Completed jobs are cleaned up after 5 minutes (`ORPHEUS_JOB_TTL`, default 300s).
 
-**Orpheus-music service (container):** The Orpheus container wraps the HuggingFace Space Gradio API. Key reliability features: (1) `asyncio.wait_for()` around each Gradio `predict()` call (default 180s per call, configurable via `ORPHEUS_PREDICT_TIMEOUT`), (2) periodic keepalive pings to prevent the HF Space GPU from going to sleep (`ORPHEUS_KEEPALIVE_INTERVAL`, default 600s), (3) automatic Gradio client recreation on connection failures, (4) `/diagnostics` endpoint for operational visibility (Gradio client status, HF Space status, active generation count, queue depth, cache stats), (5) `GET /queue/status` for queue depth and worker utilization.
+**Orpheus-music service (container):** The Storpheus container wraps the HuggingFace Space Gradio API. Key reliability features: (1) `asyncio.wait_for()` around each Gradio `predict()` call (default 180s per call, configurable via `ORPHEUS_PREDICT_TIMEOUT`), (2) periodic keepalive pings to prevent the HF Space GPU from going to sleep (`ORPHEUS_KEEPALIVE_INTERVAL`, default 600s), (3) automatic Gradio client recreation on connection failures, (4) `/diagnostics` endpoint for operational visibility (Gradio client status, HF Space status, active generation count, queue depth, cache stats), (5) `GET /queue/status` for queue depth and worker utilization.
 
 ---
 

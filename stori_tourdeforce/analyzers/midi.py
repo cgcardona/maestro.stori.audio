@@ -54,7 +54,7 @@ def analyze_midi_bytes(data: bytes) -> MidiMetrics:
 
 
 def analyze_tool_call_notes(notes: list[dict]) -> MidiMetrics:
-    """Analyze notes from Orpheus tool-call output (no MIDI file needed)."""
+    """Analyze notes from Storpheus tool-call output (no MIDI file needed)."""
     if not notes:
         return MidiMetrics()
 

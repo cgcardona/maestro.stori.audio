@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 class Component(str, Enum):
     MAESTRO = "maestro"
-    ORPHEUS = "orpheus"
+    STORPHEUS = "storpheus"
     MUSE = "muse"
     PROMPT_SERVICE = "prompt_service"
     CLIENT = "client"
@@ -48,7 +48,7 @@ class Severity(str, Enum):
 class RunStatus(str, Enum):
     SUCCESS = "success"
     MAESTRO_ERROR = "maestro_error"
-    ORPHEUS_ERROR = "orpheus_error"
+    STORPHEUS_ERROR = "storpheus_error"
     MIDI_QUALITY_FAIL = "midi_quality_fail"
     MUSE_ERROR = "muse_error"
     MERGE_CONFLICT = "merge_conflict"
@@ -172,13 +172,13 @@ class RunResult:
     execution_mode: str = ""
 
     # Orpheus
-    orpheus_job_id: str = ""
-    orpheus_queue_wait_ms: float = 0.0
-    orpheus_infer_ms: float = 0.0
-    orpheus_total_ms: float = 0.0
-    orpheus_retries: int = 0
-    orpheus_output_bytes: int = 0
-    orpheus_note_count: int = 0
+    storpheus_job_id: str = ""
+    storpheus_queue_wait_ms: float = 0.0
+    storpheus_infer_ms: float = 0.0
+    storpheus_total_ms: float = 0.0
+    storpheus_retries: int = 0
+    storpheus_output_bytes: int = 0
+    storpheus_note_count: int = 0
 
     # MIDI
     midi_metrics: dict[str, Any] = field(default_factory=dict)
@@ -199,7 +199,7 @@ class RunResult:
     error_message: str = ""
     last_sse_events: list[dict[str, Any]] = field(default_factory=list)
 
-    # Artifacts (downloaded from Orpheus)
+    # Artifacts (downloaded from Storpheus)
     artifact_files: list[str] = field(default_factory=list)
 
     # Payload hashes

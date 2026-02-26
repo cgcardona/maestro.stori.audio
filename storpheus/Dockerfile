@@ -1,8 +1,8 @@
-# Production Dockerfile for Orpheus Music Service
+# Production Dockerfile for Storpheus Music Service
 FROM python:3.11-slim
 
 # Security: Run as non-root user
-RUN groupadd -r orpheus && useradd -r -g orpheus orpheus
+RUN groupadd -r storpheus && useradd -r -g storpheus storpheus
 
 # Set working directory
 WORKDIR /app
@@ -26,13 +26,13 @@ COPY *.py pyproject.toml ./
 COPY seed_library/ ./seed_library/
 
 # Persistent cache directory (mounted as volume)
-RUN mkdir -p /data/cache && chown -R orpheus:orpheus /data
+RUN mkdir -p /data/cache && chown -R storpheus:storpheus /data
 
 # Security: Set ownership
-RUN chown -R orpheus:orpheus /app
+RUN chown -R storpheus:storpheus /app
 
 # Security: Switch to non-root user
-USER orpheus
+USER storpheus
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \

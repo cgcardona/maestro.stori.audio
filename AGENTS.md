@@ -1,6 +1,6 @@
 # Stori Maestro — Agent Contract
 
-This document defines how AI agents operate in this repository. It applies to all agents — backend (Python/Maestro/Orpheus), frontend (Swift/macOS DAW), and cross-cutting (DevOps, security, documentation).
+This document defines how AI agents operate in this repository. It applies to all agents — backend (Python/Maestro/Storpheus), frontend (Swift/macOS DAW), and cross-cutting (DevOps, security, documentation).
 
 ---
 
@@ -99,8 +99,8 @@ app/
   protocol/        → SSE events, version, hashing
   config.py        → Pydantic Settings (STORI_* env vars)
 
-orpheus-music/
-  music_service.py → Orpheus FastAPI app (generation, caching, MIDI pipeline)
+storpheus/
+  music_service.py → Storpheus FastAPI app (proxies to Orpheus on HuggingFace/Gradio)
 ```
 
 ### Frontend (Stori DAW — separate repo)
@@ -128,7 +128,7 @@ The backend serves the frontend via SSE streaming and tool calls. The SSE event 
 Before considering work complete, run in this order (mypy first so type fixes don't force a re-run of tests):
 
 1. [ ] `docker compose exec maestro mypy app/ tests/` — clean
-2. [ ] `docker compose exec orpheus mypy .` — clean
+2. [ ] `docker compose exec storpheus mypy .` — clean
 3. [ ] Relevant test file passes: `docker compose exec <service> pytest <file> -v`
 4. [ ] Regression test added (if bug fix)
 5. [ ] Affected docs updated

@@ -22,7 +22,7 @@ Maestro dimensions (all other top-level keys):
     Maestro LLM system prompt as YAML. The vocabulary is open — invent new
     dimensions and they work immediately.
 
-See docs/protocol/stori-prompt-spec.md for the full specification.
+See docs/protocol/stori_prompt_spec.md for the full specification.
 """
 
 from __future__ import annotations

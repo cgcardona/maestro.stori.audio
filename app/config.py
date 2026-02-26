@@ -76,7 +76,7 @@ def get_context_window_tokens(model: str) -> int:
 
 
 # Single source of truth for default tempo (BPM).  Referenced by the executor,
-# Orpheus client, request models, and planner so they all agree.
+# Storpheus client, request models, and planner so they all agree.
 DEFAULT_TEMPO: int = 120
 
 
@@ -115,19 +115,19 @@ class Settings(BaseSettings):
     qdrant_port: int = 6333
     
     # Music Generation Service Configuration
-    orpheus_base_url: str = "http://localhost:10002"
-    orpheus_timeout: int = 180  # seconds — fallback max read timeout
-    orpheus_max_concurrent: int = 2  # max parallel submit+poll cycles (serializes GPU access)
-    orpheus_poll_timeout: int = 30   # seconds — long-poll timeout per /jobs/{id}/wait request
-    orpheus_poll_max_attempts: int = 10  # max polls before giving up (~5 min total)
-    orpheus_cb_threshold: int = 3   # consecutive failures before circuit breaker trips
-    orpheus_cb_cooldown: int = 120  # seconds before tripped circuit allows a probe request
-    orpheus_required: bool = True   # hard-gate: abort composition if pre-flight health check fails
-    orpheus_preserve_all_channels: bool = True   # return all generated MIDI channels (DAW handles routing)
-    orpheus_enable_beat_rescaling: bool = False   # disable beat rescaling to evaluate raw model timing
-    orpheus_max_session_tokens: int = 4096        # token cap before session rotation
-    orpheus_loops_space: str = ""                 # HF Space ID for Orpheus Loops model (e.g. "asigalov61/Orpheus-Music-Loops")
-    orpheus_use_loops_model: bool = False         # feature flag: route short requests (<=8 bars) to Loops model
+    storpheus_base_url: str = "http://localhost:10002"
+    storpheus_timeout: int = 180  # seconds — fallback max read timeout
+    storpheus_max_concurrent: int = 2  # max parallel submit+poll cycles (serializes GPU access)
+    storpheus_poll_timeout: int = 30   # seconds — long-poll timeout per /jobs/{id}/wait request
+    storpheus_poll_max_attempts: int = 10  # max polls before giving up (~5 min total)
+    storpheus_cb_threshold: int = 3   # consecutive failures before circuit breaker trips
+    storpheus_cb_cooldown: int = 120  # seconds before tripped circuit allows a probe request
+    storpheus_required: bool = True   # hard-gate: abort composition if pre-flight health check fails
+    storpheus_preserve_all_channels: bool = True   # return all generated MIDI channels (DAW handles routing)
+    storpheus_enable_beat_rescaling: bool = False   # disable beat rescaling to evaluate raw model timing
+    storpheus_max_session_tokens: int = 4096        # token cap before session rotation
+    storpheus_loops_space: str = ""                 # HF Space ID for Orpheus Loops model (e.g. "asigalov61/Orpheus-Music-Loops")
+    storpheus_use_loops_model: bool = False         # feature flag: route short requests (<=8 bars) to Loops model
     skip_expressiveness: bool = True              # MVP: bypass post-processing until raw path is proven
     max_concurrent_compositions_per_user: int = 2  # per-user composition concurrency limit (0 = unlimited)
     
@@ -148,7 +148,7 @@ class Settings(BaseSettings):
     orchestration_temperature: float = 0.1   # Low temp for deterministic tool selection
     composition_max_tokens: int = 32768      # Higher token budget for GENERATE_MUSIC in EDITING mode
     composition_reasoning_fraction: float = 0.08  # Keep reasoning tight for tool-calling; ~2,600 tokens on 32K budget
-    agent_reasoning_fraction: float = 0.05        # Minimal reasoning — agents execute a fixed pipeline; Orpheus handles musical decisions
+    agent_reasoning_fraction: float = 0.05        # Minimal reasoning — agents execute a fixed pipeline; Storpheus handles musical decisions
 
     # Agent watchdog timeouts (seconds) — prevents orphaned subagents
     section_child_timeout: int = 300     # 5 min per section child (region + generate + optional refinement)

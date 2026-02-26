@@ -502,7 +502,7 @@ class TestGeneratorTimeout:
         })
 
         mock_mg = MagicMock()
-        mock_mg.generate = AsyncMock(side_effect=RuntimeError("Orpheus down"))
+        mock_mg.generate = AsyncMock(side_effect=RuntimeError("Storpheus down"))
 
         with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
             await _process_call_for_variation(call, var_ctx, exec_ctx)
@@ -538,7 +538,7 @@ class TestEmotionVectorIntegration:
             return GenerationResult(
                 success=True,
                 notes=[NoteDict(pitch=60, start_beat=0.0, duration_beats=1.0, velocity=80)],
-                backend_used=GeneratorBackend.ORPHEUS,
+                backend_used=GeneratorBackend.STORPHEUS,
                 metadata={},
             )
 
@@ -613,7 +613,7 @@ class TestEmotionVectorIntegration:
             return GenerationResult(
                 success=True,
                 notes=[],
-                backend_used=GeneratorBackend.ORPHEUS,
+                backend_used=GeneratorBackend.STORPHEUS,
                 metadata={},
             )
 
@@ -683,7 +683,7 @@ class TestEmotionVectorIntegration:
             return GenerationResult(
                 success=True,
                 notes=[],
-                backend_used=GeneratorBackend.ORPHEUS,
+                backend_used=GeneratorBackend.STORPHEUS,
                 metadata={},
             )
 
@@ -1410,7 +1410,7 @@ class TestGenerationResultCC:
         r = GenerationResult(
             success=True,
             notes=[{"pitch": 60}],
-            backend_used=GeneratorBackend.ORPHEUS,
+            backend_used=GeneratorBackend.STORPHEUS,
             metadata={},
         )
         assert r.cc_events == []
@@ -1422,7 +1422,7 @@ class TestGenerationResultCC:
         r = GenerationResult(
             success=True,
             notes=[{"pitch": 60}],
-            backend_used=GeneratorBackend.ORPHEUS,
+            backend_used=GeneratorBackend.STORPHEUS,
             metadata={},
             cc_events=[{"cc": 64, "beat": 0, "value": 127}],
             pitch_bends=[{"beat": 1, "value": 8191}],
@@ -1431,13 +1431,13 @@ class TestGenerationResultCC:
         assert len(r.pitch_bends) == 1
 
 
-class TestOrpheusBackendCC:
-    """Orpheus backend extracts CC and pitch bend from tool_calls."""
+class TestStorpheusBackendCC:
+    """Storpheus backend extracts CC and pitch bend from tool_calls."""
 
     @pytest.mark.anyio
     async def test_extract_cc_and_pitch_bend(self) -> None:
 
-        from app.services.backends.orpheus import OrpheusBackend
+        from app.services.backends.storpheus import StorpheusBackend
 
         mock_client = AsyncMock()
         mock_client.generate.return_value = {
@@ -1470,7 +1470,7 @@ class TestOrpheusBackendCC:
             ],
         }
 
-        backend = OrpheusBackend()
+        backend = StorpheusBackend()
         backend.client = mock_client
 
         result = await backend.generate(
@@ -1491,8 +1491,8 @@ class TestOrpheusBackendCC:
     @pytest.mark.anyio
     async def test_no_cc_when_absent(self) -> None:
 
-        """When Orpheus returns only addNotes, CC/PB should be empty."""
-        from app.services.backends.orpheus import OrpheusBackend
+        """When Storpheus returns only addNotes, CC/PB should be empty."""
+        from app.services.backends.storpheus import StorpheusBackend
 
         mock_client = AsyncMock()
         mock_client.generate.return_value = {
@@ -1509,7 +1509,7 @@ class TestOrpheusBackendCC:
             ],
         }
 
-        backend = OrpheusBackend()
+        backend = StorpheusBackend()
         backend.client = mock_client
 
         result = await backend.generate(
@@ -1593,14 +1593,14 @@ class TestAftertouchPipeline:
 
         from app.services.backends.base import GenerationResult, GeneratorBackend
         r = GenerationResult(
-            success=True, notes=[], backend_used=GeneratorBackend.ORPHEUS, metadata={}
+            success=True, notes=[], backend_used=GeneratorBackend.STORPHEUS, metadata={}
         )
         assert r.aftertouch == []
 
     @pytest.mark.anyio
-    async def test_orpheus_extracts_aftertouch(self) -> None:
+    async def test_storpheus_extracts_aftertouch(self) -> None:
 
-        from app.services.backends.orpheus import OrpheusBackend
+        from app.services.backends.storpheus import StorpheusBackend
         mock_client = AsyncMock()
         mock_client.generate.return_value = {
             "success": True,
@@ -1616,7 +1616,7 @@ class TestAftertouchPipeline:
                 }},
             ],
         }
-        backend = OrpheusBackend()
+        backend = StorpheusBackend()
         backend.client = mock_client
         result = await backend.generate(instrument="piano", style="classical", tempo=120, bars=4)
         assert result.success

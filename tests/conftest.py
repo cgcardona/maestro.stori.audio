@@ -35,13 +35,13 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture(autouse=True)
-def _disable_orpheus_hard_gate() -> Generator[None, None, None]:
-    """Tests don't have Orpheus running — disable the pre-flight hard gate."""
+def _disable_storpheus_hard_gate() -> Generator[None, None, None]:
+    """Tests don't have Storpheus running — disable the pre-flight hard gate."""
     from app.config import settings
-    original = settings.orpheus_required
-    settings.orpheus_required = False
+    original = settings.storpheus_required
+    settings.storpheus_required = False
     yield
-    settings.orpheus_required = original
+    settings.storpheus_required = original
 
 
 @pytest.fixture(autouse=True)

@@ -862,7 +862,7 @@ for concepts not in the list).
 | `folk`, `indie` | energy 0.40, valence +0.10, tension 0.30, intimacy 0.80, motion 0.40 |
 | `classical` | energy 0.50, valence +0.30, tension 0.40, intimacy 0.50, motion 0.40 |
 
-### Orpheus Conditioning Chain
+### Storpheus Conditioning Chain
 
 The final EmotionVector maps to three Orpheus intent fields:
 
@@ -1345,7 +1345,7 @@ Retry later"`, which previously caused a permanent failure for that track.
 
 ### Retry logic
 
-`OrpheusClient.generate()` now retries up to 3 times with exponential
+`StorpheusClient.generate()` now retries up to 3 times with exponential
 backoff delays of **5s**, **15s**, **30s** when it detects a GPU
 cold-start error in:
 
@@ -1383,7 +1383,7 @@ so the first real generation call doesn't hit the 60-second cold-start.
 
 ### Module
 
-`app/services/orpheus.py` — retry logic in `OrpheusClient.generate()`.
+`app/services/orpheus.py` — retry logic in `StorpheusClient.generate()`.
 `app/core/maestro_agent_teams/coordinator.py` — warm-up probe before Phase 2.
 Tests: `tests/test_orpheus_client.py` (`TestGpuColdStartRetry`).
 
@@ -1426,9 +1426,9 @@ Tests: `tests/test_orpheus_client.py` (`TestGpuColdStartRetry`).
 | **Bus-before-send ordering guaranteed** | Done | `app/core/planner._schema_to_tool_calls` |
 | **Expressiveness post-processor (velocity, CC, PB, timing)** | Done | `app/services/expressiveness.py`, `app/services/music_generator.py` |
 | **Genre expressiveness profiles (14 genres)** | Done | `app/services/expressiveness.py` (PROFILES) |
-| **Orpheus MIDI parser: full CC/PB/AT extraction** | Done | `orpheus-music/music_service.py` (parse\_midi\_to\_notes) |
-| **Orpheus token budget raised (1024 max, 24-64/bar)** | Done | `orpheus-music/music_service.py`, `orpheus-music/generation_policy.py` |
-| **Curated seed library (genre-matched seeds from 230K Loops dataset)** | Done | `orpheus-music/seed_selector.py`, `orpheus-music/build_seed_library.py` |
+| **Orpheus MIDI parser: full CC/PB/AT extraction** | Done | `storpheus/music_service.py` (parse\_midi\_to\_notes) |
+| **Orpheus token budget raised (1024 max, 24-64/bar)** | Done | `storpheus/music_service.py`, `storpheus/generation_policy.py` |
+| **Curated seed library (genre-matched seeds from 230K Loops dataset)** | Done | `storpheus/seed_selector.py`, `storpheus/build_seed_library.py` |
 | **Time signature-aware region calculation** | Done | `app/core/planner/conversion.py` (\_beats\_per\_bar) |
 | **MIDI analysis tooling (reference corpus)** | Done | `scripts/analyze_midi.py`, `scripts/download_reference_midi.py` |
 | **Auto-section parsing (single-prompt multi-part)** | Done | `app/core/maestro_agent_teams/sections.py` |

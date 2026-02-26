@@ -1,6 +1,6 @@
-# Orpheus Contract Suite
+# Ststorpheus Contract Suite
 
-> Exhaustive boundary audit between Maestro and Orpheus.
+> Exhaustive boundary audit between Maestro and Ststorpheus.
 > Generated: 2026-02-24 | Last updated: 2026-02-25
 
 ---
@@ -9,7 +9,7 @@
 
 ### What This Contract Is
 
-This document defines every input/output boundary between the **Maestro** orchestration service and the **Orpheus** music generation service. It specifies canonical schemas for all payloads, proves coverage of musical vectors across the boundary, and provides contract tests for automated validation.
+This document defines every input/output boundary between the **Maestro** orchestration service and the **Ststorpheus** music generation service. It specifies canonical schemas for all payloads, proves coverage of musical vectors across the boundary, and provides contract tests for automated validation.
 
 ### Architecture At A Glance
 
@@ -28,9 +28,9 @@ This document defines every input/output boundary between the **Maestro** orches
 
 | Flow | Description |
 |------|-------------|
-| **Maestro → Orpheus** | Intent-conditioned generation request (genre, tempo, instruments, bars, emotion_vector, role_profile_summary, generation_constraints, intent_goals, quality_preset, seed, trace_id, intent_hash) |
-| **Orpheus → Maestro** | Generated MIDI data (notes, CC events, pitch bends, aftertouch) + metadata |
-| **Maestro post-processing** | Expressiveness enrichment (velocity curves, CC automation, pitch bends, timing humanization) applied Maestro-side after Orpheus response |
+| **Maestro → Ststorpheus** | Intent-conditioned generation request (genre, tempo, instruments, bars, emotion_vector, role_profile_summary, generation_constraints, intent_goals, quality_preset, seed, trace_id, intent_hash) |
+| **Ststorpheus → Maestro** | Generated MIDI data (notes, CC events, pitch bends, aftertouch) + metadata |
+| **Maestro post-processing** | Expressiveness enrichment (velocity curves, CC automation, pitch bends, timing humanization) applied Maestro-side after Ststorpheus response |
 
 ### Key Risks
 
@@ -40,8 +40,8 @@ This document defines every input/output boundary between the **Maestro** orches
 | R2 | EmotionVector tension axis dropped at boundary | **HIGH** | **RESOLVED** — full 5-axis emotion_vector sent |
 | R3 | RoleProfile reduced to single complexity float | **HIGH** | **RESOLVED** — 12-field role_profile_summary transmitted |
 | R4 | No deterministic seed propagation | **MEDIUM** | **RESOLVED** — seed parameter added |
-| R5 | GenerationConstraints never sent to Orpheus | **HIGH** | **RESOLVED** — full generation_constraints block forwarded |
-| R6 | Orpheus tool_calls coupled via string matching | **MEDIUM** | **RESOLVED** — tool_calls removed; Orpheus returns flat notes directly |
+| R5 | GenerationConstraints never sent to Ststorpheus | **HIGH** | **RESOLVED** — full generation_constraints block forwarded |
+| R6 | Ststorpheus tool_calls coupled via string matching | **MEDIUM** | **RESOLVED** — tool_calls removed; Ststorpheus returns flat notes directly |
 | R7 | No trace_id / request_id propagation | **MEDIUM** | **RESOLVED** — trace_id and intent_hash added |
 | R8 | 63-feature heuristic time-series does not exist | **INFO** | DESIGN GAP |
 | R9 | Emotional arcs (time-varying emotion) not implemented | **INFO** | DESIGN GAP |
@@ -61,7 +61,7 @@ All P0/P1 remediation items have been implemented:
 
 ### B.1 Directional Inventory
 
-#### Maestro → Orpheus (3 active boundaries)
+#### Maestro → Ststorpheus (3 active boundaries)
 
 | # | Boundary | Direction | Method | Path | Sync/Async | Transport |
 |---|----------|-----------|--------|------|------------|-----------|
@@ -69,11 +69,11 @@ All P0/P1 remediation items have been implemented:
 | B2 | SubmitGeneration | M→O | POST | `/generate` | Async (returns jobId) | HTTP/JSON |
 | B3 | PollJob | M→O | GET | `/jobs/{jobId}/wait?timeout=30` | Long-poll | HTTP/JSON |
 
-#### Orpheus → Maestro (0 active callbacks)
+#### Ststorpheus → Maestro (0 active callbacks)
 
-Orpheus has **no callback mechanism** to Maestro. All communication is Maestro-initiated poll-based. Orpheus only responds to requests.
+Ststorpheus has **no callback mechanism** to Maestro. All communication is Maestro-initiated poll-based. Ststorpheus only responds to requests.
 
-#### Orpheus Endpoints NOT Used by Maestro
+#### Ststorpheus Endpoints NOT Used by Maestro
 
 | Endpoint | Purpose | Used? |
 |----------|---------|-------|
@@ -91,26 +91,26 @@ Orpheus has **no callback mechanism** to Maestro. All communication is Maestro-i
 | Property | Value |
 |----------|-------|
 | **Name** | SubmitGeneration |
-| **Direction** | Maestro → Orpheus |
+| **Direction** | Maestro → Ststorpheus |
 | **Transport** | HTTP POST, JSON body |
-| **Idempotency** | NOT idempotent. Each call may produce different results (stochastic generation). Orpheus deduplicates by `dedupe_key` within the job queue. |
+| **Idempotency** | NOT idempotent. Each call may produce different results (stochastic generation). Ststorpheus deduplicates by `dedupe_key` within the job queue. |
 | **Retry semantics** | 4 retries with delays [2s, 5s, 10s, 20s]. Retried on: `ReadTimeout`, `HTTPStatusError`, `503` (queue full). NOT retried on: `ConnectError`. |
 | **Timeout budget** | Submit: connect 5s, read 10s, write 10s. Poll: connect 5s, read 35s, write 5s. Total budget: ~5 min (10 polls × 30s). |
 | **Correlation** | `composition_id` (optional, free-form string). No `trace_id` or `request_id`. |
-| **AuthN/AuthZ** | HuggingFace Bearer token in `Authorization` header (for Gradio Space). No Maestro-Orpheus auth. |
+| **AuthN/AuthZ** | HuggingFace Bearer token in `Authorization` header (for Gradio Space). No Maestro-Ststorpheus auth. |
 | **Circuit breaker** | Opens after 3 consecutive failures, 120s cooldown, half-open probe. |
-| **Concurrency** | Semaphore-limited to `orpheus_max_concurrent` (default 2). |
+| **Concurrency** | Semaphore-limited to `storpheus_max_concurrent` (default 2). |
 
 ### B.3 Boundary Detail: PollJob (B3)
 
 | Property | Value |
 |----------|-------|
 | **Name** | PollJob |
-| **Direction** | Maestro → Orpheus |
+| **Direction** | Maestro → Ststorpheus |
 | **Transport** | HTTP GET, query param `timeout` |
 | **Idempotency** | Idempotent (read-only). |
-| **Retry semantics** | Up to `orpheus_poll_max_attempts` (default 10). ReadTimeout is NOT an error — job continues. ConnectError aborts. |
-| **Timeout budget** | `orpheus_poll_timeout` seconds per poll (default 30) + 5s buffer. |
+| **Retry semantics** | Up to `storpheus_poll_max_attempts` (default 10). ReadTimeout is NOT an error — job continues. ConnectError aborts. |
+| **Timeout budget** | `storpheus_poll_timeout` seconds per poll (default 30) + 5s buffer. |
 
 ### B.4 Boundary JSON
 
@@ -122,7 +122,7 @@ Orpheus has **no callback mechanism** to Maestro. All communication is Maestro-i
       {
         "id": "B1",
         "name": "HealthCheck",
-        "direction": "maestro_to_orpheus",
+        "direction": "maestro_to_storpheus",
         "method": "GET",
         "path": "/health",
         "sync": true,
@@ -136,7 +136,7 @@ Orpheus has **no callback mechanism** to Maestro. All communication is Maestro-i
       {
         "id": "B2",
         "name": "SubmitGeneration",
-        "direction": "maestro_to_orpheus",
+        "direction": "maestro_to_storpheus",
         "method": "POST",
         "path": "/generate",
         "sync": false,
@@ -161,7 +161,7 @@ Orpheus has **no callback mechanism** to Maestro. All communication is Maestro-i
       {
         "id": "B3",
         "name": "PollJob",
-        "direction": "maestro_to_orpheus",
+        "direction": "maestro_to_storpheus",
         "method": "GET",
         "path": "/jobs/{jobId}/wait",
         "sync": true,
@@ -178,7 +178,7 @@ Orpheus has **no callback mechanism** to Maestro. All communication is Maestro-i
         "correlation_id": "jobId"
       }
     ],
-    "unused_orpheus_endpoints": [
+    "unused_storpheus_endpoints": [
       "/diagnostics",
       "/queue/status",
       "/cache/stats",
@@ -242,14 +242,14 @@ The system does NOT currently have a per-16th-note time-series heuristic vector.
 | 36 | `pct_monophonic` | float | ratio | [0, 1] | Polyphony |
 | 37 | `motif_pitch_trigram_repeat` | float | ratio | [0, 1] | Motif |
 | 38 | `motif_direction_trigram_repeat` | float | ratio | [0, 1] | Motif |
-| 39 | `orpheus_complexity` | float | norm | [0, 1] | Derived |
-| 40 | `orpheus_density_hint` | str | enum | {"sparse", "moderate", "dense"} | Derived |
+| 39 | `storpheus_complexity` | float | norm | [0, 1] | Derived |
+| 40 | `storpheus_density_hint` | str | enum | {"sparse", "moderate", "dense"} | Derived |
 
 ### C.2 What Crosses the Boundary
 
-Of these 40 fields, only **3 pieces of information** actually reach Orpheus:
+Of these 40 fields, only **3 pieces of information** actually reach Ststorpheus:
 
-| RoleProfile Field(s) | Orpheus Parameter | Transformation | Information Loss |
+| RoleProfile Field(s) | Ststorpheus Parameter | Transformation | Information Loss |
 |----------------------|-------------------|----------------|------------------|
 | `contour_complexity` | `complexity` (float 0–1) | `min(1.0, contour_complexity)` | 39 other fields discarded |
 | `rest_ratio > 0.4` | `musical_goals: ["breathing"]` | Boolean threshold | Continuous value lost |
@@ -325,7 +325,7 @@ The aspirational 63-feature-per-16th-note vector would require:
 
 ### D.1 GM Program Resolution (Current Implementation)
 
-Orpheus uses **0-indexed GM program numbers** (0–127). The mapping system has three layers:
+Ststorpheus uses **0-indexed GM program numbers** (0–127). The mapping system has three layers:
 
 | Layer | Function | Input | Output |
 |-------|----------|-------|--------|
@@ -395,13 +395,13 @@ Orpheus uses **0-indexed GM program numbers** (0–127). The mapping system has 
 }
 ```
 
-**FINDING:** Orpheus does NOT model polyphony constraints or pitch ranges per voice. It relies on the ML model to implicitly learn these. This is a gap for validation — Orpheus cannot verify that generated notes are within the playable range of the assigned instrument.
+**FINDING:** Ststorpheus does NOT model polyphony constraints or pitch ranges per voice. It relies on the ML model to implicitly learn these. This is a gap for validation — Ststorpheus cannot verify that generated notes are within the playable range of the assigned instrument.
 
 ### D.3 OrchestrationDirective Schema
 
 **STATUS: DOES NOT EXIST as a formal schema.** Orchestration is implicit:
 - Maestro's LLM agent selects instruments and passes them as string names
-- Orpheus resolves names to GM programs and channels
+- Ststorpheus resolves names to GM programs and channels
 - No voicing rules, register constraints, or doubling directives cross the boundary
 
 ```json
@@ -457,15 +457,15 @@ Orpheus uses **0-indexed GM program numbers** (0–127). The mapping system has 
 | `intimacy` | [0.0, 1.0] | 0.5 | distant/epic → close/personal |
 | `motion` | [0.0, 1.0] | 0.5 | static/sustained → driving/rhythmic |
 
-### E.2 EmotionVector → Orpheus Mapping (Lossy)
+### E.2 EmotionVector → Ststorpheus Mapping (Lossy)
 
-| EmotionVector Axis | Orpheus Field | Transformation | Orpheus Range |
+| EmotionVector Axis | Ststorpheus Field | Transformation | Ststorpheus Range |
 |-------------------|---------------|----------------|---------------|
 | `valence` | `tone_brightness` | Direct: `valence` | [-1, +1] |
 | `energy` | `energy_intensity` | Scale: `energy * 2.0 - 1.0` | [-1, +1] |
 | `intimacy` | `tone_warmth` | Scale: `intimacy * 2.0 - 1.0` | [-1, +1] |
 | `motion` | `energy_excitement` | Scale: `motion * 2.0 - 1.0` | [-1, +1] |
-| **`tension`** | **DROPPED** | **Not mapped to any Orpheus field** | **N/A** |
+| **`tension`** | **DROPPED** | **Not mapped to any Ststorpheus field** | **N/A** |
 
 **CRITICAL FINDING: The `tension` axis is lost at the boundary.** It only contributes indirectly through `musical_goals: ["tense"]` when `tension > 0.6`. Continuous tension information below that threshold is discarded.
 
@@ -487,7 +487,7 @@ Orpheus uses **0-indexed GM program numbers** (0–127). The mapping system has 
 | `sustained_ratio > 0.03` (role) | `"sustained"` |
 | `syncopation_ratio > 0.5` (role) | `"syncopated"` |
 
-**FINDING:** Musical goals are an open vocabulary (any string is accepted by Orpheus). There is no validation, no canonical enumeration, and no guarantee that Orpheus's `generation_policy.py` handles all goals that Maestro can produce.
+**FINDING:** Musical goals are an open vocabulary (any string is accepted by Ststorpheus). There is no validation, no canonical enumeration, and no guarantee that Ststorpheus's `generation_policy.py` handles all goals that Maestro can produce.
 
 ### E.4 EmotionVector JSON Schema
 
@@ -555,16 +555,16 @@ Orpheus uses **0-indexed GM program numbers** (0–127). The mapping system has 
 User text → Intent classification (pattern/LLM)
          → Slots extraction (action, target, amount, etc.)
          → STORI PROMPT parsing → EmotionVector
-         → OrpheusBackend.generate() → maps to Orpheus fields
+         → StstorpheusBackend.generate() → maps to Ststorpheus fields
 ```
 
-The intent engine classifies **30+ intents** (PLAY, STOP, TRACK_ADD, GENERATE_MUSIC, etc.) but only `GENERATE_MUSIC` (and composing-mode intents) reach Orpheus. The engine does NOT produce a structured `IntentSpec` — instead, intent is decomposed into:
+The intent engine classifies **30+ intents** (PLAY, STOP, TRACK_ADD, GENERATE_MUSIC, etc.) but only `GENERATE_MUSIC` (and composing-mode intents) reach Ststorpheus. The engine does NOT produce a structured `IntentSpec` — instead, intent is decomposed into:
 
 1. **Tool selection** (which tools the agent can call)
 2. **EmotionVector** (derived from STORI PROMPT)
 3. **Free-form LLM reasoning** (the agent's system prompt includes role profiles and decides parameters)
 
-### F.2 GenerationConstraints (Computed but NOT Sent to Orpheus)
+### F.2 GenerationConstraints (Computed but NOT Sent to Ststorpheus)
 
 Maestro computes `GenerationConstraints` from the EmotionVector:
 
@@ -583,11 +583,11 @@ Maestro computes `GenerationConstraints` from the EmotionVector:
 | `velocity_floor` | int | [40, 80] | `energy` lerp |
 | `velocity_ceiling` | int | [80, 120] | `energy` lerp |
 
-**CRITICAL FINDING:** These 12 constraint fields are computed in `emotion_vector.py:emotion_to_constraints()` but **never transmitted to Orpheus**. Orpheus has its own `generation_policy.py:intent_to_controls()` that independently derives similar values. The two derivations may diverge.
+**CRITICAL FINDING:** These 12 constraint fields are computed in `emotion_vector.py:emotion_to_constraints()` but **never transmitted to Ststorpheus**. Ststorpheus has its own `generation_policy.py:intent_to_controls()` that independently derives similar values. The two derivations may diverge.
 
-### F.3 Orpheus GenerationControlVector (Orpheus-Side)
+### F.3 Ststorpheus GenerationControlVector (Ststorpheus-Side)
 
-Orpheus independently computes:
+Ststorpheus independently computes:
 
 | Field | Type | Range | Purpose |
 |-------|------|-------|---------|
@@ -602,11 +602,11 @@ Orpheus independently computes:
 | `build_intensity` | bool | — | Crescendo mode |
 | `quality_preset` | str | {"fast", "balanced", "quality"} | Candidate count |
 
-**FINDING:** Orpheus re-derives `tension` from musical goals, despite Maestro having computed it precisely. This is a **parallel derivation anti-pattern** — two independent transformations of the same semantic concept.
+**FINDING:** Ststorpheus re-derives `tension` from musical goals, despite Maestro having computed it precisely. This is a **parallel derivation anti-pattern** — two independent transformations of the same semantic concept.
 
 ### F.4 FulfillmentReport
 
-**STATUS: DOES NOT EXIST.** Orpheus returns raw notes without any assessment of how well they fulfilled the intent. Post-generation quality scoring exists (`rejection_score`, `analyze_quality`) but:
+**STATUS: DOES NOT EXIST.** Ststorpheus returns raw notes without any assessment of how well they fulfilled the intent. Post-generation quality scoring exists (`rejection_score`, `analyze_quality`) but:
 - Scores are NOT returned to Maestro
 - No comparison against original intent
 - No constraint violation reporting
@@ -618,7 +618,7 @@ Orpheus independently computes:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "IntentSpec",
-  "description": "PROPOSED — structured intent specification for Orpheus",
+  "description": "PROPOSED — structured intent specification for Ststorpheus",
   "type": "object",
   "properties": {
     "goals": {
@@ -653,7 +653,7 @@ Orpheus independently computes:
 
 ### G.1 GenerateRequest (Wire Format)
 
-This is the **actual payload** sent from Maestro to Orpheus:
+This is the **actual payload** sent from Maestro to Ststorpheus:
 
 ```json
 {
@@ -925,15 +925,15 @@ This is the **actual payload** sent from Maestro to Orpheus:
 ```
 
 Known error codes (string values, not HTTP status):
-- `"orpheus_circuit_open"` — circuit breaker tripped
-- `"Orpheus service not available"` — connection refused
-- `"Orpheus queue full"` — 503 after max retries
+- `"storpheus_circuit_open"` — circuit breaker tripped
+- `"Ststorpheus service not available"` — connection refused
+- `"Ststorpheus queue full"` — 503 after max retries
 - `"Generation did not complete within Ns"` — poll timeout
 - `"gpu_unavailable"` — GPU cold start / quota
 
 ### G.5 Normalized Output (Maestro-Side Adapter)
 
-Orpheus returns flat note data directly. Maestro works with:
+Ststorpheus returns flat note data directly. Maestro works with:
 
 ```json
 {
@@ -953,7 +953,7 @@ Orpheus returns flat note data directly. Maestro works with:
 ```
 
 Note field name asymmetry:
-- Orpheus (snake_case): `start_beat`, `duration_beats`
+- Ststorpheus (snake_case): `start_beat`, `duration_beats`
 - MVP path (camelCase): `startBeat`, `durationBeats`
 - Maestro normalizes via `_normalize_note_keys()` and `_SNAKE_TO_CAMEL` mapping
 
@@ -963,7 +963,7 @@ Note field name asymmetry:
 
 ### H.1 Vector Coverage Matrix
 
-| # | Maestro Vector/Parameter | Orpheus Slot | Mapping Quality |
+| # | Maestro Vector/Parameter | Ststorpheus Slot | Mapping Quality |
 |---|-------------------------|-------------|----------------|
 | 1 | `EmotionVector.energy` | `energy_intensity` | ✅ Direct (scaled) |
 | 2 | `EmotionVector.valence` | `tone_brightness` | ✅ Direct |
@@ -1032,10 +1032,10 @@ Note field name asymmetry:
 
 ### H.3 Collisions
 
-| Maestro Concept A | Maestro Concept B | Orpheus Slot | Collision |
+| Maestro Concept A | Maestro Concept B | Ststorpheus Slot | Collision |
 |-------------------|-------------------|-------------|-----------|
 | `emotion.motion > 0.7` | `role.sustained_ratio > 0.03` | `musical_goals` | Both can produce `"sustained"` — but with opposite semantics. High motion → "driving" NOT "sustained", but role's `sustained_ratio > 0.03` adds "sustained" regardless. |
-| `RoleProfile.orpheus_density_hint` | (never sent) | — | Computed but never transmitted. |
+| `RoleProfile.storpheus_density_hint` | (never sent) | — | Computed but never transmitted. |
 
 ### H.4 Remediation Plan
 
@@ -1043,7 +1043,7 @@ Note field name asymmetry:
 |----------|--------|--------|--------|--------|
 | P0 | Add `tension` float to GenerateRequest | S | Recovers dropped emotion axis | **DONE** — full `emotion_vector` |
 | P1 | Add `role_profile` summary object to GenerateRequest | M | Recovers 25% of dropped information | **DONE** — 12-field `role_profile_summary` |
-| P1 | Forward `GenerationConstraints` to Orpheus | M | Eliminates parallel derivation | **DONE** — `generation_constraints` block |
+| P1 | Forward `GenerationConstraints` to Ststorpheus | M | Eliminates parallel derivation | **DONE** — `generation_constraints` block |
 | P2 | Add `seed` parameter for deterministic generation | S | Enables reproducibility | **DONE** |
 | P2 | Add `trace_id` to request headers | S | End-to-end observability | **DONE** — `trace_id` + `intent_hash` |
 | P3 | Add FulfillmentReport to GenerateResponse | L | Intent verification | **DONE** — `fulfillment_report` in metadata |
@@ -1062,8 +1062,8 @@ Note field name asymmetry:
 | G3 | `test_response_has_notes` | Successful response contains `notes` |
 | G4 | `test_note_schema_valid` | Every note has pitch [0-127], startBeat ≥ 0, durationBeats > 0, velocity [0-127] |
 | G5 | `test_notes_within_bar_range` | All note startBeats < bars × 4 |
-| G6 | *removed* | tool_calls path deleted — Orpheus returns notes directly |
-| G7 | `test_emotion_to_orpheus_mapping` | EmotionVector axes correctly map to Orpheus fields |
+| G6 | *removed* | tool_calls path deleted — Ststorpheus returns notes directly |
+| G7 | `test_emotion_to_storpheus_mapping` | EmotionVector axes correctly map to Ststorpheus fields |
 | G8 | `test_tension_dropped_warning` | Verify tension > 0 does NOT appear in request (documents the gap) |
 
 ### I.2 Property-Based Tests
@@ -1136,9 +1136,9 @@ Note field name asymmetry:
           },
           {
             "id": "G7",
-            "name": "test_emotion_to_orpheus_mapping",
+            "name": "test_emotion_to_storpheus_mapping",
             "input_emotion": {"energy": 0.8, "valence": -0.5, "tension": 0.9, "intimacy": 0.3, "motion": 0.7},
-            "expected_orpheus_fields": {
+            "expected_storpheus_fields": {
               "tone_brightness": -0.5,
               "energy_intensity": 0.6,
               "tone_warmth": -0.4,
@@ -1155,7 +1155,7 @@ Note field name asymmetry:
       },
       "performance": {
         "count": 4,
-        "requires": "running_orpheus_service"
+        "requires": "running_storpheus_service"
       },
       "compatibility": {
         "count": 5
@@ -1173,21 +1173,21 @@ Note field name asymmetry:
 
 | Metric | Type | Labels | Purpose |
 |--------|------|--------|---------|
-| `orpheus_request_total` | counter | `status={success,failure,circuit_open}` | Request volume |
-| `orpheus_request_duration_seconds` | histogram | `phase={submit,poll,total}` | Latency profile |
-| `orpheus_circuit_breaker_state` | gauge | `state={closed,open,half_open}` | Availability |
-| `orpheus_retry_total` | counter | `reason={timeout,503,error}` | Retry burden |
-| `orpheus_notes_generated` | histogram | — | Output volume per request |
-| `orpheus_cache_hit_total` | counter | `type={exact,fuzzy}` | Cache effectiveness |
-| `orpheus_vector_coverage_pct` | gauge | — | % of Maestro vectors that reach Orpheus |
-| `orpheus_emotion_tension_dropped` | counter | — | Tracks how often tension > 0 is lost |
+| `storpheus_request_total` | counter | `status={success,failure,circuit_open}` | Request volume |
+| `storpheus_request_duration_seconds` | histogram | `phase={submit,poll,total}` | Latency profile |
+| `storpheus_circuit_breaker_state` | gauge | `state={closed,open,half_open}` | Availability |
+| `storpheus_retry_total` | counter | `reason={timeout,503,error}` | Retry burden |
+| `storpheus_notes_generated` | histogram | — | Output volume per request |
+| `storpheus_cache_hit_total` | counter | `type={exact,fuzzy}` | Cache effectiveness |
+| `storpheus_vector_coverage_pct` | gauge | — | % of Maestro vectors that reach Ststorpheus |
+| `storpheus_emotion_tension_dropped` | counter | — | Tracks how often tension > 0 is lost |
 
 ### J.2 Required Structured Log Fields
 
 | Field | Source | Present? |
 |-------|--------|----------|
 | `composition_id` | Maestro request | ✅ Yes (optional) |
-| `job_id` | Orpheus submit response | ✅ Yes |
+| `job_id` | Ststorpheus submit response | ✅ Yes |
 | `trace_id` | Maestro request | ✅ Yes |
 | `intent_hash` | Maestro request | ✅ Yes |
 | `seed` | Maestro request | ✅ Yes (optional) |
@@ -1195,8 +1195,8 @@ Note field name asymmetry:
 | `quality_preset` | Request payload | ✅ Yes |
 | `genre` | Request payload | ✅ Yes |
 | `instruments` | Request payload | ✅ Yes |
-| `policy_version` | Orpheus response metadata | ✅ Yes |
-| `seed_provenance` | Orpheus response metadata | ✅ Yes (source, hash, notes, tokens) |
+| `policy_version` | Ststorpheus response metadata | ✅ Yes |
+| `seed_provenance` | Ststorpheus response metadata | ✅ Yes (source, hash, notes, tokens) |
 
 ### J.3 Redaction Policy
 
@@ -1225,7 +1225,7 @@ The complete machine-readable contract follows. All JSON is valid and parseable.
       {
         "id": "B1",
         "name": "HealthCheck",
-        "direction": "maestro_to_orpheus",
+        "direction": "maestro_to_storpheus",
         "method": "GET",
         "path": "/health",
         "sync": true,
@@ -1237,7 +1237,7 @@ The complete machine-readable contract follows. All JSON is valid and parseable.
       {
         "id": "B2",
         "name": "SubmitGeneration",
-        "direction": "maestro_to_orpheus",
+        "direction": "maestro_to_storpheus",
         "method": "POST",
         "path": "/generate",
         "sync": false,
@@ -1252,7 +1252,7 @@ The complete machine-readable contract follows. All JSON is valid and parseable.
       {
         "id": "B3",
         "name": "PollJob",
-        "direction": "maestro_to_orpheus",
+        "direction": "maestro_to_storpheus",
         "method": "GET",
         "path": "/jobs/{jobId}/wait",
         "sync": true,
@@ -1273,7 +1273,7 @@ The complete machine-readable contract follows. All JSON is valid and parseable.
       "POST /quality/ab-test",
       "POST /jobs/{id}/cancel"
     ],
-    "callbacks_orpheus_to_maestro": []
+    "callbacks_storpheus_to_maestro": []
   },
   "schemas": {
     "GenerateRequest": {
@@ -1329,7 +1329,7 @@ The complete machine-readable contract follows. All JSON is valid and parseable.
         "motion": {"type": "float", "range": [0, 1], "default": 0.5}
       }
     },
-    "EmotionToOrpheusMapping": {
+    "EmotionToStstorpheusMapping": {
       "mappings": [
         {"from": "valence", "to": "tone_brightness", "transform": "identity"},
         {"from": "energy", "to": "energy_intensity", "transform": "x * 2.0 - 1.0"},
@@ -1401,7 +1401,7 @@ The complete machine-readable contract follows. All JSON is valid and parseable.
       {
         "field": "GenerationConstraints (all 12)",
         "status": "COMPUTED_NOT_SENT",
-        "impact": "Parallel derivation in Orpheus may diverge from Maestro's computation",
+        "impact": "Parallel derivation in Ststorpheus may diverge from Maestro's computation",
         "remediation": "Forward constraints or unify derivation on one side"
       }
     ],
@@ -1415,11 +1415,11 @@ The complete machine-readable contract follows. All JSON is valid and parseable.
   },
   "observability": {
     "metrics": [
-      {"name": "orpheus_request_total", "type": "counter", "labels": ["status"]},
-      {"name": "orpheus_request_duration_seconds", "type": "histogram", "labels": ["phase"]},
-      {"name": "orpheus_circuit_breaker_state", "type": "gauge", "labels": ["state"]},
-      {"name": "orpheus_notes_generated", "type": "histogram"},
-      {"name": "orpheus_cache_hit_total", "type": "counter", "labels": ["type"]}
+      {"name": "storpheus_request_total", "type": "counter", "labels": ["status"]},
+      {"name": "storpheus_request_duration_seconds", "type": "histogram", "labels": ["phase"]},
+      {"name": "storpheus_circuit_breaker_state", "type": "gauge", "labels": ["state"]},
+      {"name": "storpheus_notes_generated", "type": "histogram"},
+      {"name": "storpheus_cache_hit_total", "type": "counter", "labels": ["type"]}
     ],
     "required_log_fields": [
       "composition_id", "job_id", "trace_id", "intent_hash",
@@ -1437,19 +1437,19 @@ The complete machine-readable contract follows. All JSON is valid and parseable.
     },
     {
       "id": "U2",
-      "description": "Does Orpheus's generation_policy.py handle all musical_goals that Maestro can produce?",
-      "resolution": "Enumerate all goals in generation_policy.py and cross-reference with OrpheusBackend + RoleProfile goal production. Check for unhandled goals.",
+      "description": "Does Ststorpheus's generation_policy.py handle all musical_goals that Maestro can produce?",
+      "resolution": "Enumerate all goals in generation_policy.py and cross-reference with StstorpheusBackend + RoleProfile goal production. Check for unhandled goals.",
       "proposed_options": ["A: All goals handled", "B: Some goals silently ignored"]
     },
     {
       "id": "U3",
-      "description": "Can Orpheus's fuzzy cache produce musically incoherent results when epsilon is too large?",
+      "description": "Can Ststorpheus's fuzzy cache produce musically incoherent results when epsilon is too large?",
       "resolution": "Test with epsilon=0.35 and extreme emotional deltas. Listen to matched results.",
       "proposed_options": ["A: Epsilon 0.35 is safe", "B: Reduce to 0.2", "C: Add perceptual distance metric"]
     },
     {
       "id": "U4",
-      "description": "What is the maximum practical bar count before Orpheus OOMs or produces degenerate output?",
+      "description": "What is the maximum practical bar count before Ststorpheus OOMs or produces degenerate output?",
       "resolution": "Stress test with bars=16, 32, 64, 128 and measure token budget, memory, and output quality.",
       "proposed_options": ["A: 64 bars is the hard limit (MAX_GEN_TOKENS)", "B: Quality degrades after 16 bars"]
     },
@@ -1467,7 +1467,7 @@ The complete machine-readable contract follows. All JSON is valid and parseable.
     },
     {
       "id": "U7",
-      "description": "Do the 200+ _GM_ALIASES in Orpheus exactly match the instrument names that Maestro agents produce?",
+      "description": "Do the 200+ _GM_ALIASES in Ststorpheus exactly match the instrument names that Maestro agents produce?",
       "resolution": "Log every instrument name Maestro sends over 1 week and check alias resolution success rate.",
       "proposed_options": ["A: Perfect coverage", "B: Some names fall through to default channel"]
     }
@@ -1483,10 +1483,10 @@ To resolve all UNKNOWNs, instrument the following:
 
 | # | What to Instrument | Where | Output |
 |---|-------------------|-------|--------|
-| 1 | Log every `musical_goals` list at OrpheusBackend boundary | `app/services/backends/orpheus.py:generate()` | Canonical goal vocabulary |
-| 2 | Log every instrument name pre-resolution | `orpheus-music/music_service.py:resolve_gm_program()` | Alias coverage report |
-| 3 | Log `GenerationConstraints` vs Orpheus `GenerationControlVector` side-by-side | Both services | Divergence report |
-| 4 | Add `X-Trace-ID` header to Orpheus requests | `app/services/orpheus.py:generate()` | End-to-end trace stitching |
-| 5 | Log emotion vector at DEBUG before Orpheus mapping | Already present | Confirm no silent clipping |
+| 1 | Log every `musical_goals` list at StstorpheusBackend boundary | `app/services/backends/storpheus.py:generate()` | Canonical goal vocabulary |
+| 2 | Log every instrument name pre-resolution | `storpheus/music_service.py:resolve_gm_program()` | Alias coverage report |
+| 3 | Log `GenerationConstraints` vs Ststorpheus `GenerationControlVector` side-by-side | Both services | Divergence report |
+| 4 | Add `X-Trace-ID` header to Ststorpheus requests | `app/services/storpheus.py:generate()` | End-to-end trace stitching |
+| 5 | Log emotion vector at DEBUG before Ststorpheus mapping | Already present | Confirm no silent clipping |
 | 6 | Count features in `heuristics_v2.json` per role | One-time script | Resolve 40 vs 63 question |
-| 7 | Log `rejection_score` from Orpheus to Maestro via metadata | `orpheus-music/music_service.py` | Quality observability |
+| 7 | Log `rejection_score` from Ststorpheus to Maestro via metadata | `storpheus/music_service.py` | Quality observability |

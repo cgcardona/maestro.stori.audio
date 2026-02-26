@@ -119,7 +119,7 @@ You already have: HTTP endpoints (list/call with Bearer), stdio server (`app.mcp
 **1. Prove “list tools + call one tool” (no DAW)**  
 Use the **HTTP** API so you don’t depend on Cursor/Claude or Swift.
 
-- Backend running (e.g. `docker compose up -d`), `.env` with `STORI_ACCESS_TOKEN_SECRET` and Orpheus (e.g. `STORI_ORPHEUS_BASE_URL`).
+- Backend running (e.g. `docker compose up -d`), `.env` with `STORI_ACCESS_TOKEN_SECRET` and Orpheus (e.g. `STORI_STORPHEUS_BASE_URL`).
 - Valid JWT (e.g. `scripts/generate_access_code.py --generate-user-id --days 1`); register the user if you use budget.
 - List tools:  
   `curl -s -H "Authorization: Bearer <token>" https://<host>/api/v1/mcp/tools`

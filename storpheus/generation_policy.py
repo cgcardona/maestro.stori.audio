@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 
-from orpheus_types import FulfillmentReport, GradioGenerationParams, OrpheusNoteDict
+from storpheus_types import FulfillmentReport, GradioGenerationParams, StorpheusNoteDict
 
 if TYPE_CHECKING:
     from music_service import GenerationConstraintsPayload
@@ -417,7 +417,7 @@ def build_controls(
 
 
 def build_fulfillment_report(
-    notes: list[OrpheusNoteDict],
+    notes: list[StorpheusNoteDict],
     bars: int,
     controls: GenerationControlVector,
     generation_constraints: GenerationConstraintsPayload | None = None,

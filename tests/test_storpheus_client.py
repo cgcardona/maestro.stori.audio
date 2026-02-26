@@ -1,4 +1,4 @@
-"""Tests for app.services.orpheus.OrpheusClient (mocked HTTP)."""
+"""Tests for app.services.storpheus.StorpheusClient (mocked HTTP)."""
 from __future__ import annotations
 
 from collections.abc import Generator
@@ -10,23 +10,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.contracts.generation_types import GenerationContext
 from app.contracts.json_types import NoteDict
-from app.services.orpheus import OrpheusClient
+from app.services.storpheus import StorpheusClient
 
 if TYPE_CHECKING:
-    from app.services.backends.orpheus import OrpheusBackend
+    from app.services.backends.storpheus import StorpheusBackend
 
 
 def _patch_settings(m: MagicMock) -> None:
 
-    """Apply default Orpheus test settings to a mock."""
-    m.orpheus_base_url = "http://orpheus:10002"
-    m.orpheus_timeout = 30
+    """Apply default Storpheus test settings to a mock."""
+    m.storpheus_base_url = "http://storpheus:10002"
+    m.storpheus_timeout = 30
     m.hf_api_key = None
-    m.orpheus_max_concurrent = 2
-    m.orpheus_cb_threshold = 3
-    m.orpheus_cb_cooldown = 60
-    m.orpheus_poll_timeout = 30
-    m.orpheus_poll_max_attempts = 10
+    m.storpheus_max_concurrent = 2
+    m.storpheus_cb_threshold = 3
+    m.storpheus_cb_cooldown = 60
+    m.storpheus_poll_timeout = 30
+    m.storpheus_poll_max_attempts = 10
 
 
 _JOB_ID = "test-job-00000000"
@@ -88,14 +88,14 @@ def _ok_gen_result(**overrides: Any) -> dict[str, Any]:
 
 
 @pytest.fixture
-def client() -> Generator[OrpheusClient, None, None]:
-    with patch("app.services.orpheus.settings") as m:
+def client() -> Generator[StorpheusClient, None, None]:
+    with patch("app.services.storpheus.settings") as m:
         _patch_settings(m)
-        yield OrpheusClient()
+        yield StorpheusClient()
 
 
 @pytest.mark.asyncio
-async def test_health_check_returns_true_when_200(client: OrpheusClient) -> None:
+async def test_health_check_returns_true_when_200(client: StorpheusClient) -> None:
 
     import httpx
     client._client = MagicMock()
@@ -104,13 +104,13 @@ async def test_health_check_returns_true_when_200(client: OrpheusClient) -> None
     assert result is True
     # health_check uses a short probe timeout, not the default generation timeout
     client._client.get.assert_called_once_with(
-        "http://orpheus:10002/health",
+        "http://storpheus:10002/health",
         timeout=httpx.Timeout(connect=3.0, read=3.0, write=3.0, pool=3.0),
     )
 
 
 @pytest.mark.asyncio
-async def test_health_check_returns_false_when_not_200(client: OrpheusClient) -> None:
+async def test_health_check_returns_false_when_not_200(client: StorpheusClient) -> None:
 
     client._client = MagicMock()
     client._client.get = AsyncMock(return_value=MagicMock(status_code=503))
@@ -119,7 +119,7 @@ async def test_health_check_returns_false_when_not_200(client: OrpheusClient) ->
 
 
 @pytest.mark.asyncio
-async def test_health_check_returns_false_on_exception(client: OrpheusClient) -> None:
+async def test_health_check_returns_false_on_exception(client: StorpheusClient) -> None:
 
     client._client = MagicMock()
     client._client.get = AsyncMock(side_effect=Exception("connection refused"))
@@ -128,7 +128,7 @@ async def test_health_check_returns_false_on_exception(client: OrpheusClient) ->
 
 
 @pytest.mark.asyncio
-async def test_generate_success_via_poll(client: OrpheusClient) -> None:
+async def test_generate_success_via_poll(client: StorpheusClient) -> None:
 
     """Submit returns queued; poll returns complete result."""
     client._client = MagicMock()
@@ -140,7 +140,7 @@ async def test_generate_success_via_poll(client: OrpheusClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_cache_hit_returns_immediately(client: OrpheusClient) -> None:
+async def test_generate_cache_hit_returns_immediately(client: StorpheusClient) -> None:
 
     """Submit returns status=complete (cache hit) — no polling needed."""
     client._client = MagicMock()
@@ -154,7 +154,7 @@ async def test_generate_cache_hit_returns_immediately(client: OrpheusClient) -> 
 
 
 @pytest.mark.asyncio
-async def test_generate_default_instruments(client: OrpheusClient) -> None:
+async def test_generate_default_instruments(client: StorpheusClient) -> None:
 
     client._client = MagicMock()
     client._client.post = AsyncMock(
@@ -168,7 +168,7 @@ async def test_generate_default_instruments(client: OrpheusClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_includes_key_when_provided(client: OrpheusClient) -> None:
+async def test_generate_includes_key_when_provided(client: StorpheusClient) -> None:
 
     client._client = MagicMock()
     client._client.post = AsyncMock(
@@ -180,7 +180,7 @@ async def test_generate_includes_key_when_provided(client: OrpheusClient) -> Non
 
 
 @pytest.mark.asyncio
-async def test_generate_submit_http_error_returns_error_dict(client: OrpheusClient) -> None:
+async def test_generate_submit_http_error_returns_error_dict(client: StorpheusClient) -> None:
 
     """HTTP 500 during submit (after retries exhausted) returns error."""
     import httpx
@@ -191,14 +191,14 @@ async def test_generate_submit_http_error_returns_error_dict(client: OrpheusClie
     client._client.post = AsyncMock(
         side_effect=httpx.HTTPStatusError("500", request=MagicMock(), response=mock_resp)
     )
-    with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock):
+    with patch("app.services.storpheus.asyncio.sleep", new_callable=AsyncMock):
         result = await client.generate(genre="x", tempo=90)
     assert result["success"] is False
     assert "error" in result
 
 
 @pytest.mark.asyncio
-async def test_generate_connect_error_returns_service_not_available(client: OrpheusClient) -> None:
+async def test_generate_connect_error_returns_service_not_available(client: StorpheusClient) -> None:
 
     import httpx
     client._client = MagicMock()
@@ -209,7 +209,7 @@ async def test_generate_connect_error_returns_service_not_available(client: Orph
 
 
 @pytest.mark.asyncio
-async def test_close_clears_client(client: OrpheusClient) -> None:
+async def test_close_clears_client(client: StorpheusClient) -> None:
 
     client._client = MagicMock()
     client._client.aclose = AsyncMock()
@@ -218,54 +218,54 @@ async def test_close_clears_client(client: OrpheusClient) -> None:
 
 
 # =============================================================================
-# OrpheusClient singleton and warmup
+# StorpheusClient singleton and warmup
 # =============================================================================
 
-def test_get_orpheus_client_returns_singleton() -> None:
-    """get_orpheus_client() returns the same instance on repeated calls (sync — no loop needed)."""
-    import app.services.orpheus as orpheus_module
-    from app.services.orpheus import get_orpheus_client
-    orpheus_module._shared_client = None  # reset
-    c1 = get_orpheus_client()
-    c2 = get_orpheus_client()
+def test_get_storpheus_client_returns_singleton() -> None:
+    """get_storpheus_client() returns the same instance on repeated calls (sync — no loop needed)."""
+    import app.services.storpheus as storpheus_module
+    from app.services.storpheus import get_storpheus_client
+    storpheus_module._shared_client = None  # reset
+    c1 = get_storpheus_client()
+    c2 = get_storpheus_client()
     assert c1 is c2
-    orpheus_module._shared_client = None  # cleanup without awaiting close
+    storpheus_module._shared_client = None  # cleanup without awaiting close
 
 
-def test_close_orpheus_client_resets_singleton() -> None:
-    """close_orpheus_client() clears the singleton so the next call makes a fresh one."""
-    import app.services.orpheus as orpheus_module
-    from app.services.orpheus import get_orpheus_client
-    orpheus_module._shared_client = None  # start clean
-    c1 = get_orpheus_client()
+def test_close_storpheus_client_resets_singleton() -> None:
+    """close_storpheus_client() clears the singleton so the next call makes a fresh one."""
+    import app.services.storpheus as storpheus_module
+    from app.services.storpheus import get_storpheus_client
+    storpheus_module._shared_client = None  # start clean
+    c1 = get_storpheus_client()
     # Directly reset the module-level variable (avoids async close complications)
-    orpheus_module._shared_client = None
-    c2 = get_orpheus_client()
+    storpheus_module._shared_client = None
+    c2 = get_storpheus_client()
     assert c1 is not c2
-    orpheus_module._shared_client = None  # cleanup
+    storpheus_module._shared_client = None  # cleanup
 
 
 @pytest.mark.asyncio
 async def test_warmup_succeeds_when_healthy() -> None:
     """warmup() logs success when health_check returns True."""
-    from app.services.orpheus import get_orpheus_client, close_orpheus_client
-    await close_orpheus_client()
-    c = get_orpheus_client()
+    from app.services.storpheus import get_storpheus_client, close_storpheus_client
+    await close_storpheus_client()
+    c = get_storpheus_client()
     mock_inner = MagicMock()
     mock_inner.get = AsyncMock(return_value=MagicMock(status_code=200))
     mock_inner.aclose = AsyncMock()
     c._client = mock_inner
     # Should not raise
     await c.warmup()
-    await close_orpheus_client()
+    await close_storpheus_client()
 
 
 @pytest.mark.asyncio
 async def test_warmup_tolerates_connection_failure() -> None:
     """warmup() does not raise even when Orpheus is unreachable."""
-    from app.services.orpheus import get_orpheus_client, close_orpheus_client
-    await close_orpheus_client()
-    c = get_orpheus_client()
+    from app.services.storpheus import get_storpheus_client, close_storpheus_client
+    await close_storpheus_client()
+    c = get_storpheus_client()
     import httpx
     mock_inner = MagicMock()
     mock_inner.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
@@ -273,14 +273,14 @@ async def test_warmup_tolerates_connection_failure() -> None:
     c._client = mock_inner
     # Must not raise
     await c.warmup()
-    await close_orpheus_client()
+    await close_storpheus_client()
 
 
 def test_connection_limits_configured() -> None:
-    """The OrpheusClient passes explicit connection limits when creating the AsyncClient."""
+    """The StorpheusClient passes explicit connection limits when creating the AsyncClient."""
     import httpx
-    import app.services.orpheus as orpheus_module
-    from app.services.orpheus import get_orpheus_client, close_orpheus_client
+    import app.services.storpheus as storpheus_module
+    from app.services.storpheus import get_storpheus_client, close_storpheus_client
 
     created_kwargs: dict[str, Any] = {}
 
@@ -290,12 +290,12 @@ def test_connection_limits_configured() -> None:
         created_kwargs.update(kwargs)
         original_init(self, **kwargs)
 
-    orpheus_module._shared_client = None  # force fresh
-    with patch("app.services.orpheus.settings") as m:
+    storpheus_module._shared_client = None  # force fresh
+    with patch("app.services.storpheus.settings") as m:
         _patch_settings(m)
-        m.orpheus_max_concurrent = 4
-        orpheus_module._shared_client = None
-        c = get_orpheus_client()
+        m.storpheus_max_concurrent = 4
+        storpheus_module._shared_client = None
+        c = get_storpheus_client()
         with patch.object(httpx.AsyncClient, "__init__", capturing_init):
             c._client = None  # force re-creation through the property
             _ = c.client
@@ -306,17 +306,21 @@ def test_connection_limits_configured() -> None:
 
 
 # =============================================================================
-# OrpheusBackend — emotion vector mapping
+# StorpheusBackend — emotion vector mapping
 # =============================================================================
 
-class TestOrpheusBackendEmotionMapping:
-    """Tests that OrpheusBackend correctly maps EmotionVector to OrpheusClient fields."""
+class TestStorpheusBackendEmotionMapping:
+    """Tests that StorpheusBackend correctly maps EmotionVector to StorpheusClient fields."""
 
-    def _make_backend(self, mock_client: MagicMock) -> OrpheusBackend:
-        from app.services.backends.orpheus import OrpheusBackend
-        import app.services.orpheus as orpheus_module
-        orpheus_module._shared_client = mock_client
-        return OrpheusBackend()
+    def teardown_method(self) -> None:
+        import app.services.storpheus as storpheus_module
+        storpheus_module._shared_client = None
+
+    def _make_backend(self, mock_client: MagicMock) -> StorpheusBackend:
+        from app.services.backends.storpheus import StorpheusBackend
+        import app.services.storpheus as storpheus_module
+        storpheus_module._shared_client = mock_client
+        return StorpheusBackend()
 
     def _make_mock_client(self, notes: list[NoteDict] | None = None) -> MagicMock:
 
@@ -401,7 +405,7 @@ class TestOrpheusBackendEmotionMapping:
     @pytest.mark.asyncio
     async def test_quality_preset_forwarded(self) -> None:
 
-        """quality_preset kwarg reaches OrpheusClient.generate."""
+        """quality_preset kwarg reaches StorpheusClient.generate."""
         from app.core.emotion_vector import EmotionVector
         mock_client = self._make_mock_client()
         backend = self._make_backend(mock_client)
@@ -413,17 +417,17 @@ class TestOrpheusBackendEmotionMapping:
 
 
 # =============================================================================
-# OrpheusBackend — note key normalization (snake_case → camelCase)
+# StorpheusBackend — note key normalization (snake_case → camelCase)
 # =============================================================================
 
-class TestOrpheusNoteNormalization:
+class TestStorpheusNoteNormalization:
     """Notes from Orpheus may use snake_case keys; backend must normalize to camelCase."""
 
-    def _make_backend(self, mock_client: MagicMock) -> OrpheusBackend:
-        from app.services.backends.orpheus import OrpheusBackend
-        import app.services.orpheus as orpheus_module
-        orpheus_module._shared_client = mock_client
-        return OrpheusBackend()
+    def _make_backend(self, mock_client: MagicMock) -> StorpheusBackend:
+        from app.services.backends.storpheus import StorpheusBackend
+        import app.services.storpheus as storpheus_module
+        storpheus_module._shared_client = mock_client
+        return StorpheusBackend()
 
     @pytest.mark.asyncio
     async def test_snake_case_keys_normalized_to_camel(self) -> None:
@@ -478,19 +482,23 @@ class TestOrpheusNoteNormalization:
 
 
 # =============================================================================
-# OrpheusBackend — beat rescaling
+# StorpheusBackend — beat rescaling
 # =============================================================================
 
-class TestOrpheusBeatRescaling:
+class TestStorpheusBeatRescaling:
     """Notes compressed into a short window must be rescaled to the target bars."""
 
-    def _make_backend(self, mock_client: MagicMock) -> OrpheusBackend:
-        from app.services.backends import orpheus as orpheus_backend
-        from app.services.backends.orpheus import OrpheusBackend
-        import app.services.orpheus as orpheus_module
-        orpheus_module._shared_client = mock_client
-        orpheus_backend.ENABLE_BEAT_RESCALING = True
-        return OrpheusBackend()
+    def teardown_method(self) -> None:
+        import app.services.storpheus as storpheus_module
+        storpheus_module._shared_client = None
+
+    def _make_backend(self, mock_client: MagicMock) -> StorpheusBackend:
+        from app.services.backends import storpheus as storpheus_backend
+        from app.services.backends.storpheus import StorpheusBackend
+        import app.services.storpheus as storpheus_module
+        storpheus_module._shared_client = mock_client
+        storpheus_backend.ENABLE_BEAT_RESCALING = True
+        return StorpheusBackend()
 
     @pytest.mark.asyncio
     async def test_compressed_notes_rescaled_to_target(self) -> None:
@@ -580,21 +588,21 @@ class TestOrpheusBeatRescaling:
 # =============================================================================
 
 class TestSubmitAndPoll:
-    """Tests for the submit + long-poll flow in OrpheusClient.generate.
+    """Tests for the submit + long-poll flow in StorpheusClient.generate.
 
     POST /generate now returns immediately with {jobId, status}.
     GET /jobs/{id}/wait is polled until the job completes or fails.
     """
 
     @pytest.fixture
-    def client(self) -> Generator[OrpheusClient, None, None]:
+    def client(self) -> Generator[StorpheusClient, None, None]:
 
-        with patch("app.services.orpheus.settings") as m:
+        with patch("app.services.storpheus.settings") as m:
             _patch_settings(m)
-            yield OrpheusClient()
+            yield StorpheusClient()
 
     @pytest.mark.asyncio
-    async def test_poll_returns_failed_job(self, client: OrpheusClient) -> None:
+    async def test_poll_returns_failed_job(self, client: StorpheusClient) -> None:
 
         """When the GPU job fails, poll returns the error."""
         client._client = MagicMock()
@@ -609,13 +617,13 @@ class TestSubmitAndPoll:
         assert "GPU OOM" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_poll_exhausted_returns_timeout(self, client: OrpheusClient) -> None:
+    async def test_poll_exhausted_returns_timeout(self, client: StorpheusClient) -> None:
 
         """When max polls are exhausted the client reports a timeout."""
-        with patch("app.services.orpheus.settings") as m:
+        with patch("app.services.storpheus.settings") as m:
             _patch_settings(m)
-            m.orpheus_poll_max_attempts = 2
-            c = OrpheusClient()
+            m.storpheus_poll_max_attempts = 2
+            c = StorpheusClient()
 
         c._client = MagicMock()
         c._client.post = AsyncMock(return_value=_submit_resp())
@@ -626,7 +634,7 @@ class TestSubmitAndPoll:
         assert "did not complete" in result["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_503_submit_retries_then_succeeds(self, client: OrpheusClient) -> None:
+    async def test_503_submit_retries_then_succeeds(self, client: StorpheusClient) -> None:
 
         """503 from Orpheus queue-full triggers submit retry."""
         full_resp = MagicMock()
@@ -637,14 +645,14 @@ class TestSubmitAndPoll:
         client._client.post = AsyncMock(side_effect=[full_resp, _submit_resp()])
         client._client.get = AsyncMock(return_value=_poll_resp(result=_ok_gen_result()))
 
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("app.services.storpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             result = await client.generate(genre="house", tempo=128, bars=4)
 
         assert result["success"] is True
         assert mock_sleep.await_count == 1
 
     @pytest.mark.asyncio
-    async def test_503_submit_all_retries_exhausted(self, client: OrpheusClient) -> None:
+    async def test_503_submit_all_retries_exhausted(self, client: StorpheusClient) -> None:
 
         """503 on every submit attempt returns queue-full error."""
         full_resp = MagicMock()
@@ -653,14 +661,14 @@ class TestSubmitAndPoll:
         client._client = MagicMock()
         client._client.post = AsyncMock(return_value=full_resp)
 
-        with patch("app.services.orpheus.asyncio.sleep", new_callable=AsyncMock):
+        with patch("app.services.storpheus.asyncio.sleep", new_callable=AsyncMock):
             result = await client.generate(genre="trap", tempo=140, bars=8)
 
         assert result["success"] is False
         assert "queue full" in result["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_poll_http_timeout_retries_poll(self, client: OrpheusClient) -> None:
+    async def test_poll_http_timeout_retries_poll(self, client: StorpheusClient) -> None:
 
         """HTTP read timeout during poll just retries the poll (job survives)."""
         import httpx
@@ -677,7 +685,7 @@ class TestSubmitAndPoll:
         assert client._client.get.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_poll_connect_error_fails_immediately(self, client: OrpheusClient) -> None:
+    async def test_poll_connect_error_fails_immediately(self, client: StorpheusClient) -> None:
 
         """ConnectError during polling means Orpheus went down — fail fast."""
         import httpx
@@ -697,24 +705,24 @@ class TestSubmitAndPoll:
 
 
 class TestSemaphore:
-    """Tests for the GPU concurrency semaphore in OrpheusClient."""
+    """Tests for the GPU concurrency semaphore in StorpheusClient."""
 
     def test_semaphore_configurable(self) -> None:
 
         """max_concurrent param controls semaphore capacity."""
-        with patch("app.services.orpheus.settings") as m:
+        with patch("app.services.storpheus.settings") as m:
             _patch_settings(m)
-            m.orpheus_max_concurrent = 5
-            c = OrpheusClient()
+            m.storpheus_max_concurrent = 5
+            c = StorpheusClient()
             assert c._max_concurrent == 5
             assert c._semaphore._value == 5
 
     def test_semaphore_explicit_override(self) -> None:
 
         """Explicit max_concurrent kwarg overrides the config value."""
-        with patch("app.services.orpheus.settings") as m:
+        with patch("app.services.storpheus.settings") as m:
             _patch_settings(m)
-            c = OrpheusClient(max_concurrent=7)
+            c = StorpheusClient(max_concurrent=7)
             assert c._max_concurrent == 7
             assert c._semaphore._value == 7
 
@@ -725,10 +733,10 @@ class TestSemaphore:
         import asyncio
 
         max_concurrent = 2
-        with patch("app.services.orpheus.settings") as m:
+        with patch("app.services.storpheus.settings") as m:
             _patch_settings(m)
-            m.orpheus_max_concurrent = max_concurrent
-            c = OrpheusClient()
+            m.storpheus_max_concurrent = max_concurrent
+            c = StorpheusClient()
 
         peak = 0
         active = 0
@@ -760,10 +768,10 @@ class TestSemaphore:
     async def test_semaphore_releases_on_error(self) -> None:
 
         """Semaphore slot is released even when generate() hits an error."""
-        with patch("app.services.orpheus.settings") as m:
+        with patch("app.services.storpheus.settings") as m:
             _patch_settings(m)
-            m.orpheus_max_concurrent = 1
-            c = OrpheusClient()
+            m.storpheus_max_concurrent = 1
+            c = StorpheusClient()
 
         c._client = MagicMock()
         c._client.post = AsyncMock(side_effect=Exception("boom"))
@@ -776,11 +784,11 @@ class TestSemaphore:
 class TestIntentGoalsPayload:
     """Regression: musical_goals=None must not appear as null in the HTTP payload."""
 
-    def _make_client(self) -> OrpheusClient:
+    def _make_client(self) -> StorpheusClient:
 
-        with patch("app.services.orpheus.settings") as m:
+        with patch("app.services.storpheus.settings") as m:
             _patch_settings(m)
-            return OrpheusClient()
+            return StorpheusClient()
 
     @pytest.mark.asyncio
     async def test_intent_goals_none_omitted_from_payload(self) -> None:
@@ -840,11 +848,11 @@ class TestIntentGoalsPayload:
 class TestCorrelationId:
     """composition_id is threaded through to the HTTP payload."""
 
-    def _make_client(self) -> OrpheusClient:
+    def _make_client(self) -> StorpheusClient:
 
-        with patch("app.services.orpheus.settings") as m:
+        with patch("app.services.storpheus.settings") as m:
             _patch_settings(m)
-            return OrpheusClient()
+            return StorpheusClient()
 
     @pytest.mark.asyncio
     async def test_composition_id_included_in_payload(self) -> None:
@@ -891,16 +899,16 @@ class TestCircuitBreaker:
     """Orpheus circuit breaker prevents cascading failures."""
 
     @pytest.fixture
-    def client(self) -> Generator[OrpheusClient, None, None]:
+    def client(self) -> Generator[StorpheusClient, None, None]:
 
-        with patch("app.services.orpheus.settings") as m:
+        with patch("app.services.storpheus.settings") as m:
             _patch_settings(m)
-            m.orpheus_cb_threshold = 2
-            m.orpheus_cb_cooldown = 60
-            yield OrpheusClient()
+            m.storpheus_cb_threshold = 2
+            m.storpheus_cb_cooldown = 60
+            yield StorpheusClient()
 
     @pytest.mark.asyncio
-    async def test_circuit_open_returns_immediately(self, client: OrpheusClient) -> None:
+    async def test_circuit_open_returns_immediately(self, client: StorpheusClient) -> None:
 
         """When circuit is open, generate() returns immediately without HTTP call."""
         client._cb._failures = 3
@@ -912,11 +920,11 @@ class TestCircuitBreaker:
         result = await client.generate(genre="pop", tempo=120, bars=4)
 
         assert result["success"] is False
-        assert result["error"] == "orpheus_circuit_open"
+        assert result["error"] == "storpheus_circuit_open"
         client._client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_circuit_resets_after_cooldown(self, client: OrpheusClient) -> None:
+    async def test_circuit_resets_after_cooldown(self, client: StorpheusClient) -> None:
 
         """After cooldown expires, the circuit allows one probe request."""
         client._cb._failures = 3
@@ -934,7 +942,7 @@ class TestCircuitBreaker:
         assert client._cb._failures == 0
 
     @pytest.mark.asyncio
-    async def test_success_resets_circuit(self, client: OrpheusClient) -> None:
+    async def test_success_resets_circuit(self, client: StorpheusClient) -> None:
 
         """A successful call resets the failure counter."""
         import httpx
@@ -952,7 +960,7 @@ class TestCircuitBreaker:
         assert not client.circuit_breaker_open
 
     @pytest.mark.asyncio
-    async def test_connect_error_trips_circuit(self, client: OrpheusClient) -> None:
+    async def test_connect_error_trips_circuit(self, client: StorpheusClient) -> None:
 
         """ConnectError counts toward circuit breaker failures."""
         import httpx
@@ -967,7 +975,7 @@ class TestCircuitBreaker:
         assert client.circuit_breaker_open
 
     @pytest.mark.asyncio
-    async def test_poll_failure_trips_circuit(self, client: OrpheusClient) -> None:
+    async def test_poll_failure_trips_circuit(self, client: StorpheusClient) -> None:
 
         """Job failure during polling also counts toward circuit breaker."""
         client._client = MagicMock()

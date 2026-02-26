@@ -140,7 +140,7 @@ def main() -> int:
         print(f"  Pitch range: {min(pitches)}-{max(pitches)}")
         print("  PASS")
     else:
-        print("  WARN: no notes found (Orpheus may not have been invoked)")
+        print("  WARN: no notes found (Storpheus may not have been invoked)")
 
     # ── Step 4: MUSE health ──────────────────────────────────────────────
     print("\n" + "=" * 60)

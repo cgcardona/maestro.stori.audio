@@ -1,4 +1,4 @@
-"""Orpheus MVP Test — Prove the HuggingFace Space returns high-quality MIDI.
+"""Storpheus MVP Test — Prove the HuggingFace Space returns high-quality MIDI.
 
 This script does EXACTLY what the HF Gradio GUI does:
 1. Create a fresh Gradio client (fresh session = no accumulated state)
@@ -22,7 +22,7 @@ import logging
 from typing import Any
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-logger = logging.getLogger("orpheus_mvp")
+logger = logging.getLogger("storpheus_mvp")
 
 
 def create_minimal_seed(tempo: int = 120) -> str:
@@ -118,7 +118,7 @@ def main() -> None:
     from gradio_client import Client, handle_file
 
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
-    space_id = os.environ.get("STORI_ORPHEUS_SPACE", "cgcardona/Orpheus-Music-Transformer")
+    space_id = os.environ.get("STORI_STORPHEUS_SPACE", "cgcardona/Orpheus-Music-Transformer")
 
     instruments = ["Acoustic Grand", "Electric Bass(finger)"]
     num_prime = 6656
@@ -183,7 +183,7 @@ def main() -> None:
 
             # Copy to a persistent location
             import shutil
-            out_path = f"/tmp/orpheus_mvp_batch_{batch_idx}.mid"
+            out_path = f"/tmp/storpheus_mvp_batch_{batch_idx}.mid"
             shutil.copy2(midi_path, out_path)
             logger.info(f"  Saved to: {out_path}")
 
@@ -227,7 +227,7 @@ def main() -> None:
             logger.info("✅ Batches have different note counts — stochastic diversity confirmed!")
 
     logger.info("")
-    logger.info("Done! MIDI files saved to /tmp/orpheus_mvp_batch_*.mid")
+    logger.info("Done! MIDI files saved to /tmp/storpheus_mvp_batch_*.mid")
     logger.info("Play them in a DAW to verify quality.")
 
 

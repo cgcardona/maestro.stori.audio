@@ -98,7 +98,7 @@ def extract_complete(events: list[ParsedSSEEvent]) -> dict:
 
 
 def extract_generator_events(events: list[ParsedSSEEvent]) -> list[dict]:
-    """Extract generatorStart/generatorComplete pairs for Orpheus instrumentation."""
+    """Extract generatorStart/generatorComplete pairs for Storpheus instrumentation."""
     generators: list[dict] = []
     starts: dict[str, dict] = {}
 

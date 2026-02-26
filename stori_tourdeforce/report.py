@@ -162,7 +162,7 @@ class ReportBuilder:
             )
 
         # Note count distribution
-        note_counts = [float(r.orpheus_note_count) for r in self._results if r.orpheus_note_count > 0]
+        note_counts = [float(r.storpheus_note_count) for r in self._results if r.storpheus_note_count > 0]
         if note_counts:
             plots["note_count_distribution"] = self._plot_histogram(
                 note_counts, "Note Count Distribution", "Notes", "Count",
@@ -221,7 +221,7 @@ class ReportBuilder:
     def _plot_bar(self, data: dict[str, int], title: str, xlabel: str, ylabel: str) -> str:
         fig, ax = plt.subplots(figsize=(8, 4))
         colors_map = {
-            "success": "#22c55e", "maestro_error": "#f85149", "orpheus_error": "#f59e0b",
+            "success": "#22c55e", "maestro_error": "#f85149", "storpheus_error": "#f59e0b",
             "timeout": "#6a6a7a", "muse_error": "#a855f7", "prompt_error": "#f59e0b",
         }
         keys = list(data.keys())
@@ -282,7 +282,7 @@ class ReportBuilder:
 
         dur_stats = kpis.get("duration_stats", {})
         quality_stats = kpis.get("quality_score_stats", {})
-        orpheus_stats = kpis.get("orpheus_latency_stats", {})
+        storpheus_stats = kpis.get("storpheus_latency_stats", {})
         note_stats = kpis.get("note_count_stats", {})
 
         # Inline plots
@@ -425,7 +425,7 @@ class ReportBuilder:
 <div class="hero">
   <div class="container">
     <h1><span class="gradient-text">Tour de Force</span></h1>
-    <p class="subtitle">Maestro &times; Orpheus &times; MUSE &mdash; End-to-End Integration Report</p>
+    <p class="subtitle">Maestro &times; Storpheus &times; MUSE &mdash; End-to-End Integration Report</p>
     <p class="timestamp">{now}</p>
     <div class="scenario-tags">
       {scenario_html}
@@ -469,8 +469,8 @@ class ReportBuilder:
       <div class="kpi-label">P95 Duration</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-value accent">{_fmt_ms(orpheus_stats.get('median', 0))}</div>
-      <div class="kpi-label">Orpheus Median</div>
+      <div class="kpi-value accent">{_fmt_ms(storpheus_stats.get('median', 0))}</div>
+      <div class="kpi-label">Storpheus Median</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-value">{_fmt_ms(kpis.get('total_duration_ms', 0))}</div>
@@ -562,7 +562,7 @@ class ReportBuilder:
   <div class="section-title">Detailed Statistics</div>
   <div class="stats-grid">
     {self._render_stats_card("Duration", dur_stats, fmt_fn=_fmt_ms)}
-    {self._render_stats_card("Orpheus Latency", orpheus_stats, fmt_fn=_fmt_ms)}
+    {self._render_stats_card("Storpheus Latency", storpheus_stats, fmt_fn=_fmt_ms)}
     {self._render_stats_card("Quality Score", quality_stats)}
     {self._render_stats_card("Note Count", note_stats, fmt_fn=_fmt_num)}
   </div>
@@ -625,7 +625,7 @@ class ReportBuilder:
         if not best:
             return '<div class="run-card"><h3>No runs completed</h3></div>'
         quality = best.midi_metrics.get("quality_score", 0) if best.midi_metrics else 0
-        notes = _fmt_num(best.orpheus_note_count)
+        notes = _fmt_num(best.storpheus_note_count)
         duration = _fmt_ms(best.duration_ms)
         prompt_preview = (best.prompt.text[:150] + "...") if best.prompt and len(best.prompt.text) > 150 else (best.prompt.text if best.prompt else "N/A")
         return f"""
@@ -701,7 +701,7 @@ class ReportBuilder:
             rows += f"""<tr>
                 <td class="mono">{r.run_id}</td>
                 <td><span class="badge {badge}">{r.status.value}</span></td>
-                <td class="mono">{_fmt_num(r.orpheus_note_count)}</td>
+                <td class="mono">{_fmt_num(r.storpheus_note_count)}</td>
                 <td class="mono">{quality:.1f}</td>
                 <td class="mono">{_fmt_ms(r.duration_ms)}</td>
                 <td><span class="badge info">{r.intent or '—'}</span></td>
@@ -753,7 +753,7 @@ class ReportBuilder:
 
 - **ID:** {best.run_id if best else 'N/A'}
 - **Quality:** {best.midi_metrics.get('quality_score', 0) if best and best.midi_metrics else 0:.1f}
-- **Notes:** {_fmt_num(best.orpheus_note_count) if best else '0'}
+- **Notes:** {_fmt_num(best.storpheus_note_count) if best else '0'}
 - **Duration:** {_fmt_ms(best.duration_ms) if best else '—'}
 
 ## Worst Run

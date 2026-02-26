@@ -20,8 +20,8 @@ We run tests **in Docker** so everyone (Mac, Linux, CI) uses the same environmen
 # Maestro (app + tests)
 docker compose exec maestro mypy app/ tests/
 
-# Orpheus
-docker compose exec orpheus mypy . --exclude venv
+# Storpheus
+docker compose exec storpheus mypy . --exclude venv
 ```
 
 - Both commands must exit clean (zero errors) before committing.
@@ -50,14 +50,14 @@ When CI is enabled, run the same coverage command so the build fails if coverage
 
 ---
 
-## Orpheus Music Service tests
+## Storpheus Music Service tests
 
-The Orpheus service (`orpheus-music/`) has its own test suite that runs independently inside its container. Like the maestro container, the orpheus container copies source at build time — rebuild before testing.
+The Storpheus service (`storpheus/`) has its own test suite that runs independently inside its container. Like the maestro container, the orpheus container copies source at build time — rebuild before testing.
 
 **Rebuild + run:**
 ```bash
 docker compose build orpheus && docker compose up -d orpheus
-docker compose exec orpheus sh -c "pytest test_*.py -v"
+docker compose exec storpheus sh -c "pytest test_*.py -v"
 ```
 
 Tests cover: GM instrument resolution (`test_gm_resolution.py` — role → GM program → TMIDIX name), MIDI pipeline (`test_midi_pipeline.py` — parse, tool call generation, fuzzy cache), API contracts (`test_endpoints.py` — all endpoints), cache system (LRU + TTL), generation policy (intent-to-controls mapping, token budget allocation), quality metrics, and job queue (submit/cancel/dedupe/cleanup).
@@ -71,7 +71,7 @@ Rebuild both containers and run both test suites sequentially:
 ```bash
 docker compose build maestro orpheus && docker compose up -d
 docker compose exec maestro pytest tests/ -v
-docker compose exec orpheus sh -c "pytest test_*.py -v"
+docker compose exec storpheus sh -c "pytest test_*.py -v"
 ```
 
 ---
@@ -149,7 +149,7 @@ Uses AST parsing to enforce 17 import and access rules (8 original variation bou
 7. `compute_variation_from_context` must not import executor modules
 
 **Muse VCS isolation (rules 9–17):**
-Each VCS module (`muse_replay`, `muse_drift`, `muse_checkout`, `muse_checkout_executor`, `muse_merge`, `muse_merge_base`, `muse_log_graph`, `note_matching`) has enforced forbidden imports preventing coupling to StateStore, executor, LLM handlers, or MCP layers. See `docs/architecture/boundary_rules.md` and [muse-vcs.md](../architecture/muse-vcs.md) for details.
+Each VCS module (`muse_replay`, `muse_drift`, `muse_checkout`, `muse_checkout_executor`, `muse_merge`, `muse_merge_base`, `muse_log_graph`, `note_matching`) has enforced forbidden imports preventing coupling to StateStore, executor, LLM handlers, or MCP layers. See `docs/architecture/boundary_rules.md` and [muse_vcs.md](../architecture/muse_vcs.md) for details.
 
 **Boundary seal tests (`tests/test_boundary_seal.py`):**
 

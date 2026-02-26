@@ -142,17 +142,17 @@ class TestScorerForInstrument:
 
     def test_drums_returns_scorer(self) -> None:
 
-        """Drums role always gets a scorer (enables rejection sampling for Orpheus)."""
+        """Drums role always gets a scorer (enables rejection sampling for Storpheus)."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
-        scorer = mg._scorer_for_instrument("drums", GeneratorBackend.ORPHEUS, bars=4, style="trap")
+        scorer = mg._scorer_for_instrument("drums", GeneratorBackend.STORPHEUS, bars=4, style="trap")
         assert scorer is not None
 
     def test_bass_returns_scorer(self) -> None:
 
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
-        scorer = mg._scorer_for_instrument("bass", GeneratorBackend.ORPHEUS, bars=4, style="trap")
+        scorer = mg._scorer_for_instrument("bass", GeneratorBackend.STORPHEUS, bars=4, style="trap")
         assert scorer is not None
 
     def test_organ_returns_scorer(self) -> None:
@@ -160,7 +160,7 @@ class TestScorerForInstrument:
         """Melodic instruments (organ) also get a scorer — chord scoring."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
-        scorer = mg._scorer_for_instrument("organ", GeneratorBackend.ORPHEUS, bars=4, style="ska")
+        scorer = mg._scorer_for_instrument("organ", GeneratorBackend.STORPHEUS, bars=4, style="ska")
         assert scorer is not None
 
     def test_unknown_role_returns_none(self) -> None:
@@ -168,7 +168,7 @@ class TestScorerForInstrument:
         """Unknown instrument roles return None (no scoring, single generation)."""
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
-        scorer = mg._scorer_for_instrument("theremin", GeneratorBackend.ORPHEUS, bars=4, style="lofi")
+        scorer = mg._scorer_for_instrument("theremin", GeneratorBackend.STORPHEUS, bars=4, style="lofi")
         assert scorer is None
 
     def test_drum_ir_backend_overrides_role(self) -> None:
@@ -197,14 +197,14 @@ class TestCandidatesForRole:
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]  # num_candidates=4
-        assert mg._candidates_for_role("drums", config, GeneratorBackend.ORPHEUS) == 4
+        assert mg._candidates_for_role("drums", config, GeneratorBackend.STORPHEUS) == 4
 
     def test_bass_keeps_full_candidates(self) -> None:
 
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]
-        assert mg._candidates_for_role("bass", config, GeneratorBackend.ORPHEUS) == 4
+        assert mg._candidates_for_role("bass", config, GeneratorBackend.STORPHEUS) == 4
 
     def test_organ_capped_at_two_for_quality(self) -> None:
 
@@ -212,16 +212,16 @@ class TestCandidatesForRole:
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]  # num_candidates=6
-        assert mg._candidates_for_role("organ", config, GeneratorBackend.ORPHEUS) == 2
+        assert mg._candidates_for_role("organ", config, GeneratorBackend.STORPHEUS) == 2
 
     def test_guitar_capped_at_two_for_quality(self) -> None:
 
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]
-        assert mg._candidates_for_role("guitar", config, GeneratorBackend.ORPHEUS) == 2
+        assert mg._candidates_for_role("guitar", config, GeneratorBackend.STORPHEUS) == 2
 
-    def test_non_orpheus_backend_untouched(self) -> None:
+    def test_non_storpheus_backend_untouched(self) -> None:
 
         """IR backends are not modified — they have their own scoring logic."""
         from app.services.backends.base import GeneratorBackend
@@ -235,7 +235,7 @@ class TestCandidatesForRole:
         from app.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["balanced"]  # num_candidates=2
-        assert mg._candidates_for_role("organ", config, GeneratorBackend.ORPHEUS) == 2
+        assert mg._candidates_for_role("organ", config, GeneratorBackend.STORPHEUS) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -264,17 +264,17 @@ class TestParallelCandidateGeneration:
             return GenerationResult(
                 success=True,
                 notes=[NoteDict(pitch=36, start_beat=float(call_count[0] - 1), duration_beats=0.25, velocity=100)],
-                backend_used=GeneratorBackend.ORPHEUS,
+                backend_used=GeneratorBackend.STORPHEUS,
                 metadata={},
             )
 
         mock_backend = MagicMock()
         mock_backend.generate = fake_generate
-        mock_backend.backend_type = GeneratorBackend.ORPHEUS
+        mock_backend.backend_type = GeneratorBackend.STORPHEUS
 
         result = await mg._generate_with_coupling(
             backend=mock_backend,
-            backend_type=GeneratorBackend.ORPHEUS,
+            backend_type=GeneratorBackend.STORPHEUS,
             instrument="drums",
             style="trap",
             tempo=120,
@@ -311,13 +311,13 @@ class TestParallelCandidateGeneration:
             return GenerationResult(
                 success=True,
                 notes=[NoteDict(pitch=36 + idx, start_beat=0.0, duration_beats=0.25, velocity=100)],
-                backend_used=GeneratorBackend.ORPHEUS,
+                backend_used=GeneratorBackend.STORPHEUS,
                 metadata={"candidate_idx": idx},
             )
 
         mock_backend = MagicMock()
         mock_backend.generate = fake_generate
-        mock_backend.backend_type = GeneratorBackend.ORPHEUS
+        mock_backend.backend_type = GeneratorBackend.STORPHEUS
 
         with patch(
             "app.services.music_generator.MusicGenerator._scorer_for_instrument",
@@ -325,7 +325,7 @@ class TestParallelCandidateGeneration:
         ):
             result = await mg._generate_with_coupling(
                 backend=mock_backend,
-                backend_type=GeneratorBackend.ORPHEUS,
+                backend_type=GeneratorBackend.STORPHEUS,
                 instrument="drums",
                 style="trap",
                 tempo=120,
@@ -354,17 +354,17 @@ class TestParallelCandidateGeneration:
             call_idx[0] += 1
             if call_idx[0] <= 2:
                 # First two calls (parallel candidates) fail
-                return GenerationResult(success=False, notes=[], backend_used=GeneratorBackend.ORPHEUS, metadata={}, error="fail")
+                return GenerationResult(success=False, notes=[], backend_used=GeneratorBackend.STORPHEUS, metadata={}, error="fail")
             # Third call (single fallback) succeeds
-            return GenerationResult(success=True, notes=[NoteDict(pitch=36, start_beat=0.0, duration_beats=0.25, velocity=100)], backend_used=GeneratorBackend.ORPHEUS, metadata={})
+            return GenerationResult(success=True, notes=[NoteDict(pitch=36, start_beat=0.0, duration_beats=0.25, velocity=100)], backend_used=GeneratorBackend.STORPHEUS, metadata={})
 
         mock_backend = MagicMock()
         mock_backend.generate = fake_generate
-        mock_backend.backend_type = GeneratorBackend.ORPHEUS
+        mock_backend.backend_type = GeneratorBackend.STORPHEUS
 
         result = await mg._generate_with_coupling(
             backend=mock_backend,
-            backend_type=GeneratorBackend.ORPHEUS,
+            backend_type=GeneratorBackend.STORPHEUS,
             instrument="drums",
             style="trap",
             tempo=120,

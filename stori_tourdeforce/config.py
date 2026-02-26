@@ -13,10 +13,10 @@ class TDFConfig:
     """Immutable configuration for a Tour de Force run."""
 
     # Endpoints — defaults use Docker Compose service names (resolved via maestro-stori-net).
-    # TDF runs inside the maestro container; both maestro and orpheus resolve via Docker DNS.
+    # TDF runs inside the maestro container; both maestro and storpheus resolve via Docker DNS.
     prompt_endpoint: str = "http://maestro:10001/api/v1/prompts/random"
     maestro_url: str = "http://maestro:10001/api/v1/maestro/stream"
-    orpheus_url: str = "http://orpheus:10002"
+    storpheus_url: str = "http://storpheus:10002"
     muse_base_url: str = "http://maestro:10001/api/v1/muse"
 
     # Auth
@@ -30,11 +30,11 @@ class TDFConfig:
     # Timeouts (seconds)
     prompt_fetch_timeout: float = 10.0
     maestro_stream_timeout: float = 180.0
-    orpheus_job_timeout: float = 180.0
+    storpheus_job_timeout: float = 180.0
     global_run_timeout: float = 300.0
 
     # Concurrency limits
-    orpheus_semaphore: int = 2
+    storpheus_semaphore: int = 2
     maestro_semaphore: int = 4
 
     # Quality
@@ -65,7 +65,7 @@ class TDFConfig:
         jwt_env: str = "STORI_JWT",
         prompt_endpoint: str | None = None,
         maestro: str | None = None,
-        orpheus: str | None = None,
+        storpheus: str | None = None,
         muse_base_url: str | None = None,
         muse_root: str = "./muse_repo",
         runs: int = 10,
@@ -74,7 +74,7 @@ class TDFConfig:
         out: str = "",
         quality_preset: str = "balanced",
         maestro_timeout: float = 180.0,
-        orpheus_timeout: float = 180.0,
+        storpheus_timeout: float = 180.0,
         global_timeout: float = 300.0,
     ) -> TDFConfig:
         jwt = os.environ.get(jwt_env, "")
@@ -87,7 +87,7 @@ class TDFConfig:
         return cls(
             prompt_endpoint=prompt_endpoint or cls.prompt_endpoint,
             maestro_url=maestro or cls.maestro_url,
-            orpheus_url=orpheus or cls.orpheus_url,
+            storpheus_url=storpheus or cls.storpheus_url,
             muse_base_url=muse_base_url or cls.muse_base_url,
             jwt=jwt,
             runs=runs,
@@ -97,6 +97,6 @@ class TDFConfig:
             muse_root=muse_root,
             quality_preset=quality_preset,
             maestro_stream_timeout=maestro_timeout,
-            orpheus_job_timeout=orpheus_timeout,
+            storpheus_job_timeout=storpheus_timeout,
             global_run_timeout=global_timeout,
         )

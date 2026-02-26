@@ -226,7 +226,7 @@ class TestNonStructuredUnchanged:
 
 
 class TestSpecExamples:
-    """One test per full example from docs/protocol/stori-prompt-spec.md."""
+    """One test per full example from docs/protocol/stori_prompt_spec.md."""
 
     def test_example_1_compose_advanced(self) -> None:
 

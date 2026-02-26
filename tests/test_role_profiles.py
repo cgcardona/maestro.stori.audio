@@ -166,27 +166,27 @@ class TestOrpheusConditioning:
     def test_complexity_in_range(self) -> None:
 
         for name, profile in ROLE_PROFILES.items():
-            assert 0 <= profile.orpheus_complexity <= 1.0, (
-                f"{name} orpheus_complexity out of [0, 1]"
+            assert 0 <= profile.storpheus_complexity <= 1.0, (
+                f"{name} storpheus_complexity out of [0, 1]"
             )
 
     def test_density_hint_valid(self) -> None:
 
         valid_hints = {"sparse", "moderate", "dense"}
         for name, profile in ROLE_PROFILES.items():
-            assert profile.orpheus_density_hint in valid_hints, (
-                f"{name} has invalid density_hint: {profile.orpheus_density_hint}"
+            assert profile.storpheus_density_hint in valid_hints, (
+                f"{name} has invalid density_hint: {profile.storpheus_density_hint}"
             )
 
     def test_drums_low_complexity(self) -> None:
 
         drums = ROLE_PROFILES["drums"]
-        assert drums.orpheus_complexity < 0.2
+        assert drums.storpheus_complexity < 0.2
 
     def test_chords_moderate_complexity(self) -> None:
 
         chords = ROLE_PROFILES["chords"]
-        assert chords.orpheus_complexity > 0.3
+        assert chords.storpheus_complexity > 0.3
 
 
 class TestRoleAwareExpressiveness:

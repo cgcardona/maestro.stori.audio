@@ -1,4 +1,4 @@
-"""OrpheusClient — submit generation jobs, poll for completion, capture MIDI."""
+"""StorpheusClient — submit generation jobs, poll for completion, capture MIDI."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from stori_tourdeforce.collectors.metrics import MetricsCollector
 logger = logging.getLogger(__name__)
 
 
-class OrpheusClient:
+class StorpheusClient:
     """Submits generation requests and polls for MIDI output."""
 
     def __init__(
@@ -34,14 +34,14 @@ class OrpheusClient:
         self._config = config
         self._events = event_collector
         self._metrics = metrics
-        self._req_dir = payload_dir / "orpheus_requests"
-        self._resp_dir = payload_dir / "orpheus_responses"
+        self._req_dir = payload_dir / "storpheus_requests"
+        self._resp_dir = payload_dir / "storpheus_responses"
         self._midi_dir = midi_dir
         self._req_dir.mkdir(parents=True, exist_ok=True)
         self._resp_dir.mkdir(parents=True, exist_ok=True)
         self._client = httpx.AsyncClient(
-            base_url=config.orpheus_url,
-            timeout=httpx.Timeout(connect=10.0, read=config.orpheus_job_timeout, write=10.0, pool=10.0),
+            base_url=config.storpheus_url,
+            timeout=httpx.Timeout(connect=10.0, read=config.storpheus_job_timeout, write=10.0, pool=10.0),
         )
 
     async def close(self) -> None:
@@ -60,9 +60,9 @@ class OrpheusClient:
         seed: int | None = None,
         add_outro: bool = False,
         unified_output: bool = True,
-    ) -> OrpheusResult:
+    ) -> StorpheusResult:
         """Submit a generation request and wait for completion."""
-        span = trace.new_span("orpheus_generate")
+        span = trace.new_span("storpheus_generate")
 
         payload: dict[str, Any] = {
             "genre": genre,
@@ -88,7 +88,7 @@ class OrpheusClient:
 
         await self._events.emit(
             run_id=run_id,
-            scenario="orpheus_generate",
+            scenario="storpheus_generate",
             component=Component.ORPHEUS,
             event_type=EventType.HTTP_REQUEST,
             trace=trace,
@@ -97,14 +97,14 @@ class OrpheusClient:
 
         submit_start = time.monotonic()
 
-        async with self._metrics.timer("orpheus_total", run_id):
+        async with self._metrics.timer("storpheus_total", run_id):
             # Submit job
-            async with self._metrics.timer("orpheus_submit", run_id):
+            async with self._metrics.timer("storpheus_submit", run_id):
                 resp = await self._client.post("/generate", json=payload)
 
             if resp.status_code != 200:
                 trace.end_span()
-                raise OrpheusError(f"Orpheus /generate returned {resp.status_code}: {resp.text[:500]}")
+                raise StorpheusError(f"Storpheus /generate returned {resp.status_code}: {resp.text[:500]}")
 
             submit_data = resp.json()
             job_id = submit_data.get("jobId", "")
@@ -131,7 +131,7 @@ class OrpheusClient:
             "result": result_data,
         }, indent=2, default=str))
 
-        result = OrpheusResult(
+        result = StorpheusResult(
             job_id=job_id,
             status="complete",
             result=result_data,
@@ -142,13 +142,13 @@ class OrpheusClient:
         )
 
         # Record metrics
-        await self._metrics.gauge("orpheus.queue_wait_ms", run_id, queue_wait_ms)
-        await self._metrics.gauge("orpheus.infer_ms", run_id, infer_ms)
-        await self._metrics.gauge("orpheus.total_ms", run_id, total_ms)
+        await self._metrics.gauge("storpheus.queue_wait_ms", run_id, queue_wait_ms)
+        await self._metrics.gauge("storpheus.infer_ms", run_id, infer_ms)
+        await self._metrics.gauge("storpheus.total_ms", run_id, total_ms)
 
         await self._events.emit(
             run_id=run_id,
-            scenario="orpheus_generate",
+            scenario="storpheus_generate",
             component=Component.ORPHEUS,
             event_type=EventType.HTTP_RESPONSE,
             trace=trace,
@@ -185,12 +185,12 @@ class OrpheusClient:
                 )
             except httpx.ReadTimeout:
                 retries += 1
-                await self._metrics.counter("orpheus.retries", run_id)
+                await self._metrics.counter("storpheus.retries", run_id)
                 continue
 
             if resp.status_code != 200:
                 retries += 1
-                await self._metrics.counter("orpheus.retries", run_id)
+                await self._metrics.counter("storpheus.retries", run_id)
                 continue
 
             data = resp.json()
@@ -211,21 +211,21 @@ class OrpheusClient:
                 infer_ms = (time.monotonic() - queue_start) * 1000 - queue_wait_ms
                 return queue_wait_ms, infer_ms, data.get("result", {})
             elif status == "failed":
-                error = data.get("error", "Unknown Orpheus failure")
-                raise OrpheusError(f"Orpheus job {job_id} failed: {error}")
+                error = data.get("error", "Unknown Storpheus failure")
+                raise StorpheusError(f"Storpheus job {job_id} failed: {error}")
             elif status == "canceled":
-                raise OrpheusError(f"Orpheus job {job_id} was canceled")
+                raise StorpheusError(f"Storpheus job {job_id} was canceled")
 
-        raise OrpheusError(f"Orpheus job {job_id} timed out after {max_retries} polls")
+        raise StorpheusError(f"Storpheus job {job_id} timed out after {max_retries} polls")
 
     async def health_check(self) -> dict:
-        """Quick health check against Orpheus."""
+        """Quick health check against Storpheus."""
         resp = await self._client.get("/health")
         return resp.json()
 
 
-class OrpheusResult:
-    """Structured result from an Orpheus generation job."""
+class StorpheusResult:
+    """Structured result from a Storpheus generation job."""
 
     def __init__(
         self,
@@ -302,5 +302,5 @@ class OrpheusResult:
         }
 
 
-class OrpheusError(Exception):
+class StorpheusError(Exception):
     pass

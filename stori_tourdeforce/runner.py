@@ -20,7 +20,7 @@ from stori_tourdeforce.models import (
 )
 from stori_tourdeforce.clients.prompt import PromptFetchError, PromptServiceClient
 from stori_tourdeforce.clients.maestro import MaestroClient, MaestroError, MaestroResult
-from stori_tourdeforce.clients.orpheus import OrpheusClient, OrpheusError
+from stori_tourdeforce.clients.storpheus import StorpheusClient, StorpheusError
 from stori_tourdeforce.clients.muse import CheckoutResult, MergeResult, MuseClient, MuseError
 from stori_tourdeforce.collectors.events import EventCollector
 from stori_tourdeforce.collectors.logs import LogCollector
@@ -71,7 +71,7 @@ class Runner:
         self._maestro_client = MaestroClient(
             config, self._event_collector, self._metrics, self._payload_dir,
         )
-        self._orpheus_client = OrpheusClient(
+        self._storpheus_client = StorpheusClient(
             config, self._event_collector, self._metrics, self._payload_dir, self._midi_dir,
         )
         self._muse_client = MuseClient(
@@ -80,7 +80,7 @@ class Runner:
 
         # Semaphores
         self._maestro_sem = asyncio.Semaphore(config.maestro_semaphore)
-        self._orpheus_sem = asyncio.Semaphore(config.orpheus_semaphore)
+        self._storpheus_sem = asyncio.Semaphore(config.storpheus_semaphore)
 
         # Results
         self._results: list[RunResult] = []
@@ -99,11 +99,11 @@ class Runner:
             "seed": self._config.seed,
             "concurrency": self._config.concurrency,
             "maestro_url": self._config.maestro_url,
-            "orpheus_url": self._config.orpheus_url,
+            "storpheus_url": self._config.storpheus_url,
             "muse_base_url": self._config.muse_base_url,
             "quality_preset": self._config.quality_preset,
             "maestro_timeout": self._config.maestro_stream_timeout,
-            "orpheus_timeout": self._config.orpheus_job_timeout,
+            "storpheus_timeout": self._config.storpheus_job_timeout,
         }, indent=2))
 
         # Run with concurrency
@@ -131,7 +131,7 @@ class Runner:
         # Cleanup
         await self._prompt_client.close()
         await self._maestro_client.close()
-        await self._orpheus_client.close()
+        await self._storpheus_client.close()
         await self._muse_client.close()
 
         # Post-processing
@@ -189,11 +189,11 @@ class Runner:
             result.error_type = "maestro"
             result.error_message = str(e)
             logger.error("Run %s Maestro error: %s", run_id, e)
-        except OrpheusError as e:
+        except StorpheusError as e:
             result.status = RunStatus.ORPHEUS_ERROR
-            result.error_type = "orpheus"
+            result.error_type = "storpheus"
             result.error_message = str(e)
-            logger.error("Run %s Orpheus error: %s", run_id, e)
+            logger.error("Run %s Storpheus error: %s", run_id, e)
         except MuseError as e:
             result.status = RunStatus.MUSE_ERROR
             result.error_type = "muse"
@@ -239,8 +239,8 @@ class Runner:
             "end_ts": result.end_ts,
             "prompt_id": result.prompt.id if result.prompt else "",
             "intent": result.intent,
-            "orpheus_job_id": result.orpheus_job_id,
-            "note_count": result.orpheus_note_count,
+            "storpheus_job_id": result.storpheus_job_id,
+            "note_count": result.storpheus_note_count,
             "quality_score": result.midi_metrics.get("quality_score", 0) if result.midi_metrics else 0,
             "muse_commits": len(result.muse_commit_ids),
             "muse_merges": len(result.muse_merge_ids),
@@ -250,7 +250,7 @@ class Runner:
         logger.info(
             "Run %s: %s (%.1fs, %d notes, quality=%.0f)",
             run_id, result.status.value, result.duration_ms / 1000,
-            result.orpheus_note_count,
+            result.storpheus_note_count,
             result.midi_metrics.get("quality_score", 0) if result.midi_metrics else 0,
         )
 
@@ -291,9 +291,9 @@ class Runner:
             result.error_message = maestro_result.complete.get("error", "Stream not successful")
             return result
 
-        # ── Step 3: Extract Orpheus data from tool calls ──────────────────
+        # ── Step 3: Extract Storpheus data from tool calls ──────────────────
         notes = self._extract_notes_from_tool_calls(maestro_result.tool_calls)
-        result.orpheus_note_count = len(notes)
+        result.storpheus_note_count = len(notes)
 
         # ── Step 4: Analyze MIDI quality ──────────────────────────────────
         if notes:
@@ -317,8 +317,8 @@ class Runner:
             await self._metrics.gauge("midi.quality_score", run_id, midi_metrics.quality_score)
             await self._metrics.gauge("midi.note_count", run_id, float(midi_metrics.note_count_total))
 
-        # ── Step 4b: Download Orpheus artifacts (WAV, MIDI, plot) ─────────
-        result.artifact_files = await self._download_orpheus_artifacts(run_id, maestro_result)
+        # ── Step 4b: Download Storpheus artifacts (WAV, MIDI, plot) ─────────
+        result.artifact_files = await self._download_storpheus_artifacts(run_id, maestro_result)
 
         # ── Step 5: MUSE commit (initial compose) — C1 ────────────────────
         tracks = self._extract_tracks_from_tool_calls(maestro_result.tool_calls)
@@ -362,7 +362,7 @@ class Runner:
                     )
                     accumulated_tool_calls.extend(edit_mr.tool_calls)
                     edit_notes = self._extract_notes_from_tool_calls(edit_mr.tool_calls)
-                    result.orpheus_note_count += len(edit_notes)
+                    result.storpheus_note_count += len(edit_notes)
                     wave_commits[edit_step.branch_name] = edit_cid
                     result.muse_commit_ids.append(edit_cid)
                     result.muse_branch_names.append(edit_step.branch_name)
@@ -765,7 +765,7 @@ class Runner:
             )
 
         # Download artifacts from this edit step
-        edit_artifacts = await self._download_orpheus_artifacts(
+        edit_artifacts = await self._download_storpheus_artifacts(
             f"{run_id}_edit_{edit_step.branch_name}", edit_result,
         )
         if edit_artifacts:
@@ -892,8 +892,8 @@ class Runner:
             "tracks": list(tracks_by_id.values()),
         }
 
-    async def _download_orpheus_artifacts(self, run_id: str, maestro_result: MaestroResult) -> list[str]:
-        """Download WAV, MIDI, and plot files from Orpheus artifact endpoint."""
+    async def _download_storpheus_artifacts(self, run_id: str, maestro_result: MaestroResult) -> list[str]:
+        """Download WAV, MIDI, and plot files from Storpheus artifact endpoint."""
         comp_id = maestro_result.trace_id
         if not comp_id:
             logger.debug("No trace_id available — skipping artifact download for %s", run_id)
@@ -905,12 +905,12 @@ class Runner:
 
         try:
             async with httpx.AsyncClient(
-                base_url=self._config.orpheus_url,
+                base_url=self._config.storpheus_url,
                 timeout=httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0),
             ) as client:
                 list_resp = await client.get(f"/artifacts/{comp_id}")
                 if list_resp.status_code != 200:
-                    logger.debug("Orpheus artifacts not found for comp_id=%s (status %d)", comp_id, list_resp.status_code)
+                    logger.debug("Storpheus artifacts not found for comp_id=%s (status %d)", comp_id, list_resp.status_code)
                     return []
 
                 listing = list_resp.json()

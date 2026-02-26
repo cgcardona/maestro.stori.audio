@@ -1,7 +1,7 @@
-"""Orpheus Music Transformer backend.
+"""Storpheus Music Transformer backend.
 
 Transmits the full EmotionVector, RoleProfile summary, and
-GenerationConstraints so Orpheus consumes structured intent without
+GenerationConstraints so Storpheus consumes structured intent without
 re-derivation.
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ from app.services.backends.base import (
     GenerationResult,
     GeneratorBackend,
 )
-from app.services.orpheus import get_orpheus_client, normalize_orpheus_tool_calls
+from app.services.storpheus import get_storpheus_client, normalize_storpheus_tool_calls
 
 if TYPE_CHECKING:
     from app.core.emotion_vector import EmotionVector
@@ -59,7 +59,7 @@ def _rescale_beats(
     target_beats: int,
     bars: int = 0,
 ) -> None:
-    """Rescale beat positions in-place when Orpheus output is compressed."""
+    """Rescale beat positions in-place when Storpheus output is compressed."""
     if not notes or target_beats <= 0:
         return
 
@@ -75,7 +75,7 @@ def _rescale_beats(
 
     scale = target_beats / max_end
     logger.info(
-        f"Rescaling Orpheus output: max_end={max_end:.2f} → "
+        f"Rescaling Storpheus output: max_end={max_end:.2f} → "
         f"target={target_beats} (scale={scale:.2f}x)"
     )
 
@@ -113,7 +113,7 @@ def _build_intent_hash(
     return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
-class OrpheusBackend(MusicGeneratorBackend):
+class StorpheusBackend(MusicGeneratorBackend):
     """Orpheus Music Transformer backend.
 
     Transmits structured EmotionVector, RoleProfile summary, and
@@ -121,11 +121,11 @@ class OrpheusBackend(MusicGeneratorBackend):
     """
 
     def __init__(self) -> None:
-        self.client = get_orpheus_client()
+        self.client = get_storpheus_client()
 
     @property
     def backend_type(self) -> GeneratorBackend:
-        return GeneratorBackend.ORPHEUS
+        return GeneratorBackend.STORPHEUS
 
     async def is_available(self) -> bool:
         return await self.client.health_check()
@@ -211,7 +211,7 @@ class OrpheusBackend(MusicGeneratorBackend):
         intent_hash = _build_intent_hash(ev_dict, rp_dict, gc_dict, musical_goals)
 
         logger.info(
-            f"⚠️ Orpheus SINGLE-instrument generate({instrument}): "
+            f"⚠️ Storpheus SINGLE-instrument generate({instrument}): "
             f"This path uses seed MIDI + ignores prime_instruments. "
             f"ev={ev_dict is not None} rp={rp_dict is not None} "
             f"gc={gc_dict is not None} "
@@ -242,7 +242,7 @@ class OrpheusBackend(MusicGeneratorBackend):
 
             mvp_notes = result.get("notes")
             if mvp_notes:
-                logger.info(f"✅ Orpheus: {len(mvp_notes)} notes (direct)")
+                logger.info(f"✅ Storpheus: {len(mvp_notes)} notes (direct)")
                 return GenerationResult(
                     success=True,
                     notes=[_normalize_note_keys(n) for n in mvp_notes],
@@ -251,7 +251,7 @@ class OrpheusBackend(MusicGeneratorBackend):
                 )
 
             tool_calls = result.get("tool_calls", [])
-            parsed = normalize_orpheus_tool_calls(tool_calls)
+            parsed = normalize_storpheus_tool_calls(tool_calls)
             notes: list[NoteDict] = [_normalize_note_keys(n) for n in parsed["notes"]]
             cc_events: list[CCEventDict] = parsed["cc_events"]
             pitch_bends: list[PitchBendDict] = parsed["pitch_bends"]
@@ -265,7 +265,7 @@ class OrpheusBackend(MusicGeneratorBackend):
 
             if notes:
                 logger.info(
-                    f"Orpheus generated {len(notes)} notes, "
+                    f"Storpheus generated {len(notes)} notes, "
                     f"{len(cc_events)} CC, "
                     f"{len(pitch_bends)} PB, "
                     f"{len(aftertouch)} AT"
@@ -280,13 +280,13 @@ class OrpheusBackend(MusicGeneratorBackend):
                     aftertouch=aftertouch,
                 )
             else:
-                logger.warning("Orpheus returned success but no notes found in tool_calls")
+                logger.warning("Storpheus returned success but no notes found in tool_calls")
                 return GenerationResult(
                     success=False,
                     notes=[],
                     backend_used=self.backend_type,
                     metadata=meta,
-                    error="No notes found in Orpheus response",
+                    error="No notes found in Storpheus response",
                 )
         else:
             return GenerationResult(
@@ -294,7 +294,7 @@ class OrpheusBackend(MusicGeneratorBackend):
                 notes=[],
                 backend_used=self.backend_type,
                 metadata={},
-                error=result.get("error", "Orpheus generation failed"),
+                error=result.get("error", "Storpheus generation failed"),
             )
 
     async def generate_unified(
@@ -308,7 +308,7 @@ class OrpheusBackend(MusicGeneratorBackend):
     ) -> GenerationResult:
         """Generate all instruments together — coherent multi-instrument output.
 
-        Sends every instrument in a single Orpheus call with unified_output=True.
+        Sends every instrument in a single Storpheus call with unified_output=True.
         The response includes channel_notes keyed by instrument label (bass, keys,
         drums, melody, etc.) so the caller can distribute to tracks.
         """
@@ -437,5 +437,5 @@ class OrpheusBackend(MusicGeneratorBackend):
                 notes=[],
                 backend_used=self.backend_type,
                 metadata={},
-                error=result.get("error", "Unified Orpheus generation failed"),
+                error=result.get("error", "Unified Storpheus generation failed"),
             )

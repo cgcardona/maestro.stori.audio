@@ -1,12 +1,12 @@
 """
 Music Generation Service for Maestro.
 
-Primary backend: Orpheus (required for composing). No pattern fallback;
+Primary backend: Storpheus (required for composing). No pattern fallback;
 other backends (IR, HuggingFace, LLM) can be used when explicitly requested
 or configured in priority.
 
 Unified generation: all instruments for a section are generated in a single
-Orpheus call so the model produces coherent, musically-related parts.  A
+Storpheus call so the model produces coherent, musically-related parts.  A
 per-section cache ensures that concurrent instrument agents sharing the same
 section only trigger ONE GPU call; subsequent agents read from cache.
 """
@@ -25,7 +25,7 @@ from app.services.backends.drum_ir import DrumSpecBackend
 from app.services.backends.bass_ir import BassSpecBackend
 from app.services.backends.harmonic_ir import HarmonicSpecBackend
 from app.services.backends.melody_ir import MelodySpecBackend
-from app.services.backends.orpheus import OrpheusBackend
+from app.services.backends.storpheus import StorpheusBackend
 from app.services.groove_engine import RhythmSpine, extract_kick_onsets
 from app.services.expressiveness import apply_expressiveness
 from app.config import settings
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Role → channel family mapping for unified generation channel extraction.
 #
-# Orpheus labels channels by GM family (e.g. "piano", "bass", "drums",
+# Storpheus labels channels by GM family (e.g. "piano", "bass", "drums",
 # "guitar", "strings") while the LLM uses musical role names (e.g. "keys",
 # "chords", "rhythm guitar", "pad").  This map bridges the two vocabularies.
 # ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ def _extract_channel_for_role(
     role_key: str,
     channel_notes: dict[str, list[NoteDict]],
 ) -> list[NoteDict]:
-    """Extract notes for a musical role from Orpheus channel labels.
+    """Extract notes for a musical role from Storpheus channel labels.
 
     Tries, in order:
     1. Exact match (role_key == channel label)
@@ -203,8 +203,8 @@ class MusicGenerator:
     """
     Music generation service for composing.
 
-    Default backend: Orpheus (required for composing). No pattern fallback;
-    if Orpheus is unavailable, generation fails with a clear error.
+    Default backend: Storpheus (required for composing). No pattern fallback;
+    if Storpheus is unavailable, generation fails with a clear error.
     """
     
     def __init__(self, backend_priority: list[GeneratorBackend] | None = None):
@@ -214,10 +214,10 @@ class MusicGenerator:
         Args:
             backend_priority: Ordered list of backends to try
         """
-        # Composing requires Orpheus; no pattern fallback (fail fast)
+        # Composing requires Storpheus; no pattern fallback (fail fast)
         if backend_priority is None:
             backend_priority = [
-                GeneratorBackend.ORPHEUS,
+                GeneratorBackend.STORPHEUS,
             ]
         
         # Initialize backends
@@ -227,7 +227,7 @@ class MusicGenerator:
             GeneratorBackend.BASS_IR: BassSpecBackend(),
             GeneratorBackend.HARMONIC_IR: HarmonicSpecBackend(),
             GeneratorBackend.MELODY_IR: MelodySpecBackend(),
-            GeneratorBackend.ORPHEUS: OrpheusBackend(),
+            GeneratorBackend.STORPHEUS: StorpheusBackend(),
         }
         
         self.priority = backend_priority
@@ -257,7 +257,7 @@ class MusicGenerator:
         preferred_backend: GeneratorBackend | None = None,
         context: GenerationContext | None = None,
     ) -> GenerationResult:
-        """Generate MIDI notes (default: Orpheus; no pattern fallback)."""
+        """Generate MIDI notes (default: Storpheus; no pattern fallback)."""
         ctx = context or {}
         quality_preset = ctx.get("quality_preset", "quality")
         num_candidates = ctx.get("num_candidates")
@@ -313,15 +313,15 @@ class MusicGenerator:
                 error=error_msg,
             )
         error_msg = (
-            "Music generation (Orpheus) is currently unavailable. "
-            "Ensure the Orpheus service is running (port 10002) and reachable. "
+            "Music generation (Storpheus) is currently unavailable. "
+            "Ensure the Storpheus service is running (port 10002) and reachable. "
             "Please try again once the service is up."
         )
         logger.error(error_msg)
         return GenerationResult(
             success=False,
             notes=[],
-            backend_used=GeneratorBackend.ORPHEUS,
+            backend_used=GeneratorBackend.STORPHEUS,
             metadata={},
             error=error_msg,
         )
@@ -335,7 +335,7 @@ class MusicGenerator:
         key: str | None = None,
         context: GenerationContext | None = None,
     ) -> GenerationResult:
-        """Generate all instruments together in one Orpheus call.
+        """Generate all instruments together in one Storpheus call.
 
         Produces coherent multi-instrument output where all parts are
         generated simultaneously, yielding better musical coherence than
@@ -364,7 +364,7 @@ class MusicGenerator:
         return GenerationResult(
             success=False,
             notes=[],
-            backend_used=GeneratorBackend.ORPHEUS,
+            backend_used=GeneratorBackend.STORPHEUS,
             metadata={},
             error="No backend available for unified generation",
         )
@@ -382,7 +382,7 @@ class MusicGenerator:
     ) -> GenerationResult:
         """Generate notes for one instrument within a section using unified caching.
 
-        The first call for a section triggers a single Orpheus call with all
+        The first call for a section triggers a single Storpheus call with all
         instruments. Concurrent callers for the same section wait on the lock
         and read from cache, extracting only their channel's notes.
         """
@@ -394,7 +394,7 @@ class MusicGenerator:
             if entry.result is None:
                 logger.info(
                     f"🎼 Section {section_key}: FIRST call ({instrument}), "
-                    f"triggering unified Orpheus call for ALL {all_instruments}"
+                    f"triggering unified Storpheus call for ALL {all_instruments}"
                 )
                 entry.result = await self.generate_unified(
                     instruments=all_instruments,
@@ -475,7 +475,7 @@ class MusicGenerator:
         Return a scorer function for the given instrument role.
 
         Scoring is now instrument-role-based rather than backend-type-based so
-        that Orpheus (and any other backend) benefits from rejection sampling,
+        that Storpheus (and any other backend) benefits from rejection sampling,
         not just the IR backends.
         """
         from app.services.critic import (
@@ -519,13 +519,13 @@ class MusicGenerator:
         """
         Reduce candidate count for low-variance melodic instruments.
 
-        Drums and bass have high output variance and benefit from many Orpheus
+        Drums and bass have high output variance and benefit from many Storpheus
         candidates; melodic instruments (organ, guitar, strings, etc.) are more
         consistent across samples so two candidates capture most of the gain.
-        Only applies when the backend is Orpheus — IR backends already handle
+        Only applies when the backend is Storpheus — IR backends already handle
         this at the scorer level.
         """
-        if backend_type != GeneratorBackend.ORPHEUS:
+        if backend_type != GeneratorBackend.STORPHEUS:
             return preset_config.num_candidates
         role = instrument.lower()
         _HIGH_VARIANCE_ROLES = {
@@ -557,7 +557,7 @@ class MusicGenerator:
 
         For drums: captures rhythm spine for bass coupling.
         For bass: uses rhythm spine if available.
-        Candidates are dispatched concurrently via asyncio.gather so N Orpheus
+        Candidates are dispatched concurrently via asyncio.gather so N Storpheus
         calls run in parallel rather than sequentially.
         """
         gen_ctx: GenerationContext = {**(context or {})}
@@ -567,7 +567,7 @@ class MusicGenerator:
                 gen_ctx["rhythm_spine"] = self._generation_context.rhythm_spine
                 gen_ctx["drum_kick_beats"] = self._generation_context.rhythm_spine.kick_onsets
 
-        # Smarter candidate count — melodic instruments cap at 2 for Orpheus
+        # Smarter candidate count — melodic instruments cap at 2 for Storpheus
         effective_candidates = self._candidates_for_role(instrument, preset_config, backend_type)
 
         use_rejection = preset_config.use_critic and effective_candidates > 1
@@ -575,7 +575,7 @@ class MusicGenerator:
 
         if scorer is not None:
             # Dispatch all candidates concurrently — the bottleneck is GPU inference
-            # time on Orpheus, so parallel dispatch cuts wall-clock time from
+            # time on Storpheus, so parallel dispatch cuts wall-clock time from
             # N × T_inference to ≈ T_inference + network overhead.
             tasks = [
                 backend.generate(instrument, style, tempo, bars, key, chords, context=gen_ctx)
@@ -658,7 +658,7 @@ class MusicGenerator:
     
     async def _is_backend_available(self, backend: MusicGeneratorBackend) -> bool:
         """Check backend availability with caching.
-        Only cache positive results so we re-check after Orpheus restarts or brief outages.
+        Only cache positive results so we re-check after Storpheus restarts or brief outages.
         """
         backend_type = backend.backend_type
         cache_key = backend_type.value

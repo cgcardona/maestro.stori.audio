@@ -61,9 +61,9 @@ class TestHealthEndpoint:
 
 
 class TestHealthFullEndpoint:
-    """GET /api/v1/health/full — dependencies (Orpheus, LLM, S3).
+    """GET /api/v1/health/full — dependencies (Storpheus, LLM, S3).
 
-    Orpheus and S3 are mocked so these contract tests verify shape and status
+    Storpheus and S3 are mocked so these contract tests verify shape and status
     codes without making real network calls (which would hang in CI).
     """
 
@@ -71,7 +71,7 @@ class TestHealthFullEndpoint:
     async def test_status_200_or_503(self, client: AsyncClient) -> None:
 
         with patch(
-            "app.services.orpheus.OrpheusClient.health_check",
+            "app.services.storpheus.StorpheusClient.health_check",
             new_callable=AsyncMock,
             return_value=False,
         ):
@@ -82,7 +82,7 @@ class TestHealthFullEndpoint:
     async def test_response_has_status_and_dependencies(self, client: AsyncClient) -> None:
 
         with patch(
-            "app.services.orpheus.OrpheusClient.health_check",
+            "app.services.storpheus.StorpheusClient.health_check",
             new_callable=AsyncMock,
             return_value=False,
         ):

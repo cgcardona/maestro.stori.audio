@@ -19,7 +19,7 @@ from gradio_client import Client, handle_file
 OUT = "/data/cache/quality_test"
 os.makedirs(OUT, exist_ok=True)
 
-SPACE = os.environ.get("STORI_ORPHEUS_SPACE", "cgcardona/Orpheus-Music-Transformer")
+SPACE = os.environ.get("STORI_STORPHEUS_SPACE", "cgcardona/Orpheus-Music-Transformer")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
 SEED = "/app/seed_library/seeds/neo_soul/neo_soul_00.mid"

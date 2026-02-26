@@ -275,43 +275,43 @@ async def _handle_composition_agent_team(
 
     # ── GPU warm-up: fire a lightweight health probe before spawning agents ──
     # This primes the Gradio Space GPU pod so the first real generation call
-    # does not hit the 60-second cold-start timeout.  When orpheus_required is
+    # does not hit the 60-second cold-start timeout.  When storpheus_required is
     # true (default), an unhealthy probe aborts the composition immediately
     # instead of wasting 45+ seconds of LLM reasoning that will inevitably
     # fail at generation time.
-    _orpheus_healthy = True
+    _storpheus_healthy = True
     try:
-        from app.services.orpheus import get_orpheus_client
-        _orpheus = get_orpheus_client()
-        _orpheus_healthy = await _orpheus.health_check()
-        if _orpheus_healthy:
-            logger.debug(f"[{trace.trace_id[:8]}] Orpheus GPU warm-up: healthy ✓")
+        from app.services.storpheus import get_storpheus_client
+        _storpheus = get_storpheus_client()
+        _storpheus_healthy = await _storpheus.health_check()
+        if _storpheus_healthy:
+            logger.debug(f"[{trace.trace_id[:8]}] Storpheus GPU warm-up: healthy ✓")
         else:
             logger.warning(
-                f"⚠️ [{trace.trace_id[:8]}] Orpheus health check failed before composition"
+                f"⚠️ [{trace.trace_id[:8]}] Storpheus health check failed before composition"
             )
     except Exception as _wu_exc:
-        _orpheus_healthy = False
-        logger.warning(f"⚠️ [{trace.trace_id[:8]}] Orpheus warm-up probe failed: {_wu_exc}")
+        _storpheus_healthy = False
+        logger.warning(f"⚠️ [{trace.trace_id[:8]}] Storpheus warm-up probe failed: {_wu_exc}")
 
-    if not _orpheus_healthy:
-        if settings.orpheus_required:
+    if not _storpheus_healthy:
+        if settings.storpheus_required:
             logger.error(
-                f"❌ [{trace.trace_id[:8]}] Orpheus required but unavailable — "
+                f"❌ [{trace.trace_id[:8]}] Storpheus required but unavailable — "
                 "aborting composition (set STORI_ORPHEUS_REQUIRED=false to override)"
             )
             yield await sse_event({
                 "type": "error",
                 "message": (
-                    "Music generation service (Orpheus) is not responding. "
-                    "Cannot start composition — please verify Orpheus is running "
+                    "Music generation service (Storpheus) is not responding. "
+                    "Cannot start composition — please verify Storpheus is running "
                     "and retry."
                 ),
             })
             yield await sse_event({
                 "type": "complete",
                 "success": False,
-                "error": "Orpheus health check failed — composition aborted",
+                "error": "Storpheus health check failed — composition aborted",
                 "traceId": trace.trace_id,
             })
             return
@@ -319,7 +319,7 @@ async def _handle_composition_agent_team(
             yield await sse_event({
                 "type": "status",
                 "message": (
-                    "⚠️ Music generation (Orpheus) is not responding. "
+                    "⚠️ Music generation (Storpheus) is not responding. "
                     "MIDI regions may be empty — retry logic will attempt recovery."
                 ),
             })
@@ -347,7 +347,7 @@ async def _handle_composition_agent_team(
             ),
         })
 
-    # ── Build composition context for Orpheus routing ──
+    # ── Build composition context for Storpheus routing ──
     _emotion_vector = None
     try:
         _emotion_vector = emotion_vector_from_stori_prompt(prompt)
@@ -794,7 +794,7 @@ async def _handle_composition_agent_team(
         if _notes_generated == 0 and _regions_created > 0:
             _complete_warnings.append(
                 f"MIDI generation failed for all {_regions_created} region(s) — "
-                "Orpheus returned no notes. Check that the Orpheus service is "
+                "Storpheus returned no notes. Check that the Storpheus service is "
                 "reachable and returning valid responses."
             )
         logger.warning(

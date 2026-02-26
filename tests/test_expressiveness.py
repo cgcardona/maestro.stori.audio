@@ -720,7 +720,7 @@ class TestMusicGeneratorExpressiveness:
         return GenerationResult(
             success=True,
             notes=resolved,
-            backend_used=GeneratorBackend.ORPHEUS,
+            backend_used=GeneratorBackend.STORPHEUS,
             metadata={},
             cc_events=cc_events or [],
             pitch_bends=pitch_bends or [],
@@ -770,7 +770,7 @@ class TestMusicGeneratorExpressiveness:
         result = GenerationResult(
             success=True,
             notes=camel_notes,
-            backend_used=GeneratorBackend.ORPHEUS,
+            backend_used=GeneratorBackend.STORPHEUS,
             metadata={},
         )
         enriched = MusicGenerator._maybe_apply_expressiveness(result, "bass", "trap", 4)

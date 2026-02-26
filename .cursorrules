@@ -5,7 +5,7 @@
 Stori Maestro — AI music composition backend (FastAPI + MCP) for the Stori DAW, a **macOS app** (never say "iOS"). Tagline: "the infinite music machine."
 
 - **Entry points:** `POST /api/v1/maestro/stream` (human in DAW) and MCP tools (Cursor/Claude). Same engine, same pipeline.
-- **Stack:** Python 3.11+, FastAPI, Pydantic v2, fully async. Orpheus required for generation (no fallback).
+- **Stack:** Python 3.11+, FastAPI, Pydantic v2, fully async. Storpheus required for generation (no fallback).
 - **Models:** Exactly two — `anthropic/claude-sonnet-4.6` and `anthropic/claude-opus-4.6` via OpenRouter. No others.
 - **Version:** Single source of truth in `pyproject.toml`. Everything else derives from `app/protocol/version.py`.
 
@@ -25,9 +25,9 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 ## Execution
 
 - **Docker-first:** Never run Python on the host. `docker compose exec <service> <cmd>`. Rebuild before testing: `docker compose build <service> && docker compose up -d`.
-- **Two containers:** `maestro` (`app/`, `tests/`) and `orpheus` (`orpheus-music/`). Both have mypy and pytest.
+- **Two containers:** `maestro` (`app/`, `tests/`) and `storpheus` (`storpheus/`). Both have mypy and pytest.
 - **Verification order: mypy → tests → docs.** Always run mypy first. Fix type errors before running tests so you only need one test pass.
-- **Mypy (both):** `docker compose exec maestro mypy app/ tests/` AND `docker compose exec orpheus mypy .`. Both pass before committing.
+- **Mypy (both):** `docker compose exec maestro mypy app/ tests/` AND `docker compose exec storpheus mypy .`. Both pass before committing.
 - **Tests:** Run individual files yourself; user runs full suite. Regression test for every bug fix: `test_<what_broke>_<fixed_behavior>`.
 - **Show full output:** Never truncate, pipe through `head`/`tail`, or hide shell output.
 - **After tests pass:** Update affected docs, then commit — don't wait to be asked.
@@ -52,7 +52,7 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 - E2E tests use `e2e_pocket_groove` from `prompts_world.py` with `Mode: compose`.
 - Ephemeral scripts go to `/tmp/` — never committed.
 
-## Orpheus service
+## Storpheus service
 
 - `music_service.py` — FastAPI (port 10002), flat module layout. Proxies to HF Space Gradio API for inference.
 - **Instrument resolution:** `resolve_gm_program(role)` → GM program, `resolve_tmidix_name(role)` → TMIDIX string, `_resolve_melodic_index(role)` → channel (0=bass, 1=keys, 2=other).
@@ -76,7 +76,7 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 | Frontend/MCP/JWT | `docs/guides/integrate.md` |
 | API reference | `docs/reference/api.md` |
 | Architecture | `docs/reference/architecture.md` |
-| **Orpheus** | `docs/reference/orpheus.md` |
+| **Storpheus** | `docs/reference/storpheus.md` |
 | Muse VCS | `docs/architecture/muse-vcs.md` |
 | Testing | `docs/guides/testing.md` |
 | Security | `docs/guides/security.md` |
@@ -87,7 +87,7 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 | Service | Container | Port |
 |---------|-----------|------|
 | Maestro | `maestro-stori-app` | 10001 |
-| Orpheus | `maestro-stori-orpheus` | 10002 |
+| Storpheus | `maestro-stori-storpheus` | 10002 |
 | Postgres | `maestro-stori-postgres` | 5432 |
 | Qdrant | `maestro-stori-qdrant` | 6333/6334 |
 | Nginx | `maestro-stori-nginx` | 80/443 |
@@ -101,7 +101,7 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 | Pipeline | `app/core/pipeline.py` | `tests/test_pipeline.py` |
 | Maestro | `app/core/maestro_handlers.py` | `tests/test_maestro_handlers.py` |
 | Agent Teams | `app/core/maestro_agent_teams/` | `tests/test_section_agent.py` |
-| Orpheus | `orpheus-music/music_service.py` | `orpheus-music/test_*.py` |
+| Storpheus | `storpheus/music_service.py` | `storpheus/test_*.py` |
 | MCP | `app/mcp/` | `tests/test_mcp.py` |
 | Muse VCS | `app/services/muse_*.py` | `tests/test_muse_*.py` |
 | Muse Routes | `app/api/routes/muse.py` | `tests/e2e/test_muse_e2e_harness.py` |

@@ -54,7 +54,7 @@ from app.core.maestro_agent_teams.sections import (
     _section_overall_description,
 )
 from app.core.maestro_agent_teams.signals import SectionSignals
-from app.services.orpheus import get_orpheus_client
+from app.services.storpheus import get_storpheus_client
 
 logger = logging.getLogger(__name__)
 
@@ -501,9 +501,9 @@ async def _run_instrument_agent_inner(
                 break
 
             _any_generate_missing = any("stori_generate_midi" in m for m in missing)
-            if _any_generate_missing and get_orpheus_client().circuit_breaker_open:
+            if _any_generate_missing and get_storpheus_client().circuit_breaker_open:
                 logger.warning(
-                    f"{agent_log} ⚠️ Orpheus circuit breaker open on retry turn {turn} — aborting"
+                    f"{agent_log} ⚠️ Storpheus circuit breaker open on retry turn {turn} — aborting"
                 )
                 break
 
@@ -864,17 +864,17 @@ async def _run_instrument_agent_inner(
         messages.extend(tool_result_messages)
 
         if _generates_completed < _expected_sections:
-            _oc = get_orpheus_client()
+            _oc = get_storpheus_client()
             if _oc.circuit_breaker_open:
                 logger.warning(
-                    f"{agent_log} ⚠️ Orpheus circuit breaker is open — "
+                    f"{agent_log} ⚠️ Storpheus circuit breaker is open — "
                     f"stopping retries (would waste tokens)"
                 )
                 await sse_queue.put({
                     "type": "toolError",
                     "name": "stori_generate_midi",
                     "error": (
-                        "Orpheus music service is unavailable. "
+                        "Storpheus music service is unavailable. "
                         "Generation cannot proceed."
                     ),
                     "agentId": _agent_id,
@@ -1105,7 +1105,7 @@ async def _dispatch_section_children(
     # regionId and trackId are resolved from all_tool_results via $refs.
     # Unified generation: attach section_key + all_instruments so the
     # tool execution path routes through generate_for_section, producing
-    # coherent multi-instrument output via a shared Orpheus call.
+    # coherent multi-instrument output via a shared Storpheus call.
     _orphan_gen_base_ctx: CompositionContext | None = None
     if orphaned_generates and runtime_context:
         _orphan_gen_base_ctx = CompositionContext(
@@ -1302,9 +1302,9 @@ async def _dispatch_section_children(
     for _retry_round in range(_MAX_SECTION_RETRIES):
         if not _failed_indices:
             break
-        if get_orpheus_client().circuit_breaker_open:
+        if get_storpheus_client().circuit_breaker_open:
             logger.warning(
-                f"{agent_log} ⚠️ Orpheus circuit breaker open — skipping section retries"
+                f"{agent_log} ⚠️ Storpheus circuit breaker open — skipping section retries"
             )
             break
 
@@ -1382,7 +1382,7 @@ async def _dispatch_section_children(
     # ── Aggregate section results ──
     # Count ALL dispatched sections as "completed" for _missing_stages().
     # The server already retried failed sections — asking the LLM to
-    # re-emit calls it can't fix (Orpheus down, etc.) wastes tokens and
+    # re-emit calls it can't fix (Storpheus down, etc.) wastes tokens and
     # confuses the model when it sees stub tool results.
     # Also populate per-section name sets to prevent duplicate regeneration.
     _children_total_elapsed = asyncio.get_event_loop().time() - _children_start

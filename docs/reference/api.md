@@ -13,14 +13,14 @@ Streaming (SSE), event types, models, and the full MCP tool set in one place. To
 
 The backend determines execution mode from intent classification: COMPOSING -> variation (human review), EDITING -> apply (immediate). See [architecture.md](architecture.md).
 
-The `prompt` field accepts both natural language and the **Stori structured prompt** format. When a prompt begins with `STORI PROMPT`, it is parsed as a structured prompt and routed deterministically by the `Mode` field, bypassing NL classification. See [stori-prompt-spec.md](../protocol/stori-prompt-spec.md).
+The `prompt` field accepts both natural language and the **Stori structured prompt** format. When a prompt begins with `STORI PROMPT`, it is parsed as a structured prompt and routed deterministically by the `Mode` field, bypassing NL classification. See [stori_prompt_spec.md](../protocol/stori_prompt_spec.md).
 
 ### Request body fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `prompt` | string | yes | Natural language or STORI PROMPT text |
-| `project` | object | no | Full DAW project snapshot (tracks, regions, buses, tempo, key). See [fe-project-state-sync.md](../guides/fe-project-state-sync.md). |
+| `project` | object | no | Full DAW project snapshot (tracks, regions, buses, tempo, key). See [fe_project_state_sync.md](../guides/fe_project_state_sync.md). |
 | `conversationId` | string (UUID) | no | Conversation ID for multi-turn context. Send the same ID for every request in a session. |
 | `model` | string | no | LLM model override. Supported: `anthropic/claude-sonnet-4.6` (default), `anthropic/claude-opus-4.6`. |
 | `storePrompt` | bool | no | Whether to store prompt for training data (default `true`) |
@@ -224,7 +224,7 @@ All models use OpenRouter's `reasoning` parameter for Chain of Thought. Two even
 
 Production endpoints for the musical version control system. All routes require JWT auth (`Authorization: Bearer <token>`). Prefix: `/api/v1/muse/`.
 
-See [muse-vcs.md](../architecture/muse-vcs.md) for the full architecture reference.
+See [muse_vcs.md](../architecture/muse_vcs.md) for the full architecture reference.
 
 ### Endpoints
 

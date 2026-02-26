@@ -54,13 +54,13 @@ from seed_selector import select_seed, select_seed_with_key, SeedSelection
 from midi_transforms import transpose_midi
 from candidate_scorer import score_candidate, select_best_candidate, CandidateScore
 from post_processing import build_post_processor
-from orpheus_types import (
+from storpheus_types import (
     BestCandidate,
     CacheKeyData,
-    OrpheusAftertouch,
-    OrpheusCCEvent,
-    OrpheusNoteDict,
-    OrpheusPitchBend,
+    StorpheusAftertouch,
+    StorpheusCCEvent,
+    StorpheusNoteDict,
+    StorpheusPitchBend,
     ParsedMidiResult,
     QualityEvalToolCall,
     ScoringParams,
@@ -101,7 +101,7 @@ _MAX_QUEUE_DEPTH = int(os.environ.get("ORPHEUS_MAX_QUEUE_DEPTH", "20"))
 _JOB_TTL_SECONDS = int(os.environ.get("ORPHEUS_JOB_TTL", "300"))  # 5 min
 _COOLDOWN_SECONDS = float(os.environ.get("ORPHEUS_COOLDOWN_SECONDS", "3"))
 
-_CACHE_DIR = pathlib.Path(os.environ.get("ORPHEUS_CACHE_DIR", "/tmp/orpheus_cache"))
+_CACHE_DIR = pathlib.Path(os.environ.get("STORPHEUS_CACHE_DIR", "/tmp/storpheus_cache"))
 _CACHE_FILE = _CACHE_DIR / "result_cache.json"
 
 # ── Storpheus config flags ─────────────────────────────────────────────
@@ -118,7 +118,7 @@ def _create_client() -> Client:
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
     if not hf_token:
         logger.warning("⚠️ No HF_TOKEN or STORI_HF_API_KEY set; Gradio Space may return GPU quota errors")
-    space_id = os.environ.get("STORI_ORPHEUS_SPACE", _DEFAULT_SPACE)
+    space_id = os.environ.get("STORI_STORPHEUS_SPACE", _DEFAULT_SPACE)
     logger.info(f"🔌 Connecting to Orpheus Space: {space_id}")
     return Client(space_id, hf_token=hf_token)
 
@@ -536,7 +536,7 @@ class GenerateResponse(BaseModel):
     """Response from a generation request.
 
     ``notes`` and ``channel_notes`` use the camelCase wire format (``WireNoteDict``)
-    for direct consumption by Maestro.  Internal processing uses ``OrpheusNoteDict``
+    for direct consumption by Maestro.  Internal processing uses ``StorpheusNoteDict``
     (snake_case) up until the response is assembled.
     """
 
@@ -1283,10 +1283,10 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> ParsedMidiResult:
     mid = mido.MidiFile(midi_path)
     ticks_per_beat = mid.ticks_per_beat
 
-    notes: dict[int, list[OrpheusNoteDict]] = {}
-    cc_events: dict[int, list[OrpheusCCEvent]] = {}
-    pitch_bends: dict[int, list[OrpheusPitchBend]] = {}
-    aftertouch: dict[int, list[OrpheusAftertouch]] = {}
+    notes: dict[int, list[StorpheusNoteDict]] = {}
+    cc_events: dict[int, list[StorpheusCCEvent]] = {}
+    pitch_bends: dict[int, list[StorpheusPitchBend]] = {}
+    aftertouch: dict[int, list[StorpheusAftertouch]] = {}
     program_changes: dict[int, int] = {}
 
     for track in mid.tracks:
@@ -1419,7 +1419,7 @@ def filter_channels_for_instruments(parsed: ParsedMidiResult, instruments: list[
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "service": "orpheus-music"}
+    return {"status": "ok", "service": "storpheus"}
 
 
 # ── Artifact download endpoints ──
@@ -1429,7 +1429,7 @@ async def list_artifacts(comp_id: str) -> dict[str, object] | JSONResponse:
     """list artifact files for a composition."""
     from fastapi.responses import JSONResponse
     artifacts_dir = pathlib.Path(
-        os.environ.get("ORPHEUS_CACHE_DIR", "/tmp")
+        os.environ.get("STORPHEUS_CACHE_DIR", "/tmp")
     ) / "artifacts" / comp_id
     if not artifacts_dir.is_dir():
         return JSONResponse({"files": []}, status_code=200)
@@ -1442,7 +1442,7 @@ async def download_artifact(comp_id: str, filename: str) -> object:
     """Download a single artifact file."""
     from fastapi.responses import FileResponse
     artifacts_dir = pathlib.Path(
-        os.environ.get("ORPHEUS_CACHE_DIR", "/tmp")
+        os.environ.get("STORPHEUS_CACHE_DIR", "/tmp")
     ) / "artifacts" / comp_id
     fpath = artifacts_dir / filename
     if not fpath.is_file():
@@ -1459,7 +1459,7 @@ async def download_artifact(comp_id: str, filename: str) -> object:
 async def diagnostics() -> dict[str, object]:
     """Structured diagnostics for the Orpheus service pipeline."""
     now = time()
-    space_id = os.environ.get("STORI_ORPHEUS_SPACE", _DEFAULT_SPACE)
+    space_id = os.environ.get("STORI_STORPHEUS_SPACE", _DEFAULT_SPACE)
 
     gradio_status = "disconnected"
     hf_space_status = "unknown"
@@ -1481,7 +1481,7 @@ async def diagnostics() -> dict[str, object]:
     total_hits = sum(e.hits for e in _result_cache.values())
 
     return {
-        "service": "orpheus-music",
+        "service": "storpheus",
         "space_id": space_id,
         "gradio_client": gradio_status,
         "hf_space": hf_space_status,
@@ -1627,7 +1627,7 @@ async def evaluate_quality(request: QualityEvaluationRequest) -> dict[str, objec
     Used for A/B testing policies, monitoring quality over time,
     and automated quality gates.
     """
-    all_notes: list[OrpheusNoteDict] = []
+    all_notes: list[StorpheusNoteDict] = []
     for tool_call in request.tool_calls:
         if tool_call["tool"] == "addNotes":
             all_notes.extend(tool_call["params"].get("notes", []))
@@ -1665,9 +1665,9 @@ async def ab_test(request: ABTestRequest) -> dict[str, object]:
             "result_b_success": result_b.success,
         }
 
-    def _to_orpheus(wire: list[WireNoteDict]) -> list[OrpheusNoteDict]:
+    def _to_storpheus(wire: list[WireNoteDict]) -> list[StorpheusNoteDict]:
         return [
-            OrpheusNoteDict(
+            StorpheusNoteDict(
                 pitch=n["pitch"], start_beat=n["startBeat"],
                 duration_beats=n["durationBeats"], velocity=n["velocity"],
             )
@@ -1675,8 +1675,8 @@ async def ab_test(request: ABTestRequest) -> dict[str, object]:
         ]
 
     comparison = compare_generations(
-        _to_orpheus(result_a.notes or []),
-        _to_orpheus(result_b.notes or []),
+        _to_storpheus(result_a.notes or []),
+        _to_storpheus(result_b.notes or []),
         request.config_a.bars,
         request.config_a.tempo,
     )
@@ -2113,7 +2113,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                 if not _attempt_parsed["aftertouch"][ch]:
                     del _attempt_parsed["aftertouch"][ch]
 
-            _attempt_flat: list[OrpheusNoteDict] = [
+            _attempt_flat: list[StorpheusNoteDict] = [
                 note
                 for ch_notes in _attempt_parsed["notes"].values()
                 for note in ch_notes
@@ -2170,7 +2170,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         midi_path = best_candidate.midi_path
         parsed = best_candidate.parsed
         batch_idx = best_candidate.batch_idx
-        snake_notes: list[OrpheusNoteDict] = list(best_candidate.flat_notes)
+        snake_notes: list[StorpheusNoteDict] = list(best_candidate.flat_notes)
         mvp_notes: list[WireNoteDict] = [
             {"pitch": n["pitch"], "startBeat": n["start_beat"],
              "durationBeats": n["duration_beats"], "velocity": n["velocity"]}
@@ -2194,7 +2194,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         plot_path: str | None = None
         _comp_id = request.composition_id or "ephemeral"
         _artifacts_dir = (
-            pathlib.Path(os.environ.get("ORPHEUS_CACHE_DIR", "/tmp"))
+            pathlib.Path(os.environ.get("STORPHEUS_CACHE_DIR", "/tmp"))
             / "artifacts"
             / _comp_id
         )

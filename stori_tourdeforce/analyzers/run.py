@@ -43,7 +43,7 @@ class RunAnalyzer:
     def compute_kpis(self) -> dict[str, Any]:
         """Compute aggregate KPIs."""
         durations = [r.duration_ms for r in self._results if r.duration_ms > 0]
-        orpheus_totals = [r.orpheus_total_ms for r in self._results if r.orpheus_total_ms > 0]
+        storpheus_totals = [r.storpheus_total_ms for r in self._results if r.storpheus_total_ms > 0]
         quality_scores = [
             r.midi_metrics.get("quality_score", 0)
             for r in self._results
@@ -61,11 +61,11 @@ class RunAnalyzer:
             "success_rate": round(self.success_rate * 100, 1),
             "failure_breakdown": self.failure_breakdown,
             "duration_stats": _stats(durations) if durations else {},
-            "orpheus_latency_stats": _stats(orpheus_totals) if orpheus_totals else {},
+            "storpheus_latency_stats": _stats(storpheus_totals) if storpheus_totals else {},
             "quality_score_stats": _stats(quality_scores) if quality_scores else {},
             "note_count_stats": _stats(note_counts) if note_counts else {},
             "total_tool_calls": sum(len(r.tool_calls) for r in self._results),
-            "total_midi_notes": sum(r.orpheus_note_count for r in self._results),
+            "total_midi_notes": sum(r.storpheus_note_count for r in self._results),
             # MUSE VCS KPIs
             "total_muse_commits": sum(len(r.muse_commit_ids) for r in self._results),
             "total_muse_merges": sum(len(r.muse_merge_ids) for r in self._results),
@@ -80,7 +80,7 @@ class RunAnalyzer:
             "artifact_breakdown": self._artifact_breakdown(),
             # Timing breakdown
             "total_duration_ms": sum(r.duration_ms for r in self._results),
-            "total_orpheus_ms": sum(r.orpheus_total_ms for r in self._results),
+            "total_storpheus_ms": sum(r.storpheus_total_ms for r in self._results),
         }
 
     def _artifact_breakdown(self) -> dict[str, int]:
@@ -108,7 +108,7 @@ class RunAnalyzer:
             scenario TEXT
         )""")
 
-        c.execute("""CREATE TABLE IF NOT EXISTS orpheus_calls (
+        c.execute("""CREATE TABLE IF NOT EXISTS storpheus_calls (
             run_id TEXT,
             job_id TEXT,
             queue_wait_ms REAL,
@@ -171,12 +171,12 @@ class RunAnalyzer:
                  r.start_ts, r.end_ts, r.duration_ms, r.seed, r.scenario),
             )
 
-            if r.orpheus_job_id:
+            if r.storpheus_job_id:
                 c.execute(
-                    "INSERT INTO orpheus_calls VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (r.run_id, r.orpheus_job_id, r.orpheus_queue_wait_ms,
-                     r.orpheus_infer_ms, r.orpheus_total_ms, r.orpheus_retries,
-                     r.orpheus_output_bytes, r.orpheus_note_count),
+                    "INSERT INTO storpheus_calls VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (r.run_id, r.storpheus_job_id, r.storpheus_queue_wait_ms,
+                     r.storpheus_infer_ms, r.storpheus_total_ms, r.storpheus_retries,
+                     r.storpheus_output_bytes, r.storpheus_note_count),
                 )
 
             if r.midi_metrics:

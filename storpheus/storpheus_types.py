@@ -1,7 +1,7 @@
-"""Typed structures for the Orpheus music generation service.
+"""Typed structures for the Storpheus music generation service.
 
 Defines the MIDI event shapes, parsed result types, and scoring entities
-used throughout the Orpheus codebase.  These mirror ``app/contracts/json_types.py``
+used throughout the Storpheus codebase.  These mirror ``app/contracts/json_types.py``
 in the Maestro service but are defined independently to avoid
 cross-container imports.
 """
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing_extensions import Required, TypedDict
 
 
-class OrpheusNoteDict(TypedDict, total=False):
+class StorpheusNoteDict(TypedDict, total=False):
     """A single MIDI note as parsed from a MIDI file."""
 
     pitch: Required[int]
@@ -22,7 +22,7 @@ class OrpheusNoteDict(TypedDict, total=False):
     velocity: Required[int]
 
 
-class OrpheusCCEvent(TypedDict):
+class StorpheusCCEvent(TypedDict):
     """A MIDI Control Change event."""
 
     cc: int
@@ -30,14 +30,14 @@ class OrpheusCCEvent(TypedDict):
     value: int
 
 
-class OrpheusPitchBend(TypedDict):
+class StorpheusPitchBend(TypedDict):
     """A MIDI Pitch Bend event."""
 
     beat: float
     value: int
 
 
-class OrpheusAftertouch(TypedDict, total=False):
+class StorpheusAftertouch(TypedDict, total=False):
     """A MIDI Aftertouch event (channel or poly)."""
 
     beat: Required[float]
@@ -48,10 +48,10 @@ class OrpheusAftertouch(TypedDict, total=False):
 class ParsedMidiResult(TypedDict):
     """Return type of ``parse_midi_to_notes``."""
 
-    notes: dict[int, list[OrpheusNoteDict]]
-    cc_events: dict[int, list[OrpheusCCEvent]]
-    pitch_bends: dict[int, list[OrpheusPitchBend]]
-    aftertouch: dict[int, list[OrpheusAftertouch]]
+    notes: dict[int, list[StorpheusNoteDict]]
+    cc_events: dict[int, list[StorpheusCCEvent]]
+    pitch_bends: dict[int, list[StorpheusPitchBend]]
+    aftertouch: dict[int, list[StorpheusAftertouch]]
     program_changes: dict[int, int]
 
 
@@ -92,7 +92,7 @@ class GradioGenerationParams(TypedDict):
 class WireNoteDict(TypedDict):
     """A single MIDI note in the camelCase wire format sent to Maestro.
 
-    ``OrpheusNoteDict`` is used internally (snake_case).  This type is
+    ``StorpheusNoteDict`` is used internally (snake_case).  This type is
     used only in ``GenerateResponse`` fields that cross the API boundary.
     """
 
@@ -117,7 +117,7 @@ class QualityEvalParams(TypedDict, total=False):
     Only ``addNotes`` is currently scored; other tool types are ignored.
     """
 
-    notes: list[OrpheusNoteDict]
+    notes: list[StorpheusNoteDict]
 
 
 class QualityEvalToolCall(TypedDict):
@@ -156,5 +156,5 @@ class BestCandidate:
     midi_result: Sequence[object]  # Gradio response: [audio, plot, midi_path, …]
     midi_path: str
     parsed: ParsedMidiResult
-    flat_notes: list[OrpheusNoteDict]
+    flat_notes: list[StorpheusNoteDict]
     batch_idx: int

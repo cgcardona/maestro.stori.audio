@@ -37,7 +37,7 @@ from candidate_scorer import (
     _pattern_diversity,
     _silence_score,
 )
-from orpheus_types import OrpheusNoteDict, ScoringParams
+from storpheus_types import StorpheusNoteDict, ScoringParams
 from post_processing import PostProcessor, PostProcessorConfig, build_post_processor
 from generation_policy import (
     apply_controls_to_params,
@@ -210,11 +210,11 @@ class TestCandidateScoring:
         pitch_range: int = 12,
         velocity_range: tuple[int, int] = (60, 100),
         bars: int = 4,
-    ) -> list[OrpheusNoteDict]:
+    ) -> list[StorpheusNoteDict]:
         import random
         rng = random.Random(42)
         return [
-            OrpheusNoteDict(
+            StorpheusNoteDict(
                 pitch=pitch_center + rng.randint(-pitch_range // 2, pitch_range // 2),
                 start_beat=(i / n) * bars * 4,
                 duration_beats=0.5,
@@ -234,8 +234,8 @@ class TestCandidateScoring:
         assert result.batch_index == 0
 
     def test_score_with_key_target(self) -> None:
-        c_major_notes: list[OrpheusNoteDict] = [
-            OrpheusNoteDict(pitch=p, start_beat=i * 0.5, duration_beats=0.5, velocity=80)
+        c_major_notes: list[StorpheusNoteDict] = [
+            StorpheusNoteDict(pitch=p, start_beat=i * 0.5, duration_beats=0.5, velocity=80)
             for i, p in enumerate([60, 62, 64, 65, 67, 69, 71, 72] * 4)
         ]
         result = score_candidate(
@@ -267,8 +267,8 @@ class TestCandidateScoring:
         assert _key_compliance([60, 62, 64], None) == 0.5
 
     def test_density_match_ideal(self) -> None:
-        notes: list[OrpheusNoteDict] = [
-            OrpheusNoteDict(pitch=60, start_beat=i * 0.5, duration_beats=0.5, velocity=80)
+        notes: list[StorpheusNoteDict] = [
+            StorpheusNoteDict(pitch=60, start_beat=i * 0.5, duration_beats=0.5, velocity=80)
             for i in range(32)
         ]
         score = _density_match(notes, 4, 8.0)
@@ -276,8 +276,8 @@ class TestCandidateScoring:
 
     def test_density_match_default_orpheus_output(self) -> None:
         """Typical Orpheus output (~111 notes/bar) scores reasonably with no target."""
-        notes: list[OrpheusNoteDict] = [
-            OrpheusNoteDict(pitch=60, start_beat=i * 0.036, duration_beats=0.1, velocity=80)
+        notes: list[StorpheusNoteDict] = [
+            StorpheusNoteDict(pitch=60, start_beat=i * 0.036, duration_beats=0.1, velocity=80)
             for i in range(444)
         ]
         score = _density_match(notes, 4, None)
@@ -289,16 +289,16 @@ class TestCandidateScoring:
         assert score > 0.7
 
     def test_velocity_compliance_all_in_range(self) -> None:
-        notes: list[OrpheusNoteDict] = [
-            OrpheusNoteDict(pitch=60, start_beat=float(i), duration_beats=0.5, velocity=v)
+        notes: list[StorpheusNoteDict] = [
+            StorpheusNoteDict(pitch=60, start_beat=float(i), duration_beats=0.5, velocity=v)
             for i, v in enumerate(range(60, 100))
         ]
         score = _velocity_compliance(notes, 60, 100)
         assert score == 1.0
 
     def test_silence_score_full(self) -> None:
-        notes: list[OrpheusNoteDict] = [
-            OrpheusNoteDict(pitch=60, start_beat=float(i), duration_beats=0.5, velocity=80)
+        notes: list[StorpheusNoteDict] = [
+            StorpheusNoteDict(pitch=60, start_beat=float(i), duration_beats=0.5, velocity=80)
             for i in range(16)
         ]
         score = _silence_score(notes, 4)
@@ -316,10 +316,10 @@ class TestPostProcessing:
     def test_velocity_scaling(self) -> None:
         config = PostProcessorConfig(velocity_floor=40, velocity_ceiling=80)
         pp = PostProcessor(config)
-        notes: list[OrpheusNoteDict] = [
-            OrpheusNoteDict(pitch=60, start_beat=0.0, duration_beats=0.5, velocity=10),
-            OrpheusNoteDict(pitch=62, start_beat=0.5, duration_beats=0.5, velocity=127),
-            OrpheusNoteDict(pitch=64, start_beat=1.0, duration_beats=0.5, velocity=64),
+        notes: list[StorpheusNoteDict] = [
+            StorpheusNoteDict(pitch=60, start_beat=0.0, duration_beats=0.5, velocity=10),
+            StorpheusNoteDict(pitch=62, start_beat=0.5, duration_beats=0.5, velocity=127),
+            StorpheusNoteDict(pitch=64, start_beat=1.0, duration_beats=0.5, velocity=64),
         ]
         result = pp.process(notes)
         velocities = [n["velocity"] for n in result]
@@ -329,10 +329,10 @@ class TestPostProcessing:
     def test_register_normalization(self) -> None:
         config = PostProcessorConfig(register_center=72)
         pp = PostProcessor(config)
-        notes: list[OrpheusNoteDict] = [
-            OrpheusNoteDict(pitch=48, start_beat=0.0, duration_beats=0.5, velocity=80),
-            OrpheusNoteDict(pitch=50, start_beat=0.5, duration_beats=0.5, velocity=80),
-            OrpheusNoteDict(pitch=52, start_beat=1.0, duration_beats=0.5, velocity=80),
+        notes: list[StorpheusNoteDict] = [
+            StorpheusNoteDict(pitch=48, start_beat=0.0, duration_beats=0.5, velocity=80),
+            StorpheusNoteDict(pitch=50, start_beat=0.5, duration_beats=0.5, velocity=80),
+            StorpheusNoteDict(pitch=52, start_beat=1.0, duration_beats=0.5, velocity=80),
         ]
         result = pp.process(notes)
         median = sorted(n["pitch"] for n in result)[1]
@@ -341,9 +341,9 @@ class TestPostProcessing:
     def test_quantization_16th(self) -> None:
         config = PostProcessorConfig(subdivision=16)
         pp = PostProcessor(config)
-        notes: list[OrpheusNoteDict] = [
-            OrpheusNoteDict(pitch=60, start_beat=0.13, duration_beats=0.5, velocity=80),
-            OrpheusNoteDict(pitch=62, start_beat=0.51, duration_beats=0.5, velocity=80),
+        notes: list[StorpheusNoteDict] = [
+            StorpheusNoteDict(pitch=60, start_beat=0.13, duration_beats=0.5, velocity=80),
+            StorpheusNoteDict(pitch=62, start_beat=0.51, duration_beats=0.5, velocity=80),
         ]
         result = pp.process(notes)
         assert result[0]["start_beat"] in (0.0, 0.25)
@@ -352,9 +352,9 @@ class TestPostProcessing:
     def test_duration_cleanup(self) -> None:
         config = PostProcessorConfig(min_duration_beats=0.25, max_duration_beats=2.0)
         pp = PostProcessor(config)
-        notes: list[OrpheusNoteDict] = [
-            OrpheusNoteDict(pitch=60, start_beat=0.0, duration_beats=0.05, velocity=80),
-            OrpheusNoteDict(pitch=62, start_beat=1.0, duration_beats=4.0, velocity=80),
+        notes: list[StorpheusNoteDict] = [
+            StorpheusNoteDict(pitch=60, start_beat=0.0, duration_beats=0.05, velocity=80),
+            StorpheusNoteDict(pitch=62, start_beat=1.0, duration_beats=4.0, velocity=80),
         ]
         result = pp.process(notes)
         assert result[0]["duration_beats"] == 0.25
@@ -363,10 +363,10 @@ class TestPostProcessing:
     def test_swing(self) -> None:
         config = PostProcessorConfig(swing_amount=0.5)
         pp = PostProcessor(config)
-        notes: list[OrpheusNoteDict] = [
-            OrpheusNoteDict(pitch=60, start_beat=0.0, duration_beats=0.25, velocity=80),
-            OrpheusNoteDict(pitch=62, start_beat=0.25, duration_beats=0.25, velocity=80),
-            OrpheusNoteDict(pitch=64, start_beat=0.5, duration_beats=0.25, velocity=80),
+        notes: list[StorpheusNoteDict] = [
+            StorpheusNoteDict(pitch=60, start_beat=0.0, duration_beats=0.25, velocity=80),
+            StorpheusNoteDict(pitch=62, start_beat=0.25, duration_beats=0.25, velocity=80),
+            StorpheusNoteDict(pitch=64, start_beat=0.5, duration_beats=0.25, velocity=80),
         ]
         result = pp.process(notes)
         assert result[0]["start_beat"] == 0.0  # downbeat unchanged
@@ -375,8 +375,8 @@ class TestPostProcessing:
     def test_no_transforms_when_disabled(self) -> None:
         config = PostProcessorConfig(velocity_floor=40, velocity_ceiling=80, enabled=False)
         pp = PostProcessor(config)
-        notes: list[OrpheusNoteDict] = [
-            OrpheusNoteDict(pitch=60, start_beat=0.0, duration_beats=0.5, velocity=10),
+        notes: list[StorpheusNoteDict] = [
+            StorpheusNoteDict(pitch=60, start_beat=0.0, duration_beats=0.5, velocity=10),
         ]
         result = pp.process(notes)
         assert result[0]["velocity"] == 10

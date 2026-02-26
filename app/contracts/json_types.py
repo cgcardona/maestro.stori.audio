@@ -10,7 +10,7 @@ Hierarchy:
   CCEventDict           — a MIDI CC event
   PitchBendDict         — a MIDI pitch bend event
   AftertouchDict        — a MIDI aftertouch event (channel or poly)
-  OrpheusResultBucket   — return shape of normalize_orpheus_tool_calls
+  StorpheusResultBucket — return shape of normalize_storpheus_tool_calls
   ToolCallDict          — SSE tool call payload
   TrackSummaryDict      — summary.final track info
   EffectSummaryDict     — summary.final effect info
@@ -125,12 +125,12 @@ class SectionDict(TypedDict, total=False):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Orpheus adapter types
+# Storpheus adapter types
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-class OrpheusResultBucket(TypedDict):
-    """Return shape of ``normalize_orpheus_tool_calls``."""
+class StorpheusResultBucket(TypedDict):
+    """Return shape of ``normalize_storpheus_tool_calls``."""
 
     notes: list[NoteDict]
     cc_events: list[CCEventDict]
@@ -213,7 +213,7 @@ class NoteChangeDict(TypedDict, total=False):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Generation constraints (typed version of the dict built in OrpheusBackend)
+# Generation constraints (typed version of the dict built in StorpheusBackend)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 

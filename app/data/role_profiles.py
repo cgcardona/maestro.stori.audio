@@ -5,7 +5,7 @@ Loads heuristic statistics (median values) for each instrument role
 compositions totaling 1,844,218 tracks.  Used by:
 
 - Instrument agent prompts (Musical DNA blocks)
-- Orpheus conditioning (complexity, density, musical_goals)
+- Storpheus conditioning (complexity, density, musical_goals)
 - Expressiveness post-processor (role-aware profiles)
 """
 
@@ -129,9 +129,9 @@ class RoleProfile:
     motif_pitch_trigram_repeat: float
     motif_direction_trigram_repeat: float
 
-    # ── Derived Orpheus conditioning targets ──
-    orpheus_complexity: float
-    orpheus_density_hint: str
+    # ── Derived Storpheus conditioning targets ──
+    storpheus_complexity: float
+    storpheus_density_hint: str
 
     def to_summary_dict(self) -> dict[str, float]:
         """Return the 12-field expressive subset transmitted to Orpheus v2."""
@@ -241,8 +241,8 @@ def _build_profile(role: str, data: dict[str, Any]) -> RoleProfile:
         pct_monophonic=_safe_median(data.get("polyphony.pct_monophonic")),
         motif_pitch_trigram_repeat=_safe_median(data.get("motif.pitch_trigram_repeat")),
         motif_direction_trigram_repeat=_safe_median(data.get("motif.direction_trigram_repeat")),
-        orpheus_complexity=round(min(1.0, contour_complexity), 3),
-        orpheus_density_hint=density_hint,
+        storpheus_complexity=round(min(1.0, contour_complexity), 3),
+        storpheus_density_hint=density_hint,
     )
 
 

@@ -22,7 +22,7 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [_ExistingTrackInfo](#_existingtrackinfo)
 6. [State Store (`app/core/state_store.py`)](#state-store)
    - [_ProjectMetadataSnapshot](#_projectmetadatasnapshot)
-7. [Orpheus Types (`orpheus-music/orpheus_types.py`)](#orpheus-types)
+7. [Orpheus Types (`storpheus/orpheus_types.py`)](#orpheus-types)
    - [MIDI event types](#midi-event-types)
    - [Pipeline types](#pipeline-types)
    - [Scoring types](#scoring-types)
@@ -372,9 +372,9 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
-## Orpheus Types
+## Storpheus Types
 
-**Path:** `orpheus-music/orpheus_types.py`
+**Path:** `storpheus/orpheus_types.py`
 
 These types mirror the Maestro `app/contracts/json_types.py` types but are defined independently to avoid cross-container imports. Orpheus uses **snake_case** internally; camelCase types (like `WireNoteDict`) are used only at the API boundary.
 
@@ -632,7 +632,7 @@ Maestro Service (app/)
 │
 ├── Services (app/services/)
 │   ├── orpheus.py
-│   │   └── OrpheusRawResponse         — raw HTTP response from Orpheus service
+│   │   └── OrpheusRawResponse         — raw HTTP response from Storpheus service
 │   │
 │   └── muse_drift.py
 │       └── SampleChange               — a single note diff sample
@@ -654,7 +654,7 @@ Maestro Service (app/)
             └── error/cc_events/pitch_bends/aftertouch
 
 
-Orpheus Service (orpheus-music/)
+Orpheus Service (storpheus/)
 │
 └── orpheus_types.py
     │

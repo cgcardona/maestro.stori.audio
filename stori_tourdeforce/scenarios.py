@@ -430,7 +430,7 @@ def build_edit_stori_prompt(
     """Wrap an edit description into a structured STORI PROMPT.
 
     The ``Mode: compose`` sentinel routes the prompt through the full
-    Orpheus generation pipeline (Intent.GENERATE_MUSIC) instead of the
+    Storpheus generation pipeline (Intent.GENERATE_MUSIC) instead of the
     EDITING path which only exposes mixing tools.
     """
     role_yaml = ", ".join(roles)

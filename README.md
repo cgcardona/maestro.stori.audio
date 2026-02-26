@@ -87,7 +87,7 @@ Stori is **human-first:** AI is here to amplify your creativity, not replace you
 | [docs/guides/integrate.md](docs/guides/integrate.md) | Frontend, MCP, access (JWT) |
 | [docs/reference/api.md](docs/reference/api.md) | API reference: maestro stream (SSE), event types, models, Muse VCS endpoints, and full MCP tool reference |
 | [docs/reference/architecture.md](docs/reference/architecture.md) | Request flow, intent, human/agent, Muse VCS engine |
-| [docs/architecture/muse-vcs.md](docs/architecture/muse-vcs.md) | Muse VCS — Git for music: commit, branch, merge, checkout, log graph |
+| [docs/architecture/muse_vcs.md](docs/architecture/muse_vcs.md) | Muse VCS — Git for music: commit, branch, merge, checkout, log graph |
 | [docs/guides/testing.md](docs/guides/testing.md) | Run tests, intent QA, Muse E2E harness |
 | [docs/guides/assets.md](docs/guides/assets.md) | Drum kits, soundfonts |
 | [docs/guides/security.md](docs/guides/security.md) | Security audit, go-live checklist |

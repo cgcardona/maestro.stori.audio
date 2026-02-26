@@ -28,7 +28,7 @@ def main() -> int:
     run_parser.add_argument("--jwt-env", default="STORI_JWT", help="Env var containing JWT (default: STORI_JWT)")
     run_parser.add_argument("--prompt-endpoint", default=None, help="Prompt fetch endpoint URL")
     run_parser.add_argument("--maestro", default=None, help="Maestro stream endpoint URL")
-    run_parser.add_argument("--orpheus", default=None, help="Orpheus base URL")
+    run_parser.add_argument("--storpheus", default=None, help="Storpheus base URL")
     run_parser.add_argument("--muse-url", default=None, help="MUSE API base URL")
     run_parser.add_argument("--muse-root", default="./muse_repo", help="MUSE local repo root")
     run_parser.add_argument("--runs", type=int, default=10, help="Number of runs (default: 10)")
@@ -37,7 +37,7 @@ def main() -> int:
     run_parser.add_argument("--out", default="", help="Output directory (default: auto-generated)")
     run_parser.add_argument("--quality-preset", default="balanced", choices=["fast", "balanced", "quality"])
     run_parser.add_argument("--maestro-timeout", type=float, default=180.0, help="Maestro stream timeout (s)")
-    run_parser.add_argument("--orpheus-timeout", type=float, default=180.0, help="Orpheus job timeout (s)")
+    run_parser.add_argument("--storpheus-timeout", type=float, default=180.0, help="Storpheus job timeout (s)")
     run_parser.add_argument("--global-timeout", type=float, default=300.0, help="Global run timeout (s)")
     run_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
 
@@ -73,7 +73,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             jwt_env=args.jwt_env,
             prompt_endpoint=args.prompt_endpoint,
             maestro=args.maestro,
-            orpheus=args.orpheus,
+            storpheus=args.storpheus,
             muse_base_url=args.muse_url,
             muse_root=args.muse_root,
             runs=args.runs,
@@ -82,7 +82,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             out=args.out,
             quality_preset=args.quality_preset,
             maestro_timeout=args.maestro_timeout,
-            orpheus_timeout=args.orpheus_timeout,
+            storpheus_timeout=args.storpheus_timeout,
             global_timeout=args.global_timeout,
         )
     except ValueError as e:
@@ -134,7 +134,7 @@ def _cmd_report(args: argparse.Namespace) -> int:
             seed=data.get("seed", 0),
             scenario=data.get("scenario", ""),
             intent=data.get("intent", ""),
-            orpheus_note_count=data.get("note_count", 0),
+            storpheus_note_count=data.get("note_count", 0),
             midi_metrics={"quality_score": data.get("quality_score", 0)},
             error_message=data.get("error", ""),
         )

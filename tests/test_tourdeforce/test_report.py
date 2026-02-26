@@ -80,7 +80,7 @@ class TestRunAnalyzerMuseKPIs:
 
         a = self._make_analyzer(
             self._make_result("r_000001", status=RunStatus.MAESTRO_ERROR),
-            self._make_result("r_000002", status=RunStatus.ORPHEUS_ERROR),
+            self._make_result("r_000002", status=RunStatus.STORPHEUS_ERROR),
             self._make_result("r_000003", status=RunStatus.MUSE_ERROR),
             self._make_result("r_000004", status=RunStatus.MERGE_CONFLICT),
         )
@@ -88,6 +88,6 @@ class TestRunAnalyzerMuseKPIs:
         assert kpis["total_runs"] == 4
         assert kpis["successful_runs"] == 0
         assert "maestro_error" in kpis["failure_breakdown"]
-        assert "orpheus_error" in kpis["failure_breakdown"]
+        assert "storpheus_error" in kpis["failure_breakdown"]
         assert "muse_error" in kpis["failure_breakdown"]
         assert "merge_conflict" in kpis["failure_breakdown"]

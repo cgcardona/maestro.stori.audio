@@ -1,4 +1,4 @@
-"""Contract coverage tests: verify zero information loss across the Maestro→Orpheus boundary.
+"""Contract coverage tests: verify zero information loss across the Maestro→Storpheus boundary.
 
 Validates that:
 1. All EmotionVector axes cross the boundary (including tension).
@@ -16,7 +16,7 @@ import pytest
 
 from app.core.emotion_vector import EmotionVector, emotion_to_constraints
 from app.data.role_profiles import RoleProfile
-from app.services.backends.orpheus import _build_intent_hash
+from app.services.backends.storpheus import _build_intent_hash
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +44,7 @@ _DEFAULT_PROFILE = RoleProfile(
     polyphony_mean=1.2, pct_monophonic=0.7,
     motif_pitch_trigram_repeat=0.65,
     motif_direction_trigram_repeat=0.55,
-    orpheus_complexity=0.6, orpheus_density_hint="moderate",
+    storpheus_complexity=0.6, storpheus_density_hint="moderate",
 )
 
 

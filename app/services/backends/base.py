@@ -17,7 +17,7 @@ from app.contracts.json_types import (
 
 class GeneratorBackend(str, Enum):
     """Available generation backends."""
-    ORPHEUS = "orpheus"
+    STORPHEUS = "storpheus"
     TEXT2MIDI = "text2midi"
     DRUM_IR = "drum_ir"
     BASS_IR = "bass_ir"
@@ -75,7 +75,7 @@ class MusicGeneratorBackend(ABC):
         """Generate all instruments together in a single call.
 
         Default implementation falls back to single-instrument generate().
-        Orpheus overrides this to produce coherent multi-instrument output.
+        StorpheusBackend overrides this to produce coherent multi-instrument output.
         """
         return await self.generate(
             instrument=instruments[0] if instruments else "drums",

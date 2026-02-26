@@ -19,7 +19,7 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from orpheus_types import OrpheusNoteDict
+from storpheus_types import StorpheusNoteDict
 
 if TYPE_CHECKING:
     from music_service import GenerationConstraintsPayload, RoleProfileSummary
@@ -63,7 +63,7 @@ class PostProcessor:
         self.config = config
         self._transforms_applied: list[str] = []
 
-    def process(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
+    def process(self, notes: list[StorpheusNoteDict]) -> list[StorpheusNoteDict]:
         """Apply all configured transforms to the note list in order.
 
         Returns the (possibly modified) note list. Non-destructive on
@@ -95,7 +95,7 @@ class PostProcessor:
 
     # ── Individual transforms ──────────────────────────────────────
 
-    def _scale_velocity(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
+    def _scale_velocity(self, notes: list[StorpheusNoteDict]) -> list[StorpheusNoteDict]:
         """Map velocity range to [floor, ceiling]."""
         floor_v = self.config.velocity_floor
         ceil_v = self.config.velocity_ceiling
@@ -129,7 +129,7 @@ class PostProcessor:
         self._transforms_applied.append(f"velocity[{floor_v}-{ceil_v}]")
         return notes
 
-    def _normalize_register(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
+    def _normalize_register(self, notes: list[StorpheusNoteDict]) -> list[StorpheusNoteDict]:
         """Shift notes so the median pitch aligns with register_center."""
         center = self.config.register_center
         spread = self.config.register_spread
@@ -164,7 +164,7 @@ class PostProcessor:
         self._transforms_applied.append(f"register[center={center},shift={octave_shift:+d}]")
         return notes
 
-    def _quantize(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
+    def _quantize(self, notes: list[StorpheusNoteDict]) -> list[StorpheusNoteDict]:
         """Snap note start times to the nearest subdivision grid."""
         sub = self.config.subdivision
         if sub is None or sub <= 0:
@@ -179,7 +179,7 @@ class PostProcessor:
         self._transforms_applied.append(f"quantize[1/{sub}]")
         return notes
 
-    def _cleanup_durations(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
+    def _cleanup_durations(self, notes: list[StorpheusNoteDict]) -> list[StorpheusNoteDict]:
         """Enforce minimum and maximum note durations."""
         min_d = self.config.min_duration_beats
         max_d = self.config.max_duration_beats
@@ -203,7 +203,7 @@ class PostProcessor:
             )
         return notes
 
-    def _apply_swing(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
+    def _apply_swing(self, notes: list[StorpheusNoteDict]) -> list[StorpheusNoteDict]:
         """Apply swing feel by delaying odd 16th-note positions.
 
         ``swing_amount`` in [0, 1]:  0 = straight, 0.33 = light swing,
