@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TypedDict
 
 from app.contracts.json_types import NoteDict
 from app.core.music_spec_ir import (
@@ -31,13 +31,27 @@ logger = logging.getLogger(__name__)
 # Bass Render Result: notes + coupling metadata
 # -----------------------------------------------------------------------------
 
+class BassRenderMetadata(TypedDict, total=False):
+    """Metadata emitted by the bass IR renderer alongside its notes.
+
+    All fields are optional because an empty result (no notes) still
+    returns a ``BassRenderResult`` with an empty metadata bag.
+    """
+
+    total_notes: int
+    kick_aligned_count: int
+    anticipation_count: int
+    style: str
+    used_rhythm_spine: bool
+
+
 @dataclass
 class BassRenderResult:
     """Result of bass rendering with coupling metrics."""
     notes: list[NoteDict] = field(default_factory=list)
     kick_alignment_ratio: float = 0.0
     anticipation_count: int = 0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: BassRenderMetadata = field(default_factory=BassRenderMetadata)
 
 
 def _chord_at_bar(schedule: list[ChordScheduleEntry], bar: int) -> str:

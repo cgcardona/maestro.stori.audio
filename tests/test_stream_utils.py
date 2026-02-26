@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import pytest
 
+from app.contracts.pydantic_types import wrap_dict
 from app.core.stream_utils import ReasoningBuffer, sanitize_reasoning, strip_tool_echoes
 from app.protocol.emitter import emit
 from app.protocol.events import StatusEvent, ToolCallEvent
@@ -28,7 +29,7 @@ class TestEmit:
         result = emit(ToolCallEvent(
             id="tc-1",
             name="stori_add_track",
-            params={"trackId": "abc-123"},
+            params=wrap_dict({"trackId": "abc-123"}),
         ))
         payload = json.loads(result[6:].strip())
         assert payload["params"]["trackId"] == "abc-123"

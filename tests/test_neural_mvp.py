@@ -11,7 +11,7 @@ Tests:
 from __future__ import annotations
 
 import pytest
-from app.contracts.json_types import NoteDict
+from app.contracts.json_types import NoteDict, jfloat, jint
 from app.core.emotion_vector import (
     EmotionVector,
     emotion_to_constraints,
@@ -428,7 +428,7 @@ class TestHuggingFaceBackend:
         low_params = backend._emotion_to_hf_params(low_energy, bars=4)
         
         # Higher energy/tension should mean higher temperature
-        assert high_params["temperature"] > low_params["temperature"]
+        assert jfloat(high_params["temperature"]) > jfloat(low_params["temperature"])
     
     def test_emotion_to_params_motion_affects_tokens(self) -> None:
 
@@ -441,7 +441,7 @@ class TestHuggingFaceBackend:
         high_params = backend._emotion_to_hf_params(high_motion, bars=4)
         low_params = backend._emotion_to_hf_params(low_motion, bars=4)
         
-        assert high_params["max_tokens"] > low_params["max_tokens"]
+        assert jint(high_params["max_tokens"]) > jint(low_params["max_tokens"])
     
     def test_emotion_to_params_intimacy_affects_top_p(self) -> None:
 
@@ -455,7 +455,7 @@ class TestHuggingFaceBackend:
         distant_params = backend._emotion_to_hf_params(distant, bars=4)
         
         # More intimate = more focused = lower top_p
-        assert intimate_params["top_p"] < distant_params["top_p"]
+        assert jfloat(intimate_params["top_p"]) < jfloat(distant_params["top_p"])
     
     @pytest.mark.asyncio
     async def test_fallback_when_no_api_key(self) -> None:

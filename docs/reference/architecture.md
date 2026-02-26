@@ -690,3 +690,210 @@ For Claude / Anthropic models (via OpenRouter), Maestro applies **Anthropic's pr
 On a **cache hit**, input token cost drops to ~10% of the uncached price (Anthropic charges ~0.1× for cached reads). The cache TTL is 5 minutes, refreshed on each hit during an active session. Cache hits/misses are logged at `INFO` level with `🗃️ Prompt cache:` prefix, making them easy to spot in production logs.
 
 The implementation is in `app/core/llm_client._enable_prompt_caching()`. Non-Anthropic models receive the payload unchanged.
+
+---
+
+## Type system — the contract layer
+
+All data shapes in Maestro are explicitly named.  `dict[str, object]`, `Any`, and untyped generic dicts are forbidden.  This section describes every type entity, where it lives, when to use it, and how to cross type boundaries.
+
+### Guiding principle
+
+> "We should know what every single key is in every single case, always, even at the boundaries where we accept requests from outside."
+
+Ambiguity is a code smell.  If a function accepts `dict[str, object]`, it is hiding a type problem in the callee.  Fix the callee to return the right shape; never cast at the caller site.
+
+---
+
+### JSON primitive types (`app/contracts/json_types.py`)
+
+These cover the genuinely-unknown cases — raw LLM output, external API payloads, pre-validation data.  Use them sparingly.  Every other case should use a named TypedDict.
+
+| Type | Definition | When to use |
+|------|-----------|-------------|
+| `JSONScalar` | `str \| int \| float \| bool \| None` | A JSON leaf with no structure |
+| `JSONValue` | Recursive union of all JSON-representable values | Unknown JSON payloads in TypedDicts, function signatures, dataclasses.  **Never in Pydantic BaseModel fields.** |
+| `JSONObject` | `dict[str, JSONValue]` | JSON objects with unknown key sets.  **Never in Pydantic BaseModel fields.** |
+
+**Pydantic restriction:** `JSONValue` and `JSONObject` contain recursive string forward-references (`list["JSONValue"]`, `dict[str, "JSONValue"]`).  Pydantic v2 cannot resolve these at schema generation time — it raises `RecursionError`.  The fix is `PydanticJson` (see below).
+
+---
+
+### Pydantic boundary primitives (`app/contracts/pydantic_types.py`)
+
+These solve the `JSONValue`-in-Pydantic problem.  Use them at every Pydantic model boundary.
+
+| Entity | Kind | Purpose |
+|--------|------|---------|
+| `PydanticJson` | `RootModel` subclass | Named recursive JSON type for Pydantic model fields.  Pydantic resolves named `RootModel` subclasses correctly via `model_rebuild()` — this is the only way to hold arbitrary JSON in a Pydantic field without `RecursionError`. |
+| `unwrap(v)` | function | `PydanticJson → JSONValue`.  Pydantic→internal boundary.  Recurses into lists and dicts. |
+| `unwrap_dict(d)` | function | `dict[str, PydanticJson] → dict[str, JSONValue]`.  Unwrap a Pydantic arguments-style dict into internal types. |
+| `wrap(v)` | function | `JSONValue → PydanticJson`.  Internal→Pydantic boundary.  Recurses into lists and dicts. |
+| `wrap_dict(d)` | function | `dict[str, JSONValue] → dict[str, PydanticJson]`.  Wrap internal pipeline data before constructing Pydantic models. |
+
+**Rule:** `wrap`/`unwrap` cross the boundary exactly once per request or response.  Internal code always holds `JSONValue`; Pydantic models always hold `PydanticJson`.
+
+```
+Internal pipeline
+  dict[str, JSONValue]
+        │
+        ▼  wrap_dict()
+  dict[str, PydanticJson]   ← Pydantic BaseModel field
+        │
+        ▼  unwrap_dict()
+  dict[str, JSONValue]      ← back in internal code
+```
+
+---
+
+### Music-domain TypedDicts (`app/contracts/json_types.py`)
+
+Every named data shape in the music pipeline.  All are `TypedDict` subclasses — mypy-checked structural types with zero runtime overhead.
+
+#### MIDI event types
+
+| TypedDict | Fields | Notes |
+|-----------|--------|-------|
+| `NoteDict` | `pitch`, `velocity`, `channel`, `startBeat`/`start_beat`, `durationBeats`/`duration_beats`, `noteId`/`note_id`, `trackId`/`track_id`, `regionId`/`region_id`, `layer` | `total=False` — all fields optional.  Accepts both camelCase (wire) and snake_case (internal storage) to avoid two-pass normalization at every layer boundary. |
+| `InternalNoteDict` | alias for `NoteDict` | Use this alias in code that works with post-normalization (snake_case) notes to signal intent. |
+| `CCEventDict` | `cc: MidiCC`, `beat: BeatPosition`, `value: MidiCCValue` | A single MIDI Control Change event.  All 128 CCs. |
+| `PitchBendDict` | `beat: BeatPosition`, `value: MidiPitchBend` | 14-bit signed pitch bend (−8192 to 8191; 0 = center). |
+| `AftertouchDict` | `beat: Required[BeatPosition]`, `value: Required[MidiAftertouchValue]`, `pitch?: MidiPitch` | `total=False`.  `pitch` present only for polyphonic (per-key) aftertouch. |
+
+#### Composition types
+
+| TypedDict | Fields | Notes |
+|-----------|--------|-------|
+| `SectionDict` | `name`, `start_beat`, `length_beats`, `description?`, `per_track_description?` | A named composition section (verse, chorus, bridge…).  Used in the section planner; `description` and `per_track_description` added by the LLM. |
+
+#### Storpheus adapter
+
+| TypedDict | Fields | Notes |
+|-----------|--------|-------|
+| `StorpheusResultBucket` | `notes`, `cc_events`, `pitch_bends`, `aftertouch` | Return shape of `normalize_storpheus_tool_calls()`.  All four expressive MIDI streams in one named container. |
+
+#### SSE / protocol types
+
+| TypedDict | Fields | Notes |
+|-----------|--------|-------|
+| `ToolCallDict` | `tool: str`, `params: dict[str, JSONValue]` | Internal representation of a collected tool call.  All producers write this exact shape; the `tool` field matches the MCP tool name. |
+| `ToolCallPreviewDict` | `name: str`, `params: dict[str, JSONValue]` | Plan preview variant — uses `name` (not `tool`) to match `ToolCall` dataclass field names. |
+
+#### Summary event types
+
+| TypedDict | Fields | Notes |
+|-----------|--------|-------|
+| `TrackSummaryDict` | `name?`, `trackId?`, `instrument?`, `color?` | Per-track entry in `SummaryFinalEvent.tracks_created` / `tracks_reused`. |
+| `EffectSummaryDict` | `type?`, `trackId?`, `name?` | Per-effect entry in `SummaryFinalEvent.effects_added`. |
+| `SectionSummaryDict` | `name?`, `status?`, `regionId?`, `notesGenerated?`, `error?` | Per-section result in `batch_complete` tool result (agent teams). |
+| `CCEnvelopeDict` | `cc?`, `trackId?`, `name?`, `pointCount?` | CC envelope summary in `SummaryFinalEvent`. |
+| `CompositionSummary` | `tracksCreated`, `tracksReused`, `trackCount`, `regionsCreated`, `notesGenerated`, `effectsAdded`, `effectCount`, `sendsCreated`, `ccEnvelopes`, `automationLanes`, `text` | Aggregated metadata for `summary.final` SSE event. |
+| `AppliedRegionInfo` | `region_id`, `track_id`, `notes`, `cc_events`, `pitch_bends`, `aftertouch`, `start_beat?`, `duration_beats?`, `name?` | Per-region result from `apply_variation_phrases()`.  Holds the full post-commit MIDI state for the region. |
+
+#### Variation / note change types
+
+| TypedDict | Fields | Notes |
+|-----------|--------|-------|
+| `NoteChangeDict` | `pitch?`, `startBeat?`, `durationBeats?`, `velocity?`, `channel?`, `cc?`, `beat?`, `value?` | Snapshot of a MIDI note's properties for before/after comparison.  `total=False` because CC and pitch-bend snapshots share the same shape. |
+| `NoteChangeEntryDict` | `noteId: Required[str]`, `changeType: Required[Literal["added","removed","modified"]]`, `before?: NoteChangeDict`, `after?: NoteChangeDict` | Wire shape of one entry in `PhrasePayload.noteChanges`. |
+
+#### Generation constraints
+
+| TypedDict | Fields | Notes |
+|-----------|--------|-------|
+| `GenerationConstraintsDict` | `drum_density?`, `subdivision?`, `swing_amount?`, `register_center?`, `register_spread?`, `rest_density?`, `leap_probability?`, `chord_extensions?`, `borrowed_chord_probability?`, `harmonic_rhythm_bars?`, `velocity_floor?`, `velocity_ceiling?` | Serialized `GenerationConstraints` — the dict form passed to Orpheus/Storpheus. |
+| `IntentGoalDict` | `name: str`, `weight: float`, `constraint_type: str` | A single intent goal sent to the generation backend. |
+
+#### Region metadata and maps
+
+| Type | Definition | Notes |
+|------|-----------|-------|
+| `RegionMetadataWire` | TypedDict: `startBeat?`, `durationBeats?`, `name?` | Region position in camelCase — the handler-to-storage path. |
+| `RegionMetadataDB` | TypedDict: `start_beat?`, `duration_beats?`, `name?` | Region position in snake_case — the database path. |
+| `RegionNotesMap` | `dict[str, list[NoteDict]]` | region_id → ordered MIDI notes for that region. |
+| `RegionCCMap` | `dict[str, list[CCEventDict]]` | region_id → MIDI CC events. |
+| `RegionPitchBendMap` | `dict[str, list[PitchBendDict]]` | region_id → pitch bend events. |
+| `RegionAftertouchMap` | `dict[str, list[AftertouchDict]]` | region_id → aftertouch events. |
+
+#### Protocol introspection aliases
+
+| Type | Definition | Notes |
+|------|-----------|-------|
+| `EventJsonSchema` | `dict[str, JSONValue]` | JSON Schema dict for a single SSE event type (output of Pydantic's `model_json_schema()`). |
+| `EventSchemaMap` | `dict[str, EventJsonSchema]` | Returned by `GET /api/v1/protocol/events.json`. |
+| `EnumDefinitionMap` | `dict[str, list[str]]` | Returned by `GET /api/v1/protocol/schema.json`. |
+
+---
+
+### Conversion helpers (`app/contracts/json_types.py`)
+
+| Helper | Signature | Purpose |
+|--------|-----------|---------|
+| `is_note_dict(v)` | `JSONValue → TypeGuard[NoteDict]` | Narrow a `JSONValue` to `NoteDict` — use in list comprehensions to filter without `cast()`. |
+| `jfloat(v, default)` | `JSONValue → float` | Safe float extraction from a `JSONValue`.  Returns `default` when `v` is not numeric. |
+| `jint(v, default)` | `JSONValue → int` | Safe int extraction from a `JSONValue`.  Returns `default` when `v` is not numeric. |
+| `json_list(items)` | `Iterable[TypedDict] → list[JSONValue]` | Coerce a `list[SomeDomainDict]` to `list[JSONValue]` — the single list-coercion boundary.  Uses `@overload` signatures for `NoteDict`, `CCEventDict`, `PitchBendDict`, and `dict[str, JSONValue]`; no `cast()` needed at call sites. |
+
+**List invariance rule:** Python lists are invariant — `list[NoteDict]` is not `list[JSONValue]`.  Whenever a `list[DomainDict]` must be inserted into a position expecting `list[JSONValue]`, call `json_list()`.  The `@overload` declarations ensure mypy validates each call site against the correct domain type.  The single `type: ignore[arg-type]` lives inside `json_list`'s implementation body — never at call sites.
+
+---
+
+### Pydantic wire models for recursive structures
+
+Some Pydantic `BaseModel` fields cannot hold `JSONValue` (recursive alias) directly.  These wire models solve the schema-generation problem by using `PydanticJson` instead.
+
+#### `ToolCallWire` (`app/protocol/events.py`)
+
+Used in `CompleteEvent.tool_calls` and `ToolCallEvent.params`.  The SSE serialization layer emits this shape to the frontend.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `tool` | `str` | MCP tool name (e.g. `stori_add_notes`). |
+| `params` | `dict[str, PydanticJson]` | Tool arguments.  `PydanticJson` instead of `dict[str, JSONValue]` to avoid schema-generation recursion. |
+
+Conversion: `ToolCallWire.from_tool_call_dict(tc)` — wraps `tc["params"]` via `wrap_dict()`.
+
+#### `MCPPropertyDefWire`, `MCPInputSchemaWire`, `MCPToolDefWire` (`app/contracts/mcp_types.py`)
+
+Pydantic mirrors of the `MCPPropertyDef`, `MCPInputSchema`, `MCPToolDef` TypedDicts.  Used as FastAPI response types for MCP tool listing endpoints (`GET /api/v1/mcp/tools`, `GET /api/v1/mcp/tools/{name}`).
+
+`MCPPropertyDefWire` resolves its self-referential `properties` field via `MCPPropertyDefWire.model_rebuild()` (called immediately after class definition).  The `default` and `items` fields use `PydanticJson` instead of `JSONValue`.
+
+Conversion: `MCPToolDefWire.model_validate(tool_dict)` — Pydantic recursively converts the full nested dict.
+
+#### `GenerationStep.constraints` (`app/core/plan_schemas/models.py`)
+
+`GenerationStep` is a Pydantic `BaseModel`.  Its `constraints` field is `dict[str, PydanticJson] | None` — not `dict[str, JSONValue]` — for schema-generation safety.
+
+| Boundary | Operation |
+|----------|-----------|
+| `ParsedPrompt.constraints` → `GenerationStep.constraints` | `wrap_dict({k: v for k, v in parsed.constraints.items() if k != "bars"})` |
+| `GenerationStep.constraints` → `dict[str, JSONValue]` in tool params | `unwrap_dict(gen.constraints)` |
+
+---
+
+### Boundary map summary
+
+```
+External (DAW, LLM, Storpheus)
+     │
+     ▼ Pydantic model_validate / route boundary
+  Pydantic BaseModel fields: dict[str, PydanticJson]
+     │
+     ▼ unwrap_dict()
+  Internal pipeline: dict[str, JSONValue]
+     │
+     ▼ named TypedDicts (NoteDict, CCEventDict, ...)
+  Domain operations: precise structural types
+     │
+     ▼ json_list()  (list insertion points)
+  list[JSONValue]  (inside params dicts, JSONObject values)
+     │
+     ▼ wrap_dict() / ToolCallWire.from_tool_call_dict()
+  Pydantic wire models: ToolCallWire, MCPToolDefWire, ...
+     │
+     ▼ SSE emit / API response
+  Frontend / MCP client
+```
+
+Implementation: `app/contracts/json_types.py` (TypedDicts + helpers), `app/contracts/pydantic_types.py` (PydanticJson + converters), `app/contracts/mcp_types.py` (MCP TypedDicts + wire models), `app/protocol/events.py` (ToolCallWire).

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from app.contracts.json_types import ToolCallDict
+from app.contracts.json_types import JSONValue, ToolCallDict
 
 if TYPE_CHECKING:
     from app.core.state_store import StateStore
@@ -62,7 +62,7 @@ def _get_missing_expressive_steps(
         return []
 
     # Keys are lowercased by the parser (prompt_parser.py line 177)
-    extensions: dict[str, Any] = parsed.extensions or {}
+    extensions: dict[str, JSONValue] = parsed.extensions or {}
     called_tools = {tc["tool"] for tc in tool_calls_collected}
 
     missing: list[str] = []
@@ -73,7 +73,8 @@ def _get_missing_expressive_steps(
             "Call stori_add_insert_effect for each effects entry (compressor, reverb, eq, etc.)."
         )
 
-    me = extensions.get("midiexpressiveness") or {}
+    _me_raw = extensions.get("midiexpressiveness")
+    me: dict[str, JSONValue] = _me_raw if isinstance(_me_raw, dict) else {}
     if me.get("cc_curves") and "stori_add_midi_cc" not in called_tools:
         missing.append(
             "MidiExpressiveness.cc_curves present but stori_add_midi_cc was never called. "

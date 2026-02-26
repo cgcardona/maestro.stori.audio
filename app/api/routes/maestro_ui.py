@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_valid_token
+from app.auth.tokens import TokenClaims
 from app.data.maestro_ui import PLACEHOLDERS, PROMPT_POOL, PROMPT_BY_ID
 from app.db import get_db, User, UsageLog
 from app.models.maestro_ui import (
@@ -147,7 +146,7 @@ async def get_prompt_by_id(prompt_id: str) -> PromptItem:
     response_model_by_alias=True,
 )
 async def get_budget_status(
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> BudgetStatusResponse:
     """Focused budget status for the Creative Fuel UI.

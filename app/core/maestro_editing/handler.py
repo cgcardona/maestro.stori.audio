@@ -13,7 +13,8 @@ from app.contracts.llm_types import ChatMessage
 from app.contracts.project_types import ProjectContext
 from app.core.entity_context import build_entity_context_for_llm, format_project_context
 
-from app.contracts.json_types import ToolCallDict
+from app.contracts.json_types import JSONValue, ToolCallDict
+from app.protocol.events import ToolCallWire
 from app.core.expansion import ToolCall
 from app.core.intent import Intent, IntentResult, SSEState
 from app.core.llm_client import LLMClient, enforce_single_tool
@@ -189,7 +190,7 @@ async def _run_llm_tool_loop(
             if not is_composition:
                 break
 
-        iter_tool_results: list[dict[str, object]] = []
+        iter_tool_results: list[dict[str, JSONValue]] = []
 
         if (
             plan_tracker is None
@@ -441,7 +442,7 @@ async def _handle_editing_apply(
 
     yield emit(CompleteEvent(
         success=True,
-        tool_calls=tool_calls_collected,
+        tool_calls=[ToolCallWire.from_tool_call_dict(tc) for tc in tool_calls_collected] or None,
         state_version=store.version,
         trace_id=trace.trace_id,
         **_context_usage_fields(usage_tracker, llm.model),

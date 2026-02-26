@@ -12,6 +12,8 @@ from dataclasses import dataclass
 import hashlib
 import json
 
+from app.contracts.json_types import JSONValue, ToolCallPreviewDict
+
 
 @dataclass(frozen=True)
 class ToolCall:
@@ -24,12 +26,12 @@ class ToolCall:
     """
 
     name: str
-    params: dict[str, object]
+    params: dict[str, JSONValue]
     id: str = ""  # LLM-assigned call ID; empty for planner-generated calls
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> ToolCallPreviewDict:
         """Serialise to ``{"name": ..., "params": ...}`` (omits ``id``)."""
-        return {"name": self.name, "params": self.params}
+        return ToolCallPreviewDict(name=self.name, params=self.params)
 
     def fingerprint(self) -> str:
         """Return a 16-char SHA-256 content hash of ``name`` + ``params``.

@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import Any
-
+from app.contracts.json_types import NoteDict
 from app.core.music_spec_ir import MelodySpec, GlobalSpec, HarmonicSpec, ChordScheduleEntry
 from app.core.chord_utils import chord_root_pitch_class, chord_to_scale_degrees
 
@@ -60,13 +59,13 @@ def render_melody_spec(
     harmonic_spec: HarmonicSpec,
     *,
     apply_humanize: bool = True,
-) -> list[dict[str, Any]]:
+) -> list[NoteDict]:
     """
     Render MelodySpec + GlobalSpec + HarmonicSpec to MIDI melody notes.
 
     Uses chord_schedule: resolve to chord tones on bar boundaries; scale_lock for other notes.
     """
-    notes = []
+    notes: list[NoteDict] = []
     schedule = harmonic_spec.chord_schedule
     bars = global_spec.bars
     key = global_spec.key

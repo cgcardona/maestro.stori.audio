@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import Any
 
+from app.contracts.json_types import NoteDict
 from app.core.music_spec_ir import HarmonicSpec, GlobalSpec, ChordScheduleEntry
 from app.core.chord_utils import chord_to_midi_voicing
 
@@ -29,13 +29,13 @@ def render_harmonic_spec(
     *,
     chord_rhythm_beats: float = 2.0,
     apply_humanize: bool = True,
-) -> list[dict[str, Any]]:
+) -> list[NoteDict]:
     """
     Render HarmonicSpec + GlobalSpec to MIDI note list (chord voicings).
 
     chord_schedule defines (bar, chord); each chord lasts until next schedule entry or end of bars.
     """
-    notes = []
+    notes: list[NoteDict] = []
     schedule = harmonic_spec.chord_schedule
     bars = global_spec.bars
     vel_lo, vel_hi = harmonic_spec.velocity_range

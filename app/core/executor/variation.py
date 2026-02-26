@@ -28,12 +28,16 @@ from app.contracts.project_types import ProjectContext
 from app.contracts.json_types import (
     AftertouchDict,
     CCEventDict,
+    JSONValue,
     NoteDict,
     PitchBendDict,
     RegionAftertouchMap,
     RegionCCMap,
     RegionNotesMap,
     RegionPitchBendMap,
+    is_note_dict,
+    jfloat,
+    jint,
 )
 from app.core.expansion import ToolCall, dedupe_tool_calls
 from app.core.tool_names import ToolName
@@ -86,7 +90,7 @@ async def _process_call_for_variation(
     exec_ctx: VariationExecutionContext,
     quality_preset: str | None = None,
     emotion_vector: EmotionVector | None = None,
-) -> dict[str, object]:
+) -> dict[str, JSONValue]:
     """
     Process a tool call to extract proposed notes for variation.
 
@@ -211,7 +215,7 @@ async def _process_call_for_variation(
                 if region_id not in var_ctx.base.notes:
                     var_ctx.capture_base_notes(region_id, track_id or "", [])
 
-                var_ctx.record_proposed_notes(region_id, notes)
+                var_ctx.record_proposed_notes(region_id, [n for n in notes if is_note_dict(n)])
                 logger.info(
                     f"📝 stori_add_notes: {len(notes)} notes → "
                     f"region={region_id[:8]} track={(track_id or '')[:8]}"
@@ -226,7 +230,7 @@ async def _process_call_for_variation(
         cc_events_list = _cc_events_raw if isinstance(_cc_events_raw, list) else []
         if cc_region_id and cc_num is not None and cc_events_list:
             cc_events: list[CCEventDict] = [
-                {"cc": cc_num, "beat": e["beat"], "value": e["value"]}
+                {"cc": cc_num, "beat": jfloat(e.get("beat")), "value": jint(e.get("value"))}
                 for e in cc_events_list
                 if isinstance(e, dict)
             ]
@@ -241,7 +245,12 @@ async def _process_call_for_variation(
         _pb_events_raw = params.get("events")
         pb_events = _pb_events_raw if isinstance(_pb_events_raw, list) else []
         if pb_region_id and pb_events:
-            var_ctx.record_proposed_pitch_bends(pb_region_id, pb_events)
+            typed_pb_events: list[PitchBendDict] = [
+                {"beat": jfloat(e.get("beat")), "value": jint(e.get("value"))}
+                for e in pb_events
+                if isinstance(e, dict)
+            ]
+            var_ctx.record_proposed_pitch_bends(pb_region_id, typed_pb_events)
             logger.info(
                 f"🎛️ stori_add_pitch_bend: {len(pb_events)} events → region={pb_region_id[:8]}"
             )
@@ -252,7 +261,12 @@ async def _process_call_for_variation(
         _at_events_raw = params.get("events")
         at_events = _at_events_raw if isinstance(_at_events_raw, list) else []
         if at_region_id and at_events:
-            var_ctx.record_proposed_aftertouch(at_region_id, at_events)
+            typed_at_events: list[AftertouchDict] = [
+                {"beat": jfloat(e.get("beat")), "value": jint(e.get("value"))}
+                for e in at_events
+                if isinstance(e, dict)
+            ]
+            var_ctx.record_proposed_aftertouch(at_region_id, typed_at_events)
             logger.info(
                 f"🎛️ stori_add_aftertouch: {len(at_events)} events → region={at_region_id[:8]}"
             )
@@ -270,7 +284,10 @@ async def _process_call_for_variation(
         gen_tempo = int(_gen_tempo) if isinstance(_gen_tempo, (int, float)) else 120
         gen_bars = int(_gen_bars) if isinstance(_gen_bars, (int, float)) else 4
         gen_key = _gen_key if isinstance(_gen_key, str) else None
-        gen_chords = _gen_chords if isinstance(_gen_chords, list) else None
+        gen_chords: list[str] | None = (
+            [c for c in _gen_chords if isinstance(c, str)]
+            if isinstance(_gen_chords, list) else None
+        )
 
         try:
             gen_start = time.time()

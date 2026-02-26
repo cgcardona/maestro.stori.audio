@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 import pytest
+from app.contracts.json_types import JSONValue
 
 from app.core.entity_registry import EntityRegistry
 from app.core.tool_validation import (
@@ -287,19 +288,19 @@ class TestValidateValueRanges:
 
     def test_notes_array_pitch_out_of_range(self) -> None:
 
-        notes = [{"pitch": 200, "velocity": 100}]
+        notes: list[JSONValue] = [{"pitch": 200, "velocity": 100}]
         errors = _validate_value_ranges({"notes": notes})
         assert any("notes[0].pitch" in e.field for e in errors)
 
     def test_notes_array_velocity_out_of_range(self) -> None:
 
-        notes = [{"pitch": 60, "velocity": 200}]
+        notes: list[JSONValue] = [{"pitch": 60, "velocity": 200}]
         errors = _validate_value_ranges({"notes": notes})
         assert any("notes[0].velocity" in e.field for e in errors)
 
     def test_notes_array_valid(self) -> None:
 
-        notes = [{"pitch": 60, "velocity": 100}]
+        notes: list[JSONValue] = [{"pitch": 60, "velocity": 100}]
         assert _validate_value_ranges({"notes": notes}) == []
 
     def test_notes_array_not_list_no_crash(self) -> None:

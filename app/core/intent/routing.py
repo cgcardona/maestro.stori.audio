@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from app.core.llm_client import LLMClient
 
 from app.core.intent_config import Intent, match_producer_idiom
-from app.core.intent.models import IntentResult, Slots
+from app.core.intent.models import IntentResult, Slots, SlotsExtrasDict
 from app.core.intent.normalization import normalize
 from app.core.intent.detection import (
     _is_question,
@@ -61,11 +61,14 @@ def get_intent_result(
 
     idiom = match_producer_idiom(norm)
     if idiom:
+        idiom_extras: SlotsExtrasDict = {"matched_phrase": idiom.phrase}
+        if idiom.target is not None:
+            idiom_extras["target"] = idiom.target
         slots = Slots(
             value_str=raw,
             idiom_match=idiom,
             direction=idiom.direction,
-            extras={"target": idiom.target, "matched_phrase": idiom.phrase},
+            extras=idiom_extras,
         )
         return _build_result(idiom.intent, 0.85, slots, (f"idiom:{idiom.phrase}",))
 

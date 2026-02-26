@@ -17,7 +17,8 @@ if TYPE_CHECKING:
     from app.core.llm_client import LLMClient
     from app.core.maestro_handlers import UsageTracker
 
-from app.contracts.json_types import JSONObject
+from app.contracts.json_types import JSONObject, ToolCallDict, ToolCallPreviewDict
+from app.contracts.pydantic_types import wrap_dict
 from app.contracts.llm_types import ChatMessage
 from app.core.plan_schemas.models import GenerationRole
 from app.core.plan_schemas.plan_json_types import PlanJsonDict
@@ -163,7 +164,7 @@ def _try_deterministic_plan(
                 tempo=parsed.tempo,
                 bars=bars,
                 key=parsed.key,
-                constraints={k: v for k, v in parsed.constraints.items() if k != "bars"} or None,
+                constraints=wrap_dict({k: v for k, v in parsed.constraints.items() if k != "bars"}) or None,
                 trackName=track_name,
             )
         )
@@ -384,7 +385,7 @@ class PlanPreview(TypedDict, total=False):
     total_steps: int
     generations: int
     edits: int
-    tool_calls: list[dict[str, object]]
+    tool_calls: list[ToolCallPreviewDict]
     notes: list[str]
     errors: list[str]
     warnings: list[str]

@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import httpx
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator, Required, TypeGuard, TypedDict
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter
@@ -24,6 +24,28 @@ logger = logging.getLogger(__name__)
 
 # HuggingFace embedding model (matches ingestion script)
 HF_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+
+class QdrantCollectionStats(TypedDict):
+    """Live statistics for the Qdrant docs collection (success path)."""
+
+    name: str
+    vectors_count: int
+    points_count: int
+    status: str
+
+
+class QdrantCollectionError(TypedDict):
+    """Error payload returned when Qdrant collection info cannot be fetched."""
+
+    error: str
+
+
+def is_collection_stats(
+    info: QdrantCollectionStats | QdrantCollectionError,
+) -> TypeGuard[QdrantCollectionStats]:
+    """Narrow a collection-info result to the success path."""
+    return "error" not in info
 
 
 @dataclass
@@ -270,14 +292,14 @@ Please provide a clear, helpful answer. Use the documentation context when it's 
         except Exception:
             return False
     
-    def get_collection_info(self) -> dict[str, Any]:
+    def get_collection_info(self) -> QdrantCollectionStats | QdrantCollectionError:
         """Get information about the docs collection."""
         try:
             info = self.qdrant.get_collection(self.COLLECTION_NAME)
             return {
                 "name": self.COLLECTION_NAME,
                 "vectors_count": getattr(info, "vectors_count", getattr(info, "indexed_vectors_count", 0)),
-                "points_count": info.points_count,
+                "points_count": info.points_count if info.points_count is not None else 0,
                 "status": getattr(info.status, "value", str(info.status)),
             }
         except Exception as e:

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 
 from app.contracts.generation_types import CompositionContext, RoleResult, UnifiedGenerationOutput
 from app.contracts.llm_types import AssistantMessage, ToolResultMessage
+from app.contracts.pydantic_types import wrap_dict
 from app.core.gm_instruments import DRUM_ICON, icon_for_gm_program
 from app.core.tool_validation import VALID_SF_SYMBOL_ICONS, validate_tool_call
 from app.core.tracing import TraceContext, log_tool_call, log_validation_error, trace_span
@@ -23,7 +24,7 @@ from app.protocol.events import (
 if TYPE_CHECKING:
     from app.core.state_store import StateStore
 
-from app.contracts.json_types import ToolCallDict
+from app.contracts.json_types import JSONValue, NoteDict, ToolCallDict, json_list, is_note_dict
 from app.core.maestro_helpers import (
     _build_tool_result,
     _enrich_params_with_track_context,
@@ -46,19 +47,19 @@ from app.services.music_generator import get_music_generator
 logger = logging.getLogger(__name__)
 
 
-def _sp(params: dict[str, object], key: str, default: str = "") -> str:
+def _sp(params: dict[str, JSONValue], key: str, default: str = "") -> str:
     """Extract a string value from a params dict, falling back to *default*."""
     v = params.get(key, default)
     return v if isinstance(v, str) else default
 
 
-def _sp_opt(params: dict[str, object], key: str) -> str | None:
+def _sp_opt(params: dict[str, JSONValue], key: str) -> str | None:
     """Extract an optional string value from a params dict."""
     v = params.get(key)
     return v if isinstance(v, str) else None
 
 
-def _ip(params: dict[str, object], key: str, default: int = 0) -> int:
+def _ip(params: dict[str, JSONValue], key: str, default: int = 0) -> int:
     """Extract an int value from a params dict."""
     v = params.get(key, default)
     if isinstance(v, int):
@@ -68,7 +69,7 @@ def _ip(params: dict[str, object], key: str, default: int = 0) -> int:
     return default
 
 
-def _fp(params: dict[str, object], key: str, default: float = 0.0) -> float:
+def _fp(params: dict[str, JSONValue], key: str, default: float = 0.0) -> float:
     """Extract a float value from a params dict."""
     v = params.get(key, default)
     if isinstance(v, (int, float)):
@@ -76,7 +77,7 @@ def _fp(params: dict[str, object], key: str, default: float = 0.0) -> float:
     return default
 
 
-def _list_dicts(params: dict[str, object], key: str) -> list[dict[str, object]]:
+def _list_dicts(params: dict[str, JSONValue], key: str) -> list[dict[str, JSONValue]]:
     """Extract a list of dicts from a params dict, filtering out non-dict items."""
     v = params.get(key, [])
     if not isinstance(v, list):
@@ -113,7 +114,7 @@ def phase_for_tool(tool_name: str) -> str:
 async def _execute_agent_generator(
     tc_id: str,
     tc_name: str,
-    enriched_params: dict[str, object],
+    enriched_params: dict[str, JSONValue],
     store: StateStore,
     trace: TraceContext,
     composition_context: CompositionContext,
@@ -170,7 +171,7 @@ async def _execute_agent_generator(
             f"before stori_generate_midi. Pass regionId from stori_add_midi_region."
         )
         logger.error(f"❌ [{trace.trace_id[:8]}] {error_msg}")
-        error_result: dict[str, object] = {"error": error_msg}
+        error_result: dict[str, JSONValue] = {"error": error_msg}
         if emit_sse:
             sse_events.append(ToolErrorEvent(name=tc_name, error=error_msg))
         return _ToolCallOutcome(
@@ -340,7 +341,7 @@ async def _execute_agent_generator(
     if result.aftertouch:
         store.add_aftertouch(region_id, result.aftertouch)
 
-    tool_result: dict[str, object] = {
+    tool_result: dict[str, JSONValue] = {
         "regionId": region_id,
         "trackId": track_id,
         "notesAdded": len(result.notes),
@@ -359,17 +360,17 @@ async def _execute_agent_generator(
         sse_events.append(ToolCallEvent(
             id=tc_id, name="stori_add_notes",
             label=_gen_label, phase=_gen_phase,
-            params={"trackId": track_id, "regionId": region_id, "notes": result.notes},
+            params=wrap_dict({"trackId": track_id, "regionId": region_id, "notes": json_list(result.notes)}),
         ))
         if result.cc_events:
             extra_tool_calls.append({
                 "tool": "stori_add_midi_cc",
-                "params": {"regionId": region_id, "events": result.cc_events},
+                "params": {"regionId": region_id, "events": json_list(result.cc_events)},
             })
         if result.pitch_bends:
             extra_tool_calls.append({
                 "tool": "stori_add_pitch_bend",
-                "params": {"regionId": region_id, "events": result.pitch_bends},
+                "params": {"regionId": region_id, "events": json_list(result.pitch_bends)},
             })
 
     return _ToolCallOutcome(
@@ -500,7 +501,7 @@ async def execute_unified_generation(
 async def _apply_single_tool_call(
     tc_id: str,
     tc_name: str,
-    resolved_args: dict[str, object],
+    resolved_args: dict[str, JSONValue],
     allowed_tool_names: set[str] | frozenset[str],
     store: StateStore,
     trace: TraceContext,
@@ -587,7 +588,7 @@ async def _apply_single_tool_call(
                 error=validation.error_message,
                 errors=[str(e) for e in validation.errors],
             ))
-        error_result: dict[str, object] = {"error": validation.error_message}
+        error_result: dict[str, JSONValue] = {"error": validation.error_message}
         msg_call = {
             "role": "assistant",
             "tool_calls": [{"id": tc_id, "type": "function",
@@ -670,7 +671,7 @@ async def _apply_single_tool_call(
                 )
                 _existing_entity = store.registry.get_region(_existing_rid)
                 _existing_name = _existing_entity.name if _existing_entity else region_name
-                idempotent_result: dict[str, object] = {
+                idempotent_result: dict[str, JSONValue] = {
                     "success": True,
                     "regionId": _existing_rid,
                     "existingRegionId": _existing_rid,
@@ -708,7 +709,7 @@ async def _apply_single_tool_call(
                 enriched_params["regionId"] = region_id
             except ValueError as e:
                 logger.error(f"❌ Failed to create region: {e}")
-                region_err: dict[str, object] = {
+                region_err: dict[str, JSONValue] = {
                     "success": False,
                     "error": f"Failed to create region: {e}",
                 }
@@ -733,7 +734,7 @@ async def _apply_single_tool_call(
             logger.error(
                 f"stori_add_midi_region called without trackId for region '{region_name}'"
             )
-            no_track_err: dict[str, object] = {
+            no_track_err: dict[str, JSONValue] = {
                 "success": False,
                 "error": (
                     f"Cannot create region '{region_name}' — no trackId provided. "
@@ -800,7 +801,7 @@ async def _apply_single_tool_call(
         ))
         sse_events.append(ToolCallEvent(
             id=tc_id, name=tc_name, label=_tc_label,
-            phase=_tc_phase, params=emit_params,
+            phase=_tc_phase, params=wrap_dict(emit_params),
         ))
 
     log_tool_call(trace.trace_id, tc_name, enriched_params, True)
@@ -824,7 +825,7 @@ async def _apply_single_tool_call(
         if _track_icon:
             enriched_params["icon"] = _track_icon
         if _track_icon and _icon_track_id:
-            _icon_params: dict[str, object] = {"trackId": _icon_track_id, "icon": _track_icon}
+            _icon_params: dict[str, JSONValue] = {"trackId": _icon_track_id, "icon": _track_icon}
             _icon_label = f"Setting icon for {_sp(enriched_params, 'name', 'track')}"
             _icon_phase = phase_for_tool("stori_set_track_icon")
             sse_events.append(ToolStartEvent(
@@ -832,7 +833,7 @@ async def _apply_single_tool_call(
             ))
             sse_events.append(ToolCallEvent(
                 id=f"{tc_id}-icon", name="stori_set_track_icon",
-                label=_icon_label, phase=_icon_phase, params=_icon_params,
+                label=_icon_label, phase=_icon_phase, params=wrap_dict(_icon_params),
             ))
             extra_tool_calls.append({"tool": "stori_set_track_icon", "params": _icon_params})
 
@@ -858,9 +859,11 @@ async def _apply_single_tool_call(
 
     # ── Note persistence (with post-processing when context is available) ──
     if tc_name == "stori_add_notes":
-        from app.contracts.json_types import NoteDict
         _notes_raw = enriched_params.get("notes", [])
-        _notes: list[NoteDict] = _notes_raw if isinstance(_notes_raw, list) else []
+        _notes: list[NoteDict] = (
+            [n for n in _notes_raw if is_note_dict(n)]
+            if isinstance(_notes_raw, list) else []
+        )
         _rid = _sp(enriched_params, "regionId")
         if _rid and _notes:
             if composition_context:
@@ -874,7 +877,7 @@ async def _apply_single_tool_call(
                         _notes, _style, _bars, instrument_role=_role,
                     )
                     _notes = expr["notes"]
-                    enriched_params["notes"] = _notes
+                    enriched_params["notes"] = json_list(_notes)
                     if expr.get("cc_events"):
                         store.add_cc(_rid, expr["cc_events"])
                     if expr.get("pitch_bends"):
@@ -894,9 +897,11 @@ async def _apply_single_tool_call(
 
     # ── Message objects for LLM conversation history ──
     if tc_name == "stori_add_notes":
-        from app.contracts.json_types import NoteDict
         _notes_raw2 = enriched_params.get("notes", [])
-        notes: list[NoteDict] = _notes_raw2 if isinstance(_notes_raw2, list) else []
+        notes: list[NoteDict] = (
+            [n for n in _notes_raw2 if is_note_dict(n)]
+            if isinstance(_notes_raw2, list) else []
+        )
         summary_params = {k: v for k, v in enriched_params.items() if k != "notes"}
         summary_params["_noteCount"] = len(notes)
         if notes:
@@ -913,7 +918,7 @@ async def _apply_single_tool_call(
     }
 
     # ── Tool result ──
-    tool_result: dict[str, object] = _build_tool_result(tc_name, enriched_params, store)
+    tool_result: dict[str, JSONValue] = _build_tool_result(tc_name, enriched_params, store)
     msg_result = {
         "role": "tool", "tool_call_id": tc_id,
         "content": json.dumps(tool_result),

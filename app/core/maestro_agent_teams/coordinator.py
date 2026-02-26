@@ -43,6 +43,7 @@ from app.protocol.events import (
     MaestroEvent,
     SummaryEvent,
     SummaryFinalEvent,
+    ToolCallWire,
 )
 from app.core.tracing import TraceContext
 from app.core.tools import ALL_TOOLS
@@ -59,7 +60,7 @@ from app.core.maestro_plan_tracker import (
 from app.core.maestro_editing import _apply_single_tool_call
 from app.core.maestro_agent_teams.agent import _run_instrument_agent
 from app.contracts import hash_list_canonical, seal_contract
-from app.contracts.json_types import ToolCallDict
+from app.contracts.json_types import JSONValue, ToolCallDict
 from app.core.maestro_agent_teams.contracts import (
     CompositionContract,
     ExecutionServices,
@@ -738,7 +739,7 @@ async def _handle_composition_agent_team(
                 tool_choice="auto",
                 max_tokens=2000,
             )
-            phase3_iter_results: list[dict[str, object]] = []
+            phase3_iter_results: list[dict[str, JSONValue]] = []
             phase3_failures: dict[str, int] = {}
             for tc in phase3_response.tool_calls:
                 p3_resolved = _resolve_variable_refs(tc.params, phase3_iter_results)
@@ -828,7 +829,7 @@ async def _handle_composition_agent_team(
     yield emit(CompleteEvent(
         success=_generation_succeeded,
         trace_id=trace.trace_id,
-        tool_calls=all_collected,
+        tool_calls=[ToolCallWire.from_tool_call_dict(tc) for tc in all_collected] or None,
         state_version=store.version,
         warnings=_complete_warnings if _complete_warnings else None,
         input_tokens=_usage.get("input_tokens", 0),

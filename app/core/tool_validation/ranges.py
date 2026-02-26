@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from app.contracts.json_types import JSONValue
 from app.core.tool_validation.models import ValidationError
 from app.core.tool_validation.constants import VALUE_RANGES
 
 
-def _validate_value_ranges(params: dict[str, Any]) -> list[ValidationError]:
+def _validate_value_ranges(params: dict[str, JSONValue]) -> list[ValidationError]:
     """Validate numeric values are within expected ranges."""
     errors: list[ValidationError] = []
 

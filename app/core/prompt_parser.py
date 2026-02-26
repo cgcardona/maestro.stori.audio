@@ -32,6 +32,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
+from app.contracts.json_types import JSONValue, jint
+
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -73,7 +75,7 @@ def _as_mode(raw: str) -> Literal["compose", "edit", "ask"]:
     of the three mode literals, even when the caller has already checked membership
     (e.g. ``if raw.lower() in {"compose", "edit", "ask"}``).  This helper
     encapsulates the exhaustive ``if/elif`` branching that mypy accepts as a
-    genuine type narrowing, avoiding any ``cast()`` or ``# type: ignore``.
+    genuine type narrowing, avoiding any ``cast()`` or ignore comments.
 
     Callers **must** have already confirmed ``raw.lower()`` is in
     ``("compose", "edit", "ask")`` before calling this; the fallthrough returns
@@ -170,9 +172,9 @@ class ParsedPrompt:
     tempo: int | None = None
     energy: str | None = None
     roles: list[str] = field(default_factory=list)
-    constraints: dict[str, object] = field(default_factory=dict)
+    constraints: dict[str, JSONValue] = field(default_factory=dict)
     vibes: list[VibeWeight] = field(default_factory=list)
-    extensions: dict[str, object] = field(default_factory=dict)
+    extensions: dict[str, JSONValue] = field(default_factory=dict)
 
     @property
     def after(self) -> PositionSpec | None:
@@ -228,7 +230,7 @@ def parse_prompt(text: str) -> ParsedPrompt | None:
         return None
 
     # Normalise all top-level keys to lowercase
-    data: dict[str, object] = {str(k).lower(): v for k, v in raw_data.items()}
+    data: dict[str, JSONValue] = {str(k).lower(): v for k, v in raw_data.items()}
 
     # Required: Mode
     mode_raw = _str(data.get("mode"))
@@ -281,7 +283,7 @@ def parse_prompt(text: str) -> ParsedPrompt | None:
 # ─── Field parsers ────────────────────────────────────────────────────────────
 
 
-def _str(v: object, lower: bool = False) -> str | None:
+def _str(v: JSONValue, lower: bool = False) -> str | None:
     """Coerce a YAML scalar to a stripped string, or None."""
     if v is None:
         return None
@@ -304,7 +306,7 @@ def _parse_target(val: str | None) -> TargetSpec | None:
     return None
 
 
-def _parse_tempo(v: object) -> int | None:
+def _parse_tempo(v: JSONValue) -> int | None:
     """Accept integer, float, or string like '92 bpm'."""
     if v is None:
         return None
@@ -314,7 +316,7 @@ def _parse_tempo(v: object) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _parse_roles(v: object) -> list[str]:
+def _parse_roles(v: JSONValue) -> list[str]:
     """Role: string | list[str]."""
     if v is None:
         return []
@@ -324,14 +326,14 @@ def _parse_roles(v: object) -> list[str]:
     return [p.strip() for p in str(v).split(",") if p.strip()]
 
 
-def _parse_constraints(v: object) -> dict[str, object]:
+def _parse_constraints(v: JSONValue) -> dict[str, JSONValue]:
     """Constraints: dict | list of {k: v} dicts | string."""
     if v is None:
         return {}
     if isinstance(v, dict):
         return {str(k).lower(): val for k, val in v.items()}
     if isinstance(v, list):
-        out: dict[str, object] = {}
+        out: dict[str, JSONValue] = {}
         for item in v:
             if isinstance(item, dict):
                 for k, val in item.items():
@@ -347,7 +349,7 @@ def _parse_constraints(v: object) -> dict[str, object]:
     return {}
 
 
-def _parse_vibes(v: object) -> list[VibeWeight]:
+def _parse_vibes(v: JSONValue) -> list[VibeWeight]:
     """Vibe: string | list[str | {name: weight}].
 
     Weight syntax (in string items):
@@ -358,7 +360,7 @@ def _parse_vibes(v: object) -> list[VibeWeight]:
     if v is None:
         return []
 
-    raw: list[object] = []
+    raw: list[JSONValue] = []
     if isinstance(v, list):
         raw = v
     elif isinstance(v, str):
@@ -371,7 +373,7 @@ def _parse_vibes(v: object) -> list[VibeWeight]:
         if isinstance(item, dict):
             # {name: weight} form
             for name, weight in item.items():
-                vibes.append(VibeWeight(vibe=str(name).strip().lower(), weight=int(weight)))
+                vibes.append(VibeWeight(vibe=str(name).strip().lower(), weight=jint(weight)))
             continue
         s = _LIST_BULLET_RE.sub("", str(item)).strip()
         if not s:

@@ -3,10 +3,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TypedDict
 
+from app.contracts.json_types import JSONValue, ToolCallPreviewDict
 from app.core.expansion import ToolCall
 from app.core.plan_schemas import PlanValidationResult
+
+
+class ExecutionPlanSummary(TypedDict):
+    """Wire shape of ``ExecutionPlan.to_dict()``.
+
+    Emitted in the ``plan`` SSE event so the frontend can render a step-by-step
+    checklist before execution begins.  ``tool_calls`` mirrors the ``ToolCall``
+    representation (name + params); ``validation_errors`` is empty on a valid plan.
+    """
+
+    tool_calls: list[ToolCallPreviewDict]
+    notes: list[str]
+    safety_validated: bool
+    validation_errors: list[str]
 
 
 @dataclass
@@ -35,7 +50,7 @@ class ExecutionPlan:
     llm_response_text: str | None = None
     validation_result: PlanValidationResult | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> ExecutionPlanSummary:
         """Serialise to a summary dict suitable for SSE plan-preview events."""
         return {
             "tool_calls": [tc.to_dict() for tc in self.tool_calls],

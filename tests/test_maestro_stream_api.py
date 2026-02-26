@@ -16,6 +16,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts.llm_types import ChatMessage
+from app.contracts.pydantic_types import wrap_dict
 from app.core.maestro_handlers import UsageTracker
 from app.db.models import User
 from app.protocol.emitter import ProtocolSerializationError, emit, parse_event
@@ -112,7 +113,7 @@ class TestComposeStreamEndpoint:
         async def fake_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
 
             yield emit(StateEvent(state="editing", intent="track.add", confidence=0.9, trace_id="t-1"))
-            yield emit(ToolCallEvent(id="tc-1", name="stori_set_tempo", params={"tempo": 120}))
+            yield emit(ToolCallEvent(id="tc-1", name="stori_set_tempo", params=wrap_dict({"tempo": 120})))
             yield emit(CompleteEvent(success=True, trace_id="t-1", tool_calls=[]))
 
         with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):

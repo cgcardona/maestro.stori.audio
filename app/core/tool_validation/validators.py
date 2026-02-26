@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from app.contracts.json_types import JSONValue
 from app.core.entity_registry import EntityRegistry
 from app.core.tools import tool_schema_by_name
 from app.core.tool_validation.models import ValidationError, ValidationResult
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def validate_tool_call(
     tool_name: str,
-    params: dict[str, object],
+    params: dict[str, JSONValue],
     allowed_tools: set[str] | frozenset[str],
     registry: EntityRegistry | None = None,
     target_scope: tuple[str, str | None] | None = None,
@@ -90,7 +91,7 @@ def validate_tool_call(
 
 def validate_tool_call_simple(
     tool_name: str,
-    params: dict[str, object],
+    params: dict[str, JSONValue],
     allowed_tools: set[str],
 ) -> tuple[bool, str]:
     """Simple validation returning (valid, error_message). Backward-compatible."""
@@ -99,7 +100,7 @@ def validate_tool_call_simple(
 
 
 def validate_tool_calls_batch(
-    tool_calls: list[tuple[str, dict[str, object]]],
+    tool_calls: list[tuple[str, dict[str, JSONValue]]],
     allowed_tools: set[str],
     registry: EntityRegistry | None = None,
 ) -> list[ValidationResult]:

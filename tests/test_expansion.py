@@ -43,7 +43,9 @@ class TestToolCallToDict:
         assert isinstance(params, dict)
         notes = params["notes"]
         assert isinstance(notes, list)
-        assert notes[0]["pitch"] == 60
+        first = notes[0]
+        assert isinstance(first, dict)
+        assert first["pitch"] == 60
 
     def test_returns_dict(self) -> None:
 

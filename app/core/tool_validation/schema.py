@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from app.contracts.json_types import JSONValue
 from app.contracts.llm_types import ToolParametersDict, ToolSchemaDict
 from app.core.tool_validation.models import ValidationError
 from app.core.tool_validation.constants import TOOL_REQUIRED_FIELDS
 
 
-def _validate_type(field: str, value: object, expected_type: str) -> ValidationError | None:
+def _validate_type(field: str, value: JSONValue, expected_type: str) -> ValidationError | None:
     """Validate a value against an expected JSON Schema type."""
     type_map: dict[str, type | tuple[type, ...]] = {
         "string": str,
@@ -30,7 +31,7 @@ def _validate_type(field: str, value: object, expected_type: str) -> ValidationE
 
 def _validate_schema(
     tool_name: str,
-    params: dict[str, object],
+    params: dict[str, JSONValue],
     schema: ToolSchemaDict,
 ) -> list[ValidationError]:
     """Validate params against tool schema (required fields + types)."""
@@ -56,12 +57,10 @@ def _validate_schema(
         if field not in properties:
             continue
         prop = properties.get(field)
-        if not isinstance(prop, dict):
+        if prop is None:
             continue
-        expected_type_val = prop.get("type")
-        if not isinstance(expected_type_val, str):
-            continue
-        type_error = _validate_type(field, value, expected_type_val)
+        # prop["type"] is Required[str] in OpenAIPropertyDef — always a str
+        type_error = _validate_type(field, value, prop["type"])
         if type_error:
             errors.append(type_error)
 

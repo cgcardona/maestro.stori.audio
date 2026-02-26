@@ -177,12 +177,62 @@ def _normalize_note(note: NoteDict | InternalNoteDict) -> InternalNoteDict:
     """Normalize a note dict to internal snake_case keys.
 
     Tool calls from the LLM use camelCase (startBeat, durationBeats).
-    Internal storage always uses snake_case.
+    Internal storage always uses snake_case.  Explicit per-field extraction
+    keeps mypy satisfied without a cast or type: ignore.
     """
-    out: dict[str, object] = {}
-    for k, v in note.items():
-        out[_CAMEL_TO_SNAKE.get(k, k)] = v
-    return out  # type: ignore[return-value]  # dynamic key mapping — keys are known at runtime
+    result: InternalNoteDict = {}
+
+    pitch = note.get("pitch")
+    if pitch is not None:
+        result["pitch"] = pitch
+
+    velocity = note.get("velocity")
+    if velocity is not None:
+        result["velocity"] = velocity
+
+    channel = note.get("channel")
+    if channel is not None:
+        result["channel"] = channel
+
+    layer = note.get("layer")
+    if layer is not None:
+        result["layer"] = layer
+
+    note_id = note.get("noteId")
+    if note_id is not None:
+        result["noteId"] = note_id
+    note_id_snake = note.get("note_id")
+    if note_id_snake is not None:
+        result["note_id"] = note_id_snake
+
+    track_id = note.get("trackId")
+    if track_id is not None:
+        result["trackId"] = track_id
+    track_id_snake = note.get("track_id")
+    if track_id_snake is not None:
+        result["track_id"] = track_id_snake
+
+    region_id = note.get("regionId")
+    if region_id is not None:
+        result["regionId"] = region_id
+    region_id_snake = note.get("region_id")
+    if region_id_snake is not None:
+        result["region_id"] = region_id_snake
+
+    # Timing: prefer snake_case; fall back to camelCase alias
+    start_beat = note.get("start_beat")
+    if start_beat is None:
+        start_beat = note.get("startBeat")
+    if start_beat is not None:
+        result["start_beat"] = start_beat
+
+    duration_beats = note.get("duration_beats")
+    if duration_beats is None:
+        duration_beats = note.get("durationBeats")
+    if duration_beats is not None:
+        result["duration_beats"] = duration_beats
+
+    return result
 
 
 def _notes_match(existing: InternalNoteDict, criteria: InternalNoteDict) -> bool:

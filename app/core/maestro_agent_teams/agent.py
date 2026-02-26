@@ -15,7 +15,7 @@ import json
 import logging
 import uuid as _uuid_mod
 from app.contracts.generation_types import CompositionContext
-from app.contracts.json_types import NoteDict, SectionDict, SectionSummaryDict, ToolCallDict
+from app.contracts.json_types import JSONValue, NoteDict, SectionDict, SectionSummaryDict, ToolCallDict
 from app.contracts.llm_types import ChatMessage, ToolCallEntry, UsageStats
 from app.config import settings
 from app.core.expansion import ToolCall
@@ -419,7 +419,7 @@ async def _run_instrument_agent_inner(
 
     add_notes_failures: dict[str, int] = {}
     active_step_id: str | None = None
-    all_tool_results: list[dict[str, object]] = []
+    all_tool_results: list[dict[str, JSONValue]] = []
 
     # Server-owned retries handle *failed* section children inside
     # _dispatch_section_children.  However the LLM must actually emit the
@@ -599,7 +599,7 @@ async def _run_instrument_agent_inner(
                 try:
                     _fn = _tc["function"]
                     _args_str = _fn["arguments"]
-                    _parsed_args: dict[str, object] = json.loads(_args_str) if _args_str else {}
+                    _parsed_args: dict[str, JSONValue] = json.loads(_args_str) if _args_str else {}
                     response.tool_calls.append(ToolCall(
                         id=_tc["id"],
                         name=_fn["name"],
@@ -908,7 +908,7 @@ async def _dispatch_section_children(
     sse_queue: "asyncio.Queue[MaestroEvent]",
     instrument_contract: InstrumentContract | None = None,
     collected_tool_calls: list[ToolCallDict],
-    all_tool_results: list[dict[str, object]],
+    all_tool_results: list[dict[str, JSONValue]],
     add_notes_failures: dict[str, int],
     runtime_context: RuntimeContext | None,
     execution_services: ExecutionServices | None = None,

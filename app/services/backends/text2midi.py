@@ -14,9 +14,10 @@ import logging
 from app.contracts.generation_types import GenerationContext
 from app.contracts.json_types import JSONValue
 from app.services.backends.base import (
-    MusicGeneratorBackend,
+    GenerationMetadata,
     GenerationResult,
     GeneratorBackend,
+    MusicGeneratorBackend,
 )
 from app.services.neural.text2midi_backend import Text2MidiBackend
 from app.core.emotion_vector import EmotionVector, get_emotion_preset
@@ -153,11 +154,10 @@ class Text2MidiGeneratorBackend(MusicGeneratorBackend):
             
             if result.success:
                 logger.info(f"[text2midi] Generated {len(result.notes)} notes")
-                ev_dict: dict[str, object] = {**emotion_vector.to_dict()}
-                meta: dict[str, object] = {
+                meta: GenerationMetadata = {
                     "source": "text2midi",
                     "model": result.model_used,
-                    "emotion_vector": ev_dict,
+                    "emotion_vector": emotion_vector.to_dict(),
                     "style": style,
                     "instrument": mapped_instrument,
                     **(result.metadata or {}),

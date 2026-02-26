@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TypedDict
 
 from app.contracts.json_types import NoteDict
 from app.core.music_spec_ir import (
@@ -30,21 +30,31 @@ logger = logging.getLogger(__name__)
 # Drum Render Result: notes + metadata (including layer info)
 # -----------------------------------------------------------------------------
 
+class DrumRenderMetadata(TypedDict, total=False):
+    """Metadata emitted by the drum IR renderer alongside its notes."""
+
+    style: str
+    groove_template: str
+    humanize_profile: str
+    bars: int
+    tempo: int
+
+
 @dataclass
 class DrumRenderResult:
     """
     Result of drum rendering with notes and metadata.
-    
+
     Attributes:
         notes: list of {pitch, start_beat, duration_beats, velocity, layer}
         layer_map: dict mapping note index → layer name
         rhythm_spine: RhythmSpine for bass/melody coupling
-        metadata: Additional render metadata
+        metadata: Drum render provenance metadata
     """
     notes: list[NoteDict] = field(default_factory=list)
     layer_map: dict[int, str] = field(default_factory=dict)
     rhythm_spine: RhythmSpine | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: DrumRenderMetadata = field(default_factory=DrumRenderMetadata)
 
 
 # -----------------------------------------------------------------------------

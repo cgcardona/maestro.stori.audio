@@ -25,12 +25,14 @@ from typing_extensions import TypedDict
 from app.contracts.json_types import (
     AftertouchDict,
     CCEventDict,
+    JSONValue,
     NoteDict,
     PitchBendDict,
     RegionAftertouchMap,
     RegionCCMap,
     RegionNotesMap,
     RegionPitchBendMap,
+    json_list,
 )
 from app.core.tool_names import ToolName
 from app.services.muse_drift import _fingerprint, _combined_fingerprint
@@ -58,7 +60,7 @@ class CheckoutToolCall(TypedDict):
     """
 
     tool: str
-    arguments: dict[str, object]
+    arguments: dict[str, JSONValue]
 
 
 @dataclass(frozen=True)
@@ -108,7 +110,7 @@ class CheckoutPlan:
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
-def _make_tool_call(tool: ToolName, arguments: dict[str, object]) -> CheckoutToolCall:
+def _make_tool_call(tool: ToolName, arguments: dict[str, JSONValue]) -> CheckoutToolCall:
     """Construct a ``CheckoutToolCall`` from a ``ToolName`` enum and argument dict."""
     return {"tool": tool.value, "arguments": arguments}
 
@@ -141,7 +143,7 @@ def _build_region_note_calls(
     if needs_reset:
         calls.append(_make_tool_call(ToolName.CLEAR_NOTES, {"regionId": region_id}))
         if target_notes:
-            notes_for_reset: list[NoteDict] = [
+            notes_for_reset: list[JSONValue] = [
                 {
                     "pitch": n.get("pitch", 60),
                     "startBeat": n.get("start_beat", 0.0),
@@ -157,7 +159,7 @@ def _build_region_note_calls(
         return calls, True
 
     if added:
-        notes_to_add: list[NoteDict] = [
+        notes_to_add: list[JSONValue] = [
             {
                 "pitch": m.proposed_note.get("pitch", 60),
                 "startBeat": m.proposed_note.get("start_beat", 0.0),
@@ -186,22 +188,25 @@ def _build_cc_calls(
     if not needed:
         return []
 
-    by_cc: dict[int, list[PitchBendDict]] = {}
+    by_cc: dict[int, list[CCEventDict]] = {}
     for m in needed:
         ev = m.proposed_event
         if ev is None:
             continue
         raw_cc = ev.get("cc", 0)
         cc_num = int(raw_cc) if isinstance(raw_cc, (int, float, str)) else 0
-        by_cc.setdefault(cc_num, []).append(
-            {"beat": ev.get("beat", 0.0), "value": ev.get("value", 0)}
-        )
+        by_cc.setdefault(cc_num, []).append(CCEventDict(
+            cc=cc_num,
+            beat=float(ev.get("beat", 0.0) or 0.0),
+            value=int(ev.get("value", 0) or 0),
+        ))
 
     calls: list[CheckoutToolCall] = []
     for cc_num in sorted(by_cc):
+        cc_events_json: list[JSONValue] = json_list(by_cc[cc_num])
         calls.append(_make_tool_call(
             ToolName.ADD_MIDI_CC,
-            {"regionId": region_id, "cc": cc_num, "events": by_cc[cc_num]},
+            {"regionId": region_id, "cc": cc_num, "events": cc_events_json},
         ))
     return calls
 
@@ -216,14 +221,14 @@ def _build_pb_calls(
     if not needed:
         return []
 
-    events: list[PitchBendDict] = [
+    pb_events: list[JSONValue] = [
         {"beat": m.proposed_event.get("beat", 0.0), "value": m.proposed_event.get("value", 0)}
         for m in needed
         if m.proposed_event is not None
     ]
     return [_make_tool_call(
         ToolName.ADD_PITCH_BEND,
-        {"regionId": region_id, "events": events},
+        {"regionId": region_id, "events": pb_events},
     )]
 
 
@@ -237,7 +242,7 @@ def _build_at_calls(
     if not needed:
         return []
 
-    events: list[AftertouchDict] = []
+    at_events: list[JSONValue] = []
     for m in needed:
         ev = m.proposed_event
         if ev is None:
@@ -245,15 +250,13 @@ def _build_at_calls(
         beat = ev.get("beat", 0.0)
         value = ev.get("value", 0)
         pitch_val = ev.get("pitch")
+        at_entry: dict[str, JSONValue] = {"beat": beat, "value": value}
         if isinstance(pitch_val, int):
-            pitch_int: int = pitch_val
-            entry: AftertouchDict = {"beat": beat, "value": value, "pitch": pitch_int}
-        else:
-            entry = {"beat": beat, "value": value}
-        events.append(entry)
+            at_entry["pitch"] = pitch_val
+        at_events.append(at_entry)
     return [_make_tool_call(
         ToolName.ADD_AFTERTOUCH,
-        {"regionId": region_id, "events": events},
+        {"regionId": region_id, "events": at_events},
     )]
 
 

@@ -11,7 +11,8 @@ import asyncio
 from app.contracts.generation_types import CompositionContext
 from app.protocol.events import MaestroEvent, ToolCallEvent, GeneratorCompleteEvent
 
-from app.contracts.json_types import NoteDict
+from app.contracts.json_types import JSONValue, NoteDict
+from app.contracts.pydantic_types import wrap_dict
 import math
 from unittest.mock import patch
 
@@ -355,10 +356,10 @@ class TestSectionAgentTelemetry:
         region_outcome = _ToolCallOutcome(
             enriched_params={"trackId": "trk-1"},
             tool_result={"regionId": "reg-1", "trackId": "trk-1"},
-            sse_events=[ToolCallEvent(id="r1", name="stori_add_midi_region", params={"trackId": "trk-1"})],
+            sse_events=[ToolCallEvent(id="r1", name="stori_add_midi_region", params=wrap_dict({"trackId": "trk-1"}))],
             msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
-        gen_notes = [
+        gen_notes: list[JSONValue] = [
             {"pitch": 36, "start_beat": 0, "duration_beats": 1, "velocity": 100},
             {"pitch": 38, "start_beat": 1, "duration_beats": 0.5, "velocity": 90},
             {"pitch": 42, "start_beat": 0.5, "duration_beats": 0.25, "velocity": 70},
@@ -369,9 +370,9 @@ class TestSectionAgentTelemetry:
             tool_result={"notesAdded": 4, "regionId": "reg-1", "trackId": "trk-1"},
             sse_events=[
                 GeneratorCompleteEvent(role="drums", agent_id="drums", note_count=4, duration_ms=100),
-                ToolCallEvent(id="g1", name="stori_add_notes", params={
+                ToolCallEvent(id="g1", name="stori_add_notes", params=wrap_dict({
                     "trackId": "trk-1", "regionId": "reg-1", "notes": gen_notes,
-                }),
+                })),
             ],
             msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
@@ -470,16 +471,16 @@ class TestSectionAgentTelemetry:
         region_outcome = _ToolCallOutcome(
             enriched_params={"trackId": "trk-2"},
             tool_result={"regionId": "reg-2", "trackId": "trk-2"},
-            sse_events=[ToolCallEvent(id="r1", name="stori_add_midi_region", params={"trackId": "trk-2"})],
+            sse_events=[ToolCallEvent(id="r1", name="stori_add_midi_region", params=wrap_dict({"trackId": "trk-2"}))],
             msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
         gen_outcome = _ToolCallOutcome(
             enriched_params={"role": "bass", "regionId": "reg-2"},
             tool_result={"notesAdded": 8, "regionId": "reg-2"},
             sse_events=[
-                ToolCallEvent(id="g1", name="stori_add_notes", params={
+                ToolCallEvent(id="g1", name="stori_add_notes", params=wrap_dict({
                     "notes": [{"pitch": 40, "start_beat": i, "velocity": 80} for i in range(8)],
-                }),
+                })),
             ],
             msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
@@ -554,9 +555,9 @@ class TestSectionAgentTelemetry:
         )
         gen_outcome = _ToolCallOutcome(
             enriched_params={}, tool_result={"notesAdded": 2},
-            sse_events=[ToolCallEvent(id="g1", name="stori_add_notes", params={
+            sse_events=[ToolCallEvent(id="g1", name="stori_add_notes", params=wrap_dict({
                 "notes": [{"pitch": 60, "start_beat": 0, "velocity": 80}],
-            })],
+            }))],
             msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 

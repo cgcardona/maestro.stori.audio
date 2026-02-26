@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from app.contracts.json_types import JSONValue, is_note_dict, json_list
 from app.core.expansion import ToolCall
 from app.core.tools import get_tool_meta, ToolTier, ToolKind
 from app.core.tracing import trace_span
@@ -14,14 +15,14 @@ from app.services.music_generator import get_music_generator
 logger = logging.getLogger(__name__)
 
 
-def _sp(v: object, default: str = "") -> str:
-    """Narrow an object param value to str."""
+def _sp(v: JSONValue, default: str = "") -> str:
+    """Narrow a JSONValue param to str."""
     return v if isinstance(v, str) else default
 
 
 async def _execute_generator(
     name: str,
-    params: dict[str, object],
+    params: dict[str, JSONValue],
     ctx: ExecutionContext,
 ) -> None:
     """Execute a generator tool server-side."""
@@ -36,7 +37,10 @@ async def _execute_generator(
     _key = params.get("key")
     key = _key if isinstance(_key, str) else None
     _chords = params.get("chords")
-    chords = _chords if isinstance(_chords, list) else None
+    chords: list[str] | None = (
+        [c for c in _chords if isinstance(c, str)]
+        if isinstance(_chords, list) else None
+    )
 
     logger.info(f"🎵 Generating MIDI: {instrument} - {style}")
 
@@ -85,7 +89,7 @@ async def _execute_generator(
         ctx.add_event({
             "tool": "stori_add_notes",
             "params": {
-                "notes": result.notes,
+                "notes": json_list(result.notes),
                 "trackId": track_id,
                 "regionId": region_id,
             },
@@ -268,7 +272,11 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
             _rid = params.get("regionId")
             _notes = params.get("notes")
             if isinstance(_rid, str) and isinstance(_notes, list):
-                ctx.store.add_notes(_rid, _notes, transaction=ctx.transaction)
+                ctx.store.add_notes(
+                    _rid,
+                    [n for n in _notes if is_note_dict(n)],
+                    transaction=ctx.transaction,
+                )
 
         elif call.name == "stori_add_insert_effect":
             _track = params.get("trackId")

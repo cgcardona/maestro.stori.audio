@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from app.contracts.json_types import JSONValue
 from app.core.entity_registry import EntityRegistry
 from app.core.tool_validation.models import EntityResolutionResult, ValidationError
 from app.core.tool_validation.constants import _ENTITY_CREATING_SKIP
@@ -55,7 +56,7 @@ def _find_closest_match(
 
 def _resolve_and_validate_entities(
     tool_name: str,
-    params: dict[str, object],
+    params: dict[str, JSONValue],
     registry: EntityRegistry,
 ) -> EntityResolutionResult:
     """
@@ -205,9 +206,9 @@ def _resolve_and_validate_entities(
 
 def resolve_tool_entities(
     tool_name: str,
-    params: dict[str, object],
+    params: dict[str, JSONValue],
     registry: EntityRegistry,
-) -> dict[str, object]:
+) -> dict[str, JSONValue]:
     """Resolve entity names to IDs in tool call params.
 
     Public wrapper around ``_resolve_and_validate_entities`` that returns

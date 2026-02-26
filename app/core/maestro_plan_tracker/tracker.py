@@ -5,12 +5,13 @@ from __future__ import annotations
 import uuid as _uuid_mod
 from typing import TYPE_CHECKING
 
+from app.contracts.json_types import JSONValue
 from app.core.expansion import ToolCall
 from app.core.maestro_helpers import _human_label_for_tool, _humanize_style
 
 
-def _sp(v: object, default: str = "") -> str:
-    """Narrow an object tool param value to str."""
+def _sp(v: JSONValue, default: str = "") -> str:
+    """Narrow a JSONValue tool param value to str."""
     return v if isinstance(v, str) else default
 
 if TYPE_CHECKING:
@@ -686,7 +687,7 @@ class _PlanTracker:
     def find_step_for_tool(
         self,
         tc_name: str,
-        tc_params: dict[str, object],
+        tc_params: dict[str, JSONValue],
         store: StateStore,
     ) -> _PlanStep | None:
         """Map a tool call to a plan step by name/context.

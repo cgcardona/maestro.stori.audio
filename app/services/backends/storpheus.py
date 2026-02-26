@@ -24,9 +24,10 @@ from app.contracts.json_types import (
     PitchBendDict,
 )
 from app.services.backends.base import (
-    MusicGeneratorBackend,
+    GenerationMetadata,
     GenerationResult,
     GeneratorBackend,
+    MusicGeneratorBackend,
 )
 from app.services.storpheus import get_storpheus_client, normalize_storpheus_tool_calls
 
@@ -44,10 +45,39 @@ _SNAKE_TO_CAMEL: dict[str, str] = {
 
 
 def _normalize_note_keys(note: NoteDict) -> NoteDict:
-    """Ensure note dict uses camelCase field names (startBeat, durationBeats)."""
+    """Ensure note dict uses camelCase timing keys (startBeat, durationBeats) for the DAW.
+
+    Explicit per-field extraction keeps mypy clean without a type: ignore.
+    Only the two timing keys are translated; all other keys pass through.
+    """
     out: NoteDict = {}
-    for k, v in note.items():
-        out[_SNAKE_TO_CAMEL.get(k, k)] = v  # type: ignore[literal-required]  # dynamic key remap
+    if "pitch" in note:
+        out["pitch"] = note["pitch"]
+    if "velocity" in note:
+        out["velocity"] = note["velocity"]
+    if "channel" in note:
+        out["channel"] = note["channel"]
+    if "layer" in note:
+        out["layer"] = note["layer"]
+    if "noteId" in note:
+        out["noteId"] = note["noteId"]
+    if "note_id" in note:
+        out["note_id"] = note["note_id"]
+    if "trackId" in note:
+        out["trackId"] = note["trackId"]
+    if "track_id" in note:
+        out["track_id"] = note["track_id"]
+    if "regionId" in note:
+        out["regionId"] = note["regionId"]
+    if "region_id" in note:
+        out["region_id"] = note["region_id"]
+    # Timing: prefer camelCase for wire format; fall back to snake_case source
+    start_beat = note.get("startBeat") if "startBeat" in note else note.get("start_beat")
+    if start_beat is not None:
+        out["startBeat"] = start_beat
+    duration_beats = note.get("durationBeats") if "durationBeats" in note else note.get("duration_beats")
+    if duration_beats is not None:
+        out["durationBeats"] = duration_beats
     return out
 
 
@@ -236,7 +266,10 @@ class StorpheusBackend(MusicGeneratorBackend):
         )
 
         if result.get("success"):
-            meta = result.get("metadata", {})
+            meta: GenerationMetadata = {}
+            _meta_raw = result.get("metadata")
+            if isinstance(_meta_raw, dict):
+                meta.update(_meta_raw)  # type: ignore[typeddict-item]  # boundary: Storpheus dict[str, JSONValue] → GenerationMetadata (total=False)
             meta["trace_id"] = trace_id
             meta["intent_hash"] = intent_hash
 
@@ -396,7 +429,10 @@ class StorpheusBackend(MusicGeneratorBackend):
         )
 
         if result.get("success"):
-            meta = result.get("metadata", {})
+            meta: GenerationMetadata = {}
+            _meta_raw = result.get("metadata")
+            if isinstance(_meta_raw, dict):
+                meta.update(_meta_raw)  # type: ignore[typeddict-item]  # boundary: Storpheus dict[str, JSONValue] → GenerationMetadata (total=False)
             meta["trace_id"] = trace_id
             meta["intent_hash"] = intent_hash
             meta["unified_instruments"] = instruments

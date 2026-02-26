@@ -14,7 +14,8 @@ from typing import Any
 import pytest
 
 from app.contracts.generation_types import CompositionContext
-from app.contracts.json_types import NoteDict, TrackSummaryDict
+from app.contracts.json_types import JSONValue, NoteDict, TrackSummaryDict, json_list
+from app.contracts.pydantic_types import wrap_dict
 from app.core.tool_validation.constants import (
     TOOL_REQUIRED_FIELDS,
     VALID_SF_SYMBOL_ICONS,
@@ -130,7 +131,7 @@ class TestToolCallEventContract:
 
         wire = emit(ToolCallEvent(
             name="stori_set_tempo",
-            params={"tempo": 120},
+            params=wrap_dict({"tempo": 120}),
             id="call-1",
         ))
         payload = _parse_sse(wire)
@@ -1920,13 +1921,13 @@ class TestCompactToolResults:
         from app.core.maestro_agent_teams.section_agent import _compact_tool_result
 
         notes_sample: list[NoteDict] = [{"pitch": 60}] * 100
-        full_result = {
+        full_result: dict[str, JSONValue] = {
             "regionId": "reg-001",
             "trackId": "trk-1",
             "notesAdded": 116,
             "totalNotes": 116,
             "entities": [{"id": "e1"}, {"id": "e2"}],
-            "notes": notes_sample,
+            "notes": json_list(notes_sample),
             "backend": "storpheus",
         }
         compact = _compact_tool_result(full_result)
@@ -1940,7 +1941,7 @@ class TestCompactToolResults:
         """Error-related fields must survive compaction."""
         from app.core.maestro_agent_teams.section_agent import _compact_tool_result
 
-        error_result = {
+        error_result: dict[str, JSONValue] = {
             "error": "Region collision",
             "existingRegionId": "reg-existing",
             "success": False,

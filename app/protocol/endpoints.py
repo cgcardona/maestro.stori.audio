@@ -11,6 +11,8 @@ from fastapi import APIRouter
 from app.protocol.hash import compute_protocol_hash
 from app.protocol.registry import EVENT_REGISTRY, ALL_EVENT_TYPES
 from app.protocol.version import MAESTRO_VERSION
+from app.contracts.mcp_types import MCPToolDefWire
+from app.contracts.pydantic_types import PydanticJson
 from app.protocol.responses import (
     ProtocolInfoResponse,
     ProtocolEventsResponse,
@@ -41,7 +43,9 @@ async def protocol_events() -> ProtocolEventsResponse:
     return ProtocolEventsResponse(
         protocolVersion=MAESTRO_VERSION,
         events={
-            event_type: EVENT_REGISTRY[event_type].model_json_schema()
+            event_type: PydanticJson.model_validate(
+                EVENT_REGISTRY[event_type].model_json_schema()
+            )
             for event_type in sorted(EVENT_REGISTRY)
         },
     )
@@ -54,7 +58,7 @@ async def protocol_tools() -> ProtocolToolsResponse:
 
     return ProtocolToolsResponse(
         protocolVersion=MAESTRO_VERSION,
-        tools=MCP_TOOLS,
+        tools=[MCPToolDefWire.model_validate(t) for t in MCP_TOOLS],
         toolCount=len(MCP_TOOLS),
     )
 
@@ -72,14 +76,16 @@ async def protocol_schema() -> ProtocolSchemaResponse:
         protocolVersion=MAESTRO_VERSION,
         protocolHash=compute_protocol_hash(),
         events={
-            event_type: EVENT_REGISTRY[event_type].model_json_schema()
+            event_type: PydanticJson.model_validate(
+                EVENT_REGISTRY[event_type].model_json_schema()
+            )
             for event_type in sorted(EVENT_REGISTRY)
         },
         enums={
             "Intent": sorted(m.value for m in Intent),
             "SSEState": sorted(m.value for m in SSEState),
         },
-        tools=MCP_TOOLS,
+        tools=[MCPToolDefWire.model_validate(t) for t in MCP_TOOLS],
         toolCount=len(MCP_TOOLS),
         eventCount=len(EVENT_REGISTRY),
     )

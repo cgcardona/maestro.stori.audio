@@ -22,7 +22,10 @@ from typing import AsyncIterator
 from typing_extensions import TypedDict
 
 from app.config import settings
+from app.contracts.json_types import JSONValue
 from app.contracts.llm_types import (
+    CachedToolSchemaDict,
+    CacheControlDict,
     ChatMessage,
     ContentDeltaEvent,
     DoneStreamEvent,
@@ -246,7 +249,7 @@ class LLMClient:
         self,
         messages: list[ChatMessage],
         tools: list[ToolSchemaDict] | None = None,
-    ) -> tuple[list[ChatMessage], list[dict[str, object]] | None, None]:
+    ) -> tuple[list[ChatMessage], list[CachedToolSchemaDict] | None, None]:
         """
         Add Anthropic cache_control breakpoints to the system prompt and tools.
 
@@ -277,8 +280,9 @@ class LLMClient:
                 logger.debug(
                     f"Prompt caching skipped: {self.model} not in CACHE_SUPPORTED_MODELS"
                 )
-            _pass_through: list[dict[str, object]] | None = (
-                [dict(t) for t in tools] if tools else None
+            _pass_through: list[CachedToolSchemaDict] | None = (
+                [CachedToolSchemaDict(type=t["type"], function=t["function"]) for t in tools]
+                if tools else None
             )
             return messages, _pass_through, None
 
@@ -297,12 +301,16 @@ class LLMClient:
         # Anthropic requires the cacheable prefix to be ≥ 1024 tokens.
         # For COMPOSING (22 tools, ~2500+ tok) this fires reliably.
         # For EDITING (1 tool, ~200-800 tok) it is below threshold — accepted.
-        cached_tools: list[dict[str, object]] | None = None
+        cached_tools: list[CachedToolSchemaDict] | None = None
         if tools:
-            cached_tools = [dict(t) for t in tools]
-            last = dict(cached_tools[-1])
-            last["cache_control"] = {"type": "ephemeral"}
-            cached_tools[-1] = last
+            cached_tools = [
+                CachedToolSchemaDict(type=t["type"], function=t["function"]) for t in tools
+            ]
+            cached_tools[-1] = CachedToolSchemaDict(
+                type=cached_tools[-1]["type"],
+                function=cached_tools[-1]["function"],
+                cache_control=CacheControlDict(type="ephemeral"),
+            )
 
         n_tools = len(tools) if tools else 0
         logger.debug(
@@ -580,7 +588,7 @@ class LLMClient:
             try:
                 fn = tc.get("function")
                 raw_args = fn.get("arguments", "{}") if fn else "{}"
-                args: dict[str, object] = json.loads(raw_args) if isinstance(raw_args, str) and raw_args else {}
+                args: dict[str, JSONValue] = json.loads(raw_args) if isinstance(raw_args, str) and raw_args else {}
                 response.tool_calls.append(ToolCall(
                     id=tc.get("id") or "",
                     name=fn.get("name", "") if fn else "",

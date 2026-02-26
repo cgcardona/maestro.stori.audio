@@ -28,6 +28,9 @@ from app.contracts.json_types import (
     NoteDict,
     StorpheusResultBucket,
     PitchBendDict,
+    is_note_dict,
+    jfloat,
+    jint,
 )
 
 
@@ -41,8 +44,8 @@ class StorpheusRawResponse(TypedDict, total=False):
 
     success: bool
     notes: list[NoteDict]
-    tool_calls: list[dict[str, object]]
-    metadata: dict[str, object]
+    tool_calls: list[dict[str, JSONValue]]
+    metadata: dict[str, JSONValue]
     channel_notes: dict[int, list[NoteDict]]
     error: str
     message: str
@@ -590,7 +593,7 @@ class StorpheusClient:
 
 
 def normalize_storpheus_tool_calls(
-    tool_calls: list[dict[str, object]],
+    tool_calls: list[dict[str, JSONValue]],
 ) -> StorpheusResultBucket:
     """Translate Orpheus-format tool_calls into Maestro-internal flat lists.
 
@@ -611,24 +614,24 @@ def normalize_storpheus_tool_calls(
         _tool_raw = tc.get("tool")
         tool_name = str(_tool_raw) if _tool_raw is not None else ""
         _params_raw = tc.get("params")
-        params: dict[str, object] = _params_raw if isinstance(_params_raw, dict) else {}
+        params: dict[str, JSONValue] = _params_raw if isinstance(_params_raw, dict) else {}
 
         if tool_name == "addNotes":
             _notes_raw = params.get("notes")
             if isinstance(_notes_raw, list):
-                notes.extend(_notes_raw)
+                notes.extend(n for n in _notes_raw if is_note_dict(n))
 
         elif tool_name == "addMidiCC":
             _cc_raw = params.get("cc")
-            cc_num = int(_cc_raw) if isinstance(_cc_raw, (int, float)) else 0
+            cc_num = jint(_cc_raw)
             _evts = params.get("events")
             for ev in (_evts if isinstance(_evts, list) else []):
                 if not isinstance(ev, dict):
                     continue
                 cc_events.append(CCEventDict(
                     cc=cc_num,
-                    beat=ev.get("beat", 0),
-                    value=ev.get("value", 0),
+                    beat=jfloat(ev.get("beat", 0.0)),
+                    value=jint(ev.get("value", 0)),
                 ))
 
         elif tool_name == "addPitchBend":
@@ -637,8 +640,8 @@ def normalize_storpheus_tool_calls(
                 if not isinstance(ev, dict):
                     continue
                 pitch_bends.append(PitchBendDict(
-                    beat=ev.get("beat", 0),
-                    value=ev.get("value", 0),
+                    beat=jfloat(ev.get("beat", 0.0)),
+                    value=jint(ev.get("value", 0)),
                 ))
 
         elif tool_name == "addAftertouch":
@@ -647,11 +650,11 @@ def normalize_storpheus_tool_calls(
                 if not isinstance(ev, dict):
                     continue
                 entry = AftertouchDict(
-                    beat=ev.get("beat", 0),
-                    value=ev.get("value", 0),
+                    beat=jfloat(ev.get("beat", 0.0)),
+                    value=jint(ev.get("value", 0)),
                 )
                 if "pitch" in ev:
-                    entry["pitch"] = ev["pitch"]
+                    entry["pitch"] = jint(ev["pitch"])
                 aftertouch.append(entry)
 
     return StorpheusResultBucket(

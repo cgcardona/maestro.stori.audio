@@ -36,6 +36,8 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+from app.contracts.json_types import JSONValue
+
 
 class GenerationStepDict(TypedDict, total=False):
     """Wire format for one MIDI generation step in the planner JSON.
@@ -74,7 +76,7 @@ class GenerationStepDict(TypedDict, total=False):
     tempo: int
     bars: int
     key: str
-    constraints: dict[str, object]
+    constraints: dict[str, JSONValue]
     trackName: str  # noqa: N815
 
 

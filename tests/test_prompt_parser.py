@@ -704,7 +704,9 @@ class TestMaestroExtensions:
         assert "expression" in result.extensions
         expression = result.extensions["expression"]
         assert isinstance(expression, dict)
-        assert "3am" in expression["narrative"]
+        narrative = expression["narrative"]
+        assert isinstance(narrative, str)
+        assert "3am" in narrative
 
     def test_routing_fields_not_in_extensions(self) -> None:
 

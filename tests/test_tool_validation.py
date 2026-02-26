@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from app.contracts.json_types import JSONValue
 from app.core.entity_registry import EntityRegistry
 from app.core.tool_validation import (
     validate_tool_call,
@@ -585,7 +586,7 @@ class TestTargetScopeCheck:
 class TestAddAutomationValidation:
     """stori_add_automation requires trackId (not target), parameter, and points."""
 
-    VALID_POINTS = [{"beat": 0, "value": 0.5}, {"beat": 8, "value": 1.0}]
+    VALID_POINTS: list[JSONValue] = [{"beat": 0, "value": 0.5}, {"beat": 8, "value": 1.0}]
     ALLOWED = {"stori_add_automation"}
 
     def test_valid_automation_call_passes(self) -> None:
@@ -754,7 +755,7 @@ class TestGenerateMidiSchemaRegression:
     def test_legacy_call_without_new_fields_fails(self) -> None:
 
         """A legacy call with only role/style/tempo/bars (the old required set) now fails."""
-        legacy_params = {"role": "drums", "style": "trap", "tempo": 140, "bars": 8}
+        legacy_params: dict[str, JSONValue] = {"role": "drums", "style": "trap", "tempo": 140, "bars": 8}
         result = validate_tool_call("stori_generate_midi", legacy_params, self.ALLOWED)
         assert not result.valid
         # At minimum trackId, regionId, start_beat must be reported as missing

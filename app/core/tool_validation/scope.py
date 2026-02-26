@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from app.contracts.json_types import JSONValue
 from app.core.entity_registry import EntityRegistry
 
 
 def _check_target_scope(
     tool_name: str,
-    params: dict[str, Any],
+    params: dict[str, JSONValue],
     target_scope: tuple[str, str | None],
     registry: EntityRegistry | None,
 ) -> list[str]:
@@ -31,8 +30,10 @@ def _check_target_scope(
     warnings: list[str] = []
 
     if kind == "track":
-        track_id = params.get("trackId")
-        track_name = params.get("trackName") or params.get("name")
+        _tid_raw = params.get("trackId")
+        track_id = _tid_raw if isinstance(_tid_raw, str) else None
+        _tname_raw = params.get("trackName") or params.get("name")
+        track_name = _tname_raw if isinstance(_tname_raw, str) else None
 
         if track_name and track_name.lower() != name.lower():
             warnings.append(
@@ -46,7 +47,8 @@ def _check_target_scope(
                 )
 
     elif kind == "region":
-        region_name = params.get("name")
+        _rname_raw = params.get("name")
+        region_name = _rname_raw if isinstance(_rname_raw, str) else None
         if region_name and region_name.lower() != name.lower():
             warnings.append(
                 f"Target scope is region:{name} but tool call references region '{region_name}'"

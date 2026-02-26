@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from app.contracts.json_types import JSONValue
 from app.core.tool_validation.models import ValidationError
 from app.core.tool_validation.constants import (
     VALID_SF_SYMBOL_ICONS,
@@ -14,13 +13,14 @@ from app.core.tool_validation.constants import (
 
 def _validate_tool_specific(
     tool_name: str,
-    params: dict[str, Any],
+    params: dict[str, JSONValue],
 ) -> list[ValidationError]:
     """Run tool-specific validation rules."""
     errors: list[ValidationError] = []
 
     if tool_name == "stori_add_midi_track":
-        name = params.get("name", "")
+        _name_raw = params.get("name", "")
+        name = _name_raw if isinstance(_name_raw, str) else ""
         if name and len(name) > NAME_LENGTH_LIMITS["track"]:
             errors.append(ValidationError(
                 field="name",
@@ -35,8 +35,9 @@ def _validate_tool_specific(
             ))
 
     elif tool_name == "stori_add_midi_region":
-        name = params.get("name")
-        if name and len(name) > NAME_LENGTH_LIMITS["region"]:
+        _name_raw = params.get("name")
+        region_name = _name_raw if isinstance(_name_raw, str) else None
+        if region_name and len(region_name) > NAME_LENGTH_LIMITS["region"]:
             errors.append(ValidationError(
                 field="name",
                 message=f"Region name exceeds {NAME_LENGTH_LIMITS['region']} characters",
@@ -58,7 +59,8 @@ def _validate_tool_specific(
             ))
 
     elif tool_name == "stori_ensure_bus":
-        name = params.get("name", "")
+        _name_raw = params.get("name", "")
+        name = _name_raw if isinstance(_name_raw, str) else ""
         if name and len(name) > NAME_LENGTH_LIMITS["bus"]:
             errors.append(ValidationError(
                 field="name",
@@ -67,7 +69,8 @@ def _validate_tool_specific(
             ))
 
     elif tool_name == "stori_create_project":
-        name = params.get("name", "")
+        _name_raw = params.get("name", "")
+        name = _name_raw if isinstance(_name_raw, str) else ""
         if name and len(name) > NAME_LENGTH_LIMITS["project"]:
             errors.append(ValidationError(
                 field="name",
@@ -76,7 +79,8 @@ def _validate_tool_specific(
             ))
 
     elif tool_name == "stori_add_insert_effect":
-        effect_type = params.get("type", "").lower()
+        _type_raw = params.get("type", "")
+        effect_type = _type_raw.lower() if isinstance(_type_raw, str) else ""
         valid_effects = {
             "reverb", "delay", "compressor", "eq", "distortion", "filter",
             "chorus", "modulation", "overdrive", "phaser", "flanger", "tremolo",
@@ -92,7 +96,8 @@ def _validate_tool_specific(
             ))
 
     elif tool_name == "stori_set_track_icon":
-        icon = params.get("icon", "")
+        _icon_raw = params.get("icon", "")
+        icon = _icon_raw if isinstance(_icon_raw, str) else ""
         if icon and icon not in VALID_SF_SYMBOL_ICONS:
             errors.append(ValidationError(
                 field="icon",

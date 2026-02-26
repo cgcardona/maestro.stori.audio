@@ -13,6 +13,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from app.core.intent import Intent, IntentResult, Slots, SSEState
+from app.core.intent.models import SlotsExtrasDict
 from app.core.intent_config import IdiomMatch, match_weighted_vibes
 from app.core.planner import ExecutionPlan, build_execution_plan
 from app.core.prompt_parser import ParsedPrompt, TargetSpec, VibeWeight
@@ -317,7 +318,7 @@ class TestWeightedVibes:
 def _make_composing_route(parsed: ParsedPrompt | None = None) -> IntentResult:
 
     """Build a minimal COMPOSING IntentResult for testing."""
-    extras: dict[str, object] = {}
+    extras: SlotsExtrasDict = {}
     if parsed:
         extras["parsed_prompt"] = parsed
     return IntentResult(

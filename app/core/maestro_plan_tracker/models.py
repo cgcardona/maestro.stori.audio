@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.contracts.json_types import ToolCallDict
+from app.contracts.json_types import JSONValue, ToolCallDict
 from app.contracts.llm_types import AssistantMessage, ToolResultMessage
 from app.protocol.events import MaestroEvent
 
@@ -32,8 +32,8 @@ class _ToolCallOutcome:
     either yield them directly (editing path) or put them into a queue
     (agent-team path).
     """
-    enriched_params: dict[str, object]
-    tool_result: dict[str, object]
+    enriched_params: dict[str, JSONValue]
+    tool_result: dict[str, JSONValue]
     sse_events: list[MaestroEvent]
     msg_call: AssistantMessage          # assistant message containing the tool call
     msg_result: ToolResultMessage       # tool response message

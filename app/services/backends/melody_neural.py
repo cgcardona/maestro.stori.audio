@@ -13,9 +13,10 @@ import logging
 from app.contracts.generation_types import GenerationContext
 from app.contracts.json_types import JSONValue, NoteDict
 from app.services.backends.base import (
-    MusicGeneratorBackend,
+    GenerationMetadata,
     GenerationResult,
     GeneratorBackend,
+    MusicGeneratorBackend,
 )
 from app.services.neural.melody_generator import NeuralMelodyGenerator
 from app.core.emotion_vector import EmotionVector, get_emotion_preset
@@ -113,11 +114,10 @@ class MelodyNeuralBackend(MusicGeneratorBackend):
             
             logger.info(f"MelodyNeuralBackend: {len(out)} notes, model={result.model_used}")
             
-            ev_dict: dict[str, object] = {**emotion_vector.to_dict()}
-            meta: dict[str, object] = {
+            meta: GenerationMetadata = {
                 "source": "melody_neural",
                 "model": result.model_used,
-                "emotion_vector": ev_dict,
+                "emotion_vector": emotion_vector.to_dict(),
                 **result.metadata,
             }
             return GenerationResult(

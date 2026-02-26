@@ -10,7 +10,8 @@ Tests proving the integrity guarantees of the contract/hash system:
 
 from __future__ import annotations
 
-from app.contracts.json_types import JSONObject
+from app.contracts.json_types import JSONObject, JSONValue
+from app.contracts.pydantic_types import wrap_dict
 import asyncio
 
 import json
@@ -326,18 +327,18 @@ class TestExecutionAttestation:
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-ic")
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
-                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
+                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=wrap_dict(resolved_args))],
                     msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={"notesAdded": 20, "regionId": "reg-1"},
-                sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
+                sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=wrap_dict(resolved_args))],
                 msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
@@ -511,18 +512,18 @@ class TestReplayAttackPrevention:
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-A")
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
-                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
+                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=wrap_dict(resolved_args))],
                     msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={"notesAdded": 15, "regionId": "reg-1"},
-                sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
+                sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=wrap_dict(resolved_args))],
                 msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 

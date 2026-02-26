@@ -19,14 +19,17 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import Field
 
+from app.contracts.json_types import JSONValue
+from app.contracts.pydantic_types import PydanticJson, unwrap_dict
 from app.models.base import CamelModel
 
-from app.contracts.mcp_types import DAWToolCallMessage, DAWToolResponse, MCPContentBlock, MCPServerInfo, MCPToolDef
+from app.contracts.mcp_types import DAWToolCallMessage, DAWToolResponse, MCPContentBlock, MCPServerInfo, MCPToolDef, MCPToolDefWire
 from app.mcp.server import get_mcp_server, StoriMCPServer
 from app.auth.dependencies import require_valid_token
 from app.auth.tokens import validate_access_code, AccessCodeError
 from app.protocol.emitter import ProtocolSerializationError, emit
 from app.protocol.events import ErrorEvent, MCPMessageEvent, MCPPingEvent
+from app.auth.tokens import TokenClaims
 from app.protocol.validation import ProtocolGuard
 
 router = APIRouter()
@@ -60,7 +63,11 @@ def _is_valid_connection_id(connection_id: str) -> bool:
 class MCPToolCallRequest(CamelModel):
     """Request to call an MCP tool."""
     name: str
-    arguments: dict[str, object] = {}
+    arguments: dict[str, PydanticJson] = {}
+
+    def arguments_as_json(self) -> dict[str, JSONValue]:
+        """Return the arguments as a ``dict[str, JSONValue]`` for internal use."""
+        return unwrap_dict(self.arguments)
 
 
 class MCPToolCallResponse(CamelModel):
@@ -73,7 +80,11 @@ class MCPToolCallResponse(CamelModel):
 class ToolResponseBody(CamelModel):
     """Body for DAW tool-response POST."""
     request_id: str
-    result: dict[str, object] = {}
+    result: dict[str, PydanticJson] = {}
+
+    def result_as_json(self) -> dict[str, JSONValue]:
+        """Return the result as a ``dict[str, JSONValue]`` for internal use."""
+        return unwrap_dict(self.result)
 
 
 # =============================================================================
@@ -81,7 +92,7 @@ class ToolResponseBody(CamelModel):
 # =============================================================================
 
 
-def _parse_daw_response(raw: object) -> DAWToolResponse:
+def _parse_daw_response(raw: JSONValue) -> DAWToolResponse:
     """Parse an untyped WebSocket/HTTP payload into a typed DAWToolResponse.
 
     This is the single deserialization boundary for tool responses arriving
@@ -99,7 +110,7 @@ def _parse_daw_response(raw: object) -> DAWToolResponse:
 
 class MCPToolListResponse(CamelModel):
     """Response containing the list of available MCP tools."""
-    tools: list[MCPToolDef]
+    tools: list[MCPToolDefWire]
 
 
 class ConnectionCreatedResponse(CamelModel):
@@ -154,23 +165,25 @@ class ToolResponseReceivedResponse(CamelModel):
 
 @router.get("/tools")
 async def list_tools(
-    _auth: object = Depends(require_valid_token),
+    _auth: TokenClaims = Depends(require_valid_token),
 ) -> MCPToolListResponse:
     """list all available MCP tools. Requires authentication."""
     server = get_mcp_server()
-    return MCPToolListResponse(tools=server.list_tools())
+    return MCPToolListResponse(
+        tools=[MCPToolDefWire.model_validate(t) for t in server.list_tools()]
+    )
 
 
 @router.get("/tools/{tool_name}")
 async def get_tool(
     tool_name: str,
-    _auth: object = Depends(require_valid_token),
-) -> MCPToolDef:
+    _auth: TokenClaims = Depends(require_valid_token),
+) -> MCPToolDefWire:
     """Get details about a specific tool. Requires authentication."""
     server = get_mcp_server()
     for tool in server.list_tools():
         if tool["name"] == tool_name:
-            return tool
+            return MCPToolDefWire.model_validate(tool)
     raise HTTPException(status_code=404, detail=f"Tool not found: {tool_name}")
 
 
@@ -178,11 +191,11 @@ async def get_tool(
 async def call_tool(
     tool_name: str,
     request: MCPToolCallRequest,
-    _auth: object = Depends(require_valid_token),
+    _auth: TokenClaims = Depends(require_valid_token),
 ) -> MCPToolCallResponse:
     """Call an MCP tool. Requires authentication. Returns 400 on validation failure."""
     server = get_mcp_server()
-    result = await server.call_tool(tool_name, request.arguments)
+    result = await server.call_tool(tool_name, request.arguments_as_json())
     if result.bad_request:
         detail = result.content[0].get("text", "Invalid tool or arguments") if result.content else "Invalid tool or arguments"
         raise HTTPException(status_code=400, detail=detail)
@@ -195,7 +208,7 @@ async def call_tool(
 
 @router.get("/info")
 async def server_info(
-    _auth: object = Depends(require_valid_token),
+    _auth: TokenClaims = Depends(require_valid_token),
 ) -> MCPServerInfo:
     """Get MCP server information. Requires authentication."""
     server = get_mcp_server()
@@ -290,7 +303,7 @@ async def daw_websocket(
 
 @router.post("/connection")
 async def create_connection(
-    _auth: object = Depends(require_valid_token),
+    _auth: TokenClaims = Depends(require_valid_token),
 ) -> ConnectionCreatedResponse:
     """
     Obtain a server-issued connection ID for the SSE flow.
@@ -304,7 +317,7 @@ async def create_connection(
 @router.get("/stream/{connection_id}")
 async def tool_stream(
     connection_id: str,
-    _auth: object = Depends(require_valid_token),
+    _auth: TokenClaims = Depends(require_valid_token),
 ) -> StreamingResponse:
     """
     SSE endpoint for receiving tool calls. Requires authentication.
@@ -355,7 +368,7 @@ async def tool_stream(
 async def post_tool_response(
     connection_id: str,
     body: ToolResponseBody,
-    _auth: object = Depends(require_valid_token),
+    _auth: TokenClaims = Depends(require_valid_token),
 ) -> ToolResponseReceivedResponse:
     """
     Endpoint for DAW to post tool execution results. Requires authentication.
@@ -370,6 +383,6 @@ async def post_tool_response(
     server.receive_tool_response(
         connection_id,
         body.request_id,
-        _parse_daw_response(body.result),
+        _parse_daw_response(body.result_as_json()),
     )
     return ToolResponseReceivedResponse(status="ok")

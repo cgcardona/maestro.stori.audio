@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from app.core.intent.models import SlotsExtrasDict
 
 from app.core.intent_config import Intent, IdiomMatch, match_producer_idiom
 from app.core.intent.models import IntentResult, Slots
@@ -44,7 +44,7 @@ def _route_from_parsed_prompt(parsed: ParsedPrompt) -> IntentResult:
 
     Mode is a hard routing signal — no pattern matching or LLM classification.
     """
-    extras: dict[str, Any] = {"parsed_prompt": parsed}
+    extras: SlotsExtrasDict = {"parsed_prompt": parsed}
 
     target_type: str | None = None
     target_name: str | None = None

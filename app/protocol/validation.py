@@ -8,9 +8,8 @@ violations log at WARNING level. The guard never crashes the stream.
 from __future__ import annotations
 
 import logging
-from typing import Any
-
 from app.config import settings
+from app.contracts.json_types import JSONObject
 from app.protocol.registry import EVENT_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -25,7 +24,7 @@ class ProtocolGuard:
         self._has_complete = False
         self._seen_types: list[str] = []
 
-    def check_event(self, event_type: str, data: dict[str, Any]) -> list[str]:
+    def check_event(self, event_type: str, data: JSONObject) -> list[str]:
         """Validate an event before emission. Returns list of violations (empty = ok)."""
         violations: list[str] = []
 

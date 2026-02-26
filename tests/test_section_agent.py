@@ -35,7 +35,8 @@ from app.core.maestro_agent_teams.section_agent import (
     _run_section_child,
 )
 from app.core.maestro_plan_tracker import _ToolCallOutcome
-from app.contracts.json_types import NoteDict, SectionDict, ToolCallDict
+from app.contracts.json_types import JSONValue, NoteDict, SectionDict, ToolCallDict, json_list
+from app.contracts.pydantic_types import wrap_dict
 from app.contracts.llm_types import ChatMessage
 from app.protocol.events import (
     GeneratorCompleteEvent,
@@ -54,7 +55,7 @@ class _CapturedToolCallDict(TypedDict):
     """Test helper: captured tool call name + resolved args."""
 
     name: str
-    args: dict[str, object]
+    args: dict[str, JSONValue]
 
 
 def _trace() -> TraceContext:
@@ -171,7 +172,7 @@ def _ok_region_outcome(tc_id: str = "r1", region_id: str = "reg-001") -> _ToolCa
     return _ToolCallOutcome(
         enriched_params={"startBeat": 0, "durationBeats": 16, "trackId": "trk-1"},
         tool_result={"regionId": region_id, "trackId": "trk-1"},
-        sse_events=[ToolCallEvent(id=tc_id, name="stori_add_midi_region", params={"startBeat": 0, "durationBeats": 16, "trackId": "trk-1"})],
+        sse_events=[ToolCallEvent(id=tc_id, name="stori_add_midi_region", params=wrap_dict({"startBeat": 0, "durationBeats": 16, "trackId": "trk-1"}))],
         msg_call={"role": "assistant", "tool_calls": []},
         msg_result={"role": "tool", "tool_call_id": tc_id, "content": "{}"},
         skipped=False,
@@ -186,10 +187,10 @@ def _ok_generate_outcome(tc_id: str = "g1", notes_count: int = 24) -> _ToolCallO
         tool_result={"notesAdded": notes_count, "regionId": "reg-001", "trackId": "trk-1"},
         sse_events=[
             GeneratorStartEvent(role="drums", agent_id="_unset_", style="house", bars=4, start_beat=0, label="Generating drums"),
-            ToolCallEvent(id=tc_id, name="stori_add_notes", params={
+            ToolCallEvent(id=tc_id, name="stori_add_notes", params=wrap_dict({
                 "trackId": "trk-1", "regionId": "reg-001",
-                "notes": [NoteDict(pitch=36, start_beat=0, duration_beats=1)] * notes_count,
-            }),
+                "notes": json_list([NoteDict(pitch=36, start_beat=0, duration_beats=1)] * notes_count),
+            })),
             GeneratorCompleteEvent(role="drums", agent_id="_unset_", note_count=notes_count, duration_ms=100),
         ],
         msg_call={"role": "assistant", "tool_calls": []},
@@ -330,7 +331,7 @@ class TestRunSectionChild:
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         call_count = 0
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             nonlocal call_count
             call_count += 1
             if tc_name == "stori_add_midi_region":
@@ -375,7 +376,7 @@ class TestRunSectionChild:
             skipped=False,
         )
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             return bad_region
 
         with patch(
@@ -405,7 +406,7 @@ class TestRunSectionChild:
         store = StateStore(conversation_id="test-sc-gen-fail")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _failed_generate_outcome(tc_id)
@@ -438,7 +439,7 @@ class TestRunSectionChild:
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         captured_args: list[_CapturedToolCallDict] = []
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             captured_args.append(_CapturedToolCallDict(name=tc_name, args=resolved_args))
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
@@ -481,7 +482,7 @@ class TestSectionChildDrumSignaling:
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id, notes_count=12)
@@ -529,7 +530,7 @@ class TestSectionChildDrumSignaling:
             msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             return bad_region
 
         with patch(
@@ -562,7 +563,7 @@ class TestSectionChildDrumSignaling:
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _failed_generate_outcome(tc_id)
@@ -605,7 +606,7 @@ class TestSectionChildBassWaiting:
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
         bass_started = False
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             nonlocal bass_started
             bass_started = True
             if tc_name == "stori_add_midi_region":
@@ -646,7 +647,7 @@ class TestSectionChildBassWaiting:
         store = StateStore(conversation_id="test-bass-nosig")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -684,7 +685,7 @@ class TestSectionChildSSE:
         store = StateStore(conversation_id="test-sse")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -729,7 +730,7 @@ class TestSectionChildException:
         store = StateStore(conversation_id="test-exc")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> None:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> None:
             raise RuntimeError("unexpected crash")
 
         with patch(
@@ -761,7 +762,7 @@ class TestSectionChildException:
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> None:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> None:
             raise RuntimeError("boom")
 
         with patch(
@@ -801,7 +802,7 @@ class TestDispatchSectionChildren:
 
         store = StateStore(conversation_id="test-dispatch")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
-        all_results: list[dict[str, object]] = []
+        all_results: list[dict[str, JSONValue]] = []
         collected: list[ToolCallDict] = []
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
@@ -814,14 +815,14 @@ class TestDispatchSectionChildren:
         track_outcome = _ToolCallOutcome(
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
-            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params={})],
+            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params=wrap_dict({}))],
             msg_call={"role": "assistant"},
             msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
         call_log: list[str] = []
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             call_log.append(tc_name)
             if tc_name == "stori_add_midi_track":
                 return track_outcome
@@ -975,7 +976,7 @@ class TestDispatchSectionChildren:
         r1 = _region_tc("r1")
         g1 = _generate_tc("g1")
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -1048,13 +1049,13 @@ class TestDispatchSectionChildren:
 
         store = StateStore(conversation_id="test-planstep-completed")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
-        all_results: list[dict[str, object]] = []
+        all_results: list[dict[str, JSONValue]] = []
         collected: list[ToolCallDict] = []
 
         r1 = _region_tc("r1", start_beat=0, duration=16)
         g1 = _generate_tc("g1", role="drums")
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -1152,7 +1153,7 @@ class TestDispatchSectionChildren:
         event_types = {e.type for e in gen_outcome.sse_events}
         assert "generatorStart" in event_types or "generatorComplete" in event_types
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
 
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
@@ -1570,7 +1571,7 @@ class TestSectionChildStatusEvents:
         store = StateStore(conversation_id="test-status")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
 
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
@@ -1613,7 +1614,7 @@ class TestSectionChildStatusEvents:
         store = StateStore(conversation_id="test-status-done")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
 
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
@@ -1693,7 +1694,7 @@ class TestExpressionRefinementStreaming:
         cc_outcome = _ToolCallOutcome(
             enriched_params={"ccNumber": 1},
             tool_result={"success": True},
-            sse_events=[ToolCallEvent(id="", name="stori_add_midi_cc", params={"ccNumber": 1})],
+            sse_events=[ToolCallEvent(id="", name="stori_add_midi_cc", params=wrap_dict({"ccNumber": 1}))],
             msg_call={"role": "assistant"},
             msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             skipped=False,
@@ -1874,7 +1875,7 @@ class TestServerOwnedRetries:
 
         store = StateStore(conversation_id="test-server-retry")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
-        all_results: list[dict[str, object]] = []
+        all_results: list[dict[str, JSONValue]] = []
         collected: list[ToolCallDict] = []
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
@@ -1887,14 +1888,14 @@ class TestServerOwnedRetries:
         track_outcome = _ToolCallOutcome(
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
-            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params={})],
+            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params=wrap_dict({}))],
             msg_call={"role": "assistant"},
             msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
         _gen_attempts = 0
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
 
             nonlocal _gen_attempts
             if tc_name == "stori_add_midi_track":
@@ -2003,12 +2004,12 @@ class TestServerOwnedRetries:
         track_outcome = _ToolCallOutcome(
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
-            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params={})],
+            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params=wrap_dict({}))],
             msg_call={"role": "assistant"},
             msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
 
             if tc_name == "stori_add_midi_track":
                 return track_outcome
@@ -2103,12 +2104,12 @@ class TestServerOwnedRetries:
         track_outcome = _ToolCallOutcome(
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
-            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params={})],
+            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params=wrap_dict({}))],
             msg_call={"role": "assistant"},
             msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
 
             if tc_name == "stori_add_midi_track":
                 return track_outcome
@@ -2356,7 +2357,7 @@ class TestPreEmitGeneratorEvents:
             *,
             tc_id: str,
             tc_name: str,
-            resolved_args: dict[str, object],
+            resolved_args: dict[str, JSONValue],
             pre_emit_callback: Callable[..., Awaitable[None]] | None = None,
             **kw: object,
         ) -> _ToolCallOutcome:

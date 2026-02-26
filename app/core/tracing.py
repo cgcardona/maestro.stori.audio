@@ -32,6 +32,10 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Generator
 
+from typing_extensions import TypedDict
+
+from app.contracts.json_types import JSONValue
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,6 +43,35 @@ class SpanStatus(str, Enum):
     """Status of a trace span."""
     OK = "ok"
     ERROR = "error"
+
+
+class SpanEventDict(TypedDict):
+    """A single structured event recorded within a span."""
+    name: str
+    timestamp: float
+    attributes: dict[str, JSONValue]
+
+
+class SpanDict(TypedDict):
+    """Serialised form of a ``Span`` (returned by ``Span.to_dict()``)."""
+    name: str
+    trace_id: str
+    span_id: str
+    parent_span_id: str | None
+    start_time: float
+    end_time: float | None
+    duration_ms: float | None
+    status: str
+    attributes: dict[str, JSONValue]
+    events: list[SpanEventDict]
+
+
+class TraceDict(TypedDict):
+    """Serialised form of a ``TraceContext`` (returned by ``TraceContext.to_dict()``)."""
+    trace_id: str
+    conversation_id: str | None
+    user_id: str | None
+    spans: list[SpanDict]
 
 
 @dataclass
@@ -51,48 +84,48 @@ class Span:
     start_time: float
     end_time: float | None = None
     status: SpanStatus = SpanStatus.OK
-    attributes: dict[str, object] = field(default_factory=dict)
-    events: list[dict[str, object]] = field(default_factory=list)
+    attributes: dict[str, JSONValue] = field(default_factory=dict)
+    events: list[SpanEventDict] = field(default_factory=list)
 
-    def set_attribute(self, key: str, value: object) -> None:
+    def set_attribute(self, key: str, value: JSONValue) -> None:
         """Set a structured attribute on this span (e.g. ``intent``, ``tool_name``)."""
         self.attributes[key] = value
 
-    def add_event(self, name: str, attributes: dict[str, object] | None = None) -> None:
+    def add_event(self, name: str, attributes: dict[str, JSONValue] | None = None) -> None:
         """Add an event to the span."""
-        self.events.append({
-            "name": name,
-            "timestamp": time.time(),
-            "attributes": attributes or {},
-        })
-    
+        self.events.append(SpanEventDict(
+            name=name,
+            timestamp=time.time(),
+            attributes=attributes or {},
+        ))
+
     def set_error(self, error: Exception) -> None:
         """Mark the span as errored and record the exception type and message."""
         self.status = SpanStatus.ERROR
         self.set_attribute("error.type", type(error).__name__)
         self.set_attribute("error.message", str(error))
-    
+
     @property
     def duration_ms(self) -> float | None:
         """Get span duration in milliseconds."""
         if self.end_time is None:
             return None
         return (self.end_time - self.start_time) * 1000
-    
-    def to_dict(self) -> dict[str, object]:
+
+    def to_dict(self) -> SpanDict:
         """Serialise to a structured log-friendly dict (used by ``log_span``)."""
-        return {
-            "name": self.name,
-            "trace_id": self.trace_id,
-            "span_id": self.span_id,
-            "parent_span_id": self.parent_span_id,
-            "start_time": self.start_time,
-            "end_time": self.end_time,
-            "duration_ms": self.duration_ms,
-            "status": self.status.value,
-            "attributes": self.attributes,
-            "events": self.events,
-        }
+        return SpanDict(
+            name=self.name,
+            trace_id=self.trace_id,
+            span_id=self.span_id,
+            parent_span_id=self.parent_span_id,
+            start_time=self.start_time,
+            end_time=self.end_time,
+            duration_ms=self.duration_ms,
+            status=self.status.value,
+            attributes=self.attributes,
+            events=self.events,
+        )
 
 
 @dataclass
@@ -121,14 +154,14 @@ class TraceContext:
     current_span: Span | None = None
     _span_stack: list[Span] = field(default_factory=list)
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> TraceDict:
         """Serialise to a structured dict (excludes internal stack)."""
-        return {
-            "trace_id": self.trace_id,
-            "conversation_id": self.conversation_id,
-            "user_id": self.user_id,
-            "spans": [s.to_dict() for s in self.spans],
-        }
+        return TraceDict(
+            trace_id=self.trace_id,
+            conversation_id=self.conversation_id,
+            user_id=self.user_id,
+            spans=[s.to_dict() for s in self.spans],
+        )
 
 
 # Context variable for request-scoped trace context
@@ -171,7 +204,7 @@ def clear_trace_context() -> None:
 def trace_span(
     ctx: TraceContext,
     name: str,
-    attributes: dict[str, object] | None = None,
+    attributes: dict[str, JSONValue] | None = None,
 ) -> Generator[Span, None, None]:
     """
     Context manager for tracing a span.
@@ -212,7 +245,7 @@ def trace_span(
 
 def log_span(span: Span) -> None:
     """Log a completed span with structured data."""
-    log_data: dict[str, object] = {
+    log_data: dict[str, JSONValue] = {
         "trace_id": span.trace_id,
         "span_id": span.span_id,
         "span_name": span.name,
@@ -257,7 +290,7 @@ def log_intent(
 def log_tool_call(
     trace_id: str,
     tool_name: str,
-    params: dict[str, object],
+    params: dict[str, JSONValue],
     success: bool,
     error: str | None = None,
 ) -> None:

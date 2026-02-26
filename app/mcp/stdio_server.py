@@ -20,7 +20,22 @@ import sys
 import json
 import asyncio
 import logging
-from app.contracts.mcp_types import MCPContentBlock
+from app.contracts.json_types import JSONObject, JSONValue
+from app.contracts.mcp_types import (
+    MCPCallResponse,
+    MCPCallResult,
+    MCPCapabilitiesResult,
+    MCPContentBlock,
+    MCPErrorDetail,
+    MCPErrorResponse,
+    MCPInitializeResponse,
+    MCPInitializeResult,
+    MCPMethodResponse,
+    MCPSuccessResponse,
+    MCPToolsListResponse,
+    MCPToolsListResult,
+    MCPToolsCapability,
+)
 
 import httpx
 
@@ -71,7 +86,7 @@ class StdioMCPServer:
                     break
                 
                 raw = json.loads(line.decode())
-                message: dict[str, object] = raw if isinstance(raw, dict) else {}
+                message: JSONObject = raw if isinstance(raw, dict) else {}
                 response = await self.handle_message(message)
                 
                 if response:
@@ -82,16 +97,16 @@ class StdioMCPServer:
             except Exception as e:
                 logger.exception(f"Error handling message: {e}")
     
-    def send_response(self, message: dict[str, object]) -> None:
+    def send_response(self, message: MCPMethodResponse) -> None:
         """Send a response via stdout."""
         sys.stdout.write(json.dumps(message) + "\n")
         sys.stdout.flush()
 
-    async def _proxy_daw_tool(self, tool_name: str, arguments: dict[str, object]) -> ToolCallResult:
+    async def _proxy_daw_tool(self, tool_name: str, arguments: dict[str, JSONValue]) -> ToolCallResult:
         """Proxy a DAW tool call to the Maestro backend (which has the WebSocket)."""
         from app.mcp.server import ToolCallResult
         url = f"{self._maestro_url}/api/v1/mcp/tools/{tool_name}/call"
-        payload: dict[str, object] = {"name": tool_name, "arguments": arguments}
+        payload: JSONObject = {"name": tool_name, "arguments": arguments}
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self._mcp_token}",
@@ -100,7 +115,7 @@ class StdioMCPServer:
             async with httpx.AsyncClient(timeout=35.0) as client:
                 resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
-            data: dict[str, object] = resp.json()
+            data: JSONObject = resp.json() if isinstance(resp.json(), dict) else {}
             raw_content = data.get("content")
             content: list[MCPContentBlock]
             if isinstance(raw_content, list):
@@ -136,41 +151,44 @@ class StdioMCPServer:
                 is_error=True,
             )
 
-    async def handle_message(self, message: dict[str, object]) -> dict[str, object] | None:
+    async def handle_message(self, message: JSONObject) -> MCPMethodResponse | None:
         """Handle an incoming MCP message."""
         method = str(message.get("method", ""))
-        msg_id = message.get("id")
+        _raw_id = message.get("id")
+        msg_id: str | int | None = (
+            _raw_id if isinstance(_raw_id, (str, int)) else None
+        )
         raw_params = message.get("params")
-        params: dict[str, object] = raw_params if isinstance(raw_params, dict) else {}
-        
+        params: JSONObject = raw_params if isinstance(raw_params, dict) else {}
+
         logger.debug(f"Received: {method}")
-        
+
         if method == "initialize":
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "protocolVersion": "2024-11-05",
-                    "serverInfo": self.mcp.get_server_info(),
-                    "capabilities": {
-                        "tools": {},
-                    }
-                }
-            }
-        
+            return MCPInitializeResponse(
+                jsonrpc="2.0",
+                id=msg_id,
+                result=MCPInitializeResult(
+                    protocolVersion="2024-11-05",
+                    serverInfo=self.mcp.get_server_info(),
+                    capabilities=MCPCapabilitiesResult(
+                        tools=MCPToolsCapability(),
+                    ),
+                ),
+            )
+
         elif method == "tools/list":
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "tools": self.mcp.list_tools()
-                }
-            }
-        
+            return MCPToolsListResponse(
+                jsonrpc="2.0",
+                id=msg_id,
+                result=MCPToolsListResult(
+                    tools=self.mcp.list_tools(),
+                ),
+            )
+
         elif method == "tools/call":
             tool_name = str(params.get("name", ""))
             raw_args = params.get("arguments")
-            arguments: dict[str, object] = raw_args if isinstance(raw_args, dict) else {}
+            arguments: dict[str, JSONValue] = raw_args if isinstance(raw_args, dict) else {}
 
             # DAW tools: proxy to Maestro backend if configured (backend has the WebSocket)
             if (
@@ -181,14 +199,14 @@ class StdioMCPServer:
             else:
                 result = await self.mcp.call_tool(tool_name, arguments)
 
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": result.content,
-                    "isError": result.is_error,
-                }
-            }
+            return MCPCallResponse(
+                jsonrpc="2.0",
+                id=msg_id,
+                result=MCPCallResult(
+                    content=result.content,
+                    isError=result.is_error,
+                ),
+            )
         
         elif method == "notifications/initialized":
             # Client is ready, no response needed
@@ -196,22 +214,22 @@ class StdioMCPServer:
             return None
         
         elif method == "ping":
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {}
-            }
-        
+            return MCPSuccessResponse(
+                jsonrpc="2.0",
+                id=msg_id,
+                result={},
+            )
+
         else:
             logger.warning(f"Unknown method: {method}")
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "error": {
-                    "code": -32601,
-                    "message": f"Method not found: {method}"
-                }
-            }
+            return MCPErrorResponse(
+                jsonrpc="2.0",
+                id=msg_id,
+                error=MCPErrorDetail(
+                    code=-32601,
+                    message=f"Method not found: {method}",
+                ),
+            )
 
 
 async def main() -> None:

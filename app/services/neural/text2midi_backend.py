@@ -15,9 +15,10 @@ import logging
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from app.contracts.json_types import NoteDict
+from app.services.backends.base import GenerationMetadata
 
 if TYPE_CHECKING:
     from app.services.neural.melody_generator import MelodyGenerationRequest, MelodyGenerationResult
@@ -30,17 +31,22 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Text2MidiResult:
-    """Result from text2midi generation."""
+    """Result from text2midi generation.
+
+    Uses ``GenerationMetadata`` (the shared generation result bag) so that the
+    metadata is directly assignable to ``MelodyGenerationResult.metadata`` and
+    ``GenerationResult.metadata`` without conversion.
+    """
     notes: list[NoteDict]
     success: bool
     midi_path: str | None = None
     model_used: str = "text2midi"
-    metadata: dict[str, Any] | None = None
+    metadata: GenerationMetadata | None = None
     error: str | None = None
-    
+
     def __post_init__(self) -> None:
         if self.metadata is None:
-            self.metadata = {}
+            self.metadata = GenerationMetadata()
 
 
 def emotion_to_text_description(

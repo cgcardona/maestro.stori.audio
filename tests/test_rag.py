@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 
-from app.services.rag import RAGService, RAGChunk
+from app.services.rag import RAGService, RAGChunk, is_collection_stats
 from app.core.llm_client import LLMClient
 
 
@@ -354,7 +354,7 @@ def test_get_collection_info(rag_service: RAGService, mock_qdrant: MagicMock) ->
     mock_qdrant.get_collection.return_value = mock_info
     
     info = rag_service.get_collection_info()
-    assert "points_count" in info
+    assert is_collection_stats(info), f"Expected stats, got error: {info}"
     assert info["points_count"] == 61
     assert info["name"] == "stori_docs"
 

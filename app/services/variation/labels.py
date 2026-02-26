@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from app.services.variation.note_matching import TIMING_TOLERANCE_BEATS
+
+if TYPE_CHECKING:
+    from app.models.variation import NoteChange
 
 
 def _beat_to_bar(beat: float, beats_per_bar: int = 4) -> int:
@@ -19,7 +22,7 @@ def _generate_bar_label(start_bar: int, end_bar: int) -> str:
     return f"Bars {start_bar}-{end_bar}"
 
 
-def _detect_change_tags(note_changes: list[Any]) -> list[str]:
+def _detect_change_tags(note_changes: list[NoteChange]) -> list[str]:
     """Detect what types of changes are present in a phrase."""
     tags: set[str] = set()
 

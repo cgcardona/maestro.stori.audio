@@ -38,6 +38,8 @@ from app.core.maestro_agent_teams.section_agent import (
     _run_section_child,
 )
 from app.core.expansion import ToolCall
+from app.contracts.json_types import JSONValue
+from app.contracts.pydantic_types import wrap_dict
 from app.core.maestro_plan_tracker import _ToolCallOutcome
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
@@ -301,13 +303,13 @@ class TestSingleSectionLockdown:
 
         captured_params: dict[str, dict[str, object]] = {}
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 captured_params["region"] = dict(resolved_args)
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
-                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
+                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=wrap_dict(resolved_args))],
                     msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             if tc_name == "stori_generate_midi":
@@ -315,7 +317,7 @@ class TestSingleSectionLockdown:
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"notesAdded": 20, "regionId": "reg-1"},
-                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
+                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=wrap_dict(resolved_args))],
                     msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
@@ -537,18 +539,18 @@ class TestExecutionAttestation:
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-ic-hash")
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, JSONValue], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
-                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
+                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=wrap_dict(resolved_args))],
                     msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={"notesAdded": 30, "regionId": "reg-1"},
-                sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
+                sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=wrap_dict(resolved_args))],
                 msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 

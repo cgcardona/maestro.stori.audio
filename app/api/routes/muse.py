@@ -23,9 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.contracts.json_types import (
     AftertouchDict,
     CCEventDict,
+    JSONValue,
     PitchBendDict,
     RegionMetadataWire,
+    jfloat,
+    jint,
 )
+from app.contracts.pydantic_types import PydanticJson, wrap_dict, unwrap_dict
 from app.auth.dependencies import require_valid_token
 from app.core.state_store import get_or_create_store
 from app.core.tracing import create_trace_context
@@ -70,7 +74,7 @@ class SaveVariationRequest(BaseModel):
     conversation_id: str = "default"
     parent_variation_id: str | None = None
     parent2_variation_id: str | None = None
-    phrases: list[dict[str, object]] = Field(default_factory=list)
+    phrases: list[dict[str, PydanticJson]] = Field(default_factory=list)
     affected_tracks: list[str] = Field(default_factory=list)
     affected_regions: list[str] = Field(default_factory=list)
     beat_range: tuple[float, float] = (0.0, 8.0)
@@ -168,7 +172,7 @@ class CheckoutExecutionStats(BaseModel):
             "Identical hashes guarantee identical execution plans."
         )
     )
-    events: list[dict[str, object]] = Field(
+    events: list[dict[str, PydanticJson]] = Field(
         description=(
             "Ordered list of SSE event payloads emitted during execution. "
             "Each element is a raw dict matching the wire format of a MaestroEvent subclass."
@@ -276,43 +280,46 @@ async def save_variation(
     controller changes) and writes it to the variations table.
     """
     domain_phrases: list[DomainPhrase] = []
-    for p in req.phrases:
+    for p_raw in req.phrases:
+        p = unwrap_dict(p_raw)  # dict[str, JSONValue] — known phrase shape
         note_changes: list[DomainNoteChange] = []
-        _raw_nc = p.get("note_changes", [])
+        _raw_nc: JSONValue = p.get("note_changes", [])
         for nc in (_raw_nc if isinstance(_raw_nc, list) else []):
             if not isinstance(nc, dict):
                 continue
+            _nc_before = nc.get("before")
+            _nc_after = nc.get("after")
             note_changes.append(DomainNoteChange(
                 note_id=str(nc.get("note_id", "")),
                 change_type=_parse_change_type(str(nc.get("change_type", ""))),
-                before=MidiNoteSnapshot(**nc["before"]) if isinstance(nc.get("before"), dict) else None,
-                after=MidiNoteSnapshot(**nc["after"]) if isinstance(nc.get("after"), dict) else None,
+                before=MidiNoteSnapshot.model_validate(_nc_before) if isinstance(_nc_before, dict) else None,
+                after=MidiNoteSnapshot.model_validate(_nc_after) if isinstance(_nc_after, dict) else None,
             ))
-        _raw_cc_events = p.get("cc_events", [])
+        _raw_cc_events: JSONValue = p.get("cc_events", [])
         _cc_events: list[CCEventDict] = [
-            CCEventDict(cc=int(e.get("cc", 0)), beat=float(e.get("beat", 0)), value=int(e.get("value", 0)))
+            CCEventDict(cc=jint(e.get("cc", 0)), beat=jfloat(e.get("beat", 0.0)), value=jint(e.get("value", 0)))
             for e in (_raw_cc_events if isinstance(_raw_cc_events, list) else [])
             if isinstance(e, dict)
         ]
-        _raw_pb = p.get("pitch_bends", [])
+        _raw_pb: JSONValue = p.get("pitch_bends", [])
         _pitch_bends: list[PitchBendDict] = [
-            PitchBendDict(beat=float(e.get("beat", 0)), value=int(e.get("value", 0)))
+            PitchBendDict(beat=jfloat(e.get("beat", 0.0)), value=jint(e.get("value", 0)))
             for e in (_raw_pb if isinstance(_raw_pb, list) else [])
             if isinstance(e, dict)
         ]
-        _raw_at = p.get("aftertouch", [])
+        _raw_at: JSONValue = p.get("aftertouch", [])
         _aftertouch: list[AftertouchDict] = []
         for at_raw in (_raw_at if isinstance(_raw_at, list) else []):
             if not isinstance(at_raw, dict):
                 continue
             at_ev: AftertouchDict = {
-                "beat": float(at_raw.get("beat", 0)),
-                "value": int(at_raw.get("value", 0)),
+                "beat": jfloat(at_raw.get("beat", 0.0)),
+                "value": jint(at_raw.get("value", 0)),
             }
             if "pitch" in at_raw:
-                at_ev["pitch"] = int(at_raw["pitch"])
+                at_ev["pitch"] = jint(at_raw["pitch"])
             _aftertouch.append(at_ev)
-        _raw_tags = p.get("tags", [])
+        _raw_tags: JSONValue = p.get("tags", [])
         _tags: list[str] = [t for t in _raw_tags if isinstance(t, str)] if isinstance(_raw_tags, list) else []
         _sb = p.get("start_beat", 0.0)
         _eb = p.get("end_beat", 8.0)
@@ -429,7 +436,7 @@ async def checkout(
                 executed=summary.execution.executed,
                 failed=summary.execution.failed,
                 plan_hash=summary.execution.plan_hash,
-                events=list(summary.execution.events),
+                events=[wrap_dict(e) for e in summary.execution.events],
             ),
             head_moved=summary.head_moved,
         )
@@ -482,7 +489,7 @@ async def merge(
                 executed=summary.execution.executed,
                 failed=summary.execution.failed,
                 plan_hash=summary.execution.plan_hash,
-                events=list(summary.execution.events),
+                events=[wrap_dict(e) for e in summary.execution.events],
             ),
             head_moved=summary.head_moved,
         )

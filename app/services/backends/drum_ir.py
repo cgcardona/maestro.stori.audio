@@ -12,9 +12,10 @@ import logging
 from app.contracts.generation_types import GenerationContext
 from app.contracts.json_types import JSONValue, NoteDict
 from app.services.backends.base import (
-    MusicGeneratorBackend,
+    GenerationMetadata,
     GenerationResult,
     GeneratorBackend,
+    MusicGeneratorBackend,
 )
 from app.core.music_spec_ir import MusicSpec, default_drum_spec, GlobalSpec
 from app.services.backends.drum_ir_renderer import DrumRenderResult, render_drum_spec
@@ -115,7 +116,7 @@ class DrumSpecBackend(MusicGeneratorBackend):
             ]
             
             distinct = len(set(n["pitch"] for n in out_notes))
-            meta: dict[str, object] = {
+            meta: GenerationMetadata = {
                 "source": "drum_ir",
                 "groove_template": drum_spec.groove_template,
                 "humanize_profile": global_spec.humanize_profile,

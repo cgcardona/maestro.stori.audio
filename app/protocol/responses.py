@@ -14,8 +14,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.contracts.json_types import EnumDefinitionMap, EventSchemaMap
-from app.contracts.mcp_types import MCPToolDef
+from app.contracts.json_types import EnumDefinitionMap
+from app.contracts.mcp_types import MCPToolDefWire
+from app.contracts.pydantic_types import PydanticJson
 
 
 class ProtocolInfoResponse(BaseModel):
@@ -80,11 +81,11 @@ class ProtocolEventsResponse(BaseModel):
     protocolVersion: str = Field(
         description="Semver string of the protocol version that produced these schemas."
     )
-    events: EventSchemaMap = Field(
+    events: dict[str, PydanticJson] = Field(
         description=(
             "Map from event type name to its JSON Schema object. "
             "Keys are event type strings (e.g. 'complete'); values are "
-            "JSON Schema draft-07 objects (EventSchemaMap = dict[str, dict[str, object]])."
+            "JSON Schema draft-07 objects wrapped as PydanticJson for schema safety."
         )
     )
 
@@ -107,11 +108,11 @@ class ProtocolToolsResponse(BaseModel):
     protocolVersion: str = Field(
         description="Semver string of the protocol version that produced these tool definitions."
     )
-    tools: list[MCPToolDef] = Field(
+    tools: list[MCPToolDefWire] = Field(
         description=(
             "Ordered list of every registered MCP tool definition. "
-            "Each MCPToolDef is a TypedDict with 'name' (str), "
-            "'description' (str), and 'inputSchema' (JSON Schema object)."
+            "Each MCPToolDefWire mirrors MCPToolDef as a Pydantic model with "
+            "'name', 'description', and 'inputSchema' fields."
         )
     )
     toolCount: int = Field(
@@ -151,10 +152,10 @@ class ProtocolSchemaResponse(BaseModel):
             "Stable across identical schema content; changes on any structural edit."
         )
     )
-    events: EventSchemaMap = Field(
+    events: dict[str, PydanticJson] = Field(
         description=(
-            "Map from event type name to its JSON Schema object "
-            "(EventSchemaMap = dict[str, dict[str, object]])."
+            "Map from event type name to its JSON Schema object, "
+            "wrapped as PydanticJson for Pydantic schema-generation safety."
         )
     )
     enums: EnumDefinitionMap = Field(
@@ -164,10 +165,10 @@ class ProtocolSchemaResponse(BaseModel):
             "Used to generate Swift enum types."
         )
     )
-    tools: list[MCPToolDef] = Field(
+    tools: list[MCPToolDefWire] = Field(
         description=(
             "Ordered list of every registered MCP tool definition. "
-            "Each MCPToolDef is a TypedDict with 'name', 'description', and 'inputSchema'."
+            "Each MCPToolDefWire mirrors MCPToolDef as a Pydantic model."
         )
     )
     toolCount: int = Field(

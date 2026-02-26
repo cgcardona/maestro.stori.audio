@@ -9,7 +9,8 @@ import time
 import uuid as _uuid_mod
 from typing import AsyncIterator, Awaitable, Callable
 
-from app.contracts.json_types import NoteDict, RegionMetadataWire
+from app.contracts.json_types import JSONValue, NoteDict, RegionMetadataWire
+from app.contracts.pydantic_types import wrap_dict
 from app.contracts.project_types import ProjectContext
 
 from app.core.entity_context import format_project_context
@@ -115,7 +116,7 @@ async def _handle_composing(
                 name=tc.name,
                 label=_human_label_for_tool(tc.name, tc.params),
                 phase=phase_for_tool(tc.name),
-                params=tc.params,
+                params=wrap_dict(tc.params),
                 proposal=True,
             ))
 
@@ -128,7 +129,7 @@ async def _handle_composing(
                 _active_step_by_track: dict[str, str] = {}
 
                 async def _on_pre_tool(
-                    tool_name: str, params: dict[str, object],
+                    tool_name: str, params: dict[str, JSONValue],
                 ) -> None:
                     """Execution phase: planStepUpdate:active + toolStart."""
                     step = composing_plan_tracker.find_step_for_tool(
@@ -155,7 +156,7 @@ async def _handle_composing(
                     ))
 
                 async def _on_post_tool(
-                    tool_name: str, resolved_params: dict[str, object],
+                    tool_name: str, resolved_params: dict[str, JSONValue],
                 ) -> None:
                     """Execution phase: toolCall with real UUID after success.
 
@@ -173,7 +174,7 @@ async def _handle_composing(
                         name=tool_name,
                         label=label,
                         phase=phase_for_tool(tool_name),
-                        params=emit_params,
+                        params=wrap_dict(emit_params),
                         proposal=False,
                     ))
 
@@ -453,7 +454,7 @@ async def _handle_composing_with_agent_teams(
     _at_route = _create_editing_composition_route(route)
 
     # ── 2. Run Agent Teams — intercept the ``complete`` event ──
-    _agent_complete: dict[str, object] | None = None  # boundary: SSE complete event
+    _agent_complete: dict[str, JSONValue] | None = None  # parse boundary: SSE complete event
     _SSE_PREFIX = "data: "
 
     async for event_str in _handle_composition_agent_team(
@@ -592,7 +593,10 @@ async def _handle_composing_with_agent_teams(
     )
     _success = bool(_success_raw)
     _warnings_raw = _agent_complete.get("warnings") if _agent_complete else None
-    _warnings: list[str] | None = _warnings_raw if isinstance(_warnings_raw, list) else None
+    _warnings: list[str] | None = (
+        [str(w) for w in _warnings_raw if w is not None]
+        if isinstance(_warnings_raw, list) else None
+    )
     _sv_raw = _agent_complete.get("stateVersion") if _agent_complete else None
     _state_version: int | None = _sv_raw if isinstance(_sv_raw, int) else None
 

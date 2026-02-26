@@ -29,7 +29,8 @@ import re
 import uuid as _uuid_mod
 from dataclasses import dataclass, field
 from app.contracts.generation_types import CompositionContext
-from app.contracts.json_types import NoteDict, ToolCallDict
+from app.contracts.json_types import JSONValue, NoteDict, ToolCallDict, is_note_dict
+from app.contracts.pydantic_types import unwrap
 from app.contracts.llm_types import ChatMessage, ToolCallEntry
 from app.core.expansion import ToolCall
 from app.core.llm_client import LLMClient
@@ -81,7 +82,7 @@ _COMPACT_KEEP_KEYS = frozenset({
 })
 
 
-def _compact_tool_result(result: dict[str, object]) -> dict[str, object]:
+def _compact_tool_result(result: dict[str, JSONValue]) -> dict[str, JSONValue]:
     """Strip large payloads (entities, notes) that bloat LLM context.
 
     Keeps only key fields so the result stays under the LLM's
@@ -109,7 +110,7 @@ class SectionResult:
     region_id: str | None = None
     notes_generated: int = 0
     generated_notes: list[NoteDict] = field(default_factory=list)
-    tool_results: list[dict[str, object]] = field(default_factory=list)
+    tool_results: list[dict[str, JSONValue]] = field(default_factory=list)
     tool_call_records: list[ToolCallDict] = field(default_factory=list)
     tool_result_msgs: list[ChatMessage] = field(default_factory=list)
     error: str | None = None
@@ -176,7 +177,7 @@ async def _run_section_child(
             # The section child is the authoritative owner of agent_id and
             # section_name for every event it emits.  Stamp unconditionally —
             # never rely on whatever placeholder value tool_execution set.
-            _updates: dict[str, object] = {}
+            _updates: dict[str, JSONValue] = {}
             if hasattr(evt, "agent_id"):
                 _updates["agent_id"] = agent_id
             if hasattr(evt, "section_name"):
@@ -289,7 +290,7 @@ async def _run_section_child(
         # ── Execute stori_add_midi_region ──
         # All structural params come from the frozen contract — never from
         # the L2's tool-call params.  This eliminates region collision drift.
-        region_params = {
+        region_params: dict[str, JSONValue] = {
             "trackId": contract.track_id,
             "startBeat": contract.start_beat,
             "durationBeats": contract.duration_beats,
@@ -354,7 +355,7 @@ async def _run_section_child(
             f"prompt={_final_prompt[:80]}..."
         )
         _gen_start = asyncio.get_event_loop().time()
-        gen_params = {
+        gen_params: dict[str, JSONValue] = {
             "trackId": contract.track_id,
             "regionId": region_id,
             "role": contract.role,
@@ -374,7 +375,7 @@ async def _run_section_child(
             the frontend to time out during long Orpheus calls.
             """
             for evt in events:
-                _updates: dict[str, object] = {}
+                _updates: dict[str, JSONValue] = {}
                 if hasattr(evt, "agent_id"):
                     _updates["agent_id"] = agent_id
                 if hasattr(evt, "section_name"):
@@ -458,7 +459,9 @@ async def _run_section_child(
         _raw_notes: list[NoteDict] = []
         for evt in gen_outcome.sse_events:
             if isinstance(evt, ToolCallEvent) and evt.name == "stori_add_notes":
-                _raw_notes = evt.params.get("notes", [])
+                _notes_pj = evt.params.get("notes")
+                _notes_val: JSONValue = unwrap(_notes_pj) if _notes_pj is not None else []
+                _raw_notes = [n for n in _notes_val if is_note_dict(n)] if isinstance(_notes_val, list) else []
                 break
         generated_notes: list[NoteDict] = _raw_notes
         result.generated_notes = generated_notes
@@ -812,7 +815,7 @@ async def _maybe_refine_expression(
             try:
                 fn = tc_raw["function"]
                 args_str = fn["arguments"]
-                parsed_args: dict[str, object] = json.loads(args_str) if args_str else {}
+                parsed_args: dict[str, JSONValue] = json.loads(args_str) if args_str else {}
                 tool_calls.append(ToolCall(
                     id=tc_raw["id"],
                     name=fn["name"],
@@ -823,7 +826,7 @@ async def _maybe_refine_expression(
 
         add_notes_failures: dict[str, int] = {}
         for tc in tool_calls:
-            params = dict(tc.params)
+            params: dict[str, JSONValue] = dict(tc.params)
             params["trackId"] = contract.track_id
             params["regionId"] = region_id
 
@@ -838,7 +841,7 @@ async def _maybe_refine_expression(
                 emit_sse=True,
             )
             for evt in outcome.sse_events:
-                _updates: dict[str, object] = {}
+                _updates: dict[str, JSONValue] = {}
                 if hasattr(evt, "agent_id"):
                     _updates["agent_id"] = agent_id
                 if hasattr(evt, "section_name"):

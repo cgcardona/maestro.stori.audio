@@ -16,9 +16,8 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
 
-from app.contracts.json_types import AftertouchDict, CCEventDict, PitchBendDict
+from app.contracts.json_types import AftertouchDict, CCEventDict, JSONValue, NoteDict, PitchBendDict, is_note_dict, jfloat, jint
 from app.core.state_store import StateStore, Transaction
 from app.core.tool_names import ToolName
 from app.core.tracing import TraceContext, trace_span
@@ -49,7 +48,7 @@ class CheckoutExecutionResult:
     executed: int
     failed: int
     plan_hash: str
-    events: tuple[dict[str, object], ...] = ()
+    events: tuple[dict[str, JSONValue], ...] = ()
 
     @property
     def success(self) -> bool:
@@ -96,7 +95,7 @@ def execute_checkout_plan(
 
     executed = 0
     failed = 0
-    events: list[dict[str, object]] = []
+    events: list[dict[str, JSONValue]] = []
 
     txn = store.begin_transaction(
         f"checkout:{checkout_plan.target_variation_id[:8]}",
@@ -163,14 +162,27 @@ def execute_checkout_plan(
     )
 
 
+def _make_cc_event(cc_num: int, e: dict[str, JSONValue]) -> CCEventDict:
+    return {"cc": cc_num, "beat": jfloat(e.get("beat")), "value": jint(e.get("value"))}
+
+
+def _make_pb_event(e: dict[str, JSONValue]) -> PitchBendDict:
+    return {"beat": jfloat(e.get("beat")), "value": jint(e.get("value"))}
+
+
+def _make_at_event(e: dict[str, JSONValue]) -> AftertouchDict:
+    return {"beat": jfloat(e.get("beat")), "value": jint(e.get("value"))}
+
+
 def _dispatch_tool(
     tool: str,
-    args: dict[str, Any],
+    args: dict[str, JSONValue],
     store: StateStore,
     txn: Transaction,
 ) -> None:
     """Dispatch a single checkout tool call to StateStore methods."""
-    region_id = args.get("regionId", "")
+    _rid_raw = args.get("regionId", "")
+    region_id = _rid_raw if isinstance(_rid_raw, str) else ""
 
     if tool == ToolName.CLEAR_NOTES.value:
         current = store.get_region_notes(region_id)
@@ -178,35 +190,37 @@ def _dispatch_tool(
             store.remove_notes(region_id, current, transaction=txn)
 
     elif tool == ToolName.ADD_NOTES.value:
-        notes = args.get("notes", [])
+        _notes_raw = args.get("notes", [])
+        notes: list[NoteDict] = (
+            [n for n in _notes_raw if is_note_dict(n)]
+            if isinstance(_notes_raw, list) else []
+        )
         if notes:
             store.add_notes(region_id, notes, transaction=txn)
 
     elif tool == ToolName.ADD_MIDI_CC.value:
-        cc_num = args.get("cc", 0)
-        raw_events = args.get("events", [])
+        _cc_raw = args.get("cc", 0)
+        cc_num = int(_cc_raw) if isinstance(_cc_raw, (int, float)) else 0
+        _events_raw = args.get("events", [])
+        raw_events = [e for e in _events_raw if isinstance(e, dict)] if isinstance(_events_raw, list) else []
         cc_events: list[CCEventDict] = [
-            CCEventDict(cc=cc_num, beat=e.get("beat", 0.0), value=e.get("value", 0))
+            _make_cc_event(cc_num, e)
             for e in raw_events
         ]
         if cc_events:
             store.add_cc(region_id, cc_events)
 
     elif tool == ToolName.ADD_PITCH_BEND.value:
-        raw_pb = args.get("events", [])
-        pb_events: list[PitchBendDict] = [
-            PitchBendDict(beat=e.get("beat", 0.0), value=e.get("value", 0))
-            for e in raw_pb
-        ]
+        _pb_raw = args.get("events", [])
+        raw_pb = [e for e in _pb_raw if isinstance(e, dict)] if isinstance(_pb_raw, list) else []
+        pb_events: list[PitchBendDict] = [_make_pb_event(e) for e in raw_pb]
         if pb_events:
             store.add_pitch_bends(region_id, pb_events)
 
     elif tool == ToolName.ADD_AFTERTOUCH.value:
-        raw_at = args.get("events", [])
-        at_events: list[AftertouchDict] = [
-            {"beat": e.get("beat", 0.0), "value": e.get("value", 0)}
-            for e in raw_at
-        ]
+        _at_raw = args.get("events", [])
+        raw_at = [e for e in _at_raw if isinstance(e, dict)] if isinstance(_at_raw, list) else []
+        at_events: list[AftertouchDict] = [_make_at_event(e) for e in raw_at]
         if at_events:
             store.add_aftertouch(region_id, at_events)
 

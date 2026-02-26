@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.contracts.json_types import NoteDict, ToolCallDict
+from app.contracts.json_types import JSONValue, NoteDict, ToolCallDict, json_list
 from app.contracts.llm_types import ChatMessage
 from app.contracts.project_types import ProjectContext
 from app.protocol.events import MaestroEvent, PlanStepUpdateEvent, ReasoningEvent, ToolCallEvent
@@ -671,7 +671,7 @@ class TestHandleEditing:
         response.tool_calls = [
             ToolCall(id="tc1", name="stori_add_notes", params={
                 "regionId": region_id,
-                "notes": notes_payload,
+                "notes": json_list(notes_payload),
             }),
         ]
         done_response = LLMResponse(content="Done.", usage={"prompt_tokens": 5, "completion_tokens": 5})
@@ -2149,7 +2149,7 @@ class TestBuildToolResult:
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         track_id = store.create_track("Drums")
-        params: dict[str, object] = {"trackId": track_id, "name": "Drums", "drumKitId": "acoustic"}
+        params: dict[str, JSONValue] = {"trackId": track_id, "name": "Drums", "drumKitId": "acoustic"}
         result = _build_tool_result("stori_add_midi_track", params, store)
 
         assert result["success"] is True
@@ -2164,7 +2164,7 @@ class TestBuildToolResult:
         store = self._make_store()
         track_id = store.create_track("Bass")
         region_id = store.create_region("Verse", track_id, metadata={"startBeat": 0, "durationBeats": 32})
-        params = {
+        params: dict[str, JSONValue] = {
             "regionId": region_id,
             "trackId": track_id,
             "name": "Verse",
@@ -2189,7 +2189,7 @@ class TestBuildToolResult:
         region_id = store.create_region("Pattern", track_id)
         notes: list[NoteDict] = [{"pitch": 36, "startBeat": float(i), "durationBeats": 0.5, "velocity": 100} for i in range(8)]
         store.add_notes(region_id, notes)
-        params: dict[str, object] = {"regionId": region_id, "notes": notes}
+        params: dict[str, JSONValue] = {"regionId": region_id, "notes": json_list(notes)}
         result = _build_tool_result("stori_add_notes", params, store)
 
         assert result["success"] is True
@@ -2211,7 +2211,7 @@ class TestBuildToolResult:
         second_notes: list[NoteDict] = [{"pitch": 38, "startBeat": float(i), "durationBeats": 0.5, "velocity": 90} for i in range(4)]
         store.add_notes(region_id, second_notes)
 
-        result = _build_tool_result("stori_add_notes", {"regionId": region_id, "notes": second_notes}, store)
+        result = _build_tool_result("stori_add_notes", {"regionId": region_id, "notes": json_list(second_notes)}, store)
         assert result["notesAdded"] == 4
         assert result["totalNotes"] == 8
 
@@ -2233,7 +2233,7 @@ class TestBuildToolResult:
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         bus_id = store.get_or_create_bus("Reverb")
-        params: dict[str, object] = {"busId": bus_id, "name": "Reverb"}
+        params: dict[str, JSONValue] = {"busId": bus_id, "name": "Reverb"}
         result = _build_tool_result("stori_ensure_bus", params, store)
 
         assert result["success"] is True
@@ -2255,7 +2255,7 @@ class TestBuildToolResult:
         """stori_add_midi_cc result includes regionId and event count."""
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
-        events = [{"beat": 0, "value": 64}, {"beat": 4, "value": 127}]
+        events: list[JSONValue] = [{"beat": 0, "value": 64}, {"beat": 4, "value": 127}]
         result = _build_tool_result("stori_add_midi_cc", {"regionId": "r-1", "cc": 1, "events": events}, store)
         assert result["regionId"] == "r-1"
         assert result["cc"] == 1
@@ -2368,7 +2368,7 @@ class TestEnrichParamsWithTrackContext:
         """regionId-only params get trackName and trackId appended."""
         from app.core.maestro_helpers import _enrich_params_with_track_context
         store, track_id, region_id = self._make_store_with_region()
-        params = {"regionId": region_id, "cc": 11, "events": []}
+        params: dict[str, JSONValue] = {"regionId": region_id, "cc": 11, "events": []}
         result = _enrich_params_with_track_context(params, store)
         assert result["trackName"] == "Guitar Lead"
         assert result["trackId"] == track_id
@@ -2380,7 +2380,7 @@ class TestEnrichParamsWithTrackContext:
         """Params already containing trackName are returned unchanged."""
         from app.core.maestro_helpers import _enrich_params_with_track_context
         store, _, region_id = self._make_store_with_region()
-        params: dict[str, object] = {"regionId": region_id, "trackName": "Already set", "trackId": "existing"}
+        params: dict[str, JSONValue] = {"regionId": region_id, "trackName": "Already set", "trackId": "existing"}
         result = _enrich_params_with_track_context(params, store)
         assert result["trackName"] == "Already set"
         assert result["trackId"] == "existing"
@@ -2391,7 +2391,7 @@ class TestEnrichParamsWithTrackContext:
         from app.core.maestro_helpers import _enrich_params_with_track_context
         from app.core.state_store import StateStore
         store = StateStore(conversation_id="enrich-test-2")
-        params = {"trackId": "some-track", "volumeDb": -6}
+        params: dict[str, JSONValue] = {"trackId": "some-track", "volumeDb": -6}
         result = _enrich_params_with_track_context(params, store)
         assert result == params
 
@@ -2401,7 +2401,7 @@ class TestEnrichParamsWithTrackContext:
         from app.core.maestro_helpers import _enrich_params_with_track_context
         from app.core.state_store import StateStore
         store = StateStore(conversation_id="enrich-test-3")
-        params = {"regionId": "nonexistent-region-id", "cc": 64, "events": []}
+        params: dict[str, JSONValue] = {"regionId": "nonexistent-region-id", "cc": 64, "events": []}
         result = _enrich_params_with_track_context(params, store)
         assert result == params
         assert "trackName" not in result
@@ -2411,7 +2411,7 @@ class TestEnrichParamsWithTrackContext:
         """The helper returns a new dict; the original is never mutated."""
         from app.core.maestro_helpers import _enrich_params_with_track_context
         store, _, region_id = self._make_store_with_region()
-        params = {"regionId": region_id, "cc": 1, "events": []}
+        params: dict[str, JSONValue] = {"regionId": region_id, "cc": 1, "events": []}
         original = dict(params)
         _enrich_params_with_track_context(params, store)
         assert params == original
@@ -3191,7 +3191,7 @@ class TestApplySingleToolCall:
             tc_name="stori_add_notes",
             resolved_args={
                 "regionId": region_id,
-                "notes": [NoteDict(pitch=72)],
+                "notes": json_list([NoteDict(pitch=72)]),
             },
             allowed_tool_names={"stori_add_notes"},
             store=store,
@@ -4036,7 +4036,7 @@ class TestIconValidation:
             if isinstance(e, ToolCallEvent) and e.name == "stori_set_track_icon"
         ]
         assert len(icon_events) >= 1, "Valid icon should produce stori_set_track_icon events"
-        icon_param = icon_events[-1].params["icon"]
+        icon_param = icon_events[-1].params["icon"].root
         assert icon_param == "pianokeys"
 
     @pytest.mark.anyio
@@ -4211,8 +4211,8 @@ class TestSummaryFinalText:
             ToolCallDict(tool="stori_add_midi_track", params={"name": "Bass", "trackId": "t2", "_gmInstrumentName": "Electric Bass"}),
             ToolCallDict(tool="stori_add_midi_region", params={}),
             ToolCallDict(tool="stori_add_midi_region", params={}),
-            ToolCallDict(tool="stori_add_notes", params={"notes": [NoteDict(pitch=60)] * 40}),
-            ToolCallDict(tool="stori_add_notes", params={"notes": [NoteDict(pitch=36)] * 53}),
+            ToolCallDict(tool="stori_add_notes", params={"notes": json_list([NoteDict(pitch=60)] * 40)}),
+            ToolCallDict(tool="stori_add_notes", params={"notes": json_list([NoteDict(pitch=36)] * 53)}),
             ToolCallDict(tool="stori_add_insert_effect", params={"trackId": "t1", "effectType": "reverb"}),
             ToolCallDict(tool="stori_add_insert_effect", params={"trackId": "t2", "effectType": "reverb"}),
         ]

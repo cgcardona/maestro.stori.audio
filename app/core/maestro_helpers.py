@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypedDict
 
 from app.config import settings
+from app.contracts.json_types import JSONValue
 from app.contracts.llm_types import (
     ChatMessage,
     OpenAIToolChoice,
@@ -120,9 +121,9 @@ def _humanize_style(style: str) -> str:
 
 
 def _enrich_params_with_track_context(
-    params: dict[str, object],
+    params: dict[str, JSONValue],
     store: StateStore,
-) -> dict[str, object]:
+) -> dict[str, JSONValue]:
     """Inject trackName/trackId into SSE toolCall params for region-scoped tools.
 
     Tools such as stori_add_midi_cc, stori_add_pitch_bend, stori_quantize_notes,
@@ -154,7 +155,7 @@ def _enrich_params_with_track_context(
         return params
 
 
-def _human_label_for_tool(name: str, args: dict[str, object]) -> str:
+def _human_label_for_tool(name: str, args: dict[str, JSONValue]) -> str:
     """Return a short, musician-friendly description of a tool call.
 
     Used in progress/toolStart SSE events and as the label for plan steps.
@@ -267,9 +268,9 @@ def _human_label_for_tool(name: str, args: dict[str, object]) -> str:
 
 
 def _resolve_variable_refs(
-    params: dict[str, object],
-    prior_results: list[dict[str, object]],
-) -> dict[str, object]:
+    params: dict[str, JSONValue],
+    prior_results: list[dict[str, JSONValue]],
+) -> dict[str, JSONValue]:
     """Resolve $N.field variable references in tool params.
 
     Lets the LLM reference the output of an earlier tool call in the same
@@ -278,7 +279,7 @@ def _resolve_variable_refs(
     """
     if not prior_results:
         return params
-    resolved = {}
+    resolved: dict[str, JSONValue] = {}
     for key, value in params.items():
         if isinstance(value, str):
             m = _VAR_REF_RE.match(value)
@@ -293,7 +294,7 @@ def _resolve_variable_refs(
     return resolved
 
 
-def _scalar(v: object) -> str | int | bool | None:
+def _scalar(v: JSONValue) -> str | int | bool | None:
     """Narrow a tool param value to an LLM-safe scalar for tool results."""
     if v is None:
         return None
@@ -308,9 +309,9 @@ def _scalar(v: object) -> str | int | bool | None:
 
 def _build_tool_result(
     tool_name: str,
-    params: dict[str, object],
+    params: dict[str, JSONValue],
     store: StateStore,
-) -> dict[str, object]:
+) -> dict[str, JSONValue]:
     """Build a tool result with state feedback for the LLM.
 
     Entity-creating tools: echo server-assigned IDs.
@@ -320,7 +321,7 @@ def _build_tool_result(
     Note: entity manifests are injected separately via
     ``EntityRegistry.agent_manifest()`` — not embedded in tool results.
     """
-    result: dict[str, object] = {"success": True}
+    result: dict[str, JSONValue] = {"success": True}
 
     if tool_name in _ENTITY_CREATING_TOOLS:
         for id_field in _ENTITY_ID_ECHO.get(tool_name, []):
@@ -465,8 +466,8 @@ async def _stream_llm_response(
     for tc in response_tool_calls:
         try:
             raw_args = tc.get("function", {}).get("arguments", "{}")
-            parsed: object = json.loads(raw_args) if isinstance(raw_args, str) and raw_args else raw_args
-            parsed_args: dict[str, object] = parsed if isinstance(parsed, dict) else {}
+            parsed: JSONValue = json.loads(raw_args) if isinstance(raw_args, str) and raw_args else raw_args
+            parsed_args: dict[str, JSONValue] = parsed if isinstance(parsed, dict) else {}
             response.tool_calls.append(ToolCall(
                 id=tc.get("id", ""),
                 name=tc.get("function", {}).get("name", ""),

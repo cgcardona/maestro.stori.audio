@@ -16,6 +16,7 @@ import pytest
 from typing import Any
 from unittest.mock import MagicMock
 
+from app.contracts.json_types import JSONValue
 from app.contracts.project_types import ProjectContext
 
 from app.core.entity_registry import (
@@ -643,7 +644,7 @@ class TestCompactToolResult:
     def test_region_id_preserved(self) -> None:
 
         from app.core.maestro_agent_teams.section_agent import _compact_tool_result
-        result = {
+        result: dict[str, JSONValue] = {
             "success": True,
             "regionId": "abc-123",
             "trackId": "def-456",
@@ -660,7 +661,7 @@ class TestCompactToolResult:
     def test_existing_region_id_preserved(self) -> None:
 
         from app.core.maestro_agent_teams.section_agent import _compact_tool_result
-        result = {
+        result: dict[str, JSONValue] = {
             "success": True,
             "existingRegionId": "existing-rid",
             "skipped": True,
@@ -674,6 +675,6 @@ class TestCompactToolResult:
     def test_error_field_preserved(self) -> None:
 
         from app.core.maestro_agent_teams.section_agent import _compact_tool_result
-        result = {"success": False, "error": "Region overlap"}
+        result: dict[str, JSONValue] = {"success": False, "error": "Region overlap"}
         compact = _compact_tool_result(result)
         assert compact["error"] == "Region overlap"

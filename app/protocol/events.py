@@ -16,7 +16,7 @@ Extra fields policy:
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import ConfigDict, Field
 
@@ -25,13 +25,56 @@ from app.contracts.json_types import (
     CCEnvelopeDict,
     CCEventDict,
     EffectSummaryDict,
+    JSONValue,
     NoteChangeDict,
     PitchBendDict,
     ToolCallDict,
     TrackSummaryDict,
 )
+from app.contracts.pydantic_types import PydanticJson
 from app.models.base import CamelModel
 from app.protocol.version import MAESTRO_VERSION
+
+
+class ToolCallWire(CamelModel):
+    """Pydantic-safe wire shape for a tool call in SSE events.
+
+    Used in ``CompleteEvent.tool_calls`` and as the ``params`` carrier for
+    ``ToolCallEvent`` — wherever a tool call must cross the Pydantic model
+    boundary (SSE serialization, API responses).
+
+    **Why not ``ToolCallDict``?**  ``ToolCallDict.params`` is
+    ``dict[str, JSONValue]``, a recursive type alias.  Pydantic v2 cannot
+    generate a finite JSON Schema for recursive aliases — it raises
+    ``RecursionError`` at model class definition time.  ``ToolCallWire``
+    replaces ``params`` with ``dict[str, PydanticJson]``, which Pydantic
+    resolves correctly via ``PydanticJson.model_rebuild()``.
+
+    **Conversion from internal code:**  All producers (editing handler,
+    composing coordinator, agent teams) hold ``list[ToolCallDict]`` internally.
+    Convert at the SSE emit boundary using ``from_tool_call_dict()``::
+
+        tool_calls=[ToolCallWire.from_tool_call_dict(tc) for tc in collected]
+
+    **Serialization:** ``CamelModel`` serializes ``tool`` and ``params`` as
+    camelCase via ``by_alias=True``.  The ``params`` values round-trip through
+    ``PydanticJson`` transparently — the SSE client receives standard JSON.
+    """
+
+    tool: str
+    params: dict[str, PydanticJson] = Field(default_factory=dict)
+
+    @classmethod
+    def from_tool_call_dict(cls, tc: ToolCallDict) -> ToolCallWire:
+        """Convert an internal ``ToolCallDict`` to a Pydantic-safe wire model.
+
+        Wraps ``tc["params"]`` (``dict[str, JSONValue]``) into
+        ``dict[str, PydanticJson]`` using ``wrap_dict()``.  This is the single
+        conversion point for crossing the internal→Pydantic boundary for tool
+        call params.
+        """
+        from app.contracts.pydantic_types import wrap_dict
+        return cls(tool=tc["tool"], params=wrap_dict(tc["params"]))
 
 
 class MaestroEvent(CamelModel):
@@ -122,7 +165,7 @@ class CompleteEvent(MaestroEvent):
     context_window_tokens: int = 0
 
     # EDITING mode
-    tool_calls: list[ToolCallDict] | None = None
+    tool_calls: list[ToolCallWire] | None = None
     state_version: int | None = None
 
     # COMPOSING mode
@@ -196,7 +239,7 @@ class ToolCallEvent(MaestroEvent):
     type: Literal["toolCall"] = "toolCall"
     id: str
     name: str
-    params: dict[str, Any]
+    params: dict[str, PydanticJson]
     label: str | None = None
     phase: str = "composition"
     proposal: bool | None = None

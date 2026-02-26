@@ -1,7 +1,8 @@
 """Health check endpoints."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Required
+from typing_extensions import TypedDict
 
 from fastapi import APIRouter
 
@@ -10,6 +11,29 @@ from app.services.storpheus import StorpheusClient
 from app.services.assets import check_s3_reachable
 
 router = APIRouter()
+
+
+class HealthDependencyDict(TypedDict, total=False):
+    """Status entry for one external dependency in the full health check.
+
+    ``status`` is always present.  Additional keys depend on the dependency:
+    ``provider`` for LLM, ``url`` for Storpheus, ``bucket`` for S3.
+    """
+
+    status: Required[str]
+    provider: str   # LLM only
+    url: str        # Storpheus only
+    bucket: str     # S3 only
+
+
+class FullHealthCheckDict(TypedDict):
+    """Response shape for ``GET /health/full``."""
+
+    status: str             # "ok" | "degraded"
+    service: str
+    version: str
+    tagline: str
+    dependencies: dict[str, HealthDependencyDict]
 
 
 def _llm_configured() -> bool:
@@ -29,9 +53,8 @@ async def health_check() -> dict[str, str]:
 
 
 @router.get("/health/full")
-async def full_health_check() -> dict[str, Any]:
-    """
-    Full health check including dependencies.
+async def full_health_check() -> FullHealthCheckDict:
+    """Full health check including dependencies.
 
     Reports:
     - LLM: configured (OpenRouter API key present)
@@ -42,11 +65,11 @@ async def full_health_check() -> dict[str, Any]:
     try:
         llm_ok = _llm_configured()
         storpheus_ok = await storpheus.health_check()
-        s3_ok = check_s3_reachable() if settings.aws_s3_asset_bucket else None  # None = not configured
+        s3_ok = check_s3_reachable() if settings.aws_s3_asset_bucket else None
 
         all_ok = llm_ok and storpheus_ok
 
-        deps = {
+        deps: dict[str, HealthDependencyDict] = {
             "llm": {
                 "status": "ok" if llm_ok else "unconfigured",
                 "provider": settings.llm_provider,

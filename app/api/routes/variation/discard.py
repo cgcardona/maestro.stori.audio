@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import logging
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
 from app.models.requests import DiscardVariationRequest
 from app.auth.dependencies import require_valid_token
+from app.auth.tokens import TokenClaims
 from app.variation.core.state_machine import (
     VariationStatus,
     InvalidTransitionError,
@@ -59,7 +58,7 @@ class DiscardVariationResponse(BaseModel):
 async def discard_variation(
     request: Request,
     discard_request: DiscardVariationRequest,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
 ) -> DiscardVariationResponse:
     """Discard a variation — cancel generation if streaming, transition to DISCARDED."""
     vstore = get_variation_store()

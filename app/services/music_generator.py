@@ -456,11 +456,43 @@ class MusicGenerator:
 
     @staticmethod
     def _ensure_snake_keys(notes: list[NoteDict]) -> list[NoteDict]:
-        """Return a shallow copy of notes with snake_case beat keys for critics."""
-        _MAP = {"startBeat": "start_beat", "durationBeats": "duration_beats"}
+        """Return a copy of notes with snake_case beat keys normalised for critics.
+
+        Notes may arrive with either camelCase (startBeat / durationBeats, from
+        the DAW / Storpheus) or snake_case (start_beat / duration_beats, from
+        IR renderers).  Critics always expect snake_case.  Explicit per-field
+        extraction avoids a dynamic key loop and satisfies mypy.
+        """
         out: list[NoteDict] = []
         for n in notes:
-            converted: NoteDict = {_MAP.get(k, k): v for k, v in n.items()}  # type: ignore[assignment]  # dynamic key remap; mypy can't narrow computed keys
+            converted: NoteDict = {}
+            if "pitch" in n:
+                converted["pitch"] = n["pitch"]
+            if "velocity" in n:
+                converted["velocity"] = n["velocity"]
+            if "channel" in n:
+                converted["channel"] = n["channel"]
+            if "layer" in n:
+                converted["layer"] = n["layer"]
+            if "noteId" in n:
+                converted["noteId"] = n["noteId"]
+            if "note_id" in n:
+                converted["note_id"] = n["note_id"]
+            if "trackId" in n:
+                converted["trackId"] = n["trackId"]
+            if "track_id" in n:
+                converted["track_id"] = n["track_id"]
+            if "regionId" in n:
+                converted["regionId"] = n["regionId"]
+            if "region_id" in n:
+                converted["region_id"] = n["region_id"]
+            # Timing: prefer already-normalised snake_case; fall back to camelCase alias
+            start_beat = n.get("start_beat") if "start_beat" in n else n.get("startBeat")
+            if start_beat is not None:
+                converted["start_beat"] = start_beat
+            duration_beats = n.get("duration_beats") if "duration_beats" in n else n.get("durationBeats")
+            if duration_beats is not None:
+                converted["duration_beats"] = duration_beats
             out.append(converted)
         return out
 
@@ -600,12 +632,10 @@ class MusicGenerator:
                 if instrument == "drums" and preset_config.use_coupled_generation:
                     self._capture_drum_context(best_result.notes, style, tempo, bars)
                 scores_val: list[JSONValue] = list(all_scores)
-                best_result.metadata.update({
-                    "critic_score": best_score,
-                    "rejection_attempts": len(all_scores),
-                    "all_scores": scores_val,
-                    "parallel_candidates": effective_candidates,
-                })
+                best_result.metadata["critic_score"] = best_score
+                best_result.metadata["rejection_attempts"] = len(all_scores)
+                best_result.metadata["all_scores"] = scores_val
+                best_result.metadata["parallel_candidates"] = effective_candidates
                 return best_result
 
         # Single generation (no rejection sampling, or all candidates failed)

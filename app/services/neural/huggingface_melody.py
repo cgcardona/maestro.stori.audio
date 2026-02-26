@@ -17,10 +17,40 @@ import logging
 import httpx
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import TypeGuard, TypedDict
 
-from app.contracts.json_types import NoteDict
+from app.contracts.json_types import JSONValue, NoteDict
 from app.core.emotion_vector import EmotionVector, emotion_to_constraints
+
+
+class HFGenerationParams(TypedDict):
+    """Parameters sent to the HuggingFace text-generation API.
+
+    Derived from the emotion vector via ``_emotion_to_hf_params``.  Values are
+    clamped to safe inference ranges before being passed to the Gradio endpoint.
+    """
+
+    temperature: float    # 0.5–1.4: higher = more variation (energy + tension)
+    top_p: float          # 0.8–0.95: lower = more focused (intimacy)
+    max_tokens: int       # bars × 32 × motion_multiplier, capped at model config
+
+
+class HFTextOutput(TypedDict):
+    """Single element in the HuggingFace text-generation API response list.
+
+    The Gradio / HF inference API wraps each generated text in a dict with a
+    ``generated_text`` key.  We use this TypedDict to document the expected
+    shape at the library boundary and narrow with isinstance checks at parse time.
+    """
+
+    generated_text: str
+
+
+def _is_hf_text_output(v: object) -> TypeGuard[HFTextOutput]:
+    """True when *v* is a dict with a ``generated_text`` key — the HF API response shape."""
+    return isinstance(v, dict) and "generated_text" in v
+
+
 from app.services.neural.melody_generator import (
     MelodyModelBackend,
     MelodyGenerationRequest,
@@ -131,16 +161,22 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
         try:
             # Map emotion to generation parameters
             gen_params = self._emotion_to_hf_params(request.emotion_vector, request.bars)
-            
+            _temperature = gen_params["temperature"]
+            _top_p = gen_params["top_p"]
+            _max_tokens = gen_params["max_tokens"]
+            temperature: float = float(_temperature) if isinstance(_temperature, (int, float)) else 0.85
+            top_p: float = float(_top_p) if isinstance(_top_p, (int, float)) else 0.9
+            max_tokens: int = int(_max_tokens) if isinstance(_max_tokens, (int, float)) else 256
+
             # Build prompt/seed
             prompt = self._build_prompt(request)
-            
+
             payload = {
                 "inputs": prompt,
                 "parameters": {
-                    "max_new_tokens": gen_params["max_tokens"],
-                    "temperature": gen_params["temperature"],
-                    "top_p": gen_params["top_p"],
+                    "max_new_tokens": max_tokens,
+                    "temperature": temperature,
+                    "top_p": top_p,
                     "do_sample": True,
                     "return_full_text": False,
                 },
@@ -149,10 +185,10 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
                     "use_cache": False,
                 }
             }
-            
+
             logger.info(
                 f"Calling HuggingFace model: {self.model_config.model_id}, "
-                f"temp={gen_params['temperature']:.2f}, "
+                f"temp={temperature:.2f}, "
                 f"emotion={request.emotion_vector}"
             )
             
@@ -172,10 +208,14 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
                 return await self._fallback_generate(request)
             
             response.raise_for_status()
-            data = response.json()
-            
-            # Parse output
-            notes = self._parse_output(data, request)
+            raw = response.json()
+            # Validate the HF API response shape at the library boundary
+            hf_data: list[HFTextOutput] = (
+                [e for e in raw if _is_hf_text_output(e)]
+                if isinstance(raw, list)
+                else []
+            )
+            notes = self._parse_output(hf_data, request)
             
             # Apply emotion-based post-processing
             notes = self._apply_emotion_postprocess(notes, request.emotion_vector)
@@ -198,10 +238,12 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
             logger.exception(f"HuggingFace generation failed: {e}")
             return await self._fallback_generate(request)
     
-    def _emotion_to_hf_params(self, ev: EmotionVector, bars: int) -> dict[str, Any]:
-        """
-        Map emotion vector to HuggingFace generation parameters.
-        
+    def _emotion_to_hf_params(self, ev: EmotionVector, bars: int) -> dict[str, JSONValue]:
+        """Map emotion vector to HuggingFace generation parameters.
+
+        Returns a ``dict[str, JSONValue]`` suitable for both the API payload and
+        metadata storage.  Documented shape: ``HFGenerationParams``.
+
         Higher energy/tension → higher temperature (more variation)
         Higher intimacy → lower top_p (more focused)
         Higher motion → more tokens (more notes)
@@ -210,20 +252,19 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
         base_temp = 0.85
         energy_factor = (ev.energy - 0.5) * 0.3  # -0.15 to +0.15
         tension_factor = (ev.tension - 0.5) * 0.2  # -0.1 to +0.1
-        temperature = max(0.5, min(1.4, base_temp + energy_factor + tension_factor))
-        
+        temperature: float = round(max(0.5, min(1.4, base_temp + energy_factor + tension_factor)), 2)
+
         # Top-p: 0.8 - 0.98 based on intimacy (intimate = more focused)
-        top_p = 0.95 - (ev.intimacy * 0.15)  # 0.8 to 0.95
-        
+        top_p: float = round(0.95 - (ev.intimacy * 0.15), 2)  # 0.8 to 0.95
+
         # Max tokens: based on motion and bars
         base_tokens = bars * 32  # ~32 tokens per bar base
         motion_multiplier = 0.7 + (ev.motion * 0.6)  # 0.7x to 1.3x
-        max_tokens = int(base_tokens * motion_multiplier)
-        max_tokens = min(max_tokens, self.model_config.max_tokens)
-        
+        max_tokens: int = min(int(base_tokens * motion_multiplier), self.model_config.max_tokens)
+
         return {
-            "temperature": round(temperature, 2),
-            "top_p": round(top_p, 2),
+            "temperature": temperature,
+            "top_p": top_p,
             "max_tokens": max_tokens,
         }
     
@@ -268,17 +309,21 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
                 midi -= 1
         return midi
     
-    def _parse_output(self, data: Any, request: MelodyGenerationRequest) -> list[NoteDict]:
-        """Parse HuggingFace model output into notes."""
-        notes = []
-        
-        if isinstance(data, list) and len(data) > 0:
-            result = data[0]
-            
-            if isinstance(result, dict) and "generated_text" in result:
-                text = result["generated_text"]
+    def _parse_output(self, data: list[HFTextOutput], request: MelodyGenerationRequest) -> list[NoteDict]:
+        """Parse HuggingFace model output into notes.
+
+        ``data`` is expected to be a list of ``HFTextOutput`` dicts from the
+        Gradio/HF text-generation endpoint.  The caller validates the raw API
+        response with isinstance checks before passing it here.
+        """
+        notes: list[NoteDict] = []
+
+        if data:
+            first = data[0]
+            text = first.get("generated_text", "")
+            if text:
                 notes = self._parse_midi_tokens(text, request.tempo, request.bars)
-        
+
         return notes
     
     def _parse_midi_tokens(self, text: str, tempo: int, bars: int) -> list[NoteDict]:

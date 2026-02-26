@@ -11,17 +11,30 @@ GenerationRole = Literal["drums", "bass", "chords", "melody", "arp", "pads", "fx
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 from app.contracts.json_types import JSONObject
+from app.contracts.pydantic_types import PydanticJson
 
 logger = logging.getLogger(__name__)
 
 
 class GenerationStep(BaseModel):
-    """
-    A single MIDI generation step.
+    """A single MIDI generation step in an execution plan.
 
-    Example:
-        {"role": "drums", "style": "boom bap", "bars": 8, "tempo": 90, "key": "Cm"}
+    Produced by the planner from a ``ParsedPrompt`` and validated before
+    the plan is handed to the executor.  Every ``GenerationStep`` maps to
+    one ``stori_generate_midi`` tool call.
+
+    Example::
+
+        GenerationStep(role="drums", style="boom bap", bars=8, tempo=90, key="Cm")
+
+    ``constraints`` holds arbitrary key-value generation hints (density,
+    syncopation, swing, etc.) parsed from the STORI PROMPT ``Constraints:``
+    block.  It is typed ``dict[str, PydanticJson]`` — not ``dict[str, JSONValue]``
+    — because this model is a Pydantic ``BaseModel``.  Convert to/from
+    ``dict[str, JSONValue]`` at call sites using ``wrap_dict`` / ``unwrap_dict``
+    from ``app.contracts.pydantic_types``.
     """
+
     role: Literal["drums", "bass", "chords", "melody", "arp", "pads", "fx", "lead"] = Field(
         ...,
         description="Musical role: drums, bass, chords, melody, arp, pads, fx, lead"
@@ -30,7 +43,15 @@ class GenerationStep(BaseModel):
     tempo: int = Field(..., ge=30, le=300, description="Tempo in BPM (30-300)")
     bars: int = Field(..., ge=1, le=64, description="Number of bars to generate (1-64)")
     key: str | None = Field(default=None, description="Musical key (e.g., 'Cm', 'F#', 'G minor'). Required for melodic instruments.")
-    constraints: dict[str, object] | None = Field(default=None, description="Additional constraints (density, syncopation, swing, etc.)")
+    constraints: dict[str, PydanticJson] | None = Field(
+        default=None,
+        description=(
+            "Additional generation constraints (density, syncopation, swing, etc.) "
+            "from the STORI PROMPT Constraints block.  PydanticJson instead of JSONValue "
+            "because this field lives in a Pydantic BaseModel — use wrap_dict/unwrap_dict "
+            "to cross the boundary."
+        ),
+    )
     trackName: str | None = Field(default=None, description="Override track name (e.g. 'Banjo') when role is a generic category like 'melody'")
 
     @field_validator('key')

@@ -18,11 +18,20 @@ import logging
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
 
-from app.contracts.json_types import NoteDict
+from app.contracts.json_types import JSONValue, NoteDict
 from app.core.emotion_vector import EmotionVector, emotion_to_constraints, GenerationConstraints
+from app.services.backends.base import GenerationMetadata
 from app.services.neural.tokenizer import MidiTokenizer, TokenizerConfig
+
+
+class MelodyGenerationMetadata(GenerationMetadata, total=False):
+    """Metadata produced by melody generation backends.
+
+    Inherits all optional fields from ``GenerationMetadata``.  All melody-specific
+    fields (hf_params, raw_note_count) live in ``GenerationMetadata`` so that
+    any backend can populate them without subclassing.
+    """
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +57,7 @@ class MelodyGenerationResult:
     notes: list[NoteDict]
     success: bool
     model_used: str
-    metadata: dict[str, Any]
+    metadata: MelodyGenerationMetadata
 
 
 class MelodyModelBackend(ABC):

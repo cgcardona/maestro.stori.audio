@@ -1,39 +1,88 @@
 """Canonical type definitions for JSON data and music-domain dicts.
 
-Replaces untyped dict mappings with precise structural types.
-Import from here instead of re-defining shapes ad hoc.
+This module is the **single source of truth for every named data shape** in
+Maestro.  Import from here; do not redefine shapes ad hoc.
 
-Hierarchy:
-  JSONScalar / JSONValue — arbitrary JSON (use sparingly)
-  NoteDict              — a single MIDI note (camelCase wire format)
-  InternalNoteDict      — a single MIDI note (snake_case internal storage)
-  CCEventDict           — a MIDI CC event  (cc, beat, value)
+## When to use which type
+
+Use ``JSONValue`` / ``JSONObject`` only when the shape is genuinely unknown
+(e.g. raw LLM output before validation, or an arbitrary external payload).
+For every known structure, use the named TypedDict below.
+
+Do **not** use ``JSONValue`` or ``JSONObject`` in Pydantic ``BaseModel``
+fields — Pydantic v2 cannot resolve the recursive forward references and
+raises ``RecursionError`` at schema generation time.  Use
+``app.contracts.pydantic_types.PydanticJson`` instead.
+
+## Conversion helpers
+
+- ``json_list(items)`` — coerce a ``list[TypedDict]`` to ``list[JSONValue]``
+  at list-insertion boundaries (Python list invariance workaround).
+- ``jint(v)`` / ``jfloat(v)`` — safe numeric extraction from ``JSONValue``.
+- ``is_note_dict(v)`` — ``TypeGuard`` narrowing from ``JSONValue`` → ``NoteDict``.
+
+## Entity catalog
+
+JSON primitives:
+  JSONScalar            — str | int | float | bool | None
+  JSONValue             — recursive JSON value (use sparingly; not in Pydantic)
+  JSONObject            — dict[str, JSONValue] (use sparingly; not in Pydantic)
+
+MIDI note types:
+  NoteDict              — a single MIDI note (camelCase + snake_case fields, total=False)
+  InternalNoteDict      — alias for NoteDict (snake_case storage path)
+  CCEventDict           — a MIDI Control Change event (cc, beat, value)
   PitchBendDict         — a MIDI pitch bend event (beat, value)
   AftertouchDict        — a MIDI aftertouch event (beat, value[, pitch])
+
+Composition types:
+  SectionDict           — a composition section (verse, chorus, bridge…)
+
+Storpheus adapter:
   StorpheusResultBucket — return shape of normalize_storpheus_tool_calls
-  ToolCallDict          — SSE tool call payload
+
+SSE / protocol types:
+  ToolCallDict          — internal tool call payload {tool, params}
+  ToolCallPreviewDict   — plan preview tool call {name, params}
+
+Summary event types:
   TrackSummaryDict      — summary.final track info
   EffectSummaryDict     — summary.final effect info
-  NoteChangeDict        — MIDI note snapshot (before/after in NoteChangeEntryDict)
-  NoteChangeEntryDict   — wire shape of one noteChanges entry (noteId, changeType, before, after)
-  RegionMetadataWire    — region position metadata (camelCase, handler path)
-  RegionMetadataDB      — region position metadata (snake_case, database path)
+  SectionSummaryDict    — per-section summary in batch_complete result
+  CCEnvelopeDict        — CC envelope info in summary.final
+  CompositionSummary    — aggregated metadata for the summary.final SSE event
+  AppliedRegionInfo     — per-region result from apply_variation_phrases
 
-  Region event map aliases (used across Muse/StateStore):
-  RegionNotesMap        — dict[str, list[NoteDict]]      (region_id → notes)
-  RegionCCMap           — dict[str, list[CCEventDict]]   (region_id → CC events)
-  RegionPitchBendMap    — dict[str, list[PitchBendDict]] (region_id → pitch bends)
-  RegionAftertouchMap   — dict[str, list[AftertouchDict]](region_id → aftertouch)
+Variation / note change types:
+  NoteChangeDict        — snapshot of a MIDI note's properties (before/after)
+  NoteChangeEntryDict   — wire shape of one noteChanges entry
 
-  Protocol introspection aliases (used by app/protocol/responses.py):
-  EventJsonSchema       — dict[str, object]              (single event JSON Schema)
-  EventSchemaMap        — dict[str, EventJsonSchema]     (event_type → JSON Schema)
-  EnumDefinitionMap     — dict[str, list[str]]           (enum name → member values)
+Generation constraints:
+  GenerationConstraintsDict — serialized GenerationConstraints sent to Orpheus
+  IntentGoalDict        — a single intent goal sent to Orpheus
+
+State store types:
+  StateEventData        — payload of a StateStore event's data field
+
+Region metadata:
+  RegionMetadataWire    — region position metadata in camelCase (handler path)
+  RegionMetadataDB      — region position metadata in snake_case (database path)
+
+Region event map aliases (region_id → list of events):
+  RegionNotesMap        — dict[str, list[NoteDict]]
+  RegionCCMap           — dict[str, list[CCEventDict]]
+  RegionPitchBendMap    — dict[str, list[PitchBendDict]]
+  RegionAftertouchMap   — dict[str, list[AftertouchDict]]
+
+Protocol introspection aliases:
+  EventJsonSchema       — dict[str, JSONValue] (single event JSON Schema)
+  EventSchemaMap        — dict[str, EventJsonSchema] (event_type → JSON Schema)
+  EnumDefinitionMap     — dict[str, list[str]] (enum name → member values)
 """
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Iterable, Literal, TypeGuard, overload
 
 from typing_extensions import Required, TypedDict
 
@@ -75,19 +124,33 @@ from app.contracts.midi_types import (
 # ═══════════════════════════════════════════════════════════════════════════════
 
 JSONScalar = str | int | float | bool | None
-"""A JSON leaf value."""
+"""A JSON leaf value with no recursive structure."""
 
 JSONValue = str | int | float | bool | None | list["JSONValue"] | dict[str, "JSONValue"]
-"""Recursive JSON value — use instead of ``Any`` for arbitrary JSON payloads.
+"""Recursive JSON value — the most precise mypy-safe alternative to ``Any``.
 
-See module docstring: do NOT use this in Pydantic BaseModel fields.
+Use this type for JSON payloads whose shape is not statically known.
+
+**Pydantic restriction:** Do NOT use in Pydantic ``BaseModel`` fields.
+The recursive forward references (``list["JSONValue"]``, ``dict[str, "JSONValue"]``)
+cannot be resolved by Pydantic v2 at schema generation time, causing
+``RecursionError``.  Use ``PydanticJson`` from
+``app.contracts.pydantic_types`` for Pydantic model fields instead, and
+convert at the boundary with ``unwrap()`` / ``wrap()``.
+
+**Mypy usage:** Use ``isinstance`` guards, ``jint()``, ``jfloat()``, or
+``is_note_dict()`` to narrow ``JSONValue`` before dereferencing fields.
+Never index a ``JSONValue`` without first narrowing to ``dict``.
 """
 
 JSONObject = dict[str, JSONValue]
-"""A JSON object mapping with unknown structure.
+"""A JSON object with unknown key set.
 
-Use this when keys are not statically known.
-See module docstring: do NOT use this in Pydantic BaseModel fields.
+Use when the object's keys are not statically known (e.g. LLM output before
+validation, arbitrary config dicts).
+
+**Pydantic restriction:** Do NOT use in Pydantic ``BaseModel`` fields.
+See ``JSONValue`` for the full explanation.
 """
 
 
@@ -225,13 +288,23 @@ class ToolCallDict(TypedDict):
     Every producer (editing handler, composing coordinator, agent teams)
     writes exactly ``{"tool": "stori_xxx", "params": {...}}``.
 
-    ``params`` is ``dict[str, object]`` because tool call arguments are
-    LLM-generated and genuinely polymorphic — we use ``object`` rather
-    than ``Any`` so callers must narrow before dereferencing.
+    ``params`` is ``dict[str, JSONValue]`` — LLM-generated arguments are
+    JSON values and must be narrowed before dereferencing.
     """
 
     tool: str
-    params: dict[str, object]
+    params: dict[str, JSONValue]
+
+
+class ToolCallPreviewDict(TypedDict):
+    """Shape produced by ``ToolCall.to_dict()`` for plan previews.
+
+    Distinct from ``ToolCallDict``: uses ``name`` (not ``tool``) to match
+    ``ToolCall``'s dataclass field name.
+    """
+
+    name: str
+    params: dict[str, JSONValue]
 
 
 class TrackSummaryDict(TypedDict, total=False):
@@ -472,7 +545,7 @@ RegionAftertouchMap = dict[str, list[AftertouchDict]]
 # contract between the endpoint, its response model, and callers self-evident.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-EventJsonSchema = dict[str, object]
+EventJsonSchema = dict[str, JSONValue]
 """JSON Schema dict for a single SSE event type, as produced by Pydantic's model_json_schema()."""
 
 EventSchemaMap = dict[str, EventJsonSchema]
@@ -480,3 +553,101 @@ EventSchemaMap = dict[str, EventJsonSchema]
 
 EnumDefinitionMap = dict[str, list[str]]
 """Maps enum name → sorted list of member values.  Used in the protocol /schema.json endpoint."""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TypeGuard narrowing helpers
+#
+# These live here because they narrow JSONValue / dicts-from-JSON into the
+# music-domain TypedDicts defined above.  Callers use them in list
+# comprehensions to avoid cast() at the site where JSON is parsed.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def is_note_dict(v: JSONValue) -> TypeGuard[NoteDict]:
+    """Narrow a ``JSONValue`` to ``NoteDict``.
+
+    ``NoteDict`` is ``total=False`` — every field is optional — so any ``dict``
+    that arrives from a trusted internal source (StateStore, SSE wire, Storpheus
+    result) can be safely treated as ``NoteDict`` once we confirm it is a dict.
+
+    Use in list comprehensions to filter a ``list[JSONValue]`` into
+    ``list[NoteDict]`` without ``cast()``::
+
+        notes = [n for n in raw_list if is_note_dict(n)]
+    """
+    return isinstance(v, dict)
+
+
+def jfloat(v: JSONValue, default: float = 0.0) -> float:
+    """Safely extract a ``float`` from a ``JSONValue``.
+
+    Returns *default* when *v* is not numeric.  Use when pulling float fields
+    out of a ``dict[str, JSONValue]`` — avoids the two-step ``float(v.get("x"))``
+    pattern that mypy cannot narrow::
+
+        beat = jfloat(event.get("beat"))          # 0.0 if key absent or non-numeric
+        value = jfloat(event.get("value"), 0.5)   # custom default
+    """
+    return float(v) if isinstance(v, (int, float)) else default
+
+
+def jint(v: JSONValue, default: int = 0) -> int:
+    """Safely extract an ``int`` from a ``JSONValue``.
+
+    Returns *default* when *v* is not numeric.  Same rationale as ``jfloat``::
+
+        cc = jint(event.get("cc"))        # 0 if absent
+        vel = jint(note.get("velocity"))  # 0 if absent
+    """
+    return int(v) if isinstance(v, (int, float)) else default
+
+
+# ─── List coercion helper ──────────────────────────────────────────────────────
+#
+# Python lists are invariant: ``list[NoteDict]`` is NOT assignable to
+# ``list[JSONValue]`` even though every NoteDict value is a valid JSONValue.
+# Mypy enforces this strictly — dict itself is invariant in its value type,
+# so even ``Iterable[dict[str, JSONValue]]`` rejects ``list[NoteDict]``.
+#
+# The principled solution (no ``cast()``, no per-call ``type: ignore``) is
+# ``@overload`` declarations: enumerate every domain TypedDict explicitly so
+# mypy resolves call sites against the precise overloads.  The implementation
+# body uses ``Iterable[object]`` to accept any of the overloads, with a single
+# ``type: ignore[arg-type]`` at the internal coercion point.
+#
+# To add a new TypedDict, add an ``@overload`` line here.  Do NOT add ``cast()``
+# at any call site.
+
+
+@overload
+def json_list(items: Iterable[NoteDict]) -> list[JSONValue]: ...
+@overload
+def json_list(items: Iterable[CCEventDict]) -> list[JSONValue]: ...
+@overload
+def json_list(items: Iterable[PitchBendDict]) -> list[JSONValue]: ...
+@overload
+def json_list(items: Iterable[dict[str, JSONValue]]) -> list[JSONValue]: ...
+
+
+def json_list(items: Iterable[object]) -> list[JSONValue]:
+    """Coerce an iterable of music-domain TypedDicts to ``list[JSONValue]``.
+
+    This is the **single designated list-coercion boundary** in the codebase.
+    Call it whenever a ``list[SomeDomainDict]`` must be placed into a position
+    that expects ``list[JSONValue]`` (e.g. a ``params`` dict, a ``JSONObject``
+    field, an SSE event body).
+
+    Each overload is typed precisely for a specific domain dict.  The
+    implementation uses ``Iterable[object]`` so mypy validates call sites against
+    the overloads, not the implementation signature.  The single
+    ``type: ignore[arg-type]`` is the sole coercion point — callers never need
+    ``cast()`` or ``type: ignore``::
+
+        params["notes"] = json_list(result.notes)        # list[NoteDict]
+        params["cc_events"] = json_list(result.cc_events) # list[CCEventDict]
+    """
+    result: list[JSONValue] = []
+    for item in items:
+        result.append(item)  # type: ignore[arg-type]  # boundary: domain dict → JSONValue
+    return result

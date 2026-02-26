@@ -34,6 +34,8 @@ from app.models.base import CamelModel
 
 from app.config import settings
 from app.contracts.project_types import ProjectContext
+from app.contracts.json_types import ToolCallPreviewDict
+from app.contracts.pydantic_types import PydanticJson, wrap_dict
 from app.models.requests import MaestroRequest
 from app.core.maestro_handlers import UsageTracker, orchestrate
 from app.core.sanitize import normalise_user_input
@@ -123,6 +125,17 @@ class ValidateTokenResponse(CamelModel):
     )
 
 
+class ToolCallWire(CamelModel):
+    """Single tool-call step in a plan preview — wire shape for JSON serialisation.
+
+    Uses ``PydanticJson`` for ``params`` so Pydantic can serialise arbitrary
+    JSON without recursion from the raw ``dict[str, JSONValue]`` type alias.
+    """
+
+    name: str
+    params: dict[str, PydanticJson] = Field(default_factory=dict)
+
+
 class PlanPreviewResponse(CamelModel):
     """Execution plan produced by ``POST /maestro/preview`` (without executing).
 
@@ -164,11 +177,11 @@ class PlanPreviewResponse(CamelModel):
         default=None,
         description="Number of editor tool calls (Tier 2 — MIDI / structure edits) in the plan.",
     )
-    tool_calls: list[dict[str, object]] = Field(
+    tool_calls: list[ToolCallWire] = Field(
         default_factory=list,
         description=(
-            "Ordered list of tool-call descriptors as raw dicts, "
-            "each with keys 'name', 'arguments', and optional metadata."
+            "Ordered list of tool-call descriptors, "
+            "each with 'name' and 'params'."
         ),
     )
     notes: list[str] = Field(
@@ -498,7 +511,19 @@ async def preview_maestro(
             preview_available=True,
             intent=route.intent.value,
             sse_state=route.sse_state.value,
-            preview=PlanPreviewResponse(**preview_result),
+            preview=PlanPreviewResponse(
+                valid=preview_result.get("valid"),
+                total_steps=preview_result.get("total_steps"),
+                generations=preview_result.get("generations"),
+                edits=preview_result.get("edits"),
+                tool_calls=[
+                    ToolCallWire(name=tc["name"], params=wrap_dict(tc["params"]))
+                    for tc in preview_result.get("tool_calls", [])
+                ],
+                notes=preview_result.get("notes", []),
+                errors=preview_result.get("errors", []),
+                warnings=preview_result.get("warnings", []),
+            ),
         )
 
     finally:

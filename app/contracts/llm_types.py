@@ -7,8 +7,9 @@ Organisation:
   Chat messages          → ``SystemMessage``, ``UserMessage``,
                            ``AssistantMessage``, ``ToolResultMessage``,
                            ``ChatMessage`` (union)
-  Tool schemas           → ``ToolParametersDict``, ``ToolFunctionDict``,
-                           ``ToolSchemaDict``, ``ToolCallFunction``,
+  Tool schemas           → ``OpenAIPropertyDef``, ``ToolParametersDict``,
+                           ``ToolFunctionDict``, ``ToolSchemaDict``,
+                           ``OpenAIToolChoiceDict``, ``ToolCallFunction``,
                            ``ToolCallEntry``
   Token usage            → ``PromptTokenDetails``, ``UsageStats``
   Request payload        → ``ProviderConfig``, ``ReasoningConfig``,
@@ -27,6 +28,8 @@ from __future__ import annotations
 from typing import Literal, Union
 
 from typing_extensions import NotRequired, Required, TypedDict
+
+from app.contracts.json_types import JSONValue
 
 
 # ── Chat message shapes ────────────────────────────────────────────────────────
@@ -87,12 +90,40 @@ ChatMessage = Union[SystemMessage, UserMessage, AssistantMessage, ToolResultMess
 # ── Tool schema shapes (OpenAI function-calling format) ───────────────────────
 
 
+class OpenAIPropertyDef(TypedDict, total=False):
+    """JSON Schema definition for a single OpenAI function parameter.
+
+    Covers the subset of JSON Schema used in Maestro tool definitions.
+    All constraint fields are optional.
+    """
+
+    type: Required[str]       # "string", "number", "integer", "boolean", "array", "object"
+    description: str
+    enum: list[str]
+    minimum: float
+    maximum: float
+    default: JSONValue
+    items: dict[str, JSONValue]   # array item schema (simplified)
+    properties: dict[str, "OpenAIPropertyDef"]  # nested object schema
+
+
 class ToolParametersDict(TypedDict, total=False):
     """JSON Schema ``parameters`` block inside an OpenAI tool definition."""
 
     type: str
-    properties: dict[str, object]
+    properties: dict[str, OpenAIPropertyDef]
     required: list[str]
+
+
+class OpenAIToolChoiceDict(TypedDict):
+    """Structured ``tool_choice`` when forcing a specific tool call.
+
+    The OpenAI API accepts either the string ``"auto"`` / ``"none"`` /
+    ``"required"`` or this dict to force a specific function.
+    """
+
+    type: str      # always "function" when forcing a specific tool
+    function: dict[str, str]  # {"name": "<tool_name>"}
 
 
 class ToolFunctionDict(TypedDict):
@@ -108,6 +139,25 @@ class ToolSchemaDict(TypedDict):
 
     type: str
     function: ToolFunctionDict
+
+
+class CacheControlDict(TypedDict):
+    """Anthropic prompt-caching marker added to the last tool definition."""
+
+    type: str  # always "ephemeral"
+
+
+class CachedToolSchemaDict(TypedDict, total=False):
+    """A tool definition with optional Anthropic prompt-caching annotation.
+
+    Identical to ``ToolSchemaDict`` plus an optional ``cache_control`` field.
+    The ``llm_client`` adds this field to the last tool in the list before
+    sending to OpenRouter/Anthropic when prompt-caching is enabled.
+    """
+
+    type: Required[str]
+    function: Required[ToolFunctionDict]
+    cache_control: CacheControlDict
 
 
 # ── Token usage shapes ────────────────────────────────────────────────────────
@@ -167,9 +217,10 @@ class ReasoningConfig(TypedDict, total=False):
 class OpenAIRequestPayload(TypedDict, total=False):
     """Full request body sent to OpenRouter's chat completions endpoint.
 
-    ``tools`` is typed as ``list[dict[str, object]]`` rather than
-    ``list[ToolSchemaDict]`` because prompt-caching adds an extra
-    ``cache_control`` key to the last tool definition before sending.
+    ``tools`` is ``list[ToolSchemaDict]`` for base tool definitions.  When
+    prompt-caching is active, the LLM client adds a ``cache_control`` key to
+    the last entry — handled by widening to ``dict[str, JSONValue]`` at that
+    insertion point only.
     """
 
     model: Required[str]
@@ -177,8 +228,8 @@ class OpenAIRequestPayload(TypedDict, total=False):
     temperature: float
     max_tokens: int
     stream: bool
-    tools: list[dict[str, object]]
-    tool_choice: str | dict[str, object]
+    tools: list[CachedToolSchemaDict]
+    tool_choice: str | OpenAIToolChoiceDict
     provider: ProviderConfig
     reasoning: ReasoningConfig
 
@@ -313,4 +364,6 @@ StreamEvent = Union[ReasoningDeltaEvent, ContentDeltaEvent, DoneStreamEvent]
 # Kept as a type alias: either a string shorthand ("auto", "none", "required")
 # or an explicit tool-selector dict.  The dict form is rarely used but
 # specified by the OpenAI API.
-OpenAIToolChoice = str | dict[str, object]
+OpenAIToolChoice = str | OpenAIToolChoiceDict
+"""Either a string shorthand (``"auto"``, ``"none"``, ``"required"``) or an
+explicit tool-selector dict forcing a specific function call."""

@@ -4,9 +4,42 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, TypedDict
 
 from app.contracts.llm_types import OpenAIToolChoice, ToolSchemaDict
 from app.core.intent_config import Intent, SSEState, IdiomMatch
+
+if TYPE_CHECKING:
+    from app.core.prompt_parser import ParsedPrompt
+
+
+class SlotsExtrasDict(TypedDict, total=False):
+    """Typed extras bag on ``Slots``.
+
+    All fields are optional (``total=False``).  Each field is populated by a
+    specific part of the intent routing / parsing pipeline:
+
+    parsed_prompt
+        The fully parsed structured STORI PROMPT, present only when the request
+        was a structured prompt (not natural language).
+    visible
+        UI panel visibility flag from ``stori_show_panel`` / hide patterns.
+    target
+        Idiom match target entity (e.g. instrument name from a producer idiom).
+    matched_phrase
+        The raw phrase that triggered an idiom match.
+    tempo
+        Project tempo override extracted during intent parsing (BPM as int).
+    style
+        Musical style tag extracted during intent parsing.
+    """
+
+    parsed_prompt: ParsedPrompt
+    visible: bool
+    target: str
+    matched_phrase: str
+    tempo: int
+    style: str
 
 
 @dataclass(frozen=True)
@@ -20,7 +53,7 @@ class Slots:
     direction: str | None = None
     value_str: str | None = None
     idiom_match: IdiomMatch | None = None
-    extras: dict[str, object] = field(default_factory=dict)
+    extras: SlotsExtrasDict = field(default_factory=SlotsExtrasDict)
 
 
 @dataclass(frozen=True)

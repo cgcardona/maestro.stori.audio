@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing_extensions import NotRequired, Required, TypedDict
 
+from app.contracts.json_types import JSONValue
+from app.contracts.pydantic_types import unwrap_dict
 from app.contracts.project_types import ProjectContext
 from app.core.expansion import ToolCall
 from app.core.gm_instruments import infer_gm_program
@@ -51,7 +53,7 @@ class _GenerateParams(TypedDict, total=False):
     bars: Required[int]
     key: Required[str]
     trackName: Required[str]  # noqa: N815
-    constraints: dict[str, object]
+    constraints: dict[str, JSONValue]
     trackId: str  # noqa: N815  present when targeting an existing track
 
 
@@ -168,7 +170,7 @@ def _schema_to_tool_calls(
         if not is_existing and not is_role_mapped and t_lower in edits_by_track:
             styling = get_track_styling(track_name, rotation_index=_new_track_idx)
             _new_track_idx += 1
-            track_params: dict[str, object] = {
+            track_params: dict[str, JSONValue] = {
                 "name": track_name,
                 "color": styling["color"],
                 "icon": styling["icon"],
@@ -184,7 +186,7 @@ def _schema_to_tool_calls(
                 continue
             bar_start = edit.barStart or 0
             resolved_track = role_to_track.get(edit.track.lower(), edit.track)
-            region_params: dict[str, object] = {
+            region_params: dict[str, JSONValue] = {
                 "name": resolved_track,
                 "trackName": resolved_track,
                 "startBeat": bar_start * bpb + region_start_offset,
@@ -201,14 +203,14 @@ def _schema_to_tool_calls(
             if gen_track.lower() != t_lower:
                 continue
             normalized_style = gen.style.replace("_", " ").strip() if gen.style else ""
-            gen_params: dict[str, object] = {
+            gen_params: dict[str, JSONValue] = {
                 "role": gen.role,
                 "style": normalized_style,
                 "tempo": gen.tempo,
                 "bars": gen.bars,
                 "key": gen.key or "",
                 "trackName": gen_track,
-                "constraints": gen.constraints or {},
+                "constraints": unwrap_dict(gen.constraints) if gen.constraints else {},
             }
             existing = existing_tracks.get(gen_track.lower())
             if existing and existing["id"]:

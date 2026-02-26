@@ -27,6 +27,7 @@ from app.contracts.mcp_types import (
     MCPServerInfo,
     MCPToolDef,
 )
+from app.contracts.json_types import JSONValue, json_list, jint
 from app.contracts.project_types import ProjectContext
 from app.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, TOOL_CATEGORIES
 from app.core.tool_validation import validate_tool_call
@@ -100,7 +101,7 @@ class StoriMCPServer:
     async def call_tool(
         self,
         name: str,
-        arguments: dict[str, object],
+        arguments: dict[str, JSONValue],
     ) -> ToolCallResult:
         """
         Execute an MCP tool call.
@@ -189,7 +190,7 @@ class StoriMCPServer:
     async def _execute_generation_tool(
         self,
         name: str,
-        arguments: dict[str, object],
+        arguments: dict[str, JSONValue],
     ) -> ToolCallResult:
         """Execute a music generation tool server-side."""
         raw_chords = arguments.get("chords")
@@ -236,7 +237,7 @@ class StoriMCPServer:
     async def _forward_to_daw(
         self,
         name: str,
-        arguments: dict[str, object],
+        arguments: dict[str, JSONValue],
     ) -> ToolCallResult:
         """Forward a tool call to the connected DAW."""
         
@@ -289,17 +290,17 @@ class StoriMCPServer:
     def _format_project_state(
         self,
         state: ProjectContext,
-        arguments: dict[str, object],
+        arguments: dict[str, JSONValue],
     ) -> ToolCallResult:
         """Format project state for MCP response."""
 
         include_notes = bool(arguments.get("include_notes", False))
         include_automation = bool(arguments.get("include_automation", False))
 
-        tracks_out: list[dict[str, object]] = []
+        tracks_out: list[dict[str, JSONValue]] = []
         for track in state.get("tracks", []):
             mixer = track.get("mixerSettings") or {}
-            track_info: dict[str, object] = {
+            track_info: dict[str, JSONValue] = {
                 "id": track.get("id"),
                 "name": track.get("name"),
                 "type": "drums" if track.get("drumKitId") else "instrument",
@@ -310,9 +311,9 @@ class StoriMCPServer:
                 "regions": [],
             }
 
-            regions_out: list[dict[str, object]] = []
+            regions_out: list[dict[str, JSONValue]] = []
             for region in track.get("regions", []):
-                region_info: dict[str, object] = {
+                region_info: dict[str, JSONValue] = {
                     "id": region.get("id"),
                     "name": region.get("name"),
                     "startBeat": region.get("startBeat", 0),
@@ -320,21 +321,44 @@ class StoriMCPServer:
                     "noteCount": len(region.get("notes", [])),
                 }
                 if include_notes:
-                    region_info["notes"] = region.get("notes", [])
+                    region_info["notes"] = json_list(region.get("notes", []))
                 regions_out.append(region_info)
 
-            track_info["regions"] = regions_out
+            regions_json: list[JSONValue] = json_list(regions_out)
+            track_info["regions"] = regions_json
             if include_automation:
-                track_info["automation"] = track.get("automationLanes", [])
+                track_info["automation"] = [
+                    {
+                        "id": lane.get("id", ""),
+                        "parameter": lane.get("parameter", ""),
+                        "points": [
+                            {"beat": pt.get("beat", 0.0), "value": pt.get("value", 0.0)}
+                            for pt in lane.get("points", [])
+                        ],
+                    }
+                    for lane in track.get("automationLanes", [])
+                ]
             tracks_out.append(track_info)
 
-        summary: dict[str, object] = {
+        _ts_raw = state.get("timeSignature")
+        if isinstance(_ts_raw, dict):
+            _ts_num = jint(_ts_raw.get("numerator", 4))
+            _ts_den = jint(_ts_raw.get("denominator", 4))
+        elif isinstance(_ts_raw, str):
+            _parts = _ts_raw.split("/")
+            _ts_num = int(_parts[0]) if _parts[0].isdigit() else 4
+            _ts_den = int(_parts[1]) if len(_parts) > 1 and _parts[1].isdigit() else 4
+        else:
+            _ts_num, _ts_den = 4, 4
+        time_sig: JSONValue = {"numerator": _ts_num, "denominator": _ts_den}
+        tracks_json: list[JSONValue] = list(tracks_out)
+        summary: dict[str, JSONValue] = {
             "name": state.get("name", "Untitled"),
             "tempo": state.get("tempo", 120),
             "key": state.get("key", "C"),
-            "timeSignature": state.get("timeSignature", {"numerator": 4, "denominator": 4}),
+            "timeSignature": time_sig,
             "trackCount": len(state.get("tracks", [])),
-            "tracks": tracks_out,
+            "tracks": tracks_json,
         }
 
         return ToolCallResult(
