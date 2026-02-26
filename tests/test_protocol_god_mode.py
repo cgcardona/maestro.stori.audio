@@ -214,8 +214,9 @@ class TestCompositionRootLineage:
         assert "sections" in canonical
         sections_val = canonical["sections"]
         assert isinstance(sections_val, list)
-        sections_strs = [str(h) for h in sections_val]
-        assert all(isinstance(h, str) for h in sections_strs)
+        # isinstance filter narrows list[JSONValue] → list[str] without coercion
+        sections_strs = [h for h in sections_val if isinstance(h, str)]
+        assert len(sections_strs) == len(sections_val), "all section entries must be str hashes"
         assert sorted(sections_strs) == sections_strs
         assert spec_a.contract_hash in sections_strs
         assert spec_b.contract_hash in sections_strs

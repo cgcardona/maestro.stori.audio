@@ -165,19 +165,32 @@ def validate_access_code(token: str) -> TokenClaims:
             algorithms=[settings.access_token_algorithm],
         )
         
-        # Verify it's an access token
-        if payload.get("type") != "access":
+        # Validate and narrow each claim at the jwt.decode() boundary.
+        # jwt.decode() returns dict[str, Any]; we validate types explicitly
+        # rather than coercing so malformed tokens raise clear errors.
+        raw_type = payload.get("type")
+        if not isinstance(raw_type, str) or raw_type != "access":
             raise AccessCodeError("Invalid token type")
 
-        claims = TokenClaims(
-            type=str(payload["type"]),
-            iat=int(payload.get("iat", 0)),
-            exp=int(payload.get("exp", 0)),
-        )
-        if "sub" in payload:
-            claims["sub"] = str(payload["sub"])
-        if "role" in payload:
-            claims["role"] = str(payload["role"])
+        raw_iat = payload.get("iat", 0)
+        raw_exp = payload.get("exp", 0)
+        if not isinstance(raw_iat, int) or not isinstance(raw_exp, int):
+            raise AccessCodeError("Malformed token: iat/exp must be integers")
+
+        claims = TokenClaims(type=raw_type, iat=raw_iat, exp=raw_exp)
+
+        raw_sub = payload.get("sub")
+        if raw_sub is not None:
+            if not isinstance(raw_sub, str):
+                raise AccessCodeError("Malformed token: sub must be a string")
+            claims["sub"] = raw_sub
+
+        raw_role = payload.get("role")
+        if raw_role is not None:
+            if not isinstance(raw_role, str):
+                raise AccessCodeError("Malformed token: role must be a string")
+            claims["role"] = raw_role
+
         return claims
         
     except jwt.ExpiredSignatureError:
