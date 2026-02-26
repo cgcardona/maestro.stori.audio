@@ -11,9 +11,16 @@ Coverage:
 """
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-from typing import Any
 import json
+import typing
+from collections.abc import AsyncGenerator
+
+from app.contracts.json_types import JSONObject
+from app.core.plan_schemas.plan_json_types import (
+    EditStepDict,
+    GenerationStepDict,
+    PlanJsonDict,
+)
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -75,27 +82,27 @@ def _minimal_parsed(
     )
 
 
-def _llm_with_response(json_body: dict[str, Any]) -> AsyncMock:
-    """Return a mock LLM that yields the given JSON as its chat response."""
+def _llm_with_response(json_body: PlanJsonDict) -> AsyncMock:
+    """Return a mock LLM that yields the given plan JSON as its chat response."""
     llm = AsyncMock()
     response_text = json.dumps(json_body)
     llm.chat.return_value = MagicMock(content=response_text)
     return llm
 
 
-def _valid_plan_json(bars: int = 8, tempo: int = 128) -> dict[str, Any]:
+def _valid_plan_json(bars: int = 8, tempo: int = 128) -> PlanJsonDict:
+    """Return a minimal valid plan JSON fixture."""
+    drums: GenerationStepDict = {"role": "drums", "style": "house", "tempo": tempo, "bars": bars}
+    bass: GenerationStepDict = {"role": "bass", "style": "house", "tempo": tempo, "bars": bars, "key": "Am"}
+
+    add_drums: EditStepDict = {"action": "add_track", "name": "Drums"}
+    add_bass: EditStepDict = {"action": "add_track", "name": "Bass"}
+    add_drums_region: EditStepDict = {"action": "add_region", "track": "Drums", "barStart": 0, "bars": bars}
+    add_bass_region: EditStepDict = {"action": "add_region", "track": "Bass", "barStart": 0, "bars": bars}
 
     return {
-        "generations": [
-            {"role": "drums", "style": "house", "tempo": tempo, "bars": bars},
-            {"role": "bass",  "style": "house", "tempo": tempo, "bars": bars, "key": "Am"},
-        ],
-        "edits": [
-            {"action": "add_track", "name": "Drums"},
-            {"action": "add_track", "name": "Bass"},
-            {"action": "add_region", "track": "Drums", "barStart": 0, "bars": bars},
-            {"action": "add_region", "track": "Bass",  "barStart": 0, "bars": bars},
-        ],
+        "generations": [drums, bass],
+        "edits": [add_drums, add_bass, add_drums_region, add_bass_region],
         "mix": [],
     }
 
@@ -652,13 +659,8 @@ class TestBuildExecutionPlanMocked:
     async def test_generations_only_plan_valid(self) -> None:
 
         """A plan with generations but no explicit edits is still valid (complete_plan infers edits)."""
-        plan_json = {
-            "generations": [
-                {"role": "drums", "style": "house", "tempo": 128, "bars": 8}
-            ],
-            "edits": [],
-            "mix": [],
-        }
+        drums_only: GenerationStepDict = {"role": "drums", "style": "house", "tempo": 128, "bars": 8}
+        plan_json: PlanJsonDict = {"generations": [drums_only], "edits": [], "mix": []}
         llm = _llm_with_response(plan_json)
         plan = await build_execution_plan(
             user_prompt="make a beat",
@@ -684,8 +686,14 @@ class TestBuildPlanFromDict:
         assert plan.is_valid
         assert len(plan.tool_calls) > 0
 
+    @typing.no_type_check
     def test_invalid_dict_produces_invalid_plan(self) -> None:
+        """build_plan_from_dict handles runtime-invalid dicts gracefully.
 
+        Passes a dict that does not conform to PlanJsonDict to verify Pydantic
+        validation rejects it at runtime without crashing.  The @no_type_check
+        decorator acknowledges this is a deliberate type violation.
+        """
         plan = build_plan_from_dict({"not_a_real_field": True})
         assert not plan.is_valid
 
@@ -894,7 +902,7 @@ class TestBuildExecutionPlanStream:
         reasoning_events: list[str] = []
         plan_result: ExecutionPlan | None = None
 
-        async def mock_emit_sse(data: dict[str, Any]) -> str:
+        async def mock_emit_sse(data: JSONObject) -> str:
             if data.get("type") == "reasoning":
                 reasoning_events.append(str(data["content"]))
             return f"data: {json.dumps(data)}\n\n"

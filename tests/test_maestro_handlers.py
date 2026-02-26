@@ -1,8 +1,8 @@
 """Tests for maestro handlers (orchestration, UsageTracker, fallback route)."""
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from typing import TYPE_CHECKING
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -609,7 +609,7 @@ class TestOrchestrateStream:
             yield {"type": "done", "content": "Answer.", "usage": {"prompt_tokens": 1, "completion_tokens": 2}}
 
         def make_stream(
-            *args: object, **kwargs: Any
+            *args: object, **kwargs: object
         ) -> AsyncGenerator[dict[str, object], None]:
             return stream_chunks(*args, **kwargs)
 
@@ -979,16 +979,19 @@ class TestComposingUnifiedSSE:
             safety_validated=True,
         )
 
-        async def _mock_execute(**kwargs: Any) -> Variation:
-            pre_cb = kwargs.get("pre_tool_callback")
-            post_cb = kwargs.get("post_tool_callback")
-            prog_cb = kwargs.get("progress_callback")
-            if pre_cb:
-                await pre_cb("stori_set_tempo", {"tempo": 120})
-            if post_cb:
-                await post_cb("stori_set_tempo", {"tempo": 120})
-            if prog_cb:
-                await prog_cb(1, 1, "stori_set_tempo", {"tempo": 120})
+        async def _mock_execute(
+            *,
+            pre_tool_callback: Callable[..., Awaitable[None]] | None = None,
+            post_tool_callback: Callable[..., Awaitable[None]] | None = None,
+            progress_callback: Callable[..., Awaitable[None]] | None = None,
+            **_: object,
+        ) -> Variation:
+            if pre_tool_callback:
+                await pre_tool_callback("stori_set_tempo", {"tempo": 120})
+            if post_tool_callback:
+                await post_tool_callback("stori_set_tempo", {"tempo": 120})
+            if progress_callback:
+                await progress_callback(1, 1, "stori_set_tempo", {"tempo": 120})
             from app.models.variation import Variation
             return Variation(
                 variation_id="var-1",
@@ -1056,19 +1059,22 @@ class TestComposingUnifiedSSE:
 
         call_idx = 0
 
-        async def _mock_execute(**kwargs: Any) -> Variation:
+        async def _mock_execute(
+            *,
+            pre_tool_callback: Callable[..., Awaitable[None]] | None = None,
+            post_tool_callback: Callable[..., Awaitable[None]] | None = None,
+            progress_callback: Callable[..., Awaitable[None]] | None = None,
+            **_: object,
+        ) -> Variation:
             nonlocal call_idx
-            pre_cb = kwargs.get("pre_tool_callback")
-            post_cb = kwargs.get("post_tool_callback")
-            prog_cb = kwargs.get("progress_callback")
             for tc in plan.tool_calls:
                 call_idx += 1
-                if pre_cb:
-                    await pre_cb(tc.name, tc.params)
-                if post_cb:
-                    await post_cb(tc.name, tc.params)
-                if prog_cb:
-                    await prog_cb(call_idx, len(plan.tool_calls), tc.name, tc.params)
+                if pre_tool_callback:
+                    await pre_tool_callback(tc.name, tc.params)
+                if post_tool_callback:
+                    await post_tool_callback(tc.name, tc.params)
+                if progress_callback:
+                    await progress_callback(call_idx, len(plan.tool_calls), tc.name, tc.params)
             from app.models.variation import Variation
             return Variation(
                 variation_id="var-2",

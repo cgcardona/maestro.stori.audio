@@ -66,6 +66,20 @@ _POS_OFFSET_RE = re.compile(
 _POS_KEYWORDS = ("after", "before", "alongside", "between", "within", "last")
 
 
+def _as_mode(raw: str) -> Literal["compose", "edit", "ask"]:
+    """Narrow a pre-validated mode string to the Literal type.
+
+    Callers must have already confirmed ``raw.lower()`` is in
+    ``("compose", "edit", "ask")`` before calling this.
+    """
+    lower = raw.lower()
+    if lower == "edit":
+        return "edit"
+    if lower == "ask":
+        return "ask"
+    return "compose"
+
+
 # ─── Data classes ─────────────────────────────────────────────────────────────
 
 
@@ -241,7 +255,7 @@ def parse_prompt(text: str) -> ParsedPrompt | None:
 
     return ParsedPrompt(
         raw=text,
-        mode=mode_raw.lower(),  # type: ignore[arg-type]  # validated by _MODE_KEYWORDS lookup above
+        mode=_as_mode(mode_raw),
         request=request_val,
         section=_str(data.get("section"), lower=True),
         position=position,
@@ -416,8 +430,11 @@ def _parse_position(val: str | None, after_alias: bool = False) -> PositionSpec 
                     except ValueError:
                         pass
                 return PositionSpec(kind="within", ref=ref, offset=offset + bar_off)
-            kind_val: Literal["after", "before", "alongside", "between", "within", "absolute", "last"] = kw  # type: ignore[assignment]  # kw validated by _POSITION_KEYWORDS dict lookup
-            return PositionSpec(kind=kind_val, ref=remainder.lower() or None, offset=offset)
+            if kw == "after":
+                return PositionSpec(kind="after", ref=remainder.lower() or None, offset=offset)
+            if kw == "before":
+                return PositionSpec(kind="before", ref=remainder.lower() or None, offset=offset)
+            return PositionSpec(kind="alongside", ref=remainder.lower() or None, offset=offset)
 
     if after_alias:
         return PositionSpec(kind="after", ref=val.lower(), offset=offset)

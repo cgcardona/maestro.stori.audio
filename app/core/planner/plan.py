@@ -20,12 +20,12 @@ if TYPE_CHECKING:
 from app.contracts.json_types import JSONObject
 from app.contracts.llm_types import ChatMessage
 from app.core.plan_schemas.models import GenerationRole
+from app.core.plan_schemas.plan_json_types import PlanJsonDict
 
 from app.contracts.project_types import ProjectContext
 
 ProjectState = ProjectContext
-PlanJsonDict = JSONObject  # plan JSON payload (validated by ExecutionPlanSchema)
-SSEEventDict = JSONObject  # SSE event wire dict
+SSEEventDict = JSONObject  # SSE event wire dict — JSON object emitted to the client
 
 from app.core.expansion import ToolCall
 from app.core.intent import IntentResult

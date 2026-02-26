@@ -554,24 +554,143 @@ def add_timing_humanization(
 # Note key normalization (camelCase ↔ snake_case)
 # ---------------------------------------------------------------------------
 
-_CAMEL_TO_SNAKE: dict[str, str] = {"startBeat": "start_beat", "durationBeats": "duration_beats"}
-_SNAKE_TO_CAMEL: dict[str, str] = {"start_beat": "startBeat", "duration_beats": "durationBeats"}
+def _note_to_snake(n: NoteDict) -> NoteDict:
+    """Return a new NoteDict with camelCase timing keys normalised to snake_case.
+
+    ``startBeat`` → ``start_beat``, ``durationBeats`` → ``duration_beats``.
+    All other fields are copied as-is.  Explicit per-field access avoids
+    dynamic key mutation and keeps the type checker satisfied.
+    """
+    result: NoteDict = {}
+
+    pitch = n.get("pitch")
+    if pitch is not None:
+        result["pitch"] = pitch
+
+    velocity = n.get("velocity")
+    if velocity is not None:
+        result["velocity"] = velocity
+
+    channel = n.get("channel")
+    if channel is not None:
+        result["channel"] = channel
+
+    layer = n.get("layer")
+    if layer is not None:
+        result["layer"] = layer
+
+    note_id = n.get("noteId")
+    if note_id is not None:
+        result["noteId"] = note_id
+
+    note_id_snake = n.get("note_id")
+    if note_id_snake is not None:
+        result["note_id"] = note_id_snake
+
+    track_id = n.get("trackId")
+    if track_id is not None:
+        result["trackId"] = track_id
+
+    track_id_snake = n.get("track_id")
+    if track_id_snake is not None:
+        result["track_id"] = track_id_snake
+
+    region_id = n.get("regionId")
+    if region_id is not None:
+        result["regionId"] = region_id
+
+    region_id_snake = n.get("region_id")
+    if region_id_snake is not None:
+        result["region_id"] = region_id_snake
+
+    # Timing: prefer existing snake_case; fall back to camelCase alias
+    start_beat = n.get("start_beat")
+    if start_beat is None:
+        start_beat = n.get("startBeat")
+    if start_beat is not None:
+        result["start_beat"] = start_beat
+
+    duration_beats = n.get("duration_beats")
+    if duration_beats is None:
+        duration_beats = n.get("durationBeats")
+    if duration_beats is not None:
+        result["duration_beats"] = duration_beats
+
+    return result
 
 
-def _notes_to_snake(notes: list[NoteDict]) -> None:
-    """Convert camelCase note keys to snake_case in-place."""
-    for n in notes:
-        for camel, snake in _CAMEL_TO_SNAKE.items():
-            if camel in n and snake not in n:
-                n[snake] = n.pop(camel)  # type: ignore[literal-required,misc]  # dynamic key remap; mypy can't narrow computed keys
+def _note_to_camel(n: NoteDict) -> NoteDict:
+    """Return a new NoteDict with snake_case timing keys converted to camelCase.
+
+    ``start_beat`` → ``startBeat``, ``duration_beats`` → ``durationBeats``.
+    All other fields are copied as-is.
+    """
+    result: NoteDict = {}
+
+    pitch = n.get("pitch")
+    if pitch is not None:
+        result["pitch"] = pitch
+
+    velocity = n.get("velocity")
+    if velocity is not None:
+        result["velocity"] = velocity
+
+    channel = n.get("channel")
+    if channel is not None:
+        result["channel"] = channel
+
+    layer = n.get("layer")
+    if layer is not None:
+        result["layer"] = layer
+
+    note_id = n.get("noteId")
+    if note_id is not None:
+        result["noteId"] = note_id
+
+    note_id_snake = n.get("note_id")
+    if note_id_snake is not None:
+        result["note_id"] = note_id_snake
+
+    track_id = n.get("trackId")
+    if track_id is not None:
+        result["trackId"] = track_id
+
+    track_id_snake = n.get("track_id")
+    if track_id_snake is not None:
+        result["track_id"] = track_id_snake
+
+    region_id = n.get("regionId")
+    if region_id is not None:
+        result["regionId"] = region_id
+
+    region_id_snake = n.get("region_id")
+    if region_id_snake is not None:
+        result["region_id"] = region_id_snake
+
+    # Timing: prefer existing camelCase; fall back to snake_case
+    start_beat = n.get("startBeat")
+    if start_beat is None:
+        start_beat = n.get("start_beat")
+    if start_beat is not None:
+        result["startBeat"] = start_beat
+
+    duration_beats = n.get("durationBeats")
+    if duration_beats is None:
+        duration_beats = n.get("duration_beats")
+    if duration_beats is not None:
+        result["durationBeats"] = duration_beats
+
+    return result
 
 
-def _notes_to_camel(notes: list[NoteDict]) -> None:
-    """Convert snake_case note keys to camelCase in-place."""
-    for n in notes:
-        for snake, camel in _SNAKE_TO_CAMEL.items():
-            if snake in n and camel not in n:
-                n[camel] = n.pop(snake)  # type: ignore[literal-required,misc]  # dynamic key remap; mypy can't narrow computed keys
+def _notes_to_snake(notes: list[NoteDict]) -> list[NoteDict]:
+    """Return a new list of notes with camelCase timing keys converted to snake_case."""
+    return [_note_to_snake(n) for n in notes]
+
+
+def _notes_to_camel(notes: list[NoteDict]) -> list[NoteDict]:
+    """Return a new list of notes with snake_case timing keys converted to camelCase."""
+    return [_note_to_camel(n) for n in notes]
 
 
 # ---------------------------------------------------------------------------
@@ -604,12 +723,12 @@ def apply_expressiveness(
 
     _was_camel = any("startBeat" in n for n in notes) if notes else False
     if _was_camel:
-        _notes_to_snake(notes)
+        notes[:] = _notes_to_snake(notes)
 
     # Skip drums — they have their own groove engine
     if instrument_role == "drums":
         if _was_camel:
-            _notes_to_camel(notes)
+            notes[:] = _notes_to_camel(notes)
         return {"notes": notes, "cc_events": [], "pitch_bends": []}
 
     add_velocity_curves(notes, style, bars, rng, role=instrument_role)
@@ -618,6 +737,6 @@ def apply_expressiveness(
     pitch_bends = add_pitch_bend_phrasing(notes, style, instrument_role, rng)
 
     if _was_camel:
-        _notes_to_camel(notes)
+        notes[:] = _notes_to_camel(notes)
 
     return {"notes": notes, "cc_events": cc_events, "pitch_bends": pitch_bends}

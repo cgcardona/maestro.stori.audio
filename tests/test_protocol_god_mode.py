@@ -10,7 +10,7 @@ Tests proving the four protocol upgrades:
 
 from __future__ import annotations
 
-from typing import Any
+from app.contracts.json_types import JSONObject
 import asyncio
 
 import json
@@ -212,11 +212,13 @@ class TestCompositionRootLineage:
         canonical = canonical_contract_dict(cc)
 
         assert "sections" in canonical
-        assert isinstance(canonical["sections"], list)
-        assert all(isinstance(h, str) for h in canonical["sections"])
-        assert sorted(canonical["sections"]) == canonical["sections"]
-        assert spec_a.contract_hash in canonical["sections"]
-        assert spec_b.contract_hash in canonical["sections"]
+        sections_val = canonical["sections"]
+        assert isinstance(sections_val, list)
+        sections_strs = [str(h) for h in sections_val]
+        assert all(isinstance(h, str) for h in sections_strs)
+        assert sorted(sections_strs) == sections_strs
+        assert spec_a.contract_hash in sections_strs
+        assert spec_b.contract_hash in sections_strs
 
         print("\n## COMPOSITION_CANONICAL_DICT")
         print(json.dumps(canonical, indent=2))
@@ -323,7 +325,7 @@ class TestExecutionAttestation:
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-ic")
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, Any], **kw: Any) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
@@ -508,7 +510,7 @@ class TestReplayAttackPrevention:
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-A")
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, Any], **kw: Any) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,

@@ -1,6 +1,6 @@
 """Canonical type definitions for JSON data and music-domain dicts.
 
-Replaces pervasive ``dict[str, Any]`` with precise structural types.
+Replaces untyped dict mappings with precise structural types.
 Import from here instead of re-defining shapes ad hoc.
 
 Hierarchy:
@@ -84,8 +84,9 @@ See module docstring: do NOT use this in Pydantic BaseModel fields.
 """
 
 JSONObject = dict[str, JSONValue]
-"""A JSON object — use instead of ``dict[str, Any]`` when keys are unknown.
+"""A JSON object mapping with unknown structure.
 
+Use this when keys are not statically known.
 See module docstring: do NOT use this in Pydantic BaseModel fields.
 """
 

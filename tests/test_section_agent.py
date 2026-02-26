@@ -7,7 +7,9 @@ no-bass, section child failure, missing regionId.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable
-from typing import Any, Callable, TypedDict
+from typing import Callable, TypedDict
+
+from app.contracts.llm_types import StreamEvent
 
 import asyncio
 import json
@@ -1664,7 +1666,7 @@ class TestExpressionRefinementStreaming:
 
         mock_llm = MagicMock()
 
-        async def _mock_stream(**kwargs: object) -> AsyncIterator[dict[str, Any]]:
+        async def _mock_stream(**kwargs: object) -> AsyncIterator[StreamEvent]:
 
             yield {"type": "reasoning_delta", "text": "Adding modulation "}
             yield {"type": "reasoning_delta", "text": "sweep for warmth."}
@@ -1673,6 +1675,7 @@ class TestExpressionRefinementStreaming:
                 "content": None,
                 "tool_calls": [{
                     "id": "cc1",
+                    "type": "function",
                     "function": {
                         "name": "stori_add_midi_cc",
                         "arguments": json.dumps({
@@ -1800,9 +1803,13 @@ class TestExpressionRefinementStreaming:
         captured_messages: list[ChatMessage] = []
         mock_llm = MagicMock()
 
-        async def _capture_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        async def _capture_stream(
+            *,
+            messages: list[ChatMessage] | None = None,
+            **_: object,
+        ) -> AsyncIterator[StreamEvent]:
 
-            captured_messages.extend(kwargs.get("messages", []))
+            captured_messages.extend(messages or [])
             yield {
                 "type": "done",
                 "content": None,

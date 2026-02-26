@@ -12,7 +12,7 @@ import inspect
 import json
 import re
 from pathlib import Path
-from typing import Any
+import typing
 
 import pytest
 from pydantic import ValidationError
@@ -207,10 +207,11 @@ class TestEventSerialization:
 
 
 class TestEmitter:
+    @typing.no_type_check
     def test_emit_rejects_raw_dict(self) -> None:
-
+        """emit() raises TypeError when called with a raw dict instead of a MaestroEvent."""
         with pytest.raises(TypeError, match="MaestroEvent"):
-            emit({"type": "state"})  # type: ignore[arg-type]  # intentionally wrong: testing that emit() rejects raw dicts
+            emit({"type": "state"})
 
     def test_emit_rejects_unregistered_type(self) -> None:
 
@@ -310,7 +311,7 @@ class TestExtraFieldsPolicy:
 
         """Event models reject unexpected fields."""
         with pytest.raises(ValidationError):
-            ContentEvent(content="hi", bogus_field="nope")  # type: ignore[call-arg]  # intentionally wrong: testing that extra fields are rejected
+            ContentEvent.model_validate({"content": "hi", "bogus_field": "nope"})
 
     def test_project_snapshot_allows_extra(self) -> None:
 
@@ -376,7 +377,7 @@ class TestCompleteEvent:
     def test_requires_success_and_trace_id(self) -> None:
 
         with pytest.raises(ValidationError):
-            CompleteEvent()  # type: ignore[call-arg]  # intentionally omitting required fields to test validation
+            CompleteEvent.model_validate({})
 
     def test_success_true(self) -> None:
 
@@ -837,7 +838,7 @@ class TestPhase2ProjectSnapshotValidation:
         """
         from app.models.requests import MaestroRequest
 
-        req = MaestroRequest(prompt="test", project={"id": "p1", "futureField": "ok"})  # type: ignore[arg-type]  # intentionally passing extra field to verify the validator strips unknown keys
+        req = MaestroRequest.model_validate({"prompt": "test", "project": {"id": "p1", "futureField": "ok"}})
         assert req.project is not None
         assert req.project.get("id") == "p1"
         assert "futureField" not in req.project
@@ -864,7 +865,7 @@ class TestPhase2NoDuplicateHelpers:
 
 def _make_minimal(model_class: type[MaestroEvent]) -> MaestroEvent:
     """Construct a minimal valid instance of an event model."""
-    _MINIMAL: dict[str, dict[str, Any]] = {
+    _MINIMAL: dict[str, JSONObject] = {
         "state": {"state": "editing", "intent": "track.add", "confidence": 0.9, "trace_id": "t"},
         "reasoning": {"content": "thinking..."},
         "reasoningEnd": {"agent_id": "a1"},
@@ -895,7 +896,7 @@ def _make_minimal(model_class: type[MaestroEvent]) -> MaestroEvent:
     else:
         et = "unknown"
     kwargs = _MINIMAL.get(et, {})
-    return model_class(**kwargs)
+    return model_class.model_validate(kwargs)
 
 
 # ═══════════════════════════════════════════════════════════════════════

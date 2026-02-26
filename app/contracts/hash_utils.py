@@ -18,7 +18,8 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
-from typing import Any
+
+from app.contracts.json_types import JSONObject, JSONValue
 
 
 _HASH_EXCLUDED_FIELDS = frozenset({
@@ -34,7 +35,7 @@ _HASH_EXCLUDED_FIELDS = frozenset({
 })
 
 
-def _normalize_value(value: object) -> object:
+def _normalize_value(value: object) -> JSONValue:
     """Recursively normalize a value for canonical serialization."""
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return canonical_contract_dict(value)
@@ -47,7 +48,7 @@ def _normalize_value(value: object) -> object:
     return str(value)
 
 
-def canonical_contract_dict(obj: object) -> dict[str, Any]:
+def canonical_contract_dict(obj: object) -> JSONObject:
     """Convert a frozen dataclass to a canonical ordered dict for hashing.
 
     Excludes advisory/meta fields defined in ``_HASH_EXCLUDED_FIELDS``.
@@ -63,7 +64,7 @@ def canonical_contract_dict(obj: object) -> dict[str, Any]:
 
     _is_composition = type(obj).__name__ == "CompositionContract"
 
-    result: dict[str, Any] = {}
+    result: JSONObject = {}
     for f in dataclasses.fields(obj):
         if f.name in _HASH_EXCLUDED_FIELDS:
             continue
