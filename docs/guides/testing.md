@@ -52,11 +52,11 @@ When CI is enabled, run the same coverage command so the build fails if coverage
 
 ## Storpheus Music Service tests
 
-The Storpheus service (`storpheus/`) has its own test suite that runs independently inside its container. Like the maestro container, the orpheus container copies source at build time — rebuild before testing.
+The Storpheus service (`storpheus/`) has its own test suite that runs independently inside its container. Like the maestro container, the storpheus container copies source at build time — rebuild before testing.
 
 **Rebuild + run:**
 ```bash
-docker compose build orpheus && docker compose up -d orpheus
+docker compose build storpheus && docker compose up -d storpheus
 docker compose exec storpheus sh -c "pytest test_*.py -v"
 ```
 
@@ -69,7 +69,7 @@ Tests cover: GM instrument resolution (`test_gm_resolution.py` — role → GM p
 Rebuild both containers and run both test suites sequentially:
 
 ```bash
-docker compose build maestro orpheus && docker compose up -d
+docker compose build maestro storpheus && docker compose up -d
 docker compose exec maestro pytest tests/ -v
 docker compose exec storpheus sh -c "pytest test_*.py -v"
 ```

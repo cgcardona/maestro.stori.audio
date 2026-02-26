@@ -95,22 +95,22 @@ _last_keepalive: float = 0.0
 _last_successful_gen: float = 0.0
 
 _DEFAULT_SPACE = "cgcardona/Orpheus-Music-Transformer"
-_KEEPALIVE_INTERVAL = int(os.environ.get("ORPHEUS_KEEPALIVE_INTERVAL", "600"))
-_MAX_CONCURRENT = int(os.environ.get("ORPHEUS_MAX_CONCURRENT", "1"))
-_MAX_QUEUE_DEPTH = int(os.environ.get("ORPHEUS_MAX_QUEUE_DEPTH", "20"))
-_JOB_TTL_SECONDS = int(os.environ.get("ORPHEUS_JOB_TTL", "300"))  # 5 min
-_COOLDOWN_SECONDS = float(os.environ.get("ORPHEUS_COOLDOWN_SECONDS", "3"))
+_KEEPALIVE_INTERVAL = int(os.environ.get("STORPHEUS_KEEPALIVE_INTERVAL", "600"))
+_MAX_CONCURRENT = int(os.environ.get("STORPHEUS_MAX_CONCURRENT", "1"))
+_MAX_QUEUE_DEPTH = int(os.environ.get("STORPHEUS_MAX_QUEUE_DEPTH", "20"))
+_JOB_TTL_SECONDS = int(os.environ.get("STORPHEUS_JOB_TTL", "300"))  # 5 min
+_COOLDOWN_SECONDS = float(os.environ.get("STORPHEUS_COOLDOWN_SECONDS", "3"))
 
 _CACHE_DIR = pathlib.Path(os.environ.get("STORPHEUS_CACHE_DIR", "/tmp/storpheus_cache"))
 _CACHE_FILE = _CACHE_DIR / "result_cache.json"
 
 # ── Storpheus config flags ─────────────────────────────────────────────
-ORPHEUS_PRESERVE_ALL_CHANNELS = os.environ.get("ORPHEUS_PRESERVE_ALL_CHANNELS", "true").lower() in ("1", "true", "yes")
+STORPHEUS_PRESERVE_ALL_CHANNELS = os.environ.get("STORPHEUS_PRESERVE_ALL_CHANNELS", "true").lower() in ("1", "true", "yes")
 ENABLE_BEAT_RESCALING = os.environ.get("ENABLE_BEAT_RESCALING", "false").lower() in ("1", "true", "yes")
-MAX_SESSION_TOKENS = int(os.environ.get("ORPHEUS_MAX_SESSION_TOKENS", "4096"))
+MAX_SESSION_TOKENS = int(os.environ.get("STORPHEUS_MAX_SESSION_TOKENS", "4096"))
 
-_INTENT_QUANT_STEP = float(os.environ.get("ORPHEUS_INTENT_QUANT", "0.2"))
-_FUZZY_EPSILON = float(os.environ.get("ORPHEUS_FUZZY_EPSILON", "0.35"))
+_INTENT_QUANT_STEP = float(os.environ.get("STORPHEUS_INTENT_QUANT", "0.2"))
+_FUZZY_EPSILON = float(os.environ.get("STORPHEUS_FUZZY_EPSILON", "0.35"))
 
 
 def _create_client() -> Client:
@@ -151,7 +151,7 @@ class _ClientPool:
         return client
 
     def get_loops(self, worker_id: int) -> Client | None:
-        loops_space = os.environ.get("STORI_ORPHEUS_LOOPS_SPACE", "")
+        loops_space = os.environ.get("STORI_STORPHEUS_LOOPS_SPACE", "")
         if not loops_space:
             return None
         if worker_id not in self._loops_clients:
@@ -162,7 +162,7 @@ class _ClientPool:
 
     def fresh_loops(self, worker_id: int) -> Client | None:
         """Return a brand-new Loops client, discarding previous session."""
-        loops_space = os.environ.get("STORI_ORPHEUS_LOOPS_SPACE", "")
+        loops_space = os.environ.get("STORI_STORPHEUS_LOOPS_SPACE", "")
         if not loops_space:
             return None
         self._loops_clients.pop(worker_id, None)
@@ -1494,7 +1494,7 @@ async def diagnostics() -> dict[str, object]:
             round(now - _last_keepalive, 1) if _last_keepalive > 0 else None
         ),
         "keepalive_interval_s": _KEEPALIVE_INTERVAL,
-        "predict_timeout_s": float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "180")),
+        "predict_timeout_s": float(os.environ.get("STORPHEUS_PREDICT_TIMEOUT", "180")),
         "max_concurrent": _MAX_CONCURRENT,
         "intent_quant_step": _INTENT_QUANT_STEP,
         "fuzzy_epsilon": _FUZZY_EPSILON,
@@ -1760,7 +1760,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
 
     try:
         _use_loops = (
-            os.environ.get("STORI_ORPHEUS_USE_LOOPS_MODEL", "").lower() in ("1", "true", "yes")
+            os.environ.get("STORI_STORPHEUS_USE_LOOPS_MODEL", "").lower() in ("1", "true", "yes")
             and request.bars <= 8
         )
         if _use_loops:
@@ -1878,7 +1878,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             f"gen={num_gen_tokens} ctx={_ctx_util:.0f}%"
         )
 
-        _predict_timeout = float(os.environ.get("ORPHEUS_PREDICT_TIMEOUT", "180"))
+        _predict_timeout = float(os.environ.get("STORPHEUS_PREDICT_TIMEOUT", "180"))
         session_hash, comp_state = _get_or_create_session(request.composition_id)
 
         # Section seeding: override seed with accumulated MIDI for section continuity
@@ -1992,7 +1992,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         # (0-9) for variety, then score the result.  For non-fast presets,
         # we can retry with a fresh generation if the score is poor.
         _num_candidates = quality_preset_to_batch_count(request.quality_preset)
-        _rejection_threshold = float(os.environ.get("ORPHEUS_REJECTION_THRESHOLD", "0.3"))
+        _rejection_threshold = float(os.environ.get("STORPHEUS_REJECTION_THRESHOLD", "0.3"))
 
         # Extract scoring params from constraints for candidate scoring
         _gc = request.generation_constraints

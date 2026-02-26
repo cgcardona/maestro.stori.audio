@@ -190,7 +190,7 @@ class Runner:
             result.error_message = str(e)
             logger.error("Run %s Maestro error: %s", run_id, e)
         except StorpheusError as e:
-            result.status = RunStatus.ORPHEUS_ERROR
+            result.status = RunStatus.STORPHEUS_ERROR
             result.error_type = "storpheus"
             result.error_message = str(e)
             logger.error("Run %s Storpheus error: %s", run_id, e)

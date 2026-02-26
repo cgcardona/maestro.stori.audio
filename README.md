@@ -22,7 +22,7 @@ cp .env.example .env
 # Edit .env: STORI_OPENROUTER_API_KEY, STORI_DB_PASSWORD (required; e.g. openssl rand -hex 16 for local), STORI_ACCESS_TOKEN_SECRET (openssl rand -hex 32), STORI_CORS_ORIGINS (required for browser/app; see .env.example).
 # For local nginx: NGINX_CONF_DIR=conf.d-local
 
-# Start the stack (Postgres, Qdrant, Orpheus, Maestro, nginx)
+# Start the stack (Postgres, Qdrant, Storpheus, Maestro, nginx)
 docker compose up
 # Or: docker compose up -d   (detached)
 ```
@@ -58,7 +58,7 @@ More (troubleshooting, cloud, deploy): [docs/guides/setup.md](docs/guides/setup.
         ▼                    ▼                    ▼
    Reasoning              Editing              Composing
    RAG (Qdrant)            Cloud LLM            Cloud LLM +
-                          (OpenRouter)         Orpheus / HF
+                          (OpenRouter)         Storpheus / HF
                                                (music generation)
 ```
 
@@ -67,7 +67,7 @@ More (troubleshooting, cloud, deploy): [docs/guides/setup.md](docs/guides/setup.
 1. **Intent** — One of three:
    - **Reasoning** — Answer in natural language; RAG over docs.
    - **Editing** — LLM emits validated tool calls; client applies them.
-   - **Composing** — Planner → executor runs tools; Orpheus/HF/patterns for music.
+   - **Composing** — Planner → executor runs tools; Storpheus/HF for music generation.
 2. **LLM** — Intent classification, reasoning answers, editing tool-call generation, composing plans; only allowed tools per intent are exposed.
 3. **Tools** — Create project, add tracks/regions, generate drums/bass/melody/chords, add notes, effects, automation, UI. Same tool set whether the caller is Stori (HTTP stream) or an MCP client. Full list and API: [docs/reference/api.md](docs/reference/api.md) (streaming, SSE events, models, and full MCP tool reference).
 4. **Stream** — **Human-first:** the Stori app uses **HTTP**: POST `/api/v1/maestro/stream` → SSE (reasoning, tool_call, complete). You stay in the driver's seat; the app is a normal HTTP client. No MCP required.
@@ -101,7 +101,7 @@ Ports use the **10001–10099** block (below the ephemeral range, avoids common 
 | Service | Port | Description |
 |---------|------|-------------|
 | **Stori Maestro** | 10001 | This backend (FastAPI + MCP) |
-| **Orpheus Music** | 10002 | AI music generation (HF) |
+| **Storpheus** | 10002 | AI music generation (Orpheus Music Transformer on HF) |
 | **Cloud LLM** | — | OpenRouter |
 
 ---

@@ -19,7 +19,7 @@ This document is the single source of truth for every named entity (TypedDict, d
 3. [Auth (`app/auth/tokens.py`)](#auth)
 4. [Services](#services)
    - [Assets (`app/services/assets.py`)](#assets)
-   - [OrpheusRawResponse](#orpheusrawresponse)
+   - [StorpheusRawResponse](#storpheusrawresponse)
    - [SampleChange](#samplechange)
    - [ExpressivenessResult](#expressivenessresult)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
@@ -32,7 +32,7 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [_GenerateParams](#_generateparams)
 7. [State Store (`app/core/state_store.py`)](#state-store)
    - [_ProjectMetadataSnapshot](#_projectmetadatasnapshot)
-7. [Orpheus Types (`storpheus/orpheus_types.py`)](#orpheus-types)
+7. [Storpheus Types (`storpheus/storpheus_types.py`)](#storpheus-types)
    - [MIDI event types](#midi-event-types)
    - [Pipeline types](#pipeline-types)
    - [Scoring types](#scoring-types)
@@ -861,11 +861,11 @@ These Protocols define the structural interface for the untyped `boto3` S3 clien
 
 ---
 
-### `OrpheusRawResponse`
+### `StorpheusRawResponse`
 
-**Path:** `app/services/orpheus.py`
+**Path:** `app/services/storpheus.py`
 
-`TypedDict, total=False` — The raw JSON response from the Orpheus `/generate` endpoint.
+`TypedDict, total=False` — The raw JSON response from the Storpheus `/generate` endpoint.
 
 On success: `success=True` plus `notes`/`tool_calls`/`metadata`.
 On failure: `success=False` plus `error` (and optionally `message`).
@@ -874,7 +874,7 @@ On failure: `success=False` plus `error` (and optionally `message`).
 |-------|----------|------|-------------|
 | `success` | ✓ | `bool` | Whether generation completed |
 | `notes` | ✓ | `list[NoteDict]` | Flat note list (wire format) |
-| `tool_calls` | ✓ | `list[dict[str, object]]` | Raw tool call dicts from Orpheus |
+| `tool_calls` | ✓ | `list[dict[str, object]]` | Raw tool call dicts from Storpheus |
 | `metadata` | ✓ | `dict[str, object]` | Generation metadata (timing, cache info, etc.) |
 | `channel_notes` | | `dict[int, list[NoteDict]]` | Per-MIDI-channel note lists |
 | `error` | | `str` | Error description on failure |
@@ -1088,13 +1088,13 @@ Consumers must narrow on `envelope.type` before accessing payload fields.
 
 ## Storpheus Types
 
-**Path:** `storpheus/orpheus_types.py`
+**Path:** `storpheus/storpheus_types.py`
 
-These types mirror the Maestro `app/contracts/json_types.py` types but are defined independently to avoid cross-container imports. Orpheus uses **snake_case** internally; camelCase types (like `WireNoteDict`) are used only at the API boundary.
+These types mirror the Maestro `app/contracts/json_types.py` types but are defined independently to avoid cross-container imports. Storpheus uses **snake_case** internally; camelCase types (like `WireNoteDict`) are used only at the API boundary.
 
 ### MIDI Event Types
 
-#### `OrpheusNoteDict`
+#### `StorpheusNoteDict`
 
 `TypedDict, total=False` — A single MIDI note as parsed from a MIDI file. Internal representation (snake_case).
 
@@ -1105,7 +1105,7 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 | `duration_beats` | ✓ | `float` | Note duration in beats |
 | `velocity` | ✓ | `int` | MIDI velocity (0–127) |
 
-#### `OrpheusCCEvent`
+#### `StorpheusCCEvent`
 
 `TypedDict` — A MIDI Control Change event.
 
@@ -1115,7 +1115,7 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 | `beat` | `float` | Event position in beats |
 | `value` | `int` | CC value (0–127) |
 
-#### `OrpheusPitchBend`
+#### `StorpheusPitchBend`
 
 `TypedDict` — A MIDI Pitch Bend event.
 
@@ -1124,7 +1124,7 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 | `beat` | `float` | Event position in beats |
 | `value` | `int` | Pitch bend value (-8192 to 8191) |
 
-#### `OrpheusAftertouch`
+#### `StorpheusAftertouch`
 
 `TypedDict, total=False` — A MIDI Aftertouch event (channel pressure or polyphonic).
 
@@ -1144,15 +1144,15 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `notes` | `dict[int, list[OrpheusNoteDict]]` | Notes per channel |
-| `cc_events` | `dict[int, list[OrpheusCCEvent]]` | CC events per channel |
-| `pitch_bends` | `dict[int, list[OrpheusPitchBend]]` | Pitch bends per channel |
-| `aftertouch` | `dict[int, list[OrpheusAftertouch]]` | Aftertouch per channel |
+| `notes` | `dict[int, list[StorpheusNoteDict]]` | Notes per channel |
+| `cc_events` | `dict[int, list[StorpheusCCEvent]]` | CC events per channel |
+| `pitch_bends` | `dict[int, list[StorpheusPitchBend]]` | Pitch bends per channel |
+| `aftertouch` | `dict[int, list[StorpheusAftertouch]]` | Aftertouch per channel |
 | `program_changes` | `dict[int, int]` | Program number per channel |
 
 #### `WireNoteDict`
 
-`TypedDict` — A single MIDI note in the camelCase wire format sent to Maestro. Used **only** in `GenerateResponse` fields that cross the HTTP boundary. All internal processing uses `OrpheusNoteDict`.
+`TypedDict` — A single MIDI note in the camelCase wire format sent to Maestro. Used **only** in `GenerateResponse` fields that cross the HTTP boundary. All internal processing uses `StorpheusNoteDict`.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -1218,7 +1218,7 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `notes` | `list[OrpheusNoteDict]` | Notes to evaluate |
+| `notes` | `list[StorpheusNoteDict]` | Notes to evaluate |
 
 #### `QualityEvalToolCall`
 
@@ -1257,7 +1257,7 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 | `midi_result` | `Sequence[object]` | Raw Gradio response tuple `[audio, plot, midi_path, …]` |
 | `midi_path` | `str` | Path to the generated MIDI file |
 | `parsed` | `ParsedMidiResult` | Fully parsed MIDI events by channel |
-| `flat_notes` | `list[OrpheusNoteDict]` | Flattened note list across all channels |
+| `flat_notes` | `list[StorpheusNoteDict]` | Flattened note list across all channels |
 | `batch_idx` | `int` | Index in the generation batch (for logging) |
 
 ---
@@ -1804,8 +1804,8 @@ Maestro Service (app/)
 │   │   ├── _GetObjectResponse         — TypedDict: boto3 get_object response
 │   │   └── _S3Client                  — Protocol: boto3 S3 client interface
 │   │
-│   ├── backends/storpheus.py (via orpheus.py)
-│   │   └── OrpheusRawResponse         — raw HTTP response from Orpheus service
+│   ├── backends/storpheus.py (via services/storpheus.py)
+│   │   └── StorpheusRawResponse         — raw HTTP response from Storpheus service
 │   │
 │   └── muse_drift.py
 │       └── SampleChange               — a single note diff sample
@@ -1827,15 +1827,15 @@ Maestro Service (app/)
             └── error / cc_events / pitch_bends / aftertouch
 
 
-Orpheus Service (storpheus/)
+Storpheus Service (storpheus/)
 │
-└── orpheus_types.py
+└── storpheus_types.py
     │
     ├── MIDI Events
-    │   ├── OrpheusNoteDict            — note (snake_case, internal)
-    │   ├── OrpheusCCEvent             — CC event
-    │   ├── OrpheusPitchBend           — pitch bend event
-    │   └── OrpheusAftertouch          — aftertouch event (channel/poly)
+    │   ├── StorpheusNoteDict            — note (snake_case, internal)
+    │   ├── StorpheusCCEvent             — CC event
+    │   ├── StorpheusPitchBend           — pitch bend event
+    │   └── StorpheusAftertouch          — aftertouch event (channel/poly)
     │
     ├── Pipeline
     │   ├── ParsedMidiResult           — full parse output (all channels)

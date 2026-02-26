@@ -1,6 +1,6 @@
 # Stori Tour de Force
 
-End-to-end integration harness that stress-tests and proves the integrated Maestro + Orpheus + MUSE system.
+End-to-end integration harness that stress-tests and proves the integrated Maestro + Storpheus + MUSE system.
 
 ## What It Does
 
@@ -23,7 +23,7 @@ The TDF runs **inside the `maestro` Docker container**. Never run it on the host
 1. Both containers built and running:
 
 ```bash
-docker compose build maestro orpheus
+docker compose build maestro storpheus
 docker compose up -d
 ```
 
@@ -75,10 +75,10 @@ The TDF runs inside the `maestro` container. All endpoint defaults use Docker Co
 |---------|-------------|
 | Maestro API | `http://maestro:10001` |
 | Prompt endpoint | `http://maestro:10001/api/v1/prompts/random` |
-| Orpheus | `http://orpheus:10002` |
+| Storpheus | `http://storpheus:10002` |
 | MUSE API | `http://maestro:10001/api/v1/muse` |
 
-These are **not** the same as host-machine URLs. From your Mac, Maestro is at `http://localhost:10001` (or `http://maestro.local:10001` if you add `127.0.0.1 maestro.local` to `/etc/hosts`). Inside Docker, service names like `maestro` and `orpheus` are resolved by Docker DNS — `localhost` only reaches the current container.
+These are **not** the same as host-machine URLs. From your Mac, Maestro is at `http://localhost:10001` (or `http://maestro.local:10001` if you add `127.0.0.1 maestro.local` to `/etc/hosts`). Inside Docker, service names like `maestro` and `storpheus` are resolved by Docker DNS — `localhost` only reaches the current container.
 
 ## Output Directory
 
@@ -100,7 +100,7 @@ The default output path is `/data/tdf_<timestamp>`. No `--out` flag needed unles
 | `--jwt-env` | `STORI_JWT` | Env var containing JWT |
 | `--prompt-endpoint` | `http://maestro:10001/api/v1/prompts/random` | Prompt fetch URL |
 | `--maestro` | `http://maestro:10001/api/v1/maestro/stream` | Maestro stream URL |
-| `--orpheus` | `http://orpheus:10002` | Orpheus base URL |
+| `--storpheus` | `http://storpheus:10002` | Storpheus base URL |
 | `--muse-url` | `http://maestro:10001/api/v1/muse` | MUSE API base URL |
 | `--runs` | `10` | Number of runs |
 | `--seed` | `1337` | Random seed |
@@ -108,7 +108,7 @@ The default output path is `/data/tdf_<timestamp>`. No `--out` flag needed unles
 | `--out` | `/data/tdf_<timestamp>` | Output directory (persistent Docker volume) |
 | `--quality-preset` | `balanced` | `fast` / `balanced` / `quality` |
 | `--maestro-timeout` | `180` | Stream timeout (seconds) |
-| `--orpheus-timeout` | `180` | Job timeout (seconds) |
+| `--storpheus-timeout` | `180` | Job timeout (seconds) |
 | `--global-timeout` | `300` | Per-run timeout (seconds) |
 | `-v` / `--verbose` | off | Verbose logging |
 
@@ -148,8 +148,8 @@ docker compose exec maestro pytest tests/test_tourdeforce/ -v
     prompt_fetch/        # Raw prompt responses
     maestro_requests/    # Maestro request payloads
     maestro_sse/         # Raw + parsed SSE streams
-    orpheus_requests/    # Orpheus generation requests
-    orpheus_responses/   # Orpheus job results
+    storpheus_requests/  # Storpheus generation requests
+    storpheus_responses/ # Storpheus job results
   midi/
     run_r_000001/
       midi_summary.json  # MIDI quality metrics
@@ -172,7 +172,7 @@ All events in `events.jsonl` follow a unified schema:
   "ts": "2026-02-24T17:30:00.123Z",
   "run_id": "r_000042",
   "scenario": "compose->commit->edit->branch->merge",
-  "component": "maestro|orpheus|muse|prompt_service|client",
+  "component": "maestro|storpheus|muse|prompt_service|client",
   "event_type": "http_request|sse_event|tool_call|midi_metric|muse_commit|...",
   "trace_id": "t_abc123",
   "span_id": "s_def456",
@@ -197,7 +197,7 @@ The analyzer computes:
 ## Determinism
 
 - Prompt selection uses `stable_hash(sorted_ids, seed) % N`
-- Seed propagated into Maestro and Orpheus where supported
+- Seed propagated into Maestro and Storpheus where supported
 - MUSE commits are content-addressed
 - Full payload hashing (SHA-256) for reproducibility audit
 
@@ -240,8 +240,8 @@ See `SCENARIOS.md` for detailed flow diagrams.
 | `Name or service not known` | Endpoint URLs pointing at an external domain | Defaults are already correct for Docker; check you haven't overridden them |
 | `PermissionError: 'artifacts'` | Writing to `/app/` which is root-owned | Don't pass `--out` (defaults to `/data/`), or use `--out /tmp/tdf` |
 | `STORI_JWT not found` | JWT not passed into container | `source .env.tourdeforce && docker compose exec -e STORI_JWT="$STORI_JWT" maestro ...` |
-| Orpheus timeout | HF Space cold start | Increase `--orpheus-timeout 300` and `--global-timeout 600` |
-| Empty MIDI / 0 notes | Orpheus Space down or rate-limited | Check `docker compose logs orpheus` and HF Space status |
+| Storpheus timeout | HF Space cold start | Increase `--storpheus-timeout 300` and `--global-timeout 600` |
+| Empty MIDI / 0 notes | HF Space down or rate-limited | Check `docker compose logs storpheus` and HF Space status |
 
 ## Dependencies
 

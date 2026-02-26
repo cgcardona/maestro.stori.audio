@@ -449,8 +449,8 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 | `STORI_SECTION_CHILD_TIMEOUT` | 300 | Per-section child watchdog (seconds) |
 | `STORI_INSTRUMENT_AGENT_TIMEOUT` | 600 | Per-instrument parent watchdog (seconds) |
 | `STORI_BASS_SIGNAL_WAIT_TIMEOUT` | 240 | Bass waiting for drum signal (seconds) |
-| `STORI_ORPHEUS_MAX_CONCURRENT` | 2 | Max parallel submit+poll cycles (serializes GPU access) |
-| `STORI_ORPHEUS_TIMEOUT` | 180 | Fallback max read timeout (seconds) |
+| `STORI_STORPHEUS_MAX_CONCURRENT` | 2 | Max parallel submit+poll cycles (serializes GPU access) |
+| `STORI_STORPHEUS_TIMEOUT` | 180 | Fallback max read timeout (seconds) |
 | `STORI_STORPHEUS_POLL_TIMEOUT` | 30 | Long-poll timeout per `/jobs/{id}/wait` request (seconds) |
 | `STORI_STORPHEUS_POLL_MAX_ATTEMPTS` | 10 | Max polls before giving up (~5 min total) |
 | `STORI_STORPHEUS_CB_THRESHOLD` | 3 | Consecutive failures before circuit breaker trips |
@@ -459,7 +459,7 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 | `STORI_STORPHEUS_PRESERVE_ALL_CHANNELS` | true | Return all MIDI channels (DAW handles routing) |
 | `STORI_STORPHEUS_ENABLE_BEAT_RESCALING` | false | Disable beat rescaling for raw model timing |
 | `STORI_STORPHEUS_REJECTION_CANDIDATES` | 4 | Candidates for rejection sampling (quality preset) |
-| `STORI_ORPHEUS_MAX_SESSION_TOKENS` | 4096 | Token cap before session rotation |
+| `STORI_STORPHEUS_MAX_SESSION_TOKENS` | 4096 | Token cap before session rotation |
 
 ### SectionState — deterministic musical telemetry
 
@@ -581,17 +581,17 @@ Every Orpheus generation is primed with a curated seed MIDI from the pre-built s
 
 ### Persistent composition sessions
 
-Each composition maintains a persistent Gradio session via `CompositionState`. Instead of resetting the session hash on every call (which destroyed accumulated token context), sessions persist across sections and instrument calls within the same composition. A token cap (`STORI_ORPHEUS_MAX_SESSION_TOKENS`, default 4096) triggers automatic session rotation — truncating earliest tokens rather than a full reset — to prevent unbounded growth while preserving continuity.
+Each composition maintains a persistent Gradio session via `CompositionState`. Instead of resetting the session hash on every call (which destroyed accumulated token context), sessions persist across sections and instrument calls within the same composition. A token cap (`STORI_STORPHEUS_MAX_SESSION_TOKENS`, default 4096) triggers automatic session rotation — truncating earliest tokens rather than a full reset — to prevent unbounded growth while preserving continuity.
 
 `CompositionState` is tracked in both the Orpheus music service (per-call session management) and the Maestro `StateStore` (architectural hook for future direct token-state persistence).
 
 ### Channel preservation
 
-By default (`STORI_ORPHEUS_PRESERVE_ALL_CHANNELS=true`), all generated MIDI channels are returned to the DAW. Instrument routing is handled DAW-side, not proxy-side. This preserves the full musical structure that Orpheus generates instead of destructively filtering channels before the DAW sees them. The legacy channel-filtering path remains available by setting the flag to `false`.
+By default (`STORI_STORPHEUS_PRESERVE_ALL_CHANNELS=true`), all generated MIDI channels are returned to the DAW. Instrument routing is handled DAW-side, not proxy-side. This preserves the full musical structure that Orpheus generates instead of destructively filtering channels before the DAW sees them. The legacy channel-filtering path remains available by setting the flag to `false`.
 
 ### Quality rejection sampling
 
-For the `quality` preset, the Orpheus proxy generates N candidates (default 4, configurable via `STORI_ORPHEUS_REJECTION_CANDIDATES`) and scores each using a composite quality metric:
+For the `quality` preset, the Orpheus proxy generates N candidates (default 4, configurable via `STORI_STORPHEUS_REJECTION_CANDIDATES`) and scores each using a composite quality metric:
 
 | Signal | Weight | Measures |
 |--------|--------|----------|
@@ -654,7 +654,7 @@ StorpheusBackend.generate()                   ← app/services/backends/orpheus.
     │         energy → energy_intensity
     │         salient axes → musical_goals list
     ▼
-StorpheusClient.generate()                    ← app/services/orpheus.py
+StorpheusClient.generate()                    ← app/services/storpheus.py
     │  submit: POST /generate → {jobId, status}
     │  poll:   GET /jobs/{id}/wait?timeout=30
     ▼
@@ -672,9 +672,9 @@ For **natural language** prompts: the EmotionVector is not derived (no structure
 
 `StorpheusClient` is a process-wide singleton (see `app/services/orpheus.get_storpheus_client()`). The `httpx.AsyncClient` is created once at startup with explicit connection limits and keepalive settings, and `warmup()` is called in the FastAPI lifespan to pre-establish the TCP connection before the first user request.
 
-**Submit + poll pattern:** `POST /generate` returns immediately with `{jobId, status}`. Cache hits arrive pre-completed (no queue slot used). Cache misses enqueue a job in a bounded `asyncio.Queue` (max depth 20, configurable via `ORPHEUS_MAX_QUEUE_DEPTH`). A fixed-size worker pool (`ORPHEUS_MAX_CONCURRENT`, default 2) pulls jobs from the queue and runs `_do_generate()` (the extracted GPU generation logic). Callers poll `GET /jobs/{jobId}/wait?timeout=30` until the job completes or fails. Jobs survive HTTP disconnects — if a poll times out, the GPU work continues and the result is retrievable on the next poll. Completed jobs are cleaned up after 5 minutes (`ORPHEUS_JOB_TTL`, default 300s).
+**Submit + poll pattern:** `POST /generate` returns immediately with `{jobId, status}`. Cache hits arrive pre-completed (no queue slot used). Cache misses enqueue a job in a bounded `asyncio.Queue` (max depth 20, configurable via `STORPHEUS_MAX_QUEUE_DEPTH`). A fixed-size worker pool (`STORPHEUS_MAX_CONCURRENT`, default 2) pulls jobs from the queue and runs `_do_generate()` (the extracted GPU generation logic). Callers poll `GET /jobs/{jobId}/wait?timeout=30` until the job completes or fails. Jobs survive HTTP disconnects — if a poll times out, the GPU work continues and the result is retrievable on the next poll. Completed jobs are cleaned up after 5 minutes (`STORPHEUS_JOB_TTL`, default 300s).
 
-**Orpheus-music service (container):** The Storpheus container wraps the HuggingFace Space Gradio API. Key reliability features: (1) `asyncio.wait_for()` around each Gradio `predict()` call (default 180s per call, configurable via `ORPHEUS_PREDICT_TIMEOUT`), (2) periodic keepalive pings to prevent the HF Space GPU from going to sleep (`ORPHEUS_KEEPALIVE_INTERVAL`, default 600s), (3) automatic Gradio client recreation on connection failures, (4) `/diagnostics` endpoint for operational visibility (Gradio client status, HF Space status, active generation count, queue depth, cache stats), (5) `GET /queue/status` for queue depth and worker utilization.
+**Storpheus service (container):** The Storpheus container wraps the HuggingFace Space Gradio API. Key reliability features: (1) `asyncio.wait_for()` around each Gradio `predict()` call (default 180s per call, configurable via `STORPHEUS_PREDICT_TIMEOUT`), (2) periodic keepalive pings to prevent the HF Space GPU from going to sleep (`STORPHEUS_KEEPALIVE_INTERVAL`, default 600s), (3) automatic Gradio client recreation on connection failures, (4) `/diagnostics` endpoint for operational visibility (Gradio client status, HF Space status, active generation count, queue depth, cache stats), (5) `GET /queue/status` for queue depth and worker utilization.
 
 ---
 
