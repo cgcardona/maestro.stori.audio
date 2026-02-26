@@ -75,21 +75,21 @@ async def _handle_reasoning(
                 tool_choice="none",
             ):
                 event = raw
-                if event.get("type") == "reasoning_delta":
-                    reasoning_text = event.get("text", "")
+                if event["type"] == "reasoning_delta":
+                    reasoning_text = event["text"]
                     if reasoning_text:
                         sanitized = sanitize_reasoning(reasoning_text)
                         if sanitized:
                             yield emit(ReasoningEvent(content=sanitized))
-                elif event.get("type") == "content_delta":
-                    content_text = event.get("text", "")
+                elif event["type"] == "content_delta":
+                    content_text = event["text"]
                     if content_text:
                         response_text += content_text
                         yield emit(ContentEvent(content=content_text))
-                elif event.get("type") == "done":
+                elif event["type"] == "done":
                     response = LLMResponse(
-                        content=response_text or event.get("content"),
-                        usage=event.get("usage", {})
+                        content=response_text or event["content"],
+                        usage=event["usage"],
                     )
             duration_ms = (time.time() - start_time) * 1000
         else:

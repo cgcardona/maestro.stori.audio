@@ -22,6 +22,8 @@ from app.config import settings
 from app.contracts.json_types import (
     AftertouchDict,
     CCEventDict,
+    GenerationConstraintsDict,
+    IntentGoalDict,
     JSONValue,
     NoteDict,
     StorpheusResultBucket,
@@ -276,8 +278,8 @@ class StorpheusClient:
         # ── Canonical intent blocks ──
         emotion_vector: dict[str, float] | None = None,
         role_profile_summary: dict[str, float] | None = None,
-        generation_constraints: dict[str, object] | None = None,
-        intent_goals: list[dict[str, object]] | None = None,
+        generation_constraints: GenerationConstraintsDict | None = None,
+        intent_goals: list[IntentGoalDict] | None = None,
         seed: int | None = None,
         trace_id: str | None = None,
         intent_hash: str | None = None,

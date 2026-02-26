@@ -13,7 +13,8 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    from app.core.llm_client import LLMClient, UsageStats
+    from app.contracts.llm_types import UsageStats
+    from app.core.llm_client import LLMClient
     from app.core.maestro_handlers import UsageTracker
 
 from app.contracts.json_types import JSONObject
@@ -310,28 +311,28 @@ async def build_execution_plan_stream(
         temperature=0.1,
         reasoning_fraction=0.15,
     ):
-        if chunk.get("type") == "reasoning_delta":
-            reasoning_text = chunk.get("text", "")
+        if chunk["type"] == "reasoning_delta":
+            reasoning_text = chunk["text"]
             if reasoning_text:
                 to_emit = reasoning_buf.add(reasoning_text)
                 if to_emit and emit_sse:
                     yield await emit_sse({"type": "reasoning", "content": to_emit})
 
-        elif chunk.get("type") == "content_delta":
+        elif chunk["type"] == "content_delta":
             flushed = reasoning_buf.flush()
             if flushed and emit_sse:
                 yield await emit_sse({"type": "reasoning", "content": flushed})
-            content_text = chunk.get("text", "")
+            content_text = chunk["text"]
             if content_text:
                 accumulated_content.append(content_text)
 
-        elif chunk.get("type") == "done":
+        elif chunk["type"] == "done":
             flushed = reasoning_buf.flush()
             if flushed and emit_sse:
                 yield await emit_sse({"type": "reasoning", "content": flushed})
-            if not accumulated_content and chunk.get("content"):
+            if not accumulated_content and chunk["content"]:
                 accumulated_content.append(chunk["content"])
-            usage = chunk.get("usage", {})
+            usage = chunk["usage"]
 
     if usage_tracker and usage:
         usage_tracker.add(

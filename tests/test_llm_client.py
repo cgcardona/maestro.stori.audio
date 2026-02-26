@@ -10,7 +10,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.expansion import ToolCall
-from app.contracts.llm_types import ChatMessage, ToolSchemaDict
+from app.contracts.llm_types import ChatMessage, OpenAIResponse, ToolSchemaDict
 from app.core.llm_client import (
     LLMClient,
     LLMProvider,
@@ -142,7 +142,7 @@ class TestParseResponse:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test"
         )
-        data = {
+        data: OpenAIResponse = {
             "choices": [{
                 "message": {"content": "Hello world"},
                 "finish_reason": "stop",
@@ -159,7 +159,7 @@ class TestParseResponse:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test"
         )
-        data = {
+        data: OpenAIResponse = {
             "choices": [{
                 "message": {
                     "content": None,
@@ -186,7 +186,7 @@ class TestParseResponse:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test"
         )
-        data: dict[str, object] = {"choices": [{}]}
+        data: OpenAIResponse = {"choices": [{}]}
         result = client._parse_response(data)
         assert result.content is None
         assert len(result.tool_calls) == 0
@@ -197,7 +197,7 @@ class TestParseResponse:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="test"
         )
-        data = {
+        data: OpenAIResponse = {
             "choices": [{
                 "message": {
                     "tool_calls": [{

@@ -21,8 +21,8 @@ from pydantic import Field
 
 from app.models.base import CamelModel
 
-from app.contracts.mcp_types import MCPContentBlock, MCPToolDef
-from app.mcp.server import get_mcp_server, DAWMessage, ServerInfoDict, StoriMCPServer
+from app.contracts.mcp_types import DAWToolCallMessage, MCPContentBlock, MCPServerInfo, MCPToolDef
+from app.mcp.server import get_mcp_server, StoriMCPServer
 from app.auth.dependencies import require_valid_token
 from app.auth.tokens import validate_access_code, AccessCodeError
 from app.protocol.emitter import ProtocolSerializationError, emit
@@ -179,7 +179,7 @@ async def call_tool(
 @router.get("/info")
 async def server_info(
     _auth: object = Depends(require_valid_token),
-) -> ServerInfoDict:
+) -> MCPServerInfo:
     """Get MCP server information. Requires authentication."""
     server = get_mcp_server()
     return server.get_server_info()
@@ -219,7 +219,7 @@ async def daw_websocket(
     connection_id = str(id(websocket))
     server = get_mcp_server()
 
-    async def send_to_daw(message: DAWMessage) -> None:
+    async def send_to_daw(message: DAWToolCallMessage) -> None:
         await websocket.send_json(message)
 
     server.register_daw(connection_id, send_to_daw)
@@ -302,10 +302,10 @@ async def tool_stream(
         )
     async def event_generator() -> AsyncIterator[str]:
         server = get_mcp_server()
-        queue: asyncio.Queue[DAWMessage] = asyncio.Queue()
+        queue: asyncio.Queue[DAWToolCallMessage] = asyncio.Queue()
         guard = ProtocolGuard()
 
-        async def send_to_queue(message: DAWMessage) -> None:
+        async def send_to_queue(message: DAWToolCallMessage) -> None:
             await queue.put(message)
 
         server.register_daw(connection_id, send_to_queue)
@@ -315,7 +315,7 @@ async def tool_stream(
                 try:
                     message = await asyncio.wait_for(queue.get(), timeout=30.0)
                     try:
-                        yield emit(MCPMessageEvent(payload=message))
+                        yield emit(MCPMessageEvent(payload=dict(message)))
                     except ProtocolSerializationError as exc:
                         logger.error(f"❌ MCP stream protocol error: {exc}")
                         yield emit(ErrorEvent(message="Protocol serialization failure"))

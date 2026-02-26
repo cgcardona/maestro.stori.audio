@@ -28,12 +28,85 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, Union
+
+from typing_extensions import TypedDict
+
+from app.contracts.json_types import CCEventDict, PitchBendDict, AftertouchDict
 
 logger = logging.getLogger(__name__)
 
 
 EventType = Literal["meta", "phrase", "done", "error", "heartbeat"]
+
+
+# ── Per-event payload shapes ───────────────────────────────────────────────────
+
+
+class MetaPayload(TypedDict, total=False):
+    """Payload for ``type="meta"`` envelopes (always sequence=1).
+
+    Describes which tracks and regions a variation will affect, and carries
+    the user's intent and the AI explanation.
+    """
+
+    intent: str
+    aiExplanation: str | None  # noqa: N815
+    affectedTracks: list[str]  # noqa: N815
+    affectedRegions: list[str]  # noqa: N815
+    noteCounts: dict[str, int]  # noqa: N815
+
+
+class PhrasePayload(TypedDict, total=False):
+    """Payload for ``type="phrase"`` envelopes.
+
+    One generated MIDI phrase.  Both camelCase (wire) and snake_case (internal)
+    key forms are accepted — consumers should prefer camelCase.
+    """
+
+    phraseId: str  # noqa: N815
+    phrase_id: str  # snake_case fallback
+    trackId: str  # noqa: N815
+    track_id: str  # snake_case fallback
+    regionId: str  # noqa: N815
+    region_id: str  # snake_case fallback
+    startBeat: float  # noqa: N815
+    start_beat: float  # snake_case fallback
+    endBeat: float  # noqa: N815
+    end_beat: float  # snake_case fallback
+    label: str
+    tags: list[str]
+    explanation: str | None
+    noteChanges: list[dict[str, object]]  # noqa: N815  raw JSON objects; shape defined by NoteChangeDict
+    note_changes: list[dict[str, object]]  # snake_case fallback
+    ccEvents: list[CCEventDict]  # noqa: N815
+    cc_events: list[CCEventDict]  # snake_case fallback
+    pitchBends: list[PitchBendDict]  # noqa: N815
+    pitch_bends: list[PitchBendDict]  # snake_case fallback
+    aftertouch: list[AftertouchDict]
+
+
+class DonePayload(TypedDict, total=False):
+    """Payload for ``type="done"`` envelopes (always last in a variation stream)."""
+
+    status: str
+    phraseCount: int  # noqa: N815
+    phrase_count: int  # snake_case fallback
+
+
+class ErrorPayload(TypedDict, total=False):
+    """Payload for ``type="error"`` envelopes."""
+
+    message: str
+    code: str | None
+
+
+EnvelopePayload = Union[MetaPayload, PhrasePayload, DonePayload, ErrorPayload]
+"""Union of all typed envelope payload shapes.
+
+``EventEnvelope.payload`` holds exactly one of these depending on ``EventEnvelope.type``.
+Consumers that need structural access should narrow on ``envelope.type`` first.
+"""
 
 
 @dataclass(frozen=True)
@@ -62,7 +135,7 @@ class EventEnvelope:
     variation_id: str
     project_id: str
     base_state_id: str
-    payload: dict[str, object]
+    payload: EnvelopePayload
     timestamp_ms: int = field(default_factory=lambda: int(time.time() * 1000))
 
     def to_dict(self) -> dict[str, object]:
@@ -114,7 +187,7 @@ class SequenceCounter:
 
 def build_envelope(
     event_type: EventType,
-    payload: dict[str, object],
+    payload: EnvelopePayload,
     sequence: int,
     variation_id: str,
     project_id: str = "",
@@ -148,15 +221,16 @@ def build_meta_envelope(
     sequence: int = 1,
 ) -> EventEnvelope:
     """Build a meta envelope (always sequence=1)."""
+    meta: MetaPayload = {
+        "intent": intent,
+        "aiExplanation": ai_explanation,
+        "affectedTracks": affected_tracks,
+        "affectedRegions": affected_regions,
+        "noteCounts": note_counts,
+    }
     return build_envelope(
         event_type="meta",
-        payload={
-            "intent": intent,
-            "aiExplanation": ai_explanation,
-            "affectedTracks": affected_tracks,
-            "affectedRegions": affected_regions,
-            "noteCounts": note_counts,
-        },
+        payload=meta,
         sequence=sequence,
         variation_id=variation_id,
         project_id=project_id,
@@ -169,7 +243,7 @@ def build_phrase_envelope(
     project_id: str,
     base_state_id: str,
     sequence: int,
-    phrase_data: dict[str, object],
+    phrase_data: PhrasePayload,
 ) -> EventEnvelope:
     """Build a phrase envelope."""
     return build_envelope(
@@ -191,12 +265,13 @@ def build_done_envelope(
     phrase_count: int = 0,
 ) -> EventEnvelope:
     """Build a done envelope (always last in sequence)."""
+    done: DonePayload = {
+        "status": status,
+        "phraseCount": phrase_count,
+    }
     return build_envelope(
         event_type="done",
-        payload={
-            "status": status,
-            "phraseCount": phrase_count,
-        },
+        payload=done,
         sequence=sequence,
         variation_id=variation_id,
         project_id=project_id,
@@ -213,12 +288,13 @@ def build_error_envelope(
     error_code: str | None = None,
 ) -> EventEnvelope:
     """Build an error envelope."""
+    error: ErrorPayload = {
+        "message": error_message,
+        "code": error_code,
+    }
     return build_envelope(
         event_type="error",
-        payload={
-            "message": error_message,
-            "code": error_code,
-        },
+        payload=error,
         sequence=sequence,
         variation_id=variation_id,
         project_id=project_id,

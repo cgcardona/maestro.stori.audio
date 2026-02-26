@@ -18,9 +18,22 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Any
+from typing_extensions import TypedDict
 
 from app.contracts.json_types import CCEventDict, NoteDict, PitchBendDict
+
+
+class ExpressivenessResult(TypedDict):
+    """Return shape of ``apply_expressiveness``.
+
+    ``notes`` is mutated in-place (velocity + timing humanization) and
+    returned in the same key format (camelCase or snake_case) as the input.
+    ``cc_events`` and ``pitch_bends`` are newly generated lists.
+    """
+
+    notes: list[NoteDict]
+    cc_events: list[CCEventDict]
+    pitch_bends: list[PitchBendDict]
 
 
 @dataclass
@@ -571,7 +584,7 @@ def apply_expressiveness(
     bars: int,
     instrument_role: str = "melody",
     seed: int = 42,
-) -> dict[str, Any]:
+) -> ExpressivenessResult:
     """
     Full expressiveness post-processing pipeline.
 

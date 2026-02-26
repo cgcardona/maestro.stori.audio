@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +16,7 @@ from app.contracts.json_types import (
 )
 from app.models.requests import CommitVariationRequest
 from app.models.variation import (
+    ChangeType,
     MidiNoteSnapshot,
     NoteChange,
     Phrase,
@@ -28,6 +28,7 @@ from app.core.executor import apply_variation_phrases
 from app.core.state_store import get_or_create_store
 from app.core.tracing import create_trace_context, clear_trace_context, trace_span
 from app.auth.dependencies import require_valid_token
+from app.auth.tokens import TokenClaims
 from app.db import get_db
 from app.services.budget import (
     check_budget,
@@ -52,9 +53,11 @@ def _record_to_variation(record: VariationRecord) -> Variation:
         for nc_dict in diff.get("noteChanges", []):
             before_raw = nc_dict.get("before")
             after_raw = nc_dict.get("after")
+            raw_ct = str(nc_dict.get("changeType", "added"))
+            ct: ChangeType = "removed" if raw_ct == "removed" else "modified" if raw_ct == "modified" else "added"
             note_changes.append(NoteChange(
-                note_id=nc_dict.get("noteId", ""),
-                change_type=nc_dict.get("changeType", "added"),
+                note_id=str(nc_dict.get("noteId", "")),
+                change_type=ct,
                 before=MidiNoteSnapshot.model_validate(before_raw) if before_raw else None,
                 after=MidiNoteSnapshot.model_validate(after_raw) if after_raw else None,
             ))
@@ -110,7 +113,7 @@ logger = logging.getLogger(__name__)
 async def commit_variation(
     request: Request,
     commit_request: CommitVariationRequest,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> CommitVariationResponse:
     """

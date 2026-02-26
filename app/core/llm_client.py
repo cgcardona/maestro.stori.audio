@@ -24,14 +24,18 @@ from typing_extensions import TypedDict
 from app.config import settings
 from app.contracts.llm_types import (
     ChatMessage,
-    OpenAIRequestPayload as OpenAIRequestPayload,
-    OpenAIResponse as OpenAIResponse,
-    OpenAIStreamChunk as OpenAIStreamChunk,
-    OpenAITool as OpenAITool,
-    OpenAIToolChoice as OpenAIToolChoice,
-    StreamEvent as StreamEvent,
+    ContentDeltaEvent,
+    DoneStreamEvent,
+    OpenAIRequestPayload,
+    OpenAIResponse,
+    OpenAIStreamChunk,
+    OpenAIToolChoice,
+    ReasoningDeltaEvent,
+    StreamEvent,
+    ToolCallEntry,
+    ToolCallFunction,
     ToolSchemaDict,
-    UsageStats as UsageStats,
+    UsageStats,
 )
 from app.core.expansion import ToolCall
 
@@ -438,7 +442,7 @@ class LLMClient:
             payload["tool_choice"] = tool_choice if tool_choice is not None else "required"
         
         accumulated_content: list[str] = []
-        accumulated_tool_calls: dict[int, OpenAITool] = {}
+        accumulated_tool_calls: dict[int, ToolCallEntry] = {}
         finish_reason: str | None = None
         usage: UsageStats = {}
         debug_logged = False  # Flag to log first delta
@@ -467,64 +471,70 @@ class LLMClient:
                     try:
                         chunk: OpenAIStreamChunk = json.loads(data_str)
                         chunk_count += 1
-                        
+
                         # Log first chunk to see structure
                         if chunk_count == 1:
                             logger.info(f"🔍 First chunk keys: {list(chunk.keys())}")
                             logger.info(f"🔍 First chunk: {json.dumps(chunk)[:300]}")
                     except json.JSONDecodeError:
                         continue
-                    
-                    choice = chunk.get("choices", [{}])[0]
-                    delta = choice.get("delta", {})
-                    
+
+                    chunk_choices = chunk.get("choices") or []
+                    choice = chunk_choices[0] if chunk_choices else None
+
+                    if chunk_stats := chunk.get("usage"):
+                        usage = chunk_stats
+
+                    if choice is None:
+                        continue
+
+                    if fr := choice.get("finish_reason"):
+                        finish_reason = fr
+
+                    delta = choice.get("delta")
+                    if delta is None:
+                        continue
+
                     # DEBUG: Log first meaningful delta to see OpenRouter's format
-                    if not debug_logged and delta and len(delta.keys()) > 0:
+                    if not debug_logged and delta:
                         logger.info(f"🔍 Chunk #{chunk_count}, delta keys: {list(delta.keys())}")
                         delta_str = json.dumps(delta, indent=2)[:500]
                         logger.info(f"🔍 Delta sample: {delta_str}")
                         debug_logged = True
-                    
+
                     # OpenRouter reasoning format: delta.reasoning_details array.
                     # Both delta.reasoning (string) and delta.reasoning_details (array)
                     # are present in every chunk with identical text — use only the
                     # structured array to avoid double-emitting.
                     # https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
-                    if "reasoning_details" in delta and delta["reasoning_details"]:
-                        for detail in delta["reasoning_details"]:
-                            if detail.get("type") == "reasoning.text" and detail.get("text"):
-                                yield {"type": "reasoning_delta", "text": detail["text"]}
-                            elif detail.get("type") == "reasoning.summary" and detail.get("summary"):
-                                yield {"type": "reasoning_delta", "text": detail["summary"]}
-                    
-                    if "content" in delta and delta["content"]:
-                        # Regular content (user-facing response)
-                        content = delta["content"]
+                    for detail in delta.get("reasoning_details") or []:
+                        detail_type = detail.get("type")
+                        if detail_type == "reasoning.text":
+                            if text := detail.get("text"):
+                                yield ReasoningDeltaEvent(type="reasoning_delta", text=text)
+                        elif detail_type == "reasoning.summary":
+                            if summary := detail.get("summary"):
+                                yield ReasoningDeltaEvent(type="reasoning_delta", text=summary)
+
+                    if content := delta.get("content"):
                         accumulated_content.append(content)
-                        yield {"type": "content_delta", "text": content}
-                    
-                    if "tool_calls" in delta:
-                        for tc in delta["tool_calls"]:
-                            idx = tc.get("index", 0)
-                            if idx not in accumulated_tool_calls:
-                                accumulated_tool_calls[idx] = {
-                                    "id": tc.get("id", ""),
-                                    "type": "function",
-                                    "function": {"name": "", "arguments": ""}
-                                }
-                            if "id" in tc:
-                                accumulated_tool_calls[idx]["id"] = tc["id"]
-                            if "function" in tc:
-                                if "name" in tc["function"]:
-                                    accumulated_tool_calls[idx]["function"]["name"] = tc["function"]["name"]
-                                if "arguments" in tc["function"]:
-                                    accumulated_tool_calls[idx]["function"]["arguments"] += tc["function"]["arguments"]
-                    
-                    if chunk.get("choices", [{}])[0].get("finish_reason"):
-                        finish_reason = chunk["choices"][0]["finish_reason"]
-                    
-                    if "usage" in chunk:
-                        usage = chunk["usage"]
+                        yield ContentDeltaEvent(type="content_delta", text=content)
+
+                    for tc in delta.get("tool_calls") or []:
+                        idx = tc.get("index") or 0
+                        if idx not in accumulated_tool_calls:
+                            accumulated_tool_calls[idx] = ToolCallEntry(
+                                id=tc.get("id") or "",
+                                type="function",
+                                function=ToolCallFunction(name="", arguments=""),
+                            )
+                        if tc_id := tc.get("id"):
+                            accumulated_tool_calls[idx]["id"] = tc_id
+                        if tc_func := tc.get("function"):
+                            if tc_name := tc_func.get("name"):
+                                accumulated_tool_calls[idx]["function"]["name"] = tc_name
+                            if tc_args := tc_func.get("arguments"):
+                                accumulated_tool_calls[idx]["function"]["arguments"] += tc_args
         
         except httpx.HTTPError as e:
             logger.error(f"Stream HTTP error: {e}")
@@ -546,34 +556,34 @@ class LLMClient:
                     f"(keys: {list(usage.keys())})"
                 )
 
-        yield {
-            "type": "done",
-            "content": "".join(accumulated_content) if accumulated_content else None,
-            "tool_calls": [accumulated_tool_calls[i] for i in sorted(accumulated_tool_calls.keys())],
-            "finish_reason": finish_reason,
-            "usage": usage,
-        }
+        yield DoneStreamEvent(
+            type="done",
+            content="".join(accumulated_content) if accumulated_content else None,
+            tool_calls=[accumulated_tool_calls[i] for i in sorted(accumulated_tool_calls.keys())],
+            finish_reason=finish_reason,
+            usage=usage,
+        )
     
     def _parse_response(self, data: OpenAIResponse) -> LLMResponse:
-        """Parse OpenAI-compatible response."""
-        choice = data.get("choices", [{}])[0]
-        message = choice.get("message", {})
-        
+        """Parse an OpenAI-compatible non-streaming response into an ``LLMResponse``."""
+        choices = data.get("choices") or []
+        choice = choices[0] if choices else None
+        message = choice.get("message") if choice else None
+
         response = LLMResponse(
-            content=message.get("content"),
-            finish_reason=choice.get("finish_reason"),
+            content=message.get("content") if message else None,
+            finish_reason=choice.get("finish_reason") if choice else None,
             usage=data.get("usage"),
         )
-        
-        for tc in message.get("tool_calls", []):
-            try:
-                args = tc.get("function", {}).get("arguments", "{}")
-                if isinstance(args, str):
-                    args = json.loads(args) if args else {}
 
+        for tc in (message.get("tool_calls") if message else None) or []:
+            try:
+                fn = tc.get("function")
+                raw_args = fn.get("arguments", "{}") if fn else "{}"
+                args: dict[str, object] = json.loads(raw_args) if isinstance(raw_args, str) and raw_args else {}
                 response.tool_calls.append(ToolCall(
-                    id=tc.get("id", ""),
-                    name=tc.get("function", {}).get("name", ""),
+                    id=tc.get("id") or "",
+                    name=fn.get("name", "") if fn else "",
                     params=args,
                 ))
             except Exception as e:

@@ -5,12 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from typing import Any
-
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from app.auth.dependencies import require_valid_token
+from app.auth.tokens import TokenClaims
 from app.protocol.emitter import ProtocolSerializationError, emit, parse_event
 from app.protocol.events import ErrorEvent, MCPPingEvent
 from app.protocol.validation import ProtocolGuard
@@ -24,7 +23,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _envelope_to_protocol_dict(envelope: EventEnvelope) -> dict[str, Any]:
+def _envelope_to_protocol_dict(envelope: EventEnvelope) -> dict[str, object]:
     """Convert an EventEnvelope to a Stori Protocol event dict."""
     etype = envelope.type
     payload = envelope.payload
@@ -80,7 +79,7 @@ def _envelope_to_protocol_dict(envelope: EventEnvelope) -> dict[str, Any]:
 async def stream_variation(
     variation_id: str,
     from_sequence: int = Query(default=0, ge=0, description="Resume from sequence"),
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
 ) -> StreamingResponse:
     """
     Stream variation events via SSE using Stori Protocol.

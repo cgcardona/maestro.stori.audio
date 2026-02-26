@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, Required, TypedDict
 
 from app.contracts.project_types import ProjectContext
 from app.core.expansion import ToolCall
@@ -17,6 +17,42 @@ class _ExistingTrackInfo(TypedDict, total=False):
     id: str
     name: str
     gmProgram: int | None
+
+
+class _AddMidiTrackParams(TypedDict, total=False):
+    """Parameters for a ``stori_add_midi_track`` tool call built by the planner.
+
+    ``name``, ``color``, and ``icon`` are always present.
+    ``gmProgram`` is omitted for drum tracks (they use ``drumKitId``).
+    """
+
+    name: Required[str]
+    color: Required[str]
+    icon: Required[str]
+    gmProgram: int
+
+
+class _AddMidiRegionParams(TypedDict, total=False):
+    """Parameters for a ``stori_add_midi_region`` tool call built by the planner."""
+
+    name: Required[str]
+    trackName: Required[str]  # noqa: N815
+    startBeat: Required[float]  # noqa: N815
+    durationBeats: Required[float]  # noqa: N815
+    trackId: str  # noqa: N815  present when targeting an existing track
+
+
+class _GenerateParams(TypedDict, total=False):
+    """Parameters for a generation tool call (``stori_generate_*``) built by the planner."""
+
+    role: Required[str]
+    style: Required[str]
+    tempo: Required[int]
+    bars: Required[int]
+    key: Required[str]
+    trackName: Required[str]  # noqa: N815
+    constraints: dict[str, object]
+    trackId: str  # noqa: N815  present when targeting an existing track
 
 
 def _beats_per_bar(project_state: ProjectContext | None) -> int:

@@ -622,9 +622,8 @@ async def _reason_before_generate(
             max_tokens=800,
             reasoning_fraction=settings.agent_reasoning_fraction * 4,
         ):
-            ct = chunk.get("type")
-            if ct == "reasoning_delta":
-                text = chunk.get("text", "")
+            if chunk["type"] == "reasoning_delta":
+                text = chunk["text"]
                 if text:
                     word = rbuf.add(text)
                     if word:
@@ -634,7 +633,7 @@ async def _reason_before_generate(
                             agent_id=agent_id,
                             section_name=sec_name,
                         ))
-            elif ct == "content_delta":
+            elif chunk["type"] == "content_delta":
                 flush = rbuf.flush()
                 if flush:
                     _had_reasoning = True
@@ -643,7 +642,7 @@ async def _reason_before_generate(
                         agent_id=agent_id,
                         section_name=sec_name,
                     ))
-            elif ct == "done":
+            elif chunk["type"] == "done":
                 flush = rbuf.flush()
                 if flush:
                     _had_reasoning = True
@@ -657,7 +656,7 @@ async def _reason_before_generate(
                         agent_id=agent_id,
                         section_name=sec_name,
                     ))
-                _refined = chunk.get("content")
+                _refined = chunk["content"]
 
         if _refined and len(_refined.strip()) > 10:
             logger.info(
@@ -772,9 +771,8 @@ async def _maybe_refine_expression(
             max_tokens=1000,
             reasoning_fraction=settings.agent_reasoning_fraction,
         ):
-            ct = chunk.get("type")
-            if ct == "reasoning_delta":
-                text = chunk.get("text", "")
+            if chunk["type"] == "reasoning_delta":
+                text = chunk["text"]
                 if text:
                     word = rbuf.add(text)
                     if word:
@@ -784,7 +782,7 @@ async def _maybe_refine_expression(
                             agent_id=agent_id,
                             section_name=sec_name,
                         ))
-            elif ct == "content_delta":
+            elif chunk["type"] == "content_delta":
                 flush = rbuf.flush()
                 if flush:
                     _had_reasoning = True
@@ -793,7 +791,7 @@ async def _maybe_refine_expression(
                         agent_id=agent_id,
                         section_name=sec_name,
                     ))
-            elif ct == "done":
+            elif chunk["type"] == "done":
                 flush = rbuf.flush()
                 if flush:
                     _had_reasoning = True
@@ -807,7 +805,7 @@ async def _maybe_refine_expression(
                         agent_id=agent_id,
                         section_name=sec_name,
                     ))
-                resp_tool_calls = chunk.get("tool_calls", [])
+                resp_tool_calls = chunk["tool_calls"]
 
         tool_calls: list[ToolCall] = []
         for tc_raw in resp_tool_calls:

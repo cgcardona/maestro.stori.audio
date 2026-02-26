@@ -25,7 +25,6 @@ from sqlalchemy.orm import selectinload
 from app.contracts.json_types import (
     AftertouchDict,
     CCEventDict,
-    JSONObject,
     PitchBendDict,
     RegionMetadataDB,
     RegionMetadataWire,
@@ -52,8 +51,13 @@ def _validate_change_type(raw: str) -> ChangeType:
     raise ValueError(f"Invalid change_type in DB: {raw!r}")
 
 
-def _parse_cc_event(raw: JSONObject) -> CCEventDict:
-    """Rebuild a typed CCEventDict from a raw DB JSON dict."""
+def _parse_cc_event(raw: CCEventDict) -> CCEventDict:
+    """Coerce a DB-deserialized CCEventDict to correct Python types.
+
+    SQLAlchemy deserialises JSON columns as plain Python dicts; the value types
+    are whatever json.loads produced (int, float, str).  The defensive casts
+    here handle cases where the stored value doesn't match the expected type.
+    """
     def _to_int(v: object) -> int:
         return int(v) if isinstance(v, (int, float, str)) else 0
 
@@ -67,8 +71,8 @@ def _parse_cc_event(raw: JSONObject) -> CCEventDict:
     )
 
 
-def _parse_pitch_bend(raw: JSONObject) -> PitchBendDict:
-    """Rebuild a typed PitchBendDict from a raw DB JSON dict."""
+def _parse_pitch_bend(raw: PitchBendDict) -> PitchBendDict:
+    """Coerce a DB-deserialized PitchBendDict to correct Python types."""
     raw_beat = raw.get("beat", 0)
     raw_value = raw.get("value", 0)
     return PitchBendDict(
@@ -77,8 +81,8 @@ def _parse_pitch_bend(raw: JSONObject) -> PitchBendDict:
     )
 
 
-def _parse_aftertouch(raw: JSONObject) -> AftertouchDict:
-    """Rebuild a typed AftertouchDict from a raw DB JSON dict."""
+def _parse_aftertouch(raw: AftertouchDict) -> AftertouchDict:
+    """Coerce a DB-deserialized AftertouchDict to correct Python types."""
     raw_beat = raw.get("beat", 0)
     raw_value = raw.get("value", 0)
     ev: AftertouchDict = {

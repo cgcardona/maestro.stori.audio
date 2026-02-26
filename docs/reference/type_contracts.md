@@ -1,6 +1,6 @@
 # Stori Maestro — Type Contracts Reference
 
-> Updated: 2026-02-26 | Reflects the mypy hardening sweep that eliminated ~1,800 `Any` usages.
+> Updated: 2026-02-26 | Reflects the full `Any`-elimination sweep. `Any` no longer exists in any production app file — `llm_types.py` is now a complete TypedDict hierarchy, not a quarantine.
 
 This document is the single source of truth for every named entity (TypedDict, dataclass, Protocol, type alias) in the Maestro and Orpheus codebases. It covers the full API surface of each type: fields, types, optionality, and intended use.
 
@@ -45,7 +45,7 @@ This document is the single source of truth for every named entity (TypedDict, d
 
 Every entity in this codebase follows three rules:
 
-1. **No naked `Any`.** The word `Any` appears in exactly one place per subsystem boundary: `llm_types.py` for LLM APIs and `orpheus_types.py` (legacy) for Orpheus wire types. Every other module imports named aliases.
+1. **No `Any`.** `Any` does not appear in any production app file. LLM API shapes are described with full TypedDict hierarchies in `llm_types.py`. External untyped library boundaries (boto3, Pydantic's `model_json_schema`) are handled with `dict[str, object]` and Protocol types — never `Any`.
 
 2. **Boundaries own coercion.** When external data arrives as `float | str | None` (e.g., from JSON), the boundary module coerces it to the canonical internal type. Downstream code always sees clean types.
 
@@ -147,61 +147,54 @@ Groups per-role results with aggregate statistics, replacing a mixed `dict[str, 
 
 **Path:** `app/contracts/llm_types.py`
 
-The `Any` quarantine for external LLM API boundaries. Every module that needs to work with OpenAI/Anthropic/OpenRouter responses imports from here — never spelling out `dict[str, Any]` themselves.
+Complete TypedDict hierarchy for every shape used by `LLMClient`. No `Any` lives here — every field has a concrete type. Consumers import named entities from this module; they never write `dict[str, Any]` themselves.
 
-#### Type Aliases
+All streaming event consumers narrow on `event["type"]` (not `.get("type")`) to get full discriminated-union inference from mypy.
 
-| Name | Underlying Type | Represents |
-|------|----------------|------------|
-| `OpenAIData` | `dict[str, Any]` | Base alias — JSON-decoded dict from any LLM API |
-| `OpenAIStreamChunk` | `OpenAIData` | One SSE chunk from the streaming API |
-| `OpenAITool` | `OpenAIData` | A tool schema sent to the model |
-| `UsageStats` | `OpenAIData` | Token usage / cost statistics |
-| `OpenAIRequestPayload` | `OpenAIData` | Full request body sent to OpenRouter |
-| `OpenAIResponse` | `OpenAIData` | Full (non-streaming) response body |
-| `OpenAIToolChoice` | `str \| OpenAIData` | `"auto"` \| `"required"` \| `"none"` \| specific tool dict |
-| `StreamEvent` | `OpenAIData` | Internal stream event yielded by `LLMClient.chat()` |
+---
 
-#### `ToolCallFunction`
+#### Chat message shapes
 
-`TypedDict` — The `function` field inside an OpenAI tool call.
+##### `ToolCallFunction`
+
+`TypedDict` — The `function` field inside an OpenAI tool call. `arguments` is always a JSON-encoded string; callers must `json.loads` it.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | `str` | Function name the model wants to call |
 | `arguments` | `str` | JSON-encoded arguments string |
 
-#### `ToolCallEntry`
+##### `ToolCallEntry`
 
-`TypedDict` — One tool call in an assistant message.
+`TypedDict` — One tool call in an assistant message (streaming accumulator or final response).
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `str` | Unique tool call ID (used in `ToolResultMessage`) |
+| `id` | `str` | Unique tool call ID (matches `ToolResultMessage.tool_call_id`) |
 | `type` | `str` | Always `"function"` in OpenAI format |
 | `function` | `ToolCallFunction` | The function being called |
 
-#### `SystemMessage`
+##### `SystemMessage`
 
-`TypedDict` — A system prompt message.
+`TypedDict` — A system-role prompt message.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `role` | `Literal["system"]` | Discriminant |
 | `content` | `str` | System prompt text |
 
-#### `UserMessage`
+##### `UserMessage`
 
-`TypedDict` — A user message.
+`TypedDict` — A user-role message.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `role` | `Literal["user"]` | Discriminant |
 | `content` | `str` | User message text |
 
-#### `AssistantMessage`
+##### `AssistantMessage`
 
-`TypedDict, total=False` — An assistant reply (may contain tool calls).
+`TypedDict, total=False` — An assistant reply (may be text-only or contain tool calls).
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
@@ -209,9 +202,9 @@ The `Any` quarantine for external LLM API boundaries. Every module that needs to
 | `content` | | `str \| None` | Assistant text reply |
 | `tool_calls` | | `list[ToolCallEntry]` | Tool calls requested by the model |
 
-#### `ToolResultMessage`
+##### `ToolResultMessage`
 
-`TypedDict` — A tool result returned to the LLM.
+`TypedDict` — A tool result message returned to the LLM after a tool call.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -219,9 +212,274 @@ The `Any` quarantine for external LLM API boundaries. Every module that needs to
 | `tool_call_id` | `str` | Matches `ToolCallEntry.id` |
 | `content` | `str` | JSON-encoded result string |
 
-#### `ChatMessage`
+##### `ChatMessage`
 
-`Union[SystemMessage, UserMessage, AssistantMessage, ToolResultMessage]` — Discriminated union of all OpenAI chat message shapes. Narrowed at call sites by checking `msg["role"]`.
+`Union[SystemMessage, UserMessage, AssistantMessage, ToolResultMessage]` — Discriminated union of all OpenAI chat message shapes. Narrow via `msg["role"]`.
+
+---
+
+#### Tool schema shapes
+
+##### `ToolParametersDict`
+
+`TypedDict, total=False` — JSON Schema `parameters` block inside an OpenAI tool definition.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `str` | Always `"object"` |
+| `properties` | `dict[str, object]` | Per-parameter schemas |
+| `required` | `list[str]` | Required parameter names |
+
+##### `ToolFunctionDict`
+
+`TypedDict` — The `function` field of an OpenAI tool definition.
+
+| Field | Required | Type | Description |
+|-------|----------|------|-------------|
+| `name` | ✓ | `str` | Tool name |
+| `description` | ✓ | `str` | Shown to the model |
+| `parameters` | | `ToolParametersDict` | JSON Schema for the tool's arguments |
+
+##### `ToolSchemaDict`
+
+`TypedDict` — A single OpenAI-format tool definition (`{type: "function", function: {...}}`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `str` | Always `"function"` |
+| `function` | `ToolFunctionDict` | The tool's function definition |
+
+---
+
+#### Token usage shapes
+
+##### `PromptTokenDetails`
+
+`TypedDict, total=False` — Nested token-detail block inside `UsageStats`. OpenRouter surfaces cache data in at least two field names depending on model and API version.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cached_tokens` | `int` | Cache read hits |
+| `cache_write_tokens` | `int` | Cache write/creation |
+
+##### `UsageStats`
+
+`TypedDict, total=False` — Token usage and cost stats returned by OpenAI/Anthropic/OpenRouter. All fields optional — the exact set varies by model and API version.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `prompt_tokens` | `int` | Input tokens billed |
+| `completion_tokens` | `int` | Output tokens generated |
+| `total_tokens` | `int` | Sum of prompt + completion |
+| `prompt_tokens_details` | `PromptTokenDetails` | Nested cache breakdown |
+| `native_tokens_cached` | `int` | OR: cache read tokens (alt field name) |
+| `cache_read_input_tokens` | `int` | Anthropic: cache read tokens |
+| `prompt_cache_hit_tokens` | `int` | OR: cache hit tokens (alt) |
+| `cache_creation_input_tokens` | `int` | Anthropic: cache write tokens |
+| `prompt_cache_miss_tokens` | `int` | OR: cache miss tokens |
+| `cache_discount` | `float` | Cost discount from cache (USD) |
+
+---
+
+#### Request payload shapes
+
+##### `ProviderConfig`
+
+`TypedDict, total=False` — OpenRouter provider-routing config (`payload["provider"]`). Used to lock generation to direct Anthropic for caching and reasoning token support.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `order` | `list[str]` | Ordered provider preference list (e.g. `["anthropic"]`) |
+| `allow_fallbacks` | `bool` | Whether to fall back if first provider fails |
+
+##### `ReasoningConfig`
+
+`TypedDict, total=False` — OpenRouter extended-reasoning config (`payload["reasoning"]`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `max_tokens` | `int` | Token budget for reasoning (extended thinking) |
+
+##### `OpenAIRequestPayload`
+
+`TypedDict, total=False` — Full request body sent to OpenRouter's chat completions endpoint. `tools` is `list[dict[str, object]]` rather than `list[ToolSchemaDict]` because prompt-caching adds an extra `cache_control` key to the last tool definition before sending.
+
+| Field | Required | Type | Description |
+|-------|----------|------|-------------|
+| `model` | ✓ | `str` | Model identifier (e.g. `"anthropic/claude-sonnet-4.6"`) |
+| `messages` | ✓ | `list[ChatMessage]` | Conversation history |
+| `temperature` | | `float` | Sampling temperature |
+| `max_tokens` | | `int` | Maximum output tokens |
+| `stream` | | `bool` | Enable SSE streaming |
+| `tools` | | `list[dict[str, object]]` | Tool definitions (may include `cache_control`) |
+| `tool_choice` | | `str \| dict[str, object]` | `"auto"` \| `"required"` \| `"none"` \| specific tool |
+| `provider` | | `ProviderConfig` | OpenRouter routing config |
+| `reasoning` | | `ReasoningConfig` | Extended reasoning budget |
+
+---
+
+#### Non-streaming response shapes
+
+##### `ResponseFunction`
+
+`TypedDict, total=False` — The `function` field of a tool call in a non-streaming response.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Function name |
+| `arguments` | `str` | JSON-encoded arguments string |
+
+##### `ResponseToolCall`
+
+`TypedDict, total=False` — One tool call in a non-streaming assistant response choice.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | Tool call ID |
+| `type` | `str` | Always `"function"` |
+| `function` | `ResponseFunction` | The function called |
+
+##### `ResponseMessage`
+
+`TypedDict, total=False` — The `message` field inside a non-streaming response choice.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `content` | `str \| None` | Assistant text reply |
+| `tool_calls` | `list[ResponseToolCall]` | Tool calls requested |
+
+##### `ResponseChoice`
+
+`TypedDict, total=False` — One choice in a non-streaming API response.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | `ResponseMessage` | The assistant message |
+| `finish_reason` | `str \| None` | `"stop"` \| `"tool_calls"` \| `"length"` \| … |
+
+##### `OpenAIResponse`
+
+`TypedDict, total=False` — Full (non-streaming) response body from an OpenAI-compatible API.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `choices` | `list[ResponseChoice]` | Candidate completions (always 1 in practice) |
+| `usage` | `UsageStats` | Token usage stats |
+
+---
+
+#### Streaming chunk shapes
+
+##### `ReasoningDetail`
+
+`TypedDict, total=False` — One element of `delta.reasoning_details` in a stream chunk. OpenRouter uses `type="reasoning.text"` for incremental text and `type="reasoning.summary"` for the final consolidated summary.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `str` | `"reasoning.text"` or `"reasoning.summary"` |
+| `text` | `str` | Incremental reasoning text |
+| `summary` | `str` | Final reasoning summary (summary type only) |
+
+##### `ToolCallFunctionDelta`
+
+`TypedDict, total=False` — Incremental function info in a streaming tool call delta.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Function name (arrives in first fragment) |
+| `arguments` | `str` | Arguments fragment (concatenate across deltas) |
+
+##### `ToolCallDelta`
+
+`TypedDict, total=False` — One tool call fragment in a streaming delta.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `index` | `int` | Position in the tool_calls array (for multi-tool accumulation) |
+| `id` | `str` | Tool call ID (arrives in first fragment) |
+| `type` | `str` | Always `"function"` |
+| `function` | `ToolCallFunctionDelta` | Incremental function data |
+
+##### `StreamDelta`
+
+`TypedDict, total=False` — The `delta` field inside a streaming choice.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `reasoning_details` | `list[ReasoningDetail]` | Extended-thinking fragments |
+| `content` | `str` | Content text fragment |
+| `tool_calls` | `list[ToolCallDelta]` | Tool call fragments |
+
+##### `StreamChoice`
+
+`TypedDict, total=False` — One choice in a streaming SSE chunk.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delta` | `StreamDelta` | Incremental content for this chunk |
+| `finish_reason` | `str \| None` | Set on the final chunk; `None` on all others |
+
+##### `OpenAIStreamChunk`
+
+`TypedDict, total=False` — One SSE data chunk from the OpenRouter streaming API.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `choices` | `list[StreamChoice]` | Candidate chunks (always 1 in practice) |
+| `usage` | `UsageStats` | Token stats (present only on the final chunk) |
+
+---
+
+#### Stream event shapes (yielded by `LLMClient.chat_completion_stream`)
+
+These are the **internal** events yielded by the LLM client — they differ from the wire SSE events emitted to the DAW.
+
+##### `ReasoningDeltaEvent`
+
+`TypedDict` — Incremental reasoning text from an extended-thinking model.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `Literal["reasoning_delta"]` | Discriminant |
+| `text` | `str` | Reasoning text fragment |
+
+##### `ContentDeltaEvent`
+
+`TypedDict` — Incremental content text from the model.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `Literal["content_delta"]` | Discriminant |
+| `text` | `str` | Content text fragment |
+
+##### `DoneStreamEvent`
+
+`TypedDict` — Terminal event yielded when streaming completes. `tool_calls` holds the fully-accumulated list built up from all `ToolCallDelta` fragments — consumers should not read it before this event arrives.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `Literal["done"]` | Discriminant |
+| `content` | `str \| None` | Full accumulated content (may be `None` for tool-call-only responses) |
+| `tool_calls` | `list[ToolCallEntry]` | All tool calls, fully accumulated |
+| `finish_reason` | `str \| None` | Final finish reason |
+| `usage` | `UsageStats` | Token usage for the full request |
+
+##### `StreamEvent`
+
+`Union[ReasoningDeltaEvent, ContentDeltaEvent, DoneStreamEvent]` — Discriminated union of all events yielded by `chat_completion_stream`. Narrow via `event["type"]`:
+
+```python
+if event["type"] == "reasoning_delta":
+    text: str = event["text"]           # mypy knows this is ReasoningDeltaEvent
+elif event["type"] == "content_delta":
+    text: str = event["text"]           # ContentDeltaEvent
+elif event["type"] == "done":
+    calls: list[ToolCallEntry] = event["tool_calls"]  # DoneStreamEvent
+```
+
+##### `OpenAIToolChoice`
+
+Type alias: `str | dict[str, object]` — Either a string shorthand (`"auto"`, `"none"`, `"required"`) or an explicit tool-selector dict. Used in `OpenAIRequestPayload.tool_choice`.
 
 ---
 
@@ -1133,21 +1391,35 @@ After this point, `tempo` is `int` everywhere:
 
 ---
 
-## The `Any` Quarantine
+## `Any` Status
 
-`Any` is confined to two locations, used by all other modules via named imports:
+`Any` does not appear in any production app file. The table below summarises how every historical use was eliminated:
 
-### `app/contracts/llm_types.py`
+| Location | Old pattern | Replacement |
+|----------|-------------|-------------|
+| `app/contracts/llm_types.py` | `OpenAIData = dict[str, Any]` + aliases | Full TypedDict hierarchy (see above) |
+| `app/db/muse_models.py` | `list[dict[str, Any]]` mapped columns | `list[CCEventDict]`, `list[PitchBendDict]`, etc. |
+| `app/services/expressiveness.py` | `dict[str, Any]` return type | `ExpressivenessResult(TypedDict)` |
+| `app/protocol/hash.py` | `cast(JSONValue, ...)` calls | `list[dict[str, object]]` return types |
+| `app/core/llm_client.py` | `or {}` default patterns | Explicit `None` narrowing with `if chunk is None: continue` |
+
+### Remaining `dict[str, object]` uses
+
+`dict[str, object]` is the correct type for genuinely polymorphic bags (e.g. tool call `params`, generation `metadata`). It is **not** `Any` — mypy requires explicit narrowing before any field access, making all assumptions visible.
+
+### External library boundary
+
+The only `cast()` that survives is in `app/services/assets.py`:
 
 ```python
-OpenAIData = dict[str, Any]  # The only Any in Maestro production code
+return cast(_S3Client, boto3.client("s3", ...))
 ```
 
-All LLM boundary types (`OpenAIStreamChunk`, `OpenAIResponse`, `StreamEvent`, etc.) are aliases of `OpenAIData`. Modules that handle LLM responses import these names — they never write `dict[str, Any]` themselves.
+This is a structural Protocol cast at the boto3 boundary (boto3 ships no type stubs). The `_S3Client` Protocol documents every method we call — the cast is the API contract.
 
-### External boundary coercions
+### Boundary rule
 
-When data arrives from JSON/HTTP with unknown structure, it is immediately coerced to a named type at the boundary function. Downstream code always receives typed values. If a field genuinely can be anything (e.g. a metadata bag), it is typed as `dict[str, object]` — which forces `isinstance` checks before use, making assumptions explicit.
+When external data arrives from JSON/HTTP with unknown structure, it is immediately coerced to a named type at the boundary function. Downstream code always receives typed values.
 
 ---
 
@@ -1163,22 +1435,52 @@ Maestro Service (app/)
 │   │   ├── RoleResult                 — per-instrument outcome
 │   │   └── UnifiedGenerationOutput    — full generation return value
 │   │
-│   ├── llm_types.py                   — Any quarantine for LLM APIs
-│   │   ├── OpenAIData                 — base alias (dict[str, Any])
-│   │   ├── OpenAIStreamChunk          — one SSE chunk
-│   │   ├── OpenAITool                 — tool schema sent to model
-│   │   ├── UsageStats                 — token/cost statistics
-│   │   ├── OpenAIRequestPayload       — full request body to OpenRouter
-│   │   ├── OpenAIResponse             — full (non-streaming) response
-│   │   ├── OpenAIToolChoice           — "auto" | tool dict
-│   │   ├── StreamEvent                — internal stream event
-│   │   ├── ToolCallFunction           — function inside a tool call
-│   │   ├── ToolCallEntry              — one tool call in assistant message
-│   │   ├── SystemMessage              — system prompt
-│   │   ├── UserMessage                — user turn
-│   │   ├── AssistantMessage           — assistant reply (+ tool_calls)
-│   │   ├── ToolResultMessage          — tool result back to LLM
-│   │   └── ChatMessage                — discriminated union of all messages
+│   ├── llm_types.py                   — complete TypedDict hierarchy, no Any
+│   │   │
+│   │   ├── Chat messages (discriminated on role)
+│   │   │   ├── ToolCallFunction       — function{name, arguments} inside a tool call
+│   │   │   ├── ToolCallEntry          — one complete tool call {id, type, function}
+│   │   │   ├── SystemMessage          — role:"system"
+│   │   │   ├── UserMessage            — role:"user"
+│   │   │   ├── AssistantMessage       — role:"assistant" (+ optional tool_calls)
+│   │   │   ├── ToolResultMessage      — role:"tool"
+│   │   │   └── ChatMessage            — Union of all four (discriminated on role)
+│   │   │
+│   │   ├── Tool schemas
+│   │   │   ├── ToolParametersDict     — JSON Schema parameters block
+│   │   │   ├── ToolFunctionDict       — {name, description, parameters}
+│   │   │   └── ToolSchemaDict         — {type:"function", function:ToolFunctionDict}
+│   │   │
+│   │   ├── Token usage
+│   │   │   ├── PromptTokenDetails     — nested cache token breakdown
+│   │   │   └── UsageStats             — all OpenRouter/Anthropic usage fields
+│   │   │
+│   │   ├── Request payload
+│   │   │   ├── ProviderConfig         — OpenRouter provider routing {order, allow_fallbacks}
+│   │   │   ├── ReasoningConfig        — extended reasoning {max_tokens}
+│   │   │   └── OpenAIRequestPayload   — full request body to OpenRouter
+│   │   │
+│   │   ├── Non-streaming response
+│   │   │   ├── ResponseFunction       — {name, arguments} in response tool call
+│   │   │   ├── ResponseToolCall       — one tool call in response
+│   │   │   ├── ResponseMessage        — {content, tool_calls}
+│   │   │   ├── ResponseChoice         — {message, finish_reason}
+│   │   │   └── OpenAIResponse         — full non-streaming response body
+│   │   │
+│   │   ├── Streaming chunks
+│   │   │   ├── ReasoningDetail        — one reasoning_details element
+│   │   │   ├── ToolCallFunctionDelta  — incremental {name, arguments}
+│   │   │   ├── ToolCallDelta          — incremental tool call fragment
+│   │   │   ├── StreamDelta            — {reasoning_details, content, tool_calls}
+│   │   │   ├── StreamChoice           — {delta, finish_reason}
+│   │   │   └── OpenAIStreamChunk      — one SSE data line {choices, usage}
+│   │   │
+│   │   └── Stream events (yielded by LLMClient.chat_completion_stream)
+│   │       ├── ReasoningDeltaEvent    — type:"reasoning_delta", text
+│   │       ├── ContentDeltaEvent      — type:"content_delta", text
+│   │       ├── DoneStreamEvent        — type:"done", content, tool_calls, usage
+│   │       ├── StreamEvent            — Union of all three (discriminated on type)
+│   │       └── OpenAIToolChoice       — str | dict[str, object] (request tool_choice)
 │   │
 │   ├── json_types.py
 │   │   ├── JSONScalar/JSONValue/JSONObject  — JSON primitive types

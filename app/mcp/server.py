@@ -14,27 +14,23 @@ from typing import (
     Awaitable,
     Callable,
 )
-from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
     from app.services.music_generator import MusicGenerator
 from dataclasses import dataclass, field
 
-from app.contracts.mcp_types import MCPContentBlock, MCPToolDef
+from app.contracts.mcp_types import (
+    DAWToolCallMessage,
+    MCPCapabilities,
+    MCPContentBlock,
+    MCPServerInfo,
+    MCPToolDef,
+)
 from app.contracts.project_types import ProjectContext
 from app.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, TOOL_CATEGORIES
 from app.core.tool_validation import validate_tool_call
 
 logger = logging.getLogger(__name__)
-
-
-class ServerInfoDict(TypedDict):
-    """MCP server info response — known shape."""
-
-    name: str
-    version: str
-    protocolVersion: str
-    capabilities: dict[str, object]
 
 
 @dataclass
@@ -45,14 +41,12 @@ class ToolCallResult:
     is_error: bool = False
     bad_request: bool = False
 
-DAWMessage = dict[str, object]
-
 
 @dataclass
 class DAWConnection:
     """Represents a connected DAW instance."""
     id: str
-    send_callback: Callable[[DAWMessage], Awaitable[None]]
+    send_callback: Callable[[DAWToolCallMessage], Awaitable[None]]
     project_state: ProjectContext | None = None
     pending_responses: dict[str, asyncio.Future[dict[str, object]]] = field(default_factory=dict)
 
@@ -88,17 +82,15 @@ class StoriMCPServer:
     # MCP Protocol Methods
     # =========================================================================
     
-    def get_server_info(self) -> ServerInfoDict:
+    def get_server_info(self) -> MCPServerInfo:
         """Return MCP server information."""
-        return {
-            "name": self.name,
-            "version": self.version,
-            "protocolVersion": "2024-11-05",
-            "capabilities": {
-                "tools": {},
-                "resources": {},
-            }
-        }
+        capabilities: MCPCapabilities = {"tools": {}, "resources": {}}
+        return MCPServerInfo(
+            name=self.name,
+            version=self.version,
+            protocolVersion="2024-11-05",
+            capabilities=capabilities,
+        )
     
     def list_tools(self) -> list[MCPToolDef]:
         """list all available MCP tools."""
@@ -150,7 +142,7 @@ class StoriMCPServer:
     def register_daw(
         self,
         connection_id: str,
-        send_callback: Callable[[DAWMessage], Awaitable[None]],
+        send_callback: Callable[[DAWToolCallMessage], Awaitable[None]],
     ) -> None:
         """Register a DAW connection."""
         self._daw_connections[connection_id] = DAWConnection(
@@ -264,16 +256,16 @@ class StoriMCPServer:
         request_id = f"{name}_{id(arguments)}"
         response_future: asyncio.Future[dict[str, object]] = asyncio.Future()
         conn.pending_responses[request_id] = response_future
-        
+
         try:
             # Send tool call to DAW
-            await conn.send_callback({
-                "type": "toolCall",
-                "requestId": request_id,
-                "tool": name,
-                "arguments": arguments,
-            })
-            
+            await conn.send_callback(DAWToolCallMessage(
+                type="toolCall",
+                requestId=request_id,
+                tool=name,
+                arguments=arguments,
+            ))
+
             # Wait for response (with timeout)
             result = await asyncio.wait_for(response_future, timeout=30.0)
             succeeded = bool(result.get("success", False))

@@ -14,6 +14,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from app.contracts.llm_types import UsageStats
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -370,10 +371,10 @@ class ConversationMessage(Base):
         nullable=True,
     )
     
-    tokens_used: Mapped[dict[str, object] | None] = mapped_column(
+    tokens_used: Mapped[UsageStats | None] = mapped_column(
         JSON,
         nullable=True,
-    )  # {"prompt": 1234, "completion": 567}
+    )  # {"prompt_tokens": 1234, "completion_tokens": 567}
     
     # Cost in cents
     cost_cents: Mapped[int] = mapped_column(

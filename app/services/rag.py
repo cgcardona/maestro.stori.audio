@@ -236,13 +236,8 @@ Please provide a clear, helpful answer. Use the documentation context when it's 
                 messages=messages,
                 tools=None,  # No tools for Q&A
             ):
-                # Extract content from streaming chunk
-                choices = chunk.get("choices", [])
-                if choices:
-                    delta = choices[0].get("delta", {})
-                    content = delta.get("content")
-                    if content:
-                        yield content
+                if chunk["type"] == "content_delta":
+                    yield chunk["text"]
         else:
             # Fallback: non-streaming response
             yield "I'm sorry, I can't answer questions right now. Please try again later."

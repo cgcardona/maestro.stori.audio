@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 
-from app.contracts.json_types import JSONObject
 from app.protocol.events import MaestroEvent
 from app.protocol.registry import EVENT_REGISTRY
 
@@ -61,7 +61,7 @@ def emit(event: MaestroEvent) -> str:
     return f"data: {json.dumps(data, separators=(',', ':'), ensure_ascii=False)}\n\n"
 
 
-def parse_event(data: JSONObject) -> MaestroEvent:
+def parse_event(data: Mapping[str, object]) -> MaestroEvent:
     """Deserialize a wire-format dict back into the correct MaestroEvent subclass.
 
     Dispatches through the registry and validates via the Pydantic model,

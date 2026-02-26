@@ -369,7 +369,7 @@ class MCPMessageEvent(MaestroEvent):
     """MCP tool-call message relayed over SSE."""
 
     type: Literal["mcp.message"] = "mcp.message"
-    payload: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, object] = Field(default_factory=dict)
 
 
 class MCPPingEvent(MaestroEvent):

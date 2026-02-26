@@ -20,8 +20,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
-
+from app.variation.core.event_envelope import PhrasePayload
 from app.variation.core.state_machine import (
     VariationStatus,
     assert_transition,
@@ -45,7 +44,7 @@ class PhraseRecord:
     beat_start: float
     beat_end: float
     label: str
-    diff_json: dict[str, Any]
+    diff_json: PhrasePayload
     ai_explanation: str | None = None
     tags: list[str] = field(default_factory=list)
     # Region position — populated at store time so commit can build updatedRegions

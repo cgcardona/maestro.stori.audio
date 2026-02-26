@@ -164,7 +164,7 @@ async def test_message_with_tokens_and_tools(db_session: AsyncSession) -> None:
         role="assistant",
         content="Response",
         model_used="anthropic/claude-3.5-sonnet",
-        tokens_used={"prompt": 100, "completion": 50},
+        tokens_used={"prompt_tokens": 100, "completion_tokens": 50},
         cost_cents=12,
         tool_calls=[
             {"name": "add_track", "type": "function"},
@@ -178,8 +178,8 @@ async def test_message_with_tokens_and_tools(db_session: AsyncSession) -> None:
     
     assert message.model_used == "anthropic/claude-3.5-sonnet"
     assert message.tokens_used is not None
-    assert message.tokens_used["prompt"] == 100
-    assert message.tokens_used["completion"] == 50
+    assert message.tokens_used["prompt_tokens"] == 100
+    assert message.tokens_used["completion_tokens"] == 50
     assert message.tool_calls is not None and len(message.tool_calls) == 2
     assert message.extra_metadata is not None and message.extra_metadata["user_feedback"] == "good"
 

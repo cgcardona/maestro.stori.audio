@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import logging
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import Field
 
 from app.auth.dependencies import require_valid_token
+from app.auth.tokens import TokenClaims
 from app.models.base import CamelModel
+from app.variation.core.event_envelope import PhrasePayload
 from app.variation.storage.variation_store import get_variation_store
 
 router = APIRouter()
@@ -78,7 +78,7 @@ class VariationPhraseResponse(CamelModel):
     ai_explanation: str | None = Field(
         description="Natural-language explanation of what the AI generated, or None."
     )
-    diff: dict[str, object] = Field(
+    diff: PhrasePayload = Field(
         description=(
             "MIDI delta for this phrase in the internal diff-JSON format. "
             "Contains added/removed/modified notes and controller events relative to the base state."
@@ -173,7 +173,7 @@ class GetVariationResponse(CamelModel):
 @router.get("/variation/{variation_id}", response_model_by_alias=True)
 async def get_variation(
     variation_id: str,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    _auth: TokenClaims = Depends(require_valid_token),
 ) -> GetVariationResponse:
     """
     Poll variation status and phrases (for reconnect / non-streaming clients).

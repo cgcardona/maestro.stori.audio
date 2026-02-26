@@ -555,9 +555,8 @@ async def _run_instrument_agent_inner(
                 max_tokens=settings.composition_max_tokens,
                 reasoning_fraction=settings.agent_reasoning_fraction,
             ):
-                _ct = _chunk.get("type")
-                if _ct == "reasoning_delta":
-                    _text = _chunk.get("text", "")
+                if _chunk["type"] == "reasoning_delta":
+                    _text = _chunk["text"]
                     if _text:
                         _word = _rbuf.add(_text)
                         if _word:
@@ -566,7 +565,7 @@ async def _run_instrument_agent_inner(
                                 content=_word,
                                 agent_id=_agent_id,
                             ))
-                elif _ct == "content_delta":
+                elif _chunk["type"] == "content_delta":
                     _flush = _rbuf.flush()
                     if _flush:
                         _had_reasoning = True
@@ -574,7 +573,7 @@ async def _run_instrument_agent_inner(
                             content=_flush,
                             agent_id=_agent_id,
                         ))
-                elif _ct == "done":
+                elif _chunk["type"] == "done":
                     _flush = _rbuf.flush()
                     if _flush:
                         _had_reasoning = True
@@ -586,10 +585,10 @@ async def _run_instrument_agent_inner(
                         await sse_queue.put(ReasoningEndEvent(
                             agent_id=_agent_id,
                         ))
-                    _resp_content = _chunk.get("content")
-                    _resp_tool_calls = _chunk.get("tool_calls", [])
-                    _resp_finish = _chunk.get("finish_reason")
-                    _resp_usage = _chunk.get("usage", {})
+                    _resp_content = _chunk["content"]
+                    _resp_tool_calls = _chunk["tool_calls"]
+                    _resp_finish = _chunk["finish_reason"]
+                    _resp_usage = _chunk["usage"]
 
             response = LLMResponse(
                 content=_resp_content,

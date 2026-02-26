@@ -15,10 +15,15 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypedDict
 
 from app.config import settings
-from app.contracts.llm_types import ChatMessage, ToolCallEntry
+from app.contracts.llm_types import (
+    ChatMessage,
+    OpenAIToolChoice,
+    ToolCallEntry,
+    ToolSchemaDict,
+    UsageStats,
+)
 from app.core.expansion import ToolCall
-from app.core.llm_client import LLMClient, LLMResponse, OpenAIToolChoice, UsageStats
-from app.contracts.llm_types import ToolSchemaDict
+from app.core.llm_client import LLMClient, LLMResponse
 from app.core.stream_utils import ReasoningBuffer
 from app.protocol.emitter import emit
 from app.protocol.events import ContentEvent, ReasoningEvent
@@ -430,27 +435,27 @@ async def _stream_llm_response(
         max_tokens=max_tokens,
         reasoning_fraction=reasoning_fraction,
     ):
-        if chunk.get("type") == "reasoning_delta":
-            reasoning_text = chunk.get("text", "")
+        if chunk["type"] == "reasoning_delta":
+            reasoning_text = chunk["text"]
             if reasoning_text:
                 to_emit = reasoning_buf.add(reasoning_text)
                 if to_emit:
                     yield emit(ReasoningEvent(content=to_emit))
-        elif chunk.get("type") == "content_delta":
+        elif chunk["type"] == "content_delta":
             flushed = reasoning_buf.flush()
             if flushed:
                 yield emit(ReasoningEvent(content=flushed))
-            content_text = chunk.get("text", "")
+            content_text = chunk["text"]
             if content_text and not suppress_content:
                 yield emit(ContentEvent(content=content_text))
-        elif chunk.get("type") == "done":
+        elif chunk["type"] == "done":
             flushed = reasoning_buf.flush()
             if flushed:
                 yield emit(ReasoningEvent(content=flushed))
-            response_content = chunk.get("content")
-            response_tool_calls = chunk.get("tool_calls", [])
-            finish_reason = chunk.get("finish_reason")
-            usage = chunk.get("usage", {})
+            response_content = chunk["content"]
+            response_tool_calls = chunk["tool_calls"]
+            finish_reason = chunk["finish_reason"]
+            usage = chunk["usage"]
 
     response = LLMResponse(
         content=response_content,

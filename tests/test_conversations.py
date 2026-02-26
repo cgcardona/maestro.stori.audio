@@ -333,7 +333,7 @@ async def test_add_assistant_message_with_metadata(db_session: AsyncSession, tes
         role="assistant",
         content="Here's your beat",
         model_used="anthropic/claude-3.5-sonnet",
-        tokens_used={"prompt": 200, "completion": 100},
+        tokens_used={"prompt_tokens": 200, "completion_tokens": 100},
         cost_cents=25,
         tool_calls=[
             {"name": "add_track", "arguments": {"type": "bass"}},
@@ -345,8 +345,8 @@ async def test_add_assistant_message_with_metadata(db_session: AsyncSession, tes
     
     assert message.model_used == "anthropic/claude-3.5-sonnet"
     assert message.tokens_used is not None
-    assert message.tokens_used["prompt"] == 200
-    assert message.tokens_used["completion"] == 100
+    assert message.tokens_used["prompt_tokens"] == 200
+    assert message.tokens_used["completion_tokens"] == 100
     assert message.cost_cents == 25
     assert message.cost == 0.25
     assert message.tool_calls is not None and len(message.tool_calls) == 2

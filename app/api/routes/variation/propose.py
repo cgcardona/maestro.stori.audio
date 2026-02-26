@@ -29,6 +29,7 @@ from app.services.budget import (
 )
 from app.variation.core.state_machine import VariationStatus, InvalidTransitionError
 from app.variation.core.event_envelope import (
+    PhrasePayload,
     build_meta_envelope,
     build_phrase_envelope,
     build_done_envelope,
@@ -180,9 +181,6 @@ async def _run_generation(
                 explanation=output.plan.llm_response_text,
             )
 
-            if record.status != VariationStatus.STREAMING:
-                return  # type: ignore[unreachable]  # defensive: cancellation may transition record
-
             record.ai_explanation = variation.ai_explanation
             record.affected_tracks = variation.affected_tracks
             record.affected_regions = variation.affected_regions
@@ -201,11 +199,8 @@ async def _run_generation(
             await publish_event(meta_env)
 
             for phrase in variation.phrases:
-                if record.status != VariationStatus.STREAMING:
-                    return  # type: ignore[unreachable]  # defensive: cancellation may transition record
-
                 seq = record.next_sequence()
-                phrase_data = {
+                phrase_data: PhrasePayload = {
                     "phraseId": phrase.phrase_id,
                     "trackId": phrase.track_id,
                     "regionId": phrase.region_id,
@@ -242,9 +237,6 @@ async def _run_generation(
                     ai_explanation=phrase.explanation,
                     tags=phrase.tags,
                 ))
-
-            if record.status != VariationStatus.STREAMING:
-                return  # type: ignore[unreachable]  # defensive: cancellation may transition record
 
             done_env = build_done_envelope(
                 variation_id=variation_id,

@@ -153,7 +153,7 @@ class TestChatCompletionStream:
         ):
             events.append(event)
 
-        done_event = next(e for e in events if e.get("type") == "done")
+        done_event = next(e for e in events if e["type"] == "done")
         assert len(done_event["tool_calls"]) == 1
         assert done_event["tool_calls"][0]["function"]["name"] == "stori_set_tempo"
 
