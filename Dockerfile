@@ -1,7 +1,13 @@
-# Stori Maestro API - Production Dockerfile
-# Multi-stage build for smaller image size
-# For reproducible builds, pin base image by digest: python:3.11-slim@sha256:<digest>
-# Get digest: docker inspect --format='{{index .RepoDigests 0}}' python:3.11-slim
+# Maestro — Production Dockerfile
+# Multi-stage build: builder installs deps into wheels; runtime copies only the wheels.
+#
+# Layer invalidation guide (when to rebuild):
+#   requirements.txt changed  →  docker compose build maestro
+#   Python code changed       →  no rebuild (override.yml bind-mounts app/ tests/ etc.)
+#   New tool/script added     →  docker compose build maestro (or add to override mounts)
+#
+# Pin base image for reproducible production builds:
+#   docker inspect --format='{{index .RepoDigests 0}}' python:3.11-slim
 
 FROM python:3.11-slim as builder
 
@@ -39,15 +45,14 @@ RUN pip install --no-cache-dir pytest-cov
 
 # Copy application code
 COPY --chown=stori:stori app/ ./app/
-COPY --chown=stori:stori scripts/ ./scripts/
-COPY --chown=stori:stori reference_midi/ ./reference_midi/
-COPY --chown=stori:stori alembic/ ./alembic/
-COPY --chown=stori:stori alembic.ini ./
-COPY --chown=stori:stori entrypoint.sh ./
-COPY --chown=stori:stori pyproject.toml ./
 COPY --chown=stori:stori tests/ ./tests/
+COPY --chown=stori:stori scripts/ ./scripts/
+COPY --chown=stori:stori tools/ ./tools/
+COPY --chown=stori:stori alembic/ ./alembic/
 COPY --chown=stori:stori stori_tourdeforce/ ./stori_tourdeforce/
-COPY --chown=stori:stori mvp_happy_path.py ./mvp_happy_path.py
+COPY --chown=stori:stori reference_midi/ ./reference_midi/
+COPY --chown=stori:stori alembic.ini pyproject.toml mvp_happy_path.py ./
+COPY --chown=stori:stori entrypoint.sh ./
 
 # Create data directory for SQLite with proper permissions
 RUN mkdir -p /data && chown -R stori:stori /data && chmod 755 /data
@@ -58,14 +63,12 @@ USER stori
 # Ensure data directory is writable
 VOLUME ["/data"]
 
-# Environment defaults (PYTHONPATH so alembic/scripts find app from any CWD)
+# Infrastructure env vars (PYTHONPATH so alembic/scripts find app from any CWD).
+# Application defaults (DEBUG, HOST, PORT, DATABASE_URL, etc.) live in app/config.py
+# and are overridden via .env / docker-compose environment: blocks — not here.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app \
-    STORI_DEBUG=false \
-    STORI_HOST=0.0.0.0 \
-    STORI_PORT=10001 \
-    STORI_DATABASE_URL=sqlite+aiosqlite:////data/stori.db
+    PYTHONPATH=/app
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

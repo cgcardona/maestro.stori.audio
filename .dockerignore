@@ -1,22 +1,38 @@
-# Reduce build context; only app/, scripts/, alembic/, alembic.ini, requirements.txt are copied in Dockerfile
+# Excluded from the Maestro build context.
+# Keep this in sync with the COPY directives in Dockerfile.
+#
+# Included (COPYd):   app/  tests/  scripts/  tools/  alembic/
+#                     stori_tourdeforce/  reference_midi/
+#                     alembic.ini  pyproject.toml  mvp_happy_path.py  entrypoint.sh
+# Excluded (below):   everything else
+
 .git
+.github
+
+# Secrets — never in the image
 .env
 .env.*
 !.env.example
-docs/
-orpheus-music/
+
+# External service (separate build context)
+storpheus/
+
+# Infrastructure / deploy configs (not needed at runtime)
 deploy/
+docs/
 assets/
-maestro-service/
-node_modules/
+
+# Dev artifacts
 **/__pycache__/
 **/.pytest_cache/
+**/.mypy_cache/
 **/*.pyc
+**/*.pyo
 .venv/
 venv/
-*.md
+
+# Misc
 docker-compose*.yml
-.pytest_cache/
+*.md
 QUICK_TEST_PROMPTS.txt
-generate_test_token.py
 LICENSE

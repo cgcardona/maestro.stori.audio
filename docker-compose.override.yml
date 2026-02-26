@@ -1,8 +1,26 @@
-# Dev-only overrides — auto-merged by `docker compose up`.
-# Bind-mounts shadow COPY'd code so host edits are instantly visible
-# inside the container without a rebuild.
+# docker-compose.override.yml — local development only
 #
-# Production: use `docker compose -f docker-compose.yml up` to skip this.
+# Auto-merged by `docker compose up` (no -f flag needed).
+# Production: `docker compose -f docker-compose.yml up` skips this file.
+#
+# ┌─────────────────────────────────────────────────────────────────────┐
+# │  REBUILD GUIDE — when do you need `docker compose build <service>`? │
+# ├─────────────────────────────────────────────────────────────────────┤
+# │  REBUILD REQUIRED          │  NO REBUILD — live via bind-mount      │
+# ├────────────────────────────┼────────────────────────────────────────┤
+# │  requirements.txt changed  │  app/**/*.py                           │
+# │  Dockerfile changed        │  tests/**/*.py                         │
+# │  New top-level dir added   │  scripts/**                            │
+# │  (not yet in volumes below)│  alembic/**                            │
+# │                            │  stori_tourdeforce/**                  │
+# │                            │  tools/**                              │
+# │                            │  pyproject.toml                        │
+# │                            │  storpheus/**/*.py                     │
+# └────────────────────────────┴────────────────────────────────────────┘
+#
+# Bind-mounts shadow the COPY'd code in the image — host edits are
+# immediately visible inside the container with zero restart needed.
+# The baked image layer only matters for dependencies (wheels/pip installs).
 
 services:
   maestro:
@@ -11,6 +29,7 @@ services:
       - ./app:/app/app
       - ./tests:/app/tests
       - ./scripts:/app/scripts
+      - ./tools:/app/tools
       - ./alembic:/app/alembic
       - ./stori_tourdeforce:/app/stori_tourdeforce
       - ./pyproject.toml:/app/pyproject.toml

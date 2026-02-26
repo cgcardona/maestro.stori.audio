@@ -1,0 +1,19 @@
+# Excluded from the Storpheus build context.
+# Included (COPYd): *.py  pyproject.toml  requirements.txt  seed_library/
+
+.git
+
+# Dev artifacts
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+*.pyc
+*.pyo
+
+# Volume-mounted cache (populated at runtime, not baked in)
+cache/
+
+# Misc
+*.md
+.env
+.env.*
