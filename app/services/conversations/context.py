@@ -28,26 +28,30 @@ def _extract_entity_summary(messages: list[ConversationMessage]) -> str:
         if not msg.tool_calls:
             continue
         for tc in msg.tool_calls:
-            name = tc.get("name", "")
-            args = tc.get("arguments", {})
+            _n = tc.get("name")
+            if not isinstance(_n, str):
+                continue
+            name = _n
+            _a = tc.get("arguments")
+            args: dict[str, object] = _a if isinstance(_a, dict) else {}
 
             if name == "stori_add_midi_track":
-                track_name = args.get("name", "")
-                track_id = args.get("trackId", "")
-                if track_name and track_id:
-                    tracks[track_name] = track_id
+                _track_name = args.get("name")
+                _track_id = args.get("trackId")
+                if isinstance(_track_name, str) and isinstance(_track_id, str):
+                    tracks[_track_name] = _track_id
 
             elif name == "stori_add_midi_region":
-                region_name = args.get("name", "")
-                region_id = args.get("regionId", "")
-                if region_name and region_id:
-                    regions[region_name] = region_id
+                _region_name = args.get("name")
+                _region_id = args.get("regionId")
+                if isinstance(_region_name, str) and isinstance(_region_id, str):
+                    regions[_region_name] = _region_id
 
             elif name == "stori_ensure_bus":
-                bus_name = args.get("name", "")
-                bus_id = args.get("busId", "")
-                if bus_name and bus_id:
-                    buses[bus_name] = bus_id
+                _bus_name = args.get("name")
+                _bus_id = args.get("busId")
+                if isinstance(_bus_name, str) and isinstance(_bus_id, str):
+                    buses[_bus_name] = _bus_id
 
     if not tracks and not regions and not buses:
         return ""
@@ -75,8 +79,9 @@ def _build_context_summary(messages: list[ConversationMessage]) -> str:
             user_intents.append(content)
         elif msg.role == "assistant" and msg.tool_calls:
             for tc in msg.tool_calls:
-                name = tc.get("name", "").replace("stori_", "")
-                actions_taken.append(name)
+                _n = tc.get("name")
+                if isinstance(_n, str):
+                    actions_taken.append(_n.replace("stori_", ""))
 
     summary_parts: list[str] = []
 
@@ -161,7 +166,7 @@ async def summarize_conversation_for_llm(
             content_parts.append(f"User: {msg.content[:200]}")
         elif msg.role == "assistant":
             if msg.tool_calls:
-                tools = [tc.get("name", "") for tc in msg.tool_calls]
+                tools = [_n for tc in msg.tool_calls if isinstance((_n := tc.get("name")), str)]
                 content_parts.append(f"Assistant: Called {', '.join(tools)}")
             elif msg.content:
                 content_parts.append(f"Assistant: {msg.content[:200]}")

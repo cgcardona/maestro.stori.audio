@@ -299,9 +299,9 @@ class TestSingleSectionLockdown:
         spec = _spec("verse", index=0, start=0, beats=16)
         sc = _section_contract(spec, parent_hash="test-parent")
 
-        captured_params: dict[str, Any] = {}
+        captured_params: dict[str, dict[str, object]] = {}
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, Any], **kw: Any) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 captured_params["region"] = dict(resolved_args)
                 return _ToolCallOutcome(
@@ -537,7 +537,7 @@ class TestExecutionAttestation:
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-ic-hash")
 
-        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, Any], **kw: Any) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,

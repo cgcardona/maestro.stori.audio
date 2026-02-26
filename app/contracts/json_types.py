@@ -17,6 +17,12 @@ Hierarchy:
   NoteChangeDict        — before/after shape in NoteChangeSchema
   RegionMetadataWire    — region position metadata (camelCase, handler path)
   RegionMetadataDB      — region position metadata (snake_case, database path)
+
+  Region event map aliases (used across Muse/StateStore):
+  RegionNotesMap        — dict[str, list[NoteDict]]     (region_id → notes)
+  RegionCCMap           — dict[str, list[CCEventDict]]  (region_id → CC events)
+  RegionPitchBendMap    — dict[str, list[PitchBendDict]](region_id → pitch bends)
+  RegionAftertouchMap   — dict[str, list[AftertouchDict]](region_id → aftertouch)
 """
 
 from __future__ import annotations
@@ -291,3 +297,24 @@ class RegionMetadataDB(TypedDict, total=False):
     start_beat: float
     duration_beats: float
     name: str
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Region event map aliases
+#
+# These replace the repeated pattern ``dict[str, list[XxxDict]]`` across the
+# Muse VCS, StateStore, and variation pipeline.  The key is always a region_id
+# string; the value is the ordered list of events for that region.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+RegionNotesMap = dict[str, list[NoteDict]]
+"""Maps region_id → ordered list of MIDI notes for that region."""
+
+RegionCCMap = dict[str, list[CCEventDict]]
+"""Maps region_id → ordered list of MIDI CC events for that region."""
+
+RegionPitchBendMap = dict[str, list[PitchBendDict]]
+"""Maps region_id → ordered list of MIDI pitch bend events for that region."""
+
+RegionAftertouchMap = dict[str, list[AftertouchDict]]
+"""Maps region_id → ordered list of MIDI aftertouch events for that region."""

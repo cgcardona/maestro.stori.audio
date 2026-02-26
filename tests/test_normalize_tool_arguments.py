@@ -41,8 +41,10 @@ def test_nested_dict() -> None:
     })
     assert out is not None
     assert out["a"] == "1"
-    assert out["inner"]["b"] == "2"
-    assert out["inner"]["c"] == "0.5"
+    inner = out["inner"]
+    assert isinstance(inner, dict)
+    assert inner["b"] == "2"
+    assert inner["c"] == "0.5"
 
 
 def test_list_of_numbers() -> None:
@@ -52,8 +54,12 @@ def test_list_of_numbers() -> None:
         "gains": [0.5, 1.0],
     })
     assert out is not None
-    assert out["beats"] == ["0", "4", "8", "12"]
-    assert out["gains"] == ["0.5", "1.0"]
+    beats = out["beats"]
+    assert isinstance(beats, list)
+    assert beats == ["0", "4", "8", "12"]
+    gains = out["gains"]
+    assert isinstance(gains, list)
+    assert gains == ["0.5", "1.0"]
 
 
 def test_list_of_dicts() -> None:
@@ -62,8 +68,14 @@ def test_list_of_dicts() -> None:
         "items": [{"x": 1}, {"y": 2.0}],
     })
     assert out is not None
-    assert out["items"][0]["x"] == "1"
-    assert out["items"][1]["y"] == "2.0"
+    items = out["items"]
+    assert isinstance(items, list)
+    item0 = items[0]
+    assert isinstance(item0, dict)
+    assert item0["x"] == "1"
+    item1 = items[1]
+    assert isinstance(item1, dict)
+    assert item1["y"] == "2.0"
 
 
 def test_strings_and_none_unchanged() -> None:
@@ -85,7 +97,9 @@ def test_bool_in_list_unchanged() -> None:
         "flags": [True, False, 1, 0],
     })
     assert out is not None
-    assert out["flags"][0] is True
-    assert out["flags"][1] is False
-    assert out["flags"][2] == "1"
-    assert out["flags"][3] == "0"
+    flags = out["flags"]
+    assert isinstance(flags, list)
+    assert flags[0] is True
+    assert flags[1] is False
+    assert flags[2] == "1"
+    assert flags[3] == "0"

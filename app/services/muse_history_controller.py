@@ -18,6 +18,10 @@ from app.contracts.json_types import (
     CCEventDict,
     NoteDict,
     PitchBendDict,
+    RegionAftertouchMap,
+    RegionCCMap,
+    RegionNotesMap,
+    RegionPitchBendMap,
 )
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -319,9 +323,9 @@ async def merge_variations(
     )
 
 
-def _capture_working_notes(store: StateStore) -> dict[str, list[NoteDict]]:
+def _capture_working_notes(store: StateStore) -> RegionNotesMap:
     """Extract notes from all regions in the store."""
-    result: dict[str, list[NoteDict]] = {}
+    result: RegionNotesMap = {}
     if hasattr(store, "_region_notes"):
         for rid, notes in store._region_notes.items():
             if notes:
@@ -329,9 +333,9 @@ def _capture_working_notes(store: StateStore) -> dict[str, list[NoteDict]]:
     return result
 
 
-def _capture_working_cc(store: StateStore) -> dict[str, list[CCEventDict]]:
+def _capture_working_cc(store: StateStore) -> RegionCCMap:
     """Extract CC events from all regions in the store."""
-    result: dict[str, list[CCEventDict]] = {}
+    result: RegionCCMap = {}
     if hasattr(store, "_region_cc"):
         for rid, events in store._region_cc.items():
             if events:
@@ -339,9 +343,9 @@ def _capture_working_cc(store: StateStore) -> dict[str, list[CCEventDict]]:
     return result
 
 
-def _capture_working_pb(store: StateStore) -> dict[str, list[PitchBendDict]]:
+def _capture_working_pb(store: StateStore) -> RegionPitchBendMap:
     """Extract pitch bend events from all regions in the store."""
-    result: dict[str, list[PitchBendDict]] = {}
+    result: RegionPitchBendMap = {}
     if hasattr(store, "_region_pitch_bends"):
         for rid, events in store._region_pitch_bends.items():
             if events:
@@ -349,9 +353,9 @@ def _capture_working_pb(store: StateStore) -> dict[str, list[PitchBendDict]]:
     return result
 
 
-def _capture_working_at(store: StateStore) -> dict[str, list[AftertouchDict]]:
+def _capture_working_at(store: StateStore) -> RegionAftertouchMap:
     """Extract aftertouch events from all regions in the store."""
-    result: dict[str, list[AftertouchDict]] = {}
+    result: RegionAftertouchMap = {}
     if hasattr(store, "_region_aftertouch"):
         for rid, events in store._region_aftertouch.items():
             if events:

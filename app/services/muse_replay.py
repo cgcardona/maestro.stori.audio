@@ -27,6 +27,10 @@ from app.contracts.json_types import (
     CCEventDict,
     NoteDict,
     PitchBendDict,
+    RegionAftertouchMap,
+    RegionCCMap,
+    RegionNotesMap,
+    RegionPitchBendMap,
 )
 from app.services import muse_repository
 from app.services.muse_repository import HistoryNode
@@ -36,9 +40,9 @@ logger = logging.getLogger(__name__)
 
 def _route_controller_event(
     ev: dict[str, Any],
-    cc: dict[str, list[CCEventDict]],
-    pitch_bends: dict[str, list[PitchBendDict]],
-    aftertouch: dict[str, list[AftertouchDict]],
+    cc: RegionCCMap,
+    pitch_bends: RegionPitchBendMap,
+    aftertouch: RegionAftertouchMap,
     rid: str,
 ) -> None:
     """Deserialize a raw controller change dict into the appropriate typed list."""
@@ -152,10 +156,10 @@ class HeadSnapshot:
     """
 
     variation_id: str
-    notes: dict[str, list[NoteDict]]
-    cc: dict[str, list[CCEventDict]]
-    pitch_bends: dict[str, list[PitchBendDict]]
-    aftertouch: dict[str, list[AftertouchDict]]
+    notes: RegionNotesMap
+    cc: RegionCCMap
+    pitch_bends: RegionPitchBendMap
+    aftertouch: RegionAftertouchMap
     track_regions: dict[str, str]
     region_start_beats: dict[str, float]
 
@@ -187,10 +191,10 @@ async def reconstruct_head_snapshot(
     if not lineage:
         return None
 
-    notes: dict[str, list[NoteDict]] = {}
-    cc: dict[str, list[CCEventDict]] = {}
-    pitch_bends: dict[str, list[PitchBendDict]] = {}
-    aftertouch: dict[str, list[AftertouchDict]] = {}
+    notes: RegionNotesMap = {}
+    cc: RegionCCMap = {}
+    pitch_bends: RegionPitchBendMap = {}
+    aftertouch: RegionAftertouchMap = {}
     track_regions: dict[str, str] = {}
     region_start_beats: dict[str, float] = {}
 
@@ -249,10 +253,10 @@ async def reconstruct_variation_snapshot(
     if not lineage:
         return None
 
-    notes: dict[str, list[NoteDict]] = {}
-    cc: dict[str, list[CCEventDict]] = {}
-    pitch_bends: dict[str, list[PitchBendDict]] = {}
-    aftertouch: dict[str, list[AftertouchDict]] = {}
+    notes: RegionNotesMap = {}
+    cc: RegionCCMap = {}
+    pitch_bends: RegionPitchBendMap = {}
+    aftertouch: RegionAftertouchMap = {}
     track_regions: dict[str, str] = {}
     region_start_beats: dict[str, float] = {}
 

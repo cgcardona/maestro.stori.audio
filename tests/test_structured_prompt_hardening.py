@@ -643,9 +643,10 @@ class TestPositionPlannerRegression:
         if plan:
             region_calls = [tc for tc in plan.tool_calls if tc.name == "stori_add_midi_region"]
             for call in region_calls:
-                start = call.params.get("startBeat", 0)
+                _start = call.params.get("startBeat", 0)
+                start = _start if isinstance(_start, (int, float)) else 0
                 assert start >= 64.0, (
-                    f"startBeat {start} should be >= 64. Position offset not applied."
+                    f"startBeat {_start} should be >= 64. Position offset not applied."
                 )
 
     def test_resolve_position_after_uses_region_end(self) -> None:

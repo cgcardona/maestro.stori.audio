@@ -12,7 +12,7 @@ import logging
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Awaitable, Callable
 
 from app.config import settings
 from app.contracts.llm_types import ChatMessage, ToolCallEntry
@@ -105,9 +105,9 @@ def _humanize_style(style: str) -> str:
 
 
 def _enrich_params_with_track_context(
-    params: dict[str, Any],  # boundary: LLM tool params
+    params: dict[str, object],
     store: StateStore,
-) -> dict[str, Any]:  # boundary: LLM tool params
+) -> dict[str, object]:
     """Inject trackName/trackId into SSE toolCall params for region-scoped tools.
 
     Tools such as stori_add_midi_cc, stori_add_pitch_bend, stori_quantize_notes,
@@ -125,7 +125,7 @@ def _enrich_params_with_track_context(
     if "trackName" in params or "trackId" in params:
         return params
     region_id = params.get("regionId")
-    if not region_id:
+    if not isinstance(region_id, str) or not region_id:
         return params
     try:
         track_id = store.get_region_track_id(region_id)
@@ -139,14 +139,14 @@ def _enrich_params_with_track_context(
         return params
 
 
-def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:  # boundary: LLM tool params
+def _human_label_for_tool(name: str, args: dict[str, object]) -> str:
     """Return a short, musician-friendly description of a tool call.
 
     Used in progress/toolStart SSE events and as the label for plan steps.
     Labels follow canonical patterns that ExecutionTimelineView uses for
     per-track grouping (see the Execution Timeline UI spec).
     """
-    track = args.get("trackName") or args.get("name") or ""
+    track = str(args.get("trackName") or args.get("name") or "")
     match name:
         case "stori_set_tempo":
             return f"set tempo to {args.get('tempo', '?')} BPM"
@@ -158,7 +158,8 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:  # boundary: 
             region_name = args.get("name", "region")
             return f"Creating region: {region_name}"
         case "stori_add_notes":
-            n = len(args.get("notes") or [])
+            notes = args.get("notes")
+            n = len(notes) if isinstance(notes, (list, tuple)) else 0
             suffix = f" to {track}" if track else ""
             return f"Add notes{suffix}" if not n else f"Add {n} notes{suffix}"
         case "stori_clear_notes":
@@ -168,8 +169,8 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:  # boundary: 
         case "stori_apply_swing":
             return "Applying swing"
         case "stori_generate_midi":
-            role = args.get("role", "part")
-            style = _humanize_style(args.get("style", ""))
+            role = str(args.get("role") or "part")
+            style = _humanize_style(str(args.get("style") or ""))
             bars = args.get("bars", "")
             tname = args.get("trackName") or role.capitalize()
             detail = f"{style} {role}" + (f", {bars} bars" if bars else "")
@@ -251,9 +252,9 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:  # boundary: 
 
 
 def _resolve_variable_refs(
-    params: dict[str, Any],  # boundary: LLM tool params
-    prior_results: list[dict[str, Any]],  # boundary: LLM tool results
-) -> dict[str, Any]:  # boundary: LLM tool params
+    params: dict[str, object],
+    prior_results: list[dict[str, object]],
+) -> dict[str, object]:
     """Resolve $N.field variable references in tool params.
 
     Lets the LLM reference the output of an earlier tool call in the same
@@ -277,11 +278,24 @@ def _resolve_variable_refs(
     return resolved
 
 
+def _scalar(v: object) -> str | int | bool | None:
+    """Narrow a tool param value to an LLM-safe scalar for tool results."""
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (str, int)):
+        return v
+    if isinstance(v, float):
+        return int(v)
+    return str(v)
+
+
 def _build_tool_result(
     tool_name: str,
-    params: dict[str, Any],  # boundary: LLM tool params
+    params: dict[str, object],
     store: StateStore,
-) -> dict[str, str | int | bool | None]:
+) -> dict[str, object]:
     """Build a tool result with state feedback for the LLM.
 
     Entity-creating tools: echo server-assigned IDs.
@@ -291,41 +305,40 @@ def _build_tool_result(
     Note: entity manifests are injected separately via
     ``EntityRegistry.agent_manifest()`` — not embedded in tool results.
     """
-    result: dict[str, str | int | bool | None] = {"success": True}
+    result: dict[str, object] = {"success": True}
 
     if tool_name in _ENTITY_CREATING_TOOLS:
         for id_field in _ENTITY_ID_ECHO.get(tool_name, []):
             if id_field in params:
-                result[id_field] = params[id_field]
+                result[id_field] = _scalar(params[id_field])
 
         if tool_name == "stori_add_midi_region":
-            result["startBeat"] = params.get("startBeat", 0)
-            result["durationBeats"] = params.get("durationBeats", 16)
-            result["name"] = params.get("name", "Region")
+            result["startBeat"] = _scalar(params.get("startBeat", 0))
+            result["durationBeats"] = _scalar(params.get("durationBeats", 16))
+            result["name"] = _scalar(params.get("name", "Region"))
 
         elif tool_name == "stori_add_midi_track":
-            result["name"] = params.get("name", "Track")
+            result["name"] = _scalar(params.get("name", "Track"))
             if params.get("gmProgram") is not None:
-                result["gmProgram"] = params["gmProgram"]
+                result["gmProgram"] = _scalar(params["gmProgram"])
             if params.get("drumKitId"):
-                result["drumKitId"] = params["drumKitId"]
+                result["drumKitId"] = _scalar(params["drumKitId"])
             if params.get("_gmInstrumentName"):
-                result["instrumentName"] = params["_gmInstrumentName"]
+                result["instrumentName"] = _scalar(params["_gmInstrumentName"])
 
         elif tool_name == "stori_ensure_bus":
-            result["name"] = params.get("name", "Bus")
+            result["name"] = _scalar(params.get("name", "Bus"))
 
     elif tool_name == "stori_add_notes":
         region_id = params.get("regionId", "")
-        notes = params.get("notes", [])
-        result["regionId"] = region_id
-        result["notesAdded"] = len(notes)
-        total_notes = len(store.get_region_notes(region_id)) if region_id else 0
-        result["totalNotes"] = total_notes
+        notes = params.get("notes")
+        result["regionId"] = _scalar(region_id)
+        result["notesAdded"] = len(notes) if isinstance(notes, (list, tuple)) else 0
+        rid = region_id if isinstance(region_id, str) else ""
+        result["totalNotes"] = len(store.get_region_notes(rid)) if rid else 0
 
     elif tool_name == "stori_clear_notes":
-        region_id = params.get("regionId", "")
-        result["regionId"] = region_id
+        result["regionId"] = _scalar(params.get("regionId", ""))
         result["totalNotes"] = 0
         result["warning"] = (
             "Region cleared. If you intended to replace notes, "
@@ -333,32 +346,35 @@ def _build_tool_result(
         )
 
     elif tool_name == "stori_add_insert_effect":
-        result["trackId"] = params.get("trackId", "")
-        result["effectType"] = params.get("type", "")
+        result["trackId"] = _scalar(params.get("trackId", ""))
+        result["effectType"] = _scalar(params.get("type", ""))
 
     elif tool_name == "stori_add_send":
-        result["trackId"] = params.get("trackId", "")
-        result["busId"] = params.get("busId", "")
+        result["trackId"] = _scalar(params.get("trackId", ""))
+        result["busId"] = _scalar(params.get("busId", ""))
 
     elif tool_name == "stori_add_automation":
-        result["trackId"] = params.get("trackId", "")
-        result["parameter"] = params.get("parameter", "")
-        result["pointCount"] = len(params.get("points", []))
+        result["trackId"] = _scalar(params.get("trackId", ""))
+        result["parameter"] = _scalar(params.get("parameter", ""))
+        points = params.get("points")
+        result["pointCount"] = len(points) if isinstance(points, (list, tuple)) else 0
 
     elif tool_name == "stori_add_midi_cc":
-        result["regionId"] = params.get("regionId", "")
-        result["cc"] = params.get("cc")
-        result["eventCount"] = len(params.get("events", []))
+        result["regionId"] = _scalar(params.get("regionId", ""))
+        result["cc"] = _scalar(params.get("cc"))
+        events = params.get("events")
+        result["eventCount"] = len(events) if isinstance(events, (list, tuple)) else 0
 
     elif tool_name == "stori_add_pitch_bend":
-        result["regionId"] = params.get("regionId", "")
-        result["eventCount"] = len(params.get("events", []))
+        result["regionId"] = _scalar(params.get("regionId", ""))
+        events = params.get("events")
+        result["eventCount"] = len(events) if isinstance(events, (list, tuple)) else 0
 
     elif tool_name in ("stori_set_track_volume", "stori_set_track_pan",
                        "stori_mute_track", "stori_solo_track",
                        "stori_set_track_color", "stori_set_track_icon",
                        "stori_set_track_name", "stori_set_midi_program"):
-        result["trackId"] = params.get("trackId", "")
+        result["trackId"] = _scalar(params.get("trackId", ""))
 
     return result
 

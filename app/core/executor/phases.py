@@ -13,23 +13,31 @@ _PHASE3_TOOLS: set[str] = {
 }
 
 
+def _str_param(v: object, default: str = "") -> str:
+    """Safely narrow an object param value to str."""
+    return v if isinstance(v, str) else default
+
+
 def _get_instrument_for_call(call: ToolCall) -> str | None:
     """Extract the instrument/track name a tool call belongs to.
 
     Returns None for project-level (setup/mixing) calls.
     """
     if call.name == "stori_add_midi_track":
-        return call.params.get("name")
+        v = call.params.get("name")
+        return _str_param(v) or None
     if call.name in _PHASE1_TOOLS | _PHASE3_TOOLS:
         return None
-    return (
-        call.params.get("trackName")
-        or call.params.get("name")
-        or (
-            call.params.get("role", "").capitalize()
-            if call.name.startswith("stori_generate") else None
-        )
+    name = (
+        _str_param(call.params.get("trackName"))
+        or _str_param(call.params.get("name"))
     )
+    if name:
+        return name
+    if call.name.startswith("stori_generate"):
+        role = _str_param(call.params.get("role"))
+        return role.capitalize() if role else None
+    return None
 
 
 def _group_into_phases(

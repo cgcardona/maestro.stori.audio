@@ -10,6 +10,10 @@ from app.contracts.json_types import (
     CCEventDict,
     NoteDict,
     PitchBendDict,
+    RegionAftertouchMap,
+    RegionCCMap,
+    RegionNotesMap,
+    RegionPitchBendMap,
 )
 from app.core.state_store import StateStore, Transaction
 from app.core.tracing import TraceContext, log_tool_call
@@ -87,10 +91,10 @@ class SnapshotBundle:
     One type, one shape, everywhere.
     """
 
-    notes: dict[str, list[NoteDict]] = field(default_factory=dict)
-    cc: dict[str, list[CCEventDict]] = field(default_factory=dict)
-    pitch_bends: dict[str, list[PitchBendDict]] = field(default_factory=dict)
-    aftertouch: dict[str, list[AftertouchDict]] = field(default_factory=dict)
+    notes: RegionNotesMap = field(default_factory=dict)
+    cc: RegionCCMap = field(default_factory=dict)
+    pitch_bends: RegionPitchBendMap = field(default_factory=dict)
+    aftertouch: RegionAftertouchMap = field(default_factory=dict)
     track_regions: dict[str, str] = field(default_factory=dict)
     region_start_beats: dict[str, float] = field(default_factory=dict)
 

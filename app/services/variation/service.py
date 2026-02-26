@@ -11,6 +11,10 @@ from app.contracts.json_types import (
     CCEventDict,
     NoteDict,
     PitchBendDict,
+    RegionAftertouchMap,
+    RegionCCMap,
+    RegionNotesMap,
+    RegionPitchBendMap,
 )
 from app.models.variation import (
     Variation,
@@ -303,15 +307,15 @@ class VariationService:
 
     def compute_multi_region_variation(
         self,
-        base_regions: dict[str, list[NoteDict]],
-        proposed_regions: dict[str, list[NoteDict]],
+        base_regions: RegionNotesMap,
+        proposed_regions: RegionNotesMap,
         track_regions: dict[str, str],
         intent: str,
         explanation: str | None = None,
         region_start_beats: dict[str, float] | None = None,
-        region_cc: dict[str, list[CCEventDict]] | None = None,
-        region_pitch_bends: dict[str, list[PitchBendDict]] | None = None,
-        region_aftertouch: dict[str, list[AftertouchDict]] | None = None,
+        region_cc: RegionCCMap | None = None,
+        region_pitch_bends: RegionPitchBendMap | None = None,
+        region_aftertouch: RegionAftertouchMap | None = None,
     ) -> Variation:
         """Compute a Variation across multiple regions, each potentially on a different track.
 

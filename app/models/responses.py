@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-from typing import Any, Literal
+from typing import Literal
 from enum import Enum
+
+from app.contracts.json_types import ToolCallDict
 
 
 class SSEMessageType(str, Enum):
@@ -34,7 +36,7 @@ class SSEGenerating(BaseModel):
     """Music generation in progress."""
     type: Literal["generating"] = "generating"
     tool: str
-    params: dict[str, Any]
+    params: dict[str, object]
 
 
 class SSEGenerated(BaseModel):
@@ -42,14 +44,14 @@ class SSEGenerated(BaseModel):
     type: Literal["generated"] = "generated"
     tool: str
     noteCount: int
-    metadata: dict[str, Any] | None = None
+    metadata: dict[str, object] | None = None
 
 
 class SSEToolCall(BaseModel):
     """DAW tool call for Swift to execute."""
     type: Literal["tool_call"] = "tool_call"
     tool: str
-    params: dict[str, Any]
+    params: dict[str, object]
 
 
 class SSEToolResult(BaseModel):
@@ -57,14 +59,14 @@ class SSEToolResult(BaseModel):
     type: Literal["tool_result"] = "tool_result"
     tool: str
     success: bool
-    result: dict[str, Any] | None = None
+    result: dict[str, object] | None = None
 
 
 class SSEComplete(BaseModel):
     """Composition complete."""
     type: Literal["complete"] = "complete"
     success: bool
-    tool_calls: list[dict[str, Any]]
+    tool_calls: list[ToolCallDict]
     summary: str | None = None
 
 
@@ -82,6 +84,6 @@ SSEMessage = SSEStatus | SSEReasoning | SSEGenerating | SSEGenerated | SSEToolCa
 class MaestroResponse(BaseModel):
     """Non-streaming maestro response."""
     success: bool
-    tool_calls: list[dict[str, Any]]
+    tool_calls: list[ToolCallDict]
     raw_response: str | None = None
     error: str | None = None

@@ -11,7 +11,11 @@ from app.contracts.json_types import (
     CCEventDict,
     NoteDict,
     PitchBendDict,
+    RegionAftertouchMap,
+    RegionCCMap,
     RegionMetadataDB,
+    RegionNotesMap,
+    RegionPitchBendMap,
 )
 from app.core.tracing import get_trace_context, trace_span
 from app.core.executor.models import VariationApplyResult
@@ -49,12 +53,12 @@ async def apply_variation_phrases(
             notes_modified = 0
             applied_phrases: list[str] = []
 
-            region_adds: dict[str, list[NoteDict]] = {}
-            region_removals: dict[str, list[NoteDict]] = {}
+            region_adds: RegionNotesMap = {}
+            region_removals: RegionNotesMap = {}
             region_track_map: dict[str, str] = {}
-            region_cc: dict[str, list[CCEventDict]] = {}
-            region_pitch_bends: dict[str, list[PitchBendDict]] = {}
-            region_aftertouch: dict[str, list[AftertouchDict]] = {}
+            region_cc: RegionCCMap = {}
+            region_pitch_bends: RegionPitchBendMap = {}
+            region_aftertouch: RegionAftertouchMap = {}
 
             for phrase_id in accepted_phrase_ids:
                 phrase = variation.get_phrase(phrase_id)

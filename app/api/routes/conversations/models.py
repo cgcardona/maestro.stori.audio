@@ -1,10 +1,9 @@
 """Request/response Pydantic models for conversation routes."""
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import Field
 
+from app.contracts.llm_types import UsageStats
 from app.contracts.project_types import ProjectContext
 from app.models.base import CamelModel
 
@@ -32,7 +31,7 @@ class ToolCallInfo(CamelModel):
     id: str | None = None
     type: str = "function"
     name: str
-    arguments: dict[str, Any]
+    arguments: dict[str, object]
 
 
 class MessageInfo(CamelModel):
@@ -44,11 +43,11 @@ class MessageInfo(CamelModel):
     content: str
     timestamp: str
     model_used: str | None = None
-    tokens_used: dict[str, Any] | None = None
+    tokens_used: UsageStats | None = None
     cost: float
     tool_calls: list[ToolCallInfo] | None = None
-    sse_events: list[dict[str, Any]] | None = None
-    actions: list[dict[str, Any]] | None = None
+    sse_events: list[dict[str, object]] | None = None
+    actions: list[dict[str, object]] | None = None
 
 
 class ConversationResponse(CamelModel):
@@ -59,7 +58,7 @@ class ConversationResponse(CamelModel):
     created_at: str
     updated_at: str
     is_archived: bool
-    project_context: dict[str, Any] | None = None
+    project_context: ProjectContext | None = None
     messages: list[MessageInfo] = []
 
 

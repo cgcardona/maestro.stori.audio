@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from app.contracts.json_types import ToolCallDict
 from app.contracts.llm_types import AssistantMessage, ToolResultMessage
@@ -33,8 +32,8 @@ class _ToolCallOutcome:
     either yield them directly (editing path) or put them into a queue
     (agent-team path).
     """
-    enriched_params: dict[str, Any]
-    tool_result: dict[str, Any]
+    enriched_params: dict[str, object]
+    tool_result: dict[str, object]
     sse_events: list[SSEEventInput]
     msg_call: AssistantMessage          # assistant message containing the tool call
     msg_result: ToolResultMessage       # tool response message

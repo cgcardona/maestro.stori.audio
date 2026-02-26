@@ -8,13 +8,14 @@ from __future__ import annotations
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 import pytest
-from unittest.mock import MagicMock
+
 
 from app.api.routes.conversations import (
     normalize_tool_arguments,
     build_conversation_history_for_llm,
 )
 from app.core.sse_utils import sse_event
+from app.db.models import ConversationMessage
 
 
 # ---------------------------------------------------------------------------
@@ -58,8 +59,10 @@ class TestNormalizeToolArguments:
             "track": {"volume": 0.5, "name": "Bass"},
         })
         assert result is not None
-        assert result["track"]["volume"] == "0.5"
-        assert result["track"]["name"] == "Bass"
+        track = result["track"]
+        assert isinstance(track, dict)
+        assert track["volume"] == "0.5"
+        assert track["name"] == "Bass"
 
     def test_list_with_numbers(self) -> None:
 
@@ -67,8 +70,12 @@ class TestNormalizeToolArguments:
             "notes": [{"pitch": 60, "velocity": 100}],
         })
         assert result is not None
-        assert result["notes"][0]["pitch"] == "60"
-        assert result["notes"][0]["velocity"] == "100"
+        notes = result["notes"]
+        assert isinstance(notes, list)
+        note0 = notes[0]
+        assert isinstance(note0, dict)
+        assert note0["pitch"] == "60"
+        assert note0["velocity"] == "100"
 
     def test_list_with_mixed_types(self) -> None:
 
@@ -86,13 +93,18 @@ class TestNormalizeToolArguments:
 
 class TestBuildConversationHistoryForLLM:
 
-    def _make_msg(self, role: str, content: str | None, tool_calls: list[object] | None = None) -> MagicMock:
-
-        msg = MagicMock()
-        msg.role = role
-        msg.content = content
-        msg.tool_calls = tool_calls
-        return msg
+    def _make_msg(
+        self,
+        role: str,
+        content: str | None,
+        tool_calls: list[dict[str, object]] | None = None,
+    ) -> ConversationMessage:
+        return ConversationMessage(
+            conversation_id="test-conv-id",
+            role=role,
+            content=content or "",
+            tool_calls=tool_calls,
+        )
 
     def test_user_message(self) -> None:
 

@@ -1838,22 +1838,10 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         _pre_controls = build_controls(
             genre=request.genre,
             tempo=request.tempo,
-            emotion_vector=(
-                request.emotion_vector.model_dump()
-                if request.emotion_vector else None
-            ),
-            role_profile_summary=(
-                request.role_profile_summary.model_dump()
-                if request.role_profile_summary else None
-            ),
-            generation_constraints=(
-                request.generation_constraints.model_dump()
-                if request.generation_constraints else None
-            ),
-            intent_goals=(
-                [g.model_dump() for g in request.intent_goals]
-                if request.intent_goals else None
-            ),
+            emotion_vector=request.emotion_vector or None,
+            role_profile_summary=request.role_profile_summary or None,
+            generation_constraints=request.generation_constraints or None,
+            intent_goals=request.intent_goals or None,
             quality_preset=request.quality_preset,
         )
         _derived = apply_controls_to_params(_pre_controls, request.bars)
@@ -2259,26 +2247,13 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         )
 
         # ── Build metadata ──
-        gc_dict = (
-            request.generation_constraints.model_dump()
-            if request.generation_constraints else None
-        )
         controls = build_controls(
             genre=request.genre,
             tempo=request.tempo,
-            emotion_vector=(
-                request.emotion_vector.model_dump()
-                if request.emotion_vector else None
-            ),
-            role_profile_summary=(
-                request.role_profile_summary.model_dump()
-                if request.role_profile_summary else None
-            ),
-            generation_constraints=gc_dict,
-            intent_goals=(
-                [g.model_dump() for g in request.intent_goals]
-                if request.intent_goals else None
-            ),
+            emotion_vector=request.emotion_vector or None,
+            role_profile_summary=request.role_profile_summary or None,
+            generation_constraints=request.generation_constraints or None,
+            intent_goals=request.intent_goals or None,
             quality_preset=request.quality_preset,
         )
 

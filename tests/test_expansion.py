@@ -39,7 +39,11 @@ class TestToolCallToDict:
             params={"regionId": "r1", "notes": [{"pitch": 60, "startBeat": 0}]},
         )
         d = tc.to_dict()
-        assert d["params"]["notes"][0]["pitch"] == 60
+        params = d["params"]
+        assert isinstance(params, dict)
+        notes = params["notes"]
+        assert isinstance(notes, list)
+        assert notes[0]["pitch"] == 60
 
     def test_returns_dict(self) -> None:
 

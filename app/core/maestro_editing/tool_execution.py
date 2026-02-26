@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Awaitable, Callable
 
 from app.contracts.generation_types import CompositionContext, RoleResult, UnifiedGenerationOutput
 from app.contracts.llm_types import AssistantMessage, ToolResultMessage
@@ -68,7 +68,7 @@ def phase_for_tool(tool_name: str) -> str:
 async def _execute_agent_generator(
     tc_id: str,
     tc_name: str,
-    enriched_params: dict[str, Any],  # boundary: polymorphic tool params from LLM
+    enriched_params: dict[str, object],
     store: StateStore,
     trace: TraceContext,
     composition_context: CompositionContext,
@@ -88,23 +88,31 @@ async def _execute_agent_generator(
     sse_events: list[SSEEventInput] = []
     extra_tool_calls: list[ToolCallDict] = []
 
-    role = enriched_params.get("role", "")
-    if not role:
-        role = "melody"
+    _role = enriched_params.get("role", "")
+    role = str(_role) if _role else "melody"
 
-    style = enriched_params.get("style") or composition_context.get("style", "")
-    tempo = int(enriched_params.get("tempo") or composition_context.get("tempo", 120))
-    bars = int(enriched_params.get("bars") or composition_context.get("bars", 4))
-    key = enriched_params.get("key") or composition_context.get("key")
-    start_beat = float(enriched_params.get("start_beat", 0))
-    instrument_prompt = enriched_params.get("prompt", "")
+    _style = enriched_params.get("style") or composition_context.get("style", "")
+    style = str(_style) if _style else ""
+    _tempo = enriched_params.get("tempo") or composition_context.get("tempo", 120)
+    tempo = int(_tempo) if isinstance(_tempo, (int, float)) else 120
+    _bars = enriched_params.get("bars") or composition_context.get("bars", 4)
+    bars = int(_bars) if isinstance(_bars, (int, float)) else 4
+    _key = enriched_params.get("key") or composition_context.get("key")
+    key = str(_key) if isinstance(_key, str) else None
+    _start_beat = enriched_params.get("start_beat", 0)
+    start_beat = float(_start_beat) if isinstance(_start_beat, (int, float)) else 0.0
+    _prompt = enriched_params.get("prompt", "")
+    instrument_prompt = str(_prompt) if _prompt else ""
 
     # Prefer explicit trackId/regionId passed by the agent; fall back to registry lookup.
-    track_id = enriched_params.get("trackId", "")
-    region_id = enriched_params.get("regionId", "")
+    _track_id = enriched_params.get("trackId", "")
+    track_id = str(_track_id) if _track_id else ""
+    _region_id = enriched_params.get("regionId", "")
+    region_id = str(_region_id) if _region_id else ""
 
     if not track_id:
-        track_name = enriched_params.get("trackName", role.capitalize())
+        _track_name = enriched_params.get("trackName", role.capitalize())
+        track_name = str(_track_name) if _track_name else role.capitalize()
         track_id = store.registry.resolve_track(track_name) or ""
 
     if not region_id and track_id:
@@ -117,7 +125,7 @@ async def _execute_agent_generator(
             f"before stori_generate_midi. Pass regionId from stori_add_midi_region."
         )
         logger.error(f"❌ [{trace.trace_id[:8]}] {error_msg}")
-        error_result: dict[str, str] = {"error": error_msg}
+        error_result: dict[str, object] = {"error": error_msg}
         if emit_sse:
             sse_events.append({"type": "toolError", "name": tc_name, "error": error_msg})
         return _ToolCallOutcome(
@@ -300,7 +308,7 @@ async def _execute_agent_generator(
     if result.aftertouch:
         store.add_aftertouch(region_id, result.aftertouch)
 
-    tool_result: dict[str, str | int] = {
+    tool_result: dict[str, object] = {
         "regionId": region_id,
         "trackId": track_id,
         "notesAdded": len(result.notes),
@@ -467,7 +475,7 @@ async def execute_unified_generation(
 async def _apply_single_tool_call(
     tc_id: str,
     tc_name: str,
-    resolved_args: dict[str, Any],  # boundary: polymorphic tool params from LLM
+    resolved_args: dict[str, object],
     allowed_tool_names: set[str] | frozenset[str],
     store: StateStore,
     trace: TraceContext,
@@ -507,7 +515,8 @@ async def _apply_single_tool_call(
 
     # ── Circuit breaker: stori_add_notes infinite-retry guard ──
     if tc_name == "stori_add_notes":
-        cb_region_id = resolved_args.get("regionId", "__unknown__")
+        _cb_raw = resolved_args.get("regionId", "__unknown__")
+        cb_region_id = _cb_raw if isinstance(_cb_raw, str) else "__unknown__"
         cb_failures = add_notes_failures.get(cb_region_id, 0)
         if cb_failures >= 3:
             cb_error = (
@@ -544,7 +553,8 @@ async def _apply_single_tool_call(
     if not validation.valid:
         log_validation_error(trace.trace_id, tc_name, [str(e) for e in validation.errors])
         if tc_name == "stori_add_notes":
-            cb_region_id = resolved_args.get("regionId", "__unknown__")
+            _fail_raw = resolved_args.get("regionId", "__unknown__")
+            cb_region_id = _fail_raw if isinstance(_fail_raw, str) else "__unknown__"
             add_notes_failures[cb_region_id] = add_notes_failures.get(cb_region_id, 0) + 1
         if emit_sse:
             sse_events.append({
@@ -553,7 +563,7 @@ async def _apply_single_tool_call(
                 "error": validation.error_message,
                 "errors": [str(e) for e in validation.errors],
             })
-        error_result: dict[str, str] = {"error": validation.error_message}
+        error_result: dict[str, object] = {"error": validation.error_message}
         msg_call = {
             "role": "assistant",
             "tool_calls": [{"id": tc_id, "type": "function",
@@ -636,7 +646,7 @@ async def _apply_single_tool_call(
                 )
                 _existing_entity = store.registry.get_region(_existing_rid)
                 _existing_name = _existing_entity.name if _existing_entity else region_name
-                idempotent_result: dict[str, str | bool | int | float] = {
+                idempotent_result: dict[str, object] = {
                     "success": True,
                     "regionId": _existing_rid,
                     "existingRegionId": _existing_rid,
@@ -674,7 +684,7 @@ async def _apply_single_tool_call(
                 enriched_params["regionId"] = region_id
             except ValueError as e:
                 logger.error(f"❌ Failed to create region: {e}")
-                region_err: dict[str, str | bool] = {
+                region_err: dict[str, object] = {
                     "success": False,
                     "error": f"Failed to create region: {e}",
                 }
@@ -699,7 +709,7 @@ async def _apply_single_tool_call(
             logger.error(
                 f"stori_add_midi_region called without trackId for region '{region_name}'"
             )
-            no_track_err: dict[str, str | bool] = {
+            no_track_err: dict[str, object] = {
                 "success": False,
                 "error": (
                     f"Cannot create region '{region_name}' — no trackId provided. "
@@ -889,7 +899,7 @@ async def _apply_single_tool_call(
     }
 
     # ── Tool result ──
-    tool_result: dict[str, str | int | bool | None] = _build_tool_result(tc_name, enriched_params, store)
+    tool_result: dict[str, object] = _build_tool_result(tc_name, enriched_params, store)
     msg_result = {
         "role": "tool", "tool_call_id": tc_id,
         "content": json.dumps(tool_result),

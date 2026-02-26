@@ -312,7 +312,8 @@ async def _run_section_child(
             "content": json.dumps(_compact_tool_result(region_outcome.tool_result)),
         })
 
-        region_id = region_outcome.tool_result.get("regionId")
+        _region_id_raw = region_outcome.tool_result.get("regionId")
+        region_id = _region_id_raw if isinstance(_region_id_raw, str) else None
         if not region_id:
             result.error = f"Region creation failed for {sec_name}"
             result.contract_hash = contract.contract_hash
@@ -392,7 +393,8 @@ async def _run_section_child(
         _gen_elapsed = asyncio.get_event_loop().time() - _gen_start
 
         if gen_outcome.skipped:
-            result.error = gen_outcome.tool_result.get("error", "Generation failed")
+            _err_raw = gen_outcome.tool_result.get("error", "Generation failed")
+            result.error = _err_raw if isinstance(_err_raw, str) else "Generation failed"
             result.contract_hash = contract.contract_hash
             result.parent_contract_hash = contract.parent_contract_hash
             logger.warning(
@@ -406,7 +408,8 @@ async def _run_section_child(
                 )
             return result
 
-        result.notes_generated = gen_outcome.tool_result.get("notesAdded", 0)
+        _notes_raw = gen_outcome.tool_result.get("notesAdded", 0)
+        result.notes_generated = _notes_raw if isinstance(_notes_raw, int) else 0
         result.success = True
 
         _MIN_NOTES = 4
@@ -478,7 +481,7 @@ async def _run_section_child(
         })
 
         # ── Optional refinement LLM call for expressive tools ──
-        if result.success and llm and runtime_ctx:
+        if result.success and llm and runtime_ctx and isinstance(region_id, str):
             logger.info(f"{child_log} 🎨 Checking expression refinement...")
             await _maybe_refine_expression(
                 contract=contract,

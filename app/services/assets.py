@@ -13,7 +13,46 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Protocol, cast
+
+from typing_extensions import TypedDict
+
+
+class _S3StreamingBody(Protocol):
+    """Structural interface for the streaming body returned by S3 get_object."""
+
+    def read(self) -> bytes: ...
+
+
+class _GetObjectResponse(TypedDict):
+    """Typed subset of the boto3 get_object response that we actually use."""
+
+    Body: _S3StreamingBody
+
+
+class _S3Client(Protocol):
+    """Structural interface for the boto3 S3 client methods used in this module."""
+
+    def get_object(self, *, Bucket: str, Key: str) -> _GetObjectResponse: ...
+    def generate_presigned_url(self, operation: str, /, **kwargs: object) -> str: ...
+    def head_object(self, *, Bucket: str, Key: str) -> dict[str, object]: ...
+    def head_bucket(self, *, Bucket: str) -> dict[str, object]: ...
+
+
+class DrumKitInfo(TypedDict, total=False):
+    """Metadata for a single drum kit from the S3 manifest."""
+
+    id: str
+    name: str
+    version: str
+
+
+class SoundFontInfo(TypedDict, total=False):
+    """Metadata for a single soundfont from the S3 manifest."""
+
+    id: str
+    name: str
+    filename: str
 
 import boto3
 from botocore.config import Config
@@ -39,24 +78,21 @@ SOUNDFONTS_MANIFEST_KEY = "assets/soundfonts/manifest.json"
 BUNDLE_KEY = "assets/bundle/all-assets.zip"
 
 # Default manifest when S3 manifest is missing (so app can still list)
-DEFAULT_DRUM_KITS_MANIFEST = {
-    "kits": [
-        {"id": "cr78", "name": "CR-78", "version": "1.0"},
-        {"id": "linndrum", "name": "LinnDrum", "version": "1.0"},
-        {"id": "pearl", "name": "Pearl", "version": "1.0"},
-        {"id": "tr505", "name": "TR-505", "version": "1.0"},
-        {"id": "tr909", "name": "TR-909", "version": "1.0"},
-        {"id": "template", "name": "Template Kit", "version": "1.0"},
-    ]
-}
-DEFAULT_SOUNDFONTS_MANIFEST = {
-    "soundfonts": [
-        {"id": "fluidr3_gm", "name": "Fluid R3 GM", "filename": "FluidR3_GM.sf2"},
-    ]
-}
+DEFAULT_DRUM_KITS: list[DrumKitInfo] = [
+    DrumKitInfo(id="cr78", name="CR-78", version="1.0"),
+    DrumKitInfo(id="linndrum", name="LinnDrum", version="1.0"),
+    DrumKitInfo(id="pearl", name="Pearl", version="1.0"),
+    DrumKitInfo(id="tr505", name="TR-505", version="1.0"),
+    DrumKitInfo(id="tr909", name="TR-909", version="1.0"),
+    DrumKitInfo(id="template", name="Template Kit", version="1.0"),
+]
+
+DEFAULT_SOUNDFONTS: list[SoundFontInfo] = [
+    SoundFontInfo(id="fluidr3_gm", name="Fluid R3 GM", filename="FluidR3_GM.sf2"),
+]
 
 
-def _s3_client() -> Any:
+def _s3_client() -> _S3Client:
     """
     Create S3 client with SigV4 and regional endpoint.
     Using the regional endpoint (e.g. s3.us-east-1.amazonaws.com) avoids redirects from the
@@ -65,11 +101,15 @@ def _s3_client() -> Any:
     """
     region = settings.aws_region
     endpoint_url = f"https://s3.{region}.amazonaws.com"
-    return boto3.client(
-        "s3",
-        region_name=region,
-        endpoint_url=endpoint_url,
-        config=S3_CONFIG,
+    # boto3 has no type stubs — cast to our Protocol at the untyped library boundary.
+    return cast(
+        _S3Client,
+        boto3.client(
+            "s3",
+            region_name=region,
+            endpoint_url=endpoint_url,
+            config=S3_CONFIG,
+        ),
     )
 
 
@@ -79,7 +119,7 @@ def _bucket() -> str:
     return settings.aws_s3_asset_bucket
 
 
-def _get_object_json(key: str) -> dict[str, Any] | None:
+def _get_object_json(key: str) -> dict[str, object] | None:
     """Fetch a JSON object from S3. Returns None if missing or on error."""
     try:
         client = _s3_client()
@@ -99,7 +139,29 @@ def _get_object_json(key: str) -> dict[str, Any] | None:
         return None
 
 
-def list_drum_kits() -> list[dict[str, Any]]:
+def _to_drum_kit(k: dict[str, object]) -> DrumKitInfo:
+    info: DrumKitInfo = {}
+    if isinstance(_id := k.get("id"), str):
+        info["id"] = _id
+    if isinstance(_name := k.get("name"), str):
+        info["name"] = _name
+    if isinstance(_ver := k.get("version"), str):
+        info["version"] = _ver
+    return info
+
+
+def _to_soundfont(s: dict[str, object]) -> SoundFontInfo:
+    info: SoundFontInfo = {}
+    if isinstance(_id := s.get("id"), str):
+        info["id"] = _id
+    if isinstance(_name := s.get("name"), str):
+        info["name"] = _name
+    if isinstance(_fn := s.get("filename"), str):
+        info["filename"] = _fn
+    return info
+
+
+def list_drum_kits() -> list[DrumKitInfo]:
     """
     Return list of available drum kits.
     Uses manifest.json if present; otherwise returns default list (no size hints).
@@ -107,13 +169,13 @@ def list_drum_kits() -> list[dict[str, Any]]:
     if not settings.aws_s3_asset_bucket:
         return []
     data = _get_object_json(DRUM_KITS_MANIFEST_KEY)
-    if data and "kits" in data:
-        kits: list[dict[str, Any]] = data["kits"]
-        return kits
-    return DEFAULT_DRUM_KITS_MANIFEST["kits"]
+    kits = data.get("kits") if data else None
+    if isinstance(kits, list):
+        return [_to_drum_kit(k) for k in kits if isinstance(k, dict)]
+    return DEFAULT_DRUM_KITS
 
 
-def list_soundfonts() -> list[dict[str, Any]]:
+def list_soundfonts() -> list[SoundFontInfo]:
     """
     Return list of available soundfonts.
     Uses manifest.json if present; otherwise returns default list.
@@ -121,10 +183,10 @@ def list_soundfonts() -> list[dict[str, Any]]:
     if not settings.aws_s3_asset_bucket:
         return []
     data = _get_object_json(SOUNDFONTS_MANIFEST_KEY)
-    if data and "soundfonts" in data:
-        soundfonts: list[dict[str, Any]] = data["soundfonts"]
-        return soundfonts
-    return DEFAULT_SOUNDFONTS_MANIFEST["soundfonts"]
+    soundfonts = data.get("soundfonts") if data else None
+    if isinstance(soundfonts, list):
+        return [_to_soundfont(s) for s in soundfonts if isinstance(s, dict)]
+    return DEFAULT_SOUNDFONTS
 
 
 def get_drum_kit_download_url(

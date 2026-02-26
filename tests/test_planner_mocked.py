@@ -238,7 +238,8 @@ class TestTryDeterministicPlan:
         region_calls = [tc for tc in plan.tool_calls if tc.name == "stori_add_midi_region"]
         assert len(region_calls) > 0
         for call in region_calls:
-            start = call.params.get("startBeat", 0)
+            _start = call.params.get("startBeat", 0)
+            start = _start if isinstance(_start, (int, float)) else 0
             assert start >= 64.0, (
                 f"startBeat={start} should be >=64 when start_beat=64 is passed. "
                 "Position offset was not applied."
@@ -322,9 +323,9 @@ class TestSchemaToToolCalls:
         calls = _schema_to_tool_calls(schema, region_start_offset=64.0)
         for tc in calls:
             if tc.name == "stori_add_midi_region":
-                assert tc.params["startBeat"] >= 64.0, (
-                    f"startBeat {tc.params['startBeat']} not offset by 64"
-                )
+                _sb = tc.params["startBeat"]
+                sb = _sb if isinstance(_sb, (int, float)) else 0
+                assert sb >= 64.0, f"startBeat {_sb} not offset by 64"
 
     def test_generates_two_track_calls(self) -> None:
 
@@ -812,9 +813,9 @@ class TestPositionToBeatRegressionFull:
         region_calls = [tc for tc in plan.tool_calls if tc.name == "stori_add_midi_region"]
         assert len(region_calls) > 0
         for call in region_calls:
-            assert call.params["startBeat"] >= 64.0, (
-                f"startBeat={call.params['startBeat']} not offset. Bug: offset not applied."
-            )
+            _sb = call.params["startBeat"]
+            sb = _sb if isinstance(_sb, (int, float)) else 0
+            assert sb >= 64.0, f"startBeat={_sb} not offset. Bug: offset not applied."
 
     def test_no_position_regions_start_at_zero(self) -> None:
 
@@ -1100,12 +1101,14 @@ class TestDeterministicPlanEffects:
             gen_indices = [
                 i for i, tc in enumerate(calls)
                 if tc.name == "stori_generate_midi"
-                and (tc.params.get("trackName") or "").lower() == track_name.lower()
+                and isinstance((_tn := tc.params.get("trackName")), str)
+                and _tn.lower() == track_name.lower()
             ]
             fx_indices = [
                 i for i, tc in enumerate(calls)
                 if tc.name == "stori_add_insert_effect"
-                and (tc.params.get("trackName") or "").lower() == track_name.lower()
+                and isinstance((_tn := tc.params.get("trackName")), str)
+                and _tn.lower() == track_name.lower()
             ]
             if gen_indices and fx_indices:
                 assert min(fx_indices) > max(gen_indices), (
@@ -1188,9 +1191,11 @@ class TestSchemaToToolCallsTrackContiguous:
         # Extract track association for each call
         track_sequence: list[str] = []
         for tc in calls:
-            track = tc.params.get("trackName") or tc.params.get("name") or ""
-            if track:
-                track_sequence.append(track.lower())
+            _tn = tc.params.get("trackName")
+            _nm = tc.params.get("name")
+            _raw = (_tn if isinstance(_tn, str) else None) or (_nm if isinstance(_nm, str) else None) or ""
+            if _raw:
+                track_sequence.append(_raw.lower())
 
         # Find index ranges for each track
         drums_indices = [i for i, t in enumerate(track_sequence) if t == "drums"]

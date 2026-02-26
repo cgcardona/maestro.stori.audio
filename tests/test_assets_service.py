@@ -20,8 +20,8 @@ from app.services.assets import (
     get_bundle_download_url,
     check_s3_reachable,
     AssetServiceUnavailableError,
-    DEFAULT_DRUM_KITS_MANIFEST,
-    DEFAULT_SOUNDFONTS_MANIFEST,
+    DEFAULT_DRUM_KITS,
+    DEFAULT_SOUNDFONTS,
 )
 
 
@@ -65,7 +65,7 @@ class TestListDrumKits:
         mock_settings.aws_s3_asset_bucket = "test-bucket"
         mock_get.return_value = None
         result = list_drum_kits()
-        assert result == DEFAULT_DRUM_KITS_MANIFEST["kits"]
+        assert result == DEFAULT_DRUM_KITS
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ class TestListSoundfonts:
         mock_settings.aws_s3_asset_bucket = "test-bucket"
         mock_get.return_value = None
         result = list_soundfonts()
-        assert result == DEFAULT_SOUNDFONTS_MANIFEST["soundfonts"]
+        assert result == DEFAULT_SOUNDFONTS
 
 
 # ---------------------------------------------------------------------------

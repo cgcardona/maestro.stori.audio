@@ -22,7 +22,7 @@ import asyncio
 import logging
 import time
 import uuid as uuid_module
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 
 from app.contracts.project_types import ProjectContext
 from app.contracts.json_types import (
@@ -30,6 +30,10 @@ from app.contracts.json_types import (
     CCEventDict,
     NoteDict,
     PitchBendDict,
+    RegionAftertouchMap,
+    RegionCCMap,
+    RegionNotesMap,
+    RegionPitchBendMap,
 )
 from app.core.expansion import ToolCall, dedupe_tool_calls
 from app.core.tool_names import ToolName
@@ -45,6 +49,11 @@ from app.contracts.generation_types import GenerationContext
 from app.services.music_generator import get_music_generator
 
 logger = logging.getLogger(__name__)
+
+
+def _sp(v: object, default: str = "") -> str:
+    """Narrow an object tool param value to str."""
+    return v if isinstance(v, str) else default
 
 _GENERATOR_TIMEOUT: float = 180
 _MAX_PARALLEL_GROUPS = 5
@@ -77,7 +86,7 @@ async def _process_call_for_variation(
     exec_ctx: VariationExecutionContext,
     quality_preset: str | None = None,
     emotion_vector: EmotionVector | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """
     Process a tool call to extract proposed notes for variation.
 
@@ -88,30 +97,34 @@ async def _process_call_for_variation(
     store = exec_ctx.store
 
     if "trackName" in params and "trackId" not in params:
-        track_name = params["trackName"]
+        track_name = _sp(params["trackName"])
         track_id = store.registry.resolve_track(track_name)
         if track_id:
             params["trackId"] = track_id
 
     if "regionName" in params and "regionId" not in params:
-        region_name = params["regionName"]
-        parent_track = params.get("trackId") or params.get("trackName")
+        region_name = _sp(params["regionName"])
+        _ptid = params.get("trackId")
+        _ptn = params.get("trackName")
+        parent_track = (_ptid if isinstance(_ptid, str) else None) or (_ptn if isinstance(_ptn, str) else None)
         region_id = store.registry.resolve_region(region_name, parent_track)
         if region_id:
             params["regionId"] = region_id
 
     if call.name == ToolName.ADD_MIDI_TRACK:
-        track_name = params.get("name", "Track")
+        track_name = _sp(params.get("name"), "Track")
         existing = store.registry.resolve_track(track_name)
         if not existing:
-            track_id = store.create_track(track_name, track_id=params.get("trackId"))
+            _etid = params.get("trackId")
+            track_id = store.create_track(track_name, track_id=_etid if isinstance(_etid, str) else None)
             params["trackId"] = track_id
             logger.info(f"🎹 [variation] Registered track: {track_name} → {track_id[:8]}")
 
             from app.core.gm_instruments import infer_gm_program_with_context
+            _instr = params.get("instrument")
             inference = infer_gm_program_with_context(
                 track_name=track_name,
-                instrument=params.get("instrument"),
+                instrument=_instr if isinstance(_instr, str) else None,
             )
             params["_gmInstrumentName"] = inference.instrument_name
             params["_isDrums"] = inference.is_drums
@@ -122,22 +135,26 @@ async def _process_call_for_variation(
             logger.debug(f"🎹 [variation] Track already exists: {track_name} → {existing[:8]}")
 
     elif call.name == ToolName.ADD_MIDI_REGION:
-        track_id = params.get("trackId", "")
+        _tid_raw = params.get("trackId")
+        track_id = _tid_raw if isinstance(_tid_raw, str) else ""
         if not track_id:
-            track_ref = params.get("trackName") or params.get("name")
+            _tr = params.get("trackName") or params.get("name")
+            track_ref = _tr if isinstance(_tr, str) else None
             if track_ref:
                 track_id = store.registry.resolve_track(track_ref) or ""
                 if track_id:
                     params["trackId"] = track_id
         if track_id:
-            region_name = params.get("name", "Region")
+            region_name = _sp(params.get("name"), "Region")
+            _sb = params.get("startBeat", 0)
+            _db = params.get("durationBeats", 16)
             region_id = store.create_region(
                 name=region_name,
                 parent_track_id=track_id,
                 region_id=None,
                 metadata={
-                    "startBeat": params.get("startBeat", 0),
-                    "durationBeats": params.get("durationBeats", 16),
+                    "startBeat": _sb if isinstance(_sb, (int, float)) else 0,
+                    "durationBeats": _db if isinstance(_db, (int, float)) else 16,
                 },
             )
             params["regionId"] = region_id
@@ -149,9 +166,12 @@ async def _process_call_for_variation(
             logger.warning("⚠️ [variation] Cannot create region — no track resolved")
 
     elif call.name == ToolName.ADD_NOTES:
-        region_id = params.get("regionId", "")
-        track_id = params.get("trackId", "")
-        notes = params.get("notes", [])
+        _rid_raw = params.get("regionId")
+        region_id = _rid_raw if isinstance(_rid_raw, str) else ""
+        _tid_raw2 = params.get("trackId")
+        track_id = _tid_raw2 if isinstance(_tid_raw2, str) else ""
+        _notes_raw = params.get("notes")
+        notes = _notes_raw if isinstance(_notes_raw, list) else []
 
         if not region_id:
             logger.warning(
@@ -161,7 +181,7 @@ async def _process_call_for_variation(
             registered = store.registry.get_region(region_id)
             if not registered:
                 resolved_track_id = (
-                    store.registry.resolve_track(params.get("trackName", ""))
+                    store.registry.resolve_track(_sp(params.get("trackName")))
                     or track_id
                 )
                 fallback_region_id = (
@@ -198,54 +218,72 @@ async def _process_call_for_variation(
                 )
 
     elif call.name == ToolName.ADD_MIDI_CC:
-        region_id = params.get("regionId", "")
-        cc = params.get("cc")
-        events = params.get("events", [])
-        if region_id and cc is not None and events:
-            cc_events: list[CCEventDict] = [{"cc": cc, "beat": e["beat"], "value": e["value"]} for e in events]
-            var_ctx.record_proposed_cc(region_id, cc_events)
+        _cc_rid_raw = params.get("regionId")
+        cc_region_id = _cc_rid_raw if isinstance(_cc_rid_raw, str) else ""
+        _cc_raw = params.get("cc")
+        cc_num = _cc_raw if isinstance(_cc_raw, int) else None
+        _cc_events_raw = params.get("events")
+        cc_events_list = _cc_events_raw if isinstance(_cc_events_raw, list) else []
+        if cc_region_id and cc_num is not None and cc_events_list:
+            cc_events: list[CCEventDict] = [
+                {"cc": cc_num, "beat": e["beat"], "value": e["value"]}
+                for e in cc_events_list
+                if isinstance(e, dict)
+            ]
+            var_ctx.record_proposed_cc(cc_region_id, cc_events)
             logger.info(
-                f"🎛️ stori_add_midi_cc: CC{cc} {len(events)} events → region={region_id[:8]}"
+                f"🎛️ stori_add_midi_cc: CC{cc_num} {len(cc_events_list)} events → region={cc_region_id[:8]}"
             )
 
     elif call.name == ToolName.ADD_PITCH_BEND:
-        region_id = params.get("regionId", "")
-        events = params.get("events", [])
-        if region_id and events:
-            var_ctx.record_proposed_pitch_bends(region_id, events)
+        _pb_rid_raw = params.get("regionId")
+        pb_region_id = _pb_rid_raw if isinstance(_pb_rid_raw, str) else ""
+        _pb_events_raw = params.get("events")
+        pb_events = _pb_events_raw if isinstance(_pb_events_raw, list) else []
+        if pb_region_id and pb_events:
+            var_ctx.record_proposed_pitch_bends(pb_region_id, pb_events)
             logger.info(
-                f"🎛️ stori_add_pitch_bend: {len(events)} events → region={region_id[:8]}"
+                f"🎛️ stori_add_pitch_bend: {len(pb_events)} events → region={pb_region_id[:8]}"
             )
 
     elif call.name == ToolName.ADD_AFTERTOUCH:
-        region_id = params.get("regionId", "")
-        events = params.get("events", [])
-        if region_id and events:
-            var_ctx.record_proposed_aftertouch(region_id, events)
+        _at_rid_raw = params.get("regionId")
+        at_region_id = _at_rid_raw if isinstance(_at_rid_raw, str) else ""
+        _at_events_raw = params.get("events")
+        at_events = _at_events_raw if isinstance(_at_events_raw, list) else []
+        if at_region_id and at_events:
+            var_ctx.record_proposed_aftertouch(at_region_id, at_events)
             logger.info(
-                f"🎛️ stori_add_aftertouch: {len(events)} events → region={region_id[:8]}"
+                f"🎛️ stori_add_aftertouch: {len(at_events)} events → region={at_region_id[:8]}"
             )
 
     meta = get_tool_meta(call.name)
     if meta and meta.tier == ToolTier.TIER1 and meta.kind == ToolKind.GENERATOR:
         mg = get_music_generator()
 
-        gen_params = {
-            "instrument": params.get("role", "drums"),
-            "style": params.get("style", ""),
-            "tempo": params.get("tempo", 120),
-            "bars": params.get("bars", 4),
-            "key": params.get("key"),
-            "chords": params.get("chords"),
-        }
+        _gen_tempo = params.get("tempo", 120)
+        _gen_bars = params.get("bars", 4)
+        _gen_key = params.get("key")
+        _gen_chords = params.get("chords")
+        gen_instrument = _sp(params.get("role"), "drums")
+        gen_style = _sp(params.get("style"))
+        gen_tempo = int(_gen_tempo) if isinstance(_gen_tempo, (int, float)) else 120
+        gen_bars = int(_gen_bars) if isinstance(_gen_bars, (int, float)) else 4
+        gen_key = _gen_key if isinstance(_gen_key, str) else None
+        gen_chords = _gen_chords if isinstance(_gen_chords, list) else None
 
         try:
             gen_start = time.time()
-            logger.info(f"🎵 Starting generator {call.name} with params: {gen_params}")
+            logger.info(f"🎵 Starting generator {call.name}: instrument={gen_instrument} style={gen_style}")
 
             result = await asyncio.wait_for(
                 mg.generate(
-                    **gen_params,
+                    instrument=gen_instrument,
+                    style=gen_style,
+                    tempo=gen_tempo,
+                    bars=gen_bars,
+                    key=gen_key,
+                    chords=gen_chords,
                     context=GenerationContext(
                         quality_preset=quality_preset or "quality",
                         emotion_vector=emotion_vector,
@@ -262,10 +300,12 @@ async def _process_call_for_variation(
             )
 
             if result.success and result.notes:
-                track_name = params.get("trackName", gen_params["instrument"].capitalize())
+                _gen_track_name = params.get("trackName")
+                track_name = _gen_track_name if isinstance(_gen_track_name, str) else gen_instrument.capitalize()
+                _gen_tid = params.get("trackId")
                 track_id = (
                     store.registry.resolve_track(track_name)
-                    or params.get("trackId", "")
+                    or (_gen_tid if isinstance(_gen_tid, str) else "")
                 )
 
                 if track_id:
@@ -313,12 +353,12 @@ async def _process_call_for_variation(
 
 def compute_variation_from_context(
     *,
-    base_notes: dict[str, list[NoteDict]],
-    proposed_notes: dict[str, list[NoteDict]],
+    base_notes: RegionNotesMap,
+    proposed_notes: RegionNotesMap,
     track_regions: dict[str, str],
-    proposed_cc: dict[str, list[CCEventDict]],
-    proposed_pitch_bends: dict[str, list[PitchBendDict]],
-    proposed_aftertouch: dict[str, list[AftertouchDict]],
+    proposed_cc: RegionCCMap,
+    proposed_pitch_bends: RegionPitchBendMap,
+    proposed_aftertouch: RegionAftertouchMap,
     region_start_beats: dict[str, float],
     intent: str,
     explanation: str | None = None,

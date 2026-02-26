@@ -53,6 +53,10 @@ from app.contracts.json_types import (
     InternalNoteDict,
     NoteDict,
     PitchBendDict,
+    RegionAftertouchMap,
+    RegionCCMap,
+    RegionNotesMap,
+    RegionPitchBendMap,
     StateEventData,
 )
 from app.core.entity_registry import EntityMetadata, EntityRegistry, EntityInfo, EntityType
@@ -133,10 +137,10 @@ class _ProjectMetadataSnapshot(TypedDict, total=False):
     tempo: int
     key: str
     time_signature: tuple[int, int]
-    _region_notes: dict[str, list[InternalNoteDict]]
-    _region_cc: dict[str, list[CCEventDict]]
-    _region_pitch_bends: dict[str, list[PitchBendDict]]
-    _region_aftertouch: dict[str, list[AftertouchDict]]
+    _region_notes: RegionNotesMap
+    _region_cc: RegionCCMap
+    _region_pitch_bends: RegionPitchBendMap
+    _region_aftertouch: RegionAftertouchMap
 
 
 @dataclass
@@ -242,12 +246,12 @@ class StateStore:
         
         # Materialized note store: region_id -> list of note dicts
         # Maintained by add_notes/remove_notes; queryable after commit
-        self._region_notes: dict[str, list[InternalNoteDict]] = {}
+        self._region_notes: RegionNotesMap = {}
 
         # MIDI CC, pitch bend, and aftertouch stores: region_id -> list of event dicts
-        self._region_cc: dict[str, list[CCEventDict]] = {}
-        self._region_pitch_bends: dict[str, list[PitchBendDict]] = {}
-        self._region_aftertouch: dict[str, list[AftertouchDict]] = {}
+        self._region_cc: RegionCCMap = {}
+        self._region_pitch_bends: RegionPitchBendMap = {}
+        self._region_aftertouch: RegionAftertouchMap = {}
 
         # Orpheus composition state: composition_id -> CompositionState
         self._composition_states: dict[str, CompositionState] = {}

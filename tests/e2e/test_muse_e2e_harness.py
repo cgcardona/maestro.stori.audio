@@ -14,8 +14,6 @@ Run:
 
 from __future__ import annotations
 
-from typing import Any
-
 from sqlalchemy.ext.asyncio import AsyncSession
 import json
 import logging
@@ -26,6 +24,7 @@ from httpx import AsyncClient
 from tests.e2e.muse_fixtures import (
     C0, C1, C2, C3, C5, C6,
     CONVO_ID, PROJECT_ID,
+    MuseVariationPayload,
     cc_sustain_branch_a,
     cc_sustain_branch_b,
     make_variation_payload,
@@ -41,6 +40,42 @@ logger = logging.getLogger(__name__)
 
 BASE = "/api/v1/muse"
 
+
+# ── Response-narrowing helpers ─────────────────────────────────────────────
+# JSON responses are dict[str, object]. These helpers narrow values to their
+# expected types and assert the API contract simultaneously.
+
+def _s(d: dict[str, object], key: str) -> str:
+    """Extract a required string field from a response dict."""
+    v = d[key]
+    assert isinstance(v, str), f"Expected str for {key!r}, got {type(v).__name__}: {v!r}"
+    return v
+
+
+def _s_opt(d: dict[str, object], key: str) -> str | None:
+    """Extract an optional string field (None allowed) from a response dict."""
+    v = d.get(key)
+    assert v is None or isinstance(v, str), f"Expected str|None for {key!r}, got {type(v).__name__}"
+    return v if isinstance(v, str) else None
+
+
+def _d(d: dict[str, object], key: str) -> dict[str, object]:
+    """Extract a required dict field from a response dict."""
+    v = d[key]
+    assert isinstance(v, dict), f"Expected dict for {key!r}, got {type(v).__name__}"
+    return v
+
+
+def _nodes(d: dict[str, object]) -> list[dict[str, object]]:
+    """Extract and validate the 'nodes' list from a log response."""
+    raw = d["nodes"]
+    assert isinstance(raw, list), f"Expected list for 'nodes', got {type(raw).__name__}"
+    result: list[dict[str, object]] = []
+    for item in raw:
+        assert isinstance(item, dict), f"Expected dict node, got {type(item).__name__}"
+        result.append(item)
+    return result
+
 # ── Counters for summary table ────────────────────────────────────────────
 
 _checkouts_executed = 0
@@ -52,30 +87,30 @@ _forced_ops = 0
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-async def save(client: AsyncClient, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+async def save(client: AsyncClient, payload: MuseVariationPayload, headers: dict[str, str]) -> dict[str, object]:
     resp = await client.post(f"{BASE}/variations", json=payload, headers=headers)
     assert resp.status_code == 200, f"save failed: {resp.text}"
-    result: dict[str, Any] = resp.json()
+    result: dict[str, object] = resp.json()
     return result
 
 
-async def set_head(client: AsyncClient, vid: str, headers: dict[str, str]) -> dict[str, Any]:
+async def set_head(client: AsyncClient, vid: str, headers: dict[str, str]) -> dict[str, object]:
     resp = await client.post(f"{BASE}/head", json={"variation_id": vid}, headers=headers)
     assert resp.status_code == 200, f"set_head failed: {resp.text}"
-    result: dict[str, Any] = resp.json()
+    result: dict[str, object] = resp.json()
     return result
 
 
-async def get_log(client: AsyncClient, headers: dict[str, str]) -> dict[str, Any]:
+async def get_log(client: AsyncClient, headers: dict[str, str]) -> dict[str, object]:
     resp = await client.get(f"{BASE}/log", params={"project_id": PROJECT_ID}, headers=headers)
     assert resp.status_code == 200, f"get_log failed: {resp.text}"
-    result: dict[str, Any] = resp.json()
+    result: dict[str, object] = resp.json()
     return result
 
 
 async def do_checkout(
     client: AsyncClient, target: str, headers: dict[str, str], *, force: bool = False,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     global _checkouts_executed, _forced_ops
     resp = await client.post(f"{BASE}/checkout", json={
         "project_id": PROJECT_ID,
@@ -86,7 +121,7 @@ async def do_checkout(
     if resp.status_code == 409:
         global _drift_blocks
         _drift_blocks += 1
-        result: dict[str, Any] = resp.json()
+        result: dict[str, object] = resp.json()
         return result
     assert resp.status_code == 200, f"checkout failed: {resp.text}"
     _checkouts_executed += 1
@@ -98,7 +133,7 @@ async def do_checkout(
 
 async def do_merge(
     client: AsyncClient, left: str, right: str, headers: dict[str, str], *, force: bool = False,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, dict[str, object]]:
     global _forced_ops
     resp = await client.post(f"{BASE}/merge", json={
         "project_id": PROJECT_ID,
@@ -109,7 +144,7 @@ async def do_merge(
     }, headers=headers)
     if force:
         _forced_ops += 1
-    body: dict[str, Any] = resp.json()
+    body: dict[str, object] = resp.json()
     return resp.status_code, body
 
 
@@ -136,8 +171,8 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     await set_head(client, C0, headers)
 
     log = await get_log(client, headers)
-    assert len(log["nodes"]) == 1
-    assert log["head"] == C0
+    assert len(_nodes(log)) == 1
+    assert _s(log, "head") == C0
     print(f"  ✅ Root C0 committed, HEAD={C0[:8]}")
 
     # ── Step 1: Mainline commit C1 (keys v1) ──────────────────────────
@@ -163,10 +198,11 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     assert co["head_moved"]
 
     log = await get_log(client, headers)
-    node_ids = [n["id"] for n in log["nodes"]]
+    nodes = _nodes(log)
+    node_ids = [_s(n, "id") for n in nodes]
     assert C1 in node_ids and C2 in node_ids
-    assert log["head"] == C2
-    print(f"  ✅ C2 committed, HEAD={C2[:8]}, graph has {len(log['nodes'])} nodes")
+    assert _s(log, "head") == C2
+    print(f"  ✅ C2 committed, HEAD={C2[:8]}, graph has {len(nodes)} nodes")
 
     # ── Step 3: Branch B — drums (C3) ────────────────────────────────
     print("\n═══ Step 3: Branch B — drums v1 (C3) ═══")
@@ -188,14 +224,14 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     status, merge_resp = await do_merge(client, C2, C3, headers, force=True)
     assert status == 200, f"Merge failed: {merge_resp}"
     assert merge_resp["head_moved"]
-    c4_id = merge_resp["merge_variation_id"]
+    c4_id = _s(merge_resp, "merge_variation_id")
     print(f"  ✅ Merge commit C4={c4_id[:8]}, executed={merge_resp['executed']} tool calls")
 
     log = await get_log(client, headers)
-    assert log["head"] == c4_id
-    c4_node = next(n for n in log["nodes"] if n["id"] == c4_id)
+    assert _s(log, "head") == c4_id
+    c4_node = next(n for n in _nodes(log) if _s(n, "id") == c4_id)
     assert c4_node["parent2"] is not None, "Merge commit must have two parents"
-    print(f"  ✅ Merge commit has parent={c4_node['parent'][:8]}, parent2={c4_node['parent2'][:8]}")
+    print(f"  ✅ Merge commit has parent={_s(c4_node, 'parent')[:8]}, parent2={_s(c4_node, 'parent2')[:8]}")
 
     # ── Step 5: Conflict merge demo ──────────────────────────────────
     print("\n═══ Step 5: Conflict merge demo (C5 vs C6) ═══")
@@ -215,13 +251,15 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     status, conflict_resp = await do_merge(client, C5, C6, headers)
     _conflict_merges += 1
     assert status == 409, f"Expected 409 conflict, got {status}: {conflict_resp}"
-    detail = conflict_resp["detail"]
+    detail = _d(conflict_resp, "detail")
     assert detail["error"] == "merge_conflict"
-    conflicts = detail["conflicts"]
+    _conflicts_raw = detail["conflicts"]
+    assert isinstance(_conflicts_raw, list)
+    conflicts: list[dict[str, object]] = [c for c in _conflicts_raw if isinstance(c, dict)]
     assert len(conflicts) >= 1, "Expected at least one conflict"
     print(f"  ✅ Conflict detected: {len(conflicts)} conflict(s)")
     for c in conflicts:
-        print(f"     {c['type']}: {c['description']}")
+        print(f"     {_s(c, 'type')}: {_s(c, 'description')}")
 
     # ── Step 6: (Skipped — cherry-pick not yet implemented) ──────────
     print("\n═══ Step 6: Cherry-pick — skipped (future phase) ═══")
@@ -232,32 +270,33 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
 
     co = await do_checkout(client, C1, headers, force=True)
     assert co["head_moved"]
-    plan_hashes.append(co["plan_hash"])
-    print(f"  → Checked out C1: executed={co['executed']}, hash={co['plan_hash'][:12]}")
+    plan_hashes.append(_s(co, "plan_hash"))
+    print(f"  → Checked out C1: executed={co['executed']}, hash={_s(co, 'plan_hash')[:12]}")
 
     co = await do_checkout(client, C2, headers, force=True)
     assert co["head_moved"]
-    plan_hashes.append(co["plan_hash"])
-    print(f"  → Checked out C2: executed={co['executed']}, hash={co['plan_hash'][:12]}")
+    plan_hashes.append(_s(co, "plan_hash"))
+    print(f"  → Checked out C2: executed={co['executed']}, hash={_s(co, 'plan_hash')[:12]}")
 
     co = await do_checkout(client, c4_id, headers, force=True)
     assert co["head_moved"]
-    plan_hashes.append(co["plan_hash"])
-    print(f"  → Checked out C4 (merge): executed={co['executed']}, hash={co['plan_hash'][:12]}")
+    plan_hashes.append(_s(co, "plan_hash"))
+    print(f"  → Checked out C4 (merge): executed={co['executed']}, hash={_s(co, 'plan_hash')[:12]}")
 
     # Checkout to same target again — should be no-op or same hash
     co2 = await do_checkout(client, c4_id, headers, force=True)
     assert co2["head_moved"]
-    print(f"  → Re-checkout C4: executed={co2['executed']}, hash={co2['plan_hash'][:12]}")
+    print(f"  → Re-checkout C4: executed={co2['executed']}, hash={_s(co2, 'plan_hash')[:12]}")
     print(f"  ✅ All checkouts transactional, plan hashes: {[h[:12] for h in plan_hashes]}")
 
     # ── Final assertions ─────────────────────────────────────────────
     print("\n═══ Final Assertions ═══")
 
     log = await get_log(client, headers)
+    log_nodes = _nodes(log)
 
     # DAG correctness
-    node_map = {n["id"]: n for n in log["nodes"]}
+    node_map = {_s(n, "id"): n for n in log_nodes}
     assert node_map[C0]["parent"] is None
     assert node_map[C1]["parent"] == C0
     assert node_map[C2]["parent"] == C1
@@ -273,22 +312,25 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     print("  ✅ Merge commit has 2 parents")
 
     # HEAD correctness
-    assert log["head"] == c4_id
+    assert _s(log, "head") == c4_id
     print(f"  ✅ HEAD = {c4_id[:8]}")
 
     # Topological order: parents before children
-    id_order = [n["id"] for n in log["nodes"]]
-    for n in log["nodes"]:
-        if n["parent"] and n["parent"] in node_map:
-            assert id_order.index(n["parent"]) < id_order.index(n["id"]), \
-                f"Parent {n['parent'][:8]} must appear before child {n['id'][:8]}"
-        if n["parent2"] and n["parent2"] in node_map:
-            assert id_order.index(n["parent2"]) < id_order.index(n["id"]), \
-                f"Parent2 {n['parent2'][:8]} must appear before child {n['id'][:8]}"
+    id_order = [_s(n, "id") for n in log_nodes]
+    for n in log_nodes:
+        n_id = _s(n, "id")
+        n_parent = _s_opt(n, "parent")
+        n_parent2 = _s_opt(n, "parent2")
+        if n_parent and n_parent in node_map:
+            assert id_order.index(n_parent) < id_order.index(n_id), \
+                f"Parent {n_parent[:8]} must appear before child {n_id[:8]}"
+        if n_parent2 and n_parent2 in node_map:
+            assert id_order.index(n_parent2) < id_order.index(n_id), \
+                f"Parent2 {n_parent2[:8]} must appear before child {n_id[:8]}"
     print("  ✅ Topological ordering: parents before children")
 
     # camelCase serialization
-    for n in log["nodes"]:
+    for n in log_nodes:
         assert "isHead" in n
         assert "parent2" in n
     assert "projectId" in log
@@ -308,20 +350,43 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     from app.services.muse_log_graph import MuseLogGraph, MuseLogNode
 
     # Reconstruct MuseLogGraph from the JSON for rendering
+    import time
+
+    def _str_opt(v: object) -> str | None:
+        return v if isinstance(v, str) else None
+
+    def _float_ts(v: object) -> float:
+        """Parse a timestamp value — ISO string or numeric — to a float epoch."""
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str):
+            from datetime import datetime, timezone
+            try:
+                return datetime.fromisoformat(v).replace(tzinfo=timezone.utc).timestamp()
+            except ValueError:
+                pass
+        return time.time()
+
     graph = MuseLogGraph(
-        project_id=log["projectId"],
-        head=log["head"],
+        project_id=_s(log, "projectId"),
+        head=_s_opt(log, "head"),
         nodes=tuple(
             MuseLogNode(
-                variation_id=n["id"],
-                parent=n["parent"],
-                parent2=n["parent2"],
-                is_head=n["isHead"],
-                timestamp=n["timestamp"],
-                intent=n["intent"],
-                affected_regions=tuple(n["regions"]),
+                variation_id=_s(n, "id"),
+                parent=_str_opt(n.get("parent")),
+                parent2=_str_opt(n.get("parent2")),
+                is_head=bool(n.get("isHead")),
+                timestamp=_float_ts(n.get("timestamp")),
+                intent=_str_opt(n.get("intent")),
+                affected_regions=tuple(
+                    r
+                    for _rgns in [n.get("regions")]
+                    if isinstance(_rgns, list)
+                    for r in _rgns
+                    if isinstance(r, str)
+                ),
             )
-            for n in log["nodes"]
+            for n in log_nodes
         ),
     )
 

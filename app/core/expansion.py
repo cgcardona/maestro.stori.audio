@@ -9,7 +9,6 @@ This module should be dependency-free so it can run in worker contexts.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 import hashlib
 import json
 
@@ -25,10 +24,10 @@ class ToolCall:
     """
 
     name: str
-    params: dict[str, Any]
+    params: dict[str, object]
     id: str = ""  # LLM-assigned call ID; empty for planner-generated calls
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {"name": self.name, "params": self.params}
 
     def fingerprint(self) -> str:

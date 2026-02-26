@@ -10,6 +10,11 @@ from app.core.sse_utils import SSEEventInput
 from app.core.expansion import ToolCall
 from app.core.maestro_helpers import _human_label_for_tool, _humanize_style
 
+
+def _sp(v: object, default: str = "") -> str:
+    """Narrow an object tool param value to str."""
+    return v if isinstance(v, str) else default
+
 if TYPE_CHECKING:
     from app.contracts.project_types import ProjectContext
     from app.core.prompt_parser import ParsedPrompt
@@ -87,7 +92,7 @@ class _PlanTracker:
         else:
             for tc in tool_calls:
                 if tc.name in _GENERATOR_TOOL_NAMES:
-                    s = tc.params.get("style", "")
+                    s = _sp(tc.params.get("style"))
                     if s:
                         style = _humanize_style(s)
                         break
@@ -118,13 +123,13 @@ class _PlanTracker:
         name = tc.name
         params = tc.params
         if name in _TRACK_CREATION_NAMES:
-            val = params.get("name")
-            return str(val) if val else None
+            val = _sp(params.get("name"))
+            return val or None
         if name in _GENERATOR_TOOL_NAMES:
-            val = params.get("trackName") or params.get("role", "").capitalize() or None
-            return str(val) if val else None
-        val = params.get("trackName") or params.get("name") or None
-        return str(val) if val else None
+            gen_val = _sp(params.get("trackName")) or _sp(params.get("role")).capitalize()
+            return gen_val or None
+        val = _sp(params.get("trackName")) or _sp(params.get("name"))
+        return val or None
 
     def _group_into_steps(self, tool_calls: list[ToolCall]) -> list[_PlanStep]:
         """Group tool calls into plan steps using canonical label patterns.
@@ -150,9 +155,9 @@ class _PlanTracker:
         while i < n and tool_calls[i].name in _PROJECT_SETUP_TOOL_NAMES:
             tc = tool_calls[i]
             if tc.name == "stori_set_tempo":
-                label = f"set tempo to {tc.params.get('tempo', '?')} BPM"
+                label = f"set tempo to {tc.params.get('tempo', '?')!s} BPM"
             elif tc.name == "stori_set_key":
-                key_val = tc.params.get("key", "?")
+                key_val = _sp(tc.params.get("key"), "?")
                 label = f"set key signature to {key_val}"
             else:
                 label = _human_label_for_tool(tc.name, tc.params)
@@ -170,7 +175,7 @@ class _PlanTracker:
 
             # ----- Track creation: "Create <TrackName> track" -----
             if tc.name in _TRACK_CREATION_NAMES:
-                track_name = tc.params.get("name", "Track")
+                track_name = _sp(tc.params.get("name"), "Track")
                 steps.append(_PlanStep(
                     step_id=str(self._next_id),
                     label=f"Create {track_name} track",
@@ -198,9 +203,10 @@ class _PlanTracker:
                         break
                     content_indices.append(i)
                     if next_tc.name in _GENERATOR_TOOL_NAMES:
-                        style = next_tc.params.get("style", "")
-                        bars = next_tc.params.get("bars", "")
-                        role = next_tc.params.get("role", "")
+                        style = _sp(next_tc.params.get("style"))
+                        bars_raw = next_tc.params.get("bars")
+                        bars = str(bars_raw) if bars_raw is not None else ""
+                        role = _sp(next_tc.params.get("role"))
                         parts = []
                         if bars:
                             parts.append(f"{bars} bars")
@@ -228,12 +234,12 @@ class _PlanTracker:
                 effect_detail_parts: list[str] = []
                 while i < n and tool_calls[i].name in _EFFECT_TOOL_NAMES:
                     etc = tool_calls[i]
-                    etc_track = etc.params.get("trackName") or etc.params.get("name", "")
+                    etc_track = _sp(etc.params.get("trackName")) or _sp(etc.params.get("name"))
                     if etc_track and etc_track.lower() != track_name.lower():
                         break
                     effect_indices.append(i)
                     if etc.name == "stori_add_insert_effect":
-                        etype = etc.params.get("type", "")
+                        etype = _sp(etc.params.get("type"))
                         if etype:
                             effect_detail_parts.append(etype.title())
                     i += 1
@@ -307,7 +313,7 @@ class _PlanTracker:
 
             # ----- Bus/routing (ensure bus + sends) -----
             elif tc.name == "stori_ensure_bus":
-                bus_name = tc.params.get("name", "Bus")
+                bus_name = _sp(tc.params.get("name"), "Bus")
                 bus_indices = [i]
                 i += 1
                 while i < n and tool_calls[i].name == "stori_add_send":
@@ -323,22 +329,22 @@ class _PlanTracker:
 
             # ----- Effects (track-targeted insert effects) -----
             elif tc.name in _EFFECT_TOOL_NAMES:
-                track_name = tc.params.get("trackName") or "Track"
+                track_name = _sp(tc.params.get("trackName")) or "Track"
                 indices = [i]
                 detail_parts: list[str] = []
                 if tc.name == "stori_add_insert_effect":
-                    etype = tc.params.get("type", "")
+                    etype = _sp(tc.params.get("type"))
                     if etype:
                         detail_parts.append(etype.title())
                 i += 1
                 while i < n and tool_calls[i].name in _EFFECT_TOOL_NAMES:
                     etc = tool_calls[i]
-                    etc_track = etc.params.get("trackName", "")
+                    etc_track = _sp(etc.params.get("trackName"))
                     if etc_track and etc_track.lower() != track_name.lower():
                         break
                     indices.append(i)
                     if etc.name == "stori_add_insert_effect":
-                        etype = etc.params.get("type", "")
+                        etype = _sp(etc.params.get("type"))
                         if etype:
                             detail_parts.append(etype.title())
                     i += 1

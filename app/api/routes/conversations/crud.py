@@ -160,7 +160,7 @@ async def get_conversation(
 
     messages = []
     for msg in conversation.messages:
-        actions = [
+        actions: list[dict[str, object]] = [
             {
                 "id": action.id,
                 "actionType": action.action_type,
@@ -175,13 +175,23 @@ async def get_conversation(
         tool_calls_parsed = None
         if msg.tool_calls:
             try:
-                normalized_calls = []
+                normalized_calls: list[dict[str, object]] = []
                 for tc in msg.tool_calls:
-                    tc_copy = tc.copy()
+                    tc_copy: dict[str, object] = dict(tc)
                     if "arguments" in tc_copy:
-                        tc_copy["arguments"] = normalize_tool_arguments(tc_copy["arguments"])
+                        _args = tc_copy["arguments"]
+                        tc_copy["arguments"] = normalize_tool_arguments(
+                            _args if isinstance(_args, dict) else None
+                        )
                     normalized_calls.append(tc_copy)
-                tool_calls_parsed = [ToolCallInfo(**tc) for tc in normalized_calls]
+                tool_calls_parsed = [
+                    ToolCallInfo(
+                        id=_v if isinstance((_v := tc.get("id")), str) else None,
+                        name=_n if isinstance((_n := tc.get("name")), str) else "",
+                        arguments=_a if isinstance((_a := tc.get("arguments")), dict) else {},
+                    )
+                    for tc in normalized_calls
+                ]
             except Exception as e:
                 logger.warning(f"Failed to parse tool_calls for message {msg.id}: {e}")
 

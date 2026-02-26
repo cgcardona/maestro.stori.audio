@@ -2145,7 +2145,7 @@ class TestBuildToolResult:
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         track_id = store.create_track("Drums")
-        params = {"trackId": track_id, "name": "Drums", "drumKitId": "acoustic"}
+        params: dict[str, object] = {"trackId": track_id, "name": "Drums", "drumKitId": "acoustic"}
         result = _build_tool_result("stori_add_midi_track", params, store)
 
         assert result["success"] is True
@@ -2185,7 +2185,7 @@ class TestBuildToolResult:
         region_id = store.create_region("Pattern", track_id)
         notes: list[NoteDict] = [{"pitch": 36, "startBeat": float(i), "durationBeats": 0.5, "velocity": 100} for i in range(8)]
         store.add_notes(region_id, notes)
-        params = {"regionId": region_id, "notes": notes}
+        params: dict[str, object] = {"regionId": region_id, "notes": notes}
         result = _build_tool_result("stori_add_notes", params, store)
 
         assert result["success"] is True
@@ -2229,7 +2229,7 @@ class TestBuildToolResult:
         from app.core.maestro_helpers import _build_tool_result
         store = self._make_store()
         bus_id = store.get_or_create_bus("Reverb")
-        params = {"busId": bus_id, "name": "Reverb"}
+        params: dict[str, object] = {"busId": bus_id, "name": "Reverb"}
         result = _build_tool_result("stori_ensure_bus", params, store)
 
         assert result["success"] is True
@@ -2376,7 +2376,7 @@ class TestEnrichParamsWithTrackContext:
         """Params already containing trackName are returned unchanged."""
         from app.core.maestro_helpers import _enrich_params_with_track_context
         store, _, region_id = self._make_store_with_region()
-        params = {"regionId": region_id, "trackName": "Already set", "trackId": "existing"}
+        params: dict[str, object] = {"regionId": region_id, "trackName": "Already set", "trackId": "existing"}
         result = _enrich_params_with_track_context(params, store)
         assert result["trackName"] == "Already set"
         assert result["trackId"] == "existing"
@@ -2945,10 +2945,10 @@ class TestApplySingleToolCall:
             emit_sse=True,
         )
         assert not outcome.skipped
-        track_id = outcome.enriched_params.get("trackId")
-        assert track_id is not None
+        _track_id = outcome.enriched_params.get("trackId")
+        assert isinstance(_track_id, str)
         # Verify UUID was registered in store
-        assert store.registry.get_track(track_id) is not None
+        assert store.registry.get_track(_track_id) is not None
 
     @pytest.mark.anyio
     async def test_circuit_breaker_fires_at_3_failures(self) -> None:
@@ -3195,7 +3195,10 @@ class TestApplySingleToolCall:
             add_notes_failures={},
             emit_sse=True,
         )
-        note = outcome.enriched_params["notes"][0]
+        _notes = outcome.enriched_params["notes"]
+        assert isinstance(_notes, list)
+        note = _notes[0]
+        assert isinstance(note, dict)
         assert note["pitch"] == 72
         assert note["velocity"] == 100
         assert note["startBeat"] == 0

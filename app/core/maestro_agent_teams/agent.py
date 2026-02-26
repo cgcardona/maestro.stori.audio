@@ -1181,16 +1181,16 @@ async def _dispatch_section_children(
         sec = sections[i] if i < len(sections) else sections[-1]
         planned_start = int(sec.get("start_beat", 0))
         planned_dur = int(sec.get("length_beats", 16))
-        llm_start = region_tc.params.get("startBeat")
-        llm_dur = region_tc.params.get("durationBeats")
-        if llm_start is not None and int(llm_start) != planned_start:
+        _llm_start = region_tc.params.get("startBeat")
+        _llm_dur = region_tc.params.get("durationBeats")
+        if _llm_start is not None and isinstance(_llm_start, (int, float)) and int(_llm_start) != planned_start:
             logger.warning(
-                f"{agent_log} ⚠️ L2 drift: region[{i}] startBeat={llm_start} "
+                f"{agent_log} ⚠️ L2 drift: region[{i}] startBeat={_llm_start} "
                 f"vs planned={planned_start} — contract will override"
             )
-        if llm_dur is not None and int(llm_dur) != planned_dur:
+        if _llm_dur is not None and isinstance(_llm_dur, (int, float)) and int(_llm_dur) != planned_dur:
             logger.warning(
-                f"{agent_log} ⚠️ L2 drift: region[{i}] durationBeats={llm_dur} "
+                f"{agent_log} ⚠️ L2 drift: region[{i}] durationBeats={_llm_dur} "
                 f"vs planned={planned_dur} — contract will override"
             )
 
@@ -1229,10 +1229,8 @@ async def _dispatch_section_children(
             style=style,
             tempo=tempo,
             key=key,
-            region_name=region_tc.params.get(
-                "name", f"{instrument_name} – {_sec_name}"
-            ),
-            l2_generate_prompt=gen_tc.params.get("prompt", ""),
+            region_name=_rn if isinstance((_rn := region_tc.params.get("name")), str) else f"{instrument_name} – {_sec_name}",
+            l2_generate_prompt=_gp if isinstance((_gp := gen_tc.params.get("prompt")), str) else "",
         )
         # Seal with lineage: parent is the InstrumentContract
         seal_contract(

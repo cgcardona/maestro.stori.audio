@@ -27,6 +27,10 @@ from app.contracts.json_types import (
     CCEventDict,
     NoteDict,
     PitchBendDict,
+    RegionAftertouchMap,
+    RegionCCMap,
+    RegionNotesMap,
+    RegionPitchBendMap,
 )
 from app.core.tool_names import ToolName
 from app.services.muse_drift import _fingerprint, _combined_fingerprint
@@ -233,14 +237,14 @@ def build_checkout_plan(
     *,
     project_id: str,
     target_variation_id: str,
-    target_notes: dict[str, list[NoteDict]],
-    target_cc: dict[str, list[CCEventDict]],
-    target_pb: dict[str, list[PitchBendDict]],
-    target_at: dict[str, list[AftertouchDict]],
-    working_notes: dict[str, list[NoteDict]],
-    working_cc: dict[str, list[CCEventDict]],
-    working_pb: dict[str, list[PitchBendDict]],
-    working_at: dict[str, list[AftertouchDict]],
+    target_notes: RegionNotesMap,
+    target_cc: RegionCCMap,
+    target_pb: RegionPitchBendMap,
+    target_at: RegionAftertouchMap,
+    working_notes: RegionNotesMap,
+    working_cc: RegionCCMap,
+    working_pb: RegionPitchBendMap,
+    working_at: RegionAftertouchMap,
     track_regions: dict[str, str],
 ) -> CheckoutPlan:
     """Build a checkout plan that transforms working state → target state.

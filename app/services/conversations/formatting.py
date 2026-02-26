@@ -64,17 +64,20 @@ def _format_single_message(message: ConversationMessage) -> list[ChatMessage]:
             openai_tool_calls: list[ToolCallEntry] = []
             seen_ids: set[str] = set()
             for tc in message.tool_calls:
-                tool_call_id = _sanitize_tool_call_id(tc.get("id", "")) or ""
+                _tc_id = tc.get("id")
+                tool_call_id = _sanitize_tool_call_id(_tc_id if isinstance(_tc_id, str) else "") or ""
                 if not tool_call_id or tool_call_id in seen_ids:
                     tool_call_id = f"call_{_uuid.uuid4().hex[:12]}"
                 seen_ids.add(tool_call_id)
 
+                _tc_name = tc.get("name")
+                _tc_args = tc.get("arguments")
                 openai_tool_calls.append({
                     "id": tool_call_id,
                     "type": "function",
                     "function": {
-                        "name": tc.get("name", ""),
-                        "arguments": json.dumps(tc.get("arguments", {})),
+                        "name": _tc_name if isinstance(_tc_name, str) else "",
+                        "arguments": json.dumps(_tc_args if isinstance(_tc_args, dict) else {}),
                     },
                 })
 
@@ -116,20 +119,26 @@ def format_conversation_history(conversation: Conversation) -> list[ChatMessage]
                 openai_tool_calls: list[ToolCallEntry] = []
                 seen_ids: set[str] = set()
                 for tc in message.tool_calls:
-                    tool_call_id = _sanitize_tool_call_id(tc.get("id", "")) or ""
+                    _tc_id = tc.get("id")
+                    tool_call_id = _sanitize_tool_call_id(_tc_id if isinstance(_tc_id, str) else "") or ""
                     if not tool_call_id or tool_call_id in seen_ids:
                         tool_call_id = f"call_{_uuid.uuid4().hex[:12]}"
                     seen_ids.add(tool_call_id)
 
+                    _tc_args = tc.get("arguments")
                     arguments_str = (
-                        json.dumps(tc.get("arguments", {}))
-                        if isinstance(tc.get("arguments"), dict)
-                        else str(tc.get("arguments", {}))
+                        json.dumps(_tc_args)
+                        if isinstance(_tc_args, dict)
+                        else str(_tc_args or {})
                     )
+                    _tc_name = tc.get("name")
                     openai_tool_calls.append({
                         "id": tool_call_id,
                         "type": "function",
-                        "function": {"name": tc.get("name", ""), "arguments": arguments_str},
+                        "function": {
+                            "name": _tc_name if isinstance(_tc_name, str) else "",
+                            "arguments": arguments_str,
+                        },
                     })
 
                 asst_msg: AssistantMessage = {
@@ -140,7 +149,8 @@ def format_conversation_history(conversation: Conversation) -> list[ChatMessage]
                 formatted_messages.append(asst_msg)
 
                 for tc, openai_tc in zip(message.tool_calls, openai_tool_calls):
-                    tool_name = tc.get("name", "")
+                    _tn = tc.get("name")
+                    tool_name = _tn if isinstance(_tn, str) else ""
                     output = {}
                     if message.actions:
                         for action in message.actions:

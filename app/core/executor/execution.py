@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from app.core.expansion import ToolCall
 from app.core.tools import get_tool_meta, ToolTier, ToolKind
@@ -15,28 +14,40 @@ from app.services.music_generator import get_music_generator
 logger = logging.getLogger(__name__)
 
 
+def _sp(v: object, default: str = "") -> str:
+    """Narrow an object param value to str."""
+    return v if isinstance(v, str) else default
+
+
 async def _execute_generator(
     name: str,
-    params: dict[str, Any],
+    params: dict[str, object],
     ctx: ExecutionContext,
 ) -> None:
     """Execute a generator tool server-side."""
     mg = get_music_generator()
 
-    gen_params = {
-        "instrument": params.get("role", "drums"),
-        "style": params.get("style", ""),
-        "tempo": params.get("tempo", 120),
-        "bars": params.get("bars", 4),
-        "key": params.get("key"),
-        "chords": params.get("chords"),
-    }
+    _tempo = params.get("tempo", 120)
+    _bars = params.get("bars", 4)
+    instrument = _sp(params.get("role"), "drums")
+    style = _sp(params.get("style"))
+    tempo = int(_tempo) if isinstance(_tempo, (int, float)) else 120
+    bars = int(_bars) if isinstance(_bars, (int, float)) else 4
+    _key = params.get("key")
+    key = _key if isinstance(_key, str) else None
+    _chords = params.get("chords")
+    chords = _chords if isinstance(_chords, list) else None
 
-    logger.info(f"🎵 Generating MIDI: {gen_params['instrument']} - {gen_params['style']}")
+    logger.info(f"🎵 Generating MIDI: {instrument} - {style}")
 
     try:
         result = await mg.generate(
-            **gen_params,
+            instrument=instrument,
+            style=style,
+            tempo=tempo,
+            bars=bars,
+            key=key,
+            chords=chords,
             context=GenerationContext(quality_preset="quality"),
         )
 
@@ -47,8 +58,10 @@ async def _execute_generator(
 
         logger.info(f"✅ Generated {len(result.notes)} notes via {result.backend_used.value}")
 
-        track_name = params.get("trackName", gen_params["instrument"].capitalize())
-        track_id = ctx.store.registry.resolve_track(track_name) or params.get("trackId")
+        _track_name = params.get("trackName")
+        track_name = _track_name if isinstance(_track_name, str) else instrument.capitalize()
+        _tid = params.get("trackId")
+        track_id = ctx.store.registry.resolve_track(track_name) or (_tid if isinstance(_tid, str) else None)
 
         if not track_id:
             ctx.add_result(name, False, {}, f"Track '{track_name}' not found")
@@ -106,7 +119,7 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
         # --- Step 1: Resolve Name References ---
 
         if "trackName" in params and "trackId" not in params:
-            track_name = params["trackName"]
+            track_name = _sp(params["trackName"])
             track_id = ctx.store.registry.resolve_track(track_name)
 
             if track_id:
@@ -118,8 +131,10 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
                 return
 
         if "regionName" in params and "regionId" not in params:
-            region_name = params["regionName"]
-            parent_track = params.get("trackId") or params.get("trackName")
+            region_name = _sp(params["regionName"])
+            _ptid = params.get("trackId")
+            _ptn = params.get("trackName")
+            parent_track = (_ptid if isinstance(_ptid, str) else None) or (_ptn if isinstance(_ptn, str) else None)
             region_id = ctx.store.registry.resolve_region(region_name, parent_track)
             if region_id:
                 params["regionId"] = region_id
@@ -131,8 +146,9 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
         entity_created = None
 
         if call.name == "stori_add_midi_track":
-            track_name = params.get("name", "Track")
-            instrument = params.get("instrument")
+            track_name = _sp(params.get("name"), "Track")
+            _instr = params.get("instrument")
+            instrument = _instr if isinstance(_instr, str) else None
             gm_program = params.get("gmProgram")
 
             existing = ctx.store.registry.resolve_track(track_name, exact=True)
@@ -140,9 +156,10 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
                 logger.debug(f"📋 Track '{track_name}' already exists: {existing[:8]}")
                 params["trackId"] = existing
             else:
+                _etid = params.get("trackId")
                 track_id = ctx.store.create_track(
                     track_name,
-                    track_id=params.get("trackId"),
+                    track_id=_etid if isinstance(_etid, str) else None,
                     transaction=ctx.transaction,
                 )
                 params["trackId"] = track_id
@@ -166,13 +183,15 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
                     params["gmProgram"] = inference.program
 
         elif call.name == "stori_add_midi_region":
-            track_id = params.get("trackId")
-            if not track_id:
-                track_ref = params.get("name") or params.get("trackName")
+            _region_track_id_raw = params.get("trackId")
+            region_track_id = _region_track_id_raw if isinstance(_region_track_id_raw, str) else None
+            if not region_track_id:
+                _tr = params.get("name") or params.get("trackName")
+                track_ref = _tr if isinstance(_tr, str) else None
                 if track_ref:
-                    track_id = ctx.store.registry.resolve_track(track_ref)
-                    if track_id:
-                        params["trackId"] = track_id
+                    region_track_id = ctx.store.registry.resolve_track(track_ref)
+                    if region_track_id:
+                        params["trackId"] = region_track_id
                     else:
                         ctx.add_result(call.name, False, {}, f"Track '{track_ref}' not found")
                         return
@@ -180,12 +199,14 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
                     ctx.add_result(call.name, False, {}, "No track specified")
                     return
 
-            region_name = params.get("name", "Region")
-            _req_start = params.get("startBeat", 0)
-            _req_dur = params.get("durationBeats", 16)
+            region_name = _sp(params.get("name"), "Region")
+            _req_start_raw = params.get("startBeat", 0)
+            _req_dur_raw = params.get("durationBeats", 16)
+            _req_start = _req_start_raw if isinstance(_req_start_raw, (int, float)) else 0
+            _req_dur = _req_dur_raw if isinstance(_req_dur_raw, (int, float)) else 16
 
             _existing_rid = ctx.store.registry.find_overlapping_region(
-                track_id, _req_start, _req_dur,
+                region_track_id, _req_start, _req_dur,
             )
             if _existing_rid:
                 params["regionId"] = _existing_rid
@@ -200,10 +221,11 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
                 return
 
             try:
+                _rid_raw = params.get("regionId")
                 region_id = ctx.store.create_region(
                     name=region_name,
-                    parent_track_id=track_id,
-                    region_id=params.get("regionId"),
+                    parent_track_id=region_track_id,
+                    region_id=_rid_raw if isinstance(_rid_raw, str) else None,
                     metadata={
                         "startBeat": _req_start,
                         "durationBeats": _req_dur,
@@ -218,7 +240,7 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
                 return
 
         elif call.name == "stori_ensure_bus":
-            bus_name = params.get("name", "Bus")
+            bus_name = _sp(params.get("name"), "Bus")
             bus_id = ctx.store.get_or_create_bus(bus_name, transaction=ctx.transaction)
             params["busId"] = bus_id
             entity_created = bus_id
@@ -233,26 +255,26 @@ async def _execute_single_call(call: ToolCall, ctx: ExecutionContext) -> None:
         # --- Step 4: Record State Changes ---
 
         if call.name == "stori_set_tempo":
-            tempo = params.get("tempo")
-            if tempo:
-                ctx.store.set_tempo(tempo, transaction=ctx.transaction)
+            _tempo_raw = params.get("tempo")
+            if isinstance(_tempo_raw, (int, float)):
+                ctx.store.set_tempo(int(_tempo_raw), transaction=ctx.transaction)
 
         elif call.name == "stori_set_key":
-            key = params.get("key")
-            if key:
-                ctx.store.set_key(key, transaction=ctx.transaction)
+            _key = params.get("key")
+            if isinstance(_key, str):
+                ctx.store.set_key(_key, transaction=ctx.transaction)
 
         elif call.name == "stori_add_notes":
-            region_id = params.get("regionId")
-            notes = params.get("notes", [])
-            if region_id and notes:
-                ctx.store.add_notes(region_id, notes, transaction=ctx.transaction)
+            _rid = params.get("regionId")
+            _notes = params.get("notes")
+            if isinstance(_rid, str) and isinstance(_notes, list):
+                ctx.store.add_notes(_rid, _notes, transaction=ctx.transaction)
 
         elif call.name == "stori_add_insert_effect":
-            track_id = params.get("trackId")
-            effect_type = params.get("type")
-            if track_id and effect_type:
-                ctx.store.add_effect(track_id, effect_type, transaction=ctx.transaction)
+            _track = params.get("trackId")
+            _etype = params.get("type")
+            if isinstance(_track, str) and isinstance(_etype, str):
+                ctx.store.add_effect(_track, _etype, transaction=ctx.transaction)
 
         # --- Step 5: Emit Tier 2 Primitives to Client ---
 

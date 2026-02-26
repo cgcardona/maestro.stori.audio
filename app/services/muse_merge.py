@@ -23,6 +23,10 @@ from app.contracts.json_types import (
     CCEventDict,
     NoteDict,
     PitchBendDict,
+    RegionAftertouchMap,
+    RegionCCMap,
+    RegionNotesMap,
+    RegionPitchBendMap,
 )
 from app.services.muse_checkout import CheckoutPlan, build_checkout_plan
 from app.services.muse_merge_base import find_merge_base
@@ -143,10 +147,10 @@ def build_merge_result(
     )
 
     conflicts: list[MergeConflict] = []
-    merged_notes: dict[str, list[NoteDict]] = {}
-    merged_cc: dict[str, list[CCEventDict]] = {}
-    merged_pb: dict[str, list[PitchBendDict]] = {}
-    merged_at: dict[str, list[AftertouchDict]] = {}
+    merged_notes: RegionNotesMap = {}
+    merged_cc: RegionCCMap = {}
+    merged_pb: RegionPitchBendMap = {}
+    merged_at: RegionAftertouchMap = {}
     merged_track_regions: dict[str, str] = {}
     merged_region_starts: dict[str, float] = {}
 
@@ -172,7 +176,7 @@ def build_merge_result(
         cc_result, cc_conflicts = _merge_event_layer(
             b_cc, l_cc, r_cc, rid, "cc", match_cc_events,
         )
-        merged_cc[rid] = cc_result  # type: ignore[assignment]
+        merged_cc[rid] = cc_result
         conflicts.extend(cc_conflicts)
 
         b_pb = base.pitch_bends.get(rid, [])
@@ -181,7 +185,7 @@ def build_merge_result(
         pb_result, pb_conflicts = _merge_event_layer(
             b_pb, l_pb, r_pb, rid, "pb", match_pitch_bends,
         )
-        merged_pb[rid] = pb_result  # type: ignore[assignment]
+        merged_pb[rid] = pb_result
         conflicts.extend(pb_conflicts)
 
         b_at = base.aftertouch.get(rid, [])
@@ -190,7 +194,7 @@ def build_merge_result(
         at_result, at_conflicts = _merge_event_layer(
             b_at, l_at, r_at, rid, "at", match_aftertouch,
         )
-        merged_at[rid] = at_result  # type: ignore[assignment]
+        merged_at[rid] = at_result
         conflicts.extend(at_conflicts)
 
     conflict_tuple = tuple(conflicts)
@@ -230,10 +234,10 @@ async def build_merge_checkout_plan(
     left_id: str,
     right_id: str,
     *,
-    working_notes: dict[str, list[NoteDict]] | None = None,
-    working_cc: dict[str, list[CCEventDict]] | None = None,
-    working_pb: dict[str, list[PitchBendDict]] | None = None,
-    working_at: dict[str, list[AftertouchDict]] | None = None,
+    working_notes: RegionNotesMap | None = None,
+    working_cc: RegionCCMap | None = None,
+    working_pb: RegionPitchBendMap | None = None,
+    working_at: RegionAftertouchMap | None = None,
 ) -> MergeCheckoutPlan:
     """Build a complete merge plan: merge-base → three-way diff → checkout plan.
 

@@ -12,7 +12,7 @@ from app.config import settings
 from app.contracts.llm_types import ChatMessage
 from app.contracts.project_types import ProjectContext
 from app.core.entity_context import build_entity_context_for_llm, format_project_context
-from app.contracts.json_types import JSONObject, ToolCallDict
+from app.contracts.json_types import ToolCallDict
 from app.core.expansion import ToolCall
 from app.core.intent import Intent, IntentResult, SSEState
 from app.core.llm_client import LLMClient, enforce_single_tool
@@ -177,7 +177,7 @@ async def _run_llm_tool_loop(
             if not is_composition:
                 break
 
-        iter_tool_results: list[JSONObject] = []  # boundary: LLM tool result format
+        iter_tool_results: list[dict[str, object]] = []
 
         if (
             plan_tracker is None

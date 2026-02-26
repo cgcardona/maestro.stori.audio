@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING
 
 from app.contracts.llm_types import AssistantMessage, ChatMessage, ToolCallEntry
 
+if TYPE_CHECKING:
+    from app.db.models import ConversationMessage
 
-def build_conversation_history_for_llm(messages: list[Any]) -> list[ChatMessage]:
+
+def build_conversation_history_for_llm(messages: list[ConversationMessage]) -> list[ChatMessage]:
     """
     Build conversation history in OpenAI format for LLM context.
 
@@ -28,16 +31,20 @@ def build_conversation_history_for_llm(messages: list[Any]) -> list[ChatMessage]
             if msg.tool_calls:
                 seen_ids: set[str] = set()
                 for tc in msg.tool_calls:
-                    tc_id = tc.get("id", "")
+                    _tc_id = tc.get("id")
+                    tc_id = _tc_id if isinstance(_tc_id, str) else ""
                     if not tc_id or tc_id in seen_ids:
                         tc_id = f"call_{uuid.uuid4().hex[:12]}"
                     seen_ids.add(tc_id)
+                    _tc_type = tc.get("type")
+                    _tc_name = tc.get("name")
+                    _tc_args = tc.get("arguments")
                     openai_tool_calls.append({
                         "id": tc_id,
-                        "type": tc.get("type", "function"),
+                        "type": _tc_type if isinstance(_tc_type, str) else "function",
                         "function": {
-                            "name": tc.get("name", ""),
-                            "arguments": json.dumps(tc.get("arguments", {})),
+                            "name": _tc_name if isinstance(_tc_name, str) else "",
+                            "arguments": json.dumps(_tc_args if isinstance(_tc_args, dict) else {}),
                         },
                     })
 
@@ -64,7 +71,7 @@ def build_conversation_history_for_llm(messages: list[Any]) -> list[ChatMessage]
     return history
 
 
-def normalize_tool_arguments(arguments: dict[str, Any] | None) -> dict[str, Any] | None:
+def normalize_tool_arguments(arguments: dict[str, object] | None) -> dict[str, object] | None:
     """
     Normalize tool arguments for API responses.
 
@@ -73,7 +80,7 @@ def normalize_tool_arguments(arguments: dict[str, Any] | None) -> dict[str, Any]
     """
     if arguments is None or not arguments:
         return arguments
-    out: dict[str, Any] = {}
+    out: dict[str, object] = {}
     for k, v in arguments.items():
         if isinstance(v, (int, float)) and not isinstance(v, bool):
             out[k] = str(v)

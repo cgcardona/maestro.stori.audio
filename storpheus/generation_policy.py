@@ -27,12 +27,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 from storpheus_types import FulfillmentReport, GradioGenerationParams, StorpheusNoteDict
 
 if TYPE_CHECKING:
-    from music_service import GenerationConstraintsPayload
+    from music_service import (
+        EmotionVectorPayload,
+        GenerationConstraintsPayload,
+        IntentGoal,
+        RoleProfileSummary,
+    )
 
 
 # =============================================================================
@@ -317,10 +322,10 @@ def build_controls(
     *,
     genre: str,
     tempo: int,
-    emotion_vector: dict[str, Any] | None = None,
-    role_profile_summary: dict[str, Any] | None = None,
-    generation_constraints: dict[str, Any] | None = None,
-    intent_goals: list[dict[str, Any]] | None = None,
+    emotion_vector: EmotionVectorPayload | None = None,
+    role_profile_summary: RoleProfileSummary | None = None,
+    generation_constraints: GenerationConstraintsPayload | None = None,
+    intent_goals: list[IntentGoal] | None = None,
     quality_preset: str = "balanced",
 ) -> GenerationControlVector:
     """Build a ``GenerationControlVector`` from the canonical Maestro payload.
@@ -335,49 +340,44 @@ def build_controls(
         3. role_profile_summary (data-driven priors)
         4. genre/tempo heuristic baseline (last resort)
     """
-    ev = emotion_vector or {}
-    rp = role_profile_summary or {}
-    gc = generation_constraints or {}
-    goals = intent_goals or []
-
     controls = GenerationControlVector(quality_preset=quality_preset)  # type: ignore[arg-type]
 
     # ── Tension: from emotion_vector (Maestro is authoritative) ──
-    if "tension" in ev:
-        controls.tension = ev["tension"]
+    if emotion_vector is not None:
+        controls.tension = emotion_vector.tension
 
     # ── Density: from generation_constraints first, else emotion-derived ──
-    if "drum_density" in gc:
-        controls.density = gc["drum_density"]
-    elif "energy" in ev and "motion" in ev:
-        controls.density = ev["energy"] * ev["motion"]
-    elif "rest_ratio" in rp:
-        controls.density = max(0.0, 1.0 - rp["rest_ratio"])
+    if generation_constraints is not None:
+        controls.density = generation_constraints.drum_density
+    elif emotion_vector is not None:
+        controls.density = emotion_vector.energy * emotion_vector.motion
+    elif role_profile_summary is not None:
+        controls.density = max(0.0, 1.0 - role_profile_summary.rest_ratio)
 
     # ── Complexity: from role profile first ──
-    if "contour_complexity" in rp:
-        controls.complexity = rp["contour_complexity"]
-    elif gc:
+    if role_profile_summary is not None:
+        controls.complexity = role_profile_summary.contour_complexity
+    elif generation_constraints is not None:
         controls.complexity = 0.5  # neutral when constraints drive everything
 
     # ── Brightness: from emotion valence ──
-    if "valence" in ev:
-        controls.brightness = normalize_signed(ev["valence"])
+    if emotion_vector is not None:
+        controls.brightness = normalize_signed(emotion_vector.valence)
 
     # ── Groove: from role profile swing ──
-    if "swing_ratio" in rp:
-        controls.groove = rp["swing_ratio"]
-    elif "swing_amount" in gc:
-        controls.groove = min(1.0, gc["swing_amount"] * 4.0)  # 0-0.25 → 0-1
+    if role_profile_summary is not None:
+        controls.groove = role_profile_summary.swing_ratio
+    elif generation_constraints is not None:
+        controls.groove = min(1.0, generation_constraints.swing_amount * 4.0)
 
     # ── Creativity: emotion-derived ──
-    if "motion" in ev:
-        controls.creativity = normalize_signed(ev.get("motion", 0.5) * 2 - 1)
+    if emotion_vector is not None:
+        controls.creativity = normalize_signed(emotion_vector.motion * 2 - 1)
 
     # ── Apply weighted goal modifiers ──
-    for goal in goals:
-        name = goal.get("name", "") if isinstance(goal, dict) else str(goal)
-        weight = goal.get("weight", 1.0) if isinstance(goal, dict) else 1.0
+    for goal in (intent_goals or []):
+        name = goal.name
+        weight = goal.weight
         name_lower = name.lower()
 
         if name_lower in ("dark", "moody", "ominous"):

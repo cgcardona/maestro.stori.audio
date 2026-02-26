@@ -1,8 +1,8 @@
 # Stori Maestro — Type Contracts Reference
 
-> Generated: 2026-02-26 | Reflects the mypy hardening sweep that eliminated ~1,800 `Any` usages.
+> Updated: 2026-02-26 | Reflects the mypy hardening sweep that eliminated ~1,800 `Any` usages.
 
-This document is the single source of truth for every named entity (TypedDict, dataclass, type alias) in the Maestro and Orpheus codebases. It covers the full API surface of each type: fields, types, optionality, and intended use.
+This document is the single source of truth for every named entity (TypedDict, dataclass, Protocol, type alias) in the Maestro and Orpheus codebases. It covers the full API surface of each type: fields, types, optionality, and intended use.
 
 ---
 
@@ -12,10 +12,11 @@ This document is the single source of truth for every named entity (TypedDict, d
 2. [Maestro Contracts (`app/contracts/`)](#maestro-contracts)
    - [generation_types.py](#generation_typespy)
    - [llm_types.py](#llm_typespy)
-   - [json_types.py (key types)](#json_typespy)
-   - [project_types.py (key types)](#project_typespy)
+   - [json_types.py](#json_typespy)
+   - [project_types.py](#project_typespy)
 3. [Auth (`app/auth/tokens.py`)](#auth)
 4. [Services](#services)
+   - [Assets (`app/services/assets.py`)](#assets)
    - [OrpheusRawResponse](#orpheusrawresponse)
    - [SampleChange](#samplechange)
 5. [Planner (`app/core/planner/`)](#planner)
@@ -26,9 +27,10 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [MIDI event types](#midi-event-types)
    - [Pipeline types](#pipeline-types)
    - [Scoring types](#scoring-types)
-8. [Tempo Convention](#tempo-convention)
-9. [The `Any` Quarantine](#the-any-quarantine)
-10. [Entity Hierarchy](#entity-hierarchy)
+8. [Region Event Map Aliases](#region-event-map-aliases)
+9. [Tempo Convention](#tempo-convention)
+10. [The `Any` Quarantine](#the-any-quarantine)
+11. [Entity Hierarchy](#entity-hierarchy)
 
 ---
 
@@ -218,18 +220,67 @@ The `Any` quarantine for external LLM API boundaries. Every module that needs to
 
 ### `json_types.py`
 
-**Path:** `app/contracts/json_types.py` (selected key types)
+**Path:** `app/contracts/json_types.py`
+
+#### JSON Primitive Types
+
+| Name | Type | Use |
+|------|------|-----|
+| `JSONScalar` | `str \| int \| float \| bool \| None` | A JSON leaf value |
+| `JSONValue` | Recursive union | Any valid JSON value — use instead of `Any` for truly unknown payloads |
+| `JSONObject` | `dict[str, JSONValue]` | A JSON object with unknown key set |
 
 #### `NoteDict`
 
-`TypedDict` — A single MIDI note in the camelCase wire format used across the Maestro<→>DAW boundary.
+`TypedDict, total=False` — A single MIDI note. Accepts **both** camelCase (DAW wire) and snake_case (internal) field names so that notes flow through all pipeline layers without conversion.
+
+| Field | Format | Type | Description |
+|-------|--------|------|-------------|
+| `pitch` | both | `int` | MIDI pitch (0–127) |
+| `velocity` | both | `int` | MIDI velocity (0–127) |
+| `channel` | both | `int` | MIDI channel (0–15) |
+| `startBeat` | wire | `float` | Note onset in beats |
+| `durationBeats` | wire | `float` | Note duration in beats |
+| `noteId` | wire | `str` | Unique note ID |
+| `trackId` | wire | `str` | Foreign key to track |
+| `regionId` | wire | `str` | Foreign key to region |
+| `start_beat` | internal | `float` | Note onset in beats |
+| `duration_beats` | internal | `float` | Note duration in beats |
+| `note_id` | internal | `str` | Unique note ID |
+| `track_id` | internal | `str` | Foreign key to track |
+| `region_id` | internal | `str` | Foreign key to region |
+| `layer` | both | `str` | Drum renderer layer tag |
+
+`InternalNoteDict` is an alias for `NoteDict` used at storage boundaries to signal intent.
+
+#### `CCEventDict`
+
+`TypedDict` — A MIDI Control Change event.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `pitch` | `int` | MIDI pitch (0–127) |
-| `startBeat` | `float` | Note onset in beats |
-| `durationBeats` | `float` | Note duration in beats |
-| `velocity` | `int` | MIDI velocity (0–127) |
+| `cc` | `int` | CC number (0–127) |
+| `beat` | `float` | Event position in beats |
+| `value` | `int` | CC value (0–127) |
+
+#### `PitchBendDict`
+
+`TypedDict` — A MIDI Pitch Bend event.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `beat` | `float` | Event position in beats |
+| `value` | `int` | Pitch bend value (-8192 to 8191) |
+
+#### `AftertouchDict`
+
+`TypedDict, total=False` — A MIDI Aftertouch event (channel pressure or polyphonic key pressure).
+
+| Field | Required | Type | Description |
+|-------|----------|------|-------------|
+| `beat` | ✓ | `float` | Event position in beats |
+| `value` | ✓ | `int` | Pressure value (0–127) |
+| `pitch` | | `int` | Specific MIDI pitch (polyphonic aftertouch only) |
 
 #### `ToolCallDict`
 
@@ -238,27 +289,125 @@ The `Any` quarantine for external LLM API boundaries. Every module that needs to
 | Field | Type | Description |
 |-------|------|-------------|
 | `tool` | `str` | Tool name (e.g. `"stori_add_notes"`) |
-| `params` | `dict[str, Any]` | LLM-generated tool arguments (genuinely polymorphic) |
+| `params` | `dict[str, object]` | LLM-generated tool arguments |
+
+#### `RegionMetadataWire`
+
+`TypedDict, total=False` — Region position metadata in camelCase (handler → storage path).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `startBeat` | `float` | Region start position in beats |
+| `durationBeats` | `float` | Region duration in beats |
+| `name` | `str` | Region display name |
+
+#### `RegionMetadataDB`
+
+`TypedDict, total=False` — Region position metadata in snake_case (database path).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `start_beat` | `float` | Region start position in beats |
+| `duration_beats` | `float` | Region duration in beats |
+| `name` | `str` | Region display name |
 
 ---
 
 ### `project_types.py`
 
-**Path:** `app/contracts/project_types.py` (selected key types)
+**Path:** `app/contracts/project_types.py`
 
-#### `ProjectContext`
+#### `TimeSignatureDict`
 
-`TypedDict, total=False` — The current DAW project state as sent from the frontend.
+`TypedDict` — Time signature in structured form. Some DAW versions send `"4/4"` (string); others send this dict.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `str` | Project UUID (canonical ID — `trackId` is removed) |
+| `numerator` | `int` | Beats per bar |
+| `denominator` | `int` | Beat unit (4 = quarter note) |
+
+#### `MixerSettingsDict`
+
+`TypedDict, total=False` — Mixer state for a track.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `volume` | `float` | Track volume (0.0–1.0) |
+| `pan` | `float` | Pan position (-1.0 to 1.0) |
+| `isMuted` | `bool` | Whether the track is muted |
+| `isSolo` | `bool` | Whether the track is soloed |
+
+#### `AutomationLaneDict`
+
+`TypedDict, total=False` — An automation lane on a track.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | Lane UUID |
+| `parameter` | `str` | Automated parameter name |
+| `points` | `list[dict[str, float]]` | Automation curve control points |
+
+#### `ProjectRegion`
+
+`TypedDict, total=False` — A MIDI region inside a track.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | Region UUID |
+| `name` | `str` | Region display name |
+| `startBeat` | `float` | Region start position in beats |
+| `durationBeats` | `float` | Region duration in beats |
+| `noteCount` | `int` | Number of MIDI notes |
+| `notes` | `list[NoteDict]` | Notes in this region |
+
+#### `ProjectTrack`
+
+`TypedDict, total=False` — A track in the DAW project.
+
+`id` is the track's own UUID. `trackId` is reserved for foreign-key references in tool call params and event payloads (e.g. `stori_add_midi_region(trackId=…)`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | Track UUID |
+| `name` | `str` | Track display name |
+| `gmProgram` | `int \| None` | General MIDI program (null on drum tracks) |
+| `drumKitId` | `str \| None` | Drum kit ID (null on melodic tracks) |
+| `isDrums` | `bool` | Whether this is a drum track |
+| `volume` | `float` | Volume (0.0–1.0) |
+| `pan` | `float` | Pan (-1.0–1.0) |
+| `muted` | `bool` | Mute state |
+| `solo` | `bool` | Solo state |
+| `color` | `str` | Display color hex |
+| `icon` | `str` | Track icon name |
+| `role` | `str` | Instrument role (e.g. `"bass"`, `"drums"`) |
+| `regions` | `list[ProjectRegion]` | All regions on this track |
+| `mixerSettings` | `MixerSettingsDict` | Detailed mixer state |
+| `automationLanes` | `list[AutomationLaneDict]` | Automation lanes |
+
+#### `BusDict`
+
+`TypedDict, total=False` — An audio bus.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | Bus UUID |
+| `name` | `str` | Bus display name |
+
+#### `ProjectContext`
+
+`TypedDict, total=False` — The full DAW project state sent from the Stori macOS app on every request.
+
+`timeSignature` is polymorphic — the DAW sends it as `"4/4"` (string) in some versions and as `{"numerator": 4, "denominator": 4}` (dict) in others. Coerce at the boundary with `parse_time_signature()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | Project UUID — canonical project identifier |
 | `name` | `str` | Project display name |
-| `tempo` | `int` | Project tempo in BPM |
-| `key` | `str` | Root key (e.g. `"Am"`) |
+| `tempo` | `int` | Project tempo in BPM (always whole integer) |
+| `key` | `str` | Root key (e.g. `"Am"`, `"C"`) |
 | `timeSignature` | `str \| TimeSignatureDict` | Time signature |
 | `tracks` | `list[ProjectTrack]` | All tracks in the project |
-| `buses` | `list[BusDict]` | All buses in the project |
+| `buses` | `list[BusDict]` | All audio buses |
 
 ---
 
@@ -298,6 +447,58 @@ The `Any` quarantine for external LLM API boundaries. Every module that needs to
 ---
 
 ## Services
+
+### Assets
+
+**Path:** `app/services/assets.py`
+
+#### `DrumKitInfo`
+
+`TypedDict, total=False` — Metadata for a single drum kit from the S3 asset manifest.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | Kit identifier (e.g. `"tr909"`) |
+| `name` | `str` | Display name (e.g. `"TR-909"`) |
+| `version` | `str` | Manifest version string |
+
+**Default kits** (used when S3 is unavailable): `cr78`, `linndrum`, `pearl`, `tr505`, `tr909`.
+
+#### `SoundFontInfo`
+
+`TypedDict, total=False` — Metadata for a single soundfont from the S3 asset manifest.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | Soundfont identifier (e.g. `"fluidr3_gm"`) |
+| `name` | `str` | Display name (e.g. `"Fluid R3 GM"`) |
+| `filename` | `str` | Filename on S3 (e.g. `"FluidR3_GM.sf2"`) |
+
+**Default soundfonts**: `fluidr3_gm` (Fluid R3 GM).
+
+#### S3 Client Protocols (private)
+
+These Protocols define the structural interface for the untyped `boto3` S3 client. They live in `assets.py` and are not imported elsewhere — they exist to keep `Any` out of the production code while bridging the external library boundary.
+
+| Protocol | Description |
+|----------|-------------|
+| `_S3StreamingBody` | `read() -> bytes` — streaming body returned by `get_object` |
+| `_GetObjectResponse` | `TypedDict` with `Body: _S3StreamingBody` |
+| `_S3Client` | Full structural interface: `get_object`, `generate_presigned_url`, `head_object`, `head_bucket` |
+
+`_s3_client()` returns `_S3Client`. The single `cast(_S3Client, boto3.client(...))` at the boundary is the only place `boto3`'s untyped surface touches typed code.
+
+**Public functions:**
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `list_drum_kits` | `() -> list[DrumKitInfo]` | Returns S3 manifest or `DEFAULT_DRUM_KITS` |
+| `list_soundfonts` | `() -> list[SoundFontInfo]` | Returns S3 manifest or `DEFAULT_SOUNDFONTS` |
+| `get_drum_kit_download_url` | `(kit_id, expires_in) -> str \| None` | Presigned S3 URL for a drum kit |
+| `get_soundfont_download_url` | `(soundfont_id, expires_in) -> str \| None` | Presigned S3 URL for a soundfont |
+| `check_s3_health` | `() -> bool` | Returns `True` if S3 bucket is reachable |
+
+---
 
 ### `OrpheusRawResponse`
 
@@ -548,6 +749,38 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 
 ---
 
+## Region Event Map Aliases
+
+**Path:** `app/contracts/json_types.py`
+
+These type aliases replace the repeated pattern `dict[str, list[XxxDict]]` that appears 25+ times across the Muse VCS, StateStore, variation executor, and checkout pipeline. The key is always a `region_id` string; the value is the ordered list of events for that region.
+
+| Alias | Underlying Type | Semantics |
+|-------|----------------|-----------|
+| `RegionNotesMap` | `dict[str, list[NoteDict]]` | All MIDI notes per region |
+| `RegionCCMap` | `dict[str, list[CCEventDict]]` | All MIDI CC events per region |
+| `RegionPitchBendMap` | `dict[str, list[PitchBendDict]]` | All pitch bend events per region |
+| `RegionAftertouchMap` | `dict[str, list[AftertouchDict]]` | All aftertouch events per region |
+
+**Where used:**
+
+| Module | Usage |
+|--------|-------|
+| `app/core/state_store.py` | `StateStore._region_notes/cc/pitch_bends/aftertouch` fields |
+| `app/core/executor/models.py` | `VariationContext` snapshot fields |
+| `app/core/executor/apply.py` | Local accumulator variables in `apply_variation_phrases` |
+| `app/core/executor/variation.py` | `compute_variation_from_context` signature |
+| `app/services/muse_replay.py` | `HeadSnapshot` fields; `reconstruct_*` locals |
+| `app/services/muse_merge.py` | `three_way_merge` accumulators; `build_merge_checkout_plan` params |
+| `app/services/muse_drift.py` | `compute_drift_report` signature |
+| `app/services/muse_checkout.py` | `build_checkout_plan` signature |
+| `app/services/muse_history_controller.py` | `_capture_working_*` return types |
+| `app/services/variation/service.py` | `compute_multi_region_variation` signature |
+
+**Note:** `list[NoteDict]` (without the dict wrapper) remains the correct type for single-region operations — e.g. `_build_region_note_calls(region_id, target_notes: list[NoteDict], ...)`. The alias applies only at the multi-region aggregation level.
+
+---
+
 ## Tempo Convention
 
 **Tempo is always `int` (BPM) throughout the internal codebase.**
@@ -596,34 +829,50 @@ Maestro Service (app/)
 │
 ├── Contracts (app/contracts/)
 │   ├── generation_types.py
-│   │   ├── GenerationContext          — backend kwargs
+│   │   ├── GenerationContext          — backend kwargs (replaces **kwargs: Any)
 │   │   ├── CompositionContext         — per-turn generation context
 │   │   ├── RoleResult                 — per-instrument outcome
 │   │   └── UnifiedGenerationOutput    — full generation return value
 │   │
-│   ├── llm_types.py
-│   │   ├── OpenAIData                 — Any quarantine alias
-│   │   ├── OpenAIStreamChunk/Tool/Response/etc.  — LLM boundary types
-│   │   ├── ToolCallFunction/Entry     — tool call wire format
-│   │   ├── SystemMessage/UserMessage  — chat message types
-│   │   ├── AssistantMessage           — assistant reply (with tool_calls)
+│   ├── llm_types.py                   — Any quarantine for LLM APIs
+│   │   ├── OpenAIData                 — base alias (dict[str, Any])
+│   │   ├── OpenAIStreamChunk          — one SSE chunk
+│   │   ├── OpenAITool                 — tool schema sent to model
+│   │   ├── UsageStats                 — token/cost statistics
+│   │   ├── OpenAIRequestPayload       — full request body to OpenRouter
+│   │   ├── OpenAIResponse             — full (non-streaming) response
+│   │   ├── OpenAIToolChoice           — "auto" | tool dict
+│   │   ├── StreamEvent                — internal stream event
+│   │   ├── ToolCallFunction           — function inside a tool call
+│   │   ├── ToolCallEntry              — one tool call in assistant message
+│   │   ├── SystemMessage              — system prompt
+│   │   ├── UserMessage                — user turn
+│   │   ├── AssistantMessage           — assistant reply (+ tool_calls)
 │   │   ├── ToolResultMessage          — tool result back to LLM
 │   │   └── ChatMessage                — discriminated union of all messages
 │   │
 │   ├── json_types.py
-│   │   ├── NoteDict                   — MIDI note (camelCase, DAW wire format)
+│   │   ├── JSONScalar/JSONValue/JSONObject  — JSON primitive types
+│   │   ├── NoteDict / InternalNoteDict — MIDI note (camelCase+snake_case)
 │   │   ├── CCEventDict                — MIDI CC event
 │   │   ├── PitchBendDict              — MIDI pitch bend
-│   │   ├── AftertouchDict             — MIDI aftertouch
+│   │   ├── AftertouchDict             — MIDI aftertouch (channel/poly)
 │   │   ├── ToolCallDict               — collected tool call in SSE events
-│   │   ├── JSONScalar/JSONValue/JSONObject  — JSON primitive types
-│   │   └── SSEEventInput              — SSE event dict
+│   │   ├── RegionMetadataWire         — region position (camelCase)
+│   │   ├── RegionMetadataDB           — region position (snake_case)
+│   │   ├── RegionNotesMap             — dict[str, list[NoteDict]]
+│   │   ├── RegionCCMap                — dict[str, list[CCEventDict]]
+│   │   ├── RegionPitchBendMap         — dict[str, list[PitchBendDict]]
+│   │   └── RegionAftertouchMap        — dict[str, list[AftertouchDict]]
 │   │
 │   └── project_types.py
-│       ├── ProjectContext             — DAW project state (from frontend)
-│       ├── ProjectTrack               — a single DAW track
-│       ├── BusDict                    — a mixer bus
-│       └── TimeSignatureDict          — time signature representation
+│       ├── TimeSignatureDict          — structured time signature
+│       ├── MixerSettingsDict          — track mixer state
+│       ├── AutomationLaneDict         — automation lane on a track
+│       ├── ProjectRegion              — a MIDI region in the DAW
+│       ├── ProjectTrack               — a DAW track with all metadata
+│       ├── BusDict                    — an audio bus
+│       └── ProjectContext             — full DAW project state (from frontend)
 │
 ├── Auth (app/auth/)
 │   └── tokens.py
@@ -631,8 +880,15 @@ Maestro Service (app/)
 │       └── AccessCodeError            — validation failure exception
 │
 ├── Services (app/services/)
-│   ├── orpheus.py
-│   │   └── OrpheusRawResponse         — raw HTTP response from Storpheus service
+│   ├── assets.py
+│   │   ├── DrumKitInfo                — drum kit manifest entry
+│   │   ├── SoundFontInfo              — soundfont manifest entry
+│   │   ├── _S3StreamingBody           — Protocol: boto3 streaming body
+│   │   ├── _GetObjectResponse         — TypedDict: boto3 get_object response
+│   │   └── _S3Client                  — Protocol: boto3 S3 client interface
+│   │
+│   ├── backends/storpheus.py (via orpheus.py)
+│   │   └── OrpheusRawResponse         — raw HTTP response from Orpheus service
 │   │
 │   └── muse_drift.py
 │       └── SampleChange               — a single note diff sample
@@ -650,8 +906,8 @@ Maestro Service (app/)
             ├── success: bool
             ├── notes: list[NoteDict]
             ├── metadata: dict[str, object]
-            ├── channel_notes: dict[str, list[NoteDict]] | None
-            └── error/cc_events/pitch_bends/aftertouch
+            ├── channel_notes: RegionNotesMap | None
+            └── error / cc_events / pitch_bends / aftertouch
 
 
 Orpheus Service (storpheus/)
@@ -662,15 +918,15 @@ Orpheus Service (storpheus/)
     │   ├── OrpheusNoteDict            — note (snake_case, internal)
     │   ├── OrpheusCCEvent             — CC event
     │   ├── OrpheusPitchBend           — pitch bend event
-    │   └── OrpheusAftertouch          — aftertouch event
+    │   └── OrpheusAftertouch          — aftertouch event (channel/poly)
     │
     ├── Pipeline
     │   ├── ParsedMidiResult           — full parse output (all channels)
     │   ├── WireNoteDict               — note (camelCase, API boundary only)
-    │   ├── CacheKeyData               — cache key fields
+    │   ├── CacheKeyData               — cache key for generation dedup
     │   ├── FulfillmentReport          — constraint satisfaction report
     │   ├── GradioGenerationParams     — parameters for Gradio inference
-    │   ├── GenerationComparison       — A/B candidate comparison
+    │   ├── GenerationComparison       — A/B candidate comparison result
     │   ├── QualityEvalParams          — /quality/evaluate input
     │   └── QualityEvalToolCall        — single tool call for quality eval
     │

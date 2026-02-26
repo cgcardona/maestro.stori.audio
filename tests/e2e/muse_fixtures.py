@@ -6,7 +6,7 @@ so the full VCS lifecycle can be exercised with stable, predictable data.
 
 from __future__ import annotations
 
-from typing import Any
+from typing_extensions import NotRequired, TypedDict
 
 from app.contracts.json_types import NoteDict
 
@@ -38,8 +38,68 @@ _REGION_TRACK_MAP: dict[str, str] = {
 }
 
 
-def _track_for(region_id: str) -> str:
+# ── Fixture entities ───────────────────────────────────────────────────────
 
+
+class MuseCCEvent(TypedDict):
+    """A MIDI CC event carried inside a Muse variation phrase.
+
+    ``kind`` acts as a discriminator for the controller_changes list (e.g. "cc",
+    "pitch_bend") so consumers can route without inspecting numeric fields.
+    """
+
+    kind: str
+    cc: int
+    beat: float
+    value: int
+
+
+class MuseNoteChange(TypedDict, total=False):
+    """One note add/remove record in a region diff.
+
+    Exactly one of ``before`` / ``after`` is ``None``:
+    - added  → before=None, after=<new note>
+    - removed → before=<old note>, after=None
+    """
+
+    note_id: str
+    change_type: str  # "added" | "removed"
+    before: NoteDict | None
+    after: NoteDict | None
+
+
+class MusePhrase(TypedDict):
+    """A phrase (one region's contribution) in a Muse variation payload."""
+
+    phrase_id: str
+    track_id: str
+    region_id: str
+    start_beat: float
+    end_beat: float
+    label: str
+    note_changes: list[MuseNoteChange]
+    controller_changes: list[MuseCCEvent]
+
+
+class MuseVariationPayload(TypedDict, total=False):
+    """POST /muse/variations request body built by the fixture helpers."""
+
+    project_id: str
+    variation_id: str
+    intent: str
+    conversation_id: str
+    parent_variation_id: str | None
+    parent2_variation_id: str | None
+    affected_tracks: list[str]
+    affected_regions: list[str]
+    phrases: list[MusePhrase]
+    beat_range: list[float]
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+
+def _track_for(region_id: str) -> str:
     return _REGION_TRACK_MAP.get(region_id, region_id.replace("r_", "t_"))
 
 
@@ -102,22 +162,22 @@ def snapshot_keys_v3_conflict() -> dict[str, list[NoteDict]]:
     return {R_KEYS: notes}
 
 
-def cc_sustain_branch_a() -> dict[str, list[dict[str, Any]]]:
+def cc_sustain_branch_a() -> dict[str, list[MuseCCEvent]]:
     """CC64 sustain pattern for conflict branch A."""
     return {
         R_KEYS: [
-            {"kind": "cc", "cc": 64, "beat": 0.0, "value": 127},
-            {"kind": "cc", "cc": 64, "beat": 3.0, "value": 0},
+            MuseCCEvent(kind="cc", cc=64, beat=0.0, value=127),
+            MuseCCEvent(kind="cc", cc=64, beat=3.0, value=0),
         ],
     }
 
 
-def cc_sustain_branch_b() -> dict[str, list[dict[str, Any]]]:
+def cc_sustain_branch_b() -> dict[str, list[MuseCCEvent]]:
     """CC64 sustain pattern for conflict branch B (different values)."""
     return {
         R_KEYS: [
-            {"kind": "cc", "cc": 64, "beat": 0.0, "value": 64},
-            {"kind": "cc", "cc": 64, "beat": 2.0, "value": 0},
+            MuseCCEvent(kind="cc", cc=64, beat=0.0, value=64),
+            MuseCCEvent(kind="cc", cc=64, beat=2.0, value=0),
         ],
     }
 
@@ -137,10 +197,10 @@ def make_variation_payload(
     *,
     parent_variation_id: str | None = None,
     parent2_variation_id: str | None = None,
-    controller_changes: dict[str, list[dict[str, Any]]] | None = None,
-) -> dict[str, Any]:
+    controller_changes: dict[str, list[MuseCCEvent]] | None = None,
+) -> MuseVariationPayload:
     """Build a POST /muse/variations request body with proper NoteChange diffs."""
-    phrases: list[dict[str, Any]] = []
+    phrases: list[MusePhrase] = []
     all_regions = sorted(set(base_notes) | set(proposed_notes))
 
     for rid in all_regions:
@@ -150,49 +210,49 @@ def make_variation_payload(
         base_keys = {_note_key(n) for n in base}
         proposed_keys = {_note_key(n) for n in proposed}
 
-        note_changes: list[dict[str, Any]] = []
+        note_changes: list[MuseNoteChange] = []
         for n in proposed:
             key = _note_key(n)
             if key not in base_keys:
-                note_changes.append({
-                    "note_id": f"nc-{variation_id[:8]}-{rid}-p{key[0]}b{key[1]}",
-                    "change_type": "added",
-                    "before": None,
-                    "after": n,
-                })
+                note_changes.append(MuseNoteChange(
+                    note_id=f"nc-{variation_id[:8]}-{rid}-p{key[0]}b{key[1]}",
+                    change_type="added",
+                    before=None,
+                    after=n,
+                ))
         for n in base:
             key = _note_key(n)
             if key not in proposed_keys:
-                note_changes.append({
-                    "note_id": f"nc-{variation_id[:8]}-{rid}-p{key[0]}b{key[1]}",
-                    "change_type": "removed",
-                    "before": n,
-                    "after": None,
-                })
+                note_changes.append(MuseNoteChange(
+                    note_id=f"nc-{variation_id[:8]}-{rid}-p{key[0]}b{key[1]}",
+                    change_type="removed",
+                    before=n,
+                    after=None,
+                ))
 
         cc = (controller_changes or {}).get(rid, [])
         tid = _track_for(rid)
 
-        phrases.append({
-            "phrase_id": f"ph-{variation_id[:8]}-{rid}",
-            "track_id": tid,
-            "region_id": rid,
-            "start_beat": 0.0,
-            "end_beat": 8.0,
-            "label": f"{intent} ({rid})",
-            "note_changes": note_changes,
-            "controller_changes": cc,
-        })
+        phrases.append(MusePhrase(
+            phrase_id=f"ph-{variation_id[:8]}-{rid}",
+            track_id=tid,
+            region_id=rid,
+            start_beat=0.0,
+            end_beat=8.0,
+            label=f"{intent} ({rid})",
+            note_changes=note_changes,
+            controller_changes=cc,
+        ))
 
-    return {
-        "project_id": PROJECT_ID,
-        "variation_id": variation_id,
-        "intent": intent,
-        "conversation_id": CONVO_ID,
-        "parent_variation_id": parent_variation_id,
-        "parent2_variation_id": parent2_variation_id,
-        "affected_tracks": [_track_for(r) for r in all_regions],
-        "affected_regions": list(all_regions),
-        "phrases": phrases,
-        "beat_range": [0.0, 8.0],
-    }
+    return MuseVariationPayload(
+        project_id=PROJECT_ID,
+        variation_id=variation_id,
+        intent=intent,
+        conversation_id=CONVO_ID,
+        parent_variation_id=parent_variation_id,
+        parent2_variation_id=parent2_variation_id,
+        affected_tracks=[_track_for(r) for r in all_regions],
+        affected_regions=list(all_regions),
+        phrases=phrases,
+        beat_range=[0.0, 8.0],
+    )

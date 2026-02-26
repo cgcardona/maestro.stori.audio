@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -29,6 +28,7 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.contracts.project_types import ProjectContext
 from app.db.database import Base
 
 
@@ -298,7 +298,7 @@ class Conversation(Base):
     )
     
     # Project context at conversation start (JSON works for both PostgreSQL and SQLite)
-    project_context: Mapped[dict[str, Any] | None] = mapped_column(
+    project_context: Mapped[ProjectContext | None] = mapped_column(
         JSON,
         nullable=True,
     )
@@ -370,7 +370,7 @@ class ConversationMessage(Base):
         nullable=True,
     )
     
-    tokens_used: Mapped[dict[str, Any] | None] = mapped_column(
+    tokens_used: Mapped[dict[str, object] | None] = mapped_column(
         JSON,
         nullable=True,
     )  # {"prompt": 1234, "completion": 567}
@@ -383,20 +383,20 @@ class ConversationMessage(Base):
     )
     
     # Tool calls made during this message
-    tool_calls: Mapped[list[dict[str, Any]] | None] = mapped_column(
+    tool_calls: Mapped[list[dict[str, object]] | None] = mapped_column(
         JSON,
         nullable=True,
     )
     
     # Complete SSE event stream for full replay capability
     # Each event: {"type": "...", "data": {...}, "timestamp": "..."}
-    sse_events: Mapped[list[dict[str, Any]] | None] = mapped_column(
+    sse_events: Mapped[list[dict[str, object]] | None] = mapped_column(
         JSON,
         nullable=True,
     )
     
     # Additional message metadata (renamed from 'metadata' - reserved by SQLAlchemy)
-    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+    extra_metadata: Mapped[dict[str, object] | None] = mapped_column(
         JSON,
         nullable=True,
     )
@@ -475,7 +475,7 @@ class MessageAction(Base):
     )
     
     # Additional context (renamed from 'metadata' - reserved by SQLAlchemy)
-    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+    extra_metadata: Mapped[dict[str, object] | None] = mapped_column(
         JSON,
         nullable=True,
     )  # Track ID, region ID, etc.
