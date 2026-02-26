@@ -684,12 +684,22 @@ def _note_to_camel(n: NoteDict) -> NoteDict:
 
 
 def _notes_to_snake(notes: list[NoteDict]) -> list[NoteDict]:
-    """Return a new list of notes with camelCase timing keys converted to snake_case."""
+    """Return a new list of notes with all camelCase timing keys converted to snake_case.
+
+    This is the batch entry-point used at the top of ``apply_expressiveness``
+    to normalise DAW wire payloads before internal processing.  Each note is
+    treated immutably — the originals are never modified.
+    """
     return [_note_to_snake(n) for n in notes]
 
 
 def _notes_to_camel(notes: list[NoteDict]) -> list[NoteDict]:
-    """Return a new list of notes with snake_case timing keys converted to camelCase."""
+    """Return a new list of notes with all snake_case timing keys converted to camelCase.
+
+    This is the batch exit-point used at the bottom of ``apply_expressiveness``
+    to restore the wire format expected by the DAW.  Each note is treated
+    immutably — the post-processed copies are returned as a new list.
+    """
     return [_note_to_camel(n) for n in notes]
 
 

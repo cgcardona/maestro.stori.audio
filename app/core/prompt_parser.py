@@ -67,10 +67,17 @@ _POS_KEYWORDS = ("after", "before", "alongside", "between", "within", "last")
 
 
 def _as_mode(raw: str) -> Literal["compose", "edit", "ask"]:
-    """Narrow a pre-validated mode string to the Literal type.
+    """Narrow a pre-validated mode string to the ``Literal["compose", "edit", "ask"]`` type.
 
-    Callers must have already confirmed ``raw.lower()`` is in
-    ``("compose", "edit", "ask")`` before calling this.
+    Python's type system cannot statically prove that an arbitrary ``str`` is one
+    of the three mode literals, even when the caller has already checked membership
+    (e.g. ``if raw.lower() in {"compose", "edit", "ask"}``).  This helper
+    encapsulates the exhaustive ``if/elif`` branching that mypy accepts as a
+    genuine type narrowing, avoiding any ``cast()`` or ``# type: ignore``.
+
+    Callers **must** have already confirmed ``raw.lower()`` is in
+    ``("compose", "edit", "ask")`` before calling this; the fallthrough returns
+    ``"compose"`` as the default mode.
     """
     lower = raw.lower()
     if lower == "edit":

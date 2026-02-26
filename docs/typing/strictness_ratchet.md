@@ -33,11 +33,26 @@ design — `Any` is a valid type — but it weakens the safety net.
 
 `strict = true` globally. Override for tests (`disallow_untyped_decorators = false`).
 
-### Phase 2 — Kill explicit `Any` in app code
+### Phase 2 — Kill explicit `Any` in app code (in progress)
 
 Replace `dict[str, Any]` with `TypedDict`, `JSONValue`, or `JSONObject` from
 `app/contracts/json_types.py`. Per-module overrides not needed — the fix is in
 the code, not the config.
+
+**What was done (2026-02):**
+- Eliminated all `Any` from `app/` production code — zero `app/` files in the top offenders list.
+- Replaced `dict[str, Any]` returns with `TypedDict` and `JSONObject` across contracts, hash utils, note utils, expressiveness, auth, planner.
+- Replaced `cast()` calls with explicit `isinstance` narrowing.
+- Replaced `type: ignore` comments with proper typing (exhaustive `if/elif`, `@typing.no_type_check` for runtime-only tests).
+- Replaced silent `str()`/`int()` coercions at the JWT boundary with strict `isinstance` + `AccessCodeError`.
+- Created `app/core/plan_schemas/plan_json_types.py` — precise TypedDicts for the planner LLM wire format.
+- Rewrote `_normalize_note` (note_utils) and expressiveness note converters to use explicit field extraction instead of dynamic key remapping.
+
+**Remaining `Any` is almost entirely in tests** — mocks, fixtures, and intentional
+runtime-rejection tests (`@typing.no_type_check`).  The two `app/` files
+remaining (`app/services/neural/huggingface_melody.py`,
+`app/variation/core/event_envelope.py`) are at the untyped Gradio/HTTP boundary
+and are in the boundary-quarantine list below.
 
 ### Phase 3 — Enable `disallow_any_explicit` per-module
 
@@ -69,6 +84,15 @@ Gradio returns). These are quarantined:
 
 - **Allowed**: boundary adapter modules that parse raw → typed
 - **Required**: immediate conversion to typed forms before returning
+- **Pattern**: extract → `isinstance` check → raise named error → assign to typed struct.
+  See `app/auth/tokens.py` (`validate_access_code`) for the canonical example.
+
+Quarantined boundary files (allowed `Any` — justified):
+
+| File | Boundary | Why `Any` is permitted |
+|------|----------|----------------------|
+| `app/services/neural/huggingface_melody.py` | Gradio API | Gradio `Client.predict()` returns untyped `object` |
+| `app/variation/core/event_envelope.py` | SSE event construction | Generic envelope must accept any event payload before dispatch |
 
 See `app/contracts/json_types.py` for the canonical type definitions.
 
@@ -80,7 +104,9 @@ counts against the baseline and fails if `Any` usage increases.
 
 ## Tracking Progress
 
-Run `python tools/typing_audit.py` to see current counts. The baseline was:
+Run `docker compose exec maestro python tools/typing_audit.py` to see current counts.
+
+### Baseline (2026-01, pre-sweep)
 
 | Pattern | Count |
 |---------|-------|
@@ -92,3 +118,18 @@ Run `python tools/typing_audit.py` to see current counts. The baseline was:
 | `list[Any]` | 12 |
 | `cast(Any)` | 1 |
 | **Total** | **2015** |
+
+### Current (2026-02, post-sweep)
+
+| Pattern | Count | Change |
+|---------|-------|--------|
+| `dict[str, Any]` | 90 | −1018 |
+| `# type: ignore` | 30 | −9 |
+| `: Any` params | 26 | −727 |
+| `-> Any` returns | 4 | −68 |
+| `tuple[..., Any]` | 3 | −27 |
+| `list[Any]` | 1 | −11 |
+| **Total** | **154** | **−1861 (−92%)** |
+
+All remaining `Any` is in test files (mocks, runtime-rejection tests) or the two
+quarantined boundary files.  Zero `Any` in production `app/` code outside boundary adapters.

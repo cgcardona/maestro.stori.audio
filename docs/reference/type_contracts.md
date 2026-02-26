@@ -30,6 +30,7 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [_AddMidiTrackParams](#_addmiditrackparams)
    - [_AddMidiRegionParams](#_addmidiregionparams)
    - [_GenerateParams](#_generateparams)
+   - [Plan wire-format TypedDicts (plan_json_types.py)](#plan-wire-format-typeddicts-plan_json_typespy)
 7. [State Store (`app/core/state_store.py`)](#state-store)
    - [_ProjectMetadataSnapshot](#_projectmetadatasnapshot)
 7. [Storpheus Types (`storpheus/storpheus_types.py`)](#storpheus-types)
@@ -1063,6 +1064,69 @@ Consumers must narrow on `envelope.type` before accessing payload fields.
 | `trackId` | | `str` | Track UUID — present when targeting an existing track |
 
 > **Note:** All three planner TypedDicts (`_AddMidiTrackParams`, `_AddMidiRegionParams`, `_GenerateParams`) exist for documentation only. The local variables in `_schema_to_tool_calls` are annotated as `dict[str, object]` because mypy's dict invariance prevents assigning a TypedDict to `dict[str, object]`. The TypedDicts define the shape; the annotation preserves compatibility with `ToolCall.params`.
+
+### Plan wire-format TypedDicts (`plan_json_types.py`)
+
+**Path:** `app/core/plan_schemas/plan_json_types.py`
+
+These TypedDicts model the **raw LLM output** — the JSON dict returned by the planner
+before Pydantic coerces it into domain models.  Using TypedDicts at this boundary
+lets call-sites (test helpers, macro expansion, MCP adapters) construct plan
+fixtures with static type-checking, without hiding intent behind `dict[str, Any]`.
+
+**Layering contract:**
+- `PlanJsonDict` → `validate_plan_json` → `build_plan_from_dict` → Pydantic `ExecutionPlanSchema`
+- Code that holds a *validated* plan should work with the Pydantic models, not these dicts.
+- These TypedDicts use `total=False` because the LLM may emit partial objects; Pydantic enforces required fields at validation time.
+
+#### `GenerationStepDict`
+
+`TypedDict, total=False` — Wire format for one MIDI generation step.
+
+| Field | Required at runtime | Type | Description |
+|-------|---------------------|------|-------------|
+| `role` | ✓ | `str` | Instrument role (`"drums"`, `"bass"`, `"chords"`, `"melody"`, `"arp"`, `"pads"`, `"fx"`, `"lead"`) |
+| `style` | ✓ | `str` | Normalised style tag (e.g. `"boom_bap"`, `"house"`) |
+| `tempo` | ✓ | `int` | Project tempo in BPM (30–300) |
+| `bars` | ✓ | `int` | Number of bars to generate (1–64) |
+| `key` | | `str` | Root key (e.g. `"Am"`, `"F#"`) |
+| `constraints` | | `dict[str, object]` | Open-shape per-role generation hints (density, swing …) — populated from the emotion vector |
+| `trackName` | | `str` | Override track display name when the role is a generic category |
+
+#### `EditStepDict`
+
+`TypedDict, total=False` — Wire format for one DAW edit step (track/region creation).
+
+| Field | Required at runtime | Type | Description |
+|-------|---------------------|------|-------------|
+| `action` | ✓ | `str` | Edit action — `"add_track"` or `"add_region"` |
+| `name` | for `add_track` | `str` | Display name for the new track |
+| `track` | for `add_region` | `str` | Target track name |
+| `barStart` | | `int` | Zero-indexed start bar (defaults to 0) |
+| `bars` | for `add_region` | `int` | Duration in bars (1–64) |
+
+#### `MixStepDict`
+
+`TypedDict, total=False` — Wire format for one mixing/effects step.
+
+| Field | Required at runtime | Type | Description |
+|-------|---------------------|------|-------------|
+| `action` | ✓ | `str` | Mix action — `"add_insert"`, `"add_send"`, `"set_volume"`, `"set_pan"` |
+| `track` | ✓ | `str` | Target track display name |
+| `type` | for `add_insert` | `str` | Effect type (e.g. `"compressor"`, `"eq"`, `"reverb"`) |
+| `bus` | for `add_send` | `str` | Bus name |
+| `value` | for volume/pan | `float` | dB (volume) or −100–100 (pan) |
+
+#### `PlanJsonDict`
+
+`TypedDict, total=False` — Complete wire format for a planner LLM response.  Root type passed to `build_plan_from_dict`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `generations` | `list[GenerationStepDict]` | Ordered MIDI generation steps |
+| `edits` | `list[EditStepDict]` | Ordered DAW edit steps |
+| `mix` | `list[MixStepDict]` | Ordered mixing/effects steps applied after generation |
+| `explanation` | `str` | LLM-provided explanation — logged, never executed |
 
 ---
 

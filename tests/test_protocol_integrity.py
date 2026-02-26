@@ -1,6 +1,6 @@
-"""Protocol God Mode — Verification Proofs.
+"""Protocol Integrity — Verification Proofs.
 
-Tests proving the four protocol upgrades:
+Tests proving the integrity guarantees of the contract/hash system:
   1. CompositionContract root lineage anchor
   2. Canonical parent hashing (collision-proof)
   3. Execution attestation binding

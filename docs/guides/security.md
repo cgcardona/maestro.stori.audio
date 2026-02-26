@@ -34,3 +34,22 @@ The stack is in good shape when properly configured: SSH hardening, fail2ban, UF
 - [ ] Backups and rate limits in effect; admin tokens only via controlled script.
 
 Full audit (infrastructure, Docker, Nginx, FastAPI, JWT, assets, secrets, DB, DDoS, logging, codebase) was consolidated into this summary and checklist.
+
+---
+
+## JWT token boundary validation
+
+**File:** `app/auth/tokens.py` — `validate_access_code`
+
+The JWT payload returned by `jwt.decode()` is typed `dict[str, Any]` by the underlying library.  Rather than coercing fields with `str(payload["sub"])` or `int(payload["exp"])` — which silently accepts malformed tokens — the boundary validator uses explicit `isinstance` checks and raises `AccessCodeError` on any type mismatch:
+
+```python
+raw_iat = payload.get("iat", 0)
+raw_exp = payload.get("exp", 0)
+if not isinstance(raw_iat, int) or not isinstance(raw_exp, int):
+    raise AccessCodeError("Malformed token: iat/exp must be integers")
+```
+
+**Why this matters:** A coercion like `int(payload["exp"])` succeeds on `"1234"` (string) and raises only on truly uncoercible values — giving a false sense of validation.  The `isinstance` check rejects *any* non-integer `exp`, making the boundary contract explicit and exhaustive.
+
+**Pattern:** This boundary-validation approach (extract → `isinstance` check → raise named error → assign to typed `TypedDict`) is the canonical way to cross from untyped external library output into the typed internal domain.  Apply the same pattern wherever raw HTTP payloads, database rows, or third-party library returns first enter the codebase.

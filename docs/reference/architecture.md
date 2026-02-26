@@ -23,7 +23,7 @@ How the backend works: one engine, two entry points; request flow; intent; execu
 5. **EDITING:** LLM gets a tool allowlist; emits tool calls; server validates and resolves entity IDs. Emits a structured `plan` event (checklist of steps) before the first tool call, then `planStepUpdate` events bracketing each step, and `toolStart` + `toolCall` events for each tool.
 6. **COMPOSING:** Two sub-paths based on whether the prompt is a structured STORI PROMPT with roles:
    - **Structured (Mode: compose + roles):** Agent Teams runs per-instrument agents with streaming reasoning, then captures all generated notes and computes a Variation for commit/discard review. The SSE stream emits both `reasoning`/`toolCall` events (real-time per-agent chain-of-thought) AND `meta`/`phrase`/`done` events (Variation for the review UI). Single-instrument compose also uses this path — the instrument count determines parallelism, not the execution path.
-   - **Freeform (no parsed prompt):** Planner produces a plan (JSON); executor simulates it without mutation; server streams Variation events (`meta`, `phrase*`, `done`). The planner is **project-context-aware**: it checks existing tracks by name and instrument type before proposing new ones, reuses existing track UUIDs in region and generator calls, and maps abstract roles (e.g. "melody") to matching existing instruments (e.g. an "Organ" track).
+   - **Freeform (no parsed prompt):** Planner produces a plan (JSON), typed as `PlanJsonDict` at the wire boundary (`app/core/plan_schemas/plan_json_types.py`), then validated by `validate_plan_json` → `build_plan_from_dict` → Pydantic `ExecutionPlanSchema`; executor simulates it without mutation; server streams Variation events (`meta`, `phrase*`, `done`). The planner is **project-context-aware**: it checks existing tracks by name and instrument type before proposing new ones, reuses existing track UUIDs in region and generator calls, and maps abstract roles (e.g. "melody") to matching existing instruments (e.g. an "Organ" track).
 7. **Stream:** Events include `state`, `reasoning`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `toolError`, `meta`, `phrase`, `done`, `budgetUpdate`, `complete`, `error`. Variable refs (`$0.trackId`) resolved server-side. `complete` is **always the final event**, even on errors (`success: false`).
 
 ---
@@ -109,7 +109,7 @@ User prompt arrives
 
 Parsed fields (Style, Key, Tempo, Roles, Constraints, Vibes, Target) are injected into the LLM system prompt as structured context, reducing inference overhead and increasing determinism.
 
-Implementation: `app/core/prompt_parser.py` (parser), `app/core/intent/` (routing gate).
+Implementation: `app/core/prompt_parser.py` (parser, including `_as_mode` for Literal type narrowing without cast), `app/core/intent/` (routing gate).
 
 ---
 
@@ -619,7 +619,9 @@ The generation pipeline carries the **complete set** of musically relevant MIDI 
 | Program Change | track-level | PC (0xCn) | `stori_set_midi_program` |
 | Automation | track-level | n/a (DAW param curves) | `stori_add_automation` (volume, pan, FX) |
 
-**Data flow:** Storpheus generates notes + CC + pitch bend + aftertouch → `GenerationResult` → executor records into `VariationContext` → variation service groups into `Phrase.controller_changes` → commit materialises into `updated_regions` (cc_events, pitch_bends, aftertouch arrays) → frontend replaces region data.
+**Data flow:** Storpheus generates notes + CC + pitch bend + aftertouch (camelCase wire format) → `_normalize_note` (`app/core/executor/note_utils.py`) converts each note to snake_case at the executor boundary → `GenerationResult` → executor records into `VariationContext` → variation service groups into `Phrase.controller_changes` → commit materialises into `updated_regions` (cc_events, pitch_bends, aftertouch arrays) → frontend replaces region data.
+
+**Note format contract:** Storpheus always emits camelCase (`startBeat`, `durationBeats`). The executor boundary (`note_utils._normalize_note`) is the single conversion point. Downstream code — `VariationContext`, `StateStore`, `Phrase` — always works in snake_case. On the way out to the DAW, `expressiveness._note_to_camel` restores camelCase. This is a strict one-in / one-out rule with no ad-hoc conversions permitted elsewhere.
 
 In non-variation mode (EDITING), expressive data is written to `StateStore` directly and returned in `toolCall` results.
 
