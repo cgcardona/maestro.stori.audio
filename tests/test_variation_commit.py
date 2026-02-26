@@ -11,6 +11,7 @@ Proves correctness of apply_variation_phrases() including:
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
@@ -496,3 +497,151 @@ class TestUpdatedRegions:
             assert "duration_beats" in note
 
         clear_all_stores()
+
+
+# =============================================================================
+# NoteChangeEntryDict round-trip and AftertouchDict contract
+# =============================================================================
+
+
+class TestNoteChangeEntryDictRoundTrip:
+    """Verify that _record_to_variation correctly reads back NoteChangeEntryDict data.
+
+    Exercises the full path:
+      Phrase domain model
+        → build_phrase_payload (NoteChangeEntryDict construction)
+        → PhraseRecord.diff_json storage
+        → _record_to_variation (NoteChange reconstruction)
+    """
+
+    def _make_phrase_record(
+        self,
+        change_type: Literal["added", "removed", "modified"] = "added",
+    ) -> object:
+        """Build a PhraseRecord whose diff_json was produced by build_phrase_payload."""
+        from app.models.variation import Phrase, NoteChange, MidiNoteSnapshot
+        from app.contracts.json_types import CCEventDict, PitchBendDict, AftertouchDict
+        from app.variation.core.event_envelope import build_phrase_payload
+        from app.variation.storage.variation_store import PhraseRecord
+
+        before = MidiNoteSnapshot(pitch=60, start_beat=0.0, duration_beats=1.0) if change_type != "added" else None
+        after = MidiNoteSnapshot(pitch=62, start_beat=0.0, duration_beats=1.0) if change_type != "removed" else None
+        phrase = Phrase(
+            phrase_id="p-rt",
+            track_id="t-1",
+            region_id="r-1",
+            start_beat=0.0,
+            end_beat=4.0,
+            label="test",
+            note_changes=[NoteChange(note_id="nc-rt", change_type=change_type, before=before, after=after)],
+            cc_events=[CCEventDict(cc=11, beat=0.5, value=80)],
+            pitch_bends=[PitchBendDict(beat=1.0, value=100)],
+            aftertouch=[AftertouchDict(beat=2.0, value=64)],
+        )
+        return PhraseRecord(
+            phrase_id="p-rt",
+            variation_id="v-1",
+            sequence=1,
+            track_id="t-1",
+            region_id="r-1",
+            beat_start=0.0,
+            beat_end=4.0,
+            label="test",
+            diff_json=build_phrase_payload(phrase),
+        )
+
+    def _to_variation(self, pr: object) -> Variation:
+        """Wrap a PhraseRecord in a VariationRecord and round-trip through _record_to_variation."""
+        from app.variation.storage.variation_store import VariationRecord, PhraseRecord
+        from app.api.routes.variation.commit import _record_to_variation
+
+        assert isinstance(pr, PhraseRecord)
+        record = VariationRecord(
+            variation_id="v-1",
+            project_id="proj-1",
+            base_state_id="base",
+            intent="test",
+        )
+        record.phrases.append(pr)
+        return _record_to_variation(record)
+
+    def test_added_note_round_trips(self) -> None:
+        """added NoteChange serialises and deserialises without data loss."""
+        pr = self._make_phrase_record("added")
+        variation = self._to_variation(pr)
+        nc = variation.phrases[0].note_changes[0]
+        assert nc.note_id == "nc-rt"
+        assert nc.change_type == "added"
+        assert nc.before is None
+        assert nc.after is not None
+        assert nc.after.pitch == 62
+
+    def test_removed_note_round_trips(self) -> None:
+        """removed NoteChange serialises and deserialises without data loss."""
+        pr = self._make_phrase_record("removed")
+        variation = self._to_variation(pr)
+        nc = variation.phrases[0].note_changes[0]
+        assert nc.change_type == "removed"
+        assert nc.before is not None
+        assert nc.before.pitch == 60
+        assert nc.after is None
+
+    def test_modified_note_round_trips(self) -> None:
+        """modified NoteChange carries both before and after through the round-trip."""
+        pr = self._make_phrase_record("modified")
+        variation = self._to_variation(pr)
+        nc = variation.phrases[0].note_changes[0]
+        assert nc.change_type == "modified"
+        assert nc.before is not None
+        assert nc.after is not None
+        assert nc.before.pitch == 60
+        assert nc.after.pitch == 62
+
+    def test_cc_events_preserved(self) -> None:
+        """CCEventDict entries survive the round-trip intact."""
+        pr = self._make_phrase_record()
+        variation = self._to_variation(pr)
+        cc = variation.phrases[0].cc_events
+        assert len(cc) == 1
+        assert cc[0]["cc"] == 11
+        assert cc[0]["value"] == 80
+
+    def test_aftertouch_preserved(self) -> None:
+        """AftertouchDict (with Required beat/value) survives the round-trip."""
+        pr = self._make_phrase_record()
+        variation = self._to_variation(pr)
+        at = variation.phrases[0].aftertouch
+        assert len(at) == 1
+        assert at[0]["beat"] == 2.0
+        assert at[0]["value"] == 64
+
+
+class TestAftertouchDictContract:
+    """AftertouchDict Required-field contracts."""
+
+    def test_beat_and_value_are_required(self) -> None:
+        """Both beat and value must be provided — pitch is optional."""
+        from app.contracts.json_types import AftertouchDict
+        at: AftertouchDict = {"beat": 1.5, "value": 64}
+        assert at["beat"] == 1.5
+        assert at["value"] == 64
+        assert "pitch" not in at
+
+    def test_polyphonic_aftertouch_includes_pitch(self) -> None:
+        """Polyphonic aftertouch adds the optional pitch key."""
+        from app.contracts.json_types import AftertouchDict
+        at: AftertouchDict = {"beat": 0.5, "value": 80, "pitch": 60}
+        assert at["pitch"] == 60
+
+    def test_beat_type_is_float(self) -> None:
+        """beat is Required[float] — integer literal is also float-compatible."""
+        from app.contracts.json_types import AftertouchDict
+        at: AftertouchDict = {"beat": 0, "value": 127}  # 0 coerces to float at runtime
+        assert isinstance(at["beat"], (int, float))
+
+    def test_value_range(self) -> None:
+        """value is Required[int] in range 0-127."""
+        from app.contracts.json_types import AftertouchDict
+        for v in (0, 64, 127):
+            at: AftertouchDict = {"beat": 0.0, "value": v}
+            assert at["value"] == v

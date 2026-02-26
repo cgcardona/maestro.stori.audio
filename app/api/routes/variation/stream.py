@@ -13,7 +13,7 @@ from app.auth.tokens import TokenClaims
 from app.protocol.emitter import ProtocolSerializationError, emit, parse_event
 from app.protocol.events import ErrorEvent, MCPPingEvent
 from app.protocol.validation import ProtocolGuard
-from app.variation.core.event_envelope import EventEnvelope
+from app.variation.core.event_envelope import AnyEnvelope
 from app.variation.core.state_machine import is_terminal
 from app.variation.storage.variation_store import get_variation_store
 from app.variation.streaming.sse_broadcaster import get_sse_broadcaster
@@ -23,7 +23,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _envelope_to_protocol_dict(envelope: EventEnvelope) -> dict[str, object]:
+def _envelope_to_protocol_dict(envelope: AnyEnvelope) -> dict[str, object]:
     """Convert an EventEnvelope to a Stori Protocol event dict."""
     etype = envelope.type
     payload = envelope.payload

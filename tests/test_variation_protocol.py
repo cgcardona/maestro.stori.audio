@@ -32,12 +32,13 @@ from app.variation.core.state_machine import (
     can_discard,
 )
 from app.variation.core.event_envelope import (
+    AnyEnvelope,
     EventEnvelope,
     SequenceCounter,
-    build_meta_envelope,
-    build_phrase_envelope,
     build_done_envelope,
     build_error_envelope,
+    build_meta_envelope,
+    build_phrase_envelope,
 )
 from app.variation.storage.variation_store import (
     VariationStore,
@@ -394,17 +395,20 @@ class TestEventSequencing:
         vid = "v1"
         counter = SequenceCounter()
 
-        events = [
+        events: list[AnyEnvelope] = [
             build_meta_envelope(vid, "p", "s", "test", None, [], [], {}, counter.next()),
             build_phrase_envelope(vid, "p", "s", counter.next(), {"phraseId": "p1"}),
             build_phrase_envelope(vid, "p", "s", counter.next(), {"phraseId": "p2"}),
-            build_done_envelope(vid, "p", "s", counter.next(), status="ready", phrase_count=2),
         ]
+        # done_env built last so counter.next() yields the highest sequence
+        done_env = build_done_envelope(vid, "p", "s", counter.next(), status="ready", phrase_count=2)
+        events.append(done_env)
 
         seqs = [e.sequence for e in events]
         assert seqs == sorted(seqs), "Sequences must be monotonically increasing"
         assert events[-1].type == "done"
-        assert events[-1].payload["status"] == "ready"
+        # Use typed original for payload assertion — no cast needed
+        assert done_env.payload["status"] == "ready"
 
     def test_done_includes_status(self) -> None:
 
@@ -464,7 +468,7 @@ class TestSSEBroadcasting:
 
         queue = broadcaster.subscribe(vid, from_sequence=3)
         # Should only get seq 4 and 5
-        events: list[EventEnvelope] = []
+        events: list[AnyEnvelope] = []
         while not queue.empty():
             evt = queue.get_nowait()
             assert evt is not None
@@ -490,18 +494,19 @@ class TestSSEBroadcasting:
         vid = "v-full"
         queue = broadcaster.subscribe(vid)
 
-        events = [
+        done_env = build_done_envelope(vid, "p", "s", 4, status="ready", phrase_count=2)
+        events: list[AnyEnvelope] = [
             build_meta_envelope(vid, "p", "s", "intent", None, [], [], {}, 1),
             build_phrase_envelope(vid, "p", "s", 2, {"phraseId": "p1"}),
             build_phrase_envelope(vid, "p", "s", 3, {"phraseId": "p2"}),
-            build_done_envelope(vid, "p", "s", 4, status="ready", phrase_count=2),
+            done_env,
         ]
 
         for env in events:
             await broadcaster.publish(env)
         await broadcaster.close_stream(vid)
 
-        received = []
+        received: list[AnyEnvelope] = []
         while not queue.empty():
             item = queue.get_nowait()
             if item is None:
@@ -513,7 +518,8 @@ class TestSSEBroadcasting:
         assert received[1].type == "phrase"
         assert received[2].type == "phrase"
         assert received[3].type == "done"
-        assert received[3].payload["status"] == "ready"
+        # Payload assertions use typed original (broadcaster delivers same object)
+        assert done_env.payload["status"] == "ready"
 
         # Verify strict ordering
         seqs = [e.sequence for e in received]
@@ -645,7 +651,7 @@ class TestDiscardCancellation:
         await broadcaster.publish(done)
         await broadcaster.close_stream(record.variation_id)
 
-        received = []
+        received: list[AnyEnvelope] = []
         while not queue.empty():
             item = queue.get_nowait()
             if item is None:
@@ -654,7 +660,8 @@ class TestDiscardCancellation:
 
         assert len(received) == 1
         assert received[0].type == "done"
-        assert received[0].payload["status"] == "discarded"
+        # Payload assertion uses typed original (broadcaster delivers same object)
+        assert done.payload["status"] == "discarded"
 
     def test_discard_from_ready(self, ready_record: VariationRecord) -> None:
 
@@ -692,7 +699,7 @@ class TestEnvelopeSerialization:
     def test_to_json_roundtrips(self) -> None:
 
         """JSON serialization roundtrips correctly."""
-        env = build_phrase_envelope("v", "p", "s", 5, {"phraseId": "p1", "notes": []})
+        env = build_phrase_envelope("v", "p", "s", 5, {"phraseId": "p1", "noteChanges": []})
         j = env.to_json()
         parsed = json.loads(j)
 

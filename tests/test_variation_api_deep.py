@@ -320,13 +320,16 @@ class TestStreamVariation:
     async def test_stream_terminal_returns_200(self, var_client: AsyncClient) -> None:
 
         """Terminal variation stream returns 200 with SSE content type."""
-        from app.variation.core.event_envelope import EventEnvelope
+        from app.variation.core.event_envelope import build_done_envelope
 
         rec = _make_vrecord(status=VariationStatus.READY)
-        envelope = EventEnvelope(
-            type="done", sequence=1, variation_id="var-test-1",
-            project_id="proj-1", base_state_id="0",
-            payload={"status": "ready"}, timestamp_ms=1000,
+        envelope = build_done_envelope(
+            variation_id="var-test-1",
+            project_id="proj-1",
+            base_state_id="0",
+            sequence=1,
+            status="ready",
+            phrase_count=0,
         )
 
         with (

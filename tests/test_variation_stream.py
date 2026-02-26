@@ -11,10 +11,14 @@ import asyncio
 import pytest
 
 from app.variation.core.event_envelope import (
-    build_meta_envelope,
-    build_phrase_envelope,
+    AnyEnvelope,
+    DonePayload,
+    MetaPayload,
+    PhrasePayload,
     build_done_envelope,
     build_error_envelope,
+    build_meta_envelope,
+    build_phrase_envelope,
     EventEnvelope,
 )
 from app.variation.streaming.sse_broadcaster import (
@@ -44,7 +48,7 @@ def reset_singleton() -> Generator[None, None, None]:
     reset_sse_broadcaster()
 
 
-def _make_meta(variation_id: str = "v-1", seq: int = 1) -> EventEnvelope:
+def _make_meta(variation_id: str = "v-1", seq: int = 1) -> EventEnvelope[MetaPayload]:
 
     """Helper to create a meta envelope."""
     return build_meta_envelope(
@@ -60,7 +64,7 @@ def _make_meta(variation_id: str = "v-1", seq: int = 1) -> EventEnvelope:
     )
 
 
-def _make_phrase(variation_id: str = "v-1", seq: int = 2) -> EventEnvelope:
+def _make_phrase(variation_id: str = "v-1", seq: int = 2) -> EventEnvelope[PhrasePayload]:
 
     """Helper to create a phrase envelope."""
     return build_phrase_envelope(
@@ -72,7 +76,7 @@ def _make_phrase(variation_id: str = "v-1", seq: int = 2) -> EventEnvelope:
     )
 
 
-def _make_done(variation_id: str = "v-1", seq: int = 3) -> EventEnvelope:
+def _make_done(variation_id: str = "v-1", seq: int = 3) -> EventEnvelope[DonePayload]:
 
     """Helper to create a done envelope."""
     return build_done_envelope(
@@ -310,7 +314,7 @@ class TestFullStreamSimulation:
         vid = "v-sim"
         queue = broadcaster.subscribe(vid)
 
-        # Publish full stream
+        # Publish full stream — keep done_env reference for typed payload assertions
         await broadcaster.publish(build_meta_envelope(
             variation_id=vid, project_id="p", base_state_id="0",
             intent="simulate", ai_explanation=None,
@@ -325,16 +329,17 @@ class TestFullStreamSimulation:
             variation_id=vid, project_id="p", base_state_id="0",
             sequence=3, phrase_data={"phrase_id": "p-2"},
         ))
-        await broadcaster.publish(build_done_envelope(
+        done_env = build_done_envelope(
             variation_id=vid, project_id="p", base_state_id="0",
             sequence=4, status="ready", phrase_count=2,
-        ))
+        )
+        await broadcaster.publish(done_env)
 
         # Close the stream
         await broadcaster.close_stream(vid)
 
         # Collect all received events
-        events = []
+        events: list[AnyEnvelope] = []
         while not queue.empty():
             item = queue.get_nowait()
             if item is None:
@@ -351,8 +356,9 @@ class TestFullStreamSimulation:
         assert events[2].sequence == 3
         assert events[3].type == "done"
         assert events[3].sequence == 4
-        assert events[3].payload["status"] == "ready"
-        assert events[3].payload["phraseCount"] == 2
+        # Payload assertions use the typed original (broadcaster delivers same object)
+        assert done_env.payload["status"] == "ready"
+        assert done_env.payload["phraseCount"] == 2
 
     @pytest.mark.asyncio
     async def test_error_then_done_stream(self, broadcaster: SSEBroadcaster) -> None:
@@ -367,18 +373,20 @@ class TestFullStreamSimulation:
             affected_tracks=[], affected_regions=[],
             note_counts={"added": 0, "removed": 0, "modified": 0},
         ))
-        await broadcaster.publish(build_error_envelope(
+        error_env = build_error_envelope(
             variation_id=vid, project_id="p", base_state_id="0",
             sequence=2, error_message="Generation failed",
-        ))
-        await broadcaster.publish(build_done_envelope(
+        )
+        done_env = build_done_envelope(
             variation_id=vid, project_id="p", base_state_id="0",
             sequence=3, status="failed", phrase_count=0,
-        ))
+        )
+        await broadcaster.publish(error_env)
+        await broadcaster.publish(done_env)
 
         await broadcaster.close_stream(vid)
 
-        events = []
+        events: list[AnyEnvelope] = []
         while not queue.empty():
             item = queue.get_nowait()
             if item is None:
@@ -388,9 +396,10 @@ class TestFullStreamSimulation:
         assert len(events) == 3
         assert events[0].type == "meta"
         assert events[1].type == "error"
-        assert events[1].payload["message"] == "Generation failed"
+        # Payload assertions use typed originals (broadcaster delivers same objects)
+        assert error_env.payload["message"] == "Generation failed"
         assert events[2].type == "done"
-        assert events[2].payload["status"] == "failed"
+        assert done_env.payload["status"] == "failed"
 
 
 # =============================================================================

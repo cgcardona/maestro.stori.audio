@@ -17,7 +17,7 @@ import asyncio
 import logging
 from typing import AsyncIterator
 
-from app.variation.core.event_envelope import EventEnvelope
+from app.variation.core.event_envelope import AnyEnvelope, EventEnvelope
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +32,11 @@ class SSEBroadcaster:
 
     def __init__(self) -> None:
         # variation_id -> list of subscriber queues
-        self._subscribers: dict[str, list[asyncio.Queue[EventEnvelope | None]]] = {}
+        self._subscribers: dict[str, list[asyncio.Queue[AnyEnvelope | None]]] = {}
         # variation_id -> list of past envelopes (for replay)
-        self._history: dict[str, list[EventEnvelope]] = {}
+        self._history: dict[str, list[AnyEnvelope]] = {}
 
-    async def publish(self, envelope: EventEnvelope) -> int:
+    async def publish(self, envelope: AnyEnvelope) -> int:
         """
         Publish an event to all subscribers of a variation.
 
@@ -72,16 +72,16 @@ class SSEBroadcaster:
         self,
         variation_id: str,
         from_sequence: int = 0,
-    ) -> asyncio.Queue[EventEnvelope | None]:
+    ) -> asyncio.Queue[AnyEnvelope | None]:
         """
         Subscribe to events for a variation.
 
-        Returns a queue that will receive EventEnvelope objects.
+        Returns a queue that will receive AnyEnvelope objects.
         A None sentinel signals end-of-stream.
 
         If from_sequence > 0, queues replay events starting after that sequence.
         """
-        queue: asyncio.Queue[EventEnvelope | None] = asyncio.Queue(maxsize=256)
+        queue: asyncio.Queue[AnyEnvelope | None] = asyncio.Queue(maxsize=256)
 
         if variation_id not in self._subscribers:
             self._subscribers[variation_id] = []
@@ -108,7 +108,7 @@ class SSEBroadcaster:
     def unsubscribe(
         self,
         variation_id: str,
-        queue: asyncio.Queue[EventEnvelope | None],
+        queue: asyncio.Queue[AnyEnvelope | None],
     ) -> None:
         """Remove a subscriber queue."""
         subscribers = self._subscribers.get(variation_id, [])
@@ -139,7 +139,7 @@ class SSEBroadcaster:
         self,
         variation_id: str,
         from_sequence: int = 0,
-    ) -> list[EventEnvelope]:
+    ) -> list[AnyEnvelope]:
         """Get stored events for a variation, optionally from a sequence."""
         history = self._history.get(variation_id, [])
         if from_sequence > 0:

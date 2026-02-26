@@ -816,7 +816,11 @@ class TestIntentGoalsPayload:
             return_value=_submit_resp(status="complete", result=_ok_gen_result())
         )
 
-        goals = [{"name": "dark", "weight": 1.0}, {"name": "energetic", "weight": 0.8}]
+        from app.contracts.json_types import IntentGoalDict
+        goals: list[IntentGoalDict] = [
+            {"name": "dark", "weight": 1.0, "constraint_type": "mood"},
+            {"name": "energetic", "weight": 0.8, "constraint_type": "mood"},
+        ]
         await c.generate(genre="jazz", tempo=100, bars=4, intent_goals=goals)
 
         _, kwargs = c._client.post.call_args

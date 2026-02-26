@@ -28,7 +28,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Literal, Union
+from typing import Generic, Literal, TypeVar, Union
 
 from typing_extensions import TypedDict
 
@@ -111,18 +111,31 @@ class ErrorPayload(TypedDict, total=False):
 EnvelopePayload = Union[MetaPayload, PhrasePayload, DonePayload, ErrorPayload]
 """Union of all typed envelope payload shapes.
 
-``EventEnvelope.payload`` holds exactly one of these depending on ``EventEnvelope.type``.
-Consumers that need structural access should narrow on ``envelope.type`` first.
+``EventEnvelope[P].payload`` holds exactly one of these depending on
+``EventEnvelope.type``.  Transport layers that accept any envelope use
+``AnyEnvelope`` (the pre-built union alias below).
 """
+
+_P = TypeVar("_P", bound=EnvelopePayload)
+"""Payload TypeVar — bound to ``EnvelopePayload``.
+
+Used for ``EventEnvelope[_P]`` (class) and ``build_envelope[_T]`` (function).
+Invariant so mypy can verify the payload type at construction and access sites
+without needing casts.
+"""
+
+_T = TypeVar("_T", bound=EnvelopePayload)
+"""Function-level payload TypeVar for ``build_envelope``."""
 
 
 @dataclass(frozen=True)
-class EventEnvelope:
+class EventEnvelope(Generic[_P]):
     """Immutable, transport-agnostic event envelope for all Muse/Variation events.
 
-    All envelopes are produced through ``build_envelope()`` (or the typed
-    ``build_*_envelope`` helpers) and consumed identically by the SSE stream
-    and WebSocket broadcaster.
+    Generic over the payload type ``_P`` so each typed builder produces a
+    precise return type — e.g. ``build_meta_envelope`` returns
+    ``EventEnvelope[MetaPayload]``.  Transport layers that handle any envelope
+    use the ``AnyEnvelope`` union alias.
 
     Attributes:
         type: Event type discriminator — one of ``meta``, ``phrase``, ``done``,
@@ -133,7 +146,7 @@ class EventEnvelope:
         project_id: UUID of the project (denormalized for client convenience).
         base_state_id: Variation ID of the baseline at proposal time — allows
             the client to detect mid-stream state changes.
-        payload: Event-specific JSON body; schema depends on ``type``.
+        payload: Event-specific JSON body; concrete type depends on ``_P``.
         timestamp_ms: Unix epoch milliseconds at envelope construction time.
     """
 
@@ -142,7 +155,7 @@ class EventEnvelope:
     variation_id: str
     project_id: str
     base_state_id: str
-    payload: EnvelopePayload
+    payload: _P
     timestamp_ms: int = field(default_factory=lambda: int(time.time() * 1000))
 
     def to_dict(self) -> dict[str, object]:
@@ -194,17 +207,17 @@ class SequenceCounter:
 
 def build_envelope(
     event_type: EventType,
-    payload: EnvelopePayload,
+    payload: _T,
     sequence: int,
     variation_id: str,
     project_id: str = "",
     base_state_id: str = "",
-) -> EventEnvelope:
-    """
-    Build a transport-agnostic event envelope.
+) -> EventEnvelope[_T]:
+    """Build a transport-agnostic event envelope.
 
-    This is the single entry point for creating events.
-    All broadcasters consume EventEnvelope objects.
+    Generic over the payload type — the return type is ``EventEnvelope[_T]``
+    where ``_T`` is inferred from the ``payload`` argument.  Callers that
+    need a specific payload type will get it without any casting.
     """
     return EventEnvelope(
         type=event_type,
@@ -226,7 +239,7 @@ def build_meta_envelope(
     affected_regions: list[str],
     note_counts: dict[str, int],
     sequence: int = 1,
-) -> EventEnvelope:
+) -> EventEnvelope[MetaPayload]:
     """Build a meta envelope (always sequence=1)."""
     meta: MetaPayload = {
         "intent": intent,
@@ -251,7 +264,7 @@ def build_phrase_envelope(
     base_state_id: str,
     sequence: int,
     phrase_data: PhrasePayload,
-) -> EventEnvelope:
+) -> EventEnvelope[PhrasePayload]:
     """Build a phrase envelope."""
     return build_envelope(
         event_type="phrase",
@@ -270,7 +283,7 @@ def build_done_envelope(
     sequence: int,
     status: str = "ready",
     phrase_count: int = 0,
-) -> EventEnvelope:
+) -> EventEnvelope[DonePayload]:
     """Build a done envelope (always last in sequence)."""
     done: DonePayload = {
         "status": status,
@@ -293,7 +306,7 @@ def build_error_envelope(
     sequence: int,
     error_message: str,
     error_code: str | None = None,
-) -> EventEnvelope:
+) -> EventEnvelope[ErrorPayload]:
     """Build an error envelope."""
     error: ErrorPayload = {
         "message": error_message,
@@ -307,6 +320,21 @@ def build_error_envelope(
         project_id=project_id,
         base_state_id=base_state_id,
     )
+
+
+AnyEnvelope = Union[
+    EventEnvelope[MetaPayload],
+    EventEnvelope[PhrasePayload],
+    EventEnvelope[DonePayload],
+    EventEnvelope[ErrorPayload],
+]
+"""Union of all concretely-typed envelopes.
+
+Transport layers (``SSEBroadcaster``, ``stream_router``, ``stream.py``) that
+accept any envelope use this alias.  Accepting ``AnyEnvelope`` instead of a
+bare ``EventEnvelope`` is safe because all variants share the same non-payload
+fields and the payload is serialized without inspection.
+"""
 
 
 # ── Phrase serialization helpers ───────────────────────────────────────────────

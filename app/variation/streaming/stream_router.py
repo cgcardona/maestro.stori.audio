@@ -13,15 +13,13 @@ are an implementation detail.
 from __future__ import annotations
 
 import logging
-from typing import Any
-
-from app.variation.core.event_envelope import EventEnvelope
+from app.variation.core.event_envelope import AnyEnvelope
 from app.variation.streaming.sse_broadcaster import get_sse_broadcaster
 
 logger = logging.getLogger(__name__)
 
 
-async def publish_event(envelope: EventEnvelope) -> int:
+async def publish_event(envelope: AnyEnvelope) -> int:
     """
     Publish a variation event to all transports.
 

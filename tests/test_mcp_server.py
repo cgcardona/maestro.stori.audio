@@ -119,25 +119,44 @@ class TestStoriMCPServer:
         mcp_server.update_project_state("ghost", {"tempo": 100})  # Should not raise
 
     @pytest.mark.anyio
-    async def test_receive_tool_response(self, mcp_server: StoriMCPServer) -> None:
-
+    async def test_receive_tool_response_success(self, mcp_server: StoriMCPServer) -> None:
+        """A successful DAWToolResponse is resolved into the pending Future."""
+        from app.contracts.mcp_types import DAWToolResponse
         cb = AsyncMock()
         mcp_server.register_daw("daw-1", cb)
         loop = asyncio.get_event_loop()
-        future = loop.create_future()
+        future: asyncio.Future[DAWToolResponse] = loop.create_future()
         mcp_server._daw_connections["daw-1"].pending_responses["req-1"] = future
-        mcp_server.receive_tool_response("daw-1", "req-1", {"status": "ok"})
-        assert future.result() == {"status": "ok"}
+        response: DAWToolResponse = {"success": True}
+        mcp_server.receive_tool_response("daw-1", "req-1", response)
+        result = future.result()
+        assert result["success"] is True
 
-    def test_receive_response_nonexistent_connection(self, mcp_server: StoriMCPServer) -> None:
-
-        mcp_server.receive_tool_response("ghost", "req-1", {})  # Should not raise
-
-    def test_receive_response_nonexistent_request(self, mcp_server: StoriMCPServer) -> None:
-
+    @pytest.mark.anyio
+    async def test_receive_tool_response_failure(self, mcp_server: StoriMCPServer) -> None:
+        """A failed DAWToolResponse is resolved with success=False."""
+        from app.contracts.mcp_types import DAWToolResponse
         cb = AsyncMock()
         mcp_server.register_daw("daw-1", cb)
-        mcp_server.receive_tool_response("daw-1", "no-req", {})  # Should not raise
+        loop = asyncio.get_event_loop()
+        future: asyncio.Future[DAWToolResponse] = loop.create_future()
+        mcp_server._daw_connections["daw-1"].pending_responses["req-1"] = future
+        response: DAWToolResponse = {"success": False, "isError": True}
+        mcp_server.receive_tool_response("daw-1", "req-1", response)
+        result = future.result()
+        assert result["success"] is False
+
+    def test_receive_response_nonexistent_connection(self, mcp_server: StoriMCPServer) -> None:
+        """Delivering to an unknown connection ID is a no-op (never raises)."""
+        from app.contracts.mcp_types import DAWToolResponse
+        mcp_server.receive_tool_response("ghost", "req-1", {"success": False})
+
+    def test_receive_response_nonexistent_request(self, mcp_server: StoriMCPServer) -> None:
+        """Delivering to an unknown request ID for a known DAW is a no-op."""
+        from app.contracts.mcp_types import DAWToolResponse
+        cb = AsyncMock()
+        mcp_server.register_daw("daw-1", cb)
+        mcp_server.receive_tool_response("daw-1", "no-req", {"success": False})
 
     def test_multiple_daw_connections(self, mcp_server: StoriMCPServer) -> None:
 
