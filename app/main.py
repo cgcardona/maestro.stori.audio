@@ -90,10 +90,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Production: refuse weak or missing DB password (R1)
     if not settings.debug and settings.database_url and "postgres" in settings.database_url:
-        pw = (settings.stori_db_password or "").strip()
+        pw = (settings.db_password or "").strip()
         if not pw or pw == "changeme123":
             raise RuntimeError(
-                "Production requires STORI_DB_PASSWORD set to a strong value. "
+                "Production requires DB_PASSWORD set to a strong value. "
                 "Do not use 'changeme123' or leave it unset. Generate with: openssl rand -hex 16"
             )
 
@@ -114,7 +114,7 @@ app = FastAPI(
     version=settings.app_version,
     description="Stori — the infinite music machine.",
     lifespan=lifespan,
-    # Disable public docs in production/stage; set STORI_DEBUG=true locally to enable
+    # Disable public docs in production/stage; set DEBUG=true locally to enable
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,
     openapi_url="/openapi.json" if settings.debug else None,
@@ -134,7 +134,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 if "*" in settings.cors_origins:
     logger.warning(
         "SECURITY WARNING: CORS allows all origins. "
-        "set STORI_CORS_ORIGINS to specific domains in production."
+        "Set CORS_ORIGINS to specific domains in production."
     )
 app.add_middleware(
     CORSMiddleware,

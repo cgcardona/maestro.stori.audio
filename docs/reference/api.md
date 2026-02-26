@@ -216,7 +216,7 @@ For full parameter documentation per tool, see the [tool reference tables](#1-se
 
 All models use OpenRouter's `reasoning` parameter for Chain of Thought. Two event types: `reasoning` (CoT) and `content` (user-facing).
 
-**Supported models (exactly two):** `anthropic/claude-sonnet-4.6` (default) · `anthropic/claude-opus-4.6`. Both have a 200 000-token context window. Set `STORI_LLM_MODEL` in `.env` to switch.
+**Supported models (exactly two):** `anthropic/claude-sonnet-4.6` (default) · `anthropic/claude-opus-4.6`. Both have a 200 000-token context window. Set `LLM_MODEL` in `.env` to switch.
 
 ---
 

@@ -14,7 +14,7 @@ Usage:
     python scripts/generate_access_code.py --generate-user-id --days 7        # One-off / testing (then register)
 
 Environment:
-    STORI_ACCESS_TOKEN_SECRET must be set (generate with: openssl rand -hex 32)
+    ACCESS_TOKEN_SECRET must be set (generate with: openssl rand -hex 32)
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ Examples:
     %(prog)s --user-id UUID --minutes 30         # Existing user, 30 min (testing)
 
 Environment:
-    STORI_ACCESS_TOKEN_SECRET must be set before running this script.
+    ACCESS_TOKEN_SECRET must be set before running this script.
     Generate one with: openssl rand -hex 32
         """
     )

@@ -1383,9 +1383,9 @@ so the first real generation call doesn't hit the 60-second cold-start.
 
 ### Module
 
-`app/services/orpheus.py` — retry logic in `StorpheusClient.generate()`.
+`app/services/storpheus.py` — retry logic in `StorpheusClient.generate()`.
 `app/core/maestro_agent_teams/coordinator.py` — warm-up probe before Phase 2.
-Tests: `tests/test_orpheus_client.py` (`TestGpuColdStartRetry`).
+Tests: `tests/test_storpheus_client.py` (`TestGpuColdStartRetry`).
 
 ------------------------------------------------------------------------
 
@@ -1405,10 +1405,10 @@ Tests: `tests/test_orpheus_client.py` (`TestGpuColdStartRetry`).
 | Extensions pass-through (all Maestro dims) | Done | `app/core/prompt_parser.py`, `app/core/prompts.py` |
 | Entity manifest in tool results | Done | `app/core/maestro_handlers.py` |
 | `$N.field` variable references | Done | `app/core/maestro_handlers.py` |
-| Vibe/Section/Style/Energy → EmotionVector → Orpheus | Done | `app/core/emotion_vector.py`, `app/core/executor/`, `app/services/backends/orpheus.py` |
-| CC events extraction + pipeline (all 128 CCs) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation/` |
-| Pitch bend extraction + pipeline (14-bit) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation/` |
-| Aftertouch extraction + pipeline (channel + poly) | Done | `app/services/backends/orpheus.py`, `app/core/executor/`, `app/services/variation/` |
+| Vibe/Section/Style/Energy → EmotionVector → Orpheus | Done | `app/core/emotion_vector.py`, `app/core/executor/`, `app/services/backends/storpheus.py` |
+| CC events extraction + pipeline (all 128 CCs) | Done | `app/services/backends/storpheus.py`, `app/core/executor/`, `app/services/variation/` |
+| Pitch bend extraction + pipeline (14-bit) | Done | `app/services/backends/storpheus.py`, `app/core/executor/`, `app/services/variation/` |
+| Aftertouch extraction + pipeline (channel + poly) | Done | `app/services/backends/storpheus.py`, `app/core/executor/`, `app/services/variation/` |
 | Expressive data in `updated_regions` (commit response) | Done | `app/core/executor/`, `app/api/routes/variation/` |
 | Routing-only context for planner (reduces verbosity) | Done | `app/core/prompts.py`, `app/core/planner/` |
 | Planner reasoning fraction | Done | `app/core/planner/` |
@@ -1426,8 +1426,8 @@ Tests: `tests/test_orpheus_client.py` (`TestGpuColdStartRetry`).
 | **Bus-before-send ordering guaranteed** | Done | `app/core/planner._schema_to_tool_calls` |
 | **Expressiveness post-processor (velocity, CC, PB, timing)** | Done | `app/services/expressiveness.py`, `app/services/music_generator.py` |
 | **Genre expressiveness profiles (14 genres)** | Done | `app/services/expressiveness.py` (PROFILES) |
-| **Orpheus MIDI parser: full CC/PB/AT extraction** | Done | `storpheus/music_service.py` (parse\_midi\_to\_notes) |
-| **Orpheus token budget raised (1024 max, 24-64/bar)** | Done | `storpheus/music_service.py`, `storpheus/generation_policy.py` |
+| **Storpheus MIDI parser: full CC/PB/AT extraction** | Done | `storpheus/music_service.py` (parse\_midi\_to\_notes) |
+| **Storpheus token budget raised (1024 max, 24-64/bar)** | Done | `storpheus/music_service.py`, `storpheus/generation_policy.py` |
 | **Curated seed library (genre-matched seeds from 230K Loops dataset)** | Done | `storpheus/seed_selector.py`, `storpheus/build_seed_library.py` |
 | **Time signature-aware region calculation** | Done | `app/core/planner/conversion.py` (\_beats\_per\_bar) |
 | **MIDI analysis tooling (reference corpus)** | Done | `scripts/analyze_midi.py`, `scripts/download_reference_midi.py` |
@@ -1435,7 +1435,7 @@ Tests: `tests/test_orpheus_client.py` (`TestGpuColdStartRetry`).
 | **Multi-section agent pipeline (per-section region+generate)** | Done | `app/core/maestro_agent_teams/agent.py` |
 | **stori_generate_midi: trackId/regionId/start_beat required** | Done | `app/core/tools/definitions.py`, `app/core/maestro_editing/tool_execution.py` |
 | **Instrument-specific prompt field on stori_generate_midi** | Done | `app/core/tools/definitions.py`, `app/core/maestro_agent_teams/agent.py` |
-| **GPU retry (3x backoff: 5s/15s/30s)** | Done | `app/services/orpheus.py` |
+| **GPU retry (3x backoff: 5s/15s/30s)** | Done | `app/services/storpheus.py` |
 | **GPU warm-up probe before composition** | Done | `app/core/maestro_agent_teams/coordinator.py` |
 | **Structured diagnostic logging for stori_generate_midi** | Done | `app/core/maestro_editing/tool_execution.py` |
 
@@ -1465,4 +1465,4 @@ The richer text-only dimensions (`Expression`, `Harmony`, `Dynamics`, `Orchestra
 `tests/test_planner_mocked.py` (effects inference, bus ordering, no-op suppression),
 `tests/test_entity_context.py` (role inference, format_project_context, add_notes validation),
 `tests/test_sections.py` (auto-section parsing, beat ranges, per-track descriptions),
-`tests/test_orpheus_client.py` (GPU cold-start retry logic, backoff, structured error).
+`tests/test_storpheus_client.py` (GPU cold-start retry logic, backoff, structured error).

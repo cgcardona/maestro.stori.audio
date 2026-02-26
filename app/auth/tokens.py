@@ -39,7 +39,7 @@ def _get_secret() -> str:
     """Get the token signing secret, raising if not configured."""
     if not settings.access_token_secret:
         raise AccessCodeError(
-            "STORI_ACCESS_TOKEN_SECRET not configured. "
+            "ACCESS_TOKEN_SECRET not configured. "
             "Generate one with: openssl rand -hex 32"
         )
     return settings.access_token_secret

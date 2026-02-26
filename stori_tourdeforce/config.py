@@ -62,7 +62,7 @@ class TDFConfig:
     def from_cli(
         cls,
         *,
-        jwt_env: str = "STORI_JWT",
+        jwt_env: str = "JWT",
         prompt_endpoint: str | None = None,
         maestro: str | None = None,
         storpheus: str | None = None,

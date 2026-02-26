@@ -12,7 +12,7 @@ SSE events, downloads artifacts from Orpheus, and produces clean output:
     intro.mid / .webp  ← MIDI + piano-roll plot per section
 
 Usage:
-    docker compose exec -e STORI_JWT="..." maestro python /app/mvp_happy_path.py
+    docker compose exec -e JWT="..." maestro python /app/mvp_happy_path.py
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from pathlib import Path
 
 import httpx
 
-JWT = os.environ.get("STORI_JWT", "")
+JWT = os.environ.get("JWT", "")
 MAESTRO_URL = "http://localhost:10001/api/v1/maestro/stream"
 ORPHEUS_URL = "http://storpheus:10002"
 OUTPUT_DIR = Path("/data/mvp_output")
@@ -278,7 +278,7 @@ def concatenate_mp3s(mp3_paths: list[Path], output: Path) -> bool:
 
 async def main():
     if not JWT:
-        print("ERROR: set STORI_JWT environment variable")
+        print("ERROR: set JWT environment variable")
         sys.exit(1)
 
     output = OUTPUT_DIR

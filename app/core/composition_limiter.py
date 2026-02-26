@@ -74,7 +74,7 @@ _limiter: CompositionLimiter | None = None
 def get_composition_limiter() -> CompositionLimiter:
     """Return the process-wide singleton ``CompositionLimiter``, creating it if needed.
 
-    Configured from ``STORI_MAX_CONCURRENT_COMPOSITIONS_PER_USER`` via
+    Configured from ``MAX_CONCURRENT_COMPOSITIONS_PER_USER`` via
     ``app.config.settings``.  Setting the value to ``0`` disables per-user
     limits entirely (the ``acquire`` context manager becomes a no-op).
     """

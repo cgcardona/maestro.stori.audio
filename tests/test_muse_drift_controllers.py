@@ -378,7 +378,7 @@ class TestReplayFidelity:
     async def test_pb_roundtrip(self, async_session: AsyncSession) -> None:
 
         notes = [_note(60, 0.0)]
-        var = _make_variation_with_controllers(notes, pitch_bends=[_pb(1.0, 4096), _pb(3.0, 8192)])
+        var = _make_variation_with_controllers(notes, pitch_bends=[_pb(1.0, 4096), _pb(3.0, 8191)])
 
         await muse_repository.save_variation(
             async_session, var,

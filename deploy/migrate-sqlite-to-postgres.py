@@ -159,8 +159,8 @@ def main():
     )
     parser.add_argument(
         "--postgres",
-        default=os.environ.get("STORI_DATABASE_URL"),
-        help="PostgreSQL database URL (or set STORI_DATABASE_URL)"
+        default=os.environ.get("DATABASE_URL"),
+        help="PostgreSQL database URL (or set DATABASE_URL)"
     )
     parser.add_argument(
         "--dry-run",
@@ -172,7 +172,7 @@ def main():
     
     if not args.postgres or not args.postgres.strip():
         logger.error(
-            "PostgreSQL URL required. set STORI_DATABASE_URL or pass --postgres "
+            "PostgreSQL URL required. set DATABASE_URL or pass --postgres "
             "(e.g. postgresql+asyncpg://stori:YOUR_PASSWORD@localhost:5432/stori)."
         )
         sys.exit(1)

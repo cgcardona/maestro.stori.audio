@@ -117,8 +117,8 @@ def analyze_midi(path: str) -> dict[str, Any]:
 def main() -> None:
     from gradio_client import Client, handle_file
 
-    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
-    space_id = os.environ.get("STORI_STORPHEUS_SPACE", "cgcardona/Orpheus-Music-Transformer")
+    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HF_API_KEY")
+    space_id = os.environ.get("STORPHEUS_SPACE", "cgcardona/Orpheus-Music-Transformer")
 
     instruments = ["Acoustic Grand", "Electric Bass(finger)"]
     num_prime = 6656

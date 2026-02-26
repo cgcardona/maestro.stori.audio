@@ -22,8 +22,8 @@ services:
     environment:
       POSTGRES_DB: stori
       POSTGRES_USER: stori
-      # REQUIRED: Set STORI_DB_PASSWORD in .env (e.g. openssl rand -hex 16). No default for security.
-      POSTGRES_PASSWORD: ${STORI_DB_PASSWORD}
+      # REQUIRED: Set DB_PASSWORD in .env (e.g. openssl rand -hex 16). No default for security.
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -89,16 +89,15 @@ services:
     env_file:
       - .env
     environment:
-      # REQUIRED: Set STORI_DB_PASSWORD in .env. Same value as postgres service.
-      STORI_DATABASE_URL: "postgresql+asyncpg://stori:${STORI_DB_PASSWORD}@postgres:5432/stori"
+      # REQUIRED: Set DB_PASSWORD in .env. Same value as postgres service.
+      DATABASE_URL: "postgresql+asyncpg://stori:${DB_PASSWORD}@postgres:5432/stori"
       # Storpheus: from inside the container use service name (not localhost)
-      STORI_STORPHEUS_BASE_URL: "http://storpheus:10002"
-      # S3 asset delivery: set in .env (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, STORI_AWS_S3_ASSET_BUCKET, STORI_AWS_REGION)
-      # Pass-through so container has them; boto3 reads AWS_*, app reads STORI_AWS_*
+      STORPHEUS_BASE_URL: "http://storpheus:10002"
+      # S3 asset delivery: set in .env (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_ASSET_BUCKET, AWS_REGION)
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      STORI_AWS_S3_ASSET_BUCKET: ${STORI_AWS_S3_ASSET_BUCKET:-}
-      STORI_AWS_REGION: ${STORI_AWS_REGION:-eu-west-1}
+      AWS_S3_ASSET_BUCKET: ${AWS_S3_ASSET_BUCKET:-}
+      AWS_REGION: ${AWS_REGION:-eu-west-1}
     volumes:
       - maestro_data:/data
     networks:
@@ -147,8 +146,8 @@ services:
       - .env
     environment:
       # Gradio Client needs HF token for Space GPU quota; use same key as Maestro
-      HF_TOKEN: ${STORI_HF_API_KEY:-}
-      STORI_STORPHEUS_SPACE: ${STORI_STORPHEUS_SPACE:-cgcardona/Orpheus-Music-Transformer}
+      HF_TOKEN: ${HF_API_KEY:-}
+      STORPHEUS_SPACE: ${STORPHEUS_SPACE:-cgcardona/Orpheus-Music-Transformer}
       STORPHEUS_CACHE_DIR: /data/cache
     volumes:
       - storpheus_cache:/data/cache

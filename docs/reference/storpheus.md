@@ -614,40 +614,40 @@ first 16 characters of the SHA-256 hex digest.
 
 ## 4. Configuration
 
-**Module:** `app/config.py` — `Settings` class (env prefix: `STORI_`)
+**Module:** `app/config.py` — `Settings` class (env prefix: none)
 
 All settings default to safe development values. Override in `.env` or the
 Docker Compose `environment` block.
 
 | Setting | Env var | Type | Default | Description |
 |---------|---------|------|---------|-------------|
-| `storpheus_base_url` | `STORI_STORPHEUS_BASE_URL` | `str` | `"http://localhost:10002"` | Base URL of the Storpheus service. Inside Docker use `"http://storpheus:10002"`. |
-| `storpheus_timeout` | `STORI_STORPHEUS_TIMEOUT` | `int` | `180` | Fallback max read timeout in seconds for generation HTTP calls. |
-| `storpheus_max_concurrent` | `STORI_STORPHEUS_MAX_CONCURRENT` | `int` | `2` | Max parallel submit+poll cycles (semaphore). Serialises GPU access. |
-| `storpheus_poll_timeout` | `STORI_STORPHEUS_POLL_TIMEOUT` | `int` | `30` | Seconds per `/jobs/{id}/wait` long-poll request. |
-| `storpheus_poll_max_attempts` | `STORI_STORPHEUS_POLL_MAX_ATTEMPTS` | `int` | `10` | Maximum poll iterations before giving up (~5 min total at defaults). |
-| `storpheus_cb_threshold` | `STORI_STORPHEUS_CB_THRESHOLD` | `int` | `3` | Consecutive failures before circuit breaker opens. |
-| `storpheus_cb_cooldown` | `STORI_STORPHEUS_CB_COOLDOWN` | `int` | `120` | Seconds the circuit stays open before allowing a probe. |
-| `storpheus_required` | `STORI_STORPHEUS_REQUIRED` | `bool` | `True` | Hard-gate: abort composition startup if Storpheus health check fails. |
-| `storpheus_preserve_all_channels` | `STORI_STORPHEUS_PRESERVE_ALL_CHANNELS` | `bool` | `True` | Return all generated MIDI channels; DAW handles routing. |
-| `storpheus_enable_beat_rescaling` | `STORI_STORPHEUS_ENABLE_BEAT_RESCALING` | `bool` | `False` | Enable `_rescale_beats()` post-processing (disabled while evaluating raw model timing). |
-| `storpheus_max_session_tokens` | `STORI_STORPHEUS_MAX_SESSION_TOKENS` | `int` | `4096` | Token cap before Gradio session rotation. |
-| `storpheus_loops_space` | `STORI_STORPHEUS_LOOPS_SPACE` | `str` | `""` | HF Space ID for the Orpheus Loops model (e.g. `"asigalov61/Orpheus-Music-Loops"`). Empty = disabled. |
-| `storpheus_use_loops_model` | `STORI_STORPHEUS_USE_LOOPS_MODEL` | `bool` | `False` | Feature flag: route short requests (≤8 bars) to the Loops model. |
+| `storpheus_base_url` | `STORPHEUS_BASE_URL` | `str` | `"http://localhost:10002"` | Base URL of the Storpheus service. Inside Docker use `"http://storpheus:10002"`. |
+| `storpheus_timeout` | `STORPHEUS_TIMEOUT` | `int` | `180` | Fallback max read timeout in seconds for generation HTTP calls. |
+| `storpheus_max_concurrent` | `STORPHEUS_MAX_CONCURRENT` | `int` | `2` | Max parallel submit+poll cycles (semaphore). Serialises GPU access. |
+| `storpheus_poll_timeout` | `STORPHEUS_POLL_TIMEOUT` | `int` | `30` | Seconds per `/jobs/{id}/wait` long-poll request. |
+| `storpheus_poll_max_attempts` | `STORPHEUS_POLL_MAX_ATTEMPTS` | `int` | `10` | Maximum poll iterations before giving up (~5 min total at defaults). |
+| `storpheus_cb_threshold` | `STORPHEUS_CB_THRESHOLD` | `int` | `3` | Consecutive failures before circuit breaker opens. |
+| `storpheus_cb_cooldown` | `STORPHEUS_CB_COOLDOWN` | `int` | `120` | Seconds the circuit stays open before allowing a probe. |
+| `storpheus_required` | `STORPHEUS_REQUIRED` | `bool` | `True` | Hard-gate: abort composition startup if Storpheus health check fails. |
+| `storpheus_preserve_all_channels` | `STORPHEUS_PRESERVE_ALL_CHANNELS` | `bool` | `True` | Return all generated MIDI channels; DAW handles routing. |
+| `storpheus_enable_beat_rescaling` | `STORPHEUS_ENABLE_BEAT_RESCALING` | `bool` | `False` | Enable `_rescale_beats()` post-processing (disabled while evaluating raw model timing). |
+| `storpheus_max_session_tokens` | `STORPHEUS_MAX_SESSION_TOKENS` | `int` | `4096` | Token cap before Gradio session rotation. |
+| `storpheus_loops_space` | `STORPHEUS_LOOPS_SPACE` | `str` | `""` | HF Space ID for the Orpheus Loops model (e.g. `"asigalov61/Orpheus-Music-Loops"`). Empty = disabled. |
+| `storpheus_use_loops_model` | `STORPHEUS_USE_LOOPS_MODEL` | `bool` | `False` | Feature flag: route short requests (≤8 bars) to the Loops model. |
 
 **Docker Compose:**
 
 ```yaml
 # docker-compose.yml — storpheus service
 environment:
-  STORI_STORPHEUS_SPACE: ${STORI_STORPHEUS_SPACE:-cgcardona/Orpheus-Music-Transformer}
+  STORPHEUS_SPACE: ${STORPHEUS_SPACE:-cgcardona/Orpheus-Music-Transformer}
   STORPHEUS_CACHE_DIR: /data/cache
 ```
 
 ```yaml
 # docker-compose.yml — maestro service
 environment:
-  STORI_STORPHEUS_BASE_URL: "http://storpheus:10002"
+  STORPHEUS_BASE_URL: "http://storpheus:10002"
 ```
 
 ---
@@ -1298,7 +1298,7 @@ Any change must be validated against the HF Space source.
 
 **Fix:** `_DEFAULT_SPACE = "cgcardona/Orpheus-Music-Transformer"`.
 
-**Prevention:** `STORI_STORPHEUS_SPACE` in `.env`; never hardcode the free Space.
+**Prevention:** `STORPHEUS_SPACE` in `.env`; never hardcode the free Space.
 
 ---
 
@@ -1375,7 +1375,7 @@ continuity across sections.
 
 ### GPU quota exceeded
 
-Verify `STORI_STORPHEUS_SPACE` and `HF_TOKEN` are set correctly in `.env`.
+Verify `STORPHEUS_SPACE` and `HF_TOKEN` are set correctly in `.env`.
 The paid Space requires a valid HuggingFace token.
 
 ### Circuit breaker tripped

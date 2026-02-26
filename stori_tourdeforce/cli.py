@@ -25,7 +25,7 @@ def main() -> int:
 
     # ── run ───────────────────────────────────────────────────────────────
     run_parser = sub.add_parser("run", help="Execute Tour de Force runs")
-    run_parser.add_argument("--jwt-env", default="STORI_JWT", help="Env var containing JWT (default: STORI_JWT)")
+    run_parser.add_argument("--jwt-env", default="JWT", help="Env var containing JWT (default: JWT)")
     run_parser.add_argument("--prompt-endpoint", default=None, help="Prompt fetch endpoint URL")
     run_parser.add_argument("--maestro", default=None, help="Maestro stream endpoint URL")
     run_parser.add_argument("--storpheus", default=None, help="Storpheus base URL")

@@ -155,7 +155,7 @@ class TestHandleReasoning:
 
             yield {"type": "reasoning_delta", "text": "Thinking about this..."}
             yield {"type": "content_delta", "text": "The answer."}
-            yield {"type": "done", "content": "The answer.", "usage": {"prompt_tokens": 5, "completion_tokens": 10}}
+            yield {"type": "done", "content": "The answer.", "tool_calls": [], "finish_reason": "stop", "usage": {"prompt_tokens": 5, "completion_tokens": 10}}
 
         llm.chat_completion_stream = MagicMock(side_effect=fake_stream)
 
@@ -866,7 +866,7 @@ class TestStreamLLMResponse:
 
             yield {"type": "reasoning_delta", "text": "Let me think..."}
             yield {"type": "content_delta", "text": "Here's the answer."}
-            yield {"type": "done", "content": "Here's the answer.", "tool_calls": [], "usage": {"prompt_tokens": 10, "completion_tokens": 20}}
+            yield {"type": "done", "content": "Here's the answer.", "tool_calls": [], "finish_reason": "stop", "usage": {"prompt_tokens": 10, "completion_tokens": 20}}
 
         llm.chat_completion_stream = MagicMock(side_effect=fake_stream)
 
@@ -897,6 +897,7 @@ class TestStreamLLMResponse:
                 "tool_calls": [
                     {"id": "tc1", "function": {"name": "stori_set_tempo", "arguments": '{"tempo": 120}'}},
                 ],
+                "finish_reason": "tool_calls",
                 "usage": {},
             }
 

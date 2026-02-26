@@ -627,11 +627,11 @@ class MusicGenerator:
     ) -> GenerationResult:
         """Enrich a successful generation with velocity curves, CC, and humanization.
 
-        Gated by STORI_SKIP_EXPRESSIVENESS for debugging raw model output.
+        Gated by SKIP_EXPRESSIVENESS for debugging raw model output.
         """
         from app.config import settings
         if settings.skip_expressiveness:
-            logger.info("⏭️ Expressiveness post-processing skipped (STORI_SKIP_EXPRESSIVENESS=true)")
+            logger.info("⏭️ Expressiveness post-processing skipped (SKIP_EXPRESSIVENESS=true)")
             return result
 
         expr = apply_expressiveness(

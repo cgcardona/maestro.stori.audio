@@ -19,7 +19,7 @@ cd maestro.stori.audio
 
 # Copy env and set required values
 cp .env.example .env
-# Edit .env: STORI_OPENROUTER_API_KEY, STORI_DB_PASSWORD (required; e.g. openssl rand -hex 16 for local), STORI_ACCESS_TOKEN_SECRET (openssl rand -hex 32), STORI_CORS_ORIGINS (required for browser/app; see .env.example).
+# Edit .env: OPENROUTER_API_KEY, DB_PASSWORD (required; e.g. openssl rand -hex 16 for local), ACCESS_TOKEN_SECRET (openssl rand -hex 32), CORS_ORIGINS (required for browser/app; see .env.example).
 # For local nginx: NGINX_CONF_DIR=conf.d-local
 
 # Start the stack (Postgres, Qdrant, Storpheus, Maestro, nginx)
@@ -27,7 +27,7 @@ docker compose up
 # Or: docker compose up -d   (detached)
 ```
 
-**Verify:** Maestro is at **http://localhost:10001**. Health: `curl http://localhost:10001/api/v1/health`. Run tests: `docker compose exec maestro pytest tests/ -v` (see [docs/guides/testing.md](docs/guides/testing.md); prefer Docker so `STORI_ACCESS_TOKEN_SECRET` and DB are set). Stop: `docker compose down`.
+**Verify:** Maestro is at **http://localhost:10001**. Health: `curl http://localhost:10001/api/v1/health`. Run tests: `docker compose exec maestro pytest tests/ -v` (see [docs/guides/testing.md](docs/guides/testing.md); prefer Docker so `ACCESS_TOKEN_SECRET` and DB are set). Stop: `docker compose down`.
 
 More (troubleshooting, cloud, deploy): [docs/guides/setup.md](docs/guides/setup.md).
 
@@ -37,29 +37,49 @@ More (troubleshooting, cloud, deploy): [docs/guides/setup.md](docs/guides/setup.
 
 ## Architecture
 
-```
-  ┌─────────────────────────────┐     ┌─────────────────────────────┐
-  │  Stori DAW (Swift)          │     │  MCP clients                │
-  │  User in app → prompt       │     │  Cursor, Claude Desktop,    │
-  │  POST /maestro/stream → SSE │     │  custom agents              │
-  └──────────────┬──────────────┘     │  tools/list, tools/call,    │
-                 │                    │  /mcp/daw (WebSocket)       │
-                 │                    └──────────────┬──────────────┘
-                 │                                   │
-                 └────────────────┬──────────────────┘
-                                  ▼
-┌────────────────────────────────────────────────────────────────────-─┐
-│  Stori Maestro (this repo · port 10001) · MCP server                │
-│  Intent (reason | edit | compose) → LLM → tools / stream             │
-│  Same engine whether request is from Stori app or from an MCP client │
-└────────────────────────────┼─────────────────────────────────────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        ▼                    ▼                    ▼
-   Reasoning              Editing              Composing
-   RAG (Qdrant)            Cloud LLM            Cloud LLM +
-                          (OpenRouter)         Storpheus / HF
-                                               (music generation)
+```mermaid
+graph TB
+    subgraph stori_repo ["Stori DAW  —  separate repo  (macOS · Swift)"]
+        DAW["User prompt"]
+    end
+
+    subgraph mcp_clients ["MCP Clients  —  external"]
+        MCP["Cursor · Claude Desktop · custom agents"]
+    end
+
+    subgraph this_repo ["maestro.stori.audio  —  this repo"]
+        subgraph maestro ["Maestro  ·  port 10001"]
+            IE["Intent Engine\nREASONING  |  EDITING  |  COMPOSING"]
+            QD[("Qdrant  ·  6333\nRAG vector store")]
+            PG[("Postgres  ·  5432\nauth · budget · state")]
+        end
+
+        subgraph storpheus ["Storpheus  ·  port 10002"]
+            GEN["MIDI generation pipeline\n(seed selection · rejection sampling · post-processing)"]
+        end
+    end
+
+    subgraph openrouter ["OpenRouter  —  external"]
+        LLM["Cloud LLM\nClaude Sonnet · Claude Opus"]
+    end
+
+    subgraph huggingface ["HuggingFace  —  external"]
+        GRADIO["Gradio Space API"]
+        ORPHEUS["Orpheus Music Transformer\n(neural MIDI model)"]
+        GRADIO <-->|"GPU inference"| ORPHEUS
+    end
+
+    DAW      -->|"POST /maestro/stream"| IE
+    MCP      -->|"MCP tools/call"| IE
+    IE       -->|"SSE events (reasoning · tool calls · variations)"| DAW
+
+    IE       <-->|"REASONING: semantic search"| QD
+    IE       ---  PG
+    IE       <-->|"EDITING / COMPOSING: tool-call generation"| LLM
+
+    IE       -->|"COMPOSING: POST /generate"| GEN
+    GEN      -->|"GET /jobs/{id}/wait → GenerationResult"| IE
+    GEN      <-->|"gradio_client.predict()"| GRADIO
 ```
 
 **What we’re building** — One backend (Maestro), two entry points, one DAW. **Human in Stori**: user types in the app → Stori POSTs to Maestro → SSE stream of tool calls → Stori applies them. **Agent via MCP**: user (or script) talks to Cursor/Claude (or another MCP client) → client calls MCP tools → Maestro runs or forwards to the **same** Stori instance (the one connected at `/api/v1/mcp/daw`). So the same session can be driven from the app or from an external agent; human stays in the loop. See [docs/reference/architecture.md](docs/reference/architecture.md).
@@ -116,7 +136,7 @@ docker compose exec maestro pytest tests/ -v
 
 Coverage threshold is in `pyproject.toml` (`[tool.coverage.report]` → `fail_under`). For the canonical coverage command, see [docs/guides/testing.md](docs/guides/testing.md).
 
-Prefer running tests in the container above. If you run pytest on the host instead, set `STORI_ACCESS_TOKEN_SECRET` in the environment so auth tests pass.
+Prefer running tests in the container above. If you run pytest on the host instead, set `ACCESS_TOKEN_SECRET` in the environment so auth tests pass.
 
 The team usually runs tests on the remote after rsync + container restart (see [docs/guides/setup.md](docs/guides/setup.md)).
 

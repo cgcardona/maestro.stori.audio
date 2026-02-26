@@ -11,7 +11,7 @@ Usage:
     # Or with custom Qdrant host:
     python scripts/ingest_docs.py --docs-dir ./docs --qdrant-host localhost
     
-    # Use HuggingFace embeddings (requires STORI_HF_API_KEY or --hf-key):
+    # Use HuggingFace embeddings (requires HF_API_KEY or --hf-key):
     python scripts/ingest_docs.py --docs-dir ./docs --hf-key your_key
 """
 from __future__ import annotations
@@ -340,7 +340,7 @@ async def main() -> None:
     parser.add_argument("--docs-dir", required=True, help="Path to docs directory")
     parser.add_argument("--qdrant-host", default="localhost", help="Qdrant host")
     parser.add_argument("--qdrant-port", type=int, default=6333, help="Qdrant port")
-    parser.add_argument("--hf-key", default=None, help="HuggingFace API key for embeddings (or STORI_HF_API_KEY)")
+    parser.add_argument("--hf-key", default=None, help="HuggingFace API key for embeddings (or HF_API_KEY)")
     args = parser.parse_args()
     
     docs_dir = Path(args.docs_dir)
@@ -348,9 +348,9 @@ async def main() -> None:
         logger.error("Docs directory not found: %s", docs_dir)
         sys.exit(1)
 
-    hf_key = args.hf_key or os.environ.get("HF_API_KEY") or os.environ.get("STORI_HF_API_KEY")
+    hf_key = args.hf_key or os.environ.get("HF_API_KEY") or os.environ.get("HF_API_KEY")
     if not hf_key:
-        logger.error("HuggingFace API key required. set STORI_HF_API_KEY or use --hf-key")
+        logger.error("HuggingFace API key required. set HF_API_KEY or use --hf-key")
         sys.exit(1)
     embedding_dim = HF_EMBEDDING_DIM
     logger.info("Using HuggingFace embeddings (all-MiniLM-L6-v2)")

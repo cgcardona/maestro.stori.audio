@@ -28,9 +28,9 @@ The app and the backend use **one identifier**: the **device UUID** (generated b
 
 ## Access codes (JWT)
 
-Tokens are time-limited JWTs (HMAC-SHA256). No DB lookup; no revocation until expiry. Rotate `STORI_ACCESS_TOKEN_SECRET` to invalidate all.
+Tokens are time-limited JWTs (HMAC-SHA256). No DB lookup; no revocation until expiry. Rotate `ACCESS_TOKEN_SECRET` to invalidate all.
 
-**Generate secret:** `openssl rand -hex 32` → set `STORI_ACCESS_TOKEN_SECRET` in `.env`.
+**Generate secret:** `openssl rand -hex 32` → set `ACCESS_TOKEN_SECRET` in `.env`.
 
 **Issue a code (from repo root, stack running):**
 
@@ -74,8 +74,8 @@ curl -X POST https://<your-api>/api/v1/users/register -H "Content-Type: applicat
 **Auth & identity parity:** The app should use the backend's single-identifier architecture (device UUID). Register, get JWT for maestro/MCP, use X-Device-ID only for assets.
 
 - **Assets:** Asset endpoints use **X-Device-ID only** (no JWT). Send header `X-Device-ID: <device-uuid>` (the app’s per-install UUID). List drum kits: `GET /api/v1/assets/drum-kits`. Download URL: `GET /api/v1/assets/drum-kits/{id}/download-url` → response has `url` (presigned S3, use within 30 min) and `expires_at`.
-- **CORS:** Backend allows origins in `STORI_CORS_ORIGINS` (e.g. `https://stage.stori.audio`, `stori://`). No wildcard in prod.
-- **Stage:** `/docs` and `/openapi.json` are off when `STORI_DEBUG=false`; use local or debug backend for interactive docs.
+- **CORS:** Backend allows origins in `CORS_ORIGINS` (e.g. `https://stage.stori.audio`, `stori://`). No wildcard in prod.
+- **Stage:** `/docs` and `/openapi.json` are off when `DEBUG=false`; use local or debug backend for interactive docs.
 
 ---
 
@@ -85,7 +85,7 @@ Stori Maestro is an MCP server. Cursor, Claude Desktop, or any MCP client can li
 
 **WebSocket (DAW):** Stori connects to `ws://<host>:10001/api/v1/mcp/daw` (with `?token=<jwt>`). When an MCP client calls a DAW tool, Maestro forwards it to that connected DAW.
 
-**Cursor / Claude (stdio):** Run the stdio server via Docker so it shares the stack; for **DAW tools** (e.g. `stori_read_project`, `stori_play`) to work, set `STORI_MAESTRO_MCP_URL` and `STORI_MCP_TOKEN` so the stdio process proxies those calls to the backend (where the Stori app WebSocket is registered). Without them, DAW tools return "No DAW connected"; generation tools still work.
+**Cursor / Claude (stdio):** Run the stdio server via Docker so it shares the stack; for **DAW tools** (e.g. `stori_read_project`, `stori_play`) to work, set `MAESTRO_MCP_URL` and `MCP_TOKEN` so the stdio process proxies those calls to the backend (where the Stori app WebSocket is registered). Without them, DAW tools return "No DAW connected"; generation tools still work.
 
 **Config (one block):** Replace `REPO_ROOT` with the path to the maestro repo and `YOUR_JWT` with a valid access token (do not commit the token). Use `-f` so Compose finds the file. With **Docker exec**, the process runs inside the container and does not see Cursor's `env` block, so pass proxy vars with **`-e`** in the args:
 
@@ -95,8 +95,8 @@ Stori Maestro is an MCP server. Cursor, Claude Desktop, or any MCP client can li
   "args": [
     "compose", "-f", "REPO_ROOT/docker-compose.yml",
     "exec", "-T",
-    "-e", "STORI_MAESTRO_MCP_URL=http://localhost:10001",
-    "-e", "STORI_MCP_TOKEN=YOUR_JWT",
+    "-e", "MAESTRO_MCP_URL=http://localhost:10001",
+    "-e", "MCP_TOKEN=YOUR_JWT",
     "maestro",
     "python", "-m", "app.mcp.stdio_server"
   ],
@@ -119,7 +119,7 @@ You already have: HTTP endpoints (list/call with Bearer), stdio server (`app.mcp
 **1. Prove “list tools + call one tool” (no DAW)**  
 Use the **HTTP** API so you don’t depend on Cursor/Claude or Swift.
 
-- Backend running (e.g. `docker compose up -d`), `.env` with `STORI_ACCESS_TOKEN_SECRET` and Orpheus (e.g. `STORI_STORPHEUS_BASE_URL`).
+- Backend running (e.g. `docker compose up -d`), `.env` with `ACCESS_TOKEN_SECRET` and Orpheus (e.g. `STORPHEUS_BASE_URL`).
 - Valid JWT (e.g. `scripts/generate_access_code.py --generate-user-id --days 1`); register the user if you use budget.
 - List tools:  
   `curl -s -H "Authorization: Bearer <token>" https://<host>/api/v1/mcp/tools`
@@ -181,7 +181,7 @@ So an LLM client can list and call tools.
 - If Cursor lists the tools and/or returns a result from `stori_generate_drums`, the stdio MCP path works.
 
 **3. (Optional) Prove DAW forwarding**  
-Requires the Stori app (Swift) running and connected. If you use **Cursor with stdio**, set `STORI_MAESTRO_MCP_URL=http://localhost:10001` and `STORI_MCP_TOKEN=<jwt>` in the environment so the stdio server proxies DAW tools to the backend (where the app’s WebSocket is registered).
+Requires the Stori app (Swift) running and connected. If you use **Cursor with stdio**, set `MAESTRO_MCP_URL=http://localhost:10001` and `MCP_TOKEN=<jwt>` in the environment so the stdio server proxies DAW tools to the backend (where the app’s WebSocket is registered).
 
 - Stori app opens a WebSocket to `wss://<host>/api/v1/mcp/daw?token=<jwt>`.
 - From Cursor (or HTTP), call a **DAW** tool (e.g. `stori_play`, `stori_read_project`).  

@@ -97,7 +97,7 @@ app/
   auth/            → JWT validation, dependencies
   db/              → Database models, sessions
   protocol/        → SSE events, version, hashing
-  config.py        → Pydantic Settings (STORI_* env vars)
+  config.py        → Pydantic Settings (unprefixed env vars)
 
 storpheus/
   music_service.py → Storpheus FastAPI app (proxies to Orpheus on HuggingFace/Gradio)

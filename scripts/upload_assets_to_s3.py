@@ -24,10 +24,10 @@ Usage:
 
 Environment:
   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or IAM role)
-  STORI_AWS_S3_ASSET_BUCKET (or --bucket)
-  STORI_AWS_REGION (or --region)
-  STORI_ASSET_AUTHOR  Optional; default "Stori Maestro" (used when kit.json omits author)
-  STORI_ASSET_LICENSE Optional; default "CC0" (used when kit.json omits license)
+  AWS_S3_ASSET_BUCKET (or --bucket)
+  AWS_REGION (or --region)
+  ASSET_AUTHOR  Optional; default "Stori Maestro" (used when kit.json omits author)
+  ASSET_LICENSE Optional; default "CC0" (used when kit.json omits license)
 """
 from __future__ import annotations
 
@@ -64,8 +64,8 @@ def normalize_kit_meta(meta: dict, kit_id: str) -> dict:
     """Ensure kit.json has name, author, sounds, license, version (see ASSETS_API.md)."""
     out = dict(meta)
     out.setdefault("name", kit_id)
-    out.setdefault("author", os.environ.get("STORI_ASSET_AUTHOR", "Stori Maestro"))
-    out.setdefault("license", os.environ.get("STORI_ASSET_LICENSE", "CC0"))
+    out.setdefault("author", os.environ.get("ASSET_AUTHOR", "Stori Maestro"))
+    out.setdefault("license", os.environ.get("ASSET_LICENSE", "CC0"))
     out.setdefault("version", "1.0")
     out.setdefault("sounds", {})
     return out
@@ -207,7 +207,7 @@ def main() -> None:
         description="Upload drum kits and soundfonts to S3 for on-demand delivery",
     )
     parser.add_argument("source_dir", type=Path, help="Local directory containing drum-kits/ and soundfonts/")
-    parser.add_argument("--bucket", "-b", type=str, default=None, help="S3 bucket (or set STORI_AWS_S3_ASSET_BUCKET)")
+    parser.add_argument("--bucket", "-b", type=str, default=None, help="S3 bucket (or set AWS_S3_ASSET_BUCKET)")
     parser.add_argument("--region", "-r", type=str, default="us-east-1", help="AWS region")
     parser.add_argument("--no-bundle", action="store_true", help="Do not create all-assets.zip bundle")
     args = parser.parse_args()
@@ -215,9 +215,9 @@ def main() -> None:
     if not source_dir.is_dir():
         logger.error("Not a directory: %s", source_dir)
         sys.exit(1)
-    bucket = args.bucket or os.environ.get("STORI_AWS_S3_ASSET_BUCKET")
+    bucket = args.bucket or os.environ.get("AWS_S3_ASSET_BUCKET")
     if not bucket:
-        logger.error("set --bucket or STORI_AWS_S3_ASSET_BUCKET")
+        logger.error("set --bucket or AWS_S3_ASSET_BUCKET")
         sys.exit(1)
     client = get_s3_client(args.region)
     try:

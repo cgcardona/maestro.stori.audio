@@ -117,10 +117,10 @@ def _bucket() -> str:
     """Return the configured S3 bucket name, raising if unset.
 
     Raises:
-        ValueError: If ``STORI_AWS_S3_ASSET_BUCKET`` is not configured.
+        ValueError: If ``AWS_S3_ASSET_BUCKET`` is not configured.
     """
     if not settings.aws_s3_asset_bucket:
-        raise ValueError("STORI_AWS_S3_ASSET_BUCKET is not set")
+        raise ValueError("AWS_S3_ASSET_BUCKET is not set")
     return settings.aws_s3_asset_bucket
 
 

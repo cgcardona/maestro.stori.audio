@@ -11,7 +11,7 @@ Covers:
   7.  AccessCodeError — raised correctly
   8.  Secret not configured — raises cleanly
 
-JWT operations require STORI_ACCESS_TOKEN_SECRET.  We monkeypatch settings
+JWT operations require ACCESS_TOKEN_SECRET.  We monkeypatch settings
 rather than relying on env, so these tests are hermetic.
 """
 from __future__ import annotations
@@ -176,7 +176,7 @@ class TestGenerateAccessCode:
             access_token_secret=None,
             access_token_algorithm=_ALGO,
         ):
-            with pytest.raises(AccessCodeError, match="STORI_ACCESS_TOKEN_SECRET"):
+            with pytest.raises(AccessCodeError, match="ACCESS_TOKEN_SECRET"):
                 generate_access_code(duration_hours=1)
 
     def test_iat_is_recent(self) -> None:

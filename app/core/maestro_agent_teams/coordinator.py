@@ -319,7 +319,7 @@ async def _handle_composition_agent_team(
         if settings.storpheus_required:
             logger.error(
                 f"❌ [{trace.trace_id[:8]}] Storpheus required but unavailable — "
-                "aborting composition (set STORI_ORPHEUS_REQUIRED=false to override)"
+                "aborting composition (set STORPHEUS_REQUIRED=false to override)"
             )
             yield emit(ErrorEvent(
                 message=(

@@ -11,9 +11,9 @@ import httpx
 
 
 def main() -> int:
-    jwt = os.environ.get("STORI_JWT", "")
+    jwt = os.environ.get("JWT", "")
     if not jwt:
-        print("STORI_JWT not set", file=sys.stderr)
+        print("JWT not set", file=sys.stderr)
         return 1
 
     base = "http://maestro:10001/api/v1"

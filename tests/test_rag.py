@@ -275,12 +275,13 @@ async def test_answer_with_context(rag_service: RAGService, mock_llm_client: Mag
         ),
     ]
     
-    # Mock LLM streaming response
+    # Mock LLM streaming response using StreamEvent format
     async def mock_stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
 
-        yield {"choices": [{"delta": {"content": "Based on "}}]}
-        yield {"choices": [{"delta": {"content": "the docs, "}}]}
-        yield {"choices": [{"delta": {"content": "here's how..."}}]}
+        yield {"type": "content_delta", "text": "Based on "}
+        yield {"type": "content_delta", "text": "the docs, "}
+        yield {"type": "content_delta", "text": "here's how..."}
+        yield {"type": "done", "finish_reason": "stop"}
     
     mock_llm_client.chat_completion_stream = mock_stream
     

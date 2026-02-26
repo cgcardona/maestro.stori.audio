@@ -89,14 +89,14 @@ class Settings(BaseSettings):
     debug: bool = False
     
     # Server Configuration
-    stori_host: str = "0.0.0.0"
-    stori_port: int = 10001
+    host: str = "0.0.0.0"
+    port: int = 10001
     
     # Database Configuration
     # PostgreSQL: postgresql+asyncpg://user:pass@localhost:5432/stori
     # SQLite (dev): sqlite+aiosqlite:///./stori.db
     database_url: str | None = None
-    stori_db_password: str | None = None  # PostgreSQL password
+    db_password: str | None = None  # PostgreSQL password
     
     # Budget Configuration
     default_budget_cents: int = 500  # $5.00 default budget for new users
@@ -156,7 +156,7 @@ class Settings(BaseSettings):
     bass_signal_wait_timeout: int = 240  # 4 min waiting for drum section signal before giving up
     
     # CORS Settings (fail closed: no default origins)
-    # set STORI_CORS_ORIGINS (JSON array) in .env. Local dev: ["http://localhost:5173", "stori://"].
+    # set CORS_ORIGINS (JSON array) in .env. Local dev: ["http://localhost:5173", "stori://"].
     # Production: exact origins only, e.g. ["https://your-domain.com", "stori://"]. Never use "*" in production.
     cors_origins: list[str] = []
 
@@ -165,8 +165,8 @@ class Settings(BaseSettings):
         """Warn when CORS allows all origins in non-debug (production) mode."""
         if not self.debug and self.cors_origins and "*" in self.cors_origins:
             logging.getLogger(__name__).warning(
-                "CORS allows all origins (*) with STORI_DEBUG=false. "
-                "set STORI_CORS_ORIGINS to exact origins in production."
+                "CORS allows all origins (*) with DEBUG=false. "
+                "Set CORS_ORIGINS to exact origins in production."
             )
         return self
 
@@ -179,8 +179,8 @@ class Settings(BaseSettings):
     
     # AWS S3 Asset Delivery (drum kits, GM soundfont)
     # Region MUST match the bucket's region (S3 returns 301 if URL uses wrong region).
-    # Override with STORI_AWS_REGION if your bucket is in a different region.
-    aws_region: str = "eu-west-1"  # stori-assets bucket region; set STORI_AWS_REGION if different
+    # Override with AWS_REGION if your bucket is in a different region.
+    aws_region: str = "eu-west-1"  # stori-assets bucket region; set AWS_REGION if different
     aws_s3_asset_bucket: str | None = None  # e.g. stori-assets
     aws_cloudfront_domain: str | None = None  # e.g. assets.example.com (optional)
     presign_expiry_seconds: int = 1800  # 30 min default for presigned download URLs (leaked URLs die faster)
@@ -196,7 +196,6 @@ class Settings(BaseSettings):
     mcp_token: str | None = None  # JWT for Authorization: Bearer when proxying
 
     model_config = SettingsConfigDict(
-        env_prefix="STORI_",
         env_file=".env",
         env_file_encoding="utf-8",
     )

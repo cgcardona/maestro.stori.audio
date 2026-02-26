@@ -8,7 +8,7 @@ One place for: local run, cloud deploy, config, and day-to-day ops. All paths an
 
 ```bash
 cp .env.example .env
-# Edit .env: STORI_OPENROUTER_API_KEY, STORI_DB_PASSWORD (required; e.g. openssl rand -hex 16 for local), STORI_ACCESS_TOKEN_SECRET (openssl rand -hex 32).
+# Edit .env: OPENROUTER_API_KEY, DB_PASSWORD (required; e.g. openssl rand -hex 16 for local), ACCESS_TOKEN_SECRET (openssl rand -hex 32).
 docker compose up -d
 ```
 
@@ -42,24 +42,24 @@ docker compose exec maestro pytest tests/ -v
 
 | Area | Key vars |
 |------|----------|
-| **Domain / CORS** | `STORI_DOMAIN`; `STORI_CORS_ORIGINS` (JSON array, required—no default; set exact origins in production) |
-| **Auth** | `STORI_ACCESS_TOKEN_SECRET` — `openssl rand -hex 32`; required for protected endpoints |
-| **LLM** | `STORI_LLM_PROVIDER=openrouter`, `STORI_OPENROUTER_API_KEY`, `STORI_LLM_MODEL` (supported: `anthropic/claude-sonnet-4.6` · `anthropic/claude-opus-4.6` — no other models) |
-| **DB** | `STORI_DB_PASSWORD` or `STORI_DATABASE_URL`. Reset: see **Reset database (Postgres)** below. |
-| **Music** | `STORI_STORPHEUS_BASE_URL` (default `http://localhost:10002`), `STORI_HF_API_KEY`, `STORI_ORPHEUS_MAX_CONCURRENT` (default `2` — max parallel submit+poll cycles), `STORI_ORPHEUS_TIMEOUT` (default `180`s — fallback max read timeout), `STORI_ORPHEUS_POLL_TIMEOUT` (default `30`s — long-poll timeout per `/jobs/{id}/wait` request), `STORI_ORPHEUS_POLL_MAX_ATTEMPTS` (default `10` — max polls before giving up, ~5 min total), `STORI_ORPHEUS_CB_THRESHOLD` (default `3` — consecutive failures before circuit breaker trips), `STORI_ORPHEUS_CB_COOLDOWN` (default `60`s — probe interval after trip), `STORI_ORPHEUS_REQUIRED` (default `true` — abort composition if Orpheus is unreachable). **Docker:** `docker-compose.yml` overrides to `http://storpheus:10002` so the maestro container can reach Orpheus. See **HuggingFace token (Orpheus)** below. |
-| **Agent watchdogs** | `STORI_SECTION_CHILD_TIMEOUT` (default `300`s), `STORI_INSTRUMENT_AGENT_TIMEOUT` (default `600`s), `STORI_BASS_SIGNAL_WAIT_TIMEOUT` (default `240`s). Prevents orphaned subagents. See [architecture.md](../reference/architecture.md#agent-safety-nets). |
-| **S3** | `STORI_AWS_S3_ASSET_BUCKET`, `STORI_AWS_REGION`, plus AWS keys for presigned URLs |
+| **Domain / CORS** | `DOMAIN`; `CORS_ORIGINS` (JSON array, required—no default; set exact origins in production) |
+| **Auth** | `ACCESS_TOKEN_SECRET` — `openssl rand -hex 32`; required for protected endpoints |
+| **LLM** | `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY`, `LLM_MODEL` (supported: `anthropic/claude-sonnet-4.6` · `anthropic/claude-opus-4.6` — no other models) |
+| **DB** | `DB_PASSWORD` or `DATABASE_URL`. Reset: see **Reset database (Postgres)** below. |
+| **Music** | `STORPHEUS_BASE_URL` (default `http://localhost:10002`), `HF_API_KEY`, `STORPHEUS_MAX_CONCURRENT` (default `2` — max parallel submit+poll cycles), `STORPHEUS_TIMEOUT` (default `180`s — fallback max read timeout), `STORPHEUS_POLL_TIMEOUT` (default `30`s — long-poll timeout per `/jobs/{id}/wait` request), `STORPHEUS_POLL_MAX_ATTEMPTS` (default `10` — max polls before giving up, ~5 min total), `STORPHEUS_CB_THRESHOLD` (default `3` — consecutive failures before circuit breaker trips), `STORPHEUS_CB_COOLDOWN` (default `60`s — probe interval after trip), `STORPHEUS_REQUIRED` (default `true` — abort composition if Orpheus is unreachable). **Docker:** `docker-compose.yml` overrides to `http://storpheus:10002` so the maestro container can reach Orpheus. See **HuggingFace token (Orpheus)** below. |
+| **Agent watchdogs** | `SECTION_CHILD_TIMEOUT` (default `300`s), `INSTRUMENT_AGENT_TIMEOUT` (default `600`s), `BASS_SIGNAL_WAIT_TIMEOUT` (default `240`s). Prevents orphaned subagents. See [architecture.md](../reference/architecture.md#agent-safety-nets). |
+| **S3** | `AWS_S3_ASSET_BUCKET`, `AWS_REGION`, plus AWS keys for presigned URLs |
 
 Local: `NGINX_CONF_DIR=conf.d-local`. Full list: `.env.example`.
 
 ### HuggingFace token (Orpheus)
 
-Orpheus (when backed by a Hugging Face Gradio Space) needs a Hugging Face API token so the Space can attribute GPU usage to your account. Maestro reads `STORI_HF_API_KEY` and sends it as `Authorization: Bearer <token>` on every request to Orpheus; the Storpheus service forwards it to the Space.
+Orpheus (when backed by a Hugging Face Gradio Space) needs a Hugging Face API token so the Space can attribute GPU usage to your account. Maestro reads `HF_API_KEY` and sends it as `Authorization: Bearer <token>` on every request to Orpheus; the Storpheus service forwards it to the Space.
 
-- **Set the token:** In `.env`, set `STORI_HF_API_KEY` to your token (no quotes). With Docker Compose, the maestro service loads `.env`, so restart the stack after changing it.
-- **Verify it’s sent:** With `STORI_DEBUG=true`, Maestro logs at debug level whether an HF token is present for each Orpheus request (value is never logged).
+- **Set the token:** In `.env`, set `HF_API_KEY` to your token (no quotes). With Docker Compose, the maestro service loads `.env`, so restart the stack after changing it.
+- **Verify it’s sent:** With `DEBUG=true`, Maestro logs at debug level whether an HF token is present for each Orpheus request (value is never logged).
 - **“GPU quota (0s left)” after a new token:** If you see this right after switching to a new token, (1) confirm the new token is in `.env` and the maestro container was restarted; (2) try a token with **Write** scope—read-only tokens may not receive GPU quota for Space API calls. Create the token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
-- **Revoked tokens:** If HF revokes a token (e.g. after it was exposed), replace it with a new token and update `STORI_HF_API_KEY`; no code change is required.
+- **Revoked tokens:** If HF revokes a token (e.g. after it was exposed), replace it with a new token and update `HF_API_KEY`; no code change is required.
 
 ---
 
@@ -77,7 +77,7 @@ Orpheus (when backed by a Hugging Face Gradio Space) needs a Hugging Face API to
    docker compose exec -T postgres psql -U stori -d postgres -c "DROP DATABASE IF EXISTS stori;"
    docker compose exec -T postgres psql -U stori -d postgres -c "CREATE DATABASE stori;"
    ```
-3. **Run migrations** in a one-off container (so the app does not create tables on startup first). Migrations require `STORI_DATABASE_URL` or `STORI_DB_PASSWORD` (with Docker Postgres); see `.env.example`.
+3. **Run migrations** in a one-off container (so the app does not create tables on startup first). Migrations require `DATABASE_URL` or `DB_PASSWORD` (with Docker Postgres); see `.env.example`.
    ```bash
    docker compose run --rm maestro alembic upgrade head
    ```

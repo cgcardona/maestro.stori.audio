@@ -115,10 +115,10 @@ _FUZZY_EPSILON = float(os.environ.get("STORPHEUS_FUZZY_EPSILON", "0.35"))
 
 def _create_client() -> Client:
     """Create a fresh Gradio client connection."""
-    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
+    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HF_API_KEY")
     if not hf_token:
-        logger.warning("⚠️ No HF_TOKEN or STORI_HF_API_KEY set; Gradio Space may return GPU quota errors")
-    space_id = os.environ.get("STORI_STORPHEUS_SPACE", _DEFAULT_SPACE)
+        logger.warning("⚠️ No HF_TOKEN or HF_API_KEY set; Gradio Space may return GPU quota errors")
+    space_id = os.environ.get("STORPHEUS_SPACE", _DEFAULT_SPACE)
     logger.info(f"🔌 Connecting to Orpheus Space: {space_id}")
     return Client(space_id, hf_token=hf_token)
 
@@ -151,22 +151,22 @@ class _ClientPool:
         return client
 
     def get_loops(self, worker_id: int) -> Client | None:
-        loops_space = os.environ.get("STORI_STORPHEUS_LOOPS_SPACE", "")
+        loops_space = os.environ.get("STORPHEUS_LOOPS_SPACE", "")
         if not loops_space:
             return None
         if worker_id not in self._loops_clients:
-            hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
+            hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HF_API_KEY")
             logger.info(f"🔌 Connecting to Orpheus Loops Space: {loops_space}")
             self._loops_clients[worker_id] = Client(loops_space, hf_token=hf_token)
         return self._loops_clients[worker_id]
 
     def fresh_loops(self, worker_id: int) -> Client | None:
         """Return a brand-new Loops client, discarding previous session."""
-        loops_space = os.environ.get("STORI_STORPHEUS_LOOPS_SPACE", "")
+        loops_space = os.environ.get("STORPHEUS_LOOPS_SPACE", "")
         if not loops_space:
             return None
         self._loops_clients.pop(worker_id, None)
-        hf_token = os.environ.get("HF_TOKEN") or os.environ.get("STORI_HF_API_KEY")
+        hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HF_API_KEY")
         logger.info(f"🔌 Connecting to Orpheus Loops Space: {loops_space}")
         client = Client(loops_space, hf_token=hf_token)
         self._loops_clients[worker_id] = client
@@ -1459,7 +1459,7 @@ async def download_artifact(comp_id: str, filename: str) -> object:
 async def diagnostics() -> dict[str, object]:
     """Structured diagnostics for the Orpheus service pipeline."""
     now = time()
-    space_id = os.environ.get("STORI_STORPHEUS_SPACE", _DEFAULT_SPACE)
+    space_id = os.environ.get("STORPHEUS_SPACE", _DEFAULT_SPACE)
 
     gradio_status = "disconnected"
     hf_space_status = "unknown"
@@ -1760,7 +1760,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
 
     try:
         _use_loops = (
-            os.environ.get("STORI_STORPHEUS_USE_LOOPS_MODEL", "").lower() in ("1", "true", "yes")
+            os.environ.get("STORPHEUS_USE_LOOPS_MODEL", "").lower() in ("1", "true", "yes")
             and request.bars <= 8
         )
         if _use_loops:

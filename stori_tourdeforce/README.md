@@ -41,7 +41,7 @@ All endpoint defaults are configured for the Docker environment — no URL overr
 ```bash
 source .env.tourdeforce
 
-docker compose exec -e STORI_JWT="$STORI_JWT" maestro \
+docker compose exec -e JWT="$JWT" maestro \
   python -m stori_tourdeforce run --runs 5 --seed 1337 -v
 ```
 
@@ -97,7 +97,7 @@ The default output path is `/data/tdf_<timestamp>`. No `--out` flag needed unles
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--jwt-env` | `STORI_JWT` | Env var containing JWT |
+| `--jwt-env` | `JWT` | Env var containing JWT |
 | `--prompt-endpoint` | `http://maestro:10001/api/v1/prompts/random` | Prompt fetch URL |
 | `--maestro` | `http://maestro:10001/api/v1/maestro/stream` | Maestro stream URL |
 | `--storpheus` | `http://storpheus:10002` | Storpheus base URL |
@@ -239,7 +239,7 @@ See `SCENARIOS.md` for detailed flow diagrams.
 |---------|-------|-----|
 | `Name or service not known` | Endpoint URLs pointing at an external domain | Defaults are already correct for Docker; check you haven't overridden them |
 | `PermissionError: 'artifacts'` | Writing to `/app/` which is root-owned | Don't pass `--out` (defaults to `/data/`), or use `--out /tmp/tdf` |
-| `STORI_JWT not found` | JWT not passed into container | `source .env.tourdeforce && docker compose exec -e STORI_JWT="$STORI_JWT" maestro ...` |
+| `JWT not found` | JWT not passed into container | `source .env.tourdeforce && docker compose exec -e JWT="$JWT" maestro ...` |
 | Storpheus timeout | HF Space cold start | Increase `--storpheus-timeout 300` and `--global-timeout 600` |
 | Empty MIDI / 0 notes | HF Space down or rate-limited | Check `docker compose logs storpheus` and HF Space status |
 

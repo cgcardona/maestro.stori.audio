@@ -29,7 +29,7 @@ target_metadata = Base.metadata
 # Override sqlalchemy.url with the one from settings (required; no default password in repo)
 if not settings.database_url:
     raise RuntimeError(
-        "STORI_DATABASE_URL (or STORI_DB_PASSWORD with Docker Postgres) must be set for migrations. "
+        "DATABASE_URL (or DB_PASSWORD with Docker Postgres) must be set for migrations. "
         "set in .env or export before running alembic."
     )
 config.set_main_option(

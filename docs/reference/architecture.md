@@ -78,7 +78,7 @@ state → reasoning* → plan → planStepUpdate(active) → toolStart → toolC
 
 ## Intent engine
 
-Classify first, then execute. **REASONING** = questions, no tools. **EDITING** = direct DAW actions (transport, track, region, effects); LLM constrained by allowlist; validation + entity resolution before execution. **COMPOSING** = "make music" / high-level; planner -> executor -> Variation proposal; Orpheus for generation. Tool allowlisting and server-side entity IDs prevent bad or fabricated IDs.
+Classify first, then execute. **REASONING** = questions, no tools. **EDITING** = direct DAW actions (transport, track, region, effects); LLM constrained by allowlist; validation + entity resolution before execution. **COMPOSING** = "make music" / high-level; planner -> executor -> Variation proposal; Storpheus for generation. Tool allowlisting and server-side entity IDs prevent bad or fabricated IDs.
 
 ---
 
@@ -103,7 +103,7 @@ User prompt arrives
  field        ← COMPLETELY UNCHANGED
 ```
 
-- `Mode: compose` → COMPOSING. When the parsed prompt has roles (1+), the request routes through Agent Teams + Variation capture: per-instrument agents stream reasoning, generate music via Orpheus, and the result is packaged as a Variation for commit/discard review. When no roles are parsed, the standard planner path is used.
+- `Mode: compose` → COMPOSING. When the parsed prompt has roles (1+), the request routes through Agent Teams + Variation capture: per-instrument agents stream reasoning, generate music via Storpheus, and the result is packaged as a Variation for commit/discard review. When no roles are parsed, the standard planner path is used.
 - `Mode: edit` → EDITING. Vibes are matched against the producer idiom lexicon to pick the most appropriate edit intent.
 - `Mode: ask` → REASONING. No tools.
 
@@ -230,7 +230,7 @@ ExecutionServices  (mutable coordination — NOT frozen, passed separately)
 
 **Design rules:**
 - `frozen=True` on all contracts and `RuntimeContext` — structural fields and data are immutable once built by L1.
-- L3 may only reason about HOW to describe the music (Orpheus prompt). It must not reinterpret beat ranges, section names, roles, or track IDs — those come from the frozen contract.
+- L3 may only reason about HOW to describe the music (Storpheus prompt). It must not reinterpret beat ranges, section names, roles, or track IDs — those come from the frozen contract.
 - `l2_generate_prompt` is explicitly marked advisory; the contract's `section.character` and `section.role_brief` are authoritative when they conflict.
 - `RuntimeContext` is genuinely frozen — no nested mutable objects. `emotion_vector` is stored as `tuple[tuple[str, float], ...]` (never a dict). `drum_telemetry` is a `tuple[tuple[str, Any], ...]`. Immutable updates use `with_emotion_vector()` / `with_drum_telemetry()`, each returning a new instance. `to_composition_context()` returns a `types.MappingProxyType` (read-only).
 - Mutable coordination primitives (`SectionSignals`, `SectionState`) live in `ExecutionServices`, which is explicitly NOT frozen and passed separately from contracts and `RuntimeContext`. This prevents the frozen data boundary from wrapping live mutable synchronization state.
@@ -357,10 +357,10 @@ Independent instruments (keys, melody, guitar, pads, etc.) ignore `SectionSignal
 2. Parent executes `create_track` immediately, captures real `trackId`
 3. Groups remaining calls into section pairs `(region, generate_midi)`
 4. Runs section children **sequentially** for cross-section musical continuity. Bass children additionally self-gate via drum signals.
-5. **Server-owned retries** — `_dispatch_section_children` automatically retries failed sections (up to 2 retries per section, 2s/5s delays). Retries re-use the original frozen `SectionContract`, skip region creation if the region already exists (idempotent), pass continuity notes from the preceding section, and check the Orpheus circuit breaker before each retry round. No LLM involvement — the server replays the contract deterministically.
+5. **Server-owned retries** — `_dispatch_section_children` automatically retries failed sections (up to 2 retries per section, 2s/5s delays). Retries re-use the original frozen `SectionContract`, skip region creation if the region already exists (idempotent), pass continuity notes from the preceding section, and check the Storpheus circuit breaker before each retry round. No LLM involvement — the server replays the contract deterministically.
 6. Results are collapsed into **one summary tool-result message** per dispatch batch (plus `"..."` stubs for remaining `tool_call_id`s), keeping the LLM conversation small regardless of section count.
 7. Executes `effect` call at the end
-8. The LLM retry loop (`max_turns = 3`) catches any stage the LLM missed on Turn 0 — `_missing_stages()` checks track, region/generate counts, and effect. If generates are missing and the Orpheus circuit breaker is open, the loop aborts early. Server-owned retries handle *failed* section children; `_missing_stages()` handles the LLM *not emitting* the tool calls at all.
+8. The LLM retry loop (`max_turns = 3`) catches any stage the LLM missed on Turn 0 — `_missing_stages()` checks track, region/generate counts, and effect. If generates are missing and the Storpheus circuit breaker is open, the loop aborts early. Server-owned retries handle *failed* section children; `_missing_stages()` handles the LLM *not emitting* the tool calls at all.
 
 For single-section compositions, the parent uses the sequential execution path (same as before the three-level refactor). Section children are only spawned for multi-section compositions.
 
@@ -373,7 +373,7 @@ For single-section compositions, the parent uses the sequential execution path (
 5. Execute `stori_add_midi_region` — all structural params (`trackId`, `startBeat`, `durationBeats`) come **exclusively from the frozen contract**, never from LLM-proposed values. LLM drift is silently corrected. **Idempotent:** if a region already exists at the same (trackId, startBeat, durationBeats) location, the existing region's ID is returned with `skipped: true` and no `toolCall` event is emitted to the frontend — preventing duplicate-region errors when agents retry after context truncation.
 6. Capture `regionId` from result
 7. **Section reasoning**: brief streamed LLM call (`_reason_before_generate`) — reasons about section-specific musical approach (density, register, rhythmic choices). Emits `type: "reasoning"` events tagged with `agentId` + `sectionName` so the frontend can nest section-specific thinking under the correct section header. Returns a refined prompt for the generate call, or falls back to the parent's prompt on failure.
-8. Execute `stori_generate_midi` — structural params (`trackId`, `regionId`, `role`, `bars`, `key`, `start_beat`, `tempo`) also come from the frozen contract. Orpheus selects a curated seed MIDI from the pre-built seed library (`select_seed()`) matched to the request genre.
+8. Execute `stori_generate_midi` — structural params (`trackId`, `regionId`, `role`, `bars`, `key`, `start_beat`, `tempo`) also come from the frozen contract. Storpheus selects a curated seed MIDI from the pre-built seed library (`select_seed()`) matched to the request genre.
 9. Extract generated notes from SSE events and store them on `SectionResult.generated_notes`
 10. Compute `SectionTelemetry` from notes and write to `SectionState` (all instruments, not just drums)
 11. If drums: call `section_signals.signal_complete(section_id, contract_hash=..., success=True, drum_notes=...)`
@@ -407,7 +407,7 @@ When the STORI PROMPT contains `MidiExpressiveness:` or `Automation:` blocks, se
 Defense-in-depth against the failure modes that occur in nested, GPU-bound agent pipelines. All timeouts are configurable via `STORI_*` env vars.
 
 **Orphaned subagent prevention (§2):**
-- Section children are wrapped in `asyncio.wait_for(timeout=section_child_timeout)` (default 300s). If a child hangs on Orpheus or an LLM call, it is killed and the parent reports it as timed out.
+- Section children are wrapped in `asyncio.wait_for(timeout=section_child_timeout)` (default 300s). If a child hangs on Storpheus or an LLM call, it is killed and the parent reports it as timed out.
 - Instrument parents are wrapped in `asyncio.wait_for(timeout=instrument_agent_timeout)` (default 600s). A stuck parent cannot block the entire composition indefinitely.
 - Bass signal waits use `asyncio.wait_for(timeout=bass_signal_wait_timeout)` (default 240s). If drums fail silently, bass proceeds without the rhythm spine rather than deadlocking.
 
@@ -415,7 +415,7 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 - Before Phase 2 starts, the coordinator calls `allocate_colors(instrument_names)` (`app/core/track_styling.py`) to assign one distinct hex color per instrument from a fixed 12-entry perceptually-spaced palette (`COMPOSITION_PALETTE`). Colors are chosen in role order so adjacent tracks always contrast. Each instrument agent receives its pre-assigned color and is instructed to pass it verbatim in `stori_add_midi_track` — the agent cannot override it. This prevents the LLM from hallucinating repeated colors (the original bug was all tracks receiving amber/orange).
 
 **Storpheus pre-flight health check (hard gate):**
-- Before Phase 2 starts, the coordinator calls `StorpheusClient.health_check()`. When `STORI_STORPHEUS_REQUIRED=true` (default), an unhealthy probe aborts the composition immediately with `complete(success=false)` instead of wasting 45+ seconds of LLM reasoning that would inevitably fail at generation time. When `STORI_STORPHEUS_REQUIRED=false` (development/testing), it falls back to a soft warning and continues with retry logic active.
+- Before Phase 2 starts, the coordinator calls `StorpheusClient.health_check()`. When `STORPHEUS_REQUIRED=true` (default), an unhealthy probe aborts the composition immediately with `complete(success=false)` instead of wasting 45+ seconds of LLM reasoning that would inevitably fail at generation time. When `STORPHEUS_REQUIRED=false` (development/testing), it falls back to a soft warning and continues with retry logic active.
 
 **Storpheus async job queue (submit + poll):**
 - `StorpheusClient.generate()` uses a two-phase pattern: (1) **Submit** — `POST /generate` returns immediately with `{jobId, status}`. Cache hits arrive pre-completed (`status: "complete"`) without consuming a queue slot. Cache misses enqueue a job and return `{status: "queued", position}`. (2) **Poll** — `GET /jobs/{jobId}/wait?timeout=30` long-polls until the job completes or fails. Max `storpheus_poll_max_attempts` polls (default 10 = ~5 min total). Jobs survive HTTP disconnects — if a poll times out, the GPU work continues server-side and the next poll picks up the result. This eliminates the timeout cascade that occurred when 9 agents queued behind a semaphore in a single blocking HTTP request.
@@ -434,10 +434,10 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 - `is_cancelled` (from `request.is_disconnected`) is threaded from the SSE route through `orchestrate()` to the coordinator. The coordinator checks it on every 50ms poll cycle. If the client has disconnected, all pending agent tasks are cancelled, preventing wasted GPU and LLM tokens on compositions nobody will receive.
 
 **Lifecycle logging:**
-- Every level emits structured log messages with emoji prefixes for at-a-glance diagnosis: `🎬` start, `✅` success, `❌` error, `⏰` timeout, `💥` crash, `⏳` waiting, `🔄` retry, `🏁` completion. Timing is logged for LLM calls, Orpheus generation, signal waits, and full section/instrument durations.
+- Every level emits structured log messages with emoji prefixes for at-a-glance diagnosis: `🎬` start, `✅` success, `❌` error, `⏰` timeout, `💥` crash, `⏳` waiting, `🔄` retry, `🏁` completion. Timing is logged for LLM calls, Storpheus generation, signal waits, and full section/instrument durations.
 
-**Deep Orpheus telemetry:** Every generation call logs token flow and output metrics:
-- `🧠 Orpheus context usage: N / 8192 tokens (X%)` — prime + gen tokens vs context window
+**Deep Storpheus telemetry:** Every generation call logs token flow and output metrics:
+- `🧠 Storpheus context usage: N / 8192 tokens (X%)` — prime + gen tokens vs context window
 - `🎼 Channels generated: N` — number of MIDI channels in output
 - `🎵 Notes generated: N` — total note count
 - `📊 Session {id}: accumulated=N tokens, call #M` — persistent session state
@@ -446,20 +446,20 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 
 | Config key | Default | Controls |
 |---|---|---|
-| `STORI_SECTION_CHILD_TIMEOUT` | 300 | Per-section child watchdog (seconds) |
-| `STORI_INSTRUMENT_AGENT_TIMEOUT` | 600 | Per-instrument parent watchdog (seconds) |
-| `STORI_BASS_SIGNAL_WAIT_TIMEOUT` | 240 | Bass waiting for drum signal (seconds) |
-| `STORI_STORPHEUS_MAX_CONCURRENT` | 2 | Max parallel submit+poll cycles (serializes GPU access) |
-| `STORI_STORPHEUS_TIMEOUT` | 180 | Fallback max read timeout (seconds) |
-| `STORI_STORPHEUS_POLL_TIMEOUT` | 30 | Long-poll timeout per `/jobs/{id}/wait` request (seconds) |
-| `STORI_STORPHEUS_POLL_MAX_ATTEMPTS` | 10 | Max polls before giving up (~5 min total) |
-| `STORI_STORPHEUS_CB_THRESHOLD` | 3 | Consecutive failures before circuit breaker trips |
-| `STORI_STORPHEUS_CB_COOLDOWN` | 60 | Seconds before tripped circuit allows a probe |
-| `STORI_STORPHEUS_REQUIRED` | true | Abort composition if pre-flight health check fails |
-| `STORI_STORPHEUS_PRESERVE_ALL_CHANNELS` | true | Return all MIDI channels (DAW handles routing) |
-| `STORI_STORPHEUS_ENABLE_BEAT_RESCALING` | false | Disable beat rescaling for raw model timing |
-| `STORI_STORPHEUS_REJECTION_CANDIDATES` | 4 | Candidates for rejection sampling (quality preset) |
-| `STORI_STORPHEUS_MAX_SESSION_TOKENS` | 4096 | Token cap before session rotation |
+| `SECTION_CHILD_TIMEOUT` | 300 | Per-section child watchdog (seconds) |
+| `INSTRUMENT_AGENT_TIMEOUT` | 600 | Per-instrument parent watchdog (seconds) |
+| `BASS_SIGNAL_WAIT_TIMEOUT` | 240 | Bass waiting for drum signal (seconds) |
+| `STORPHEUS_MAX_CONCURRENT` | 2 | Max parallel submit+poll cycles (serializes GPU access) |
+| `STORPHEUS_TIMEOUT` | 180 | Fallback max read timeout (seconds) |
+| `STORPHEUS_POLL_TIMEOUT` | 30 | Long-poll timeout per `/jobs/{id}/wait` request (seconds) |
+| `STORPHEUS_POLL_MAX_ATTEMPTS` | 10 | Max polls before giving up (~5 min total) |
+| `STORPHEUS_CB_THRESHOLD` | 3 | Consecutive failures before circuit breaker trips |
+| `STORPHEUS_CB_COOLDOWN` | 60 | Seconds before tripped circuit allows a probe |
+| `STORPHEUS_REQUIRED` | true | Abort composition if pre-flight health check fails |
+| `STORPHEUS_PRESERVE_ALL_CHANNELS` | true | Return all MIDI channels (DAW handles routing) |
+| `STORPHEUS_ENABLE_BEAT_RESCALING` | false | Disable beat rescaling for raw model timing |
+| `STORPHEUS_REJECTION_CANDIDATES` | 4 | Candidates for rejection sampling (quality preset) |
+| `STORPHEUS_MAX_SESSION_TOKENS` | 4096 | Token cap before session rotation |
 
 ### SectionState — deterministic musical telemetry
 
@@ -482,7 +482,7 @@ class SectionTelemetry:
 
 Keys follow `"Instrument: section_id"` format (e.g. `"Drums: 0:verse"`, `"Bass: 1:chorus"`). All writes go through an `asyncio.Lock` for thread safety across concurrent section children. `snapshot()` is also async and locked to prevent races during execution. Values are frozen dataclasses — immutable after write.
 
-**Bass enrichment:** Before generating, each bass section child reads `SectionState["Drums: {section_id}"]`. If available, the drum telemetry (groove vector, density, kick pattern hash, rhythmic complexity) is injected into a new `RuntimeContext` instance via `with_drum_telemetry()` (immutable update — stores as `tuple[tuple[str, Any], ...]`). The updated context is bridged to the Orpheus generate call at the tool-execution boundary via a read-only `MappingProxyType`. This enables deterministic cross-instrument awareness without expanding LLM prompts or adding token cost.
+**Bass enrichment:** Before generating, each bass section child reads `SectionState["Drums: {section_id}"]`. If available, the drum telemetry (groove vector, density, kick pattern hash, rhythmic complexity) is injected into a new `RuntimeContext` instance via `with_drum_telemetry()` (immutable update — stores as `tuple[tuple[str, Any], ...]`). The updated context is bridged to the Storpheus generate call at the tool-execution boundary via a read-only `MappingProxyType`. This enables deterministic cross-instrument awareness without expanding LLM prompts or adding token cost.
 
 **Diagnostic value:** The coordinator can call `await section_state.snapshot()` after composition completes for orchestration diagnostics, quality scoring, and future mixing decisions.
 
@@ -518,7 +518,7 @@ Automated guardrails prevent regression in the Maestro/Muse separation.
 
 **Boundary check script:** `scripts/check_boundaries.py` uses AST parsing to enforce 17 import and access rules across the codebase (8 original variation boundaries + 9 Muse VCS module isolation rules). Run locally (`python scripts/check_boundaries.py`) or in CI — fails with non-zero exit code on any violation. Rules are documented in `docs/architecture/boundary_rules.md`.
 
-**Boundary seal tests:** `tests/test_boundary_seal.py` enforces the same contracts at the pytest level — signature checks, forbidden-import assertions, `VariationContext` data-only verification, `muse_repository` isolation, and golden shape tests for `UpdatedRegionPayload`, `_ToolCallOutcome`, Orpheus normalization output, and `SnapshotBundle`.
+**Boundary seal tests:** `tests/test_boundary_seal.py` enforces the same contracts at the pytest level — signature checks, forbidden-import assertions, `VariationContext` data-only verification, `muse_repository` isolation, and golden shape tests for `UpdatedRegionPayload`, `_ToolCallOutcome`, Storpheus normalization output, and `SnapshotBundle`.
 
 Key invariants enforced:
 
@@ -562,7 +562,7 @@ HTTP API: 5 production endpoints at `/api/v1/muse/` (routes in `app/api/routes/m
 
 ## Music generation
 
-**Orpheus required** for composing. No pattern fallback; if Orpheus is down, generation fails with a clear error. Config: `STORI_STORPHEUS_BASE_URL` (default `http://localhost:10002`). Full health requires Orpheus. See [setup.md](../guides/setup.md) for config.
+**Storpheus required** for composing. No pattern fallback; if Storpheus is down, generation fails with a clear error. Config: `STORPHEUS_BASE_URL` (default `http://localhost:10002`). Full health requires Storpheus. See [setup.md](../guides/setup.md) for config.
 
 ### Storpheus instrument mapping
 
@@ -577,21 +577,21 @@ If none of the requested instruments resolve, the fallback is `["Drums", "Electr
 
 ### Seed selection
 
-Every Orpheus generation is primed with a curated seed MIDI from the pre-built seed library (`seed_library/seeds/`). Seeds are selected by genre via `select_seed()`, which picks a random high-quality seed from the genre bucket (or falls back to the `general` bucket). Each seed contains ~500 notes / ~1,500 tokens from the Orpheus 230K Loops dataset, giving the transformer rich harmonic and rhythmic context for continuation. Seed quality is validated at selection time via `analyze_seed()` — seeds below minimum note/byte thresholds are rejected.
+Every Storpheus generation is primed with a curated seed MIDI from the pre-built seed library (`seed_library/seeds/`). Seeds are selected by genre via `select_seed()`, which picks a random high-quality seed from the genre bucket (or falls back to the `general` bucket). Each seed contains ~500 notes / ~1,500 tokens from the Orpheus-230K Loops dataset, giving the transformer rich harmonic and rhythmic context for continuation. Seed quality is validated at selection time via `analyze_seed()` — seeds below minimum note/byte thresholds are rejected.
 
 ### Persistent composition sessions
 
-Each composition maintains a persistent Gradio session via `CompositionState`. Instead of resetting the session hash on every call (which destroyed accumulated token context), sessions persist across sections and instrument calls within the same composition. A token cap (`STORI_STORPHEUS_MAX_SESSION_TOKENS`, default 4096) triggers automatic session rotation — truncating earliest tokens rather than a full reset — to prevent unbounded growth while preserving continuity.
+Each composition maintains a persistent Gradio session via `CompositionState`. Instead of resetting the session hash on every call (which destroyed accumulated token context), sessions persist across sections and instrument calls within the same composition. A token cap (`STORPHEUS_MAX_SESSION_TOKENS`, default 4096) triggers automatic session rotation — truncating earliest tokens rather than a full reset — to prevent unbounded growth while preserving continuity.
 
-`CompositionState` is tracked in both the Orpheus music service (per-call session management) and the Maestro `StateStore` (architectural hook for future direct token-state persistence).
+`CompositionState` is tracked in both the Storpheus service (per-call session management) and the Maestro `StateStore` (architectural hook for future direct token-state persistence).
 
 ### Channel preservation
 
-By default (`STORI_STORPHEUS_PRESERVE_ALL_CHANNELS=true`), all generated MIDI channels are returned to the DAW. Instrument routing is handled DAW-side, not proxy-side. This preserves the full musical structure that Orpheus generates instead of destructively filtering channels before the DAW sees them. The legacy channel-filtering path remains available by setting the flag to `false`.
+By default (`STORPHEUS_PRESERVE_ALL_CHANNELS=true`), all generated MIDI channels are returned to the DAW. Instrument routing is handled DAW-side, not proxy-side. This preserves the full musical structure that Storpheus generates instead of destructively filtering channels before the DAW sees them. The legacy channel-filtering path remains available by setting the flag to `false`.
 
 ### Quality rejection sampling
 
-For the `quality` preset, the Orpheus proxy generates N candidates (default 4, configurable via `STORI_STORPHEUS_REJECTION_CANDIDATES`) and scores each using a composite quality metric:
+For the `quality` preset, the Storpheus service generates N candidates (default 4, configurable via `STORPHEUS_REJECTION_CANDIDATES`) and scores each using a composite quality metric:
 
 | Signal | Weight | Measures |
 |--------|--------|----------|
@@ -604,7 +604,7 @@ The best-scoring candidate is returned. For `balanced` and `fast` presets, a sin
 
 ### Beat rescaling
 
-Beat rescaling is disabled by default (`ENABLE_BEAT_RESCALING=false`) to evaluate raw Orpheus model timing without distortion. When enabled, it detects compressed output (notes spanning <50% of target duration) and applies a linear scale factor. Re-enable via environment variable when timing distortion is confirmed.
+Beat rescaling is disabled by default (`ENABLE_BEAT_RESCALING=false`) to evaluate raw Storpheus model timing without distortion. When enabled, it detects compressed output (notes spanning <50% of target duration) and applies a linear scale factor. Re-enable via environment variable when timing distortion is confirmed.
 
 ### Expressive MIDI pipeline
 
@@ -619,13 +619,13 @@ The generation pipeline carries the **complete set** of musically relevant MIDI 
 | Program Change | track-level | PC (0xCn) | `stori_set_midi_program` |
 | Automation | track-level | n/a (DAW param curves) | `stori_add_automation` (volume, pan, FX) |
 
-**Data flow:** Orpheus generates notes + CC + pitch bend + aftertouch → `GenerationResult` → executor records into `VariationContext` → variation service groups into `Phrase.controller_changes` → commit materialises into `updated_regions` (cc_events, pitch_bends, aftertouch arrays) → frontend replaces region data.
+**Data flow:** Storpheus generates notes + CC + pitch bend + aftertouch → `GenerationResult` → executor records into `VariationContext` → variation service groups into `Phrase.controller_changes` → commit materialises into `updated_regions` (cc_events, pitch_bends, aftertouch arrays) → frontend replaces region data.
 
 In non-variation mode (EDITING), expressive data is written to `StateStore` directly and returned in `toolCall` results.
 
 ### Emotion vector conditioning
 
-Every Orpheus generation call is conditioned by a 5-axis **EmotionVector** derived from the request's creative brief:
+Every Storpheus generation call is conditioned by a 5-axis **EmotionVector** derived from the request's creative brief:
 
 | Axis | Range | Musical meaning |
 |---|---|---|
@@ -649,7 +649,7 @@ emotion_vector_from_stori_prompt()          ← app/core/emotion_vector.py
 EmotionVector(energy, valence, tension, intimacy, motion)
     │
     ▼
-StorpheusBackend.generate()                   ← app/services/backends/orpheus.py
+StorpheusBackend.generate()                   ← app/services/backends/storpheus.py
     │  maps:  valence → tone_brightness
     │         energy → energy_intensity
     │         salient axes → musical_goals list
@@ -658,7 +658,7 @@ StorpheusClient.generate()                    ← app/services/storpheus.py
     │  submit: POST /generate → {jobId, status}
     │  poll:   GET /jobs/{id}/wait?timeout=30
     ▼
-Orpheus JobQueue (asyncio.Queue, 2 workers)
+Storpheus JobQueue (asyncio.Queue, 2 workers)
     │  worker picks job → calls _do_generate()
     ▼
 HF Space gradio_client.predict()
@@ -670,7 +670,7 @@ For **natural language** prompts: the EmotionVector is not derived (no structure
 
 ### Storpheus async job queue
 
-`StorpheusClient` is a process-wide singleton (see `app/services/orpheus.get_storpheus_client()`). The `httpx.AsyncClient` is created once at startup with explicit connection limits and keepalive settings, and `warmup()` is called in the FastAPI lifespan to pre-establish the TCP connection before the first user request.
+`StorpheusClient` is a process-wide singleton (see `app/services/storpheus.get_storpheus_client()`). The `httpx.AsyncClient` is created once at startup with explicit connection limits and keepalive settings, and `warmup()` is called in the FastAPI lifespan to pre-establish the TCP connection before the first user request.
 
 **Submit + poll pattern:** `POST /generate` returns immediately with `{jobId, status}`. Cache hits arrive pre-completed (no queue slot used). Cache misses enqueue a job in a bounded `asyncio.Queue` (max depth 20, configurable via `STORPHEUS_MAX_QUEUE_DEPTH`). A fixed-size worker pool (`STORPHEUS_MAX_CONCURRENT`, default 2) pulls jobs from the queue and runs `_do_generate()` (the extracted GPU generation logic). Callers poll `GET /jobs/{jobId}/wait?timeout=30` until the job completes or fails. Jobs survive HTTP disconnects — if a poll times out, the GPU work continues and the result is retrievable on the next poll. Completed jobs are cleaned up after 5 minutes (`STORPHEUS_JOB_TTL`, default 300s).
 

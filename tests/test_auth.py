@@ -93,7 +93,7 @@ class TestGenerateAccessCode:
 
         """Should raise error when secret not configured."""
         with patch.object(settings, "access_token_secret", None):
-            with pytest.raises(AccessCodeError, match="STORI_ACCESS_TOKEN_SECRET not configured"):
+            with pytest.raises(AccessCodeError, match="ACCESS_TOKEN_SECRET not configured"):
                 generate_access_code(duration_hours=1)
 
 
