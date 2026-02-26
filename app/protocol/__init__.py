@@ -2,13 +2,21 @@
 
 Public re-exports for convenience:
 
-    from app.protocol import STORI_VERSION, STORI_PROTOCOL_VERSION, emit, serialize_event, StoriEvent
+    from app.protocol import (
+        STORI_VERSION,
+        STORI_PROTOCOL_VERSION,
+        StoriEvent,
+        emit,
+        serialize_event,
+        parse_event,
+        ProtocolSerializationError,
+    )
 """
 from __future__ import annotations
 
 from app.protocol.version import STORI_VERSION, STORI_PROTOCOL_VERSION
 from app.protocol.events import StoriEvent
-from app.protocol.emitter import emit, serialize_event, ProtocolSerializationError
+from app.protocol.emitter import emit, serialize_event, parse_event, ProtocolSerializationError
 
 __all__ = [
     "STORI_VERSION",
@@ -16,5 +24,6 @@ __all__ = [
     "StoriEvent",
     "emit",
     "serialize_event",
+    "parse_event",
     "ProtocolSerializationError",
 ]

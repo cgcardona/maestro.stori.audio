@@ -1,11 +1,15 @@
-"""Typed SSE event emitter — protocol-enforced serialization.
+"""Typed SSE event emitter and parser — protocol-enforced serialization.
 
 Every SSE event the backend emits passes through this module.
-Two entry points:
+Three entry points:
 
-  ``emit(StoriEvent)``       — for code that constructs typed event objects.
-  ``serialize_event(dict)``  — for handler code that builds dicts; validates
-                               through the registry model before serialization.
+  ``emit(StoriEvent)``       — serialize a typed event object to SSE wire format.
+  ``serialize_event(dict)``  — serialize a handler dict; validates through the
+                               registry model before serialization.
+  ``parse_event(dict)``      — deserialize a wire-format dict back into the
+                               correct StoriEvent subclass (inverse of
+                               ``serialize_event``).  Use in tests and any
+                               consumer that needs typed access to received events.
 
 The ``seq`` field defaults to -1 (sentinel); the route-layer ``_with_seq()``
 wrapper in maestro.py overwrites it with the monotonic stream counter.
@@ -53,6 +57,37 @@ def emit(event: StoriEvent) -> str:
 
     data = event.model_dump(by_alias=True, exclude_none=True)
     return f"data: {json.dumps(data, separators=(',', ':'), ensure_ascii=False)}\n\n"
+
+
+def parse_event(data: dict[str, Any]) -> StoriEvent:
+    """Deserialize a wire-format dict back into the correct StoriEvent subclass.
+
+    Mirrors ``serialize_event`` in reverse: dispatches through the registry
+    and validates via the Pydantic model, returning the concrete subclass
+    (e.g. ``ErrorEvent``, ``StateEvent``) rather than the base ``StoriEvent``.
+
+    The wire format uses camelCase keys (``by_alias=True``).  ``CamelModel``
+    has ``populate_by_name=True`` so both snake_case and camelCase keys are
+    accepted during validation.
+
+    Raises ``ProtocolSerializationError`` for unknown or malformed events.
+    """
+    event_type = data.get("type")
+    if not isinstance(event_type, str):
+        raise ProtocolSerializationError("Event dict missing 'type' field")
+
+    if event_type not in EVENT_REGISTRY:
+        raise ProtocolSerializationError(
+            f"Unknown event type '{event_type}'. Cannot deserialize."
+        )
+
+    model_class = EVENT_REGISTRY[event_type]
+    try:
+        return model_class.model_validate(data)
+    except Exception as exc:
+        raise ProtocolSerializationError(
+            f"Event '{event_type}' failed deserialization: {exc}"
+        ) from exc
 
 
 def serialize_event(data: dict[str, Any]) -> str:

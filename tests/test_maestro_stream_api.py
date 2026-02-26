@@ -7,15 +7,19 @@ Covers:
 """
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncGenerator
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.db.models import User
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-import json
-import pytest
-import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+
+from app.contracts.llm_types import ChatMessage
+from app.core.maestro_handlers import UsageTracker
+from app.db.models import User
+from app.protocol.emitter import ProtocolSerializationError, parse_event
+from app.protocol.events import ErrorEvent, StoriEvent
 
 
 # ---------------------------------------------------------------------------
@@ -23,15 +27,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # ---------------------------------------------------------------------------
 
 
-def parse_sse_events(body: str) -> list[dict[str, object]]:
-    """Parse SSE event stream body into list of dicts."""
-    events: list[dict[str, object]] = []
+def parse_sse_events(body: str) -> list[StoriEvent]:
+    """Parse SSE event stream body into typed StoriEvent instances."""
+    events: list[StoriEvent] = []
     for line in body.split("\n"):
         line = line.strip()
         if line.startswith("data: "):
             try:
-                events.append(json.loads(line[6:]))
-            except json.JSONDecodeError:
+                data = json.loads(line[6:])
+                events.append(parse_event(data))
+            except (json.JSONDecodeError, ProtocolSerializationError):
                 pass
     return events
 
@@ -83,8 +88,8 @@ class TestComposeStreamEndpoint:
         async def fake_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
 
             from app.core.sse_utils import sse_event
-            yield await sse_event({"type": "state", "state": "composing"})
-            yield await sse_event({"type": "complete", "success": True, "toolCalls": []})
+            yield await sse_event({"type": "state", "state": "composing", "intent": "compose", "confidence": 0.9, "traceId": "t-0"})
+            yield await sse_event({"type": "complete", "success": True, "traceId": "t-0"})
 
         with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
@@ -113,7 +118,7 @@ class TestComposeStreamEndpoint:
                 headers=auth_headers,
             )
         events = parse_sse_events(resp.text)
-        types = [e["type"] for e in events]
+        types = [e.type for e in events]
         assert "state" in types
         assert "toolCall" in types
         assert "complete" in types
@@ -141,9 +146,14 @@ class TestComposeStreamEndpoint:
         """Budget deduction runs after successful streaming; no budgetUpdate SSE event is emitted."""
         mock_deduct = AsyncMock(return_value=(test_user, MagicMock()))
 
-        async def fake_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
+        async def fake_orchestrate(
+            prompt: str,
+            project_context: object = None,
+            model: str | None = None,
+            usage_tracker: UsageTracker | None = None,
+            **kwargs: object,
+        ) -> AsyncGenerator[str, None]:
 
-            usage_tracker = kwargs.get("usage_tracker")
             if usage_tracker:
                 usage_tracker.add(100, 50)
             from app.core.sse_utils import sse_event
@@ -164,7 +174,7 @@ class TestComposeStreamEndpoint:
         mock_deduct.assert_called_once()
         # No budgetUpdate event is emitted — frontend polls /budget/status instead
         events = parse_sse_events(resp.text)
-        assert not any(e.get("type") == "budgetUpdate" for e in events)
+        assert not any(e.type == "budgetUpdate" for e in events)
         # No X-Budget-Remaining header
         assert "x-budget-remaining" not in {k.lower() for k in resp.headers}
 
@@ -185,9 +195,9 @@ class TestComposeStreamEndpoint:
                 headers=auth_headers,
             )
         events = parse_sse_events(resp.text)
-        error_events = [e for e in events if e.get("type") == "error"]
+        error_events = [e for e in events if isinstance(e, ErrorEvent)]
         assert len(error_events) >= 1
-        assert "backend exploded" in error_events[0].get("message", "")
+        assert "backend exploded" in error_events[0].message
 
     @pytest.mark.anyio
     async def test_maestro_stream_loads_conversation_history(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User, db_session: AsyncSession) -> None:
@@ -212,11 +222,21 @@ class TestComposeStreamEndpoint:
         db_session.add(msg)
         await db_session.commit()
 
-        captured_history = {}
+        captured_history: list[ChatMessage] = []
 
-        async def spy_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
+        async def spy_orchestrate(
+            prompt: str,
+            project_context: object = None,
+            model: str | None = None,
+            usage_tracker: UsageTracker | None = None,
+            conversation_id: str | None = None,
+            user_id: str | None = None,
+            conversation_history: list[ChatMessage] | None = None,
+            **kwargs: object,
+        ) -> AsyncGenerator[str, None]:
 
-            captured_history["history"] = kwargs.get("conversation_history", [])
+            captured_history.clear()
+            captured_history.extend(conversation_history or [])
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
             yield await sse_event({"type": "complete", "success": True, "traceId": "t-1"})
@@ -228,8 +248,8 @@ class TestComposeStreamEndpoint:
                 headers=auth_headers,
             )
         assert resp.status_code == 200
-        assert len(captured_history.get("history", [])) >= 1
-        assert captured_history["history"][0]["content"] == "previous prompt"
+        assert len(captured_history) >= 1
+        assert captured_history[0]["content"] == "previous prompt"
 
     @pytest.mark.anyio
     async def test_maestro_stream_no_auth_401(self, client: AsyncClient, db_session: AsyncSession) -> None:
