@@ -21,7 +21,7 @@ from pydantic import Field
 
 from app.models.base import CamelModel
 
-from app.contracts.mcp_types import DAWToolCallMessage, MCPContentBlock, MCPServerInfo, MCPToolDef
+from app.contracts.mcp_types import DAWToolCallMessage, DAWToolResponse, MCPContentBlock, MCPServerInfo, MCPToolDef
 from app.mcp.server import get_mcp_server, StoriMCPServer
 from app.auth.dependencies import require_valid_token
 from app.auth.tokens import validate_access_code, AccessCodeError
@@ -74,6 +74,23 @@ class ToolResponseBody(CamelModel):
     """Body for DAW tool-response POST."""
     request_id: str
     result: dict[str, object] = {}
+
+
+# =============================================================================
+# Helpers
+# =============================================================================
+
+
+def _parse_daw_response(raw: object) -> DAWToolResponse:
+    """Parse an untyped WebSocket/HTTP payload into a typed DAWToolResponse.
+
+    This is the single deserialization boundary for tool responses arriving
+    from the DAW.  Explicit ``is True`` comparison avoids treating any
+    truthy object as a successful response — only JSON ``true`` qualifies.
+    """
+    if isinstance(raw, dict) and "success" in raw:
+        return {"success": raw["success"] is True}
+    return {"success": False}
 
 
 # =============================================================================
@@ -249,11 +266,10 @@ async def daw_websocket(
                 logger.debug("Project state updated")
             elif message_type == "toolResponse":
                 request_id = data.get("requestId")
-                result = data.get("result", {})
                 server.receive_tool_response(
                     connection_id,
                     str(request_id) if request_id is not None else "",
-                    result if isinstance(result, dict) else {},
+                    _parse_daw_response(data.get("result")),
                 )
                 logger.debug(f"Tool response received: {request_id}")
             elif message_type == "ping":
@@ -354,6 +370,6 @@ async def post_tool_response(
     server.receive_tool_response(
         connection_id,
         body.request_id,
-        dict(body.result),
+        _parse_daw_response(body.result),
     )
     return ToolResponseReceivedResponse(status="ok")

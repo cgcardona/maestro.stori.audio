@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 from app.contracts.mcp_types import (
     DAWToolCallMessage,
+    DAWToolResponse,
     MCPCapabilities,
     MCPContentBlock,
     MCPServerInfo,
@@ -48,7 +49,7 @@ class DAWConnection:
     id: str
     send_callback: Callable[[DAWToolCallMessage], Awaitable[None]]
     project_state: ProjectContext | None = None
-    pending_responses: dict[str, asyncio.Future[dict[str, object]]] = field(default_factory=dict)
+    pending_responses: dict[str, asyncio.Future[DAWToolResponse]] = field(default_factory=dict)
 
 
 class StoriMCPServer:
@@ -173,7 +174,7 @@ class StoriMCPServer:
         self,
         connection_id: str,
         request_id: str,
-        result: dict[str, object],
+        result: DAWToolResponse,
     ) -> None:
         """Receive a tool execution response from DAW."""
         if connection_id in self._daw_connections:
@@ -254,7 +255,7 @@ class StoriMCPServer:
         
         # Create request ID and future for response
         request_id = f"{name}_{id(arguments)}"
-        response_future: asyncio.Future[dict[str, object]] = asyncio.Future()
+        response_future: asyncio.Future[DAWToolResponse] = asyncio.Future()
         conn.pending_responses[request_id] = response_future
 
         try:
@@ -268,7 +269,7 @@ class StoriMCPServer:
 
             # Wait for response (with timeout)
             result = await asyncio.wait_for(response_future, timeout=30.0)
-            succeeded = bool(result.get("success", False))
+            succeeded = result["success"]
 
             return ToolCallResult(
                 success=succeeded,

@@ -14,30 +14,38 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [llm_types.py](#llm_typespy)
    - [json_types.py](#json_typespy)
    - [project_types.py](#project_typespy)
+   - [mcp_types.py](#mcp_typespy)
 3. [Auth (`app/auth/tokens.py`)](#auth)
 4. [Services](#services)
    - [Assets (`app/services/assets.py`)](#assets)
    - [OrpheusRawResponse](#orpheusrawresponse)
    - [SampleChange](#samplechange)
-5. [Planner (`app/core/planner/`)](#planner)
+   - [ExpressivenessResult](#expressivenessresult)
+5. [Variation Layer (`app/variation/`)](#variation-layer)
+   - [Event Envelope payloads](#event-envelope-payloads)
+   - [PhraseRecord](#phraserecord)
+6. [Planner (`app/core/planner/`)](#planner)
    - [_ExistingTrackInfo](#_existingtrackinfo)
-6. [State Store (`app/core/state_store.py`)](#state-store)
+   - [_AddMidiTrackParams](#_addmiditrackparams)
+   - [_AddMidiRegionParams](#_addmidiregionparams)
+   - [_GenerateParams](#_generateparams)
+7. [State Store (`app/core/state_store.py`)](#state-store)
    - [_ProjectMetadataSnapshot](#_projectmetadatasnapshot)
 7. [Orpheus Types (`storpheus/orpheus_types.py`)](#orpheus-types)
    - [MIDI event types](#midi-event-types)
    - [Pipeline types](#pipeline-types)
    - [Scoring types](#scoring-types)
-8. [Region Event Map Aliases](#region-event-map-aliases)
-9. [HTTP Response Entities](#http-response-entities)
-   - [Protocol Introspection](#protocol-introspection-appprotocolresponsespy)
-   - [Muse VCS](#muse-vcs-appapiroutesmusepy)
-   - [Maestro Core](#maestro-core-appapiroutesmaestropy)
-   - [MCP Endpoints](#mcp-endpoints-appapiroutesmcppy)
-   - [Variation Endpoints](#variation-endpoints)
-   - [Conversations](#conversations-appapiroutesconversationsmodelspy)
-10. [Tempo Convention](#tempo-convention)
-11. [The `Any` Quarantine](#the-any-quarantine)
-12. [Entity Hierarchy](#entity-hierarchy)
+10. [Region Event Map Aliases](#region-event-map-aliases)
+11. [HTTP Response Entities](#http-response-entities)
+    - [Protocol Introspection](#protocol-introspection-appprotocolresponsespy)
+    - [Muse VCS](#muse-vcs-appapiroutesmusepy)
+    - [Maestro Core](#maestro-core-appapiroutesmaestropy)
+    - [MCP Endpoints](#mcp-endpoints-appapiroutesmcppy)
+    - [Variation Endpoints](#variation-endpoints)
+    - [Conversations](#conversations-appapiroutesconversationsmodelspy)
+12. [Tempo Convention](#tempo-convention)
+13. [`Any` Status](#any-status)
+14. [Entity Hierarchy](#entity-hierarchy)
 
 ---
 
@@ -674,6 +682,48 @@ Type alias: `str | dict[str, object]` — Either a string shorthand (`"auto"`, `
 | `tracks` | `list[ProjectTrack]` | All tracks in the project |
 | `buses` | `list[BusDict]` | All audio buses |
 
+### `mcp_types.py`
+
+**Path:** `app/contracts/mcp_types.py`
+
+Named TypedDicts for every entity in the MCP protocol layer: tool schema shapes, server capabilities, JSON-RPC 2.0 messages, and the DAW communication channel. No `dict[str, object]` is used here — every shape is named and documented.
+
+#### Tool schema shapes
+
+| Type | Kind | Description |
+|------|------|-------------|
+| `MCPInputSchema` | `TypedDict, total=False` | JSON Schema for an MCP tool's accepted arguments. `type` and `properties` are `Required`; `required` is optional. |
+| `MCPToolDef` | `TypedDict, total=False` | Full definition of one MCP tool. `name`, `description`, `inputSchema` are `Required`; `server_side` is optional. |
+| `MCPContentBlock` | `TypedDict` | A content block in an MCP tool result — always `{"type": "text", "text": "..."}`. |
+
+#### Server capability shapes
+
+| Type | Kind | Description |
+|------|------|-------------|
+| `MCPToolsCapability` | `TypedDict, total=False` | The `tools` entry in `MCPCapabilities`. Currently always `{}` — reserved for future metadata. |
+| `MCPResourcesCapability` | `TypedDict, total=False` | The `resources` entry in `MCPCapabilities`. Currently always `{}` — reserved for future metadata. |
+| `MCPCapabilities` | `TypedDict, total=False` | MCP server capabilities advertised during the `initialize` handshake. Fields: `tools`, `resources`. |
+| `MCPServerInfo` | `TypedDict` | Server info returned in `initialize` responses and `get_server_info()`. Fields: `name`, `version`, `protocolVersion`, `capabilities`. |
+
+#### JSON-RPC 2.0 message shapes
+
+| Type | Kind | Description |
+|------|------|-------------|
+| `MCPRequest` | `TypedDict, total=False` | Incoming JSON-RPC 2.0 message. `jsonrpc` and `method` are `Required`; `id` (absent for notifications) and `params` (absent for no-arg methods) are optional. |
+| `MCPSuccessResponse` | `TypedDict` | JSON-RPC 2.0 success response with `jsonrpc`, `id`, and `result: dict[str, object]`. |
+| `MCPErrorDetail` | `TypedDict, total=False` | The `error` object in an error response. `code` and `message` are `Required`; `data` is optional. |
+| `MCPErrorResponse` | `TypedDict` | JSON-RPC 2.0 error response with `jsonrpc`, `id`, and `error: MCPErrorDetail`. |
+| `MCPResponse` | `Union` | `MCPSuccessResponse \| MCPErrorResponse` — discriminated union of all response shapes. |
+
+#### DAW channel shapes
+
+| Type | Kind | Description |
+|------|------|-------------|
+| `DAWToolCallMessage` | `TypedDict` | Message sent from MCP server → DAW over WebSocket to trigger tool execution. Fields: `type: Literal["toolCall"]`, `requestId: str`, `tool: str`, `arguments: dict[str, object]`. |
+| `DAWToolResponse` | `TypedDict, total=False` | Response sent from DAW → MCP server after tool execution. `success: Required[bool]`; `content: list[MCPContentBlock]` and `isError: bool` are optional. |
+
+**Deserialization boundary:** Raw WebSocket / HTTP payloads are parsed into `DAWToolResponse` by `_parse_daw_response(raw: object) -> DAWToolResponse` in `app/api/routes/mcp.py`. This is the single point where untyped JSON becomes a typed shape. The `is True` comparison (not `bool()`) ensures only JSON `true` counts as success.
+
 ---
 
 ## Auth
@@ -802,6 +852,112 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+### `ExpressivenessResult`
+
+**Path:** `app/services/expressiveness.py`
+
+`TypedDict` — Return shape of `apply_expressiveness`. The `notes` list is mutated in-place (velocity + timing humanization); `cc_events` and `pitch_bends` are freshly generated.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `notes` | `list[NoteDict]` | Source notes with humanized velocity and timing, same key format (camelCase/snake_case) as input |
+| `cc_events` | `list[CCEventDict]` | Generated CC automation (sustain, expression, mod wheel) |
+| `pitch_bends` | `list[PitchBendDict]` | Generated pitch-bend automation |
+
+---
+
+## Variation Layer
+
+**Path:** `app/variation/`
+
+### Event Envelope payloads
+
+**Path:** `app/variation/core/event_envelope.py`
+
+Every variation event is wrapped in an `EventEnvelope`. The `payload` field holds one of four typed shapes depending on `envelope.type`. The union `EnvelopePayload` makes this explicit.
+
+```
+EnvelopePayload = MetaPayload | PhrasePayload | DonePayload | ErrorPayload
+```
+
+Consumers must narrow on `envelope.type` before accessing payload fields.
+
+#### `MetaPayload`
+
+`TypedDict, total=False` — Payload for `type="meta"` envelopes (always `sequence=1`). Describes the scope of the variation before any phrases arrive.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `intent` | `str` | User's natural-language request |
+| `aiExplanation` | `str \| None` | AI's top-level description of the plan |
+| `affectedTracks` | `list[str]` | Track IDs that will be modified |
+| `affectedRegions` | `list[str]` | Region IDs that will be modified |
+| `noteCounts` | `dict[str, int]` | Per-region note counts in the base state |
+
+#### `PhrasePayload`
+
+`TypedDict, total=False` — Payload for `type="phrase"` envelopes. One generated MIDI phrase. Both camelCase (wire) and snake_case fallback keys are present; consumers should use camelCase.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `phraseId` / `phrase_id` | `str` | Stable UUID for this phrase |
+| `trackId` / `track_id` | `str` | Target DAW track |
+| `regionId` / `region_id` | `str` | Target DAW region |
+| `startBeat` / `start_beat` | `float` | Phrase start in beats |
+| `endBeat` / `end_beat` | `float` | Phrase end in beats |
+| `label` | `str` | Human-readable display label |
+| `tags` | `list[str]` | Categorisation tags |
+| `explanation` | `str \| None` | AI explanation for this specific phrase |
+| `noteChanges` / `note_changes` | `list[dict[str, object]]` | Added/removed/modified notes (shape matches `NoteChangeDict`) |
+| `ccEvents` / `cc_events` | `list[CCEventDict]` | CC automation events |
+| `pitchBends` / `pitch_bends` | `list[PitchBendDict]` | Pitch-bend events |
+| `aftertouch` | `list[AftertouchDict]` | Aftertouch events |
+
+> **Why `list[dict[str, object]]` for note changes?** `noteChanges` is populated from `model_dump(by_alias=True)`, which returns `dict[str, Any]`. List invariance prevents assigning `list[dict[str, Any]]` to `list[NoteChangeDict]` in mypy. The shape is documented by `NoteChangeDict` in `json_types.py`; the type at this boundary is `dict[str, object]`.
+
+#### `DonePayload`
+
+`TypedDict, total=False` — Payload for `type="done"` envelopes (always last in a variation stream).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `str` | `"ready"` (success) or `"failed"` |
+| `phraseCount` / `phrase_count` | `int` | Total number of phrases emitted |
+
+#### `ErrorPayload`
+
+`TypedDict, total=False` — Payload for `type="error"` envelopes.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | `str` | Human-readable error description |
+| `code` | `str \| None` | Optional machine-readable error code |
+
+### `PhraseRecord`
+
+**Path:** `app/variation/storage/variation_store.py`
+
+`dataclass` — Persists one generated phrase for the lifetime of a variation. Held in `VariationRecord.phrases`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `phrase_id` | `str` | Stable UUID |
+| `variation_id` | `str` | Parent variation UUID |
+| `sequence` | `int` | Emission sequence number |
+| `track_id` | `str` | Target DAW track |
+| `region_id` | `str` | Target DAW region |
+| `beat_start` | `float` | Phrase start in beats |
+| `beat_end` | `float` | Phrase end in beats |
+| `label` | `str` | Display label |
+| `diff_json` | `PhrasePayload` | Full phrase payload as emitted (used by commit + retrieve routes) |
+| `ai_explanation` | `str \| None` | AI explanation text |
+| `tags` | `list[str]` | Categorisation tags |
+| `region_start_beat` | `float \| None` | Region start — populated at store time so commit doesn't need to re-query StateStore |
+| `region_duration_beats` | `float \| None` | Region duration |
+| `region_name` | `str \| None` | Region display name |
+
+---
+
 ## Planner
 
 ### `_ExistingTrackInfo`
@@ -815,6 +971,52 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | `id` | `str` | Track UUID from the DAW |
 | `name` | `str` | Track display name |
 | `gmProgram` | `int \| None` | General MIDI program number (0–127) |
+
+### `_AddMidiTrackParams`
+
+**Path:** `app/core/planner/conversion.py`
+
+`TypedDict, total=False` — Shape of `params` for a `stori_add_midi_track` tool call built by the planner. `name`, `color`, and `icon` are always present; `gmProgram` is omitted for drum tracks (which use `drumKitId` instead).
+
+| Field | Required | Type | Description |
+|-------|----------|------|-------------|
+| `name` | ✓ | `str` | Track display name |
+| `color` | ✓ | `str` | Track hex colour |
+| `icon` | ✓ | `str` | Track icon identifier |
+| `gmProgram` | | `int` | GM program number (0–127); absent for drum tracks |
+
+### `_AddMidiRegionParams`
+
+**Path:** `app/core/planner/conversion.py`
+
+`TypedDict, total=False` — Shape of `params` for a `stori_add_midi_region` tool call.
+
+| Field | Required | Type | Description |
+|-------|----------|------|-------------|
+| `name` | ✓ | `str` | Region display name |
+| `trackName` | ✓ | `str` | Display name of the parent track |
+| `startBeat` | ✓ | `float` | Region start position in beats |
+| `durationBeats` | ✓ | `float` | Region duration in beats |
+| `trackId` | | `str` | Track UUID — present when targeting an existing (non-new) track |
+
+### `_GenerateParams`
+
+**Path:** `app/core/planner/conversion.py`
+
+`TypedDict, total=False` — Shape of `params` for a `stori_generate_midi` (or similar) tool call.
+
+| Field | Required | Type | Description |
+|-------|----------|------|-------------|
+| `role` | ✓ | `str` | Instrument role (e.g. `"bass"`, `"keys"`) |
+| `style` | ✓ | `str` | Normalised style string (underscores replaced with spaces) |
+| `tempo` | ✓ | `int` | Project tempo in BPM |
+| `bars` | ✓ | `int` | Number of bars to generate |
+| `key` | ✓ | `str` | Root key (e.g. `"Am"`) |
+| `trackName` | ✓ | `str` | Target track display name |
+| `constraints` | | `dict[str, object]` | Per-role generation constraints (intentional open shape — populated from emotion vector) |
+| `trackId` | | `str` | Track UUID — present when targeting an existing track |
+
+> **Note:** All three planner TypedDicts (`_AddMidiTrackParams`, `_AddMidiRegionParams`, `_GenerateParams`) exist for documentation only. The local variables in `_schema_to_tool_calls` are annotated as `dict[str, object]` because mypy's dict invariance prevents assigning a TypedDict to `dict[str, object]`. The TypedDicts define the shape; the annotation preserves compatibility with `ToolCall.params`.
 
 ---
 
@@ -1324,7 +1526,7 @@ One generated MIDI phrase within a polled variation.
 | `label` | `str` | `label` | Human-readable display label |
 | `tags` | `list[str]` | `tags` | Categorisation tags |
 | `ai_explanation` | `str \| None` | `aiExplanation` | Natural-language explanation of what was generated |
-| `diff` | `dict[str, object]` | `diff` | MIDI delta in internal diff-JSON format (added/removed/modified notes + controller events) |
+| `diff` | `PhrasePayload` | `diff` | Full phrase payload as originally emitted (see [PhrasePayload](#phraserecord) above) |
 
 #### `GetVariationResponse`
 
