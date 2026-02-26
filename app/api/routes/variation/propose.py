@@ -30,6 +30,7 @@ from app.services.budget import (
 from app.variation.core.state_machine import VariationStatus, InvalidTransitionError
 from app.variation.core.event_envelope import (
     PhrasePayload,
+    build_phrase_payload,
     build_meta_envelope,
     build_phrase_envelope,
     build_done_envelope,
@@ -41,6 +42,7 @@ from app.api.routes.variation._state import limiter, _generation_tasks
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
 
 
 @router.post("/variation/propose", response_model=ProposeVariationResponse, response_model_by_alias=True)
@@ -200,20 +202,7 @@ async def _run_generation(
 
             for phrase in variation.phrases:
                 seq = record.next_sequence()
-                phrase_data: PhrasePayload = {
-                    "phraseId": phrase.phrase_id,
-                    "trackId": phrase.track_id,
-                    "regionId": phrase.region_id,
-                    "startBeat": phrase.start_beat,
-                    "endBeat": phrase.end_beat,
-                    "label": phrase.label,
-                    "tags": phrase.tags,
-                    "explanation": phrase.explanation,
-                    "noteChanges": [nc.model_dump(by_alias=True) for nc in phrase.note_changes],
-                    "ccEvents": list(phrase.cc_events),
-                    "pitchBends": list(phrase.pitch_bends),
-                    "aftertouch": list(phrase.aftertouch),
-                }
+                phrase_data = build_phrase_payload(phrase)
 
                 phrase_env = build_phrase_envelope(
                     variation_id=variation_id,

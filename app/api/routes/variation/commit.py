@@ -8,15 +8,11 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts.json_types import (
-    AftertouchDict,
-    CCEventDict,
-    PitchBendDict,
     RegionMetadataDB,
     RegionMetadataWire,
 )
 from app.models.requests import CommitVariationRequest
 from app.models.variation import (
-    ChangeType,
     MidiNoteSnapshot,
     NoteChange,
     Phrase,
@@ -49,27 +45,15 @@ def _record_to_variation(record: VariationRecord) -> Variation:
     phrases: list[Phrase] = []
     for pr in record.phrases:
         diff = pr.diff_json or {}
-        note_changes: list[NoteChange] = []
-        for nc_dict in diff.get("noteChanges", []):
-            before_raw = nc_dict.get("before")
-            after_raw = nc_dict.get("after")
-            raw_ct = str(nc_dict.get("changeType", "added"))
-            ct: ChangeType = "removed" if raw_ct == "removed" else "modified" if raw_ct == "modified" else "added"
-            note_changes.append(NoteChange(
-                note_id=str(nc_dict.get("noteId", "")),
-                change_type=ct,
-                before=MidiNoteSnapshot.model_validate(before_raw) if before_raw else None,
-                after=MidiNoteSnapshot.model_validate(after_raw) if after_raw else None,
-            ))
-        raw_at: list[AftertouchDict] = []
-        for at_raw in diff.get("aftertouch", []):
-            at_ev: AftertouchDict = {
-                "beat": float(at_raw.get("beat", 0)),
-                "value": int(at_raw.get("value", 0)),
-            }
-            if "pitch" in at_raw:
-                at_ev["pitch"] = int(at_raw["pitch"])
-            raw_at.append(at_ev)
+        note_changes: list[NoteChange] = [
+            NoteChange(
+                note_id=nc["noteId"],
+                change_type=nc["changeType"],
+                before=MidiNoteSnapshot.model_validate(nc["before"]) if nc.get("before") else None,
+                after=MidiNoteSnapshot.model_validate(nc["after"]) if nc.get("after") else None,
+            )
+            for nc in diff.get("noteChanges", [])
+        ]
         phrases.append(Phrase(
             phrase_id=pr.phrase_id,
             track_id=pr.track_id,
@@ -78,15 +62,9 @@ def _record_to_variation(record: VariationRecord) -> Variation:
             end_beat=pr.beat_end,
             label=pr.label,
             note_changes=note_changes,
-            cc_events=[
-                CCEventDict(cc=int(e.get("cc", 0)), beat=float(e.get("beat", 0)), value=int(e.get("value", 0)))
-                for e in diff.get("ccEvents", [])
-            ],
-            pitch_bends=[
-                PitchBendDict(beat=float(e.get("beat", 0)), value=int(e.get("value", 0)))
-                for e in diff.get("pitchBends", [])
-            ],
-            aftertouch=raw_at,
+            cc_events=list(diff.get("ccEvents", [])),
+            pitch_bends=list(diff.get("pitchBends", [])),
+            aftertouch=list(diff.get("aftertouch", [])),
             explanation=pr.ai_explanation,
             tags=pr.tags or [],
         ))

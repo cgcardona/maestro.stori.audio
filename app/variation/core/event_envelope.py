@@ -32,7 +32,14 @@ from typing import Literal, Union
 
 from typing_extensions import TypedDict
 
-from app.contracts.json_types import CCEventDict, PitchBendDict, AftertouchDict
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteChangeDict,
+    NoteChangeEntryDict,
+    PitchBendDict,
+)
+from app.models.variation import MidiNoteSnapshot, NoteChange, Phrase
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +84,8 @@ class PhrasePayload(TypedDict, total=False):
     label: str
     tags: list[str]
     explanation: str | None
-    noteChanges: list[dict[str, object]]  # noqa: N815  raw JSON objects; shape defined by NoteChangeDict
-    note_changes: list[dict[str, object]]  # snake_case fallback
+    noteChanges: list[NoteChangeEntryDict]  # noqa: N815
+    note_changes: list[NoteChangeEntryDict]  # snake_case fallback
     ccEvents: list[CCEventDict]  # noqa: N815
     cc_events: list[CCEventDict]  # snake_case fallback
     pitchBends: list[PitchBendDict]  # noqa: N815
@@ -299,4 +306,65 @@ def build_error_envelope(
         variation_id=variation_id,
         project_id=project_id,
         base_state_id=base_state_id,
+    )
+
+
+# ── Phrase serialization helpers ───────────────────────────────────────────────
+#
+# These live here (not in propose.py / storage.py) so any module that builds
+# a PhrasePayload can share the same serialization logic without creating
+# a layer-crossing import.
+
+
+def _snapshot_to_note_dict(snap: MidiNoteSnapshot) -> NoteChangeDict:
+    """Convert a ``MidiNoteSnapshot`` to its camelCase wire ``NoteChangeDict``.
+
+    Uses explicit field access so mypy can verify the output shape rather
+    than relying on ``model_dump(by_alias=True)``'s ``dict[str, Any]``.
+    """
+    return NoteChangeDict(
+        pitch=snap.pitch,
+        startBeat=snap.start_beat,
+        durationBeats=snap.duration_beats,
+        velocity=snap.velocity,
+        channel=snap.channel,
+    )
+
+
+def note_change_to_wire(nc: NoteChange) -> NoteChangeEntryDict:
+    """Serialize a ``NoteChange`` domain model to its ``PhrasePayload`` wire entry.
+
+    This is the single serialization point for note changes — explicit field
+    extraction means mypy can verify the result type against
+    ``NoteChangeEntryDict`` without relying on ``model_dump``'s ``dict[str, Any]``.
+    """
+    return NoteChangeEntryDict(
+        noteId=nc.note_id,
+        changeType=nc.change_type,
+        before=_snapshot_to_note_dict(nc.before) if nc.before is not None else None,
+        after=_snapshot_to_note_dict(nc.after) if nc.after is not None else None,
+    )
+
+
+def build_phrase_payload(phrase: Phrase) -> PhrasePayload:
+    """Build a ``PhrasePayload`` from a ``Phrase`` domain model.
+
+    Single serialization point shared by the SSE streaming path
+    (``propose.py``) and the background storage path
+    (``maestro_composing/storage.py``).  Both paths call this function so
+    the two wire representations are guaranteed to be identical.
+    """
+    return PhrasePayload(
+        phraseId=phrase.phrase_id,
+        trackId=phrase.track_id,
+        regionId=phrase.region_id,
+        startBeat=phrase.start_beat,
+        endBeat=phrase.end_beat,
+        label=phrase.label,
+        tags=phrase.tags,
+        explanation=phrase.explanation,
+        noteChanges=[note_change_to_wire(nc) for nc in phrase.note_changes],
+        ccEvents=list(phrase.cc_events),
+        pitchBends=list(phrase.pitch_bends),
+        aftertouch=list(phrase.aftertouch),
     )

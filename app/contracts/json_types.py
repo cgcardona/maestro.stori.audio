@@ -14,7 +14,8 @@ Hierarchy:
   ToolCallDict          — SSE tool call payload
   TrackSummaryDict      — summary.final track info
   EffectSummaryDict     — summary.final effect info
-  NoteChangeDict        — before/after shape in NoteChangeSchema
+  NoteChangeDict        — MIDI note snapshot (before/after in NoteChangeEntryDict)
+  NoteChangeEntryDict   — wire shape of one noteChanges entry (noteId, changeType, before, after)
   RegionMetadataWire    — region position metadata (camelCase, handler path)
   RegionMetadataDB      — region position metadata (snake_case, database path)
 
@@ -32,7 +33,9 @@ Hierarchy:
 
 from __future__ import annotations
 
-from typing_extensions import TypedDict
+from typing import Literal
+
+from typing_extensions import Required, TypedDict
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Generic JSON types — use ONLY when the shape is truly unknown
@@ -132,11 +135,12 @@ class PitchBendDict(TypedDict):
 class AftertouchDict(TypedDict, total=False):
     """A MIDI aftertouch event (channel pressure or poly key pressure).
 
-    ``pitch`` is present only for polyphonic aftertouch.
+    ``beat`` and ``value`` are always present.
+    ``pitch`` is present only for polyphonic (per-key) aftertouch.
     """
 
-    beat: float
-    value: int
+    beat: Required[float]
+    value: Required[int]
     pitch: int
 
 
@@ -275,7 +279,11 @@ class AppliedRegionInfo(TypedDict, total=False):
 
 
 class NoteChangeDict(TypedDict, total=False):
-    """Before/after shape in NoteChangeSchema."""
+    """Snapshot of a MIDI note's properties — used as ``before``/``after`` in ``NoteChangeEntryDict``.
+
+    Serialized form of ``MidiNoteSnapshot`` (camelCase keys, matching ``by_alias=True`` output).
+    Also used for CC/pitch-bend snapshots where ``cc``, ``beat``, and ``value`` apply.
+    """
 
     pitch: int
     startBeat: float  # noqa: N815
@@ -285,6 +293,27 @@ class NoteChangeDict(TypedDict, total=False):
     cc: int
     beat: float
     value: int
+
+
+class NoteChangeEntryDict(TypedDict, total=False):
+    """Wire shape of one entry in ``PhrasePayload.noteChanges``.
+
+    Serialized form of a ``NoteChange`` Pydantic model.  Produced by
+    ``_note_change_to_wire()`` in ``propose.py`` and consumed by
+    ``_record_to_variation()`` in ``commit.py``.
+
+    ``noteId`` and ``changeType`` are always present (``Required``).
+    ``before`` and ``after`` follow the same semantics as ``NoteChange``:
+
+    - ``added``    → ``before=None``,   ``after`` is set
+    - ``removed``  → ``before`` is set, ``after=None``
+    - ``modified`` → both ``before`` and ``after`` are set
+    """
+
+    noteId: Required[str]  # noqa: N815
+    changeType: Required[Literal["added", "removed", "modified"]]  # noqa: N815
+    before: NoteChangeDict | None
+    after: NoteChangeDict | None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

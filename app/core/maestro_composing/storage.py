@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from app.variation.core.event_envelope import build_phrase_payload
+
 if TYPE_CHECKING:
     from app.contracts.json_types import RegionMetadataWire
     from app.contracts.project_types import ProjectContext
@@ -71,20 +73,7 @@ async def _store_variation(
             beat_start=phrase.start_beat,
             beat_end=phrase.end_beat,
             label=phrase.label,
-            diff_json={
-                "phraseId": phrase.phrase_id,
-                "trackId": phrase.track_id,
-                "regionId": phrase.region_id,
-                "startBeat": phrase.start_beat,
-                "endBeat": phrase.end_beat,
-                "label": phrase.label,
-                "tags": phrase.tags,
-                "explanation": phrase.explanation,
-                "noteChanges": [nc.model_dump(by_alias=True) for nc in phrase.note_changes],
-                "ccEvents": list(phrase.cc_events),
-                "pitchBends": list(phrase.pitch_bends),
-                "aftertouch": list(phrase.aftertouch),
-            },
+            diff_json=build_phrase_payload(phrase),
             ai_explanation=phrase.explanation,
             tags=phrase.tags,
             region_start_beat=region_start_beat,
