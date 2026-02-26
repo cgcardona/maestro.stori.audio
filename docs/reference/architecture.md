@@ -303,7 +303,7 @@ SectionResult.execution_hash = SHA256(contract_hash + trace_id)
 - `parent_contract_hash` — the `InstrumentContract` that spawned it.
 - `execution_hash` — `SHA256(contract_hash + trace_id)`, binding the result to a specific composition session. The same contract re-run in a different session produces a different `execution_hash`, preventing replay attacks.
 
-**Implementation:** `app/contracts/hash_utils.py` (`canonical_contract_dict`, `compute_contract_hash`, `hash_list_canonical`, `compute_execution_hash`, `seal_contract`, `verify_contract_hash`). Verified by `tests/test_protocol_proof.py` (existing proofs) and `tests/test_protocol_god_mode.py` (composition root, canonical parent hash, execution attestation, signal lineage, replay prevention, hash scope).
+**Implementation:** `app/contracts/hash_utils.py` (`canonical_contract_dict`, `compute_contract_hash`, `hash_list_canonical`, `compute_execution_hash`, `seal_contract`, `verify_contract_hash`). Verified by `tests/test_protocol_proof.py` (existing proofs) and `tests/test_protocol_integrity.py` (composition root, canonical parent hash, execution attestation, signal lineage, replay prevention, hash scope).
 
 ### Three-phase execution
 
