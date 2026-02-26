@@ -11,7 +11,14 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
+
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+)
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +35,9 @@ from app.services.muse_merge import (
     MergeConflict,
     build_merge_checkout_plan,
 )
+if TYPE_CHECKING:
+    from app.core.state_store import StateStore
+
 from app.services.muse_replay import (
     HeadSnapshot,
     reconstruct_head_snapshot,
@@ -65,7 +75,7 @@ async def checkout_to_variation(
     session: AsyncSession,
     project_id: str,
     target_variation_id: str,
-    store: Any,
+    store: StateStore,
     trace: TraceContext,
     force: bool = False,
     emit_sse: bool = True,
@@ -209,7 +219,7 @@ async def merge_variations(
     project_id: str,
     left_id: str,
     right_id: str,
-    store: Any,
+    store: StateStore,
     trace: TraceContext,
     force: bool = False,
     emit_sse: bool = True,
@@ -309,9 +319,9 @@ async def merge_variations(
     )
 
 
-def _capture_working_notes(store: Any) -> dict[str, list[dict[str, Any]]]:
+def _capture_working_notes(store: StateStore) -> dict[str, list[NoteDict]]:
     """Extract notes from all regions in the store."""
-    result: dict[str, list[dict[str, Any]]] = {}
+    result: dict[str, list[NoteDict]] = {}
     if hasattr(store, "_region_notes"):
         for rid, notes in store._region_notes.items():
             if notes:
@@ -319,9 +329,9 @@ def _capture_working_notes(store: Any) -> dict[str, list[dict[str, Any]]]:
     return result
 
 
-def _capture_working_cc(store: Any) -> dict[str, list[dict[str, Any]]]:
+def _capture_working_cc(store: StateStore) -> dict[str, list[CCEventDict]]:
     """Extract CC events from all regions in the store."""
-    result: dict[str, list[dict[str, Any]]] = {}
+    result: dict[str, list[CCEventDict]] = {}
     if hasattr(store, "_region_cc"):
         for rid, events in store._region_cc.items():
             if events:
@@ -329,9 +339,9 @@ def _capture_working_cc(store: Any) -> dict[str, list[dict[str, Any]]]:
     return result
 
 
-def _capture_working_pb(store: Any) -> dict[str, list[dict[str, Any]]]:
+def _capture_working_pb(store: StateStore) -> dict[str, list[PitchBendDict]]:
     """Extract pitch bend events from all regions in the store."""
-    result: dict[str, list[dict[str, Any]]] = {}
+    result: dict[str, list[PitchBendDict]] = {}
     if hasattr(store, "_region_pitch_bends"):
         for rid, events in store._region_pitch_bends.items():
             if events:
@@ -339,9 +349,9 @@ def _capture_working_pb(store: Any) -> dict[str, list[dict[str, Any]]]:
     return result
 
 
-def _capture_working_at(store: Any) -> dict[str, list[dict[str, Any]]]:
+def _capture_working_at(store: StateStore) -> dict[str, list[AftertouchDict]]:
     """Extract aftertouch events from all regions in the store."""
-    result: dict[str, list[dict[str, Any]]] = {}
+    result: dict[str, list[AftertouchDict]] = {}
     if hasattr(store, "_region_aftertouch"):
         for rid, events in store._region_aftertouch.items():
             if events:

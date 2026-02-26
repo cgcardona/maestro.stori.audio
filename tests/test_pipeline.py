@@ -5,7 +5,6 @@ Ensures REASONING, COMPOSING, and EDITING branches return correct PipelineOutput
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,7 +22,7 @@ def mock_llm() -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_run_pipeline_reasoning_returns_llm_response(mock_llm: Any) -> None:
+async def test_run_pipeline_reasoning_returns_llm_response(mock_llm: MagicMock) -> None:
 
     """REASONING route returns PipelineOutput with llm_response, no plan."""
     route = IntentResult(
@@ -48,7 +47,7 @@ async def test_run_pipeline_reasoning_returns_llm_response(mock_llm: Any) -> Non
 
 
 @pytest.mark.asyncio
-async def test_run_pipeline_composing_returns_plan(mock_llm: Any) -> None:
+async def test_run_pipeline_composing_returns_plan(mock_llm: MagicMock) -> None:
 
     """COMPOSING route returns PipelineOutput with plan."""
     from app.core.planner import ExecutionPlan
@@ -81,7 +80,7 @@ async def test_run_pipeline_composing_returns_plan(mock_llm: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_pipeline_editing_returns_llm_response(mock_llm: Any) -> None:
+async def test_run_pipeline_editing_returns_llm_response(mock_llm: MagicMock) -> None:
 
     """EDITING route returns PipelineOutput with llm_response (tool allowlist)."""
     route = IntentResult(

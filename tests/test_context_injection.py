@@ -18,10 +18,10 @@ Coverage:
 """
 from __future__ import annotations
 
-from typing import Any
 
 import pytest
 
+from app.contracts.project_types import ProjectContext
 from app.core.prompt_parser import parse_prompt, ParsedPrompt, PositionSpec
 from app.core.prompts import (
     structured_prompt_context,
@@ -45,7 +45,7 @@ def _parse(prompt: str) -> ParsedPrompt:
     return result
 
 
-def _full_composing_system(parsed: ParsedPrompt, project_state: dict[str, Any] | None = None) -> str:
+def _full_composing_system(parsed: ParsedPrompt, project_state: ProjectContext | None = None) -> str:
 
     """Assemble the exact system prompt that build_execution_plan injects."""
     project_state = project_state or {}
@@ -57,7 +57,7 @@ def _full_composing_system(parsed: ParsedPrompt, project_state: dict[str, Any] |
     return sys
 
 
-def _full_editing_system(parsed: ParsedPrompt, project_state: dict[str, Any] | None = None) -> str:
+def _full_editing_system(parsed: ParsedPrompt, project_state: ProjectContext | None = None) -> str:
 
     """Assemble the system prompt that run_pipeline injects for EDITING."""
     project_state = project_state or {}
@@ -250,12 +250,13 @@ class TestSequentialContextStandalone:
 class TestCombinedContextNoDuplicates:
     """When both blocks are concatenated, no fields are duplicated."""
 
-    def _combined(self, prompt_str: str, project: dict[str, Any] | None = None) -> str:
+    def _combined(self, prompt_str: str, project: ProjectContext | None = None) -> str:
 
         parsed = _parse(prompt_str)
         ctx = structured_prompt_context(parsed)
         if parsed.position is not None:
-            beat = resolve_position(parsed.position, project or {})
+            proj: ProjectContext = project or {}
+            beat = resolve_position(parsed.position, proj)
             ctx += sequential_context(beat, parsed.section, pos=parsed.position)
         return ctx
 
@@ -342,7 +343,7 @@ class TestFullSystemPromptAssembly:
         parsed = _parse(
             "STORI PROMPT\nMode: compose\nSection: verse\nPosition: after intro\nRequest: go"
         )
-        project = {"tracks": [
+        project: ProjectContext = {"tracks": [
             {"name": "intro", "regions": [
                 {"name": "intro", "startBeat": 0, "durationBeats": 64}
             ]}

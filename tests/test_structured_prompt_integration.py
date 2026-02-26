@@ -9,7 +9,6 @@ Covers:
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -315,7 +314,7 @@ class TestWeightedVibes:
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 
-def _make_composing_route(parsed: Any = None) -> IntentResult:
+def _make_composing_route(parsed: ParsedPrompt | None = None) -> IntentResult:
 
     """Build a minimal COMPOSING IntentResult for testing."""
     extras = {}

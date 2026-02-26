@@ -19,8 +19,8 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Any
 
+from orpheus_types import OrpheusNoteDict, ScoringParams
 from key_detection import (
     MAJOR_PROFILE,
     MINOR_PROFILE,
@@ -98,7 +98,7 @@ _ORPHEUS_TYPICAL_NOTES_PER_BAR = 50.0
 
 
 def _density_match(
-    notes: list[dict[str, Any]],
+    notes: list[OrpheusNoteDict],
     bars: int,
     target_density: float | None,
 ) -> float:
@@ -150,7 +150,7 @@ def _register_compliance(
 
 
 def _velocity_compliance(
-    notes: list[dict[str, Any]],
+    notes: list[OrpheusNoteDict],
     velocity_floor: int | None,
     velocity_ceiling: int | None,
 ) -> float:
@@ -166,7 +166,7 @@ def _velocity_compliance(
     return in_range / len(velocities)
 
 
-def _pattern_diversity(notes: list[dict[str, Any]]) -> float:
+def _pattern_diversity(notes: list[OrpheusNoteDict]) -> float:
     """Score melodic diversity using 2-note pattern entropy.
 
     Higher diversity → higher score.  Penalizes both total randomness
@@ -205,7 +205,7 @@ def _pattern_diversity(notes: list[dict[str, Any]]) -> float:
 
 
 def _coverage_score(
-    channel_notes: dict[int, list[dict[str, Any]]],
+    channel_notes: dict[int, list[OrpheusNoteDict]],
     expected_channels: int,
 ) -> float:
     """Score whether output has notes on expected number of channels."""
@@ -216,14 +216,14 @@ def _coverage_score(
     return min(1.0, active / expected_channels)
 
 
-def _silence_score(notes: list[dict[str, Any]], bars: int) -> float:
+def _silence_score(notes: list[OrpheusNoteDict], bars: int) -> float:
     """Score based on fraction of bars that contain at least one note."""
     if bars <= 0 or not notes:
         return 0.0
 
     bar_counts = [0] * bars
     for n in notes:
-        b = int(n.get("start_beat", n.get("startBeat", 0)) / 4)
+        b = int(n.get("start_beat", 0.0) / 4)
         if 0 <= b < bars:
             bar_counts[b] += 1
 
@@ -232,18 +232,10 @@ def _silence_score(notes: list[dict[str, Any]], bars: int) -> float:
 
 
 def score_candidate(
-    notes: list[dict[str, Any]],
-    channel_notes: dict[int, list[dict[str, Any]]],
+    notes: list[OrpheusNoteDict],
+    channel_notes: dict[int, list[OrpheusNoteDict]],
     batch_index: int,
-    *,
-    bars: int = 4,
-    target_key: str | None = None,
-    target_density: float | None = None,
-    register_center: int | None = None,
-    register_spread: int | None = None,
-    velocity_floor: int | None = None,
-    velocity_ceiling: int | None = None,
-    expected_channels: int = 2,
+    params: ScoringParams,
     weights: dict[str, float] | None = None,
 ) -> CandidateScore:
     """Score a single generation candidate across all dimensions.
@@ -254,16 +246,16 @@ def score_candidate(
     w = weights or _DEFAULT_WEIGHTS
     result = CandidateScore(batch_index=batch_index, note_count=len(notes))
 
-    pitches = [n.get("pitch", 60) for n in notes]
+    pitches = [n["pitch"] for n in notes]
 
     dims: dict[str, float] = {}
-    dims["key_compliance"] = _key_compliance(pitches, target_key)
-    dims["density"] = _density_match(notes, bars, target_density)
-    dims["register"] = _register_compliance(pitches, register_center, register_spread)
-    dims["velocity"] = _velocity_compliance(notes, velocity_floor, velocity_ceiling)
+    dims["key_compliance"] = _key_compliance(pitches, params.target_key)
+    dims["density"] = _density_match(notes, params.bars, params.target_density)
+    dims["register"] = _register_compliance(pitches, params.register_center, params.register_spread)
+    dims["velocity"] = _velocity_compliance(notes, params.velocity_floor, params.velocity_ceiling)
     dims["diversity"] = _pattern_diversity(notes)
-    dims["coverage"] = _coverage_score(channel_notes, expected_channels)
-    dims["silence"] = _silence_score(notes, bars)
+    dims["coverage"] = _coverage_score(channel_notes, params.expected_channels)
+    dims["silence"] = _silence_score(notes, params.bars)
 
     total = 0.0
     weight_sum = 0.0

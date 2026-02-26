@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import Any
 
+from app.contracts.json_types import NoteDict
 from app.services.groove_engine import (
     apply_groove_map,
     get_groove_profile,
@@ -21,14 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 def apply_groove_postprocess(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     tempo: int = 120,
     *,
     style: str = "trap",
     humanize_profile: str | None = None,
     layer_map: dict[int, str] | None = None,
     rng: random.Random | None = None,
-) -> list[dict[str, Any]]:
+) -> list[NoteDict]:
     """
     Apply groove humanization using the Groove Engine.
     
@@ -64,19 +64,21 @@ def apply_groove_postprocess(
 
 
 def apply_groovae_if_available(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     tempo: int,
     style: str = "trap",
-    **kwargs: Any,
-) -> list[dict[str, Any]]:
+    *,
+    humanize_profile: str | None = None,
+    layer_map: dict[int, str] | None = None,
+    rng: random.Random | None = None,
+) -> list[NoteDict]:
     """
     Placeholder for future groove-model integration. For now, use Groove Engine.
     """
-    try:
-        pass
-    except Exception:
-        pass
-    return apply_groove_postprocess(notes, tempo, style=style, **kwargs)
+    return apply_groove_postprocess(
+        notes, tempo, style=style,
+        humanize_profile=humanize_profile, layer_map=layer_map, rng=rng,
+    )
 
 
 def get_available_profiles() -> list[str]:

@@ -27,10 +27,12 @@ Design rules:
 
 from __future__ import annotations
 
-import types
-from dataclasses import dataclass, field
-from typing import Any
 
+from dataclasses import dataclass, field
+
+
+from app.contracts.generation_types import CompositionContext
+from app.contracts.json_types import JSONValue
 from app.core.maestro_agent_teams.signals import SectionSignals, SectionState
 
 
@@ -60,7 +62,7 @@ class CompositionContract:
     composition_id: str
     sections: tuple["SectionSpec", ...]
     style: str
-    tempo: float
+    tempo: int
     key: str
 
     contract_version: int = 2
@@ -130,7 +132,7 @@ class SectionContract:
     instrument_name: str
     role: str
     style: str
-    tempo: float
+    tempo: int
     key: str
     region_name: str
 
@@ -196,7 +198,7 @@ class InstrumentContract:
     role: str
     style: str
     bars: int
-    tempo: float
+    tempo: int
     key: str
     start_beat: int
     sections: tuple[SectionSpec, ...]
@@ -266,10 +268,10 @@ class RuntimeContext:
     raw_prompt: str = ""
     emotion_vector: tuple[tuple[str, float], ...] | None = None
     quality_preset: str = "quality"
-    drum_telemetry: tuple[tuple[str, Any], ...] | None = None
+    drum_telemetry: tuple[tuple[str, JSONValue], ...] | None = None
 
     @staticmethod
-    def freeze_emotion_vector(ev: Any) -> tuple[tuple[str, float], ...]:
+    def freeze_emotion_vector(ev: object) -> tuple[tuple[str, float], ...]:
         """Convert an EmotionVector or dict to a frozen tuple-of-pairs."""
         if hasattr(ev, "to_dict"):
             d = ev.to_dict()
@@ -281,7 +283,7 @@ class RuntimeContext:
             )
         return tuple(sorted((k, float(v)) for k, v in d.items()))
 
-    def with_emotion_vector(self, ev: Any) -> RuntimeContext:
+    def with_emotion_vector(self, ev: object) -> RuntimeContext:
         """Return a new RuntimeContext with a frozen emotion vector."""
         frozen = RuntimeContext.freeze_emotion_vector(ev)
         return RuntimeContext(
@@ -291,7 +293,7 @@ class RuntimeContext:
             drum_telemetry=self.drum_telemetry,
         )
 
-    def with_drum_telemetry(self, telemetry: dict[str, Any]) -> RuntimeContext:
+    def with_drum_telemetry(self, telemetry: dict[str, JSONValue]) -> RuntimeContext:
         """Return a new RuntimeContext with an immutable telemetry snapshot."""
         return RuntimeContext(
             raw_prompt=self.raw_prompt,
@@ -300,27 +302,22 @@ class RuntimeContext:
             drum_telemetry=tuple(telemetry.items()),
         )
 
-    def to_composition_context(self) -> types.MappingProxyType[str, Any]:
-        """Read-only bridge to legacy code that expects a dict-like mapping.
+    def to_composition_context(self) -> CompositionContext:
+        """Build a CompositionContext from this RuntimeContext.
 
-        Returns a ``MappingProxyType`` to prevent downstream mutation.
-        Does NOT include mutable services (signals, state) — those live
-        in ``ExecutionServices``.
+        Exposes only the fields that generation tool calls need —
+        does NOT include mutable services (signals, state).
 
         Reconstructs ``EmotionVector`` from the frozen tuple so downstream
         consumers (Orpheus backends) can access ``.energy``, ``.valence``,
-        etc. as attributes.
+        etc. as attributes. Passes ``drum_telemetry`` as a plain dict so
+        bass/chord sections can read drum energy and groove data.
         """
-        ctx: dict[str, Any] = {
-            "_raw_prompt": self.raw_prompt,
-            "quality_preset": self.quality_preset,
-        }
+        ctx = CompositionContext(quality_preset=self.quality_preset)
         if self.emotion_vector is not None:
             from app.core.emotion_vector import EmotionVector
 
             ctx["emotion_vector"] = EmotionVector(**dict(self.emotion_vector))
         if self.drum_telemetry is not None:
-            ctx["drum_telemetry"] = types.MappingProxyType(
-                dict(self.drum_telemetry)
-            )
-        return types.MappingProxyType(ctx)
+            ctx["drum_telemetry"] = dict(self.drum_telemetry)
+        return ctx

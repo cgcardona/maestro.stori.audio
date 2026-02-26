@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from app.contracts.json_types import NoteDict
 from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -51,13 +52,13 @@ async def async_session() -> AsyncGenerator[AsyncSession, None]:
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _note(pitch: int, start: float) -> dict[str, Any]:
+def _note(pitch: int, start: float) -> NoteDict:
 
     return {"pitch": pitch, "start_beat": start, "duration_beats": 1.0, "velocity": 100, "channel": 0}
 
 
 def _make_variation(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     region_id: str = "region-1",
     track_id: str = "track-1",
     intent: str = "test",

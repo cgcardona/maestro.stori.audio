@@ -18,7 +18,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+
+from app.contracts.json_types import NoteDict
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +175,7 @@ class MidiTokenizer:
     
     def encode(
         self,
-        notes: list[dict[str, Any]],
+        notes: list[NoteDict],
         bars: int,
         add_special_tokens: bool = True,
     ) -> list[int]:
@@ -247,18 +248,18 @@ class MidiTokenizer:
         self,
         token_ids: list[int],
         tempo: int = 120,
-    ) -> list[dict[str, Any]]:
+    ) -> list[NoteDict]:
         """
         Decode REMI token IDs back to notes.
-        
+
         Args:
             token_ids: list of token IDs
             tempo: Tempo for timing conversion
-            
+
         Returns:
             list of {pitch, start_beat, duration_beats, velocity}
         """
-        notes: list[dict[str, Any]] = []
+        notes: list[NoteDict] = []
         
         current_bar = -1
         current_position = 0
@@ -309,7 +310,7 @@ class MidiTokenizer:
         
         return notes
     
-    def encode_to_tokens(self, notes: list[dict[str, Any]], bars: int) -> list[str]:
+    def encode_to_tokens(self, notes: list[NoteDict], bars: int) -> list[str]:
         """Encode notes to token strings (for debugging)."""
         token_ids = self.encode(notes, bars, add_special_tokens=False)
         return [self.id_to_token.get(tid, "<UNK>") for tid in token_ids]

@@ -15,8 +15,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 
+from app.contracts.json_types import NoteDict
 from app.core.telemetry import SectionTelemetry
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ class SectionSignalResult:
     """
 
     success: bool
-    drum_notes: list[dict[str, Any]] | None = None
+    drum_notes: list[NoteDict] | None = None
     contract_hash: str = ""
 
 
@@ -94,7 +94,7 @@ class SectionSignals:
         *,
         contract_hash: str,
         success: bool = True,
-        drum_notes: list[dict[str, Any]] | None = None,
+        drum_notes: list[NoteDict] | None = None,
     ) -> None:
         """Signal that a drum section has completed (success or failure).
 

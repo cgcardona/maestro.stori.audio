@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+from app.contracts.llm_types import ChatMessage
 from app.core.intent import (
     normalize,
     get_intent_result,
@@ -198,7 +199,7 @@ class TestIntentWithLLM:
     @pytest.mark.anyio
     async def test_affirmative_with_context(self) -> None:
 
-        history = [
+        history: list[ChatMessage] = [
             {"role": "user", "content": "make a beat"},
             {"role": "assistant", "content": "Would you like me to add drums?"},
         ]

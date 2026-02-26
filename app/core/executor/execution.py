@@ -9,6 +9,7 @@ from app.core.expansion import ToolCall
 from app.core.tools import get_tool_meta, ToolTier, ToolKind
 from app.core.tracing import trace_span
 from app.core.executor.models import ExecutionContext
+from app.contracts.generation_types import GenerationContext
 from app.services.music_generator import get_music_generator
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,10 @@ async def _execute_generator(
     logger.info(f"🎵 Generating MIDI: {gen_params['instrument']} - {gen_params['style']}")
 
     try:
-        result = await mg.generate(**gen_params, quality_preset="quality")
+        result = await mg.generate(
+            **gen_params,
+            context=GenerationContext(quality_preset="quality"),
+        )
 
         if not result.success:
             logger.error(f"❌ Generation failed: {result.error}")

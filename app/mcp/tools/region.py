@@ -1,7 +1,9 @@
 """Region-level MCP tool definitions."""
 from __future__ import annotations
 
-REGION_TOOLS = [
+from app.contracts.mcp_types import MCPToolDef
+
+REGION_TOOLS: list[MCPToolDef] = [
     {
         "name": "stori_add_midi_region",
         "description": "Add a MIDI region to a track. Regions are containers for MIDI notes. Position and duration are in beats (quarter notes).",

@@ -7,8 +7,9 @@ See docs/MIDI_SPEC_IR_SCHEMA.md.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
+from app.contracts.generation_types import GenerationContext
+from app.contracts.json_types import NoteDict
 from app.services.backends.base import (
     MusicGeneratorBackend,
     GenerationResult,
@@ -38,7 +39,7 @@ class HarmonicSpecBackend(MusicGeneratorBackend):
         bars: int,
         key: str | None = None,
         chords: list[str] | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
         if instrument not in ("piano", "chords", "harmony", "keys"):
             return GenerationResult(
@@ -49,7 +50,8 @@ class HarmonicSpecBackend(MusicGeneratorBackend):
                 error="HarmonicSpecBackend only handles piano/chords/harmony",
             )
         try:
-            music_spec = kwargs.get("music_spec")
+            ctx = context or {}
+            music_spec = ctx.get("music_spec")
             if music_spec and music_spec.harmonic_spec and music_spec.global_spec:
                 global_spec = music_spec.global_spec
                 harmonic_spec = music_spec.harmonic_spec
@@ -57,7 +59,7 @@ class HarmonicSpecBackend(MusicGeneratorBackend):
                 global_spec = GlobalSpec(tempo=tempo, bars=bars, key=(key or "C").strip())
                 harmonic_spec = default_harmonic_spec(key=key or "C", bars=bars, chords=chords)
             notes = render_harmonic_spec(harmonic_spec, global_spec)
-            out = [
+            out: list[NoteDict] = [
                 {"pitch": n["pitch"], "start_beat": n["start_beat"], "duration_beats": n["duration_beats"], "velocity": n["velocity"]}
                 for n in notes
             ]

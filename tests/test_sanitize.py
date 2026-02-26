@@ -5,7 +5,6 @@ Each test targets exactly one transform so failures point to the exact rule.
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
 import unicodedata
 
@@ -127,7 +126,7 @@ class TestInvisibleCharStripping:
         ("\u2060", "WORD JOINER"),
         ("\ufeff", "BYTE ORDER MARK"),
     ])
-    def test_invisible_char_stripped(self, char: Any, name: Any) -> None:
+    def test_invisible_char_stripped(self, char: str, name: str) -> None:
 
         text = f"STORI{char} PROMPT\nMode: compose\nRequest: go"
         result = normalise_user_input(text)

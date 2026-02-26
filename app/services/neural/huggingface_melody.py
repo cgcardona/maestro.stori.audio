@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from app.contracts.json_types import NoteDict
 from app.core.emotion_vector import EmotionVector, emotion_to_constraints
 from app.services.neural.melody_generator import (
     MelodyModelBackend,
@@ -267,7 +268,7 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
                 midi -= 1
         return midi
     
-    def _parse_output(self, data: Any, request: MelodyGenerationRequest) -> list[dict[str, Any]]:
+    def _parse_output(self, data: Any, request: MelodyGenerationRequest) -> list[NoteDict]:
         """Parse HuggingFace model output into notes."""
         notes = []
         
@@ -280,9 +281,9 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
         
         return notes
     
-    def _parse_midi_tokens(self, text: str, tempo: int, bars: int) -> list[dict[str, Any]]:
+    def _parse_midi_tokens(self, text: str, tempo: int, bars: int) -> list[NoteDict]:
         """Parse MIDI tokens from generated text."""
-        notes = []
+        notes: list[NoteDict] = []
         max_beat = bars * 4
         
         # Common token patterns across models
@@ -350,9 +351,9 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
     
     def _apply_emotion_postprocess(
         self,
-        notes: list[dict[str, Any]],
+        notes: list[NoteDict],
         emotion_vector: EmotionVector,
-    ) -> list[dict[str, Any]]:
+    ) -> list[NoteDict]:
         """
         Apply emotion-based post-processing to generated notes.
         
@@ -363,28 +364,28 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
         
         constraints = emotion_to_constraints(emotion_vector)
         
-        processed = []
+        processed: list[NoteDict] = []
         for note in notes:
-            n = dict(note)
-            
-            # Adjust velocity based on emotion
+            n: NoteDict = note.copy()
+
             vel_range = constraints.velocity_ceiling - constraints.velocity_floor
-            n["velocity"] = constraints.velocity_floor + int(
-                (note["velocity"] - 40) / 87 * vel_range  # Normalize and rescale
-            )
-            n["velocity"] = max(40, min(127, n["velocity"]))
-            
-            # Clamp to emotion-appropriate register
+            raw_vel = int(note.get("velocity", 80))
+            n["velocity"] = max(40, min(127,
+                constraints.velocity_floor + int((raw_vel - 40) / 87 * vel_range)
+            ))
+
             min_pitch = constraints.register_center - constraints.register_spread
             max_pitch = constraints.register_center + constraints.register_spread
-            
-            while n["pitch"] < min_pitch and n["pitch"] < 84:
-                n["pitch"] += 12
-            while n["pitch"] > max_pitch and n["pitch"] > 48:
-                n["pitch"] -= 12
-            
+            cur_pitch = int(note.get("pitch", 60))
+
+            while cur_pitch < min_pitch and cur_pitch < 84:
+                cur_pitch += 12
+            while cur_pitch > max_pitch and cur_pitch > 48:
+                cur_pitch -= 12
+            n["pitch"] = cur_pitch
+
             processed.append(n)
-        
+
         return processed
     
     async def _fallback_generate(self, request: MelodyGenerationRequest) -> MelodyGenerationResult:

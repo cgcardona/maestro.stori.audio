@@ -22,7 +22,6 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -31,9 +30,16 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.config import settings
+from app.contracts.project_types import ProjectContext
 from app.models.requests import MaestroRequest
 from app.core.maestro_handlers import UsageTracker, orchestrate
 from app.core.sanitize import normalise_user_input
+from app.contracts.llm_types import (
+    AssistantMessage,
+    ChatMessage,
+    SystemMessage,
+    UserMessage,
+)
 from app.core.composition_limiter import (
     get_composition_limiter,
     CompositionLimitExceeded,
@@ -43,7 +49,7 @@ from app.core.llm_client import LLMClient
 from app.core.planner import preview_plan
 from app.core.sse_utils import sse_event, SSESequencer
 from app.protocol.emitter import ProtocolSerializationError
-from app.auth.dependencies import require_valid_token
+from app.auth.dependencies import TokenClaims, require_valid_token
 from app.db import get_db
 from app.services.budget import (
     check_budget,
@@ -66,9 +72,9 @@ limiter = Limiter(key_func=get_remote_address)
 
 @router.get("/validate-token")
 async def validate_token(
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Validate access token and return budget info."""
     exp_timestamp = token_claims.get("exp", 0)
     expires_at = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
@@ -102,7 +108,7 @@ async def validate_token(
 async def stream_maestro(
     request: Request,
     maestro_request: MaestroRequest,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """
@@ -143,7 +149,7 @@ async def stream_maestro(
     # Ownership check: join through Conversation so we only load messages
     # that belong to the authenticated user — prevents IDOR where a caller
     # could supply another user's conversation_id.
-    conversation_history: list[dict[str, Any]] = []
+    conversation_history: list[ChatMessage] = []
     if maestro_request.conversation_id and user_id:
         try:
             from app.db.models import Conversation, ConversationMessage
@@ -164,10 +170,14 @@ async def stream_maestro(
 
             # Convert to chat format
             for msg in messages:
-                conversation_history.append({
-                    "role": msg.role,
-                    "content": msg.content
-                })
+                role = msg.role
+                content = msg.content or ""
+                if role == "user":
+                    conversation_history.append(UserMessage(role="user", content=content))
+                elif role == "assistant":
+                    conversation_history.append(AssistantMessage(role="assistant", content=content))
+                elif role == "system":
+                    conversation_history.append(SystemMessage(role="system", content=content))
 
         except Exception as e:
             logger.warning(f"Failed to load conversation history: {e}")
@@ -275,9 +285,9 @@ async def stream_maestro(
 async def preview_maestro(
     request: Request,
     maestro_request: MaestroRequest,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """
     Preview a composition plan without executing.
 
@@ -305,7 +315,7 @@ async def preview_maestro(
 
         preview_result = await preview_plan(
             safe_prompt,
-            maestro_request.project or {},
+            maestro_request.project or ProjectContext(),
             route,
             llm
         )

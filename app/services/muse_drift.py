@@ -20,10 +20,20 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Literal
 
+from typing_extensions import TypedDict
+
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+    RegionMetadataDB,
+)
 from app.services.variation.note_matching import (
     match_notes,
     match_cc_events,
@@ -34,6 +44,18 @@ from app.services.variation.note_matching import (
 logger = logging.getLogger(__name__)
 
 MAX_SAMPLE_CHANGES = 5
+
+
+class SampleChange(TypedDict, total=False):
+    """A single note change captured as a human-readable diff sample.
+
+    ``type`` is always present; ``note``/``before``/``after`` depend on type.
+    """
+
+    type: Literal["added", "removed", "modified"]
+    note: NoteDict | None
+    before: NoteDict | None
+    after: NoteDict | None
 
 
 class DriftSeverity(str, Enum):
@@ -67,7 +89,7 @@ class RegionDriftSummary:
     at_removed: int = 0
     at_modified: int = 0
 
-    sample_changes: tuple[dict[str, Any], ...] = ()
+    sample_changes: tuple[SampleChange, ...] = ()
     head_fingerprint: str = ""
     working_fingerprint: str = ""
 
@@ -147,7 +169,7 @@ class CommitConflictPayload:
         )
 
 
-def _fingerprint(events: list[dict[str, Any]]) -> str:
+def _fingerprint(events: Sequence[Mapping[str, object]]) -> str:
     """Stable hash of a note or event list for cache-friendly comparison."""
     canonical = sorted(
         events,
@@ -163,10 +185,10 @@ def _fingerprint(events: list[dict[str, Any]]) -> str:
 
 
 def _combined_fingerprint(
-    notes: list[dict[str, Any]],
-    cc: list[dict[str, Any]],
-    pb: list[dict[str, Any]],
-    at: list[dict[str, Any]],
+    notes: Sequence[Mapping[str, object]],
+    cc: Sequence[Mapping[str, object]],
+    pb: Sequence[Mapping[str, object]],
+    at: Sequence[Mapping[str, object]],
 ) -> str:
     """Composite fingerprint across all data types for a region."""
     combined = json.dumps({
@@ -182,16 +204,16 @@ def compute_drift_report(
     *,
     project_id: str,
     head_variation_id: str,
-    head_snapshot_notes: dict[str, list[dict[str, Any]]],
-    working_snapshot_notes: dict[str, list[dict[str, Any]]],
+    head_snapshot_notes: dict[str, list[NoteDict]],
+    working_snapshot_notes: dict[str, list[NoteDict]],
     track_regions: dict[str, str],
-    head_cc: dict[str, list[dict[str, Any]]] | None = None,
-    working_cc: dict[str, list[dict[str, Any]]] | None = None,
-    head_pb: dict[str, list[dict[str, Any]]] | None = None,
-    working_pb: dict[str, list[dict[str, Any]]] | None = None,
-    head_at: dict[str, list[dict[str, Any]]] | None = None,
-    working_at: dict[str, list[dict[str, Any]]] | None = None,
-    region_metadata: dict[str, dict[str, Any]] | None = None,
+    head_cc: dict[str, list[CCEventDict]] | None = None,
+    working_cc: dict[str, list[CCEventDict]] | None = None,
+    head_pb: dict[str, list[PitchBendDict]] | None = None,
+    working_pb: dict[str, list[PitchBendDict]] | None = None,
+    head_at: dict[str, list[AftertouchDict]] | None = None,
+    working_at: dict[str, list[AftertouchDict]] | None = None,
+    region_metadata: dict[str, RegionMetadataDB] | None = None,
 ) -> DriftReport:
     """Compare HEAD snapshot against working snapshot — notes + controllers.
 
@@ -284,16 +306,16 @@ def compute_drift_report(
         ) > 0
 
         # Build capped sample_changes from note matches only
-        samples: list[dict[str, Any]] = []
+        samples: list[SampleChange] = []
         for m in note_matches:
             if len(samples) >= MAX_SAMPLE_CHANGES:
                 break
             if m.is_added:
-                samples.append({"type": "added", "note": m.proposed_note})
+                samples.append(SampleChange(type="added", note=m.proposed_note))
             elif m.is_removed:
-                samples.append({"type": "removed", "note": m.base_note})
+                samples.append(SampleChange(type="removed", note=m.base_note))
             elif m.is_modified:
-                samples.append({"type": "modified", "before": m.base_note, "after": m.proposed_note})
+                samples.append(SampleChange(type="modified", before=m.base_note, after=m.proposed_note))
 
         if has_changes:
             changed_regions.append(rid)

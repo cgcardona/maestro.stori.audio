@@ -24,6 +24,9 @@ from app.core.executor import (
     VariationExecutionContext,
     VariationApplyResult,
 )
+from app.contracts.json_types import AftertouchDict, CCEventDict, NoteDict, PitchBendDict
+from app.contracts.project_types import ProjectContext
+from app.services.backends.base import GenerationResult
 from app.core.expansion import ToolCall
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
@@ -74,7 +77,7 @@ def _make_phrase(
     )
 
 
-def _note_add(pitch: Any = 60, start: Any = 0.0, dur: Any = 1.0, vel: Any = 100) -> NoteChange:
+def _note_add(pitch: int = 60, start: float = 0.0, dur: float = 1.0, vel: int = 100) -> NoteChange:
 
     return NoteChange(
         note_id=f"nc-add-{pitch}-{start}",
@@ -83,7 +86,7 @@ def _note_add(pitch: Any = 60, start: Any = 0.0, dur: Any = 1.0, vel: Any = 100)
     )
 
 
-def _note_remove(pitch: Any = 60, start: Any = 0.0, dur: Any = 1.0, vel: Any = 100) -> NoteChange:
+def _note_remove(pitch: int = 60, start: float = 0.0, dur: float = 1.0, vel: int = 100) -> NoteChange:
 
     return NoteChange(
         note_id=f"nc-rm-{pitch}-{start}",
@@ -92,7 +95,7 @@ def _note_remove(pitch: Any = 60, start: Any = 0.0, dur: Any = 1.0, vel: Any = 1
     )
 
 
-def _note_modify(old_pitch: Any = 60, new_pitch: Any = 63, start: Any = 0.0, dur: Any = 1.0) -> NoteChange:
+def _note_modify(old_pitch: int = 60, new_pitch: int = 63, start: float = 0.0, dur: float = 1.0) -> NoteChange:
 
     return NoteChange(
         note_id=f"nc-mod-{old_pitch}-{new_pitch}",
@@ -135,7 +138,7 @@ class TestExecutePlanVariation:
             ],
         })]
 
-        project_state = {
+        project_state: ProjectContext = {
             "tracks": [{
                 "id": "t1",
                 "name": "Piano",
@@ -158,7 +161,7 @@ class TestExecutePlanVariation:
         """tool_event_callback is invoked before each tool call is processed."""
         captured: list[tuple[str, str, dict[str, Any]]] = []
 
-        async def _on_tool(call_id: Any, name: Any, params: Any) -> None:
+        async def _on_tool(call_id: str, name: str, params: dict[str, Any]) -> None:
 
             captured.append((call_id, name, params))
 
@@ -181,7 +184,7 @@ class TestExecutePlanVariation:
     async def test_no_mutation_of_canonical_state(self) -> None:
 
         """Variation execution must not modify the project_state dict."""
-        project_state = {
+        project_state: ProjectContext = {
             "tracks": [{
                 "id": "t1",
                 "name": "Piano",
@@ -406,7 +409,7 @@ class TestExtractNotesFromProject:
         trace = TraceContext(trace_id="test")
         var_ctx = VariationContext(trace=trace)
         exec_ctx = VariationExecutionContext(store=store, trace=trace)
-        project = {
+        project: ProjectContext = {
             "tracks": [{
                 "id": "t1",
                 "regions": [{"id": "r1", "notes": [
@@ -422,11 +425,12 @@ class TestExtractNotesFromProject:
 
         """When region has no notes array, falls back to StateStore."""
         store = StateStore(conversation_id="test-fallback")
-        store.add_notes("r1", [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}])
+        _notes: list[NoteDict] = [{"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100}]
+        store.add_notes("r1", _notes)
         trace = TraceContext(trace_id="test")
         var_ctx = VariationContext(trace=trace)
         exec_ctx = VariationExecutionContext(store=store, trace=trace)
-        project = {
+        project: ProjectContext = {
             "tracks": [{
                 "id": "t1",
                 "regions": [{"id": "r1", "noteCount": 1}],
@@ -462,7 +466,7 @@ class TestGeneratorTimeout:
             "bars": 4,
         })
 
-        async def slow_generate(**kwargs: Any) -> None:
+        async def slow_generate(**kwargs: object) -> None:
 
             await asyncio.sleep(100)
 
@@ -528,13 +532,12 @@ class TestEmotionVectorIntegration:
 
         captured_kwargs: dict[str, Any] = {}
 
-        async def mock_generate(**kwargs: Any) -> Any:
-
-            captured_kwargs.update(kwargs)
+        async def mock_generate(**kwargs: Any) -> GenerationResult:
             from app.services.backends.base import GenerationResult, GeneratorBackend
+            captured_kwargs.update(kwargs)
             return GenerationResult(
                 success=True,
-                notes=[{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 80}],
+                notes=[NoteDict(pitch=60, start_beat=0.0, duration_beats=1.0, velocity=80)],
                 backend_used=GeneratorBackend.ORPHEUS,
                 metadata={},
             )
@@ -590,11 +593,11 @@ class TestEmotionVectorIntegration:
                         explanation=stori_prompt,
                     )
 
-        # emotion_vector should have been passed to mg.generate
-        assert "emotion_vector" in captured_kwargs
-        ev = captured_kwargs["emotion_vector"]
+        # emotion_vector should have been passed inside context=GenerationContext(...)
+        ctx = captured_kwargs.get("context")
+        assert ctx is not None, "expected context kwarg with GenerationContext"
+        ev = ctx.get("emotion_vector")
         assert ev is not None
-        # A melancholic low-energy prompt should produce low energy and high intimacy
         assert ev.energy < 0.5
         assert ev.intimacy > 0.5
 
@@ -604,10 +607,9 @@ class TestEmotionVectorIntegration:
         """When explanation is None, emotion_vector is not passed (or is None)."""
         captured_kwargs: dict[str, Any] = {}
 
-        async def mock_generate(**kwargs: Any) -> Any:
-
-            captured_kwargs.update(kwargs)
+        async def mock_generate(**kwargs: Any) -> GenerationResult:
             from app.services.backends.base import GenerationResult, GeneratorBackend
+            captured_kwargs.update(kwargs)
             return GenerationResult(
                 success=True,
                 notes=[],
@@ -675,10 +677,9 @@ class TestEmotionVectorIntegration:
         """quality_preset passed to execute_plan_variation reaches mg.generate."""
         captured_kwargs: dict[str, Any] = {}
 
-        async def mock_generate(**kwargs: Any) -> Any:
-
-            captured_kwargs.update(kwargs)
+        async def mock_generate(**kwargs: Any) -> GenerationResult:
             from app.services.backends.base import GenerationResult, GeneratorBackend
+            captured_kwargs.update(kwargs)
             return GenerationResult(
                 success=True,
                 notes=[],
@@ -737,7 +738,9 @@ class TestEmotionVectorIntegration:
                         quality_preset="fast",
                     )
 
-        assert captured_kwargs.get("quality_preset") == "fast"
+        ctx = captured_kwargs.get("context")
+        assert ctx is not None, "expected context kwarg with GenerationContext"
+        assert ctx.get("quality_preset") == "fast"
 
 
 # ---------------------------------------------------------------------------
@@ -789,7 +792,7 @@ class TestParallelGeneratorDispatch:
         call_order: list[str] = []
         in_flight: list[str] = []
 
-        async def fake_generate(*args: Any, **kwargs: Any) -> MagicMock:
+        async def fake_generate(*args: object, **kwargs: Any) -> MagicMock:
 
             role = kwargs.get("instrument", "unknown")
             in_flight.append(role)
@@ -839,7 +842,7 @@ class TestParallelGeneratorDispatch:
         """Phase ordering: setup → drums → bass → parallel melodic."""
         execution_order: list[str] = []
 
-        async def track_call(call_id: Any, tool_name: Any, params: Any) -> None:
+        async def track_call(call_id: str, tool_name: str, params: dict[str, Any]) -> None:
 
             execution_order.append(params.get("role", tool_name))
 
@@ -922,7 +925,7 @@ class TestPhraseAbsoluteBeats:
         from app.services.variation import VariationService
 
         svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
-        proposed = [
+        proposed: list[NoteDict] = [
             {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
             {"pitch": 62, "start_beat": 4, "duration_beats": 1, "velocity": 100},
         ]
@@ -947,7 +950,7 @@ class TestPhraseAbsoluteBeats:
         from app.services.variation import VariationService
 
         svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
-        proposed = [
+        proposed: list[NoteDict] = [
             {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
         ]
         variation = svc.compute_variation(
@@ -968,7 +971,7 @@ class TestPhraseAbsoluteBeats:
         from app.services.variation import VariationService
 
         svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
-        proposed = [
+        proposed: list[NoteDict] = [
             {"pitch": 60, "start_beat": 2.5, "duration_beats": 1, "velocity": 100},
         ]
         variation = svc.compute_variation(
@@ -992,12 +995,13 @@ class TestPhraseAbsoluteBeats:
         from app.services.variation import VariationService
 
         svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
+        proposed_regions: dict[str, list[NoteDict]] = {
+            "r1": [{"pitch": 36, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
+            "r2": [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
+        }
         variation = svc.compute_multi_region_variation(
             base_regions={"r1": [], "r2": []},
-            proposed_regions={
-                "r1": [{"pitch": 36, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
-                "r2": [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
-            },
+            proposed_regions=proposed_regions,
             track_regions={"r1": "t1", "r2": "t2"},
             intent="test",
             region_start_beats={"r1": 16.0, "r2": 16.0},
@@ -1013,7 +1017,7 @@ class TestPhraseAbsoluteBeats:
         from app.services.variation import VariationService
 
         svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
-        proposed = [
+        proposed: list[NoteDict] = [
             {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
         ]
         variation = svc.compute_variation(
@@ -1078,7 +1082,7 @@ class TestApplyVariationUpdatedRegions:
             accepted_phrase_ids=["p1"],
             project_state={},
             store=store,
-            region_metadata={"r1": {"startBeat": 0, "durationBeats": 16, "name": "Region1"}},
+            region_metadata={"r1": {"start_beat": 0, "duration_beats": 16, "name": "Region1"}},
         )
 
         assert result.success
@@ -1122,7 +1126,7 @@ class TestApplyVariationUpdatedRegions:
             accepted_phrase_ids=["p1"],
             project_state={},
             store=store,
-            region_metadata={"r1": {"startBeat": 16, "durationBeats": 32, "name": "Verse"}},
+            region_metadata={"r1": {"start_beat": 16, "duration_beats": 32, "name": "Verse"}},
         )
 
         assert result.success
@@ -1185,14 +1189,14 @@ class TestVariationContextCC:
     def test_record_proposed_cc(self) -> None:
 
         ctx = VariationContext(trace=TraceContext(trace_id="test"))
-        cc_events = [{"cc": 64, "beat": 0.0, "value": 127}]
+        cc_events: list[CCEventDict] = [{"cc": 64, "beat": 0.0, "value": 127}]
         ctx.record_proposed_cc("r1", cc_events)
         assert ctx.proposed.cc["r1"] == cc_events
 
     def test_record_proposed_pitch_bends(self) -> None:
 
         ctx = VariationContext(trace=TraceContext(trace_id="test"))
-        pb_events = [{"beat": 1.0, "value": 4096}]
+        pb_events: list[PitchBendDict] = [{"beat": 1.0, "value": 4096}]
         ctx.record_proposed_pitch_bends("r1", pb_events)
         assert ctx.proposed.pitch_bends["r1"] == pb_events
 
@@ -1205,8 +1209,10 @@ class TestVariationContextCC:
     def test_cc_accumulates_across_calls(self) -> None:
 
         ctx = VariationContext(trace=TraceContext(trace_id="test"))
-        ctx.record_proposed_cc("r1", [{"cc": 64, "beat": 0, "value": 127}])
-        ctx.record_proposed_cc("r1", [{"cc": 11, "beat": 1, "value": 80}])
+        cc1: list[CCEventDict] = [{"cc": 64, "beat": 0, "value": 127}]
+        ctx.record_proposed_cc("r1", cc1)
+        cc2: list[CCEventDict] = [{"cc": 11, "beat": 1, "value": 80}]
+        ctx.record_proposed_cc("r1", cc2)
         assert len(ctx.proposed.cc["r1"]) == 2
 
 
@@ -1216,7 +1222,8 @@ class TestStateStoreCCPitchBend:
     def test_add_and_get_cc(self) -> None:
 
         store = StateStore(conversation_id="s1", project_id="p")
-        store.add_cc("r1", [{"cc": 64, "beat": 0, "value": 127}])
+        cc_data: list[CCEventDict] = [{"cc": 64, "beat": 0, "value": 127}]
+        store.add_cc("r1", cc_data)
         result = store.get_region_cc("r1")
         assert len(result) == 1
         assert result[0]["cc"] == 64
@@ -1224,7 +1231,8 @@ class TestStateStoreCCPitchBend:
     def test_add_and_get_pitch_bends(self) -> None:
 
         store = StateStore(conversation_id="s2", project_id="p")
-        store.add_pitch_bends("r1", [{"beat": 0.5, "value": 2048}])
+        pb_data: list[PitchBendDict] = [{"beat": 0.5, "value": 2048}]
+        store.add_pitch_bends("r1", pb_data)
         result = store.get_region_pitch_bends("r1")
         assert len(result) == 1
         assert result[0]["value"] == 2048
@@ -1242,8 +1250,10 @@ class TestStateStoreCCPitchBend:
     def test_cc_survives_snapshot_restore(self) -> None:
 
         store = StateStore(conversation_id="s5", project_id="p")
-        store.add_cc("r1", [{"cc": 64, "beat": 0, "value": 127}])
-        store.add_pitch_bends("r1", [{"beat": 1.0, "value": 8191}])
+        cc_data: list[CCEventDict] = [{"cc": 64, "beat": 0, "value": 127}]
+        store.add_cc("r1", cc_data)
+        pb_data: list[PitchBendDict] = [{"beat": 1.0, "value": 8191}]
+        store.add_pitch_bends("r1", pb_data)
         snap = store._take_snapshot()
         store._region_cc.clear()
         store._region_pitch_bends.clear()
@@ -1260,11 +1270,11 @@ class TestVariationServiceCC:
 
         from app.services.variation import VariationService
         svc = VariationService()
-        base_notes: list[dict[str, Any]] = []
-        proposed_notes = [
+        base_notes: list[NoteDict] = []
+        proposed_notes: list[NoteDict] = [
             {"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100},
         ]
-        cc = [{"cc": 64, "beat": 0.5, "value": 127}]
+        cc: list[CCEventDict] = [{"cc": 64, "beat": 0.5, "value": 127}]
 
         variation = svc.compute_variation(
             base_notes=base_notes,
@@ -1288,10 +1298,10 @@ class TestVariationServiceCC:
 
         from app.services.variation import VariationService
         svc = VariationService()
-        proposed_notes = [
+        proposed_notes: list[NoteDict] = [
             {"pitch": 64, "start_beat": 0, "duration_beats": 2, "velocity": 90},
         ]
-        pb = [{"beat": 0.5, "value": 4096}]
+        pb: list[PitchBendDict] = [{"beat": 0.5, "value": 4096}]
 
         variation = svc.compute_variation(
             base_notes=[],
@@ -1313,13 +1323,13 @@ class TestVariationServiceCC:
         from app.services.variation import VariationService
         svc = VariationService()
 
-        base_regions: dict[str, list[dict[str, Any]]] = {"r1": [], "r2": []}
-        proposed_regions = {
+        base_regions: dict[str, list[NoteDict]] = {"r1": [], "r2": []}
+        proposed_regions: dict[str, list[NoteDict]] = {
             "r1": [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
             "r2": [{"pitch": 64, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
         }
         track_regions = {"r1": "t1", "r2": "t2"}
-        region_cc = {
+        region_cc: dict[str, list[CCEventDict]] = {
             "r1": [{"cc": 64, "beat": 0, "value": 127}],
             "r2": [{"cc": 11, "beat": 0, "value": 90}],
         }
@@ -1525,7 +1535,7 @@ class TestAftertouchPipeline:
     def test_variation_context_records_aftertouch(self) -> None:
 
         ctx = VariationContext(trace=TraceContext(trace_id="test"))
-        at_events = [{"beat": 0.5, "value": 80}]
+        at_events: list[AftertouchDict] = [{"beat": 0.5, "value": 80}]
         ctx.record_proposed_aftertouch("r1", at_events)
         assert ctx.proposed.aftertouch["r1"] == at_events
 
@@ -1538,7 +1548,8 @@ class TestAftertouchPipeline:
     def test_state_store_aftertouch(self) -> None:
 
         store = StateStore(conversation_id="at3", project_id="p")
-        store.add_aftertouch("r1", [{"beat": 0, "value": 64, "pitch": 60}])
+        at_data: list[AftertouchDict] = [{"beat": 0, "value": 64, "pitch": 60}]
+        store.add_aftertouch("r1", at_data)
         result = store.get_region_aftertouch("r1")
         assert len(result) == 1
         assert result[0]["pitch"] == 60
@@ -1547,7 +1558,8 @@ class TestAftertouchPipeline:
     def test_aftertouch_survives_snapshot_restore(self) -> None:
 
         store = StateStore(conversation_id="at4", project_id="p")
-        store.add_aftertouch("r1", [{"beat": 0, "value": 100}])
+        at_data: list[AftertouchDict] = [{"beat": 0, "value": 100}]
+        store.add_aftertouch("r1", at_data)
         snap = store._take_snapshot()
         store._region_aftertouch.clear()
         assert store.get_region_aftertouch("r1") == []
@@ -1558,8 +1570,8 @@ class TestAftertouchPipeline:
 
         from app.services.variation import VariationService
         svc = VariationService()
-        proposed = [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}]
-        at = [{"beat": 0.5, "value": 80, "pitch": 60}]
+        proposed: list[NoteDict] = [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}]
+        at: list[AftertouchDict] = [{"beat": 0.5, "value": 80, "pitch": 60}]
 
         variation = svc.compute_variation(
             base_notes=[],

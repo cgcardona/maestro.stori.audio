@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 import random
 import pytest
+from app.contracts.json_types import NoteDict
 from app.services.repair import apply_drum_repair, repair_drum_if_needed
 from app.core.music_spec_ir import DrumSpec, DrumConstraints, DensityTarget, DrumLayerSpec, default_drum_spec
 
@@ -17,10 +18,10 @@ def _make_drum_spec(**overrides: Any) -> DrumSpec:
     return default_drum_spec(style="boom_bap", bars=8)
 
 
-def _basic_kick_snare_hats(bars: Any = 4) -> list[dict[str, Any]]:
+def _basic_kick_snare_hats(bars: Any = 4) -> list[NoteDict]:
 
     """Generate a basic kick/snare/hat pattern."""
-    notes = []
+    notes: list[NoteDict] = []
     for bar in range(bars):
         base = bar * 4.0
         notes.append({"pitch": 36, "start_beat": base, "duration_beats": 0.25, "velocity": 100})

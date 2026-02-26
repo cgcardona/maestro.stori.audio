@@ -1,7 +1,9 @@
 """MIDI CC, pitch bend, and aftertouch MCP tool definitions."""
 from __future__ import annotations
 
-MIDI_CONTROL_TOOLS = [
+from app.contracts.mcp_types import MCPToolDef
+
+MIDI_CONTROL_TOOLS: list[MCPToolDef] = [
     {
         "name": "stori_add_midi_cc",
         "description": "Add MIDI CC (control change) events to a region.",

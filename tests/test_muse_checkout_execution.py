@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.contracts.json_types import CCEventDict, NoteDict
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
 from app.core.tool_names import ToolName
@@ -70,18 +71,23 @@ async def async_session() -> AsyncGenerator[AsyncSession, None]:
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict[str, Any]:
+def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> NoteDict:
 
     return {"pitch": pitch, "start_beat": start, "duration_beats": dur, "velocity": vel, "channel": 0}
 
 
-def _cc(cc_num: int, beat: float, value: int) -> dict[str, Any]:
+def _cc(cc_num: int, beat: float, value: int) -> CCEventDict:
 
+    return {"cc": cc_num, "beat": beat, "value": value}
+
+
+def _cc_ctrl(cc_num: int, beat: float, value: int) -> dict[str, Any]:
+    """CC event with 'kind' discriminator for controller_changes persistence."""
     return {"kind": "cc", "cc": cc_num, "beat": beat, "value": value}
 
 
 def _make_variation(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     controllers: list[dict[str, Any]] | None = None,
     region_id: str = "region-1",
     track_id: str = "track-1",

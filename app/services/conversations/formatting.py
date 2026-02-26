@@ -6,8 +6,7 @@ import json
 import logging
 import re
 import uuid as _uuid
-from typing import Any
-
+from app.contracts.llm_types import AssistantMessage, ChatMessage, ToolCallEntry
 from app.db.models import Conversation, ConversationMessage
 
 logger = logging.getLogger(__name__)
@@ -53,18 +52,16 @@ async def get_conversation_preview(conversation: Conversation) -> str:
     return ""
 
 
-def _format_single_message(message: ConversationMessage) -> list[dict[str, Any]]:
+def _format_single_message(message: ConversationMessage) -> list[ChatMessage]:
     """Format a single ConversationMessage for LLM context."""
-    formatted: list[dict[str, Any]] = []
+    formatted: list[ChatMessage] = []
 
     if message.role == "user":
         formatted.append({"role": "user", "content": message.content})
 
     elif message.role == "assistant":
-        msg: dict[str, Any] = {"role": "assistant", "content": message.content or ""}
-
         if message.tool_calls:
-            openai_tool_calls = []
+            openai_tool_calls: list[ToolCallEntry] = []
             seen_ids: set[str] = set()
             for tc in message.tool_calls:
                 tool_call_id = _sanitize_tool_call_id(tc.get("id", "")) or ""
@@ -81,8 +78,12 @@ def _format_single_message(message: ConversationMessage) -> list[dict[str, Any]]
                     },
                 })
 
-            msg["tool_calls"] = openai_tool_calls
-            formatted.append(msg)
+            assistant_msg: AssistantMessage = {
+                "role": "assistant",
+                "content": message.content or "",
+                "tool_calls": openai_tool_calls,
+            }
+            formatted.append(assistant_msg)
 
             for _tc, openai_tc in zip(message.tool_calls, openai_tool_calls):
                 formatted.append({
@@ -91,12 +92,12 @@ def _format_single_message(message: ConversationMessage) -> list[dict[str, Any]]
                     "content": json.dumps({"status": "success"}),
                 })
         else:
-            formatted.append(msg)
+            formatted.append({"role": "assistant", "content": message.content or ""})
 
     return formatted
 
 
-def format_conversation_history(conversation: Conversation) -> list[dict[str, Any]]:
+def format_conversation_history(conversation: Conversation) -> list[ChatMessage]:
     """Format all conversation messages for LLM context.
 
     Converts stored messages into OpenAI-compatible format:
@@ -104,17 +105,15 @@ def format_conversation_history(conversation: Conversation) -> list[dict[str, An
     - Assistant: {"role": "assistant", "content": "...", "tool_calls": [...]}
     - Tool result: {"role": "tool", "tool_call_id": "...", "content": "..."}
     """
-    formatted_messages: list[dict[str, Any]] = []
+    formatted_messages: list[ChatMessage] = []
 
     for message in conversation.messages:
         if message.role == "user":
             formatted_messages.append({"role": "user", "content": message.content})
 
         elif message.role == "assistant":
-            msg: dict[str, Any] = {"role": "assistant", "content": message.content or ""}
-
             if message.tool_calls:
-                openai_tool_calls = []
+                openai_tool_calls: list[ToolCallEntry] = []
                 seen_ids: set[str] = set()
                 for tc in message.tool_calls:
                     tool_call_id = _sanitize_tool_call_id(tc.get("id", "")) or ""
@@ -133,8 +132,12 @@ def format_conversation_history(conversation: Conversation) -> list[dict[str, An
                         "function": {"name": tc.get("name", ""), "arguments": arguments_str},
                     })
 
-                msg["tool_calls"] = openai_tool_calls
-                formatted_messages.append(msg)
+                asst_msg: AssistantMessage = {
+                    "role": "assistant",
+                    "content": message.content or "",
+                    "tool_calls": openai_tool_calls,
+                }
+                formatted_messages.append(asst_msg)
 
                 for tc, openai_tc in zip(message.tool_calls, openai_tool_calls):
                     tool_name = tc.get("name", "")
@@ -150,7 +153,7 @@ def format_conversation_history(conversation: Conversation) -> list[dict[str, An
                         "content": str(output),
                     })
             else:
-                formatted_messages.append(msg)
+                formatted_messages.append({"role": "assistant", "content": message.content or ""})
 
     logger.info(f"Formatted {len(formatted_messages)} messages from conversation history")
     return formatted_messages

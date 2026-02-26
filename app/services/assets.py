@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, cast
+from typing import Any
 
 import boto3
 from botocore.config import Config
@@ -85,7 +85,9 @@ def _get_object_json(key: str) -> dict[str, Any] | None:
         client = _s3_client()
         resp = client.get_object(Bucket=_bucket(), Key=key)
         body = resp["Body"].read().decode("utf-8")
-        return cast(dict[str, Any], json.loads(body))
+        parsed = json.loads(body)
+        assert isinstance(parsed, dict)
+        return parsed
     except ClientError as e:
         if e.response["Error"]["Code"] == "NoSuchKey":
             logger.debug("Manifest not found: %s", key)
@@ -106,7 +108,8 @@ def list_drum_kits() -> list[dict[str, Any]]:
         return []
     data = _get_object_json(DRUM_KITS_MANIFEST_KEY)
     if data and "kits" in data:
-        return cast(list[dict[str, Any]], data["kits"])
+        kits: list[dict[str, Any]] = data["kits"]
+        return kits
     return DEFAULT_DRUM_KITS_MANIFEST["kits"]
 
 
@@ -119,7 +122,8 @@ def list_soundfonts() -> list[dict[str, Any]]:
         return []
     data = _get_object_json(SOUNDFONTS_MANIFEST_KEY)
     if data and "soundfonts" in data:
-        return cast(list[dict[str, Any]], data["soundfonts"])
+        soundfonts: list[dict[str, Any]] = data["soundfonts"]
+        return soundfonts
     return DEFAULT_SOUNDFONTS_MANIFEST["soundfonts"]
 
 

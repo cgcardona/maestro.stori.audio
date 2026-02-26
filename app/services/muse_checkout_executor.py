@@ -18,6 +18,10 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.sse_utils import SSEEventInput
+
+from app.contracts.json_types import AftertouchDict, CCEventDict, PitchBendDict
+from app.core.state_store import StateStore, Transaction
 from app.core.tool_names import ToolName
 from app.core.tracing import TraceContext, trace_span
 from app.services.muse_checkout import CheckoutPlan
@@ -34,7 +38,7 @@ class CheckoutExecutionResult:
     executed: int
     failed: int
     plan_hash: str
-    events: tuple[dict[str, Any], ...] = ()
+    events: tuple[SSEEventInput, ...] = ()
 
     @property
     def success(self) -> bool:
@@ -48,7 +52,7 @@ class CheckoutExecutionResult:
 def execute_checkout_plan(
     *,
     checkout_plan: CheckoutPlan,
-    store: Any,
+    store: StateStore,
     trace: TraceContext,
     emit_sse: bool = True,
 ) -> CheckoutExecutionResult:
@@ -79,7 +83,7 @@ def execute_checkout_plan(
 
     executed = 0
     failed = 0
-    events: list[dict[str, Any]] = []
+    events: list[SSEEventInput] = []
 
     txn = store.begin_transaction(
         f"checkout:{checkout_plan.target_variation_id[:8]}",
@@ -149,8 +153,8 @@ def execute_checkout_plan(
 def _dispatch_tool(
     tool: str,
     args: dict[str, Any],
-    store: Any,
-    txn: Any,
+    store: StateStore,
+    txn: Transaction,
 ) -> None:
     """Dispatch a single checkout tool call to StateStore methods."""
     region_id = args.get("regionId", "")
@@ -168,17 +172,28 @@ def _dispatch_tool(
     elif tool == ToolName.ADD_MIDI_CC.value:
         cc_num = args.get("cc", 0)
         raw_events = args.get("events", [])
-        cc_events = [{"cc": cc_num, **e} for e in raw_events]
+        cc_events: list[CCEventDict] = [
+            CCEventDict(cc=cc_num, beat=e.get("beat", 0.0), value=e.get("value", 0))
+            for e in raw_events
+        ]
         if cc_events:
             store.add_cc(region_id, cc_events)
 
     elif tool == ToolName.ADD_PITCH_BEND.value:
-        pb_events = args.get("events", [])
+        raw_pb = args.get("events", [])
+        pb_events: list[PitchBendDict] = [
+            PitchBendDict(beat=e.get("beat", 0.0), value=e.get("value", 0))
+            for e in raw_pb
+        ]
         if pb_events:
             store.add_pitch_bends(region_id, pb_events)
 
     elif tool == ToolName.ADD_AFTERTOUCH.value:
-        at_events = args.get("events", [])
+        raw_at = args.get("events", [])
+        at_events: list[AftertouchDict] = [
+            {"beat": e.get("beat", 0.0), "value": e.get("value", 0)}
+            for e in raw_at
+        ]
         if at_events:
             store.add_aftertouch(region_id, at_events)
 

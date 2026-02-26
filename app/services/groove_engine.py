@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Any
+from app.contracts.json_types import NoteDict
 
 logger = logging.getLogger(__name__)
 
@@ -373,13 +373,13 @@ def calculate_swing_offset(
 # -----------------------------------------------------------------------------
 
 def apply_groove_map(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     tempo: int,
     style: str = "trap",
     humanize_profile: str | None = None,
     layer_map: dict[int, str] | None = None,
     rng: random.Random | None = None,
-) -> list[dict[str, Any]]:
+) -> list[NoteDict]:
     """
     Apply style-specific groove to notes: microtiming, swing, velocity shaping.
     
@@ -404,9 +404,9 @@ def apply_groove_map(
     profile = get_groove_profile(style, humanize_profile)
     ms_per_beat = 60_000 / tempo
     
-    out = []
+    out: list[NoteDict] = []
     for idx, n in enumerate(notes):
-        nn = dict(n)
+        nn: NoteDict = n.copy()
         pitch = nn.get("pitch", 36)
         velocity = nn.get("velocity", 80)
         start = nn.get("start_beat", 0.0)
@@ -478,7 +478,7 @@ SNARE_PITCHES = {38, 39, 40}
 HAT_PITCHES = {42, 44, 46}
 
 
-def extract_onsets(notes: list[dict[str, Any]], pitch_set: set[int]) -> list[float]:
+def extract_onsets(notes: list[NoteDict], pitch_set: set[int]) -> list[float]:
     """
     Extract onset times for notes matching the given pitch set.
     
@@ -487,17 +487,17 @@ def extract_onsets(notes: list[dict[str, Any]], pitch_set: set[int]) -> list[flo
     return sorted({round(n["start_beat"], 4) for n in notes if n.get("pitch") in pitch_set})
 
 
-def extract_kick_onsets(notes: list[dict[str, Any]]) -> list[float]:
+def extract_kick_onsets(notes: list[NoteDict]) -> list[float]:
     """Extract kick drum onset times from drum notes."""
     return extract_onsets(notes, KICK_PITCHES)
 
 
-def extract_snare_onsets(notes: list[dict[str, Any]]) -> list[float]:
+def extract_snare_onsets(notes: list[NoteDict]) -> list[float]:
     """Extract snare/clap onset times from drum notes."""
     return extract_onsets(notes, SNARE_PITCHES)
 
 
-def extract_hat_grid(notes: list[dict[str, Any]]) -> list[float]:
+def extract_hat_grid(notes: list[NoteDict]) -> list[float]:
     """Extract hi-hat onset times from drum notes."""
     return extract_onsets(notes, HAT_PITCHES)
 
@@ -523,7 +523,7 @@ class RhythmSpine:
     @classmethod
     def from_drum_notes(
         cls,
-        notes: list[dict[str, Any]],
+        notes: list[NoteDict],
         tempo: int = 120,
         bars: int = 16,
         style: str = "trap",

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from app.contracts.json_types import ToolCallDict
+
 if TYPE_CHECKING:
     from app.core.state_store import StateStore
     from app.core.prompt_parser import ParsedPrompt
@@ -11,7 +13,7 @@ if TYPE_CHECKING:
 
 def _get_incomplete_tracks(
     store: "StateStore",
-    tool_calls_collected: list[dict[str, Any]] | None = None,
+    tool_calls_collected: list[ToolCallDict] | None = None,
 ) -> list[str]:
     """Return names of tracks that are missing regions or notes.
 
@@ -47,7 +49,7 @@ def _get_incomplete_tracks(
 
 def _get_missing_expressive_steps(
     parsed: "ParsedPrompt" | None,
-    tool_calls_collected: list[dict[str, Any]],
+    tool_calls_collected: list[ToolCallDict],
 ) -> list[str]:
     """Return human-readable descriptions of expressive steps not yet executed.
 

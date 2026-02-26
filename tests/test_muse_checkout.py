@@ -16,6 +16,12 @@ from typing import Any
 
 import pytest
 
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+)
 from app.services.muse_checkout import (
     CheckoutPlan,
     REGION_RESET_THRESHOLD,
@@ -26,24 +32,20 @@ from app.services.muse_checkout import (
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict[str, Any]:
-
+def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> NoteDict:
     return {"pitch": pitch, "start_beat": start, "duration_beats": dur, "velocity": vel, "channel": 0}
 
 
-def _cc(cc_num: int, beat: float, value: int) -> dict[str, Any]:
-
-    return {"kind": "cc", "cc": cc_num, "beat": beat, "value": value}
-
-
-def _pb(beat: float, value: int) -> dict[str, Any]:
-
-    return {"kind": "pitch_bend", "beat": beat, "value": value}
+def _cc(cc_num: int, beat: float, value: int) -> CCEventDict:
+    return {"cc": cc_num, "beat": beat, "value": value}
 
 
-def _at(beat: float, value: int, pitch: int | None = None) -> dict[str, Any]:
+def _pb(beat: float, value: int) -> PitchBendDict:
+    return {"beat": beat, "value": value}
 
-    d: dict[str, Any] = {"kind": "aftertouch", "beat": beat, "value": value}
+
+def _at(beat: float, value: int, pitch: int | None = None) -> AftertouchDict:
+    d: AftertouchDict = {"beat": beat, "value": value}
     if pitch is not None:
         d["pitch"] = pitch
     return d
@@ -51,15 +53,15 @@ def _at(beat: float, value: int, pitch: int | None = None) -> dict[str, Any]:
 
 def _empty_plan_args(
     *,
-    target_notes: dict[str, Any] | None = None,
-    working_notes: dict[str, Any] | None = None,
-    target_cc: dict[str, Any] | None = None,
-    working_cc: dict[str, Any] | None = None,
-    target_pb: dict[str, Any] | None = None,
-    working_pb: dict[str, Any] | None = None,
-    target_at: dict[str, Any] | None = None,
-    working_at: dict[str, Any] | None = None,
-    track_regions: dict[str, Any] | None = None,
+    target_notes: dict[str, list[NoteDict]] | None = None,
+    working_notes: dict[str, list[NoteDict]] | None = None,
+    target_cc: dict[str, list[CCEventDict]] | None = None,
+    working_cc: dict[str, list[CCEventDict]] | None = None,
+    target_pb: dict[str, list[PitchBendDict]] | None = None,
+    working_pb: dict[str, list[PitchBendDict]] | None = None,
+    target_at: dict[str, list[AftertouchDict]] | None = None,
+    working_at: dict[str, list[AftertouchDict]] | None = None,
+    track_regions: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     return {
         "project_id": "proj-1",
@@ -129,8 +131,11 @@ class TestNoteAddCheckout:
         assert not plan.is_noop
         add_calls = [c for c in plan.tool_calls if c["tool"] == "stori_add_notes"]
         assert len(add_calls) == 1
-        assert len(add_calls[0]["arguments"]["notes"]) == 1
-        assert add_calls[0]["arguments"]["notes"][0]["pitch"] == 72
+        notes = add_calls[0]["arguments"]["notes"]
+        assert isinstance(notes, list)
+        assert len(notes) == 1
+        assert isinstance(notes[0], dict)
+        assert notes[0]["pitch"] == 72
 
     def test_region_with_removals_triggers_reset(self) -> None:
 
@@ -185,7 +190,10 @@ class TestControllerRestore:
         ))
         pb_calls = [c for c in plan.tool_calls if c["tool"] == "stori_add_pitch_bend"]
         assert len(pb_calls) == 1
-        assert pb_calls[0]["arguments"]["events"][0]["value"] == 4096
+        pb_events = pb_calls[0]["arguments"]["events"]
+        assert isinstance(pb_events, list)
+        assert isinstance(pb_events[0], dict)
+        assert pb_events[0]["value"] == 4096
 
     def test_missing_cc_produces_add_midi_cc(self) -> None:
 
@@ -211,7 +219,10 @@ class TestControllerRestore:
         ))
         at_calls = [c for c in plan.tool_calls if c["tool"] == "stori_add_aftertouch"]
         assert len(at_calls) == 1
-        assert at_calls[0]["arguments"]["events"][0]["pitch"] == 60
+        at_events = at_calls[0]["arguments"]["events"]
+        assert isinstance(at_events, list)
+        assert isinstance(at_events[0], dict)
+        assert at_events[0]["pitch"] == 60
 
     def test_modified_cc_value_produces_call(self) -> None:
 
@@ -224,7 +235,10 @@ class TestControllerRestore:
         ))
         cc_calls = [c for c in plan.tool_calls if c["tool"] == "stori_add_midi_cc"]
         assert len(cc_calls) == 1
-        assert cc_calls[0]["arguments"]["events"][0]["value"] == 0
+        cc_events = cc_calls[0]["arguments"]["events"]
+        assert isinstance(cc_events, list)
+        assert isinstance(cc_events[0], dict)
+        assert cc_events[0]["value"] == 0
 
     def test_multiple_cc_numbers_grouped(self) -> None:
 
@@ -237,7 +251,9 @@ class TestControllerRestore:
         ))
         cc_calls = [c for c in plan.tool_calls if c["tool"] == "stori_add_midi_cc"]
         assert len(cc_calls) == 2
-        cc_numbers = sorted(c["arguments"]["cc"] for c in cc_calls)
+        cc_numbers = sorted(
+            cc for c in cc_calls if isinstance((cc := c["arguments"]["cc"]), int)
+        )
         assert cc_numbers == [1, 64]
 
 
@@ -261,7 +277,9 @@ class TestLargeDriftFallback:
         add_calls = [c for c in plan.tool_calls if c["tool"] == "stori_add_notes"]
         assert len(clear_calls) == 1
         assert len(add_calls) == 1
-        assert len(add_calls[0]["arguments"]["notes"]) == len(target_notes)
+        large_notes = add_calls[0]["arguments"]["notes"]
+        assert isinstance(large_notes, list)
+        assert len(large_notes) == len(target_notes)
 
     def test_below_threshold_pure_additions_no_reset(self) -> None:
 

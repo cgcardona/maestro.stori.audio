@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.contracts.llm_types import ChatMessage
 from app.db import get_db
 from app.auth.dependencies import require_valid_token
 from app.services import conversations as conv_service
@@ -92,7 +93,7 @@ async def add_message_to_conversation(
         assistant_message_id: str | None = None
 
         try:
-            conversation_history: list[dict[str, Any]] = []
+            conversation_history: list[ChatMessage] = []
             if conversation.messages:
                 previous_messages = [m for m in conversation.messages if m.id != user_message.id]
                 conversation_history, _ = await get_optimized_context(

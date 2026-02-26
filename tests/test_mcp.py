@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from httpx import AsyncClient
-from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -13,14 +12,6 @@ from app.mcp.server import StoriMCPServer, ToolCallResult
 from app.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, DAW_TOOLS, TOOL_CATEGORIES
 
 
-def _tool_dict(tool: Any) -> dict[str, Any]:
-
-    """Ensure we have a dict for a single tool (MCP_TOOLS is list of dicts)."""
-    if isinstance(tool, dict):
-        return tool
-    return {}
-
-
 class TestMCPTools:
     """Tests for MCP tool definitions."""
 
@@ -28,26 +19,21 @@ class TestMCPTools:
 
         """Verify all tools have name, description, and inputSchema."""
         for tool in MCP_TOOLS:
-            t = _tool_dict(tool)
-            assert "name" in t, f"Tool missing name: {tool}"
-            assert "description" in t, f"Tool {t.get('name')} missing description"
-            assert "inputSchema" in t, f"Tool {t.get('name')} missing inputSchema"
+            assert "name" in tool, f"Tool missing name: {tool}"
+            assert "description" in tool, f"Tool {tool['name']} missing description"
+            assert "inputSchema" in tool, f"Tool {tool['name']} missing inputSchema"
 
     def test_tool_names_are_prefixed(self) -> None:
 
         """All MCP tools should be prefixed with 'stori_'."""
         for tool in MCP_TOOLS:
-            t = _tool_dict(tool)
-            name = str(t.get("name", ""))
-            assert name.startswith("stori_"), f"Tool {name} should start with 'stori_'"
+            assert tool["name"].startswith("stori_"), f"Tool {tool['name']} should start with 'stori_'"
 
     def test_tool_categories_complete(self) -> None:
 
         """Every tool should be in a category."""
         for tool in MCP_TOOLS:
-            t = _tool_dict(tool)
-            name = str(t.get("name", ""))
-            assert name in TOOL_CATEGORIES, f"Tool {name} not in TOOL_CATEGORIES"
+            assert tool["name"] in TOOL_CATEGORIES, f"Tool {tool['name']} not in TOOL_CATEGORIES"
     
     def test_server_side_and_daw_tools_disjoint(self) -> None:
 
@@ -147,7 +133,7 @@ class TestMCPEndpoints:
             app.dependency_overrides.pop(require_valid_token, None)
 
     @pytest.mark.anyio
-    async def test_list_tools_endpoint(self, mcp_client: Any) -> None:
+    async def test_list_tools_endpoint(self, mcp_client: AsyncClient) -> None:
 
         """Test /mcp/tools endpoint."""
         response = await mcp_client.get("/api/v1/mcp/tools")
@@ -158,7 +144,7 @@ class TestMCPEndpoints:
         assert len(data["tools"]) > 0
 
     @pytest.mark.anyio
-    async def test_server_info_endpoint(self, mcp_client: Any) -> None:
+    async def test_server_info_endpoint(self, mcp_client: AsyncClient) -> None:
 
         """Test /mcp/info endpoint."""
         response = await mcp_client.get("/api/v1/mcp/info")
@@ -168,7 +154,7 @@ class TestMCPEndpoints:
         assert data["name"] == "stori-daw"
 
     @pytest.mark.anyio
-    async def test_get_specific_tool(self, mcp_client: Any) -> None:
+    async def test_get_specific_tool(self, mcp_client: AsyncClient) -> None:
 
         """Test getting a specific tool."""
         response = await mcp_client.get("/api/v1/mcp/tools/stori_add_midi_track")
@@ -178,17 +164,17 @@ class TestMCPEndpoints:
         assert data["name"] == "stori_add_midi_track"
 
     @pytest.mark.anyio
-    async def test_get_unknown_tool(self, mcp_client: Any) -> None:
+    async def test_get_unknown_tool(self, mcp_client: AsyncClient) -> None:
 
-        """Test getting an unknown tool."""
+        """Test getting an unknown tool returns 404."""
         response = await mcp_client.get("/api/v1/mcp/tools/unknown_tool")
-        assert response.status_code == 200
+        assert response.status_code == 404
 
         data = response.json()
-        assert "error" in data
+        assert "detail" in data
 
     @pytest.mark.anyio
-    async def test_call_tool_endpoint(self, mcp_client: Any) -> None:
+    async def test_call_tool_endpoint(self, mcp_client: AsyncClient) -> None:
 
         """POST /tools/{tool_name}/call invokes tool and returns success/content."""
         # MCPToolCallRequest requires "name" and "arguments"

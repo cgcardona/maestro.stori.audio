@@ -81,7 +81,7 @@ class ProjectSnapshot(CamelModel):
 
     id: str
     name: str | None = None
-    tempo: float | None = Field(default=None, ge=40, le=240)
+    tempo: int | None = Field(default=None, ge=40, le=240)
     key: str | None = None
     time_signature: str | None = None
     schema_version: int | None = None

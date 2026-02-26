@@ -11,6 +11,7 @@ Tests:
 from __future__ import annotations
 
 import pytest
+from app.contracts.json_types import NoteDict
 from app.core.emotion_vector import (
     EmotionVector,
     emotion_to_constraints,
@@ -200,9 +201,14 @@ class TestEmotionToConstraints:
         assert relaxed_c.chord_extensions is False
 
 
+def _note(p: int, s: float, d: float, v: int) -> NoteDict:
+    """Build a NoteDict for tokenizer tests."""
+    return NoteDict(pitch=p, start_beat=s, duration_beats=d, velocity=v)
+
+
 class TestMidiTokenizer:
     """Test REMI tokenization."""
-    
+
     def test_vocab_size(self) -> None:
 
         """Should have reasonable vocab size."""
@@ -222,11 +228,10 @@ class TestMidiTokenizer:
 
         """Should roundtrip notes through tokenization."""
         tokenizer = MidiTokenizer()
-        
-        original_notes = [
-            {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80},
-            {"pitch": 64, "start_beat": 1.0, "duration_beats": 0.5, "velocity": 90},
-            {"pitch": 67, "start_beat": 2.0, "duration_beats": 1.5, "velocity": 70},
+        original_notes: list[NoteDict] = [
+            _note(60, 0.0, 1.0, 80),
+            _note(64, 1.0, 0.5, 90),
+            _note(67, 2.0, 1.5, 70),
         ]
         
         # Encode
@@ -248,11 +253,10 @@ class TestMidiTokenizer:
 
         """Should handle multi-bar sequences."""
         tokenizer = MidiTokenizer()
-        
-        notes = [
-            {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80},  # Bar 0
-            {"pitch": 62, "start_beat": 4.0, "duration_beats": 1.0, "velocity": 80},  # Bar 1
-            {"pitch": 64, "start_beat": 8.0, "duration_beats": 1.0, "velocity": 80},  # Bar 2
+        notes: list[NoteDict] = [
+            _note(60, 0.0, 1.0, 80),   # Bar 0
+            _note(62, 4.0, 1.0, 80),   # Bar 1
+            _note(64, 8.0, 1.0, 80),   # Bar 2
         ]
         
         token_ids = tokenizer.encode(notes, bars=3)
@@ -269,8 +273,7 @@ class TestMidiTokenizer:
 
         """Should produce readable token strings."""
         tokenizer = MidiTokenizer()
-        
-        notes = [{"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 80}]
+        notes: list[NoteDict] = [_note(60, 0.0, 1.0, 80)]
         tokens = tokenizer.encode_to_tokens(notes, bars=1)
         
         assert "BAR" in tokens
@@ -498,7 +501,7 @@ class TestHuggingFaceBackend:
         """Should adjust notes based on emotion."""
         backend = HuggingFaceMelodyBackend(api_key=None)
         
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 72, "start_beat": 0, "duration_beats": 1, "velocity": 80},
             {"pitch": 74, "start_beat": 1, "duration_beats": 1, "velocity": 90},
         ]

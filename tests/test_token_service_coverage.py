@@ -4,9 +4,9 @@ Covers register, revoke, check revoked, cleanup, and list active tokens.
 """
 from __future__ import annotations
 
-from app.db.models import User
+from app.db.models import AccessToken, User
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Any
+
 import pytest
 import pytest_asyncio
 from datetime import datetime, timezone, timedelta
@@ -26,7 +26,7 @@ USER_ID = "550e8400-e29b-41d4-a716-446655440000"
 
 
 @pytest_asyncio.fixture
-async def user_with_token(db_session: AsyncSession, test_user: User) -> tuple[User, str, Any]:
+async def user_with_token(db_session: AsyncSession, test_user: User) -> tuple[User, str, AccessToken]:
 
     """Create a test user and register a token."""
     token = create_access_token(user_id=test_user.id, expires_hours=1)
@@ -51,7 +51,7 @@ class TestRegisterToken:
 class TestIsTokenRevoked:
 
     @pytest.mark.anyio
-    async def test_active_token_not_revoked(self, db_session: AsyncSession, user_with_token: Any) -> None:
+    async def test_active_token_not_revoked(self, db_session: AsyncSession, user_with_token: tuple[User, str, AccessToken]) -> None:
 
         _, token, _ = user_with_token
         revoked = await is_token_revoked(db_session, token)
@@ -65,7 +65,7 @@ class TestIsTokenRevoked:
         assert revoked is False
 
     @pytest.mark.anyio
-    async def test_revoked_token_returns_true(self, db_session: AsyncSession, user_with_token: Any) -> None:
+    async def test_revoked_token_returns_true(self, db_session: AsyncSession, user_with_token: tuple[User, str, AccessToken]) -> None:
 
         user, token, _ = user_with_token
         await revoke_token(db_session, token)
@@ -77,7 +77,7 @@ class TestIsTokenRevoked:
 class TestRevokeToken:
 
     @pytest.mark.anyio
-    async def test_revoke_existing(self, db_session: AsyncSession, user_with_token: Any) -> None:
+    async def test_revoke_existing(self, db_session: AsyncSession, user_with_token: tuple[User, str, AccessToken]) -> None:
 
         _, token, _ = user_with_token
         result = await revoke_token(db_session, token)

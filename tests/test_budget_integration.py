@@ -10,7 +10,6 @@ Ensures that:
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Any
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -41,7 +40,7 @@ async def test_user(db_session: AsyncSession) -> User:
 
 
 @pytest.fixture
-def auth_token(test_user: Any) -> str:
+def auth_token(test_user: User) -> str:
 
     """Generate JWT token for test user."""
     return create_access_token(
@@ -51,7 +50,7 @@ def auth_token(test_user: Any) -> str:
 
 
 @pytest.fixture
-def auth_headers(auth_token: Any) -> dict[str, str]:
+def auth_headers(auth_token: str) -> dict[str, str]:
 
     """Headers with authentication."""
     return {
@@ -95,7 +94,7 @@ async def test_calculate_cost_cents_zero_tokens() -> None:
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_check_budget_sufficient(db_session: AsyncSession, test_user: Any) -> None:
+async def test_check_budget_sufficient(db_session: AsyncSession, test_user: User) -> None:
 
     """Test budget check passes when user has sufficient budget."""
     # Should not raise
@@ -132,7 +131,7 @@ async def test_check_budget_nonexistent_user(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_check_budget_minimum_cents(db_session: AsyncSession, test_user: Any) -> None:
+async def test_check_budget_minimum_cents(db_session: AsyncSession, test_user: User) -> None:
 
     """Test check_budget with custom minimum_cents."""
     await budget.check_budget(db_session, test_user.id, minimum_cents=1)
@@ -146,7 +145,7 @@ async def test_check_budget_minimum_cents(db_session: AsyncSession, test_user: A
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_reserve_budget_success_and_release(db_session: AsyncSession, test_user: Any) -> None:
+async def test_reserve_budget_success_and_release(db_session: AsyncSession, test_user: User) -> None:
 
     """Reserve budget then release unused portion."""
     initial = test_user.budget_cents
@@ -182,7 +181,7 @@ async def test_reserve_budget_user_not_found(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_reserve_budget_consume(db_session: AsyncSession, test_user: Any) -> None:
+async def test_reserve_budget_consume(db_session: AsyncSession, test_user: User) -> None:
 
     """Reserve then consume with actual cost; unused portion released."""
     initial = test_user.budget_cents
@@ -201,7 +200,7 @@ async def test_reserve_budget_consume(db_session: AsyncSession, test_user: Any) 
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_deduct_budget(db_session: AsyncSession, test_user: Any) -> None:
+async def test_deduct_budget(db_session: AsyncSession, test_user: User) -> None:
 
     """Test deducting budget and logging usage."""
     original_budget = test_user.budget_cents
@@ -236,7 +235,7 @@ async def test_deduct_budget(db_session: AsyncSession, test_user: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_deduct_budget_without_storing_prompt(db_session: AsyncSession, test_user: Any) -> None:
+async def test_deduct_budget_without_storing_prompt(db_session: AsyncSession, test_user: User) -> None:
 
     """Test deducting budget without storing the prompt."""
     await budget.deduct_budget(
@@ -323,7 +322,7 @@ async def test_get_model_or_default_without_model() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_user_budget_found(db_session: AsyncSession, test_user: Any) -> None:
+async def test_get_user_budget_found(db_session: AsyncSession, test_user: User) -> None:
 
     """get_user_budget returns remaining budget in dollars when user exists."""
     remaining = await budget.get_user_budget(db_session, test_user.id)
@@ -365,7 +364,7 @@ def test_validate_model_invalid_raises() -> None:
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_conversation_message_budget_integration(db_session: AsyncSession, test_user: Any, auth_headers: Any) -> None:
+async def test_conversation_message_budget_integration(db_session: AsyncSession, test_user: User, auth_headers: dict[str, str]) -> None:
 
     """Test that sending a message properly tracks budget."""
     # Create conversation first
@@ -389,7 +388,7 @@ async def test_conversation_message_budget_integration(db_session: AsyncSession,
 
 
 @pytest.mark.asyncio
-async def test_budget_exceeded_error_in_api(db_session: AsyncSession, auth_headers: Any) -> None:
+async def test_budget_exceeded_error_in_api(db_session: AsyncSession, auth_headers: dict[str, str]) -> None:
 
     """Test that API returns 402 when budget is exceeded."""
     # Create user with zero budget
@@ -428,7 +427,7 @@ async def test_budget_exceeded_error_in_api(db_session: AsyncSession, auth_heade
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_usage_log_creation(db_session: AsyncSession, test_user: Any) -> None:
+async def test_usage_log_creation(db_session: AsyncSession, test_user: User) -> None:
 
     """Test that usage logs are properly created."""
     await budget.deduct_budget(
@@ -454,7 +453,7 @@ async def test_usage_log_creation(db_session: AsyncSession, test_user: Any) -> N
 
 
 @pytest.mark.asyncio
-async def test_multiple_usage_logs(db_session: AsyncSession, test_user: Any) -> None:
+async def test_multiple_usage_logs(db_session: AsyncSession, test_user: User) -> None:
 
     """Test that multiple usage logs can be created for one user."""
     for i in range(3):
@@ -484,7 +483,7 @@ async def test_multiple_usage_logs(db_session: AsyncSession, test_user: Any) -> 
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_get_user_budget_info(test_user: Any, auth_headers: Any) -> None:
+async def test_get_user_budget_info(test_user: User, auth_headers: dict[str, str]) -> None:
 
     """Test that user endpoint returns budget information."""
     transport = ASGITransport(app=app)

@@ -7,16 +7,26 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncGenerator
-from typing import Any
+from collections.abc import AsyncGenerator, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Never
+
+if TYPE_CHECKING:
+    from app.contracts.project_types import ProjectContext
+    from app.core.maestro_plan_tracker import _PlanTracker
+    from app.core.prompt_parser import ParsedPrompt
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.contracts.json_types import NoteDict, ToolCallDict
+from app.contracts.llm_types import ChatMessage
+from app.contracts.project_types import ProjectContext
+from app.core.sse_utils import SSEEventInput
 from app.core.maestro_handlers import UsageTracker, orchestrate
 from app.core.maestro_helpers import StreamFinalResponse, _stream_llm_response
 from app.core.maestro_composing import _handle_reasoning, _handle_composing, _retry_composing_as_editing
 from app.core.maestro_editing import _handle_editing
 from app.core.maestro_plan_tracker import _PlanTracker, _PlanStep, _build_step_result
+from app.core.planner import ExecutionPlan
 from app.core.expansion import ToolCall
 from app.core.intent import Intent, IntentResult, SSEState
 from app.core.llm_client import LLMResponse
@@ -34,7 +44,7 @@ def _parse_events(events: list[str]) -> list[dict[str, Any]]:
     return parsed
 
 
-async def _fake_plan_stream(plan: Any) -> AsyncGenerator[Any, None]:
+async def _fake_plan_stream(plan: ExecutionPlan) -> AsyncGenerator[ExecutionPlan, None]:
 
     """Async generator yielding a single ExecutionPlan (simulates build_execution_plan_stream)."""
     yield plan
@@ -44,9 +54,9 @@ def _make_trace() -> TraceContext:
     return TraceContext(trace_id="test-trace-id")
 
 
-def _make_route(sse_state: Any = SSEState.REASONING, intent: Any = Intent.UNKNOWN, **kwargs: Any) -> IntentResult:
+def _make_route(sse_state: SSEState = SSEState.REASONING, intent: Intent = Intent.UNKNOWN, **kwargs: object) -> IntentResult:
 
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         intent=intent,
         sse_state=sse_state,
         confidence=0.9,
@@ -62,14 +72,15 @@ def _make_route(sse_state: Any = SSEState.REASONING, intent: Any = Intent.UNKNOW
     return IntentResult(**defaults)
 
 
-def _response_to_stream(response: LLMResponse) -> Any:
-
+def _response_to_stream(
+    response: LLMResponse,
+) -> Callable[..., AsyncGenerator[dict[str, Any], None]]:
     """Convert an LLMResponse to an async iterator matching chat_completion_stream protocol.
 
     Used to adapt tests that mocked chat_completion to the streaming API
     used by _run_instrument_agent.
     """
-    async def _stream(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+    async def _stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
 
         tool_calls_raw = [
             {
@@ -89,7 +100,7 @@ def _response_to_stream(response: LLMResponse) -> Any:
     return _stream
 
 
-def _make_llm_mock(content: Any = "Hello", supports_reasoning: Any = False, tool_calls: Any = None) -> MagicMock:
+def _make_llm_mock(content: str | None = "Hello", supports_reasoning: bool = False, tool_calls: list[ToolCall] | None = None) -> MagicMock:
 
     mock = MagicMock()
     mock.model = "test-model"
@@ -140,7 +151,7 @@ class TestHandleReasoning:
         trace = _make_trace()
         route = _make_route(SSEState.REASONING, Intent.UNKNOWN)
 
-        async def fake_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+        async def fake_stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
 
             yield {"type": "reasoning_delta", "text": "Thinking about this..."}
             yield {"type": "content_delta", "text": "The answer."}
@@ -183,7 +194,7 @@ class TestHandleReasoning:
 
         mock_rag = MagicMock()
         mock_rag.collection_exists.return_value = True
-        async def rag_answer(*a: Any, **k: Any) -> AsyncGenerator[str, None]:
+        async def rag_answer(*a: object, **k: object) -> AsyncGenerator[str, None]:
 
             yield "RAG answer part 1"
             yield "RAG answer part 2"
@@ -226,7 +237,7 @@ class TestHandleReasoning:
         llm = _make_llm_mock(content="With context")
         trace = _make_trace()
         route = _make_route(SSEState.REASONING)
-        history = [{"role": "user", "content": "prev"}, {"role": "assistant", "content": "prev answer"}]
+        history: list[ChatMessage] = [{"role": "user", "content": "prev"}, {"role": "assistant", "content": "prev answer"}]
 
         events = []
         async for e in _handle_reasoning("follow up?", {}, route, llm, trace, None, history):
@@ -652,9 +663,9 @@ class TestHandleEditing:
         )
 
         region_id = "r-test-persist"
-        notes_payload = [
-            {"pitch": 60, "startBeat": 0.0, "durationBeats": 1.0, "velocity": 100},
-            {"pitch": 62, "startBeat": 1.0, "durationBeats": 0.5, "velocity": 90},
+        notes_payload: list[NoteDict] = [
+            NoteDict(pitch=60, startBeat=0.0, durationBeats=1.0, velocity=100),
+            NoteDict(pitch=62, startBeat=1.0, durationBeats=0.5, velocity=90),
         ]
         response = LLMResponse(content=None, usage={"prompt_tokens": 5, "completion_tokens": 5})
         response.tool_calls = [
@@ -851,7 +862,7 @@ class TestStreamLLMResponse:
         llm = _make_llm_mock(supports_reasoning=True)
         trace = _make_trace()
 
-        async def fake_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+        async def fake_stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
 
             yield {"type": "reasoning_delta", "text": "Let me think..."}
             yield {"type": "content_delta", "text": "Here's the answer."}
@@ -880,7 +891,7 @@ class TestStreamLLMResponse:
         llm = _make_llm_mock(supports_reasoning=True)
         trace = _make_trace()
 
-        async def fake_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+        async def fake_stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
 
             yield {
                 "type": "done",
@@ -961,7 +972,7 @@ class TestOrchestrateExecutionModePolicy:
             beat_range=(0.0, 0.0),
             phrases=[],
         )
-        project_ctx = {"id": "p1", "tracks": [{"id": "t1", "name": "Track 1"}]}
+        project_ctx: ProjectContext = {"id": "p1", "tracks": [{"id": "t1", "name": "Track 1"}]}
 
         with (
             patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
@@ -1024,7 +1035,7 @@ class TestOrchestrateExecutionModePolicy:
 
 class TestPlanTracker:
 
-    def _make_tool_calls(self, specs: list[tuple[str, dict[str, Any]]]) -> list[ToolCall]:
+    def _make_tool_calls(self, specs: list[tuple[str, dict[str, Any]]]) -> list[ToolCall]:  # boundary: tool call params
 
         return [
             ToolCall(id=f"tc{i}", name=name, params=params)
@@ -1462,8 +1473,7 @@ class TestCompleteEventOnError:
 class TestBuildFromPromptNoOpSkip:
     """build_from_prompt omits tempo/key steps when project already matches."""
 
-    def _make_parsed(self, tempo: Any = None, key: Any = None, roles: Any = None) -> Any:
-
+    def _make_parsed(self, tempo: int | None = None, key: str | None = None, roles: list[str] | None = None) -> ParsedPrompt:
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1542,7 +1552,7 @@ class TestMatchRolesWithInferredRoles:
 
         """A track with drumKitId is inferred as drums even if named differently."""
         from app.core.planner import _match_roles_to_existing_tracks
-        project = {
+        project: ProjectContext = {
             "tracks": [
                 {"id": "BEAT-UUID", "name": "The Beat", "drumKitId": "TR-808"},
             ]
@@ -1554,7 +1564,7 @@ class TestMatchRolesWithInferredRoles:
 
         """A track with GM program 33 (Electric Bass) is inferred as bass role."""
         from app.core.planner import _match_roles_to_existing_tracks
-        project = {
+        project: ProjectContext = {
             "tracks": [
                 {"id": "LOW-UUID", "name": "Low End", "gmProgram": 33},
             ]
@@ -1566,7 +1576,7 @@ class TestMatchRolesWithInferredRoles:
 
         """A track with GM program 80 (Square Lead) is inferred as lead role."""
         from app.core.planner import _match_roles_to_existing_tracks
-        project = {
+        project: ProjectContext = {
             "tracks": [
                 {"id": "LEAD-UUID", "name": "Synth 1", "gmProgram": 80},
             ]
@@ -1578,7 +1588,7 @@ class TestMatchRolesWithInferredRoles:
 
         """A 'Cathedral Pad' track (Church Organ GM 19) inferred as pads, matched to pads role."""
         from app.core.planner import _match_roles_to_existing_tracks
-        project = {
+        project: ProjectContext = {
             "tracks": [
                 {"id": "PAD-UUID", "name": "Cathedral Pad", "gmProgram": 19},
             ]
@@ -1594,8 +1604,7 @@ class TestMatchRolesWithInferredRoles:
 class TestBuildFromPromptExpressiveSteps:
     """build_from_prompt surfaces Effects / MidiExpressiveness / Automation as plan steps."""
 
-    def _make_parsed(self, roles: Any = None, extensions: Any = None) -> Any:
-
+    def _make_parsed(self, roles: list[str] | None = None, extensions: dict[str, Any] | None = None) -> ParsedPrompt:
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1710,8 +1719,7 @@ class TestBuildFromPromptExpressiveSteps:
 class TestStructuredPromptContextTranslation:
     """structured_prompt_context injects execution requirements for expressive blocks."""
 
-    def _make_parsed(self, extensions: Any) -> Any:
-
+    def _make_parsed(self, extensions: dict[str, Any]) -> ParsedPrompt:
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1786,8 +1794,7 @@ class TestStructuredPromptContextTranslation:
 class TestPlanStepToolName:
     """_PlanStep.tool_name is included in the plan SSE event as toolName."""
 
-    def _make_tracker_from_prompt(self, roles: Any = None, extensions: Any = None, tempo: Any = None, key: Any = None) -> Any:
-
+    def _make_tracker_from_prompt(self, roles: list[str] | None = None, extensions: dict[str, Any] | None = None, tempo: int | None = None, key: str | None = None) -> _PlanTracker:
         from app.core.prompt_parser import ParsedPrompt
         from app.core.maestro_plan_tracker import _PlanTracker
         parsed = ParsedPrompt(
@@ -1902,8 +1909,7 @@ class TestPlanStepToolName:
 class TestGetMissingExpressiveSteps:
     """_get_missing_expressive_steps detects pending expressive tool calls."""
 
-    def _parsed(self, extensions: Any) -> Any:
-
+    def _parsed(self, extensions: dict[str, Any]) -> ParsedPrompt:
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1912,12 +1918,13 @@ class TestGetMissingExpressiveSteps:
             extensions=extensions,
         )
 
-    def _missing(self, extensions: Any, tool_calls_collected: Any = None) -> list[str]:
+    def _missing(self, extensions: dict[str, Any], tool_calls_collected: list[ToolCallDict] | None = None) -> list[str]:
 
         from app.core.maestro_editing import _get_missing_expressive_steps
+        empty: list[ToolCallDict] = []
         return _get_missing_expressive_steps(
             self._parsed(extensions),
-            tool_calls_collected or [],
+            tool_calls_collected if tool_calls_collected is not None else empty,
         )
 
     def test_none_parsed_returns_empty(self) -> None:
@@ -1943,7 +1950,7 @@ class TestGetMissingExpressiveSteps:
         """effects extension with stori_add_insert_effect already called → empty."""
         result = self._missing(
             {"effects": {"drums": {"compression": True}}},
-            [{"tool": "stori_add_insert_effect", "params": {}}],
+            [ToolCallDict(tool="stori_add_insert_effect", params={})],
         )
         assert result == []
 
@@ -1958,7 +1965,7 @@ class TestGetMissingExpressiveSteps:
         """cc_curves with stori_add_midi_cc already called → not flagged."""
         result = self._missing(
             {"midiexpressiveness": {"cc_curves": [{"cc": 91}]}},
-            [{"tool": "stori_add_midi_cc", "params": {}}],
+            [ToolCallDict(tool="stori_add_midi_cc", params={})],
         )
         assert not any("stori_add_midi_cc" in m for m in result)
 
@@ -2018,11 +2025,11 @@ class TestGetMissingExpressiveSteps:
             },
             "automation": [{"track": "Drums", "param": "Volume"}],
         }
-        tool_calls = [
-            {"tool": "stori_add_insert_effect", "params": {}},
-            {"tool": "stori_add_midi_cc", "params": {}},
-            {"tool": "stori_add_pitch_bend", "params": {}},
-            {"tool": "stori_add_automation", "params": {}},
+        tool_calls: list[ToolCallDict] = [
+            ToolCallDict(tool="stori_add_insert_effect", params={}),
+            ToolCallDict(tool="stori_add_midi_cc", params={}),
+            ToolCallDict(tool="stori_add_pitch_bend", params={}),
+            ToolCallDict(tool="stori_add_automation", params={}),
         ]
         result = self._missing(extensions, tool_calls)
         assert result == []
@@ -2058,8 +2065,7 @@ class TestGetMissingExpressiveSteps:
 class TestBuildFromPromptReverbBus:
     """build_from_prompt adds a bus setup step when 2+ tracks need reverb."""
 
-    def _make_parsed(self, extensions: Any) -> Any:
-
+    def _make_parsed(self, extensions: dict[str, Any]) -> ParsedPrompt:
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -2177,7 +2183,7 @@ class TestBuildToolResult:
         store = self._make_store()
         track_id = store.create_track("Drums")
         region_id = store.create_region("Pattern", track_id)
-        notes = [{"pitch": 36, "startBeat": i, "durationBeats": 0.5, "velocity": 100} for i in range(8)]
+        notes: list[NoteDict] = [{"pitch": 36, "startBeat": float(i), "durationBeats": 0.5, "velocity": 100} for i in range(8)]
         store.add_notes(region_id, notes)
         params = {"regionId": region_id, "notes": notes}
         result = _build_tool_result("stori_add_notes", params, store)
@@ -2195,10 +2201,10 @@ class TestBuildToolResult:
         track_id = store.create_track("Drums")
         region_id = store.create_region("Pattern", track_id)
 
-        first_notes = [{"pitch": 36, "startBeat": i, "durationBeats": 0.5, "velocity": 100} for i in range(4)]
+        first_notes: list[NoteDict] = [{"pitch": 36, "startBeat": float(i), "durationBeats": 0.5, "velocity": 100} for i in range(4)]
         store.add_notes(region_id, first_notes)
 
-        second_notes = [{"pitch": 38, "startBeat": i, "durationBeats": 0.5, "velocity": 90} for i in range(4)]
+        second_notes: list[NoteDict] = [{"pitch": 38, "startBeat": float(i), "durationBeats": 0.5, "velocity": 90} for i in range(4)]
         store.add_notes(region_id, second_notes)
 
         result = _build_tool_result("stori_add_notes", {"regionId": region_id, "notes": second_notes}, store)
@@ -2317,7 +2323,7 @@ class TestPlanStepPhantomCompletion:
         track_id = store.registry.resolve_track("Drums")
         assert track_id is not None
         region_id = store.create_region("Pattern", track_id)
-        store.add_notes(region_id, [{"pitch": 36, "startBeat": 0, "durationBeats": 0.5, "velocity": 100}])
+        store.add_notes(region_id, [NoteDict(pitch=36, startBeat=0, durationBeats=0.5, velocity=100)])
 
         existing_track_names = {t.name for t in store.registry.list_tracks()}
         from app.core.maestro_editing import _get_incomplete_tracks
@@ -2414,7 +2420,7 @@ class TestEnrichParamsWithTrackContext:
 class TestParallelGroup:
     """parallelGroup is emitted on instrument steps but not setup/mixing steps."""
 
-    def _make_tool_calls(self, specs: list[tuple[str, dict[str, Any]]]) -> list[ToolCall]:
+    def _make_tool_calls(self, specs: list[tuple[str, dict[str, Any]]]) -> list[ToolCall]:  # boundary: tool call params
 
         return [
             ToolCall(id=f"tc{i}", name=name, params=params)
@@ -2628,7 +2634,7 @@ class TestMultiActiveSteps:
 class TestGroupIntoPhases:
     """_group_into_phases splits tool calls into setup / instruments / mixing."""
 
-    def _tc(self, name: str, params: dict[str, Any] | None = None) -> ToolCall:
+    def _tc(self, name: str, params: dict[str, Any] | None = None) -> ToolCall:  # boundary: tool call params
 
         return ToolCall(name=name, params=params or {})
 
@@ -2734,7 +2740,7 @@ def _make_parsed_multi(
     roles: list[str] | None = None,
     style: str = "funk",
     bars: int = 4,
-) -> Any:
+) -> ParsedPrompt:
     from app.core.prompt_parser import ParsedPrompt
     return ParsedPrompt(
         raw="STORI PROMPT",
@@ -2751,7 +2757,7 @@ def _make_parsed_multi(
 class TestAgentTeamRouting:
     """orchestrate() routes multi-role STORI PROMPT to agent-team handler."""
 
-    def _make_intent_result(self, intent: Any, sse_state: Any, parsed: Any = None) -> IntentResult:
+    def _make_intent_result(self, intent: Intent, sse_state: SSEState, parsed: ParsedPrompt | None = None) -> IntentResult:
 
         from app.core.intent import IntentResult
         slots = MagicMock()
@@ -2781,7 +2787,7 @@ class TestAgentTeamRouting:
 
         llm = _make_llm_mock(content="Done")
         store = StateStore(conversation_id="test-routing")
-        project_context: dict[str, Any] = {}
+        project_context: ProjectContext = {}
 
         agent_team_events = []
         with patch(
@@ -2814,7 +2820,7 @@ class TestAgentTeamRouting:
 
         llm = _make_llm_mock(content="Done")
         store = StateStore(conversation_id="test-single")
-        project_context: dict[str, Any] = {}
+        project_context: ProjectContext = {}
 
         with patch(
             "app.core.maestro_handlers._handle_composition_agent_team",
@@ -2844,7 +2850,7 @@ class TestAgentTeamRouting:
 
         llm = _make_llm_mock(content="Done")
         store = StateStore(conversation_id="test-no-parsed")
-        project_context: dict[str, Any] = {}
+        project_context: ProjectContext = {}
 
         with patch(
             "app.core.maestro_handlers._handle_composition_agent_team",
@@ -2864,7 +2870,7 @@ class TestAgentTeamRouting:
         mock_agent_team.assert_not_called()
 
 
-async def _fake_events_gen(events: Any) -> AsyncGenerator[str, None]:
+async def _fake_events_gen(events: Iterable[str]) -> AsyncGenerator[str, None]:
 
     """Async generator yielding fake SSE event strings."""
     for e in events:
@@ -3181,7 +3187,7 @@ class TestApplySingleToolCall:
             tc_name="stori_add_notes",
             resolved_args={
                 "regionId": region_id,
-                "notes": [{"pitch": 72}],
+                "notes": [NoteDict(pitch=72)],
             },
             allowed_tool_names={"stori_add_notes"},
             store=store,
@@ -3199,7 +3205,7 @@ class TestApplySingleToolCall:
 class TestRunInstrumentAgent:
     """_run_instrument_agent() makes one LLM call and pushes events to the queue."""
 
-    def _make_track_response(self, track_name: Any = "Drums") -> LLMResponse:
+    def _make_track_response(self, track_name: str = "Drums") -> LLMResponse:
 
         """LLMResponse with stori_add_midi_track + stori_add_midi_region."""
         response = LLMResponse(content=None, usage={"prompt_tokens": 10, "completion_tokens": 20})
@@ -3228,7 +3234,7 @@ class TestRunInstrumentAgent:
         llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
         trace = _make_trace()
 
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3236,7 +3242,7 @@ class TestRunInstrumentAgent:
             role="drums",
             style="funk",
             bars=4,
-            tempo=92.0,
+            tempo=92,
             key="Cm",
             step_ids=step_ids,
             plan_tracker=plan_tracker,
@@ -3271,14 +3277,14 @@ class TestRunInstrumentAgent:
         )
 
         llm = _make_llm_mock()
-        async def _failing_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
+        async def _failing_stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
 
             raise RuntimeError("LLM down")
             yield  # type: ignore[unreachable]  # makes this an async generator
         llm.chat_completion_stream = MagicMock(side_effect=_failing_stream)
         trace = _make_trace()
 
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3286,7 +3292,7 @@ class TestRunInstrumentAgent:
             role="drums",
             style="funk",
             bars=4,
-            tempo=92.0,
+            tempo=92,
             key="Cm",
             step_ids=step_ids,
             plan_tracker=plan_tracker,
@@ -3324,7 +3330,7 @@ class TestRunInstrumentAgent:
         resp = self._make_track_response("Bass")
         llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
         trace = _make_trace()
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3332,7 +3338,7 @@ class TestRunInstrumentAgent:
             role="bass",
             style="funk",
             bars=4,
-            tempo=92.0,
+            tempo=92,
             key="Cm",
             step_ids=step_ids,
             plan_tracker=plan_tracker,
@@ -3495,7 +3501,7 @@ class TestAgentTeamFailureIsolation:
 
         agent_call_count = 0
 
-        def agent_stream_side_effect(*args: Any, **kwargs: Any) -> Any:
+        def agent_stream_side_effect(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
 
             nonlocal agent_call_count
             agent_call_count += 1
@@ -3542,9 +3548,9 @@ class TestAgentTeamFailureIsolation:
         store = StateStore(conversation_id="test-all-fail")
         trace = _make_trace()
 
-        def all_fail(*args: Any, **kwargs: Any) -> Any:
+        def all_fail(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
 
-            async def _fail() -> AsyncGenerator[Any, None]:
+            async def _fail() -> AsyncGenerator[Never, None]:
                 raise RuntimeError("all down")
                 yield  # type: ignore[unreachable]
             return _fail()
@@ -3581,10 +3587,10 @@ class TestIsAdditiveCompositionBug3:
         from app.core.maestro_editing import _is_additive_composition
 
         parsed = _make_parsed_multi(roles=["drums", "horns"])
-        project_context = {
+        project_context: ProjectContext = {
             "tracks": [
-                {"name": "Drums", "trackId": "t1", "regions": []},
-                {"name": "Horns", "trackId": "t2", "regions": []},
+                {"name": "Drums", "id": "t1", "regions": []},
+                {"name": "Horns", "id": "t2", "regions": []},
             ]
         }
         assert _is_additive_composition(parsed, project_context) is True
@@ -3595,8 +3601,8 @@ class TestIsAdditiveCompositionBug3:
         from app.core.maestro_editing import _is_additive_composition
 
         parsed = _make_parsed_multi(roles=["drums"])
-        project_context = {
-            "tracks": [{"name": "Drums", "trackId": "t1", "regions": []}]
+        project_context: ProjectContext = {
+            "tracks": [{"name": "Drums", "id": "t1", "regions": []}]
         }
         assert _is_additive_composition(parsed, project_context) is False
 
@@ -3606,8 +3612,8 @@ class TestIsAdditiveCompositionBug3:
         from app.core.maestro_editing import _is_additive_composition
 
         parsed = _make_parsed_multi(roles=["bass"])
-        project_context = {
-            "tracks": [{"name": "Drums", "trackId": "t1", "regions": []}]
+        project_context: ProjectContext = {
+            "tracks": [{"name": "Drums", "id": "t1", "regions": []}]
         }
         assert _is_additive_composition(parsed, project_context) is True
 
@@ -3631,10 +3637,10 @@ class TestBuildCompositionSummaryBug1:
         """Synthetic _reused_track entries populate tracksReused."""
         from app.core.maestro_agent_teams import _build_composition_summary
 
-        tool_calls = [
-            {"tool": "_reused_track", "params": {"name": "Drums", "trackId": "t-drums"}},
-            {"tool": "stori_add_midi_track", "params": {"name": "Bass", "trackId": "t-bass"}},
-            {"tool": "stori_add_midi_region", "params": {}},
+        tool_calls: list[ToolCallDict] = [
+            ToolCallDict(tool="_reused_track", params={"name": "Drums", "trackId": "t-drums"}),
+            ToolCallDict(tool="stori_add_midi_track", params={"name": "Bass", "trackId": "t-bass"}),
+            ToolCallDict(tool="stori_add_midi_region", params={}),
         ]
         summary = _build_composition_summary(tool_calls)
 
@@ -3649,8 +3655,8 @@ class TestBuildCompositionSummaryBug1:
         """When no tracks are reused, tracksReused is an empty list."""
         from app.core.maestro_agent_teams import _build_composition_summary
 
-        tool_calls = [
-            {"tool": "stori_add_midi_track", "params": {"name": "Drums", "trackId": "t1"}},
+        tool_calls: list[ToolCallDict] = [
+            ToolCallDict(tool="stori_add_midi_track", params={"name": "Drums", "trackId": "t1"}),
         ]
         summary = _build_composition_summary(tool_calls)
 
@@ -3694,11 +3700,11 @@ class TestAgentTeamExistingTrackReuse:
         parsed = _make_parsed_multi(roles=["drums", "bass"])
         route = self._make_route_for_team()
         # Project already has a Drums track with one 16-beat region
-        project_context = {
+        project_context: ProjectContext = {
             "tracks": [
                 {
                     "name": "Drums",
-                    "trackId": "existing-drums-id",
+                    "id": "existing-drums-id",
                     "regions": [{"startBeat": 0, "durationBeats": 16}],
                 }
             ]
@@ -3737,11 +3743,11 @@ class TestAgentTeamExistingTrackReuse:
         plan_tracker.build_from_prompt(
             _make_parsed_multi(roles=["drums"]),
             "add chorus",
-            {"tracks": [{"name": "Drums", "trackId": "d1", "regions": []}]},
+            {"tracks": [{"name": "Drums", "id": "d1", "regions": []}]},
         )
         captured_messages: list[dict[str, Any]] = []
 
-        def capture_stream(*args: Any, **kwargs: Any) -> Any:
+        def capture_stream(*args: object, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
 
             captured_messages.extend(kwargs.get("messages", []))
             r = LLMResponse(content=None, usage={})
@@ -3753,7 +3759,7 @@ class TestAgentTeamExistingTrackReuse:
         llm = _make_llm_mock()
         llm.chat_completion_stream = MagicMock(side_effect=capture_stream)
         trace = _make_trace()
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3761,7 +3767,7 @@ class TestAgentTeamExistingTrackReuse:
             role="drums",
             style="lofi",
             bars=4,
-            tempo=90.0,
+            tempo=90,
             key="Am",
             step_ids=step_ids,
             plan_tracker=plan_tracker,
@@ -3795,12 +3801,12 @@ class TestAgentTeamExistingTrackReuse:
 
         parsed = _make_parsed_multi(roles=["drums", "bass", "guitar", "horns"])
         route = self._make_route_for_team()
-        project_context = {
+        project_context: ProjectContext = {
             "tracks": [
-                {"name": "Drums",  "trackId": "id-drums",  "regions": [{"startBeat": 0, "durationBeats": 16}]},
-                {"name": "Bass",   "trackId": "id-bass",   "regions": [{"startBeat": 0, "durationBeats": 16}]},
-                {"name": "Guitar", "trackId": "id-guitar", "regions": [{"startBeat": 0, "durationBeats": 16}]},
-                {"name": "Horns",  "trackId": "id-horns",  "regions": [{"startBeat": 0, "durationBeats": 16}]},
+                {"name": "Drums",  "id": "id-drums",  "regions": [{"startBeat": 0, "durationBeats": 16}]},
+                {"name": "Bass",   "id": "id-bass",   "regions": [{"startBeat": 0, "durationBeats": 16}]},
+                {"name": "Guitar", "id": "id-guitar", "regions": [{"startBeat": 0, "durationBeats": 16}]},
+                {"name": "Horns",  "id": "id-horns",  "regions": [{"startBeat": 0, "durationBeats": 16}]},
             ]
         }
         store = StateStore(conversation_id="test-distinct-ids")
@@ -3808,7 +3814,7 @@ class TestAgentTeamExistingTrackReuse:
 
         captured_system_prompts: list[str] = []
 
-        def capture_stream(*args: Any, **kwargs: Any) -> Any:
+        def capture_stream(*args: object, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
 
             msgs = kwargs.get("messages", args[0] if args else [])
             for m in msgs:
@@ -3848,7 +3854,7 @@ class TestAgentTeamExistingTrackReuse:
         parsed = _make_parsed_multi(roles=["drums", "bass"])
         route = self._make_route_for_team()
         # Client sends "id" (DAW format) instead of "trackId"
-        project_context = {
+        project_context: ProjectContext = {
             "tracks": [
                 {"name": "Drums", "id": "daw-drums-id", "regions": []},
                 {"name": "Bass",  "id": "daw-bass-id",  "regions": []},
@@ -3859,7 +3865,7 @@ class TestAgentTeamExistingTrackReuse:
 
         captured_system_prompts: list[str] = []
 
-        def capture_stream(*args: Any, **kwargs: Any) -> Any:
+        def capture_stream(*args: object, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
 
             msgs = kwargs.get("messages", args[0] if args else [])
             for m in msgs:
@@ -4087,7 +4093,7 @@ class TestAgentReasoningEventsCarryAgentId:
 
         llm = _make_llm_mock()
 
-        async def _stream_with_reasoning(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+        async def _stream_with_reasoning(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
 
             yield {"type": "reasoning_delta", "text": "Walking bass follows chord roots"}
             resp = LLMResponse(content=None, usage={})
@@ -4102,7 +4108,7 @@ class TestAgentReasoningEventsCarryAgentId:
 
         llm.chat_completion_stream = MagicMock(side_effect=_stream_with_reasoning)
         trace = _make_trace()
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -4110,7 +4116,7 @@ class TestAgentReasoningEventsCarryAgentId:
             role="bass",
             style="funk",
             bars=4,
-            tempo=92.0,
+            tempo=92,
             key="Cm",
             step_ids=step_ids,
             plan_tracker=plan_tracker,
@@ -4154,7 +4160,7 @@ class TestAgentReasoningEventsCarryAgentId:
         ]
         llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
         trace = _make_trace()
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -4162,7 +4168,7 @@ class TestAgentReasoningEventsCarryAgentId:
             role="drums",
             style="funk",
             bars=4,
-            tempo=92.0,
+            tempo=92,
             key="Cm",
             step_ids=step_ids,
             plan_tracker=plan_tracker,
@@ -4193,15 +4199,15 @@ class TestSummaryFinalText:
         """_build_composition_summary includes text when context is provided."""
         from app.core.maestro_agent_teams import _build_composition_summary
 
-        tool_calls = [
-            {"tool": "stori_add_midi_track", "params": {"name": "Drums", "trackId": "t1", "drumKitId": "TR-808"}},
-            {"tool": "stori_add_midi_track", "params": {"name": "Bass", "trackId": "t2", "_gmInstrumentName": "Electric Bass"}},
-            {"tool": "stori_add_midi_region", "params": {}},
-            {"tool": "stori_add_midi_region", "params": {}},
-            {"tool": "stori_add_notes", "params": {"notes": [{"pitch": 60}] * 40}},
-            {"tool": "stori_add_notes", "params": {"notes": [{"pitch": 36}] * 53}},
-            {"tool": "stori_add_insert_effect", "params": {"trackId": "t1", "effectType": "reverb"}},
-            {"tool": "stori_add_insert_effect", "params": {"trackId": "t2", "effectType": "reverb"}},
+        tool_calls: list[ToolCallDict] = [
+            ToolCallDict(tool="stori_add_midi_track", params={"name": "Drums", "trackId": "t1", "drumKitId": "TR-808"}),
+            ToolCallDict(tool="stori_add_midi_track", params={"name": "Bass", "trackId": "t2", "_gmInstrumentName": "Electric Bass"}),
+            ToolCallDict(tool="stori_add_midi_region", params={}),
+            ToolCallDict(tool="stori_add_midi_region", params={}),
+            ToolCallDict(tool="stori_add_notes", params={"notes": [NoteDict(pitch=60)] * 40}),
+            ToolCallDict(tool="stori_add_notes", params={"notes": [NoteDict(pitch=36)] * 53}),
+            ToolCallDict(tool="stori_add_insert_effect", params={"trackId": "t1", "effectType": "reverb"}),
+            ToolCallDict(tool="stori_add_insert_effect", params={"trackId": "t2", "effectType": "reverb"}),
         ]
         summary = _build_composition_summary(tool_calls, tempo=88, key="Dm", style="cinematic orchestral")
 
@@ -4219,8 +4225,8 @@ class TestSummaryFinalText:
         """_build_composition_summary includes text even without musical context."""
         from app.core.maestro_agent_teams import _build_composition_summary
 
-        tool_calls = [
-            {"tool": "stori_add_midi_track", "params": {"name": "Piano", "trackId": "t1"}},
+        tool_calls: list[ToolCallDict] = [
+            ToolCallDict(tool="stori_add_midi_track", params={"name": "Piano", "trackId": "t1"}),
         ]
         summary = _build_composition_summary(tool_calls)
 
@@ -4233,9 +4239,9 @@ class TestSummaryFinalText:
         """When tracks are reused, the summary uses 'Extended' verb."""
         from app.core.maestro_agent_teams import _build_composition_summary
 
-        tool_calls = [
-            {"tool": "_reused_track", "params": {"name": "Drums", "trackId": "t1"}},
-            {"tool": "stori_add_midi_region", "params": {}},
+        tool_calls: list[ToolCallDict] = [
+            ToolCallDict(tool="_reused_track", params={"name": "Drums", "trackId": "t1"}),
+            ToolCallDict(tool="stori_add_midi_region", params={}),
         ]
         summary = _build_composition_summary(tool_calls, tempo=120, key="C", style="funk")
 

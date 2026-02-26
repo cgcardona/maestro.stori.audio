@@ -5,6 +5,14 @@ from __future__ import annotations
 import logging
 from typing import Any, TYPE_CHECKING
 
+from app.contracts.project_types import ProjectContext
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+    RegionMetadataDB,
+)
 from app.core.tracing import get_trace_context, trace_span
 from app.core.executor.models import VariationApplyResult
 from app.models.variation import Variation
@@ -14,15 +22,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-RegionMeta = dict[str, Any]
-
 
 async def apply_variation_phrases(
     variation: Variation,
     accepted_phrase_ids: list[str],
-    project_state: dict[str, Any],
+    project_state: ProjectContext,
     store: "StateStore",
-    region_metadata: dict[str, RegionMeta] | None = None,
+    region_metadata: dict[str, RegionMetadataDB] | None = None,
 ) -> VariationApplyResult:
     """Apply accepted phrases from a variation to canonical state.
 
@@ -43,12 +49,12 @@ async def apply_variation_phrases(
             notes_modified = 0
             applied_phrases: list[str] = []
 
-            region_adds: dict[str, list[dict[str, Any]]] = {}
-            region_removals: dict[str, list[dict[str, Any]]] = {}
+            region_adds: dict[str, list[NoteDict]] = {}
+            region_removals: dict[str, list[NoteDict]] = {}
             region_track_map: dict[str, str] = {}
-            region_cc: dict[str, list[dict[str, Any]]] = {}
-            region_pitch_bends: dict[str, list[dict[str, Any]]] = {}
-            region_aftertouch: dict[str, list[dict[str, Any]]] = {}
+            region_cc: dict[str, list[CCEventDict]] = {}
+            region_pitch_bends: dict[str, list[PitchBendDict]] = {}
+            region_aftertouch: dict[str, list[AftertouchDict]] = {}
 
             for phrase_id in accepted_phrase_ids:
                 phrase = variation.get_phrase(phrase_id)
@@ -80,12 +86,21 @@ async def apply_variation_phrases(
 
                 for cc_change in phrase.controller_changes:
                     kind = cc_change.get("kind", "cc")
+                    beat = cc_change.get("beat", 0.0)
+                    value = cc_change.get("value", 0)
                     if kind == "pitch_bend":
-                        region_pitch_bends.setdefault(region_id, []).append(cc_change)
+                        region_pitch_bends.setdefault(region_id, []).append(
+                            PitchBendDict(beat=beat, value=value),
+                        )
                     elif kind == "aftertouch":
-                        region_aftertouch.setdefault(region_id, []).append(cc_change)
+                        at: AftertouchDict = {"beat": beat, "value": value}
+                        if "pitch" in cc_change:
+                            at["pitch"] = cc_change["pitch"]
+                        region_aftertouch.setdefault(region_id, []).append(at)
                     else:
-                        region_cc.setdefault(region_id, []).append(cc_change)
+                        region_cc.setdefault(region_id, []).append(
+                            CCEventDict(cc=cc_change.get("cc", 0), beat=beat, value=value),
+                        )
 
                 applied_phrases.append(phrase_id)
 
@@ -133,8 +148,8 @@ async def apply_variation_phrases(
                     "cc_events": store.get_region_cc(rid),
                     "pitch_bends": store.get_region_pitch_bends(rid),
                     "aftertouch": store.get_region_aftertouch(rid),
-                    "start_beat": meta.get("startBeat"),
-                    "duration_beats": meta.get("durationBeats"),
+                    "start_beat": meta.get("start_beat"),
+                    "duration_beats": meta.get("duration_beats"),
                     "name": meta.get("name"),
                 })
 

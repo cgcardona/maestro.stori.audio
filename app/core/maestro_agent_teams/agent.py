@@ -16,11 +16,15 @@ import logging
 import uuid as _uuid_mod
 from typing import Any
 
+from app.contracts.generation_types import CompositionContext
+from app.contracts.json_types import NoteDict, SectionDict, SectionSummaryDict, ToolCallDict
+from app.contracts.llm_types import ChatMessage, ToolCallEntry
 from app.config import settings
 from app.core.expansion import ToolCall
 from app.core.llm_client import LLMClient, LLMResponse
-from app.core.sse_utils import ReasoningBuffer
+from app.core.sse_utils import ReasoningBuffer, SSEEventInput
 from app.core.state_store import StateStore
+from app.core.tracing import TraceContext
 from app.core.tools import ALL_TOOLS
 from app.core.maestro_helpers import _resolve_variable_refs
 from app.core.maestro_plan_tracker import (
@@ -60,16 +64,16 @@ async def _run_instrument_agent(
     role: str,
     style: str,
     bars: int,
-    tempo: float,
+    tempo: int,
     key: str,
     step_ids: list[str],
     plan_tracker: _PlanTracker,
     llm: LLMClient,
     store: StateStore,
     allowed_tool_names: set[str] | frozenset[str],
-    trace: Any,
-    sse_queue: "asyncio.Queue[dict[str, Any]]",
-    collected_tool_calls: list[dict[str, Any]],
+    trace: TraceContext,
+    sse_queue: "asyncio.Queue[SSEEventInput]",
+    collected_tool_calls: list[ToolCallDict],
     existing_track_id: str | None = None,
     start_beat: int = 0,
     assigned_color: str | None = None,
@@ -154,16 +158,16 @@ async def _run_instrument_agent_inner(
     role: str,
     style: str,
     bars: int,
-    tempo: float,
+    tempo: int,
     key: str,
     step_ids: list[str],
     plan_tracker: _PlanTracker,
     llm: LLMClient,
     store: StateStore,
     allowed_tool_names: set[str] | frozenset[str],
-    trace: Any,
-    sse_queue: "asyncio.Queue[dict[str, Any]]",
-    collected_tool_calls: list[dict[str, Any]],
+    trace: TraceContext,
+    sse_queue: "asyncio.Queue[SSEEventInput]",
+    collected_tool_calls: list[ToolCallDict],
     existing_track_id: str | None,
     start_beat: int,
     agent_log: str,
@@ -200,14 +204,14 @@ async def _run_instrument_agent_inner(
     _gm_guidance = _ic.gm_guidance if _ic else get_genre_gm_guidance(style, role)
     _gm_guidance_block = f"\n{_gm_guidance}\n" if _gm_guidance else ""
 
-    _sections: list[dict[str, Any]] = []
+    _sections: list[SectionDict] = []
     if _ic:
         _sections = [
-            {
-                "name": s.name,
-                "start_beat": s.start_beat,
-                "length_beats": s.duration_beats,
-            }
+            SectionDict(
+                name=s.name,
+                start_beat=s.start_beat,
+                length_beats=s.duration_beats,
+            )
             for s in _ic.sections
         ]
     _multi_section = len(_sections) > 1
@@ -280,7 +284,7 @@ async def _run_instrument_agent_inner(
                 if sec_hint_str:
                     lines.append(sec_hint_str)
         else:
-            single_sec: dict[str, Any] | None = _sections[0] if _sections else None
+            single_sec: SectionDict | None = _sections[0] if _sections else None
             sec_start = single_sec["start_beat"] if single_sec else (start_beat if reusing else 0)
             sec_beats = int(single_sec["length_beats"]) if single_sec else beat_count
             sec_bars = max(1, sec_beats // 4)
@@ -404,14 +408,14 @@ async def _run_instrument_agent_inner(
         t for t in ALL_TOOLS
         if t["function"]["name"] in _INSTRUMENT_AGENT_TOOLS
     ]
-    messages: list[dict[str, Any]] = [
+    messages: list[ChatMessage] = [
         {"role": "system", "content": system_content},
         {"role": "user", "content": user_message},
     ]
 
     add_notes_failures: dict[str, int] = {}
     active_step_id: str | None = None
-    all_tool_results: list[dict[str, Any]] = []
+    all_tool_results: list[dict[str, Any]] = []  # boundary: LLM tool result messages
 
     # Server-owned retries handle *failed* section children inside
     # _dispatch_section_children.  However the LLM must actually emit the
@@ -534,9 +538,9 @@ async def _run_instrument_agent_inner(
         _llm_start = asyncio.get_event_loop().time()
         try:
             _resp_content: str | None = None
-            _resp_tool_calls: list[dict[str, Any]] = []
+            _resp_tool_calls: list[dict[str, Any]] = []  # boundary: OpenAI message format
             _resp_finish: str | None = None
-            _resp_usage: dict[str, Any] = {}
+            _resp_usage: dict[str, Any] = {}  # boundary: OpenAI message format
             _rbuf = ReasoningBuffer()
             _had_reasoning = False
 
@@ -674,7 +678,7 @@ async def _run_instrument_agent_inner(
         else:
             response.tool_calls.sort(key=lambda tc: _TOOL_ORDER.get(tc.name, 2))
 
-        assistant_tool_calls = [
+        assistant_tool_calls: list[ToolCallEntry] = [
             {
                 "id": tc.id,
                 "type": "function",
@@ -684,7 +688,7 @@ async def _run_instrument_agent_inner(
         ]
         messages.append({"role": "assistant", "content": None, "tool_calls": assistant_tool_calls})
 
-        tool_result_messages: list[dict[str, Any]] = []
+        tool_result_messages: list[ChatMessage] = []
 
         _AGENT_TAGGED_EVENTS = {
             "toolCall", "toolStart", "toolError",
@@ -788,18 +792,17 @@ async def _run_instrument_agent_inner(
                     })
                     continue
 
-                _tool_ctx: dict[str, Any] | None = None
+                _tool_ctx: CompositionContext | None = None
                 if runtime_context:
-                    _tool_ctx = {
+                    _tool_ctx = CompositionContext(
                         **runtime_context.to_composition_context(),
-                        "style": style,
-                        "tempo": tempo,
-                        "bars": bars,
-                        "key": key,
-                        "role": role,
-                    }
+                        style=style,
+                        tempo=tempo,
+                        bars=bars,
+                        key=key,
+                    )
 
-                async def _pre_emit_fallback(events: list[dict[str, Any]]) -> None:
+                async def _pre_emit_fallback(events: list[SSEEventInput]) -> None:
                     for evt in events:
                         if evt.get("type") in _AGENT_TAGGED_EVENTS:
                             evt = {**evt, "agentId": _agent_id}
@@ -892,23 +895,23 @@ async def _run_instrument_agent_inner(
 async def _dispatch_section_children(
     *,
     tool_calls: list[ToolCall],
-    sections: list[dict[str, Any]],
+    sections: list[SectionDict],
     existing_track_id: str | None,
     instrument_name: str,
     role: str,
     style: str,
-    tempo: float,
+    tempo: int,
     key: str,
     agent_id: str,
     agent_log: str,
     reusing: bool,
     allowed_tool_names: set[str] | frozenset[str],
     store: StateStore,
-    trace: Any,
-    sse_queue: "asyncio.Queue[dict[str, Any]]",
+    trace: TraceContext,
+    sse_queue: "asyncio.Queue[SSEEventInput]",
     instrument_contract: InstrumentContract | None = None,
-    collected_tool_calls: list[dict[str, Any]],
-    all_tool_results: list[dict[str, Any]],
+    collected_tool_calls: list[ToolCallDict],
+    all_tool_results: list[dict[str, Any]],  # boundary: LLM tool result messages
     add_notes_failures: dict[str, int],
     runtime_context: RuntimeContext | None,
     execution_services: ExecutionServices | None = None,
@@ -924,7 +927,7 @@ async def _dispatch_section_children(
     sections_with_region: set[str] | None = None,
     sections_with_generate: set[str] | None = None,
     all_composition_instruments: list[str] | None = None,
-) -> tuple[list[dict[str, Any]], bool, bool, int, int, int]:
+) -> tuple[list[ChatMessage], bool, bool, int, int, int]:
     """Group LLM tool calls and dispatch section children in parallel.
 
     Returns (tool_result_msgs, stage_track, stage_effect,
@@ -948,7 +951,7 @@ async def _dispatch_section_children(
     regions_ok = prior_regions_ok
     generates_completed = prior_generates_completed
 
-    tool_result_msgs: list[dict[str, Any]] = []
+    tool_result_msgs: list[ChatMessage] = []
 
     # ── Categorize tool calls ──
     track_tcs: list[ToolCall] = []
@@ -1103,17 +1106,16 @@ async def _dispatch_section_children(
     # Unified generation: attach section_key + all_instruments so the
     # tool execution path routes through generate_for_section, producing
     # coherent multi-instrument output via a shared Orpheus call.
-    _orphan_gen_base_ctx: dict[str, Any] | None = None
+    _orphan_gen_base_ctx: CompositionContext | None = None
     if orphaned_generates and runtime_context:
-        _orphan_gen_base_ctx = {
+        _orphan_gen_base_ctx = CompositionContext(
             **runtime_context.to_composition_context(),
-            "style": style,
-            "tempo": tempo,
-            "key": key,
-            "role": role,
-        }
+            style=style,
+            tempo=tempo,
+            key=key,
+        )
 
-    async def _pre_emit_orphan(events: list[dict[str, Any]]) -> None:
+    async def _pre_emit_orphan(events: list[SSEEventInput]) -> None:
         for evt in events:
             if evt.get("type") in _AGENT_TAGGED:
                 evt = {**evt, "agentId": agent_id}
@@ -1123,7 +1125,7 @@ async def _dispatch_section_children(
         resolved_args = _resolve_variable_refs(tc.params, all_tool_results)
         resolved_args["trackId"] = real_track_id
 
-        _orphan_gen_ctx = dict(_orphan_gen_base_ctx) if _orphan_gen_base_ctx else None
+        _orphan_gen_ctx: CompositionContext | None = CompositionContext(**_orphan_gen_base_ctx) if _orphan_gen_base_ctx else None
         if _orphan_gen_ctx and instrument_contract and all_composition_instruments:
             _sec_offset = len(pairs) + _oi
             if _sec_offset < len(instrument_contract.sections):
@@ -1248,7 +1250,7 @@ async def _dispatch_section_children(
     )
     _children_start = asyncio.get_event_loop().time()
     _section_results: list[SectionResult | None] = []
-    _chain_notes: list[dict[str, Any]] | None = None
+    _chain_notes: list[NoteDict] | None = None
 
     for _ci, (_contract, _region_tc, _gen_tc) in enumerate(_child_contracts):
         _sec_name = _contract.section_name
@@ -1328,7 +1330,7 @@ async def _dispatch_section_children(
                 id=str(_uuid_mod.uuid4()),
             )
             # Use the preceding section's notes for continuity seeding
-            _retry_prev: list[dict[str, Any]] | None = None
+            _retry_prev: list[NoteDict] | None = None
             if _idx > 0:
                 _prior = _section_results[_idx - 1]
                 if _prior and _prior.success and _prior.generated_notes:
@@ -1389,20 +1391,20 @@ async def _dispatch_section_children(
     _child_crashes = 0
     _total_notes = 0
     for _i, _sr in enumerate(_section_results):
-        _sec_name = (
+        _sec_name_agg = (
             _child_contracts[_i][0].section_name
             if _i < len(_child_contracts)
-            else None
+            else f"section-{_i}"
         )
         if _sr is None:
             _child_crashes += 1
             regions_completed += 1
             generates_completed += 1
-            if _sec_name:
+            if _sec_name_agg:
                 if sections_with_region is not None:
-                    sections_with_region.add(_sec_name)
+                    sections_with_region.add(_sec_name_agg)
                 if sections_with_generate is not None:
-                    sections_with_generate.add(_sec_name)
+                    sections_with_generate.add(_sec_name_agg)
             continue
         collected_tool_calls.extend(_sr.tool_call_records)
         all_tool_results.extend(_sr.tool_results)
@@ -1419,16 +1421,16 @@ async def _dispatch_section_children(
                 f"{agent_log} ⚠️ Section '{_sr.section_name}' failed "
                 f"after all retries: {_sr.error}"
             )
-        if _sec_name:
+        if _sec_name_agg:
             if sections_with_region is not None:
-                sections_with_region.add(_sec_name)
+                sections_with_region.add(_sec_name_agg)
             if sections_with_generate is not None:
-                sections_with_generate.add(_sec_name)
+                sections_with_generate.add(_sec_name_agg)
 
     # ── Build collapsed tool-result summary for LLM conversation ──
     # One summary message + stubs replaces N individual tool results,
     # eliminating LLM dependency on regionId recovery from tool results.
-    _section_summaries: list[dict[str, Any]] = []
+    _section_summaries: list[SectionSummaryDict] = []
     for _i, _sr in enumerate(_section_results):
         if _sr is None:
             _sec_name = (
@@ -1442,7 +1444,7 @@ async def _dispatch_section_children(
                 "error": "section child crashed or timed out",
             })
         else:
-            _entry: dict[str, Any] = {
+            _entry: SectionSummaryDict = {
                 "name": _sr.section_name,
                 "regionId": _sr.region_id,
                 "status": "ok" if _sr.success else "failed",

@@ -14,6 +14,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+SSEEventInput = dict[str, Any]
+"""Pre-validation SSE event dict.
+
+Pydantic ``EVENT_REGISTRY`` validates the shape at runtime, so this
+is the one place ``dict[str, Any]`` is genuinely correct.
+"""
+
 
 class SSESequencer:
     """Injects a monotonic ``seq`` counter into SSE ``data:`` frames.

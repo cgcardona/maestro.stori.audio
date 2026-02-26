@@ -8,14 +8,12 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.auth.tokens import validate_access_code, AccessCodeError, hash_token
+from app.auth.tokens import validate_access_code, AccessCodeError, hash_token, TokenClaims as TokenClaims
 from app.auth.revocation_cache import get_revocation_status, set_revocation_status
 
 logger = logging.getLogger(__name__)
@@ -25,7 +23,7 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer(auto_error=False)
 
 
-async def _check_and_register_token(token: str, claims: dict[str, Any]) -> bool:
+async def _check_and_register_token(token: str, claims: TokenClaims) -> bool:
     """
     Check if a token has been revoked, registering it if not found.
 
@@ -83,7 +81,7 @@ async def _check_and_register_token(token: str, claims: dict[str, Any]) -> bool:
 
 async def require_valid_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
-) -> dict[str, Any]:
+) -> TokenClaims:
     """
     FastAPI dependency that validates access tokens.
     

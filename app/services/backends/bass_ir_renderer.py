@@ -14,6 +14,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.contracts.json_types import NoteDict
 from app.core.music_spec_ir import (
     BassSpec,
     GlobalSpec,
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class BassRenderResult:
     """Result of bass rendering with coupling metrics."""
-    notes: list[dict[str, Any]] = field(default_factory=list)
+    notes: list[NoteDict] = field(default_factory=list)
     kick_alignment_ratio: float = 0.0
     anticipation_count: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -85,7 +86,7 @@ def render_bass_spec(
     *,
     apply_humanize: bool = True,
     return_result: bool = False,
-) -> list[dict[str, Any]] | BassRenderResult:
+) -> list[NoteDict] | BassRenderResult:
     """
     Render BassSpec + GlobalSpec + HarmonicSpec to MIDI note list.
 
@@ -112,7 +113,7 @@ def render_bass_spec(
     Returns:
         list of notes, or BassRenderResult if return_result=True
     """
-    notes = []
+    notes: list[NoteDict] = []
     schedule = harmonic_spec.chord_schedule
     bars = global_spec.bars
     rng = random.Random()

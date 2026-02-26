@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing_extensions import TypedDict
 
+from app.contracts.project_types import ProjectContext
 from app.core.expansion import ToolCall
 from app.core.gm_instruments import infer_gm_program
-from app.core.plan_schemas import ExecutionPlanSchema
+from app.core.plan_schemas import EditStep, ExecutionPlanSchema, GenerationStep, MixStep
 from app.core.planner.track_matching import _build_role_to_track_map
 
 
-def _beats_per_bar(project_state: dict[str, Any] | None) -> int:
+class _ExistingTrackInfo(TypedDict, total=False):
+    """Cached info for a track already present in the DAW project."""
+
+    id: str
+    name: str
+    gmProgram: int | None
+
+
+def _beats_per_bar(project_state: ProjectContext | None) -> int:
     """Extract beats per bar from project state, defaulting to 4."""
     if project_state:
         ts = project_state.get("time_signature") or project_state.get("timeSignature")
@@ -26,7 +35,7 @@ def _beats_per_bar(project_state: dict[str, Any] | None) -> int:
 def _schema_to_tool_calls(
     plan: ExecutionPlanSchema,
     region_start_offset: float = 0.0,
-    project_state: dict[str, Any] | None = None,
+    project_state: ProjectContext | None = None,
 ) -> list[ToolCall]:
     """
     Convert validated plan schema to ToolCalls.
@@ -52,14 +61,15 @@ def _schema_to_tool_calls(
     project_state = project_state or {}
     bpb = _beats_per_bar(project_state)
 
-    existing_tracks: dict[str, dict[str, Any]] = {}
+    existing_tracks: dict[str, _ExistingTrackInfo] = {}
     for t in project_state.get("tracks", []):
         name = t.get("name", "")
         if name:
+            gm_raw = t.get("gmProgram")
             existing_tracks[name.lower()] = {
-                "id": t.get("id", ""),
-                "name": name,
-                "gmProgram": t.get("gmProgram"),
+                "id": str(t.get("id") or ""),
+                "name": str(name),
+                "gmProgram": int(gm_raw) if isinstance(gm_raw, int) else None,
             }
 
     role_to_track = _build_role_to_track_map(plan, project_state)
@@ -69,8 +79,8 @@ def _schema_to_tool_calls(
         if target_name.lower() in existing_tracks:
             _role_mapped_existing.add(role)
 
-    edits_by_track: dict[str, list[Any]] = {}
-    regions_by_track: dict[str, list[Any]] = {}
+    edits_by_track: dict[str, list[EditStep]] = {}
+    regions_by_track: dict[str, list[EditStep]] = {}
     for edit in plan.edits:
         if edit.action == "add_track" and edit.name:
             edits_by_track.setdefault(edit.name.lower(), []).append(edit)
@@ -78,10 +88,10 @@ def _schema_to_tool_calls(
             resolved = role_to_track.get(edit.track.lower(), edit.track)
             regions_by_track.setdefault(resolved.lower(), []).append(edit)
 
-    inserts_by_track: dict[str, list[Any]] = {}
-    sends: list[Any] = []
+    inserts_by_track: dict[str, list[MixStep]] = {}
+    sends: list[MixStep] = []
     buses: set[str] = set()
-    volume_pan: list[Any] = []
+    volume_pan: list[MixStep] = []
     for mix in plan.mix:
         if mix.action == "add_insert" and mix.type:
             inserts_by_track.setdefault(mix.track.lower(), []).append(mix)
@@ -119,7 +129,7 @@ def _schema_to_tool_calls(
         if not is_existing and not is_role_mapped and t_lower in edits_by_track:
             styling = get_track_styling(track_name, rotation_index=_new_track_idx)
             _new_track_idx += 1
-            track_params: dict[str, Any] = {
+            track_params: dict[str, object] = {
                 "name": track_name,
                 "color": styling["color"],
                 "icon": styling["icon"],
@@ -131,13 +141,15 @@ def _schema_to_tool_calls(
 
         # 3. Region creation
         for edit in regions_by_track.get(t_lower, []):
+            if not edit.track:
+                continue
             bar_start = edit.barStart or 0
             resolved_track = role_to_track.get(edit.track.lower(), edit.track)
-            region_params: dict[str, Any] = {
+            region_params: dict[str, object] = {
                 "name": resolved_track,
                 "trackName": resolved_track,
                 "startBeat": bar_start * bpb + region_start_offset,
-                "durationBeats": edit.bars * bpb,
+                "durationBeats": (edit.bars or 4) * bpb,
             }
             existing = existing_tracks.get(resolved_track.lower())
             if existing and existing["id"]:
@@ -150,7 +162,7 @@ def _schema_to_tool_calls(
             if gen_track.lower() != t_lower:
                 continue
             normalized_style = gen.style.replace("_", " ").strip() if gen.style else ""
-            gen_params: dict[str, Any] = {
+            gen_params: dict[str, object] = {
                 "role": gen.role,
                 "style": normalized_style,
                 "tempo": gen.tempo,

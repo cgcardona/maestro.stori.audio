@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.contracts.json_types import ToolCallDict
 from app.core.maestro_agent_teams.constants import _CC_NAMES
 
 
 def _build_composition_summary(
-    tool_calls_collected: list[dict[str, Any]],
-    tempo: float | None = None,
+    tool_calls_collected: list[ToolCallDict],
+    tempo: int | None = None,
     key: str | None = None,
     style: str | None = None,
 ) -> dict[str, Any]:
@@ -85,7 +86,7 @@ def _build_composition_summary(
 
 def _compose_summary_text(
     summary: dict[str, Any],
-    tempo: float | None = None,
+    tempo: int | None = None,
     key: str | None = None,
     style: str | None = None,
 ) -> str:

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 import asyncio
+
+from app.core.sse_utils import SSEEventInput
 import json
 from unittest.mock import patch
 
@@ -75,7 +77,7 @@ def _section_contract(
         instrument_name=instrument,
         role=role,
         style="neo-soul",
-        tempo=92.0,
+        tempo=92,
         key="Fm",
         region_name=region_name or f"{instrument} – {spec.name}",
         l2_generate_prompt=l2_prompt,
@@ -102,7 +104,7 @@ class TestCompositionRootLineage:
             composition_id="comp-001",
             sections=(spec_a, spec_b),
             style="neo-soul",
-            tempo=92.0,
+            tempo=92,
             key="Fm",
         )
         seal_contract(cc)
@@ -121,7 +123,7 @@ class TestCompositionRootLineage:
             composition_id="comp-002",
             sections=(spec_a, spec_b),
             style="neo-soul",
-            tempo=92.0,
+            tempo=92,
             key="Fm",
         )
         seal_contract(cc)
@@ -131,7 +133,7 @@ class TestCompositionRootLineage:
             role="drums",
             style="neo-soul",
             bars=8,
-            tempo=92.0,
+            tempo=92,
             key="Fm",
             start_beat=0,
             sections=(spec_a, spec_b),
@@ -157,7 +159,7 @@ class TestCompositionRootLineage:
             composition_id="comp-chain",
             sections=(spec_intro, spec_verse),
             style="neo-soul",
-            tempo=92.0,
+            tempo=92,
             key="Fm",
         )
         seal_contract(cc)
@@ -167,7 +169,7 @@ class TestCompositionRootLineage:
             role="bass",
             style="neo-soul",
             bars=8,
-            tempo=92.0,
+            tempo=92,
             key="Fm",
             start_beat=0,
             sections=(spec_intro, spec_verse),
@@ -203,7 +205,7 @@ class TestCompositionRootLineage:
             composition_id="comp-canon",
             sections=(spec_a, spec_b),
             style="neo-soul",
-            tempo=92.0,
+            tempo=92,
             key="Fm",
         )
         seal_contract(cc)
@@ -321,24 +323,23 @@ class TestExecutionAttestation:
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-ic")
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> Any:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, Any], **kw: Any) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
                     sse_events=[{"type": "toolCall", "name": tc_name}],
-                    msg_call={}, msg_result={},
+                    msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={"notesAdded": 20, "regionId": "reg-1"},
                 sse_events=[{"type": "toolCall", "name": tc_name}],
-                msg_call={}, msg_result={},
+                msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
         store = StateStore(conversation_id="exec-attest")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         trace = TraceContext(trace_id="exec-trace-001")
 
         with patch(
@@ -507,24 +508,23 @@ class TestReplayAttackPrevention:
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-A")
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> Any:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, Any], **kw: Any) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
                     sse_events=[{"type": "toolCall", "name": tc_name}],
-                    msg_call={}, msg_result={},
+                    msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={"notesAdded": 15, "regionId": "reg-1"},
                 sse_events=[{"type": "toolCall", "name": tc_name}],
-                msg_call={}, msg_result={},
+                msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
         store = StateStore(conversation_id="replay-test")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
@@ -541,7 +541,7 @@ class TestReplayAttackPrevention:
                 sse_queue=queue,
             )
 
-        queue2: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue2: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
@@ -602,7 +602,7 @@ class TestHashScopeEnforcement:
 
         ic_a = InstrumentContract(
             instrument_name="Drums", role="drums", style="neo-soul",
-            bars=4, tempo=92.0, key="Fm", start_beat=0,
+            bars=4, tempo=92, key="Fm", start_beat=0,
             sections=(spec,), existing_track_id="trk-old",
             assigned_color="#FF0000", gm_guidance="Original guidance",
         )
@@ -610,7 +610,7 @@ class TestHashScopeEnforcement:
 
         ic_b = InstrumentContract(
             instrument_name="Drums", role="drums", style="neo-soul",
-            bars=4, tempo=92.0, key="Fm", start_beat=0,
+            bars=4, tempo=92, key="Fm", start_beat=0,
             sections=(spec,), existing_track_id="trk-DIFFERENT",
             assigned_color="#00FF00", gm_guidance="DIFFERENT guidance",
         )
@@ -630,7 +630,7 @@ class TestHashScopeEnforcement:
             composition_id="test",
             sections=(spec,),
             style="neo-soul",
-            tempo=92.0,
+            tempo=92,
             key="Fm",
         )
         seal_contract(cc)

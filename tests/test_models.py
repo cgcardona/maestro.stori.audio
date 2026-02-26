@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from app.contracts.project_types import ProjectContext
 from app.models.requests import MaestroRequest, GenerateRequest
 from app.models.tools import MidiNote, AutomationPoint
 
@@ -22,7 +23,7 @@ class TestMaestroRequest:
     def test_with_project(self) -> None:
 
         """Test request with project context."""
-        project = {"id": "proj-1", "name": "Test", "tempo": 120}
+        project: ProjectContext = {"id": "proj-1", "name": "Test", "tempo": 120}
         req = MaestroRequest(prompt="Add drums", mode="edit", project=project)
         assert req.mode == "edit"
         assert req.project is not None and req.project["tempo"] == 120

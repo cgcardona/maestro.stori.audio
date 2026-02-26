@@ -10,10 +10,20 @@ from typing import (
     AsyncIterator,
     Awaitable,
     Callable,
+    TypedDict,
 )
 
 if TYPE_CHECKING:
+    from app.core.llm_client import LLMClient, UsageStats
     from app.core.maestro_handlers import UsageTracker
+
+from app.contracts.llm_types import ChatMessage
+
+from app.contracts.project_types import ProjectContext
+
+ProjectState = ProjectContext
+PlanJsonDict = dict[str, Any]  # boundary: plan JSON (validated by ExecutionPlanSchema)
+SSEEventDict = dict[str, Any]  # boundary: SSE event dict
 
 from app.core.expansion import ToolCall
 from app.core.intent import IntentResult
@@ -41,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 def _finalise_plan(
     llm_response_text: str,
-    project_state: dict[str, Any] | None = None,
+    project_state: ProjectState | None = None,
 ) -> ExecutionPlan:
     """Shared post-LLM logic: validate, complete, and convert a plan."""
     validation = extract_and_validate_plan(llm_response_text)
@@ -94,7 +104,7 @@ def _finalise_plan(
 def _try_deterministic_plan(
     parsed: ParsedPrompt,
     start_beat: float = 0.0,
-    project_state: dict[str, Any] | None = None,
+    project_state: ProjectState | None = None,
 ) -> ExecutionPlan | None:
     """Build an execution plan deterministically from a structured prompt.
 
@@ -181,9 +191,9 @@ def _try_deterministic_plan(
 
 async def build_execution_plan(
     user_prompt: str,
-    project_state: dict[str, Any],
+    project_state: ProjectState,
     route: IntentResult,
-    llm: Any,
+    llm: "LLMClient",
     parsed: ParsedPrompt | None = None,
     usage_tracker: "UsageTracker" | None = None,
 ) -> ExecutionPlan:
@@ -241,12 +251,12 @@ async def build_execution_plan(
 
 async def build_execution_plan_stream(
     user_prompt: str,
-    project_state: dict[str, Any],
+    project_state: ProjectState,
     route: IntentResult,
-    llm: Any,
+    llm: "LLMClient",
     parsed: ParsedPrompt | None = None,
     usage_tracker: "UsageTracker" | None = None,
-    emit_sse: Callable[[dict[str, Any]], Awaitable[str]] | None = None,
+    emit_sse: Callable[[SSEEventDict], Awaitable[str]] | None = None,
 ) -> AsyncIterator[ExecutionPlan | str]:
     """Streaming variant of build_execution_plan.
 
@@ -278,7 +288,7 @@ async def build_execution_plan_stream(
         if parsed.position is not None:
             sys += sequential_context(start_beat, parsed.section, pos=parsed.position)
 
-    messages: list[dict[str, Any]] = [{"role": "system", "content": sys}]
+    messages: list[ChatMessage] = [{"role": "system", "content": sys}]
     if project_state:
         messages.append({
             "role": "system",
@@ -287,7 +297,7 @@ async def build_execution_plan_stream(
     messages.append({"role": "user", "content": user_prompt})
 
     accumulated_content: list[str] = []
-    usage: dict[str, Any] = {}
+    usage: "UsageStats" = {}
     reasoning_buf = ReasoningBuffer()
 
     async for chunk in llm.chat_completion_stream(
@@ -333,8 +343,8 @@ async def build_execution_plan_stream(
 
 
 def build_plan_from_dict(
-    plan_dict: dict[str, Any],
-    project_state: dict[str, Any] | None = None,
+    plan_dict: PlanJsonDict,
+    project_state: ProjectState | None = None,
 ) -> ExecutionPlan:
     """Build an execution plan from a dict (for testing or macro expansion)."""
     validation = validate_plan_json(plan_dict)
@@ -363,17 +373,30 @@ def build_plan_from_dict(
     )
 
 
+class PlanPreview(TypedDict, total=False):
+    """Preview of an execution plan (return type of preview_plan)."""
+
+    valid: bool
+    total_steps: int
+    generations: int
+    edits: int
+    tool_calls: list[dict[str, object]]
+    notes: list[str]
+    errors: list[str]
+    warnings: list[str]
+
+
 async def preview_plan(
     user_prompt: str,
-    project_state: dict[str, Any],
+    project_state: ProjectState,
     route: IntentResult,
-    llm: Any,
+    llm: "LLMClient",
     parsed: ParsedPrompt | None = None,
-) -> dict[str, Any]:
+) -> PlanPreview:
     """Generate a plan preview without executing."""
     plan = await build_execution_plan(user_prompt, project_state, route, llm, parsed=parsed)
 
-    preview: dict[str, Any] = {
+    preview: PlanPreview = {
         "valid": plan.is_valid,
         "total_steps": len(plan.tool_calls),
         "generations": plan.generation_count,

@@ -9,7 +9,8 @@ from __future__ import annotations
 import hashlib
 import jwt
 from datetime import datetime, timedelta, timezone
-from typing import Any
+
+from typing_extensions import Required, TypedDict
 
 from app.config import settings
 
@@ -17,6 +18,21 @@ from app.config import settings
 class AccessCodeError(Exception):
     """Raised when access code validation fails."""
     pass
+
+
+class TokenClaims(TypedDict, total=False):
+    """Decoded JWT payload returned by validate_access_code.
+
+    ``type``, ``iat``, and ``exp`` are always present.
+    ``sub`` is the user ID — omitted for anonymous/machine tokens.
+    ``role`` is set to ``"admin"`` for tokens issued with ``is_admin=True``.
+    """
+
+    type: Required[str]
+    iat: Required[int]
+    exp: Required[int]
+    sub: str
+    role: str
 
 
 def _get_secret() -> str:
@@ -127,7 +143,7 @@ def create_access_token(
     )
 
 
-def validate_access_code(token: str) -> dict[str, Any]:
+def validate_access_code(token: str) -> TokenClaims:
     """
     Validate an access code and return its claims.
     
@@ -152,8 +168,17 @@ def validate_access_code(token: str) -> dict[str, Any]:
         # Verify it's an access token
         if payload.get("type") != "access":
             raise AccessCodeError("Invalid token type")
-            
-        return payload
+
+        claims = TokenClaims(
+            type=str(payload["type"]),
+            iat=int(payload.get("iat", 0)),
+            exp=int(payload.get("exp", 0)),
+        )
+        if "sub" in payload:
+            claims["sub"] = str(payload["sub"])
+        if "role" in payload:
+            claims["role"] = str(payload["role"])
+        return claims
         
     except jwt.ExpiredSignatureError:
         raise AccessCodeError("Access code has expired")

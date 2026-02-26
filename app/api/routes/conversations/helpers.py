@@ -6,8 +6,10 @@ import json
 import uuid
 from typing import Any
 
+from app.contracts.llm_types import AssistantMessage, ChatMessage, ToolCallEntry
 
-def build_conversation_history_for_llm(messages: list[Any]) -> list[dict[str, Any]]:
+
+def build_conversation_history_for_llm(messages: list[Any]) -> list[ChatMessage]:
     """
     Build conversation history in OpenAI format for LLM context.
 
@@ -15,19 +17,14 @@ def build_conversation_history_for_llm(messages: list[Any]) -> list[dict[str, An
     and their parameters (including generated UUIDs) to reuse them in subsequent
     tool calls.
     """
-    history = []
+    history: list[ChatMessage] = []
 
     for msg in messages:
         if msg.role == "user":
             history.append({"role": "user", "content": msg.content or ""})
 
         elif msg.role == "assistant":
-            assistant_msg: dict[str, Any] = {
-                "role": "assistant",
-                "content": msg.content or "",
-            }
-
-            openai_tool_calls: list[dict[str, Any]] = []
+            openai_tool_calls: list[ToolCallEntry] = []
             if msg.tool_calls:
                 seen_ids: set[str] = set()
                 for tc in msg.tool_calls:
@@ -43,11 +40,15 @@ def build_conversation_history_for_llm(messages: list[Any]) -> list[dict[str, An
                             "arguments": json.dumps(tc.get("arguments", {})),
                         },
                     })
-                assistant_msg["tool_calls"] = openai_tool_calls
 
-            history.append(assistant_msg)
+            if openai_tool_calls:
+                assistant_msg: AssistantMessage = {
+                    "role": "assistant",
+                    "content": msg.content or "",
+                    "tool_calls": openai_tool_calls,
+                }
+                history.append(assistant_msg)
 
-            if msg.tool_calls and openai_tool_calls:
                 for otc in openai_tool_calls:
                     history.append({
                         "role": "tool",
@@ -57,6 +58,8 @@ def build_conversation_history_for_llm(messages: list[Any]) -> list[dict[str, An
                             "message": f"Tool {otc['function']['name']} executed successfully",
                         }),
                     })
+            else:
+                history.append({"role": "assistant", "content": msg.content or ""})
 
     return history
 

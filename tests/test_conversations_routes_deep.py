@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Any
 import pytest
 from unittest.mock import MagicMock
 
@@ -87,7 +86,7 @@ class TestNormalizeToolArguments:
 
 class TestBuildConversationHistoryForLLM:
 
-    def _make_msg(self, role: Any, content: Any, tool_calls: Any = None) -> MagicMock:
+    def _make_msg(self, role: str, content: str | None, tool_calls: list[object] | None = None) -> MagicMock:
 
         msg = MagicMock()
         msg.role = role
@@ -119,8 +118,10 @@ class TestBuildConversationHistoryForLLM:
         history = build_conversation_history_for_llm(msgs)
         # assistant + tool result
         assert len(history) == 2
-        assert "tool_calls" in history[0]
-        assert history[0]["tool_calls"][0]["function"]["name"] == "stori_set_tempo"
+        msg0 = history[0]
+        assert msg0["role"] == "assistant"
+        assert "tool_calls" in msg0
+        assert msg0["tool_calls"][0]["function"]["name"] == "stori_set_tempo"
         assert history[1]["role"] == "tool"
 
     def test_duplicate_ids_deduplicated(self) -> None:
@@ -130,7 +131,9 @@ class TestBuildConversationHistoryForLLM:
             {"id": "dup", "name": "stori_add_midi_track", "arguments": {"name": "X"}},
         ])]
         history = build_conversation_history_for_llm(msgs)
-        ids = [tc["id"] for tc in history[0]["tool_calls"]]
+        msg0 = history[0]
+        assert msg0["role"] == "assistant"
+        ids = [tc["id"] for tc in msg0["tool_calls"]]
         assert len(set(ids)) == 2
 
     def test_empty_id_generates(self) -> None:
@@ -139,7 +142,9 @@ class TestBuildConversationHistoryForLLM:
             {"name": "stori_set_tempo", "arguments": {}},
         ])]
         history = build_conversation_history_for_llm(msgs)
-        tc_id = history[0]["tool_calls"][0]["id"]
+        msg0 = history[0]
+        assert msg0["role"] == "assistant"
+        tc_id = msg0["tool_calls"][0]["id"]
         assert tc_id.startswith("call_")
 
     def test_mixed_messages(self) -> None:

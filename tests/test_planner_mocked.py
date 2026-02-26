@@ -11,11 +11,13 @@ Coverage:
 """
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from typing import Any
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+from app.contracts.project_types import ProjectContext
 from app.core.planner import (
     ExecutionPlan,
     _try_deterministic_plan,
@@ -74,7 +76,6 @@ def _minimal_parsed(
 
 
 def _llm_with_response(json_body: dict[str, Any]) -> AsyncMock:
-
     """Return a mock LLM that yields the given JSON as its chat response."""
     llm = AsyncMock()
     response_text = json.dumps(json_body)
@@ -108,7 +109,7 @@ class TestMatchRolesToExistingTracks:
 
     def test_name_match_drums_and_bass(self) -> None:
 
-        project = {
+        project: ProjectContext = {
             "tracks": [
                 {"id": "D-UUID", "name": "Drums"},
                 {"id": "B-UUID", "name": "Bass"},
@@ -120,7 +121,7 @@ class TestMatchRolesToExistingTracks:
 
     def test_instrument_keyword_melody_to_organ(self) -> None:
 
-        project = {
+        project: ProjectContext = {
             "tracks": [
                 {"id": "D-UUID", "name": "Drums"},
                 {"id": "O-UUID", "name": "Organ", "gmProgram": 16},
@@ -133,19 +134,20 @@ class TestMatchRolesToExistingTracks:
 
     def test_no_match_returns_empty(self) -> None:
 
-        project = {"tracks": [{"id": "X", "name": "FX"}]}
+        project: ProjectContext = {"tracks": [{"id": "X", "name": "FX"}]}
         result = _match_roles_to_existing_tracks({"drums"}, project)
         assert "drums" not in result
 
     def test_empty_tracks(self) -> None:
 
-        result = _match_roles_to_existing_tracks({"drums"}, {"tracks": []})
+        project: ProjectContext = {"tracks": []}
+        result = _match_roles_to_existing_tracks({"drums"}, project)
         assert result == {}
 
     def test_no_double_claim(self) -> None:
 
         """A single track should not be claimed by multiple roles."""
-        project = {
+        project: ProjectContext = {
             "tracks": [
                 {"id": "P-UUID", "name": "Piano"},
             ]
@@ -390,7 +392,7 @@ class TestSchemaToToolCalls:
 
         """When project_state has Drums and Bass, stori_add_midi_track calls are skipped."""
         schema = self._make_schema()
-        project_state = {
+        project_state: ProjectContext = {
             "tracks": [
                 {"id": "DRUMS-UUID", "name": "Drums"},
                 {"id": "BASS-UUID", "name": "Bass"},
@@ -404,7 +406,7 @@ class TestSchemaToToolCalls:
 
         """Existing tracks should not get stori_set_track_color or stori_set_track_icon."""
         schema = self._make_schema()
-        project_state = {
+        project_state: ProjectContext = {
             "tracks": [
                 {"id": "DRUMS-UUID", "name": "Drums"},
                 {"id": "BASS-UUID", "name": "Bass"},
@@ -420,7 +422,7 @@ class TestSchemaToToolCalls:
 
         """Tracks not in project_state should still be created."""
         schema = self._make_schema()
-        project_state = {"tracks": [{"id": "DRUMS-UUID", "name": "Drums"}]}
+        project_state: ProjectContext = {"tracks": [{"id": "DRUMS-UUID", "name": "Drums"}]}
         calls = _schema_to_tool_calls(schema, project_state=project_state)
         track_calls = [tc for tc in calls if tc.name == "stori_add_midi_track"]
         assert len(track_calls) == 1
@@ -432,7 +434,7 @@ class TestSchemaToToolCalls:
 
         """Region calls should carry the existing track's UUID as trackId."""
         schema = self._make_schema()
-        project_state = {
+        project_state: ProjectContext = {
             "tracks": [
                 {"id": "DRUMS-UUID-123", "name": "Drums"},
                 {"id": "BASS-UUID-456", "name": "Bass"},
@@ -449,7 +451,7 @@ class TestSchemaToToolCalls:
 
         """Generator calls should carry the existing track's UUID as trackId."""
         schema = self._make_schema()
-        project_state = {
+        project_state: ProjectContext = {
             "tracks": [
                 {"id": "DRUMS-UUID-123", "name": "Drums"},
                 {"id": "BASS-UUID-456", "name": "Bass"},
@@ -484,7 +486,7 @@ class TestSchemaToToolCalls:
             ],
             mix=[],
         )
-        project_state = {
+        project_state: ProjectContext = {
             "tracks": [
                 {"id": "DRUMS-UUID", "name": "Drums"},
                 {"id": "BASS-UUID", "name": "Bass"},
@@ -610,7 +612,7 @@ class TestBuildExecutionPlanMocked:
         parsed = _minimal_parsed()
         parsed.position = PositionSpec(kind="after", ref="intro")
         parsed.constraints = {}  # force LLM path
-        project_with_intro = {
+        project_with_intro: ProjectContext = {
             "tracks": [
                 {"name": "intro", "regions": [
                     {"name": "intro", "startBeat": 0, "durationBeats": 64}
@@ -794,7 +796,7 @@ class TestPositionToBeatRegressionFull:
         assert parsed is not None
         assert parsed.position is not None
 
-        project = {
+        project: ProjectContext = {
             "tracks": [
                 {"name": "intro", "regions": [
                     {"name": "intro", "startBeat": 0, "durationBeats": 64}
@@ -856,7 +858,7 @@ class TestBuildExecutionPlanStream:
         route = _make_route()
         llm = AsyncMock()
 
-        items: list[Any] = []
+        items: list[ExecutionPlan | str] = []
         async for item in build_execution_plan_stream(
             "make a beat", {}, route, llm, parsed=parsed,
         ):
@@ -874,8 +876,7 @@ class TestBuildExecutionPlanStream:
         """LLM path yields reasoning SSE events then the ExecutionPlan."""
         route = _make_route()
 
-        async def _fake_stream(**kwargs: Any) -> Any:
-
+        async def _fake_stream(**kwargs: object) -> AsyncGenerator[dict[str, object], None]:
             yield {"type": "reasoning_delta", "text": "Thinking about drums..."}
             yield {"type": "reasoning_delta", "text": " and bass."}
             yield {
@@ -892,10 +893,9 @@ class TestBuildExecutionPlanStream:
         reasoning_events: list[str] = []
         plan_result: ExecutionPlan | None = None
 
-        async def mock_emit_sse(data: Any) -> str:
-
+        async def mock_emit_sse(data: dict[str, Any]) -> str:
             if data.get("type") == "reasoning":
-                reasoning_events.append(data["content"])
+                reasoning_events.append(str(data["content"]))
             return f"data: {json.dumps(data)}\n\n"
 
         async for item in build_execution_plan_stream(
@@ -916,8 +916,7 @@ class TestBuildExecutionPlanStream:
 
         route = _make_route()
 
-        async def _fake_stream(**kwargs: Any) -> Any:
-
+        async def _fake_stream(**kwargs: object) -> AsyncGenerator[dict[str, object], None]:
             yield {
                 "type": "done",
                 "content": json.dumps(_valid_plan_json()),
@@ -945,8 +944,7 @@ class TestBuildExecutionPlanStream:
         """When LLM returns non-JSON content, streaming path returns a failed plan."""
         route = _make_route()
 
-        async def _fake_stream(**kwargs: Any) -> Any:
-
+        async def _fake_stream(**kwargs: object) -> AsyncGenerator[dict[str, object], None]:
             yield {"type": "content_delta", "text": "No JSON here at all."}
             yield {
                 "type": "done",

@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 
+from app.contracts.json_types import CCEventDict, NoteDict
 from app.services.muse_drift import (
     CommitConflictPayload,
     DriftReport,
@@ -29,14 +30,14 @@ from app.services.muse_drift import (
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _note(pitch: int, start: float) -> dict[str, Any]:
+def _note(pitch: int, start: float) -> NoteDict:
 
     return {"pitch": pitch, "start_beat": start, "duration_beats": 1.0, "velocity": 100, "channel": 0}
 
 
-def _cc(cc_num: int, beat: float, value: int) -> dict[str, Any]:
+def _cc(cc_num: int, beat: float, value: int) -> CCEventDict:
 
-    return {"kind": "cc", "cc": cc_num, "beat": beat, "value": value}
+    return {"cc": cc_num, "beat": beat, "value": value}
 
 
 # ---------------------------------------------------------------------------
@@ -173,8 +174,8 @@ class TestDirtyControllersBlocked:
             head_snapshot_notes={"r1": [_note(60, 0.0)]},
             working_snapshot_notes={"r1": [_note(60, 0.0)]},
             track_regions={"r1": "t1"},
-            head_pb={"r1": [{"kind": "pitch_bend", "beat": 1.0, "value": 4096}]},
-            working_pb={"r1": [{"kind": "pitch_bend", "beat": 1.0, "value": 8192}]},
+            head_pb={"r1": [{"beat": 1.0, "value": 4096}]},
+            working_pb={"r1": [{"beat": 1.0, "value": 8192}]},
         )
         assert report.requires_user_action() is True
 

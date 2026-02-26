@@ -17,7 +17,12 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
+
+from orpheus_types import OrpheusNoteDict
+
+if TYPE_CHECKING:
+    from music_service import GenerationConstraintsPayload, RoleProfileSummary
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +63,7 @@ class PostProcessor:
         self.config = config
         self._transforms_applied: list[str] = []
 
-    def process(self, notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def process(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
         """Apply all configured transforms to the note list in order.
 
         Returns the (possibly modified) note list. Non-destructive on
@@ -90,7 +95,7 @@ class PostProcessor:
 
     # ── Individual transforms ──────────────────────────────────────
 
-    def _scale_velocity(self, notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _scale_velocity(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
         """Map velocity range to [floor, ceiling]."""
         floor_v = self.config.velocity_floor
         ceil_v = self.config.velocity_ceiling
@@ -102,7 +107,7 @@ class PostProcessor:
         if floor_v >= ceil_v:
             return notes
 
-        velocities = [n.get("velocity", 80) for n in notes]
+        velocities = [n["velocity"] for n in notes]
         if not velocities:
             return notes
 
@@ -117,21 +122,21 @@ class PostProcessor:
             src_range = v_max - v_min
             dst_range = ceil_v - floor_v
             for n in notes:
-                v = n.get("velocity", 80)
+                v = n["velocity"]
                 normalised = (v - v_min) / src_range
                 n["velocity"] = max(1, min(127, round(floor_v + normalised * dst_range)))
 
         self._transforms_applied.append(f"velocity[{floor_v}-{ceil_v}]")
         return notes
 
-    def _normalize_register(self, notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _normalize_register(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
         """Shift notes so the median pitch aligns with register_center."""
         center = self.config.register_center
         spread = self.config.register_spread
         if center is None:
             return notes
 
-        pitches = sorted(n.get("pitch", 60) for n in notes)
+        pitches = sorted(n["pitch"] for n in notes)
         if not pitches:
             return notes
 
@@ -147,8 +152,7 @@ class PostProcessor:
             return notes
 
         for n in notes:
-            new_p = n.get("pitch", 60) + octave_shift
-            n["pitch"] = max(0, min(127, new_p))
+            n["pitch"] = max(0, min(127, n["pitch"] + octave_shift))
 
         # If spread constraint exists, clamp outliers
         if spread is not None:
@@ -160,7 +164,7 @@ class PostProcessor:
         self._transforms_applied.append(f"register[center={center},shift={octave_shift:+d}]")
         return notes
 
-    def _quantize(self, notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _quantize(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
         """Snap note start times to the nearest subdivision grid."""
         sub = self.config.subdivision
         if sub is None or sub <= 0:
@@ -169,14 +173,13 @@ class PostProcessor:
         grid = 4.0 / sub  # beats per grid line (e.g., 16th → 0.25)
 
         for n in notes:
-            start = n.get("start_beat", 0.0)
-            quantized = round(start / grid) * grid
+            quantized = round(n["start_beat"] / grid) * grid
             n["start_beat"] = round(quantized, 4)
 
         self._transforms_applied.append(f"quantize[1/{sub}]")
         return notes
 
-    def _cleanup_durations(self, notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _cleanup_durations(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
         """Enforce minimum and maximum note durations."""
         min_d = self.config.min_duration_beats
         max_d = self.config.max_duration_beats
@@ -186,7 +189,7 @@ class PostProcessor:
 
         changed = False
         for n in notes:
-            dur = n.get("duration_beats", 0.5)
+            dur = n["duration_beats"]
             if min_d > 0 and dur < min_d:
                 n["duration_beats"] = min_d
                 changed = True
@@ -200,7 +203,7 @@ class PostProcessor:
             )
         return notes
 
-    def _apply_swing(self, notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _apply_swing(self, notes: list[OrpheusNoteDict]) -> list[OrpheusNoteDict]:
         """Apply swing feel by delaying odd 16th-note positions.
 
         ``swing_amount`` in [0, 1]:  0 = straight, 0.33 = light swing,
@@ -214,8 +217,8 @@ class PostProcessor:
         delay = grid_16th * amount * 0.5
 
         for n in notes:
-            start = n.get("start_beat", 0.0)
-            pos_in_beat = (start % 1.0)
+            start = n["start_beat"]
+            pos_in_beat = start % 1.0
             # Odd 16th positions: 0.25, 0.75
             if abs(pos_in_beat - 0.25) < 0.06 or abs(pos_in_beat - 0.75) < 0.06:
                 n["start_beat"] = round(start + delay, 4)
@@ -225,35 +228,30 @@ class PostProcessor:
 
 
 def build_post_processor(
-    generation_constraints: dict[str, Any] | None = None,
-    role_profile_summary: dict[str, Any] | None = None,
+    generation_constraints: GenerationConstraintsPayload | None = None,
+    role_profile_summary: RoleProfileSummary | None = None,
 ) -> PostProcessor:
     """Build a PostProcessor from Maestro's structured payloads.
 
     Uses generation_constraints for hard limits and role_profile_summary
     for data-driven defaults when constraints are absent.
     """
-    gc = generation_constraints or {}
-    rp = role_profile_summary or {}
-
     config = PostProcessorConfig()
 
-    if "velocity_floor" in gc or "velocity_ceiling" in gc:
-        config.velocity_floor = gc.get("velocity_floor")
-        config.velocity_ceiling = gc.get("velocity_ceiling")
+    if generation_constraints is not None:
+        gc = generation_constraints
+        config.velocity_floor = gc.velocity_floor
+        config.velocity_ceiling = gc.velocity_ceiling
+        config.register_center = gc.register_center
+        config.register_spread = gc.register_spread
+        config.subdivision = gc.subdivision
 
-    if "register_center" in gc:
-        config.register_center = gc.get("register_center")
-        config.register_spread = gc.get("register_spread", 24)
-    elif "register_mean_pitch" in rp:
-        config.register_center = round(rp["register_mean_pitch"])
+    if generation_constraints is None and role_profile_summary is not None:
+        config.register_center = round(role_profile_summary.register_mean_pitch)
 
-    if "subdivision" in gc:
-        config.subdivision = gc.get("subdivision")
-
-    if "swing_amount" in gc and gc["swing_amount"] > 0.01:
-        config.swing_amount = gc["swing_amount"]
-    elif "swing_ratio" in rp and rp["swing_ratio"] > 0.01:
-        config.swing_amount = min(1.0, rp["swing_ratio"] * 2.0)
+    if generation_constraints is not None and generation_constraints.swing_amount > 0.01:
+        config.swing_amount = generation_constraints.swing_amount
+    elif role_profile_summary is not None and role_profile_summary.swing_ratio > 0.01:
+        config.swing_amount = min(1.0, role_profile_summary.swing_ratio * 2.0)
 
     return PostProcessor(config)

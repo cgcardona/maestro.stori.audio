@@ -18,7 +18,6 @@ Coverage:
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
 
 from app.core.gm_instruments import (
@@ -309,7 +308,7 @@ class TestInferGMProgramRegressionTable:
         ("banjo",    105),
         ("kalimba",  108),
     ])
-    def test_known_instrument(self, text: Any, expected_program: Any) -> None:
+    def test_known_instrument(self, text: str, expected_program: int) -> None:
 
         result = infer_gm_program(text)
         assert result == expected_program, (
@@ -320,7 +319,7 @@ class TestInferGMProgramRegressionTable:
         "Drums", "Kick", "Snare", "Hi-Hat", "drum kit",
         "Percussion", "Beat", "Kit",
     ])
-    def test_drum_texts_return_none(self, drum_text: Any) -> None:
+    def test_drum_texts_return_none(self, drum_text: str) -> None:
 
         assert infer_gm_program(drum_text) is None, (
             f"'{drum_text}' should return None (drums)"
@@ -607,7 +606,7 @@ class TestInferGMProgramWithContextEdgeCases:
         ("Lead Synth",     False),
         ("Strings",        False),
     ])
-    def test_drums_detection_parametrized(self, track_name: Any, expected_is_drums: Any) -> None:
+    def test_drums_detection_parametrized(self, track_name: str, expected_is_drums: bool) -> None:
 
         result = infer_gm_program_with_context(track_name=track_name)
         assert result.is_drums == expected_is_drums, (
@@ -646,7 +645,7 @@ class TestIconForGMProgram:
         (15,  "instrument.xylophone"),
         (127, "sparkles"),
     ])
-    def test_category_boundaries(self, program: Any, expected: Any) -> None:
+    def test_category_boundaries(self, program: int, expected: str) -> None:
 
         assert icon_for_gm_program(program) == expected
 

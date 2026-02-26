@@ -28,6 +28,8 @@ from app.models.variation import (
 from app.services import muse_repository
 from typing import Any
 
+from app.contracts.json_types import NoteDict
+
 from app.services.muse_drift import (
     DriftReport,
     DriftSeverity,
@@ -56,7 +58,7 @@ async def async_session() -> AsyncGenerator[AsyncSession, None]:
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict[str, Any]:
+def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> NoteDict:
 
     return {
         "pitch": pitch,
@@ -68,7 +70,7 @@ def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict[st
 
 
 def _make_variation_with_notes(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     region_id: str = "region-1",
     track_id: str = "track-1",
     intent: str = "test",
@@ -342,7 +344,7 @@ class TestSampleChanges:
     def test_sample_changes_capped(self) -> None:
 
         """Sample changes should not exceed MAX_SAMPLE_CHANGES."""
-        head: list[dict[str, Any]] = []
+        head: list[NoteDict] = []
         working = [_note(i, float(i)) for i in range(20)]
         report = compute_drift_report(
             project_id="p1",

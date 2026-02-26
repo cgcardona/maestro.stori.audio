@@ -11,8 +11,18 @@ import json
 import logging
 import os
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+from app.contracts.generation_types import GenerationContext
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    GenerationConstraintsDict,
+    IntentGoalDict,
+    JSONValue,
+    NoteDict,
+    PitchBendDict,
+)
 from app.services.backends.base import (
     MusicGeneratorBackend,
     GenerationResult,
@@ -33,16 +43,19 @@ _SNAKE_TO_CAMEL: dict[str, str] = {
 }
 
 
-def _normalize_note_keys(note: dict[str, Any]) -> dict[str, Any]:
+def _normalize_note_keys(note: NoteDict) -> NoteDict:
     """Ensure note dict uses camelCase field names (startBeat, durationBeats)."""
-    return {_SNAKE_TO_CAMEL.get(k, k): v for k, v in note.items()}
+    out: NoteDict = {}
+    for k, v in note.items():
+        out[_SNAKE_TO_CAMEL.get(k, k)] = v  # type: ignore[literal-required]  # dynamic key remap
+    return out
 
 
 def _rescale_beats(
-    notes: list[dict[str, Any]],
-    cc_events: list[dict[str, Any]],
-    pitch_bends: list[dict[str, Any]],
-    aftertouch: list[dict[str, Any]],
+    notes: list[NoteDict],
+    cc_events: list[CCEventDict],
+    pitch_bends: list[PitchBendDict],
+    aftertouch: list[AftertouchDict],
     target_beats: int,
     bars: int = 0,
 ) -> None:
@@ -70,20 +83,20 @@ def _rescale_beats(
         n["startBeat"] = round(n.get("startBeat", 0) * scale, 4)
         n["durationBeats"] = round(n.get("durationBeats", 0) * scale, 4)
 
-    for ev in cc_events:
-        ev["beat"] = round(ev.get("beat", 0) * scale, 4)
+    for cc_ev in cc_events:
+        cc_ev["beat"] = round(cc_ev.get("beat", 0) * scale, 4)
 
-    for ev in pitch_bends:
-        ev["beat"] = round(ev.get("beat", 0) * scale, 4)
+    for pb_ev in pitch_bends:
+        pb_ev["beat"] = round(pb_ev.get("beat", 0) * scale, 4)
 
-    for ev in aftertouch:
-        ev["beat"] = round(ev.get("beat", 0) * scale, 4)
+    for at_ev in aftertouch:
+        at_ev["beat"] = round(at_ev.get("beat", 0) * scale, 4)
 
 
 def _build_intent_hash(
     emotion_vector: dict[str, float] | None,
     role_profile_summary: dict[str, float] | None,
-    generation_constraints: dict[str, Any] | None,
+    generation_constraints: GenerationConstraintsDict | None,
     musical_goals: list[str],
 ) -> str:
     """Stable hash of the full intent payload for idempotency tracking."""
@@ -125,14 +138,15 @@ class OrpheusBackend(MusicGeneratorBackend):
         bars: int,
         key: str | None = None,
         chords: list[str] | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
-        emotion_vector: "EmotionVector" | None = kwargs.get("emotion_vector")
-        quality_preset: str = kwargs.get("quality_preset", "quality")
+        ctx = context or {}
+        emotion_vector: "EmotionVector" | None = ctx.get("emotion_vector")
+        quality_preset: str = ctx.get("quality_preset", "quality")
 
         ev_dict: dict[str, float] | None = None
         rp_dict: dict[str, float] | None = None
-        gc_dict: dict[str, Any] | None = None
+        gc_dict: GenerationConstraintsDict | None = None
         musical_goals: list[str] = []
 
         if emotion_vector is not None:
@@ -174,23 +188,26 @@ class OrpheusBackend(MusicGeneratorBackend):
         if emotion_vector is not None:
             from app.core.emotion_vector import emotion_to_constraints
             constraints = emotion_to_constraints(emotion_vector)
-            gc_dict = {
-                "drum_density": constraints.drum_density,
-                "subdivision": constraints.subdivision,
-                "swing_amount": constraints.swing_amount,
-                "register_center": constraints.register_center,
-                "register_spread": constraints.register_spread,
-                "rest_density": constraints.rest_density,
-                "leap_probability": constraints.leap_probability,
-                "chord_extensions": constraints.chord_extensions,
-                "borrowed_chord_probability": constraints.borrowed_chord_probability,
-                "harmonic_rhythm_bars": constraints.harmonic_rhythm_bars,
-                "velocity_floor": constraints.velocity_floor,
-                "velocity_ceiling": constraints.velocity_ceiling,
-            }
+            gc_dict = GenerationConstraintsDict(
+                drum_density=constraints.drum_density,
+                subdivision=constraints.subdivision,
+                swing_amount=constraints.swing_amount,
+                register_center=constraints.register_center,
+                register_spread=constraints.register_spread,
+                rest_density=constraints.rest_density,
+                leap_probability=constraints.leap_probability,
+                chord_extensions=constraints.chord_extensions,
+                borrowed_chord_probability=constraints.borrowed_chord_probability,
+                harmonic_rhythm_bars=constraints.harmonic_rhythm_bars,
+                velocity_floor=constraints.velocity_floor,
+                velocity_ceiling=constraints.velocity_ceiling,
+            )
 
-        intent_goals = [{"name": g, "weight": 1.0, "constraint_type": "soft"} for g in musical_goals]
-        trace_id = kwargs.get("trace_id") or str(uuid.uuid4())
+        intent_goals: list[IntentGoalDict] = [
+            IntentGoalDict(name=g, weight=1.0, constraint_type="soft")
+            for g in musical_goals
+        ]
+        trace_id: str = ctx.get("trace_id") or str(uuid.uuid4())
         intent_hash = _build_intent_hash(ev_dict, rp_dict, gc_dict, musical_goals)
 
         logger.info(
@@ -208,12 +225,12 @@ class OrpheusBackend(MusicGeneratorBackend):
             bars=bars,
             key=key,
             quality_preset=quality_preset,
-            composition_id=kwargs.get("composition_id"),
+            composition_id=ctx.get("composition_id"),
             emotion_vector=ev_dict,
             role_profile_summary=rp_dict,
-            generation_constraints=gc_dict,
-            intent_goals=intent_goals,
-            seed=kwargs.get("seed"),
+            generation_constraints=dict(gc_dict) if gc_dict else None,
+            intent_goals=[dict(g) for g in intent_goals] if intent_goals else None,
+            seed=ctx.get("seed"),
             trace_id=trace_id,
             intent_hash=intent_hash,
         )
@@ -235,10 +252,10 @@ class OrpheusBackend(MusicGeneratorBackend):
 
             tool_calls = result.get("tool_calls", [])
             parsed = normalize_orpheus_tool_calls(tool_calls)
-            notes: list[dict[str, Any]] = [_normalize_note_keys(n) for n in parsed["notes"]]
-            cc_events: list[dict[str, Any]] = parsed["cc_events"]
-            pitch_bends: list[dict[str, Any]] = parsed["pitch_bends"]
-            aftertouch: list[dict[str, Any]] = parsed["aftertouch"]
+            notes: list[NoteDict] = [_normalize_note_keys(n) for n in parsed["notes"]]
+            cc_events: list[CCEventDict] = parsed["cc_events"]
+            pitch_bends: list[PitchBendDict] = parsed["pitch_bends"]
+            aftertouch: list[AftertouchDict] = parsed["aftertouch"]
 
             target_beats = bars * 4
             if ENABLE_BEAT_RESCALING:
@@ -287,7 +304,7 @@ class OrpheusBackend(MusicGeneratorBackend):
         tempo: int,
         bars: int,
         key: str | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
         """Generate all instruments together — coherent multi-instrument output.
 
@@ -295,12 +312,13 @@ class OrpheusBackend(MusicGeneratorBackend):
         The response includes channel_notes keyed by instrument label (bass, keys,
         drums, melody, etc.) so the caller can distribute to tracks.
         """
-        emotion_vector: "EmotionVector" | None = kwargs.get("emotion_vector")
-        quality_preset: str = kwargs.get("quality_preset", "quality")
+        ctx = context or {}
+        emotion_vector: "EmotionVector" | None = ctx.get("emotion_vector")
+        quality_preset: str = ctx.get("quality_preset", "quality")
 
         ev_dict: dict[str, float] | None = None
         rp_dict: dict[str, float] | None = None
-        gc_dict: dict[str, Any] | None = None
+        gc_dict: GenerationConstraintsDict | None = None
         musical_goals: list[str] = []
 
         if emotion_vector is not None:
@@ -322,7 +340,6 @@ class OrpheusBackend(MusicGeneratorBackend):
             elif emotion_vector.motion < 0.25:
                 musical_goals.append("sustained")
 
-        # Merge role profiles for all instruments
         from app.data.role_profiles import get_role_profile
         for inst in instruments:
             rp = get_role_profile(inst)
@@ -332,26 +349,26 @@ class OrpheusBackend(MusicGeneratorBackend):
         if emotion_vector is not None:
             from app.core.emotion_vector import emotion_to_constraints
             constraints = emotion_to_constraints(emotion_vector)
-            gc_dict = {
-                "drum_density": constraints.drum_density,
-                "subdivision": constraints.subdivision,
-                "swing_amount": constraints.swing_amount,
-                "register_center": constraints.register_center,
-                "register_spread": constraints.register_spread,
-                "rest_density": constraints.rest_density,
-                "leap_probability": constraints.leap_probability,
-                "chord_extensions": constraints.chord_extensions,
-                "borrowed_chord_probability": constraints.borrowed_chord_probability,
-                "harmonic_rhythm_bars": constraints.harmonic_rhythm_bars,
-                "velocity_floor": constraints.velocity_floor,
-                "velocity_ceiling": constraints.velocity_ceiling,
-            }
+            gc_dict = GenerationConstraintsDict(
+                drum_density=constraints.drum_density,
+                subdivision=constraints.subdivision,
+                swing_amount=constraints.swing_amount,
+                register_center=constraints.register_center,
+                register_spread=constraints.register_spread,
+                rest_density=constraints.rest_density,
+                leap_probability=constraints.leap_probability,
+                chord_extensions=constraints.chord_extensions,
+                borrowed_chord_probability=constraints.borrowed_chord_probability,
+                harmonic_rhythm_bars=constraints.harmonic_rhythm_bars,
+                velocity_floor=constraints.velocity_floor,
+                velocity_ceiling=constraints.velocity_ceiling,
+            )
 
-        intent_goals = [
-            {"name": g, "weight": 1.0, "constraint_type": "soft"}
+        intent_goals: list[IntentGoalDict] = [
+            IntentGoalDict(name=g, weight=1.0, constraint_type="soft")
             for g in musical_goals
         ]
-        trace_id = kwargs.get("trace_id") or str(uuid.uuid4())
+        trace_id: str = ctx.get("trace_id") or str(uuid.uuid4())
         intent_hash = _build_intent_hash(ev_dict, rp_dict, gc_dict, musical_goals)
 
         logger.info(
@@ -366,15 +383,15 @@ class OrpheusBackend(MusicGeneratorBackend):
             bars=bars,
             key=key,
             quality_preset=quality_preset,
-            composition_id=kwargs.get("composition_id"),
+            composition_id=ctx.get("composition_id"),
             emotion_vector=ev_dict,
             role_profile_summary=rp_dict,
-            generation_constraints=gc_dict,
-            intent_goals=intent_goals,
-            seed=kwargs.get("seed"),
+            generation_constraints=dict(gc_dict) if gc_dict else None,
+            intent_goals=[dict(g) for g in intent_goals] if intent_goals else None,
+            seed=ctx.get("seed"),
             trace_id=trace_id,
             intent_hash=intent_hash,
-            add_outro=kwargs.get("add_outro", False),
+            add_outro=ctx.get("add_outro", False),
             unified_output=True,
         )
 
@@ -388,16 +405,22 @@ class OrpheusBackend(MusicGeneratorBackend):
             channel_notes = result.get("channel_notes")
 
             if mvp_notes or channel_notes:
+                _str_channel_notes: dict[str, list[NoteDict]] | None = None
+                if isinstance(channel_notes, dict):
+                    _str_channel_notes = {
+                        str(ch): [_normalize_note_keys(n) for n in notes]
+                        for ch, notes in channel_notes.items()
+                    }
                 logger.info(
                     f"✅ Unified: {len(mvp_notes or [])} flat notes, "
-                    f"channels={list(channel_notes.keys()) if channel_notes else 'none'}"
+                    f"channels={list(_str_channel_notes.keys()) if _str_channel_notes else 'none'}"
                 )
                 return GenerationResult(
                     success=True,
                     notes=[_normalize_note_keys(n) for n in (mvp_notes or [])],
                     backend_used=self.backend_type,
                     metadata=meta,
-                    channel_notes=channel_notes,
+                    channel_notes=_str_channel_notes,
                 )
             else:
                 logger.warning("Unified generation returned no notes")

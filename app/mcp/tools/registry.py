@@ -1,8 +1,7 @@
 """MCP tool registry — combines all category lists into the master lists."""
 from __future__ import annotations
 
-from typing import Any
-
+from app.contracts.mcp_types import MCPToolDef
 from app.mcp.tools.project import PROJECT_TOOLS
 from app.mcp.tools.track import TRACK_TOOLS
 from app.mcp.tools.region import REGION_TOOLS
@@ -14,7 +13,7 @@ from app.mcp.tools.generation import GENERATION_TOOLS
 from app.mcp.tools.playback import PLAYBACK_TOOLS
 from app.mcp.tools.ui import UI_TOOLS
 
-MCP_TOOLS = (
+MCP_TOOLS: list[MCPToolDef] = (
     PROJECT_TOOLS
     + TRACK_TOOLS
     + REGION_TOOLS
@@ -27,7 +26,7 @@ MCP_TOOLS = (
     + UI_TOOLS
 )
 
-_CATEGORY_LISTS: list[tuple[str, list[dict[str, Any]]]] = [
+_CATEGORY_LISTS: list[tuple[str, list[MCPToolDef]]] = [
     ("project", PROJECT_TOOLS),
     ("track", TRACK_TOOLS),
     ("region", REGION_TOOLS),
@@ -41,14 +40,14 @@ _CATEGORY_LISTS: list[tuple[str, list[dict[str, Any]]]] = [
 ]
 
 TOOL_CATEGORIES: dict[str, str] = {
-    str(tool["name"]): category
+    tool["name"]: category
     for category, tools in _CATEGORY_LISTS
     for tool in tools
 }
 
 SERVER_SIDE_TOOLS: set[str] = {
-    str(tool["name"]) for tool in MCP_TOOLS if tool.get("server_side", False)
+    tool["name"] for tool in MCP_TOOLS if tool.get("server_side", False)
 }
 DAW_TOOLS: set[str] = {
-    str(tool["name"]) for tool in MCP_TOOLS if not tool.get("server_side", False)
+    tool["name"] for tool in MCP_TOOLS if not tool.get("server_side", False)
 }

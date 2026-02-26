@@ -6,7 +6,6 @@ get_optimized_context, summarize_conversation_for_llm, get_conversation_preview.
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Any
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,7 +22,12 @@ from app.services.conversations import (
 USER_ID = "550e8400-e29b-41d4-a716-446655440000"
 
 
-def _make_msg(role: Any, content: Any, tool_calls: Any = None, actions: Any = None) -> MagicMock:
+def _make_msg(
+    role: str,
+    content: str | None,
+    tool_calls: list[object] | None = None,
+    actions: list[object] | None = None,
+) -> MagicMock:
 
     """Create a minimal ConversationMessage-like object."""
     msg = MagicMock(spec=ConversationMessage)
@@ -116,7 +120,9 @@ class TestFormatSingleMessage:
         assert _loaded is not None
         conv = _loaded
         history = format_conversation_history(conv)
-        ids = [tc["id"] for tc in history[0]["tool_calls"]]
+        msg = history[0]
+        assert msg["role"] == "assistant"
+        ids = [tc["id"] for tc in msg["tool_calls"]]
         assert len(set(ids)) == 2, "Tool call IDs must be unique"
 
     @pytest.mark.anyio
@@ -135,7 +141,9 @@ class TestFormatSingleMessage:
         assert _loaded is not None
         conv = _loaded
         history = format_conversation_history(conv)
-        assert history[0]["tool_calls"][0]["id"]
+        msg = history[0]
+        assert msg["role"] == "assistant"
+        assert msg["tool_calls"][0]["id"]
 
 
 # ---------------------------------------------------------------------------

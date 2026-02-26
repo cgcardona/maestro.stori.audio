@@ -6,12 +6,14 @@ import logging
 import time
 from typing import Any, AsyncIterator
 
+from app.contracts.llm_types import ChatMessage
+from app.contracts.project_types import ProjectContext
 from app.core.entity_context import format_project_context
-from app.core.intent import Intent
+from app.core.intent import Intent, IntentResult
 from app.core.llm_client import LLMClient, LLMResponse
 from app.core.prompts import system_prompt_base, wrap_user_request
 from app.core.sse_utils import sanitize_reasoning, sse_event
-from app.core.tracing import log_llm_call, trace_span
+from app.core.tracing import TraceContext, log_llm_call, trace_span
 from app.core.maestro_helpers import UsageTracker, _context_usage_fields
 
 logger = logging.getLogger(__name__)
@@ -19,12 +21,12 @@ logger = logging.getLogger(__name__)
 
 async def _handle_reasoning(
     prompt: str,
-    project_context: dict[str, Any],
-    route: Any,
+    project_context: ProjectContext,
+    route: IntentResult,
     llm: LLMClient,
-    trace: Any,
+    trace: TraceContext,
     usage_tracker: UsageTracker | None,
-    conversation_history: list[dict[str, Any]],
+    conversation_history: list[ChatMessage],
 ) -> AsyncIterator[str]:
     """Handle REASONING state - answer questions without tools."""
     yield await sse_event({"type": "status", "message": "Reasoning..."})
@@ -50,7 +52,7 @@ async def _handle_reasoning(
             logger.warning(f"[{trace.trace_id[:8]}] RAG failed: {e}")
 
     with trace_span(trace, "llm_thinking"):
-        messages = [{"role": "system", "content": system_prompt_base()}]
+        messages: list[ChatMessage] = [{"role": "system", "content": system_prompt_base()}]
 
         if project_context:
             messages.append({"role": "system", "content": format_project_context(project_context)})

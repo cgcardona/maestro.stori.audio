@@ -17,9 +17,9 @@ These cover every public class and function with zero prior test coverage:
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
 
+from app.contracts.json_types import NoteDict
 from app.services.variation import (
     TIMING_TOLERANCE_BEATS,
     NoteMatch,
@@ -43,7 +43,7 @@ from app.models.variation import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _note(pitch: int = 60, start: float = 0.0, dur: float = 0.5, vel: int = 100) -> dict[str, Any]:
+def _note(pitch: int = 60, start: float = 0.0, dur: float = 0.5, vel: int = 100) -> NoteDict:
 
     return {"pitch": pitch, "start_beat": start, "duration_beats": dur, "velocity": vel}
 
@@ -165,7 +165,7 @@ class TestNotesMatch:
 
     def test_none_pitch_returns_false(self) -> None:
 
-        assert not _notes_match({"pitch": None, "start_beat": 0}, _note())
+        assert not _notes_match({"pitch": None, "start_beat": 0}, _note())  # type: ignore[typeddict-item]  # intentional None for edge-case test
 
 
 # ===========================================================================
@@ -609,7 +609,7 @@ class TestGetVariationService:
 # ===========================================================================
 
 class TestVariationModel:
-    def _phrase_with(self, n_added: Any = 0, n_removed: Any = 0, n_modified: Any = 0) -> Phrase:
+    def _phrase_with(self, n_added: int = 0, n_removed: int = 0, n_modified: int = 0) -> Phrase:
 
         changes = []
         for i in range(n_added):
@@ -629,7 +629,7 @@ class TestVariationModel:
             note_changes=changes,
         )
 
-    def _variation(self, phrases: Any = None) -> Variation:
+    def _variation(self, phrases: list[Phrase] | None = None) -> Variation:
 
         return Variation(
             variation_id="v1",
@@ -718,7 +718,7 @@ class TestVariationModel:
 # ===========================================================================
 
 class TestPhraseModel:
-    def _phrase(self, n_added: Any = 0, n_removed: Any = 0, n_modified: Any = 0) -> Phrase:
+    def _phrase(self, n_added: int = 0, n_removed: int = 0, n_modified: int = 0) -> Phrase:
 
         changes = []
         for i in range(n_added):

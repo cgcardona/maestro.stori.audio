@@ -6,6 +6,12 @@ import logging
 import uuid
 from typing import Any
 
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+)
 from app.models.variation import (
     Variation,
     Phrase,
@@ -56,17 +62,17 @@ class VariationService:
 
     def compute_variation(
         self,
-        base_notes: list[dict[str, Any]],
-        proposed_notes: list[dict[str, Any]],
+        base_notes: list[NoteDict],
+        proposed_notes: list[NoteDict],
         region_id: str,
         track_id: str,
         intent: str,
         explanation: str | None = None,
         variation_id: str | None = None,
         region_start_beat: float = 0.0,
-        cc_events: list[dict[str, Any]] | None = None,
-        pitch_bends: list[dict[str, Any]] | None = None,
-        aftertouch: list[dict[str, Any]] | None = None,
+        cc_events: list[CCEventDict] | None = None,
+        pitch_bends: list[PitchBendDict] | None = None,
+        aftertouch: list[AftertouchDict] | None = None,
     ) -> Variation:
         """Compute a Variation between base and proposed note states.
 
@@ -152,9 +158,9 @@ class VariationService:
         region_id: str,
         track_id: str,
         region_start_beat: float = 0.0,
-        cc_events: list[dict[str, Any]] | None = None,
-        pitch_bends: list[dict[str, Any]] | None = None,
-        aftertouch: list[dict[str, Any]] | None = None,
+        cc_events: list[CCEventDict] | None = None,
+        pitch_bends: list[PitchBendDict] | None = None,
+        aftertouch: list[AftertouchDict] | None = None,
     ) -> list[Phrase]:
         """Group note changes into musical phrases by bar range.
 
@@ -187,23 +193,23 @@ class VariationService:
                     phrase_groups[phrase_index] = []
                 phrase_groups[phrase_index].append(match)
 
-        cc_by_phrase: dict[int, list[dict[str, Any]]] = {}
-        for ev in (cc_events or []):
-            beat = ev.get("beat", 0)
+        cc_by_phrase: dict[int, list[CCEventDict]] = {}
+        for cc_ev in (cc_events or []):
+            beat = cc_ev.get("beat", 0)
             idx = int(beat // beats_per_phrase)
-            cc_by_phrase.setdefault(idx, []).append(ev)
+            cc_by_phrase.setdefault(idx, []).append(cc_ev)
 
-        pb_by_phrase: dict[int, list[dict[str, Any]]] = {}
-        for ev in (pitch_bends or []):
-            beat = ev.get("beat", 0)
+        pb_by_phrase: dict[int, list[PitchBendDict]] = {}
+        for pb_ev in (pitch_bends or []):
+            beat = pb_ev.get("beat", 0)
             idx = int(beat // beats_per_phrase)
-            pb_by_phrase.setdefault(idx, []).append(ev)
+            pb_by_phrase.setdefault(idx, []).append(pb_ev)
 
-        at_by_phrase: dict[int, list[dict[str, Any]]] = {}
-        for ev in (aftertouch or []):
-            beat = ev.get("beat", 0)
+        at_by_phrase: dict[int, list[AftertouchDict]] = {}
+        for at_ev in (aftertouch or []):
+            beat = at_ev.get("beat", 0)
             idx = int(beat // beats_per_phrase)
-            at_by_phrase.setdefault(idx, []).append(ev)
+            at_by_phrase.setdefault(idx, []).append(at_ev)
 
         for idx in set(cc_by_phrase) | set(pb_by_phrase) | set(at_by_phrase):
             if idx not in phrase_groups:
@@ -230,27 +236,27 @@ class VariationService:
             tags = _detect_change_tags(note_changes)
 
             controller_changes: list[dict[str, Any]] = []
-            for ev in cc_by_phrase.get(phrase_index, []):
+            for cc_ev in cc_by_phrase.get(phrase_index, []):
                 controller_changes.append({
                     "kind": "cc",
-                    "cc": ev.get("cc"),
-                    "beat": ev.get("beat", 0),
-                    "value": ev.get("value", 0),
+                    "cc": cc_ev.get("cc"),
+                    "beat": cc_ev.get("beat", 0),
+                    "value": cc_ev.get("value", 0),
                 })
-            for ev in pb_by_phrase.get(phrase_index, []):
+            for pb_ev in pb_by_phrase.get(phrase_index, []):
                 controller_changes.append({
                     "kind": "pitch_bend",
-                    "beat": ev.get("beat", 0),
-                    "value": ev.get("value", 0),
+                    "beat": pb_ev.get("beat", 0),
+                    "value": pb_ev.get("value", 0),
                 })
-            for ev in at_by_phrase.get(phrase_index, []):
+            for at_ev in at_by_phrase.get(phrase_index, []):
                 entry: dict[str, Any] = {
                     "kind": "aftertouch",
-                    "beat": ev.get("beat", 0),
-                    "value": ev.get("value", 0),
+                    "beat": at_ev.get("beat", 0),
+                    "value": at_ev.get("value", 0),
                 }
-                if "pitch" in ev:
-                    entry["pitch"] = ev["pitch"]
+                if "pitch" in at_ev:
+                    entry["pitch"] = at_ev["pitch"]
                 controller_changes.append(entry)
 
             phrase = Phrase(
@@ -297,15 +303,15 @@ class VariationService:
 
     def compute_multi_region_variation(
         self,
-        base_regions: dict[str, list[dict[str, Any]]],
-        proposed_regions: dict[str, list[dict[str, Any]]],
+        base_regions: dict[str, list[NoteDict]],
+        proposed_regions: dict[str, list[NoteDict]],
         track_regions: dict[str, str],
         intent: str,
         explanation: str | None = None,
         region_start_beats: dict[str, float] | None = None,
-        region_cc: dict[str, list[dict[str, Any]]] | None = None,
-        region_pitch_bends: dict[str, list[dict[str, Any]]] | None = None,
-        region_aftertouch: dict[str, list[dict[str, Any]]] | None = None,
+        region_cc: dict[str, list[CCEventDict]] | None = None,
+        region_pitch_bends: dict[str, list[PitchBendDict]] | None = None,
+        region_aftertouch: dict[str, list[AftertouchDict]] | None = None,
     ) -> Variation:
         """Compute a Variation across multiple regions, each potentially on a different track.
 

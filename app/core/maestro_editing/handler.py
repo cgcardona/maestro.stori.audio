@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import time
-from typing import (
-    Any,
-    AsyncIterator,
-    Awaitable,
-    Callable,
-    cast,
-)
+from typing import TYPE_CHECKING, AsyncIterator, Awaitable, Callable
+
+if TYPE_CHECKING:
+    from app.core.state_store import StateStore
 
 from app.config import settings
+from app.contracts.llm_types import ChatMessage
+from app.contracts.project_types import ProjectContext
 from app.core.entity_context import build_entity_context_for_llm, format_project_context
+from app.contracts.json_types import JSONObject, ToolCallDict
 from app.core.expansion import ToolCall
-from app.core.intent import Intent, SSEState
+from app.core.intent import Intent, IntentResult, SSEState
 from app.core.llm_client import LLMClient, enforce_single_tool
 from app.core.prompt_parser import ParsedPrompt
 from app.core.prompts import (
@@ -27,7 +27,7 @@ from app.core.prompts import (
     wrap_user_request,
 )
 from app.core.sse_utils import sse_event, strip_tool_echoes
-from app.core.tracing import log_llm_call, trace_span
+from app.core.tracing import TraceContext, log_llm_call, trace_span
 from app.core.maestro_helpers import (
     UsageTracker,
     StreamFinalResponse,
@@ -51,18 +51,18 @@ from app.core.maestro_editing.tool_execution import _apply_single_tool_call
 async def _run_llm_tool_loop(
     *,
     prompt: str,
-    project_context: dict[str, Any],
-    route: Any,
+    project_context: ProjectContext,
+    route: IntentResult,
     llm: LLMClient,
-    store: Any,
-    trace: Any,
+    store: StateStore,
+    trace: TraceContext,
     usage_tracker: UsageTracker | None,
-    conversation_history: list[dict[str, Any]],
+    conversation_history: list[ChatMessage],
     is_cancelled: Callable[[], Awaitable[bool]] | None,
     quality_preset: str | None,
     emit_sse: bool,
     plan_tracker: _PlanTracker | None,
-    collected: list[dict[str, Any]],
+    collected: list[ToolCallDict],
 ) -> AsyncIterator[str]:
     """Shared LLM iteration loop — dispatches tool calls and accumulates results.
 
@@ -88,7 +88,7 @@ async def _run_llm_tool_loop(
 
     allowed_tools = [t for t in ALL_TOOLS if t["function"]["name"] in route.allowed_tool_names]
 
-    messages: list[dict[str, Any]] = [{"role": "system", "content": sys_prompt}]
+    messages: list[ChatMessage] = [{"role": "system", "content": sys_prompt}]
 
     if project_context:
         messages.append({"role": "system", "content": format_project_context(project_context)})
@@ -177,7 +177,7 @@ async def _run_llm_tool_loop(
             if not is_composition:
                 break
 
-        iter_tool_results: list[dict[str, Any]] = []
+        iter_tool_results: list[JSONObject] = []  # boundary: LLM tool result format
 
         if (
             plan_tracker is None
@@ -238,7 +238,8 @@ async def _run_llm_tool_loop(
                 yield await sse_event(evt)
 
             if not outcome.skipped:
-                collected.append({"tool": tc.name, "params": outcome.enriched_params})
+                _tc_dict: ToolCallDict = {"tool": tc.name, "params": outcome.enriched_params}
+                collected.append(_tc_dict)
                 collected.extend(outcome.extra_tool_calls)
 
                 if plan_tracker and emit_sse:
@@ -360,13 +361,13 @@ async def _run_llm_tool_loop(
 
 async def _handle_editing_apply(
     prompt: str,
-    project_context: dict[str, Any],
-    route: Any,
+    project_context: ProjectContext,
+    route: IntentResult,
     llm: LLMClient,
-    store: Any,
-    trace: Any,
+    store: StateStore,
+    trace: TraceContext,
     usage_tracker: UsageTracker | None,
-    conversation_history: list[dict[str, Any]],
+    conversation_history: list[ChatMessage],
     is_cancelled: Callable[[], Awaitable[bool]] | None = None,
     quality_preset: str | None = None,
 ) -> AsyncIterator[str]:
@@ -384,7 +385,7 @@ async def _handle_editing_apply(
         plan_tracker.build_from_prompt(parsed, prompt, project_context or {})
         yield await sse_event(plan_tracker.to_plan_event())
 
-    tool_calls_collected: list[dict[str, Any]] = []
+    tool_calls_collected: list[ToolCallDict] = []
 
     async for evt in _run_llm_tool_loop(
         prompt=prompt,
@@ -443,20 +444,20 @@ async def _handle_editing_apply(
 
 async def _handle_editing_variation(
     prompt: str,
-    project_context: dict[str, Any],
-    route: Any,
+    project_context: ProjectContext,
+    route: IntentResult,
     llm: LLMClient,
-    store: Any,
-    trace: Any,
+    store: StateStore,
+    trace: TraceContext,
     usage_tracker: UsageTracker | None,
-    conversation_history: list[dict[str, Any]],
+    conversation_history: list[ChatMessage],
     is_cancelled: Callable[[], Awaitable[bool]] | None = None,
     quality_preset: str | None = None,
 ) -> AsyncIterator[str]:
     """Handle EDITING in variation mode — compute + emit variation proposal."""
     yield await sse_event({"type": "status", "message": "Generating variation..."})
 
-    tool_calls_collected: list[dict[str, Any]] = []
+    tool_calls_collected: list[ToolCallDict] = []
 
     async for evt in _run_llm_tool_loop(
         prompt=prompt,
@@ -488,7 +489,7 @@ async def _handle_editing_variation(
     from app.core.executor import execute_plan_variation
 
     tool_call_objs = [
-        ToolCall(name=cast(str, tc["tool"]), params=cast(dict[str, Any], tc["params"]))
+        ToolCall(name=str(tc["tool"]), params=dict(tc.get("params", {})))
         for tc in tool_calls_collected
     ]
 
@@ -502,13 +503,14 @@ async def _handle_editing_variation(
     )
 
     from app.core.maestro_composing import _store_variation
-    _edit_region_metadata: dict[str, dict[str, Any]] = {}
+    from app.contracts.json_types import RegionMetadataWire
+    _edit_region_metadata: dict[str, RegionMetadataWire] = {}
     for _re in store.registry.list_regions():
-        _rmeta: dict[str, Any] = {}
-        if _re.metadata:
-            _rmeta["startBeat"] = _re.metadata.get("startBeat")
-            _rmeta["durationBeats"] = _re.metadata.get("durationBeats")
-        _rmeta["name"] = _re.name
+        _rmeta: RegionMetadataWire = {
+            "startBeat": _re.metadata.start_beat,
+            "durationBeats": _re.metadata.duration_beats,
+            "name": _re.name,
+        }
         _edit_region_metadata[_re.id] = _rmeta
     await _store_variation(
         variation, project_context,
@@ -568,13 +570,13 @@ async def _handle_editing_variation(
 
 async def _handle_editing(
     prompt: str,
-    project_context: dict[str, Any],
-    route: Any,
+    project_context: ProjectContext,
+    route: IntentResult,
     llm: LLMClient,
-    store: Any,
-    trace: Any,
+    store: StateStore,
+    trace: TraceContext,
     usage_tracker: UsageTracker | None,
-    conversation_history: list[dict[str, Any]],
+    conversation_history: list[ChatMessage],
     execution_mode: str = "apply",
     is_cancelled: Callable[[], Awaitable[bool]] | None = None,
     quality_preset: str | None = None,

@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import re
 import logging
-from typing import Any
+
+from app.contracts.json_types import SectionDict
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +240,7 @@ def parse_sections(
     prompt: str,
     bars: int,
     roles: list[str],
-) -> list[dict[str, Any]]:
+) -> list[SectionDict]:
     """Parse a STORI PROMPT into musical sections with beat ranges.
 
     Args:
@@ -319,12 +320,12 @@ def _build_sections(
     ordered: list[str],
     beats_total: float,
     roles: list[str],
-) -> list[dict[str, Any]]:
+) -> list[SectionDict]:
     """Distribute *beats_total* across *ordered* section names proportionally."""
     # Distribute total beats across sections proportionally using default weights.
     weights = {name: w for _, name, w in _SECTION_KEYWORDS}
     total_weight = sum(weights.get(n, 0.2) for n in ordered)
-    sections: list[dict[str, Any]] = []
+    sections: list[SectionDict] = []
     current_beat: float = 0.0
 
     for i, name in enumerate(ordered):
@@ -342,13 +343,13 @@ def _build_sections(
             if desc:
                 per_track[role.lower()] = desc
 
-        sections.append({
-            "name": name,
-            "start_beat": current_beat,
-            "length_beats": length,
-            "description": _section_overall_description(name),
-            "per_track_description": per_track,
-        })
+        sections.append(SectionDict(
+            name=name,
+            start_beat=current_beat,
+            length_beats=length,
+            description=_section_overall_description(name),
+            per_track_description=per_track,
+        ))
         current_beat += length
 
     logger.info(
@@ -358,18 +359,18 @@ def _build_sections(
     return sections
 
 
-def _single_section(beats_total: float, roles: list[str]) -> list[dict[str, Any]]:
+def _single_section(beats_total: float, roles: list[str]) -> list[SectionDict]:
     """Return a single full-arrangement section."""
     per_track: dict[str, str] = {}
     for role in roles:
         per_track[role.lower()] = ""
-    return [{
-        "name": "full",
-        "start_beat": 0.0,
-        "length_beats": float(beats_total),
-        "description": "Full arrangement.",
-        "per_track_description": per_track,
-    }]
+    return [SectionDict(
+        name="full",
+        start_beat=0.0,
+        length_beats=float(beats_total),
+        description="Full arrangement.",
+        per_track_description=per_track,
+    )]
 
 
 _SECTION_OVERALL_DESCRIPTIONS: dict[str, str] = {

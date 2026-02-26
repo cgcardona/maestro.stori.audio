@@ -19,7 +19,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from app.contracts.project_types import ProjectContext
 
 logger = logging.getLogger(__name__)
 
@@ -33,31 +33,95 @@ class EntityType(str, Enum):
 
 
 @dataclass
+class EntityMetadata:
+    """Typed metadata for tracks, regions, and buses.
+
+    Wraps the raw metadata dict from the DAW with typed accessors
+    for well-known fields.  Unknown keys are preserved in ``extra``
+    for round-trip serialization.  (Named to avoid collision with
+    app.contracts.json_types.EntityMetadataDict.)
+    """
+
+    start_beat: float = 0.0
+    duration_beats: float = 0.0
+    instrument: str = ""
+    color: str = ""
+
+    extra: dict[str, str | int | float | bool] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, object] | None) -> EntityMetadata:
+        if not raw:
+            return cls()
+        known = {"startBeat", "durationBeats", "instrument", "color"}
+        raw_start = raw.get("startBeat", 0)
+        raw_dur = raw.get("durationBeats", 0)
+        return cls(
+            start_beat=float(raw_start) if isinstance(raw_start, (int, float)) else 0.0,
+            duration_beats=float(raw_dur) if isinstance(raw_dur, (int, float)) else 0.0,
+            instrument=str(raw.get("instrument", "")),
+            color=str(raw.get("color", "")),
+            extra={k: v for k, v in raw.items()
+                   if k not in known and isinstance(v, (str, int, float, bool))},
+        )
+
+    def to_dict(self) -> dict[str, str | int | float]:
+        d: dict[str, str | int | float] = {}
+        if self.start_beat:
+            d["startBeat"] = self.start_beat
+        if self.duration_beats:
+            d["durationBeats"] = self.duration_beats
+        if self.instrument:
+            d["instrument"] = self.instrument
+        if self.color:
+            d["color"] = self.color
+        for k, v in self.extra.items():
+            if isinstance(v, (str, int, float)):
+                d[k] = v
+        return d
+
+    def get(self, key: str, default: float = 0.0) -> float:
+        """Backwards-compat accessor for beat-related lookups."""
+        if key == "startBeat":
+            return self.start_beat or default
+        if key == "durationBeats":
+            return self.duration_beats or default
+        val = self.extra.get(key)
+        if isinstance(val, (int, float)):
+            return float(val)
+        return default
+
+
+@dataclass
 class EntityInfo:
     """Information about a registered entity."""
     id: str
     entity_type: EntityType
     name: str
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: EntityMetadata = field(default_factory=EntityMetadata)
 
-    # For regions: which track they belong to
     parent_id: str | None = None
 
-    # Namespace scoping: which agent run created this entity.
-    # Used to filter agent_manifest() so agents only see their own entities.
     owner_agent_id: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
             "type": self.entity_type.value,
             "name": self.name,
             "created_at": self.created_at.isoformat(),
-            "metadata": self.metadata,
+            "metadata": self.metadata.to_dict(),
             "parent_id": self.parent_id,
             "owner_agent_id": self.owner_agent_id,
         }
+
+
+def _coerce_metadata(raw: EntityMetadata | dict[str, object] | None) -> EntityMetadata:
+    """Accept either form and always return EntityMetadata."""
+    if isinstance(raw, EntityMetadata):
+        return raw
+    return EntityMetadata.from_dict(raw)
 
 
 class EntityRegistry:
@@ -137,28 +201,17 @@ class EntityRegistry:
         self,
         name: str,
         track_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: EntityMetadata | dict[str, object] | None = None,
         owner_agent_id: str | None = None,
     ) -> str:
-        """
-        Create and register a new track.
-        
-        Args:
-            name: Display name for the track
-            track_id: Optional pre-generated ID (for client sync)
-            metadata: Optional additional metadata
-            owner_agent_id: Agent run that created this entity (for manifest scoping)
-            
-        Returns:
-            The track ID (generated or provided)
-        """
+        """Create and register a new track."""
         track_id = track_id or str(uuid.uuid4())
         
         entity = EntityInfo(
             id=track_id,
             entity_type=EntityType.TRACK,
             name=name,
-            metadata=metadata or {},
+            metadata=_coerce_metadata(metadata),
             owner_agent_id=owner_agent_id,
         )
         
@@ -180,8 +233,8 @@ class EntityRegistry:
             existing = self._regions.get(rid)
             if not existing:
                 continue
-            e_start = existing.metadata.get("startBeat", -1)
-            e_dur = existing.metadata.get("durationBeats", -1)
+            e_start = existing.metadata.start_beat
+            e_dur = existing.metadata.duration_beats
             if int(e_start) == int(start_beat) and int(e_dur) == int(duration_beats):
                 return rid
         return None
@@ -191,7 +244,7 @@ class EntityRegistry:
         name: str,
         parent_track_id: str,
         region_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: EntityMetadata | dict[str, object] | None = None,
         owner_agent_id: str | None = None,
     ) -> str:
         """
@@ -201,33 +254,24 @@ class EntityRegistry:
         same track, the existing region ID is returned instead of creating a
         duplicate.  This prevents collision errors when retry loops cause
         duplicate region creation calls.
-        
-        Args:
-            name: Display name for the region
-            parent_track_id: ID of the parent track
-            region_id: Optional pre-generated ID
-            metadata: Optional additional metadata (startBeat, durationBeats, etc.)
-            owner_agent_id: Agent run that created this entity (for manifest scoping)
-            
-        Returns:
-            The region ID
-            
-        Raises:
-            ValueError: If parent track doesn't exist
         """
         if parent_track_id not in self._tracks:
             raise ValueError(f"Parent track {parent_track_id} not found")
 
-        meta = metadata or {}
-        start_beat = meta.get("startBeat", 0)
-        duration_beats = meta.get("durationBeats", 0)
+        meta: EntityMetadata = _coerce_metadata(metadata)
 
-        existing_id = self.find_overlapping_region(
-            parent_track_id, start_beat, duration_beats,
+        has_beat_range = meta.start_beat or meta.duration_beats
+        existing_id = (
+            self.find_overlapping_region(
+                parent_track_id, meta.start_beat, meta.duration_beats,
+            )
+            if has_beat_range
+            else None
         )
         if existing_id is not None:
             logger.info(
-                f"📍 Region already exists at beat {start_beat}-{start_beat + duration_beats} "
+                f"📍 Region already exists at beat {meta.start_beat}-"
+                f"{meta.start_beat + meta.duration_beats} "
                 f"on track {parent_track_id[:8]} — returning existing {existing_id[:8]}"
             )
             return existing_id
@@ -254,26 +298,16 @@ class EntityRegistry:
         self,
         name: str,
         bus_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: EntityMetadata | dict[str, object] | None = None,
     ) -> str:
-        """
-        Create and register a new bus.
-        
-        Args:
-            name: Display name for the bus
-            bus_id: Optional pre-generated ID
-            metadata: Optional additional metadata
-            
-        Returns:
-            The bus ID
-        """
+        """Create and register a new bus."""
         bus_id = bus_id or str(uuid.uuid4())
         
         entity = EntityInfo(
             id=bus_id,
             entity_type=EntityType.BUS,
             name=name,
-            metadata=metadata or {},
+            metadata=_coerce_metadata(metadata),
         )
         
         self._buses[bus_id] = entity
@@ -491,12 +525,14 @@ class EntityRegistry:
             return "\n".join(lines)
 
         for t in tracks:
-            meta = t.metadata or {}
+            meta = t.metadata
             extra = ""
-            if meta.get("drumKitId"):
-                extra = f", drumKit={meta['drumKitId']}"
-            elif meta.get("gmProgram"):
-                extra = f", gm={meta['gmProgram']}"
+            drum_kit = meta.extra.get("drumKitId")
+            gm_prog = meta.extra.get("gmProgram")
+            if drum_kit:
+                extra = f", drumKit={drum_kit}"
+            elif gm_prog is not None and gm_prog != "":
+                extra = f", gm={gm_prog}"
             lines.append(f"  Track \"{t.name}\" → trackId='{t.id}'{extra}")
 
             region_ids = self._track_regions.get(t.id, [])
@@ -506,12 +542,11 @@ class EntityRegistry:
                     continue
                 if agent_id and r.owner_agent_id != agent_id:
                     continue
-                rmeta = r.metadata or {}
-                start = rmeta.get("startBeat", "?")
-                dur = rmeta.get("durationBeats", "?")
+                start = r.metadata.start_beat
+                dur = r.metadata.duration_beats
                 lines.append(
                     f"    Region \"{r.name}\" → regionId='{r.id}' "
-                    f"(beat {start}–{int(start) + int(dur) if isinstance(start, (int, float)) and isinstance(dur, (int, float)) else '?'})"
+                    f"(beat {start}–{int(start) + int(dur)})"
                 )
         return "\n".join(lines)
 
@@ -519,7 +554,7 @@ class EntityRegistry:
     # Synchronization with Client State
     # =========================================================================
     
-    def sync_from_project_state(self, project_state: dict[str, Any]) -> None:
+    def sync_from_project_state(self, project_state: ProjectContext) -> None:
         """
         Sync registry with client-reported project state.
         
@@ -538,7 +573,7 @@ class EntityRegistry:
                 self.create_track(
                     name=track_name,
                     track_id=track_id,
-                    metadata=track,
+                    metadata=dict(track),
                 )
         
         # Sync regions
@@ -557,7 +592,7 @@ class EntityRegistry:
                             name=region_name,
                             parent_track_id=track_id,
                             region_id=region_id,
-                            metadata=region,
+                            metadata=dict(region),
                         )
                     except ValueError:
                         logger.warning(f"⚠️ Could not sync region {region_id}: parent track not found")
@@ -571,7 +606,7 @@ class EntityRegistry:
                 self.create_bus(
                     name=bus_name,
                     bus_id=bus_id,
-                    metadata=bus,
+                    metadata=dict(bus),
                 )
         
         logger.info(
@@ -583,7 +618,7 @@ class EntityRegistry:
     # Serialization
     # =========================================================================
     
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize registry state."""
         return {
             "project_id": self.project_id,
@@ -591,50 +626,69 @@ class EntityRegistry:
             "regions": {rid: e.to_dict() for rid, e in self._regions.items()},
             "buses": {bid: e.to_dict() for bid, e in self._buses.items()},
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "EntityRegistry":
+    def from_dict(cls, data: dict[str, object]) -> EntityRegistry:
         """Deserialize registry state."""
-        registry = cls(project_id=data.get("project_id"))
-        
-        # Restore tracks
-        for tid, tdata in data.get("tracks", {}).items():
-            registry._tracks[tid] = EntityInfo(
-                id=tid,
-                entity_type=EntityType.TRACK,
-                name=tdata.get("name", ""),
-                metadata=tdata.get("metadata", {}),
-                owner_agent_id=tdata.get("owner_agent_id"),
-            )
-            registry._track_names[tdata.get("name", "").lower()] = tid
-            registry._track_regions[tid] = []
-        
-        # Restore regions
-        for rid, rdata in data.get("regions", {}).items():
-            parent_id = rdata.get("parent_id")
-            registry._regions[rid] = EntityInfo(
-                id=rid,
-                entity_type=EntityType.REGION,
-                name=rdata.get("name", ""),
-                parent_id=parent_id,
-                metadata=rdata.get("metadata", {}),
-                owner_agent_id=rdata.get("owner_agent_id"),
-            )
-            registry._region_names[rdata.get("name", "").lower()] = rid
-            if parent_id and parent_id in registry._track_regions:
-                registry._track_regions[parent_id].append(rid)
-        
-        # Restore buses
-        for bid, bdata in data.get("buses", {}).items():
-            registry._buses[bid] = EntityInfo(
-                id=bid,
-                entity_type=EntityType.BUS,
-                name=bdata.get("name", ""),
-                metadata=bdata.get("metadata", {}),
-                owner_agent_id=bdata.get("owner_agent_id"),
-            )
-            registry._bus_names[bdata.get("name", "").lower()] = bid
-        
+        registry = cls(project_id=str(data.get("project_id", "")))
+
+        raw_tracks = data.get("tracks", {})
+        if isinstance(raw_tracks, dict):
+            for tid, tdata in raw_tracks.items():
+                td: dict[str, object] = tdata if isinstance(tdata, dict) else {}
+                name = str(td.get("name", ""))
+                raw_meta = td.get("metadata")
+                meta = EntityMetadata.from_dict(raw_meta if isinstance(raw_meta, dict) else None)
+                raw_owner = td.get("owner_agent_id")
+                registry._tracks[tid] = EntityInfo(
+                    id=tid,
+                    entity_type=EntityType.TRACK,
+                    name=name,
+                    metadata=meta,
+                    owner_agent_id=str(raw_owner) if raw_owner is not None else None,
+                )
+                registry._track_names[name.lower()] = tid
+                registry._track_regions[tid] = []
+
+        raw_regions = data.get("regions", {})
+        if isinstance(raw_regions, dict):
+            for rid, rdata in raw_regions.items():
+                rd: dict[str, object] = rdata if isinstance(rdata, dict) else {}
+                name = str(rd.get("name", ""))
+                raw_parent = rd.get("parent_id")
+                parent_id = str(raw_parent) if raw_parent is not None else None
+                raw_meta = rd.get("metadata")
+                meta = EntityMetadata.from_dict(raw_meta if isinstance(raw_meta, dict) else None)
+                raw_owner = rd.get("owner_agent_id")
+                registry._regions[rid] = EntityInfo(
+                    id=rid,
+                    entity_type=EntityType.REGION,
+                    name=name,
+                    parent_id=parent_id,
+                    metadata=meta,
+                    owner_agent_id=str(raw_owner) if raw_owner is not None else None,
+                )
+                registry._region_names[name.lower()] = rid
+                if parent_id and parent_id in registry._track_regions:
+                    registry._track_regions[parent_id].append(rid)
+
+        raw_buses = data.get("buses", {})
+        if isinstance(raw_buses, dict):
+            for bid, bdata in raw_buses.items():
+                bd: dict[str, object] = bdata if isinstance(bdata, dict) else {}
+                name = str(bd.get("name", ""))
+                raw_meta = bd.get("metadata")
+                meta = EntityMetadata.from_dict(raw_meta if isinstance(raw_meta, dict) else None)
+                raw_owner = bd.get("owner_agent_id")
+                registry._buses[bid] = EntityInfo(
+                    id=bid,
+                    entity_type=EntityType.BUS,
+                    name=name,
+                    metadata=meta,
+                    owner_agent_id=str(raw_owner) if raw_owner is not None else None,
+                )
+                registry._bus_names[name.lower()] = bid
+
         return registry
 
 
@@ -642,7 +696,7 @@ class EntityRegistry:
 # Convenience Functions
 # =============================================================================
 
-def create_registry_from_context(project_state: dict[str, Any] | None = None) -> EntityRegistry:
+def create_registry_from_context(project_state: ProjectContext | None = None) -> EntityRegistry:
     """
     Create a new registry and optionally sync with project state.
     

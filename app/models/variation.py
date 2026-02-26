@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from pydantic import Field
 
+from app.contracts.json_types import NoteDict
 from app.models.base import CamelModel as _CamelModel
 
 
@@ -32,7 +33,7 @@ class MidiNoteSnapshot(_CamelModel):
     channel: int = Field(default=0, ge=0, le=15, description="MIDI channel (0-15)")
     
     @classmethod
-    def from_note_dict(cls, note: dict[str, Any]) -> "MidiNoteSnapshot":
+    def from_note_dict(cls, note: NoteDict) -> "MidiNoteSnapshot":
         """Create a snapshot from an internal note dict (snake_case keys)."""
         return cls(
             pitch=note.get("pitch", 60),
@@ -42,9 +43,15 @@ class MidiNoteSnapshot(_CamelModel):
             channel=note.get("channel", 0),
         )
     
-    def to_note_dict(self) -> dict[str, Any]:
+    def to_note_dict(self) -> NoteDict:
         """Convert to an internal note dict (snake_case keys)."""
-        return self.model_dump()
+        return NoteDict(
+            pitch=self.pitch,
+            start_beat=self.start_beat,
+            duration_beats=self.duration_beats,
+            velocity=self.velocity,
+            channel=self.channel,
+        )
 
 
 # Change type literals
@@ -223,7 +230,7 @@ class Variation(_CamelModel):
                 return phrase
         return None
     
-    def get_accepted_notes(self, accepted_phrase_ids: list[str]) -> list[dict[str, Any]]:
+    def get_accepted_notes(self, accepted_phrase_ids: list[str]) -> list[NoteDict]:
         """
         Get the proposed notes from accepted phrases.
         

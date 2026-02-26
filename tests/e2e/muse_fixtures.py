@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.contracts.json_types import NoteDict
+
 # ── Fixed IDs ─────────────────────────────────────────────────────────────
 
 PROJECT_ID = "proj_muse_e2e"
@@ -44,11 +46,11 @@ def _track_for(region_id: str) -> str:
 # ── Snapshot builders ─────────────────────────────────────────────────────
 
 
-def snapshot_empty() -> dict[str, list[dict[str, Any]]]:
+def snapshot_empty() -> dict[str, list[NoteDict]]:
     return {}
 
 
-def snapshot_keys_v1() -> dict[str, list[dict[str, Any]]]:
+def snapshot_keys_v1() -> dict[str, list[NoteDict]]:
     """C major arpeggio — 4 notes in r_keys."""
     return {
         R_KEYS: [
@@ -60,7 +62,7 @@ def snapshot_keys_v1() -> dict[str, list[dict[str, Any]]]:
     }
 
 
-def snapshot_bass_v1() -> dict[str, list[dict[str, Any]]]:
+def snapshot_bass_v1() -> dict[str, list[NoteDict]]:
     """Simple root-fifth bass line in r_bass."""
     return {
         R_BASS: [
@@ -70,7 +72,7 @@ def snapshot_bass_v1() -> dict[str, list[dict[str, Any]]]:
     }
 
 
-def snapshot_drums_v1() -> dict[str, list[dict[str, Any]]]:
+def snapshot_drums_v1() -> dict[str, list[NoteDict]]:
     """Kick-snare-hat pattern in r_drums."""
     return {
         R_DRUMS: [
@@ -82,14 +84,14 @@ def snapshot_drums_v1() -> dict[str, list[dict[str, Any]]]:
     }
 
 
-def snapshot_keys_v2_with_cc() -> dict[str, list[dict[str, Any]]]:
+def snapshot_keys_v2_with_cc() -> dict[str, list[NoteDict]]:
     """Keys v1 with an extra note at pitch=48 beat=4 — conflict branch A."""
     notes = snapshot_keys_v1()[R_KEYS].copy()
     notes.append({"pitch": 48, "start_beat": 4.0, "duration_beats": 1.0, "velocity": 95})
     return {R_KEYS: notes}
 
 
-def snapshot_keys_v3_conflict() -> dict[str, list[dict[str, Any]]]:
+def snapshot_keys_v3_conflict() -> dict[str, list[NoteDict]]:
     """Keys v1 with same pitch=48 beat=4 but different velocity — conflict branch B.
 
     Overlaps with v2 at the same (pitch, start_beat) so the merge engine
@@ -123,16 +125,15 @@ def cc_sustain_branch_b() -> dict[str, list[dict[str, Any]]]:
 # ── Variation payload builder ─────────────────────────────────────────────
 
 
-def _note_key(n: dict[str, Any]) -> tuple[int, float]:
-
+def _note_key(n: NoteDict) -> tuple[int, float]:
     return (n.get("pitch", 0), n.get("start_beat", 0.0))
 
 
 def make_variation_payload(
     variation_id: str,
     intent: str,
-    base_notes: dict[str, list[dict[str, Any]]],
-    proposed_notes: dict[str, list[dict[str, Any]]],
+    base_notes: dict[str, list[NoteDict]],
+    proposed_notes: dict[str, list[NoteDict]],
     *,
     parent_variation_id: str | None = None,
     parent2_variation_id: str | None = None,

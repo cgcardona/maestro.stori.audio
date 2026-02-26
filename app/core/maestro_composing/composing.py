@@ -7,20 +7,19 @@ import json
 import logging
 import time
 import uuid as _uuid_mod
-from typing import (
-    Any,
-    AsyncIterator,
-    Awaitable,
-    Callable,
-)
+from typing import Any, AsyncIterator, Awaitable, Callable
+
+from app.contracts.json_types import NoteDict, RegionMetadataWire
+from app.contracts.project_types import ProjectContext
 
 from app.core.entity_context import format_project_context
+from app.core.intent import IntentResult
 from app.core.llm_client import LLMClient
 from app.core.planner import build_execution_plan_stream, ExecutionPlan
 from app.core.prompt_parser import ParsedPrompt
-from app.core.sse_utils import sse_event
+from app.core.sse_utils import SSEEventInput, sse_event
 from app.core.state_store import StateStore
-from app.core.tracing import trace_span
+from app.core.tracing import TraceContext, trace_span
 from app.core.maestro_editing.tool_execution import phase_for_tool
 from app.core.maestro_helpers import (
     UsageTracker,
@@ -37,11 +36,11 @@ logger = logging.getLogger(__name__)
 
 async def _handle_composing(
     prompt: str,
-    project_context: dict[str, Any],
-    route: Any,
+    project_context: ProjectContext,
+    route: IntentResult,
     llm: LLMClient,
     store: StateStore,
-    trace: Any,
+    trace: TraceContext,
     usage_tracker: UsageTracker | None,
     conversation_id: str | None,
     quality_preset: str | None = None,
@@ -107,7 +106,7 @@ async def _handle_composing(
             with trace_span(trace, "variation_generation", {"steps": len(plan.tool_calls)}):
                 from app.core.executor import execute_plan_variation
 
-                _event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+                _event_queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
                 _active_step_by_track: dict[str, str] = {}
 
                 async def _on_pre_tool(
@@ -242,13 +241,13 @@ async def _handle_composing(
                         f"Proposed notes captured: {sum(len(n) for n in getattr(variation, '_proposed_notes', {}).values()) if hasattr(variation, '_proposed_notes') else 'N/A'}"
                     )
 
-                _region_metadata: dict[str, dict[str, Any]] = {}
+                _region_metadata: dict[str, RegionMetadataWire] = {}
                 for _re in store.registry.list_regions():
-                    _rmeta: dict[str, Any] = {}
-                    if _re.metadata:
-                        _rmeta["startBeat"] = _re.metadata.get("startBeat")
-                        _rmeta["durationBeats"] = _re.metadata.get("durationBeats")
-                    _rmeta["name"] = _re.name
+                    _rmeta: RegionMetadataWire = {
+                        "startBeat": _re.metadata.start_beat,
+                        "durationBeats": _re.metadata.duration_beats,
+                        "name": _re.name,
+                    }
                     _region_metadata[_re.id] = _rmeta
 
                 await _store_variation(
@@ -381,12 +380,12 @@ async def _handle_composing(
 
 async def _handle_composing_with_agent_teams(
     prompt: str,
-    project_context: dict[str, Any],
+    project_context: ProjectContext,
     parsed: ParsedPrompt,
-    route: Any,
+    route: IntentResult,
     llm: LLMClient,
     store: StateStore,
-    trace: Any,
+    trace: TraceContext,
     usage_tracker: UsageTracker | None,
     is_cancelled: Callable[[], Awaitable[bool]] | None = None,
     quality_preset: str | None = None,
@@ -416,7 +415,7 @@ async def _handle_composing_with_agent_teams(
 
     # ── 1. Snapshot base notes before Agent Teams runs ──
     _base_snapshot = capture_base_snapshot(store)
-    _base_notes: dict[str, list[dict[str, Any]]] = {}
+    _base_notes: dict[str, list[NoteDict]] = {}
     _track_regions: dict[str, str] = {}
     for track in project_context.get("tracks", []):
         track_id = track.get("id", "")
@@ -433,7 +432,7 @@ async def _handle_composing_with_agent_teams(
     _at_route = _create_editing_composition_route(route)
 
     # ── 2. Run Agent Teams — intercept the ``complete`` event ──
-    _agent_complete: dict[str, Any] | None = None
+    _agent_complete: dict[str, Any] | None = None  # boundary: SSE complete event
     _SSE_PREFIX = "data: "
 
     async for event_str in _handle_composition_agent_team(
@@ -452,7 +451,7 @@ async def _handle_composing_with_agent_teams(
 
     # ── 3. Collect proposed notes via snapshot (never read live StateStore) ──
     _proposed_snapshot = capture_proposed_snapshot(store)
-    _proposed_notes: dict[str, list[dict[str, Any]]] = {}
+    _proposed_notes: dict[str, list[NoteDict]] = {}
     _region_start_beats: dict[str, float] = {}
 
     for region_entity in store.registry.list_regions():
@@ -463,10 +462,7 @@ async def _handle_composing_with_agent_teams(
             _track_regions[rid] = region_entity.parent_id or ""
             if rid not in _base_notes:
                 _base_notes[rid] = []
-            if region_entity.metadata:
-                _region_start_beats[rid] = float(
-                    region_entity.metadata.get("startBeat", 0)
-                )
+            _region_start_beats[rid] = float(region_entity.metadata.start_beat)
 
     # ── 4. Compute Variation ──
     _vs = get_variation_service()
@@ -517,13 +513,13 @@ async def _handle_composing_with_agent_teams(
     )
 
     # ── 5. Store variation for commit/discard ──
-    _at_region_metadata: dict[str, dict[str, Any]] = {}
+    _at_region_metadata: dict[str, RegionMetadataWire] = {}
     for _re in store.registry.list_regions():
-        _rmeta_at: dict[str, Any] = {}
-        if _re.metadata:
-            _rmeta_at["startBeat"] = _re.metadata.get("startBeat")
-            _rmeta_at["durationBeats"] = _re.metadata.get("durationBeats")
-        _rmeta_at["name"] = _re.name
+        _rmeta_at: RegionMetadataWire = {
+            "startBeat": _re.metadata.start_beat,
+            "durationBeats": _re.metadata.duration_beats,
+            "name": _re.name,
+        }
         _at_region_metadata[_re.id] = _rmeta_at
 
     await _store_variation(

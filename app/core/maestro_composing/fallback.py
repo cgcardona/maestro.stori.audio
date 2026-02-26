@@ -3,20 +3,23 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 
+from app.contracts.json_types import JSONObject
+from app.contracts.project_types import ProjectContext
 from app.core.intent import Intent, IntentResult, SSEState
 from app.core.intent_config import _PRIMITIVES_REGION, _PRIMITIVES_TRACK
 from app.core.llm_client import LLMClient
 from app.core.sse_utils import sse_event
 from app.core.state_store import StateStore
+from app.core.tracing import TraceContext
 from app.core.tools import ALL_TOOLS
 from app.core.maestro_helpers import UsageTracker
 
 logger = logging.getLogger(__name__)
 
 
-def _create_editing_fallback_route(route: Any) -> IntentResult:
+def _create_editing_fallback_route(route: IntentResult) -> IntentResult:
     """Build an IntentResult for EDITING when the COMPOSING planner fails.
 
     The planner is supposed to return JSON; sometimes the LLM returns tool-call
@@ -39,11 +42,11 @@ def _create_editing_fallback_route(route: Any) -> IntentResult:
 
 async def _retry_composing_as_editing(
     prompt: str,
-    project_context: dict[str, Any],
-    route: Any,
+    project_context: ProjectContext,
+    route: IntentResult,
     llm: LLMClient,
     store: StateStore,
-    trace: Any,
+    trace: TraceContext,
     usage_tracker: UsageTracker | None,
     quality_preset: str | None = None,
 ) -> AsyncIterator[str]:

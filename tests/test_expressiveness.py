@@ -12,12 +12,13 @@ Covers:
 """
 from __future__ import annotations
 
-from typing import Any
 import random
 import statistics
 
 import pytest
 
+from app.contracts.json_types import CCEventDict, NoteDict, PitchBendDict
+from app.services.backends.base import GenerationResult, GeneratorBackend
 from app.services.expressiveness import (
     PROFILES,
     ExpressivenessProfile,
@@ -35,7 +36,7 @@ from app.services.expressiveness import (
 
 def _make_notes(
     count: int = 16, bars: int = 4, velocity: int = 80, channel: int = 0
-) -> list[dict[str, Any]]:
+) -> list[NoteDict]:
     """Generate evenly-spaced test notes across the given number of bars."""
     beats_total = bars * 4
     step = beats_total / max(count, 1)
@@ -197,7 +198,7 @@ class TestVelocityCurves:
 
         """Notes on beat 0 of a bar get accent boost (classical)."""
         prof = get_profile("classical")
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 60, "start_beat": 0.0, "duration_beats": 0.5, "velocity": 80},
             {"pitch": 60, "start_beat": 0.5, "duration_beats": 0.5, "velocity": 80},
         ]
@@ -368,7 +369,7 @@ class TestPitchBends:
     def test_slide_pattern_for_bass(self) -> None:
 
         """Bass/melody role uses slide-up pattern (negative → 0)."""
-        notes = [{"pitch": 60, "start_beat": 4.0, "duration_beats": 1.0, "velocity": 80}]
+        notes: list[NoteDict] = [{"pitch": 60, "start_beat": 4.0, "duration_beats": 1.0, "velocity": 80}]
         bends = add_pitch_bend_phrasing(
             notes, "trap", instrument_role="bass", rng=random.Random(1)
         )
@@ -422,7 +423,7 @@ class TestTimingHumanization:
     def test_no_negative_beats(self) -> None:
 
         """Start beats are clamped to >= 0."""
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 60, "start_beat": 0.0, "duration_beats": 0.5, "velocity": 80},
             {"pitch": 62, "start_beat": 0.01, "duration_beats": 0.5, "velocity": 80},
         ]
@@ -591,33 +592,33 @@ class TestProfileIntegrity:
     """Validate that all profiles have sane parameter ranges."""
 
     @pytest.mark.parametrize("genre", list(PROFILES.keys()))
-    def test_velocity_stdev_positive(self, genre: Any) -> None:
+    def test_velocity_stdev_positive(self, genre: str) -> None:
 
         """Velocity stdev target is positive."""
         assert PROFILES[genre].velocity_stdev_target > 0
 
     @pytest.mark.parametrize("genre", list(PROFILES.keys()))
-    def test_expression_range_valid(self, genre: Any) -> None:
+    def test_expression_range_valid(self, genre: str) -> None:
 
         """Expression range low < high and both within 0-127."""
         lo, hi = PROFILES[genre].cc_expression_range
         assert 0 <= lo < hi <= 127
 
     @pytest.mark.parametrize("genre", list(PROFILES.keys()))
-    def test_ghost_velocity_range_valid(self, genre: Any) -> None:
+    def test_ghost_velocity_range_valid(self, genre: str) -> None:
 
         """Ghost velocity range low < high and both within 1-127."""
         lo, hi = PROFILES[genre].ghost_velocity_range
         assert 1 <= lo < hi <= 127
 
     @pytest.mark.parametrize("genre", list(PROFILES.keys()))
-    def test_timing_jitter_non_negative(self, genre: Any) -> None:
+    def test_timing_jitter_non_negative(self, genre: str) -> None:
 
         """Timing jitter is non-negative."""
         assert PROFILES[genre].timing_jitter_beats >= 0
 
     @pytest.mark.parametrize("genre", list(PROFILES.keys()))
-    def test_pitch_bend_range_non_negative(self, genre: Any) -> None:
+    def test_pitch_bend_range_non_negative(self, genre: str) -> None:
 
         """Pitch bend range is non-negative."""
         assert PROFILES[genre].pitch_bend_range >= 0
@@ -631,7 +632,7 @@ class TestCamelCaseNormalization:
     expressiveness previously crashed with KeyError: 'start_beat'."""
 
     @staticmethod
-    def _camel_notes(count: int = 16, bars: int = 4, velocity: int = 80) -> list[dict[str, Any]]:
+    def _camel_notes(count: int = 16, bars: int = 4, velocity: int = 80) -> list[NoteDict]:
 
         beats_total = bars * 4
         step = beats_total / max(count, 1)
@@ -708,13 +709,17 @@ class TestMusicGeneratorExpressiveness:
         from app.config import settings
         monkeypatch.setattr(settings, "skip_expressiveness", False)
 
-    def _result(self, notes: Any = None, cc_events: Any = None, pitch_bends: Any = None) -> Any:
+    def _result(
+        self,
+        notes: list[NoteDict] | None = None,
+        cc_events: list[CCEventDict] | None = None,
+        pitch_bends: list[PitchBendDict] | None = None,
+    ) -> GenerationResult:
 
-        from app.services.backends.base import GenerationResult, GeneratorBackend
-
+        resolved: list[NoteDict] = notes if notes is not None else _make_notes(16, bars=4)
         return GenerationResult(
             success=True,
-            notes=notes or _make_notes(16, bars=4),
+            notes=resolved,
             backend_used=GeneratorBackend.ORPHEUS,
             metadata={},
             cc_events=cc_events or [],
@@ -734,7 +739,7 @@ class TestMusicGeneratorExpressiveness:
     def test_existing_cc_preserved(self) -> None:
 
         """Existing CC events are preserved and new ones appended."""
-        existing_cc = [{"cc": 7, "beat": 0.0, "value": 100}]
+        existing_cc: list[CCEventDict] = [CCEventDict(cc=7, beat=0.0, value=100)]
         result = self._result(cc_events=existing_cc.copy())
         from app.services.music_generator import MusicGenerator
 
@@ -758,7 +763,7 @@ class TestMusicGeneratorExpressiveness:
         from app.services.backends.base import GenerationResult, GeneratorBackend
         from app.services.music_generator import MusicGenerator
 
-        camel_notes = [
+        camel_notes: list[NoteDict] = [
             {"pitch": 60, "startBeat": float(i), "durationBeats": 0.5, "velocity": 80}
             for i in range(16)
         ]
@@ -792,35 +797,36 @@ class TestBeatsPerBar:
         """[3, 4] → 3 beats per bar."""
         from app.core.planner.conversion import _beats_per_bar
 
-        assert _beats_per_bar({"time_signature": [3, 4]}) == 3
+        # Testing defensive handling of legacy wire formats
+        assert _beats_per_bar({"time_signature": [3, 4]}) == 3  # type: ignore[arg-type]
 
     def test_tuple_format(self) -> None:
 
         """(6, 8) → 6 beats per bar."""
         from app.core.planner.conversion import _beats_per_bar
 
-        assert _beats_per_bar({"time_signature": (6, 8)}) == 6
+        assert _beats_per_bar({"time_signature": (6, 8)}) == 6  # type: ignore[arg-type]
 
     def test_dict_format(self) -> None:
 
         """{"numerator": 5, "denominator": 4} → 5."""
         from app.core.planner.conversion import _beats_per_bar
 
-        assert _beats_per_bar({"time_signature": {"numerator": 5, "denominator": 4}}) == 5
+        assert _beats_per_bar({"time_signature": {"numerator": 5, "denominator": 4}}) == 5  # type: ignore[arg-type]
 
     def test_string_format(self) -> None:
 
         """'7/8' → 7."""
         from app.core.planner.conversion import _beats_per_bar
 
-        assert _beats_per_bar({"time_signature": "7/8"}) == 7
+        assert _beats_per_bar({"time_signature": "7/8"}) == 7  # type: ignore[arg-type]
 
     def test_camel_case_key(self) -> None:
 
         """timeSignature (camelCase) is also supported."""
         from app.core.planner.conversion import _beats_per_bar
 
-        assert _beats_per_bar({"timeSignature": [5, 4]}) == 5
+        assert _beats_per_bar({"timeSignature": [5, 4]}) == 5  # type: ignore[arg-type]
 
 
 # ─── Prompt parser Energy field ───────────────────────────────────────────────

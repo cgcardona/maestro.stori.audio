@@ -22,10 +22,38 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+)
 from app.services import muse_repository
 from app.services.muse_repository import HistoryNode
 
 logger = logging.getLogger(__name__)
+
+
+def _route_controller_event(
+    ev: dict[str, Any],
+    cc: dict[str, list[CCEventDict]],
+    pitch_bends: dict[str, list[PitchBendDict]],
+    aftertouch: dict[str, list[AftertouchDict]],
+    rid: str,
+) -> None:
+    """Deserialize a raw controller change dict into the appropriate typed list."""
+    kind = ev.get("kind", "cc")
+    beat = ev.get("beat", 0.0)
+    value = ev.get("value", 0)
+    if kind == "cc":
+        cc.setdefault(rid, []).append(CCEventDict(cc=ev.get("cc", 0), beat=beat, value=value))
+    elif kind == "pitch_bend":
+        pitch_bends.setdefault(rid, []).append(PitchBendDict(beat=beat, value=value))
+    elif kind == "aftertouch":
+        at: AftertouchDict = {"beat": beat, "value": value}
+        if "pitch" in ev:
+            at["pitch"] = ev["pitch"]
+        aftertouch.setdefault(rid, []).append(at)
 
 
 @dataclass(frozen=True)
@@ -124,10 +152,10 @@ class HeadSnapshot:
     """
 
     variation_id: str
-    notes: dict[str, list[dict[str, Any]]]
-    cc: dict[str, list[dict[str, Any]]]
-    pitch_bends: dict[str, list[dict[str, Any]]]
-    aftertouch: dict[str, list[dict[str, Any]]]
+    notes: dict[str, list[NoteDict]]
+    cc: dict[str, list[CCEventDict]]
+    pitch_bends: dict[str, list[PitchBendDict]]
+    aftertouch: dict[str, list[AftertouchDict]]
     track_regions: dict[str, str]
     region_start_beats: dict[str, float]
 
@@ -159,10 +187,10 @@ async def reconstruct_head_snapshot(
     if not lineage:
         return None
 
-    notes: dict[str, list[dict[str, Any]]] = {}
-    cc: dict[str, list[dict[str, Any]]] = {}
-    pitch_bends: dict[str, list[dict[str, Any]]] = {}
-    aftertouch: dict[str, list[dict[str, Any]]] = {}
+    notes: dict[str, list[NoteDict]] = {}
+    cc: dict[str, list[CCEventDict]] = {}
+    pitch_bends: dict[str, list[PitchBendDict]] = {}
+    aftertouch: dict[str, list[AftertouchDict]] = {}
     track_regions: dict[str, str] = {}
     region_start_beats: dict[str, float] = {}
 
@@ -184,13 +212,7 @@ async def reconstruct_head_snapshot(
                     region_notes.append(nc.after.to_note_dict())
 
             for ev in phrase.controller_changes or []:
-                kind = ev.get("kind", "cc")
-                if kind == "cc":
-                    cc.setdefault(rid, []).append(ev)
-                elif kind == "pitch_bend":
-                    pitch_bends.setdefault(rid, []).append(ev)
-                elif kind == "aftertouch":
-                    aftertouch.setdefault(rid, []).append(ev)
+                _route_controller_event(ev, cc, pitch_bends, aftertouch, rid)
 
     logger.info(
         "✅ HEAD snapshot reconstructed: %d regions, %d notes, %d cc, %d pb, %d at",
@@ -227,10 +249,10 @@ async def reconstruct_variation_snapshot(
     if not lineage:
         return None
 
-    notes: dict[str, list[dict[str, Any]]] = {}
-    cc: dict[str, list[dict[str, Any]]] = {}
-    pitch_bends: dict[str, list[dict[str, Any]]] = {}
-    aftertouch: dict[str, list[dict[str, Any]]] = {}
+    notes: dict[str, list[NoteDict]] = {}
+    cc: dict[str, list[CCEventDict]] = {}
+    pitch_bends: dict[str, list[PitchBendDict]] = {}
+    aftertouch: dict[str, list[AftertouchDict]] = {}
     track_regions: dict[str, str] = {}
     region_start_beats: dict[str, float] = {}
 
@@ -252,13 +274,7 @@ async def reconstruct_variation_snapshot(
                     region_notes.append(nc.after.to_note_dict())
 
             for ev in phrase.controller_changes or []:
-                kind = ev.get("kind", "cc")
-                if kind == "cc":
-                    cc.setdefault(rid, []).append(ev)
-                elif kind == "pitch_bend":
-                    pitch_bends.setdefault(rid, []).append(ev)
-                elif kind == "aftertouch":
-                    aftertouch.setdefault(rid, []).append(ev)
+                _route_controller_event(ev, cc, pitch_bends, aftertouch, rid)
 
     return HeadSnapshot(
         variation_id=variation_id,

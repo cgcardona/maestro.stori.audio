@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from collections.abc import Sequence
+from typing import Callable
+
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+)
 
 # Matching tolerances
 TIMING_TOLERANCE_BEATS = 0.05  # Notes within 0.05 beats are considered same timing
@@ -13,8 +21,8 @@ PITCH_TOLERANCE = 0  # Exact pitch match required
 @dataclass
 class NoteMatch:
     """A matched pair of notes (base and proposed)."""
-    base_note: dict[str, Any] | None
-    proposed_note: dict[str, Any] | None
+    base_note: NoteDict | None
+    proposed_note: NoteDict | None
     base_index: int | None
     proposed_index: int | None
 
@@ -66,14 +74,14 @@ class NoteMatch:
         return False
 
 
-def _get_note_key(note: dict[str, Any]) -> tuple[int, float]:
+def _get_note_key(note: NoteDict) -> tuple[int, float]:
     """Get matching key for a note (pitch, start_beat)."""
     pitch = note.get("pitch", 60)
     start = note.get("start_beat", 0)
     return (pitch, start)
 
 
-def _notes_match(base_note: dict[str, Any], proposed_note: dict[str, Any]) -> bool:
+def _notes_match(base_note: NoteDict, proposed_note: NoteDict) -> bool:
     """Check if two notes should be considered the same note."""
     base_pitch = base_note.get("pitch")
     proposed_pitch = proposed_note.get("pitch")
@@ -92,8 +100,8 @@ def _notes_match(base_note: dict[str, Any], proposed_note: dict[str, Any]) -> bo
 
 
 def match_notes(
-    base_notes: list[dict[str, Any]],
-    proposed_notes: list[dict[str, Any]],
+    base_notes: list[NoteDict],
+    proposed_notes: list[NoteDict],
 ) -> list[NoteMatch]:
     """Match notes between base and proposed states.
 
@@ -158,12 +166,15 @@ def match_notes(
 # ── Controller event matching ─────────────────────────────────────────────
 
 
+EventDict = CCEventDict | PitchBendDict | AftertouchDict
+
+
 @dataclass
 class EventMatch:
     """A matched pair of controller events (base and proposed)."""
 
-    base_event: dict[str, Any] | None
-    proposed_event: dict[str, Any] | None
+    base_event: EventDict | None
+    proposed_event: EventDict | None
 
     @property
     def is_added(self) -> bool:
@@ -186,21 +197,21 @@ class EventMatch:
         return not self.is_modified
 
 
-def _events_match_by_beat(base: dict[str, Any], proposed: dict[str, Any]) -> bool:
+def _events_match_by_beat(base: EventDict, proposed: EventDict) -> bool:
     """Two events are the same if they occur at the same beat (within tolerance)."""
     b_beat: float = base.get("beat", 0)
     p_beat: float = proposed.get("beat", 0)
     return abs(b_beat - p_beat) <= TIMING_TOLERANCE_BEATS
 
 
-def _cc_events_match(base: dict[str, Any], proposed: dict[str, Any]) -> bool:
+def _cc_events_match(base: EventDict, proposed: EventDict) -> bool:
     """CC events match if same CC number and same beat."""
     if base.get("cc") != proposed.get("cc"):
         return False
     return _events_match_by_beat(base, proposed)
 
 
-def _aftertouch_events_match(base: dict[str, Any], proposed: dict[str, Any]) -> bool:
+def _aftertouch_events_match(base: EventDict, proposed: EventDict) -> bool:
     """Aftertouch events match if same pitch (if poly) and same beat."""
     if base.get("pitch") != proposed.get("pitch"):
         return False
@@ -208,9 +219,9 @@ def _aftertouch_events_match(base: dict[str, Any], proposed: dict[str, Any]) -> 
 
 
 def _match_events(
-    base_events: list[dict[str, Any]],
-    proposed_events: list[dict[str, Any]],
-    match_fn: Callable[[dict[str, Any], dict[str, Any]], bool],
+    base_events: Sequence[EventDict],
+    proposed_events: Sequence[EventDict],
+    match_fn: Callable[[EventDict, EventDict], bool],
 ) -> list[EventMatch]:
     """Generic event matcher using a pluggable identity function."""
     matches: list[EventMatch] = []
@@ -241,24 +252,24 @@ def _match_events(
 
 
 def match_cc_events(
-    base_events: list[dict[str, Any]],
-    proposed_events: list[dict[str, Any]],
+    base_events: list[CCEventDict],
+    proposed_events: list[CCEventDict],
 ) -> list[EventMatch]:
     """Match CC events by CC number + beat timing."""
     return _match_events(base_events, proposed_events, _cc_events_match)
 
 
 def match_pitch_bends(
-    base_events: list[dict[str, Any]],
-    proposed_events: list[dict[str, Any]],
+    base_events: list[PitchBendDict],
+    proposed_events: list[PitchBendDict],
 ) -> list[EventMatch]:
     """Match pitch bend events by beat timing."""
     return _match_events(base_events, proposed_events, _events_match_by_beat)
 
 
 def match_aftertouch(
-    base_events: list[dict[str, Any]],
-    proposed_events: list[dict[str, Any]],
+    base_events: list[AftertouchDict],
+    proposed_events: list[AftertouchDict],
 ) -> list[EventMatch]:
     """Match aftertouch events by pitch (if poly) + beat timing."""
     return _match_events(base_events, proposed_events, _aftertouch_events_match)

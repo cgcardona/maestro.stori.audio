@@ -6,14 +6,16 @@ no-bass, section child failure, missing regionId.
 """
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Awaitable
+from typing import Any, Callable, TypedDict
+
 import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.contracts.generation_types import CompositionContext
 from app.core.expansion import ToolCall
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
@@ -31,23 +33,32 @@ from app.core.maestro_agent_teams.section_agent import (
     _run_section_child,
 )
 from app.core.maestro_plan_tracker import _ToolCallOutcome
+from app.contracts.json_types import NoteDict, SectionDict, ToolCallDict
+from app.contracts.llm_types import ChatMessage
+from app.core.sse_utils import SSEEventInput
+
+
+class _CapturedToolCallDict(TypedDict):
+    """Test helper: captured tool call name + resolved args."""
+
+    name: str
+    args: dict[str, object]
 
 
 def _trace() -> TraceContext:
     return TraceContext(trace_id="test-section-agent")
 
 
-def _section(name: str = "verse", start_beat: int = 0, length_beats: int = 16) -> dict[str, Any]:
-
-    return {"name": name, "start_beat": start_beat, "length_beats": length_beats}
+def _section(name: str = "verse", start_beat: int = 0, length_beats: int = 16) -> SectionDict:
+    return SectionDict(name=name, start_beat=start_beat, length_beats=length_beats)
 
 
 def _instrument_contract(
-    sections: list[dict[str, Any]],
+    sections: list[SectionDict],
     instrument_name: str = "Drums",
     role: str = "drums",
     style: str = "house",
-    tempo: float = 120.0,
+    tempo: int = 120,
     key: str = "Am",
     existing_track_id: str | None = None,
 ) -> InstrumentContract:
@@ -57,9 +68,9 @@ def _instrument_contract(
             section_id=f"{i}:{s['name']}",
             name=s["name"],
             index=i,
-            start_beat=s.get("start_beat", 0),
-            duration_beats=s.get("length_beats", 16),
-            bars=max(1, s.get("length_beats", 16) // 4),
+            start_beat=int(s.get("start_beat", 0)),
+            duration_beats=int(s.get("length_beats", 16)),
+            bars=max(1, int(s.get("length_beats", 16)) // 4),
             character=f"Test {s['name']}",
             role_brief=f"Test {role} brief",
         )
@@ -67,7 +78,7 @@ def _instrument_contract(
     )
     for s in specs:
         seal_contract(s)
-    total_bars = sum(s.get("length_beats", 16) // 4 for s in sections)
+    total_bars = sum(int(s.get("length_beats", 16)) // 4 for s in sections)
     ic = InstrumentContract(
         instrument_name=instrument_name,
         role=role,
@@ -93,7 +104,7 @@ def _contract(
     role: str = "drums",
     track_id: str = "trk-1",
     style: str = "house",
-    tempo: float = 120.0,
+    tempo: int = 120,
     key: str = "Am",
     l2_generate_prompt: str = "",
 ) -> SectionContract:
@@ -164,7 +175,7 @@ def _ok_generate_outcome(tc_id: str = "g1", notes_count: int = 24) -> _ToolCallO
             {"type": "generatorStart", "role": "drums"},
             {"type": "toolCall", "name": "stori_add_notes", "params": {
                 "trackId": "trk-1", "regionId": "reg-001",
-                "notes": [{"pitch": 36, "start_beat": 0, "duration_beats": 1}] * notes_count,
+                "notes": [NoteDict(pitch=36, start_beat=0, duration_beats=1)] * notes_count,
             }},
             {"type": "generatorComplete", "role": "drums", "noteCount": notes_count},
         ],
@@ -210,10 +221,10 @@ class TestSectionSignals:
     def test_signal_complete_sets_event(self) -> None:
 
         signals = SectionSignals.from_section_ids(["0:intro"], [_H])
-        signals.signal_complete("0:intro", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
+        signals.signal_complete("0:intro", contract_hash=_H, success=True, drum_notes=[NoteDict(pitch=36)])
         key = f"0:intro:{_H}"
         assert signals.events[key].is_set()
-        assert signals._results[key].drum_notes == [{"pitch": 36}]
+        assert signals._results[key].drum_notes == [NoteDict(pitch=36)]
 
     def test_signal_complete_without_notes(self) -> None:
 
@@ -239,13 +250,13 @@ class TestSectionSignals:
 
         async def _signal_later() -> None:
             await asyncio.sleep(0.01)
-            signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 38}])
+            signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[NoteDict(pitch=38)])
 
         task = asyncio.create_task(_signal_later())
         data = await signals.wait_for("0:verse", contract_hash=_H)
         await task
         assert data is not None
-        assert data.drum_notes == [{"pitch": 38}]
+        assert data.drum_notes == [NoteDict(pitch=38)]
 
     @pytest.mark.anyio
     async def test_wait_for_unknown_returns_none(self) -> None:
@@ -260,7 +271,7 @@ class TestSectionSignals:
 
         """wait_for returns immediately if the event is already set."""
         signals = SectionSignals.from_section_ids(["0:intro"], [_H])
-        signals.signal_complete("0:intro", contract_hash=_H, success=True, drum_notes=[{"pitch": 42}])
+        signals.signal_complete("0:intro", contract_hash=_H, success=True, drum_notes=[NoteDict(pitch=42)])
         data = await signals.wait_for("0:intro", contract_hash=_H)
         assert data is not None
 
@@ -303,11 +314,10 @@ class TestRunSectionChild:
 
         """Happy path: region creates regionId, generate succeeds."""
         store = StateStore(conversation_id="test-sc")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         call_count = 0
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             nonlocal call_count
             call_count += 1
             if tc_name == "stori_add_midi_region":
@@ -341,19 +351,18 @@ class TestRunSectionChild:
 
         """When region creation returns no regionId, section fails gracefully."""
         store = StateStore(conversation_id="test-sc-fail")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         bad_region = _ToolCallOutcome(
             enriched_params={},
             tool_result={"error": "collision"},
             sse_events=[],
-            msg_call={},
-            msg_result={},
+            msg_call={"role": "assistant"},
+            msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             skipped=False,
         )
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             return bad_region
 
         with patch(
@@ -381,10 +390,9 @@ class TestRunSectionChild:
 
         """When generate is skipped (GPU error), section reports failure."""
         store = StateStore(conversation_id="test-sc-gen-fail")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _failed_generate_outcome(tc_id)
@@ -414,12 +422,11 @@ class TestRunSectionChild:
 
         """Section child injects the parent's trackId into region and generate params."""
         store = StateStore(conversation_id="test-sc-tid")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        captured_args: list[dict[str, Any]] = []
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        captured_args: list[_CapturedToolCallDict] = []
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
-            captured_args.append({"name": tc_name, "args": resolved_args})
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
+            captured_args.append(_CapturedToolCallDict(name=tc_name, args=resolved_args))
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -456,13 +463,12 @@ class TestSectionChildDrumSignaling:
 
         """A drum section child signals SectionSignals after generate completes."""
         store = StateStore(conversation_id="test-sig")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         contract = _contract(role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id, notes_count=12)
@@ -497,7 +503,7 @@ class TestSectionChildDrumSignaling:
 
         """Drum still signals even when region fails — prevents bass from hanging."""
         store = StateStore(conversation_id="test-sig-fail")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         contract = _contract(name="chorus", role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:chorus"], [ch])
@@ -506,12 +512,11 @@ class TestSectionChildDrumSignaling:
             enriched_params={},
             tool_result={},
             sse_events=[],
-            msg_call={},
-            msg_result={},
+            msg_call={"role": "assistant"},
+            msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             return bad_region
 
         with patch(
@@ -539,13 +544,12 @@ class TestSectionChildDrumSignaling:
 
         """Drum still signals even when generate fails."""
         store = StateStore(conversation_id="test-sig-gen-fail")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         contract = _contract(role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _failed_generate_outcome(tc_id)
@@ -582,14 +586,13 @@ class TestSectionChildBassWaiting:
 
         """Bass section child blocks until the drum signal fires."""
         store = StateStore(conversation_id="test-bass-wait")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         contract = _contract(instrument_name="Bass", role="bass")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
         bass_started = False
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             nonlocal bass_started
             bass_started = True
             if tc_name == "stori_add_midi_region":
@@ -599,7 +602,7 @@ class TestSectionChildBassWaiting:
         async def _signal_drum() -> None:
             await asyncio.sleep(0.05)
             assert not bass_started, "Bass should not have started before drum signal"
-            signals.signal_complete("0:verse", contract_hash=ch, success=True, drum_notes=[{"pitch": 36}])
+            signals.signal_complete("0:verse", contract_hash=ch, success=True, drum_notes=[NoteDict(pitch=36)])
 
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
@@ -628,10 +631,9 @@ class TestSectionChildBassWaiting:
 
         """Bass without execution_services runs immediately (no-drums edge case)."""
         store = StateStore(conversation_id="test-bass-nosig")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -667,10 +669,9 @@ class TestSectionChildSSE:
 
         """SSE events from tool outcomes are tagged with agentId and sectionName."""
         store = StateStore(conversation_id="test-sse")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -713,10 +714,9 @@ class TestSectionChildException:
 
         """An unhandled exception inside the child returns a failed SectionResult."""
         store = StateStore(conversation_id="test-exc")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> None:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> None:
             raise RuntimeError("unexpected crash")
 
         with patch(
@@ -743,13 +743,12 @@ class TestSectionChildException:
 
         """Drum child still signals on unhandled exception to unblock bass."""
         store = StateStore(conversation_id="test-exc-sig")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         contract = _contract(role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> None:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> None:
             raise RuntimeError("boom")
 
         with patch(
@@ -788,9 +787,9 @@ class TestDispatchSectionChildren:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-dispatch")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        all_results: list[dict[str, Any]] = []
-        collected: list[dict[str, Any]] = []
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        all_results: list[dict[str, object]] = []
+        collected: list[ToolCallDict] = []
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
         r1 = _region_tc("r1", start_beat=0, duration=16)
@@ -803,14 +802,13 @@ class TestDispatchSectionChildren:
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
             sse_events=[{"type": "toolCall", "name": "stori_add_midi_track"}],
-            msg_call={},
-            msg_result={},
+            msg_call={"role": "assistant"},
+            msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
         call_log: list[str] = []
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             call_log.append(tc_name)
             if tc_name == "stori_add_midi_track":
                 return track_outcome
@@ -823,15 +821,15 @@ class TestDispatchSectionChildren:
                     enriched_params=resolved_args,
                     tool_result={"effectId": "fx-1"},
                     sse_events=[],
-                    msg_call={},
-                    msg_result={},
+                    msg_call={"role": "assistant"},
+                    msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={},
                 sse_events=[],
-                msg_call={},
-                msg_result={},
+                msg_call={"role": "assistant"},
+                msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
         sections = [_section("intro", 0, 16), _section("verse", 16, 16)]
@@ -858,7 +856,7 @@ class TestDispatchSectionChildren:
                 instrument_name="Drums",
                 role="drums",
                 style="house",
-                tempo=120.0,
+                tempo=120,
                 key="Am",
                 agent_id="drums",
                 agent_log="[test][Drums]",
@@ -902,7 +900,8 @@ class TestDispatchSectionChildren:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-no-tid")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        collected: list[ToolCallDict] = []
 
         r1 = _region_tc("r1")
         g1 = _generate_tc("g1")
@@ -917,7 +916,7 @@ class TestDispatchSectionChildren:
             instrument_name="Drums",
             role="drums",
             style="house",
-            tempo=120.0,
+            tempo=120,
             key="Am",
             agent_id="drums",
             agent_log="[test]",
@@ -926,7 +925,7 @@ class TestDispatchSectionChildren:
             store=store,
             trace=_trace(),
             sse_queue=queue,
-            collected_tool_calls=[],
+            collected_tool_calls=collected,
             all_tool_results=[],
             add_notes_failures={},
             runtime_context=None,
@@ -945,7 +944,7 @@ class TestDispatchSectionChildren:
         assert gc == 0
         error_msgs = [
             m for m in msgs
-            if "No trackId" in json.loads(m.get("content", "{}")).get("error", "")
+            if "No trackId" in json.loads(m.get("content") or "{}").get("error", "")
         ]
         assert len(error_msgs) == 2
 
@@ -956,13 +955,12 @@ class TestDispatchSectionChildren:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-reuse")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         r1 = _region_tc("r1")
         g1 = _generate_tc("g1")
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -989,7 +987,7 @@ class TestDispatchSectionChildren:
                 instrument_name="Drums",
                 role="drums",
                 style="house",
-                tempo=120.0,
+                tempo=120,
                 key="Am",
                 agent_id="drums",
                 agent_log="[test]",
@@ -1032,15 +1030,14 @@ class TestDispatchSectionChildren:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-planstep-completed")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        all_results: list[dict[str, Any]] = []
-        collected: list[dict[str, Any]] = []
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        all_results: list[dict[str, object]] = []
+        collected: list[ToolCallDict] = []
 
         r1 = _region_tc("r1", start_beat=0, duration=16)
         g1 = _generate_tc("g1", role="drums")
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
             return _ok_generate_outcome(tc_id)
@@ -1077,7 +1074,7 @@ class TestDispatchSectionChildren:
                 instrument_name="Drums",
                 role="drums",
                 style="house",
-                tempo=120.0,
+                tempo=120,
                 key="Am",
                 agent_id="drums",
                 agent_log="[test]",
@@ -1103,7 +1100,7 @@ class TestDispatchSectionChildren:
             )
 
         # Drain the queue and look for planStepUpdate(completed) for step s2.
-        events: list[dict[str, Any]] = []
+        events: list[SSEEventInput] = []
         while not queue.empty():
             events.append(queue.get_nowait())
 
@@ -1128,7 +1125,7 @@ class TestDispatchSectionChildren:
         instrument card.
         """
         store = StateStore(conversation_id="test-agentid-tag")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         # Generate outcome whose sse_events include generatorStart / generatorComplete
         gen_outcome = _ok_generate_outcome("g1", notes_count=16)
@@ -1136,7 +1133,7 @@ class TestDispatchSectionChildren:
         event_types = {e["type"] for e in gen_outcome.sse_events}
         assert "generatorStart" in event_types or "generatorComplete" in event_types
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
 
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
@@ -1160,7 +1157,7 @@ class TestDispatchSectionChildren:
                 runtime_ctx=None,
             )
 
-        events: list[dict[str, Any]] = []
+        events: list[SSEEventInput] = []
         while not queue.empty():
             events.append(queue.get_nowait())
 
@@ -1201,10 +1198,10 @@ class TestEdgeCases:
 
         """Drum signals that no bass listens to are harmless."""
         signals = SectionSignals.from_section_ids(["0:verse"], [_H])
-        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[NoteDict(pitch=36)])
         key = f"0:verse:{_H}"
         assert signals.events[key].is_set()
-        assert signals._results[key].drum_notes == [{"pitch": 36}]
+        assert signals._results[key].drum_notes == [NoteDict(pitch=36)]
 
 
 # =============================================================================
@@ -1225,7 +1222,7 @@ class TestSectionIdCollisionPrevention:
 
         """Signaling section 0:verse does not set 1:verse."""
         signals = SectionSignals.from_section_ids(["0:verse", "1:verse"], [_H, _H2])
-        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[NoteDict(pitch=36)])
         assert signals.events[f"0:verse:{_H}"].is_set()
         assert not signals.events[f"1:verse:{_H2}"].is_set()
 
@@ -1234,17 +1231,17 @@ class TestSectionIdCollisionPrevention:
 
         """Bass waiting on 1:verse does not receive 0:verse data."""
         signals = SectionSignals.from_section_ids(["0:verse", "1:verse"], [_H, _H2])
-        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[NoteDict(pitch=36)])
 
         async def _signal_later() -> None:
             await asyncio.sleep(0.01)
-            signals.signal_complete("1:verse", contract_hash=_H2, success=True, drum_notes=[{"pitch": 38}])
+            signals.signal_complete("1:verse", contract_hash=_H2, success=True, drum_notes=[NoteDict(pitch=38)])
 
         task = asyncio.create_task(_signal_later())
         result = await signals.wait_for("1:verse", contract_hash=_H2)
         await task
         assert result is not None
-        assert result.drum_notes == [{"pitch": 38}]
+        assert result.drum_notes == [NoteDict(pitch=38)]
 
 
 class TestSignalIdempotency:
@@ -1255,9 +1252,9 @@ class TestSignalIdempotency:
         """Second call to signal_complete is silently ignored."""
         signals = SectionSignals.from_section_ids(["0:verse"], [_H])
         key = f"0:verse:{_H}"
-        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
-        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 99}])
-        assert signals._results[key].drum_notes == [{"pitch": 36}]
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[NoteDict(pitch=36)])
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[NoteDict(pitch=99)])
+        assert signals._results[key].drum_notes == [NoteDict(pitch=36)]
 
     def test_failure_then_success_keeps_failure(self) -> None:
 
@@ -1265,7 +1262,7 @@ class TestSignalIdempotency:
         signals = SectionSignals.from_section_ids(["0:verse"], [_H])
         key = f"0:verse:{_H}"
         signals.signal_complete("0:verse", contract_hash=_H, success=False)
-        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[{"pitch": 36}])
+        signals.signal_complete("0:verse", contract_hash=_H, success=True, drum_notes=[NoteDict(pitch=36)])
         assert signals._results[key].success is False
         assert signals._results[key].drum_notes is None
 
@@ -1309,7 +1306,7 @@ class TestContractHardError:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-hard-err")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         with pytest.raises(ValueError, match="Contract violation"):
             await _dispatch_section_children(
@@ -1319,7 +1316,7 @@ class TestContractHardError:
                 instrument_name="Drums",
                 role="drums",
                 style="house",
-                tempo=120.0,
+                tempo=120,
                 key="Am",
                 agent_id="drums",
                 agent_log="[test]",
@@ -1370,7 +1367,7 @@ class TestOrphanedRegionHandling:
         ic = _instrument_contract(sections, role="drums")
 
         store = StateStore(conversation_id="test-orphaned")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         region_tcs = [
             _region_tc("r1", start_beat=0, duration=16),
@@ -1389,7 +1386,7 @@ class TestOrphanedRegionHandling:
                 instrument_name="Drums",
                 role="drums",
                 style="neo-soul",
-                tempo=92.0,
+                tempo=92,
                 key="Fm",
                 agent_id="drums",
                 agent_log="[test]",
@@ -1455,13 +1452,11 @@ class TestExecutionServicesSeparation:
 
     def test_mapping_proxy_is_readonly(self) -> None:
 
-        """to_composition_context returns a read-only mapping."""
-        import types
+        """to_composition_context returns a CompositionContext with expected fields."""
         ctx = RuntimeContext(raw_prompt="test", quality_preset="quality")
         bridge = ctx.to_composition_context()
-        assert isinstance(bridge, types.MappingProxyType)
-        with pytest.raises(TypeError):
-            bridge["new_key"] = "value"  # type: ignore[index]
+        assert isinstance(bridge, dict)
+        assert bridge.get("quality_preset") == "quality"
 
 
 # =============================================================================
@@ -1553,9 +1548,9 @@ class TestSectionChildStatusEvents:
 
         """Section child emits a 'Starting' status event at the beginning."""
         store = StateStore(conversation_id="test-status")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
 
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
@@ -1596,9 +1591,9 @@ class TestSectionChildStatusEvents:
 
         """Section child emits a notes-generated status event after generation."""
         store = StateStore(conversation_id="test-status-done")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
 
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)
@@ -1646,12 +1641,12 @@ class TestExpressionRefinementStreaming:
             _maybe_refine_expression,
         )
 
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         store = StateStore(conversation_id="test-expr")
 
         mock_llm = MagicMock()
 
-        async def _mock_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        async def _mock_stream(**kwargs: object) -> AsyncIterator[dict[str, Any]]:
 
             yield {"type": "reasoning_delta", "text": "Adding modulation "}
             yield {"type": "reasoning_delta", "text": "sweep for warmth."}
@@ -1678,8 +1673,8 @@ class TestExpressionRefinementStreaming:
             enriched_params={"ccNumber": 1},
             tool_result={"success": True},
             sse_events=[{"type": "toolCall", "name": "stori_add_midi_cc"}],
-            msg_call={},
-            msg_result={},
+            msg_call={"role": "assistant"},
+            msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             skipped=False,
         )
 
@@ -1703,7 +1698,7 @@ class TestExpressionRefinementStreaming:
             await _maybe_refine_expression(
                 contract=_contract(
                     instrument_name="Synth Lead", role="melody",
-                    style="techno", tempo=130.0, key="Am",
+                    style="techno", tempo=130, key="Am",
                 ),
                 region_id="reg-001",
                 notes_generated=24,
@@ -1747,7 +1742,7 @@ class TestExpressionRefinementStreaming:
             _maybe_refine_expression,
         )
 
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         store = StateStore(conversation_id="test-no-expr")
         mock_llm = MagicMock()
 
@@ -1783,10 +1778,10 @@ class TestExpressionRefinementStreaming:
             _maybe_refine_expression,
         )
 
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         store = StateStore(conversation_id="test-expr-ctx")
 
-        captured_messages: list[dict[str, Any]] = []
+        captured_messages: list[ChatMessage] = []
         mock_llm = MagicMock()
 
         async def _capture_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
@@ -1818,7 +1813,7 @@ class TestExpressionRefinementStreaming:
         await _maybe_refine_expression(
             contract=_contract(
                 instrument_name="Pad", role="chords",
-                style="house", tempo=128.0, key="Cm",
+                style="house", tempo=128, key="Cm",
             ),
             region_id="reg-001",
             notes_generated=30,
@@ -1835,6 +1830,7 @@ class TestExpressionRefinementStreaming:
 
         assert len(captured_messages) >= 1
         system_msg = captured_messages[0]["content"]
+        assert isinstance(system_msg, str)
         assert "CC 1 value 30-50" in system_msg
         assert "modulation:" in system_msg
 
@@ -1854,9 +1850,9 @@ class TestServerOwnedRetries:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-server-retry")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        all_results: list[dict[str, Any]] = []
-        collected: list[dict[str, Any]] = []
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        all_results: list[dict[str, object]] = []
+        collected: list[ToolCallDict] = []
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
         r1 = _region_tc("r1", start_beat=0, duration=16)
@@ -1869,13 +1865,13 @@ class TestServerOwnedRetries:
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
             sse_events=[{"type": "toolCall", "name": "stori_add_midi_track"}],
-            msg_call={},
-            msg_result={},
+            msg_call={"role": "assistant"},
+            msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
         _gen_attempts = 0
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
 
             nonlocal _gen_attempts
             if tc_name == "stori_add_midi_track":
@@ -1892,15 +1888,15 @@ class TestServerOwnedRetries:
                     enriched_params=resolved_args,
                     tool_result={"effectId": "fx-1"},
                     sse_events=[],
-                    msg_call={},
-                    msg_result={},
+                    msg_call={"role": "assistant"},
+                    msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={},
                 sse_events=[],
-                msg_call={},
-                msg_result={},
+                msg_call={"role": "assistant"},
+                msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
         sections = [_section("verse", 0, 16)]
@@ -1934,7 +1930,7 @@ class TestServerOwnedRetries:
                 instrument_name="Drums",
                 role="drums",
                 style="house",
-                tempo=120.0,
+                tempo=120,
                 key="Am",
                 agent_id="drums",
                 agent_log="[test][Drums]",
@@ -1973,7 +1969,7 @@ class TestServerOwnedRetries:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-cb-skip")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
         r1 = _region_tc("r1", start_beat=0, duration=16)
@@ -1983,11 +1979,11 @@ class TestServerOwnedRetries:
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
             sse_events=[{"type": "toolCall", "name": "stori_add_midi_track"}],
-            msg_call={},
-            msg_result={},
+            msg_call={"role": "assistant"},
+            msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
 
             if tc_name == "stori_add_midi_track":
                 return track_outcome
@@ -1999,8 +1995,8 @@ class TestServerOwnedRetries:
                 enriched_params=resolved_args,
                 tool_result={},
                 sse_events=[],
-                msg_call={},
-                msg_result={},
+                msg_call={"role": "assistant"},
+                msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
         sections = [_section("verse", 0, 16)]
@@ -2032,7 +2028,7 @@ class TestServerOwnedRetries:
                 instrument_name="Drums",
                 role="drums",
                 style="house",
-                tempo=120.0,
+                tempo=120,
                 key="Am",
                 agent_id="drums",
                 agent_log="[test][Drums]",
@@ -2069,7 +2065,7 @@ class TestServerOwnedRetries:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-summary")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
         r1 = _region_tc("r1", start_beat=0, duration=16)
@@ -2081,11 +2077,11 @@ class TestServerOwnedRetries:
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
             sse_events=[{"type": "toolCall", "name": "stori_add_midi_track"}],
-            msg_call={},
-            msg_result={},
+            msg_call={"role": "assistant"},
+            msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> _ToolCallOutcome:
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
 
             if tc_name == "stori_add_midi_track":
                 return track_outcome
@@ -2097,8 +2093,8 @@ class TestServerOwnedRetries:
                 enriched_params=resolved_args,
                 tool_result={},
                 sse_events=[],
-                msg_call={},
-                msg_result={},
+                msg_call={"role": "assistant"},
+                msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
         sections = [_section("intro", 0, 16), _section("verse", 16, 16)]
@@ -2124,7 +2120,7 @@ class TestServerOwnedRetries:
                 instrument_name="Drums",
                 role="drums",
                 style="house",
-                tempo=120.0,
+                tempo=120,
                 key="Am",
                 agent_id="drums",
                 agent_log="[test][Drums]",
@@ -2157,11 +2153,13 @@ class TestServerOwnedRetries:
 
         # First msg is track creation result
         track_msg = msgs[0]
+        assert track_msg["role"] == "tool"
         track_content = json.loads(track_msg["content"])
         assert "trackId" in track_content
 
         # Second msg is the summary (anchored to first region tc)
         summary_msg = msgs[1]
+        assert summary_msg["role"] == "tool"
         assert summary_msg["tool_call_id"] == "r1"
         summary = json.loads(summary_msg["content"])
         assert summary["status"] == "batch_complete"
@@ -2170,6 +2168,7 @@ class TestServerOwnedRetries:
 
         # Remaining msgs are stubs (explicit, not ambiguous "...")
         for stub in msgs[2:]:
+            assert stub["role"] == "tool"
             assert "batch_complete" in stub["content"]
             assert stub["content"] != "..."
 
@@ -2202,14 +2201,11 @@ class TestPreEmitGeneratorEvents:
         region_id = store.create_region("Region", track_id)
 
         trace = TraceContext(trace_id="test-pre-emit")
-        comp_ctx = {
-            "style": "house", "tempo": 120, "bars": 4,
-            "key": "Am", "quality_preset": "balanced",
-        }
+        comp_ctx = CompositionContext(style="house", tempo=120, bars=4, key="Am", quality_preset="balanced")
 
         ok_result = GenerationResult(
             success=True,
-            notes=[{"pitch": 36, "startBeat": 0, "durationBeats": 1, "velocity": 80}] * 12,
+            notes=[NoteDict(pitch=36, startBeat=0, durationBeats=1, velocity=80)] * 12,
             backend_used=GeneratorBackend.ORPHEUS,
             metadata={},
         )
@@ -2217,9 +2213,9 @@ class TestPreEmitGeneratorEvents:
         mock_mg = MagicMock()
         mock_mg.generate = AsyncMock(return_value=ok_result)
 
-        pre_emitted: list[dict[str, Any]] = []
+        pre_emitted: list[SSEEventInput] = []
 
-        async def _capture_pre(events: list[dict[str, Any]]) -> None:
+        async def _capture_pre(events: list[SSEEventInput]) -> None:
 
             pre_emitted.extend(events)
 
@@ -2275,14 +2271,11 @@ class TestPreEmitGeneratorEvents:
         region_id = store.create_region("Region", track_id)
 
         trace = TraceContext(trace_id="test-no-cb")
-        comp_ctx = {
-            "style": "house", "tempo": 120, "bars": 4,
-            "key": "Am", "quality_preset": "balanced",
-        }
+        comp_ctx = CompositionContext(style="house", tempo=120, bars=4, key="Am", quality_preset="balanced")
 
         ok_result = GenerationResult(
             success=True,
-            notes=[{"pitch": 40, "startBeat": 0, "durationBeats": 1, "velocity": 80}] * 8,
+            notes=[NoteDict(pitch=40, startBeat=0, durationBeats=1, velocity=80)] * 8,
             backend_used=GeneratorBackend.ORPHEUS,
             metadata={},
         )
@@ -2326,11 +2319,18 @@ class TestPreEmitGeneratorEvents:
         BEFORE mg.generate() returns — the fix that prevents frontend timeout.
         """
         store = StateStore(conversation_id="test-e2e-pre-emit")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
-        events_at_generate_time: list[dict[str, Any]] = []
+        events_at_generate_time: list[SSEEventInput] = []
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, pre_emit_callback: Any = None, **kw: Any) -> _ToolCallOutcome:
+        async def _mock_apply(
+            *,
+            tc_id: str,
+            tc_name: str,
+            resolved_args: dict[str, object],
+            pre_emit_callback: Callable[..., Awaitable[None]] | None = None,
+            **kw: object,
+        ) -> _ToolCallOutcome:
 
             if tc_name == "stori_add_midi_region":
                 return _ok_region_outcome(tc_id)

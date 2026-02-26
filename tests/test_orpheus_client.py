@@ -2,16 +2,21 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from typing import Any
 import time as _time
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.contracts.generation_types import GenerationContext
+from app.contracts.json_types import NoteDict
 from app.services.orpheus import OrpheusClient
 
+if TYPE_CHECKING:
+    from app.services.backends.orpheus import OrpheusBackend
 
-def _patch_settings(m: Any) -> None:
+
+def _patch_settings(m: MagicMock) -> None:
 
     """Apply default Orpheus test settings to a mock."""
     m.orpheus_base_url = "http://orpheus:10002"
@@ -27,7 +32,13 @@ def _patch_settings(m: Any) -> None:
 _JOB_ID = "test-job-00000000"
 
 
-def _submit_resp(*, job_id: Any = _JOB_ID, status: Any = "queued", position: Any = 1, result: Any = None) -> MagicMock:
+def _submit_resp(
+    *,
+    job_id: str = _JOB_ID,
+    status: str = "queued",
+    position: int = 1,
+    result: dict[str, Any] | None = None,
+) -> MagicMock:
 
     """Mock HTTP response from POST /generate (submit)."""
     resp = MagicMock()
@@ -42,7 +53,13 @@ def _submit_resp(*, job_id: Any = _JOB_ID, status: Any = "queued", position: Any
     return resp
 
 
-def _poll_resp(*, job_id: Any = _JOB_ID, status: Any = "complete", result: Any = None, error: Any = None) -> MagicMock:
+def _poll_resp(
+    *,
+    job_id: str = _JOB_ID,
+    status: str = "complete",
+    result: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> MagicMock:
 
     """Mock HTTP response from GET /jobs/{id}/wait (poll)."""
     resp = MagicMock()
@@ -270,7 +287,6 @@ def test_connection_limits_configured() -> None:
     original_init = httpx.AsyncClient.__init__
 
     def capturing_init(self: Any, **kwargs: Any) -> None:
-
         created_kwargs.update(kwargs)
         original_init(self, **kwargs)
 
@@ -296,15 +312,13 @@ def test_connection_limits_configured() -> None:
 class TestOrpheusBackendEmotionMapping:
     """Tests that OrpheusBackend correctly maps EmotionVector to OrpheusClient fields."""
 
-    def _make_backend(self, mock_client: Any) -> Any:
-
+    def _make_backend(self, mock_client: MagicMock) -> OrpheusBackend:
         from app.services.backends.orpheus import OrpheusBackend
         import app.services.orpheus as orpheus_module
         orpheus_module._shared_client = mock_client
-        backend = OrpheusBackend()
-        return backend
+        return OrpheusBackend()
 
-    def _make_mock_client(self, notes: Any = None) -> MagicMock:
+    def _make_mock_client(self, notes: list[NoteDict] | None = None) -> MagicMock:
 
         mock = MagicMock()
         mock.health_check = AsyncMock(return_value=True)
@@ -340,7 +354,7 @@ class TestOrpheusBackendEmotionMapping:
         backend = self._make_backend(mock_client)
 
         ev = EmotionVector(energy=0.3, valence=-0.8, tension=0.5, intimacy=0.7, motion=0.2)
-        await backend.generate("bass", "lofi", 85, 4, emotion_vector=ev)
+        await backend.generate("bass", "lofi", 85, 4, context=GenerationContext(emotion_vector=ev))
 
         call_kwargs = mock_client.generate.call_args[1]
         assert call_kwargs["emotion_vector"]["valence"] == pytest.approx(-0.8)
@@ -357,7 +371,7 @@ class TestOrpheusBackendEmotionMapping:
         backend = self._make_backend(mock_client)
 
         ev = EmotionVector(energy=0.95, valence=0.9, motion=0.9, intimacy=0.2)
-        await backend.generate("lead", "edm", 140, 4, emotion_vector=ev)
+        await backend.generate("lead", "edm", 140, 4, context=GenerationContext(emotion_vector=ev))
 
         call_kwargs = mock_client.generate.call_args[1]
         assert call_kwargs["emotion_vector"]["energy"] == pytest.approx(0.95)
@@ -377,7 +391,7 @@ class TestOrpheusBackendEmotionMapping:
         backend = self._make_backend(mock_client)
 
         ev = EmotionVector(energy=0.2, valence=0.0, motion=0.15, intimacy=0.9)
-        await backend.generate("piano", "ambient", 60, 4, emotion_vector=ev)
+        await backend.generate("piano", "ambient", 60, 4, context=GenerationContext(emotion_vector=ev))
 
         call_kwargs = mock_client.generate.call_args[1]
         goals = [g["name"] for g in (call_kwargs.get("intent_goals") or [])]
@@ -392,7 +406,7 @@ class TestOrpheusBackendEmotionMapping:
         mock_client = self._make_mock_client()
         backend = self._make_backend(mock_client)
 
-        await backend.generate("drums", "boom_bap", 90, 4, quality_preset="fast")
+        await backend.generate("drums", "boom_bap", 90, 4, context=GenerationContext(quality_preset="fast"))
 
         call_kwargs = mock_client.generate.call_args[1]
         assert call_kwargs["quality_preset"] == "fast"
@@ -405,8 +419,7 @@ class TestOrpheusBackendEmotionMapping:
 class TestOrpheusNoteNormalization:
     """Notes from Orpheus may use snake_case keys; backend must normalize to camelCase."""
 
-    def _make_backend(self, mock_client: Any) -> Any:
-
+    def _make_backend(self, mock_client: MagicMock) -> OrpheusBackend:
         from app.services.backends.orpheus import OrpheusBackend
         import app.services.orpheus as orpheus_module
         orpheus_module._shared_client = mock_client
@@ -471,8 +484,7 @@ class TestOrpheusNoteNormalization:
 class TestOrpheusBeatRescaling:
     """Notes compressed into a short window must be rescaled to the target bars."""
 
-    def _make_backend(self, mock_client: Any) -> Any:
-
+    def _make_backend(self, mock_client: MagicMock) -> OrpheusBackend:
         from app.services.backends import orpheus as orpheus_backend
         from app.services.backends.orpheus import OrpheusBackend
         import app.services.orpheus as orpheus_module
@@ -722,7 +734,7 @@ class TestSemaphore:
         active = 0
         gate = asyncio.Event()
 
-        async def slow_post(*args: Any, **kwargs: Any) -> MagicMock:
+        async def slow_post(*args: Any, **kwargs: object) -> MagicMock:
 
             nonlocal peak, active
             active += 1

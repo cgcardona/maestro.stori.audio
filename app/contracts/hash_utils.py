@@ -34,7 +34,7 @@ _HASH_EXCLUDED_FIELDS = frozenset({
 })
 
 
-def _normalize_value(value: Any) -> Any:
+def _normalize_value(value: object) -> object:
     """Recursively normalize a value for canonical serialization."""
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return canonical_contract_dict(value)
@@ -47,7 +47,7 @@ def _normalize_value(value: Any) -> Any:
     return str(value)
 
 
-def canonical_contract_dict(obj: Any) -> dict[str, Any]:
+def canonical_contract_dict(obj: object) -> dict[str, Any]:
     """Convert a frozen dataclass to a canonical ordered dict for hashing.
 
     Excludes advisory/meta fields defined in ``_HASH_EXCLUDED_FIELDS``.
@@ -78,7 +78,7 @@ def canonical_contract_dict(obj: Any) -> dict[str, Any]:
     return dict(sorted(result.items()))
 
 
-def compute_contract_hash(obj: Any) -> str:
+def compute_contract_hash(obj: object) -> str:
     """Compute a deterministic SHA-256 short hash of structural contract fields.
 
     Returns the first 16 hex characters (64-bit collision resistance).
@@ -89,7 +89,7 @@ def compute_contract_hash(obj: Any) -> str:
     return digest[:16]
 
 
-def seal_contract(obj: Any, parent_hash: str = "") -> None:
+def seal_contract(obj: object, parent_hash: str = "") -> None:
     """Compute and set ``contract_hash`` on a frozen dataclass.
 
     Uses ``object.__setattr__`` to bypass frozen enforcement.
@@ -101,12 +101,12 @@ def seal_contract(obj: Any, parent_hash: str = "") -> None:
     object.__setattr__(obj, "contract_hash", h)
 
 
-def set_parent_hash(obj: Any, parent_hash: str) -> None:
+def set_parent_hash(obj: object, parent_hash: str) -> None:
     """set ``parent_contract_hash`` on a frozen dataclass."""
     object.__setattr__(obj, "parent_contract_hash", parent_hash)
 
 
-def verify_contract_hash(obj: Any) -> bool:
+def verify_contract_hash(obj: object) -> bool:
     """Recompute hash and compare to the stored ``contract_hash``.
 
     Returns ``True`` if the stored hash matches the recomputed hash.

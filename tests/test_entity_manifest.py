@@ -16,6 +16,8 @@ import pytest
 from typing import Any
 from unittest.mock import MagicMock
 
+from app.contracts.project_types import ProjectContext
+
 from app.core.entity_registry import (
     EntityRegistry,
     EntityInfo,
@@ -391,7 +393,7 @@ class TestEntityRegistryCRUD:
 class TestSyncFromProjectState:
     """sync_from_project_state populates registry from DAW project snapshot."""
 
-    def _project(self, **kwargs: Any) -> dict[str, Any]:
+    def _project(self) -> ProjectContext:
 
         return {
             "tracks": [
@@ -414,7 +416,6 @@ class TestSyncFromProjectState:
             "buses": [
                 {"id": "b1", "name": "Reverb"},
             ],
-            **kwargs,
         }
 
     def test_tracks_synced(self) -> None:

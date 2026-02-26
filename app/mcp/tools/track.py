@@ -1,7 +1,9 @@
 """Track-level MCP tool definitions."""
 from __future__ import annotations
 
-TRACK_TOOLS = [
+from app.contracts.mcp_types import MCPToolDef
+
+TRACK_TOOLS: list[MCPToolDef] = [
     {
         "name": "stori_add_midi_track",
         "description": "Add a new MIDI track. DRUMS: set drumKitId ('acoustic', 'TR-909', 'TR-808', 'jazz'). ALL OTHER instruments: set gmProgram (0-127). Never set both.",

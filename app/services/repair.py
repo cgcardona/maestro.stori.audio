@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import Any
-
+from app.contracts.json_types import NoteDict
 from app.core.music_spec_ir import (
     DrumSpec,
     DEFAULT_SALIENCE_WEIGHT,
@@ -29,11 +28,11 @@ PITCH_TO_LAYER = {
 }
 
 
-def _layer_for_note(note: dict[str, Any]) -> str:
+def _layer_for_note(note: NoteDict) -> str:
     return PITCH_TO_LAYER.get(note.get("pitch", 0), "timekeepers")
 
 
-def _salience_at_beat(notes: list[dict[str, Any]], beat: float, salience_weight: dict[str, float]) -> float:
+def _salience_at_beat(notes: list[NoteDict], beat: float, salience_weight: dict[str, float]) -> float:
     total = 0.0
     for n in notes:
         start = n["start_beat"]
@@ -43,13 +42,13 @@ def _salience_at_beat(notes: list[dict[str, Any]], beat: float, salience_weight:
     return total
 
 
-def _can_add_at_beat(notes: list[dict[str, Any]], beat: float, layer: str, max_salience: float, salience_weight: dict[str, float]) -> bool:
+def _can_add_at_beat(notes: list[NoteDict], beat: float, layer: str, max_salience: float, salience_weight: dict[str, float]) -> bool:
     current = _salience_at_beat(notes, beat, salience_weight)
     add = salience_weight.get(layer, 0.5)
     return bool(current + add <= max_salience)
 
 
-def _apply_salience_cap(notes: list[dict[str, Any]], drum_spec: DrumSpec) -> list[dict[str, Any]]:
+def _apply_salience_cap(notes: list[NoteDict], drum_spec: DrumSpec) -> list[NoteDict]:
     """Drop lowest-salience notes at beats over max_salience_per_beat."""
     if not notes:
         return notes
@@ -87,18 +86,18 @@ def _apply_salience_cap(notes: list[dict[str, Any]], drum_spec: DrumSpec) -> lis
 
 
 def apply_drum_repair(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     drum_spec: DrumSpec,
     repair_instructions: list[str],
     *,
     rng: random.Random | None = None,
-) -> list[dict[str, Any]]:
+) -> list[NoteDict]:
     """
     Apply repair_instructions to drum notes in an IR-aware way.
     Respects max_salience_per_beat, fill_bars, groove. Returns repaired list (new list).
     """
     rng = rng or random.Random()
-    out = [dict(n) for n in notes]
+    out: list[NoteDict] = [n.copy() for n in notes]
     salience_weight = drum_spec.salience_weight
     max_sal = drum_spec.constraints.max_salience_per_beat
     fill_bars = drum_spec.constraints.fill_bars
@@ -169,12 +168,12 @@ def apply_drum_repair(
 
 
 def repair_drum_if_needed(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     drum_spec: DrumSpec,
     score: float,
     repair_instructions: list[str],
     accept_threshold: float = 0.6,
-) -> tuple[list[dict[str, Any]], bool]:
+) -> tuple[list[NoteDict], bool]:
     """
     If score < accept_threshold and we have repair_instructions, apply repair and return (repaired_notes, True).
     Else return (original_notes, False).

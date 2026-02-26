@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pytest
 import random
+from app.contracts.json_types import NoteDict
 from app.services.groove_engine import (
     GrooveProfile,
     BOOM_BAP,
@@ -168,7 +169,7 @@ class TestGrooveApplication:
     def test_applies_timing_offsets(self) -> None:
 
         """Notes should have timing offsets applied."""
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
             {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.25, "velocity": 100},
         ]
@@ -187,7 +188,7 @@ class TestGrooveApplication:
     def test_applies_velocity_shaping(self) -> None:
 
         """Velocity should be shaped by accent map."""
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80}
             for i in range(8)
         ]
@@ -204,7 +205,7 @@ class TestGrooveApplication:
 
         """Hat notes should have velocity arc applied."""
         # Create hats at different positions in bar
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 100, "layer": "timekeepers"}
             for i in range(8)
         ]
@@ -220,7 +221,7 @@ class TestGrooveApplication:
     def test_deterministic_with_seed(self) -> None:
 
         """Same seed should produce same result."""
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
             {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.25, "velocity": 100},
         ]
@@ -248,7 +249,7 @@ class TestOnsetExtraction:
     def test_extract_kick_onsets(self) -> None:
 
         """Should extract kick onset times."""
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
             {"pitch": 42, "start_beat": 0.5, "duration_beats": 0.25, "velocity": 80},
             {"pitch": 36, "start_beat": 2.0, "duration_beats": 0.25, "velocity": 100},
@@ -261,7 +262,7 @@ class TestOnsetExtraction:
     def test_extract_snare_onsets(self) -> None:
 
         """Should extract snare onset times."""
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
             {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.25, "velocity": 100},
             {"pitch": 39, "start_beat": 3.0, "duration_beats": 0.25, "velocity": 100},
@@ -273,7 +274,7 @@ class TestOnsetExtraction:
     def test_extract_hat_grid(self) -> None:
 
         """Should extract hat onset times."""
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80}
             for i in range(8)
         ]
@@ -290,7 +291,7 @@ class TestRhythmSpine:
     def test_create_from_drum_notes(self) -> None:
 
         """Should create rhythm spine from drum notes."""
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100},
             {"pitch": 36, "start_beat": 2.0, "duration_beats": 0.25, "velocity": 100},
             {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.25, "velocity": 100},

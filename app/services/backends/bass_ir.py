@@ -7,8 +7,9 @@ Supports coupled generation with RhythmSpine from drum output.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
+from app.contracts.generation_types import GenerationContext
+from app.contracts.json_types import NoteDict
 from app.services.backends.base import (
     MusicGeneratorBackend,
     GenerationResult,
@@ -45,7 +46,7 @@ class BassSpecBackend(MusicGeneratorBackend):
         bars: int,
         key: str | None = None,
         chords: list[str] | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
         if instrument != "bass":
             return GenerationResult(
@@ -56,11 +57,11 @@ class BassSpecBackend(MusicGeneratorBackend):
                 error="BassSpecBackend only handles bass",
             )
         try:
-            # Extract coupling parameters
-            rhythm_spine: RhythmSpine | None = kwargs.pop("rhythm_spine", None)
-            drum_kick_beats: list[float] | None = kwargs.pop("drum_kick_beats", None)
+            ctx = context or {}
+            rhythm_spine: RhythmSpine | None = ctx.get("rhythm_spine")
+            drum_kick_beats: list[float] | None = ctx.get("drum_kick_beats")
             
-            music_spec = kwargs.get("music_spec")
+            music_spec = ctx.get("music_spec")
             if music_spec and music_spec.bass_spec and music_spec.harmonic_spec and music_spec.global_spec:
                 bass_spec = music_spec.bass_spec
                 global_spec = music_spec.global_spec
@@ -88,8 +89,8 @@ class BassSpecBackend(MusicGeneratorBackend):
                 drum_kick_beats=drum_kick_beats,
                 rhythm_spine=rhythm_spine,
             )
-            notes_list: list[dict[str, Any]] = raw_notes.notes if isinstance(raw_notes, BassRenderResult) else raw_notes
-            out = [
+            notes_list = raw_notes.notes if isinstance(raw_notes, BassRenderResult) else raw_notes
+            out: list[NoteDict] = [
                 {"pitch": n["pitch"], "start_beat": n["start_beat"], "duration_beats": n["duration_beats"], "velocity": n["velocity"]}
                 for n in notes_list
             ]

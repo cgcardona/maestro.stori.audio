@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.contracts.project_types import ProjectContext
+
 from app.core.prompt_parser import (
     AfterSpec,
     ParsedPrompt,
@@ -688,14 +690,18 @@ class TestMaestroExtensions:
         result = parse_prompt(self._PROMPT)
         assert result is not None
         assert "melody" in result.extensions
-        assert result.extensions["melody"]["scale"] == "C dorian"
+        melody = result.extensions["melody"]
+        assert isinstance(melody, dict)
+        assert melody["scale"] == "C dorian"
 
     def test_expression_in_extensions(self) -> None:
 
         result = parse_prompt(self._PROMPT)
         assert result is not None
         assert "expression" in result.extensions
-        assert "3am" in result.extensions["expression"]["narrative"]
+        expression = result.extensions["expression"]
+        assert isinstance(expression, dict)
+        assert "3am" in expression["narrative"]
 
     def test_routing_fields_not_in_extensions(self) -> None:
 
@@ -926,7 +932,7 @@ class TestPositionField:
 class TestResolvePosition:
     """Tests for prompts.resolve_position()."""
 
-    _PROJECT = {
+    _PROJECT: ProjectContext = {
         "tracks": [
             {"name": "Intro Drums", "regions": [
                 {"startBeat": 0, "durationBeats": 16},

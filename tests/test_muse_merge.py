@@ -16,6 +16,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+)
 from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -56,22 +62,22 @@ async def async_session() -> AsyncGenerator[AsyncSession, None]:
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> dict[str, Any]:
+def _note(pitch: int, start: float, dur: float = 1.0, vel: int = 100) -> NoteDict:
 
     return {"pitch": pitch, "start_beat": start, "duration_beats": dur, "velocity": vel, "channel": 0}
 
 
-def _cc(cc_num: int, beat: float, value: int) -> dict[str, Any]:
+def _cc(cc_num: int, beat: float, value: int) -> CCEventDict:
 
-    return {"kind": "cc", "cc": cc_num, "beat": beat, "value": value}
+    return {"cc": cc_num, "beat": beat, "value": value}
 
 
 def _snap(
     vid: str,
-    notes: dict[str, list[dict[str, Any]]] | None = None,
-    cc: dict[str, list[dict[str, Any]]] | None = None,
-    pb: dict[str, list[dict[str, Any]]] | None = None,
-    at: dict[str, list[dict[str, Any]]] | None = None,
+    notes: dict[str, list[NoteDict]] | None = None,
+    cc: dict[str, list[CCEventDict]] | None = None,
+    pb: dict[str, list[PitchBendDict]] | None = None,
+    at: dict[str, list[AftertouchDict]] | None = None,
     track_regions: dict[str, str] | None = None,
 ) -> HeadSnapshot:
     return HeadSnapshot(
@@ -86,7 +92,7 @@ def _snap(
 
 
 def _make_variation(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     controllers: list[dict[str, Any]] | None = None,
     region_id: str = "region-1",
     track_id: str = "track-1",

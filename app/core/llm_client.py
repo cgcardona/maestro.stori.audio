@@ -17,10 +17,29 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
+
+from typing_extensions import TypedDict
 
 from app.config import settings
+from app.contracts.llm_types import (
+    ChatMessage,
+    OpenAIRequestPayload as OpenAIRequestPayload,
+    OpenAIResponse as OpenAIResponse,
+    OpenAIStreamChunk as OpenAIStreamChunk,
+    OpenAITool as OpenAITool,
+    OpenAIToolChoice as OpenAIToolChoice,
+    StreamEvent as StreamEvent,
+    UsageStats as UsageStats,
+)
 from app.core.expansion import ToolCall
+
+
+class ChatContext(TypedDict, total=False):
+    """Pipeline context passed to chat (project_state, route, etc.)."""
+
+    project_state: object
+    route: object
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +55,14 @@ class LLMResponse:
     content: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
     finish_reason: str | None = None
-    usage: dict[str, Any] | None = None
+    usage: UsageStats | None = None
 
     @property
     def has_tool_calls(self) -> bool:
         return len(self.tool_calls) > 0
 
 
-def _extract_cache_stats(usage: dict[str, Any]) -> tuple[int, int, float]:
+def _extract_cache_stats(usage: UsageStats) -> tuple[int, int, float]:
     """
     Normalise OpenRouter / Anthropic cache fields into (read_tokens, write_tokens, discount).
 
@@ -170,9 +189,9 @@ class LLMClient:
         self,
         system: str,
         user: str,
-        tools: list[dict[str, Any]],
+        tools: list[OpenAITool],
         tool_choice: str,
-        context: dict[str, Any],
+        context: ChatContext,
     ) -> LLMResponse:
         """
         Simple chat interface for pipeline/planner.
@@ -187,7 +206,7 @@ class LLMClient:
         Returns:
             LLMResponse with content and/or tool calls
         """
-        messages = [{"role": "system", "content": system}]
+        messages: list[ChatMessage] = [{"role": "system", "content": system}]
         
         # Add project context if available
         if context.get("project_state"):
@@ -209,9 +228,9 @@ class LLMClient:
 
     def _enable_prompt_caching(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]] | None, None]:
+        messages: list[ChatMessage],
+        tools: list[OpenAITool] | None = None,
+    ) -> tuple[list[ChatMessage], list[OpenAITool] | None, None]:
         """
         Add Anthropic cache_control breakpoints to the system prompt and tools.
 
@@ -259,7 +278,7 @@ class LLMClient:
         # Anthropic requires the cacheable prefix to be ≥ 1024 tokens.
         # For COMPOSING (22 tools, ~2500+ tok) this fires reliably.
         # For EDITING (1 tool, ~200-800 tok) it is below threshold — accepted.
-        cached_tools: list[dict[str, Any]] | None = None
+        cached_tools: list[OpenAITool] | None = None
         if tools:
             cached_tools = [dict(t) for t in tools]
             cached_tools[-1] = dict(cached_tools[-1])
@@ -274,9 +293,9 @@ class LLMClient:
     
     async def chat_completion(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        tool_choice: str | dict[str, Any] | None = None,
+        messages: list[ChatMessage],
+        tools: list[OpenAITool] | None = None,
+        tool_choice: OpenAIToolChoice | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
         max_retries: int = 2,
@@ -284,7 +303,7 @@ class LLMClient:
         """Send a chat completion request with retry logic."""
         messages, cached_tools, _ = self._enable_prompt_caching(messages, tools)
         
-        payload: dict[str, Any] = {
+        payload: OpenAIRequestPayload = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature if temperature is not None else settings.llm_temperature,
@@ -314,7 +333,7 @@ class LLMClient:
                 response.raise_for_status()
                 
                 duration = time.time() - start
-                data = response.json()
+                data: OpenAIResponse = response.json()
                 
                 usage = data.get("usage", {})
                 logger.debug(f"Raw LLM usage from OpenRouter (non-stream): {usage}")
@@ -352,13 +371,13 @@ class LLMClient:
     
     async def chat_completion_stream(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        tool_choice: str | dict[str, Any] | None = None,
+        messages: list[ChatMessage],
+        tools: list[OpenAITool] | None = None,
+        tool_choice: OpenAIToolChoice | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
         reasoning_fraction: float | None = None,
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncIterator[StreamEvent]:
         """Stream chat completion with real-time reasoning."""
         logger.info(f"🚀 chat_completion_stream called: model={self.model}, supports_reasoning={self.supports_reasoning()}")
         # _enable_prompt_caching always returns system_blocks=None (tool-only caching).
@@ -366,7 +385,7 @@ class LLMClient:
         # cache_control on the last tool definition for COMPOSING-scale caching.
         messages, cached_tools, _ = self._enable_prompt_caching(messages, tools)
         
-        payload: dict[str, Any] = {
+        payload: OpenAIRequestPayload = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature if temperature is not None else settings.llm_temperature,
@@ -402,10 +421,10 @@ class LLMClient:
             payload["tools"] = cached_tools
             payload["tool_choice"] = tool_choice if tool_choice is not None else "required"
         
-        accumulated_content = []
-        accumulated_tool_calls = {}
-        finish_reason = None
-        usage = {}
+        accumulated_content: list[str] = []
+        accumulated_tool_calls: dict[int, OpenAITool] = {}
+        finish_reason: str | None = None
+        usage: UsageStats = {}
         debug_logged = False  # Flag to log first delta
         
         try:
@@ -430,7 +449,7 @@ class LLMClient:
                         break
                     
                     try:
-                        chunk = json.loads(data_str)
+                        chunk: OpenAIStreamChunk = json.loads(data_str)
                         chunk_count += 1
                         
                         # Log first chunk to see structure
@@ -519,7 +538,7 @@ class LLMClient:
             "usage": usage,
         }
     
-    def _parse_response(self, data: dict[str, Any]) -> LLMResponse:
+    def _parse_response(self, data: OpenAIResponse) -> LLMResponse:
         """Parse OpenAI-compatible response."""
         choice = data.get("choices", [{}])[0]
         message = choice.get("message", {})

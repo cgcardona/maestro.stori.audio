@@ -10,13 +10,20 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from app.config import settings
+from app.contracts.llm_types import ChatMessage, ToolCallEntry
 from app.core.expansion import ToolCall
-from app.core.llm_client import LLMClient, LLMResponse
-from app.core.sse_utils import ReasoningBuffer
+from app.core.llm_client import LLMClient, LLMResponse, OpenAITool, OpenAIToolChoice, UsageStats
+from app.core.sse_utils import ReasoningBuffer, SSEEventInput
+
+if TYPE_CHECKING:
+    from app.core.state_store import StateStore
+
+from app.core.tracing import TraceContext
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +105,9 @@ def _humanize_style(style: str) -> str:
 
 
 def _enrich_params_with_track_context(
-    params: dict[str, Any],
-    store: Any,
-) -> dict[str, Any]:
+    params: dict[str, Any],  # boundary: LLM tool params
+    store: StateStore,
+) -> dict[str, Any]:  # boundary: LLM tool params
     """Inject trackName/trackId into SSE toolCall params for region-scoped tools.
 
     Tools such as stori_add_midi_cc, stori_add_pitch_bend, stori_quantize_notes,
@@ -132,7 +139,7 @@ def _enrich_params_with_track_context(
         return params
 
 
-def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
+def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:  # boundary: LLM tool params
     """Return a short, musician-friendly description of a tool call.
 
     Used in progress/toolStart SSE events and as the label for plan steps.
@@ -244,9 +251,9 @@ def _human_label_for_tool(name: str, args: dict[str, Any]) -> str:
 
 
 def _resolve_variable_refs(
-    params: dict[str, Any],
-    prior_results: list[dict[str, Any]],
-) -> dict[str, Any]:
+    params: dict[str, Any],  # boundary: LLM tool params
+    prior_results: list[dict[str, Any]],  # boundary: LLM tool results
+) -> dict[str, Any]:  # boundary: LLM tool params
     """Resolve $N.field variable references in tool params.
 
     Lets the LLM reference the output of an earlier tool call in the same
@@ -272,9 +279,9 @@ def _resolve_variable_refs(
 
 def _build_tool_result(
     tool_name: str,
-    params: dict[str, Any],
-    store: Any,
-) -> dict[str, Any]:
+    params: dict[str, Any],  # boundary: LLM tool params
+    store: StateStore,
+) -> dict[str, str | int | bool | None]:
     """Build a tool result with state feedback for the LLM.
 
     Entity-creating tools: echo server-assigned IDs.
@@ -284,7 +291,7 @@ def _build_tool_result(
     Note: entity manifests are injected separately via
     ``EntityRegistry.agent_manifest()`` — not embedded in tool results.
     """
-    result: dict[str, Any] = {"success": True}
+    result: dict[str, str | int | bool | None] = {"success": True}
 
     if tool_name in _ENTITY_CREATING_TOOLS:
         for id_field in _ENTITY_ID_ECHO.get(tool_name, []):
@@ -362,15 +369,15 @@ def _build_tool_result(
 
 async def _stream_llm_response(
     llm: LLMClient,
-    messages: list[dict[str, Any]],
-    tools: list[dict[str, Any]],
-    tool_choice: str,
-    trace: Any,
-    emit_sse: Callable[[dict[str, Any]], Awaitable[str]],
+    messages: list[ChatMessage],
+    tools: list[OpenAITool],
+    tool_choice: OpenAIToolChoice | None,
+    trace: TraceContext,
+    emit_sse: Callable[[SSEEventInput], Awaitable[str]],
     max_tokens: int | None = None,
     reasoning_fraction: float | None = None,
     suppress_content: bool = False,
-) -> Any:
+) -> AsyncIterator[str | StreamFinalResponse]:
     """Stream LLM response with thinking deltas. Yields SSE events and final response.
 
     Reasoning tokens are buffered via ReasoningBuffer so BPE sub-word pieces
@@ -385,9 +392,9 @@ async def _stream_llm_response(
             to emit ``response.content`` after the stream ends.
     """
     response_content = None
-    response_tool_calls: list[dict[str, Any]] = []
+    response_tool_calls: list[ToolCallEntry] = []  # boundary: OpenAI tool call entries
     finish_reason: str | None = None
-    usage: dict[str, Any] = {}
+    usage: UsageStats = {}
     reasoning_buf = ReasoningBuffer()
 
     async for chunk in llm.chat_completion_stream(
@@ -439,13 +446,13 @@ async def _stream_llm_response(
     )
     for tc in response_tool_calls:
         try:
-            args = tc.get("function", {}).get("arguments", "{}")
-            if isinstance(args, str):
-                args = json.loads(args) if args else {}
+            raw_args = tc.get("function", {}).get("arguments", "{}")
+            parsed: object = json.loads(raw_args) if isinstance(raw_args, str) and raw_args else raw_args
+            parsed_args: dict[str, object] = parsed if isinstance(parsed, dict) else {}
             response.tool_calls.append(ToolCall(
                 id=tc.get("id", ""),
                 name=tc.get("function", {}).get("name", ""),
-                params=args,
+                params=parsed_args,
             ))
         except Exception as e:
             logger.error(f"Error parsing tool call: {e}")

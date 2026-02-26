@@ -15,7 +15,13 @@ import logging
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from app.contracts.json_types import NoteDict
+
+if TYPE_CHECKING:
+    from app.services.neural.melody_generator import MelodyGenerationRequest, MelodyGenerationResult
+    from gradio_client import Client
 
 from app.core.emotion_vector import EmotionVector
 
@@ -25,7 +31,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Text2MidiResult:
     """Result from text2midi generation."""
-    notes: list[dict[str, Any]]
+    notes: list[NoteDict]
     success: bool
     midi_path: str | None = None
     model_used: str = "text2midi"
@@ -133,10 +139,10 @@ class Text2MidiBackend:
     SPACE_NAME = "amaai-lab/text2midi"
     
     def __init__(self) -> None:
-        self._client: Any = None
-    
+        self._client: Client | None = None
+
     @property
-    def client(self) -> Any:
+    def client(self) -> Client:
         """Lazy load the Gradio client."""
         if self._client is None:
             try:
@@ -237,7 +243,7 @@ class Text2MidiBackend:
         style: str | None = None,
         instrument: str = "piano",
         temperature: float = 1.0,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> Text2MidiResult:
         """
         Generate MIDI using text2midi.
@@ -310,7 +316,7 @@ class Text2MidiBackend:
         description: str,
         temperature: float,
         max_length: int,
-    ) -> tuple[str, list[dict[str, Any]]] | None:
+    ) -> tuple[str, list[NoteDict]] | None:
         """
         Call the Gradio API synchronously.
         
@@ -363,7 +369,7 @@ class Text2MidiBackend:
             logger.error(f"[text2midi] Gradio call failed: {e}")
             return None
     
-    def _parse_midi_file(self, midi_path: str) -> list[dict[str, Any]]:
+    def _parse_midi_file(self, midi_path: str) -> list[NoteDict]:
         """
         Parse a MIDI file into our note format.
         
@@ -374,7 +380,7 @@ class Text2MidiBackend:
             import mido
             
             mid = mido.MidiFile(midi_path)
-            notes = []
+            notes: list[NoteDict] = []
             
             # Get tempo (microseconds per beat)
             tempo = 500000  # Default 120 BPM
@@ -431,17 +437,17 @@ class Text2MidiMelodyBackend:
     """
     Wrapper that makes Text2MidiBackend compatible with MelodyModelBackend interface.
     """
-    
+
     def __init__(self) -> None:
         self._backend = Text2MidiBackend()
-    
+
     async def is_available(self) -> bool:
         return await self._backend.is_available()
-    
-    async def generate(self, request: Any) -> Any:
+
+    async def generate(self, request: MelodyGenerationRequest) -> MelodyGenerationResult:
         """Generate melody using text2midi."""
         from app.services.neural.melody_generator import MelodyGenerationResult
-        
+
         result = await self._backend.generate(
             bars=request.bars,
             tempo=request.tempo,

@@ -5,12 +5,12 @@ _parse_response, _enable_prompt_caching, enforce_single_tool.
 """
 from __future__ import annotations
 
-from typing import Any
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.expansion import ToolCall
+from app.contracts.llm_types import ChatMessage
 from app.core.llm_client import (
     LLMClient,
     LLMProvider,
@@ -78,7 +78,7 @@ class TestLLMResponse:
 class TestLLMClientInit:
 
     @patch("app.core.llm_client.settings")
-    def test_default_init(self, mock_settings: Any) -> None:
+    def test_default_init(self, mock_settings: MagicMock) -> None:
 
         mock_settings.llm_provider = "openrouter"
         mock_settings.openrouter_api_key = "sk-test"
@@ -233,9 +233,8 @@ class TestPromptCaching:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
         )
-        result = client._enable_prompt_caching(
-            [{"role": "user", "content": "hi"}], tools=None
-        )
+        msgs: list[ChatMessage] = [{"role": "user", "content": "hi"}]
+        result = client._enable_prompt_caching(msgs, tools=None)
         assert len(result) == 3
 
     def test_system_blocks_always_none(self) -> None:
@@ -244,7 +243,7 @@ class TestPromptCaching:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
         )
-        messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]
+        messages: list[ChatMessage] = [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]
         _, _, system_blocks = client._enable_prompt_caching(messages, tools=None)
         assert system_blocks is None
 
@@ -254,7 +253,7 @@ class TestPromptCaching:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model="openai/gpt-4o"
         )
-        messages = [{"role": "system", "content": "You are helpful"}]
+        messages: list[ChatMessage] = [{"role": "system", "content": "You are helpful"}]
         tools = [{"type": "function", "function": {"name": "t"}}]
         returned_msgs, returned_tools, system_blocks = client._enable_prompt_caching(
             messages, tools=tools
@@ -275,7 +274,7 @@ class TestPromptCaching:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
         )
-        messages = [
+        messages: list[ChatMessage] = [
             {"role": "system", "content": "You are a music AI"},
             {"role": "user", "content": "Hello"},
         ]
@@ -290,7 +289,7 @@ class TestPromptCaching:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
         )
-        messages = [
+        messages: list[ChatMessage] = [
             {"role": "system", "content": "base instructions"},
             {"role": "system", "content": "project context"},
             {"role": "system", "content": "entity context"},
@@ -310,9 +309,8 @@ class TestPromptCaching:
             {"type": "function", "function": {"name": "tool_b"}},
             {"type": "function", "function": {"name": "tool_c"}},
         ]
-        _, cached_tools, _ = client._enable_prompt_caching(
-            [{"role": "user", "content": "hi"}], tools=tools
-        )
+        user_msgs: list[ChatMessage] = [{"role": "user", "content": "hi"}]
+        _, cached_tools, _ = client._enable_prompt_caching(user_msgs, tools=tools)
         assert cached_tools is not None
         assert "cache_control" not in cached_tools[0]
         assert "cache_control" not in cached_tools[1]
@@ -324,9 +322,8 @@ class TestPromptCaching:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
         )
-        _, cached_tools, _ = client._enable_prompt_caching(
-            [{"role": "user", "content": "hi"}], tools=None
-        )
+        user_msgs: list[ChatMessage] = [{"role": "user", "content": "hi"}]
+        _, cached_tools, _ = client._enable_prompt_caching(user_msgs, tools=None)
         assert cached_tools is None
 
     def test_original_tools_not_mutated(self) -> None:
@@ -336,9 +333,8 @@ class TestPromptCaching:
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
         )
         tools = [{"type": "function", "function": {"name": "tool_a"}}]
-        _, cached_tools, _ = client._enable_prompt_caching(
-            [{"role": "user", "content": "hi"}], tools=tools
-        )
+        user_msgs: list[ChatMessage] = [{"role": "user", "content": "hi"}]
+        _, cached_tools, _ = client._enable_prompt_caching(user_msgs, tools=tools)
         # Cached tools have cache_control; originals do not
         assert "cache_control" not in tools[0]
         assert cached_tools is not None
@@ -350,10 +346,10 @@ class TestPromptCaching:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
         )
-        messages = [
+        messages: list[ChatMessage] = [
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "do something"},
-            {"role": "tool", "content": "result"},
+            {"role": "tool", "tool_call_id": "tc-1", "content": "result"},
             {"role": "assistant", "content": "done"},
         ]
         returned_msgs, _, _ = client._enable_prompt_caching(messages, tools=None)
@@ -471,7 +467,7 @@ class TestGetLLMClient:
 
     @pytest.mark.anyio
     @patch("app.core.llm_client.settings")
-    async def test_returns_client(self, mock_settings: Any) -> None:
+    async def test_returns_client(self, mock_settings: MagicMock) -> None:
 
         mock_settings.llm_provider = "openrouter"
         mock_settings.openrouter_api_key = "sk-test"

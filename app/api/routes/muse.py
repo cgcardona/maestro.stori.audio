@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.contracts.json_types import RegionMetadataWire
 from app.auth.dependencies import require_valid_token
 from app.core.state_store import get_or_create_store
 from app.core.tracing import create_trace_context
@@ -126,7 +127,7 @@ async def save_variation(
         phrases=domain_phrases,
     )
 
-    region_metadata: dict[str, dict[str, Any]] = {}
+    region_metadata: dict[str, RegionMetadataWire] = {}
     for dp in domain_phrases:
         region_metadata[dp.region_id] = {
             "startBeat": dp.start_beat,

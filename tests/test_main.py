@@ -3,16 +3,15 @@ Tests for app.main: SecurityHeadersMiddleware, root, lifespan.
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
 
 @patch("app.main.init_db", new_callable=AsyncMock)
 @patch("app.main.close_db", new_callable=AsyncMock)
-def test_security_headers_middleware_adds_headers(mock_close: Any, mock_init: Any) -> None:
+def test_security_headers_middleware_adds_headers(mock_close: AsyncMock, mock_init: AsyncMock) -> None:
 
     """SecurityHeadersMiddleware adds X-Frame-Options, X-Content-Type-Options, etc."""
     from app.main import app
@@ -28,7 +27,7 @@ def test_security_headers_middleware_adds_headers(mock_close: Any, mock_init: An
 
 @patch("app.main.init_db", new_callable=AsyncMock)
 @patch("app.main.close_db", new_callable=AsyncMock)
-def test_root_returns_service_info(mock_close: Any, mock_init: Any) -> None:
+def test_root_returns_service_info(mock_close: AsyncMock, mock_init: AsyncMock) -> None:
 
     """Root endpoint returns service, version, docs."""
     from app.main import app

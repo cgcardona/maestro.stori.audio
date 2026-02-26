@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.contracts.json_types import ToolCallDict
+from app.contracts.llm_types import AssistantMessage, ToolResultMessage
+from app.core.sse_utils import SSEEventInput
+
 
 @dataclass
 class _PlanStep:
@@ -31,8 +35,8 @@ class _ToolCallOutcome:
     """
     enriched_params: dict[str, Any]
     tool_result: dict[str, Any]
-    sse_events: list[dict[str, Any]]    # in order: toolStart, toolCall OR toolError
-    msg_call: dict[str, Any]            # assistant message containing the tool call
-    msg_result: dict[str, Any]          # tool response message
+    sse_events: list[SSEEventInput]
+    msg_call: AssistantMessage          # assistant message containing the tool call
+    msg_result: ToolResultMessage       # tool response message
     skipped: bool = False               # True when rejected by circuit-breaker or validation
-    extra_tool_calls: list[dict[str, Any]] = field(default_factory=list)  # synthetic calls (icon)
+    extra_tool_calls: list[ToolCallDict] = field(default_factory=list)  # synthetic calls (icon)

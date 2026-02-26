@@ -13,11 +13,12 @@ Metrics tracked:
 """
 from __future__ import annotations
 
-from typing import Any
 import statistics
 
+from orpheus_types import GenerationComparison, OrpheusNoteDict
 
-def analyze_quality(notes: list[dict[str, Any]], bars: int, tempo: int) -> dict[str, float]:
+
+def analyze_quality(notes: list[OrpheusNoteDict], bars: int, tempo: int) -> dict[str, float]:
     """
     Analyze generation quality with objective metrics.
     
@@ -60,7 +61,7 @@ def analyze_quality(notes: list[dict[str, Any]], bars: int, tempo: int) -> dict[
         metrics["velocity_variation"] = metrics["velocity_stdev"] / max(metrics["velocity_mean"], 1)
     
     # 4. Timing distribution (rhythmic stability)
-    start_beats = [n["startBeat"] for n in notes if "startBeat" in n]
+    start_beats = [n["start_beat"] for n in notes]
     if start_beats:
         # Check for quantization (how "on-grid" are the notes?)
         fractional_parts = [b % 0.25 for b in start_beats]  # 16th note grid
@@ -73,7 +74,7 @@ def analyze_quality(notes: list[dict[str, Any]], bars: int, tempo: int) -> dict[
             metrics["timing_gap_stdev"] = statistics.stdev(gaps) if len(gaps) > 1 else 0.0
     
     # 5. Duration distribution
-    durations = [n["duration"] for n in notes if "duration" in n]
+    durations = [n["duration_beats"] for n in notes]
     if durations:
         metrics["duration_mean"] = statistics.mean(durations)
         metrics["duration_stdev"] = statistics.stdev(durations) if len(durations) > 1 else 0.0
@@ -137,7 +138,7 @@ def analyze_quality(notes: list[dict[str, Any]], bars: int, tempo: int) -> dict[
     return metrics
 
 
-def rejection_score(notes: list[dict[str, Any]], bars: int) -> float:
+def rejection_score(notes: list[OrpheusNoteDict], bars: int) -> float:
     """Fast rejection sampling score for candidate ranking.
 
     Combines four signals into a single 0–1 score:
@@ -157,7 +158,7 @@ def rejection_score(notes: list[dict[str, Any]], bars: int) -> float:
     # ── Density variance: how evenly distributed are notes across bars? ──
     bar_counts = [0] * max(bars, 1)
     for n in notes:
-        b = int(n.get("startBeat", n.get("start_beat", 0)) / 4)
+        b = int(n.get("start_beat", 0.0) / 4)
         if 0 <= b < bars:
             bar_counts[b] += 1
     mean_density = len(notes) / max(bars, 1)
@@ -202,7 +203,7 @@ def rejection_score(notes: list[dict[str, Any]], bars: int) -> float:
     ))
 
 
-def compare_generations(notes_a: list[dict[str, Any]], notes_b: list[dict[str, Any]], bars: int, tempo: int) -> dict[str, Any]:
+def compare_generations(notes_a: list[OrpheusNoteDict], notes_b: list[OrpheusNoteDict], bars: int, tempo: int) -> GenerationComparison:
     """
     Compare two generations to determine which is better.
     

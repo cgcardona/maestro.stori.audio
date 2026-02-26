@@ -6,7 +6,6 @@ and helper predicates per the v1 canonical spec.
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
 
 from app.variation.core.state_machine import (
@@ -136,7 +135,7 @@ class TestInvalidTransitions:
             assert_transition(VariationStatus.READY, VariationStatus.CREATED)
 
     @pytest.mark.parametrize("terminal_state", list(TERMINAL_STATES))
-    def test_terminal_states_have_no_transitions(self, terminal_state: Any) -> None:
+    def test_terminal_states_have_no_transitions(self, terminal_state: VariationStatus) -> None:
 
         """Terminal states cannot transition to anything."""
         for target in VariationStatus:

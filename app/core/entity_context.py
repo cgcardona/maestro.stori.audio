@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from app.contracts.project_types import ProjectContext
     from app.core.state_store import StateStore
 
 
@@ -91,7 +92,7 @@ def infer_track_role(
     return "melody"
 
 
-def format_project_context(project: dict[str, Any]) -> str:
+def format_project_context(project: ProjectContext) -> str:
     """Format the project snapshot from the request body into a concise,
     human-readable string for the LLM system message.
 
@@ -101,10 +102,11 @@ def format_project_context(project: dict[str, Any]) -> str:
     name = project.get("name", "Untitled")
     tempo = project.get("tempo", 120)
     key = project.get("key", "C")
-    time_sig = project.get("timeSignature") or "4/4"
+    _raw_ts: Any = project.get("timeSignature")
+    time_sig: str | dict[str, Any] = _raw_ts or "4/4"
     if isinstance(time_sig, dict):
         time_sig = f"{time_sig.get('numerator', 4)}/{time_sig.get('denominator', 4)}"
-    tracks: list[dict[str, Any]] = project.get("tracks", [])
+    tracks = project.get("tracks", [])
 
     lines: list[str] = [
         "Current project state (source of truth — use these IDs for tool calls):",
@@ -131,7 +133,7 @@ def format_project_context(project: dict[str, Any]) -> str:
 
             role = track.get("role") or infer_track_role(tname, gm, drum_kit)
 
-            regions: list[dict[str, Any]] = track.get("regions", [])
+            regions = track.get("regions", [])
             if not regions:
                 region_desc = "no regions"
             else:
@@ -188,9 +190,8 @@ def build_entity_context_for_llm(store: "StateStore") -> str:
             "trackId": r.parent_id,
             "noteCount": len(store.get_region_notes(r.id)),
         }
-        if r.metadata:
-            region_entry["startBeat"] = r.metadata.get("startBeat", 0)
-            region_entry["durationBeats"] = r.metadata.get("durationBeats", 0)
+        region_entry["startBeat"] = r.metadata.start_beat
+        region_entry["durationBeats"] = r.metadata.duration_beats
         regions_info.append(region_entry)
     buses_info = [{"name": b.name, "id": b.id} for b in registry.list_buses()]
 

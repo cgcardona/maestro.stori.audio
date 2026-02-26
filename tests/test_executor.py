@@ -5,6 +5,7 @@ from collections.abc import Generator
 
 import pytest
 
+from app.contracts.project_types import ProjectContext
 from app.core.executor import ExecutionContext
 from app.core.state_store import StateStore, clear_all_stores
 from app.core.tracing import create_trace_context, clear_trace_context
@@ -179,7 +180,7 @@ async def test_apply_variation_phrases_empty_list(cleanup_stores: None) -> None:
         beat_range=(0.0, 4.0),
         phrases=[],
     )
-    project_state = {"projectId": "proj-1", "tracks": [], "regions": {}}
+    project_state: ProjectContext = {"id": "proj-1", "tracks": []}
     store = StateStore(conversation_id="conv-1")
     result = await apply_variation_phrases(
         variation, [], project_state, store=store
@@ -204,7 +205,7 @@ async def test_apply_variation_phrases_invalid_phrase_ids_skipped(cleanup_stores
         beat_range=(0.0, 4.0),
         phrases=[],
     )
-    project_state = {"projectId": "proj-1", "tracks": [], "regions": {}}
+    project_state: ProjectContext = {"id": "proj-1", "tracks": []}
     store = StateStore()
     result = await apply_variation_phrases(
         variation, ["phrase-unknown-1", "phrase-unknown-2"], project_state, store=store

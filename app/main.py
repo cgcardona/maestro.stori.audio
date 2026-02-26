@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Callable, cast
+from collections.abc import AsyncIterator
+from typing import Awaitable, Callable
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -27,7 +29,9 @@ from app.services.orpheus import get_orpheus_client, close_orpheus_client
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
     
-    async def dispatch(self, request: Request, call_next: Any) -> Any:
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         response = await call_next(request)
         
         # Prevent clickjacking
@@ -69,7 +73,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> Any:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"LLM provider: {settings.llm_provider}")
@@ -120,7 +124,7 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(
     RateLimitExceeded,
-    cast(Callable[..., Any], _rate_limit_exceeded_handler),
+    _rate_limit_exceeded_handler,  # type: ignore[arg-type]  # slowapi handler signature is (Request, RateLimitExceeded) not (Request, Exception)
 )
 
 # Security headers middleware (added first, runs last)

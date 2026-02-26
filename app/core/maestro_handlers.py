@@ -20,6 +20,9 @@ from typing import (
     Callable,
 )
 
+from app.contracts.llm_types import ChatMessage
+from app.contracts.project_types import ProjectContext
+
 from app.core.intent import Intent, IntentResult, SSEState, get_intent_result_with_llm
 from app.core.llm_client import LLMClient
 from app.core.prompt_parser import ParsedPrompt
@@ -57,12 +60,12 @@ logger = logging.getLogger(__name__)
 
 async def orchestrate(
     prompt: str,
-    project_context: dict[str, Any] | None = None,
+    project_context: ProjectContext | None = None,
     model: str | None = None,
     usage_tracker: UsageTracker | None = None,
     conversation_id: str | None = None,
     user_id: str | None = None,
-    conversation_history: list[dict[str, Any]] | None = None,
+    conversation_history: list[ChatMessage] | None = None,
     is_cancelled: Callable[[], Awaitable[bool]] | None = None,
     quality_preset: str | None = None,
 ) -> AsyncIterator[str]:

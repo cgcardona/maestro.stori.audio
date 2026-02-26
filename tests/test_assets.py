@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import pytest
 import uuid
-from typing import Any, cast
 from httpx import AsyncClient, ASGITransport
 
 from app.main import app
@@ -21,7 +20,7 @@ def asset_client() -> AsyncClient:
 
 
 @pytest.mark.asyncio
-async def test_drum_kits_missing_x_device_id(asset_client: Any) -> None:
+async def test_drum_kits_missing_x_device_id(asset_client: AsyncClient) -> None:
 
     """GET /api/v1/assets/drum-kits without X-Device-ID returns 400."""
     response = await asset_client.get("/api/v1/assets/drum-kits")
@@ -31,7 +30,7 @@ async def test_drum_kits_missing_x_device_id(asset_client: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_drum_kits_invalid_x_device_id(asset_client: Any) -> None:
+async def test_drum_kits_invalid_x_device_id(asset_client: AsyncClient) -> None:
 
     """GET /api/v1/assets/drum-kits with non-UUID X-Device-ID returns 400."""
     response = await asset_client.get(
@@ -44,7 +43,7 @@ async def test_drum_kits_invalid_x_device_id(asset_client: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_drum_kits_valid_x_device_id(asset_client: Any) -> None:
+async def test_drum_kits_valid_x_device_id(asset_client: AsyncClient) -> None:
 
     """GET /api/v1/assets/drum-kits with valid UUID passes dependency (503 if bucket not set)."""
     device_id = str(uuid.uuid4())
@@ -59,7 +58,7 @@ async def test_drum_kits_valid_x_device_id(asset_client: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_soundfonts_missing_x_device_id(asset_client: Any) -> None:
+async def test_soundfonts_missing_x_device_id(asset_client: AsyncClient) -> None:
 
     """GET /api/v1/assets/soundfonts without X-Device-ID returns 400."""
     response = await asset_client.get("/api/v1/assets/soundfonts")
@@ -67,7 +66,7 @@ async def test_soundfonts_missing_x_device_id(asset_client: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_soundfont_download_url_missing_x_device_id(asset_client: Any) -> None:
+async def test_soundfont_download_url_missing_x_device_id(asset_client: AsyncClient) -> None:
 
     """GET download-url without X-Device-ID returns 400."""
     response = await asset_client.get("/api/v1/assets/soundfonts/some-id/download-url")
@@ -75,7 +74,7 @@ async def test_soundfont_download_url_missing_x_device_id(asset_client: Any) -> 
 
 
 @pytest.mark.asyncio
-async def test_bundle_download_url_valid_uuid(asset_client: Any) -> None:
+async def test_bundle_download_url_valid_uuid(asset_client: AsyncClient) -> None:
 
     """GET bundle download-url with valid X-Device-ID passes (503 or 200)."""
     response = await asset_client.get(
@@ -86,7 +85,7 @@ async def test_bundle_download_url_valid_uuid(asset_client: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_asset_endpoint_returns_429_when_rate_limited(asset_client: Any) -> None:
+async def test_asset_endpoint_returns_429_when_rate_limited(asset_client: AsyncClient) -> None:
 
     """When rate limit is exceeded, asset endpoint returns 429."""
     from types import SimpleNamespace
@@ -99,7 +98,7 @@ async def test_asset_endpoint_returns_429_when_rate_limited(asset_client: Any) -
     # Patch the service call used by the route so the handler raises and app returns 429
     with patch(
         "app.services.assets.list_drum_kits",
-        side_effect=RateLimitExceeded(cast(Any, fake_limit)),
+        side_effect=RateLimitExceeded(fake_limit),  # type: ignore[arg-type]  # duck-typed fake; SimpleNamespace matches Limit protocol
     ):
         response = await asset_client.get(
             "/api/v1/assets/drum-kits",

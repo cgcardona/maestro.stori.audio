@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.contracts.json_types import RegionMetadataDB, RegionMetadataWire
 from app.models.requests import CommitVariationRequest
 from app.models.variation import (
     MidiNoteSnapshot,
@@ -193,13 +194,14 @@ async def commit_variation(
                 })
 
             # ── 5. Collect region metadata ───────────────────────────────
-            commit_region_meta: dict[str, dict[str, Any]] = {}
+            commit_region_meta: dict[str, RegionMetadataDB] = {}
             for phrase in variation.phrases:
                 if phrase.region_id not in commit_region_meta:
                     entity = project_store.registry.get_region(phrase.region_id)
-                    if entity and entity.metadata:
+                    if entity:
                         commit_region_meta[phrase.region_id] = {
-                            **entity.metadata,
+                            "start_beat": entity.metadata.start_beat,
+                            "duration_beats": entity.metadata.duration_beats,
                             "name": entity.name,
                         }
 
@@ -305,7 +307,7 @@ async def commit_variation(
             )
 
             # ── 8. Build response ────────────────────────────────────────
-            db_region_meta: dict[str, dict[str, Any]] = {}
+            db_region_meta: dict[str, RegionMetadataDB] = {}
             if from_db:
                 db_region_meta = await muse_repository.get_region_metadata(
                     db, commit_request.variation_id,
@@ -334,7 +336,7 @@ async def commit_variation(
                         continue
                     pr_meta = db_region_meta.get(phrase.region_id, {})
                     notes = [
-                        MidiNoteSnapshot.from_note_dict(nc.after.model_dump())
+                        MidiNoteSnapshot.from_note_dict(nc.after.to_note_dict())
                         for nc in phrase.note_changes
                         if nc.change_type in ("added", "modified") and nc.after
                     ]

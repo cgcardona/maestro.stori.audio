@@ -3,8 +3,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
 from enum import Enum
+
+from app.contracts.generation_types import GenerationContext
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    JSONValue,
+    NoteDict,
+    PitchBendDict,
+)
 
 
 class GeneratorBackend(str, Enum):
@@ -28,14 +36,14 @@ class GenerationResult:
     - aftertouch: channel pressure and polyphonic key pressure
     """
     success: bool
-    notes: list[dict[str, Any]]
+    notes: list[NoteDict]
     backend_used: GeneratorBackend
-    metadata: dict[str, Any]
+    metadata: dict[str, object]
     error: str | None = None
-    cc_events: list[dict[str, Any]] = field(default_factory=list)
-    pitch_bends: list[dict[str, Any]] = field(default_factory=list)
-    aftertouch: list[dict[str, Any]] = field(default_factory=list)
-    channel_notes: dict[str, list[dict[str, Any]]] | None = None
+    cc_events: list[CCEventDict] = field(default_factory=list)
+    pitch_bends: list[PitchBendDict] = field(default_factory=list)
+    aftertouch: list[AftertouchDict] = field(default_factory=list)
+    channel_notes: dict[str, list[NoteDict]] | None = None
 
 
 class MusicGeneratorBackend(ABC):
@@ -50,7 +58,7 @@ class MusicGeneratorBackend(ABC):
         bars: int,
         key: str | None = None,
         chords: list[str] | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
         """Generate MIDI notes for the given parameters."""
         pass
@@ -62,7 +70,7 @@ class MusicGeneratorBackend(ABC):
         tempo: int,
         bars: int,
         key: str | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
         """Generate all instruments together in a single call.
 
@@ -75,7 +83,7 @@ class MusicGeneratorBackend(ABC):
             tempo=tempo,
             bars=bars,
             key=key,
-            **kwargs,
+            context=context,
         )
     
     @abstractmethod

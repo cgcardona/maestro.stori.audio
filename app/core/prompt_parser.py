@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 import yaml
 
@@ -124,9 +124,9 @@ class ParsedPrompt:
     tempo: int | None = None
     energy: str | None = None
     roles: list[str] = field(default_factory=list)
-    constraints: dict[str, Any] = field(default_factory=dict)
+    constraints: dict[str, object] = field(default_factory=dict)
     vibes: list[VibeWeight] = field(default_factory=list)
-    extensions: dict[str, Any] = field(default_factory=dict)
+    extensions: dict[str, object] = field(default_factory=dict)
 
     @property
     def after(self) -> PositionSpec | None:
@@ -176,7 +176,7 @@ def parse_prompt(text: str) -> ParsedPrompt | None:
         return None
 
     # Normalise all top-level keys to lowercase
-    data: dict[str, Any] = {str(k).lower(): v for k, v in raw_data.items()}
+    data: dict[str, object] = {str(k).lower(): v for k, v in raw_data.items()}
 
     # Required: Mode
     mode_raw = _str(data.get("mode"))
@@ -210,7 +210,7 @@ def parse_prompt(text: str) -> ParsedPrompt | None:
 
     return ParsedPrompt(
         raw=text,
-        mode=mode_raw.lower(),  # type: ignore[arg-type]
+        mode=mode_raw.lower(),  # type: ignore[arg-type]  # validated by _MODE_KEYWORDS lookup above
         request=request_val,
         section=_str(data.get("section"), lower=True),
         position=position,
@@ -229,7 +229,7 @@ def parse_prompt(text: str) -> ParsedPrompt | None:
 # ─── Field parsers ────────────────────────────────────────────────────────────
 
 
-def _str(v: Any, lower: bool = False) -> str | None:
+def _str(v: object, lower: bool = False) -> str | None:
     """Coerce a YAML scalar to a stripped string, or None."""
     if v is None:
         return None
@@ -252,7 +252,7 @@ def _parse_target(val: str | None) -> TargetSpec | None:
     return None
 
 
-def _parse_tempo(v: Any) -> int | None:
+def _parse_tempo(v: object) -> int | None:
     """Accept integer, float, or string like '92 bpm'."""
     if v is None:
         return None
@@ -262,7 +262,7 @@ def _parse_tempo(v: Any) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _parse_roles(v: Any) -> list[str]:
+def _parse_roles(v: object) -> list[str]:
     """Role: string | list[str]."""
     if v is None:
         return []
@@ -272,14 +272,14 @@ def _parse_roles(v: Any) -> list[str]:
     return [p.strip() for p in str(v).split(",") if p.strip()]
 
 
-def _parse_constraints(v: Any) -> dict[str, Any]:
+def _parse_constraints(v: object) -> dict[str, object]:
     """Constraints: dict | list of {k: v} dicts | string."""
     if v is None:
         return {}
     if isinstance(v, dict):
         return {str(k).lower(): val for k, val in v.items()}
     if isinstance(v, list):
-        out: dict[str, Any] = {}
+        out: dict[str, object] = {}
         for item in v:
             if isinstance(item, dict):
                 for k, val in item.items():
@@ -295,7 +295,7 @@ def _parse_constraints(v: Any) -> dict[str, Any]:
     return {}
 
 
-def _parse_vibes(v: Any) -> list[VibeWeight]:
+def _parse_vibes(v: object) -> list[VibeWeight]:
     """Vibe: string | list[str | {name: weight}].
 
     Weight syntax (in string items):
@@ -306,7 +306,7 @@ def _parse_vibes(v: Any) -> list[VibeWeight]:
     if v is None:
         return []
 
-    raw: list[Any] = []
+    raw: list[object] = []
     if isinstance(v, list):
         raw = v
     elif isinstance(v, str):
@@ -385,7 +385,7 @@ def _parse_position(val: str | None, after_alias: bool = False) -> PositionSpec 
                     except ValueError:
                         pass
                 return PositionSpec(kind="within", ref=ref, offset=offset + bar_off)
-            kind_val: Literal["after", "before", "alongside", "between", "within", "absolute", "last"] = kw  # type: ignore[assignment]  # validated by _POSITION_KEYWORDS
+            kind_val: Literal["after", "before", "alongside", "between", "within", "absolute", "last"] = kw  # type: ignore[assignment]  # kw validated by _POSITION_KEYWORDS dict lookup
             return PositionSpec(kind=kind_val, ref=remainder.lower() or None, offset=offset)
 
     if after_alias:
@@ -393,7 +393,7 @@ def _parse_position(val: str | None, after_alias: bool = False) -> PositionSpec 
     return None
 
 
-def _coerce(v: str) -> Any:
+def _coerce(v: str) -> int | float | str:
     try:
         return int(v)
     except ValueError:

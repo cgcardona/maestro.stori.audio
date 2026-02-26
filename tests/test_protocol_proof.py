@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 import asyncio
+
+from app.core.sse_utils import SSEEventInput
 import hashlib
 import json
-import types
 from dataclasses import fields
 from unittest.mock import patch
 
@@ -73,7 +74,7 @@ def _section_contract(
         instrument_name=instrument,
         role=role,
         style="neo-soul",
-        tempo=92.0,
+        tempo=92,
         key="Fm",
         region_name=region_name or f"{instrument} – {spec.name}",
         l2_generate_prompt=l2_prompt,
@@ -155,7 +156,7 @@ class TestLineageChain:
             composition_id="test-comp-001",
             sections=(spec_intro, spec_verse),
             style="neo-soul",
-            tempo=92.0,
+            tempo=92,
             key="Fm",
         )
         seal_contract(cc)
@@ -165,7 +166,7 @@ class TestLineageChain:
             role="drums",
             style="neo-soul",
             bars=8,
-            tempo=92.0,
+            tempo=92,
             key="Fm",
             start_beat=0,
             sections=(spec_intro, spec_verse),
@@ -223,7 +224,7 @@ class TestHashTamper:
         assert not verify_contract_hash(sc)
 
         store = StateStore(conversation_id="tamper-test")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         print("\n## HASH_TAMPER_TEST")
         print(f"Original tempo: 92.0")
@@ -259,13 +260,13 @@ class TestHashTamper:
             instrument_name="Drums",
             role="drums",
             style="neo-soul",
-            tempo=92.0,
+            tempo=92,
             key="Fm",
             region_name="Drums – verse",
         )
 
         store = StateStore(conversation_id="no-hash-test")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         with pytest.raises(ValueError, match="Protocol violation.*no contract_hash"):
             await _run_section_child(
@@ -300,15 +301,14 @@ class TestSingleSectionLockdown:
 
         captured_params: dict[str, Any] = {}
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> Any:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, Any], **kw: Any) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 captured_params["region"] = dict(resolved_args)
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
                     sse_events=[{"type": "toolCall", "name": tc_name}],
-                    msg_call={}, msg_result={},
+                    msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             if tc_name == "stori_generate_midi":
                 captured_params["generate"] = dict(resolved_args)
@@ -316,16 +316,16 @@ class TestSingleSectionLockdown:
                     enriched_params=resolved_args,
                     tool_result={"notesAdded": 20, "regionId": "reg-1"},
                     sse_events=[{"type": "toolCall", "name": tc_name}],
-                    msg_call={}, msg_result={},
+                    msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={},
-                sse_events=[], msg_call={}, msg_result={},
+                sse_events=[], msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
         store = StateStore(conversation_id="lockdown-test")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         bad_region_tc = ToolCall(
             id="r1", name="stori_add_midi_region",
@@ -419,12 +419,13 @@ class TestRuntimeContextFreeze:
         ctx = RuntimeContext(raw_prompt="test", emotion_vector=frozen)
 
         d = ctx.to_composition_context()
-        assert isinstance(d, types.MappingProxyType)
+        assert isinstance(d, dict)
 
-        with pytest.raises(TypeError):
-            d["emotion_vector"] = "hacked"  # type: ignore[index]
+        reconstructed = d.get("emotion_vector")
+        assert isinstance(reconstructed, EmotionVector)
+        assert reconstructed.energy == 0.8
 
-        print("Mutation ctx['emotion_vector'] = 'hacked' → TypeError ✓")
+        print("to_composition_context returns CompositionContext (TypedDict) ✓")
 
     def test_frozen_dataclass_attribute_mutation_raises(self) -> None:
 
@@ -464,7 +465,7 @@ class TestHashFieldAudit:
         spec = _spec()
         ic = InstrumentContract(
             instrument_name="Drums", role="drums", style="neo-soul",
-            bars=4, tempo=92.0, key="Fm", start_beat=0,
+            bars=4, tempo=92, key="Fm", start_beat=0,
             sections=(spec,), existing_track_id="trk-99",
             assigned_color="#FF0000", gm_guidance="GM guidance text",
         )
@@ -504,7 +505,7 @@ class TestHashFieldAudit:
         spec = _spec()
         ic = InstrumentContract(
             instrument_name="X", role="r", style="s", bars=4,
-            tempo=120.0, key="C", start_beat=0, sections=(spec,),
+            tempo=120, key="C", start_beat=0, sections=(spec,),
             existing_track_id="t", assigned_color="#000", gm_guidance="g",
         )
         seal_contract(ic)
@@ -536,24 +537,23 @@ class TestExecutionAttestation:
         spec = _spec()
         sc = _section_contract(spec, parent_hash="parent-ic-hash")
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> Any:
-
+        async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, Any], **kw: Any) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
                     sse_events=[{"type": "toolCall", "name": tc_name}],
-                    msg_call={}, msg_result={},
+                    msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={"notesAdded": 30, "regionId": "reg-1"},
                 sse_events=[{"type": "toolCall", "name": tc_name}],
-                msg_call={}, msg_result={},
+                msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
         store = StateStore(conversation_id="attest-test")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",

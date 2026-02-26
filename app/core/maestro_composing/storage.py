@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.contracts.json_types import RegionMetadataWire
+    from app.contracts.project_types import ProjectContext
+    from app.models.variation import Variation
 
 logger = logging.getLogger(__name__)
 
-RegionMeta = dict[str, Any]
-
 
 async def _store_variation(
-    variation: Any,
-    project_context: dict[str, Any],
+    variation: Variation,
+    project_context: ProjectContext,
     base_state_id: str,
     conversation_id: str,
-    region_metadata: dict[str, RegionMeta],
+    region_metadata: dict[str, RegionMetadataWire],
 ) -> None:
     """Persist a Variation to both in-memory VariationStore and Postgres.
 

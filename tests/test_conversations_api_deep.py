@@ -169,7 +169,7 @@ class TestConversationCompose:
         create_resp = await client.post("/api/v1/conversations", json={"title": "Compose"}, headers=auth_headers)
         conv_id = create_resp.json()["id"]
 
-        async def fake_orchestrate(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
+        async def fake_orchestrate(*args: Any, **kwargs: object) -> AsyncGenerator[str, None]:
 
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "composing"})

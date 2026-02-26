@@ -20,6 +20,13 @@ from typing import Any, Literal
 
 from pydantic import ConfigDict, Field
 
+from app.contracts.json_types import (
+    CCEnvelopeDict,
+    EffectSummaryDict,
+    NoteChangeDict,
+    ToolCallDict,
+    TrackSummaryDict,
+)
 from app.models.base import CamelModel
 from app.protocol.version import STORI_PROTOCOL_VERSION
 
@@ -112,7 +119,7 @@ class CompleteEvent(StoriEvent):
     context_window_tokens: int = 0
 
     # EDITING mode
-    tool_calls: list[dict[str, Any]] | None = None
+    tool_calls: list[ToolCallDict] | None = None
     state_version: int | None = None
 
     # COMPOSING mode
@@ -277,14 +284,14 @@ class SummaryFinalEvent(StoriEvent):
     type: Literal["summary.final"] = "summary.final"
     trace_id: str
     track_count: int = 0
-    tracks_created: list[dict[str, Any]] = Field(default_factory=list)
-    tracks_reused: list[dict[str, Any]] = Field(default_factory=list)
+    tracks_created: list[TrackSummaryDict] = Field(default_factory=list)
+    tracks_reused: list[TrackSummaryDict] = Field(default_factory=list)
     regions_created: int = 0
     notes_generated: int = 0
-    effects_added: list[dict[str, Any]] = Field(default_factory=list)
+    effects_added: list[EffectSummaryDict] = Field(default_factory=list)
     effect_count: int = 0
     sends_created: int = 0
-    cc_envelopes: list[dict[str, Any]] = Field(default_factory=list)
+    cc_envelopes: list[CCEnvelopeDict] = Field(default_factory=list)
     automation_lanes: int = 0
     text: str | None = None
 
@@ -301,8 +308,8 @@ class NoteChangeSchema(CamelModel):
 
     note_id: str
     change_type: Literal["added", "removed", "modified"]
-    before: dict[str, Any] | None = None
-    after: dict[str, Any] | None = None
+    before: NoteChangeDict | None = None
+    after: NoteChangeDict | None = None
 
 
 class ControllerChangeSchema(CamelModel):
@@ -312,8 +319,8 @@ class ControllerChangeSchema(CamelModel):
 
     cc_number: int
     change_type: Literal["added", "removed", "modified"]
-    before: dict[str, Any] | None = None
-    after: dict[str, Any] | None = None
+    before: NoteChangeDict | None = None
+    after: NoteChangeDict | None = None
 
 
 class MetaEvent(StoriEvent):

@@ -156,13 +156,17 @@ def test_build_conversation_history_multi_turn_with_entity_reuse() -> None:
     assert len(history) == 6
     
     # Verify turn 1 tool call has trackId
-    turn1_tool_call = history[1]["tool_calls"][0]
+    turn1_msg = history[1]
+    assert turn1_msg["role"] == "assistant"
+    turn1_tool_call = turn1_msg["tool_calls"][0]
     import json
     turn1_args = json.loads(turn1_tool_call["function"]["arguments"])
     assert turn1_args["trackId"] == track_id
     
     # CRITICAL: Verify turn 2 tool call reuses the SAME trackId
-    turn2_tool_call = history[4]["tool_calls"][0]
+    turn2_msg = history[4]
+    assert turn2_msg["role"] == "assistant"
+    turn2_tool_call = turn2_msg["tool_calls"][0]
     turn2_args = json.loads(turn2_tool_call["function"]["arguments"])
     assert turn2_args["trackId"] == track_id  # Same ID!
     assert turn2_args["type"] == "compressor"
@@ -238,13 +242,17 @@ def test_build_conversation_history_with_region_ids() -> None:
     import json
     
     # First assistant message has 2 tool calls
-    assert len(history[1]["tool_calls"]) == 2
-    region_tool_call = history[1]["tool_calls"][1]
+    msg1 = history[1]
+    assert msg1["role"] == "assistant"
+    assert len(msg1["tool_calls"]) == 2
+    region_tool_call = msg1["tool_calls"][1]
     region_args = json.loads(region_tool_call["function"]["arguments"])
     assert region_args["regionId"] == region_id
     
     # Second assistant message reuses regionId
-    notes_tool_call = history[5]["tool_calls"][0]  # After user2, assistant2
+    msg5 = history[5]
+    assert msg5["role"] == "assistant"
+    notes_tool_call = msg5["tool_calls"][0]  # After user2, assistant2
     notes_args = json.loads(notes_tool_call["function"]["arguments"])
     assert notes_args["regionId"] == region_id  # Same regionId!
 

@@ -1,7 +1,9 @@
 """Effects and routing MCP tool definitions."""
 from __future__ import annotations
 
-EFFECTS_TOOLS = [
+from app.contracts.mcp_types import MCPToolDef
+
+EFFECTS_TOOLS: list[MCPToolDef] = [
     {
         "name": "stori_add_insert_effect",
         "description": "Add an insert effect to a track. Valid types: reverb, delay, compressor, eq, distortion, filter, chorus, modulation, overdrive, phaser, flanger, tremolo.",

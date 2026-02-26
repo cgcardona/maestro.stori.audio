@@ -10,7 +10,6 @@ Proves correctness of apply_variation_phrases() including:
 """
 from __future__ import annotations
 
-from typing import Any
 import uuid
 from unittest.mock import MagicMock, patch, AsyncMock
 
@@ -134,7 +133,7 @@ class TestApplyVariationPhrases:
     """Test the commit engine."""
 
     @pytest.mark.anyio
-    async def test_adds_only(self, mock_store: Any) -> None:
+    async def test_adds_only(self, mock_store: MagicMock) -> None:
 
         """Added notes call store.add_notes."""
         variation = _make_test_variation(include_adds=True, include_removes=False, include_modifies=False)
@@ -162,7 +161,7 @@ class TestApplyVariationPhrases:
         assert notes[1]["pitch"] == 64
 
     @pytest.mark.anyio
-    async def test_removals_applied(self, mock_store: Any) -> None:
+    async def test_removals_applied(self, mock_store: MagicMock) -> None:
 
         """INVARIANT: Removed notes call store.remove_notes with before snapshot."""
         variation = _make_test_variation(include_adds=False, include_removes=True, include_modifies=False)
@@ -189,7 +188,7 @@ class TestApplyVariationPhrases:
         assert criteria[0]["start_beat"] == 4.0
 
     @pytest.mark.anyio
-    async def test_modified_notes_remove_old_add_new(self, mock_store: Any) -> None:
+    async def test_modified_notes_remove_old_add_new(self, mock_store: MagicMock) -> None:
 
         """INVARIANT: Modified notes produce remove(before) + add(after)."""
         variation = _make_test_variation(include_adds=False, include_removes=False, include_modifies=True)
@@ -218,7 +217,7 @@ class TestApplyVariationPhrases:
         assert add_notes[0]["duration_beats"] == 1.5
 
     @pytest.mark.anyio
-    async def test_partial_acceptance_subset(self, mock_store: Any) -> None:
+    async def test_partial_acceptance_subset(self, mock_store: MagicMock) -> None:
 
         """INVARIANT: Only accepted phrases are applied."""
         variation = _make_test_variation(include_adds=True, include_removes=True, include_modifies=True)
@@ -240,7 +239,7 @@ class TestApplyVariationPhrases:
         mock_store.remove_notes.assert_not_called()
 
     @pytest.mark.anyio
-    async def test_all_change_types_in_one_commit(self, mock_store: Any) -> None:
+    async def test_all_change_types_in_one_commit(self, mock_store: MagicMock) -> None:
 
         """All three change types applied in one transaction."""
         variation = _make_test_variation()
@@ -271,7 +270,7 @@ class TestApplyVariationPhrases:
         assert len(add_notes) == 3
 
     @pytest.mark.anyio
-    async def test_empty_acceptance_is_noop(self, mock_store: Any) -> None:
+    async def test_empty_acceptance_is_noop(self, mock_store: MagicMock) -> None:
 
         """Empty accepted_phrase_ids applies nothing."""
         variation = _make_test_variation()
@@ -290,7 +289,7 @@ class TestApplyVariationPhrases:
         assert result.notes_modified == 0
 
     @pytest.mark.anyio
-    async def test_unknown_phrase_id_skipped(self, mock_store: Any) -> None:
+    async def test_unknown_phrase_id_skipped(self, mock_store: MagicMock) -> None:
 
         """Unknown phrase IDs are skipped with warning."""
         variation = _make_test_variation(include_adds=True, include_removes=False, include_modifies=False)
@@ -308,7 +307,7 @@ class TestApplyVariationPhrases:
         assert result.notes_added == 2
 
     @pytest.mark.anyio
-    async def test_multi_region_changes(self, mock_store: Any) -> None:
+    async def test_multi_region_changes(self, mock_store: MagicMock) -> None:
 
         """Changes across multiple regions are handled correctly."""
         variation = Variation(

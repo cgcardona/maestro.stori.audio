@@ -5,6 +5,7 @@ import logging
 from pydantic import BaseModel, Field, field_validator
 from typing import Any
 
+from app.contracts.project_types import ProjectContext
 from app.models.base import CamelModel
 
 logger = logging.getLogger(__name__)
@@ -32,9 +33,9 @@ class MaestroRequest(CamelModel):
         default="generate",
         description="Composition mode: 'generate' for new, 'edit' for modifications"
     )
-    project: dict[str, Any] | None = Field(
+    project: ProjectContext | None = Field(
         default=None,
-        description="Current project state (for edit mode)"
+        description="Current project state from the DAW",
     )
     model: str | None = Field(
         default=None,

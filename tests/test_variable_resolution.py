@@ -17,7 +17,6 @@ Coverage:
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
 import re
 
@@ -204,7 +203,7 @@ class TestVariableRefPattern:
         ("",                 False),
         ("$0.",              False),   # empty field
     ])
-    def test_pattern(self, value: Any, should_match: Any) -> None:
+    def test_pattern(self, value: str, should_match: bool) -> None:
 
         match = _VAR_REF_RE.match(value)
         if should_match:

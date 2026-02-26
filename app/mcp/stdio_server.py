@@ -20,7 +20,7 @@ import sys
 import json
 import asyncio
 import logging
-from typing import Any
+from app.contracts.mcp_types import MCPContentBlock
 
 import httpx
 
@@ -70,7 +70,8 @@ class StdioMCPServer:
                 if not line:
                     break
                 
-                message = json.loads(line.decode())
+                raw = json.loads(line.decode())
+                message: dict[str, object] = raw if isinstance(raw, dict) else {}
                 response = await self.handle_message(message)
                 
                 if response:
@@ -81,16 +82,16 @@ class StdioMCPServer:
             except Exception as e:
                 logger.exception(f"Error handling message: {e}")
     
-    def send_response(self, message: dict[str, Any]) -> None:
+    def send_response(self, message: dict[str, object]) -> None:
         """Send a response via stdout."""
         sys.stdout.write(json.dumps(message) + "\n")
         sys.stdout.flush()
 
-    async def _proxy_daw_tool(self, tool_name: str, arguments: dict[str, Any]) -> ToolCallResult:
+    async def _proxy_daw_tool(self, tool_name: str, arguments: dict[str, object]) -> ToolCallResult:
         """Proxy a DAW tool call to the Maestro backend (which has the WebSocket)."""
         from app.mcp.server import ToolCallResult
         url = f"{self._maestro_url}/api/v1/mcp/tools/{tool_name}/call"
-        payload = {"name": tool_name, "arguments": arguments}
+        payload: dict[str, object] = {"name": tool_name, "arguments": arguments}
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self._mcp_token}",
@@ -99,11 +100,21 @@ class StdioMCPServer:
             async with httpx.AsyncClient(timeout=35.0) as client:
                 resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
-            data = resp.json()
+            data: dict[str, object] = resp.json()
+            raw_content = data.get("content")
+            content: list[MCPContentBlock]
+            if isinstance(raw_content, list):
+                content = [
+                    {"type": str(b.get("type", "text")), "text": str(b.get("text", ""))}
+                    for b in raw_content
+                    if isinstance(b, dict)
+                ]
+            else:
+                content = [{"type": "text", "text": "No content"}]
             return ToolCallResult(
-                success=data.get("success", False),
-                content=data.get("content", [{"type": "text", "text": "No content"}]),
-                is_error=data.get("isError", False),
+                success=bool(data.get("success", False)),
+                content=content,
+                is_error=bool(data.get("isError", False)),
             )
         except httpx.HTTPStatusError as e:
             body = e.response.text
@@ -125,11 +136,12 @@ class StdioMCPServer:
                 is_error=True,
             )
 
-    async def handle_message(self, message: dict[str, Any]) -> dict[str, Any] | None:
+    async def handle_message(self, message: dict[str, object]) -> dict[str, object] | None:
         """Handle an incoming MCP message."""
-        method = message.get("method")
+        method = str(message.get("method", ""))
         msg_id = message.get("id")
-        params = message.get("params", {})
+        raw_params = message.get("params")
+        params: dict[str, object] = raw_params if isinstance(raw_params, dict) else {}
         
         logger.debug(f"Received: {method}")
         
@@ -156,8 +168,9 @@ class StdioMCPServer:
             }
         
         elif method == "tools/call":
-            tool_name = params.get("name")
-            arguments = params.get("arguments", {})
+            tool_name = str(params.get("name", ""))
+            raw_args = params.get("arguments")
+            arguments: dict[str, object] = raw_args if isinstance(raw_args, dict) else {}
 
             # DAW tools: proxy to Maestro backend if configured (backend has the WebSocket)
             if (

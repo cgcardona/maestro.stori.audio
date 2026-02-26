@@ -43,10 +43,19 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
 from copy import deepcopy
+from typing_extensions import TypedDict
 
-from app.core.entity_registry import EntityRegistry, EntityInfo, EntityType
+from app.contracts.project_types import ProjectContext
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    InternalNoteDict,
+    NoteDict,
+    PitchBendDict,
+    StateEventData,
+)
+from app.core.entity_registry import EntityMetadata, EntityRegistry, EntityInfo, EntityType
 
 logger = logging.getLogger(__name__)
 
@@ -86,18 +95,18 @@ class StateEvent:
     event_type: EventType
     entity_type: EntityType | None
     entity_id: str | None
-    data: dict[str, Any]
+    data: StateEventData
     timestamp: datetime
     version: int
     transaction_id: str | None = None
     
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
             "event_type": self.event_type.value,
             "entity_type": self.entity_type.value if self.entity_type else None,
             "entity_id": self.entity_id,
-            "data": self.data,
+            "data": dict(self.data),
             "timestamp": self.timestamp.isoformat(),
             "version": self.version,
             "transaction_id": self.transaction_id,
@@ -118,13 +127,25 @@ class Transaction:
         return not self.committed and not self.rolled_back
 
 
+class _ProjectMetadataSnapshot(TypedDict, total=False):
+    """Internal snapshot shape stored inside StateSnapshot."""
+
+    tempo: int
+    key: str
+    time_signature: tuple[int, int]
+    _region_notes: dict[str, list[InternalNoteDict]]
+    _region_cc: dict[str, list[CCEventDict]]
+    _region_pitch_bends: dict[str, list[PitchBendDict]]
+    _region_aftertouch: dict[str, list[AftertouchDict]]
+
+
 @dataclass
 class StateSnapshot:
     """A full snapshot of state at a specific version."""
     version: int
     timestamp: datetime
-    registry_data: dict[str, Any]
-    project_metadata: dict[str, Any]
+    registry_data: dict[str, object]
+    project_metadata: _ProjectMetadataSnapshot
 
 
 _CAMEL_TO_SNAKE: dict[str, str] = {
@@ -133,19 +154,19 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
 }
 
 
-def _normalize_note(note: dict[str, Any]) -> dict[str, Any]:
+def _normalize_note(note: NoteDict | InternalNoteDict) -> InternalNoteDict:
     """Normalize a note dict to internal snake_case keys.
 
     Tool calls from the LLM use camelCase (startBeat, durationBeats).
     Internal storage always uses snake_case.
     """
-    out: dict[str, Any] = {}
+    out: dict[str, object] = {}
     for k, v in note.items():
         out[_CAMEL_TO_SNAKE.get(k, k)] = v
-    return out
+    return out  # type: ignore[return-value]  # dynamic key mapping — keys are known at runtime
 
 
-def _notes_match(existing: dict[str, Any], criteria: dict[str, Any]) -> bool:
+def _notes_match(existing: InternalNoteDict, criteria: InternalNoteDict) -> bool:
     """Check if an existing note matches removal criteria.
 
     Matching on pitch + start_beat + duration_beats (snake_case only).
@@ -221,12 +242,12 @@ class StateStore:
         
         # Materialized note store: region_id -> list of note dicts
         # Maintained by add_notes/remove_notes; queryable after commit
-        self._region_notes: dict[str, list[dict[str, Any]]] = {}
+        self._region_notes: dict[str, list[InternalNoteDict]] = {}
 
         # MIDI CC, pitch bend, and aftertouch stores: region_id -> list of event dicts
-        self._region_cc: dict[str, list[dict[str, Any]]] = {}
-        self._region_pitch_bends: dict[str, list[dict[str, Any]]] = {}
-        self._region_aftertouch: dict[str, list[dict[str, Any]]] = {}
+        self._region_cc: dict[str, list[CCEventDict]] = {}
+        self._region_pitch_bends: dict[str, list[PitchBendDict]] = {}
+        self._region_aftertouch: dict[str, list[AftertouchDict]] = {}
 
         # Orpheus composition state: composition_id -> CompositionState
         self._composition_states: dict[str, CompositionState] = {}
@@ -289,7 +310,7 @@ class StateStore:
             event_type=EventType.TRANSACTION_START,
             entity_type=None,
             entity_id=None,
-            data={"description": description},
+            data=StateEventData(description=description),
             transaction=tx,
         )
         
@@ -312,7 +333,7 @@ class StateStore:
             event_type=EventType.TRANSACTION_COMMIT,
             entity_type=None,
             entity_id=None,
-            data={"event_count": len(transaction.events)},
+            data=StateEventData(event_count=len(transaction.events)),
             transaction=transaction,
         )
         
@@ -350,8 +371,8 @@ class StateStore:
             event_type=EventType.TRANSACTION_ROLLBACK,
             entity_type=None,
             entity_id=None,
-            data={"rolled_back_events": len(transaction.events)},
-            transaction=None,  # Rollback is outside the transaction
+            data=StateEventData(rolled_back_events=len(transaction.events)),
+            transaction=None,
         )
         
         transaction.rolled_back = True
@@ -367,17 +388,19 @@ class StateStore:
         self,
         name: str,
         track_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: EntityMetadata | dict[str, object] | None = None,
         transaction: Transaction | None = None,
     ) -> str:
         """Create a new track and record the event."""
         track_id = self._registry.create_track(name, track_id, metadata)
         
+        _raw_meta = metadata.to_dict() if isinstance(metadata, EntityMetadata) else (metadata or {})
+        meta_dict: dict[str, object] = dict(_raw_meta)
         self._append_event(
             event_type=EventType.TRACK_CREATED,
             entity_type=EntityType.TRACK,
             entity_id=track_id,
-            data={"name": name, "metadata": metadata or {}},
+            data=StateEventData(name=name, metadata=meta_dict),
             transaction=transaction or self._active_transaction,
         )
         
@@ -388,21 +411,23 @@ class StateStore:
         name: str,
         parent_track_id: str,
         region_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: EntityMetadata | dict[str, object] | None = None,
         transaction: Transaction | None = None,
     ) -> str:
         """Create a new region and record the event."""
         region_id = self._registry.create_region(name, parent_track_id, region_id, metadata)
         
+        _raw_region_meta = metadata.to_dict() if isinstance(metadata, EntityMetadata) else (metadata or {})
+        region_meta: dict[str, object] = dict(_raw_region_meta)
         self._append_event(
             event_type=EventType.REGION_CREATED,
             entity_type=EntityType.REGION,
             entity_id=region_id,
-            data={
-                "name": name,
-                "parent_track_id": parent_track_id,
-                "metadata": metadata or {},
-            },
+            data=StateEventData(
+                name=name,
+                parent_track_id=parent_track_id,
+                metadata=region_meta,
+            ),
             transaction=transaction or self._active_transaction,
         )
         
@@ -412,17 +437,19 @@ class StateStore:
         self,
         name: str,
         bus_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: EntityMetadata | dict[str, object] | None = None,
         transaction: Transaction | None = None,
     ) -> str:
         """Create a new bus and record the event."""
         bus_id = self._registry.create_bus(name, bus_id, metadata)
         
+        _raw_bus_meta = metadata.to_dict() if isinstance(metadata, EntityMetadata) else (metadata or {})
+        bus_meta: dict[str, object] = dict(_raw_bus_meta)
         self._append_event(
             event_type=EventType.BUS_CREATED,
             entity_type=EntityType.BUS,
             entity_id=bus_id,
-            data={"name": name, "metadata": metadata or {}},
+            data=StateEventData(name=name, metadata=bus_meta),
             transaction=transaction or self._active_transaction,
         )
         
@@ -456,7 +483,7 @@ class StateStore:
             event_type=EventType.TEMPO_CHANGED,
             entity_type=None,
             entity_id=None,
-            data={"old_tempo": old_tempo, "new_tempo": tempo},
+            data=StateEventData(old_tempo=old_tempo, new_tempo=tempo),
             transaction=transaction or self._active_transaction,
         )
     
@@ -473,14 +500,14 @@ class StateStore:
             event_type=EventType.KEY_CHANGED,
             entity_type=None,
             entity_id=None,
-            data={"old_key": old_key, "new_key": key},
+            data=StateEventData(old_key=old_key, new_key=key),
             transaction=transaction or self._active_transaction,
         )
     
     def add_notes(
         self,
         region_id: str,
-        notes: list[dict[str, Any]],
+        notes: list[NoteDict],
         transaction: Transaction | None = None,
     ) -> None:
         """Add notes to a region (event + materialized view).
@@ -497,14 +524,14 @@ class StateStore:
             event_type=EventType.NOTES_ADDED,
             entity_type=EntityType.REGION,
             entity_id=region_id,
-            data={"notes_count": len(notes), "notes": notes},
+            data=StateEventData(notes_count=len(notes), notes=notes),
             transaction=transaction or self._active_transaction,
         )
     
     def remove_notes(
         self,
         region_id: str,
-        note_criteria: list[dict[str, Any]],
+        note_criteria: list[InternalNoteDict],
         transaction: Transaction | None = None,
     ) -> None:
         """
@@ -524,7 +551,7 @@ class StateStore:
             event_type=EventType.NOTES_REMOVED,
             entity_type=EntityType.REGION,
             entity_id=region_id,
-            data={"notes_count": len(note_criteria), "notes": note_criteria},
+            data=StateEventData(notes_count=len(note_criteria)),
             transaction=transaction or self._active_transaction,
         )
 
@@ -539,7 +566,7 @@ class StateStore:
             event_type=EventType.EFFECT_ADDED,
             entity_type=EntityType.TRACK,
             entity_id=track_id,
-            data={"effect_type": effect_type},
+            data=StateEventData(effect_type=effect_type),
             transaction=transaction or self._active_transaction,
         )
     
@@ -547,7 +574,7 @@ class StateStore:
     # Region Note Queries
     # =========================================================================
     
-    def get_region_notes(self, region_id: str) -> list[dict[str, Any]]:
+    def get_region_notes(self, region_id: str) -> list[InternalNoteDict]:
         """Return the current materialized note list for a region."""
         return deepcopy(self._region_notes.get(region_id, []))
     
@@ -568,42 +595,42 @@ class StateStore:
     def add_cc(
         self,
         region_id: str,
-        cc_events: list[dict[str, Any]],
+        cc_events: list[CCEventDict],
     ) -> None:
         """Append MIDI CC events to a region."""
         if region_id not in self._region_cc:
             self._region_cc[region_id] = []
         self._region_cc[region_id].extend(deepcopy(cc_events))
 
-    def get_region_cc(self, region_id: str) -> list[dict[str, Any]]:
+    def get_region_cc(self, region_id: str) -> list[CCEventDict]:
         """Return CC events for a region."""
         return deepcopy(self._region_cc.get(region_id, []))
 
     def add_pitch_bends(
         self,
         region_id: str,
-        pitch_bends: list[dict[str, Any]],
+        pitch_bends: list[PitchBendDict],
     ) -> None:
         """Append pitch bend events to a region."""
         if region_id not in self._region_pitch_bends:
             self._region_pitch_bends[region_id] = []
         self._region_pitch_bends[region_id].extend(deepcopy(pitch_bends))
 
-    def get_region_pitch_bends(self, region_id: str) -> list[dict[str, Any]]:
+    def get_region_pitch_bends(self, region_id: str) -> list[PitchBendDict]:
         """Return pitch bend events for a region."""
         return deepcopy(self._region_pitch_bends.get(region_id, []))
 
     def add_aftertouch(
         self,
         region_id: str,
-        aftertouch: list[dict[str, Any]],
+        aftertouch: list[AftertouchDict],
     ) -> None:
         """Append aftertouch events (channel or poly) to a region."""
         if region_id not in self._region_aftertouch:
             self._region_aftertouch[region_id] = []
         self._region_aftertouch[region_id].extend(deepcopy(aftertouch))
 
-    def get_region_aftertouch(self, region_id: str) -> list[dict[str, Any]]:
+    def get_region_aftertouch(self, region_id: str) -> list[AftertouchDict]:
         """Return aftertouch events for a region."""
         return deepcopy(self._region_aftertouch.get(region_id, []))
 
@@ -643,7 +670,7 @@ class StateStore:
     # Synchronization
     # =========================================================================
     
-    def sync_from_client(self, project_state: dict[str, Any]) -> None:
+    def sync_from_client(self, project_state: ProjectContext) -> None:
         """
         Sync with client-reported project state.
 
@@ -676,21 +703,16 @@ class StateStore:
 
         # Update project metadata
         if "tempo" in project_state:
-            self._tempo = project_state["tempo"]
+            self._tempo = int(project_state["tempo"])
         if "key" in project_state:
             self._key = project_state["key"]
         ts_raw = project_state.get("timeSignature")
-        if ts_raw:
-            if isinstance(ts_raw, str):
-                # "4/4" → (4, 4)
-                parts = ts_raw.split("/")
-                if len(parts) == 2:
-                    self._time_signature = (int(parts[0]), int(parts[1]))
-            elif isinstance(ts_raw, dict):
-                self._time_signature = (
-                    ts_raw.get("numerator", 4),
-                    ts_raw.get("denominator", 4),
-                )
+        if isinstance(ts_raw, str):
+            parts = ts_raw.split("/")
+            if len(parts) == 2:
+                self._time_signature = (int(parts[0]), int(parts[1]))
+        elif isinstance(ts_raw, dict):
+            self._time_signature = (ts_raw["numerator"], ts_raw["denominator"])
     
     # =========================================================================
     # Event & Snapshot Management
@@ -701,7 +723,7 @@ class StateStore:
         event_type: EventType,
         entity_type: EntityType | None,
         entity_id: str | None,
-        data: dict[str, Any],
+        data: StateEventData,
         transaction: Transaction | None,
     ) -> StateEvent:
         """Append an event to the log."""
@@ -731,15 +753,15 @@ class StateStore:
             version=self._version,
             timestamp=datetime.now(timezone.utc),
             registry_data=self._registry.to_dict(),
-            project_metadata={
-                "tempo": self._tempo,
-                "key": self._key,
-                "time_signature": self._time_signature,
-                "_region_notes": deepcopy(self._region_notes),
-                "_region_cc": deepcopy(self._region_cc),
-                "_region_pitch_bends": deepcopy(self._region_pitch_bends),
-                "_region_aftertouch": deepcopy(self._region_aftertouch),
-            },
+            project_metadata=_ProjectMetadataSnapshot(
+                tempo=self._tempo,
+                key=self._key,
+                time_signature=self._time_signature,
+                _region_notes=deepcopy(self._region_notes),
+                _region_cc=deepcopy(self._region_cc),
+                _region_pitch_bends=deepcopy(self._region_pitch_bends),
+                _region_aftertouch=deepcopy(self._region_aftertouch),
+            ),
         )
         self._snapshots.append(snapshot)
         
@@ -752,13 +774,14 @@ class StateStore:
     def _restore_snapshot(self, snapshot: StateSnapshot) -> None:
         """Restore state from a snapshot (including region notes)."""
         self._registry = EntityRegistry.from_dict(snapshot.registry_data)
-        self._tempo = snapshot.project_metadata.get("tempo", 120)
-        self._key = snapshot.project_metadata.get("key", "C")
-        self._time_signature = tuple(snapshot.project_metadata.get("time_signature", (4, 4)))
-        self._region_notes = deepcopy(snapshot.project_metadata.get("_region_notes", {}))
-        self._region_cc = deepcopy(snapshot.project_metadata.get("_region_cc", {}))
-        self._region_pitch_bends = deepcopy(snapshot.project_metadata.get("_region_pitch_bends", {}))
-        self._region_aftertouch = deepcopy(snapshot.project_metadata.get("_region_aftertouch", {}))
+        meta = snapshot.project_metadata
+        self._tempo = meta.get("tempo", 120)
+        self._key = meta.get("key", "C")
+        self._time_signature = meta.get("time_signature", (4, 4))
+        self._region_notes = deepcopy(meta.get("_region_notes", {}))
+        self._region_cc = deepcopy(meta.get("_region_cc", {}))
+        self._region_pitch_bends = deepcopy(meta.get("_region_pitch_bends", {}))
+        self._region_aftertouch = deepcopy(meta.get("_region_aftertouch", {}))
         
         logger.info(f"📸 Restored to snapshot v{snapshot.version}")
     
@@ -766,18 +789,18 @@ class StateStore:
     # Serialization
     # =========================================================================
     
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize entire store state."""
         return {
             "conversation_id": self.conversation_id,
             "project_id": self.project_id,
             "version": self._version,
             "registry": self._registry.to_dict(),
-            "events": [e.to_dict() for e in self._events[-100:]],  # Last 100 events
+            "events": [e.to_dict() for e in self._events[-100:]],
             "project_metadata": {
                 "tempo": self._tempo,
                 "key": self._key,
-                "time_signature": self._time_signature,
+                "time_signature": list(self._time_signature),
             },
         }
     

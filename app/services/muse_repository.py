@@ -18,12 +18,13 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.contracts.json_types import RegionMetadataDB, RegionMetadataWire
 from app.db import muse_models as db
 from app.models.variation import (
     ChangeType,
@@ -34,6 +35,16 @@ from app.models.variation import (
 )
 
 logger = logging.getLogger(__name__)
+
+def _validate_change_type(raw: str) -> ChangeType:
+    """Narrow a DB string to the ChangeType literal, raising on bad data."""
+    if raw == "added":
+        return "added"
+    if raw == "removed":
+        return "removed"
+    if raw == "modified":
+        return "modified"
+    raise ValueError(f"Invalid change_type in DB: {raw!r}")
 
 
 @dataclass(frozen=True)
@@ -66,7 +77,7 @@ async def save_variation(
     project_id: str,
     base_state_id: str,
     conversation_id: str,
-    region_metadata: dict[str, dict[str, Any]],
+    region_metadata: dict[str, RegionMetadataWire],
     status: str = "ready",
     parent_variation_id: str | None = None,
     parent2_variation_id: str | None = None,
@@ -152,7 +163,7 @@ async def load_variation(
         note_changes = [
             DomainNoteChange(
                 note_id=nc.id,
-                change_type=cast(ChangeType, nc.change_type),
+                change_type=_validate_change_type(nc.change_type),
                 before=MidiNoteSnapshot.model_validate(nc.before_json) if nc.before_json else None,
                 after=MidiNoteSnapshot.model_validate(nc.after_json) if nc.after_json else None,
             )
@@ -226,7 +237,7 @@ async def get_phrase_ids(
 async def get_region_metadata(
     session: AsyncSession,
     variation_id: str,
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, RegionMetadataDB]:
     """Return region metadata keyed by region_id from persisted phrases."""
     stmt = (
         select(
@@ -238,7 +249,7 @@ async def get_region_metadata(
         .where(db.Phrase.variation_id == variation_id)
     )
     result = await session.execute(stmt)
-    meta: dict[str, dict[str, Any]] = {}
+    meta: dict[str, RegionMetadataDB] = {}
     for row in result:
         rid = row[0]
         if rid not in meta:

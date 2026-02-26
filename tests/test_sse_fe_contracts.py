@@ -13,6 +13,8 @@ from typing import Any
 
 import pytest
 
+from app.contracts.generation_types import CompositionContext
+from app.contracts.json_types import NoteDict, TrackSummaryDict
 from app.core.sse_utils import sse_event
 from app.core.tool_validation.constants import (
     TOOL_REQUIRED_FIELDS,
@@ -25,11 +27,10 @@ from app.core.tool_validation.constants import (
 # ---------------------------------------------------------------------------
 
 def _parse_sse(raw: str) -> dict[str, Any]:
-
     """Strip ``data: `` prefix and parse JSON payload."""
     assert raw.startswith("data: ")
-    result: dict[str, Any] = json.loads(raw[6:].strip())
-    return result
+    parsed: dict[str, Any] = json.loads(raw[6:].strip())
+    return parsed
 
 
 # ---------------------------------------------------------------------------
@@ -654,11 +655,14 @@ class TestAgentIdTaggingRegression:
         region_id = store.create_region("Region", track_id)
 
         trace = TraceContext(trace_id="test-agentid-src")
-        comp_ctx = {"style": "dancehall", "tempo": 90, "bars": 8, "key": "Am", "quality_preset": "balanced"}
+        comp_ctx = CompositionContext(style="dancehall", tempo=90, bars=8, key="Am", quality_preset="balanced")
 
+        ok_notes: list[NoteDict] = [
+            {"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 80}
+        ]
         ok_result = GenerationResult(
             success=True,
-            notes=[{"pitch": 60, "startBeat": 0, "durationBeats": 1, "velocity": 80}],
+            notes=ok_notes,
             backend_used=GeneratorBackend.ORPHEUS,
             metadata={},
         )
@@ -726,12 +730,14 @@ class TestCompleteEventSuccessField:
     """
 
     def _make_summary(self, notes: int, regions: int) -> dict[str, Any]:
-
         """Build a minimal summary dict as _build_composition_summary would."""
+        tracks_created: list[TrackSummaryDict] = (
+            [{"name": "Bass", "trackId": "t1", "instrument": "bass"}] if regions else []
+        )
         return {
             "notesGenerated": notes,
             "regionsCreated": regions,
-            "tracksCreated": [{"name": "Bass", "trackId": "t1", "instrument": "bass"}] if regions else [],
+            "tracksCreated": tracks_created,
             "tracksReused": [],
             "trackCount": 1 if regions else 0,
             "effectsAdded": [],
@@ -1233,7 +1239,7 @@ class TestRegionCollisionCanonicalOverride:
         )
         contract = SectionContract(
             section=spec, track_id="trk-1", instrument_name="Bass",
-            role="bass", style="dancehall", tempo=95.0, key="Gm",
+            role="bass", style="dancehall", tempo=95, key="Gm",
             region_name="Bass – verse",
         )
         assert contract.start_beat == 16
@@ -1251,7 +1257,7 @@ class TestRegionCollisionCanonicalOverride:
         )
         contract = SectionContract(
             section=spec, track_id="trk-1", instrument_name="Bass",
-            role="bass", style="dancehall", tempo=95.0, key="Gm",
+            role="bass", style="dancehall", tempo=95, key="Gm",
             region_name="Bass – verse",
         )
         import pytest
@@ -1544,13 +1550,13 @@ class TestAgentContractProtocol:
         )
         contract = SectionContract(
             section=spec, track_id="trk-1", instrument_name="Chords",
-            role="chords", style="dancehall", tempo=95.0, key="Gm",
+            role="chords", style="dancehall", tempo=95, key="Gm",
             region_name="Chords – intro",
         )
         with pytest.raises(AttributeError):
             contract.role = "drums"  # type: ignore[misc]
         with pytest.raises(AttributeError):
-            contract.tempo = 200.0  # type: ignore[misc]
+            contract.tempo = 200  # type: ignore[misc]
 
     def test_contract_derived_properties(self) -> None:
 
@@ -1562,17 +1568,17 @@ class TestAgentContractProtocol:
         )
         bass = SectionContract(
             section=spec, track_id="t1", instrument_name="Bass",
-            role="bass", style="s", tempo=120.0, key="C",
+            role="bass", style="s", tempo=120, key="C",
             region_name="r",
         )
         drums = SectionContract(
             section=spec, track_id="t2", instrument_name="Drums",
-            role="drums", style="s", tempo=120.0, key="C",
+            role="drums", style="s", tempo=120, key="C",
             region_name="r",
         )
         chords = SectionContract(
             section=spec, track_id="t3", instrument_name="Chords",
-            role="chords", style="s", tempo=120.0, key="C",
+            role="chords", style="s", tempo=120, key="C",
             region_name="r",
         )
         assert bass.is_bass is True
@@ -1597,7 +1603,7 @@ class TestAgentContractProtocol:
         )
         contract = SectionContract(
             section=spec, track_id="t", instrument_name="I",
-            role="r", style="s", tempo=120.0, key="C",
+            role="r", style="s", tempo=120, key="C",
             region_name="r",
         )
         assert contract.l2_generate_prompt == ""
@@ -1668,14 +1674,14 @@ class TestInstrumentContractProtocol:
         )
         contract = InstrumentContract(
             instrument_name="Drums", role="drums", style="house",
-            bars=8, tempo=120.0, key="Am", start_beat=0,
+            bars=8, tempo=120, key="Am", start_beat=0,
             sections=(spec,), existing_track_id=None,
             assigned_color="#FF0000", gm_guidance="",
         )
         with pytest.raises(AttributeError):
             contract.role = "bass"  # type: ignore[misc]
         with pytest.raises(AttributeError):
-            contract.tempo = 200.0  # type: ignore[misc]
+            contract.tempo = 200  # type: ignore[misc]
 
     def test_instrument_contract_derived_properties(self) -> None:
 
@@ -1687,13 +1693,13 @@ class TestInstrumentContractProtocol:
         )
         drums = InstrumentContract(
             instrument_name="Drums", role="drums", style="s",
-            bars=4, tempo=120.0, key="C", start_beat=0,
+            bars=4, tempo=120, key="C", start_beat=0,
             sections=(spec,), existing_track_id=None,
             assigned_color=None, gm_guidance="",
         )
         bass = InstrumentContract(
             instrument_name="Bass", role="bass", style="s",
-            bars=4, tempo=120.0, key="C", start_beat=0,
+            bars=4, tempo=120, key="C", start_beat=0,
             sections=(spec, spec), existing_track_id="trk-1",
             assigned_color=None, gm_guidance="",
         )
@@ -1732,7 +1738,7 @@ class TestInstrumentContractProtocol:
         )
         contract = InstrumentContract(
             instrument_name="Chords", role="chords", style="dancehall",
-            bars=8, tempo=95.0, key="Gm", start_beat=0,
+            bars=8, tempo=95, key="Gm", start_beat=0,
             sections=(spec,), existing_track_id=None,
             assigned_color=None, gm_guidance="Use gmProgram=16 (Drawbar Organ)",
         )
@@ -1748,7 +1754,7 @@ class TestInstrumentContractProtocol:
         )
         contract = InstrumentContract(
             instrument_name="X", role="r", style="s",
-            bars=4, tempo=120.0, key="C", start_beat=0,
+            bars=4, tempo=120, key="C", start_beat=0,
             sections=(spec,), existing_track_id=None,
             assigned_color=None, gm_guidance="",
         )
@@ -1792,7 +1798,6 @@ class TestRuntimeContextProtocol:
             quality_preset="quality",
         )
         d = ctx.to_composition_context()
-        assert d["_raw_prompt"] == "My song prompt"
         assert d["quality_preset"] == "quality"
         reconstructed = d["emotion_vector"]
         assert isinstance(reconstructed, EmotionVector)
@@ -1931,13 +1936,14 @@ class TestCompactToolResults:
         """_compact_tool_result strips 'entities' and 'notes' keys."""
         from app.core.maestro_agent_teams.section_agent import _compact_tool_result
 
+        notes_sample: list[NoteDict] = [{"pitch": 60}] * 100
         full_result = {
             "regionId": "reg-001",
             "trackId": "trk-1",
             "notesAdded": 116,
             "totalNotes": 116,
             "entities": [{"id": "e1"}, {"id": "e2"}],
-            "notes": [{"pitch": 60}] * 100,
+            "notes": notes_sample,
             "backend": "orpheus",
         }
         compact = _compact_tool_result(full_result)

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import Field
@@ -209,9 +209,9 @@ async def list_models() -> ModelsResponse:
     models = [
         ModelInfo(
             id=model_id,
-            name=cast(str, APPROVED_MODELS[model_id]["name"]),
-            cost_per_1m_input=cast(float, APPROVED_MODELS[model_id]["input_cost"]),
-            cost_per_1m_output=cast(float, APPROVED_MODELS[model_id]["output_cost"]),
+            name=str(APPROVED_MODELS[model_id]["name"]),
+            cost_per_1m_input=float(APPROVED_MODELS[model_id]["input_cost"]),
+            cost_per_1m_output=float(APPROVED_MODELS[model_id]["output_cost"]),
             supports_reasoning=model_id in LLMClient.REASONING_MODELS,
         )
         for model_id in allowed

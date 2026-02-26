@@ -5,6 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+)
 from app.core.state_store import StateStore, Transaction
 from app.core.tracing import TraceContext, log_tool_call
 
@@ -81,10 +87,10 @@ class SnapshotBundle:
     One type, one shape, everywhere.
     """
 
-    notes: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
-    cc: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
-    pitch_bends: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
-    aftertouch: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    notes: dict[str, list[NoteDict]] = field(default_factory=dict)
+    cc: dict[str, list[CCEventDict]] = field(default_factory=dict)
+    pitch_bends: dict[str, list[PitchBendDict]] = field(default_factory=dict)
+    aftertouch: dict[str, list[AftertouchDict]] = field(default_factory=dict)
     track_regions: dict[str, str] = field(default_factory=dict)
     region_start_beats: dict[str, float] = field(default_factory=dict)
 
@@ -113,26 +119,26 @@ class VariationContext:
     base: SnapshotBundle = field(default_factory=SnapshotBundle)
     proposed: SnapshotBundle = field(default_factory=SnapshotBundle)
 
-    def capture_base_notes(self, region_id: str, track_id: str, notes: list[dict[str, Any]]) -> None:
+    def capture_base_notes(self, region_id: str, track_id: str, notes: list[NoteDict]) -> None:
         if region_id not in self.base.notes:
             from app.core.executor.note_utils import _normalize_note
             self.base.notes[region_id] = [_normalize_note(n) for n in notes]
             self.base.track_regions[region_id] = track_id
             self.proposed.track_regions[region_id] = track_id
 
-    def record_proposed_notes(self, region_id: str, notes: list[dict[str, Any]]) -> None:
+    def record_proposed_notes(self, region_id: str, notes: list[NoteDict]) -> None:
         from app.core.executor.note_utils import _normalize_note
         self.proposed.notes[region_id] = [_normalize_note(n) for n in notes]
 
-    def record_proposed_cc(self, region_id: str, cc_events: list[dict[str, Any]]) -> None:
+    def record_proposed_cc(self, region_id: str, cc_events: list[CCEventDict]) -> None:
         if cc_events:
             self.proposed.cc.setdefault(region_id, []).extend(cc_events)
 
-    def record_proposed_pitch_bends(self, region_id: str, pitch_bends: list[dict[str, Any]]) -> None:
+    def record_proposed_pitch_bends(self, region_id: str, pitch_bends: list[PitchBendDict]) -> None:
         if pitch_bends:
             self.proposed.pitch_bends.setdefault(region_id, []).extend(pitch_bends)
 
-    def record_proposed_aftertouch(self, region_id: str, aftertouch: list[dict[str, Any]]) -> None:
+    def record_proposed_aftertouch(self, region_id: str, aftertouch: list[AftertouchDict]) -> None:
         if aftertouch:
             self.proposed.aftertouch.setdefault(region_id, []).extend(aftertouch)
 

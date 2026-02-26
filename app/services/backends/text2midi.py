@@ -10,8 +10,9 @@ model via HuggingFace Spaces to generate high-quality MIDI from natural language
 from __future__ import annotations
 
 import logging
-from typing import Any
 
+from app.contracts.generation_types import GenerationContext
+from app.contracts.json_types import JSONValue
 from app.services.backends.base import (
     MusicGeneratorBackend,
     GenerationResult,
@@ -118,17 +119,11 @@ class Text2MidiGeneratorBackend(MusicGeneratorBackend):
         bars: int,
         key: str | None = None,
         chords: list[str] | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
-        """
-        Generate MIDI using text2midi.
-        
-        Converts the standard generation params to text2midi format
-        and returns results in standard format.
-        """
         try:
-            # Get or build emotion vector
-            emotion_vector = kwargs.get("emotion_vector")
+            ctx = context or {}
+            emotion_vector = ctx.get("emotion_vector")
             if emotion_vector is None:
                 # Try to get from style
                 emotion_vector = STYLE_EMOTION_MAP.get(
@@ -153,23 +148,25 @@ class Text2MidiGeneratorBackend(MusicGeneratorBackend):
                 emotion_vector=emotion_vector,
                 style=style,
                 instrument=mapped_instrument,
-                temperature=kwargs.get("temperature", 1.0),
+                temperature=ctx.get("temperature", 1.0),
             )
             
             if result.success:
                 logger.info(f"[text2midi] Generated {len(result.notes)} notes")
+                ev_dict: dict[str, object] = {**emotion_vector.to_dict()}
+                meta: dict[str, object] = {
+                    "source": "text2midi",
+                    "model": result.model_used,
+                    "emotion_vector": ev_dict,
+                    "style": style,
+                    "instrument": mapped_instrument,
+                    **(result.metadata or {}),
+                }
                 return GenerationResult(
                     success=True,
                     notes=result.notes,
                     backend_used=self.backend_type,
-                    metadata={
-                        "source": "text2midi",
-                        "model": result.model_used,
-                        "emotion_vector": emotion_vector.to_dict(),
-                        "style": style,
-                        "instrument": mapped_instrument,
-                        **(result.metadata or {}),
-                    },
+                    metadata=meta,
                 )
             else:
                 logger.warning(f"[text2midi] Generation failed: {result.error}")

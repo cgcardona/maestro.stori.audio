@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from app.contracts.llm_types import ChatMessage
+
+if TYPE_CHECKING:
+    from app.contracts.project_types import ProjectContext
+    from app.core.llm_client import LLMClient
 
 from app.core.intent_config import Intent, match_producer_idiom
 from app.core.intent.models import IntentResult, Slots
@@ -26,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 def get_intent_result(
     prompt: str,
-    project_context: dict[str, Any] | None = None,
+    project_context: ProjectContext | None = None,
 ) -> IntentResult:
     """
     Synchronous intent routing using patterns only.
@@ -88,7 +94,7 @@ def get_intent_result(
     )
 
 
-async def classify_with_llm(prompt: str, llm: Any) -> tuple[str, float]:
+async def classify_with_llm(prompt: str, llm: "LLMClient") -> tuple[str, float]:
     """Use LLM to classify intent when patterns fail."""
     try:
         response = await llm.chat(
@@ -156,9 +162,9 @@ def _category_to_result(
 
 async def get_intent_result_with_llm(
     prompt: str,
-    project_context: dict[str, Any] | None = None,
-    llm: Any = None,
-    conversation_history: list[dict[str, Any]] | None = None,
+    project_context: ProjectContext | None = None,
+    llm: "LLMClient | None" = None,
+    conversation_history: list[ChatMessage] | None = None,
 ) -> IntentResult:
     """
     Comprehensive intent routing with LLM fallback.
@@ -179,7 +185,7 @@ async def get_intent_result_with_llm(
     if _is_affirmative(norm) and conversation_history:
         for msg in reversed(conversation_history):
             if msg.get("role") == "assistant":
-                content = msg.get("content", "").lower()
+                content = (msg.get("content") or "").lower()
                 if "?" in content or any(
                     word in content
                     for word in ["would you like", "should i", "want me to"]

@@ -15,9 +15,36 @@ import asyncio
 import httpx
 import logging
 import time as _time
-from typing import Any
+
+from typing_extensions import TypedDict
 
 from app.config import settings
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    JSONValue,
+    NoteDict,
+    OrpheusResultBucket,
+    PitchBendDict,
+)
+
+
+class OrpheusRawResponse(TypedDict, total=False):
+    """Raw HTTP response shape returned by generate_async.
+
+    On success: ``success`` is True plus notes/tool_calls/metadata.
+    On failure: ``success`` is False plus ``error`` (and optionally ``message``).
+    ``channel_notes`` is present only on success when Orpheus returns them.
+    """
+
+    success: bool
+    notes: list[NoteDict]
+    tool_calls: list[dict[str, object]]
+    metadata: dict[str, object]
+    channel_notes: dict[int, list[NoteDict]]
+    error: str
+    message: str
+    retry_count: int
 
 # Error substrings that indicate a transient Gradio/GPU failure.
 # These are retried with backoff before reporting failure.
@@ -226,15 +253,15 @@ class OrpheusClient:
         # ── Canonical intent blocks ──
         emotion_vector: dict[str, float] | None = None,
         role_profile_summary: dict[str, float] | None = None,
-        generation_constraints: dict[str, Any] | None = None,
-        intent_goals: list[dict[str, Any]] | None = None,
+        generation_constraints: dict[str, object] | None = None,
+        intent_goals: list[dict[str, object]] | None = None,
         seed: int | None = None,
         trace_id: str | None = None,
         intent_hash: str | None = None,
         # ── Unified generation ──
         add_outro: bool = False,
         unified_output: bool = False,
-    ) -> dict[str, Any]:
+    ) -> OrpheusRawResponse:
         """Generate MIDI via Orpheus using the async submit + long-poll pattern.
 
         1. POST /generate → returns immediately with {jobId, status}.
@@ -248,7 +275,7 @@ class OrpheusClient:
         if instruments is None:
             instruments = ["drums", "bass"]
 
-        payload: dict[str, Any] = {
+        payload: dict[str, object] = {
             "genre": genre,
             "tempo": tempo,
             "instruments": instruments,
@@ -368,15 +395,16 @@ class OrpheusClient:
                         logger.info(
                             f"{_log_prefix}[Orpheus] ✅ Cache hit for {instruments} in {_elapsed:.1f}s"
                         )
-                        _cache_resp: dict[str, Any] = {
-                            "success": result.get("success", False),
-                            "notes": result.get("notes", []),
-                            "tool_calls": result.get("tool_calls", []),
-                            "metadata": {
-                                **(result.get("metadata") or {}),
+                        _raw_meta = result.get("metadata")
+                        _cache_resp = OrpheusRawResponse(
+                            success=bool(result.get("success", False)),
+                            notes=result.get("notes", []),
+                            tool_calls=result.get("tool_calls", []),
+                            metadata={
+                                **(_raw_meta if isinstance(_raw_meta, dict) else {}),
                                 "retry_count": attempt,
                             },
-                        }
+                        )
                         if result.get("channel_notes"):
                             _cache_resp["channel_notes"] = result["channel_notes"]
                         return _cache_resp
@@ -482,15 +510,16 @@ class OrpheusClient:
                             f"{instruments} in {_elapsed:.1f}s "
                             f"(poll {poll_num + 1}/{max_polls})"
                         )
-                        _poll_resp: dict[str, Any] = {
-                            "success": True,
-                            "notes": result.get("notes", []),
-                            "tool_calls": result.get("tool_calls", []),
-                            "metadata": {
-                                **(result.get("metadata") or {}),
+                        _poll_meta = result.get("metadata")
+                        _poll_resp = OrpheusRawResponse(
+                            success=True,
+                            notes=result.get("notes", []),
+                            tool_calls=result.get("tool_calls", []),
+                            metadata={
+                                **(_poll_meta if isinstance(_poll_meta, dict) else {}),
                                 "retry_count": 0,
                             },
-                        }
+                        )
                         if result.get("channel_notes"):
                             _poll_resp["channel_notes"] = result["channel_notes"]
                         return _poll_resp
@@ -536,59 +565,76 @@ class OrpheusClient:
 
 
 def normalize_orpheus_tool_calls(
-    tool_calls: list[dict[str, Any]],
-) -> dict[str, list[dict[str, Any]]]:
+    tool_calls: list[dict[str, object]],
+) -> OrpheusResultBucket:
     """Translate Orpheus-format tool_calls into Maestro-internal flat lists.
 
     Orpheus returns DAW-style tool names (``addNotes``, ``addMidiCC``,
     ``addPitchBend``, ``addAftertouch``).  This adapter extracts the
     musical content into plain lists keyed by data type so that callers
     never handle Orpheus-specific tool names.
+
+    This is the quarantine boundary: raw ``dict[str, Any]`` from Orpheus
+    enters, typed ``OrpheusResultBucket`` exits.
     """
-    notes: list[dict[str, Any]] = []
-    cc_events: list[dict[str, Any]] = []
-    pitch_bends: list[dict[str, Any]] = []
-    aftertouch: list[dict[str, Any]] = []
+    notes: list[NoteDict] = []
+    cc_events: list[CCEventDict] = []
+    pitch_bends: list[PitchBendDict] = []
+    aftertouch: list[AftertouchDict] = []
 
     for tc in tool_calls:
-        tool_name = tc.get("tool", "")
-        params = tc.get("params", {})
+        _tool_raw = tc.get("tool")
+        tool_name = str(_tool_raw) if _tool_raw is not None else ""
+        _params_raw = tc.get("params")
+        params: dict[str, object] = _params_raw if isinstance(_params_raw, dict) else {}
 
         if tool_name == "addNotes":
-            notes.extend(params.get("notes", []))
+            _notes_raw = params.get("notes")
+            if isinstance(_notes_raw, list):
+                notes.extend(_notes_raw)
 
         elif tool_name == "addMidiCC":
-            cc_num = params.get("cc")
-            for ev in params.get("events", []):
-                cc_events.append({
-                    "cc": cc_num,
-                    "beat": ev.get("beat", 0),
-                    "value": ev.get("value", 0),
-                })
+            _cc_raw = params.get("cc")
+            cc_num = int(_cc_raw) if isinstance(_cc_raw, (int, float)) else 0
+            _evts = params.get("events")
+            for ev in (_evts if isinstance(_evts, list) else []):
+                if not isinstance(ev, dict):
+                    continue
+                cc_events.append(CCEventDict(
+                    cc=cc_num,
+                    beat=ev.get("beat", 0),
+                    value=ev.get("value", 0),
+                ))
 
         elif tool_name == "addPitchBend":
-            for ev in params.get("events", []):
-                pitch_bends.append({
-                    "beat": ev.get("beat", 0),
-                    "value": ev.get("value", 0),
-                })
+            _evts = params.get("events")
+            for ev in (_evts if isinstance(_evts, list) else []):
+                if not isinstance(ev, dict):
+                    continue
+                pitch_bends.append(PitchBendDict(
+                    beat=ev.get("beat", 0),
+                    value=ev.get("value", 0),
+                ))
 
         elif tool_name == "addAftertouch":
-            for ev in params.get("events", []):
-                entry: dict[str, Any] = {
-                    "beat": ev.get("beat", 0),
-                    "value": ev.get("value", 0),
-                }
+            _evts = params.get("events")
+            for ev in (_evts if isinstance(_evts, list) else []):
+                if not isinstance(ev, dict):
+                    continue
+                entry = AftertouchDict(
+                    beat=ev.get("beat", 0),
+                    value=ev.get("value", 0),
+                )
                 if "pitch" in ev:
                     entry["pitch"] = ev["pitch"]
                 aftertouch.append(entry)
 
-    return {
-        "notes": notes,
-        "cc_events": cc_events,
-        "pitch_bends": pitch_bends,
-        "aftertouch": aftertouch,
-    }
+    return OrpheusResultBucket(
+        notes=notes,
+        cc_events=cc_events,
+        pitch_bends=pitch_bends,
+        aftertouch=aftertouch,
+    )
 
 
 # ---------------------------------------------------------------------------

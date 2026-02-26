@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from app.contracts.llm_types import ChatMessage
 from app.db.models import Conversation, ConversationMessage
+
+if TYPE_CHECKING:
+    from app.core.llm_client import LLMClient
 from app.services.conversations.formatting import _format_single_message
 
 logger = logging.getLogger(__name__)
@@ -97,14 +101,15 @@ async def get_optimized_context(
     messages: list[ConversationMessage],
     max_messages: int = MAX_CONTEXT_MESSAGES,
     include_entity_summary: bool = True,
-) -> tuple[list[dict[str, Any]], str | None]:
+) -> tuple[list[ChatMessage], str | None]:
     """Get optimized conversation context for LLM.
 
     Short conversations: return all messages.
     Long conversations: return extractive summary + recent messages.
     """
+    formatted: list[ChatMessage] = []
+
     if len(messages) <= max_messages:
-        formatted: list[dict[str, Any]] = []
         for msg in messages:
             formatted.extend(_format_single_message(msg))
         return formatted, None
@@ -116,8 +121,6 @@ async def get_optimized_context(
         _extract_entity_summary(old_messages) if include_entity_summary else None
     )
     context_summary = _build_context_summary(old_messages)
-
-    formatted = []
 
     if context_summary:
         formatted.append({
@@ -146,7 +149,7 @@ async def get_optimized_context(
 
 async def summarize_conversation_for_llm(
     conversation: Conversation,
-    llm: Any = None,
+    llm: LLMClient | None = None,
 ) -> str:
     """Use LLM to generate a high-quality summary; falls back to extractive."""
     if llm is None:

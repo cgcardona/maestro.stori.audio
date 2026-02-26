@@ -7,6 +7,11 @@ from __future__ import annotations
 
 from typing import Any
 import asyncio
+
+from app.contracts.generation_types import CompositionContext
+from app.core.sse_utils import SSEEventInput
+
+from app.contracts.json_types import NoteDict
 import math
 from unittest.mock import patch
 
@@ -18,27 +23,27 @@ from app.core.maestro_agent_teams.signals import SectionState, _state_key
 
 # ── Helpers ──
 
-def _note(pitch: int = 60, start: float = 0.0, dur: float = 1.0, vel: int = 80) -> dict[str, Any]:
+def _note(pitch: int = 60, start: float = 0.0, dur: float = 1.0, vel: int = 80) -> NoteDict:
 
-    return {
-        "pitch": pitch,
-        "start_beat": start,
-        "duration_beats": dur,
-        "velocity": vel,
-    }
+    return NoteDict(
+        pitch=pitch,
+        start_beat=start,
+        duration_beats=dur,
+        velocity=vel,
+    )
 
 
-def _kick(start: float, vel: int = 100) -> dict[str, Any]:
+def _kick(start: float, vel: int = 100) -> NoteDict:
 
     return _note(pitch=36, start=start, vel=vel)
 
 
-def _snare(start: float, vel: int = 90) -> dict[str, Any]:
+def _snare(start: float, vel: int = 90) -> NoteDict:
 
     return _note(pitch=38, start=start, vel=vel)
 
 
-def _hihat(start: float, vel: int = 70) -> dict[str, Any]:
+def _hihat(start: float, vel: int = 70) -> NoteDict:
 
     return _note(pitch=42, start=start, vel=vel)
 
@@ -53,7 +58,7 @@ class TestSectionTelemetryDataclass:
 
         """SectionTelemetry is frozen — attrs cannot be changed after creation."""
         t = SectionTelemetry(
-            section_name="verse", instrument="Drums", tempo=120.0,
+            section_name="verse", instrument="Drums", tempo=120,
             energy_level=0.5, density_score=2.0, groove_vector=(1.0,),
             kick_pattern_hash="abc", rhythmic_complexity=0.1,
             velocity_mean=80.0, velocity_variance=10.0,
@@ -64,7 +69,7 @@ class TestSectionTelemetryDataclass:
     def test_fields_accessible(self) -> None:
 
         t = SectionTelemetry(
-            section_name="chorus", instrument="Bass", tempo=140.0,
+            section_name="chorus", instrument="Bass", tempo=140,
             energy_level=0.8, density_score=3.0, groove_vector=(0.5, 0.5),
             kick_pattern_hash="", rhythmic_complexity=0.3,
             velocity_mean=90.0, velocity_variance=25.0,
@@ -267,7 +272,7 @@ class TestSectionState:
 
         state = SectionState()
         t = SectionTelemetry(
-            section_name="verse", instrument="Drums", tempo=120.0,
+            section_name="verse", instrument="Drums", tempo=120,
             energy_level=0.7, density_score=3.0, groove_vector=(0.5,) * 16,
             kick_pattern_hash="abc123", rhythmic_complexity=0.2,
             velocity_mean=85.0, velocity_variance=15.0,
@@ -291,7 +296,7 @@ class TestSectionState:
         async def write(key: str, energy: float) -> None:
 
             t = SectionTelemetry(
-                section_name=key, instrument="X", tempo=120.0,
+                section_name=key, instrument="X", tempo=120,
                 energy_level=energy, density_score=1.0,
                 groove_vector=(0.0,) * 16, kick_pattern_hash="",
                 rhythmic_complexity=0.0, velocity_mean=80.0,
@@ -310,7 +315,7 @@ class TestSectionState:
 
         state = SectionState()
         t = SectionTelemetry(
-            section_name="x", instrument="X", tempo=120.0,
+            section_name="x", instrument="X", tempo=120,
             energy_level=0.5, density_score=1.0,
             groove_vector=(0.0,) * 16, kick_pattern_hash="",
             rhythmic_complexity=0.0, velocity_mean=80.0,
@@ -344,14 +349,14 @@ class TestSectionAgentTelemetry:
         from app.core.maestro_plan_tracker import _ToolCallOutcome
 
         store = StateStore(conversation_id="test-telem")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
         section_state = SectionState()
 
         region_outcome = _ToolCallOutcome(
             enriched_params={"trackId": "trk-1"},
             tool_result={"regionId": "reg-1", "trackId": "trk-1"},
             sse_events=[{"type": "toolCall", "name": "stori_add_midi_region"}],
-            msg_call={}, msg_result={},
+            msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
         gen_notes = [
             {"pitch": 36, "start_beat": 0, "duration_beats": 1, "velocity": 100},
@@ -368,11 +373,16 @@ class TestSectionAgentTelemetry:
                     "trackId": "trk-1", "regionId": "reg-1", "notes": gen_notes,
                 }},
             ],
-            msg_call={}, msg_result={},
+            msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> Any:
-
+        async def _mock_apply(
+            *,
+            tc_id: str,
+            tc_name: str,
+            resolved_args: dict[str, Any],
+            **kw: Any,
+        ) -> Any:
             if tc_name == "stori_add_midi_region":
                 return region_outcome
             return gen_outcome
@@ -388,7 +398,7 @@ class TestSectionAgentTelemetry:
             seal_contract(spec)
             contract = SectionContract(
                 section=spec, track_id="trk-1", instrument_name="Drums",
-                role="drums", style="house", tempo=120.0, key="Am",
+                role="drums", style="house", tempo=120, key="Am",
                 region_name="Drums – verse",
             )
             seal_contract(contract)
@@ -428,11 +438,11 @@ class TestSectionAgentTelemetry:
         from app.core.maestro_plan_tracker import _ToolCallOutcome
 
         store = StateStore(conversation_id="test-bass-telem")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         section_state = SectionState()
         drum_t = SectionTelemetry(
-            section_name="verse", instrument="Drums", tempo=120.0,
+            section_name="verse", instrument="Drums", tempo=120,
             energy_level=0.75, density_score=3.5,
             groove_vector=(0.4, 0.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0, 0.2, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0),
             kick_pattern_hash="deadbeef",
@@ -455,13 +465,13 @@ class TestSectionAgentTelemetry:
             success=True, drum_notes=[{"pitch": 36}],
         )
 
-        captured_ctx: list[dict[str, Any]] = []
+        captured_ctx: list[CompositionContext] = []
 
         region_outcome = _ToolCallOutcome(
             enriched_params={"trackId": "trk-2"},
             tool_result={"regionId": "reg-2", "trackId": "trk-2"},
             sse_events=[{"type": "toolCall", "name": "stori_add_midi_region"}],
-            msg_call={}, msg_result={},
+            msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
         gen_outcome = _ToolCallOutcome(
             enriched_params={"role": "bass", "regionId": "reg-2"},
@@ -471,11 +481,17 @@ class TestSectionAgentTelemetry:
                     "notes": [{"pitch": 40, "start_beat": i, "velocity": 80} for i in range(8)],
                 }},
             ],
-            msg_call={}, msg_result={},
+            msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, composition_context: Any = None, **kw: Any) -> Any:
-
+        async def _mock_apply(
+            *,
+            tc_id: str,
+            tc_name: str,
+            resolved_args: dict[str, Any],
+            composition_context: CompositionContext | None = None,
+            **kw: Any,
+        ) -> Any:
             if composition_context:
                 captured_ctx.append(composition_context)
             if tc_name == "stori_add_midi_region":
@@ -488,7 +504,7 @@ class TestSectionAgentTelemetry:
         ):
             contract = SectionContract(
                 section=spec, track_id="trk-2", instrument_name="Bass",
-                role="bass", style="house", tempo=120.0, key="Am",
+                role="bass", style="house", tempo=120, key="Am",
                 region_name="Bass – verse",
             )
             seal_contract(contract)
@@ -512,6 +528,7 @@ class TestSectionAgentTelemetry:
         gen_ctx = [c for c in captured_ctx if "drum_telemetry" in c]
         assert len(gen_ctx) > 0, "drum_telemetry should be injected into bridge dict"
         dt = gen_ctx[0]["drum_telemetry"]
+        assert isinstance(dt, dict)
         assert dt["energy_level"] == 0.75
         assert dt["density_score"] == 3.5
         assert dt["kick_pattern_hash"] == "deadbeef"
@@ -529,22 +546,27 @@ class TestSectionAgentTelemetry:
         from app.core.maestro_plan_tracker import _ToolCallOutcome
 
         store = StateStore(conversation_id="test-no-state")
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
 
         region_outcome = _ToolCallOutcome(
             enriched_params={}, tool_result={"regionId": "r1"},
-            sse_events=[], msg_call={}, msg_result={},
+            sse_events=[], msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
         gen_outcome = _ToolCallOutcome(
             enriched_params={}, tool_result={"notesAdded": 2},
             sse_events=[{"type": "toolCall", "name": "stori_add_notes", "params": {
                 "notes": [{"pitch": 60, "start_beat": 0, "velocity": 80}],
             }}],
-            msg_call={}, msg_result={},
+            msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 
-        async def _mock_apply(*, tc_id: Any, tc_name: Any, resolved_args: Any, **kw: Any) -> Any:
-
+        async def _mock_apply(
+            *,
+            tc_id: str,
+            tc_name: str,
+            resolved_args: dict[str, Any],
+            **kw: Any,
+        ) -> Any:
             if tc_name == "stori_add_midi_region":
                 return region_outcome
             return gen_outcome
@@ -560,7 +582,7 @@ class TestSectionAgentTelemetry:
             seal_contract(spec)
             contract = SectionContract(
                 section=spec, track_id="trk-1", instrument_name="Keys",
-                role="chords", style="house", tempo=120.0, key="C",
+                role="chords", style="house", tempo=120, key="C",
                 region_name="Keys – verse",
             )
             seal_contract(contract)

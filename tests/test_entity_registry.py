@@ -7,6 +7,8 @@ eliminating the "fabricated ID" failure mode where LLMs invent entity IDs.
 from __future__ import annotations
 
 import pytest
+
+from app.contracts.project_types import ProjectContext
 from app.core.entity_registry import (
     EntityRegistry,
     EntityType,
@@ -321,13 +323,13 @@ class TestProjectStateSync:
         """Should sync tracks from project state."""
         registry = EntityRegistry()
         
-        project_state = {
+        project_state: ProjectContext = {
             "tracks": [
                 {"id": "track-1", "name": "Drums"},
                 {"id": "track-2", "name": "Bass"},
             ]
         }
-        
+
         registry.sync_from_project_state(project_state)
         
         assert registry.exists_track("track-1")
@@ -340,7 +342,7 @@ class TestProjectStateSync:
         """Should sync regions from project state."""
         registry = EntityRegistry()
         
-        project_state = {
+        project_state: ProjectContext = {
             "tracks": [
                 {
                     "id": "track-1",
@@ -352,7 +354,7 @@ class TestProjectStateSync:
                 }
             ]
         }
-        
+
         registry.sync_from_project_state(project_state)
         
         assert registry.exists_region("region-1")
@@ -365,14 +367,14 @@ class TestProjectStateSync:
         """Should sync buses from project state."""
         registry = EntityRegistry()
         
-        project_state = {
+        project_state: ProjectContext = {
             "tracks": [],
             "buses": [
                 {"id": "bus-1", "name": "Reverb"},
                 {"id": "bus-2", "name": "Delay"},
             ]
         }
-        
+
         registry.sync_from_project_state(project_state)
         
         assert registry.exists_bus("bus-1")
@@ -381,12 +383,12 @@ class TestProjectStateSync:
     def test_create_registry_from_context(self) -> None:
 
         """Convenience function should create and sync."""
-        project_state = {
+        project_state: ProjectContext = {
             "tracks": [
                 {"id": "track-drums", "name": "Drums"},
             ]
         }
-        
+
         registry = create_registry_from_context(project_state)
         
         assert registry.exists_track("track-drums")
@@ -407,9 +409,15 @@ class TestSerialization:
         data = registry.to_dict()
         
         assert data["project_id"] == "test-project"
-        assert track_id in data["tracks"]
-        assert region_id in data["regions"]
-        assert bus_id in data["buses"]
+        tracks = data["tracks"]
+        regions = data["regions"]
+        buses = data["buses"]
+        assert isinstance(tracks, dict)
+        assert isinstance(regions, dict)
+        assert isinstance(buses, dict)
+        assert track_id in tracks
+        assert region_id in regions
+        assert bus_id in buses
     
     def test_from_dict(self) -> None:
 

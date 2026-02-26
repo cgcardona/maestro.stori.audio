@@ -11,7 +11,6 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any
 
 import asyncio
 
@@ -20,7 +19,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.models.base import CamelModel
 
-from app.mcp.server import get_mcp_server, StoriMCPServer
+from app.contracts.mcp_types import MCPContentBlock, MCPToolDef
+from app.mcp.server import get_mcp_server, DAWMessage, ServerInfoDict, StoriMCPServer
 from app.auth.dependencies import require_valid_token
 from app.auth.tokens import validate_access_code, AccessCodeError
 from app.core.sse_utils import sse_event
@@ -58,49 +58,58 @@ def _is_valid_connection_id(connection_id: str) -> bool:
 class MCPToolCallRequest(CamelModel):
     """Request to call an MCP tool."""
     name: str
-    arguments: dict[str, Any] = {}
+    arguments: dict[str, object] = {}
 
 
 class MCPToolCallResponse(CamelModel):
     """Response from MCP tool call."""
     success: bool
-    content: list[dict[str, Any]]
+    content: list[MCPContentBlock]
     isError: bool = False
+
+
+class ToolResponseBody(CamelModel):
+    """Body for DAW tool-response POST."""
+    request_id: str
+    result: dict[str, object] = {}
 
 
 # =============================================================================
 # HTTP Endpoints for MCP
 # =============================================================================
 
+class MCPToolListResponse(CamelModel):
+    """Response containing the list of available MCP tools."""
+    tools: list[MCPToolDef]
+
+
 @router.get("/tools")
 async def list_tools(
-    token_claims: dict[str, Any] = Depends(require_valid_token),
-) -> dict[str, Any]:
+    _auth: object = Depends(require_valid_token),
+) -> MCPToolListResponse:
     """list all available MCP tools. Requires authentication."""
     server = get_mcp_server()
-    return {
-        "tools": server.list_tools()
-    }
+    return MCPToolListResponse(tools=server.list_tools())
 
 
 @router.get("/tools/{tool_name}")
 async def get_tool(
     tool_name: str,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
-) -> dict[str, Any]:
+    _auth: object = Depends(require_valid_token),
+) -> MCPToolDef:
     """Get details about a specific tool. Requires authentication."""
     server = get_mcp_server()
     for tool in server.list_tools():
         if tool["name"] == tool_name:
             return tool
-    return {"error": f"Tool not found: {tool_name}"}
+    raise HTTPException(status_code=404, detail=f"Tool not found: {tool_name}")
 
 
 @router.post("/tools/{tool_name}/call")
 async def call_tool(
     tool_name: str,
     request: MCPToolCallRequest,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    _auth: object = Depends(require_valid_token),
 ) -> MCPToolCallResponse:
     """Call an MCP tool. Requires authentication. Returns 400 on validation failure."""
     server = get_mcp_server()
@@ -117,8 +126,8 @@ async def call_tool(
 
 @router.get("/info")
 async def server_info(
-    token_claims: dict[str, Any] = Depends(require_valid_token),
-) -> dict[str, Any]:
+    _auth: object = Depends(require_valid_token),
+) -> ServerInfoDict:
     """Get MCP server information. Requires authentication."""
     server = get_mcp_server()
     return server.get_server_info()
@@ -158,7 +167,7 @@ async def daw_websocket(
     connection_id = str(id(websocket))
     server = get_mcp_server()
 
-    async def send_to_daw(message: dict[str, Any]) -> None:
+    async def send_to_daw(message: DAWMessage) -> None:
         await websocket.send_json(message)
 
     server.register_daw(connection_id, send_to_daw)
@@ -213,7 +222,7 @@ async def daw_websocket(
 
 @router.post("/connection")
 async def create_connection(
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    _auth: object = Depends(require_valid_token),
 ) -> dict[str, str]:
     """
     Obtain a server-issued connection ID for the SSE flow.
@@ -227,7 +236,7 @@ async def create_connection(
 @router.get("/stream/{connection_id}")
 async def tool_stream(
     connection_id: str,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    _auth: object = Depends(require_valid_token),
 ) -> StreamingResponse:
     """
     SSE endpoint for receiving tool calls. Requires authentication.
@@ -241,10 +250,10 @@ async def tool_stream(
         )
     async def event_generator() -> AsyncIterator[str]:
         server = get_mcp_server()
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[DAWMessage] = asyncio.Queue()
         guard = ProtocolGuard()
 
-        async def send_to_queue(message: dict[str, Any]) -> None:
+        async def send_to_queue(message: DAWMessage) -> None:
             await queue.put(message)
 
         server.register_daw(connection_id, send_to_queue)
@@ -283,8 +292,8 @@ async def tool_stream(
 @router.post("/response/{connection_id}")
 async def post_tool_response(
     connection_id: str,
-    data: dict[str, Any],
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    body: ToolResponseBody,
+    _auth: object = Depends(require_valid_token),
 ) -> dict[str, str]:
     """
     Endpoint for DAW to post tool execution results. Requires authentication.
@@ -296,11 +305,9 @@ async def post_tool_response(
             detail="Invalid or expired connection_id. Obtain one from POST /api/v1/mcp/connection first.",
         )
     server = get_mcp_server()
-    request_id = data.get("requestId")
-    result = data.get("result", {})
     server.receive_tool_response(
         connection_id,
-        str(request_id) if request_id is not None else "",
-        result if isinstance(result, dict) else {},
+        body.request_id,
+        dict(body.result),
     )
     return {"status": "ok"}

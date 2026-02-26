@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
+from app.contracts.json_types import NoteDict
 from app.services.critic.constants import DRUM_WEIGHTS
 from app.services.critic.helpers import _offbeat_ratio, _get_notes_by_layer
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def _score_groove_pocket(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     layer_map: dict[int, str] | None = None,
     style: str = "trap",
 ) -> tuple[float, list[str]]:
@@ -59,7 +59,7 @@ def _score_groove_pocket(
 
 
 def _score_hat_articulation(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     layer_map: dict[int, str] | None = None,
     bars: int = 16,
 ) -> tuple[float, list[str]]:
@@ -124,7 +124,7 @@ def _score_hat_articulation(
 
 
 def _score_fill_localization(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     layer_map: dict[int, str] | None = None,
     fill_bars: list[int] | None = None,
     bars: int = 16,
@@ -164,7 +164,7 @@ def _score_fill_localization(
 
 
 def _score_ghost_plausibility(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     layer_map: dict[int, str] | None = None,
 ) -> tuple[float, list[str]]:
     """Score ghost note placement (near backbeats) and velocity (quiet)."""
@@ -200,7 +200,7 @@ def _score_ghost_plausibility(
 
 
 def _score_layer_balance(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     layer_map: dict[int, str] | None = None,
 ) -> tuple[float, list[str]]:
     """Score layer presence: core (kick/snare), timekeepers (hats), accent layers."""
@@ -234,7 +234,7 @@ def _score_layer_balance(
     return sum(scores) / max(1, len(scores)) if scores else 0.5, repair
 
 
-def _score_repetition_structure(notes: list[dict[str, Any]], bars: int = 16) -> tuple[float, list[str]]:
+def _score_repetition_structure(notes: list[NoteDict], bars: int = 16) -> tuple[float, list[str]]:
     """Score repetition structure: A/A' patterns OK, identical bars not OK."""
     repair: list[str] = []
     if not notes or bars < 2:
@@ -273,7 +273,7 @@ def _score_repetition_structure(notes: list[dict[str, Any]], bars: int = 16) -> 
     return score, repair
 
 
-def _score_velocity_dynamics(notes: list[dict[str, Any]], bars: int = 16) -> tuple[float, list[str]]:
+def _score_velocity_dynamics(notes: list[NoteDict], bars: int = 16) -> tuple[float, list[str]]:
     """Score velocity dynamics: backbeat accents, overall dynamic range."""
     repair: list[str] = []
     if not notes:
@@ -307,7 +307,7 @@ def _score_velocity_dynamics(notes: list[dict[str, Any]], bars: int = 16) -> tup
 
 
 def score_drum_notes(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     *,
     layer_map: dict[int, str] | None = None,
     fill_bars: list[int] | None = None,

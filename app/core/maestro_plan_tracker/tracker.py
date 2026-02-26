@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import uuid as _uuid_mod
-from typing import Any
+from typing import TYPE_CHECKING
 
+from app.core.sse_utils import SSEEventInput
+
+from app.core.expansion import ToolCall
 from app.core.maestro_helpers import _human_label_for_tool, _humanize_style
+
+if TYPE_CHECKING:
+    from app.contracts.project_types import ProjectContext
+    from app.core.prompt_parser import ParsedPrompt
+    from app.core.state_store import StateStore
 from app.core.maestro_plan_tracker.constants import (
     _AGENT_TEAM_PHASE3_TOOLS,
     _CONTENT_TOOL_NAMES,
@@ -38,11 +46,11 @@ class _PlanTracker:
 
     def build(
         self,
-        tool_calls: list[Any],
+        tool_calls: list[ToolCall],
         prompt: str,
-        project_context: dict[str, Any],
+        project_context: ProjectContext,
         is_composition: bool,
-        store: Any,
+        store: StateStore,
     ) -> None:
         self.title = self._derive_title(prompt, tool_calls, project_context)
         self.steps = self._group_into_steps(tool_calls)
@@ -52,8 +60,8 @@ class _PlanTracker:
     def _derive_title(
         self,
         prompt: str,
-        tool_calls: list[Any],
-        project_context: dict[str, Any],
+        tool_calls: list[ToolCall],
+        project_context: ProjectContext,
     ) -> str:
         """Build a musically descriptive plan title.
 
@@ -105,7 +113,7 @@ class _PlanTracker:
         return f"Building {short}" if len(short) < 40 else short
 
     @staticmethod
-    def _track_name_for_call(tc: Any) -> str | None:
+    def _track_name_for_call(tc: ToolCall) -> str | None:
         """Extract the track name a tool call targets (None for project-level)."""
         name = tc.name
         params = tc.params
@@ -118,7 +126,7 @@ class _PlanTracker:
         val = params.get("trackName") or params.get("name") or None
         return str(val) if val else None
 
-    def _group_into_steps(self, tool_calls: list[Any]) -> list[_PlanStep]:
+    def _group_into_steps(self, tool_calls: list[ToolCall]) -> list[_PlanStep]:
         """Group tool calls into plan steps using canonical label patterns.
 
         Canonical patterns recognised by ExecutionTimelineView:
@@ -399,9 +407,9 @@ class _PlanTracker:
 
     def build_from_prompt(
         self,
-        parsed: Any,  # ParsedPrompt — avoid circular import
+        parsed: ParsedPrompt,
         prompt: str,
-        project_context: dict[str, Any],
+        project_context: ProjectContext,
     ) -> None:
         """Build a skeleton plan from a parsed STORI PROMPT before any LLM call.
 
@@ -617,7 +625,7 @@ class _PlanTracker:
             if step.tool_name:
                 step.phase = phase_for_tool(step.tool_name)
 
-    def _add_anticipatory_steps(self, store: Any) -> None:
+    def _add_anticipatory_steps(self, store: StateStore) -> None:
         """For composition mode, add pending steps for tracks still needing content."""
         names_with_steps = {
             s.track_name.lower() for s in self.steps if s.track_name
@@ -640,7 +648,7 @@ class _PlanTracker:
 
     # -- SSE events -----------------------------------------------------------
 
-    def to_plan_event(self) -> dict[str, Any]:
+    def to_plan_event(self) -> SSEEventInput:
         return {
             "type": "plan",
             "planId": self.plan_id,
@@ -669,27 +677,26 @@ class _PlanTracker:
     def find_step_for_tool(
         self,
         tc_name: str,
-        tc_params: dict[str, Any],
-        store: Any,
+        tc_params: dict[str, object],
+        store: StateStore,
     ) -> _PlanStep | None:
         """Map a tool call to a plan step by name/context.
 
         Used for both subsequent iterations (reactive plan) and upfront-built
         plans (where tool_indices are empty and steps are matched by label/name).
         """
+
         if tc_name == "stori_set_tempo":
-            tempo = tc_params.get("tempo")
             for step in self.steps:
                 if "tempo" in step.label.lower() and step.status != "completed":
                     return step
-            _ = tempo  # silence linter
         if tc_name == "stori_set_key":
             for step in self.steps:
                 if "key" in step.label.lower() and step.status != "completed":
                     return step
 
         if tc_name in _TRACK_CREATION_NAMES:
-            track_name = tc_params.get("name", "").lower()
+            track_name = str(tc_params.get("name") or "").lower()
             for step in self.steps:
                 if (
                     step.track_name
@@ -699,7 +706,7 @@ class _PlanTracker:
                     return step
 
         if tc_name in _CONTENT_TOOL_NAMES:
-            track_id = tc_params.get("trackId", "")
+            track_id = str(tc_params.get("trackId") or "")
             if track_id:
                 for track in store.registry.list_tracks():
                     if track.id == track_id:
@@ -713,7 +720,7 @@ class _PlanTracker:
                         break
 
         if tc_name in _GENERATOR_TOOL_NAMES:
-            gen_track = (tc_params.get("trackName") or "").lower()
+            gen_track = str(tc_params.get("trackName") or "").lower()
             if gen_track:
                 for step in self.steps:
                     if (
@@ -732,7 +739,7 @@ class _PlanTracker:
                         return step
 
         if tc_name in _EFFECT_TOOL_NAMES:
-            tc_track = tc_params.get("trackName", "").lower()
+            tc_track = str(tc_params.get("trackName") or "").lower()
             if tc_track:
                 for step in self.steps:
                     if (
@@ -751,7 +758,7 @@ class _PlanTracker:
                     return step
 
         if tc_name in _EXPRESSIVE_TOOL_NAMES:
-            tc_track = tc_params.get("trackName", "").lower()
+            tc_track = str(tc_params.get("trackName") or "").lower()
             if tc_name == "stori_add_midi_cc":
                 for step in self.steps:
                     if "MIDI CC" in step.label and step.status != "completed":
@@ -781,21 +788,20 @@ class _PlanTracker:
                 return step
         return None
 
-    def activate_step(self, step_id: str) -> dict[str, Any]:
+    def activate_step(self, step_id: str) -> SSEEventInput:
         step = self.get_step(step_id)
         if step:
             step.status = "active"
         self._active_step_id = step_id
         self._active_step_ids.add(step_id)
-        d: dict[str, Any] = {
+        return {
             "type": "planStepUpdate",
             "stepId": step_id,
             "status": "active",
             "phase": step.phase if step else "composition",
         }
-        return d
 
-    def complete_active_step(self) -> dict[str, Any] | None:
+    def complete_active_step(self) -> SSEEventInput | None:
         """Complete the currently-active step; returns event dict or None."""
         if not self._active_step_id:
             return None
@@ -805,7 +811,7 @@ class _PlanTracker:
         step.status = "completed"
         self._active_step_ids.discard(self._active_step_id)
         self._active_step_id = None
-        d: dict[str, Any] = {
+        d: SSEEventInput = {
             "type": "planStepUpdate",
             "stepId": step.step_id,
             "status": "completed",
@@ -817,7 +823,7 @@ class _PlanTracker:
 
     def complete_step_by_id(
         self, step_id: str, result: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> SSEEventInput:
         step = self.get_step(step_id)
         if step:
             step.status = "completed"
@@ -826,7 +832,7 @@ class _PlanTracker:
         if self._active_step_id == step_id:
             self._active_step_id = None
         self._active_step_ids.discard(step_id)
-        d: dict[str, Any] = {
+        d: SSEEventInput = {
             "type": "planStepUpdate",
             "stepId": step_id,
             "status": "completed",
@@ -836,14 +842,14 @@ class _PlanTracker:
             d["result"] = result
         return d
 
-    def complete_all_active_steps(self) -> list[dict[str, Any]]:
+    def complete_all_active_steps(self) -> list[SSEEventInput]:
         """Complete every currently-active step. Returns list of event dicts."""
-        events: list[dict[str, Any]] = []
+        events: list[SSEEventInput] = []
         for step_id in list(self._active_step_ids):
             step = self.get_step(step_id)
             if step and step.status == "active":
                 step.status = "completed"
-                d: dict[str, Any] = {
+                d: SSEEventInput = {
                     "type": "planStepUpdate",
                     "stepId": step.step_id,
                     "status": "completed",
@@ -868,14 +874,14 @@ class _PlanTracker:
                 return step
         return None
 
-    def finalize_pending_as_skipped(self) -> list[dict[str, Any]]:
+    def finalize_pending_as_skipped(self) -> list[SSEEventInput]:
         """Mark all remaining pending steps as skipped and return events.
 
         The Execution Timeline spec requires that no step is left in "pending"
         at plan completion — steps that were never activated must be emitted
         as "skipped" so the frontend can render them correctly.
         """
-        events: list[dict[str, Any]] = []
+        events: list[SSEEventInput] = []
         for step in self.steps:
             if step.status == "pending":
                 step.status = "skipped"

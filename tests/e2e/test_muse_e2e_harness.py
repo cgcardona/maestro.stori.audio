@@ -14,11 +14,11 @@ Run:
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 import json
 import logging
-from typing import Any
-
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
@@ -52,30 +52,30 @@ _forced_ops = 0
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-async def save(client: AsyncClient, payload: dict[str, object], headers: dict[str, str]) -> Any:
-
+async def save(client: AsyncClient, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
     resp = await client.post(f"{BASE}/variations", json=payload, headers=headers)
     assert resp.status_code == 200, f"save failed: {resp.text}"
-    return resp.json()
+    result: dict[str, Any] = resp.json()
+    return result
 
 
-async def set_head(client: AsyncClient, vid: str, headers: dict[str, str]) -> Any:
-
+async def set_head(client: AsyncClient, vid: str, headers: dict[str, str]) -> dict[str, Any]:
     resp = await client.post(f"{BASE}/head", json={"variation_id": vid}, headers=headers)
     assert resp.status_code == 200, f"set_head failed: {resp.text}"
-    return resp.json()
+    result: dict[str, Any] = resp.json()
+    return result
 
 
-async def get_log(client: AsyncClient, headers: dict[str, str]) -> Any:
-
+async def get_log(client: AsyncClient, headers: dict[str, str]) -> dict[str, Any]:
     resp = await client.get(f"{BASE}/log", params={"project_id": PROJECT_ID}, headers=headers)
     assert resp.status_code == 200, f"get_log failed: {resp.text}"
-    return resp.json()
+    result: dict[str, Any] = resp.json()
+    return result
 
 
 async def do_checkout(
     client: AsyncClient, target: str, headers: dict[str, str], *, force: bool = False,
-) -> Any:
+) -> dict[str, Any]:
     global _checkouts_executed, _forced_ops
     resp = await client.post(f"{BASE}/checkout", json={
         "project_id": PROJECT_ID,
@@ -86,17 +86,19 @@ async def do_checkout(
     if resp.status_code == 409:
         global _drift_blocks
         _drift_blocks += 1
-        return resp.json()
+        result: dict[str, Any] = resp.json()
+        return result
     assert resp.status_code == 200, f"checkout failed: {resp.text}"
     _checkouts_executed += 1
     if force:
         _forced_ops += 1
-    return resp.json()
+    result = resp.json()
+    return result
 
 
 async def do_merge(
     client: AsyncClient, left: str, right: str, headers: dict[str, str], *, force: bool = False,
-) -> tuple[int, Any]:
+) -> tuple[int, dict[str, Any]]:
     global _forced_ops
     resp = await client.post(f"{BASE}/merge", json={
         "project_id": PROJECT_ID,
@@ -107,7 +109,8 @@ async def do_merge(
     }, headers=headers)
     if force:
         _forced_ops += 1
-    return resp.status_code, resp.json()
+    body: dict[str, Any] = resp.json()
+    return resp.status_code, body
 
 
 # ── The Test ──────────────────────────────────────────────────────────────

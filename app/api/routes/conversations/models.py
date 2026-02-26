@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import Field
 
+from app.contracts.project_types import ProjectContext
 from app.models.base import CamelModel
 
 
@@ -12,7 +13,7 @@ class ConversationCreateRequest(CamelModel):
     """Request to create a new conversation."""
     title: str = Field(default="New Conversation", max_length=255)
     project_id: str | None = Field(default=None, description="Project UUID to link conversation to")
-    project_context: dict[str, Any] | None = Field(default=None)
+    project_context: ProjectContext | None = Field(default=None)
 
 
 class ConversationUpdateRequest(CamelModel):

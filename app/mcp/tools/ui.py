@@ -1,7 +1,9 @@
 """UI control MCP tool definitions."""
 from __future__ import annotations
 
-UI_TOOLS = [
+from app.contracts.mcp_types import MCPToolDef
+
+UI_TOOLS: list[MCPToolDef] = [
     {
         "name": "stori_show_panel",
         "description": "Show or hide a panel (mixer, inspector, piano_roll, etc.).",

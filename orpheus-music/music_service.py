@@ -54,6 +54,18 @@ from seed_selector import select_seed, select_seed_with_key, SeedSelection
 from midi_transforms import transpose_midi
 from candidate_scorer import score_candidate, select_best_candidate, CandidateScore
 from post_processing import build_post_processor
+from orpheus_types import (
+    BestCandidate,
+    CacheKeyData,
+    OrpheusAftertouch,
+    OrpheusCCEvent,
+    OrpheusNoteDict,
+    OrpheusPitchBend,
+    ParsedMidiResult,
+    QualityEvalToolCall,
+    ScoringParams,
+    WireNoteDict,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -219,10 +231,10 @@ CACHE_TTL_SECONDS = 86400  # 24 hours
 @dataclass
 class CacheEntry:
     """Cache entry with TTL support and key data for fuzzy matching."""
-    result: dict[str, Any]
+    result: dict[str, object]
     timestamp: float
     hits: int = 0
-    key_data: dict[str, Any] | None = None
+    key_data: CacheKeyData | None = None
 
 # Result cache: stores complete generation results (LRU with TTL)
 _result_cache: OrderedDict[str, CacheEntry] = OrderedDict()
@@ -243,7 +255,7 @@ def _canonical_instruments(instruments: list[str]) -> list[str]:
 
 
 
-def _cache_key_data(request: GenerateRequest) -> dict[str, Any]:
+def _cache_key_data(request: GenerateRequest) -> CacheKeyData:
     """Build a canonical, quantized dict of the request's cache-relevant fields."""
     ev = request.emotion_vector
     return {
@@ -269,13 +281,18 @@ def get_cache_key(request: GenerateRequest) -> str:
     return hashlib.md5(key_str.encode()).hexdigest()
 
 
-def _intent_distance(a: dict[str, Any], b: dict[str, Any]) -> float:
+def _intent_distance(a: CacheKeyData, b: CacheKeyData) -> float:
     """Euclidean distance between two cache-key dicts on emotion vector axes."""
-    axes = ["energy", "valence", "tension", "intimacy", "motion"]
-    return math.sqrt(sum((a.get(k, 0) - b.get(k, 0)) ** 2 for k in axes))
+    return math.sqrt(
+        (a["energy"] - b["energy"]) ** 2
+        + (a["valence"] - b["valence"]) ** 2
+        + (a["tension"] - b["tension"]) ** 2
+        + (a["intimacy"] - b["intimacy"]) ** 2
+        + (a["motion"] - b["motion"]) ** 2
+    )
 
 
-def get_cached_result(cache_key: str) -> dict[str, Any] | None:
+def get_cached_result(cache_key: str) -> dict[str, object] | None:
     """
     Get cached generation result if available and not expired.
     
@@ -302,7 +319,7 @@ def get_cached_result(cache_key: str) -> dict[str, Any] | None:
     return copy.deepcopy(entry.result)
 
 
-def cache_result(cache_key: str, result: dict[str, Any], key_data: dict[str, Any] | None = None) -> None:
+def cache_result(cache_key: str, result: dict[str, object], key_data: CacheKeyData | None = None) -> None:
     """
     Cache a generation result with LRU eviction + disk persistence.
 
@@ -322,7 +339,7 @@ def cache_result(cache_key: str, result: dict[str, Any], key_data: dict[str, Any
     _save_cache_to_disk()
 
 
-def fuzzy_cache_lookup(request: GenerateRequest, epsilon: float = _FUZZY_EPSILON) -> dict[str, Any] | None:
+def fuzzy_cache_lookup(request: GenerateRequest, epsilon: float = _FUZZY_EPSILON) -> dict[str, object] | None:
     """
     Find the nearest cached result within ε distance on intent vector axes.
 
@@ -357,12 +374,14 @@ def fuzzy_cache_lookup(request: GenerateRequest, epsilon: float = _FUZZY_EPSILON
     if best_entry is not None and best_dist <= epsilon:
         best_entry.hits += 1
         logger.info(f"🎯 Fuzzy cache hit (dist={best_dist:.3f}, ε={epsilon})")
-        result = dict(best_entry.result)
-        if "metadata" in result and result["metadata"]:
-            result["metadata"] = dict(result["metadata"])
-            result["metadata"]["cache_hit"] = True
-            result["metadata"]["approximate"] = True
-            result["metadata"]["fuzzy_distance"] = round(best_dist, 4)
+        result: dict[str, object] = {**best_entry.result}
+        raw_meta = result.get("metadata")
+        if isinstance(raw_meta, dict):
+            meta: dict[str, object] = {**raw_meta}
+            meta["cache_hit"] = True
+            meta["approximate"] = True
+            meta["fuzzy_distance"] = round(best_dist, 4)
+            result["metadata"] = meta
         return result
 
     return None
@@ -514,12 +533,19 @@ class GenerateRequest(BaseModel):
 
 
 class GenerateResponse(BaseModel):
+    """Response from a generation request.
+
+    ``notes`` and ``channel_notes`` use the camelCase wire format (``WireNoteDict``)
+    for direct consumption by Maestro.  Internal processing uses ``OrpheusNoteDict``
+    (snake_case) up until the response is assembled.
+    """
+
     success: bool
-    notes: list[dict[str, Any]] | None = None
-    channel_notes: dict[str, list[dict[str, Any]]] | None = None
-    tool_calls: list[dict[str, Any]] | None = None
+    notes: list[WireNoteDict] | None = None
+    channel_notes: dict[str, list[WireNoteDict]] | None = None
+    tool_calls: list[dict[str, object]] | None = None
     error: str | None = None
-    metadata: dict[str, Any] | None = None
+    metadata: dict[str, object] | None = None
 
 
 # ============================================================================
@@ -643,7 +669,7 @@ class JobQueue:
     def running_count(self) -> int:
         return sum(1 for j in self._jobs.values() if j.status == JobStatus.RUNNING)
 
-    def status_snapshot(self) -> dict[str, Any]:
+    def status_snapshot(self) -> dict[str, object]:
         return {
             "depth": self.depth,
             "running": self.running_count,
@@ -1111,7 +1137,7 @@ _MIN_SEED_NOTES = 8
 _MIN_SEED_BYTES = 200
 
 
-def analyze_seed(path: str) -> dict[str, Any]:
+def analyze_seed(path: str) -> dict[str, object]:
     """Analyze a seed MIDI file and return a provenance report.
 
     Cheap pre-check: note count, pitch range, polyphony, density, drum hits.
@@ -1246,7 +1272,7 @@ def _resolve_seed(
     )
 
 
-def parse_midi_to_notes(midi_path: str, tempo: int) -> dict[str, Any]:
+def parse_midi_to_notes(midi_path: str, tempo: int) -> ParsedMidiResult:
     """
     Parse MIDI file into notes AND expressive events grouped by channel.
 
@@ -1257,10 +1283,10 @@ def parse_midi_to_notes(midi_path: str, tempo: int) -> dict[str, Any]:
     mid = mido.MidiFile(midi_path)
     ticks_per_beat = mid.ticks_per_beat
 
-    notes: dict[int, list[dict[str, Any]]] = {}
-    cc_events: dict[int, list[dict[str, Any]]] = {}
-    pitch_bends: dict[int, list[dict[str, Any]]] = {}
-    aftertouch: dict[int, list[dict[str, Any]]] = {}
+    notes: dict[int, list[OrpheusNoteDict]] = {}
+    cc_events: dict[int, list[OrpheusCCEvent]] = {}
+    pitch_bends: dict[int, list[OrpheusPitchBend]] = {}
+    aftertouch: dict[int, list[OrpheusAftertouch]] = {}
     program_changes: dict[int, int] = {}
 
     for track in mid.tracks:
@@ -1367,7 +1393,7 @@ def _channels_to_keep(channel_keys: set[int], instruments: list[str]) -> set[int
     return keep if keep else channel_keys
 
 
-def filter_channels_for_instruments(parsed: dict[str, Any], instruments: list[str]) -> dict[str, Any]:
+def filter_channels_for_instruments(parsed: ParsedMidiResult, instruments: list[str]) -> ParsedMidiResult:
     """
     Keep only channels that correspond to the requested instruments.
 
@@ -1375,14 +1401,19 @@ def filter_channels_for_instruments(parsed: dict[str, Any], instruments: list[st
     returned by ``parse_midi_to_notes`` and filters every sub-dict.
     """
     all_chs: set[int] = set()
-    for sub in ("notes", "cc_events", "pitch_bends", "aftertouch"):
-        all_chs.update(parsed.get(sub, {}).keys())
+    all_chs.update(parsed["notes"].keys())
+    all_chs.update(parsed["cc_events"].keys())
+    all_chs.update(parsed["pitch_bends"].keys())
+    all_chs.update(parsed["aftertouch"].keys())
 
     keep = _channels_to_keep(all_chs, instruments)
 
     return {
-        sub_key: {ch: evts for ch, evts in parsed.get(sub_key, {}).items() if ch in keep}
-        for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch")
+        "notes": {ch: evts for ch, evts in parsed["notes"].items() if ch in keep},
+        "cc_events": {ch: evts for ch, evts in parsed["cc_events"].items() if ch in keep},
+        "pitch_bends": {ch: evts for ch, evts in parsed["pitch_bends"].items() if ch in keep},
+        "aftertouch": {ch: evts for ch, evts in parsed["aftertouch"].items() if ch in keep},
+        "program_changes": parsed["program_changes"],
     }
 
 
@@ -1394,7 +1425,7 @@ async def health() -> dict[str, str]:
 # ── Artifact download endpoints ──
 
 @app.get("/artifacts/{comp_id}", response_model=None)
-async def list_artifacts(comp_id: str) -> dict[str, Any] | JSONResponse:
+async def list_artifacts(comp_id: str) -> dict[str, object] | JSONResponse:
     """list artifact files for a composition."""
     from fastapi.responses import JSONResponse
     artifacts_dir = pathlib.Path(
@@ -1407,7 +1438,7 @@ async def list_artifacts(comp_id: str) -> dict[str, Any] | JSONResponse:
 
 
 @app.get("/artifacts/{comp_id}/{filename}", response_model=None)
-async def download_artifact(comp_id: str, filename: str) -> Any:
+async def download_artifact(comp_id: str, filename: str) -> object:
     """Download a single artifact file."""
     from fastapi.responses import FileResponse
     artifacts_dir = pathlib.Path(
@@ -1425,7 +1456,7 @@ async def download_artifact(comp_id: str, filename: str) -> Any:
 
 
 @app.get("/diagnostics")
-async def diagnostics() -> dict[str, Any]:
+async def diagnostics() -> dict[str, object]:
     """Structured diagnostics for the Orpheus service pipeline."""
     now = time()
     space_id = os.environ.get("STORI_ORPHEUS_SPACE", _DEFAULT_SPACE)
@@ -1478,7 +1509,7 @@ async def diagnostics() -> dict[str, Any]:
 
 
 @app.get("/cache/stats")
-async def cache_stats() -> dict[str, Any]:
+async def cache_stats() -> dict[str, object]:
     """
     Get cache statistics with LRU + TTL metrics.
     
@@ -1517,7 +1548,7 @@ async def cache_stats() -> dict[str, Any]:
 
 
 @app.post("/cache/warm")
-async def warm_cache() -> dict[str, Any]:
+async def warm_cache() -> dict[str, object]:
     """
     Pre-generate common genre × tempo combos in the background.
 
@@ -1564,7 +1595,7 @@ async def warm_cache() -> dict[str, Any]:
 
 
 @app.delete("/cache/clear")
-async def clear_cache() -> dict[str, Any]:
+async def clear_cache() -> dict[str, object]:
     """Clear all caches."""
     _result_cache.clear()
     if _CACHE_FILE.exists():
@@ -1583,22 +1614,23 @@ async def clear_cache() -> dict[str, Any]:
 
 class QualityEvaluationRequest(BaseModel):
     """Request to evaluate generation quality."""
-    tool_calls: list[dict[str, Any]]
+
+    tool_calls: list[QualityEvalToolCall]
     bars: int
     tempo: int
 
 
 @app.post("/quality/evaluate")
-async def evaluate_quality(request: QualityEvaluationRequest) -> dict[str, Any]:
+async def evaluate_quality(request: QualityEvaluationRequest) -> dict[str, object]:
     """Evaluate the quality of generated music.
 
     Used for A/B testing policies, monitoring quality over time,
     and automated quality gates.
     """
-    all_notes: list[dict[str, Any]] = []
+    all_notes: list[OrpheusNoteDict] = []
     for tool_call in request.tool_calls:
-        if tool_call.get("tool") == "addNotes":
-            all_notes.extend(tool_call.get("params", {}).get("notes", []))
+        if tool_call["tool"] == "addNotes":
+            all_notes.extend(tool_call["params"].get("notes", []))
 
     metrics = analyze_quality(all_notes, request.bars, request.tempo)
 
@@ -1616,7 +1648,7 @@ class ABTestRequest(BaseModel):
 
 
 @app.post("/quality/ab-test")
-async def ab_test(request: ABTestRequest) -> dict[str, Any]:
+async def ab_test(request: ABTestRequest) -> dict[str, object]:
     """
     A/B test two generation configurations.
     
@@ -1633,15 +1665,26 @@ async def ab_test(request: ABTestRequest) -> dict[str, Any]:
             "result_b_success": result_b.success,
         }
 
-    notes_a = result_a.notes or []
-    notes_b = result_b.notes or []
-    
-    comparison = compare_generations(notes_a, notes_b, request.config_a.bars, request.config_a.tempo)
+    def _to_orpheus(wire: list[WireNoteDict]) -> list[OrpheusNoteDict]:
+        return [
+            OrpheusNoteDict(
+                pitch=n["pitch"], start_beat=n["startBeat"],
+                duration_beats=n["durationBeats"], velocity=n["velocity"],
+            )
+            for n in wire
+        ]
+
+    comparison = compare_generations(
+        _to_orpheus(result_a.notes or []),
+        _to_orpheus(result_b.notes or []),
+        request.config_a.bars,
+        request.config_a.tempo,
+    )
     
     return {
         "comparison": comparison,
-        "config_a_cache_hit": result_a.metadata.get("cache_hit", False) if result_a.metadata else False,
-        "config_b_cache_hit": result_b.metadata.get("cache_hit", False) if result_b.metadata else False,
+        "config_a_cache_hit": bool(result_a.metadata.get("cache_hit")) if result_a.metadata else False,
+        "config_b_cache_hit": bool(result_b.metadata.get("cache_hit")) if result_b.metadata else False,
     }
 
 
@@ -1822,9 +1865,10 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         num_gen_tokens = _derived["num_gen_tokens"]
 
         # Check if prime token budget vastly exceeds seed content
+        _seed_tok_est = seed_report.get("seed_token_count_estimate")
         effective_prime_tokens = min(
             num_prime_tokens,
-            seed_report.get("seed_token_count_estimate", num_prime_tokens),
+            _seed_tok_est if isinstance(_seed_tok_est, int) else num_prime_tokens,
         )
         _ctx_util = (num_prime_tokens + num_gen_tokens) / 8192 * 100
         _prime_utilization = (
@@ -1964,23 +2008,20 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
 
         # Extract scoring params from constraints for candidate scoring
         _gc = request.generation_constraints
-        _scoring_kwargs: dict[str, Any] = {
-            "bars": request.bars,
-            "target_key": request.key,
-            "expected_channels": len(request.instruments),
-            "target_density": _pre_controls.density * 100.0,
-        }
-        if _gc:
-            _scoring_kwargs.update({
-                "register_center": _gc.register_center,
-                "register_spread": _gc.register_spread,
-                "velocity_floor": _gc.velocity_floor,
-                "velocity_ceiling": _gc.velocity_ceiling,
-            })
+        _scoring = ScoringParams(
+            bars=request.bars,
+            target_key=request.key,
+            expected_channels=len(request.instruments),
+            target_density=_pre_controls.density * 100.0,
+            register_center=_gc.register_center if _gc else None,
+            register_spread=_gc.register_spread if _gc else None,
+            velocity_floor=_gc.velocity_floor if _gc else None,
+            velocity_ceiling=_gc.velocity_ceiling if _gc else None,
+        )
 
-        best_candidate: dict[str, Any] | None = None
+        best_candidate: BestCandidate | None = None
         best_score: CandidateScore | None = None
-        all_candidate_scores: list[dict[str, Any]] = []
+        all_candidate_scores: list[dict[str, object]] = []
 
         for _attempt in range(_num_candidates):
             batch_idx = rng.randint(0, 9)
@@ -2045,23 +2086,38 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                 parse_midi_to_notes, _attempt_midi_path, request.tempo,
             )
 
-            for sub_key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
-                sub = _attempt_parsed.get(sub_key, {})
-                beat_field = "start_beat" if sub_key == "notes" else "beat"
-                for ch in list(sub):
-                    sub[ch] = [ev for ev in sub[ch] if ev.get(beat_field, 0) < max_beat]
-                    if not sub[ch]:
-                        del sub[ch]
+            # Trim events beyond max_beat in-place on the typed sub-dicts
+            for ch in list(_attempt_parsed["notes"]):
+                _attempt_parsed["notes"][ch] = [
+                    n for n in _attempt_parsed["notes"][ch]
+                    if n.get("start_beat", 0.0) < max_beat
+                ]
+                if not _attempt_parsed["notes"][ch]:
+                    del _attempt_parsed["notes"][ch]
+            for ch in list(_attempt_parsed["cc_events"]):
+                _attempt_parsed["cc_events"][ch] = [
+                    e for e in _attempt_parsed["cc_events"][ch] if e["beat"] < max_beat
+                ]
+                if not _attempt_parsed["cc_events"][ch]:
+                    del _attempt_parsed["cc_events"][ch]
+            for ch in list(_attempt_parsed["pitch_bends"]):
+                _attempt_parsed["pitch_bends"][ch] = [
+                    e for e in _attempt_parsed["pitch_bends"][ch] if e["beat"] < max_beat
+                ]
+                if not _attempt_parsed["pitch_bends"][ch]:
+                    del _attempt_parsed["pitch_bends"][ch]
+            for ch in list(_attempt_parsed["aftertouch"]):
+                _attempt_parsed["aftertouch"][ch] = [
+                    e for e in _attempt_parsed["aftertouch"][ch] if e["beat"] < max_beat
+                ]
+                if not _attempt_parsed["aftertouch"][ch]:
+                    del _attempt_parsed["aftertouch"][ch]
 
-            _attempt_flat: list[dict[str, Any]] = []
-            for ch_notes in _attempt_parsed.get("notes", {}).values():
-                for n in ch_notes:
-                    _attempt_flat.append({
-                        "pitch": n["pitch"],
-                        "start_beat": n["start_beat"],
-                        "duration_beats": n["duration_beats"],
-                        "velocity": n["velocity"],
-                    })
+            _attempt_flat: list[OrpheusNoteDict] = [
+                note
+                for ch_notes in _attempt_parsed["notes"].values()
+                for note in ch_notes
+            ]
 
             if not _attempt_flat:
                 logger.warning(f"⚠️ Batch {batch_idx} produced zero notes, skipping")
@@ -2070,9 +2126,9 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
 
             candidate_score = score_candidate(
                 _attempt_flat,
-                _attempt_parsed.get("notes", {}),
+                _attempt_parsed["notes"],
                 batch_index=batch_idx,
-                **_scoring_kwargs,
+                params=_scoring,
             )
 
             all_candidate_scores.append({
@@ -2092,13 +2148,13 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
 
             if best_score is None or candidate_score.total_score > best_score.total_score:
                 best_score = candidate_score
-                best_candidate = {
-                    "midi_result": midi_result,
-                    "midi_path": _attempt_midi_path,
-                    "parsed": _attempt_parsed,
-                    "flat_notes": _attempt_flat,
-                    "batch_idx": batch_idx,
-                }
+                best_candidate = BestCandidate(
+                    midi_result=midi_result,
+                    midi_path=_attempt_midi_path,
+                    parsed=_attempt_parsed,
+                    flat_notes=_attempt_flat,
+                    batch_idx=batch_idx,
+                )
 
             if candidate_score.total_score >= (1.0 - _rejection_threshold):
                 logger.info(f"✅ Score {candidate_score.total_score:.3f} above threshold, accepting")
@@ -2110,19 +2166,19 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                 error="All candidates produced zero usable notes",
             )
 
-        midi_result = best_candidate["midi_result"]
-        midi_path = best_candidate["midi_path"]
-        parsed = best_candidate["parsed"]
-        batch_idx = best_candidate["batch_idx"]
-        mvp_notes: list[dict[str, Any]] = [
+        midi_result = best_candidate.midi_result
+        midi_path = best_candidate.midi_path
+        parsed = best_candidate.parsed
+        batch_idx = best_candidate.batch_idx
+        snake_notes: list[OrpheusNoteDict] = list(best_candidate.flat_notes)
+        mvp_notes: list[WireNoteDict] = [
             {"pitch": n["pitch"], "startBeat": n["start_beat"],
              "durationBeats": n["duration_beats"], "velocity": n["velocity"]}
-            for n in best_candidate["flat_notes"]
+            for n in snake_notes
         ]
-        snake_notes = best_candidate["flat_notes"]
 
-        all_channels = set(parsed.get("notes", {}).keys())
-        pitches = [n["pitch"] for n in mvp_notes] if mvp_notes else []
+        all_channels = set(parsed["notes"].keys())
+        pitches: list[int] = [n["pitch"] for n in snake_notes] if snake_notes else []
         _best_total = best_score.total_score if best_score else 0.0
         logger.info(
             f"🏆 Best candidate: batch={batch_idx} "
@@ -2177,24 +2233,16 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             logger.warning(f"⚠️ Failed to copy MIDI artifact: {exc}")
 
         # ── Post-processing pipeline ──
-        _pp_gc = (
-            request.generation_constraints.model_dump()
-            if request.generation_constraints else None
-        )
-        _pp_rp = (
-            request.role_profile_summary.model_dump()
-            if request.role_profile_summary else None
-        )
         _post_processor = build_post_processor(
-            generation_constraints=_pp_gc,
-            role_profile_summary=_pp_rp,
+            generation_constraints=request.generation_constraints,
+            role_profile_summary=request.role_profile_summary,
         )
         snake_notes = _post_processor.process(snake_notes)
 
-        # Rebuild mvp_notes from post-processed snake_notes
+        # Rebuild wire-format notes from post-processed snake_notes
         mvp_notes = [
-            {"pitch": n["pitch"], "startBeat": n["start_beat"],
-             "durationBeats": n["duration_beats"], "velocity": n["velocity"]}
+            WireNoteDict(pitch=n["pitch"], startBeat=n["start_beat"],
+                         durationBeats=n["duration_beats"], velocity=n["velocity"])
             for n in snake_notes
         ]
 
@@ -2234,7 +2282,8 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             quality_preset=request.quality_preset,
         )
 
-        metadata: dict[str, Any] = {
+
+        metadata: dict[str, object] = {
             "policy_version": get_policy_version(),
             "params_used": {
                 "temperature": temperature,
@@ -2254,7 +2303,8 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                 "groove": round(controls.groove, 3),
             },
             "fulfillment_report": build_fulfillment_report(
-                snake_notes, request.bars, controls, gc_dict,
+                snake_notes, request.bars, controls,
+                generation_constraints=request.generation_constraints,
             ),
             "candidate_selection": {
                 "candidates_evaluated": len(all_candidate_scores),
@@ -2295,18 +2345,17 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
 
         # ── Build notes: unified (labeled by channel) or flat ──
         if request.unified_output:
-            _prog_changes = parsed.get("program_changes", {})
-            channel_notes: dict[str, list[dict[str, Any]]] = {}
-            for ch_key, ch_notes in parsed.get("notes", {}).items():
-                ch_int = int(ch_key) if isinstance(ch_key, str) and ch_key.isdigit() else ch_key
-                label = _channel_label(ch_int, program_changes=_prog_changes)
+            _prog_changes = parsed["program_changes"]
+            channel_notes: dict[str, list[WireNoteDict]] = {}
+            for ch_key, ch_notes in parsed["notes"].items():
+                label = _channel_label(ch_key, program_changes=_prog_changes)
                 channel_notes[label] = [
-                    {
-                        "pitch": n["pitch"],
-                        "startBeat": n["start_beat"],
-                        "durationBeats": n["duration_beats"],
-                        "velocity": n["velocity"],
-                    }
+                    WireNoteDict(
+                        pitch=n["pitch"],
+                        startBeat=n["start_beat"],
+                        durationBeats=n["duration_beats"],
+                        velocity=n["velocity"],
+                    )
                     for n in ch_notes
                 ]
             metadata["unified_channels"] = list(channel_notes.keys())
@@ -2317,19 +2366,21 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         else:
             response_notes_unified = None
 
-        response_data: dict[str, Any] = {
-            "success": True,
-            "notes": mvp_notes,
-            "error": None,
-            "metadata": metadata,
-        }
-        if response_notes_unified is not None:
-            response_data["channel_notes"] = response_notes_unified
-
-        cache_result(cache_key, response_data, key_data=_cache_key_data(request))
+        _response = GenerateResponse(
+            success=True,
+            notes=mvp_notes,
+            error=None,
+            metadata=metadata,
+            channel_notes=response_notes_unified,
+        )
+        cache_result(
+            cache_key,
+            _response.model_dump(),
+            key_data=_cache_key_data(request),
+        )
         _last_successful_gen = time()
 
-        return GenerateResponse(**response_data)
+        return _response
 
     except (Exception, asyncio.CancelledError) as e:
         err_msg = str(e) or type(e).__name__
@@ -2349,9 +2400,9 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         )
 
 
-def _job_response(job: Job) -> dict[str, Any]:
+def _job_response(job: Job) -> dict[str, object]:
     """Serialize a Job to the wire format used by /generate and /jobs endpoints."""
-    resp: dict[str, Any] = {
+    resp: dict[str, object] = {
         "jobId": job.id,
         "status": job.status.value,
     }
@@ -2367,15 +2418,16 @@ def _job_response(job: Job) -> dict[str, Any]:
 
 
 @app.post("/generate", response_model=None)
-async def generate(request: GenerateRequest) -> dict[str, Any] | JSONResponse:
+async def generate(request: GenerateRequest) -> dict[str, object] | JSONResponse:
     """Submit a generation job.  Cache hits return immediately; misses enqueue."""
     assert _job_queue is not None, "JobQueue not initialized"
 
     cache_key = get_cache_key(request)
     cached = get_cached_result(cache_key)
     if cached:
-        if "metadata" in cached:
-            cached["metadata"]["cache_hit"] = True
+        _cached_meta = cached.get("metadata")
+        if isinstance(_cached_meta, dict):
+            _cached_meta["cache_hit"] = True
         return {
             "jobId": str(uuid.uuid4()),
             "status": "complete",
@@ -2402,7 +2454,7 @@ async def generate(request: GenerateRequest) -> dict[str, Any] | JSONResponse:
 
 
 @app.get("/jobs/{job_id}", response_model=None)
-async def get_job(job_id: str) -> dict[str, Any] | JSONResponse:
+async def get_job(job_id: str) -> dict[str, object] | JSONResponse:
     """Return current status of a submitted job."""
     assert _job_queue is not None
     job = _job_queue.get_job(job_id)
@@ -2415,7 +2467,7 @@ async def get_job(job_id: str) -> dict[str, Any] | JSONResponse:
 async def wait_for_job(
     job_id: str,
     timeout: float = Query(default=30, ge=1, le=120),
-) -> dict[str, Any] | JSONResponse:
+) -> dict[str, object] | JSONResponse:
     """Long-poll until the job completes or *timeout* seconds elapse."""
     assert _job_queue is not None
     job = _job_queue.get_job(job_id)
@@ -2432,7 +2484,7 @@ async def wait_for_job(
 
 
 @app.post("/jobs/{job_id}/cancel", response_model=None)
-async def cancel_job(job_id: str) -> dict[str, Any] | JSONResponse:
+async def cancel_job(job_id: str) -> dict[str, object] | JSONResponse:
     """Cancel a queued or running job."""
     assert _job_queue is not None
     job = _job_queue.cancel(job_id)
@@ -2442,7 +2494,7 @@ async def cancel_job(job_id: str) -> dict[str, Any] | JSONResponse:
 
 
 @app.get("/queue/status")
-async def queue_status() -> dict[str, Any]:
+async def queue_status() -> dict[str, object]:
     """Diagnostics: current queue depth, running workers, limits."""
     if _job_queue is None:
         return {"error": "JobQueue not initialized"}

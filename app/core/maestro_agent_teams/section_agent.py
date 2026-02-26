@@ -30,10 +30,14 @@ import uuid as _uuid_mod
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.contracts.generation_types import CompositionContext
+from app.contracts.json_types import NoteDict, ToolCallDict
+from app.contracts.llm_types import ChatMessage
 from app.core.expansion import ToolCall
 from app.core.llm_client import LLMClient
-from app.core.sse_utils import ReasoningBuffer
+from app.core.sse_utils import ReasoningBuffer, SSEEventInput
 from app.core.state_store import StateStore
+from app.core.tracing import TraceContext
 from app.core.maestro_plan_tracker import (
     _ToolCallOutcome,
     _GENERATOR_TOOL_NAMES,
@@ -99,10 +103,10 @@ class SectionResult:
     section_name: str
     region_id: str | None = None
     notes_generated: int = 0
-    generated_notes: list[dict[str, Any]] = field(default_factory=list)
+    generated_notes: list[NoteDict] = field(default_factory=list)
     tool_results: list[dict[str, Any]] = field(default_factory=list)
-    tool_call_records: list[dict[str, Any]] = field(default_factory=list)
-    tool_result_msgs: list[dict[str, Any]] = field(default_factory=list)
+    tool_call_records: list[ToolCallDict] = field(default_factory=list)
+    tool_result_msgs: list[ChatMessage] = field(default_factory=list)
     error: str | None = None
     contract_hash: str = ""
     parent_contract_hash: str = ""
@@ -116,12 +120,12 @@ async def _run_section_child(
     agent_id: str,
     allowed_tool_names: set[str] | frozenset[str],
     store: StateStore,
-    trace: Any,
-    sse_queue: asyncio.Queue[dict[str, Any]],
+    trace: TraceContext,
+    sse_queue: asyncio.Queue[SSEEventInput],
     runtime_ctx: RuntimeContext | None = None,
     execution_services: ExecutionServices | None = None,
     llm: LLMClient | None = None,
-    previous_notes: list[dict[str, Any]] | None = None,
+    previous_notes: list[NoteDict] | None = None,
     all_section_instruments: list[str] | None = None,
 ) -> SectionResult:
     """Execute one section's region + generate pipeline against a contract.
@@ -175,18 +179,18 @@ async def _run_section_child(
         execution_services.section_state if execution_services else None
     )
 
-    def _tool_ctx() -> dict[str, Any] | None:
-        """Bridge dict for _apply_single_tool_call (tool_execution boundary)."""
+    def _tool_ctx() -> CompositionContext | None:
+        """Build a CompositionContext for _apply_single_tool_call."""
         if not runtime_ctx:
             return None
-        ctx: dict[str, Any] = {
+        ctx: CompositionContext = CompositionContext(
             **runtime_ctx.to_composition_context(),
-            "style": contract.style,
-            "tempo": contract.tempo,
-            "bars": contract.bars,
-            "key": contract.key,
-            "role": contract.role,
-        }
+            style=contract.style,
+            tempo=contract.tempo,
+            bars=contract.bars,
+            key=contract.key,
+            role=contract.role,
+        )
         if previous_notes:
             ctx["previous_notes"] = previous_notes
         if all_section_instruments:
@@ -260,7 +264,7 @@ async def _run_section_child(
                 runtime_ctx = runtime_ctx.with_drum_telemetry({
                     "energy_level": drum_telemetry.energy_level,
                     "density_score": drum_telemetry.density_score,
-                    "groove_vector": drum_telemetry.groove_vector,
+                    "groove_vector": list(drum_telemetry.groove_vector),
                     "kick_pattern_hash": drum_telemetry.kick_pattern_hash,
                     "rhythmic_complexity": drum_telemetry.rhythmic_complexity,
                 })
@@ -349,7 +353,7 @@ async def _run_section_child(
             "prompt": _final_prompt,
         }
 
-        async def _pre_emit_gen(events: list[dict[str, Any]]) -> None:
+        async def _pre_emit_gen(events: list[SSEEventInput]) -> None:
             """Flush pre-generation events to the SSE queue immediately.
 
             Without this, toolStart/generatorStart are held in a local list
@@ -431,11 +435,12 @@ async def _run_section_child(
             )
 
         # ── Extract generated notes from SSE events ──
-        generated_notes: list[dict[str, Any]] = []
+        _raw_notes = []
         for evt in gen_outcome.sse_events:
             if evt.get("name") == "stori_add_notes":
-                generated_notes = evt.get("params", {}).get("notes", [])
+                _raw_notes = evt.get("params", {}).get("notes", [])
                 break
+        generated_notes: list[NoteDict] = _raw_notes  # boundary: notes extracted from SSE tool-call events
         result.generated_notes = generated_notes
 
         # ── Drum signaling — signal bass with drum notes ──
@@ -538,7 +543,7 @@ async def _reason_before_generate(
     contract: SectionContract,
     agent_id: str,
     llm: LLMClient,
-    sse_queue: asyncio.Queue[dict[str, Any]],
+    sse_queue: asyncio.Queue[SSEEventInput],
     child_log: str,
 ) -> str | None:
     """Brief LLM reasoning about a section's musical approach (Level 3 CoT).
@@ -675,8 +680,8 @@ async def _maybe_refine_expression(
     agent_id: str,
     llm: LLMClient,
     store: StateStore,
-    trace: Any,
-    sse_queue: asyncio.Queue[dict[str, Any]],
+    trace: TraceContext,
+    sse_queue: asyncio.Queue[SSEEventInput],
     allowed_tool_names: set[str] | frozenset[str],
     runtime_ctx: RuntimeContext,
     result: SectionResult,

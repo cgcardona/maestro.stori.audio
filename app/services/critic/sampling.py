@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RejectionSamplingResult:
     """Result of a rejection sampling loop."""
-    best_result: Any
+    best_result: object | None  # Whatever generate_fn returns as first element
     best_score: float
     attempts: int
     accepted: bool

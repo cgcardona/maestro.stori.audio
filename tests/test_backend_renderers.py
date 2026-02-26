@@ -4,12 +4,13 @@ Tests the IR-based MIDI generation backends end-to-end with real rendering.
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
 from app.services.backends.drum_ir import DrumSpecBackend
 from app.services.backends.bass_ir import BassSpecBackend
 from app.services.backends.harmonic_ir import HarmonicSpecBackend
 from app.services.backends.melody_ir import MelodySpecBackend
+from app.contracts.json_types import NoteDict
+from app.contracts.generation_types import GenerationContext
 from app.services.backends.base import GeneratorBackend, GenerationResult
 
 
@@ -25,17 +26,17 @@ class TestDrumSpecBackend:
 
         return DrumSpecBackend()
 
-    def test_backend_type(self, backend: Any) -> None:
+    def test_backend_type(self, backend: DrumSpecBackend) -> None:
 
         assert backend.backend_type == GeneratorBackend.DRUM_IR
 
     @pytest.mark.anyio
-    async def test_is_available(self, backend: Any) -> None:
+    async def test_is_available(self, backend: DrumSpecBackend) -> None:
 
         assert await backend.is_available() is True
 
     @pytest.mark.anyio
-    async def test_generate_drums_trap(self, backend: Any) -> None:
+    async def test_generate_drums_trap(self, backend: DrumSpecBackend) -> None:
 
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4
@@ -46,7 +47,7 @@ class TestDrumSpecBackend:
         assert "source" in result.metadata
 
     @pytest.mark.anyio
-    async def test_generate_drums_boom_bap(self, backend: Any) -> None:
+    async def test_generate_drums_boom_bap(self, backend: DrumSpecBackend) -> None:
 
         result = await backend.generate(
             instrument="drums", style="boom_bap", tempo=90, bars=4
@@ -55,7 +56,7 @@ class TestDrumSpecBackend:
         assert len(result.notes) > 0
 
     @pytest.mark.anyio
-    async def test_generate_drums_house(self, backend: Any) -> None:
+    async def test_generate_drums_house(self, backend: DrumSpecBackend) -> None:
 
         result = await backend.generate(
             instrument="drums", style="house", tempo=128, bars=4
@@ -63,27 +64,27 @@ class TestDrumSpecBackend:
         assert result.success is True
 
     @pytest.mark.anyio
-    async def test_generate_wrong_instrument(self, backend: Any) -> None:
+    async def test_generate_wrong_instrument(self, backend: DrumSpecBackend) -> None:
 
         result = await backend.generate(
             instrument="bass", style="trap", tempo=120, bars=4
         )
         assert result.success is False
-        assert "only handles drums" in result.error
+        assert result.error is not None and "only handles drums" in result.error
 
     @pytest.mark.anyio
-    async def test_generate_with_music_spec(self, backend: Any) -> None:
+    async def test_generate_with_music_spec(self, backend: DrumSpecBackend) -> None:
 
         from app.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="trap", tempo=120, bars=4)
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4,
-            music_spec=spec,
+            context=GenerationContext(music_spec=spec),
         )
         assert result.success is True
 
     @pytest.mark.anyio
-    async def test_note_format(self, backend: Any) -> None:
+    async def test_note_format(self, backend: DrumSpecBackend) -> None:
 
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4
@@ -108,17 +109,17 @@ class TestBassSpecBackend:
 
         return BassSpecBackend()
 
-    def test_backend_type(self, backend: Any) -> None:
+    def test_backend_type(self, backend: BassSpecBackend) -> None:
 
         assert backend.backend_type == GeneratorBackend.BASS_IR
 
     @pytest.mark.anyio
-    async def test_is_available(self, backend: Any) -> None:
+    async def test_is_available(self, backend: BassSpecBackend) -> None:
 
         assert await backend.is_available() is True
 
     @pytest.mark.anyio
-    async def test_generate_bass(self, backend: Any) -> None:
+    async def test_generate_bass(self, backend: BassSpecBackend) -> None:
 
         result = await backend.generate(
             instrument="bass", style="trap", tempo=120, bars=4, key="Cm"
@@ -128,7 +129,7 @@ class TestBassSpecBackend:
         assert result.backend_used == GeneratorBackend.BASS_IR
 
     @pytest.mark.anyio
-    async def test_generate_wrong_instrument(self, backend: Any) -> None:
+    async def test_generate_wrong_instrument(self, backend: BassSpecBackend) -> None:
 
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4
@@ -136,13 +137,13 @@ class TestBassSpecBackend:
         assert result.success is False
 
     @pytest.mark.anyio
-    async def test_generate_with_music_spec(self, backend: Any) -> None:
+    async def test_generate_with_music_spec(self, backend: BassSpecBackend) -> None:
 
         from app.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="trap", tempo=120, bars=4, key="Cm")
         result = await backend.generate(
             instrument="bass", style="trap", tempo=120, bars=4, key="Cm",
-            music_spec=spec,
+            context=GenerationContext(music_spec=spec),
         )
         assert result.success is True
 
@@ -159,17 +160,17 @@ class TestHarmonicSpecBackend:
 
         return HarmonicSpecBackend()
 
-    def test_backend_type(self, backend: Any) -> None:
+    def test_backend_type(self, backend: HarmonicSpecBackend) -> None:
 
         assert backend.backend_type == GeneratorBackend.HARMONIC_IR
 
     @pytest.mark.anyio
-    async def test_is_available(self, backend: Any) -> None:
+    async def test_is_available(self, backend: HarmonicSpecBackend) -> None:
 
         assert await backend.is_available() is True
 
     @pytest.mark.anyio
-    async def test_generate_chords(self, backend: Any) -> None:
+    async def test_generate_chords(self, backend: HarmonicSpecBackend) -> None:
 
         result = await backend.generate(
             instrument="piano", style="jazz", tempo=120, bars=4, key="Cm"
@@ -178,7 +179,7 @@ class TestHarmonicSpecBackend:
         assert len(result.notes) > 0
 
     @pytest.mark.anyio
-    async def test_generate_wrong_instrument(self, backend: Any) -> None:
+    async def test_generate_wrong_instrument(self, backend: HarmonicSpecBackend) -> None:
 
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4
@@ -186,13 +187,13 @@ class TestHarmonicSpecBackend:
         assert result.success is False
 
     @pytest.mark.anyio
-    async def test_generate_with_music_spec(self, backend: Any) -> None:
+    async def test_generate_with_music_spec(self, backend: HarmonicSpecBackend) -> None:
 
         from app.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="jazz", tempo=120, bars=8, key="Cm")
         result = await backend.generate(
             instrument="piano", style="jazz", tempo=120, bars=8, key="Cm",
-            music_spec=spec,
+            context=GenerationContext(music_spec=spec),
         )
         assert result.success is True
 
@@ -209,17 +210,17 @@ class TestMelodySpecBackend:
 
         return MelodySpecBackend()
 
-    def test_backend_type(self, backend: Any) -> None:
+    def test_backend_type(self, backend: MelodySpecBackend) -> None:
 
         assert backend.backend_type == GeneratorBackend.MELODY_IR
 
     @pytest.mark.anyio
-    async def test_is_available(self, backend: Any) -> None:
+    async def test_is_available(self, backend: MelodySpecBackend) -> None:
 
         assert await backend.is_available() is True
 
     @pytest.mark.anyio
-    async def test_generate_melody(self, backend: Any) -> None:
+    async def test_generate_melody(self, backend: MelodySpecBackend) -> None:
 
         result = await backend.generate(
             instrument="lead", style="jazz", tempo=120, bars=4, key="Cm"
@@ -228,7 +229,7 @@ class TestMelodySpecBackend:
         assert len(result.notes) > 0
 
     @pytest.mark.anyio
-    async def test_generate_wrong_instrument(self, backend: Any) -> None:
+    async def test_generate_wrong_instrument(self, backend: MelodySpecBackend) -> None:
 
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4
@@ -236,13 +237,13 @@ class TestMelodySpecBackend:
         assert result.success is False
 
     @pytest.mark.anyio
-    async def test_generate_with_music_spec(self, backend: Any) -> None:
+    async def test_generate_with_music_spec(self, backend: MelodySpecBackend) -> None:
 
         from app.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="jazz", tempo=120, bars=8, key="Cm")
         result = await backend.generate(
             instrument="lead", style="jazz", tempo=120, bars=8, key="Cm",
-            music_spec=spec,
+            context=GenerationContext(music_spec=spec),
         )
         assert result.success is True
 
@@ -256,9 +257,10 @@ class TestGenerationResult:
 
     def test_success_result(self) -> None:
 
+        notes: list[NoteDict] = [{"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100}]
         result = GenerationResult(
             success=True,
-            notes=[{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
+            notes=notes,
             backend_used=GeneratorBackend.DRUM_IR,
             metadata={"source": "test"},
         )

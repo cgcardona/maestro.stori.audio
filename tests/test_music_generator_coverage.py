@@ -4,8 +4,6 @@ Covers backend priority, availability, coupled generation, and quality presets.
 """
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from dataclasses import dataclass
@@ -13,11 +11,12 @@ from dataclasses import dataclass
 from app.services.music_generator import (
     MusicGenerator,
     QualityPresetConfig,
-    GenerationContext,
+    CoupledGenState,
     QUALITY_PRESETS,
     get_music_generator,
     reset_music_generator,
 )
+from app.contracts.json_types import NoteDict
 from app.services.backends.base import GenerationResult
 
 
@@ -53,18 +52,18 @@ class TestQualityPresets:
 # ---------------------------------------------------------------------------
 
 
-class TestGenerationContext:
+class TestCoupledGenState:
 
     def test_defaults(self) -> None:
 
-        ctx = GenerationContext()
+        ctx = CoupledGenState()
         assert ctx.rhythm_spine is None
         assert ctx.drum_notes is None
         assert ctx.style == "trap"
 
     def test_custom_values(self) -> None:
 
-        ctx = GenerationContext(style="jazz", tempo=100, bars=8)
+        ctx = CoupledGenState(style="jazz", tempo=100, bars=8)
         assert ctx.style == "jazz"
         assert ctx.tempo == 100
 
@@ -112,7 +111,7 @@ class TestMusicGenerator:
     def test_generation_context_management(self) -> None:
 
         mg = MusicGenerator()
-        ctx = GenerationContext(style="lofi", tempo=80, bars=16)
+        ctx = CoupledGenState(style="lofi", tempo=80, bars=16)
         mg.set_generation_context(ctx)
         assert mg._generation_context is ctx
         mg.clear_generation_context()
@@ -259,13 +258,12 @@ class TestParallelCandidateGeneration:
         call_count = [0]
         call_times: list[float] = []
 
-        async def fake_generate(*args: Any, **kwargs: Any) -> Any:
-
+        async def fake_generate(*args: object, **kwargs: object) -> GenerationResult:
             call_count[0] += 1
             call_times.append(asyncio.get_event_loop().time())
             return GenerationResult(
                 success=True,
-                notes=[{"pitch": 36, "start_beat": float(call_count[0] - 1), "duration_beats": 0.25, "velocity": 100}],
+                notes=[NoteDict(pitch=36, start_beat=float(call_count[0] - 1), duration_beats=0.25, velocity=100)],
                 backend_used=GeneratorBackend.ORPHEUS,
                 metadata={},
             )
@@ -306,14 +304,13 @@ class TestParallelCandidateGeneration:
         scores_assigned = [0.3, 0.8]  # second candidate is better
         call_idx = [0]
 
-        async def fake_generate(*args: Any, **kwargs: Any) -> Any:
-
+        async def fake_generate(*args: object, **kwargs: object) -> GenerationResult:
             idx = call_idx[0]
             call_idx[0] += 1
             # Return notes with a recognisable marker so we can identify which candidate won
             return GenerationResult(
                 success=True,
-                notes=[{"pitch": 36 + idx, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100}],
+                notes=[NoteDict(pitch=36 + idx, start_beat=0.0, duration_beats=0.25, velocity=100)],
                 backend_used=GeneratorBackend.ORPHEUS,
                 metadata={"candidate_idx": idx},
             )
@@ -353,14 +350,13 @@ class TestParallelCandidateGeneration:
 
         call_idx = [0]
 
-        async def fake_generate(*args: Any, **kwargs: Any) -> Any:
-
+        async def fake_generate(*args: object, **kwargs: object) -> GenerationResult:
             call_idx[0] += 1
             if call_idx[0] <= 2:
                 # First two calls (parallel candidates) fail
                 return GenerationResult(success=False, notes=[], backend_used=GeneratorBackend.ORPHEUS, metadata={}, error="fail")
             # Third call (single fallback) succeeds
-            return GenerationResult(success=True, notes=[{"pitch": 36, "start_beat": 0.0, "duration_beats": 0.25, "velocity": 100}], backend_used=GeneratorBackend.ORPHEUS, metadata={})
+            return GenerationResult(success=True, notes=[NoteDict(pitch=36, start_beat=0.0, duration_beats=0.25, velocity=100)], backend_used=GeneratorBackend.ORPHEUS, metadata={})
 
         mock_backend = MagicMock()
         mock_backend.generate = fake_generate

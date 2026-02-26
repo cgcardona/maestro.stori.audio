@@ -15,11 +15,12 @@ See NEURAL_MIDI_ROADMAP.md for architecture details.
 from __future__ import annotations
 
 import logging
+import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
-import random
 
+from app.contracts.json_types import NoteDict
 from app.core.emotion_vector import EmotionVector, emotion_to_constraints, GenerationConstraints
 from app.services.neural.tokenizer import MidiTokenizer, TokenizerConfig
 
@@ -36,7 +37,7 @@ class MelodyGenerationRequest:
     emotion_vector: EmotionVector
     
     # Optional conditioning
-    seed_notes: list[dict[str, Any]] | None = None  # Prime with these notes
+    seed_notes: list[NoteDict] | None = None  # Prime with these notes
     temperature: float = 1.0
     top_p: float = 0.9
 
@@ -44,7 +45,7 @@ class MelodyGenerationRequest:
 @dataclass
 class MelodyGenerationResult:
     """Result of melody generation."""
-    notes: list[dict[str, Any]]
+    notes: list[NoteDict]
     success: bool
     model_used: str
     metadata: dict[str, Any]
@@ -115,14 +116,14 @@ class MockNeuralMelodyBackend(MelodyModelBackend):
         self,
         request: MelodyGenerationRequest,
         constraints: GenerationConstraints,
-    ) -> list[dict[str, Any]]:
+    ) -> list[NoteDict]:
         """
         Generate notes using constraints derived from emotion vector.
         
         This placeholder generates more musical output than the old
         rule-based system by using emotion constraints.
         """
-        notes: list[dict[str, Any]] = []
+        notes: list[NoteDict] = []
         rng = random.Random()
         
         # Parse key for scale
@@ -279,7 +280,7 @@ class NeuralMelodyGenerator:
         chords: list[str] | None = None,
         emotion_vector: EmotionVector | None = None,
         temperature: float = 1.0,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> MelodyGenerationResult:
         """
         Generate a melody.

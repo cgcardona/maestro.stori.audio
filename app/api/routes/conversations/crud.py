@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.auth.dependencies import require_valid_token
+from app.auth.dependencies import TokenClaims, require_valid_token
 from app.services import conversations as conv_service
 from app.api.routes.conversations.models import (
     ConversationCreateRequest,
@@ -32,7 +30,7 @@ logger = logging.getLogger(__name__)
 @router.post("/conversations", response_model=ConversationResponse, response_model_by_alias=True, status_code=status.HTTP_201_CREATED)
 async def create_conversation(
     request: ConversationCreateRequest,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> ConversationResponse:
     """Create a new conversation."""
@@ -78,7 +76,7 @@ async def create_conversation(
 async def search_conversations(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=20, le=50),
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> SearchResponse:
     """Search conversations by title and message content."""
@@ -110,7 +108,7 @@ async def list_conversations(
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
     include_archived: bool = Query(default=False),
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> ConversationListResponse:
     """list user's conversations with pagination and project filtering."""
@@ -147,7 +145,7 @@ async def list_conversations(
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponse, response_model_by_alias=True)
 async def get_conversation(
     conversation_id: str,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> ConversationResponse:
     """Get a conversation with full message history."""
@@ -212,13 +210,13 @@ async def get_conversation(
     )
 
 
-@router.patch("/conversations/{conversation_id}", response_model=dict[str, Any], response_model_by_alias=True)
+@router.patch("/conversations/{conversation_id}", response_model_by_alias=True)
 async def update_conversation(
     conversation_id: str,
     request: ConversationUpdateRequest,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Update conversation metadata (title and/or project_id)."""
     user_id = token_claims.get("sub")
     if not user_id:
@@ -255,7 +253,7 @@ async def update_conversation(
 async def delete_conversation(
     conversation_id: str,
     hard_delete: bool = Query(default=False),
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Archive or delete a conversation."""

@@ -27,6 +27,8 @@ from typing import Any
 
 import pytest
 
+from app.contracts.project_types import ProjectContext
+
 from app.core.state_store import (
     StateStore,
     Transaction,
@@ -37,6 +39,7 @@ from app.core.state_store import (
     clear_store,
     clear_all_stores,
 )
+from app.contracts.json_types import InternalNoteDict, NoteDict
 from app.core.entity_registry import EntityType
 
 
@@ -50,14 +53,14 @@ def _fresh() -> StateStore:
     return StateStore(conversation_id=str(uuid.uuid4()), project_id=str(uuid.uuid4()))
 
 
-def _note(pitch: int = 60, start: float = 0.0, dur: float = 1.0, vel: int = 100) -> dict[str, Any]:
+def _note(pitch: int = 60, start: float = 0.0, dur: float = 1.0, vel: int = 100) -> NoteDict:
 
-    return {
-        "pitch": pitch,
-        "start_beat": start,
-        "duration_beats": dur,
-        "velocity": vel,
-    }
+    return NoteDict(
+        pitch=pitch,
+        start_beat=start,
+        duration_beats=dur,
+        velocity=vel,
+    )
 
 
 # ===========================================================================
@@ -626,51 +629,52 @@ class TestNotesMatch:
 
     def test_exact_match(self) -> None:
 
-        n = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
-        assert _notes_match(n, n.copy())
+        n: InternalNoteDict = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
+        c: InternalNoteDict = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
+        assert _notes_match(n, c)
 
     def test_pitch_mismatch(self) -> None:
 
-        n = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
-        c = {"pitch": 62, "start_beat": 0.0, "duration_beats": 1.0}
+        n: InternalNoteDict = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
+        c: InternalNoteDict = {"pitch": 62, "start_beat": 0.0, "duration_beats": 1.0}
         assert not _notes_match(n, c)
 
     def test_start_beat_mismatch(self) -> None:
 
-        n = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
-        c = {"pitch": 60, "start_beat": 0.5, "duration_beats": 1.0}
+        n: InternalNoteDict = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
+        c: InternalNoteDict = {"pitch": 60, "start_beat": 0.5, "duration_beats": 1.0}
         assert not _notes_match(n, c)
 
     def test_duration_mismatch(self) -> None:
 
-        n = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
-        c = {"pitch": 60, "start_beat": 0.0, "duration_beats": 2.0}
+        n: InternalNoteDict = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
+        c: InternalNoteDict = {"pitch": 60, "start_beat": 0.0, "duration_beats": 2.0}
         assert not _notes_match(n, c)
 
     def test_float_tolerance_passes(self) -> None:
 
         """Differences within 1e-6 are treated as equal."""
-        n = {"pitch": 60, "start_beat": 0.0,       "duration_beats": 1.0}
-        c = {"pitch": 60, "start_beat": 1e-7,      "duration_beats": 1.0 + 1e-7}
+        n: InternalNoteDict = {"pitch": 60, "start_beat": 0.0,       "duration_beats": 1.0}
+        c: InternalNoteDict = {"pitch": 60, "start_beat": 1e-7,      "duration_beats": 1.0 + 1e-7}
         assert _notes_match(n, c)
 
     def test_float_outside_tolerance_fails(self) -> None:
 
-        n = {"pitch": 60, "start_beat": 0.0,  "duration_beats": 1.0}
-        c = {"pitch": 60, "start_beat": 1e-5, "duration_beats": 1.0}
+        n: InternalNoteDict = {"pitch": 60, "start_beat": 0.0,  "duration_beats": 1.0}
+        c: InternalNoteDict = {"pitch": 60, "start_beat": 1e-5, "duration_beats": 1.0}
         assert not _notes_match(n, c)
 
     def test_velocity_not_matched(self) -> None:
 
         """velocity difference must NOT prevent a match."""
-        n = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100}
-        c = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 50}
+        n: InternalNoteDict = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100}
+        c: InternalNoteDict = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 50}
         assert _notes_match(n, c)
 
     def test_missing_fields_default_to_zero(self) -> None:
 
-        n = {"pitch": 60}
-        c = {"pitch": 60}
+        n: InternalNoteDict = {"pitch": 60}
+        c: InternalNoteDict = {"pitch": 60}
         assert _notes_match(n, c)
 
 
@@ -681,7 +685,7 @@ class TestNotesMatch:
 class TestSyncFromClient:
     """sync_from_client replaces registry and note store with client snapshot."""
 
-    def _project(self) -> dict[str, Any]:
+    def _project(self) -> ProjectContext:
 
         return {
             "tempo": 140,
@@ -750,9 +754,8 @@ class TestSyncFromClient:
     def test_sync_sets_time_signature_dict(self) -> None:
 
         store = _fresh()
-        store.sync_from_client({
-            "timeSignature": {"numerator": 6, "denominator": 8}
-        })
+        ctx: ProjectContext = {"timeSignature": {"numerator": 6, "denominator": 8}}
+        store.sync_from_client(ctx)
         assert store.time_signature == (6, 8)
 
     def test_sync_clears_stale_tracks(self) -> None:
@@ -760,15 +763,17 @@ class TestSyncFromClient:
         """Stale tracks from a previous sync must not survive."""
         store = _fresh()
         # First sync: old project
-        store.sync_from_client({
+        ctx_old: ProjectContext = {
             "tracks": [{"id": "old-t", "name": "Old", "regions": []}]
-        })
+        }
+        store.sync_from_client(ctx_old)
         assert store.registry.exists_track("old-t")
 
         # Second sync: new project, old track gone
-        store.sync_from_client({
+        ctx_new: ProjectContext = {
             "tracks": [{"id": "new-t", "name": "New", "regions": []}]
-        })
+        }
+        store.sync_from_client(ctx_new)
         assert not store.registry.exists_track("old-t")
         assert store.registry.exists_track("new-t")
 
@@ -776,36 +781,40 @@ class TestSyncFromClient:
 
         """Notes from a previous sync must not survive into the new sync."""
         store = _fresh()
-        store.sync_from_client({
+        ctx_with: ProjectContext = {
             "tracks": [{"id": "t1", "name": "Bass",
                         "regions": [{"id": "r1", "name": "P",
                                      "notes": [_note(60)]}]}]
-        })
+        }
+        store.sync_from_client(ctx_with)
         assert len(store.get_region_notes("r1")) == 1
 
         # Re-sync with empty notes
-        store.sync_from_client({
+        ctx_empty: ProjectContext = {
             "tracks": [{"id": "t1", "name": "Bass",
                         "regions": [{"id": "r1", "name": "P", "notes": []}]}]
-        })
+        }
+        store.sync_from_client(ctx_empty)
         assert store.get_region_notes("r1") == []
 
     def test_sync_preserves_notes_when_key_absent(self) -> None:
 
         """When the client reports a region without a 'notes' key, keep prior notes."""
         store = _fresh()
-        store.sync_from_client({
+        ctx_with: ProjectContext = {
             "tracks": [{"id": "t1", "name": "Bass",
                         "regions": [{"id": "r1", "name": "P",
                                      "notes": [_note(60)]}]}]
-        })
+        }
+        store.sync_from_client(ctx_with)
         assert len(store.get_region_notes("r1")) == 1
 
         # Re-sync: region present but no "notes" key (frontend sends only noteCount)
-        store.sync_from_client({
+        ctx_no_notes: ProjectContext = {
             "tracks": [{"id": "t1", "name": "Bass",
                         "regions": [{"id": "r1", "name": "P", "noteCount": 1}]}]
-        })
+        }
+        store.sync_from_client(ctx_no_notes)
         assert len(store.get_region_notes("r1")) == 1
         assert store.get_region_notes("r1")[0]["pitch"] == 60
 
@@ -820,7 +829,8 @@ class TestSyncFromClient:
     def test_sync_empty_project_no_error(self) -> None:
 
         store = _fresh()
-        store.sync_from_client({})
+        ctx: ProjectContext = {}
+        store.sync_from_client(ctx)
         assert store.registry.list_tracks() == []
 
 
@@ -928,8 +938,10 @@ class TestSerialization:
         store = _fresh()
         store.create_track("Drums")
         d = store.to_dict()
-        assert "tracks" in d["registry"]
-        assert len(d["registry"]["tracks"]) == 1
+        registry = d["registry"]
+        assert isinstance(registry, dict)
+        assert "tracks" in registry
+        assert len(registry["tracks"]) == 1
 
     def test_to_dict_project_metadata_has_tempo_and_key(self) -> None:
 
@@ -937,8 +949,10 @@ class TestSerialization:
         store.set_tempo(140)
         store.set_key("Am")
         d = store.to_dict()
-        assert d["project_metadata"]["tempo"] == 140
-        assert d["project_metadata"]["key"] == "Am"
+        project_metadata = d["project_metadata"]
+        assert isinstance(project_metadata, dict)
+        assert project_metadata["tempo"] == 140
+        assert project_metadata["key"] == "Am"
 
     def test_state_event_to_dict(self) -> None:
 

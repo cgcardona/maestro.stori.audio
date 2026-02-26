@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 from app.services.music_generator import MusicGenerator
+from app.contracts.json_types import NoteDict
 from app.services.backends.base import GeneratorBackend, GenerationResult
 
 
@@ -53,7 +54,7 @@ class TestGenerationResult:
         """Test successful result."""
         result = GenerationResult(
             success=True,
-            notes=[{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}],
+            notes=[NoteDict(pitch=60, start_beat=0.0, duration_beats=1.0, velocity=100)],
             backend_used=GeneratorBackend.ORPHEUS,
             metadata={"source": "orpheus"},
         )

@@ -26,8 +26,13 @@ Key principles:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
 from enum import Enum
+from typing import TYPE_CHECKING, Any, Literal
+
+from orpheus_types import FulfillmentReport, GradioGenerationParams, OrpheusNoteDict
+
+if TYPE_CHECKING:
+    from music_service import GenerationConstraintsPayload
 
 
 # =============================================================================
@@ -412,34 +417,34 @@ def build_controls(
 
 
 def build_fulfillment_report(
-    notes: list[dict[str, Any]],
+    notes: list[OrpheusNoteDict],
     bars: int,
     controls: GenerationControlVector,
-    generation_constraints: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+    generation_constraints: GenerationConstraintsPayload | None = None,
+) -> FulfillmentReport:
     """Compute a fulfillment report comparing output against intent.
 
     Uses the existing ``rejection_score`` infrastructure and adds
     constraint violation detection.
     """
-    gc = generation_constraints or {}
     violations: list[str] = []
     goal_scores: dict[str, float] = {}
 
     if not notes:
-        return {
-            "goal_scores": {},
-            "constraint_violations": ["no_notes_generated"],
-            "coverage_pct": 0.0,
-        }
+        return FulfillmentReport(
+            goal_scores={},
+            constraint_violations=["no_notes_generated"],
+            coverage_pct=0.0,
+        )
 
-    pitches = [n.get("pitch", 60) for n in notes]
-    velocities = [n.get("velocity", 80) for n in notes]
+    pitches: list[int] = [n["pitch"] for n in notes]
+    velocities: list[int] = [n["velocity"] for n in notes]
 
-    # Pitch range constraint check
-    if "register_center" in gc and "register_spread" in gc:
-        center = gc["register_center"]
-        spread = gc["register_spread"]
+    if generation_constraints is not None:
+        gc = generation_constraints
+        # Pitch range constraint check
+        center = gc.register_center
+        spread = gc.register_spread
         low, high = center - spread, center + spread
         out_of_range = sum(1 for p in pitches if p < low or p > high)
         pct = out_of_range / len(pitches) if pitches else 0
@@ -447,9 +452,8 @@ def build_fulfillment_report(
         if pct > 0.3:
             violations.append(f"register_violation: {pct:.0%} notes outside [{low}, {high}]")
 
-    # Velocity range constraint check
-    if "velocity_floor" in gc and "velocity_ceiling" in gc:
-        floor_v, ceil_v = gc["velocity_floor"], gc["velocity_ceiling"]
+        # Velocity range constraint check
+        floor_v, ceil_v = gc.velocity_floor, gc.velocity_ceiling
         out_vel = sum(1 for v in velocities if v < floor_v or v > ceil_v)
         pct_v = out_vel / len(velocities) if velocities else 0
         goal_scores["velocity_compliance"] = round(1.0 - pct_v, 3)
@@ -465,11 +469,11 @@ def build_fulfillment_report(
     passing = sum(1 for s in goal_scores.values() if s >= 0.7)
     coverage_pct = round(passing / total_checks * 100, 1)
 
-    return {
-        "goal_scores": goal_scores,
-        "constraint_violations": violations,
-        "coverage_pct": coverage_pct,
-    }
+    return FulfillmentReport(
+        goal_scores=goal_scores,
+        constraint_violations=violations,
+        coverage_pct=coverage_pct,
+    )
 
 
 # =============================================================================
@@ -561,7 +565,7 @@ _TOP_P_MAX = 0.98
 def apply_controls_to_params(
     controls: GenerationControlVector,
     bars: int,
-) -> dict[str, Any]:
+) -> GradioGenerationParams:
     """Map the abstract control vector to concrete Gradio API parameters.
 
     Returns a dict with:
@@ -587,12 +591,12 @@ def apply_controls_to_params(
     num_prime_tokens = int(base_prime * prime_scale)
     num_prime_tokens = max(2048, min(_MAX_PRIME_TOKENS, num_prime_tokens))
 
-    return {
-        "temperature": round(temperature, 3),
-        "top_p": round(top_p, 3),
-        "num_prime_tokens": num_prime_tokens,
-        "num_gen_tokens": num_gen_tokens,
-    }
+    return GradioGenerationParams(
+        temperature=round(temperature, 3),
+        top_p=round(top_p, 3),
+        num_prime_tokens=num_prime_tokens,
+        num_gen_tokens=num_gen_tokens,
+    )
 
 
 # =============================================================================

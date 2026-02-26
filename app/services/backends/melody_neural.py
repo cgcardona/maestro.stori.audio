@@ -9,8 +9,9 @@ This is the MVP integration point for neural melody generation.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
+from app.contracts.generation_types import GenerationContext
+from app.contracts.json_types import JSONValue, NoteDict
 from app.services.backends.base import (
     MusicGeneratorBackend,
     GenerationResult,
@@ -60,23 +61,8 @@ class MelodyNeuralBackend(MusicGeneratorBackend):
         bars: int,
         key: str | None = None,
         chords: list[str] | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
-        """
-        Generate melody using neural model.
-        
-        Args:
-            instrument: Must be lead/melody/synth/vocal
-            style: Style string (used for emotion preset lookup)
-            tempo: Tempo in BPM
-            bars: Number of bars
-            key: Musical key
-            chords: Optional chord progression
-            **kwargs: May include:
-                - emotion_vector: EmotionVector or dict
-                - section_type: str (verse/chorus/etc for preset lookup)
-                - temperature: float
-        """
         if instrument not in ("lead", "melody", "synth", "vocal"):
             return GenerationResult(
                 success=False,
@@ -87,25 +73,23 @@ class MelodyNeuralBackend(MusicGeneratorBackend):
             )
         
         try:
-            # Get emotion vector from kwargs or derive from style/section
-            emotion_vector = self._resolve_emotion_vector(kwargs, style)
+            ctx = context or {}
+            emotion_vector = self._resolve_emotion_vector(ctx, style)
             
-            # Get chords from kwargs if not provided directly
-            if chords is None and "music_spec" in kwargs:
-                music_spec = kwargs["music_spec"]
-                if hasattr(music_spec, "harmonic_spec") and music_spec.harmonic_spec:
+            if chords is None and "music_spec" in ctx:
+                music_spec = ctx["music_spec"]
+                if music_spec and hasattr(music_spec, "harmonic_spec") and music_spec.harmonic_spec:
                     harmonic = music_spec.harmonic_spec
                     if hasattr(harmonic, "chord_schedule") and harmonic.chord_schedule:
                         chords = [entry.chord for entry in harmonic.chord_schedule]
             
-            # Generate
             result = await self.generator.generate(
                 bars=bars,
                 tempo=tempo,
                 key=key or "C",
                 chords=chords,
                 emotion_vector=emotion_vector,
-                temperature=kwargs.get("temperature", 1.0),
+                temperature=ctx.get("temperature", 1.0),
             )
             
             if not result.success:
@@ -117,8 +101,7 @@ class MelodyNeuralBackend(MusicGeneratorBackend):
                     error=result.metadata.get("error", "Generation failed"),
                 )
             
-            # Format notes for output
-            out = [
+            out: list[NoteDict] = [
                 {
                     "pitch": n["pitch"],
                     "start_beat": n["start_beat"],
@@ -130,16 +113,18 @@ class MelodyNeuralBackend(MusicGeneratorBackend):
             
             logger.info(f"MelodyNeuralBackend: {len(out)} notes, model={result.model_used}")
             
+            ev_dict: dict[str, object] = {**emotion_vector.to_dict()}
+            meta: dict[str, object] = {
+                "source": "melody_neural",
+                "model": result.model_used,
+                "emotion_vector": ev_dict,
+                **result.metadata,
+            }
             return GenerationResult(
                 success=True,
                 notes=out,
                 backend_used=self.backend_type,
-                metadata={
-                    "source": "melody_neural",
-                    "model": result.model_used,
-                    "emotion_vector": emotion_vector.to_dict(),
-                    **result.metadata,
-                },
+                metadata=meta,
             )
             
         except Exception as e:
@@ -152,28 +137,19 @@ class MelodyNeuralBackend(MusicGeneratorBackend):
                 error=str(e),
             )
     
-    def _resolve_emotion_vector(self, kwargs: dict[str, Any], style: str) -> EmotionVector:
+    def _resolve_emotion_vector(self, ctx: GenerationContext, style: str) -> EmotionVector:
+        """Resolve emotion vector from context or derive from style/section.
+
+        Priority: explicit emotion_vector > section_type preset > style preset > neutral.
         """
-        Resolve emotion vector from kwargs or derive from context.
-        
-        Priority:
-        1. Explicit emotion_vector in kwargs
-        2. Section type preset (verse/chorus/etc)
-        3. Style/genre preset
-        4. Neutral default
-        """
-        # Check for explicit emotion vector
-        if "emotion_vector" in kwargs:
-            ev = kwargs["emotion_vector"]
+        if "emotion_vector" in ctx:
+            ev = ctx["emotion_vector"]
             if isinstance(ev, EmotionVector):
                 return ev
-            if isinstance(ev, dict):
-                return EmotionVector.from_dict(ev)
         
-        # Check for section type
-        if "section_type" in kwargs:
-            section = kwargs["section_type"].lower()
-            preset = get_emotion_preset(section)
+        section_type = ctx.get("section_type")
+        if section_type:
+            preset = get_emotion_preset(section_type.lower())
             if preset:
                 return preset
         

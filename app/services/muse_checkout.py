@@ -20,8 +20,14 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing_extensions import TypedDict
 
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+)
 from app.core.tool_names import ToolName
 from app.services.muse_drift import _fingerprint, _combined_fingerprint
 from app.services.variation.note_matching import (
@@ -36,6 +42,13 @@ logger = logging.getLogger(__name__)
 REGION_RESET_THRESHOLD = 20
 
 
+class CheckoutToolCall(TypedDict):
+    """A single tool call produced by the checkout planner."""
+
+    tool: str
+    arguments: dict[str, object]
+
+
 @dataclass(frozen=True)
 class CheckoutPlan:
     """Deterministic plan for restoring target state via tool calls.
@@ -45,7 +58,7 @@ class CheckoutPlan:
 
     project_id: str
     target_variation_id: str
-    tool_calls: tuple[dict[str, Any], ...]
+    tool_calls: tuple[CheckoutToolCall, ...]
     regions_reset: tuple[str, ...]
     fingerprint_target: dict[str, str]
 
@@ -68,15 +81,15 @@ class CheckoutPlan:
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
-def _make_tool_call(tool: ToolName, arguments: dict[str, Any]) -> dict[str, Any]:
+def _make_tool_call(tool: ToolName, arguments: dict[str, object]) -> CheckoutToolCall:
     return {"tool": tool.value, "arguments": arguments}
 
 
 def _build_region_note_calls(
     region_id: str,
-    target_notes: list[dict[str, Any]],
-    working_notes: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], bool]:
+    target_notes: list[NoteDict],
+    working_notes: list[NoteDict],
+) -> tuple[list[CheckoutToolCall], bool]:
     """Produce tool calls to transition notes from working → target.
 
     Returns (tool_calls, was_reset).  Uses region reset (clear + add) when
@@ -95,12 +108,12 @@ def _build_region_note_calls(
     total_changes = len(added) + len(removed) + len(modified)
     needs_reset = bool(removed or modified) or total_changes >= REGION_RESET_THRESHOLD
 
-    calls: list[dict[str, Any]] = []
+    calls: list[CheckoutToolCall] = []
 
     if needs_reset:
         calls.append(_make_tool_call(ToolName.CLEAR_NOTES, {"regionId": region_id}))
         if target_notes:
-            add_notes = [
+            notes_for_reset: list[NoteDict] = [
                 {
                     "pitch": n.get("pitch", 60),
                     "startBeat": n.get("start_beat", 0.0),
@@ -111,12 +124,12 @@ def _build_region_note_calls(
             ]
             calls.append(_make_tool_call(
                 ToolName.ADD_NOTES,
-                {"regionId": region_id, "notes": add_notes},
+                {"regionId": region_id, "notes": notes_for_reset},
             ))
         return calls, True
 
     if added:
-        add_notes = [
+        notes_to_add: list[NoteDict] = [
             {
                 "pitch": m.proposed_note.get("pitch", 60),
                 "startBeat": m.proposed_note.get("start_beat", 0.0),
@@ -126,10 +139,10 @@ def _build_region_note_calls(
             for m in added
             if m.proposed_note is not None
         ]
-        if add_notes:
+        if notes_to_add:
             calls.append(_make_tool_call(
                 ToolName.ADD_NOTES,
-                {"regionId": region_id, "notes": add_notes},
+                {"regionId": region_id, "notes": notes_to_add},
             ))
 
     return calls, False
@@ -137,25 +150,26 @@ def _build_region_note_calls(
 
 def _build_cc_calls(
     region_id: str,
-    target_cc: list[dict[str, Any]],
-    working_cc: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+    target_cc: list[CCEventDict],
+    working_cc: list[CCEventDict],
+) -> list[CheckoutToolCall]:
     matches = match_cc_events(working_cc, target_cc)
     needed = [m for m in matches if m.is_added or m.is_modified]
     if not needed:
         return []
 
-    by_cc: dict[int, list[dict[str, Any]]] = {}
+    by_cc: dict[int, list[PitchBendDict]] = {}
     for m in needed:
         ev = m.proposed_event
         if ev is None:
             continue
-        cc_num = ev.get("cc", 0)
+        raw_cc = ev.get("cc", 0)
+        cc_num = int(raw_cc) if isinstance(raw_cc, (int, float, str)) else 0
         by_cc.setdefault(cc_num, []).append(
             {"beat": ev.get("beat", 0.0), "value": ev.get("value", 0)}
         )
 
-    calls: list[dict[str, Any]] = []
+    calls: list[CheckoutToolCall] = []
     for cc_num in sorted(by_cc):
         calls.append(_make_tool_call(
             ToolName.ADD_MIDI_CC,
@@ -166,15 +180,15 @@ def _build_cc_calls(
 
 def _build_pb_calls(
     region_id: str,
-    target_pb: list[dict[str, Any]],
-    working_pb: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+    target_pb: list[PitchBendDict],
+    working_pb: list[PitchBendDict],
+) -> list[CheckoutToolCall]:
     matches = match_pitch_bends(working_pb, target_pb)
     needed = [m for m in matches if m.is_added or m.is_modified]
     if not needed:
         return []
 
-    events = [
+    events: list[PitchBendDict] = [
         {"beat": m.proposed_event.get("beat", 0.0), "value": m.proposed_event.get("value", 0)}
         for m in needed
         if m.proposed_event is not None
@@ -187,22 +201,27 @@ def _build_pb_calls(
 
 def _build_at_calls(
     region_id: str,
-    target_at: list[dict[str, Any]],
-    working_at: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+    target_at: list[AftertouchDict],
+    working_at: list[AftertouchDict],
+) -> list[CheckoutToolCall]:
     matches = match_aftertouch(working_at, target_at)
     needed = [m for m in matches if m.is_added or m.is_modified]
     if not needed:
         return []
 
-    events: list[dict[str, Any]] = []
+    events: list[AftertouchDict] = []
     for m in needed:
         ev = m.proposed_event
         if ev is None:
             continue
-        entry: dict[str, Any] = {"beat": ev.get("beat", 0.0), "value": ev.get("value", 0)}
-        if "pitch" in ev:
-            entry["pitch"] = ev["pitch"]
+        beat = ev.get("beat", 0.0)
+        value = ev.get("value", 0)
+        pitch_val = ev.get("pitch")
+        if isinstance(pitch_val, int):
+            pitch_int: int = pitch_val
+            entry: AftertouchDict = {"beat": beat, "value": value, "pitch": pitch_int}
+        else:
+            entry = {"beat": beat, "value": value}
         events.append(entry)
     return [_make_tool_call(
         ToolName.ADD_AFTERTOUCH,
@@ -214,14 +233,14 @@ def build_checkout_plan(
     *,
     project_id: str,
     target_variation_id: str,
-    target_notes: dict[str, list[dict[str, Any]]],
-    target_cc: dict[str, list[dict[str, Any]]],
-    target_pb: dict[str, list[dict[str, Any]]],
-    target_at: dict[str, list[dict[str, Any]]],
-    working_notes: dict[str, list[dict[str, Any]]],
-    working_cc: dict[str, list[dict[str, Any]]],
-    working_pb: dict[str, list[dict[str, Any]]],
-    working_at: dict[str, list[dict[str, Any]]],
+    target_notes: dict[str, list[NoteDict]],
+    target_cc: dict[str, list[CCEventDict]],
+    target_pb: dict[str, list[PitchBendDict]],
+    target_at: dict[str, list[AftertouchDict]],
+    working_notes: dict[str, list[NoteDict]],
+    working_cc: dict[str, list[CCEventDict]],
+    working_pb: dict[str, list[PitchBendDict]],
+    working_at: dict[str, list[AftertouchDict]],
     track_regions: dict[str, str],
 ) -> CheckoutPlan:
     """Build a checkout plan that transforms working state → target state.
@@ -238,7 +257,7 @@ def build_checkout_plan(
         | set(working_notes) | set(working_cc) | set(working_pb) | set(working_at)
     )
 
-    tool_calls: list[dict[str, Any]] = []
+    tool_calls: list[CheckoutToolCall] = []
     regions_reset: list[str] = []
     fingerprint_target: dict[str, str] = {}
 

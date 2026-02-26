@@ -16,6 +16,7 @@ import pytest
 from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.contracts.json_types import RegionMetadataWire
 from app.db.database import Base
 from app.db import muse_models  # noqa: F401 — register tables
 from app.models.variation import (
@@ -120,7 +121,7 @@ async def test_variation_roundtrip(async_session: AsyncSession) -> None:
 
     """Persist a variation, reload it, assert equality."""
     original = _make_variation()
-    region_metadata = {
+    region_metadata: dict[str, RegionMetadataWire] = {
         "region-1": {"startBeat": 0, "durationBeats": 16, "name": "Intro Region"},
         "region-2": {"startBeat": 16, "durationBeats": 16, "name": "Verse Region"},
     }
@@ -232,7 +233,7 @@ async def test_region_metadata_roundtrip(async_session: AsyncSession) -> None:
 
     """Region metadata stored on phrases is retrievable."""
     var = _make_variation()
-    region_metadata = {
+    region_metadata: dict[str, RegionMetadataWire] = {
         "region-1": {"startBeat": 0, "durationBeats": 16, "name": "Intro"},
         "region-2": {"startBeat": 16, "durationBeats": 8, "name": "Verse"},
     }
@@ -279,7 +280,7 @@ async def test_commit_replay_from_db(async_session: AsyncSession) -> None:
 
     """Simulate memory loss: persist variation, reload, verify commit-ready data."""
     original = _make_variation()
-    region_metadata = {
+    region_metadata: dict[str, RegionMetadataWire] = {
         "region-1": {"startBeat": 0, "durationBeats": 16, "name": "R1"},
         "region-2": {"startBeat": 16, "durationBeats": 16, "name": "R2"},
     }

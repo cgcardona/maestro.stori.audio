@@ -7,7 +7,9 @@ dynamically instead of maintaining a hardcoded set.
 """
 from __future__ import annotations
 
-GENERATION_TOOLS = [
+from app.contracts.mcp_types import MCPToolDef
+
+GENERATION_TOOLS: list[MCPToolDef] = [
     {
         "name": "stori_generate_midi",
         "server_side": True,

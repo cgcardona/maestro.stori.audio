@@ -7,6 +7,7 @@ Covers:
 """
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from app.db.models import User
@@ -82,7 +83,7 @@ class TestComposeStreamEndpoint:
     async def test_maestro_stream_returns_sse_content_type(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
 
         """Stream endpoint returns text/event-stream with expected headers."""
-        async def fake_orchestrate(*args: Any, **kwargs: Any) -> Any:
+        async def fake_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
 
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "composing"})
@@ -101,7 +102,7 @@ class TestComposeStreamEndpoint:
     async def test_maestro_stream_yields_state_and_complete(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
 
         """Happy-path: orchestrate yields SSE events that are forwarded."""
-        async def fake_orchestrate(*args: Any, **kwargs: Any) -> Any:
+        async def fake_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
 
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
@@ -143,7 +144,7 @@ class TestComposeStreamEndpoint:
         """Budget deduction runs after successful streaming; no budgetUpdate SSE event is emitted."""
         mock_deduct = AsyncMock(return_value=(test_user, MagicMock()))
 
-        async def fake_orchestrate(*args: Any, **kwargs: Any) -> Any:
+        async def fake_orchestrate(*args: object, **kwargs: Any) -> AsyncGenerator[str, None]:
 
             usage_tracker = kwargs.get("usage_tracker")
             if usage_tracker:
@@ -174,7 +175,7 @@ class TestComposeStreamEndpoint:
     async def test_maestro_stream_error_yields_error_event(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
 
         """When orchestration raises, the stream yields an error event."""
-        async def failing_orchestrate(*args: Any, **kwargs: Any) -> Any:
+        async def failing_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
 
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})
@@ -216,7 +217,7 @@ class TestComposeStreamEndpoint:
 
         captured_history = {}
 
-        async def spy_orchestrate(*args: Any, **kwargs: Any) -> Any:
+        async def spy_orchestrate(*args: object, **kwargs: Any) -> AsyncGenerator[str, None]:
 
             captured_history["history"] = kwargs.get("conversation_history", [])
             from app.core.sse_utils import sse_event
@@ -243,7 +244,7 @@ class TestComposeStreamEndpoint:
     async def test_maestro_stream_no_budget_header(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
 
         """X-Budget-Remaining header is not emitted; frontend polls /budget/status instead."""
-        async def fake_orchestrate(*args: Any, **kwargs: Any) -> Any:
+        async def fake_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
 
             from app.core.sse_utils import sse_event
             yield await sse_event({"type": "state", "state": "editing", "intent": "track.add", "confidence": 0.9, "traceId": "t-1"})

@@ -12,21 +12,29 @@ Boundary rules:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+)
 from app.services.muse_checkout import CheckoutPlan, build_checkout_plan
 from app.services.muse_merge_base import find_merge_base
 from app.services.muse_replay import HeadSnapshot, reconstruct_variation_snapshot
 from app.services.variation.note_matching import (
-    NoteMatch,
+    EventDict,
     EventMatch,
-    match_notes,
-    match_cc_events,
-    match_pitch_bends,
+    NoteMatch,
     match_aftertouch,
+    match_cc_events,
+    match_notes,
+    match_pitch_bends,
 )
 
 logger = logging.getLogger(__name__)
@@ -135,10 +143,10 @@ def build_merge_result(
     )
 
     conflicts: list[MergeConflict] = []
-    merged_notes: dict[str, list[dict[str, Any]]] = {}
-    merged_cc: dict[str, list[dict[str, Any]]] = {}
-    merged_pb: dict[str, list[dict[str, Any]]] = {}
-    merged_at: dict[str, list[dict[str, Any]]] = {}
+    merged_notes: dict[str, list[NoteDict]] = {}
+    merged_cc: dict[str, list[CCEventDict]] = {}
+    merged_pb: dict[str, list[PitchBendDict]] = {}
+    merged_at: dict[str, list[AftertouchDict]] = {}
     merged_track_regions: dict[str, str] = {}
     merged_region_starts: dict[str, float] = {}
 
@@ -164,7 +172,7 @@ def build_merge_result(
         cc_result, cc_conflicts = _merge_event_layer(
             b_cc, l_cc, r_cc, rid, "cc", match_cc_events,
         )
-        merged_cc[rid] = cc_result
+        merged_cc[rid] = cc_result  # type: ignore[assignment]
         conflicts.extend(cc_conflicts)
 
         b_pb = base.pitch_bends.get(rid, [])
@@ -173,7 +181,7 @@ def build_merge_result(
         pb_result, pb_conflicts = _merge_event_layer(
             b_pb, l_pb, r_pb, rid, "pb", match_pitch_bends,
         )
-        merged_pb[rid] = pb_result
+        merged_pb[rid] = pb_result  # type: ignore[assignment]
         conflicts.extend(pb_conflicts)
 
         b_at = base.aftertouch.get(rid, [])
@@ -182,7 +190,7 @@ def build_merge_result(
         at_result, at_conflicts = _merge_event_layer(
             b_at, l_at, r_at, rid, "at", match_aftertouch,
         )
-        merged_at[rid] = at_result
+        merged_at[rid] = at_result  # type: ignore[assignment]
         conflicts.extend(at_conflicts)
 
     conflict_tuple = tuple(conflicts)
@@ -222,10 +230,10 @@ async def build_merge_checkout_plan(
     left_id: str,
     right_id: str,
     *,
-    working_notes: dict[str, list[dict[str, Any]]] | None = None,
-    working_cc: dict[str, list[dict[str, Any]]] | None = None,
-    working_pb: dict[str, list[dict[str, Any]]] | None = None,
-    working_at: dict[str, list[dict[str, Any]]] | None = None,
+    working_notes: dict[str, list[NoteDict]] | None = None,
+    working_cc: dict[str, list[CCEventDict]] | None = None,
+    working_pb: dict[str, list[PitchBendDict]] | None = None,
+    working_at: dict[str, list[AftertouchDict]] | None = None,
 ) -> MergeCheckoutPlan:
     """Build a complete merge plan: merge-base → three-way diff → checkout plan.
 
@@ -298,11 +306,11 @@ async def build_merge_checkout_plan(
 
 
 def _merge_note_layer(
-    base: list[dict[str, Any]],
-    left: list[dict[str, Any]],
-    right: list[dict[str, Any]],
+    base: list[NoteDict],
+    left: list[NoteDict],
+    right: list[NoteDict],
     region_id: str,
-) -> tuple[list[dict[str, Any]], list[MergeConflict]]:
+) -> tuple[list[NoteDict], list[MergeConflict]]:
     """Three-way merge for notes in a single region."""
     left_matches = match_notes(base, left)
     right_matches = match_notes(base, right)
@@ -318,7 +326,7 @@ def _merge_note_layer(
             right_by_base[m.base_index] = m
 
     conflicts: list[MergeConflict] = []
-    merged: list[dict[str, Any]] = []
+    merged: list[NoteDict] = []
 
     for bi, base_note in enumerate(base):
         lm = left_by_base.get(bi)
@@ -362,33 +370,21 @@ def _merge_note_layer(
 
 
 def _merge_event_layer(
-    base: list[dict[str, Any]],
-    left: list[dict[str, Any]],
-    right: list[dict[str, Any]],
+    base: Sequence[EventDict],
+    left: Sequence[EventDict],
+    right: Sequence[EventDict],
     region_id: str,
     event_type: Literal["cc", "pb", "at"],
-    match_fn: Any,
-) -> tuple[list[dict[str, Any]], list[MergeConflict]]:
+    match_fn: Callable[..., list[EventMatch]],
+) -> tuple[list[EventDict], list[MergeConflict]]:
     """Three-way merge for a controller event layer in a single region."""
     left_matches: list[EventMatch] = match_fn(base, left)
     right_matches: list[EventMatch] = match_fn(base, right)
 
-    left_by_base: dict[int, EventMatch] = {}
-    right_by_base: dict[int, EventMatch] = {}
-
-    for i, m in enumerate(left_matches):
-        if m.base_event is not None and not m.is_added:
-            left_by_base[i] = m
-    for i, m in enumerate(right_matches):
-        if m.base_event is not None and not m.is_added:
-            right_by_base[i] = m
-
     conflicts: list[MergeConflict] = []
-    merged: list[dict[str, Any]] = []
+    merged: list[EventDict] = []
 
-    base_indexed = list(enumerate(base))
-
-    for bi, base_ev in base_indexed:
+    for base_ev in base:
         lm = _find_event_match_for_base(left_matches, base_ev)
         rm = _find_event_match_for_base(right_matches, base_ev)
 
@@ -416,17 +412,19 @@ def _merge_event_layer(
         else:
             merged.append(base_ev)
 
-    left_additions = [m.proposed_event for m in left_matches if m.is_added and m.proposed_event is not None]
-    right_additions = [m.proposed_event for m in right_matches if m.is_added and m.proposed_event is not None]
-    merged.extend(left_additions)
-    merged.extend(right_additions)
+    for m in left_matches:
+        if m.is_added and m.proposed_event is not None:
+            merged.append(m.proposed_event)
+    for m in right_matches:
+        if m.is_added and m.proposed_event is not None:
+            merged.append(m.proposed_event)
 
     return merged, conflicts
 
 
 def _find_event_match_for_base(
     matches: list[EventMatch],
-    base_event: dict[str, Any],
+    base_event: EventDict,
 ) -> EventMatch | None:
     """Find the EventMatch that corresponds to a specific base event."""
     for m in matches:
@@ -436,8 +434,8 @@ def _find_event_match_for_base(
 
 
 def _check_addition_overlaps(
-    left_adds: list[dict[str, Any]],
-    right_adds: list[dict[str, Any]],
+    left_adds: list[NoteDict],
+    right_adds: list[NoteDict],
     region_id: str,
     conflict_type: Literal["note", "cc", "pb", "at"],
 ) -> list[MergeConflict]:

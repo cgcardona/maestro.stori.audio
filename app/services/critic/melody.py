@@ -1,10 +1,10 @@
 """Melody scoring functions."""
 from __future__ import annotations
 
-from typing import Any
+from app.contracts.json_types import NoteDict
 
 
-def score_melody_notes(notes: list[dict[str, Any]], *, min_notes: int = 8) -> tuple[float, list[str]]:
+def score_melody_notes(notes: list[NoteDict], *, min_notes: int = 8) -> tuple[float, list[str]]:
     """Score melody: phrase length, note count, register."""
     if len(notes) < min_notes:
         return 0.4, ["melody_sparse: add more melody notes or check rest_density"]

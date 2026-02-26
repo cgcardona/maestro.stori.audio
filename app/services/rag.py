@@ -11,12 +11,13 @@ from __future__ import annotations
 import logging
 import httpx
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, cast
+from typing import Any, AsyncGenerator
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter
 
 from app.config import get_settings
+from app.contracts.llm_types import ChatMessage, SystemMessage, UserMessage
 from app.core.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -103,10 +104,10 @@ class RAGService:
             # HF returns nested array for sentence-transformers, take mean pooling
             if isinstance(raw, list) and len(raw) > 0 and isinstance(raw[0], list):
                 import numpy as np
-                embedding = np.mean(raw, axis=0).tolist()
+                embedding: list[float] = np.mean(raw, axis=0).tolist()
             else:
                 embedding = raw if isinstance(raw, list) else []
-            return cast(list[float], embedding)
+            return embedding
     
     async def search(
         self,
@@ -226,9 +227,9 @@ Please provide a clear, helpful answer. Use the documentation context when it's 
 
         # 3. Generate answer via LLM (streaming)
         if self.llm_client:
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+            messages: list[ChatMessage] = [
+                SystemMessage(role="system", content=system_prompt),
+                UserMessage(role="user", content=user_prompt),
             ]
             
             async for chunk in self.llm_client.chat_completion_stream(

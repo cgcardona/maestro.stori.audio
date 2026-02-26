@@ -210,7 +210,7 @@ def _make_variation_with_removals() -> Variation:
 class TestStateMachineEnforcement:
     """Prove state transitions are enforced in VariationStore."""
 
-    def test_commit_only_from_ready(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+    def test_commit_only_from_ready(self, vstore: VariationStore, project_id: str, base_state_id: str) -> None:
 
         """INVARIANT: Commit is only allowed from READY."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="test")
@@ -231,7 +231,7 @@ class TestStateMachineEnforcement:
         record.transition_to(VariationStatus.COMMITTED)
         assert record.status == VariationStatus.COMMITTED
 
-    def test_discard_from_any_non_terminal(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+    def test_discard_from_any_non_terminal(self, vstore: VariationStore, project_id: str, base_state_id: str) -> None:
 
         """Discard allowed from CREATED, STREAMING, READY."""
         for source in [VariationStatus.CREATED, VariationStatus.STREAMING, VariationStatus.READY]:
@@ -250,7 +250,7 @@ class TestStateMachineEnforcement:
             record.transition_to(VariationStatus.DISCARDED)
             assert record.status == VariationStatus.DISCARDED
 
-    def test_terminal_states_are_final(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+    def test_terminal_states_are_final(self, vstore: VariationStore, project_id: str, base_state_id: str) -> None:
 
         """No transitions allowed from terminal states."""
         terminal_targets = [VariationStatus.STREAMING, VariationStatus.READY, VariationStatus.COMMITTED]
@@ -287,14 +287,14 @@ class TestCommitCorrectness:
                         VariationStatus.FAILED, VariationStatus.EXPIRED]:
             assert can_commit(status) is False
 
-    def test_double_commit_blocked(self, ready_record: Any) -> None:
+    def test_double_commit_blocked(self, ready_record: VariationRecord) -> None:
 
         """INVARIANT: Committed → Committed is invalid."""
         ready_record.transition_to(VariationStatus.COMMITTED)
         with pytest.raises(InvalidTransitionError):
             ready_record.transition_to(VariationStatus.COMMITTED)
 
-    def test_record_to_variation_roundtrip(self, ready_record: Any) -> None:
+    def test_record_to_variation_roundtrip(self, ready_record: VariationRecord) -> None:
 
         """Phrases stored in record can be converted to Variation model."""
         from app.api.routes.variation import _record_to_variation
@@ -305,7 +305,7 @@ class TestCommitCorrectness:
         assert variation.phrases[0].phrase_id == "phrase-1"
         assert variation.phrases[1].phrase_id == "phrase-2"
 
-    def test_partial_acceptance(self, ready_record: Any) -> None:
+    def test_partial_acceptance(self, ready_record: VariationRecord) -> None:
 
         """INVARIANT: Only accepted phrase IDs are applied."""
         from app.api.routes.variation import _record_to_variation
@@ -556,7 +556,7 @@ class TestStreamRouter:
 class TestVariationStoreIntegration:
     """Integration tests for VariationStore lifecycle."""
 
-    def test_create_and_retrieve(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+    def test_create_and_retrieve(self, vstore: VariationStore, project_id: str, base_state_id: str) -> None:
 
         """Create → get returns the same record."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="test")
@@ -564,7 +564,7 @@ class TestVariationStoreIntegration:
         assert retrieved is record
         assert retrieved.status == VariationStatus.CREATED
 
-    def test_full_happy_path_lifecycle(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+    def test_full_happy_path_lifecycle(self, vstore: VariationStore, project_id: str, base_state_id: str) -> None:
 
         """CREATED → STREAMING → READY → COMMITTED."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="test")
@@ -573,7 +573,7 @@ class TestVariationStoreIntegration:
         record.transition_to(VariationStatus.COMMITTED)
         assert record.status == VariationStatus.COMMITTED
 
-    def test_phrases_stored_in_sequence_order(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+    def test_phrases_stored_in_sequence_order(self, vstore: VariationStore, project_id: str, base_state_id: str) -> None:
 
         """Phrases are retrievable in sequence order."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="test")
@@ -602,7 +602,7 @@ class TestVariationStoreIntegration:
         with pytest.raises(KeyError):
             vstore.get_or_raise("nonexistent")
 
-    def test_cleanup_expired(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+    def test_cleanup_expired(self, vstore: VariationStore, project_id: str, base_state_id: str) -> None:
 
         """cleanup_expired transitions old non-terminal variations."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="old")
@@ -623,7 +623,7 @@ class TestDiscardCancellation:
     """Prove discard cancels generation and emits terminal event."""
 
     @pytest.mark.anyio
-    async def test_discard_during_streaming(self, vstore: VariationStore, broadcaster: SSEBroadcaster, project_id: Any, base_state_id: Any) -> None:
+    async def test_discard_during_streaming(self, vstore: VariationStore, broadcaster: SSEBroadcaster, project_id: str, base_state_id: str) -> None:
 
         """Discard from STREAMING cancels and emits done(discarded)."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="cancel-test")
@@ -654,14 +654,14 @@ class TestDiscardCancellation:
         assert received[0].type == "done"
         assert received[0].payload["status"] == "discarded"
 
-    def test_discard_from_ready(self, ready_record: Any) -> None:
+    def test_discard_from_ready(self, ready_record: VariationRecord) -> None:
 
         """Discard from READY succeeds."""
         assert can_discard(ready_record.status)
         ready_record.transition_to(VariationStatus.DISCARDED)
         assert ready_record.status == VariationStatus.DISCARDED
 
-    def test_discard_from_created(self, vstore: VariationStore, project_id: Any, base_state_id: Any) -> None:
+    def test_discard_from_created(self, vstore: VariationStore, project_id: str, base_state_id: str) -> None:
 
         """Discard from CREATED succeeds."""
         record = vstore.create(project_id=project_id, base_state_id=base_state_id, intent="test")

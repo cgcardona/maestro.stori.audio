@@ -7,7 +7,7 @@ Public API:
     build_execution_plan(prompt, state, route, llm, ...) -> ExecutionPlan
     build_execution_plan_stream(...) -> AsyncIterator[ExecutionPlan | str]
     build_plan_from_dict(plan_dict, project_state) -> ExecutionPlan
-    preview_plan(prompt, state, route, llm) -> dict
+    preview_plan(prompt, state, route, llm) -> PlanPreview
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from app.core.planner.track_matching import (
 )
 from app.core.planner.conversion import _schema_to_tool_calls
 from app.core.planner.plan import (
+    PlanPreview,
     _finalise_plan,
     _try_deterministic_plan,
     build_execution_plan,
@@ -35,6 +36,7 @@ from app.core.planner.plan import (
 __all__ = [
     # Models
     "ExecutionPlan",
+    "PlanPreview",
     # Effects
     "_ROLE_ALWAYS_EFFECTS",
     "_STYLE_ROLE_EFFECTS",

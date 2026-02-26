@@ -15,11 +15,19 @@ import logging
 import re
 import uuid as _uuid_mod
 from typing import (
+    TYPE_CHECKING,
     Any,
     AsyncIterator,
     Awaitable,
     Callable,
 )
+
+from app.core.sse_utils import SSEEventInput
+
+if TYPE_CHECKING:
+    from app.contracts.project_types import ProjectContext
+    from app.core.intent import IntentResult
+    from app.core.prompt_parser import ParsedPrompt
 
 from app.config import settings
 from app.core.emotion_vector import emotion_vector_from_stori_prompt
@@ -27,6 +35,7 @@ from app.core.llm_client import LLMClient
 from app.core.prompts import system_prompt_base
 from app.core.sse_utils import sse_event
 from app.core.state_store import StateStore
+from app.core.tracing import TraceContext
 from app.core.tools import ALL_TOOLS
 from app.core.maestro_helpers import (
     UsageTracker,
@@ -41,6 +50,7 @@ from app.core.maestro_plan_tracker import (
 from app.core.maestro_editing import _apply_single_tool_call
 from app.core.maestro_agent_teams.agent import _run_instrument_agent
 from app.contracts import hash_list_canonical, seal_contract
+from app.contracts.json_types import ToolCallDict
 from app.core.maestro_agent_teams.contracts import (
     CompositionContract,
     ExecutionServices,
@@ -75,12 +85,12 @@ def _parse_bars_from_text(text: str) -> int | None:
 
 async def _handle_composition_agent_team(
     prompt: str,
-    project_context: dict[str, Any],
-    parsed: Any,  # ParsedPrompt — avoids circular import at module level
-    route: Any,
+    project_context: "ProjectContext",
+    parsed: "ParsedPrompt",
+    route: "IntentResult",
     llm: LLMClient,
     store: StateStore,
-    trace: Any,
+    trace: TraceContext,
     usage_tracker: "UsageTracker" | None,
     is_cancelled: Callable[[], Awaitable[bool]] | None = None,
 ) -> AsyncIterator[str]:
@@ -111,7 +121,7 @@ async def _handle_composition_agent_team(
     if plan_tracker.steps:
         yield await sse_event(plan_tracker.to_plan_event())
 
-    tool_calls_collected: list[dict[str, Any]] = []
+    tool_calls_collected: list[ToolCallDict] = []
     add_notes_failures: dict[str, int] = {}
 
     # ── Phase 1: Deterministic setup ──
@@ -201,7 +211,7 @@ async def _handle_composition_agent_team(
         or _parse_bars_from_text(getattr(parsed, "request", "") or prompt)
         or 4
     )
-    tempo = float(parsed.tempo or project_context.get("tempo") or 120)
+    tempo = int(round(float(parsed.tempo or project_context.get("tempo") or 120)))
     key = parsed.key or project_context.get("key") or "C"
     # ── Detect existing tracks to avoid creating duplicates ──
     _existing_track_info: dict[str, dict[str, Any]] = {}
@@ -209,9 +219,8 @@ async def _handle_composition_agent_team(
         track_name_lower = (pc_track.get("name") or "").lower()
         if not track_name_lower:
             continue
-        track_id: str = (
-            pc_track.get("trackId")
-            or pc_track.get("id")
+        track_id: str = str(
+            pc_track.get("id")
             or ""
         )
         regions = pc_track.get("regions", [])
@@ -260,8 +269,8 @@ async def _handle_composition_agent_team(
                 _preflight_evt["trackColor"] = _preflight_color
             yield await sse_event(_preflight_evt)
 
-    sse_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-    agent_tool_calls: list[dict[str, Any]] = []
+    sse_queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+    agent_tool_calls: list[ToolCallDict] = []
     tasks: list[asyncio.Task[None]] = []
 
     # ── GPU warm-up: fire a lightweight health probe before spawning agents ──
@@ -454,10 +463,11 @@ async def _handle_composition_agent_team(
         agent_start_beat = role_info["start_beat"]
         assigned_color = _color_map.get(instrument_name)
         if existing_track_id:
-            agent_tool_calls.append({
+            _reused: ToolCallDict = {
                 "tool": "_reused_track",
                 "params": {"name": instrument_name, "trackId": existing_track_id},
-            })
+            }
+            agent_tool_calls.append(_reused)
 
         # ── Build role-specific SectionSpecs (with per-role brief) ──
         _role_specs = tuple(
@@ -733,7 +743,8 @@ async def _handle_composition_agent_team(
                 for evt in p3_outcome.sse_events:
                     yield await sse_event(evt)
                 if not p3_outcome.skipped:
-                    tool_calls_collected.append({"tool": tc.name, "params": p3_outcome.enriched_params})
+                    _p3_tc: ToolCallDict = {"tool": tc.name, "params": p3_outcome.enriched_params}
+                    tool_calls_collected.append(_p3_tc)
                     tool_calls_collected.extend(p3_outcome.extra_tool_calls)
                     if p3_step:
                         yield await sse_event(

@@ -49,7 +49,7 @@ def rag_service(mock_qdrant: MagicMock, mock_llm_client: MagicMock) -> RAGServic
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_embed_text_success(rag_service: Any) -> None:
+async def test_embed_text_success(rag_service: RAGService) -> None:
 
     """Test successful text embedding with HuggingFace."""
     mock_response = MagicMock()
@@ -70,7 +70,7 @@ async def test_embed_text_success(rag_service: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_embed_text_with_nested_array(rag_service: Any) -> None:
+async def test_embed_text_with_nested_array(rag_service: RAGService) -> None:
 
     """Test embedding with nested array (token-level embeddings)."""
     # Simulate token-level embeddings that need mean pooling
@@ -96,7 +96,7 @@ async def test_embed_text_with_nested_array(rag_service: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_embed_text_api_error(rag_service: Any) -> None:
+async def test_embed_text_api_error(rag_service: RAGService) -> None:
 
     """Test handling of HuggingFace API error."""
     mock_response = MagicMock()
@@ -117,7 +117,7 @@ async def test_embed_text_api_error(rag_service: Any) -> None:
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_search_success(rag_service: Any) -> None:
+async def test_search_success(rag_service: RAGService) -> None:
 
     """Test successful RAG search."""
     # Mock embedding
@@ -171,7 +171,7 @@ async def test_search_success(rag_service: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_with_score_threshold(rag_service: Any) -> None:
+async def test_search_with_score_threshold(rag_service: RAGService) -> None:
 
     """Test search with score threshold filtering."""
     mock_embedding = [0.1] * 384
@@ -213,7 +213,7 @@ async def test_search_with_score_threshold(rag_service: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_qdrant_error(rag_service: Any) -> None:
+async def test_search_qdrant_error(rag_service: RAGService) -> None:
 
     """Test handling of Qdrant search error."""
     mock_embedding = [0.1] * 384
@@ -235,7 +235,7 @@ async def test_search_qdrant_error(rag_service: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_empty_results(rag_service: Any) -> None:
+async def test_search_empty_results(rag_service: RAGService) -> None:
 
     """Test search with no matching results."""
     mock_embedding = [0.1] * 384
@@ -260,7 +260,7 @@ async def test_search_empty_results(rag_service: Any) -> None:
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_answer_with_context(rag_service: Any, mock_llm_client: Any) -> None:
+async def test_answer_with_context(rag_service: RAGService, mock_llm_client: MagicMock) -> None:
 
     """Test answer generation with retrieved context."""
     # Mock search results
@@ -276,7 +276,7 @@ async def test_answer_with_context(rag_service: Any, mock_llm_client: Any) -> No
     ]
     
     # Mock LLM streaming response
-    async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+    async def mock_stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
 
         yield {"choices": [{"delta": {"content": "Based on "}}]}
         yield {"choices": [{"delta": {"content": "the docs, "}}]}
@@ -318,7 +318,7 @@ async def test_answer_no_llm_client(mock_qdrant: MagicMock) -> None:
 # Collection Info Tests
 # =============================================================================
 
-def test_collection_exists(rag_service: Any, mock_qdrant: MagicMock) -> None:
+def test_collection_exists(rag_service: RAGService, mock_qdrant: MagicMock) -> None:
 
     """Test checking if collection exists."""
     # Mock get_collections to return list with our collection
@@ -332,7 +332,7 @@ def test_collection_exists(rag_service: Any, mock_qdrant: MagicMock) -> None:
     assert exists is True
 
 
-def test_collection_not_exists(rag_service: Any, mock_qdrant: MagicMock) -> None:
+def test_collection_not_exists(rag_service: RAGService, mock_qdrant: MagicMock) -> None:
 
     """Test checking non-existent collection."""
     mock_qdrant.get_collections.side_effect = Exception("Not found")
@@ -341,7 +341,7 @@ def test_collection_not_exists(rag_service: Any, mock_qdrant: MagicMock) -> None
     assert exists is False
 
 
-def test_get_collection_info(rag_service: Any, mock_qdrant: MagicMock) -> None:
+def test_get_collection_info(rag_service: RAGService, mock_qdrant: MagicMock) -> None:
 
     """Test getting collection info."""
     mock_info = MagicMock()
@@ -363,7 +363,7 @@ def test_get_collection_info(rag_service: Any, mock_qdrant: MagicMock) -> None:
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_search_sanitizes_input(rag_service: Any) -> None:
+async def test_search_sanitizes_input(rag_service: RAGService) -> None:
 
     """Test that search handles malicious input safely."""
     # Try various injection attempts
@@ -393,7 +393,7 @@ async def test_search_sanitizes_input(rag_service: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_embedding_handles_large_input(rag_service: Any) -> None:
+async def test_embedding_handles_large_input(rag_service: RAGService) -> None:
 
     """Test that embedding handles excessively large input."""
     # 100KB of text (potential DoS vector)
@@ -415,7 +415,7 @@ async def test_embedding_handles_large_input(rag_service: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_api_key_not_exposed_in_errors(rag_service: Any) -> None:
+async def test_api_key_not_exposed_in_errors(rag_service: RAGService) -> None:
 
     """Test that API key is not exposed in error messages."""
     mock_response = MagicMock()

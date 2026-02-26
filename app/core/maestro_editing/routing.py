@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from app.contracts.project_types import ProjectContext
 from app.core.intent import Intent, IntentResult, SSEState
 from app.core.intent_config import (
     _PRIMITIVES_FX,
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
     from app.core.prompt_parser import ParsedPrompt
 
 
-def _project_needs_structure(project_context: dict[str, Any]) -> bool:
+def _project_needs_structure(project_context: ProjectContext) -> bool:
     """Check if the project is empty and needs structural creation.
 
     Returns True when the project has no tracks, meaning composition
@@ -30,7 +31,7 @@ def _project_needs_structure(project_context: dict[str, Any]) -> bool:
 
 def _is_additive_composition(
     parsed: "ParsedPrompt" | None,
-    project_context: dict[str, Any],
+    project_context: ProjectContext,
 ) -> bool:
     """Detect if a composition request creates a new section (EDITING, not COMPOSING).
 

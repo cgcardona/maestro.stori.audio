@@ -20,6 +20,8 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.contracts.json_types import CCEventDict, NoteDict, PitchBendDict
+
 
 @dataclass
 class ExpressivenessProfile:
@@ -327,12 +329,12 @@ def get_profile(style: str, role: str = "melody") -> ExpressivenessProfile:
 # ---------------------------------------------------------------------------
 
 def add_velocity_curves(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     style: str,
     bars: int,
     rng: random.Random | None = None,
     role: str = "melody",
-    ) -> list[dict[str, Any]]:
+    ) -> list[NoteDict]:
     """
     Apply phrase-level velocity arcs, accent patterns, and ghost notes.
 
@@ -378,7 +380,7 @@ def add_velocity_curves(
 
     # Ghost note insertion
     if prof.ghost_probability > 0 and len(notes) > 2:
-        new_ghosts: list[dict[str, Any]] = []
+        new_ghosts: list[NoteDict] = []
         for note in notes:
             if rng.random() < prof.ghost_probability:
                 ghost_beat = note["start_beat"] - 0.25
@@ -401,11 +403,11 @@ def add_velocity_curves(
 # ---------------------------------------------------------------------------
 
 def add_cc_automation(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     style: str,
     bars: int,
     instrument_role: str = "melody",
-    ) -> list[dict[str, Any]]:
+    ) -> list[CCEventDict]:
     """
     Generate CC events (expression, sustain pedal, mod wheel) based on style
     and instrument role.
@@ -413,7 +415,7 @@ def add_cc_automation(
     Returns a list of CC event dicts: {cc, beat, value}.
     """
     prof = get_profile(style, instrument_role)
-    cc_events: list[dict[str, Any]] = []
+    cc_events: list[CCEventDict] = []
     is_keys = instrument_role in ("chords", "piano", "keys", "pads")
 
     # CC 11 — Expression
@@ -466,11 +468,11 @@ def add_cc_automation(
 # ---------------------------------------------------------------------------
 
 def add_pitch_bend_phrasing(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     style: str,
     instrument_role: str = "melody",
     rng: random.Random | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[PitchBendDict]:
     """
     Add subtle pitch bends for slides, approach notes, and phrase endings.
 
@@ -481,7 +483,7 @@ def add_pitch_bend_phrasing(
         return []
 
     rng = rng or random.Random(42)
-    bends: list[dict[str, Any]] = []
+    bends: list[PitchBendDict] = []
     pb_range = prof.pitch_bend_range
 
     for note in notes:
@@ -508,11 +510,11 @@ def add_pitch_bend_phrasing(
 # ---------------------------------------------------------------------------
 
 def add_timing_humanization(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     style: str,
     rng: random.Random | None = None,
     role: str = "melody",
-    ) -> list[dict[str, Any]]:
+    ) -> list[NoteDict]:
     """
     Add micro-timing offsets to push notes slightly off-grid.
 
@@ -543,20 +545,20 @@ _CAMEL_TO_SNAKE: dict[str, str] = {"startBeat": "start_beat", "durationBeats": "
 _SNAKE_TO_CAMEL: dict[str, str] = {"start_beat": "startBeat", "duration_beats": "durationBeats"}
 
 
-def _notes_to_snake(notes: list[dict[str, Any]]) -> None:
+def _notes_to_snake(notes: list[NoteDict]) -> None:
     """Convert camelCase note keys to snake_case in-place."""
     for n in notes:
         for camel, snake in _CAMEL_TO_SNAKE.items():
             if camel in n and snake not in n:
-                n[snake] = n.pop(camel)
+                n[snake] = n.pop(camel)  # type: ignore[literal-required,misc]  # dynamic key remap; mypy can't narrow computed keys
 
 
-def _notes_to_camel(notes: list[dict[str, Any]]) -> None:
+def _notes_to_camel(notes: list[NoteDict]) -> None:
     """Convert snake_case note keys to camelCase in-place."""
     for n in notes:
         for snake, camel in _SNAKE_TO_CAMEL.items():
             if snake in n and camel not in n:
-                n[camel] = n.pop(snake)
+                n[camel] = n.pop(snake)  # type: ignore[literal-required,misc]  # dynamic key remap; mypy can't narrow computed keys
 
 
 # ---------------------------------------------------------------------------
@@ -564,7 +566,7 @@ def _notes_to_camel(notes: list[dict[str, Any]]) -> None:
 # ---------------------------------------------------------------------------
 
 def apply_expressiveness(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     style: str,
     bars: int,
     instrument_role: str = "melody",

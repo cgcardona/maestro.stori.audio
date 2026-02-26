@@ -3,14 +3,15 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from typing import Any
+
+from app.contracts.json_types import NoteDict
 
 
-def _distinct_pitches(notes: list[dict[str, Any]]) -> int:
+def _distinct_pitches(notes: list[NoteDict]) -> int:
     return len(set(n.get("pitch", 0) for n in notes))
 
 
-def _velocity_entropy_normalized(notes: list[dict[str, Any]]) -> float:
+def _velocity_entropy_normalized(notes: list[NoteDict]) -> float:
     """Normalized velocity entropy: 0 = all same, 1 = well spread."""
     if not notes:
         return 0.0
@@ -23,7 +24,7 @@ def _velocity_entropy_normalized(notes: list[dict[str, Any]]) -> float:
     return min(1.0, ent / 4.0)
 
 
-def _offbeat_ratio(notes: list[dict[str, Any]], beat_resolution: float = 0.25) -> float:
+def _offbeat_ratio(notes: list[NoteDict], beat_resolution: float = 0.25) -> float:
     """Fraction of onsets that are offbeat (not on a quarter note)."""
     if not notes:
         return 0.0
@@ -31,9 +32,9 @@ def _offbeat_ratio(notes: list[dict[str, Any]], beat_resolution: float = 0.25) -
     return off / len(notes)
 
 
-def _get_notes_by_layer(notes: list[dict[str, Any]], layer_map: dict[int, str] | None = None) -> dict[str, list[dict[str, Any]]]:
+def _get_notes_by_layer(notes: list[NoteDict], layer_map: dict[int, str] | None = None) -> dict[str, list[NoteDict]]:
     """Group notes by layer name."""
-    by_layer: dict[str, list[dict[str, Any]]] = {}
+    by_layer: dict[str, list[NoteDict]] = {}
     for i, n in enumerate(notes):
         layer = n.get("layer")
         if layer is None and layer_map:

@@ -7,6 +7,8 @@ import logging
 import uuid
 from typing import Any
 
+from app.contracts.project_types import ProjectContext
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +35,7 @@ from app.variation.core.event_envelope import (
     build_done_envelope,
     build_error_envelope,
 )
-from app.variation.storage.variation_store import PhraseRecord, get_variation_store
+from app.variation.storage.variation_store import PhraseRecord, VariationRecord, get_variation_store
 from app.variation.streaming.stream_router import publish_event, close_variation_stream
 from app.api.routes.variation._state import limiter, _generation_tasks
 
@@ -135,9 +137,9 @@ async def propose_variation(
 
 
 async def _run_generation(
-    record: Any,
+    record: VariationRecord,
     propose_request: ProposeVariationRequest,
-    project_context: dict[str, Any],
+    project_context: ProjectContext,
 ) -> None:
     """
     Background task: intent → plan → variation → emit envelopes.
@@ -169,7 +171,7 @@ async def _run_generation(
                 raise ValueError("Could not generate a plan — be more specific")
 
             if record.status != VariationStatus.STREAMING:
-                return
+                return  # defensive: cancellation may transition record
 
             variation = await execute_plan_variation(
                 tool_calls=output.plan.tool_calls,
@@ -180,7 +182,7 @@ async def _run_generation(
             )
 
             if record.status != VariationStatus.STREAMING:
-                return
+                return  # type: ignore[unreachable]  # defensive: cancellation may transition record
 
             record.ai_explanation = variation.ai_explanation
             record.affected_tracks = variation.affected_tracks
@@ -201,7 +203,7 @@ async def _run_generation(
 
             for phrase in variation.phrases:
                 if record.status != VariationStatus.STREAMING:
-                    return
+                    return  # type: ignore[unreachable]  # defensive: cancellation may transition record
 
                 seq = record.next_sequence()
                 phrase_data = {
@@ -241,7 +243,7 @@ async def _run_generation(
                 ))
 
             if record.status != VariationStatus.STREAMING:
-                return
+                return  # type: ignore[unreachable]  # defensive: cancellation may transition record
 
             done_env = build_done_envelope(
                 variation_id=variation_id,

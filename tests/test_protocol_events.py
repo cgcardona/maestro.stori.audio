@@ -831,16 +831,20 @@ class TestPhase2ProjectSnapshotValidation:
         req = MaestroRequest(prompt="test", project=None)
         assert req.project is None
 
-    def test_extra_fields_preserved(self) -> None:
+    def test_extra_fields_stripped_by_typed_dict(self) -> None:
 
-        """ProjectSnapshot extra='allow' does not reject unknown FE fields."""
+        """Unknown DAW fields are stripped by ProjectContext validation.
+
+        The backend only reads known fields via .get() and never relays
+        project state back to the DAW, so stripping unknown keys is safe.
+        If a new field is needed, add it to ProjectContext.
+        """
         from app.models.requests import MaestroRequest
-        req = MaestroRequest(
-            prompt="test",
-            project={"id": "p1", "futureField": "ok"},
-        )
+
+        req = MaestroRequest(prompt="test", project={"id": "p1", "futureField": "ok"})  # type: ignore[arg-type]
         assert req.project is not None
-        assert req.project["futureField"] == "ok"
+        assert req.project.get("id") == "p1"
+        assert "futureField" not in req.project
 
 
 class TestPhase2NoDuplicateHelpers:
@@ -862,8 +866,7 @@ class TestPhase2NoDuplicateHelpers:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def _make_minimal(model_class: type) -> Any:
-
+def _make_minimal(model_class: type[StoriEvent]) -> StoriEvent:
     """Construct a minimal valid instance of an event model."""
     _MINIMAL: dict[str, dict[str, Any]] = {
         "state": {"state": "editing", "intent": "track.add", "confidence": 0.9, "trace_id": "t"},
@@ -890,7 +893,7 @@ def _make_minimal(model_class: type) -> Any:
         "mcp.message": {"payload": {"tool": "test"}},
         "mcp.ping": {},
     }
-    event_type_field = model_class.model_fields.get("type")  # type: ignore[attr-defined]  # all SSE event models have model_fields
+    event_type_field = model_class.model_fields.get("type")  # all SSE event models have model_fields
     if event_type_field and event_type_field.default:
         et = event_type_field.default
     else:

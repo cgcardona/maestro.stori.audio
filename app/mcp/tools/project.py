@@ -1,7 +1,9 @@
 """Project-level MCP tool definitions."""
 from __future__ import annotations
 
-PROJECT_TOOLS = [
+from app.contracts.mcp_types import MCPToolDef
+
+PROJECT_TOOLS: list[MCPToolDef] = [
     {
         "name": "stori_read_project",
         "description": """Read the current project state from the DAW.

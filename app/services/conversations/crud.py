@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.contracts.project_types import ProjectContext
 
 from sqlalchemy import select, func, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +23,7 @@ async def create_conversation(
     user_id: str,
     title: str = "New Conversation",
     project_id: str | None = None,
-    project_context: dict[str, Any] | None = None,
+    project_context: ProjectContext | None = None,
 ) -> Conversation:
     conversation = Conversation(
         user_id=user_id,

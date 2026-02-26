@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Callable
+from typing import Callable
 from dataclasses import dataclass, field
 
+from app.contracts.generation_types import GenerationContext
+from app.contracts.json_types import JSONValue, NoteDict
 from app.services.backends.base import GeneratorBackend, GenerationResult, MusicGeneratorBackend
 from app.services.backends.text2midi import Text2MidiGeneratorBackend
 from app.services.backends.drum_ir import DrumSpecBackend
@@ -84,8 +86,8 @@ _ROLE_TO_FAMILIES: dict[str, list[str]] = {
 
 def _extract_channel_for_role(
     role_key: str,
-    channel_notes: dict[str, list[dict[str, Any]]],
-) -> list[dict[str, Any]]:
+    channel_notes: dict[str, list[NoteDict]],
+) -> list[NoteDict]:
     """Extract notes for a musical role from Orpheus channel labels.
 
     Tries, in order:
@@ -177,10 +179,10 @@ QUALITY_PRESETS = {
 # -----------------------------------------------------------------------------
 
 @dataclass
-class GenerationContext:
-    """Context shared across coupled generation calls."""
+class CoupledGenState:
+    """Mutable state shared across coupled generation calls (drum→bass spine)."""
     rhythm_spine: RhythmSpine | None = None
-    drum_notes: list[dict[str, Any]] | None = None
+    drum_notes: list[NoteDict] | None = None
     style: str = "trap"
     tempo: int = 120
     bars: int = 16
@@ -232,11 +234,11 @@ class MusicGenerator:
         self._availability_cache: dict[str, bool] = {}
         
         # Cached context for coupled generation
-        self._generation_context: GenerationContext | None = None
+        self._generation_context: CoupledGenState | None = None
         # Per-section unified generation cache
         self._section_cache: dict[str, _SectionCacheEntry] = {}
     
-    def set_generation_context(self, context: GenerationContext) -> None:
+    def set_generation_context(self, context: CoupledGenState) -> None:
         """set context for coupled generation (e.g., rhythm spine from drums)."""
         self._generation_context = context
     
@@ -253,26 +255,12 @@ class MusicGenerator:
         key: str | None = None,
         chords: list[str] | None = None,
         preferred_backend: GeneratorBackend | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
-        """
-        Generate MIDI notes (default: Orpheus; no pattern fallback).
-        
-        Args:
-            instrument: drums, bass, piano, lead, etc.
-            style: boom_bap, jazz, house, trap, etc.
-            tempo: BPM
-            bars: Number of bars to generate
-            key: Musical key (e.g., "Am", "C")
-            chords: Chord progression
-            preferred_backend: Force a specific backend
-            **kwargs: Additional parameters for backends
-        
-        Returns:
-            GenerationResult with notes and metadata
-        """
-        quality_preset = kwargs.pop("quality_preset", "quality")  # "fast" | "balanced" | "quality"
-        num_candidates = kwargs.pop("num_candidates", None)
+        """Generate MIDI notes (default: Orpheus; no pattern fallback)."""
+        ctx = context or {}
+        quality_preset = ctx.get("quality_preset", "quality")
+        num_candidates = ctx.get("num_candidates")
         
         # Get preset config
         preset_config = QUALITY_PRESETS.get(quality_preset, QUALITY_PRESETS["balanced"])
@@ -284,7 +272,7 @@ class MusicGenerator:
             if backend:
                 result = await self._generate_with_coupling(
                     backend, preferred_backend, instrument, style, tempo, bars, key, chords,
-                    preset_config, n, **kwargs
+                    preset_config, n, context=context,
                 )
                 if result.success:
                     result = self._maybe_apply_expressiveness(result, instrument, style, bars)
@@ -304,7 +292,7 @@ class MusicGenerator:
             
             result = await self._generate_with_coupling(
                 backend, backend_type, instrument, style, tempo, bars, key, chords,
-                preset_config, n, **kwargs
+                preset_config, n, context=context,
             )
             
             if result.success:
@@ -345,7 +333,7 @@ class MusicGenerator:
         tempo: int,
         bars: int,
         key: str | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
         """Generate all instruments together in one Orpheus call.
 
@@ -353,9 +341,6 @@ class MusicGenerator:
         generated simultaneously, yielding better musical coherence than
         generating each instrument independently.
         """
-        quality_preset = kwargs.pop("quality_preset", "quality")
-        kwargs["quality_preset"] = quality_preset
-
         for backend_type in self.priority:
             backend = self.backend_map.get(backend_type)
             if not backend:
@@ -369,7 +354,7 @@ class MusicGenerator:
                 tempo=tempo,
                 bars=bars,
                 key=key,
-                **kwargs,
+                context=context,
             )
             if result.success:
                 return result
@@ -393,7 +378,7 @@ class MusicGenerator:
         tempo: int,
         bars: int,
         key: str | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
         """Generate notes for one instrument within a section using unified caching.
 
@@ -417,7 +402,7 @@ class MusicGenerator:
                     tempo=tempo,
                     bars=bars,
                     key=key,
-                    **kwargs,
+                    context=context,
                 )
             else:
                 logger.info(
@@ -430,7 +415,7 @@ class MusicGenerator:
             return unified
 
         channel_notes = unified.channel_notes or {}
-        role_notes: list[dict[str, Any]] = []
+        role_notes: list[NoteDict] = []
         role_key = instrument.lower().strip()
 
         logger.info(
@@ -470,12 +455,12 @@ class MusicGenerator:
             self._section_cache.clear()
 
     @staticmethod
-    def _ensure_snake_keys(notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _ensure_snake_keys(notes: list[NoteDict]) -> list[NoteDict]:
         """Return a shallow copy of notes with snake_case beat keys for critics."""
         _MAP = {"startBeat": "start_beat", "durationBeats": "duration_beats"}
-        out: list[dict[str, Any]] = []
+        out: list[NoteDict] = []
         for n in notes:
-            converted = {_MAP.get(k, k): v for k, v in n.items()}
+            converted: NoteDict = {_MAP.get(k, k): v for k, v in n.items()}  # type: ignore[assignment]  # dynamic key remap; mypy can't narrow computed keys
             out.append(converted)
         return out
 
@@ -485,7 +470,7 @@ class MusicGenerator:
         backend_type: GeneratorBackend,
         bars: int,
         style: str,
-    ) -> Callable[[list[dict[str, Any]]], tuple[float, list[str]]] | None:
+    ) -> Callable[[list[NoteDict]], tuple[float, list[str]]] | None:
         """
         Return a scorer function for the given instrument role.
 
@@ -566,24 +551,21 @@ class MusicGenerator:
         chords: list[str] | None,
         preset_config: QualityPresetConfig,
         num_candidates: int,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
-        """
-        Generate with coupled generation and parallel rejection sampling.
+        """Generate with coupled generation and parallel rejection sampling.
 
         For drums: captures rhythm spine for bass coupling.
         For bass: uses rhythm spine if available.
         Candidates are dispatched concurrently via asyncio.gather so N Orpheus
         calls run in parallel rather than sequentially.
         """
-        # Prepare kwargs for coupled generation
-        gen_kwargs = dict(kwargs)
+        gen_ctx: GenerationContext = {**(context or {})}
 
-        # Bass coupling: pass rhythm spine if available
         if instrument == "bass" and preset_config.use_coupled_generation:
             if self._generation_context and self._generation_context.rhythm_spine:
-                gen_kwargs["rhythm_spine"] = self._generation_context.rhythm_spine
-                gen_kwargs["drum_kick_beats"] = self._generation_context.rhythm_spine.kick_onsets
+                gen_ctx["rhythm_spine"] = self._generation_context.rhythm_spine
+                gen_ctx["drum_kick_beats"] = self._generation_context.rhythm_spine.kick_onsets
 
         # Smarter candidate count — melodic instruments cap at 2 for Orpheus
         effective_candidates = self._candidates_for_role(instrument, preset_config, backend_type)
@@ -596,7 +578,7 @@ class MusicGenerator:
             # time on Orpheus, so parallel dispatch cuts wall-clock time from
             # N × T_inference to ≈ T_inference + network overhead.
             tasks = [
-                backend.generate(instrument, style, tempo, bars, key, chords, **gen_kwargs)
+                backend.generate(instrument, style, tempo, bars, key, chords, context=gen_ctx)
                 for _ in range(effective_candidates)
             ]
             candidates = await asyncio.gather(*tasks, return_exceptions=True)
@@ -617,17 +599,18 @@ class MusicGenerator:
             if best_result is not None:
                 if instrument == "drums" and preset_config.use_coupled_generation:
                     self._capture_drum_context(best_result.notes, style, tempo, bars)
+                scores_val: list[JSONValue] = list(all_scores)
                 best_result.metadata.update({
                     "critic_score": best_score,
                     "rejection_attempts": len(all_scores),
-                    "all_scores": all_scores,
+                    "all_scores": scores_val,
                     "parallel_candidates": effective_candidates,
                 })
                 return best_result
 
         # Single generation (no rejection sampling, or all candidates failed)
         result = await backend.generate(
-            instrument, style, tempo, bars, key, chords, **gen_kwargs
+            instrument, style, tempo, bars, key, chords, context=gen_ctx
         )
 
         if result.success and instrument == "drums" and preset_config.use_coupled_generation:
@@ -661,11 +644,11 @@ class MusicGenerator:
         result.pitch_bends = (result.pitch_bends or []) + expr.get("pitch_bends", [])
         return result
 
-    def _capture_drum_context(self, notes: list[dict[str, Any]], style: str, tempo: int, bars: int) -> None:
+    def _capture_drum_context(self, notes: list[NoteDict], style: str, tempo: int, bars: int) -> None:
         """Capture rhythm spine from drum generation for bass coupling."""
         snake_notes = self._ensure_snake_keys(notes)
         rhythm_spine = RhythmSpine.from_drum_notes(snake_notes, tempo=tempo, bars=bars, style=style)
-        self._generation_context = GenerationContext(
+        self._generation_context = CoupledGenState(
             rhythm_spine=rhythm_spine,
             drum_notes=notes,
             style=style,

@@ -3,18 +3,26 @@ from __future__ import annotations
 
 from typing import Any
 from unittest.mock import MagicMock
+
+from app.contracts.project_types import ProjectContext
 import pytest
 
 from app.core.entity_context import build_entity_context_for_llm, format_project_context, infer_track_role
+from app.core.entity_registry import EntityMetadata
+from app.core.tool_validation import ValidationResult
 
 
-def _make_entity(id: str, name: str, parent_id: str | None = None, metadata: dict[str, Any] | None = None) -> Any:
-
+def _make_entity(
+    id: str,
+    name: str,
+    parent_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> MagicMock:
     e = MagicMock()
     e.id = id
     e.name = name
     e.parent_id = parent_id
-    e.metadata = metadata
+    e.metadata = EntityMetadata.from_dict(metadata)
     return e
 
 
@@ -127,7 +135,7 @@ class TestFormatProjectContext:
     def test_empty_project(self) -> None:
 
         """Empty project (no tracks) produces clear instruction to create from scratch."""
-        project = {
+        project: ProjectContext = {
             "name": "New Project",
             "tempo": 120,
             "key": "C",
@@ -145,7 +153,7 @@ class TestFormatProjectContext:
     def test_project_with_tracks_and_regions(self) -> None:
 
         """Tracks with regions include IDs, instruments, and note counts."""
-        project = {
+        project: ProjectContext = {
             "name": "Bluegrass Jam",
             "tempo": 140,
             "key": "G",
@@ -196,7 +204,7 @@ class TestFormatProjectContext:
     def test_track_with_gm_program_only(self) -> None:
 
         """Track with gmProgram but no drumKitId shows instrument name."""
-        project = {
+        project: ProjectContext = {
             "name": "Test",
             "tempo": 90,
             "key": "Am",
@@ -216,7 +224,7 @@ class TestFormatProjectContext:
     def test_track_with_unknown_gm_program(self) -> None:
 
         """Unknown GM program falls back to 'GM #N'."""
-        project = {
+        project: ProjectContext = {
             "name": "Test",
             "tempo": 90,
             "key": "Am",
@@ -236,7 +244,7 @@ class TestFormatProjectContext:
     def test_time_signature_dict_format(self) -> None:
 
         """Time signature as dict {numerator, denominator} is handled."""
-        project = {
+        project: ProjectContext = {
             "name": "Waltz",
             "tempo": 100,
             "key": "D",
@@ -249,7 +257,7 @@ class TestFormatProjectContext:
     def test_multiple_regions_on_track(self) -> None:
 
         """Multiple regions on a single track are listed with semicolons."""
-        project = {
+        project: ProjectContext = {
             "name": "Multi-region",
             "tempo": 120,
             "key": "C",
@@ -288,7 +296,7 @@ class TestFormatProjectContext:
     def test_no_raw_json_in_output(self) -> None:
 
         """Output is human-readable, not a JSON dump."""
-        project = {
+        project: ProjectContext = {
             "name": "Test",
             "tempo": 120,
             "key": "C",
@@ -363,7 +371,7 @@ class TestFormatProjectContextRole:
 
     def test_role_shown_for_drum_track(self) -> None:
 
-        project = {
+        project: ProjectContext = {
             "tracks": [{"id": "t1", "name": "Drums", "drumKitId": "acoustic", "regions": []}]
         }
         out = format_project_context(project)
@@ -371,7 +379,7 @@ class TestFormatProjectContextRole:
 
     def test_role_shown_for_bass_track(self) -> None:
 
-        project = {
+        project: ProjectContext = {
             "tracks": [{"id": "t1", "name": "Bass", "gmProgram": 33, "regions": []}]
         }
         out = format_project_context(project)
@@ -380,7 +388,7 @@ class TestFormatProjectContextRole:
     def test_cathedral_pad_inferred_as_pads(self) -> None:
 
         """'Cathedral Pad' track (Church Organ GM 19) should show role=pads."""
-        project = {
+        project: ProjectContext = {
             "tracks": [{"id": "t1", "name": "Cathedral Pad", "gmProgram": 19, "regions": []}]
         }
         out = format_project_context(project)
@@ -389,7 +397,7 @@ class TestFormatProjectContextRole:
     def test_new_section_rule_shown_when_tracks_exist(self) -> None:
 
         """NEW SECTION RULE instruction appears when project has tracks."""
-        project = {
+        project: ProjectContext = {
             "tracks": [{"id": "t1", "name": "Drums", "drumKitId": "acoustic", "regions": []}]
         }
         out = format_project_context(project)
@@ -398,7 +406,7 @@ class TestFormatProjectContextRole:
     def test_new_section_rule_absent_for_empty_project(self) -> None:
 
         """No NEW SECTION RULE when project has no tracks."""
-        project: dict[str, list[str]] = {"tracks": []}
+        project: ProjectContext = {"tracks": []}
         out = format_project_context(project)
         assert "NEW SECTION RULE" not in out
 
@@ -410,8 +418,7 @@ class TestFormatProjectContextRole:
 class TestAddNotesValidation:
     """stori_add_notes rejects fake shorthand params with a clear error."""
 
-    def _validate(self, params: Any) -> Any:
-
+    def _validate(self, params: dict[str, Any]) -> ValidationResult:
         from app.core.tool_validation import validate_tool_call
         return validate_tool_call("stori_add_notes", params, {"stori_add_notes"}, registry=None)
 

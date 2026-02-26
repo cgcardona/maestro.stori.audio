@@ -5,15 +5,16 @@ from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from app.contracts.project_types import ProjectContext, ProjectTrack
     from app.core.prompt_parser import AfterSpec, PositionSpec
 
 
-def _tracks_matching(label: str | None, tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _tracks_matching(label: str | None, tracks: list[ProjectTrack]) -> list[ProjectTrack]:
     """Return tracks whose name or any region name contains label."""
     if not label:
         return tracks
     label = label.lower()
-    matching: list[dict[str, Any]] = []
+    matching: list[ProjectTrack] = []
     for track in tracks:
         if label in track.get("name", "").lower():
             matching.append(track)
@@ -25,7 +26,7 @@ def _tracks_matching(label: str | None, tracks: list[dict[str, Any]]) -> list[di
     return matching
 
 
-def _max_end_beat(tracks: list[dict[str, Any]]) -> float:
+def _max_end_beat(tracks: list[ProjectTrack]) -> float:
     """Maximum (startBeat + durationBeats) across all regions in tracks."""
     end = 0.0
     for track in tracks:
@@ -34,7 +35,7 @@ def _max_end_beat(tracks: list[dict[str, Any]]) -> float:
     return end
 
 
-def _min_start_beat(tracks: list[dict[str, Any]]) -> float:
+def _min_start_beat(tracks: list[ProjectTrack]) -> float:
     """Minimum startBeat across all regions in tracks."""
     starts = [
         region.get("startBeat", 0.0)
@@ -44,7 +45,7 @@ def _min_start_beat(tracks: list[dict[str, Any]]) -> float:
     return min(starts) if starts else 0.0
 
 
-def resolve_position(pos: "PositionSpec", project_context: dict[str, Any]) -> float:
+def resolve_position(pos: "PositionSpec", project_context: "ProjectContext") -> float:
     """Resolve a PositionSpec to a concrete start beat using the project state.
 
     Relationship semantics:
@@ -56,7 +57,7 @@ def resolve_position(pos: "PositionSpec", project_context: dict[str, Any]) -> fl
       between X Y → max end beat of X (gap start), apply offset
       within X  → min start beat of X, apply offset
     """
-    tracks: list[dict[str, Any]] = project_context.get("tracks", [])
+    tracks = project_context.get("tracks", [])
 
     if pos.kind == "absolute":
         return float((pos.beat or 0.0) + pos.offset)
@@ -85,7 +86,7 @@ def resolve_position(pos: "PositionSpec", project_context: dict[str, Any]) -> fl
         return end_of_ref + pos.offset
 
 
-def resolve_after_beat(after: "AfterSpec", project_context: dict[str, Any]) -> float:
+def resolve_after_beat(after: "AfterSpec", project_context: "ProjectContext") -> float:
     """Backwards-compatible wrapper — delegates to resolve_position."""
     return resolve_position(after, project_context)
 

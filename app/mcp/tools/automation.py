@@ -1,7 +1,9 @@
 """Automation MCP tool definitions."""
 from __future__ import annotations
 
-AUTOMATION_TOOLS = [
+from app.contracts.mcp_types import MCPToolDef
+
+AUTOMATION_TOOLS: list[MCPToolDef] = [
     {
         "name": "stori_add_automation",
         "description": (

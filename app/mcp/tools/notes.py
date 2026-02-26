@@ -1,7 +1,9 @@
 """Note-level MCP tool definitions."""
 from __future__ import annotations
 
-NOTE_TOOLS = [
+from app.contracts.mcp_types import MCPToolDef
+
+NOTE_TOOLS: list[MCPToolDef] = [
     {
         "name": "stori_add_notes",
         "description": """Add MIDI notes to a region.

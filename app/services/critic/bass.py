@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+
+from app.contracts.json_types import NoteDict
 
 logger = logging.getLogger(__name__)
 
 
 def score_bass_notes(
-    notes: list[dict[str, Any]],
+    notes: list[NoteDict],
     kick_beats: list[float] | None = None,
     *,
     window_beats: float = 0.25,

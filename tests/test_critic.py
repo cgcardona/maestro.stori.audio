@@ -11,8 +11,9 @@ Tests verify:
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
+
+from app.contracts.json_types import NoteDict
 from app.services.critic import (
     score_drum_notes,
     score_bass_notes,
@@ -40,10 +41,10 @@ def make_drum_notes(
     include_fills: bool = True,
     include_ghosts: bool = False,
     fill_bars: list[int] | None = None,
-) -> list[dict[str, Any]]:
+) -> list[NoteDict]:
     """Helper to create drum notes for testing."""
     fill_bars = fill_bars or [3]
-    notes = []
+    notes: list[NoteDict] = []
     
     for bar in range(bars):
         bar_start = bar * 4.0
@@ -143,7 +144,7 @@ class TestHatArticulationScoring:
     def test_monotone_hats_score_low(self) -> None:
 
         """All closed hats should score lower."""
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80, "layer": "timekeepers"}
             for i in range(32)  # 4 bars of closed hats only
         ]
@@ -173,7 +174,7 @@ class TestFillLocalizationScoring:
     def test_scattered_fills_score_lower(self) -> None:
 
         """Fills scattered across all bars should score lower."""
-        notes = []
+        notes: list[NoteDict] = []
         for bar in range(4):
             bar_start = bar * 4.0
             # Put fills in every bar
@@ -201,10 +202,8 @@ class TestGhostPlausibilityScoring:
     def test_good_ghosts_score_high(self) -> None:
 
         """Properly placed quiet ghosts should score high."""
-        notes = [
-            # Ghost before beat 2 (near backbeat)
+        notes: list[NoteDict] = [
             {"pitch": 37, "start_beat": 0.75, "duration_beats": 0.25, "velocity": 50, "layer": "ghost_layer"},
-            # Ghost before beat 4 (near backbeat)
             {"pitch": 37, "start_beat": 2.75, "duration_beats": 0.25, "velocity": 45, "layer": "ghost_layer"},
         ]
         score, repairs = _score_ghost_plausibility(notes)
@@ -213,7 +212,7 @@ class TestGhostPlausibilityScoring:
     def test_loud_ghosts_score_lower(self) -> None:
 
         """Loud ghosts should score lower."""
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 37, "start_beat": 0.75, "duration_beats": 0.25, "velocity": 100, "layer": "ghost_layer"},
             {"pitch": 37, "start_beat": 2.75, "duration_beats": 0.25, "velocity": 110, "layer": "ghost_layer"},
         ]
@@ -268,8 +267,7 @@ class TestRepetitionStructureScoring:
     def test_identical_bars_score_lower(self) -> None:
 
         """Identical bars should score lower."""
-        # Create identical pattern in every bar
-        notes = []
+        notes: list[NoteDict] = []
         for bar in range(8):
             bar_start = bar * 4.0
             for beat in [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]:
@@ -296,7 +294,7 @@ class TestVelocityDynamicsScoring:
     def test_flat_velocity_scores_lower(self) -> None:
 
         """All same velocity should score lower."""
-        notes = [
+        notes: list[NoteDict] = [
             {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80}
             for i in range(32)
         ]
@@ -326,7 +324,6 @@ class TestOverallDrumScoring:
         """Layer map should be used for scoring."""
         notes = make_drum_notes(bars=4)
         layer_map = {i: n.get("layer", "unknown") for i, n in enumerate(notes)}
-        
         score, repairs = score_drum_notes(notes, layer_map=layer_map, bars=4)
         # Should work without errors
         assert 0 <= score <= 1
@@ -338,7 +335,7 @@ class TestBassScoring:
     def test_kick_aligned_bass_scores_high(self) -> None:
 
         """Bass aligned to kicks should score high."""
-        bass_notes = [
+        bass_notes: list[NoteDict] = [
             {"pitch": 36, "start_beat": 0.0, "duration_beats": 0.5, "velocity": 100},
             {"pitch": 36, "start_beat": 2.0, "duration_beats": 0.5, "velocity": 100},
         ]
@@ -350,7 +347,7 @@ class TestBassScoring:
     def test_unaligned_bass_scores_lower(self) -> None:
 
         """Bass not aligned to kicks should score lower."""
-        bass_notes = [
+        bass_notes: list[NoteDict] = [
             {"pitch": 36, "start_beat": 0.5, "duration_beats": 0.5, "velocity": 100},
             {"pitch": 36, "start_beat": 2.5, "duration_beats": 0.5, "velocity": 100},
         ]
@@ -362,7 +359,7 @@ class TestBassScoring:
     def test_anticipation_counted(self) -> None:
 
         """Anticipation notes should contribute to score."""
-        bass_notes = [
+        bass_notes: list[NoteDict] = [
             # Anticipation: 1/8 before kick
             {"pitch": 36, "start_beat": 1.875, "duration_beats": 0.5, "velocity": 100},
         ]
@@ -389,15 +386,14 @@ class TestRejectionSampling:
 
         """Should stop early when excellent score is reached."""
         call_count = 0
-        
-        def generate_fn() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+
+        def generate_fn() -> tuple[dict[str, object], list[NoteDict]]:
             nonlocal call_count
             call_count += 1
-            notes: list[dict[str, Any]] = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
+            notes: list[NoteDict] = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
             return {"notes": notes}, notes
-        
-        def scorer_fn(notes: Any) -> tuple[float, list[str]]:
 
+        def scorer_fn(notes: list[NoteDict]) -> tuple[float, list[str]]:
             return 0.9, []  # Always excellent
         
         result = rejection_sample(
@@ -415,14 +411,13 @@ class TestRejectionSampling:
         """Should try all candidates if scores are below threshold."""
         call_count = 0
         
-        def generate_fn() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        def generate_fn() -> tuple[dict[str, object], list[NoteDict]]:
             nonlocal call_count
             call_count += 1
-            notes: list[dict[str, Any]] = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
+            notes: list[NoteDict] = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
             return {"notes": notes}, notes
-        
-        def scorer_fn(notes: Any) -> tuple[float, list[str]]:
 
+        def scorer_fn(notes: list[NoteDict]) -> tuple[float, list[str]]:
             return 0.5, []  # Always mediocre
         
         result = rejection_sample(
@@ -440,15 +435,15 @@ class TestRejectionSampling:
         """Should keep the best result from all attempts."""
         attempt = 0
         
-        def generate_fn() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        def generate_fn() -> tuple[dict[str, object], list[NoteDict]]:
             nonlocal attempt
             attempt += 1
-            notes: list[dict[str, Any]] = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
+            notes: list[NoteDict] = [{"pitch": 36, "start_beat": 0.0, "velocity": 100}]
             return {"attempt": attempt, "notes": notes}, notes
-        
+
         scores = [0.5, 0.7, 0.6, 0.65]
-        
-        def scorer_fn(notes: Any) -> tuple[float, list[str]]:
+
+        def scorer_fn(notes: list[NoteDict]) -> tuple[float, list[str]]:
 
             return scores[attempt - 1] if attempt <= len(scores) else 0.5, []
         

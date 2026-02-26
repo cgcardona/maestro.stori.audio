@@ -31,6 +31,10 @@ jobs:
           python -m mypy -p app
           python -m mypy -p tests
 
+      - name: Typing ratchet (Any regression guard)
+        run: |
+          python tools/typing_audit.py --max-any 1022
+
       - name: Run tests with coverage
         env:
           STORI_ACCESS_TOKEN_SECRET: "test-secret-min-32-chars-long-for-hs256"

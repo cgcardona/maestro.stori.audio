@@ -8,8 +8,9 @@ Accepts optional music_spec from orchestrator. Post: critic + IR-aware repair.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
+from app.contracts.generation_types import GenerationContext
+from app.contracts.json_types import JSONValue, NoteDict
 from app.services.backends.base import (
     MusicGeneratorBackend,
     GenerationResult,
@@ -49,7 +50,7 @@ class DrumSpecBackend(MusicGeneratorBackend):
         bars: int,
         key: str | None = None,
         chords: list[str] | None = None,
-        **kwargs: Any,
+        context: GenerationContext | None = None,
     ) -> GenerationResult:
         if instrument != "drums":
             return GenerationResult(
@@ -60,7 +61,8 @@ class DrumSpecBackend(MusicGeneratorBackend):
                 error="DrumSpecBackend only handles drums",
             )
         try:
-            music_spec: MusicSpec | None = kwargs.get("music_spec")
+            ctx = context or {}
+            music_spec: MusicSpec | None = ctx.get("music_spec")
             if music_spec and music_spec.drum_spec and music_spec.global_spec:
                 drum_spec = music_spec.drum_spec
                 global_spec = music_spec.global_spec
@@ -80,12 +82,12 @@ class DrumSpecBackend(MusicGeneratorBackend):
                 apply_salience_cap=True,
                 apply_groove=True,
             )
-            notes: list[dict[str, Any]] = raw_notes.notes if isinstance(raw_notes, DrumRenderResult) else raw_notes
+            notes = raw_notes.notes if isinstance(raw_notes, DrumRenderResult) else raw_notes
             
-            # Build layer map for critic
-            layer_map = {i: n.get("layer", "unknown") for i, n in enumerate(notes)}
-            
-            # Critic + IR-aware repair when score below threshold
+            layer_map: dict[int, str] = {
+                i: str(n.get("layer", "unknown")) for i, n in enumerate(notes)
+            }
+
             score, repair_instructions = score_drum_notes(
                 notes,
                 layer_map=layer_map,
@@ -95,25 +97,25 @@ class DrumSpecBackend(MusicGeneratorBackend):
                 max_salience_per_beat=drum_spec.constraints.max_salience_per_beat,
             )
             
-            notes, repaired = repair_drum_if_needed(
+            repaired_notes, repaired = repair_drum_if_needed(
                 notes, drum_spec, score, repair_instructions, accept_threshold=ACCEPT_THRESHOLD_DRUM
             )
+            notes = repaired_notes
             
             # Output format: start_beat, duration_beats, velocity, pitch, layer
             # Layer is included for downstream use (e.g., coupled generation scoring)
-            out_notes = [
+            out_notes: list[NoteDict] = [
                 {
                     "pitch": n["pitch"],
                     "start_beat": n["start_beat"],
                     "duration_beats": n["duration_beats"],
                     "velocity": n["velocity"],
-                    "layer": n.get("layer", "unknown"),  # Include layer for coupling
                 }
                 for n in notes
             ]
             
             distinct = len(set(n["pitch"] for n in out_notes))
-            meta: dict[str, Any] = {
+            meta: dict[str, object] = {
                 "source": "drum_ir",
                 "groove_template": drum_spec.groove_template,
                 "humanize_profile": global_spec.humanize_profile,

@@ -216,12 +216,18 @@ class TestFilterChannelsForInstruments:
 
     def test_filters_notes_by_instrument(self) -> None:
         """Only notes on kept channels survive filtering."""
-        parsed: dict[str, Any] = {
-            "notes": {0: [{"pitch": 60}], 1: [{"pitch": 64}], 9: [{"pitch": 36}]},
-            "cc_events": {},
-            "pitch_bends": {},
-            "aftertouch": {},
-        }
+        from orpheus_types import OrpheusNoteDict, ParsedMidiResult
+        parsed = ParsedMidiResult(
+            notes={
+                0: [OrpheusNoteDict(pitch=60, start_beat=0.0, duration_beats=0.5, velocity=80)],
+                1: [OrpheusNoteDict(pitch=64, start_beat=0.0, duration_beats=0.5, velocity=80)],
+                9: [OrpheusNoteDict(pitch=36, start_beat=0.0, duration_beats=0.5, velocity=80)],
+            },
+            cc_events={},
+            pitch_bends={},
+            aftertouch={},
+            program_changes={},
+        )
         result = filter_channels_for_instruments(parsed, ["drums"])
         assert 9 in result["notes"]
         assert 0 not in result["notes"]
@@ -229,12 +235,17 @@ class TestFilterChannelsForInstruments:
 
     def test_preserves_all_sub_dicts(self) -> None:
         """Filtering preserves the dict shape for all event types."""
-        parsed: dict[str, Any] = {
-            "notes": {0: [{"pitch": 60}]},
-            "cc_events": {0: [{"cc": 64, "beat": 0, "value": 127}]},
-            "pitch_bends": {0: [{"beat": 0, "value": 0}]},
-            "aftertouch": {0: [{"beat": 0, "value": 64}]},
-        }
+        from orpheus_types import (
+            OrpheusAftertouch, OrpheusCCEvent, OrpheusNoteDict,
+            OrpheusPitchBend, ParsedMidiResult,
+        )
+        parsed = ParsedMidiResult(
+            notes={0: [OrpheusNoteDict(pitch=60, start_beat=0.0, duration_beats=0.5, velocity=80)]},
+            cc_events={0: [OrpheusCCEvent(cc=64, beat=0.0, value=127)]},
+            pitch_bends={0: [OrpheusPitchBend(beat=0.0, value=0)]},
+            aftertouch={0: [OrpheusAftertouch(beat=0.0, value=64)]},
+            program_changes={},
+        )
         result = filter_channels_for_instruments(parsed, ["bass"])
         for key in ("notes", "cc_events", "pitch_bends", "aftertouch"):
             assert key in result
@@ -253,8 +264,9 @@ class TestRejectionScore:
 
     def test_good_generation_scores_high(self) -> None:
         """A musically reasonable generation scores above 0.5."""
-        notes = [
-            {"pitch": 60 + (i % 12), "startBeat": float(i * 0.5), "velocity": 80}
+        from orpheus_types import OrpheusNoteDict
+        notes: list[OrpheusNoteDict] = [
+            OrpheusNoteDict(pitch=60 + (i % 12), start_beat=i * 0.5, duration_beats=0.5, velocity=80)
             for i in range(32)
         ]
         score = rejection_score(notes, bars=4)
@@ -262,21 +274,23 @@ class TestRejectionScore:
 
     def test_single_repeated_note_scores_lower(self) -> None:
         """Degenerate single-note repetition scores lower than varied notes."""
-        varied = [
-            {"pitch": 60 + (i % 7), "startBeat": float(i * 0.5), "velocity": 80}
+        from orpheus_types import OrpheusNoteDict
+        varied: list[OrpheusNoteDict] = [
+            OrpheusNoteDict(pitch=60 + (i % 7), start_beat=i * 0.5, duration_beats=0.5, velocity=80)
             for i in range(32)
         ]
-        repeated = [
-            {"pitch": 60, "startBeat": float(i * 0.5), "velocity": 80}
+        repeated: list[OrpheusNoteDict] = [
+            OrpheusNoteDict(pitch=60, start_beat=i * 0.5, duration_beats=0.5, velocity=80)
             for i in range(32)
         ]
         assert rejection_score(varied, bars=4) > rejection_score(repeated, bars=4)
 
     def test_score_in_0_1_range(self) -> None:
         """Score is always between 0 and 1."""
+        from orpheus_types import OrpheusNoteDict
         for note_count in (1, 4, 16, 64, 256):
-            notes = [
-                {"pitch": 60 + (i % 24), "startBeat": float(i * 0.25), "velocity": 80}
+            notes: list[OrpheusNoteDict] = [
+                OrpheusNoteDict(pitch=60 + (i % 24), start_beat=i * 0.25, duration_beats=0.25, velocity=80)
                 for i in range(note_count)
             ]
             score = rejection_score(notes, bars=max(note_count // 8, 1))
@@ -284,12 +298,13 @@ class TestRejectionScore:
 
     def test_sparse_bars_penalized(self) -> None:
         """Notes clustered in one bar are penalized vs evenly distributed."""
-        clustered = [
-            {"pitch": 60 + i, "startBeat": float(i * 0.1), "velocity": 80}
+        from orpheus_types import OrpheusNoteDict
+        clustered: list[OrpheusNoteDict] = [
+            OrpheusNoteDict(pitch=60 + i, start_beat=i * 0.1, duration_beats=0.1, velocity=80)
             for i in range(16)
         ]
-        distributed = [
-            {"pitch": 60 + i, "startBeat": float(i), "velocity": 80}
+        distributed: list[OrpheusNoteDict] = [
+            OrpheusNoteDict(pitch=60 + i, start_beat=float(i), duration_beats=0.5, velocity=80)
             for i in range(16)
         ]
         assert rejection_score(distributed, bars=4) >= rejection_score(clustered, bars=4)
@@ -345,7 +360,8 @@ class TestFuzzyCache:
         )
         result = fuzzy_cache_lookup(req2, epsilon=1.0)
         assert result is not None
-        assert result.get("metadata", {}).get("approximate") is True
+        meta = result.get("metadata")
+        assert isinstance(meta, dict) and meta.get("approximate") is True
 
     def test_different_genre_no_match(self) -> None:
         from music_service import (

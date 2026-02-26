@@ -527,7 +527,7 @@ class TestIconValidation:
         "instrument.trumpet", "instrument.violin", "instrument.saxophone",
         "instrument.flute", "instrument.drum", "instrument.harp", "instrument.xylophone",
     ])
-    def test_curated_icons_pass(self, icon: Any) -> None:
+    def test_curated_icons_pass(self, icon: str) -> None:
 
         errors = _validate_tool_specific("stori_set_track_icon", {"icon": icon})
         icon_errors = [e for e in errors if e.field == "icon"]
@@ -538,7 +538,7 @@ class TestIconValidation:
         "wind", "lungs.fill", "bell.fill", "waveform.badge.plus",
         "person.3.fill", "circle.hexagongrid.fill",
     ])
-    def test_removed_icons_rejected(self, icon: Any) -> None:
+    def test_removed_icons_rejected(self, icon: str) -> None:
 
         """Icons removed from the frontend allowlist must be rejected."""
         errors = _validate_tool_specific("stori_set_track_icon", {"icon": icon})

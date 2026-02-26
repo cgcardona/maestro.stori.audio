@@ -24,6 +24,13 @@ import time
 import uuid as uuid_module
 from typing import Any, Awaitable, Callable
 
+from app.contracts.project_types import ProjectContext
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    NoteDict,
+    PitchBendDict,
+)
 from app.core.expansion import ToolCall, dedupe_tool_calls
 from app.core.tool_names import ToolName
 from app.core.tools import get_tool_meta, ToolTier, ToolKind
@@ -34,6 +41,7 @@ from app.core.executor.models import VariationContext, VariationExecutionContext
 from app.core.executor.phases import _group_into_phases
 from app.models.variation import Variation
 from app.services.variation import get_variation_service
+from app.contracts.generation_types import GenerationContext
 from app.services.music_generator import get_music_generator
 
 logger = logging.getLogger(__name__)
@@ -43,7 +51,7 @@ _MAX_PARALLEL_GROUPS = 5
 
 
 def _extract_notes_from_project(
-    project_state: dict[str, Any],
+    project_state: ProjectContext,
     var_ctx: VariationContext,
     exec_ctx: VariationExecutionContext,
 ) -> None:
@@ -194,7 +202,7 @@ async def _process_call_for_variation(
         cc = params.get("cc")
         events = params.get("events", [])
         if region_id and cc is not None and events:
-            cc_events = [{"cc": cc, "beat": e["beat"], "value": e["value"]} for e in events]
+            cc_events: list[CCEventDict] = [{"cc": cc, "beat": e["beat"], "value": e["value"]} for e in events]
             var_ctx.record_proposed_cc(region_id, cc_events)
             logger.info(
                 f"🎛️ stori_add_midi_cc: CC{cc} {len(events)} events → region={region_id[:8]}"
@@ -238,8 +246,10 @@ async def _process_call_for_variation(
             result = await asyncio.wait_for(
                 mg.generate(
                     **gen_params,
-                    quality_preset=quality_preset or "quality",
-                    emotion_vector=emotion_vector,
+                    context=GenerationContext(
+                        quality_preset=quality_preset or "quality",
+                        emotion_vector=emotion_vector,
+                    ),
                 ),
                 timeout=_GENERATOR_TIMEOUT,
             )
@@ -303,12 +313,12 @@ async def _process_call_for_variation(
 
 def compute_variation_from_context(
     *,
-    base_notes: dict[str, list[dict[str, Any]]],
-    proposed_notes: dict[str, list[dict[str, Any]]],
+    base_notes: dict[str, list[NoteDict]],
+    proposed_notes: dict[str, list[NoteDict]],
     track_regions: dict[str, str],
-    proposed_cc: dict[str, list[dict[str, Any]]],
-    proposed_pitch_bends: dict[str, list[dict[str, Any]]],
-    proposed_aftertouch: dict[str, list[dict[str, Any]]],
+    proposed_cc: dict[str, list[CCEventDict]],
+    proposed_pitch_bends: dict[str, list[PitchBendDict]],
+    proposed_aftertouch: dict[str, list[AftertouchDict]],
     region_start_beats: dict[str, float],
     intent: str,
     explanation: str | None = None,
@@ -362,7 +372,7 @@ def compute_variation_from_context(
 
 async def execute_tools_for_variation(
     tool_calls: list[ToolCall],
-    project_state: dict[str, Any],
+    project_state: ProjectContext,
     conversation_id: str | None = None,
     explanation: str | None = None,
     quality_preset: str | None = None,
@@ -452,17 +462,15 @@ async def execute_tools_for_variation(
     # Collect region start beats at the Maestro→Muse boundary
     for rid in set(var_ctx.base.notes.keys()) | set(var_ctx.proposed.notes.keys()):
         entity = store.registry.get_region(rid)
-        if entity and entity.metadata:
-            var_ctx.proposed.region_start_beats[rid] = float(
-                entity.metadata.get("startBeat", 0)
-            )
+        if entity:
+            var_ctx.proposed.region_start_beats[rid] = float(entity.metadata.start_beat)
 
     return var_ctx
 
 
 async def execute_plan_variation(
     tool_calls: list[ToolCall],
-    project_state: dict[str, Any],
+    project_state: ProjectContext,
     intent: str,
     conversation_id: str | None = None,
     explanation: str | None = None,

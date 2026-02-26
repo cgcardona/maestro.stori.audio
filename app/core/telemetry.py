@@ -7,8 +7,8 @@ beyond stdlib.  Typical execution time is <1ms for realistic section sizes.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,7 @@ class SectionTelemetry:
 
     section_name: str
     instrument: str
-    tempo: float
+    tempo: int
     energy_level: float
     density_score: float
     groove_vector: tuple[float, ...]
@@ -30,21 +30,35 @@ class SectionTelemetry:
     velocity_variance: float
 
 
-def _note_start(n: dict[str, Any]) -> float:
-    return float(n.get("start_beat", n.get("startBeat", 0)))
+def _as_float(v: object, default: float = 0.0) -> float:
+    """Coerce an object to float, falling back to *default*."""
+    if isinstance(v, (int, float)):
+        return float(v)
+    return default
 
 
-def _note_velocity(n: dict[str, Any]) -> int:
-    return int(n.get("velocity", 80))
+def _as_int(v: object, default: int = 0) -> int:
+    """Coerce an object to int, falling back to *default*."""
+    if isinstance(v, (int, float)):
+        return int(v)
+    return default
 
 
-def _note_pitch(n: dict[str, Any]) -> int:
-    return int(n.get("pitch", 0))
+def _note_start(n: Mapping[str, object]) -> float:
+    return _as_float(n.get("start_beat") or n.get("startBeat"))
+
+
+def _note_velocity(n: Mapping[str, object]) -> int:
+    return _as_int(n.get("velocity"), 80)
+
+
+def _note_pitch(n: Mapping[str, object]) -> int:
+    return _as_int(n.get("pitch"))
 
 
 def compute_section_telemetry(
-    notes: list[dict[str, Any]],
-    tempo: float,
+    notes: Sequence[Mapping[str, object]],
+    tempo: int,
     instrument: str,
     section_name: str,
     section_beats: float,

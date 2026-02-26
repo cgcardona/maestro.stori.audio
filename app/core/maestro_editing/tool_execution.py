@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
+from app.contracts.generation_types import CompositionContext, RoleResult, UnifiedGenerationOutput
+from app.contracts.llm_types import AssistantMessage, ToolResultMessage
 from app.core.gm_instruments import DRUM_ICON, icon_for_gm_program
-from app.core.sse_utils import sse_event
+from app.core.sse_utils import SSEEventInput, sse_event
 from app.core.tool_validation import VALID_SF_SYMBOL_ICONS, validate_tool_call
-from app.core.tracing import log_tool_call, log_validation_error, trace_span
+from app.core.tracing import TraceContext, log_tool_call, log_validation_error, trace_span
+
+if TYPE_CHECKING:
+    from app.core.state_store import StateStore
+
+from app.contracts.json_types import ToolCallDict
 from app.core.maestro_helpers import (
     _build_tool_result,
     _enrich_params_with_track_context,
@@ -26,6 +33,7 @@ from app.core.maestro_plan_tracker.constants import (
     _EXPRESSION_TOOL_NAMES,
     _EXPRESSIVE_TOOL_NAMES,
 )
+from app.contracts.generation_types import GenerationContext
 from app.services.music_generator import get_music_generator
 
 logger = logging.getLogger(__name__)
@@ -60,12 +68,14 @@ def phase_for_tool(tool_name: str) -> str:
 async def _execute_agent_generator(
     tc_id: str,
     tc_name: str,
-    enriched_params: dict[str, Any],
-    store: Any,
-    trace: Any,
-    composition_context: dict[str, Any],
+    enriched_params: dict[str, Any],  # boundary: polymorphic tool params from LLM
+    store: StateStore,
+    trace: TraceContext,
+    composition_context: CompositionContext,
     emit_sse: bool,
-    pre_emit_callback: Any | None = None,
+    pre_emit_callback: (
+        Callable[[list[SSEEventInput]], Awaitable[None]] | None
+    ) = None,
 ) -> _ToolCallOutcome | None:
     """Route a generator tool call through MusicGenerator (Orpheus).
 
@@ -75,8 +85,8 @@ async def _execute_agent_generator(
     Returns a complete ``_ToolCallOutcome`` on success, or ``None`` to
     fall through to normal tool handling.
     """
-    sse_events: list[dict[str, Any]] = []
-    extra_tool_calls: list[dict[str, Any]] = []
+    sse_events: list[SSEEventInput] = []
+    extra_tool_calls: list[ToolCallDict] = []
 
     role = enriched_params.get("role", "")
     if not role:
@@ -107,7 +117,7 @@ async def _execute_agent_generator(
             f"before stori_generate_midi. Pass regionId from stori_add_midi_region."
         )
         logger.error(f"❌ [{trace.trace_id[:8]}] {error_msg}")
-        error_result: dict[str, Any] = {"error": error_msg}
+        error_result: dict[str, str] = {"error": error_msg}
         if emit_sse:
             sse_events.append({"type": "toolError", "name": tc_name, "error": error_msg})
         return _ToolCallOutcome(
@@ -129,7 +139,7 @@ async def _execute_agent_generator(
     _gen_label = f"Generating {role} via Orpheus"
     _gen_phase = phase_for_tool(tc_name)
     if emit_sse:
-        _pre_events: list[dict[str, Any]] = [
+        _pre_events: list[SSEEventInput] = [
             {
                 "type": "toolStart",
                 "name": tc_name,
@@ -151,17 +161,14 @@ async def _execute_agent_generator(
         else:
             sse_events.extend(_pre_events)
 
-    gen_kwargs: dict[str, Any] = {
+    gen_ctx: GenerationContext = {
         "quality_preset": composition_context.get("quality_preset", "quality"),
     }
     emotion_vector = composition_context.get("emotion_vector")
     if emotion_vector is not None:
-        gen_kwargs["emotion_vector"] = emotion_vector
+        gen_ctx["emotion_vector"] = emotion_vector
     if trace and hasattr(trace, "trace_id"):
-        gen_kwargs["composition_id"] = trace.trace_id
-    _prev_notes = composition_context.get("previous_notes")
-    if _prev_notes:
-        gen_kwargs["previous_notes"] = _prev_notes
+        gen_ctx["composition_id"] = trace.trace_id
 
     import time as _time
     _gen_start = _time.monotonic()
@@ -192,7 +199,7 @@ async def _execute_agent_generator(
                 tempo=tempo,
                 bars=bars,
                 key=key,
-                **gen_kwargs,
+                context=gen_ctx,
             )
         else:
             logger.warning(
@@ -207,7 +214,7 @@ async def _execute_agent_generator(
                 tempo=tempo,
                 bars=bars,
                 key=key,
-                **gen_kwargs,
+                context=gen_ctx,
             )
     except Exception as exc:
         logger.error(f"❌ [{trace.trace_id[:8]}] Generator {tc_name} failed: {exc}")
@@ -293,7 +300,7 @@ async def _execute_agent_generator(
     if result.aftertouch:
         store.add_aftertouch(region_id, result.aftertouch)
 
-    tool_result: dict[str, Any] = {
+    tool_result: dict[str, str | int] = {
         "regionId": region_id,
         "trackId": track_id,
         "notesAdded": len(result.notes),
@@ -357,10 +364,10 @@ async def execute_unified_generation(
     bars: int,
     key: str | None,
     region_map: dict[str, tuple[str, str]],
-    store: Any,
-    trace: Any,
-    composition_context: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+    store: StateStore,
+    trace: TraceContext,
+    composition_context: CompositionContext | None = None,
+) -> UnifiedGenerationOutput:
     """Generate all instruments together in one Orpheus call, distribute to regions.
 
     Args:
@@ -380,14 +387,14 @@ async def execute_unified_generation(
     import time as _time
     _gen_start = _time.monotonic()
 
-    gen_kwargs: dict[str, Any] = {}
+    gen_ctx: GenerationContext = {}
     if composition_context:
-        gen_kwargs["quality_preset"] = composition_context.get("quality_preset", "quality")
+        gen_ctx["quality_preset"] = composition_context.get("quality_preset", "quality")
         ev = composition_context.get("emotion_vector")
         if ev is not None:
-            gen_kwargs["emotion_vector"] = ev
+            gen_ctx["emotion_vector"] = ev
     if trace and hasattr(trace, "trace_id"):
-        gen_kwargs["composition_id"] = trace.trace_id
+        gen_ctx["composition_id"] = trace.trace_id
 
     mg = get_music_generator()
     result = await mg.generate_unified(
@@ -396,19 +403,19 @@ async def execute_unified_generation(
         tempo=tempo,
         bars=bars,
         key=key,
-        **gen_kwargs,
+        context=gen_ctx,
     )
 
     _gen_duration_ms = int((_time.monotonic() - _gen_start) * 1000)
-    per_role: dict[str, Any] = {}
+    per_role: dict[str, RoleResult] = {}
 
     if not result.success:
         logger.error(
             f"❌ Unified generation failed after {_gen_duration_ms}ms: {result.error}"
         )
         for role in instruments:
-            per_role[role] = {"notes_added": 0, "success": False, "error": result.error}
-        return per_role
+            per_role[role] = RoleResult(notes_added=0, success=False, error=result.error)
+        return UnifiedGenerationOutput(per_role=per_role, _duration_ms=_gen_duration_ms)
 
     channel_notes = result.channel_notes or {}
 
@@ -416,7 +423,7 @@ async def execute_unified_generation(
     for role in instruments:
         track_id, region_id = region_map.get(role, ("", ""))
         if not region_id:
-            per_role[role] = {"notes_added": 0, "success": False, "error": "no region"}
+            per_role[role] = RoleResult(notes_added=0, success=False, error="no region")
             continue
 
         role_notes = channel_notes.get(role, [])
@@ -436,36 +443,40 @@ async def execute_unified_generation(
         if result.pitch_bends:
             store.add_pitch_bends(region_id, result.pitch_bends)
 
-        per_role[role] = {
-            "notes_added": len(role_notes),
-            "success": True,
-            "track_id": track_id,
-            "region_id": region_id,
-        }
+        per_role[role] = RoleResult(
+            notes_added=len(role_notes),
+            success=True,
+            track_id=track_id,
+            region_id=region_id,
+        )
         logger.info(
             f"✅ Unified → {role}: {len(role_notes)} notes → region {region_id[:8]}"
         )
 
+    _total_notes = sum(r.get("notes_added", 0) for r in per_role.values())
     logger.info(
-        f"✅ Unified generation complete: {_gen_duration_ms}ms, "
-        f"{sum(r.get('notes_added', 0) for r in per_role.values())} total notes"
+        f"✅ Unified generation complete: {_gen_duration_ms}ms, {_total_notes} total notes"
     )
-    per_role["_metadata"] = result.metadata or {}
-    per_role["_duration_ms"] = _gen_duration_ms
-    return per_role
+    return UnifiedGenerationOutput(
+        per_role=per_role,
+        _metadata=result.metadata or {},
+        _duration_ms=_gen_duration_ms,
+    )
 
 
 async def _apply_single_tool_call(
     tc_id: str,
     tc_name: str,
-    resolved_args: dict[str, Any],
+    resolved_args: dict[str, Any],  # boundary: polymorphic tool params from LLM
     allowed_tool_names: set[str] | frozenset[str],
-    store: Any,
-    trace: Any,
+    store: StateStore,
+    trace: TraceContext,
     add_notes_failures: dict[str, int],
     emit_sse: bool = True,
-    composition_context: dict[str, Any] | None = None,
-    pre_emit_callback: Any | None = None,
+    composition_context: CompositionContext | None = None,
+    pre_emit_callback: (
+        Callable[[list[SSEEventInput]], Awaitable[None]] | None
+    ) = None,
 ) -> _ToolCallOutcome:
     """Validate, enrich, persist, and return results for one tool call.
 
@@ -490,7 +501,9 @@ async def _apply_single_tool_call(
         composition_context: Optional dict with style, tempo, bars, key,
             emotion_vector, quality_preset for generator tool routing.
     """
-    sse_events: list[dict[str, Any]] = []
+    sse_events: list[SSEEventInput] = []
+    msg_call: AssistantMessage = {"role": "assistant"}
+    msg_result: ToolResultMessage = {"role": "tool", "tool_call_id": "", "content": ""}
 
     # ── Circuit breaker: stori_add_notes infinite-retry guard ──
     if tc_name == "stori_add_notes":
@@ -506,15 +519,15 @@ async def _apply_single_tool_call(
             logger.error(f"[{trace.trace_id[:8]}] Circuit breaker: {cb_error}")
             if emit_sse:
                 sse_events.append({"type": "toolError", "name": tc_name, "error": cb_error})
-            msg_call: dict[str, Any] = {
-                "role": "assistant",
-                "tool_calls": [{"id": tc_id, "type": "function",
-                                "function": {"name": tc_name, "arguments": json.dumps(resolved_args)}}],
-            }
-            msg_result: dict[str, Any] = {
-                "role": "tool", "tool_call_id": tc_id,
-                "content": json.dumps({"error": cb_error}),
-            }
+            msg_call = AssistantMessage(
+                role="assistant",
+                tool_calls=[{"id": tc_id, "type": "function",
+                             "function": {"name": tc_name, "arguments": json.dumps(resolved_args)}}],
+            )
+            msg_result = ToolResultMessage(
+                role="tool", tool_call_id=tc_id,
+                content=json.dumps({"error": cb_error}),
+            )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={"error": cb_error},
@@ -540,7 +553,7 @@ async def _apply_single_tool_call(
                 "error": validation.error_message,
                 "errors": [str(e) for e in validation.errors],
             })
-        error_result = {"error": validation.error_message}
+        error_result: dict[str, str] = {"error": validation.error_message}
         msg_call = {
             "role": "assistant",
             "tool_calls": [{"id": tc_id, "type": "function",
@@ -623,7 +636,7 @@ async def _apply_single_tool_call(
                 )
                 _existing_entity = store.registry.get_region(_existing_rid)
                 _existing_name = _existing_entity.name if _existing_entity else region_name
-                idempotent_result: dict[str, Any] = {
+                idempotent_result: dict[str, str | bool | int | float] = {
                     "success": True,
                     "regionId": _existing_rid,
                     "existingRegionId": _existing_rid,
@@ -661,7 +674,7 @@ async def _apply_single_tool_call(
                 enriched_params["regionId"] = region_id
             except ValueError as e:
                 logger.error(f"❌ Failed to create region: {e}")
-                region_err: dict[str, Any] = {
+                region_err: dict[str, str | bool] = {
                     "success": False,
                     "error": f"Failed to create region: {e}",
                 }
@@ -686,7 +699,7 @@ async def _apply_single_tool_call(
             logger.error(
                 f"stori_add_midi_region called without trackId for region '{region_name}'"
             )
-            no_track_err: dict[str, Any] = {
+            no_track_err: dict[str, str | bool] = {
                 "success": False,
                 "error": (
                     f"Cannot create region '{region_name}' — no trackId provided. "
@@ -743,7 +756,7 @@ async def _apply_single_tool_call(
             return gen_outcome
 
     # ── SSE events (toolStart + toolCall) ──
-    extra_tool_calls: list[dict[str, Any]] = []
+    extra_tool_calls: list[ToolCallDict] = []
     _tc_phase = phase_for_tool(tc_name)
     if emit_sse:
         emit_params = _enrich_params_with_track_context(enriched_params, store)
@@ -784,7 +797,7 @@ async def _apply_single_tool_call(
         if _track_icon:
             enriched_params["icon"] = _track_icon
         if _track_icon and _icon_track_id:
-            _icon_params: dict[str, Any] = {"trackId": _icon_track_id, "icon": _track_icon}
+            _icon_params: dict[str, str] = {"trackId": _icon_track_id, "icon": _track_icon}
             _icon_label = f"Setting icon for {enriched_params.get('name', 'track')}"
             _icon_phase = phase_for_tool("stori_set_track_icon")
             sse_events.append({
@@ -830,9 +843,10 @@ async def _apply_single_tool_call(
         if _rid and _notes:
             if composition_context:
                 from app.services.expressiveness import apply_expressiveness
-                _role = composition_context.get("role", "melody")
-                _style = composition_context.get("style", "")
-                _bars = composition_context.get("bars", 4)
+                _role = str(composition_context.get("role") or "melody")
+                _style = str(composition_context.get("style") or "")
+                _bars_raw = composition_context.get("bars")
+                _bars = int(_bars_raw) if isinstance(_bars_raw, int) else 4
                 if _style:
                     expr = apply_expressiveness(
                         _notes, _style, _bars, instrument_role=_role,
@@ -875,7 +889,7 @@ async def _apply_single_tool_call(
     }
 
     # ── Tool result ──
-    tool_result = _build_tool_result(tc_name, enriched_params, store)
+    tool_result: dict[str, str | int | bool | None] = _build_tool_result(tc_name, enriched_params, store)
     msg_result = {
         "role": "tool", "tool_call_id": tc_id,
         "content": json.dumps(tool_result),

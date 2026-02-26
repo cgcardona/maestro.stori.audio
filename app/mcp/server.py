@@ -10,35 +10,51 @@ import json
 import logging
 import asyncio
 from typing import (
-    Any,
-    Callable,
+    TYPE_CHECKING,
     Awaitable,
-    cast,
+    Callable,
 )
+from typing_extensions import TypedDict
+
+if TYPE_CHECKING:
+    from app.services.music_generator import MusicGenerator
 from dataclasses import dataclass, field
 
+from app.contracts.mcp_types import MCPContentBlock, MCPToolDef
+from app.contracts.project_types import ProjectContext
 from app.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, TOOL_CATEGORIES
 from app.core.tool_validation import validate_tool_call
 
 logger = logging.getLogger(__name__)
 
 
+class ServerInfoDict(TypedDict):
+    """MCP server info response — known shape."""
+
+    name: str
+    version: str
+    protocolVersion: str
+    capabilities: dict[str, object]
+
+
 @dataclass
 class ToolCallResult:
     """Result of an MCP tool call."""
     success: bool
-    content: list[dict[str, Any]]
+    content: list[MCPContentBlock]
     is_error: bool = False
-    bad_request: bool = False  # True when validation failed (caller may return HTTP 400)
+    bad_request: bool = False
+
+DAWMessage = dict[str, object]
 
 
 @dataclass
 class DAWConnection:
     """Represents a connected DAW instance."""
     id: str
-    send_callback: Callable[[dict[str, Any]], Awaitable[None]]
-    project_state: dict[str, Any] | None = None
-    pending_responses: dict[str, asyncio.Future[dict[str, Any]]] = field(default_factory=dict)
+    send_callback: Callable[[DAWMessage], Awaitable[None]]
+    project_state: ProjectContext | None = None
+    pending_responses: dict[str, asyncio.Future[dict[str, object]]] = field(default_factory=dict)
 
 
 class StoriMCPServer:
@@ -57,12 +73,12 @@ class StoriMCPServer:
         self.name = "stori-daw"
         self.version = get_settings().app_version
         # Lazy init on first generation call to avoid circular import when running stdio server standalone
-        self._generator: Any = None
+        self._generator: MusicGenerator | None = None
         self._daw_connections: dict[str, DAWConnection] = {}
         self._active_connection: str | None = None
 
     @property
-    def generator(self) -> Any:
+    def generator(self) -> MusicGenerator:
         if self._generator is None:
             from app.services.music_generator import get_music_generator
             self._generator = get_music_generator()
@@ -72,7 +88,7 @@ class StoriMCPServer:
     # MCP Protocol Methods
     # =========================================================================
     
-    def get_server_info(self) -> dict[str, Any]:
+    def get_server_info(self) -> ServerInfoDict:
         """Return MCP server information."""
         return {
             "name": self.name,
@@ -84,14 +100,14 @@ class StoriMCPServer:
             }
         }
     
-    def list_tools(self) -> list[dict[str, Any]]:
+    def list_tools(self) -> list[MCPToolDef]:
         """list all available MCP tools."""
         return MCP_TOOLS
     
     async def call_tool(
         self,
         name: str,
-        arguments: dict[str, Any],
+        arguments: dict[str, object],
     ) -> ToolCallResult:
         """
         Execute an MCP tool call.
@@ -102,7 +118,7 @@ class StoriMCPServer:
         logger.info(f"MCP tool call: {name}")
         logger.debug(f"Arguments: {arguments}")
 
-        allowed_tools = cast(set[str], {t["name"] for t in MCP_TOOLS})
+        allowed_tools: set[str] = {t["name"] for t in MCP_TOOLS}
         validation = validate_tool_call(name, arguments, allowed_tools, registry=None)
         if not validation.valid:
             logger.warning(f"MCP tool validation failed: {validation.error_message}")
@@ -134,7 +150,7 @@ class StoriMCPServer:
     def register_daw(
         self,
         connection_id: str,
-        send_callback: Callable[[dict[str, Any]], Awaitable[None]],
+        send_callback: Callable[[DAWMessage], Awaitable[None]],
     ) -> None:
         """Register a DAW connection."""
         self._daw_connections[connection_id] = DAWConnection(
@@ -155,7 +171,7 @@ class StoriMCPServer:
     def update_project_state(
         self,
         connection_id: str,
-        project_state: dict[str, Any],
+        project_state: ProjectContext,
     ) -> None:
         """Update cached project state from DAW."""
         if connection_id in self._daw_connections:
@@ -165,7 +181,7 @@ class StoriMCPServer:
         self,
         connection_id: str,
         request_id: str,
-        result: dict[str, Any],
+        result: dict[str, object],
     ) -> None:
         """Receive a tool execution response from DAW."""
         if connection_id in self._daw_connections:
@@ -180,19 +196,23 @@ class StoriMCPServer:
     async def _execute_generation_tool(
         self,
         name: str,
-        arguments: dict[str, Any],
+        arguments: dict[str, object],
     ) -> ToolCallResult:
         """Execute a music generation tool server-side."""
-        
-        instrument = arguments.get("role", "melody")
+        raw_chords = arguments.get("chords")
+        chords: list[str] | None = None
+        if isinstance(raw_chords, list):
+            chords = [str(c) for c in raw_chords]
 
+        raw_tempo = arguments.get("tempo", 120)
+        raw_bars = arguments.get("bars", 4)
         result = await self.generator.generate(
-            instrument=instrument,
-            style=arguments.get("style", "boom_bap"),
-            tempo=arguments.get("tempo", 120),
-            bars=arguments.get("bars", 4),
-            key=arguments.get("key"),
-            chords=arguments.get("chords"),
+            instrument=str(arguments.get("role", "melody")),
+            style=str(arguments.get("style", "boom_bap")),
+            tempo=int(raw_tempo) if isinstance(raw_tempo, (int, float, str)) else 120,
+            bars=int(raw_bars) if isinstance(raw_bars, (int, float, str)) else 4,
+            key=str(arguments["key"]) if "key" in arguments else None,
+            chords=chords,
         )
         
         if result.success:
@@ -223,7 +243,7 @@ class StoriMCPServer:
     async def _forward_to_daw(
         self,
         name: str,
-        arguments: dict[str, Any],
+        arguments: dict[str, object],
     ) -> ToolCallResult:
         """Forward a tool call to the connected DAW."""
         
@@ -242,7 +262,7 @@ class StoriMCPServer:
         
         # Create request ID and future for response
         request_id = f"{name}_{id(arguments)}"
-        response_future: asyncio.Future[dict[str, Any]] = asyncio.Future()
+        response_future: asyncio.Future[dict[str, object]] = asyncio.Future()
         conn.pending_responses[request_id] = response_future
         
         try:
@@ -256,11 +276,12 @@ class StoriMCPServer:
             
             # Wait for response (with timeout)
             result = await asyncio.wait_for(response_future, timeout=30.0)
-            
+            succeeded = bool(result.get("success", False))
+
             return ToolCallResult(
-                success=result.get("success", False),
+                success=succeeded,
                 content=[{"type": "text", "text": json.dumps(result, indent=2)}],
-                is_error=not result.get("success", False),
+                is_error=not succeeded,
             )
             
         except asyncio.TimeoutError:
@@ -274,55 +295,55 @@ class StoriMCPServer:
     
     def _format_project_state(
         self,
-        state: dict[str, Any],
-        arguments: dict[str, Any],
+        state: ProjectContext,
+        arguments: dict[str, object],
     ) -> ToolCallResult:
         """Format project state for MCP response."""
-        
-        include_notes = arguments.get("include_notes", False)
-        include_automation = arguments.get("include_automation", False)
-        
-        # Build summary
-        summary = {
-            "name": state.get("name", "Untitled"),
-            "tempo": state.get("tempo", 120),
-            "key": state.get("key", "C"),
-            "timeSignature": state.get("timeSignature", {"numerator": 4, "denominator": 4}),
-            "trackCount": len(state.get("tracks", [])),
-            "tracks": [],
-        }
-        
+
+        include_notes = bool(arguments.get("include_notes", False))
+        include_automation = bool(arguments.get("include_automation", False))
+
+        tracks_out: list[dict[str, object]] = []
         for track in state.get("tracks", []):
-            track_info = {
+            mixer = track.get("mixerSettings") or {}
+            track_info: dict[str, object] = {
                 "id": track.get("id"),
                 "name": track.get("name"),
                 "type": "drums" if track.get("drumKitId") else "instrument",
                 "instrument": track.get("drumKitId") or f"GM {track.get('gmProgram', 0)}",
-                "volume": track.get("mixerSettings", {}).get("volume", 0.8),
-                "pan": track.get("mixerSettings", {}).get("pan", 0.5),
-                "muted": track.get("mixerSettings", {}).get("isMuted", False),
+                "volume": mixer.get("volume", 0.8),
+                "pan": mixer.get("pan", 0.5),
+                "muted": mixer.get("isMuted", False),
                 "regions": [],
             }
-            
+
+            regions_out: list[dict[str, object]] = []
             for region in track.get("regions", []):
-                region_info = {
+                region_info: dict[str, object] = {
                     "id": region.get("id"),
                     "name": region.get("name"),
                     "startBeat": region.get("startBeat", 0),
                     "durationBeats": region.get("durationBeats", 0),
                     "noteCount": len(region.get("notes", [])),
                 }
-                
                 if include_notes:
                     region_info["notes"] = region.get("notes", [])
-                
-                track_info["regions"].append(region_info)
-            
+                regions_out.append(region_info)
+
+            track_info["regions"] = regions_out
             if include_automation:
                 track_info["automation"] = track.get("automationLanes", [])
-            
-            summary["tracks"].append(track_info)
-        
+            tracks_out.append(track_info)
+
+        summary: dict[str, object] = {
+            "name": state.get("name", "Untitled"),
+            "tempo": state.get("tempo", 120),
+            "key": state.get("key", "C"),
+            "timeSignature": state.get("timeSignature", {"numerator": 4, "denominator": 4}),
+            "trackCount": len(state.get("tracks", [])),
+            "tracks": tracks_out,
+        }
+
         return ToolCallResult(
             success=True,
             content=[{"type": "text", "text": json.dumps(summary, indent=2)}],

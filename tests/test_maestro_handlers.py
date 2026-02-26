@@ -1,12 +1,21 @@
 """Tests for maestro handlers (orchestration, UsageTracker, fallback route)."""
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+if TYPE_CHECKING:
+    from app.core.planner import ExecutionPlan
+    from app.core.prompt_parser import ParsedPrompt
+    from app.core.state_store import StateStore
+
+from app.contracts.json_types import NoteDict, ToolCallDict
+from app.contracts.project_types import ProjectContext
 from app.core.maestro_handlers import UsageTracker, orchestrate
+from app.models.variation import Variation
 from app.core.maestro_editing import (
     _create_editing_composition_route,
     _get_incomplete_tracks,
@@ -22,14 +31,13 @@ from app.core.intent_config import (
 )
 
 
-async def _fake_plan_stream(plan: Any) -> Any:
-
+async def _fake_plan_stream(plan: ExecutionPlan) -> AsyncGenerator[ExecutionPlan, None]:
     """Async generator yielding a single ExecutionPlan (simulates build_execution_plan_stream)."""
     yield plan
 
 # Project context with existing tracks — keeps COMPOSING route active
 # (empty projects override COMPOSING → EDITING).
-_NON_EMPTY_PROJECT = {
+_NON_EMPTY_PROJECT: ProjectContext = {
     "id": "test-project",
     "tracks": [
         {
@@ -162,21 +170,20 @@ class TestProjectNeedsStructure:
     def test_project_with_tracks_does_not_need_structure(self) -> None:
 
         """Project with at least one track does not need structure."""
-        ctx = {"tracks": [{"id": "t1", "name": "Drums"}]}
+        ctx: ProjectContext = {"tracks": [{"id": "t1", "name": "Drums"}]}
         assert _project_needs_structure(ctx) is False
 
     def test_project_with_multiple_tracks(self) -> None:
 
         """Project with multiple tracks does not need structure."""
-        ctx = {"tracks": [{"id": "t1"}, {"id": "t2"}, {"id": "t3"}]}
+        ctx: ProjectContext = {"tracks": [{"id": "t1"}, {"id": "t2"}, {"id": "t3"}]}
         assert _project_needs_structure(ctx) is False
 
 
 class TestGetIncompleteTracks:
     """Test _get_incomplete_tracks helper."""
 
-    def _make_store(self) -> Any:
-
+    def _make_store(self) -> StateStore:
         from app.core.state_store import StateStore
         return StateStore(project_id="test")
 
@@ -204,7 +211,7 @@ class TestGetIncompleteTracks:
         store = self._make_store()
         tid = store.create_track("Bass")
         rid = store.create_region("Groove", tid)
-        tc = [{"tool": "stori_add_notes", "params": {"regionId": rid, "notes": []}}]
+        tc: list[ToolCallDict] = [ToolCallDict(tool="stori_add_notes", params={"regionId": rid, "notes": []})]
         result = _get_incomplete_tracks(store, tool_calls_collected=tc)
         assert "Bass" not in result
 
@@ -216,7 +223,7 @@ class TestGetIncompleteTracks:
         rid1 = store.create_region("Riff", tid1)
         tid2 = store.create_track("Drums")
         # Drums has no region at all
-        tc = [{"tool": "stori_add_notes", "params": {"regionId": rid1, "notes": []}}]
+        tc: list[ToolCallDict] = [ToolCallDict(tool="stori_add_notes", params={"regionId": rid1, "notes": []})]
         result = _get_incomplete_tracks(store, tool_calls_collected=tc)
         assert "Guitar" not in result
         assert "Drums" in result
@@ -552,8 +559,7 @@ class TestOrchestrateStream:
         )
         mock_rag = MagicMock()
         mock_rag.collection_exists = MagicMock(return_value=True)
-        async def fake_answer(*args: Any, **kwargs: Any) -> Any:
-
+        async def fake_answer(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
             yield "RAG chunk 1"
             yield "RAG chunk 2"
         mock_rag.answer = fake_answer
@@ -594,14 +600,16 @@ class TestOrchestrateStream:
             requires_planner=False,
             reasons=(),
         )
-        async def stream_chunks(*args: Any, **kwargs: Any) -> Any:
-
+        async def stream_chunks(
+            *args: object, **kwargs: object
+        ) -> AsyncGenerator[dict[str, object], None]:
             yield {"type": "reasoning_delta", "text": "Thinking..."}
             yield {"type": "content_delta", "text": "Answer."}
             yield {"type": "done", "content": "Answer.", "usage": {"prompt_tokens": 1, "completion_tokens": 2}}
 
-        def make_stream(*args: Any, **kwargs: Any) -> Any:
-
+        def make_stream(
+            *args: object, **kwargs: Any
+        ) -> AsyncGenerator[dict[str, object], None]:
             return stream_chunks(*args, **kwargs)
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
@@ -871,8 +879,9 @@ class TestComposingUnifiedSSE:
             safety_validated=True,
         )
 
-        async def _stream_with_reasoning(*args: Any, **kwargs: Any) -> Any:
-
+        async def _stream_with_reasoning(
+            *args: object, **kwargs: object
+        ) -> AsyncGenerator[str | ExecutionPlan, None]:
             yield await sse_event({"type": "reasoning", "content": "Planning the beat..."})
             yield plan
 
@@ -968,8 +977,7 @@ class TestComposingUnifiedSSE:
             safety_validated=True,
         )
 
-        async def _mock_execute(**kwargs: Any) -> Any:
-
+        async def _mock_execute(**kwargs: Any) -> Variation:
             pre_cb = kwargs.get("pre_tool_callback")
             post_cb = kwargs.get("post_tool_callback")
             prog_cb = kwargs.get("progress_callback")
@@ -1046,8 +1054,7 @@ class TestComposingUnifiedSSE:
 
         call_idx = 0
 
-        async def _mock_execute(**kwargs: Any) -> Any:
-
+        async def _mock_execute(**kwargs: Any) -> Variation:
             nonlocal call_idx
             pre_cb = kwargs.get("pre_tool_callback")
             post_cb = kwargs.get("post_tool_callback")
@@ -1104,8 +1111,7 @@ class TestComposingUnifiedSSE:
 class TestAgentTeamsVariationRouting:
     """Verify that Mode: compose routes through Agent Teams + Variation."""
 
-    def _make_parsed_prompt(self, roles: list[str]) -> Any:
-
+    def _make_parsed_prompt(self, roles: list[str]) -> ParsedPrompt:
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT\nMode: compose",
@@ -1117,7 +1123,7 @@ class TestAgentTeamsVariationRouting:
             roles=roles,
         )
 
-    def _make_composing_route(self, parsed: Any) -> IntentResult:
+    def _make_composing_route(self, parsed: ParsedPrompt) -> IntentResult:
 
         return IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -1139,8 +1145,9 @@ class TestAgentTeamsVariationRouting:
         parsed = self._make_parsed_prompt(["drums", "bass", "keys"])
         fake_route = self._make_composing_route(parsed)
 
-        async def _fake_at_gen(*args: Any, **kwargs: Any) -> Any:
-
+        async def _fake_at_gen(
+            *args: object, **kwargs: object
+        ) -> AsyncGenerator[str, None]:
             yield 'data: {"type": "status", "message": "test"}\n\n'
             yield 'data: {"type": "complete", "success": true}\n\n'
 
@@ -1172,8 +1179,9 @@ class TestAgentTeamsVariationRouting:
         parsed = self._make_parsed_prompt(["melody"])
         fake_route = self._make_composing_route(parsed)
 
-        async def _fake_at_gen(*args: Any, **kwargs: Any) -> Any:
-
+        async def _fake_at_gen(
+            *args: object, **kwargs: object
+        ) -> AsyncGenerator[str, None]:
             yield 'data: {"type": "complete", "success": true}\n\n'
 
         mock_llm = MagicMock()
@@ -1260,10 +1268,11 @@ class TestAgentTeamsVariationRouting:
             parent_track_id=tid,
             metadata={"startBeat": 0, "durationBeats": 16},
         )
-        store.add_notes(rid, [
-            {"pitch": 36, "start_beat": 0, "duration_beats": 1, "velocity": 100},
-            {"pitch": 38, "start_beat": 4, "duration_beats": 1, "velocity": 90},
-        ])
+        _notes: list[NoteDict] = [
+            {"pitch": 36, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100},
+            {"pitch": 38, "start_beat": 4.0, "duration_beats": 1.0, "velocity": 90},
+        ]
+        store.add_notes(rid, _notes)
 
         _test_variation = Variation(
             variation_id="test-var-id",
@@ -1299,8 +1308,9 @@ class TestAgentTeamsVariationRouting:
             ],
         )
 
-        async def _fake_agent_teams(*args: Any, **kwargs: Any) -> Any:
-
+        async def _fake_agent_teams(
+            *args: object, **kwargs: object
+        ) -> AsyncGenerator[str, None]:
             yield 'data: {"type": "status", "message": "Preparing..."}\n\n'
             yield 'data: {"type": "reasoning", "content": "Thinking about drums", "agentId": "drums"}\n\n'
             yield 'data: {"type": "summary", "tracks": ["Drums"], "regions": 1, "notes": 2}\n\n'

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.contracts.project_types import ProjectContext
 from app.core.plan_schemas import ExecutionPlanSchema
 
 _ROLE_INSTRUMENT_HINTS: dict[str, set[str]] = {
@@ -22,7 +23,7 @@ _ROLE_INSTRUMENT_HINTS: dict[str, set[str]] = {
 
 def _match_roles_to_existing_tracks(
     roles: set[str],
-    project_state: dict[str, Any],
+    project_state: ProjectContext,
 ) -> dict[str, dict[str, Any]]:
     """Map generation roles to existing project tracks.
 
@@ -93,7 +94,7 @@ def _match_roles_to_existing_tracks(
 
 def _build_role_to_track_map(
     plan: ExecutionPlanSchema,
-    project_state: dict[str, Any] | None = None,
+    project_state: ProjectContext | None = None,
 ) -> dict[str, str]:
     """Build a mapping from generation role to actual track name.
 

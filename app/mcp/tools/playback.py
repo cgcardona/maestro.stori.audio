@@ -1,7 +1,9 @@
 """Playback control MCP tool definitions."""
 from __future__ import annotations
 
-PLAYBACK_TOOLS = [
+from app.contracts.mcp_types import MCPToolDef
+
+PLAYBACK_TOOLS: list[MCPToolDef] = [
     {
         "name": "stori_play",
         "description": "Start playback from current position or specified beat.",

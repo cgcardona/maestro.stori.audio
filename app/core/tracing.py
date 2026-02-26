@@ -30,7 +30,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Generator
+from typing import Generator
 
 logger = logging.getLogger(__name__)
 
@@ -51,14 +51,14 @@ class Span:
     start_time: float
     end_time: float | None = None
     status: SpanStatus = SpanStatus.OK
-    attributes: dict[str, Any] = field(default_factory=dict)
-    events: list[dict[str, Any]] = field(default_factory=list)
-    
-    def set_attribute(self, key: str, value: Any) -> None:
+    attributes: dict[str, object] = field(default_factory=dict)
+    events: list[dict[str, object]] = field(default_factory=list)
+
+    def set_attribute(self, key: str, value: object) -> None:
         """set a span attribute."""
         self.attributes[key] = value
-    
-    def add_event(self, name: str, attributes: dict[str, Any] | None = None) -> None:
+
+    def add_event(self, name: str, attributes: dict[str, object] | None = None) -> None:
         """Add an event to the span."""
         self.events.append({
             "name": name,
@@ -79,7 +79,7 @@ class Span:
             return None
         return (self.end_time - self.start_time) * 1000
     
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "name": self.name,
             "trace_id": self.trace_id,
@@ -104,7 +104,7 @@ class TraceContext:
     current_span: Span | None = None
     _span_stack: list[Span] = field(default_factory=list)
     
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "trace_id": self.trace_id,
             "conversation_id": self.conversation_id,
@@ -153,7 +153,7 @@ def clear_trace_context() -> None:
 def trace_span(
     ctx: TraceContext,
     name: str,
-    attributes: dict[str, Any] | None = None,
+    attributes: dict[str, object] | None = None,
 ) -> Generator[Span, None, None]:
     """
     Context manager for tracing a span.
@@ -194,7 +194,7 @@ def trace_span(
 
 def log_span(span: Span) -> None:
     """Log a completed span with structured data."""
-    log_data = {
+    log_data: dict[str, object] = {
         "trace_id": span.trace_id,
         "span_id": span.span_id,
         "span_name": span.name,
@@ -239,7 +239,7 @@ def log_intent(
 def log_tool_call(
     trace_id: str,
     tool_name: str,
-    params: dict[str, Any],
+    params: dict[str, object],
     success: bool,
     error: str | None = None,
 ) -> None:

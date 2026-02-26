@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from app.contracts.project_types import ProjectContext
     from app.core.maestro_handlers import UsageTracker
 
 from app.core.intent import get_intent_result, SSEState, IntentResult, Intent
@@ -47,7 +48,7 @@ class PipelineOutput:
 
 async def run_pipeline(
     user_prompt: str,
-    project_state: dict[str, Any],
+    project_state: "ProjectContext",
     llm: LLMClient,
     usage_tracker: "UsageTracker" | None = None,
 ) -> PipelineOutput:
