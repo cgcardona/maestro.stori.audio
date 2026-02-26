@@ -28,16 +28,28 @@ class ToolCall:
     id: str = ""  # LLM-assigned call ID; empty for planner-generated calls
 
     def to_dict(self) -> dict[str, object]:
+        """Serialise to ``{"name": ..., "params": ...}`` (omits ``id``)."""
         return {"name": self.name, "params": self.params}
 
     def fingerprint(self) -> str:
-        # id is intentionally excluded: two structurally identical calls
-        # (same name + params) are considered duplicates regardless of id.
+        """Return a 16-char SHA-256 content hash of ``name`` + ``params``.
+
+        ``id`` is intentionally excluded: two structurally identical calls
+        (same name + params) are considered duplicates regardless of their
+        LLM-assigned ``id``.  Used by ``dedupe_tool_calls``.
+        """
         blob = json.dumps({"name": self.name, "params": self.params}, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
 def dedupe_tool_calls(calls: list[ToolCall]) -> list[ToolCall]:
+    """Remove structurally duplicate tool calls, preserving order.
+
+    Two calls are duplicates when they share the same ``name`` and ``params``
+    (``id`` is ignored).  The first occurrence is kept; subsequent identical
+    calls are dropped.  Used before executing a plan to prevent the LLM from
+    accidentally emitting the same action twice.
+    """
     seen = set()
     out: list[ToolCall] = []
     for c in calls:

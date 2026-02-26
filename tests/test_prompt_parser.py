@@ -305,20 +305,23 @@ class TestTempoParsing:
     def test_bare_number(self) -> None:
 
         prompt = "STORI PROMPT\nMode: compose\nTempo: 140\nRequest: go"
-        assert parse_prompt(prompt) is not None
-        assert parse_prompt(prompt).tempo == 140  # type: ignore[union-attr]
+        result = parse_prompt(prompt)
+        assert result is not None
+        assert result.tempo == 140
 
     def test_with_bpm_suffix(self) -> None:
 
         prompt = "STORI PROMPT\nMode: compose\nTempo: 92 bpm\nRequest: go"
-        assert parse_prompt(prompt) is not None
-        assert parse_prompt(prompt).tempo == 92  # type: ignore[union-attr]
+        result = parse_prompt(prompt)
+        assert result is not None
+        assert result.tempo == 92
 
     def test_bpm_no_space(self) -> None:
 
         prompt = "STORI PROMPT\nMode: compose\nTempo: 110bpm\nRequest: go"
-        assert parse_prompt(prompt) is not None
-        assert parse_prompt(prompt).tempo == 110  # type: ignore[union-attr]
+        result = parse_prompt(prompt)
+        assert result is not None
+        assert result.tempo == 110
 
 
 # ─── Role parsing ───────────────────────────────────────────────────────────

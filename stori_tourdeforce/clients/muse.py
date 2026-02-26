@@ -285,7 +285,9 @@ class MuseClient:
             "end_beat": 8.0,
             "label": f"{intent} ({target_region})",
             "note_changes": note_changes,
-            "controller_changes": [],
+            "cc_events": [],
+            "pitch_bends": [],
+            "aftertouch": [],
         }]
 
         return await self.save_variation(

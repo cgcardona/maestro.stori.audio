@@ -9,7 +9,7 @@ from typing import Any
 import asyncio
 
 from app.contracts.generation_types import CompositionContext
-from app.core.sse_utils import SSEEventInput
+from app.protocol.events import MaestroEvent, ToolCallEvent, GeneratorCompleteEvent
 
 from app.contracts.json_types import NoteDict
 import math
@@ -349,13 +349,13 @@ class TestSectionAgentTelemetry:
         from app.core.maestro_plan_tracker import _ToolCallOutcome
 
         store = StateStore(conversation_id="test-telem")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         section_state = SectionState()
 
         region_outcome = _ToolCallOutcome(
             enriched_params={"trackId": "trk-1"},
             tool_result={"regionId": "reg-1", "trackId": "trk-1"},
-            sse_events=[{"type": "toolCall", "name": "stori_add_midi_region"}],
+            sse_events=[ToolCallEvent(id="r1", name="stori_add_midi_region", params={"trackId": "trk-1"})],
             msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
         gen_notes = [
@@ -368,10 +368,10 @@ class TestSectionAgentTelemetry:
             enriched_params={"role": "drums", "regionId": "reg-1"},
             tool_result={"notesAdded": 4, "regionId": "reg-1", "trackId": "trk-1"},
             sse_events=[
-                {"type": "generatorComplete", "role": "drums"},
-                {"type": "toolCall", "name": "stori_add_notes", "params": {
+                GeneratorCompleteEvent(role="drums", agent_id="drums", note_count=4, duration_ms=100),
+                ToolCallEvent(id="g1", name="stori_add_notes", params={
                     "trackId": "trk-1", "regionId": "reg-1", "notes": gen_notes,
-                }},
+                }),
             ],
             msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
@@ -438,7 +438,7 @@ class TestSectionAgentTelemetry:
         from app.core.maestro_plan_tracker import _ToolCallOutcome
 
         store = StateStore(conversation_id="test-bass-telem")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         section_state = SectionState()
         drum_t = SectionTelemetry(
@@ -470,16 +470,16 @@ class TestSectionAgentTelemetry:
         region_outcome = _ToolCallOutcome(
             enriched_params={"trackId": "trk-2"},
             tool_result={"regionId": "reg-2", "trackId": "trk-2"},
-            sse_events=[{"type": "toolCall", "name": "stori_add_midi_region"}],
+            sse_events=[ToolCallEvent(id="r1", name="stori_add_midi_region", params={"trackId": "trk-2"})],
             msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
         gen_outcome = _ToolCallOutcome(
             enriched_params={"role": "bass", "regionId": "reg-2"},
             tool_result={"notesAdded": 8, "regionId": "reg-2"},
             sse_events=[
-                {"type": "toolCall", "name": "stori_add_notes", "params": {
+                ToolCallEvent(id="g1", name="stori_add_notes", params={
                     "notes": [{"pitch": 40, "start_beat": i, "velocity": 80} for i in range(8)],
-                }},
+                }),
             ],
             msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
@@ -546,7 +546,7 @@ class TestSectionAgentTelemetry:
         from app.core.maestro_plan_tracker import _ToolCallOutcome
 
         store = StateStore(conversation_id="test-no-state")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         region_outcome = _ToolCallOutcome(
             enriched_params={}, tool_result={"regionId": "r1"},
@@ -554,9 +554,9 @@ class TestSectionAgentTelemetry:
         )
         gen_outcome = _ToolCallOutcome(
             enriched_params={}, tool_result={"notesAdded": 2},
-            sse_events=[{"type": "toolCall", "name": "stori_add_notes", "params": {
+            sse_events=[ToolCallEvent(id="g1", name="stori_add_notes", params={
                 "notes": [{"pitch": 60, "start_beat": 0, "velocity": 80}],
-            }}],
+            })],
             msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
 

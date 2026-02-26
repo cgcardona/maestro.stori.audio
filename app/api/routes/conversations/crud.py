@@ -16,6 +16,7 @@ from app.api.routes.conversations.models import (
     ConversationResponse,
     ConversationListItem,
     ConversationListResponse,
+    ConversationUpdateResponse,
     SearchResultItem,
     SearchResponse,
     MessageInfo,
@@ -226,7 +227,7 @@ async def update_conversation(
     request: ConversationUpdateRequest,
     token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, object]:
+) -> ConversationUpdateResponse:
     """Update conversation metadata (title and/or project_id)."""
     user_id = token_claims.get("sub")
     if not user_id:
@@ -251,12 +252,12 @@ async def update_conversation(
         conversation.updated_at = datetime.now(timezone.utc)
         await db.commit()
 
-    return {
-        "id": conversation.id,
-        "title": conversation.title,
-        "projectId": conversation.project_id,
-        "updatedAt": conversation.updated_at.isoformat(),
-    }
+    return ConversationUpdateResponse(
+        id=conversation.id,
+        title=conversation.title,
+        project_id=conversation.project_id,
+        updated_at=conversation.updated_at.isoformat(),
+    )
 
 
 @router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)

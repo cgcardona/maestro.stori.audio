@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Type
 
 from app.protocol.events import (
-    StoriEvent,
+    MaestroEvent,
     StateEvent,
     ReasoningEvent,
     ReasoningEndEvent,
@@ -37,7 +37,7 @@ from app.protocol.events import (
     MCPPingEvent,
 )
 
-EVENT_REGISTRY: dict[str, Type[StoriEvent]] = {
+EVENT_REGISTRY: dict[str, Type[MaestroEvent]] = {
     "state": StateEvent,
     "reasoning": ReasoningEvent,
     "reasoningEnd": ReasoningEndEvent,
@@ -66,10 +66,11 @@ EVENT_REGISTRY: dict[str, Type[StoriEvent]] = {
 ALL_EVENT_TYPES: frozenset[str] = frozenset(EVENT_REGISTRY.keys())
 
 
-def get_event_class(event_type: str) -> Type[StoriEvent]:
+def get_event_class(event_type: str) -> Type[MaestroEvent]:
     """Look up the model class for an event type. Raises KeyError for unknown types."""
     return EVENT_REGISTRY[event_type]
 
 
 def is_known_event(event_type: str) -> bool:
+    """Return ``True`` when ``event_type`` is a registered SSE event type string."""
     return event_type in EVENT_REGISTRY

@@ -386,7 +386,8 @@ class TestOrchestrateStream:
                 last_payload = json.loads(last.split("data: ", 1)[1].strip())
                 assert last_payload.get("type") == "complete"
                 assert last_payload.get("success") is True
-                assert last_payload.get("toolCalls") == []
+                # REASONING path executes no tools; toolCalls is omitted from the wire payload.
+                assert last_payload.get("toolCalls") is None
 
     @pytest.mark.anyio
     async def test_complete_event_includes_context_window_fields(self) -> None:
@@ -860,7 +861,8 @@ class TestComposingUnifiedSSE:
         """Phase 1: COMPOSING path emits reasoning events from the streaming planner."""
         from app.core.planner import ExecutionPlan
         from app.core.expansion import ToolCall
-        from app.core.sse_utils import sse_event
+        from app.protocol.emitter import emit
+        from app.protocol.events import ReasoningEvent
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -882,7 +884,7 @@ class TestComposingUnifiedSSE:
         async def _stream_with_reasoning(
             *args: object, **kwargs: object
         ) -> AsyncGenerator[str | ExecutionPlan, None]:
-            yield await sse_event({"type": "reasoning", "content": "Planning the beat..."})
+            yield emit(ReasoningEvent(content="Planning the beat..."))
             yield plan
 
         with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
@@ -1303,7 +1305,9 @@ class TestAgentTeamsVariationRouting:
                             ),
                         ),
                     ],
-                    controller_changes=[],
+                    cc_events=[],
+                    pitch_bends=[],
+                    aftertouch=[],
                 ),
             ],
         )

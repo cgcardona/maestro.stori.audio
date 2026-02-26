@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+GenerationRole = Literal["drums", "bass", "chords", "melody", "arp", "pads", "fx", "lead"]
+"""Valid musical generation roles — narrows the ``role`` field of ``GenerationStep``."""
+
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+
+from app.contracts.json_types import JSONObject
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +30,12 @@ class GenerationStep(BaseModel):
     tempo: int = Field(..., ge=30, le=300, description="Tempo in BPM (30-300)")
     bars: int = Field(..., ge=1, le=64, description="Number of bars to generate (1-64)")
     key: str | None = Field(default=None, description="Musical key (e.g., 'Cm', 'F#', 'G minor'). Required for melodic instruments.")
-    constraints: dict[str, Any] | None = Field(default=None, description="Additional constraints (density, syncopation, swing, etc.)")
+    constraints: dict[str, object] | None = Field(default=None, description="Additional constraints (density, syncopation, swing, etc.)")
     trackName: str | None = Field(default=None, description="Override track name (e.g. 'Banjo') when role is a generic category like 'melody'")
 
     @field_validator('key')
     @classmethod
-    def validate_key(cls, v: str | None, info: Any) -> str | None:
+    def validate_key(cls, v: str | None, info: ValidationInfo) -> str | None:
         if v is None:
             role = info.data.get('role', '')
             if role in ('bass', 'chords', 'melody', 'arp', 'pads', 'lead'):
@@ -148,19 +153,29 @@ class ExecutionPlanSchema(BaseModel):
         return self
 
     def is_empty(self) -> bool:
+        """``True`` when the plan has no generations, edits, or mix steps."""
         return not self.generations and not self.edits and not self.mix
 
     def generation_count(self) -> int:
+        """Number of MIDI generation steps in the plan."""
         return len(self.generations)
 
     def total_steps(self) -> int:
+        """Total number of steps across all three plan categories."""
         return len(self.generations) + len(self.edits) + len(self.mix)
 
 
 class PlanValidationResult(BaseModel):
-    """Result of plan validation."""
+    """Result of plan validation.
+
+    ``raw_llm_output`` holds the raw dict that was attempted before Pydantic
+    validation.  Its values are typed ``object`` (not ``JSONValue``) because
+    this is opaque pre-validation data from an LLM — see json_types.py for
+    the Pydantic compatibility rule.
+    """
+
     valid: bool
     plan: ExecutionPlanSchema | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    raw_json: dict[str, Any] | None = None
+    raw_llm_output: dict[str, object] | None = None

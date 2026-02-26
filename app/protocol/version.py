@@ -1,4 +1,4 @@
-"""Stori version — single source of truth is pyproject.toml.
+"""Maestro version — single source of truth is pyproject.toml.
 
 All version references (app, protocol, MCP server) read from here.
 """
@@ -24,14 +24,13 @@ def _read_version() -> str:
     return "0.0.0-unknown"
 
 
-STORI_VERSION: str = _read_version()
+MAESTRO_VERSION: str = _read_version()
 
-STORI_PROTOCOL_VERSION: str = STORI_VERSION
 
-_version_parts = STORI_VERSION.split(".")
-STORI_VERSION_MAJOR: int = int(_version_parts[0]) if len(_version_parts) > 0 else 0
-STORI_VERSION_MINOR: int = int(_version_parts[1]) if len(_version_parts) > 1 else 0
-STORI_VERSION_PATCH: int = int(_version_parts[2].split("-")[0]) if len(_version_parts) > 2 else 0
+_version_parts = MAESTRO_VERSION.split(".")
+MAESTRO_VERSION_MAJOR: int = int(_version_parts[0]) if len(_version_parts) > 0 else 0
+MAESTRO_VERSION_MINOR: int = int(_version_parts[1]) if len(_version_parts) > 1 else 0
+MAESTRO_VERSION_PATCH: int = int(_version_parts[2].split("-")[0]) if len(_version_parts) > 2 else 0
 
 
 def is_compatible(client_version: str) -> bool:
@@ -39,6 +38,6 @@ def is_compatible(client_version: str) -> bool:
     try:
         parts = client_version.split(".")
         client_major = int(parts[0])
-        return client_major == STORI_VERSION_MAJOR
+        return client_major == MAESTRO_VERSION_MAJOR
     except (ValueError, IndexError):
         return False

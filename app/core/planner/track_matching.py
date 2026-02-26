@@ -2,10 +2,24 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing_extensions import TypedDict
 
 from app.contracts.project_types import ProjectContext
 from app.core.plan_schemas import ExecutionPlanSchema
+
+
+class TrackMatchDict(TypedDict, total=False):
+    """A project track entry matched to a generation role.
+
+    ``name`` and ``id`` are always present; ``gmProgram``, ``instrument``,
+    and ``inferred_role`` are present when available from the project state.
+    """
+
+    name: str
+    id: str
+    gmProgram: int | None
+    instrument: str
+    inferred_role: str | None
 
 _ROLE_INSTRUMENT_HINTS: dict[str, set[str]] = {
     "melody": {"organ", "piano", "guitar", "flute", "sax", "saxophone",
@@ -24,7 +38,7 @@ _ROLE_INSTRUMENT_HINTS: dict[str, set[str]] = {
 def _match_roles_to_existing_tracks(
     roles: set[str],
     project_state: ProjectContext,
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, TrackMatchDict]:
     """Map generation roles to existing project tracks.
 
     Priority order: inferred role → exact name → instrument keyword heuristic.
@@ -36,7 +50,7 @@ def _match_roles_to_existing_tracks(
     if not tracks:
         return {}
 
-    existing: list[dict[str, Any]] = []
+    existing: list[TrackMatchDict] = []
     for t in tracks:
         tname = t.get("name", "")
         gm = t.get("gmProgram")
@@ -46,11 +60,11 @@ def _match_roles_to_existing_tracks(
             "name": tname,
             "id": t.get("id", ""),
             "gmProgram": gm,
-            "instrument": t.get("instrument", ""),
+            "instrument": str(t.get("instrument", "")),
             "inferred_role": inferred_role,
         })
 
-    matched: dict[str, dict[str, Any]] = {}
+    matched: dict[str, TrackMatchDict] = {}
     claimed_ids: set[str] = set()
 
     # Pass 1: inferred-role match

@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import logging
 from typing import (
-    Any,
     AsyncIterator,
     Awaitable,
     Callable,
+    Literal,
 )
 
 from app.contracts.llm_types import ChatMessage
@@ -26,7 +26,6 @@ from app.contracts.project_types import ProjectContext
 from app.core.intent import Intent, IntentResult, SSEState, get_intent_result_with_llm
 from app.core.llm_client import LLMClient
 from app.core.prompt_parser import ParsedPrompt
-from app.core.sse_utils import sse_event
 from app.core.state_store import StateStore, get_or_create_store
 from app.core.tracing import (
     clear_trace_context,
@@ -34,6 +33,8 @@ from app.core.tracing import (
     log_intent,
     trace_span,
 )
+from app.protocol.emitter import emit
+from app.protocol.events import CompleteEvent, ErrorEvent, StateEvent
 from app.services.budget import get_model_or_default
 
 # Public re-exports — external callers (routes, planner, pipeline) import these
@@ -123,6 +124,7 @@ async def orchestrate(
                 _explicit_compose = (
                     _orch_parsed is not None and _orch_parsed.mode == "compose"
                 )
+                execution_mode: Literal["variation", "apply", "reasoning"]
                 if route.sse_state == SSEState.COMPOSING:
                     if _explicit_compose:
                         execution_mode = "variation"
@@ -175,14 +177,13 @@ async def orchestrate(
                 and bool(getattr(_orch_parsed, "roles", None))
                 and len(getattr(_orch_parsed, "roles", [])) > 1
             )
-            yield await sse_event({
-                "type": "state",
-                "state": SSEState.COMPOSING.value if _agent_team_path else route.sse_state.value,
-                "intent": route.intent.value,
-                "confidence": route.confidence,
-                "traceId": trace.trace_id,
-                "executionMode": execution_mode,
-            })
+            yield emit(StateEvent(
+                state=SSEState.COMPOSING.value if _agent_team_path else route.sse_state.value,
+                intent=route.intent.value,
+                confidence=route.confidence,
+                trace_id=trace.trace_id,
+                execution_mode=execution_mode,
+            ))
 
             logger.info(f"[{trace.trace_id[:8]}] 🎯 {route.intent.value} → {route.sse_state.value}")
 
@@ -263,18 +264,13 @@ async def orchestrate(
 
     except Exception as e:
         logger.exception(f"[{trace.trace_id[:8]}] Orchestration error: {e}")
-        yield await sse_event({
-            "type": "error",
-            "message": str(e),
-            "traceId": trace.trace_id,
-        })
-        yield await sse_event({
-            "type": "complete",
-            "success": False,
-            "error": str(e),
-            "traceId": trace.trace_id,
+        yield emit(ErrorEvent(message=str(e), trace_id=trace.trace_id))
+        yield emit(CompleteEvent(
+            success=False,
+            error=str(e),
+            trace_id=trace.trace_id,
             **_context_usage_fields(usage_tracker, selected_model),
-        })
+        ))
 
     finally:
         await llm.close()

@@ -131,7 +131,9 @@ def ready_record(vstore: VariationStore, project_id: str, base_state_id: str) ->
                         },
                     }
                 ],
-                "controller_changes": [],
+                "ccEvents": [],
+                "pitchBends": [],
+                "aftertouch": [],
             },
             ai_explanation=f"Bass {label}",
             tags=["pitchChange"],

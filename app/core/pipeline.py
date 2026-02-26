@@ -41,6 +41,25 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class PipelineOutput:
+    """Immutable result of one ``run_pipeline`` invocation.
+
+    Exactly one of ``llm_response`` or ``plan`` is populated, depending on the
+    intent route:
+
+    - ``REASONING`` → ``llm_response`` set, ``plan`` is ``None``
+    - ``EDITING``   → ``llm_response`` set (tool calls inside), ``plan`` is ``None``
+    - ``COMPOSING`` → ``plan`` set, ``llm_response`` is ``None``
+
+    Callers discriminate on ``route.sse_state`` (or ``route.intent``) first,
+    then unpack the appropriate field.
+
+    Attributes:
+        route: Full intent classification result including ``sse_state``,
+            ``allowed_tool_names``, and ``slots``.
+        llm_response: Raw LLM response for REASONING and EDITING paths.
+        plan: Structured ``ExecutionPlan`` for the COMPOSING path.
+    """
+
     route: IntentResult
     llm_response: LLMResponse | None = None
     plan: ExecutionPlan | None = None
@@ -77,8 +96,8 @@ async def run_pipeline(
         )
         return PipelineOutput(route=route, llm_response=resp)
 
-    # Extract parsed prompt from slots if present (structured prompt fast path)
-    parsed: ParsedPrompt | None = route.slots.extras.get("parsed_prompt")
+    _parsed_raw = route.slots.extras.get("parsed_prompt")
+    parsed: ParsedPrompt | None = _parsed_raw if isinstance(_parsed_raw, ParsedPrompt) else None
 
     # COMPOSING: planner path
     if route.sse_state == SSEState.COMPOSING or route.intent == Intent.GENERATE_MUSIC:

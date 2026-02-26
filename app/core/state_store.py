@@ -132,7 +132,22 @@ class Transaction:
 
 
 class _ProjectMetadataSnapshot(TypedDict, total=False):
-    """Internal snapshot shape stored inside StateSnapshot."""
+    """Versioned musical-metadata slice stored inside ``StateSnapshot.project_metadata``.
+
+    All fields are optional (``total=False``) — a snapshot only captures
+    what has been set on the ``StateStore`` at that version.  Absent fields
+    should be treated as "unchanged from the previous snapshot".
+
+    Attributes:
+        tempo: Project tempo in BPM (whole integer — see Tempo Convention in
+            ``docs/reference/type_contracts.md``).
+        key: Root key string, e.g. ``"Am"`` or ``"C#"``.
+        time_signature: ``(numerator, denominator)`` tuple, e.g. ``(4, 4)``.
+        _region_notes: Snapshot of all MIDI notes per region ID at this version.
+        _region_cc: Snapshot of all MIDI CC events per region ID.
+        _region_pitch_bends: Snapshot of all pitch bend events per region ID.
+        _region_aftertouch: Snapshot of all aftertouch events per region ID.
+    """
 
     tempo: int
     key: str
@@ -275,14 +290,30 @@ class StateStore:
     
     @property
     def tempo(self) -> int:
+        """Current project tempo in BPM (whole integer).
+
+        Starts at 120. Updated via :meth:`set_tempo`. Coerced to ``int``
+        at the DAW→Maestro boundary — see the Tempo Convention in
+        ``docs/reference/type_contracts.md``.
+        """
         return self._tempo
-    
+
     @property
     def key(self) -> str:
+        """Current project key signature (e.g. ``"Am"``, ``"C#"``, ``"Bb"``).
+
+        Starts at ``"C"``. Updated via :meth:`set_key`.
+        """
         return self._key
 
     @property
     def time_signature(self) -> tuple[int, int]:
+        """Current project time signature as ``(numerator, denominator)``.
+
+        Starts at ``(4, 4)``.  The denominator is always a power of two
+        (2, 4, 8, 16).  Updated only when the DAW explicitly sends a
+        ``timeSignature`` in the project context snapshot.
+        """
         return self._time_signature
 
     # =========================================================================
@@ -479,7 +510,13 @@ class StateStore:
         tempo: int,
         transaction: Transaction | None = None,
     ) -> None:
-        """set project tempo."""
+        """Set the project tempo and append a ``TEMPO_CHANGED`` event to the log.
+
+        Args:
+            tempo: New tempo in BPM (whole integer; see Tempo Convention).
+            transaction: Optional active transaction.  When provided, the event
+                is tagged with the transaction so it can be rolled back atomically.
+        """
         old_tempo = self._tempo
         self._tempo = tempo
         
@@ -496,7 +533,12 @@ class StateStore:
         key: str,
         transaction: Transaction | None = None,
     ) -> None:
-        """set project key."""
+        """Set the project key signature and append a ``KEY_CHANGED`` event to the log.
+
+        Args:
+            key: New key string (e.g. ``"Am"``, ``"F#"``).
+            transaction: Optional active transaction for atomic rollback.
+        """
         old_key = self._key
         self._key = key
         

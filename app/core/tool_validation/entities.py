@@ -83,114 +83,122 @@ def _resolve_and_validate_entities(
 
     # trackName → trackId resolution
     if "trackName" in resolved and "trackId" not in resolved:
-        track_name = resolved["trackName"]
-        track_id = registry.resolve_track(track_name)
-
-        if track_id:
-            resolved["trackId"] = track_id
-            logger.debug(f"🔗 Resolved trackName '{track_name}' → {track_id[:8]}")
-        else:
-            available = _track_suggestions()
-            suggestion = ""
-            if available:
-                closest = _find_closest_match(track_name, available)
-                suggestion = (
-                    f" Did you mean '{closest}'?"
-                    if closest
-                    else f" Available tracks: {', '.join(available[:5])}"
-                )
-            errors.append(ValidationError(
-                field="trackName",
-                message=f"Track '{track_name}' not found.{suggestion}",
-                code="ENTITY_NOT_FOUND",
-            ))
+        _raw_track_name = resolved["trackName"]
+        if isinstance(_raw_track_name, str):
+            track_name: str = _raw_track_name
+            track_id = registry.resolve_track(track_name)
+            if track_id:
+                resolved["trackId"] = track_id
+                logger.debug(f"🔗 Resolved trackName '{track_name}' → {track_id[:8]}")
+            else:
+                available = _track_suggestions()
+                suggestion = ""
+                if available:
+                    closest = _find_closest_match(track_name, available)
+                    suggestion = (
+                        f" Did you mean '{closest}'?"
+                        if closest
+                        else f" Available tracks: {', '.join(available[:5])}"
+                    )
+                errors.append(ValidationError(
+                    field="trackName",
+                    message=f"Track '{track_name}' not found.{suggestion}",
+                    code="ENTITY_NOT_FOUND",
+                ))
 
     skip_fields = _ENTITY_CREATING_SKIP.get(tool_name, set())
 
     # Validate trackId
     if "trackId" in resolved and "trackId" not in skip_fields:
-        track_id = resolved["trackId"]
-        if not registry.exists_track(track_id):
-            resolved_id = registry.resolve_track(track_id)
-            if resolved_id:
-                resolved["trackId"] = resolved_id
-            else:
-                available = _track_suggestions()
-                suggestion = ""
-                if available:
-                    closest = _find_closest_match(track_id, available)
-                    suggestion = (
-                        f" Did you mean '{closest}'?"
-                        if closest
-                        else f" Available: {', '.join(available[:5])}"
-                    )
-                errors.append(ValidationError(
-                    field="trackId",
-                    message=f"Track '{track_id}' not found.{suggestion}",
-                    code="ENTITY_NOT_FOUND",
-                ))
-
-    # Validate regionId
-    if "regionId" in resolved and "regionId" not in skip_fields:
-        region_id = resolved["regionId"]
-        if not registry.exists_region(region_id):
-            resolved_id = registry.resolve_region(region_id)
-            if resolved_id:
-                resolved["regionId"] = resolved_id
-            else:
-                track_id = resolved.get("trackId")
-                suggestion = ""
-                # Detect the common hallucination: LLM passed a trackId as regionId
-                if registry.exists_track(region_id):
-                    track_regions = _region_suggestions(region_id)
-                    if track_regions:
-                        suggestion = (
-                            f" NOTE: '{region_id[:8]}...' is a trackId, not a regionId."
-                            f" Use the regionId from stori_add_midi_region."
-                            f" Regions on this track: {', '.join(track_regions[:3])}"
-                        )
-                    else:
-                        suggestion = (
-                            f" NOTE: '{region_id[:8]}...' is a trackId, not a regionId."
-                            " Call stori_add_midi_region first to create a region."
-                        )
+        _raw_track_id = resolved["trackId"]
+        if isinstance(_raw_track_id, str):
+            track_id_val: str = _raw_track_id
+            if not registry.exists_track(track_id_val):
+                resolved_id = registry.resolve_track(track_id_val)
+                if resolved_id:
+                    resolved["trackId"] = resolved_id
                 else:
-                    available = _region_suggestions(track_id)
+                    available = _track_suggestions()
+                    suggestion = ""
                     if available:
-                        closest = _find_closest_match(region_id, available)
+                        closest = _find_closest_match(track_id_val, available)
                         suggestion = (
                             f" Did you mean '{closest}'?"
                             if closest
                             else f" Available: {', '.join(available[:5])}"
                         )
-                errors.append(ValidationError(
-                    field="regionId",
-                    message=f"Region '{region_id}' not found.{suggestion}",
-                    code="ENTITY_NOT_FOUND",
-                ))
+                    errors.append(ValidationError(
+                        field="trackId",
+                        message=f"Track '{track_id_val}' not found.{suggestion}",
+                        code="ENTITY_NOT_FOUND",
+                    ))
+
+    # Validate regionId
+    if "regionId" in resolved and "regionId" not in skip_fields:
+        _raw_region_id = resolved["regionId"]
+        if isinstance(_raw_region_id, str):
+            region_id: str = _raw_region_id
+            if not registry.exists_region(region_id):
+                resolved_id = registry.resolve_region(region_id)
+                if resolved_id:
+                    resolved["regionId"] = resolved_id
+                else:
+                    _raw_track_id2 = resolved.get("trackId")
+                    cur_track_id: str | None = _raw_track_id2 if isinstance(_raw_track_id2, str) else None
+                    suggestion = ""
+                    # Detect the common hallucination: LLM passed a trackId as regionId
+                    if registry.exists_track(region_id):
+                        track_regions = _region_suggestions(region_id)
+                        if track_regions:
+                            suggestion = (
+                                f" NOTE: '{region_id[:8]}...' is a trackId, not a regionId."
+                                f" Use the regionId from stori_add_midi_region."
+                                f" Regions on this track: {', '.join(track_regions[:3])}"
+                            )
+                        else:
+                            suggestion = (
+                                f" NOTE: '{region_id[:8]}...' is a trackId, not a regionId."
+                                " Call stori_add_midi_region first to create a region."
+                            )
+                    else:
+                        available = _region_suggestions(cur_track_id)
+                        if available:
+                            closest = _find_closest_match(region_id, available)
+                            suggestion = (
+                                f" Did you mean '{closest}'?"
+                                if closest
+                                else f" Available: {', '.join(available[:5])}"
+                            )
+                    errors.append(ValidationError(
+                        field="regionId",
+                        message=f"Region '{region_id}' not found.{suggestion}",
+                        code="ENTITY_NOT_FOUND",
+                    ))
 
     # Validate busId
     if "busId" in resolved and "busId" not in skip_fields:
-        bus_id = resolved["busId"]
-        if not registry.exists_bus(bus_id):
-            resolved_id = registry.resolve_bus(bus_id)
-            if resolved_id:
-                resolved["busId"] = resolved_id
-            else:
-                available = _bus_suggestions()
-                suggestion = ""
-                if available:
-                    closest = _find_closest_match(bus_id, available)
-                    suggestion = (
-                        f" Did you mean '{closest}'?"
-                        if closest
-                        else f" Available: {', '.join(available[:5])}"
-                    )
-                errors.append(ValidationError(
-                    field="busId",
-                    message=f"Bus '{bus_id}' not found.{suggestion}",
-                    code="ENTITY_NOT_FOUND",
-                ))
+        _raw_bus_id = resolved["busId"]
+        if isinstance(_raw_bus_id, str):
+            bus_id: str = _raw_bus_id
+            if not registry.exists_bus(bus_id):
+                resolved_id = registry.resolve_bus(bus_id)
+                if resolved_id:
+                    resolved["busId"] = resolved_id
+                else:
+                    available = _bus_suggestions()
+                    suggestion = ""
+                    if available:
+                        closest = _find_closest_match(bus_id, available)
+                        suggestion = (
+                            f" Did you mean '{closest}'?"
+                            if closest
+                            else f" Available: {', '.join(available[:5])}"
+                        )
+                    errors.append(ValidationError(
+                        field="busId",
+                        message=f"Bus '{bus_id}' not found.{suggestion}",
+                        code="ENTITY_NOT_FOUND",
+                    ))
 
     return {"params": resolved, "errors": errors, "warnings": warnings}
 

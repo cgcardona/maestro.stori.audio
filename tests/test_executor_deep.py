@@ -1266,7 +1266,7 @@ class TestStateStoreCCPitchBend:
 class TestVariationServiceCC:
     """Variation service propagates CC/pitch bend to phrases."""
 
-    def test_cc_events_appear_in_phrase_controller_changes(self) -> None:
+    def test_cc_events_appear_in_phrase_cc_events(self) -> None:
 
         from app.services.variation import VariationService
         svc = VariationService()
@@ -1285,16 +1285,12 @@ class TestVariationServiceCC:
             cc_events=cc,
         )
         assert len(variation.phrases) >= 1
-        # The first phrase should have a CC controller change
-        cc_changes = [
-            c for c in variation.phrases[0].controller_changes
-            if c.get("kind") == "cc"
-        ]
-        assert len(cc_changes) == 1
-        assert cc_changes[0]["cc"] == 64
-        assert cc_changes[0]["value"] == 127
+        cc_events = variation.phrases[0].cc_events
+        assert len(cc_events) == 1
+        assert cc_events[0]["cc"] == 64
+        assert cc_events[0]["value"] == 127
 
-    def test_pitch_bends_appear_in_phrase_controller_changes(self) -> None:
+    def test_pitch_bends_appear_in_phrase_pitch_bends(self) -> None:
 
         from app.services.variation import VariationService
         svc = VariationService()
@@ -1311,12 +1307,9 @@ class TestVariationServiceCC:
             intent="test",
             pitch_bends=pb,
         )
-        pb_changes = [
-            c for c in variation.phrases[0].controller_changes
-            if c.get("kind") == "pitch_bend"
-        ]
-        assert len(pb_changes) == 1
-        assert pb_changes[0]["value"] == 4096
+        pitch_bends = variation.phrases[0].pitch_bends
+        assert len(pitch_bends) == 1
+        assert pitch_bends[0]["value"] == 4096
 
     def test_multi_region_cc_per_region(self) -> None:
 
@@ -1341,10 +1334,9 @@ class TestVariationServiceCC:
             intent="test",
             region_cc=region_cc,
         )
-        # Each region should have its own CC in controller_changes
-        cc_by_region: dict[str, list[dict[str, Any]]] = {}
+        cc_by_region: dict[str, list[CCEventDict]] = {}
         for phrase in variation.phrases:
-            for c in phrase.controller_changes:
+            for c in phrase.cc_events:
                 cc_by_region.setdefault(phrase.region_id, []).append(c)
         assert 64 in [c["cc"] for c in cc_by_region.get("r1", [])]
         assert 11 in [c["cc"] for c in cc_by_region.get("r2", [])]
@@ -1356,7 +1348,7 @@ class TestApplyVariationCC:
     @pytest.mark.anyio
     async def test_cc_in_commit_response(self) -> None:
 
-        """CC data from phrase controller_changes flows to updated_regions."""
+        """CC data from phrase cc_events flows to updated_regions."""
         phrase = Phrase(
             phrase_id="p1",
             track_id="t1",
@@ -1374,10 +1366,8 @@ class TestApplyVariationCC:
                     ),
                 ),
             ],
-            controller_changes=[
-                {"kind": "cc", "cc": 64, "beat": 0.5, "value": 127},
-                {"kind": "pitch_bend", "beat": 1.0, "value": 4096},
-            ],
+            cc_events=[{"cc": 64, "beat": 0.5, "value": 127}],
+            pitch_bends=[{"beat": 1.0, "value": 4096}],
         )
         variation = _make_variation(phrases=[phrase])
 
@@ -1581,13 +1571,10 @@ class TestAftertouchPipeline:
             intent="test",
             aftertouch=at,
         )
-        at_changes = [
-            c for c in variation.phrases[0].controller_changes
-            if c.get("kind") == "aftertouch"
-        ]
-        assert len(at_changes) == 1
-        assert at_changes[0]["pitch"] == 60
-        assert at_changes[0]["value"] == 80
+        at_events = variation.phrases[0].aftertouch
+        assert len(at_events) == 1
+        assert at_events[0]["pitch"] == 60
+        assert at_events[0]["value"] == 80
 
     def test_generation_result_aftertouch_default(self) -> None:
 
@@ -1627,7 +1614,7 @@ class TestAftertouchPipeline:
     @pytest.mark.anyio
     async def test_commit_includes_aftertouch(self) -> None:
 
-        """Aftertouch in controller_changes flows to updated_regions."""
+        """Aftertouch in phrase.aftertouch flows to updated_regions."""
         phrase = Phrase(
             phrase_id="p1",
             track_id="t1",
@@ -1643,9 +1630,7 @@ class TestAftertouchPipeline:
                     after=MidiNoteSnapshot(pitch=60, start_beat=0, duration_beats=1, velocity=100),
                 ),
             ],
-            controller_changes=[
-                {"kind": "aftertouch", "beat": 0.5, "value": 80, "pitch": 60},
-            ],
+            aftertouch=[{"beat": 0.5, "value": 80, "pitch": 60}],
         )
         variation = _make_variation(phrases=[phrase])
 

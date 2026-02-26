@@ -1,4 +1,4 @@
-"""Regression tests for strict FE SSE event and tool call contracts.
+"""Regression tests for strict Maestro protocol event and tool call contracts.
 
 Every required field that is missing or malformed causes the FE to drop
 the event silently.  These tests ensure the backend never omits a
@@ -15,10 +15,32 @@ import pytest
 
 from app.contracts.generation_types import CompositionContext
 from app.contracts.json_types import NoteDict, TrackSummaryDict
-from app.core.sse_utils import sse_event
 from app.core.tool_validation.constants import (
     TOOL_REQUIRED_FIELDS,
     VALID_SF_SYMBOL_ICONS,
+)
+from app.protocol.emitter import emit
+from app.protocol.events import (
+    AgentCompleteEvent,
+    CompleteEvent,
+    ContentEvent,
+    DoneEvent,
+    ErrorEvent,
+    GeneratorCompleteEvent,
+    GeneratorStartEvent,
+    PlanEvent,
+    PlanStepSchema,
+    PlanStepUpdateEvent,
+    PreflightEvent,
+    ReasoningEndEvent,
+    ReasoningEvent,
+    StateEvent,
+    StatusEvent,
+    SummaryEvent,
+    SummaryFinalEvent,
+    ToolCallEvent,
+    ToolErrorEvent,
+    ToolStartEvent,
 )
 
 
@@ -41,36 +63,32 @@ def _parse_sse(raw: str) -> dict[str, Any]:
 class TestCompleteEventContract:
     """complete: success (required)."""
 
-    @pytest.mark.anyio
-    async def test_success_field_required(self) -> None:
+    def test_success_field_required(self) -> None:
 
-        event = await sse_event({"type": "complete", "success": True, "traceId": "t-1"})
-        payload = _parse_sse(event)
+        wire = emit(CompleteEvent(success=True, trace_id="t-1"))
+        payload = _parse_sse(wire)
         assert "success" in payload
 
-    @pytest.mark.anyio
-    async def test_success_false_on_failure(self) -> None:
+    def test_success_false_on_failure(self) -> None:
 
-        event = await sse_event({"type": "complete", "success": False, "error": "timeout", "traceId": "t-1"})
-        payload = _parse_sse(event)
+        wire = emit(CompleteEvent(success=False, error="timeout", trace_id="t-1"))
+        payload = _parse_sse(wire)
         assert payload["success"] is False
 
 
 class TestPreflightEventContract:
     """preflight: agentId, stepId, agentRole, label, toolName (required)."""
 
-    @pytest.mark.anyio
-    async def test_required_fields_present(self) -> None:
+    def test_required_fields_present(self) -> None:
 
-        event = await sse_event({
-            "type": "preflight",
-            "agentId": "drums",
-            "stepId": "step-1",
-            "agentRole": "drums",
-            "label": "Create Drums",
-            "toolName": "stori_add_track",
-        })
-        payload = _parse_sse(event)
+        wire = emit(PreflightEvent(
+            agent_id="drums",
+            step_id="step-1",
+            agent_role="drums",
+            label="Create Drums",
+            tool_name="stori_add_track",
+        ))
+        payload = _parse_sse(wire)
         assert payload["agentId"]
         assert payload["stepId"]
 
@@ -78,16 +96,14 @@ class TestPreflightEventContract:
 class TestPlanEventContract:
     """plan: planId (required, non-empty), steps[].stepId (required per step)."""
 
-    @pytest.mark.anyio
-    async def test_plan_id_required(self) -> None:
+    def test_plan_id_required(self) -> None:
 
-        event = await sse_event({
-            "type": "plan",
-            "planId": "plan-abc",
-            "title": "Test Plan",
-            "steps": [{"stepId": "s1", "label": "Step 1", "status": "pending"}],
-        })
-        payload = _parse_sse(event)
+        wire = emit(PlanEvent(
+            plan_id="plan-abc",
+            title="Test Plan",
+            steps=[PlanStepSchema(step_id="s1", label="Step 1", status="pending")],
+        ))
+        payload = _parse_sse(wire)
         assert payload["planId"]
         for step in payload.get("steps", []):
             assert step["stepId"]
@@ -96,15 +112,13 @@ class TestPlanEventContract:
 class TestPlanStepUpdateContract:
     """planStepUpdate: stepId, status (both required)."""
 
-    @pytest.mark.anyio
-    async def test_required_fields(self) -> None:
+    def test_required_fields(self) -> None:
 
-        event = await sse_event({
-            "type": "planStepUpdate",
-            "stepId": "step-1",
-            "status": "completed",
-        })
-        payload = _parse_sse(event)
+        wire = emit(PlanStepUpdateEvent(
+            step_id="step-1",
+            status="completed",
+        ))
+        payload = _parse_sse(wire)
         assert payload["stepId"]
         assert payload["status"] in ("pending", "active", "completed", "failed", "skipped")
 
@@ -112,16 +126,14 @@ class TestPlanStepUpdateContract:
 class TestToolCallEventContract:
     """toolCall: name, params (both required)."""
 
-    @pytest.mark.anyio
-    async def test_required_fields(self) -> None:
+    def test_required_fields(self) -> None:
 
-        event = await sse_event({
-            "type": "toolCall",
-            "name": "stori_set_tempo",
-            "params": {"tempo": 120},
-            "id": "call-1",
-        })
-        payload = _parse_sse(event)
+        wire = emit(ToolCallEvent(
+            name="stori_set_tempo",
+            params={"tempo": 120},
+            id="call-1",
+        ))
+        payload = _parse_sse(wire)
         assert payload["name"]
         assert isinstance(payload["params"], dict)
 
@@ -129,60 +141,52 @@ class TestToolCallEventContract:
 class TestToolStartEventContract:
     """toolStart: name (required, non-empty)."""
 
-    @pytest.mark.anyio
-    async def test_name_required(self) -> None:
+    def test_name_required(self) -> None:
 
-        event = await sse_event({
-            "type": "toolStart",
-            "name": "stori_add_midi_track",
-            "label": "Adding Drums track",
-        })
-        payload = _parse_sse(event)
+        wire = emit(ToolStartEvent(
+            name="stori_add_midi_track",
+            label="Adding Drums track",
+        ))
+        payload = _parse_sse(wire)
         assert payload["name"]
 
 
 class TestToolErrorEventContract:
     """toolError: name, error (both required, non-empty)."""
 
-    @pytest.mark.anyio
-    async def test_required_fields(self) -> None:
+    def test_required_fields(self) -> None:
 
-        event = await sse_event({
-            "type": "toolError",
-            "name": "stori_add_notes",
-            "error": "Invalid note data",
-        })
-        payload = _parse_sse(event)
+        wire = emit(ToolErrorEvent(
+            name="stori_add_notes",
+            error="Invalid note data",
+        ))
+        payload = _parse_sse(wire)
         assert payload["name"]
         assert payload["error"]
 
-    @pytest.mark.anyio
-    async def test_error_never_empty_string(self) -> None:
+    def test_error_never_empty_string(self) -> None:
 
         """toolError must never have an empty error string."""
-        event = await sse_event({
-            "type": "toolError",
-            "name": "stori_generate_midi",
-            "error": "Generation failed",
-        })
-        payload = _parse_sse(event)
+        wire = emit(ToolErrorEvent(
+            name="stori_generate_midi",
+            error="Generation failed",
+        ))
+        payload = _parse_sse(wire)
         assert payload["error"] != ""
 
 
 class TestSummaryEventContract:
     """summary: tracks, regions, notes (all required)."""
 
-    @pytest.mark.anyio
-    async def test_required_fields(self) -> None:
+    def test_required_fields(self) -> None:
 
-        event = await sse_event({
-            "type": "summary",
-            "tracks": ["Drums", "Bass"],
-            "regions": 2,
-            "notes": 64,
-            "effects": 1,
-        })
-        payload = _parse_sse(event)
+        wire = emit(SummaryEvent(
+            tracks=["Drums", "Bass"],
+            regions=2,
+            notes=64,
+            effects=1,
+        ))
+        payload = _parse_sse(wire)
         assert isinstance(payload["tracks"], list)
         assert isinstance(payload["regions"], int)
         assert isinstance(payload["notes"], int)
@@ -191,15 +195,13 @@ class TestSummaryEventContract:
 class TestSummaryFinalEventContract:
     """summary.final: tracksCreated (required)."""
 
-    @pytest.mark.anyio
-    async def test_tracks_created_required(self) -> None:
+    def test_tracks_created_required(self) -> None:
 
-        event = await sse_event({
-            "type": "summary.final",
-            "tracksCreated": [{"name": "Drums", "trackId": "abc"}],
-            "traceId": "trace-1",
-        })
-        payload = _parse_sse(event)
+        wire = emit(SummaryFinalEvent(
+            trace_id="trace-1",
+            tracks_created=[{"name": "Drums", "trackId": "abc"}],
+        ))
+        payload = _parse_sse(wire)
         assert "tracksCreated" in payload
         assert isinstance(payload["tracksCreated"], list)
 
@@ -207,50 +209,44 @@ class TestSummaryFinalEventContract:
 class TestDoneEventContract:
     """done: variationId (required, non-empty)."""
 
-    @pytest.mark.anyio
-    async def test_variation_id_required_nonempty(self) -> None:
+    def test_variation_id_required_nonempty(self) -> None:
 
         vid = str(uuid.uuid4())
-        event = await sse_event({
-            "type": "done",
-            "variationId": vid,
-            "phraseCount": 3,
-        })
-        payload = _parse_sse(event)
+        wire = emit(DoneEvent(
+            variation_id=vid,
+            phrase_count=3,
+        ))
+        payload = _parse_sse(wire)
         assert payload["variationId"]
         assert payload["variationId"] != ""
 
-    @pytest.mark.anyio
-    async def test_failure_done_still_has_variation_id(self) -> None:
+    def test_failure_done_still_has_variation_id(self) -> None:
 
         """Even on failure, done must have a non-empty variationId."""
         vid = str(uuid.uuid4())
-        event = await sse_event({
-            "type": "done",
-            "variationId": vid,
-            "phraseCount": 0,
-            "status": "failed",
-        })
-        payload = _parse_sse(event)
+        wire = emit(DoneEvent(
+            variation_id=vid,
+            phrase_count=0,
+            status="failed",
+        ))
+        payload = _parse_sse(wire)
         assert payload["variationId"] != ""
 
 
 class TestGeneratorStartContract:
     """generatorStart: role, agentId, style, bars, startBeat, label (all required)."""
 
-    @pytest.mark.anyio
-    async def test_required_fields(self) -> None:
+    def test_required_fields(self) -> None:
 
-        event = await sse_event({
-            "type": "generatorStart",
-            "role": "drums",
-            "agentId": "drums",
-            "style": "boom bap",
-            "bars": 8,
-            "startBeat": 0.0,
-            "label": "Drums",
-        })
-        payload = _parse_sse(event)
+        wire = emit(GeneratorStartEvent(
+            role="drums",
+            agent_id="drums",
+            style="boom bap",
+            bars=8,
+            start_beat=0.0,
+            label="Drums",
+        ))
+        payload = _parse_sse(wire)
         assert payload["role"]
         assert "style" in payload
         assert isinstance(payload["bars"], int)
@@ -259,17 +255,15 @@ class TestGeneratorStartContract:
 class TestGeneratorCompleteContract:
     """generatorComplete: role, agentId, noteCount, durationMs (all required)."""
 
-    @pytest.mark.anyio
-    async def test_required_fields(self) -> None:
+    def test_required_fields(self) -> None:
 
-        event = await sse_event({
-            "type": "generatorComplete",
-            "role": "drums",
-            "agentId": "drums",
-            "noteCount": 128,
-            "durationMs": 2500,
-        })
-        payload = _parse_sse(event)
+        wire = emit(GeneratorCompleteEvent(
+            role="drums",
+            agent_id="drums",
+            note_count=128,
+            duration_ms=2500,
+        ))
+        payload = _parse_sse(wire)
         assert payload["role"]
         assert isinstance(payload["noteCount"], int)
         assert isinstance(payload["durationMs"], int)
@@ -278,64 +272,57 @@ class TestGeneratorCompleteContract:
 class TestErrorEventContract:
     """error: message (required)."""
 
-    @pytest.mark.anyio
-    async def test_message_field(self) -> None:
+    def test_message_field(self) -> None:
 
-        event = await sse_event({"type": "error", "message": "Something went wrong"})
-        payload = _parse_sse(event)
+        wire = emit(ErrorEvent(message="Something went wrong"))
+        payload = _parse_sse(wire)
         assert "message" in payload
 
-    @pytest.mark.anyio
-    async def test_message_on_internal_failure(self) -> None:
+    def test_message_on_internal_failure(self) -> None:
 
-        event = await sse_event({"type": "error", "message": "Internal failure"})
-        payload = _parse_sse(event)
+        wire = emit(ErrorEvent(message="Internal failure"))
+        payload = _parse_sse(wire)
         assert payload["message"] == "Internal failure"
 
 
 class TestReasoningEventContract:
     """reasoning: content (required)."""
 
-    @pytest.mark.anyio
-    async def test_content_required(self) -> None:
+    def test_content_required(self) -> None:
 
-        event = await sse_event({"type": "reasoning", "content": "Analyzing..."})
-        payload = _parse_sse(event)
+        wire = emit(ReasoningEvent(content="Analyzing..."))
+        payload = _parse_sse(wire)
         assert "content" in payload
 
 
 class TestReasoningEndEventContract:
     """reasoningEnd: agentId required; sectionName present when applicable."""
 
-    @pytest.mark.anyio
-    async def test_instrument_agent_has_agentid(self) -> None:
+    def test_instrument_agent_has_agentid(self) -> None:
 
         """reasoningEnd for an instrument agent carries agentId, no sectionName."""
-        event = await sse_event({"type": "reasoningEnd", "agentId": "brass"})
-        payload = _parse_sse(event)
+        wire = emit(ReasoningEndEvent(agent_id="brass"))
+        payload = _parse_sse(wire)
         assert payload["type"] == "reasoningEnd"
         assert payload["agentId"] == "brass"
 
-    @pytest.mark.anyio
-    async def test_section_agent_has_agentid_and_sectionname(self) -> None:
+    def test_section_agent_has_agentid_and_sectionname(self) -> None:
 
         """reasoningEnd for a section child carries both agentId and sectionName."""
-        event = await sse_event({
-            "type": "reasoningEnd",
-            "agentId": "brass",
-            "sectionName": "verse",
-        })
-        payload = _parse_sse(event)
+        wire = emit(ReasoningEndEvent(
+            agent_id="brass",
+            section_name="verse",
+        ))
+        payload = _parse_sse(wire)
         assert payload["type"] == "reasoningEnd"
         assert payload["agentId"] == "brass"
         assert payload["sectionName"] == "verse"
 
-    @pytest.mark.anyio
-    async def test_no_content_field(self) -> None:
+    def test_no_content_field(self) -> None:
 
         """reasoningEnd carries no content — it is a lifecycle marker only."""
-        event = await sse_event({"type": "reasoningEnd", "agentId": "piano"})
-        payload = _parse_sse(event)
+        wire = emit(ReasoningEndEvent(agent_id="piano"))
+        payload = _parse_sse(wire)
         assert "content" not in payload
 
     def test_reasoning_end_emitted_after_reasoning_tokens(self) -> None:
@@ -358,39 +345,35 @@ class TestReasoningEndEventContract:
 class TestContentEventContract:
     """content: content (required)."""
 
-    @pytest.mark.anyio
-    async def test_content_required(self) -> None:
+    def test_content_required(self) -> None:
 
-        event = await sse_event({"type": "content", "content": "Here is the plan"})
-        payload = _parse_sse(event)
+        wire = emit(ContentEvent(content="Here is the plan"))
+        payload = _parse_sse(wire)
         assert "content" in payload
 
 
 class TestStateEventContract:
     """state: state, intent, confidence, traceId (required)."""
 
-    @pytest.mark.anyio
-    async def test_state_required(self) -> None:
+    def test_state_required(self) -> None:
 
-        event = await sse_event({
-            "type": "state",
-            "state": "composing",
-            "intent": "compose.generate_music",
-            "confidence": 0.95,
-            "traceId": "t-1",
-        })
-        payload = _parse_sse(event)
+        wire = emit(StateEvent(
+            state="composing",
+            intent="compose.generate_music",
+            confidence=0.95,
+            trace_id="t-1",
+        ))
+        payload = _parse_sse(wire)
         assert "state" in payload
 
 
 class TestStatusEventContract:
     """status: message (required)."""
 
-    @pytest.mark.anyio
-    async def test_message_required(self) -> None:
+    def test_message_required(self) -> None:
 
-        event = await sse_event({"type": "status", "message": "Processing..."})
-        payload = _parse_sse(event)
+        wire = emit(StatusEvent(message="Processing..."))
+        payload = _parse_sse(wire)
         assert "message" in payload
 
 
@@ -691,22 +674,22 @@ class TestAgentIdTaggingRegression:
 
         assert outcome is not None
         generator_start_events = [
-            e for e in outcome.sse_events if e.get("type") == "generatorStart"
+            e for e in outcome.sse_events if e.type == "generatorStart"
         ]
         generator_complete_events = [
-            e for e in outcome.sse_events if e.get("type") == "generatorComplete"
+            e for e in outcome.sse_events if e.type == "generatorComplete"
         ]
 
         assert len(generator_start_events) == 1, "Expected exactly one generatorStart event"
         assert len(generator_complete_events) == 1, "Expected exactly one generatorComplete event"
 
         gs = generator_start_events[0]
-        assert "agentId" in gs, f"generatorStart missing agentId: {gs}"
-        assert gs["agentId"] == "bass", f"Expected agentId='bass', got {gs['agentId']}"
+        assert isinstance(gs, GeneratorStartEvent)
+        assert gs.agent_id == "bass", f"Expected agent_id='bass', got {gs.agent_id}"
 
         gc = generator_complete_events[0]
-        assert "agentId" in gc, f"generatorComplete missing agentId: {gc}"
-        assert gc["agentId"] == "bass", f"Expected agentId='bass', got {gc['agentId']}"
+        assert isinstance(gc, GeneratorCompleteEvent)
+        assert gc.agent_id == "bass", f"Expected agent_id='bass', got {gc.agent_id}"
 
 
 class TestEffectPersistenceRegression:
@@ -806,8 +789,7 @@ class TestCompleteEventSuccessField:
 class TestSeqFieldRegression:
     """Regression: SSE events must carry monotonically increasing seq (0-based)."""
 
-    @pytest.mark.anyio
-    async def test_seq_starts_at_zero(self) -> None:
+    def test_seq_starts_at_zero(self) -> None:
 
         """The _with_seq wrapper must produce seq=0 for the first event."""
         import json as _json
@@ -824,13 +806,12 @@ class TestSeqFieldRegression:
             data["seq"] = _seq
             return f"data: {_json.dumps(data)}\n\n"
 
-        first_event = await sse_event({"type": "status", "message": "hello"})
+        first_event = emit(StatusEvent(message="hello"))
         result = _with_seq(first_event)
         payload = _parse_sse(result)
         assert payload["seq"] == 0, f"First event should have seq=0, got {payload['seq']}"
 
-    @pytest.mark.anyio
-    async def test_seq_increments_monotonically(self) -> None:
+    def test_seq_increments_monotonically(self) -> None:
 
         """Sequential events must get seq 0, 1, 2, ..."""
         import json as _json
@@ -848,7 +829,7 @@ class TestSeqFieldRegression:
             return f"data: {_json.dumps(data)}\n\n"
 
         events = [
-            await sse_event({"type": "status", "message": f"msg-{i}"})
+            emit(StatusEvent(message=f"msg-{i}"))
             for i in range(5)
         ]
         seq_values = []
@@ -939,9 +920,10 @@ class TestPhaseFieldRegression:
             add_notes_failures={},
             emit_sse=True,
         )
-        tool_start_events = [e for e in outcome.sse_events if e["type"] == "toolStart"]
+        tool_start_events = [e for e in outcome.sse_events if e.type == "toolStart"]
         assert len(tool_start_events) >= 1
-        assert tool_start_events[0]["phase"] == "setup"
+        assert isinstance(tool_start_events[0], ToolStartEvent)
+        assert tool_start_events[0].phase == "setup"
 
     @pytest.mark.anyio
     async def test_tool_call_includes_phase_and_label(self) -> None:
@@ -963,13 +945,14 @@ class TestPhaseFieldRegression:
             add_notes_failures={},
             emit_sse=True,
         )
-        tool_call_events = [e for e in outcome.sse_events if e["type"] == "toolCall"]
+        tool_call_events = [e for e in outcome.sse_events if e.type == "toolCall"]
         assert len(tool_call_events) >= 1
         tc_evt = tool_call_events[0]
-        assert "label" in tc_evt, "toolCall must include label"
-        assert "phase" in tc_evt, "toolCall must include phase"
-        assert tc_evt["phase"] == "setup"
-        assert tc_evt["label"]  # non-empty
+        assert isinstance(tc_evt, ToolCallEvent)
+        assert tc_evt.label is not None, "toolCall must include label"
+        assert tc_evt.phase is not None, "toolCall must include phase"
+        assert tc_evt.phase == "setup"
+        assert tc_evt.label
 
 
 class TestLabelOnToolCallRegression:
@@ -995,27 +978,29 @@ class TestLabelOnToolCallRegression:
             add_notes_failures={},
             emit_sse=True,
         )
-        starts = [e for e in outcome.sse_events if e["type"] == "toolStart"]
-        calls = [e for e in outcome.sse_events if e["type"] == "toolCall"]
+        starts = [e for e in outcome.sse_events if e.type == "toolStart"]
+        calls = [e for e in outcome.sse_events if e.type == "toolCall"]
         assert len(starts) >= 1
         assert len(calls) >= 1
-        assert starts[0]["label"] == calls[0]["label"], (
-            f"toolStart label '{starts[0]['label']}' != toolCall label '{calls[0]['label']}'"
+        start_0 = starts[0]
+        call_0 = calls[0]
+        assert isinstance(start_0, ToolStartEvent)
+        assert isinstance(call_0, ToolCallEvent)
+        assert start_0.label == call_0.label, (
+            f"toolStart label '{start_0.label}' != toolCall label '{call_0.label}'"
         )
 
 
 class TestAgentCompleteEventContract:
     """agentComplete: agentId, success (both required)."""
 
-    @pytest.mark.anyio
-    async def test_required_fields_present(self) -> None:
+    def test_required_fields_present(self) -> None:
 
-        event = await sse_event({
-            "type": "agentComplete",
-            "agentId": "drums",
-            "success": True,
-        })
-        payload = _parse_sse(event)
+        wire = emit(AgentCompleteEvent(
+            agent_id="drums",
+            success=True,
+        ))
+        payload = _parse_sse(wire)
         assert payload["agentId"]
         assert isinstance(payload["success"], bool)
 
@@ -1029,19 +1014,17 @@ class TestAgentCompleteEventContract:
 class TestPreflightTrackColorRegression:
     """Regression: preflight events should include trackColor from curated palette."""
 
-    @pytest.mark.anyio
-    async def test_preflight_with_track_color(self) -> None:
+    def test_preflight_with_track_color(self) -> None:
 
-        event = await sse_event({
-            "type": "preflight",
-            "stepId": "step-1",
-            "agentId": "drums",
-            "agentRole": "drums",
-            "label": "Create Drums track",
-            "toolName": "stori_add_track",
-            "trackColor": "#E85D75",
-        })
-        payload = _parse_sse(event)
+        wire = emit(PreflightEvent(
+            step_id="step-1",
+            agent_id="drums",
+            agent_role="drums",
+            label="Create Drums track",
+            tool_name="stori_add_track",
+            track_color="#E85D75",
+        ))
+        payload = _parse_sse(wire)
         assert "trackColor" in payload
         assert payload["trackColor"].startswith("#")
 
@@ -2004,7 +1987,7 @@ class TestCompleteEventAlwaysFlushed:
         from app.core.maestro_agent_teams import coordinator as coord_mod
         source = inspect.getsource(coord_mod._handle_composition_agent_team)
         assert "asyncio.sleep" in source
-        assert '"type": "complete"' in source or "'type': 'complete'" in source
+        assert "CompleteEvent" in source
 
 
 class TestLowNoteCountGuard:

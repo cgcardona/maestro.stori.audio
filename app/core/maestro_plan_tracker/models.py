@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from app.contracts.json_types import ToolCallDict
 from app.contracts.llm_types import AssistantMessage, ToolResultMessage
-from app.core.sse_utils import SSEEventInput
+from app.protocol.events import MaestroEvent
 
 
 @dataclass
@@ -34,7 +34,7 @@ class _ToolCallOutcome:
     """
     enriched_params: dict[str, object]
     tool_result: dict[str, object]
-    sse_events: list[SSEEventInput]
+    sse_events: list[MaestroEvent]
     msg_call: AssistantMessage          # assistant message containing the tool call
     msg_result: ToolResultMessage       # tool response message
     skipped: bool = False               # True when rejected by circuit-breaker or validation

@@ -12,8 +12,6 @@ import ast
 import json
 import uuid
 from pathlib import Path
-from typing import Any
-
 import pytest
 from app.contracts.json_types import NoteDict
 from collections.abc import AsyncGenerator
@@ -261,8 +259,8 @@ class TestDeterminism:
         g1 = await build_muse_log_graph(async_session, "proj-det")
         g2 = await build_muse_log_graph(async_session, "proj-det")
 
-        j1 = json.dumps(g1.to_dict(), sort_keys=True)
-        j2 = json.dumps(g2.to_dict(), sort_keys=True)
+        j1 = json.dumps(g1.to_response().model_dump(), sort_keys=True)
+        j2 = json.dumps(g2.to_response().model_dump(), sort_keys=True)
         assert j1 == j2
 
     @pytest.mark.anyio
@@ -273,13 +271,16 @@ class TestDeterminism:
         await async_session.commit()
 
         graph = await build_muse_log_graph(async_session, "proj-fields")
-        d = graph.to_dict()
+        d = graph.to_response().model_dump()
 
         assert "projectId" in d
         assert "head" in d
         assert "nodes" in d
 
-        node = d["nodes"][0]
+        nodes_list = d["nodes"]
+        assert isinstance(nodes_list, list)
+        node = nodes_list[0]
+        assert isinstance(node, dict)
         assert "id" in node
         assert "parent" in node
         assert "parent2" in node

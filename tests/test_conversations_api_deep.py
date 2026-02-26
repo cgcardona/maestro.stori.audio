@@ -169,11 +169,12 @@ class TestConversationCompose:
         create_resp = await client.post("/api/v1/conversations", json={"title": "Compose"}, headers=auth_headers)
         conv_id = create_resp.json()["id"]
 
-        async def fake_orchestrate(*args: Any, **kwargs: object) -> AsyncGenerator[str, None]:
+        async def fake_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
 
-            from app.core.sse_utils import sse_event
-            yield await sse_event({"type": "state", "state": "composing"})
-            yield await sse_event({"type": "complete", "success": True, "tool_calls": []})
+            from app.protocol.emitter import emit
+            from app.protocol.events import CompleteEvent, StateEvent
+            yield emit(StateEvent(state="composing", intent="compose", confidence=0.9, trace_id="t-0"))
+            yield emit(CompleteEvent(success=True, trace_id="t-0"))
 
         with patch("app.api.routes.conversations.messages.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(

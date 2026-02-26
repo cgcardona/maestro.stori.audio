@@ -12,13 +12,16 @@ import logging
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING, TypedDict
 
 from app.config import settings
 from app.contracts.llm_types import ChatMessage, ToolCallEntry
 from app.core.expansion import ToolCall
-from app.core.llm_client import LLMClient, LLMResponse, OpenAITool, OpenAIToolChoice, UsageStats
-from app.core.sse_utils import ReasoningBuffer, SSEEventInput
+from app.core.llm_client import LLMClient, LLMResponse, OpenAIToolChoice, UsageStats
+from app.contracts.llm_types import ToolSchemaDict
+from app.core.stream_utils import ReasoningBuffer
+from app.protocol.emitter import emit
+from app.protocol.events import ContentEvent, ReasoningEvent
 
 if TYPE_CHECKING:
     from app.core.state_store import StateStore
@@ -83,14 +86,21 @@ _VAR_REF_RE = re.compile(r"^\$(\d+)\.(\w+)$")
 # Shared utility functions
 # ---------------------------------------------------------------------------
 
+class ContextUsageFields(TypedDict):
+    """Typed return value for _context_usage_fields — enables safe ** unpacking into CompleteEvent."""
+
+    input_tokens: int
+    context_window_tokens: int
+
+
 def _context_usage_fields(
     usage_tracker: "UsageTracker" | None, model: str
-) -> dict[str, int]:
-    """Return inputTokens / contextWindowTokens for SSE complete events."""
+) -> ContextUsageFields:
+    """Return input_tokens / context_window_tokens for CompleteEvent construction."""
     from app.config import get_context_window_tokens
     return {
-        "inputTokens": usage_tracker.last_input_tokens if usage_tracker else 0,
-        "contextWindowTokens": get_context_window_tokens(model),
+        "input_tokens": usage_tracker.last_input_tokens if usage_tracker else 0,
+        "context_window_tokens": get_context_window_tokens(model),
     }
 
 
@@ -386,10 +396,9 @@ def _build_tool_result(
 async def _stream_llm_response(
     llm: LLMClient,
     messages: list[ChatMessage],
-    tools: list[OpenAITool],
+    tools: list[ToolSchemaDict],
     tool_choice: OpenAIToolChoice | None,
     trace: TraceContext,
-    emit_sse: Callable[[SSEEventInput], Awaitable[str]],
     max_tokens: int | None = None,
     reasoning_fraction: float | None = None,
     suppress_content: bool = False,
@@ -426,30 +435,18 @@ async def _stream_llm_response(
             if reasoning_text:
                 to_emit = reasoning_buf.add(reasoning_text)
                 if to_emit:
-                    yield await emit_sse({
-                        "type": "reasoning",
-                        "content": to_emit,
-                    })
+                    yield emit(ReasoningEvent(content=to_emit))
         elif chunk.get("type") == "content_delta":
             flushed = reasoning_buf.flush()
             if flushed:
-                yield await emit_sse({
-                    "type": "reasoning",
-                    "content": flushed,
-                })
+                yield emit(ReasoningEvent(content=flushed))
             content_text = chunk.get("text", "")
             if content_text and not suppress_content:
-                yield await emit_sse({
-                    "type": "content",
-                    "content": content_text,
-                })
+                yield emit(ContentEvent(content=content_text))
         elif chunk.get("type") == "done":
             flushed = reasoning_buf.flush()
             if flushed:
-                yield await emit_sse({
-                    "type": "reasoning",
-                    "content": flushed,
-                })
+                yield emit(ReasoningEvent(content=flushed))
             response_content = chunk.get("content")
             response_tool_calls = chunk.get("tool_calls", [])
             finish_reason = chunk.get("finish_reason")

@@ -149,7 +149,7 @@ class TestChatCompletionStream:
         events = []
         async for event in client.chat_completion_stream(
             messages=[{"role": "user", "content": "set tempo"}],
-            tools=[{"type": "function", "function": {"name": "stori_set_tempo"}}],
+            tools=[{"type": "function", "function": {"name": "stori_set_tempo", "description": "Set project tempo"}}],
         ):
             events.append(event)
 

@@ -28,7 +28,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +38,34 @@ EventType = Literal["meta", "phrase", "done", "error", "heartbeat"]
 
 @dataclass(frozen=True)
 class EventEnvelope:
-    """An immutable, transport-agnostic event envelope."""
+    """Immutable, transport-agnostic event envelope for all Muse/Variation events.
+
+    All envelopes are produced through ``build_envelope()`` (or the typed
+    ``build_*_envelope`` helpers) and consumed identically by the SSE stream
+    and WebSocket broadcaster.
+
+    Attributes:
+        type: Event type discriminator — one of ``meta``, ``phrase``, ``done``,
+            ``error``, or ``heartbeat``.
+        sequence: Strictly increasing integer per variation stream.  ``meta``
+            is always sequence 1; subsequent events increment from there.
+        variation_id: UUID of the variation this event belongs to.
+        project_id: UUID of the project (denormalized for client convenience).
+        base_state_id: Variation ID of the baseline at proposal time — allows
+            the client to detect mid-stream state changes.
+        payload: Event-specific JSON body; schema depends on ``type``.
+        timestamp_ms: Unix epoch milliseconds at envelope construction time.
+    """
 
     type: EventType
     sequence: int
     variation_id: str
     project_id: str
     base_state_id: str
-    payload: dict[str, Any]
+    payload: dict[str, object]
     timestamp_ms: int = field(default_factory=lambda: int(time.time() * 1000))
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize to a plain dict for JSON transport (camelCase keys)."""
         return {
             "type": self.type,
@@ -82,6 +99,7 @@ class SequenceCounter:
 
     @property
     def current(self) -> int:
+        """Current (last-emitted) sequence value; ``0`` before the first ``next()`` call."""
         return self._value
 
     def next(self) -> int:
@@ -96,7 +114,7 @@ class SequenceCounter:
 
 def build_envelope(
     event_type: EventType,
-    payload: dict[str, Any],
+    payload: dict[str, object],
     sequence: int,
     variation_id: str,
     project_id: str = "",
@@ -151,7 +169,7 @@ def build_phrase_envelope(
     project_id: str,
     base_state_id: str,
     sequence: int,
-    phrase_data: dict[str, Any],
+    phrase_data: dict[str, object],
 ) -> EventEnvelope:
     """Build a phrase envelope."""
     return build_envelope(

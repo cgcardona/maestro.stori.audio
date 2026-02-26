@@ -213,7 +213,9 @@ class TestBuilderHelpers:
         assert envelope.payload["intent"] == "make it minor"
         assert envelope.payload["aiExplanation"] == "Lowered thirds"
         assert envelope.payload["affectedTracks"] == ["track-1"]
-        assert envelope.payload["noteCounts"]["modified"] == 4
+        note_counts = envelope.payload["noteCounts"]
+        assert isinstance(note_counts, dict)
+        assert note_counts["modified"] == 4
 
     def test_build_phrase_envelope(self) -> None:
 

@@ -15,23 +15,24 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from typing import cast
 
+from app.contracts.json_types import JSONObject, JSONValue
 from app.protocol.registry import EVENT_REGISTRY
-from app.protocol.version import STORI_PROTOCOL_VERSION
+from app.protocol.version import MAESTRO_VERSION
 
 
-def _event_schemas_canonical() -> list[dict[str, Any]]:
+def _event_schemas_canonical() -> list[JSONObject]:
     """Extract JSON schemas from all registered event models, sorted by type."""
     schemas = []
     for event_type in sorted(EVENT_REGISTRY.keys()):
         model_class = EVENT_REGISTRY[event_type]
         schema = model_class.model_json_schema()
-        schemas.append({"type": event_type, "schema": schema})
+        schemas.append({"type": event_type, "schema": cast(JSONValue, schema)})
     return schemas
 
 
-def _tool_schemas_canonical() -> list[dict[str, Any]]:
+def _tool_schemas_canonical() -> list[JSONObject]:
     """Extract canonical tool schemas from the MCP registry, sorted by name."""
     from app.mcp.tools.registry import MCP_TOOLS
 
@@ -39,25 +40,25 @@ def _tool_schemas_canonical() -> list[dict[str, Any]]:
     for tool in sorted(MCP_TOOLS, key=lambda t: str(t["name"])):
         tools.append({
             "name": tool["name"],
-            "inputSchema": tool.get("inputSchema", {}),
+            "inputSchema": cast(JSONValue, tool.get("inputSchema", {})),
         })
     return tools
 
 
-def _enum_definitions_canonical() -> list[dict[str, Any]]:
+def _enum_definitions_canonical() -> list[JSONObject]:
     """Extract enum values for contract-critical enums."""
     from app.core.intent_config.enums import SSEState, Intent
 
     return [
-        {"name": "Intent", "values": sorted(m.value for m in Intent)},
-        {"name": "SSEState", "values": sorted(m.value for m in SSEState)},
+        {"name": "Intent", "values": cast(JSONValue, sorted(m.value for m in Intent))},
+        {"name": "SSEState", "values": cast(JSONValue, sorted(m.value for m in SSEState))},
     ]
 
 
 def compute_protocol_hash() -> str:
     """Compute deterministic SHA-256 hash of the entire protocol surface."""
     payload = {
-        "version": STORI_PROTOCOL_VERSION,
+        "version": MAESTRO_VERSION,
         "events": _event_schemas_canonical(),
         "tools": _tool_schemas_canonical(),
         "enums": _enum_definitions_canonical(),

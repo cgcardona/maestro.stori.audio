@@ -8,10 +8,10 @@ complete_plan.
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import pytest
 
+from app.contracts.json_types import JSONObject
 from app.core.plan_schemas import (
     GenerationStep,
     EditStep,
@@ -139,7 +139,7 @@ class TestValidatePlanJSON:
 
     def test_valid_plan(self) -> None:
 
-        raw = {
+        raw: JSONObject = {
             "generations": [
                 {"role": "drums", "style": "trap", "tempo": 120, "bars": 4},
             ],
@@ -150,7 +150,7 @@ class TestValidatePlanJSON:
 
     def test_invalid_role(self) -> None:
 
-        raw = {
+        raw: JSONObject = {
             "generations": [
                 {"role": "invalid_role", "style": "trap", "tempo": 120, "bars": 4},
             ],
@@ -161,14 +161,14 @@ class TestValidatePlanJSON:
 
     def test_empty_plan_warns(self) -> None:
 
-        raw: dict[str, Any] = {}
+        raw: JSONObject = {}
         result = validate_plan_json(raw)
         assert result.valid is True
         assert len(result.warnings) > 0
 
     def test_multiple_generations(self) -> None:
 
-        raw: dict[str, Any] = {
+        raw: JSONObject = {
             "generations": [
                 {"role": "drums", "style": "trap", "tempo": 120, "bars": 4},
                 {"role": "bass", "style": "trap", "tempo": 120, "bars": 4, "key": "Cm"},

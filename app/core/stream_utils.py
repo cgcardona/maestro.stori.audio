@@ -1,7 +1,7 @@
 """
-SSE and reasoning-display helpers for Maestro (Cursor-of-DAWs).
+Streaming and reasoning-display helpers for Maestro.
 
-Centralizes formatting of server-sent events, sanitization of LLM reasoning,
+Centralizes event sequencing, sanitization of LLM reasoning,
 and BPE token buffering so the user sees clean, properly-spaced reasoning text.
 """
 
@@ -10,16 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
 
 logger = logging.getLogger(__name__)
-
-SSEEventInput = dict[str, Any]
-"""Pre-validation SSE event dict.
-
-Pydantic ``EVENT_REGISTRY`` validates the shape at runtime, so this
-is the one place ``dict[str, Any]`` is genuinely correct.
-"""
 
 
 class SSESequencer:
@@ -56,17 +48,6 @@ class SSESequencer:
     def count(self) -> int:
         """Number of ``data:`` events sequenced so far (0-indexed last seq)."""
         return self._seq
-
-
-async def sse_event(data: dict[str, Any]) -> str:
-    """Serialize a dict as a protocol-validated SSE event.
-
-    Delegates to ``app.protocol.emitter.serialize_event`` which validates
-    the dict against the registered Pydantic model before serialization.
-    """
-    from app.protocol.emitter import serialize_event
-
-    return serialize_event(data)
 
 
 # Maximum buffer size before forced flush (safety limit)

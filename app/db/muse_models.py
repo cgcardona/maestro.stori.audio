@@ -95,7 +95,9 @@ class Phrase(Base):
     label: Mapped[str] = mapped_column(String(255), nullable=False)
     tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
-    controller_changes: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    cc_events: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    pitch_bends: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    aftertouch: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
     region_start_beat: Mapped[float | None] = mapped_column(Float, nullable=True)
     region_duration_beats: Mapped[float | None] = mapped_column(Float, nullable=True)

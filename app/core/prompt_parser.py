@@ -71,6 +71,20 @@ _POS_KEYWORDS = ("after", "before", "alongside", "between", "within", "last")
 
 @dataclass
 class TargetSpec:
+    """Scope anchor for a STORI PROMPT editing operation.
+
+    Identifies which DAW entity the operation targets.  When ``kind`` is
+    ``"track"`` or ``"region"``, ``name`` holds the human-readable label
+    (e.g. ``"Drums"``); the server resolves it to a UUID via EntityRegistry.
+
+    Attributes:
+        kind: Granularity of the target — ``"project"`` (whole project),
+            ``"selection"`` (currently selected items in the DAW),
+            ``"track"`` (named track), or ``"region"`` (named region).
+        name: Display name of the target when ``kind`` is ``"track"`` or
+            ``"region"``; ``None`` for ``"project"`` and ``"selection"``.
+    """
+
     kind: Literal["project", "selection", "track", "region"]
     name: str | None = None
 
@@ -102,6 +116,17 @@ AfterSpec = PositionSpec
 
 @dataclass
 class VibeWeight:
+    """A single vibe keyword with an optional repetition weight.
+
+    Parsed from the ``Vibe:`` block, e.g. ``dusty x3`` → ``VibeWeight("dusty", 3)``.
+    Higher weights bias the EmotionVector derivation toward that mood axis
+    (the weight is applied as a multiplier when blending vibe contributions).
+
+    Attributes:
+        vibe: Lowercase vibe keyword (e.g. ``"dusty"``, ``"driving"``, ``"warm"``).
+        weight: Repetition count from ``x<N>`` syntax; defaults to 1.
+    """
+
     vibe: str
     weight: int = 1
 
@@ -135,6 +160,12 @@ class ParsedPrompt:
 
     @property
     def has_maestro_fields(self) -> bool:
+        """True when the prompt includes unrecognised top-level YAML keys.
+
+        Unknown keys land in ``extensions`` and are injected verbatim into the
+        Maestro LLM system prompt, giving power users a direct channel to add
+        extra instructions without modifying the parser.
+        """
         return bool(self.extensions)
 
 

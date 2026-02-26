@@ -148,30 +148,37 @@ class SectionContract:
 
     @property
     def is_drum(self) -> bool:
+        """``True`` when the instrument role is a drums/drum kit part."""
         return self.role.lower() in ("drums", "drum")
 
     @property
     def is_bass(self) -> bool:
+        """``True`` when the instrument role is bass (affects MIDI channel assignment)."""
         return self.role.lower() == "bass"
 
     @property
     def start_beat(self) -> int:
+        """Absolute beat number where this section begins in the arrangement."""
         return self.section.start_beat
 
     @property
     def duration_beats(self) -> int:
+        """Total length of this section in beats."""
         return self.section.duration_beats
 
     @property
     def section_name(self) -> str:
+        """Human-readable section name (e.g. ``"verse"``, ``"chorus"``)."""
         return self.section.name
 
     @property
     def section_index(self) -> int:
+        """Zero-based index of this section in the composition's section list."""
         return self.section.index
 
     @property
     def bars(self) -> int:
+        """Length of this section in bars."""
         return self.section.bars
 
 
@@ -213,18 +220,31 @@ class InstrumentContract:
 
     @property
     def is_drum(self) -> bool:
+        """``True`` when the instrument role is a drums/drum kit part."""
         return self.role.lower() in ("drums", "drum")
 
     @property
     def is_bass(self) -> bool:
+        """``True`` when the instrument role is bass."""
         return self.role.lower() == "bass"
 
     @property
     def multi_section(self) -> bool:
+        """``True`` when this instrument spans more than one section.
+
+        Multi-section instruments dispatch parallel ``SectionContract``s so
+        children can generate each section concurrently.
+        """
         return len(self.sections) > 1
 
     @property
     def reusing_track(self) -> bool:
+        """``True`` when this instrument already has a DAW track to write into.
+
+        When ``True`` the executor skips ``stori_add_midi_track`` and writes
+        regions directly into the existing track identified by
+        ``existing_track_id``.
+        """
         return self.existing_track_id is not None
 
 

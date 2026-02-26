@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 import asyncio
 
-from app.core.sse_utils import SSEEventInput
+from app.protocol.events import MaestroEvent, ToolCallEvent
 import hashlib
 import json
 from dataclasses import fields
@@ -224,7 +224,7 @@ class TestHashTamper:
         assert not verify_contract_hash(sc)
 
         store = StateStore(conversation_id="tamper-test")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         print("\n## HASH_TAMPER_TEST")
         print(f"Original tempo: 92.0")
@@ -266,7 +266,7 @@ class TestHashTamper:
         )
 
         store = StateStore(conversation_id="no-hash-test")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         with pytest.raises(ValueError, match="Protocol violation.*no contract_hash"):
             await _run_section_child(
@@ -307,7 +307,7 @@ class TestSingleSectionLockdown:
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
-                    sse_events=[{"type": "toolCall", "name": tc_name}],
+                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
                     msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             if tc_name == "stori_generate_midi":
@@ -315,7 +315,7 @@ class TestSingleSectionLockdown:
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"notesAdded": 20, "regionId": "reg-1"},
-                    sse_events=[{"type": "toolCall", "name": tc_name}],
+                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
                     msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
@@ -325,7 +325,7 @@ class TestSingleSectionLockdown:
             )
 
         store = StateStore(conversation_id="lockdown-test")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         bad_region_tc = ToolCall(
             id="r1", name="stori_add_midi_region",
@@ -405,7 +405,7 @@ class TestRuntimeContextFreeze:
         ctx = RuntimeContext(raw_prompt="test", emotion_vector=frozen)
 
         with pytest.raises(TypeError):
-            ctx.emotion_vector[0][1] = 999  # type: ignore[index]
+            ctx.emotion_vector[0][1] = 999  # type: ignore[index]  # intentional: proving tuple immutability raises TypeError
 
         print("Mutation ctx.emotion_vector[0][1] = 999 → TypeError ✓")
 
@@ -542,18 +542,18 @@ class TestExecutionAttestation:
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
-                    sse_events=[{"type": "toolCall", "name": tc_name}],
+                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
                     msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={"notesAdded": 30, "regionId": "reg-1"},
-                sse_events=[{"type": "toolCall", "name": tc_name}],
+                sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
                 msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
         store = StateStore(conversation_id="attest-test")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",

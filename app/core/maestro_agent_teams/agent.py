@@ -14,15 +14,21 @@ import asyncio
 import json
 import logging
 import uuid as _uuid_mod
-from typing import Any
-
 from app.contracts.generation_types import CompositionContext
 from app.contracts.json_types import NoteDict, SectionDict, SectionSummaryDict, ToolCallDict
-from app.contracts.llm_types import ChatMessage, ToolCallEntry
+from app.contracts.llm_types import ChatMessage, ToolCallEntry, UsageStats
 from app.config import settings
 from app.core.expansion import ToolCall
 from app.core.llm_client import LLMClient, LLMResponse
-from app.core.sse_utils import ReasoningBuffer, SSEEventInput
+from app.core.stream_utils import ReasoningBuffer
+from app.protocol.events import (
+    AgentCompleteEvent,
+    PlanStepUpdateEvent,
+    ReasoningEndEvent,
+    ReasoningEvent,
+    MaestroEvent,
+    ToolErrorEvent,
+)
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
 from app.core.tools import ALL_TOOLS
@@ -72,7 +78,7 @@ async def _run_instrument_agent(
     store: StateStore,
     allowed_tool_names: set[str] | frozenset[str],
     trace: TraceContext,
-    sse_queue: "asyncio.Queue[SSEEventInput]",
+    sse_queue: "asyncio.Queue[MaestroEvent]",
     collected_tool_calls: list[ToolCallDict],
     existing_track_id: str | None = None,
     start_beat: int = 0,
@@ -106,13 +112,12 @@ async def _run_instrument_agent(
             step = next((s for s in plan_tracker.steps if s.step_id == step_id), None)
             if step and step.status in ("pending", "active"):
                 step.status = "failed"
-                await sse_queue.put({
-                    "type": "planStepUpdate",
-                    "stepId": step_id,
-                    "status": "failed",
-                    "result": reason,
-                    "agentId": _agent_id,
-                })
+                await sse_queue.put(PlanStepUpdateEvent(
+                    step_id=step_id,
+                    status="failed",
+                    result=reason,
+                    agent_id=_agent_id,
+                ))
 
     _agent_success = False
     try:
@@ -146,11 +151,10 @@ async def _run_instrument_agent(
         logger.exception(f"{agent_log} Unhandled agent error: {exc}")
         await _fail_all_steps(f"Failed: {exc}")
     finally:
-        await sse_queue.put({
-            "type": "agentComplete",
-            "agentId": _agent_id,
-            "success": _agent_success,
-        })
+        await sse_queue.put(AgentCompleteEvent(
+            agent_id=_agent_id,
+            success=_agent_success,
+        ))
 
 
 async def _run_instrument_agent_inner(
@@ -166,7 +170,7 @@ async def _run_instrument_agent_inner(
     store: StateStore,
     allowed_tool_names: set[str] | frozenset[str],
     trace: TraceContext,
-    sse_queue: "asyncio.Queue[SSEEventInput]",
+    sse_queue: "asyncio.Queue[MaestroEvent]",
     collected_tool_calls: list[ToolCallDict],
     existing_track_id: str | None,
     start_beat: int,
@@ -415,7 +419,7 @@ async def _run_instrument_agent_inner(
 
     add_notes_failures: dict[str, int] = {}
     active_step_id: str | None = None
-    all_tool_results: list[dict[str, Any]] = []  # boundary: LLM tool result messages
+    all_tool_results: list[dict[str, object]] = []
 
     # Server-owned retries handle *failed* section children inside
     # _dispatch_section_children.  However the LLM must actually emit the
@@ -538,9 +542,9 @@ async def _run_instrument_agent_inner(
         _llm_start = asyncio.get_event_loop().time()
         try:
             _resp_content: str | None = None
-            _resp_tool_calls: list[dict[str, Any]] = []  # boundary: OpenAI message format
+            _resp_tool_calls: list[ToolCallEntry] = []
             _resp_finish: str | None = None
-            _resp_usage: dict[str, Any] = {}  # boundary: OpenAI message format
+            _resp_usage: UsageStats = {}
             _rbuf = ReasoningBuffer()
             _had_reasoning = False
 
@@ -558,34 +562,30 @@ async def _run_instrument_agent_inner(
                         _word = _rbuf.add(_text)
                         if _word:
                             _had_reasoning = True
-                            await sse_queue.put({
-                                "type": "reasoning",
-                                "content": _word,
-                                "agentId": _agent_id,
-                            })
+                            await sse_queue.put(ReasoningEvent(
+                                content=_word,
+                                agent_id=_agent_id,
+                            ))
                 elif _ct == "content_delta":
                     _flush = _rbuf.flush()
                     if _flush:
                         _had_reasoning = True
-                        await sse_queue.put({
-                            "type": "reasoning",
-                            "content": _flush,
-                            "agentId": _agent_id,
-                        })
+                        await sse_queue.put(ReasoningEvent(
+                            content=_flush,
+                            agent_id=_agent_id,
+                        ))
                 elif _ct == "done":
                     _flush = _rbuf.flush()
                     if _flush:
                         _had_reasoning = True
-                        await sse_queue.put({
-                            "type": "reasoning",
-                            "content": _flush,
-                            "agentId": _agent_id,
-                        })
+                        await sse_queue.put(ReasoningEvent(
+                            content=_flush,
+                            agent_id=_agent_id,
+                        ))
                     if _had_reasoning:
-                        await sse_queue.put({
-                            "type": "reasoningEnd",
-                            "agentId": _agent_id,
-                        })
+                        await sse_queue.put(ReasoningEndEvent(
+                            agent_id=_agent_id,
+                        ))
                     _resp_content = _chunk.get("content")
                     _resp_tool_calls = _chunk.get("tool_calls", [])
                     _resp_finish = _chunk.get("finish_reason")
@@ -598,13 +598,13 @@ async def _run_instrument_agent_inner(
             )
             for _tc in _resp_tool_calls:
                 try:
-                    _args = _tc.get("function", {}).get("arguments", "{}")
-                    if isinstance(_args, str):
-                        _args = json.loads(_args) if _args else {}
+                    _fn = _tc["function"]
+                    _args_str = _fn["arguments"]
+                    _parsed_args: dict[str, object] = json.loads(_args_str) if _args_str else {}
                     response.tool_calls.append(ToolCall(
-                        id=_tc.get("id", ""),
-                        name=_tc.get("function", {}).get("name", ""),
-                        params=_args,
+                        id=_tc["id"],
+                        name=_fn["name"],
+                        params=_parsed_args,
                     ))
                 except Exception as _parse_err:
                     logger.error(f"{agent_log} Error parsing tool call: {_parse_err}")
@@ -617,13 +617,12 @@ async def _run_instrument_agent_inner(
                 step = next((s for s in plan_tracker.steps if s.step_id == step_id), None)
                 if step and step.status in ("pending", "active"):
                     step.status = "failed"
-                    await sse_queue.put({
-                        "type": "planStepUpdate",
-                        "stepId": step_id,
-                        "status": "failed",
-                        "result": f"Failed: {exc}",
-                        "agentId": _agent_id,
-                    })
+                    await sse_queue.put(PlanStepUpdateEvent(
+                        step_id=step_id,
+                        status="failed",
+                        result=f"Failed: {exc}",
+                        agent_id=_agent_id,
+                    ))
             return False
 
         _llm_elapsed = asyncio.get_event_loop().time() - _llm_start
@@ -759,11 +758,11 @@ async def _run_instrument_agent_inner(
 
                 if desired_step_id and desired_step_id != active_step_id:
                     if active_step_id:
-                        evt = plan_tracker.complete_step_by_id(active_step_id)
-                        if evt:
-                            await sse_queue.put({**evt, "agentId": _agent_id})
-                    activate_evt = plan_tracker.activate_step(desired_step_id)
-                    await sse_queue.put({**activate_evt, "agentId": _agent_id})
+                        _step_evt = plan_tracker.complete_step_by_id(active_step_id)
+                        if _step_evt:
+                            await sse_queue.put(_step_evt.model_copy(update={"agent_id": _agent_id}))
+                    _activate_evt = plan_tracker.activate_step(desired_step_id)
+                    await sse_queue.put(_activate_evt.model_copy(update={"agent_id": _agent_id}))
                     active_step_id = desired_step_id
 
                 if tc.name in _GENERATOR_TOOL_NAMES and _regions_ok == 0:
@@ -802,10 +801,10 @@ async def _run_instrument_agent_inner(
                         key=key,
                     )
 
-                async def _pre_emit_fallback(events: list[SSEEventInput]) -> None:
+                async def _pre_emit_fallback(events: list[MaestroEvent]) -> None:
                     for evt in events:
-                        if evt.get("type") in _AGENT_TAGGED_EVENTS:
-                            evt = {**evt, "agentId": _agent_id}
+                        if hasattr(evt, "agent_id") and evt.agent_id is None:
+                            evt = evt.model_copy(update={"agent_id": _agent_id})
                         await sse_queue.put(evt)
 
                 outcome = await _apply_single_tool_call(
@@ -822,8 +821,8 @@ async def _run_instrument_agent_inner(
                 )
 
                 for evt in outcome.sse_events:
-                    if evt.get("type") in _AGENT_TAGGED_EVENTS:
-                        evt = {**evt, "agentId": _agent_id}
+                    if hasattr(evt, "agent_id") and evt.agent_id is None:
+                        evt = evt.model_copy(update={"agent_id": _agent_id})
                     await sse_queue.put(evt)
 
                 if not outcome.skipped and active_step_id:
@@ -870,21 +869,20 @@ async def _run_instrument_agent_inner(
                     f"{agent_log} ⚠️ Storpheus circuit breaker is open — "
                     f"stopping retries (would waste tokens)"
                 )
-                await sse_queue.put({
-                    "type": "toolError",
-                    "name": "stori_generate_midi",
-                    "error": (
+                await sse_queue.put(ToolErrorEvent(
+                    name="stori_generate_midi",
+                    error=(
                         "Storpheus music service is unavailable. "
                         "Generation cannot proceed."
                     ),
-                    "agentId": _agent_id,
-                })
+                    agent_id=_agent_id,
+                ))
                 break
 
     if active_step_id:
-        evt = plan_tracker.complete_step_by_id(active_step_id)
-        if evt:
-            await sse_queue.put({**evt, "agentId": _agent_id})
+        _step_evt = plan_tracker.complete_step_by_id(active_step_id)
+        if _step_evt:
+            await sse_queue.put(_step_evt.model_copy(update={"agent_id": _agent_id}))
 
     # Return whether any MIDI was actually generated — not just whether
     # the agent loop completed without crashing.  The outer function uses
@@ -908,10 +906,10 @@ async def _dispatch_section_children(
     allowed_tool_names: set[str] | frozenset[str],
     store: StateStore,
     trace: TraceContext,
-    sse_queue: "asyncio.Queue[SSEEventInput]",
+    sse_queue: "asyncio.Queue[MaestroEvent]",
     instrument_contract: InstrumentContract | None = None,
     collected_tool_calls: list[ToolCallDict],
-    all_tool_results: list[dict[str, Any]],  # boundary: LLM tool result messages
+    all_tool_results: list[dict[str, object]],
     add_notes_failures: dict[str, int],
     runtime_context: RuntimeContext | None,
     execution_services: ExecutionServices | None = None,
@@ -978,11 +976,11 @@ async def _dispatch_section_children(
 
         if step_ids and step_ids[0] != active_step_id:
             if active_step_id:
-                evt = plan_tracker.complete_step_by_id(active_step_id)
-                if evt:
-                    await sse_queue.put({**evt, "agentId": agent_id})
-            activate_evt = plan_tracker.activate_step(step_ids[0])
-            await sse_queue.put({**activate_evt, "agentId": agent_id})
+                _step_evt = plan_tracker.complete_step_by_id(active_step_id)
+                if _step_evt:
+                    await sse_queue.put(_step_evt.model_copy(update={"agent_id": agent_id}))
+            _activate_evt = plan_tracker.activate_step(step_ids[0])
+            await sse_queue.put(_activate_evt.model_copy(update={"agent_id": agent_id}))
             active_step_id = step_ids[0]
 
         outcome = await _apply_single_tool_call(
@@ -996,8 +994,8 @@ async def _dispatch_section_children(
             emit_sse=True,
         )
         for evt in outcome.sse_events:
-            if evt.get("type") in _AGENT_TAGGED:
-                evt = {**evt, "agentId": agent_id}
+            if hasattr(evt, "agent_id") and evt.agent_id is None:
+                evt = evt.model_copy(update={"agent_id": agent_id})
             await sse_queue.put(evt)
 
         stage_track = True
@@ -1015,9 +1013,9 @@ async def _dispatch_section_children(
     real_track_id = existing_track_id
     if not real_track_id:
         for tr in all_tool_results:
-            tid = tr.get("trackId")
-            if tid:
-                real_track_id = tid
+            _tid = tr.get("trackId")
+            if isinstance(_tid, str) and _tid:
+                real_track_id = _tid
                 break
 
     if not real_track_id:
@@ -1034,11 +1032,11 @@ async def _dispatch_section_children(
     content_step_id = step_ids[1] if len(step_ids) > 1 else (step_ids[0] if step_ids else None)
     if content_step_id and content_step_id != active_step_id:
         if active_step_id:
-            evt = plan_tracker.complete_step_by_id(active_step_id)
-            if evt:
-                await sse_queue.put({**evt, "agentId": agent_id})
-        activate_evt = plan_tracker.activate_step(content_step_id)
-        await sse_queue.put({**activate_evt, "agentId": agent_id})
+            _step_evt = plan_tracker.complete_step_by_id(active_step_id)
+            if _step_evt:
+                await sse_queue.put(_step_evt.model_copy(update={"agent_id": agent_id}))
+        _activate_evt = plan_tracker.activate_step(content_step_id)
+        await sse_queue.put(_activate_evt.model_copy(update={"agent_id": agent_id}))
 
     # ── Pair region + generate calls into section groups ──
     logger.info(
@@ -1074,8 +1072,8 @@ async def _dispatch_section_children(
             emit_sse=True,
         )
         for evt in outcome.sse_events:
-            if evt.get("type") in _AGENT_TAGGED:
-                evt = {**evt, "agentId": agent_id}
+            if hasattr(evt, "agent_id") and evt.agent_id is None:
+                evt = evt.model_copy(update={"agent_id": agent_id})
             await sse_queue.put(evt)
 
         regions_completed += 1
@@ -1115,10 +1113,10 @@ async def _dispatch_section_children(
             key=key,
         )
 
-    async def _pre_emit_orphan(events: list[SSEEventInput]) -> None:
+    async def _pre_emit_orphan(events: list[MaestroEvent]) -> None:
         for evt in events:
-            if evt.get("type") in _AGENT_TAGGED:
-                evt = {**evt, "agentId": agent_id}
+            if hasattr(evt, "agent_id") and evt.agent_id is None:
+                evt = evt.model_copy(update={"agent_id": agent_id})
             await sse_queue.put(evt)
 
     for _oi, tc in enumerate(orphaned_generates):
@@ -1145,8 +1143,8 @@ async def _dispatch_section_children(
             pre_emit_callback=_pre_emit_orphan,
         )
         for evt in outcome.sse_events:
-            if evt.get("type") in _AGENT_TAGGED:
-                evt = {**evt, "agentId": agent_id}
+            if hasattr(evt, "agent_id") and evt.agent_id is None:
+                evt = evt.model_copy(update={"agent_id": agent_id})
             await sse_queue.put(evt)
 
         generates_completed += 1
@@ -1530,8 +1528,8 @@ async def _dispatch_section_children(
             emit_sse=True,
         )
         for evt in outcome.sse_events:
-            if evt.get("type") in _AGENT_TAGGED:
-                evt = {**evt, "agentId": agent_id}
+            if hasattr(evt, "agent_id") and evt.agent_id is None:
+                evt = evt.model_copy(update={"agent_id": agent_id})
             await sse_queue.put(evt)
 
         stage_effect = True
@@ -1562,8 +1560,8 @@ async def _dispatch_section_children(
             emit_sse=True,
         )
         for evt in outcome.sse_events:
-            if evt.get("type") in _AGENT_TAGGED:
-                evt = {**evt, "agentId": agent_id}
+            if hasattr(evt, "agent_id") and evt.agent_id is None:
+                evt = evt.model_copy(update={"agent_id": agent_id})
             await sse_queue.put(evt)
 
         all_tool_results.append(outcome.tool_result)
@@ -1591,8 +1589,8 @@ async def _dispatch_section_children(
             )
             if _child_failures:
                 _result_text += f" ({_child_failures} failed)"
-            _done_evt = plan_tracker.complete_step_by_id(content_step_id, _result_text)
-            await sse_queue.put({**_done_evt, "agentId": agent_id})
+            _step_done = plan_tracker.complete_step_by_id(content_step_id, _result_text)
+            await sse_queue.put(_step_done.model_copy(update={"agent_id": agent_id}))
 
     return (
         tool_result_msgs,

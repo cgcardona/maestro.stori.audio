@@ -25,9 +25,12 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+
+from app.models.base import CamelModel
 
 from app.config import settings
 from app.contracts.project_types import ProjectContext
@@ -47,8 +50,9 @@ from app.core.composition_limiter import (
 from app.core.intent import get_intent_result_with_llm, SSEState
 from app.core.llm_client import LLMClient
 from app.core.planner import preview_plan
-from app.core.sse_utils import sse_event, SSESequencer
-from app.protocol.emitter import ProtocolSerializationError
+from app.core.stream_utils import SSESequencer
+from app.protocol.emitter import ProtocolSerializationError, emit
+from app.protocol.events import CompleteEvent, ErrorEvent
 from app.auth.dependencies import TokenClaims, require_valid_token
 from app.db import get_db
 from app.services.budget import (
@@ -66,24 +70,190 @@ logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 
 
+# ── Response models ───────────────────────────────────────────────────────
+
+
+class ValidateTokenResponse(CamelModel):
+    """JWT validation result returned by ``GET /validate-token``.
+
+    Confirms that the bearer token is valid and not expired.  When the token's
+    ``sub`` claim resolves to a known user, budget fields are also populated
+    so the DAW can display a live credit balance without a separate request.
+
+    Wire format: camelCase (via ``CamelModel``).
+
+    Attributes:
+        valid: Always ``True`` — the endpoint raises ``401`` rather than
+            returning ``False`` for invalid tokens.
+        expires_at: ISO-8601 UTC timestamp at which the token expires
+            (e.g. ``"2026-03-01T12:00:00+00:00"``).
+        expires_in_seconds: Seconds remaining until token expiry, clamped to
+            ``0`` if the token is already past its ``exp`` claim.
+        budget_remaining: Credit balance remaining for this user (in cents),
+            or ``None`` if the user record could not be fetched.
+        budget_limit: Maximum credit balance for this user (in cents), or
+            ``None`` if the user record could not be fetched.
+    """
+
+    valid: bool = Field(
+        description=(
+            "Always True — the endpoint raises 401 rather than returning False "
+            "for invalid tokens."
+        )
+    )
+    expires_at: str = Field(
+        description="ISO-8601 UTC timestamp at which the token expires."
+    )
+    expires_in_seconds: int = Field(
+        description="Seconds remaining until token expiry, clamped to 0 if already past exp."
+    )
+    budget_remaining: float | None = Field(
+        default=None,
+        description=(
+            "Credit balance remaining for this user (in cents), "
+            "or None if the user record could not be fetched."
+        ),
+    )
+    budget_limit: float | None = Field(
+        default=None,
+        description=(
+            "Maximum credit balance for this user (in cents), "
+            "or None if the user record could not be fetched."
+        ),
+    )
+
+
+class PlanPreviewResponse(CamelModel):
+    """Execution plan produced by ``POST /maestro/preview`` (without executing).
+
+    Populated from ``PlanPreview`` (a ``TypedDict``) returned by
+    ``preview_plan()``.  All fields are optional because the planner may
+    produce an empty or invalid plan when the intent is unrecognised.
+
+    Wire format: camelCase (via ``CamelModel``).
+
+    Attributes:
+        valid: ``True`` if the plan passed validation; ``False`` if it has
+            structural errors (e.g. references unknown entities).
+        total_steps: Total number of tool-call steps in the plan.
+        generations: Number of generator tool calls (Tier 1 — audio
+            generation) in the plan.
+        edits: Number of editor tool calls (Tier 2 — MIDI / structure edits)
+            in the plan.
+        tool_calls: Ordered list of tool-call descriptors as raw dicts,
+            each with keys ``name``, ``arguments``, and optional metadata.
+        notes: Human-readable annotations produced by the planner (e.g.
+            ``"Detected 4/4 time signature from prompt"``).
+        errors: Validation errors that make the plan invalid or unexecutable.
+        warnings: Non-fatal warnings (e.g. ``"Region ID not found in project"``).
+    """
+
+    valid: bool | None = Field(
+        default=None,
+        description="True if the plan passed validation; False if it has structural errors.",
+    )
+    total_steps: int | None = Field(
+        default=None,
+        description="Total number of tool-call steps in the plan.",
+    )
+    generations: int | None = Field(
+        default=None,
+        description="Number of generator tool calls (Tier 1 — audio generation) in the plan.",
+    )
+    edits: int | None = Field(
+        default=None,
+        description="Number of editor tool calls (Tier 2 — MIDI / structure edits) in the plan.",
+    )
+    tool_calls: list[dict[str, object]] = Field(
+        default_factory=list,
+        description=(
+            "Ordered list of tool-call descriptors as raw dicts, "
+            "each with keys 'name', 'arguments', and optional metadata."
+        ),
+    )
+    notes: list[str] = Field(
+        default_factory=list,
+        description="Human-readable annotations produced by the planner.",
+    )
+    errors: list[str] = Field(
+        default_factory=list,
+        description="Validation errors that make the plan invalid or unexecutable.",
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Non-fatal warnings (e.g. 'Region ID not found in project').",
+    )
+
+
+class PreviewMaestroResponse(CamelModel):
+    """Response from ``POST /maestro/preview``.
+
+    Top-level envelope for a plan preview.  When ``preview_available`` is
+    ``True``, the ``preview`` field contains the full ``PlanPreviewResponse``.
+    When ``False``, ``reason`` explains why a preview could not be produced
+    (e.g. the prompt was classified as REASONING rather than COMPOSING).
+
+    Wire format: camelCase (via ``CamelModel``).
+
+    Attributes:
+        preview_available: ``True`` if a plan was generated and is included in
+            ``preview``; ``False`` if the prompt's intent does not support
+            previews (i.e. is not ``COMPOSING``).
+        intent: The classified intent value for the prompt (e.g.
+            ``"COMPOSING"``, ``"REASONING"``, ``"EDITING"``).
+        sse_state: The SSE state string corresponding to the intent (e.g.
+            ``"composing"``, ``"reasoning"``).  Used by the DAW to display the
+            correct UI mode.
+        reason: Human-readable explanation of why ``preview_available`` is
+            ``False`` (e.g. ``"Preview only available for COMPOSING mode"``).
+            ``None`` when ``preview_available`` is ``True``.
+        preview: The generated execution plan, or ``None`` if
+            ``preview_available`` is ``False``.
+    """
+
+    preview_available: bool = Field(
+        description=(
+            "True if a plan was generated and is included in 'preview'; "
+            "False if the prompt's intent does not support previews."
+        )
+    )
+    intent: str = Field(
+        description="Classified intent value for the prompt (e.g. 'COMPOSING', 'REASONING')."
+    )
+    sse_state: str = Field(
+        description=(
+            "SSE state string corresponding to the intent "
+            "(e.g. 'composing', 'reasoning'). Used by the DAW to display the correct UI mode."
+        )
+    )
+    reason: str | None = Field(
+        default=None,
+        description=(
+            "Human-readable explanation of why preview_available is False. "
+            "None when preview_available is True."
+        ),
+    )
+    preview: PlanPreviewResponse | None = Field(
+        default=None,
+        description="The generated execution plan, or None if preview_available is False.",
+    )
+
+
 # =============================================================================
 # API Endpoints
 # =============================================================================
 
-@router.get("/validate-token")
+@router.get("/validate-token", response_model_by_alias=True)
 async def validate_token(
     token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, object]:
+) -> ValidateTokenResponse:
     """Validate access token and return budget info."""
     exp_timestamp = token_claims.get("exp", 0)
     expires_at = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
 
-    response = {
-        "valid": True,
-        "expiresAt": expires_at.isoformat(),
-        "expiresInSeconds": max(0, exp_timestamp - int(datetime.now(timezone.utc).timestamp())),
-    }
+    budget_remaining: float | None = None
+    budget_limit: float | None = None
 
     user_id = token_claims.get("sub")
     if user_id:
@@ -95,12 +265,18 @@ async def validate_token(
             user = result.scalar_one_or_none()
 
             if user:
-                response["budgetRemaining"] = user.budget_remaining
-                response["budgetLimit"] = user.budget_limit
+                budget_remaining = user.budget_remaining
+                budget_limit = user.budget_limit
         except Exception as e:
             logger.warning(f"Could not fetch budget: {e}")
 
-    return response
+    return ValidateTokenResponse(
+        valid=True,
+        expires_at=expires_at.isoformat(),
+        expires_in_seconds=max(0, exp_timestamp - int(datetime.now(timezone.utc).timestamp())),
+        budget_remaining=budget_remaining,
+        budget_limit=budget_limit,
+    )
 
 
 @router.post("/maestro/stream")
@@ -240,32 +416,30 @@ async def stream_maestro(
 
         except CompositionLimitExceeded as e:
             logger.warning(f"⚠️ {e}")
-            yield sequencer(await sse_event({"type": "error", "message": str(e)}))
-            yield sequencer(await sse_event({
-                "type": "complete",
-                "success": False,
-                "error": f"Too many concurrent compositions (limit: {e.limit})",
-                "traceId": "composition-limit",
-            }))
+            yield sequencer(emit(ErrorEvent(message=str(e))))
+            yield sequencer(emit(CompleteEvent(
+                success=False,
+                error=f"Too many concurrent compositions (limit: {e.limit})",
+                trace_id="composition-limit",
+            )))
         except ProtocolSerializationError as e:
             _elapsed = _time.monotonic() - _stream_start
             logger.error(
                 f"❌ Protocol serialization failure after {_elapsed:.1f}s, "
                 f"{sequencer.count} events: {e}"
             )
-            yield sequencer(await sse_event({"type": "error", "message": "Protocol serialization failure"}))
-            yield sequencer(await sse_event({
-                "type": "complete",
-                "success": False,
-                "error": str(e),
-                "traceId": "protocol-error",
-            }))
+            yield sequencer(emit(ErrorEvent(message="Protocol serialization failure")))
+            yield sequencer(emit(CompleteEvent(
+                success=False,
+                error=str(e),
+                trace_id="protocol-error",
+            )))
         except Exception as e:
             _elapsed = _time.monotonic() - _stream_start
             logger.exception(
                 f"❌ SSE stream error after {_elapsed:.1f}s, {sequencer.count} events: {e}"
             )
-            yield sequencer(await sse_event({"type": "error", "message": str(e)}))
+            yield sequencer(emit(ErrorEvent(message=str(e))))
 
     headers = {
         "Cache-Control": "no-cache",
@@ -280,14 +454,14 @@ async def stream_maestro(
     )
 
 
-@router.post("/maestro/preview")
+@router.post("/maestro/preview", response_model_by_alias=True)
 @limiter.limit("30/minute")
 async def preview_maestro(
     request: Request,
     maestro_request: MaestroRequest,
     token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, object]:
+) -> PreviewMaestroResponse:
     """
     Preview a composition plan without executing.
 
@@ -306,12 +480,12 @@ async def preview_maestro(
         )
 
         if route.sse_state != SSEState.COMPOSING:
-            return {
-                "previewAvailable": False,
-                "reason": f"Preview only available for COMPOSING mode (got {route.sse_state.value})",
-                "intent": route.intent.value,
-                "sseState": route.sse_state.value,
-            }
+            return PreviewMaestroResponse(
+                preview_available=False,
+                reason=f"Preview only available for COMPOSING mode (got {route.sse_state.value})",
+                intent=route.intent.value,
+                sse_state=route.sse_state.value,
+            )
 
         preview_result = await preview_plan(
             safe_prompt,
@@ -320,12 +494,12 @@ async def preview_maestro(
             llm
         )
 
-        return {
-            "previewAvailable": True,
-            "preview": preview_result,
-            "intent": route.intent.value,
-            "sseState": route.sse_state.value,
-        }
+        return PreviewMaestroResponse(
+            preview_available=True,
+            intent=route.intent.value,
+            sse_state=route.sse_state.value,
+            preview=PlanPreviewResponse(**preview_result),
+        )
 
     finally:
         await llm.close()

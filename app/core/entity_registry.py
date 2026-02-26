@@ -51,6 +51,13 @@ class EntityMetadata:
 
     @classmethod
     def from_dict(cls, raw: dict[str, object] | None) -> EntityMetadata:
+        """Construct an ``EntityMetadata`` from a raw camelCase dict (DAW wire format).
+
+        Accepts the same shapes the DAW sends in tool-call params and project
+        context snapshots.  Unknown keys with scalar values are preserved in
+        ``extra`` for round-trip fidelity.  Returns an empty instance when
+        ``raw`` is ``None`` or empty.
+        """
         if not raw:
             return cls()
         known = {"startBeat", "durationBeats", "instrument", "color"}
@@ -66,6 +73,11 @@ class EntityMetadata:
         )
 
     def to_dict(self) -> dict[str, str | int | float]:
+        """Serialise to a camelCase dict, omitting zero/empty fields.
+
+        Produces the same key names that ``from_dict`` accepts, making the
+        round-trip lossless for any scalar values stored in ``extra``.
+        """
         d: dict[str, str | int | float] = {}
         if self.start_beat:
             d["startBeat"] = self.start_beat
@@ -94,7 +106,29 @@ class EntityMetadata:
 
 @dataclass
 class EntityInfo:
-    """Information about a registered entity."""
+    """A registered DAW entity (track, region, or bus) as stored in the registry.
+
+    Created by ``EntityRegistry.register_track/region/bus`` and returned by
+    all lookup methods.  The ``id`` field is the server-generated UUID that
+    the rest of the pipeline uses to reference this entity.
+
+    Attributes:
+        id: Server-generated UUID — the canonical reference for this entity
+            in all tool calls, SSE events, and variation payloads.
+        entity_type: Discriminant; one of ``EntityType.TRACK``, ``REGION``,
+            ``BUS``, or ``PROJECT``.
+        name: Human-readable display name (e.g. ``"Drums"``, ``"Verse Region"``).
+        created_at: UTC timestamp of when this entity was registered in the store.
+        metadata: Typed metadata (beat positions, instrument, color).  See
+            ``EntityMetadata``.
+        parent_id: UUID of the parent entity, or ``None`` for top-level entities
+            (e.g. a region's ``parent_id`` is its track's ``id``).
+        owner_agent_id: Instrument agent ID that created this entity during an
+            Agent Teams composition, or ``None`` for user-initiated edits.  Used
+            by ``agent_manifest()`` to filter entities by owner and prevent
+            cross-agent ID leakage.
+    """
+
     id: str
     entity_type: EntityType
     name: str
@@ -106,6 +140,7 @@ class EntityInfo:
     owner_agent_id: str | None = None
 
     def to_dict(self) -> dict[str, object]:
+        """Serialise this entity to a plain dict (camelCase wire format)."""
         return {
             "id": self.id,
             "type": self.entity_type.value,
@@ -490,15 +525,27 @@ class EntityRegistry:
     # =========================================================================
     
     def list_tracks(self) -> list[EntityInfo]:
-        """list all registered tracks."""
+        """Return all registered tracks as an unordered list of ``EntityInfo``.
+
+        Order reflects insertion order (Python dict guarantee).  Returns an
+        empty list when no tracks have been registered yet.
+        """
         return list(self._tracks.values())
-    
+
     def list_regions(self) -> list[EntityInfo]:
-        """list all registered regions."""
+        """Return all registered regions as an unordered list of ``EntityInfo``.
+
+        Includes regions across all tracks.  Order reflects insertion order.
+        Returns an empty list when no regions have been registered yet.
+        """
         return list(self._regions.values())
-    
+
     def list_buses(self) -> list[EntityInfo]:
-        """list all registered buses."""
+        """Return all registered audio buses as an unordered list of ``EntityInfo``.
+
+        Order reflects insertion order.  Returns an empty list when no buses
+        have been registered yet.
+        """
         return list(self._buses.values())
     
     def agent_manifest(

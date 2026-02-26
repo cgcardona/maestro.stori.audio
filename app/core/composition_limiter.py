@@ -60,9 +60,11 @@ class CompositionLimiter:
                     del self._active[user_id]
 
     def active_count(self, user_id: str) -> int:
+        """Return the number of in-flight compositions for ``user_id``."""
         return self._active.get(user_id, 0)
 
     def snapshot(self) -> dict[str, int]:
+        """Return a point-in-time copy of all active counts (for health/debug endpoints)."""
         return dict(self._active)
 
 
@@ -70,6 +72,12 @@ _limiter: CompositionLimiter | None = None
 
 
 def get_composition_limiter() -> CompositionLimiter:
+    """Return the process-wide singleton ``CompositionLimiter``, creating it if needed.
+
+    Configured from ``STORI_MAX_CONCURRENT_COMPOSITIONS_PER_USER`` via
+    ``app.config.settings``.  Setting the value to ``0`` disables per-user
+    limits entirely (the ``acquire`` context manager becomes a no-op).
+    """
     global _limiter
     if _limiter is None:
         _limiter = CompositionLimiter(

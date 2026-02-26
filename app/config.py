@@ -15,8 +15,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 def _app_version_from_package() -> str:
     """Read version from the single source of truth (pyproject.toml via protocol.version)."""
-    from app.protocol.version import STORI_VERSION
-    return STORI_VERSION
+    from app.protocol.version import MAESTRO_VERSION
+    return MAESTRO_VERSION
 
 
 # Models shown in the Stori Maestro model picker.

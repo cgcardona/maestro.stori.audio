@@ -317,7 +317,7 @@ class TestWeightedVibes:
 def _make_composing_route(parsed: ParsedPrompt | None = None) -> IntentResult:
 
     """Build a minimal COMPOSING IntentResult for testing."""
-    extras = {}
+    extras: dict[str, object] = {}
     if parsed:
         extras["parsed_prompt"] = parsed
     return IntentResult(

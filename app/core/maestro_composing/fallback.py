@@ -5,16 +5,16 @@ from __future__ import annotations
 import logging
 from typing import AsyncIterator
 
-from app.contracts.json_types import JSONObject
 from app.contracts.project_types import ProjectContext
 from app.core.intent import Intent, IntentResult, SSEState
 from app.core.intent_config import _PRIMITIVES_REGION, _PRIMITIVES_TRACK
 from app.core.llm_client import LLMClient
-from app.core.sse_utils import sse_event
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
 from app.core.tools import ALL_TOOLS
 from app.core.maestro_helpers import UsageTracker
+from app.protocol.emitter import emit
+from app.protocol.events import StatusEvent
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ async def _retry_composing_as_editing(
         f"[{trace.trace_id[:8]}] Planner output looks like function calls, "
         "falling back to EDITING mode with tools"
     )
-    yield await sse_event({"type": "status", "message": "Retrying with different approach..."})
+    yield emit(StatusEvent(message="Retrying with different approach..."))
     from app.core.maestro_editing import _handle_editing
     editing_route = _create_editing_fallback_route(route)
     async for event in _handle_editing(

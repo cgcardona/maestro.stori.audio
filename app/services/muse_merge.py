@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +32,6 @@ from app.services.muse_checkout import CheckoutPlan, build_checkout_plan
 from app.services.muse_merge_base import find_merge_base
 from app.services.muse_replay import HeadSnapshot, reconstruct_variation_snapshot
 from app.services.variation.note_matching import (
-    EventDict,
     EventMatch,
     NoteMatch,
     match_aftertouch,
@@ -42,6 +41,11 @@ from app.services.variation.note_matching import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Mirrors the constrained TypeVar in note_matching so _merge_event_layer
+# can propagate the concrete event type (CCEventDict, PitchBendDict, or
+# AftertouchDict) without overloads or casts.
+_EV = TypeVar("_EV", CCEventDict, PitchBendDict, AftertouchDict)
 
 
 # ---------------------------------------------------------------------------
@@ -374,19 +378,19 @@ def _merge_note_layer(
 
 
 def _merge_event_layer(
-    base: Sequence[EventDict],
-    left: Sequence[EventDict],
-    right: Sequence[EventDict],
+    base: list[_EV],
+    left: list[_EV],
+    right: list[_EV],
     region_id: str,
     event_type: Literal["cc", "pb", "at"],
-    match_fn: Callable[..., list[EventMatch]],
-) -> tuple[list[EventDict], list[MergeConflict]]:
+    match_fn: Callable[[list[_EV], list[_EV]], list[EventMatch[_EV]]],
+) -> tuple[list[_EV], list[MergeConflict]]:
     """Three-way merge for a controller event layer in a single region."""
-    left_matches: list[EventMatch] = match_fn(base, left)
-    right_matches: list[EventMatch] = match_fn(base, right)
+    left_matches: list[EventMatch[_EV]] = match_fn(base, left)
+    right_matches: list[EventMatch[_EV]] = match_fn(base, right)
 
     conflicts: list[MergeConflict] = []
-    merged: list[EventDict] = []
+    merged: list[_EV] = []
 
     for base_ev in base:
         lm = _find_event_match_for_base(left_matches, base_ev)
@@ -427,9 +431,9 @@ def _merge_event_layer(
 
 
 def _find_event_match_for_base(
-    matches: list[EventMatch],
-    base_event: EventDict,
-) -> EventMatch | None:
+    matches: list[EventMatch[_EV]],
+    base_event: _EV,
+) -> EventMatch[_EV] | None:
     """Find the EventMatch that corresponds to a specific base event."""
     for m in matches:
         if m.base_event is base_event:

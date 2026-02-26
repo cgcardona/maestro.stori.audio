@@ -32,7 +32,7 @@ def _build_composition_summary(
     tracks_reused: list[TrackSummaryDict] = []
     regions_created = 0
     notes_generated = 0
-    effects_added: list[dict[str, str]] = []
+    effects_added: list[EffectSummaryDict] = []
     sends_created = 0
     cc_counts: dict[int, str] = {}
     automation_lanes = 0

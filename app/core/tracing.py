@@ -55,7 +55,7 @@ class Span:
     events: list[dict[str, object]] = field(default_factory=list)
 
     def set_attribute(self, key: str, value: object) -> None:
-        """set a span attribute."""
+        """Set a structured attribute on this span (e.g. ``intent``, ``tool_name``)."""
         self.attributes[key] = value
 
     def add_event(self, name: str, attributes: dict[str, object] | None = None) -> None:
@@ -67,7 +67,7 @@ class Span:
         })
     
     def set_error(self, error: Exception) -> None:
-        """Mark span as error."""
+        """Mark the span as errored and record the exception type and message."""
         self.status = SpanStatus.ERROR
         self.set_attribute("error.type", type(error).__name__)
         self.set_attribute("error.message", str(error))
@@ -80,6 +80,7 @@ class Span:
         return (self.end_time - self.start_time) * 1000
     
     def to_dict(self) -> dict[str, object]:
+        """Serialise to a structured log-friendly dict (used by ``log_span``)."""
         return {
             "name": self.name,
             "trace_id": self.trace_id,
@@ -96,15 +97,32 @@ class Span:
 
 @dataclass
 class TraceContext:
-    """Context for a traced request."""
+    """Request-scoped trace context — one instance per Maestro request.
+
+    Stored in an ``asyncio.ContextVar`` (``_trace_context``) so it is
+    automatically isolated per asyncio task without explicit propagation.
+    Retrieve via ``get_trace_context()``; create via ``create_trace_context()``.
+
+    Attributes:
+        trace_id: UUID4 that identifies this request end-to-end.
+        conversation_id: Optional Maestro conversation ID for correlation.
+        user_id: Optional user identifier for per-user log filtering.
+        spans: All completed ``Span`` objects for this request (ordered by start).
+        current_span: The innermost active span while inside a ``trace_span``
+            context manager; ``None`` between spans.
+        _span_stack: Internal LIFO stack maintained by ``trace_span`` to restore
+            ``current_span`` correctly on exit.
+    """
+
     trace_id: str
     conversation_id: str | None = None
     user_id: str | None = None
     spans: list[Span] = field(default_factory=list)
     current_span: Span | None = None
     _span_stack: list[Span] = field(default_factory=list)
-    
+
     def to_dict(self) -> dict[str, object]:
+        """Serialise to a structured dict (excludes internal stack)."""
         return {
             "trace_id": self.trace_id,
             "conversation_id": self.conversation_id,

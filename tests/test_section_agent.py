@@ -35,7 +35,17 @@ from app.core.maestro_agent_teams.section_agent import (
 from app.core.maestro_plan_tracker import _ToolCallOutcome
 from app.contracts.json_types import NoteDict, SectionDict, ToolCallDict
 from app.contracts.llm_types import ChatMessage
-from app.core.sse_utils import SSEEventInput
+from app.protocol.events import (
+    GeneratorCompleteEvent,
+    GeneratorStartEvent,
+    MaestroEvent,
+    PlanStepUpdateEvent,
+    ReasoningEvent,
+    StatusEvent,
+    ToolCallEvent,
+    ToolErrorEvent,
+    ToolStartEvent,
+)
 
 
 class _CapturedToolCallDict(TypedDict):
@@ -159,7 +169,7 @@ def _ok_region_outcome(tc_id: str = "r1", region_id: str = "reg-001") -> _ToolCa
     return _ToolCallOutcome(
         enriched_params={"startBeat": 0, "durationBeats": 16, "trackId": "trk-1"},
         tool_result={"regionId": region_id, "trackId": "trk-1"},
-        sse_events=[{"type": "toolCall", "name": "stori_add_midi_region"}],
+        sse_events=[ToolCallEvent(id=tc_id, name="stori_add_midi_region", params={"startBeat": 0, "durationBeats": 16, "trackId": "trk-1"})],
         msg_call={"role": "assistant", "tool_calls": []},
         msg_result={"role": "tool", "tool_call_id": tc_id, "content": "{}"},
         skipped=False,
@@ -167,17 +177,18 @@ def _ok_region_outcome(tc_id: str = "r1", region_id: str = "reg-001") -> _ToolCa
 
 
 def _ok_generate_outcome(tc_id: str = "g1", notes_count: int = 24) -> _ToolCallOutcome:
-
+    # agent_id="_unset_" is a placeholder; _run_section_child's _emit() always
+    # overwrites agent_id on tagged events with the caller's authoritative value.
     return _ToolCallOutcome(
         enriched_params={"role": "drums", "regionId": "reg-001", "trackId": "trk-1"},
         tool_result={"notesAdded": notes_count, "regionId": "reg-001", "trackId": "trk-1"},
         sse_events=[
-            {"type": "generatorStart", "role": "drums"},
-            {"type": "toolCall", "name": "stori_add_notes", "params": {
+            GeneratorStartEvent(role="drums", agent_id="_unset_", style="house", bars=4, start_beat=0, label="Generating drums"),
+            ToolCallEvent(id=tc_id, name="stori_add_notes", params={
                 "trackId": "trk-1", "regionId": "reg-001",
                 "notes": [NoteDict(pitch=36, start_beat=0, duration_beats=1)] * notes_count,
-            }},
-            {"type": "generatorComplete", "role": "drums", "noteCount": notes_count},
+            }),
+            GeneratorCompleteEvent(role="drums", agent_id="_unset_", note_count=notes_count, duration_ms=100),
         ],
         msg_call={"role": "assistant", "tool_calls": []},
         msg_result={"role": "tool", "tool_call_id": tc_id, "content": "{}"},
@@ -190,7 +201,7 @@ def _failed_generate_outcome(tc_id: str = "g1") -> _ToolCallOutcome:
     return _ToolCallOutcome(
         enriched_params={"role": "drums"},
         tool_result={"error": "GPU unavailable"},
-        sse_events=[{"type": "toolError", "name": "stori_generate_midi", "error": "GPU unavailable"}],
+        sse_events=[ToolErrorEvent(name="stori_generate_midi", error="GPU unavailable")],
         msg_call={"role": "assistant", "tool_calls": []},
         msg_result={"role": "tool", "tool_call_id": tc_id, "content": "{}"},
         skipped=True,
@@ -314,7 +325,7 @@ class TestRunSectionChild:
 
         """Happy path: region creates regionId, generate succeeds."""
         store = StateStore(conversation_id="test-sc")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         call_count = 0
 
         async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
@@ -351,7 +362,7 @@ class TestRunSectionChild:
 
         """When region creation returns no regionId, section fails gracefully."""
         store = StateStore(conversation_id="test-sc-fail")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         bad_region = _ToolCallOutcome(
             enriched_params={},
@@ -390,7 +401,7 @@ class TestRunSectionChild:
 
         """When generate is skipped (GPU error), section reports failure."""
         store = StateStore(conversation_id="test-sc-gen-fail")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
@@ -422,7 +433,7 @@ class TestRunSectionChild:
 
         """Section child injects the parent's trackId into region and generate params."""
         store = StateStore(conversation_id="test-sc-tid")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         captured_args: list[_CapturedToolCallDict] = []
 
         async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
@@ -463,7 +474,7 @@ class TestSectionChildDrumSignaling:
 
         """A drum section child signals SectionSignals after generate completes."""
         store = StateStore(conversation_id="test-sig")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         contract = _contract(role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
@@ -503,7 +514,7 @@ class TestSectionChildDrumSignaling:
 
         """Drum still signals even when region fails — prevents bass from hanging."""
         store = StateStore(conversation_id="test-sig-fail")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         contract = _contract(name="chorus", role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:chorus"], [ch])
@@ -544,7 +555,7 @@ class TestSectionChildDrumSignaling:
 
         """Drum still signals even when generate fails."""
         store = StateStore(conversation_id="test-sig-gen-fail")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         contract = _contract(role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
@@ -586,7 +597,7 @@ class TestSectionChildBassWaiting:
 
         """Bass section child blocks until the drum signal fires."""
         store = StateStore(conversation_id="test-bass-wait")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         contract = _contract(instrument_name="Bass", role="bass")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
@@ -631,7 +642,7 @@ class TestSectionChildBassWaiting:
 
         """Bass without execution_services runs immediately (no-drums edge case)."""
         store = StateStore(conversation_id="test-bass-nosig")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
@@ -669,7 +680,7 @@ class TestSectionChildSSE:
 
         """SSE events from tool outcomes are tagged with agentId and sectionName."""
         store = StateStore(conversation_id="test-sse")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
@@ -696,11 +707,11 @@ class TestSectionChildSSE:
         while not queue.empty():
             events.append(queue.get_nowait())
 
-        tagged = [e for e in events if "agentId" in e]
+        tagged = [e for e in events if getattr(e, "agent_id", None) is not None]
         assert len(tagged) > 0
         for e in tagged:
-            assert e["agentId"] == "drums"
-            assert e["sectionName"] == "chorus"
+            assert getattr(e, "agent_id", None) == "drums"
+            assert getattr(e, "section_name", None) == "chorus"
 
 
 # =============================================================================
@@ -714,7 +725,7 @@ class TestSectionChildException:
 
         """An unhandled exception inside the child returns a failed SectionResult."""
         store = StateStore(conversation_id="test-exc")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> None:
             raise RuntimeError("unexpected crash")
@@ -743,7 +754,7 @@ class TestSectionChildException:
 
         """Drum child still signals on unhandled exception to unblock bass."""
         store = StateStore(conversation_id="test-exc-sig")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         contract = _contract(role="drums")
         ch = contract.section.contract_hash
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
@@ -787,7 +798,7 @@ class TestDispatchSectionChildren:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-dispatch")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         all_results: list[dict[str, object]] = []
         collected: list[ToolCallDict] = []
 
@@ -801,7 +812,7 @@ class TestDispatchSectionChildren:
         track_outcome = _ToolCallOutcome(
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
-            sse_events=[{"type": "toolCall", "name": "stori_add_midi_track"}],
+            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params={})],
             msg_call={"role": "assistant"},
             msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
@@ -838,7 +849,9 @@ class TestDispatchSectionChildren:
         mock_plan = MagicMock()
         mock_plan.steps = []
         mock_plan.complete_step_by_id = MagicMock(return_value=None)
-        mock_plan.activate_step = MagicMock(return_value={"type": "planStepUpdate"})
+        mock_plan.activate_step = MagicMock(
+            return_value=PlanStepUpdateEvent(step_id="s1", status="active"),
+        )
 
         mock_llm = MagicMock()
 
@@ -900,7 +913,7 @@ class TestDispatchSectionChildren:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-no-tid")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         collected: list[ToolCallDict] = []
 
         r1 = _region_tc("r1")
@@ -955,7 +968,7 @@ class TestDispatchSectionChildren:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-reuse")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         r1 = _region_tc("r1")
         g1 = _generate_tc("g1")
@@ -968,7 +981,9 @@ class TestDispatchSectionChildren:
         mock_plan = MagicMock()
         mock_plan.steps = []
         mock_plan.complete_step_by_id = MagicMock(return_value=None)
-        mock_plan.activate_step = MagicMock(return_value={"type": "planStepUpdate"})
+        mock_plan.activate_step = MagicMock(
+            return_value=PlanStepUpdateEvent(step_id="s1", status="active"),
+        )
 
         sections = [_section("verse")]
         ic = _instrument_contract(sections, existing_track_id="existing-trk-99")
@@ -1030,7 +1045,7 @@ class TestDispatchSectionChildren:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-planstep-completed")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         all_results: list[dict[str, object]] = []
         collected: list[ToolCallDict] = []
 
@@ -1048,13 +1063,15 @@ class TestDispatchSectionChildren:
 
         mock_plan = MagicMock()
         mock_plan.steps = []
-        mock_plan.activate_step = MagicMock(return_value={
-            "type": "planStepUpdate", "stepId": "s2", "status": "active",
-        })
-        mock_plan.complete_step_by_id = MagicMock(return_value={
-            "type": "planStepUpdate", "stepId": "s2", "status": "completed",
-            "result": "1/1 sections completed, 24 notes",
-        })
+        mock_plan.activate_step = MagicMock(
+            return_value=PlanStepUpdateEvent(step_id="s2", status="active"),
+        )
+        mock_plan.complete_step_by_id = MagicMock(
+            return_value=PlanStepUpdateEvent(
+                step_id="s2", status="completed",
+                result="1/1 sections completed, 24 notes",
+            ),
+        )
         mock_plan.get_step = MagicMock(return_value=content_step)
 
         sections = [_section("verse", 0, 16)]
@@ -1100,19 +1117,19 @@ class TestDispatchSectionChildren:
             )
 
         # Drain the queue and look for planStepUpdate(completed) for step s2.
-        events: list[SSEEventInput] = []
+        events: list[MaestroEvent] = []
         while not queue.empty():
             events.append(queue.get_nowait())
 
         completed_events = [
             e for e in events
-            if e.get("type") == "planStepUpdate" and e.get("status") == "completed"
-            and e.get("stepId") == "s2"
+            if isinstance(e, PlanStepUpdateEvent) and e.status == "completed"
+            and e.step_id == "s2"
         ]
         assert len(completed_events) >= 1, (
             f"Expected planStepUpdate(completed) for s2 but got: {events}"
         )
-        assert completed_events[0].get("agentId") == "drums"
+        assert completed_events[0].agent_id == "drums"
 
     @pytest.mark.anyio
     async def test_generator_events_tagged_with_agentid_via_emit(self) -> None:
@@ -1125,12 +1142,12 @@ class TestDispatchSectionChildren:
         instrument card.
         """
         store = StateStore(conversation_id="test-agentid-tag")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         # Generate outcome whose sse_events include generatorStart / generatorComplete
         gen_outcome = _ok_generate_outcome("g1", notes_count=16)
         # Confirm the fixture contains the expected event types
-        event_types = {e["type"] for e in gen_outcome.sse_events}
+        event_types = {e.type for e in gen_outcome.sse_events}
         assert "generatorStart" in event_types or "generatorComplete" in event_types
 
         async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
@@ -1157,18 +1174,17 @@ class TestDispatchSectionChildren:
                 runtime_ctx=None,
             )
 
-        events: list[SSEEventInput] = []
+        events: list[MaestroEvent] = []
         while not queue.empty():
             events.append(queue.get_nowait())
 
-        # Every tagged event type should have agentId = "bass" and sectionName = "chorus"
         for evt in events:
-            if evt.get("type") in {"generatorStart", "generatorComplete", "toolCall", "status"}:
-                assert evt.get("agentId") == "bass", (
-                    f"Event {evt['type']} missing agentId: {evt}"
+            if evt.type in {"generatorStart", "generatorComplete", "toolCall", "status"}:
+                assert getattr(evt, "agent_id", None) == "bass", (
+                    f"Event {evt.type} missing agent_id: {evt}"
                 )
-                assert evt.get("sectionName") == "chorus", (
-                    f"Event {evt['type']} missing sectionName: {evt}"
+                assert getattr(evt, "section_name", None) == "chorus", (
+                    f"Event {evt.type} missing section_name: {evt}"
                 )
 
 
@@ -1306,7 +1322,7 @@ class TestContractHardError:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-hard-err")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         with pytest.raises(ValueError, match="Contract violation"):
             await _dispatch_section_children(
@@ -1367,7 +1383,7 @@ class TestOrphanedRegionHandling:
         ic = _instrument_contract(sections, role="drums")
 
         store = StateStore(conversation_id="test-orphaned")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         region_tcs = [
             _region_tc("r1", start_beat=0, duration=16),
@@ -1406,7 +1422,9 @@ class TestOrphanedRegionHandling:
                 plan_tracker=MagicMock(
                     steps=[],
                     complete_step_by_id=MagicMock(return_value=None),
-                    activate_step=MagicMock(return_value={"type": "planStepUpdate"}),
+                    activate_step=MagicMock(
+                        return_value=PlanStepUpdateEvent(step_id="s1", status="active"),
+                    ),
                     get_step=MagicMock(return_value=None),
                 ),
                 step_ids=["s1"],
@@ -1548,7 +1566,7 @@ class TestSectionChildStatusEvents:
 
         """Section child emits a 'Starting' status event at the beginning."""
         store = StateStore(conversation_id="test-status")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
 
@@ -1576,22 +1594,22 @@ class TestSectionChildStatusEvents:
         while not queue.empty():
             events.append(queue.get_nowait())
 
-        status_events = [e for e in events if e.get("type") == "status"]
+        status_events = [e for e in events if isinstance(e, StatusEvent)]
         assert len(status_events) >= 2
 
         start_evt = status_events[0]
-        assert "Starting" in start_evt["message"]
-        assert "Synth Lead" in start_evt["message"]
-        assert "verse" in start_evt["message"]
-        assert start_evt["agentId"] == "lead-agent"
-        assert start_evt["sectionName"] == "verse"
+        assert "Starting" in start_evt.message
+        assert "Synth Lead" in start_evt.message
+        assert "verse" in start_evt.message
+        assert start_evt.agent_id == "lead-agent"
+        assert start_evt.section_name == "verse"
 
     @pytest.mark.anyio
     async def test_emits_completion_status_with_note_count(self) -> None:
 
         """Section child emits a notes-generated status event after generation."""
         store = StateStore(conversation_id="test-status-done")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         async def _mock_apply(*, tc_id: str, tc_name: str, resolved_args: dict[str, object], **kw: object) -> _ToolCallOutcome:
 
@@ -1621,10 +1639,10 @@ class TestSectionChildStatusEvents:
         while not queue.empty():
             events.append(queue.get_nowait())
 
-        status_events = [e for e in events if e.get("type") == "status"]
-        notes_evt = [e for e in status_events if "42 notes" in e.get("message", "")]
+        status_events = [e for e in events if isinstance(e, StatusEvent)]
+        notes_evt = [e for e in status_events if "42 notes" in e.message]
         assert len(notes_evt) >= 1
-        assert notes_evt[0]["sectionName"] == "chorus"
+        assert notes_evt[0].section_name == "chorus"
 
 
 # =============================================================================
@@ -1641,7 +1659,7 @@ class TestExpressionRefinementStreaming:
             _maybe_refine_expression,
         )
 
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         store = StateStore(conversation_id="test-expr")
 
         mock_llm = MagicMock()
@@ -1672,7 +1690,7 @@ class TestExpressionRefinementStreaming:
         cc_outcome = _ToolCallOutcome(
             enriched_params={"ccNumber": 1},
             tool_result={"success": True},
-            sse_events=[{"type": "toolCall", "name": "stori_add_midi_cc"}],
+            sse_events=[ToolCallEvent(id="", name="stori_add_midi_cc", params={"ccNumber": 1})],
             msg_call={"role": "assistant"},
             msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             skipped=False,
@@ -1720,17 +1738,15 @@ class TestExpressionRefinementStreaming:
         while not queue.empty():
             events.append(queue.get_nowait())
 
-        reasoning_events = [
-            e for e in events if e.get("type") == "reasoning"
-        ]
+        reasoning_events = [e for e in events if isinstance(e, ReasoningEvent)]
         assert len(reasoning_events) > 0
         for evt in reasoning_events:
-            assert evt["agentId"] == "lead-agent"
-            assert evt["sectionName"] == "verse"
+            assert evt.agent_id == "lead-agent"
+            assert evt.section_name == "verse"
 
-        status_events = [e for e in events if e.get("type") == "status"]
+        status_events = [e for e in events if isinstance(e, StatusEvent)]
         expr_status = [
-            e for e in status_events if "expression" in e.get("message", "").lower()
+            e for e in status_events if "expression" in e.message.lower()
         ]
         assert len(expr_status) >= 1
 
@@ -1742,7 +1758,7 @@ class TestExpressionRefinementStreaming:
             _maybe_refine_expression,
         )
 
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         store = StateStore(conversation_id="test-no-expr")
         mock_llm = MagicMock()
 
@@ -1778,7 +1794,7 @@ class TestExpressionRefinementStreaming:
             _maybe_refine_expression,
         )
 
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         store = StateStore(conversation_id="test-expr-ctx")
 
         captured_messages: list[ChatMessage] = []
@@ -1850,7 +1866,7 @@ class TestServerOwnedRetries:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-server-retry")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         all_results: list[dict[str, object]] = []
         collected: list[ToolCallDict] = []
 
@@ -1864,7 +1880,7 @@ class TestServerOwnedRetries:
         track_outcome = _ToolCallOutcome(
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
-            sse_events=[{"type": "toolCall", "name": "stori_add_midi_track"}],
+            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params={})],
             msg_call={"role": "assistant"},
             msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
@@ -1905,7 +1921,9 @@ class TestServerOwnedRetries:
         mock_plan = MagicMock()
         mock_plan.steps = []
         mock_plan.complete_step_by_id = MagicMock(return_value=None)
-        mock_plan.activate_step = MagicMock(return_value={"type": "planStepUpdate"})
+        mock_plan.activate_step = MagicMock(
+            return_value=PlanStepUpdateEvent(step_id="s1", status="active"),
+        )
         mock_plan.get_step = MagicMock(return_value=None)
 
         mock_storpheus = MagicMock()
@@ -1969,7 +1987,7 @@ class TestServerOwnedRetries:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-cb-skip")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
         r1 = _region_tc("r1", start_beat=0, duration=16)
@@ -1978,7 +1996,7 @@ class TestServerOwnedRetries:
         track_outcome = _ToolCallOutcome(
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
-            sse_events=[{"type": "toolCall", "name": "stori_add_midi_track"}],
+            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params={})],
             msg_call={"role": "assistant"},
             msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
@@ -2005,7 +2023,9 @@ class TestServerOwnedRetries:
         mock_plan = MagicMock()
         mock_plan.steps = []
         mock_plan.complete_step_by_id = MagicMock(return_value=None)
-        mock_plan.activate_step = MagicMock(return_value={"type": "planStepUpdate"})
+        mock_plan.activate_step = MagicMock(
+            return_value=PlanStepUpdateEvent(step_id="s1", status="active"),
+        )
         mock_plan.get_step = MagicMock(return_value=None)
 
         mock_storpheus = MagicMock()
@@ -2065,7 +2085,7 @@ class TestServerOwnedRetries:
         from app.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-summary")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         track_tc = ToolCall(id="t1", name="stori_add_midi_track", params={"name": "Drums"})
         r1 = _region_tc("r1", start_beat=0, duration=16)
@@ -2076,7 +2096,7 @@ class TestServerOwnedRetries:
         track_outcome = _ToolCallOutcome(
             enriched_params={"name": "Drums", "trackId": "trk-42"},
             tool_result={"trackId": "trk-42"},
-            sse_events=[{"type": "toolCall", "name": "stori_add_midi_track"}],
+            sse_events=[ToolCallEvent(id="", name="stori_add_midi_track", params={})],
             msg_call={"role": "assistant"},
             msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
         )
@@ -2103,7 +2123,9 @@ class TestServerOwnedRetries:
         mock_plan = MagicMock()
         mock_plan.steps = []
         mock_plan.complete_step_by_id = MagicMock(return_value=None)
-        mock_plan.activate_step = MagicMock(return_value={"type": "planStepUpdate"})
+        mock_plan.activate_step = MagicMock(
+            return_value=PlanStepUpdateEvent(step_id="s1", status="active"),
+        )
         mock_plan.get_step = MagicMock(return_value=None)
 
         with patch(
@@ -2213,9 +2235,9 @@ class TestPreEmitGeneratorEvents:
         mock_mg = MagicMock()
         mock_mg.generate = AsyncMock(return_value=ok_result)
 
-        pre_emitted: list[SSEEventInput] = []
+        pre_emitted: list[MaestroEvent] = []
 
-        async def _capture_pre(events: list[SSEEventInput]) -> None:
+        async def _capture_pre(events: list[MaestroEvent]) -> None:
 
             pre_emitted.extend(events)
 
@@ -2244,11 +2266,11 @@ class TestPreEmitGeneratorEvents:
 
         assert outcome is not None
 
-        pre_types = [e["type"] for e in pre_emitted]
+        pre_types = [e.type for e in pre_emitted]
         assert "toolStart" in pre_types, "toolStart must be pre-emitted"
         assert "generatorStart" in pre_types, "generatorStart must be pre-emitted"
 
-        outcome_types = [e["type"] for e in outcome.sse_events]
+        outcome_types = [e.type for e in outcome.sse_events]
         assert "toolStart" not in outcome_types, (
             "toolStart must NOT be in deferred sse_events when pre_emit_callback is set"
         )
@@ -2306,7 +2328,7 @@ class TestPreEmitGeneratorEvents:
             )
 
         assert outcome is not None
-        types = [e["type"] for e in outcome.sse_events]
+        types = [e.type for e in outcome.sse_events]
         assert "toolStart" in types
         assert "generatorStart" in types
         assert "generatorComplete" in types
@@ -2319,9 +2341,9 @@ class TestPreEmitGeneratorEvents:
         BEFORE mg.generate() returns — the fix that prevents frontend timeout.
         """
         store = StateStore(conversation_id="test-e2e-pre-emit")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
-        events_at_generate_time: list[SSEEventInput] = []
+        events_at_generate_time: list[MaestroEvent] = []
 
         async def _mock_apply(
             *,
@@ -2337,8 +2359,8 @@ class TestPreEmitGeneratorEvents:
 
             if pre_emit_callback is not None:
                 await pre_emit_callback([
-                    {"type": "toolStart", "name": tc_name, "label": "Generating"},
-                    {"type": "generatorStart", "role": "drums", "agentId": "drums"},
+                    ToolStartEvent(name=tc_name, label="Generating"),
+                    GeneratorStartEvent(role="drums", agent_id="drums", style="house", bars=4, start_beat=0, label="Generating"),
                 ])
 
             # Snapshot the queue at the moment generate would block on Storpheus.
@@ -2375,7 +2397,7 @@ class TestPreEmitGeneratorEvents:
 
         gen_start_in_queue = [
             e for e in events_at_generate_time
-            if e.get("type") == "generatorStart"
+            if e.type == "generatorStart"
         ]
         assert len(gen_start_in_queue) >= 1, (
             "generatorStart must be in the SSE queue BEFORE mg.generate() runs — "

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from app.contracts.llm_types import ToolSchemaDict
 from app.core.tools.metadata import ToolMeta, ToolTier, ToolKind
 from app.core.tools.definitions import ALL_TOOLS, TIER1_TOOLS, TIER2_TOOLS  # noqa: F401 (re-exported)
 
@@ -11,10 +10,17 @@ _TOOL_META: dict[str, ToolMeta] = {}
 
 
 def _register(meta: ToolMeta) -> None:
+    """Insert a ``ToolMeta`` entry into the module-level registry by name."""
     _TOOL_META[meta.name] = meta
 
 
 def build_tool_registry() -> dict[str, ToolMeta]:
+    """Populate ``_TOOL_META`` with every known Stori tool and return it.
+
+    Idempotent — returns the cached dict on subsequent calls without
+    re-registering.  Called lazily by ``get_tool_meta`` and ``tools_by_kind``
+    so callers never need to invoke this directly.
+    """
     if _TOOL_META:
         return _TOOL_META
 
@@ -63,17 +69,24 @@ def build_tool_registry() -> dict[str, ToolMeta]:
 
 
 def get_tool_meta(name: str) -> ToolMeta | None:
+    """Return the ``ToolMeta`` for a tool by canonical name, or ``None`` if unknown."""
     build_tool_registry()
     return _TOOL_META.get(name)
 
 
-def tools_by_kind(kind: ToolKind) -> list[dict[str, Any]]:
+def tools_by_kind(kind: ToolKind) -> list[ToolSchemaDict]:
+    """Return the JSON schema dicts for all non-planner-only tools of the given kind.
+
+    Used by the planner to build per-kind tool allowlists sent to the LLM.
+    ``planner_only`` tools (e.g. generators) are excluded from these lists.
+    """
     build_tool_registry()
     allowed = {k for k, v in _TOOL_META.items() if v.kind == kind and not v.planner_only}
     return [t for t in ALL_TOOLS if t["function"]["name"] in allowed]
 
 
-def tool_schema_by_name(name: str) -> dict[str, Any] | None:
+def tool_schema_by_name(name: str) -> ToolSchemaDict | None:
+    """Return the raw JSON schema dict for a single tool by name, or ``None``."""
     for t in ALL_TOOLS:
         if t["function"]["name"] == name:
             return t

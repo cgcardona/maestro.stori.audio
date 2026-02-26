@@ -108,7 +108,7 @@ def render_ascii_graph(graph: MuseLogGraph) -> str:
 
 def render_json(graph: MuseLogGraph) -> str:
     """Pretty-print the MuseLogGraph JSON."""
-    return json.dumps(graph.to_dict(), indent=2, default=str)
+    return json.dumps(graph.to_response().model_dump(), indent=2, default=str)
 
 
 def render_summary_table(

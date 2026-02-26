@@ -93,7 +93,6 @@ def _snap(
 
 def _make_variation(
     notes: list[NoteDict],
-    controllers: list[dict[str, Any]] | None = None,
     region_id: str = "region-1",
     track_id: str = "track-1",
 ) -> Variation:
@@ -122,7 +121,6 @@ def _make_variation(
                     )
                     for n in notes
                 ],
-                controller_changes=controllers or [],
             ),
         ],
     )

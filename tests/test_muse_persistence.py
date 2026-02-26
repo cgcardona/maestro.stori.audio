@@ -83,7 +83,7 @@ def _make_variation() -> Variation:
         end_beat=4.0,
         label="Phrase A",
         note_changes=[note_added, note_removed],
-        controller_changes=[{"cc": 64, "beat": 0.0, "value": 127}],
+        cc_events=[{"cc": 64, "beat": 0.0, "value": 127}],
         explanation="first phrase",
         tags=["intro"],
     )
@@ -95,7 +95,7 @@ def _make_variation() -> Variation:
         end_beat=8.0,
         label="Phrase B",
         note_changes=[note_modified],
-        controller_changes=[],
+        cc_events=[],
         explanation="second phrase",
         tags=["verse"],
     )
@@ -156,7 +156,9 @@ async def test_variation_roundtrip(async_session: AsyncSession) -> None:
         assert load_p.label == orig_p.label
         assert load_p.explanation == orig_p.explanation
         assert load_p.tags == orig_p.tags
-        assert load_p.controller_changes == orig_p.controller_changes
+        assert load_p.cc_events == orig_p.cc_events
+        assert load_p.pitch_bends == orig_p.pitch_bends
+        assert load_p.aftertouch == orig_p.aftertouch
         assert len(load_p.note_changes) == len(orig_p.note_changes)
 
         for orig_nc, load_nc in zip(orig_p.note_changes, load_p.note_changes):

@@ -14,7 +14,8 @@ from app.api.routes.conversations import (
     normalize_tool_arguments,
     build_conversation_history_for_llm,
 )
-from app.core.sse_utils import sse_event
+from app.protocol.emitter import emit
+from app.protocol.events import ContentEvent
 from app.db.models import ConversationMessage
 
 
@@ -193,11 +194,10 @@ class TestBuildConversationHistoryForLLM:
 
 class TestSSEEvent:
 
-    @pytest.mark.anyio
-    async def test_format(self) -> None:
+    def test_format(self) -> None:
 
-        """sse_event validates through protocol models and returns SSE format."""
-        result = await sse_event({"type": "content", "content": "hello"})
+        """emit() validates through protocol models and returns SSE format."""
+        result = emit(ContentEvent(content="hello"))
         assert result.startswith("data: ")
         assert '"type":"content"' in result or '"type": "content"' in result
         assert result.endswith("\n\n")

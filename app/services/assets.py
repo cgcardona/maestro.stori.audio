@@ -114,6 +114,11 @@ def _s3_client() -> _S3Client:
 
 
 def _bucket() -> str:
+    """Return the configured S3 bucket name, raising if unset.
+
+    Raises:
+        ValueError: If ``STORI_AWS_S3_ASSET_BUCKET`` is not configured.
+    """
     if not settings.aws_s3_asset_bucket:
         raise ValueError("STORI_AWS_S3_ASSET_BUCKET is not set")
     return settings.aws_s3_asset_bucket
@@ -140,6 +145,12 @@ def _get_object_json(key: str) -> dict[str, object] | None:
 
 
 def _to_drum_kit(k: dict[str, object]) -> DrumKitInfo:
+    """Coerce a raw S3 manifest entry to a typed ``DrumKitInfo``.
+
+    Accepts only string values for known fields; ignores or drops
+    anything that does not type-check, keeping the result safe to
+    pass to callers expecting ``DrumKitInfo``.
+    """
     info: DrumKitInfo = {}
     if isinstance(_id := k.get("id"), str):
         info["id"] = _id
@@ -151,6 +162,12 @@ def _to_drum_kit(k: dict[str, object]) -> DrumKitInfo:
 
 
 def _to_soundfont(s: dict[str, object]) -> SoundFontInfo:
+    """Coerce a raw S3 manifest entry to a typed ``SoundFontInfo``.
+
+    Accepts only string values for known fields; ignores or drops
+    anything that does not type-check, keeping the result safe to
+    pass to callers expecting ``SoundFontInfo``.
+    """
     info: SoundFontInfo = {}
     if isinstance(_id := s.get("id"), str):
         info["id"] = _id

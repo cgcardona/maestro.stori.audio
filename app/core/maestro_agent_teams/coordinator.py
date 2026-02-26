@@ -16,13 +16,12 @@ import re
 import uuid as _uuid_mod
 from typing import (
     TYPE_CHECKING,
-    Any,
     AsyncIterator,
     Awaitable,
     Callable,
 )
 
-from app.core.sse_utils import SSEEventInput
+from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
     from app.contracts.project_types import ProjectContext
@@ -33,8 +32,18 @@ from app.config import settings
 from app.core.emotion_vector import emotion_vector_from_stori_prompt
 from app.core.llm_client import LLMClient
 from app.core.prompts import system_prompt_base
-from app.core.sse_utils import sse_event
 from app.core.state_store import StateStore
+from app.protocol.emitter import emit
+from app.protocol.events import (
+    CompleteEvent,
+    ErrorEvent,
+    PlanStepUpdateEvent,
+    PreflightEvent,
+    StatusEvent,
+    MaestroEvent,
+    SummaryEvent,
+    SummaryFinalEvent,
+)
 from app.core.tracing import TraceContext
 from app.core.tools import ALL_TOOLS
 from app.core.maestro_helpers import (
@@ -71,6 +80,21 @@ from app.core.maestro_agent_teams.summary import _build_composition_summary
 logger = logging.getLogger(__name__)
 
 _BARS_RE = re.compile(r"\b(\d{1,3})[\s-]*bars?\b", re.IGNORECASE)
+
+
+class _TrackExistenceInfo(TypedDict):
+    """Metadata about an existing track, keyed by lowercased track name."""
+
+    trackId: str
+    next_beat: int
+
+
+class _RoleTrackInfo(TypedDict):
+    """Per-role track assignment resolved before agent dispatch."""
+
+    instrument_name: str
+    existing_track_id: str | None
+    start_beat: int
 
 
 def _parse_bars_from_text(text: str) -> int | None:
@@ -114,12 +138,12 @@ async def _handle_composition_agent_team(
     # tokens would add latency and cost with no user value.
     # Per-agent reasoning is emitted with agentId during Phase 2 instead.
 
-    yield await sse_event({"type": "status", "message": "Preparing composition..."})
+    yield emit(StatusEvent(message="Preparing composition..."))
 
     plan_tracker = _PlanTracker()
     plan_tracker.build_from_prompt(parsed, prompt, project_context or {})
     if plan_tracker.steps:
-        yield await sse_event(plan_tracker.to_plan_event())
+        yield emit(plan_tracker.to_plan_event())
 
     tool_calls_collected: list[ToolCallDict] = []
     add_notes_failures: dict[str, int] = {}
@@ -133,7 +157,7 @@ async def _handle_composition_agent_team(
             (s for s in plan_tracker.steps if s.tool_name == "stori_set_tempo"), None
         )
         if tempo_step:
-            yield await sse_event(plan_tracker.activate_step(tempo_step.step_id))
+            yield emit(plan_tracker.activate_step(tempo_step.step_id))
 
         outcome = await _apply_single_tool_call(
             tc_id=str(_uuid_mod.uuid4()),
@@ -146,11 +170,11 @@ async def _handle_composition_agent_team(
             emit_sse=True,
         )
         for evt in outcome.sse_events:
-            yield await sse_event(evt)
+            yield emit(evt)
         if not outcome.skipped:
             tool_calls_collected.append({"tool": "stori_set_tempo", "params": outcome.enriched_params})
             if tempo_step:
-                yield await sse_event(
+                yield emit(
                     plan_tracker.complete_step_by_id(
                         tempo_step.step_id, f"set tempo to {parsed.tempo} BPM"
                     )
@@ -161,7 +185,7 @@ async def _handle_composition_agent_team(
             (s for s in plan_tracker.steps if s.tool_name == "stori_set_key"), None
         )
         if key_step:
-            yield await sse_event(plan_tracker.activate_step(key_step.step_id))
+            yield emit(plan_tracker.activate_step(key_step.step_id))
 
         outcome = await _apply_single_tool_call(
             tc_id=str(_uuid_mod.uuid4()),
@@ -174,11 +198,11 @@ async def _handle_composition_agent_team(
             emit_sse=True,
         )
         for evt in outcome.sse_events:
-            yield await sse_event(evt)
+            yield emit(evt)
         if not outcome.skipped:
             tool_calls_collected.append({"tool": "stori_set_key", "params": outcome.enriched_params})
             if key_step:
-                yield await sse_event(
+                yield emit(
                     plan_tracker.complete_step_by_id(
                         key_step.step_id, f"set key to {parsed.key}"
                     )
@@ -214,7 +238,7 @@ async def _handle_composition_agent_team(
     tempo = int(round(float(parsed.tempo or project_context.get("tempo") or 120)))
     key = parsed.key or project_context.get("key") or "C"
     # ── Detect existing tracks to avoid creating duplicates ──
-    _existing_track_info: dict[str, dict[str, Any]] = {}
+    _existing_track_info: dict[str, _TrackExistenceInfo] = {}
     for pc_track in project_context.get("tracks", []):
         track_name_lower = (pc_track.get("name") or "").lower()
         if not track_name_lower:
@@ -231,10 +255,10 @@ async def _handle_composition_agent_team(
                 for r in regions
             ))
         if track_name_lower not in _existing_track_info:
-            _existing_track_info[track_name_lower] = {
-                "trackId": track_id,
-                "next_beat": next_beat,
-            }
+            _existing_track_info[track_name_lower] = _TrackExistenceInfo(
+                trackId=track_id,
+                next_beat=next_beat,
+            )
     # ── Pre-allocate one distinct color per instrument ──
     # Must happen before preflight so trackColor can be included.
     _instrument_names_ordered = [
@@ -255,21 +279,18 @@ async def _handle_composition_agent_team(
         steps_for_role = [s for s in plan_tracker.steps if s.step_id in step_ids_for_role]
         _preflight_color = _color_map.get(instrument_name)
         for step in steps_for_role:
-            _preflight_evt: dict[str, Any] = {
-                "type": "preflight",
-                "stepId": step.step_id,
-                "agentId": instrument_name.lower(),
-                "agentRole": role,
-                "label": step.label,
-                "toolName": step.tool_name,
-                "parallelGroup": step.parallel_group,
-                "confidence": 0.9,
-            }
-            if _preflight_color:
-                _preflight_evt["trackColor"] = _preflight_color
-            yield await sse_event(_preflight_evt)
+            yield emit(PreflightEvent(
+                step_id=step.step_id,
+                agent_id=instrument_name.lower(),
+                agent_role=role,
+                label=step.label,
+                tool_name=step.tool_name,
+                parallel_group=step.parallel_group,
+                confidence=0.9,
+                track_color=_preflight_color,
+            ))
 
-    sse_queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+    sse_queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
     agent_tool_calls: list[ToolCallDict] = []
     tasks: list[asyncio.Task[None]] = []
 
@@ -300,29 +321,26 @@ async def _handle_composition_agent_team(
                 f"❌ [{trace.trace_id[:8]}] Storpheus required but unavailable — "
                 "aborting composition (set STORI_ORPHEUS_REQUIRED=false to override)"
             )
-            yield await sse_event({
-                "type": "error",
-                "message": (
+            yield emit(ErrorEvent(
+                message=(
                     "Music generation service (Storpheus) is not responding. "
                     "Cannot start composition — please verify Storpheus is running "
                     "and retry."
                 ),
-            })
-            yield await sse_event({
-                "type": "complete",
-                "success": False,
-                "error": "Storpheus health check failed — composition aborted",
-                "traceId": trace.trace_id,
-            })
+            ))
+            yield emit(CompleteEvent(
+                success=False,
+                trace_id=trace.trace_id,
+                error="Storpheus health check failed — composition aborted",
+            ))
             return
         else:
-            yield await sse_event({
-                "type": "status",
-                "message": (
+            yield emit(StatusEvent(
+                message=(
                     "⚠️ Music generation (Storpheus) is not responding. "
                     "MIDI regions may be empty — retry logic will attempt recovery."
                 ),
-            })
+            ))
 
     # ── Section parsing: decompose STORI PROMPT into musical sections ──
     _sections = parse_sections(
@@ -339,13 +357,12 @@ async def _handle_composition_agent_team(
         )
     )
     if _multi_section:
-        yield await sse_event({
-            "type": "status",
-            "message": (
+        yield emit(StatusEvent(
+            message=(
                 f"Parsed {len(_sections)} sections: "
                 + ", ".join(s["name"] for s in _sections)
             ),
-        })
+        ))
 
     # ── Build composition context for Storpheus routing ──
     _emotion_vector = None
@@ -429,7 +446,7 @@ async def _handle_composition_agent_team(
         quality_preset=_qp,
     )
 
-    _role_track_info: dict[str, dict[str, Any]] = {}
+    _role_track_info: dict[str, _RoleTrackInfo] = {}
     for role in parsed.roles:
         instrument_name = _ROLE_LABELS.get(role.lower(), role.title())
         existing_info = _existing_track_info.get(instrument_name.lower())
@@ -439,11 +456,11 @@ async def _handle_composition_agent_team(
                     existing_info = info
                     break
         existing_track_id: str | None = existing_info["trackId"] if existing_info else None
-        _role_track_info[role] = {
-            "instrument_name": instrument_name,
-            "existing_track_id": existing_track_id if existing_track_id else None,
-            "start_beat": existing_info["next_beat"] if existing_info and existing_track_id else 0,
-        }
+        _role_track_info[role] = _RoleTrackInfo(
+            instrument_name=instrument_name,
+            existing_track_id=existing_track_id if existing_track_id else None,
+            start_beat=existing_info["next_beat"] if existing_info and existing_track_id else 0,
+        )
     _reused_ids = [
         info["existing_track_id"]
         for info in _role_track_info.values()
@@ -560,13 +577,12 @@ async def _handle_composition_agent_team(
                 sids = instrument_step_ids.get(role_for_step, [])
                 if step.step_id in sids:
                     step.status = "failed"
-                    await sse_queue.put({
-                        "type": "planStepUpdate",
-                        "stepId": step.step_id,
-                        "status": "failed",
-                        "result": f"Failed: {exc}",
-                        "agentId": role_for_step,
-                    })
+                    await sse_queue.put(PlanStepUpdateEvent(
+                        step_id=step.step_id,
+                        status="failed",
+                        result=f"Failed: {exc}",
+                        agent_id=role_for_step,
+                    ))
 
     all_tasks: list[asyncio.Task[None]] = []
     for role in parsed.roles:
@@ -594,14 +610,14 @@ async def _handle_composition_agent_team(
         _drained = 0
         while not sse_queue.empty():
             evt = sse_queue.get_nowait()
-            if evt.get("type") == "toolError":
+            if evt.type == "toolError":
                 _tool_error_count += 1
-            yield await sse_event(evt)
+            yield emit(evt)
             _drained += 1
             _total_events_emitted += 1
             _last_heartbeat_time = asyncio.get_event_loop().time()
             _last_progress_time = _last_heartbeat_time
-            _stall_warnings = 0  # reset stall counter on any activity
+            _stall_warnings = 0
 
         _now = asyncio.get_event_loop().time()
 
@@ -637,10 +653,9 @@ async def _handle_composition_agent_team(
         _STATUS_KEEPALIVE_INTERVAL = 15.0
         if _silence > _STATUS_KEEPALIVE_INTERVAL and _now - _last_warn_time > _STATUS_KEEPALIVE_INTERVAL:
             _pending_names = [t.get_name() for t in pending]
-            yield await sse_event({
-                "type": "status",
-                "message": f"Generating music ({len(pending)} agents working)...",
-            })
+            yield emit(StatusEvent(
+                message=f"Generating music ({len(pending)} agents working)...",
+            ))
             _last_warn_time = _now
             _last_heartbeat_time = _now
 
@@ -682,9 +697,9 @@ async def _handle_composition_agent_team(
     _final_drained = 0
     while not sse_queue.empty():
         _final_evt = sse_queue.get_nowait()
-        if _final_evt.get("type") == "toolError":
+        if _final_evt.type == "toolError":
             _tool_error_count += 1
-        yield await sse_event(_final_evt)
+        yield emit(_final_evt)
         _final_drained += 1
         _total_events_emitted += 1
 
@@ -723,13 +738,13 @@ async def _handle_composition_agent_team(
                 tool_choice="auto",
                 max_tokens=2000,
             )
-            phase3_iter_results: list[dict[str, Any]] = []
+            phase3_iter_results: list[dict[str, object]] = []
             phase3_failures: dict[str, int] = {}
             for tc in phase3_response.tool_calls:
                 p3_resolved = _resolve_variable_refs(tc.params, phase3_iter_results)
                 p3_step = plan_tracker.find_step_for_tool(tc.name, p3_resolved, store)
                 if p3_step:
-                    yield await sse_event(plan_tracker.activate_step(p3_step.step_id))
+                    yield emit(plan_tracker.activate_step(p3_step.step_id))
                 p3_outcome = await _apply_single_tool_call(
                     tc_id=tc.id,
                     tc_name=tc.name,
@@ -741,22 +756,20 @@ async def _handle_composition_agent_team(
                     emit_sse=True,
                 )
                 for evt in p3_outcome.sse_events:
-                    yield await sse_event(evt)
+                    yield emit(evt)
                 if not p3_outcome.skipped:
                     _p3_tc: ToolCallDict = {"tool": tc.name, "params": p3_outcome.enriched_params}
                     tool_calls_collected.append(_p3_tc)
                     tool_calls_collected.extend(p3_outcome.extra_tool_calls)
                     if p3_step:
-                        yield await sse_event(
-                            plan_tracker.complete_step_by_id(p3_step.step_id)
-                        )
+                        yield emit(plan_tracker.complete_step_by_id(p3_step.step_id))
                 phase3_iter_results.append(p3_outcome.tool_result)
         except Exception as exc:
             logger.error(f"[{trace.trace_id[:8]}] Phase 3 coordinator failed: {exc}")
 
     # ── Finalize ──
     for skip_evt in plan_tracker.finalize_pending_as_skipped():
-        yield await sse_event(skip_evt)
+        yield emit(skip_evt)
 
     all_collected = tool_calls_collected + agent_tool_calls
     summary = _build_composition_summary(
@@ -766,19 +779,27 @@ async def _handle_composition_agent_team(
     _all_tracks = summary.get("tracksCreated", []) + summary.get("tracksReused", [])
     _notes_generated = summary.get("notesGenerated", 0)
     _regions_created = summary.get("regionsCreated", 0)
-    yield await sse_event({
-        "type": "summary",
-        "tracks": [t.get("name", "") for t in _all_tracks],
-        "regions": _regions_created,
-        "notes": _notes_generated,
-        "effects": summary.get("effectCount", 0),
-    })
+    yield emit(SummaryEvent(
+        tracks=[t.get("name", "") for t in _all_tracks],
+        regions=_regions_created,
+        notes=_notes_generated,
+        effects=summary.get("effectCount", 0),
+    ))
 
-    yield await sse_event({
-        "type": "summary.final",
-        "traceId": trace.trace_id,
-        **summary,
-    })
+    yield emit(SummaryFinalEvent(
+        trace_id=trace.trace_id,
+        track_count=summary.get("trackCount", 0),
+        tracks_created=summary.get("tracksCreated", []),
+        tracks_reused=summary.get("tracksReused", []),
+        regions_created=summary.get("regionsCreated", 0),
+        notes_generated=summary.get("notesGenerated", 0),
+        effects_added=summary.get("effectsAdded", []),
+        effect_count=summary.get("effectCount", 0),
+        sends_created=summary.get("sendsCreated", 0),
+        cc_envelopes=summary.get("ccEnvelopes", []),
+        automation_lanes=summary.get("automationLanes", 0),
+        text=summary.get("text"),
+    ))
 
     # success is False when generation was attempted (regions created) but
     # produced no notes, or when toolErrors were recorded.
@@ -803,15 +824,16 @@ async def _handle_composition_agent_team(
             f"marking success=false"
         )
 
-    yield await sse_event({
-        "type": "complete",
-        "success": _generation_succeeded,
-        "toolCalls": all_collected,
-        "stateVersion": store.version,
-        "traceId": trace.trace_id,
-        **({"warnings": _complete_warnings} if _complete_warnings else {}),
-        **_context_usage_fields(usage_tracker, llm.model),
-    })
+    _usage = _context_usage_fields(usage_tracker, llm.model)
+    yield emit(CompleteEvent(
+        success=_generation_succeeded,
+        trace_id=trace.trace_id,
+        tool_calls=all_collected,
+        state_version=store.version,
+        warnings=_complete_warnings if _complete_warnings else None,
+        input_tokens=_usage.get("input_tokens", 0),
+        context_window_tokens=_usage.get("context_window_tokens", 0),
+    ))
 
     # Drain delay: give the ASGI server time to flush the .complete event
     # to the client before any cleanup (e.g. WebSocket teardown) can race.

@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-from typing import Any
+
+from app.contracts.json_types import JSONObject
 
 
 class MidiNote(BaseModel):
@@ -38,14 +39,20 @@ class PitchBendEvent(BaseModel):
 
 
 class ToolResult(BaseModel):
-    """Result from executing a tool."""
+    """Result from executing a tool.
+
+    ``result`` is typed ``dict[str, object]`` rather than ``JSONObject`` because
+    Pydantic cannot resolve JSONValue's recursive forward refs across module
+    boundaries — see json_types.py for the Pydantic compatibility rule.
+    """
+
     tool_call_id: str = Field(..., description="ID of the tool call this responds to")
     success: bool = Field(..., description="Whether the tool executed successfully")
-    result: dict[str, Any] | None = Field(default=None, description="Tool result data")
+    result: dict[str, object] | None = Field(default=None, description="Tool result data")
     error: str | None = Field(default=None, description="Error message if failed")
 
 
 class DAWToolCall(BaseModel):
     """A DAW tool call to be executed by Swift."""
     tool: str = Field(..., description="Tool name (e.g., stori_add_midi_track, stori_add_notes)")
-    params: dict[str, Any] = Field(..., description="Tool parameters")
+    params: dict[str, object] = Field(..., description="Tool parameters")

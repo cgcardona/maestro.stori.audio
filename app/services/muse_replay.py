@@ -18,15 +18,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts.json_types import (
-    AftertouchDict,
-    CCEventDict,
     NoteDict,
-    PitchBendDict,
     RegionAftertouchMap,
     RegionCCMap,
     RegionNotesMap,
@@ -37,27 +33,6 @@ from app.services.muse_repository import HistoryNode
 
 logger = logging.getLogger(__name__)
 
-
-def _route_controller_event(
-    ev: dict[str, Any],
-    cc: RegionCCMap,
-    pitch_bends: RegionPitchBendMap,
-    aftertouch: RegionAftertouchMap,
-    rid: str,
-) -> None:
-    """Deserialize a raw controller change dict into the appropriate typed list."""
-    kind = ev.get("kind", "cc")
-    beat = ev.get("beat", 0.0)
-    value = ev.get("value", 0)
-    if kind == "cc":
-        cc.setdefault(rid, []).append(CCEventDict(cc=ev.get("cc", 0), beat=beat, value=value))
-    elif kind == "pitch_bend":
-        pitch_bends.setdefault(rid, []).append(PitchBendDict(beat=beat, value=value))
-    elif kind == "aftertouch":
-        at: AftertouchDict = {"beat": beat, "value": value}
-        if "pitch" in ev:
-            at["pitch"] = ev["pitch"]
-        aftertouch.setdefault(rid, []).append(at)
 
 
 @dataclass(frozen=True)
@@ -148,8 +123,7 @@ class HeadSnapshot:
     """Snapshot reconstructed from HEAD variation's persisted data.
 
     Contains notes that Muse has committed (added/modified) and all
-    controller data (CC, pitch bends, aftertouch) from persisted
-    phrase ``controller_changes``.
+    controller data (CC, pitch bends, aftertouch) from persisted phrases.
 
     Notes that existed before Muse touched a region but were unchanged
     are not included.
@@ -215,8 +189,9 @@ async def reconstruct_head_snapshot(
                 if nc.change_type in ("added", "modified") and nc.after:
                     region_notes.append(nc.after.to_note_dict())
 
-            for ev in phrase.controller_changes or []:
-                _route_controller_event(ev, cc, pitch_bends, aftertouch, rid)
+            cc.setdefault(rid, []).extend(phrase.cc_events)
+            pitch_bends.setdefault(rid, []).extend(phrase.pitch_bends)
+            aftertouch.setdefault(rid, []).extend(phrase.aftertouch)
 
     logger.info(
         "✅ HEAD snapshot reconstructed: %d regions, %d notes, %d cc, %d pb, %d at",
@@ -277,8 +252,9 @@ async def reconstruct_variation_snapshot(
                 if nc.change_type in ("added", "modified") and nc.after:
                     region_notes.append(nc.after.to_note_dict())
 
-            for ev in phrase.controller_changes or []:
-                _route_controller_event(ev, cc, pitch_bends, aftertouch, rid)
+            cc.setdefault(rid, []).extend(phrase.cc_events)
+            pitch_bends.setdefault(rid, []).extend(phrase.pitch_bends)
+            aftertouch.setdefault(rid, []).extend(phrase.aftertouch)
 
     return HeadSnapshot(
         variation_id=variation_id,

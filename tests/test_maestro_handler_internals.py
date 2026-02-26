@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.contracts.json_types import NoteDict, ToolCallDict
 from app.contracts.llm_types import ChatMessage
 from app.contracts.project_types import ProjectContext
-from app.core.sse_utils import SSEEventInput
+from app.protocol.events import MaestroEvent, PlanStepUpdateEvent, ReasoningEvent, ToolCallEvent
 from app.core.maestro_handlers import UsageTracker, orchestrate
 from app.core.maestro_helpers import StreamFinalResponse, _stream_llm_response
 from app.core.maestro_composing import _handle_reasoning, _handle_composing, _retry_composing_as_editing
@@ -870,10 +870,8 @@ class TestStreamLLMResponse:
 
         llm.chat_completion_stream = MagicMock(side_effect=fake_stream)
 
-        from app.core.sse_utils import sse_event
-
         items = []
-        async for item in _stream_llm_response(llm, [], [], "auto", trace, lambda data: sse_event(data)):
+        async for item in _stream_llm_response(llm, [], [], "auto", trace):
             items.append(item)
 
         # Last item should be StreamFinalResponse
@@ -904,10 +902,8 @@ class TestStreamLLMResponse:
 
         llm.chat_completion_stream = MagicMock(side_effect=fake_stream)
 
-        from app.core.sse_utils import sse_event
-
         items = []
-        async for item in _stream_llm_response(llm, [], [], "auto", trace, lambda data: sse_event(data)):
+        async for item in _stream_llm_response(llm, [], [], "auto", trace):
             items.append(item)
 
         final = items[-1]
@@ -1123,14 +1119,14 @@ class TestPlanTracker:
         tracker = _PlanTracker()
         tracker.build(tcs, "Add piano", {}, False, StateStore(conversation_id="t"))
         event = tracker.to_plan_event()
-        assert event["type"] == "plan"
-        assert "planId" in event
-        assert isinstance(event["steps"], list)
-        for step in event["steps"]:
-            assert "stepId" in step
-            assert "label" in step
-            assert step["status"] == "pending"
-            assert "toolName" in step  # present because all steps have real tools
+        assert event.type == "plan"
+        assert event.plan_id != ""
+        assert isinstance(event.steps, list)
+        for step in event.steps:
+            assert step.step_id != ""
+            assert step.label != ""
+            assert step.status == "pending"
+            assert step.tool_name is not None
 
     def test_title_is_musically_descriptive(self) -> None:
 
@@ -1203,15 +1199,18 @@ class TestPlanTracker:
             _PlanStep(step_id="2", label="Track"),
         ]
         evt = tracker.activate_step("1")
-        assert evt == {"type": "planStepUpdate", "stepId": "1", "status": "active", "phase": "composition"}
+        assert evt.type == "planStepUpdate"
+        assert evt.step_id == "1"
+        assert evt.status == "active"
+        assert evt.phase == "composition"
         assert tracker._active_step_id == "1"
         assert tracker.steps[0].status == "active"
 
         tracker.steps[0].result = "set 72 BPM"
         complete_evt = tracker.complete_active_step()
         assert complete_evt is not None
-        assert complete_evt["status"] == "completed"
-        assert complete_evt["result"] == "set 72 BPM"
+        assert complete_evt.status == "completed"
+        assert complete_evt.result == "set 72 BPM"
         assert tracker._active_step_id is None
         assert tracker.steps[0].status == "completed"  # type: ignore[unreachable]
 
@@ -1223,8 +1222,12 @@ class TestPlanTracker:
             _PlanStep(step_id="1", label="Setup", tool_indices=[0, 1]),
             _PlanStep(step_id="2", label="Track", tool_indices=[2, 3, 4]),
         ]
-        assert tracker.step_for_tool_index(0).step_id == "1"  # type: ignore[union-attr]
-        assert tracker.step_for_tool_index(3).step_id == "2"  # type: ignore[union-attr]
+        step0 = tracker.step_for_tool_index(0)
+        assert step0 is not None
+        assert step0.step_id == "1"
+        step3 = tracker.step_for_tool_index(3)
+        assert step3 is not None
+        assert step3.step_id == "2"
         assert tracker.step_for_tool_index(99) is None
 
     def test_progress_context_formatting(self) -> None:
@@ -1815,9 +1818,9 @@ class TestPlanStepToolName:
         """Steps with a tool_name emit toolName in the plan event."""
         tracker = self._make_tracker_from_prompt(roles=["drums"])
         event = tracker.to_plan_event()
-        steps = event["steps"]
+        steps = event.steps
         # At least one step should have toolName (the track creation step)
-        tool_names = [s.get("toolName") for s in steps if s.get("toolName")]
+        tool_names = [s.tool_name for s in steps if s.tool_name]
         assert len(tool_names) > 0
 
     def test_tempo_step_has_stori_set_tempo_toolName(self) -> None:
@@ -1825,27 +1828,27 @@ class TestPlanStepToolName:
         """The 'set tempo' plan step reports toolName=stori_set_tempo."""
         tracker = self._make_tracker_from_prompt(tempo=90)
         event = tracker.to_plan_event()
-        tempo_steps = [s for s in event["steps"] if "tempo" in s["label"].lower()]
+        tempo_steps = [s for s in event.steps if "tempo" in s.label.lower()]
         assert len(tempo_steps) == 1
-        assert tempo_steps[0].get("toolName") == "stori_set_tempo"
+        assert tempo_steps[0].tool_name == "stori_set_tempo"
 
     def test_key_step_has_stori_set_key_toolName(self) -> None:
 
         """The 'set key' plan step reports toolName=stori_set_key."""
         tracker = self._make_tracker_from_prompt(key="Am")
         event = tracker.to_plan_event()
-        key_steps = [s for s in event["steps"] if "key" in s["label"].lower()]
+        key_steps = [s for s in event.steps if "key" in s.label.lower()]
         assert len(key_steps) == 1
-        assert key_steps[0].get("toolName") == "stori_set_key"
+        assert key_steps[0].tool_name == "stori_set_key"
 
     def test_role_step_has_stori_add_midi_track_toolName(self) -> None:
 
         """Track creation steps report toolName=stori_add_midi_track."""
         tracker = self._make_tracker_from_prompt(roles=["bass"])
         event = tracker.to_plan_event()
-        track_steps = [s for s in event["steps"] if "Bass" in s["label"]]
+        track_steps = [s for s in event.steps if "Bass" in s.label]
         assert len(track_steps) >= 1
-        assert track_steps[0].get("toolName") == "stori_add_midi_track"
+        assert track_steps[0].tool_name == "stori_add_midi_track"
 
     def test_effects_step_has_stori_add_insert_effect_toolName(self) -> None:
 
@@ -1855,9 +1858,9 @@ class TestPlanStepToolName:
             extensions={"effects": {"drums": {"compression": "VCA"}}},
         )
         event = tracker.to_plan_event()
-        fx_steps = [s for s in event["steps"] if "effect" in s["label"].lower()]
+        fx_steps = [s for s in event.steps if "effect" in s.label.lower()]
         assert len(fx_steps) >= 1
-        assert fx_steps[0].get("toolName") == "stori_add_insert_effect"
+        assert fx_steps[0].tool_name == "stori_add_insert_effect"
 
     def test_cc_step_has_stori_add_midi_cc_toolName(self) -> None:
 
@@ -1866,9 +1869,9 @@ class TestPlanStepToolName:
             extensions={"midiexpressiveness": {"cc_curves": [{"cc": 91}]}},
         )
         event = tracker.to_plan_event()
-        cc_steps = [s for s in event["steps"] if "CC" in s["label"]]
+        cc_steps = [s for s in event.steps if "CC" in s.label]
         assert len(cc_steps) >= 1
-        assert cc_steps[0].get("toolName") == "stori_add_midi_cc"
+        assert cc_steps[0].tool_name == "stori_add_midi_cc"
 
     def test_pitch_bend_step_has_stori_add_pitch_bend_toolName(self) -> None:
 
@@ -1877,9 +1880,9 @@ class TestPlanStepToolName:
             extensions={"midiexpressiveness": {"pitch_bend": {"style": "slides"}}},
         )
         event = tracker.to_plan_event()
-        pb_steps = [s for s in event["steps"] if "pitch bend" in s["label"].lower()]
+        pb_steps = [s for s in event.steps if "pitch bend" in s.label.lower()]
         assert len(pb_steps) >= 1
-        assert pb_steps[0].get("toolName") == "stori_add_pitch_bend"
+        assert pb_steps[0].tool_name == "stori_add_pitch_bend"
 
     def test_automation_step_has_stori_add_automation_toolName(self) -> None:
 
@@ -1888,9 +1891,9 @@ class TestPlanStepToolName:
             extensions={"automation": [{"track": "Piano", "param": "Volume"}]},
         )
         event = tracker.to_plan_event()
-        auto_steps = [s for s in event["steps"] if "automation" in s["label"].lower()]
+        auto_steps = [s for s in event.steps if "automation" in s.label.lower()]
         assert len(auto_steps) >= 1
-        assert auto_steps[0].get("toolName") == "stori_add_automation"
+        assert auto_steps[0].tool_name == "stori_add_automation"
 
     def test_step_without_tool_name_omits_key(self) -> None:
 
@@ -1899,7 +1902,7 @@ class TestPlanStepToolName:
         tracker = _PlanTracker()
         tracker.steps = [_PlanStep(step_id="1", label="Do something", tool_name=None)]
         event = tracker.to_plan_event()
-        assert "toolName" not in event["steps"][0]
+        assert event.steps[0].tool_name is None
 
 
 # ---------------------------------------------------------------------------
@@ -2444,13 +2447,13 @@ class TestParallelGroup:
         tracker = _PlanTracker()
         tracker.build(tcs, "Make funk", {}, False, StateStore(conversation_id="t"))
         event = tracker.to_plan_event()
-        steps = event["steps"]
+        steps = event.steps
 
         for s in steps:
-            if "Add content" in s["label"]:
-                assert s.get("parallelGroup") == "instruments", f"Step '{s['label']}' should be parallel"
-            elif "tempo" in s["label"].lower() or "bus" in s["label"].lower():
-                assert "parallelGroup" not in s, f"Step '{s['label']}' should NOT be parallel"
+            if "Add content" in s.label:
+                assert s.parallel_group == "instruments", f"Step '{s.label}' should be parallel"
+            elif "tempo" in s.label.lower() or "bus" in s.label.lower():
+                assert s.parallel_group is None, f"Step '{s.label}' should NOT be parallel"
 
     def test_setup_steps_have_no_parallel_group(self) -> None:
 
@@ -2462,8 +2465,8 @@ class TestParallelGroup:
         tracker = _PlanTracker()
         tracker.build(tcs, "set up", {}, False, StateStore(conversation_id="t"))
         event = tracker.to_plan_event()
-        for s in event["steps"]:
-            assert "parallelGroup" not in s
+        for s in event.steps:
+            assert s.parallel_group is None
 
     def test_mixing_steps_have_no_parallel_group(self) -> None:
 
@@ -2475,8 +2478,8 @@ class TestParallelGroup:
         tracker = _PlanTracker()
         tracker.build(tcs, "Mix", {}, False, StateStore(conversation_id="t"))
         event = tracker.to_plan_event()
-        for s in event["steps"]:
-            assert "parallelGroup" not in s
+        for s in event.steps:
+            assert s.parallel_group is None
 
     def test_build_from_prompt_annotates_parallel_group(self) -> None:
 
@@ -2493,13 +2496,13 @@ class TestParallelGroup:
         tracker = _PlanTracker()
         tracker.build_from_prompt(parsed, "make a groove", {"tempo": 80, "key": "C"})
         event = tracker.to_plan_event()
-        steps = event["steps"]
+        steps = event.steps
 
         for s in steps:
-            if "tempo" in s["label"].lower() or "key" in s["label"].lower():
-                assert "parallelGroup" not in s, f"Setup step '{s['label']}' should NOT be parallel"
-            elif any(kw in s["label"] for kw in ("Create", "Add content", "Add effects")):
-                assert s.get("parallelGroup") == "instruments", f"'{s['label']}' should be parallel"
+            if "tempo" in s.label.lower() or "key" in s.label.lower():
+                assert s.parallel_group is None, f"Setup step '{s.label}' should NOT be parallel"
+            elif any(kw in s.label for kw in ("Create", "Add content", "Add effects")):
+                assert s.parallel_group == "instruments", f"'{s.label}' should be parallel"
 
     def test_effects_within_track_group_have_parallel_group(self) -> None:
 
@@ -2584,7 +2587,7 @@ class TestMultiActiveSteps:
         tracker._active_step_ids = {"1", "2"}
         events = tracker.complete_all_active_steps()
         assert len(events) == 2
-        assert all(e["status"] == "completed" for e in events)
+        assert all(e.status == "completed" for e in events)
         assert tracker._active_step_ids == set()
         assert tracker.steps[0].status == "completed"
         assert tracker.steps[1].status == "completed"
@@ -2623,8 +2626,8 @@ class TestMultiActiveSteps:
         ]
         events = tracker.finalize_pending_as_skipped()
         assert len(events) == 1
-        assert events[0]["stepId"] == "3"
-        assert events[0]["status"] == "skipped"
+        assert events[0].step_id == "3"
+        assert events[0].status == "skipped"
 
 
 # ---------------------------------------------------------------------------
@@ -2900,8 +2903,8 @@ class TestApplySingleToolCall:
         )
         assert not outcome.skipped
         assert outcome.enriched_params["tempo"] == 120
-        assert any(e["type"] == "toolCall" for e in outcome.sse_events)
-        assert any(e["type"] == "toolStart" for e in outcome.sse_events)
+        assert any(e.type == "toolCall" for e in outcome.sse_events)
+        assert any(e.type == "toolStart" for e in outcome.sse_events)
         assert outcome.msg_call["role"] == "assistant"
         assert outcome.msg_result["role"] == "tool"
 
@@ -2924,7 +2927,7 @@ class TestApplySingleToolCall:
             emit_sse=True,
         )
         assert outcome.skipped
-        assert any(e["type"] == "toolError" for e in outcome.sse_events)
+        assert any(e.type == "toolError" for e in outcome.sse_events)
 
     @pytest.mark.anyio
     async def test_track_creation_generates_uuid(self) -> None:
@@ -2974,7 +2977,7 @@ class TestApplySingleToolCall:
             emit_sse=True,
         )
         assert outcome.skipped
-        assert any(e["type"] == "toolError" for e in outcome.sse_events)
+        assert any(e.type == "toolError" for e in outcome.sse_events)
 
     @pytest.mark.anyio
     async def test_emit_sse_false_produces_no_events(self) -> None:
@@ -3020,7 +3023,7 @@ class TestApplySingleToolCall:
         )
         assert outcome.skipped
         assert "error" in outcome.tool_result
-        tool_names_in_sse = [e.get("name") for e in outcome.sse_events if e.get("type") == "toolCall"]
+        tool_names_in_sse = [getattr(e, "name", None) for e in outcome.sse_events if e.type == "toolCall"]
         assert "stori_generate_midi" not in tool_names_in_sse
 
     @pytest.mark.anyio
@@ -3237,7 +3240,7 @@ class TestRunInstrumentAgent:
         llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
         trace = _make_trace()
 
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3261,7 +3264,7 @@ class TestRunInstrumentAgent:
         while not queue.empty():
             events.append(queue.get_nowait())
 
-        event_types = [e.get("type") for e in events]
+        event_types = [e.type for e in events]
         assert "toolCall" in event_types
         assert "toolStart" in event_types
 
@@ -3287,7 +3290,7 @@ class TestRunInstrumentAgent:
         llm.chat_completion_stream = MagicMock(side_effect=_failing_stream)
         trace = _make_trace()
 
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3312,8 +3315,8 @@ class TestRunInstrumentAgent:
         while not queue.empty():
             events.append(queue.get_nowait())
         # Some events for the failed steps should appear
-        step_events = [e for e in events if e.get("type") == "planStepUpdate"]
-        assert any(e.get("status") == "failed" for e in step_events)
+        step_events = [e for e in events if isinstance(e, PlanStepUpdateEvent)]
+        assert any(e.status == "failed" for e in step_events)
 
     @pytest.mark.anyio
     async def test_agent_makes_exactly_one_llm_call(self) -> None:
@@ -3333,7 +3336,7 @@ class TestRunInstrumentAgent:
         resp = self._make_track_response("Bass")
         llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
         trace = _make_trace()
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -3555,7 +3558,7 @@ class TestAgentTeamFailureIsolation:
 
             async def _fail() -> AsyncGenerator[Never, None]:
                 raise RuntimeError("all down")
-                yield  # type: ignore[unreachable]
+                yield  # type: ignore[unreachable]  # makes this an async generator; raise always fires first
             return _fail()
 
         llm = _make_llm_mock()
@@ -3762,7 +3765,7 @@ class TestAgentTeamExistingTrackReuse:
         llm = _make_llm_mock()
         llm.chat_completion_stream = MagicMock(side_effect=capture_stream)
         trace = _make_trace()
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -4029,10 +4032,10 @@ class TestIconValidation:
 
         icon_events = [
             e for e in outcome.sse_events
-            if e.get("name") == "stori_set_track_icon"
+            if isinstance(e, ToolCallEvent) and e.name == "stori_set_track_icon"
         ]
         assert len(icon_events) >= 1, "Valid icon should produce stori_set_track_icon events"
-        icon_param = icon_events[-1]["params"]["icon"]
+        icon_param = icon_events[-1].params["icon"]
         assert icon_param == "pianokeys"
 
     @pytest.mark.anyio
@@ -4111,7 +4114,7 @@ class TestAgentReasoningEventsCarryAgentId:
 
         llm.chat_completion_stream = MagicMock(side_effect=_stream_with_reasoning)
         trace = _make_trace()
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -4135,11 +4138,11 @@ class TestAgentReasoningEventsCarryAgentId:
         while not queue.empty():
             events.append(queue.get_nowait())
 
-        reasoning_events = [e for e in events if e.get("type") == "reasoning"]
+        reasoning_events = [e for e in events if isinstance(e, ReasoningEvent)]
         assert len(reasoning_events) >= 1, "Expected at least one reasoning event"
-        for re in reasoning_events:
-            assert re.get("agentId") == "bass", (
-                f"Reasoning event missing agentId='bass': {re}"
+        for rev in reasoning_events:
+            assert rev.agent_id == "bass", (
+                f"Reasoning event missing agent_id='bass': {rev}"
             )
 
     @pytest.mark.anyio
@@ -4163,7 +4166,7 @@ class TestAgentReasoningEventsCarryAgentId:
         ]
         llm.chat_completion_stream = MagicMock(side_effect=_response_to_stream(resp))
         trace = _make_trace()
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         step_ids = [s.step_id for s in plan_tracker.steps if s.parallel_group == "instruments"]
 
         await _run_instrument_agent(
@@ -4187,10 +4190,10 @@ class TestAgentReasoningEventsCarryAgentId:
         while not queue.empty():
             events.append(queue.get_nowait())
 
-        step_events = [e for e in events if e.get("type") == "planStepUpdate"]
+        step_events = [e for e in events if isinstance(e, PlanStepUpdateEvent)]
         for se in step_events:
-            assert se.get("agentId") == "drums", (
-                f"planStepUpdate missing agentId='drums': {se}"
+            assert se.agent_id == "drums", (
+                f"planStepUpdate missing agent_id='drums': {se}"
             )
 
 

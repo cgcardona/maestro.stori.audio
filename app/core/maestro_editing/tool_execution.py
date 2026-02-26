@@ -9,9 +9,16 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 from app.contracts.generation_types import CompositionContext, RoleResult, UnifiedGenerationOutput
 from app.contracts.llm_types import AssistantMessage, ToolResultMessage
 from app.core.gm_instruments import DRUM_ICON, icon_for_gm_program
-from app.core.sse_utils import SSEEventInput, sse_event
 from app.core.tool_validation import VALID_SF_SYMBOL_ICONS, validate_tool_call
 from app.core.tracing import TraceContext, log_tool_call, log_validation_error, trace_span
+from app.protocol.events import (
+    GeneratorCompleteEvent,
+    GeneratorStartEvent,
+    MaestroEvent,
+    ToolCallEvent,
+    ToolErrorEvent,
+    ToolStartEvent,
+)
 
 if TYPE_CHECKING:
     from app.core.state_store import StateStore
@@ -37,6 +44,44 @@ from app.contracts.generation_types import GenerationContext
 from app.services.music_generator import get_music_generator
 
 logger = logging.getLogger(__name__)
+
+
+def _sp(params: dict[str, object], key: str, default: str = "") -> str:
+    """Extract a string value from a params dict, falling back to *default*."""
+    v = params.get(key, default)
+    return v if isinstance(v, str) else default
+
+
+def _sp_opt(params: dict[str, object], key: str) -> str | None:
+    """Extract an optional string value from a params dict."""
+    v = params.get(key)
+    return v if isinstance(v, str) else None
+
+
+def _ip(params: dict[str, object], key: str, default: int = 0) -> int:
+    """Extract an int value from a params dict."""
+    v = params.get(key, default)
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        return int(v)
+    return default
+
+
+def _fp(params: dict[str, object], key: str, default: float = 0.0) -> float:
+    """Extract a float value from a params dict."""
+    v = params.get(key, default)
+    if isinstance(v, (int, float)):
+        return float(v)
+    return default
+
+
+def _list_dicts(params: dict[str, object], key: str) -> list[dict[str, object]]:
+    """Extract a list of dicts from a params dict, filtering out non-dict items."""
+    v = params.get(key, [])
+    if not isinstance(v, list):
+        return []
+    return [item for item in v if isinstance(item, dict)]
 
 
 def phase_for_tool(tool_name: str) -> str:
@@ -74,7 +119,7 @@ async def _execute_agent_generator(
     composition_context: CompositionContext,
     emit_sse: bool,
     pre_emit_callback: (
-        Callable[[list[SSEEventInput]], Awaitable[None]] | None
+        Callable[[list[MaestroEvent]], Awaitable[None]] | None
     ) = None,
 ) -> _ToolCallOutcome | None:
     """Route a generator tool call through MusicGenerator (Orpheus).
@@ -85,7 +130,7 @@ async def _execute_agent_generator(
     Returns a complete ``_ToolCallOutcome`` on success, or ``None`` to
     fall through to normal tool handling.
     """
-    sse_events: list[SSEEventInput] = []
+    sse_events: list[MaestroEvent] = []
     extra_tool_calls: list[ToolCallDict] = []
 
     _role = enriched_params.get("role", "")
@@ -127,7 +172,7 @@ async def _execute_agent_generator(
         logger.error(f"❌ [{trace.trace_id[:8]}] {error_msg}")
         error_result: dict[str, object] = {"error": error_msg}
         if emit_sse:
-            sse_events.append({"type": "toolError", "name": tc_name, "error": error_msg})
+            sse_events.append(ToolErrorEvent(name=tc_name, error=error_msg))
         return _ToolCallOutcome(
             enriched_params=enriched_params,
             tool_result=error_result,
@@ -147,22 +192,12 @@ async def _execute_agent_generator(
     _gen_label = f"Generating {role} via Orpheus"
     _gen_phase = phase_for_tool(tc_name)
     if emit_sse:
-        _pre_events: list[SSEEventInput] = [
-            {
-                "type": "toolStart",
-                "name": tc_name,
-                "label": _gen_label,
-                "phase": _gen_phase,
-            },
-            {
-                "type": "generatorStart",
-                "role": role,
-                "agentId": role,
-                "style": style,
-                "bars": bars,
-                "startBeat": start_beat,
-                "label": role.capitalize(),
-            },
+        _pre_events: list[MaestroEvent] = [
+            ToolStartEvent(name=tc_name, label=_gen_label, phase=_gen_phase),
+            GeneratorStartEvent(
+                role=role, agent_id=role, style=style,
+                bars=bars, start_beat=start_beat, label=role.capitalize(),
+            ),
         ]
         if pre_emit_callback is not None:
             await pre_emit_callback(_pre_events)
@@ -228,7 +263,7 @@ async def _execute_agent_generator(
         logger.error(f"❌ [{trace.trace_id[:8]}] Generator {tc_name} failed: {exc}")
         error_result = {"error": str(exc)}
         if emit_sse:
-            sse_events.append({"type": "toolError", "name": tc_name, "error": str(exc)})
+            sse_events.append(ToolErrorEvent(name=tc_name, error=str(exc)))
         return _ToolCallOutcome(
             enriched_params=enriched_params,
             tool_result=error_result,
@@ -258,7 +293,7 @@ async def _execute_agent_generator(
             error_msg = result.error or "gpu_unavailable"
         error_result = {"error": error_msg}
         if emit_sse:
-            sse_events.append({"type": "toolError", "name": tc_name, "error": error_msg})
+            sse_events.append(ToolErrorEvent(name=tc_name, error=error_msg))
         return _ToolCallOutcome(
             enriched_params=enriched_params,
             tool_result=error_result,
@@ -291,13 +326,10 @@ async def _execute_agent_generator(
         )
 
     if emit_sse:
-        sse_events.append({
-            "type": "generatorComplete",
-            "role": role,
-            "agentId": role,
-            "noteCount": len(result.notes),
-            "durationMs": _gen_duration_ms,
-        })
+        sse_events.append(GeneratorCompleteEvent(
+            role=role, agent_id=role,
+            note_count=len(result.notes), duration_ms=_gen_duration_ms,
+        ))
 
     store.add_notes(region_id, result.notes)
 
@@ -324,18 +356,11 @@ async def _execute_agent_generator(
 
     if emit_sse:
         emit_params = _enrich_params_with_track_context(enriched_params, store)
-        sse_events.append({
-            "type": "toolCall",
-            "id": tc_id,
-            "name": "stori_add_notes",
-            "label": _gen_label,
-            "phase": _gen_phase,
-            "params": {
-                "trackId": track_id,
-                "regionId": region_id,
-                "notes": result.notes,
-            },
-        })
+        sse_events.append(ToolCallEvent(
+            id=tc_id, name="stori_add_notes",
+            label=_gen_label, phase=_gen_phase,
+            params={"trackId": track_id, "regionId": region_id, "notes": result.notes},
+        ))
         if result.cc_events:
             extra_tool_calls.append({
                 "tool": "stori_add_midi_cc",
@@ -483,7 +508,7 @@ async def _apply_single_tool_call(
     emit_sse: bool = True,
     composition_context: CompositionContext | None = None,
     pre_emit_callback: (
-        Callable[[list[SSEEventInput]], Awaitable[None]] | None
+        Callable[[list[MaestroEvent]], Awaitable[None]] | None
     ) = None,
 ) -> _ToolCallOutcome:
     """Validate, enrich, persist, and return results for one tool call.
@@ -492,10 +517,10 @@ async def _apply_single_tool_call(
     (Orpheus), icon synthesis, and tool result building.
 
     **SSE contract:** This function never emits SSE events directly.
-    When ``emit_sse=True`` it *builds* SSE event dicts and returns them
-    in ``_ToolCallOutcome.sse_events``.  The caller decides whether to
-    yield them to the client (editing path) or queue them (agent-team
-    path).  When ``emit_sse=False`` the ``sse_events`` list is empty.
+    When ``emit_sse=True`` it *builds* typed MaestroEvent instances and
+    returns them in ``_ToolCallOutcome.sse_events``.  The caller decides
+    whether to yield them to the client (editing path) or queue them
+    (agent-team path).  When ``emit_sse=False`` the list is empty.
 
     Args:
         tc_id: Tool call ID (from LLM response or synthetic UUID).
@@ -509,7 +534,7 @@ async def _apply_single_tool_call(
         composition_context: Optional dict with style, tempo, bars, key,
             emotion_vector, quality_preset for generator tool routing.
     """
-    sse_events: list[SSEEventInput] = []
+    sse_events: list[MaestroEvent] = []
     msg_call: AssistantMessage = {"role": "assistant"}
     msg_result: ToolResultMessage = {"role": "tool", "tool_call_id": "", "content": ""}
 
@@ -527,7 +552,7 @@ async def _apply_single_tool_call(
             )
             logger.error(f"[{trace.trace_id[:8]}] Circuit breaker: {cb_error}")
             if emit_sse:
-                sse_events.append({"type": "toolError", "name": tc_name, "error": cb_error})
+                sse_events.append(ToolErrorEvent(name=tc_name, error=cb_error))
             msg_call = AssistantMessage(
                 role="assistant",
                 tool_calls=[{"id": tc_id, "type": "function",
@@ -557,12 +582,11 @@ async def _apply_single_tool_call(
             cb_region_id = _fail_raw if isinstance(_fail_raw, str) else "__unknown__"
             add_notes_failures[cb_region_id] = add_notes_failures.get(cb_region_id, 0) + 1
         if emit_sse:
-            sse_events.append({
-                "type": "toolError",
-                "name": tc_name,
-                "error": validation.error_message,
-                "errors": [str(e) for e in validation.errors],
-            })
+            sse_events.append(ToolErrorEvent(
+                name=tc_name,
+                error=validation.error_message,
+                errors=[str(e) for e in validation.errors],
+            ))
         error_result: dict[str, object] = {"error": validation.error_message}
         msg_call = {
             "role": "assistant",
@@ -587,8 +611,8 @@ async def _apply_single_tool_call(
 
     # ── Entity creation ──
     if tc_name == "stori_add_midi_track":
-        track_name = enriched_params.get("name", "Track")
-        instrument = enriched_params.get("instrument")
+        track_name = _sp(enriched_params, "name", "Track")
+        instrument = _sp_opt(enriched_params, "instrument")
         gm_program = enriched_params.get("gmProgram")
         drum_kit_id = enriched_params.get("drumKitId")
         track_id = store.create_track(track_name)
@@ -607,7 +631,7 @@ async def _apply_single_tool_call(
         from app.core.track_styling import (
             normalize_color, color_for_role, is_valid_icon, infer_track_icon,
         )
-        raw_color = enriched_params.get("color")
+        raw_color = _sp_opt(enriched_params, "color")
         valid_color = normalize_color(raw_color)
         if valid_color:
             enriched_params["color"] = valid_color
@@ -615,7 +639,7 @@ async def _apply_single_tool_call(
             track_count = len(store.registry.list_tracks())
             enriched_params["color"] = color_for_role(track_name, track_count)
 
-        raw_icon = enriched_params.get("icon")
+        raw_icon = _sp_opt(enriched_params, "icon")
         _icon_from_llm = is_valid_icon(raw_icon)
         if not _icon_from_llm:
             enriched_params["icon"] = infer_track_icon(track_name)
@@ -629,11 +653,11 @@ async def _apply_single_tool_call(
             enriched_params["gmProgram"] = 0
 
     elif tc_name == "stori_add_midi_region":
-        midi_region_track_id: str | None = enriched_params.get("trackId")
-        region_name: str = str(enriched_params.get("name", "Region"))
+        midi_region_track_id: str | None = _sp_opt(enriched_params, "trackId")
+        region_name: str = _sp(enriched_params, "name", "Region")
         if midi_region_track_id:
-            _req_start = enriched_params.get("startBeat", 0)
-            _req_dur = enriched_params.get("durationBeats", 16)
+            _req_start = _fp(enriched_params, "startBeat", 0.0)
+            _req_dur = _fp(enriched_params, "durationBeats", 16.0)
 
             _existing_rid = store.registry.find_overlapping_region(
                 midi_region_track_id, _req_start, _req_dur,
@@ -736,7 +760,7 @@ async def _apply_single_tool_call(
             )
 
     elif tc_name == "stori_duplicate_region":
-        source_region_id: str = enriched_params.get("regionId", "")
+        source_region_id: str = _sp(enriched_params, "regionId")
         source_entity = store.registry.get_region(source_region_id)
         if source_entity:
             copy_name = f"{source_entity.name} (copy)"
@@ -744,14 +768,14 @@ async def _apply_single_tool_call(
             try:
                 new_region_id = store.create_region(
                     copy_name, parent_track_id,
-                    metadata={"startBeat": enriched_params.get("startBeat", 0)},
+                    metadata={"startBeat": _fp(enriched_params, "startBeat")},
                 )
                 enriched_params["newRegionId"] = new_region_id
             except ValueError as e:
                 logger.error(f"Failed to register duplicate region: {e}")
 
     elif tc_name == "stori_ensure_bus":
-        bus_name = enriched_params.get("name", "Bus")
+        bus_name = _sp(enriched_params, "name", "Bus")
         bus_id = store.get_or_create_bus(bus_name)
         enriched_params["busId"] = bus_id
 
@@ -771,85 +795,73 @@ async def _apply_single_tool_call(
     if emit_sse:
         emit_params = _enrich_params_with_track_context(enriched_params, store)
         _tc_label = _human_label_for_tool(tc_name, emit_params)
-        sse_events.append({
-            "type": "toolStart",
-            "name": tc_name,
-            "label": _tc_label,
-            "phase": _tc_phase,
-        })
-        sse_events.append({
-            "type": "toolCall",
-            "id": tc_id,
-            "name": tc_name,
-            "label": _tc_label,
-            "phase": _tc_phase,
-            "params": emit_params,
-        })
+        sse_events.append(ToolStartEvent(
+            name=tc_name, label=_tc_label, phase=_tc_phase,
+        ))
+        sse_events.append(ToolCallEvent(
+            id=tc_id, name=tc_name, label=_tc_label,
+            phase=_tc_phase, params=emit_params,
+        ))
 
     log_tool_call(trace.trace_id, tc_name, enriched_params, True)
 
     # ── Refine icon via GM/drum inference and emit synthetic stori_set_track_icon ──
     if tc_name == "stori_add_midi_track" and emit_sse:
-        _icon_track_id = enriched_params.get("trackId", "")
+        _icon_track_id = _sp(enriched_params, "trackId")
         _drum_kit = enriched_params.get("drumKitId")
         _is_drums = enriched_params.get("_isDrums", False)
         _gm_program = enriched_params.get("gmProgram")
         if _drum_kit or _is_drums:
             _track_icon: str | None = DRUM_ICON
         elif _icon_from_llm:
-            _track_icon = enriched_params.get("icon")
+            _track_icon = _sp_opt(enriched_params, "icon")
         elif _gm_program is not None:
-            _track_icon = icon_for_gm_program(int(_gm_program))
+            _track_icon = icon_for_gm_program(int(_gm_program) if isinstance(_gm_program, (int, float)) else 0)
         else:
-            _track_icon = enriched_params.get("icon")
+            _track_icon = _sp_opt(enriched_params, "icon")
         if _track_icon and _track_icon not in VALID_SF_SYMBOL_ICONS:
-            _track_icon = enriched_params.get("icon")
+            _track_icon = _sp_opt(enriched_params, "icon")
         if _track_icon:
             enriched_params["icon"] = _track_icon
         if _track_icon and _icon_track_id:
-            _icon_params: dict[str, str] = {"trackId": _icon_track_id, "icon": _track_icon}
-            _icon_label = f"Setting icon for {enriched_params.get('name', 'track')}"
+            _icon_params: dict[str, object] = {"trackId": _icon_track_id, "icon": _track_icon}
+            _icon_label = f"Setting icon for {_sp(enriched_params, 'name', 'track')}"
             _icon_phase = phase_for_tool("stori_set_track_icon")
-            sse_events.append({
-                "type": "toolStart",
-                "name": "stori_set_track_icon",
-                "label": _icon_label,
-                "phase": _icon_phase,
-            })
-            sse_events.append({
-                "type": "toolCall",
-                "id": f"{tc_id}-icon",
-                "name": "stori_set_track_icon",
-                "label": _icon_label,
-                "phase": _icon_phase,
-                "params": _icon_params,
-            })
+            sse_events.append(ToolStartEvent(
+                name="stori_set_track_icon", label=_icon_label, phase=_icon_phase,
+            ))
+            sse_events.append(ToolCallEvent(
+                id=f"{tc_id}-icon", name="stori_set_track_icon",
+                label=_icon_label, phase=_icon_phase, params=_icon_params,
+            ))
             extra_tool_calls.append({"tool": "stori_set_track_icon", "params": _icon_params})
 
     # ── FE strict contract: backfill missing required fields ──
     if tc_name == "stori_add_notes":
-        for note in enriched_params.get("notes", []):
+        for note in _list_dicts(enriched_params, "notes"):
             note.setdefault("pitch", 60)
             note.setdefault("velocity", 100)
             note.setdefault("startBeat", 0)
             note.setdefault("durationBeats", 1.0)
     elif tc_name == "stori_add_automation":
-        for pt in enriched_params.get("points", []):
+        for pt in _list_dicts(enriched_params, "points"):
             pt.setdefault("beat", 0)
             pt.setdefault("value", 0.5)
     elif tc_name == "stori_add_midi_cc":
-        for ev in enriched_params.get("events", []):
+        for ev in _list_dicts(enriched_params, "events"):
             ev.setdefault("beat", 0)
             ev.setdefault("value", 0)
     elif tc_name == "stori_add_pitch_bend":
-        for ev in enriched_params.get("events", []):
+        for ev in _list_dicts(enriched_params, "events"):
             ev.setdefault("beat", 0)
             ev.setdefault("value", 0)
 
     # ── Note persistence (with post-processing when context is available) ──
     if tc_name == "stori_add_notes":
-        _notes = enriched_params.get("notes", [])
-        _rid = enriched_params.get("regionId", "")
+        from app.contracts.json_types import NoteDict
+        _notes_raw = enriched_params.get("notes", [])
+        _notes: list[NoteDict] = _notes_raw if isinstance(_notes_raw, list) else []
+        _rid = _sp(enriched_params, "regionId")
         if _rid and _notes:
             if composition_context:
                 from app.services.expressiveness import apply_expressiveness
@@ -868,12 +880,12 @@ async def _apply_single_tool_call(
                     if expr.get("pitch_bends"):
                         store.add_pitch_bends(_rid, expr["pitch_bends"])
             store.add_notes(_rid, _notes)
-        add_notes_failures.pop(enriched_params.get("regionId", "__unknown__"), None)
+        add_notes_failures.pop(_sp(enriched_params, "regionId", "__unknown__"), None)
 
     # ── Effect persistence ──
     if tc_name == "stori_add_insert_effect":
-        _fx_track = enriched_params.get("trackId", "")
-        _fx_type = enriched_params.get("type", "")
+        _fx_track = _sp(enriched_params, "trackId")
+        _fx_type = _sp(enriched_params, "type")
         if _fx_track and _fx_type:
             try:
                 store.add_effect(_fx_track, _fx_type)
@@ -882,7 +894,9 @@ async def _apply_single_tool_call(
 
     # ── Message objects for LLM conversation history ──
     if tc_name == "stori_add_notes":
-        notes = enriched_params.get("notes", [])
+        from app.contracts.json_types import NoteDict
+        _notes_raw2 = enriched_params.get("notes", [])
+        notes: list[NoteDict] = _notes_raw2 if isinstance(_notes_raw2, list) else []
         summary_params = {k: v for k, v in enriched_params.items() if k != "notes"}
         summary_params["_noteCount"] = len(notes)
         if notes:

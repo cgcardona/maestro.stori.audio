@@ -19,9 +19,9 @@ from app.mcp.server import (
 
 @pytest.fixture
 def mcp_server() -> StoriMCPServer:
-    from app.protocol.version import STORI_VERSION
+    from app.protocol.version import MAESTRO_VERSION
     with patch("app.config.get_settings") as mock_settings:
-        mock_settings.return_value = MagicMock(app_version=STORI_VERSION)
+        mock_settings.return_value = MagicMock(app_version=MAESTRO_VERSION)
         server = StoriMCPServer()
     return server
 

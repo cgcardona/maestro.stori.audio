@@ -11,7 +11,23 @@ from app.core.plan_schemas import PlanValidationResult
 
 @dataclass
 class ExecutionPlan:
-    """Validated execution plan ready for the executor."""
+    """Validated execution plan ready for the executor.
+
+    Produced by ``build_execution_plan`` and consumed by ``run_executor``.
+    A plan is only executed when ``is_valid`` is ``True`` — i.e. it passed
+    safety validation AND contains at least one tool call.
+
+    Attributes:
+        tool_calls: Ordered list of ``ToolCall``s to execute.  May include both
+            generator calls (``stori_generate_midi``) and primitive DAW calls.
+        notes: Human-readable annotations from the planner LLM (not executed).
+        safety_validated: Set to ``True`` by the validator after checking the
+            plan against schema and safety rules.
+        llm_response_text: Raw LLM explanation text, kept for debugging and
+            plan-preview SSE events.
+        validation_result: Full ``PlanValidationResult`` from Pydantic parsing,
+            or ``None`` when validation was skipped (e.g. empty plan).
+    """
 
     tool_calls: list[ToolCall] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
@@ -20,6 +36,7 @@ class ExecutionPlan:
     validation_result: PlanValidationResult | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise to a summary dict suitable for SSE plan-preview events."""
         return {
             "tool_calls": [tc.to_dict() for tc in self.tool_calls],
             "notes": self.notes,
@@ -29,14 +46,17 @@ class ExecutionPlan:
 
     @property
     def is_valid(self) -> bool:
+        """``True`` when the plan passed safety validation and has at least one tool call."""
         return self.safety_validated and len(self.tool_calls) > 0
 
     @property
     def generation_count(self) -> int:
+        """Number of ``stori_generate_*`` calls in the plan (Orpheus invocations)."""
         return sum(1 for tc in self.tool_calls if tc.name.startswith("stori_generate"))
 
     @property
     def edit_count(self) -> int:
+        """Number of structural edit calls (track / region creation) in the plan."""
         return sum(
             1 for tc in self.tool_calls
             if tc.name in ("stori_add_midi_track", "stori_add_midi_region")

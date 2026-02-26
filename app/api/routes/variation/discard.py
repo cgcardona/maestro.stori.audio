@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Depends, Request
+from pydantic import BaseModel, Field
 
 from app.models.requests import DiscardVariationRequest
 from app.auth.dependencies import require_valid_token
@@ -25,13 +26,41 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+class DiscardVariationResponse(BaseModel):
+    """Acknowledgement that a variation was discarded.
+
+    Returned by ``POST /variation/discard`` in all non-error paths:
+    - The variation was found, was in a discardable state, and was
+      successfully transitioned to ``DISCARDED``.
+    - The variation was not found in the store (already expired or never
+      created) — treated as an implicit discard.
+    - The variation was already in the ``DISCARDED`` terminal state.
+
+    The endpoint raises ``409`` (rather than returning this entity) if the
+    variation is in a non-discardable terminal state other than ``DISCARDED``,
+    or if the state machine rejects the transition.
+
+    Attributes:
+        ok: Always ``True`` in the response body.  The endpoint uses HTTP
+            status codes for failure signalling, so ``ok=False`` is never
+            returned.
+    """
+
+    ok: bool = Field(
+        description=(
+            "Always True in the response body. "
+            "The endpoint uses HTTP status codes for failure signalling."
+        )
+    )
+
+
 @router.post("/variation/discard")
 @limiter.limit("30/minute")
 async def discard_variation(
     request: Request,
     discard_request: DiscardVariationRequest,
     token_claims: dict[str, Any] = Depends(require_valid_token),
-) -> dict[str, bool]:
+) -> DiscardVariationResponse:
     """Discard a variation — cancel generation if streaming, transition to DISCARDED."""
     vstore = get_variation_store()
     record = vstore.get(discard_request.variation_id)
@@ -41,11 +70,11 @@ async def discard_variation(
             "Variation discarded (not in store)",
             extra={"variation_id": discard_request.variation_id},
         )
-        return {"ok": True}
+        return DiscardVariationResponse(ok=True)
 
     if is_terminal(record.status):
         if record.status == VariationStatus.DISCARDED:
-            return {"ok": True}
+            return DiscardVariationResponse(ok=True)
         raise HTTPException(status_code=409, detail={
             "error": "Invalid state for discard",
             "message": f"Variation is in terminal state '{record.status.value}'",
@@ -90,4 +119,4 @@ async def discard_variation(
         },
     )
 
-    return {"ok": True}
+    return DiscardVariationResponse(ok=True)

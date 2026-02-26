@@ -24,7 +24,8 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 
 ## Execution
 
-- **Docker-first:** Never run Python on the host. `docker compose exec <service> <cmd>`. Rebuild before testing: `docker compose build <service> && docker compose up -d`.
+- **Docker-first:** Never run Python on the host. `docker compose exec <service> <cmd>`.
+- **Dev bind mounts are active.** `docker-compose.override.yml` bind-mounts `app/`, `tests/`, `scripts/`, `storpheus/`, and `pyproject.toml` into the containers. Host file edits are **instantly visible** inside the container — no rebuild needed for code changes. Only rebuild (`docker compose build <service> && docker compose up -d`) when you change `requirements.txt`, `Dockerfile`, or `entrypoint.sh`.
 - **Two containers:** `maestro` (`app/`, `tests/`) and `storpheus` (`storpheus/`). Both have mypy and pytest.
 - **Verification order: mypy → tests → docs.** Always run mypy first. Fix type errors before running tests so you only need one test pass.
 - **Mypy (both):** `docker compose exec maestro mypy app/ tests/` AND `docker compose exec storpheus mypy .`. Both pass before committing.

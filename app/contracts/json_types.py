@@ -7,9 +7,9 @@ Hierarchy:
   JSONScalar / JSONValue — arbitrary JSON (use sparingly)
   NoteDict              — a single MIDI note (camelCase wire format)
   InternalNoteDict      — a single MIDI note (snake_case internal storage)
-  CCEventDict           — a MIDI CC event
-  PitchBendDict         — a MIDI pitch bend event
-  AftertouchDict        — a MIDI aftertouch event (channel or poly)
+  CCEventDict           — a MIDI CC event  (cc, beat, value)
+  PitchBendDict         — a MIDI pitch bend event (beat, value)
+  AftertouchDict        — a MIDI aftertouch event (beat, value[, pitch])
   StorpheusResultBucket — return shape of normalize_storpheus_tool_calls
   ToolCallDict          — SSE tool call payload
   TrackSummaryDict      — summary.final track info
@@ -19,30 +19,60 @@ Hierarchy:
   RegionMetadataDB      — region position metadata (snake_case, database path)
 
   Region event map aliases (used across Muse/StateStore):
-  RegionNotesMap        — dict[str, list[NoteDict]]     (region_id → notes)
-  RegionCCMap           — dict[str, list[CCEventDict]]  (region_id → CC events)
-  RegionPitchBendMap    — dict[str, list[PitchBendDict]](region_id → pitch bends)
+  RegionNotesMap        — dict[str, list[NoteDict]]      (region_id → notes)
+  RegionCCMap           — dict[str, list[CCEventDict]]   (region_id → CC events)
+  RegionPitchBendMap    — dict[str, list[PitchBendDict]] (region_id → pitch bends)
   RegionAftertouchMap   — dict[str, list[AftertouchDict]](region_id → aftertouch)
+
+  Protocol introspection aliases (used by app/protocol/responses.py):
+  EventJsonSchema       — dict[str, object]              (single event JSON Schema)
+  EventSchemaMap        — dict[str, EventJsonSchema]     (event_type → JSON Schema)
+  EnumDefinitionMap     — dict[str, list[str]]           (enum name → member values)
 """
 
 from __future__ import annotations
-
-from typing import Any
 
 from typing_extensions import TypedDict
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Generic JSON types — use ONLY when the shape is truly unknown
+#
+# PYDANTIC COMPATIBILITY RULE
+# ───────────────────────────
+# JSONValue and JSONObject are *mypy-only* type aliases.  JSONValue is
+# recursive: it contains ``list["JSONValue"]`` and ``dict[str, "JSONValue"]``
+# string forward references.  Pydantic v2 must resolve those strings at runtime
+# against the importing module's namespace, and fails when they cross module
+# boundaries — producing a ``PydanticUserError: not fully defined`` at
+# instantiation time.
+#
+# Rule: **never use JSONValue or JSONObject in a Pydantic BaseModel field.**
+#
+# Where to use each:
+#   JSONValue / JSONObject  — TypedDicts, dataclasses, function signatures.
+#                             Pure mypy land; Pydantic never sees them.
+#   dict[str, object]       — Pydantic BaseModel fields that must hold opaque
+#                             external JSON (e.g. pre-validation LLM output,
+#                             external API payloads).  ``object`` is not ``Any``
+#                             — mypy requires explicit narrowing before use —
+#                             but carries no forward refs that Pydantic cannot
+#                             resolve.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 JSONScalar = str | int | float | bool | None
 """A JSON leaf value."""
 
-JSONValue = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
-"""Recursive JSON value — use instead of ``Any`` for arbitrary JSON payloads."""
+JSONValue = str | int | float | bool | None | list["JSONValue"] | dict[str, "JSONValue"]
+"""Recursive JSON value — use instead of ``Any`` for arbitrary JSON payloads.
+
+See module docstring: do NOT use this in Pydantic BaseModel fields.
+"""
 
 JSONObject = dict[str, JSONValue]
-"""A JSON object — use instead of ``dict[str, Any]`` when keys are unknown."""
+"""A JSON object — use instead of ``dict[str, Any]`` when keys are unknown.
+
+See module docstring: do NOT use this in Pydantic BaseModel fields.
+"""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -155,13 +185,13 @@ class ToolCallDict(TypedDict):
     Every producer (editing handler, composing coordinator, agent teams)
     writes exactly ``{"tool": "stori_xxx", "params": {...}}``.
 
-    ``params`` is ``dict[str, Any]`` because tool call arguments are
-    LLM-generated and genuinely polymorphic — and Pydantic V2 cannot
-    resolve the recursive ``JSONValue`` alias at model-build time.
+    ``params`` is ``dict[str, object]`` because tool call arguments are
+    LLM-generated and genuinely polymorphic — we use ``object`` rather
+    than ``Any`` so callers must narrow before dereferencing.
     """
 
     tool: str
-    params: dict[str, Any]
+    params: dict[str, object]
 
 
 class TrackSummaryDict(TypedDict, total=False):
@@ -198,22 +228,6 @@ class CCEnvelopeDict(TypedDict, total=False):
     trackId: str  # noqa: N815
     name: str
     pointCount: int  # noqa: N815
-
-
-class ControllerEventDict(TypedDict, total=False):
-    """A serialised MIDI controller change stored in Phrase.controller_changes.
-
-    The ``kind`` field discriminates the event type:
-    - ``"cc"``         → ``cc`` field present (CC number)
-    - ``"pitch_bend"`` → no extra fields
-    - ``"aftertouch"`` → optional ``pitch`` field (poly aftertouch only)
-    """
-
-    kind: str   # "cc" | "pitch_bend" | "aftertouch"
-    beat: float
-    value: int
-    cc: int     # CC number (kind="cc" only)
-    pitch: int  # MIDI pitch (kind="aftertouch", polyphonic only)
 
 
 class CompositionSummary(TypedDict, total=False):
@@ -261,7 +275,7 @@ class AppliedRegionInfo(TypedDict, total=False):
 
 
 class NoteChangeDict(TypedDict, total=False):
-    """Before/after shape in NoteChangeSchema and ControllerChangeSchema."""
+    """Before/after shape in NoteChangeSchema."""
 
     pitch: int
     startBeat: float  # noqa: N815
@@ -373,3 +387,21 @@ RegionPitchBendMap = dict[str, list[PitchBendDict]]
 
 RegionAftertouchMap = dict[str, list[AftertouchDict]]
 """Maps region_id → ordered list of MIDI aftertouch events for that region."""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Protocol introspection types
+#
+# Named aliases for the multi-dimensional collections returned by the protocol
+# endpoints.  Using explicit names instead of raw dict/list literals makes the
+# contract between the endpoint, its response model, and callers self-evident.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+EventJsonSchema = dict[str, object]
+"""JSON Schema dict for a single SSE event type, as produced by Pydantic's model_json_schema()."""
+
+EventSchemaMap = dict[str, EventJsonSchema]
+"""Maps event_type → its JSON Schema.  Returned by the protocol /events.json endpoint."""
+
+EnumDefinitionMap = dict[str, list[str]]
+"""Maps enum name → sorted list of member values.  Used in the protocol /schema.json endpoint."""

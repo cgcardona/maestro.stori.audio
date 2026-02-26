@@ -18,8 +18,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.core.sse_utils import SSEEventInput
-
 from app.contracts.json_types import AftertouchDict, CCEventDict, PitchBendDict
 from app.core.state_store import StateStore, Transaction
 from app.core.tool_names import ToolName
@@ -31,21 +29,36 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class CheckoutExecutionResult:
-    """Summary of a checkout execution."""
+    """Immutable summary returned after executing a ``CheckoutPlan``.
+
+    Callers inspect ``success`` / ``is_noop`` to decide whether to commit the
+    checkout transaction and emit the Muse SSE ``checkout`` event.
+
+    Attributes:
+        project_id: Project the checkout was applied to.
+        target_variation_id: Variation UUID that was restored.
+        executed: Number of tool calls that ran without error.
+        failed: Number of tool calls that raised an exception.
+        plan_hash: SHA-256 prefix of the ``CheckoutPlan`` for idempotency logs.
+        events: SSE-compatible event dicts emitted during execution; forwarded
+            to the Muse SSE stream by the route handler.
+    """
 
     project_id: str
     target_variation_id: str
     executed: int
     failed: int
     plan_hash: str
-    events: tuple[SSEEventInput, ...] = ()
+    events: tuple[dict[str, object], ...] = ()
 
     @property
     def success(self) -> bool:
+        """``True`` when all tool calls executed without error (and at least one ran)."""
         return self.failed == 0 and self.executed > 0
 
     @property
     def is_noop(self) -> bool:
+        """``True`` when the plan had no tool calls (working tree already matched target)."""
         return self.executed == 0 and self.failed == 0
 
 
@@ -83,7 +96,7 @@ def execute_checkout_plan(
 
     executed = 0
     failed = 0
-    events: list[SSEEventInput] = []
+    events: list[dict[str, object]] = []
 
     txn = store.begin_transaction(
         f"checkout:{checkout_plan.target_variation_id[:8]}",

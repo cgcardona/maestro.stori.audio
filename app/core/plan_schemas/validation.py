@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+from collections.abc import Mapping
 
 from app.core.plan_schemas.models import ExecutionPlanSchema, PlanValidationResult
 
 logger = logging.getLogger(__name__)
 
 
-def validate_plan_json(raw_json: dict[str, Any]) -> PlanValidationResult:
+def validate_plan_json(raw_json: Mapping[str, object]) -> PlanValidationResult:
     """Validate a raw JSON dict against the execution plan schema."""
     errors: list[str] = []
     warnings: list[str] = []
@@ -21,7 +21,7 @@ def validate_plan_json(raw_json: dict[str, Any]) -> PlanValidationResult:
         plan = ExecutionPlanSchema.model_validate(raw_json)
         if plan.is_empty():
             warnings.append("Plan is empty - no actions to execute")
-        return PlanValidationResult(valid=True, plan=plan, errors=[], warnings=warnings, raw_json=raw_json)
+        return PlanValidationResult(valid=True, plan=plan, errors=[], warnings=warnings, raw_llm_output=dict(raw_json))
 
     except Exception as e:
         if hasattr(e, 'errors'):
@@ -32,7 +32,7 @@ def validate_plan_json(raw_json: dict[str, Any]) -> PlanValidationResult:
         else:
             errors.append(str(e))
 
-        return PlanValidationResult(valid=False, plan=None, errors=errors, warnings=warnings, raw_json=raw_json)
+        return PlanValidationResult(valid=False, plan=None, errors=errors, warnings=warnings, raw_llm_output=dict(raw_json))
 
 
 def extract_and_validate_plan(llm_response: str) -> PlanValidationResult:
@@ -43,7 +43,7 @@ def extract_and_validate_plan(llm_response: str) -> PlanValidationResult:
     multiple JSON objects, and common JSON formatting issues from LLMs.
     """
     if not llm_response or not llm_response.strip():
-        return PlanValidationResult(valid=False, errors=["Empty LLM response"], raw_json=None)
+        return PlanValidationResult(valid=False, errors=["Empty LLM response"], raw_llm_output=None)
 
     text = llm_response.strip()
 
@@ -75,9 +75,9 @@ def extract_and_validate_plan(llm_response: str) -> PlanValidationResult:
             if isinstance(raw_json, dict):
                 return validate_plan_json(raw_json)
         except json.JSONDecodeError as e:
-            return PlanValidationResult(valid=False, errors=[f"Invalid JSON after extraction: {e}"], raw_json=None)
+            return PlanValidationResult(valid=False, errors=[f"Invalid JSON after extraction: {e}"], raw_llm_output=None)
 
-    return PlanValidationResult(valid=False, errors=["No valid JSON object found in LLM response"], raw_json=None)
+    return PlanValidationResult(valid=False, errors=["No valid JSON object found in LLM response"], raw_llm_output=None)
 
 
 def _extract_json_candidates(text: str) -> list[str]:
@@ -117,7 +117,7 @@ def _extract_json_candidates(text: str) -> list[str]:
     return candidates
 
 
-def _looks_like_plan(obj: dict[str, Any]) -> bool:
+def _looks_like_plan(obj: Mapping[str, object]) -> bool:
     """Check whether a dict looks like an execution plan."""
     plan_keys = {"generations", "edits", "mix"}
     if set(obj.keys()) & plan_keys:

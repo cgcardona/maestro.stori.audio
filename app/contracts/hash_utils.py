@@ -102,7 +102,12 @@ def seal_contract(obj: object, parent_hash: str = "") -> None:
 
 
 def set_parent_hash(obj: object, parent_hash: str) -> None:
-    """set ``parent_contract_hash`` on a frozen dataclass."""
+    """Set ``parent_contract_hash`` on a frozen dataclass without unfreezing it.
+
+    Uses ``object.__setattr__`` to bypass the ``frozen=True`` restriction.
+    Call this when linking a child contract to its parent before sealing the
+    child with ``seal_contract``.
+    """
     object.__setattr__(obj, "parent_contract_hash", parent_hash)
 
 

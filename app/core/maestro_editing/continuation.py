@@ -31,7 +31,7 @@ def _get_incomplete_tracks(
         for tc in tool_calls_collected:
             if tc["tool"] == "stori_add_notes":
                 rid = tc["params"].get("regionId")
-                if rid:
+                if isinstance(rid, str) and rid:
                     regions_with_notes_this_iter.add(rid)
 
     incomplete: list[str] = []

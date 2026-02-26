@@ -1,0 +1,21 @@
+# Dev-only overrides — auto-merged by `docker compose up`.
+# Bind-mounts shadow COPY'd code so host edits are instantly visible
+# inside the container without a rebuild.
+#
+# Production: use `docker compose -f docker-compose.yml up` to skip this.
+
+services:
+  maestro:
+    volumes:
+      - maestro_data:/data
+      - ./app:/app/app
+      - ./tests:/app/tests
+      - ./scripts:/app/scripts
+      - ./alembic:/app/alembic
+      - ./stori_tourdeforce:/app/stori_tourdeforce
+      - ./pyproject.toml:/app/pyproject.toml
+
+  storpheus:
+    volumes:
+      - storpheus_cache:/data/cache
+      - ./storpheus:/app

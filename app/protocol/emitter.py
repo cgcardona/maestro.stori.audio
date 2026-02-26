@@ -1,15 +1,17 @@
 """Typed SSE event emitter and parser — protocol-enforced serialization.
 
-Every SSE event the backend emits passes through this module.
-Three entry points:
+Every SSE event the backend emits passes through ``emit()``.
+Two entry points:
 
-  ``emit(StoriEvent)``       — serialize a typed event object to SSE wire format.
-  ``serialize_event(dict)``  — serialize a handler dict; validates through the
-                               registry model before serialization.
-  ``parse_event(dict)``      — deserialize a wire-format dict back into the
-                               correct StoriEvent subclass (inverse of
-                               ``serialize_event``).  Use in tests and any
-                               consumer that needs typed access to received events.
+  ``emit(MaestroEvent)``  — serialize a typed event object to SSE wire format.
+  ``parse_event(dict)``   — deserialize a wire-format dict back into the
+                            correct MaestroEvent subclass (inverse of ``emit``).
+                            Use in tests and any consumer that needs typed
+                            access to received events.
+
+Handlers construct typed MaestroEvent subclasses directly — raw-dict emission
+is forbidden.  The type safety is enforced at construction time by Pydantic
+model validation, not at serialization time.
 
 The ``seq`` field defaults to -1 (sentinel); the route-layer ``_with_seq()``
 wrapper in maestro.py overwrites it with the monotonic stream counter.
@@ -19,9 +21,9 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
-from app.protocol.events import StoriEvent
+from app.contracts.json_types import JSONObject
+from app.protocol.events import MaestroEvent
 from app.protocol.registry import EVENT_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -35,17 +37,17 @@ class ProtocolSerializationError(Exception):
     """
 
 
-def emit(event: StoriEvent) -> str:
-    """Serialize a StoriEvent to SSE wire format.
+def emit(event: MaestroEvent) -> str:
+    """Serialize a MaestroEvent to SSE wire format.
 
     Returns ``data: {json}\\n\\n``.
 
-    Raises TypeError for non-StoriEvent arguments.
+    Raises TypeError for non-MaestroEvent arguments.
     Raises ValueError for unregistered event types.
     """
-    if not isinstance(event, StoriEvent):
+    if not isinstance(event, MaestroEvent):
         raise TypeError(
-            f"emit() requires a StoriEvent, got {type(event).__name__}."
+            f"emit() requires a MaestroEvent, got {type(event).__name__}."
         )
 
     event_type = event.type
@@ -59,12 +61,12 @@ def emit(event: StoriEvent) -> str:
     return f"data: {json.dumps(data, separators=(',', ':'), ensure_ascii=False)}\n\n"
 
 
-def parse_event(data: dict[str, Any]) -> StoriEvent:
-    """Deserialize a wire-format dict back into the correct StoriEvent subclass.
+def parse_event(data: JSONObject) -> MaestroEvent:
+    """Deserialize a wire-format dict back into the correct MaestroEvent subclass.
 
-    Mirrors ``serialize_event`` in reverse: dispatches through the registry
-    and validates via the Pydantic model, returning the concrete subclass
-    (e.g. ``ErrorEvent``, ``StateEvent``) rather than the base ``StoriEvent``.
+    Dispatches through the registry and validates via the Pydantic model,
+    returning the concrete subclass (e.g. ``ErrorEvent``, ``StateEvent``)
+    rather than the base ``MaestroEvent``.
 
     The wire format uses camelCase keys (``by_alias=True``).  ``CamelModel``
     has ``populate_by_name=True`` so both snake_case and camelCase keys are
@@ -88,35 +90,3 @@ def parse_event(data: dict[str, Any]) -> StoriEvent:
         raise ProtocolSerializationError(
             f"Event '{event_type}' failed deserialization: {exc}"
         ) from exc
-
-
-def serialize_event(data: dict[str, Any]) -> str:
-    """Validate a handler dict against its registered model and serialize.
-
-    This is the single serialization path for all SSE events.  Handler
-    code builds plain dicts; this function enforces the protocol contract
-    by validating through the Pydantic model before serialization.
-
-    If validation fails, raises ``ProtocolSerializationError``.
-    Raw dict emission is forbidden — there is no production fallback.
-    """
-    event_type = data.get("type")
-    if event_type is None:
-        raise ProtocolSerializationError("Event dict missing 'type' field")
-
-    if event_type not in EVENT_REGISTRY:
-        raise ProtocolSerializationError(
-            f"Unregistered event type '{event_type}'. "
-            f"Register it in app/protocol/registry.py."
-        )
-
-    model_class = EVENT_REGISTRY[event_type]
-    try:
-        event = model_class.model_validate(data)
-    except Exception as exc:
-        raise ProtocolSerializationError(
-            f"Event '{event_type}' failed protocol validation: {exc}"
-        ) from exc
-
-    validated = event.model_dump(by_alias=True, exclude_none=True)
-    return f"data: {json.dumps(validated, separators=(',', ':'), ensure_ascii=False)}\n\n"

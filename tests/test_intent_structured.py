@@ -14,6 +14,7 @@ from app.core.intent import (
     SSEState,
     get_intent_result,
 )
+from app.core.prompt_parser import ParsedPrompt
 
 
 # ─── Mode: compose → COMPOSING ──────────────────────────────────────────────
@@ -147,7 +148,7 @@ class TestSlotsPopulation:
         )
         result = get_intent_result(prompt)
         parsed = result.slots.extras.get("parsed_prompt")
-        assert parsed is not None
+        assert isinstance(parsed, ParsedPrompt)
         assert parsed.style == "jazz"
         assert parsed.key == "Cm"
         assert parsed.tempo == 90
@@ -262,6 +263,7 @@ class TestSpecExamples:
         assert result.confidence == 0.99
 
         parsed = result.slots.extras["parsed_prompt"]
+        assert isinstance(parsed, ParsedPrompt)
         assert parsed.style == "melodic techno"
         assert parsed.key == "F#m"
         assert parsed.tempo == 126

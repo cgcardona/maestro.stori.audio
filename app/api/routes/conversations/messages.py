@@ -8,8 +8,6 @@ import re
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +16,7 @@ from app.config import settings
 from app.contracts.llm_types import ChatMessage
 from app.db import get_db
 from app.auth.dependencies import require_valid_token
+from app.auth.tokens import TokenClaims
 from app.services import conversations as conv_service
 from app.services.conversations import get_optimized_context
 from app.services.budget import (
@@ -28,8 +27,9 @@ from app.services.budget import (
 )
 from app.models.requests import MaestroRequest
 from app.core.maestro_handlers import orchestrate, UsageTracker
-from app.core.sse_utils import sse_event, SSESequencer
-from app.protocol.emitter import ProtocolSerializationError
+from app.core.stream_utils import SSESequencer
+from app.protocol.emitter import ProtocolSerializationError, emit
+from app.protocol.events import CompleteEvent, ErrorEvent
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ async def add_message_to_conversation(
     conversation_id: str,
     maestro_request: MaestroRequest,
     request: Request,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """
@@ -87,9 +87,9 @@ async def add_message_to_conversation(
         usage_tracker = UsageTracker()
         sequencer = SSESequencer()
         assistant_content_parts: list[str] = []
-        tool_calls_made: list[dict[str, Any]] = []
-        sse_events_captured: list[dict[str, Any]] = []
-        tool_actions: dict[str, Any] = {}
+        tool_calls_made: list[dict[str, object]] = []
+        sse_events_captured: list[dict[str, object]] = []
+        tool_actions: dict[str, dict[str, object]] = {}
         assistant_message_id: str | None = None
 
         try:
@@ -191,14 +191,17 @@ async def add_message_to_conversation(
             assistant_message_id = assistant_message.id
 
             for tool_name, action_data in tool_actions.items():
-                success = action_data.get("success", False)
+                _success_raw = action_data.get("success", False)
+                _action_type = action_data.get("action_type")
+                _description = action_data.get("description")
+                _error_message = action_data.get("error_message")
                 await conv_service.add_action(
                     db=db,
                     message_id=assistant_message_id,
-                    action_type=action_data["action_type"],
-                    description=action_data["description"],
-                    success=success if success is not None else False,
-                    error_message=action_data.get("error_message"),
+                    action_type=_action_type if isinstance(_action_type, str) else tool_name,
+                    description=_description if isinstance(_description, str) else "",
+                    success=bool(_success_raw) if _success_raw is not None else False,
+                    error_message=_error_message if isinstance(_error_message, str) else None,
                     extra_metadata={
                         "tool_name": tool_name,
                         "params": action_data.get("params"),
@@ -232,17 +235,16 @@ async def add_message_to_conversation(
         except ProtocolSerializationError as e:
             logger.error(f"❌ Protocol serialization failure in conversation stream: {e}")
             await db.rollback()
-            yield sequencer(await sse_event({"type": "error", "message": "Protocol serialization failure"}))
-            yield sequencer(await sse_event({
-                "type": "complete",
-                "success": False,
-                "error": str(e),
-                "traceId": "protocol-error",
-            }))
+            yield sequencer(emit(ErrorEvent(message="Protocol serialization failure")))
+            yield sequencer(emit(CompleteEvent(
+                success=False,
+                error=str(e),
+                trace_id="protocol-error",
+            )))
         except Exception as e:
             logger.error(f"Error in conversation message stream: {e}", exc_info=True)
             await db.rollback()
-            yield sequencer(await sse_event({"type": "error", "message": str(e)}))
+            yield sequencer(emit(ErrorEvent(message=str(e))))
 
     return StreamingResponse(
         stream_with_save(),

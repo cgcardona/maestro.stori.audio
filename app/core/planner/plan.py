@@ -6,7 +6,6 @@ import json
 import logging
 from typing import (
     TYPE_CHECKING,
-    Any,
     AsyncIterator,
     Awaitable,
     Callable,
@@ -17,13 +16,15 @@ if TYPE_CHECKING:
     from app.core.llm_client import LLMClient, UsageStats
     from app.core.maestro_handlers import UsageTracker
 
+from app.contracts.json_types import JSONObject
 from app.contracts.llm_types import ChatMessage
+from app.core.plan_schemas.models import GenerationRole
 
 from app.contracts.project_types import ProjectContext
 
 ProjectState = ProjectContext
-PlanJsonDict = dict[str, Any]  # boundary: plan JSON (validated by ExecutionPlanSchema)
-SSEEventDict = dict[str, Any]  # boundary: SSE event dict
+PlanJsonDict = JSONObject  # plan JSON payload (validated by ExecutionPlanSchema)
+SSEEventDict = JSONObject  # SSE event wire dict
 
 from app.core.expansion import ToolCall
 from app.core.intent import IntentResult
@@ -124,8 +125,8 @@ def _try_deterministic_plan(
         + (f", start_beat={start_beat}" if start_beat else "")
     )
 
-    valid_roles = {"drums", "bass", "chords", "melody", "arp", "pads", "fx", "lead"}
-    _INSTRUMENT_ROLE_MAP: dict[str, str] = {
+    valid_roles: frozenset[GenerationRole] = frozenset({"drums", "bass", "chords", "melody", "arp", "pads", "fx", "lead"})
+    _INSTRUMENT_ROLE_MAP: dict[str, GenerationRole] = {
         "kick": "drums", "snare": "drums", "hihat": "drums", "hi-hat": "drums",
         "percussion": "drums", "drum kit": "drums", "congas": "drums", "bongos": "drums",
         "tabla": "drums", "cajon": "drums", "shaker": "drums", "tambourine": "drums",
@@ -146,15 +147,17 @@ def _try_deterministic_plan(
     generations = []
     for role in parsed.roles:
         role_lower = role.lower().strip()
-        if role_lower in valid_roles:
-            storpheus_role = role_lower
+        storpheus_role: GenerationRole
+        _identity_map: dict[str, GenerationRole] = {r: r for r in valid_roles}
+        if role_lower in _identity_map:
+            storpheus_role = _identity_map[role_lower]
             track_name = None
         else:
             storpheus_role = _INSTRUMENT_ROLE_MAP.get(role_lower, "melody")
             track_name = role.strip().title()
         generations.append(
             GenerationStep(
-                role=storpheus_role,  # type: ignore[arg-type]  # runtime-validated via _INSTRUMENT_ROLE_MAP
+                role=storpheus_role,
                 style=parsed.style,
                 tempo=parsed.tempo,
                 bars=bars,
@@ -264,7 +267,7 @@ async def build_execution_plan_stream(
     final ExecutionPlan as the last item. String items are SSE lines; the caller
     keeps the final ExecutionPlan.
     """
-    from app.core.sse_utils import ReasoningBuffer
+    from app.core.stream_utils import ReasoningBuffer
 
     start_beat: float = 0.0
     if parsed is not None and parsed.position is not None:

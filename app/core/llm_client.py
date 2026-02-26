@@ -30,6 +30,7 @@ from app.contracts.llm_types import (
     OpenAITool as OpenAITool,
     OpenAIToolChoice as OpenAIToolChoice,
     StreamEvent as StreamEvent,
+    ToolSchemaDict,
     UsageStats as UsageStats,
 )
 from app.core.expansion import ToolCall
@@ -59,6 +60,7 @@ class LLMResponse:
 
     @property
     def has_tool_calls(self) -> bool:
+        """``True`` when the LLM response includes at least one tool call."""
         return len(self.tool_calls) > 0
 
 
@@ -153,6 +155,12 @@ class LLMClient:
         return self.model in self.REASONING_MODELS
     
     def _get_api_key(self) -> str:
+        """Resolve the API key for the configured provider from settings.
+
+        Raises ``ValueError`` when the required key is absent (misconfigured
+        environment) so the failure surfaces at startup rather than at the
+        first request.
+        """
         if self.provider == LLMProvider.OPENROUTER:
             key = settings.openrouter_api_key
             if key is None:
@@ -161,21 +169,25 @@ class LLMClient:
         raise ValueError(f"No API key configured for provider: {self.provider}")
     
     def _get_base_url(self) -> str:
+        """Return the base URL for the configured provider's API."""
         if self.provider == LLMProvider.OPENROUTER:
             return "https://openrouter.ai/api"
         raise ValueError(f"Unknown provider: {self.provider}")
-    
+
     @property
     def client(self) -> httpx.AsyncClient:
+        """Return the shared ``httpx.AsyncClient``, creating it lazily on first access.
+
+        Injects auth and referrer headers at construction time.  Notably, the
+        ``anthropic-beta`` header is intentionally omitted: Claude 4.x has
+        stable prompt caching and sending the 2024-07-31 beta value causes
+        silent failures on newer model versions.
+        """
         if self._client is None:
             headers = {"Authorization": f"Bearer {self.api_key}"}
             if self.provider == LLMProvider.OPENROUTER:
                 headers["HTTP-Referer"] = "https://stori.ai"
                 headers["X-Title"] = "Stori Maestro"
-                # Do NOT send anthropic-beta as an HTTP header.
-                # For Claude 4.x, prompt caching is stable — no beta header needed.
-                # Cache is activated purely by cache_control blocks in the payload.
-                # Sending the 2024-07-31 beta value causes silent failures on newer models.
             self._client = httpx.AsyncClient(timeout=self.timeout, headers=headers)
         return self._client
     
@@ -189,7 +201,7 @@ class LLMClient:
         self,
         system: str,
         user: str,
-        tools: list[OpenAITool],
+        tools: list[ToolSchemaDict],
         tool_choice: str,
         context: ChatContext,
     ) -> LLMResponse:
@@ -229,8 +241,8 @@ class LLMClient:
     def _enable_prompt_caching(
         self,
         messages: list[ChatMessage],
-        tools: list[OpenAITool] | None = None,
-    ) -> tuple[list[ChatMessage], list[OpenAITool] | None, None]:
+        tools: list[ToolSchemaDict] | None = None,
+    ) -> tuple[list[ChatMessage], list[dict[str, object]] | None, None]:
         """
         Add Anthropic cache_control breakpoints to the system prompt and tools.
 
@@ -261,7 +273,10 @@ class LLMClient:
                 logger.debug(
                     f"Prompt caching skipped: {self.model} not in CACHE_SUPPORTED_MODELS"
                 )
-            return messages, tools, None
+            _pass_through: list[dict[str, object]] | None = (
+                [dict(t) for t in tools] if tools else None
+            )
+            return messages, _pass_through, None
 
         # OpenRouter's OpenAI-compatible interface does not forward a top-level
         # `system` array (Anthropic-native format) to Anthropic — it silently
@@ -278,11 +293,12 @@ class LLMClient:
         # Anthropic requires the cacheable prefix to be ≥ 1024 tokens.
         # For COMPOSING (22 tools, ~2500+ tok) this fires reliably.
         # For EDITING (1 tool, ~200-800 tok) it is below threshold — accepted.
-        cached_tools: list[OpenAITool] | None = None
+        cached_tools: list[dict[str, object]] | None = None
         if tools:
             cached_tools = [dict(t) for t in tools]
-            cached_tools[-1] = dict(cached_tools[-1])
-            cached_tools[-1]["cache_control"] = {"type": "ephemeral"}
+            last = dict(cached_tools[-1])
+            last["cache_control"] = {"type": "ephemeral"}
+            cached_tools[-1] = last
 
         n_tools = len(tools) if tools else 0
         logger.debug(
@@ -294,7 +310,7 @@ class LLMClient:
     async def chat_completion(
         self,
         messages: list[ChatMessage],
-        tools: list[OpenAITool] | None = None,
+        tools: list[ToolSchemaDict] | None = None,
         tool_choice: OpenAIToolChoice | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -372,7 +388,7 @@ class LLMClient:
     async def chat_completion_stream(
         self,
         messages: list[ChatMessage],
-        tools: list[OpenAITool] | None = None,
+        tools: list[ToolSchemaDict] | None = None,
         tool_choice: OpenAIToolChoice | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,

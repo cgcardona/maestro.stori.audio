@@ -81,14 +81,8 @@ def _cc(cc_num: int, beat: float, value: int) -> CCEventDict:
     return {"cc": cc_num, "beat": beat, "value": value}
 
 
-def _cc_ctrl(cc_num: int, beat: float, value: int) -> dict[str, Any]:
-    """CC event with 'kind' discriminator for controller_changes persistence."""
-    return {"kind": "cc", "cc": cc_num, "beat": beat, "value": value}
-
-
 def _make_variation(
     notes: list[NoteDict],
-    controllers: list[dict[str, Any]] | None = None,
     region_id: str = "region-1",
     track_id: str = "track-1",
 ) -> Variation:
@@ -117,7 +111,6 @@ def _make_variation(
                     )
                     for n in notes
                 ],
-                controller_changes=controllers or [],
             ),
         ],
     )

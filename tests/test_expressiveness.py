@@ -782,7 +782,12 @@ class TestMusicGeneratorExpressiveness:
 
 
 class TestBeatsPerBar:
-    """Tests for _beats_per_bar() in conversion.py."""
+    """Tests for _beats_per_bar() in conversion.py.
+
+    Only the canonical ProjectContext contract is tested:
+    - ``timeSignature`` key (camelCase)
+    - value is ``str`` like "3/4" or ``TimeSignatureDict`` like {"numerator": 3, "denominator": 4}
+    """
 
     def test_default_is_four(self) -> None:
 
@@ -792,41 +797,49 @@ class TestBeatsPerBar:
         assert _beats_per_bar(None) == 4
         assert _beats_per_bar({}) == 4
 
-    def test_list_format(self) -> None:
+    def test_string_three_four(self) -> None:
 
-        """[3, 4] → 3 beats per bar."""
+        """"3/4" → 3 beats per bar."""
         from app.core.planner.conversion import _beats_per_bar
 
-        # Testing defensive handling of legacy wire formats
-        assert _beats_per_bar({"time_signature": [3, 4]}) == 3  # type: ignore[arg-type]
+        assert _beats_per_bar({"timeSignature": "3/4"}) == 3
 
-    def test_tuple_format(self) -> None:
+    def test_string_six_eight(self) -> None:
 
-        """(6, 8) → 6 beats per bar."""
+        """"6/8" → 6 beats per bar."""
         from app.core.planner.conversion import _beats_per_bar
 
-        assert _beats_per_bar({"time_signature": (6, 8)}) == 6  # type: ignore[arg-type]
+        assert _beats_per_bar({"timeSignature": "6/8"}) == 6
 
-    def test_dict_format(self) -> None:
+    def test_string_seven_eight(self) -> None:
 
-        """{"numerator": 5, "denominator": 4} → 5."""
+        """"7/8" → 7 beats per bar."""
         from app.core.planner.conversion import _beats_per_bar
 
-        assert _beats_per_bar({"time_signature": {"numerator": 5, "denominator": 4}}) == 5  # type: ignore[arg-type]
+        assert _beats_per_bar({"timeSignature": "7/8"}) == 7
 
-    def test_string_format(self) -> None:
+    def test_dict_five_four(self) -> None:
 
-        """'7/8' → 7."""
+        """TimeSignatureDict with numerator 5 → 5 beats per bar."""
         from app.core.planner.conversion import _beats_per_bar
 
-        assert _beats_per_bar({"time_signature": "7/8"}) == 7  # type: ignore[arg-type]
+        assert _beats_per_bar({"timeSignature": {"numerator": 5, "denominator": 4}}) == 5
 
-    def test_camel_case_key(self) -> None:
+    def test_dict_missing_numerator_defaults_to_four(self) -> None:
 
-        """timeSignature (camelCase) is also supported."""
+        """TimeSignatureDict with all fields present still returns numerator."""
+        from app.contracts.project_types import ProjectContext
         from app.core.planner.conversion import _beats_per_bar
 
-        assert _beats_per_bar({"timeSignature": [5, 4]}) == 5  # type: ignore[arg-type]
+        ctx: ProjectContext = {"timeSignature": {"numerator": 4, "denominator": 4}}
+        assert _beats_per_bar(ctx) == 4
+
+    def test_no_time_signature_field_defaults_to_four(self) -> None:
+
+        """Project state with other fields but no timeSignature → 4."""
+        from app.core.planner.conversion import _beats_per_bar
+
+        assert _beats_per_bar({"tempo": 120, "key": "C"}) == 4
 
 
 # ─── Prompt parser Energy field ───────────────────────────────────────────────

@@ -8,7 +8,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts.json_types import RegionMetadataDB, RegionMetadataWire
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    PitchBendDict,
+    RegionMetadataDB,
+    RegionMetadataWire,
+)
 from app.models.requests import CommitVariationRequest
 from app.models.variation import (
     MidiNoteSnapshot,
@@ -52,6 +58,15 @@ def _record_to_variation(record: VariationRecord) -> Variation:
                 before=MidiNoteSnapshot.model_validate(before_raw) if before_raw else None,
                 after=MidiNoteSnapshot.model_validate(after_raw) if after_raw else None,
             ))
+        raw_at: list[AftertouchDict] = []
+        for at_raw in diff.get("aftertouch", []):
+            at_ev: AftertouchDict = {
+                "beat": float(at_raw.get("beat", 0)),
+                "value": int(at_raw.get("value", 0)),
+            }
+            if "pitch" in at_raw:
+                at_ev["pitch"] = int(at_raw["pitch"])
+            raw_at.append(at_ev)
         phrases.append(Phrase(
             phrase_id=pr.phrase_id,
             track_id=pr.track_id,
@@ -60,7 +75,15 @@ def _record_to_variation(record: VariationRecord) -> Variation:
             end_beat=pr.beat_end,
             label=pr.label,
             note_changes=note_changes,
-            controller_changes=diff.get("controllerChanges", []),
+            cc_events=[
+                CCEventDict(cc=int(e.get("cc", 0)), beat=float(e.get("beat", 0)), value=int(e.get("value", 0)))
+                for e in diff.get("ccEvents", [])
+            ],
+            pitch_bends=[
+                PitchBendDict(beat=float(e.get("beat", 0)), value=int(e.get("value", 0)))
+                for e in diff.get("pitchBends", [])
+            ],
+            aftertouch=raw_at,
             explanation=pr.ai_explanation,
             tags=pr.tags or [],
         ))

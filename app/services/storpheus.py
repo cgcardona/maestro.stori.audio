@@ -90,6 +90,12 @@ class _CircuitBreaker:
 
     @property
     def is_open(self) -> bool:
+        """``True`` while the circuit is open (within the cooldown window).
+
+        Implements the half-open probe window: once the cooldown expires the
+        property returns ``False``, allowing one probe request through.  If that
+        probe fails, ``record_failure`` re-opens the circuit immediately.
+        """
         if self._opened_at is None:
             return False
         if _time.monotonic() - self._opened_at >= self.cooldown:
@@ -97,12 +103,22 @@ class _CircuitBreaker:
         return True
 
     def record_success(self) -> None:
+        """Close the circuit after a successful Orpheus request.
+
+        Resets the failure counter and clears ``_opened_at`` so subsequent
+        calls go through immediately.
+        """
         if self._opened_at is not None:
             logger.info("🟢 Orpheus circuit breaker CLOSED (successful request)")
         self._failures = 0
         self._opened_at = None
 
     def record_failure(self) -> None:
+        """Increment the failure counter and open the circuit when the threshold is reached.
+
+        If the circuit is already open and the cooldown has elapsed (half-open probe),
+        re-opens the circuit for another full ``cooldown`` period.
+        """
         self._failures += 1
         if self._failures >= self.threshold and self._opened_at is None:
             self._opened_at = _time.monotonic()
@@ -167,6 +183,13 @@ class StorpheusClient:
 
     @property
     def client(self) -> httpx.AsyncClient:
+        """Return the shared ``httpx.AsyncClient``, creating it lazily on first access.
+
+        The client is intentionally long-lived so that keepalive connections to
+        Orpheus are reused across requests.  HF token auth headers are injected
+        at construction time so they apply to every request without per-call
+        overhead.
+        """
         if self._client is None:
             headers = {}
             if self.hf_token:

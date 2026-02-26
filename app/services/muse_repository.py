@@ -18,13 +18,18 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
-
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.contracts.json_types import RegionMetadataDB, RegionMetadataWire
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    JSONObject,
+    PitchBendDict,
+    RegionMetadataDB,
+    RegionMetadataWire,
+)
 from app.db import muse_models as db
 from app.models.variation import (
     ChangeType,
@@ -45,6 +50,45 @@ def _validate_change_type(raw: str) -> ChangeType:
     if raw == "modified":
         return "modified"
     raise ValueError(f"Invalid change_type in DB: {raw!r}")
+
+
+def _parse_cc_event(raw: JSONObject) -> CCEventDict:
+    """Rebuild a typed CCEventDict from a raw DB JSON dict."""
+    def _to_int(v: object) -> int:
+        return int(v) if isinstance(v, (int, float, str)) else 0
+
+    def _to_float(v: object) -> float:
+        return float(v) if isinstance(v, (int, float, str)) else 0.0
+
+    return CCEventDict(
+        cc=_to_int(raw.get("cc", 0)),
+        beat=_to_float(raw.get("beat", 0)),
+        value=_to_int(raw.get("value", 0)),
+    )
+
+
+def _parse_pitch_bend(raw: JSONObject) -> PitchBendDict:
+    """Rebuild a typed PitchBendDict from a raw DB JSON dict."""
+    raw_beat = raw.get("beat", 0)
+    raw_value = raw.get("value", 0)
+    return PitchBendDict(
+        beat=float(raw_beat) if isinstance(raw_beat, (int, float, str)) else 0.0,
+        value=int(raw_value) if isinstance(raw_value, (int, float, str)) else 0,
+    )
+
+
+def _parse_aftertouch(raw: JSONObject) -> AftertouchDict:
+    """Rebuild a typed AftertouchDict from a raw DB JSON dict."""
+    raw_beat = raw.get("beat", 0)
+    raw_value = raw.get("value", 0)
+    ev: AftertouchDict = {
+        "beat": float(raw_beat) if isinstance(raw_beat, (int, float, str)) else 0.0,
+        "value": int(raw_value) if isinstance(raw_value, (int, float, str)) else 0,
+    }
+    if "pitch" in raw:
+        raw_pitch = raw["pitch"]
+        ev["pitch"] = int(raw_pitch) if isinstance(raw_pitch, (int, float, str)) else 0
+    return ev
 
 
 @dataclass(frozen=True)
@@ -113,7 +157,9 @@ async def save_variation(
             label=phrase.label,
             tags=phrase.tags or [],
             explanation=phrase.explanation,
-            controller_changes=phrase.controller_changes or [],
+            cc_events=phrase.cc_events,
+            pitch_bends=phrase.pitch_bends,
+            aftertouch=phrase.aftertouch,
             region_start_beat=r_meta.get("startBeat"),
             region_duration_beats=r_meta.get("durationBeats"),
             region_name=r_meta.get("name"),
@@ -177,7 +223,9 @@ async def load_variation(
             end_beat=p.end_beat,
             label=p.label,
             note_changes=note_changes,
-            controller_changes=p.controller_changes or [],
+            cc_events=[_parse_cc_event(ev) for ev in (p.cc_events or [])],
+            pitch_bends=[_parse_pitch_bend(ev) for ev in (p.pitch_bends or [])],
+            aftertouch=[_parse_aftertouch(ev) for ev in (p.aftertouch or [])],
             explanation=p.explanation,
             tags=p.tags or [],
         ))
@@ -334,13 +382,13 @@ async def set_head(
     await session.execute(clear_stmt)
 
     # set new HEAD
-    values: dict[str, Any] = {"is_head": True}
-    if commit_state_id is not None:
-        values["commit_state_id"] = commit_state_id
     set_stmt = (
         update(db.Variation)
         .where(db.Variation.variation_id == variation_id)
-        .values(**values)
+        .values(
+            is_head=True,
+            **({"commit_state_id": commit_state_id} if commit_state_id is not None else {}),
+        )
     )
     await session.execute(set_stmt)
     logger.info("✅ HEAD set: %s (project %s)", variation_id[:8], project_id[:8])

@@ -10,20 +10,51 @@ This file intentionally keeps macros small and composable.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Callable
+
+from typing_extensions import TypedDict
 
 from app.core.expansion import ToolCall
 
 
+class MacroContext(TypedDict, total=False):
+    """Invocation context passed to a macro expand function.
+
+    All fields are optional — macros must guard against missing keys with .get().
+    ``trackId`` is the primary targeting slot; additional keys may be added
+    as new macros require them.
+    """
+
+    trackId: str
+
+
 @dataclass(frozen=True)
 class Macro:
+    """A named recipe that expands into a list of primitive ``ToolCall``s.
+
+    Macros are never sent to the LLM directly — the planner emits them by ID
+    and the macro engine expands them into primitives before execution.  This
+    keeps the LLM's tool surface small while enabling multi-step operations.
+
+    Attributes:
+        id: Stable slug used to invoke the macro (e.g. ``"mix.darker"``).
+        description: Human-readable intent, shown in plan previews.
+        expand: Pure function ``(MacroContext) -> list[ToolCall]`` — receives
+            the targeting context and returns zero or more primitives.
+            Must handle missing context keys gracefully (return ``[]``).
+    """
+
     id: str
     description: str
-    expand: Callable[[dict[str, Any]], list[ToolCall]]  # context -> toolcalls
+    expand: Callable[[MacroContext], list[ToolCall]]
 
 
-def macro_make_darker(ctx: dict[str, Any]) -> list[ToolCall]:
-    # Example conservative recipe: EQ + subtle distortion for warmth
+def macro_make_darker(ctx: MacroContext) -> list[ToolCall]:
+    """Expand the ``mix.darker`` macro into EQ + distortion inserts.
+
+    Conservative recipe: high-shelf EQ cut followed by subtle tube distortion
+    for warmth.  Returns an empty list when ``trackId`` is absent from context.
+    """
     track_id = ctx.get("trackId")
     if not track_id:
         return []
@@ -38,7 +69,12 @@ MACROS: dict[str, Macro] = {
 }
 
 
-def expand_macro(macro_id: str, ctx: dict[str, Any]) -> list[ToolCall]:
+def expand_macro(macro_id: str, ctx: MacroContext) -> list[ToolCall]:
+    """Look up a macro by ID and expand it into primitive ``ToolCall``s.
+
+    Returns an empty list for unknown ``macro_id`` values — callers should
+    treat an empty result as a no-op rather than an error.
+    """
     m = MACROS.get(macro_id)
     if not m:
         return []

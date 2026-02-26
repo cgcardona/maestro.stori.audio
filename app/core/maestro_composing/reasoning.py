@@ -12,9 +12,11 @@ from app.core.entity_context import format_project_context
 from app.core.intent import Intent, IntentResult
 from app.core.llm_client import LLMClient, LLMResponse
 from app.core.prompts import system_prompt_base, wrap_user_request
-from app.core.sse_utils import sanitize_reasoning, sse_event
+from app.core.stream_utils import sanitize_reasoning
 from app.core.tracing import TraceContext, log_llm_call, trace_span
 from app.core.maestro_helpers import UsageTracker, _context_usage_fields
+from app.protocol.emitter import emit
+from app.protocol.events import CompleteEvent, ContentEvent, ReasoningEvent, StatusEvent
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ async def _handle_reasoning(
     conversation_history: list[ChatMessage],
 ) -> AsyncIterator[str]:
     """Handle REASONING state - answer questions without tools."""
-    yield await sse_event({"type": "status", "message": "Reasoning..."})
+    yield emit(StatusEvent(message="Reasoning..."))
 
     if route.intent == Intent.ASK_STORI_DOCS:
         try:
@@ -38,15 +40,13 @@ async def _handle_reasoning(
 
             if rag.collection_exists():
                 async for chunk in rag.answer(prompt, model=llm.model):
-                    yield await sse_event({"type": "content", "content": chunk})
+                    yield emit(ContentEvent(content=chunk))
 
-                yield await sse_event({
-                    "type": "complete",
-                    "success": True,
-                    "toolCalls": [],
-                    "traceId": trace.trace_id,
+                yield emit(CompleteEvent(
+                    success=True,
+                    trace_id=trace.trace_id,
                     **_context_usage_fields(usage_tracker, llm.model),
-                })
+                ))
                 return
         except Exception as e:
             logger.warning(f"[{trace.trace_id[:8]}] RAG failed: {e}")
@@ -80,15 +80,12 @@ async def _handle_reasoning(
                     if reasoning_text:
                         sanitized = sanitize_reasoning(reasoning_text)
                         if sanitized:
-                            yield await sse_event({
-                                "type": "reasoning",
-                                "content": sanitized,
-                            })
+                            yield emit(ReasoningEvent(content=sanitized))
                 elif event.get("type") == "content_delta":
                     content_text = event.get("text", "")
                     if content_text:
                         response_text += content_text
-                        yield await sse_event({"type": "content", "content": content_text})
+                        yield emit(ContentEvent(content=content_text))
                 elif event.get("type") == "done":
                     response = LLMResponse(
                         content=response_text or event.get("content"),
@@ -104,7 +101,7 @@ async def _handle_reasoning(
             duration_ms = (time.time() - start_time) * 1000
 
             if response.content:
-                yield await sse_event({"type": "content", "content": response.content})
+                yield emit(ContentEvent(content=response.content))
 
         if response and response.usage:
             log_llm_call(
@@ -121,10 +118,8 @@ async def _handle_reasoning(
                     response.usage.get("completion_tokens", 0),
                 )
 
-    yield await sse_event({
-        "type": "complete",
-        "success": True,
-        "toolCalls": [],
-        "traceId": trace.trace_id,
+    yield emit(CompleteEvent(
+        success=True,
+        trace_id=trace.trace_id,
         **_context_usage_fields(usage_tracker, llm.model),
-    })
+    ))

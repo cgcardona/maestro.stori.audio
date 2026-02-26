@@ -13,7 +13,6 @@ from __future__ import annotations
 from typing import Any
 import asyncio
 
-from app.core.sse_utils import SSEEventInput
 import json
 from unittest.mock import patch
 
@@ -44,6 +43,7 @@ from app.core.expansion import ToolCall
 from app.core.maestro_plan_tracker import _ToolCallOutcome
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
+from app.protocol.events import MaestroEvent, ToolCallEvent
 
 
 def _spec(name: str = "verse", index: int = 0, start: int = 0, beats: int = 16) -> SectionSpec:
@@ -328,18 +328,18 @@ class TestExecutionAttestation:
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
-                    sse_events=[{"type": "toolCall", "name": tc_name}],
+                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
                     msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={"notesAdded": 20, "regionId": "reg-1"},
-                sse_events=[{"type": "toolCall", "name": tc_name}],
+                sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
                 msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
         store = StateStore(conversation_id="exec-attest")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         trace = TraceContext(trace_id="exec-trace-001")
 
         with patch(
@@ -513,18 +513,18 @@ class TestReplayAttackPrevention:
                 return _ToolCallOutcome(
                     enriched_params=resolved_args,
                     tool_result={"regionId": "reg-1", "trackId": "trk-1"},
-                    sse_events=[{"type": "toolCall", "name": tc_name}],
+                    sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
                     msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
                 )
             return _ToolCallOutcome(
                 enriched_params=resolved_args,
                 tool_result={"notesAdded": 15, "regionId": "reg-1"},
-                sse_events=[{"type": "toolCall", "name": tc_name}],
+                sse_events=[ToolCallEvent(id=tc_id, name=tc_name, params=resolved_args)],
                 msg_call={"role": "assistant"}, msg_result={"role": "tool", "tool_call_id": "", "content": "{}"},
             )
 
         store = StateStore(conversation_id="replay-test")
-        queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
@@ -541,7 +541,7 @@ class TestReplayAttackPrevention:
                 sse_queue=queue,
             )
 
-        queue2: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+        queue2: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         with patch(
             "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,

@@ -174,6 +174,12 @@ class SectionState:
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def set(self, key: str, telemetry: SectionTelemetry) -> None:
+        """Write ``telemetry`` for ``key`` (acquires lock — safe for concurrent callers).
+
+        ``key`` must follow ``"Instrument: section_id"`` format (e.g.
+        ``"Drums: 0:verse"``).  Written values are frozen ``SectionTelemetry``
+        dataclasses — subsequent reads return the same object.
+        """
         async with self._lock:
             self._data[key] = telemetry
         logger.debug(
@@ -183,6 +189,7 @@ class SectionState:
         )
 
     async def get(self, key: str) -> SectionTelemetry | None:
+        """Return the ``SectionTelemetry`` for ``key``, or ``None`` if not yet written."""
         async with self._lock:
             return self._data.get(key)
 

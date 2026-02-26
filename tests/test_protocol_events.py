@@ -12,12 +12,13 @@ import inspect
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
 from app.protocol.events import (
-    StoriEvent,
+    MaestroEvent,
     StateEvent,
     ReasoningEvent,
     ContentEvent,
@@ -41,11 +42,17 @@ from app.protocol.events import (
     NoteChangeSchema,
     DoneEvent,
 )
+from app.contracts.json_types import JSONObject
 from app.protocol.registry import EVENT_REGISTRY, ALL_EVENT_TYPES
-from app.protocol.emitter import emit, serialize_event, ProtocolSerializationError
+from app.protocol.emitter import emit, parse_event, ProtocolSerializationError
 from app.protocol.validation import ProtocolGuard
-from app.protocol.version import STORI_PROTOCOL_VERSION, is_compatible
+from app.protocol.version import MAESTRO_VERSION, is_compatible
 from app.protocol.schemas.project import ProjectSnapshot
+
+
+def _serialize_event(data: JSONObject) -> str:
+    """Validate a raw dict through the protocol and emit as SSE."""
+    return emit(parse_event(data))
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -57,26 +64,25 @@ class TestProtocolVersion:
     def test_version_format(self) -> None:
 
         """Version string is semver."""
-        assert re.match(r"^\d+\.\d+\.\d+", STORI_PROTOCOL_VERSION)
+        assert re.match(r"^\d+\.\d+\.\d+", MAESTRO_VERSION)
 
-    def test_version_matches_pyproject(self) -> None:
+    def test_version_reads_from_pyproject(self) -> None:
 
-        """Protocol version reads from pyproject.toml — single source of truth."""
-        from app.protocol.version import STORI_VERSION
-        assert STORI_PROTOCOL_VERSION == STORI_VERSION
+        """MAESTRO_VERSION reads from pyproject.toml — single source of truth."""
+        assert MAESTRO_VERSION != "0.0.0-unknown"
 
     def test_compatible_same_major(self) -> None:
 
-        from app.protocol.version import STORI_VERSION_MAJOR
-        assert is_compatible(f"{STORI_VERSION_MAJOR}.0.0")
-        assert is_compatible(f"{STORI_VERSION_MAJOR}.5.3")
+        from app.protocol.version import MAESTRO_VERSION_MAJOR
+        assert is_compatible(f"{MAESTRO_VERSION_MAJOR}.0.0")
+        assert is_compatible(f"{MAESTRO_VERSION_MAJOR}.5.3")
 
     def test_incompatible_different_major(self) -> None:
 
-        from app.protocol.version import STORI_VERSION_MAJOR
-        assert not is_compatible(f"{STORI_VERSION_MAJOR + 1}.0.0")
-        if STORI_VERSION_MAJOR > 0:
-            assert not is_compatible(f"{STORI_VERSION_MAJOR - 1}.0.0")
+        from app.protocol.version import MAESTRO_VERSION_MAJOR
+        assert not is_compatible(f"{MAESTRO_VERSION_MAJOR + 1}.0.0")
+        if MAESTRO_VERSION_MAJOR > 0:
+            assert not is_compatible(f"{MAESTRO_VERSION_MAJOR - 1}.0.0")
 
     def test_incompatible_garbage(self) -> None:
 
@@ -92,14 +98,14 @@ class TestProtocolVersion:
 class TestEventRegistry:
     def test_all_event_types_registered(self) -> None:
 
-        """Every StoriEvent subclass in events.py has a registry entry."""
+        """Every MaestroEvent subclass in events.py has a registry entry."""
         from app.protocol import events as events_module
 
         all_subclasses = set()
         for name, obj in inspect.getmembers(events_module, inspect.isclass):
             if (
-                issubclass(obj, StoriEvent)
-                and obj is not StoriEvent
+                issubclass(obj, MaestroEvent)
+                and obj is not MaestroEvent
                 and not name.endswith("Schema")
             ):
                 all_subclasses.add(obj)
@@ -107,7 +113,7 @@ class TestEventRegistry:
         registered_classes = set(EVENT_REGISTRY.values())
         missing = all_subclasses - registered_classes
         assert not missing, (
-            f"StoriEvent subclasses not in registry: {[c.__name__ for c in missing]}"
+            f"MaestroEvent subclasses not in registry: {[c.__name__ for c in missing]}"
         )
 
     def test_registry_type_keys_match_model_type(self) -> None:
@@ -155,7 +161,7 @@ class TestEventSerialization:
         assert data["type"] == "state"
         assert data["traceId"] == "test-trace"
         assert data["executionMode"] == "apply"
-        assert data["protocolVersion"] == STORI_PROTOCOL_VERSION
+        assert data["protocolVersion"] == MAESTRO_VERSION
         assert "trace_id" not in data
         assert "execution_mode" not in data
 
@@ -203,12 +209,12 @@ class TestEventSerialization:
 class TestEmitter:
     def test_emit_rejects_raw_dict(self) -> None:
 
-        with pytest.raises(TypeError, match="StoriEvent"):
-            emit({"type": "state"})  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="MaestroEvent"):
+            emit({"type": "state"})  # type: ignore[arg-type]  # intentionally wrong: testing that emit() rejects raw dicts
 
     def test_emit_rejects_unregistered_type(self) -> None:
 
-        class FakeEvent(StoriEvent):
+        class FakeEvent(MaestroEvent):
             type: str = "fake_event_xyz"
 
         with pytest.raises(ValueError, match="Unknown event type"):
@@ -232,25 +238,25 @@ class TestSerializeEvent:
     def test_valid_event_dict_validates_and_serializes(self) -> None:
 
         """serialize_event produces model-validated SSE output."""
-        sse = serialize_event({"type": "content", "content": "hello"})
+        sse = _serialize_event({"type": "content", "content": "hello"})
         assert sse.startswith("data: ")
         payload = json.loads(sse[6:].strip())
         assert payload["type"] == "content"
         assert payload["content"] == "hello"
-        assert payload["protocolVersion"] == STORI_PROTOCOL_VERSION
+        assert payload["protocolVersion"] == MAESTRO_VERSION
         assert payload["seq"] == -1
 
     def test_injects_protocol_version(self) -> None:
 
         """protocolVersion is auto-injected even when not in source dict."""
-        sse = serialize_event({"type": "status", "message": "ok"})
+        sse = _serialize_event({"type": "status", "message": "ok"})
         payload = json.loads(sse[6:].strip())
-        assert payload["protocolVersion"] == STORI_PROTOCOL_VERSION
+        assert payload["protocolVersion"] == MAESTRO_VERSION
 
     def test_camel_case_aliases_accepted(self) -> None:
 
         """Handler dicts using camelCase keys validate correctly."""
-        sse = serialize_event({
+        sse = _serialize_event({
             "type": "state",
             "state": "editing",
             "intent": "track.add",
@@ -265,30 +271,30 @@ class TestSerializeEvent:
     def test_missing_type_raises(self) -> None:
 
         with pytest.raises(ProtocolSerializationError, match="missing 'type'"):
-            serialize_event({"content": "no type"})
+            _serialize_event({"content": "no type"})
 
     def test_unregistered_type_raises(self) -> None:
 
         """Unregistered event types always raise (no production fallback)."""
-        with pytest.raises(ProtocolSerializationError, match="Unregistered"):
-            serialize_event({"type": "totally_unknown_xyz"})
+        with pytest.raises(ProtocolSerializationError, match="Unknown event type"):
+            _serialize_event({"type": "totally_unknown_xyz"})
 
     def test_invalid_dict_raises(self) -> None:
 
         """A dict that fails model validation always raises."""
-        with pytest.raises(ProtocolSerializationError, match="failed protocol validation"):
-            serialize_event({"type": "content"})
+        with pytest.raises(ProtocolSerializationError, match="failed deserialization"):
+            _serialize_event({"type": "content"})
 
     def test_compact_json_output(self) -> None:
 
-        sse = serialize_event({"type": "content", "content": "hi"})
+        sse = _serialize_event({"type": "content", "content": "hi"})
         json_part = sse[6:].strip()
         assert '" : ' not in json_part
 
     def test_exclude_none(self) -> None:
 
         """Optional None fields are excluded from wire output."""
-        sse = serialize_event({"type": "error", "message": "boom"})
+        sse = _serialize_event({"type": "error", "message": "boom"})
         payload = json.loads(sse[6:].strip())
         assert "traceId" not in payload
         assert "code" not in payload
@@ -304,7 +310,7 @@ class TestExtraFieldsPolicy:
 
         """Event models reject unexpected fields."""
         with pytest.raises(ValidationError):
-            ContentEvent(content="hi", bogus_field="nope")  # type: ignore[call-arg]
+            ContentEvent(content="hi", bogus_field="nope")  # type: ignore[call-arg]  # intentionally wrong: testing that extra fields are rejected
 
     def test_project_snapshot_allows_extra(self) -> None:
 
@@ -370,7 +376,7 @@ class TestCompleteEvent:
     def test_requires_success_and_trace_id(self) -> None:
 
         with pytest.raises(ValidationError):
-            CompleteEvent()  # type: ignore[call-arg]
+            CompleteEvent()  # type: ignore[call-arg]  # intentionally omitting required fields to test validation
 
     def test_success_true(self) -> None:
 
@@ -520,7 +526,7 @@ class TestProtocolHash:
         current = compute_protocol_hash()
         assert current == golden, (
             f"Protocol hash changed: {current} != {golden}. "
-            f"If intentional, update app/protocol/GOLDEN_HASH and bump STORI_PROTOCOL_VERSION."
+            f"If intentional, update app/protocol/GOLDEN_HASH and bump MAESTRO_VERSION."
         )
 
 
@@ -629,7 +635,7 @@ async def test_protocol_info_endpoint(client: AsyncClient) -> None:
     response = await client.get("/api/v1/protocol")
     assert response.status_code == 200
     data = response.json()
-    assert data["protocolVersion"] == STORI_PROTOCOL_VERSION
+    assert data["protocolVersion"] == MAESTRO_VERSION
     assert "protocolHash" in data
     assert "eventTypes" in data
     assert isinstance(data["eventTypes"], list)
@@ -643,7 +649,7 @@ async def test_protocol_events_endpoint(client: AsyncClient) -> None:
     response = await client.get("/api/v1/protocol/events.json")
     assert response.status_code == 200
     data = response.json()
-    assert data["protocolVersion"] == STORI_PROTOCOL_VERSION
+    assert data["protocolVersion"] == MAESTRO_VERSION
     events = data["events"]
     assert "state" in events
     assert "complete" in events
@@ -659,7 +665,7 @@ async def test_protocol_tools_endpoint(client: AsyncClient) -> None:
     response = await client.get("/api/v1/protocol/tools.json")
     assert response.status_code == 200
     data = response.json()
-    assert data["protocolVersion"] == STORI_PROTOCOL_VERSION
+    assert data["protocolVersion"] == MAESTRO_VERSION
     assert "tools" in data
     assert isinstance(data["tools"], list)
     assert data["toolCount"] > 0
@@ -672,7 +678,7 @@ async def test_protocol_schema_unified_endpoint(client: AsyncClient) -> None:
     response = await client.get("/api/v1/protocol/schema.json")
     assert response.status_code == 200
     data = response.json()
-    assert data["protocolVersion"] == STORI_PROTOCOL_VERSION
+    assert data["protocolVersion"] == MAESTRO_VERSION
     assert "protocolHash" in data
     assert "events" in data
     assert "enums" in data
@@ -689,34 +695,25 @@ async def test_protocol_schema_unified_endpoint(client: AsyncClient) -> None:
 class TestPhase2RuntimeIntegration:
     """Prove that protocol enforcement is wired into the runtime path."""
 
-    @pytest.mark.anyio
-    async def test_sse_event_uses_protocol_serializer(self) -> None:
+    def test_protocol_emitter_validates_at_runtime(self) -> None:
 
-        """sse_event() validates through protocol models at runtime."""
-        from app.core.sse_utils import sse_event
-
-        result = await sse_event({"type": "content", "content": "hello"})
+        """parse_event + emit validates through protocol models at runtime."""
+        result = _serialize_event({"type": "content", "content": "hello"})
         payload = json.loads(result[6:].strip())
-        assert payload["protocolVersion"] == STORI_PROTOCOL_VERSION
+        assert payload["protocolVersion"] == MAESTRO_VERSION
         assert payload["seq"] == -1
 
-    @pytest.mark.anyio
-    async def test_sse_event_rejects_unknown_type(self) -> None:
+    def test_protocol_emitter_rejects_unknown_type(self) -> None:
 
         """Unregistered event types always raise (no production fallback)."""
-        from app.core.sse_utils import sse_event
+        with pytest.raises(ProtocolSerializationError, match="Unknown"):
+            _serialize_event({"type": "nonexistent_event_type"})
 
-        with pytest.raises(ProtocolSerializationError, match="Unregistered"):
-            await sse_event({"type": "nonexistent_event_type"})
-
-    @pytest.mark.anyio
-    async def test_sse_event_validates_model_fields(self) -> None:
+    def test_protocol_emitter_validates_model_fields(self) -> None:
 
         """Missing required fields always raise."""
-        from app.core.sse_utils import sse_event
-
-        with pytest.raises(ProtocolSerializationError, match="failed protocol validation"):
-            await sse_event({"type": "state"})
+        with pytest.raises(ProtocolSerializationError, match="failed"):
+            _serialize_event({"type": "state"})
 
     def test_all_registered_events_roundtrip_via_serialize(self) -> None:
 
@@ -724,10 +721,10 @@ class TestPhase2RuntimeIntegration:
         for event_type, model_class in EVENT_REGISTRY.items():
             instance = _make_minimal(model_class)
             wire_dict = instance.model_dump(by_alias=True, exclude_none=True)
-            sse = serialize_event(wire_dict)
+            sse = _serialize_event(wire_dict)
             payload = json.loads(sse[6:].strip())
             assert payload["type"] == event_type
-            assert payload["protocolVersion"] == STORI_PROTOCOL_VERSION
+            assert payload["protocolVersion"] == MAESTRO_VERSION
 
 
 class TestProtocolGuardEnforcedGlobally:
@@ -748,7 +745,7 @@ class TestProtocolGuardEnforcedGlobally:
 
         return (
             "from app.protocol.validation import ProtocolGuard" in text
-            or "from app.core.sse_utils import" in text
+            or "from app.core.stream_utils import" in text
         )
 
     def test_maestro_route_has_guard(self) -> None:
@@ -840,7 +837,7 @@ class TestPhase2ProjectSnapshotValidation:
         """
         from app.models.requests import MaestroRequest
 
-        req = MaestroRequest(prompt="test", project={"id": "p1", "futureField": "ok"})  # type: ignore[arg-type]
+        req = MaestroRequest(prompt="test", project={"id": "p1", "futureField": "ok"})  # type: ignore[arg-type]  # intentionally passing extra field to verify the validator strips unknown keys
         assert req.project is not None
         assert req.project.get("id") == "p1"
         assert "futureField" not in req.project
@@ -865,9 +862,9 @@ class TestPhase2NoDuplicateHelpers:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def _make_minimal(model_class: type[StoriEvent]) -> StoriEvent:
+def _make_minimal(model_class: type[MaestroEvent]) -> MaestroEvent:
     """Construct a minimal valid instance of an event model."""
-    _MINIMAL: dict[str, dict[str, object]] = {
+    _MINIMAL: dict[str, dict[str, Any]] = {
         "state": {"state": "editing", "intent": "track.add", "confidence": 0.9, "trace_id": "t"},
         "reasoning": {"content": "thinking..."},
         "reasoningEnd": {"agent_id": "a1"},
@@ -911,15 +908,15 @@ class TestProtocolConvergenceFinal:
 
     def test_serialize_event_never_emits_raw(self) -> None:
 
-        """serialize_event() raises on invalid events, never emits raw dicts."""
+        """_serialize_event() raises on invalid events, never emits raw dicts."""
         with pytest.raises(ProtocolSerializationError):
-            serialize_event({"type": "nonexistent_type_xyz"})
+            _serialize_event({"type": "nonexistent_type_xyz"})
 
         with pytest.raises(ProtocolSerializationError):
-            serialize_event({"no_type_field": True})
+            _serialize_event({"no_type_field": True})
 
         with pytest.raises(ProtocolSerializationError):
-            serialize_event({"type": "content"})
+            _serialize_event({"type": "content"})
 
     def test_no_raw_sse_fallback_in_emitter(self) -> None:
 
@@ -1001,7 +998,7 @@ class TestProtocolConvergenceFinal:
 
         allowed = {
             "emitter.py",
-            "sse_utils.py",
+            "stream_utils.py",
         }
 
         scan_dirs = [

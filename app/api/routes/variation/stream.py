@@ -11,8 +11,8 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from app.auth.dependencies import require_valid_token
-from app.core.sse_utils import sse_event
-from app.protocol.emitter import ProtocolSerializationError
+from app.protocol.emitter import ProtocolSerializationError, emit, parse_event
+from app.protocol.events import ErrorEvent, MCPPingEvent
 from app.protocol.validation import ProtocolGuard
 from app.variation.core.event_envelope import EventEnvelope
 from app.variation.core.state_machine import is_terminal
@@ -52,7 +52,9 @@ def _envelope_to_protocol_dict(envelope: EventEnvelope) -> dict[str, Any]:
             "tags": payload.get("tags", []),
             "explanation": payload.get("explanation"),
             "noteChanges": payload.get("noteChanges", payload.get("note_changes", [])),
-            "controllerChanges": payload.get("controllerChanges", payload.get("controller_changes", [])),
+            "ccEvents": payload.get("ccEvents", payload.get("cc_events", [])),
+            "pitchBends": payload.get("pitchBends", payload.get("pitch_bends", [])),
+            "aftertouch": payload.get("aftertouch", []),
         }
     elif etype == "done":
         return {
@@ -104,13 +106,10 @@ async def stream_variation(
             for envelope in broadcaster.get_history(variation_id, from_sequence):
                 try:
                     event_dict = _envelope_to_protocol_dict(envelope)
-                    yield await sse_event(event_dict)
+                    yield emit(parse_event(event_dict))
                 except ProtocolSerializationError as exc:
                     logger.error(f"❌ Variation replay protocol error: {exc}")
-                    yield await sse_event({
-                        "type": "error",
-                        "message": "Protocol serialization failure",
-                    })
+                    yield emit(ErrorEvent(message="Protocol serialization failure"))
                     return
 
         return StreamingResponse(
@@ -128,7 +127,7 @@ async def stream_variation(
                 try:
                     envelope = await asyncio.wait_for(queue.get(), timeout=30.0)
                 except asyncio.TimeoutError:
-                    yield await sse_event({"type": "mcp.ping"})
+                    yield emit(MCPPingEvent())
                     continue
 
                 if envelope is None:
@@ -136,13 +135,10 @@ async def stream_variation(
 
                 try:
                     event_dict = _envelope_to_protocol_dict(envelope)
-                    yield await sse_event(event_dict)
+                    yield emit(parse_event(event_dict))
                 except ProtocolSerializationError as exc:
                     logger.error(f"❌ Variation stream protocol error: {exc}")
-                    yield await sse_event({
-                        "type": "error",
-                        "message": "Protocol serialization failure",
-                    })
+                    yield emit(ErrorEvent(message="Protocol serialization failure"))
                     return
 
                 if envelope.type == "done":

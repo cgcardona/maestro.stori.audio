@@ -1,46 +1,45 @@
-"""Tests for SSE formatting, reasoning sanitization, and BPE buffering."""
+"""Tests for event formatting, reasoning sanitization, and BPE buffering."""
 from __future__ import annotations
 
 import json
 import pytest
 
-from app.core.sse_utils import ReasoningBuffer, sse_event, sanitize_reasoning, strip_tool_echoes
+from app.core.stream_utils import ReasoningBuffer, sanitize_reasoning, strip_tool_echoes
+from app.protocol.emitter import emit
+from app.protocol.events import StatusEvent, ToolCallEvent
 
 
-class TestSseEvent:
-    """Test sse_event formatting."""
+class TestEmit:
+    """Test emit() formatting."""
 
-    @pytest.mark.anyio
-    async def test_formats_as_sse_data_line(self) -> None:
+    def test_formats_as_sse_data_line(self) -> None:
 
         """Output should be data: {...}\\n\\n."""
-        result = await sse_event({"type": "status", "message": "hello"})
+        result = emit(StatusEvent(message="hello"))
         assert result.startswith("data: ")
         assert result.endswith("\n\n")
         payload = json.loads(result[6:].strip())
         assert payload["type"] == "status"
         assert payload["message"] == "hello"
 
-    @pytest.mark.anyio
-    async def test_handles_nested_structure(self) -> None:
+    def test_handles_nested_structure(self) -> None:
 
         """Nested dicts are validated and serialized through the protocol model."""
-        result = await sse_event({
-            "type": "toolCall",
-            "id": "tc-1",
-            "name": "stori_add_track",
-            "params": {"trackId": "abc-123"},
-        })
+        result = emit(ToolCallEvent(
+            id="tc-1",
+            name="stori_add_track",
+            params={"trackId": "abc-123"},
+        ))
         payload = json.loads(result[6:].strip())
         assert payload["params"]["trackId"] == "abc-123"
 
-    @pytest.mark.anyio
-    async def test_rejects_empty_dict(self) -> None:
+    def test_rejects_unregistered_event_type(self) -> None:
 
-        """Empty dict raises because 'type' field is missing."""
-        from app.protocol.emitter import ProtocolSerializationError
-        with pytest.raises(ProtocolSerializationError, match="missing 'type'"):
-            await sse_event({})
+        """Event with unknown type raises ValueError."""
+        from app.protocol.events import MaestroEvent
+        event = MaestroEvent(type="nonexistent_event_type")
+        with pytest.raises(ValueError, match="Unknown event type"):
+            emit(event)
 
 
 class TestSanitizeReasoning:

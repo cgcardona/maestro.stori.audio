@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from app.contracts.llm_types import ToolParametersDict, ToolSchemaDict
 from app.core.tool_validation.models import ValidationError
 from app.core.tool_validation.constants import TOOL_REQUIRED_FIELDS
 
 
-def _validate_type(field: str, value: Any, expected_type: str) -> ValidationError | None:
+def _validate_type(field: str, value: object, expected_type: str) -> ValidationError | None:
     """Validate a value against an expected JSON Schema type."""
     type_map: dict[str, type | tuple[type, ...]] = {
         "string": str,
@@ -31,31 +30,39 @@ def _validate_type(field: str, value: Any, expected_type: str) -> ValidationErro
 
 def _validate_schema(
     tool_name: str,
-    params: dict[str, Any],
-    schema: dict[str, Any],
+    params: dict[str, object],
+    schema: ToolSchemaDict,
 ) -> list[ValidationError]:
     """Validate params against tool schema (required fields + types)."""
     errors: list[ValidationError] = []
 
-    func_schema = schema.get("function", {}).get("parameters", {})
-    required = func_schema.get("required", [])
-    properties = func_schema.get("properties", {})
+    function_def = schema["function"]
+    func_schema = function_def.get("parameters", ToolParametersDict(type="object"))
 
-    for field in required:
-        if field not in params:
+    required_val = func_schema.get("required")
+    required = required_val if isinstance(required_val, list) else []
+    properties_val = func_schema.get("properties")
+    properties = properties_val if isinstance(properties_val, dict) else {}
+
+    for field_val in required:
+        if field_val not in params:
             errors.append(ValidationError(
-                field=field,
-                message=f"Required field '{field}' is missing",
+                field=field_val,
+                message=f"Required field '{field_val}' is missing",
                 code="MISSING_REQUIRED",
             ))
 
     for field, value in params.items():
         if field not in properties:
             continue
-        expected_type = properties[field].get("type")
-        if expected_type:
-            type_error = _validate_type(field, value, expected_type)
-            if type_error:
-                errors.append(type_error)
+        prop = properties.get(field)
+        if not isinstance(prop, dict):
+            continue
+        expected_type_val = prop.get("type")
+        if not isinstance(expected_type_val, str):
+            continue
+        type_error = _validate_type(field, value, expected_type_val)
+        if type_error:
+            errors.append(type_error)
 
     return errors

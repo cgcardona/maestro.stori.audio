@@ -14,7 +14,7 @@ import ast
 import uuid
 from collections.abc import AsyncGenerator
 import pytest
-from app.contracts.json_types import AftertouchDict, CCEventDict, ControllerEventDict, NoteDict, PitchBendDict
+from app.contracts.json_types import AftertouchDict, CCEventDict, NoteDict, PitchBendDict
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.database import Base
@@ -57,34 +57,15 @@ async def async_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 def _cc(cc_num: int, beat: float, value: int) -> CCEventDict:
-
     return {"cc": cc_num, "beat": beat, "value": value}
-
-
-def _cc_ctrl(cc_num: int, beat: float, value: int) -> ControllerEventDict:
-    """CC event with 'kind' discriminator for controller_changes persistence."""
-    return ControllerEventDict(kind="cc", cc=cc_num, beat=beat, value=value)
 
 
 def _pb(beat: float, value: int) -> PitchBendDict:
     return {"beat": beat, "value": value}
 
 
-def _pb_ctrl(beat: float, value: int) -> ControllerEventDict:
-    """Pitch bend with 'kind' discriminator for controller_changes persistence."""
-    return ControllerEventDict(kind="pitch_bend", beat=beat, value=value)
-
-
 def _at(beat: float, value: int, pitch: int | None = None) -> AftertouchDict:
     d: AftertouchDict = {"beat": beat, "value": value}
-    if pitch is not None:
-        d["pitch"] = pitch
-    return d
-
-
-def _at_ctrl(beat: float, value: int, pitch: int | None = None) -> ControllerEventDict:
-    """Aftertouch with 'kind' discriminator for controller_changes persistence."""
-    d = ControllerEventDict(kind="aftertouch", beat=beat, value=value)
     if pitch is not None:
         d["pitch"] = pitch
     return d
@@ -96,7 +77,9 @@ def _note(pitch: int, start: float) -> NoteDict:
 
 def _make_variation_with_controllers(
     notes: list[NoteDict],
-    controller_changes: list[ControllerEventDict],
+    cc_events: list[CCEventDict] | None = None,
+    pitch_bends: list[PitchBendDict] | None = None,
+    aftertouch: list[AftertouchDict] | None = None,
     region_id: str = "region-1",
     track_id: str = "track-1",
 ) -> Variation:
@@ -125,7 +108,9 @@ def _make_variation_with_controllers(
                     )
                     for n in notes
                 ],
-                controller_changes=controller_changes,
+                cc_events=cc_events or [],
+                pitch_bends=pitch_bends or [],
+                aftertouch=aftertouch or [],
             ),
         ],
     )
@@ -174,8 +159,7 @@ class TestCleanControllerState:
 
         """Persist with CC, reconstruct HEAD, drift against identical data → CLEAN."""
         notes = [_note(60, 0.0)]
-        ccs_ctrl = [_cc_ctrl(64, 0.0, 127), _cc_ctrl(1, 2.0, 64)]
-        var = _make_variation_with_controllers(notes, ccs_ctrl)
+        var = _make_variation_with_controllers(notes, cc_events=[_cc(64, 0.0, 127), _cc(1, 2.0, 64)])
 
         await muse_repository.save_variation(
             async_session, var,
@@ -374,8 +358,7 @@ class TestReplayFidelity:
     async def test_cc_roundtrip(self, async_session: AsyncSession) -> None:
 
         notes = [_note(60, 0.0)]
-        ccs_ctrl = [_cc_ctrl(64, 0.0, 127), _cc_ctrl(1, 4.0, 64)]
-        var = _make_variation_with_controllers(notes, ccs_ctrl)
+        var = _make_variation_with_controllers(notes, cc_events=[_cc(64, 0.0, 127), _cc(1, 4.0, 64)])
 
         await muse_repository.save_variation(
             async_session, var,
@@ -395,8 +378,7 @@ class TestReplayFidelity:
     async def test_pb_roundtrip(self, async_session: AsyncSession) -> None:
 
         notes = [_note(60, 0.0)]
-        pbs_ctrl = [_pb_ctrl(1.0, 4096), _pb_ctrl(3.0, 8192)]
-        var = _make_variation_with_controllers(notes, pbs_ctrl)
+        var = _make_variation_with_controllers(notes, pitch_bends=[_pb(1.0, 4096), _pb(3.0, 8192)])
 
         await muse_repository.save_variation(
             async_session, var,
@@ -414,8 +396,7 @@ class TestReplayFidelity:
     async def test_at_roundtrip(self, async_session: AsyncSession) -> None:
 
         notes = [_note(60, 0.0)]
-        ats_ctrl = [_at_ctrl(2.0, 80), _at_ctrl(4.0, 100, pitch=60)]
-        var = _make_variation_with_controllers(notes, ats_ctrl)
+        var = _make_variation_with_controllers(notes, aftertouch=[_at(2.0, 80), _at(4.0, 100, pitch=60)])
 
         await muse_repository.save_variation(
             async_session, var,
@@ -434,8 +415,12 @@ class TestReplayFidelity:
 
         """All three controller types persist and reconstruct correctly."""
         notes = [_note(60, 0.0)]
-        controllers = [_cc_ctrl(64, 0.0, 127), _pb_ctrl(1.0, 4096), _at_ctrl(2.0, 80)]
-        var = _make_variation_with_controllers(notes, controllers)
+        var = _make_variation_with_controllers(
+            notes,
+            cc_events=[_cc(64, 0.0, 127)],
+            pitch_bends=[_pb(1.0, 4096)],
+            aftertouch=[_at(2.0, 80)],
+        )
 
         await muse_repository.save_variation(
             async_session, var,

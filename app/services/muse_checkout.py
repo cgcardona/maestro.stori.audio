@@ -47,7 +47,15 @@ REGION_RESET_THRESHOLD = 20
 
 
 class CheckoutToolCall(TypedDict):
-    """A single tool call produced by the checkout planner."""
+    """A single tool call produced by the checkout planner.
+
+    Structural twin of ``ToolCall`` but serialised as a plain TypedDict so
+    it can be stored in frozen dataclasses (tuples) without hashability issues.
+
+    Attributes:
+        tool: Canonical ``ToolName`` value string (e.g. ``"stori_add_notes"``).
+        arguments: Keyword arguments forwarded verbatim to the executor.
+    """
 
     tool: str
     arguments: dict[str, object]
@@ -55,9 +63,23 @@ class CheckoutToolCall(TypedDict):
 
 @dataclass(frozen=True)
 class CheckoutPlan:
-    """Deterministic plan for restoring target state via tool calls.
+    """Deterministic, immutable plan for restoring a variation's state.
+
+    Produced by ``build_checkout_plan`` — a pure function that diffs the
+    current working tree against the target variation.  Consumed by
+    ``execute_checkout_plan`` in ``muse_checkout_executor``.
 
     Pure data — no side effects, no mutations.
+
+    Attributes:
+        project_id: Project the checkout targets.
+        target_variation_id: Variation UUID to restore.
+        tool_calls: Ordered sequence of ``CheckoutToolCall``s that, when
+            executed, transform the working tree into the target state.
+        regions_reset: Region UUIDs that required a full clear + re-add because
+            the diff exceeded ``REGION_RESET_THRESHOLD`` or had removals.
+        fingerprint_target: Expected ``{region_id: sha256}`` fingerprint map
+            after execution — used to verify the checkout landed correctly.
     """
 
     project_id: str
@@ -68,6 +90,7 @@ class CheckoutPlan:
 
     @property
     def is_noop(self) -> bool:
+        """``True`` when the working tree already matches the target (no calls needed)."""
         return len(self.tool_calls) == 0
 
     def plan_hash(self) -> str:
@@ -86,6 +109,7 @@ class CheckoutPlan:
 
 
 def _make_tool_call(tool: ToolName, arguments: dict[str, object]) -> CheckoutToolCall:
+    """Construct a ``CheckoutToolCall`` from a ``ToolName`` enum and argument dict."""
     return {"tool": tool.value, "arguments": arguments}
 
 

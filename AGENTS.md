@@ -120,12 +120,15 @@ The backend serves the frontend via SSE streaming and tool calls. The SSE event 
 - **Editing existing files:** Only modify necessary sections. Preserve formatting, structure, and surrounding code.
 - **Creating new files:** Write complete, self-contained modules. Include imports, type hints, and docstrings.
 - **Before finishing any task:** Confirm types pass (mypy), tests pass, imports resolve, no orphaned code.
+- **No rebuild needed for code changes.** Dev bind mounts (`docker-compose.override.yml`) ensure host file edits are live inside the container immediately. Only rebuild (`docker compose build <service> && docker compose up -d`) when `requirements.txt`, `Dockerfile`, or `entrypoint.sh` change.
 
 ---
 
 ## Verification Checklist
 
 Before considering work complete, run in this order (mypy first so type fixes don't force a re-run of tests):
+
+> **Dev bind mounts are active.** Your host file edits are instantly visible inside the container — do NOT rebuild for code changes. Only rebuild when `requirements.txt`, `Dockerfile`, or `entrypoint.sh` change.
 
 1. [ ] `docker compose exec maestro mypy app/ tests/` — clean
 2. [ ] `docker compose exec storpheus mypy .` — clean

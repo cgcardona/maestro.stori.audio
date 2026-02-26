@@ -19,7 +19,6 @@ from pydantic import Field
 from app.contracts.json_types import (
     AftertouchDict,
     CCEventDict,
-    ControllerEventDict,
     NoteDict,
     PitchBendDict,
 )
@@ -128,9 +127,17 @@ class Phrase(_CamelModel):
         default_factory=list,
         description="list of note changes in this phrase"
     )
-    controller_changes: list[ControllerEventDict] = Field(
+    cc_events: list[CCEventDict] = Field(
         default_factory=list,
-        description="MIDI CC, pitch bend, and aftertouch changes in this phrase",
+        description="MIDI Control Change events in this phrase",
+    )
+    pitch_bends: list[PitchBendDict] = Field(
+        default_factory=list,
+        description="MIDI pitch bend events in this phrase",
+    )
+    aftertouch: list[AftertouchDict] = Field(
+        default_factory=list,
+        description="MIDI aftertouch events in this phrase (channel pressure and poly key pressure)",
     )
     
     explanation: str | None = Field(
@@ -160,7 +167,12 @@ class Phrase(_CamelModel):
     @property
     def is_empty(self) -> bool:
         """Check if phrase has no changes."""
-        return len(self.note_changes) == 0 and len(self.controller_changes) == 0
+        return (
+            len(self.note_changes) == 0
+            and len(self.cc_events) == 0
+            and len(self.pitch_bends) == 0
+            and len(self.aftertouch) == 0
+        )
 
 
 class Variation(_CamelModel):

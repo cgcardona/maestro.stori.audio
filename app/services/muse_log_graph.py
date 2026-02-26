@@ -16,13 +16,112 @@ import heapq
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any
-
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from pydantic import BaseModel, Field
 
 from app.services.muse_repository import VariationSummary, get_variations_for_project
 
 logger = logging.getLogger(__name__)
+
+
+# ── Pydantic response models ──────────────────────────────────────────────────
+
+
+class MuseLogNodeResponse(BaseModel):
+    """Wire representation of a single node in the Muse commit DAG.
+
+    Produced by ``MuseLogNode.to_response()`` and serialised as JSON by the
+    ``GET /muse/log`` endpoint.  Field names are camelCase to match the Stori
+    DAW Swift convention.
+
+    Attributes:
+        id: UUID of this variation (commit).
+        parent: UUID of the first (or only) parent variation, or ``None`` for
+            the root commit.
+        parent2: UUID of the second parent for merge commits; ``None`` for
+            ordinary (linear) commits.
+        isHead: ``True`` if this node is the current HEAD pointer for the
+            project (i.e. the variation the DAW currently has loaded).
+        timestamp: POSIX timestamp (seconds since epoch, float) of when the
+            variation was committed.  Used for topological sort tie-breaking
+            and for display in the DAW's history panel.
+        intent: Free-text intent string supplied when the variation was created
+            (e.g. ``"add bass groove"``), or ``None`` if none was provided.
+        regions: List of region IDs whose MIDI content was affected by this
+            variation.  Empty for root / no-op commits.
+    """
+
+    id: str = Field(description="UUID of this variation (commit).")
+    parent: str | None = Field(
+        description="UUID of the first parent variation, or None for the root commit."
+    )
+    parent2: str | None = Field(
+        description=(
+            "UUID of the second parent for merge commits; "
+            "None for ordinary (linear) commits."
+        )
+    )
+    isHead: bool = Field(
+        description=(
+            "True if this node is the current HEAD pointer — "
+            "the variation the DAW currently has loaded."
+        )
+    )
+    timestamp: float = Field(
+        description=(
+            "POSIX timestamp (seconds since epoch) of when the variation was committed. "
+            "Used for topological sort tie-breaking and history-panel display."
+        )
+    )
+    intent: str | None = Field(
+        description=(
+            "Free-text intent string supplied at commit time "
+            "(e.g. 'add bass groove'), or None if none was provided."
+        )
+    )
+    regions: list[str] = Field(
+        description=(
+            "List of region IDs whose MIDI content was affected by this variation. "
+            "Empty for root or no-op commits."
+        )
+    )
+
+
+class MuseLogGraphResponse(BaseModel):
+    """Wire representation of the full Muse commit DAG for a project.
+
+    Produced by ``MuseLogGraph.to_response()`` and returned directly by
+    ``GET /muse/log``.  The Swift frontend renders this as a visual commit
+    timeline, highlighting the HEAD node and drawing parent edges.
+
+    Attributes:
+        projectId: UUID of the project this DAG belongs to.
+        head: UUID of the current HEAD variation, or ``None`` if no HEAD has
+            been set yet (brand-new project with no commits).
+        nodes: Topologically sorted list of all variations (commits) for this
+            project.  Parents always appear before their children; ties are
+            broken by timestamp then variation UUID.
+    """
+
+    projectId: str = Field(
+        description="UUID of the project this DAG belongs to."
+    )
+    head: str | None = Field(
+        description=(
+            "UUID of the current HEAD variation, or None if no HEAD has been set yet "
+            "(brand-new project with no commits)."
+        )
+    )
+    nodes: list[MuseLogNodeResponse] = Field(
+        description=(
+            "Topologically sorted list of all variations (commits) for this project. "
+            "Parents always appear before their children; ties broken by timestamp then UUID."
+        )
+    )
+
+
+# ── Internal domain dataclasses ───────────────────────────────────────────────
 
 
 @dataclass(frozen=True)
@@ -37,17 +136,25 @@ class MuseLogNode:
     intent: str | None
     affected_regions: tuple[str, ...]
 
-    def to_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {
-            "id": self.variation_id,
-            "parent": self.parent,
-            "parent2": self.parent2,
-            "isHead": self.is_head,
-            "timestamp": self.timestamp,
-            "intent": self.intent,
-            "regions": list(self.affected_regions),
-        }
-        return d
+    def to_response(self) -> MuseLogNodeResponse:
+        """Convert this internal node to its Pydantic wire representation.
+
+        Translates snake_case internal field names to the camelCase names
+        expected by the Stori DAW frontend, and converts the immutable
+        ``affected_regions`` tuple to a plain list.
+
+        Returns:
+            ``MuseLogNodeResponse`` ready for JSON serialisation by FastAPI.
+        """
+        return MuseLogNodeResponse(
+            id=self.variation_id,
+            parent=self.parent,
+            parent2=self.parent2,
+            isHead=self.is_head,
+            timestamp=self.timestamp,
+            intent=self.intent,
+            regions=list(self.affected_regions),
+        )
 
 
 @dataclass(frozen=True)
@@ -58,12 +165,20 @@ class MuseLogGraph:
     head: str | None
     nodes: tuple[MuseLogNode, ...]
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "projectId": self.project_id,
-            "head": self.head,
-            "nodes": [n.to_dict() for n in self.nodes],
-        }
+    def to_response(self) -> MuseLogGraphResponse:
+        """Convert this internal graph to its Pydantic wire representation.
+
+        Calls ``MuseLogNode.to_response()`` on every node in topological order
+        and wraps them in a ``MuseLogGraphResponse``.
+
+        Returns:
+            ``MuseLogGraphResponse`` ready for JSON serialisation by FastAPI.
+        """
+        return MuseLogGraphResponse(
+            projectId=self.project_id,
+            head=self.head,
+            nodes=[n.to_response() for n in self.nodes],
+        )
 
 
 async def build_muse_log_graph(

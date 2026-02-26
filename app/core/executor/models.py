@@ -21,7 +21,18 @@ from app.core.tracing import TraceContext, log_tool_call
 
 @dataclass
 class ExecutionResult:
-    """Result of a single tool execution."""
+    """Result of a single tool execution within a plan.
+
+    Attributes:
+        tool_name: Canonical name of the tool that was called.
+        success: ``True`` when the DAW acknowledged the call without error.
+        output: Raw response dict from the DAW or executor (may be empty ``{}``
+            on failure).
+        error: Human-readable error string when ``success`` is ``False``.
+        entity_created: Entity UUID when the tool created a track, region, or
+            bus; ``None`` otherwise.  Used by ``ExecutionContext.created_entities``
+            to build the forward-reference resolution map.
+    """
 
     tool_name: str
     success: bool
@@ -32,7 +43,21 @@ class ExecutionResult:
 
 @dataclass
 class ExecutionContext:
-    """Context for plan execution with transaction support."""
+    """Mutable accumulator for one plan execution run.
+
+    Holds the live ``StateStore`` transaction, trace context, and all results
+    emitted so far.  Passed through every tool handler and read at the end to
+    produce the SSE summary event.
+
+    Attributes:
+        store: Authoritative project state — tool handlers read and write here.
+        transaction: Active database transaction; committed on success, rolled
+            back on catastrophic failure.
+        trace: Request-scoped trace for structured logging.
+        results: Ordered list of ``ExecutionResult`` instances, one per tool call.
+        events: SSE-ready event dicts accumulated during execution; flushed
+            to the stream after the transaction commits.
+    """
 
     store: StateStore
     transaction: Transaction
@@ -48,6 +73,7 @@ class ExecutionContext:
         error: str | None = None,
         entity_created: str | None = None,
     ) -> None:
+        """Append an ``ExecutionResult`` and emit a structured trace log entry."""
         self.results.append(ExecutionResult(
             tool_name=tool_name,
             success=success,
@@ -58,18 +84,26 @@ class ExecutionContext:
         log_tool_call(self.trace.trace_id, tool_name, output, success, error)
 
     def add_event(self, event: dict[str, object]) -> None:
+        """Queue an SSE event dict to be flushed after the transaction commits."""
         self.events.append(event)
 
     @property
     def all_successful(self) -> bool:
+        """``True`` when every tool in the plan succeeded."""
         return all(r.success for r in self.results)
 
     @property
     def failed_tools(self) -> list[str]:
+        """Names of all tools whose ``ExecutionResult.success`` is ``False``."""
         return [r.tool_name for r in self.results if not r.success]
 
     @property
     def created_entities(self) -> dict[str, str]:
+        """Map of ``tool_name → entity_id`` for tools that created a DAW entity.
+
+        Used by downstream tools to resolve forward references like ``$0.trackId``
+        in plan params before dispatching.
+        """
         return {
             r.tool_name: r.entity_created
             for r in self.results
@@ -124,6 +158,13 @@ class VariationContext:
     proposed: SnapshotBundle = field(default_factory=SnapshotBundle)
 
     def capture_base_notes(self, region_id: str, track_id: str, notes: list[NoteDict]) -> None:
+        """Record the pre-execution note state for a region (idempotent).
+
+        Guards against double-capture: if ``region_id`` is already in
+        ``self.base.notes``, the call is silently skipped.  This matters for
+        tools like ``stori_clear_notes`` + ``stori_add_notes`` that operate on
+        the same region in the same plan.
+        """
         if region_id not in self.base.notes:
             from app.core.executor.note_utils import _normalize_note
             self.base.notes[region_id] = [_normalize_note(n) for n in notes]
@@ -131,18 +172,22 @@ class VariationContext:
             self.proposed.track_regions[region_id] = track_id
 
     def record_proposed_notes(self, region_id: str, notes: list[NoteDict]) -> None:
+        """Overwrite the proposed note state for a region (replaces, not appends)."""
         from app.core.executor.note_utils import _normalize_note
         self.proposed.notes[region_id] = [_normalize_note(n) for n in notes]
 
     def record_proposed_cc(self, region_id: str, cc_events: list[CCEventDict]) -> None:
+        """Append new CC events to the proposed state for a region (skips empty lists)."""
         if cc_events:
             self.proposed.cc.setdefault(region_id, []).extend(cc_events)
 
     def record_proposed_pitch_bends(self, region_id: str, pitch_bends: list[PitchBendDict]) -> None:
+        """Append new pitch-bend events to the proposed state for a region (skips empty lists)."""
         if pitch_bends:
             self.proposed.pitch_bends.setdefault(region_id, []).extend(pitch_bends)
 
     def record_proposed_aftertouch(self, region_id: str, aftertouch: list[AftertouchDict]) -> None:
+        """Append new aftertouch events to the proposed state for a region (skips empty lists)."""
         if aftertouch:
             self.proposed.aftertouch.setdefault(region_id, []).extend(aftertouch)
 

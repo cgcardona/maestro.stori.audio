@@ -3,12 +3,35 @@ from __future__ import annotations
 
 import logging
 from pydantic import BaseModel, Field, field_validator
-from typing import Any
+from typing_extensions import TypedDict
 
 from app.contracts.project_types import ProjectContext
 from app.models.base import CamelModel
 
 logger = logging.getLogger(__name__)
+
+
+class ProposeVariationScopeDict(TypedDict, total=False):
+    """Optional scope that constrains a variation proposal to a subset of the project.
+
+    When ``trackIds`` or ``regionIds`` are provided, the variation only affects
+    those tracks/regions.  ``beatRange`` limits generation to a specific beat window.
+    """
+
+    trackIds: list[str]
+    regionIds: list[str]
+    beatRange: tuple[float, float]
+
+
+class ProposeVariationOptionsDict(TypedDict, total=False):
+    """Execution options for a variation proposal.
+
+    All keys are optional — omit to use server-side defaults.
+    """
+
+    phraseGrouping: str
+    barSize: int
+    stream: bool
 
 # Generous limit — comfortably fits long STORI PROMPT YAML with Maestro dimensions.
 # The nginx layer guards against large binary payloads; this catches oversized text.
@@ -65,7 +88,7 @@ class MaestroRequest(CamelModel):
 
     @field_validator("project", mode="before")
     @classmethod
-    def validate_project_snapshot(cls, v: Any) -> Any:
+    def validate_project_snapshot(cls, v: object) -> object:
         """Validate the project payload against the ProjectSnapshot schema.
 
         Catches structural issues (invalid pitch, out-of-range tempo, etc.)
@@ -132,14 +155,14 @@ class ProposeVariationRequest(CamelModel):
         ...,
         description="User intent describing the desired transformation"
     )
-    scope: dict[str, Any] | None = Field(
+    scope: ProposeVariationScopeDict | None = Field(
         default=None,
         description=(
             "Optional scope limiting the variation to specific tracks/regions/beat_range. "
             "Keys: trackIds (list), regionIds (list), beatRange (tuple of floats)"
         )
     )
-    options: dict[str, Any] | None = Field(
+    options: ProposeVariationOptionsDict | None = Field(
         default=None,
         description=(
             "Optional execution options. "

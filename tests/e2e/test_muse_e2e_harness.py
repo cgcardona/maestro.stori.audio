@@ -185,7 +185,7 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
 
     co = await do_checkout(client, C1, headers, force=True)
     assert co["head_moved"]
-    print(f"  ✅ C1 committed + checked out, executed={co['executed']} tool calls")
+    print(f"  ✅ C1 committed + checked out, executed={_d(co, 'execution')['executed']} tool calls")
 
     # ── Step 2: Branch A — bass (C2) ─────────────────────────────────
     print("\n═══ Step 2: Branch A — bass v1 (C2) ═══")
@@ -225,7 +225,7 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     assert status == 200, f"Merge failed: {merge_resp}"
     assert merge_resp["head_moved"]
     c4_id = _s(merge_resp, "merge_variation_id")
-    print(f"  ✅ Merge commit C4={c4_id[:8]}, executed={merge_resp['executed']} tool calls")
+    print(f"  ✅ Merge commit C4={c4_id[:8]}, executed={_d(merge_resp, 'execution')['executed']} tool calls")
 
     log = await get_log(client, headers)
     assert _s(log, "head") == c4_id
@@ -239,13 +239,13 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     await save(client, make_variation_payload(
         C5, "keys v2 (branch A)", snapshot_keys_v1(), snapshot_keys_v2_with_cc(),
         parent_variation_id=C1,
-        controller_changes=cc_sustain_branch_a(),
+        cc_events=cc_sustain_branch_a(),
     ), headers)
     # C6: branch from C1, adds different note + different CC in r_keys
     await save(client, make_variation_payload(
         C6, "keys v3 (branch B)", snapshot_keys_v1(), snapshot_keys_v3_conflict(),
         parent_variation_id=C1,
-        controller_changes=cc_sustain_branch_b(),
+        cc_events=cc_sustain_branch_b(),
     ), headers)
 
     status, conflict_resp = await do_merge(client, C5, C6, headers)
@@ -270,23 +270,23 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
 
     co = await do_checkout(client, C1, headers, force=True)
     assert co["head_moved"]
-    plan_hashes.append(_s(co, "plan_hash"))
-    print(f"  → Checked out C1: executed={co['executed']}, hash={_s(co, 'plan_hash')[:12]}")
+    plan_hashes.append(_s(_d(co, "execution"), "plan_hash"))
+    print(f"  → Checked out C1: executed={_d(co, 'execution')['executed']}, hash={_s(_d(co, 'execution'), 'plan_hash')[:12]}")
 
     co = await do_checkout(client, C2, headers, force=True)
     assert co["head_moved"]
-    plan_hashes.append(_s(co, "plan_hash"))
-    print(f"  → Checked out C2: executed={co['executed']}, hash={_s(co, 'plan_hash')[:12]}")
+    plan_hashes.append(_s(_d(co, "execution"), "plan_hash"))
+    print(f"  → Checked out C2: executed={_d(co, 'execution')['executed']}, hash={_s(_d(co, 'execution'), 'plan_hash')[:12]}")
 
     co = await do_checkout(client, c4_id, headers, force=True)
     assert co["head_moved"]
-    plan_hashes.append(_s(co, "plan_hash"))
-    print(f"  → Checked out C4 (merge): executed={co['executed']}, hash={_s(co, 'plan_hash')[:12]}")
+    plan_hashes.append(_s(_d(co, "execution"), "plan_hash"))
+    print(f"  → Checked out C4 (merge): executed={_d(co, 'execution')['executed']}, hash={_s(_d(co, 'execution'), 'plan_hash')[:12]}")
 
     # Checkout to same target again — should be no-op or same hash
     co2 = await do_checkout(client, c4_id, headers, force=True)
     assert co2["head_moved"]
-    print(f"  → Re-checkout C4: executed={co2['executed']}, hash={_s(co2, 'plan_hash')[:12]}")
+    print(f"  → Re-checkout C4: executed={_d(co2, 'execution')['executed']}, hash={_s(_d(co2, 'execution'), 'plan_hash')[:12]}")
     print(f"  ✅ All checkouts transactional, plan hashes: {[h[:12] for h in plan_hashes]}")
 
     # ── Final assertions ─────────────────────────────────────────────

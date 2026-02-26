@@ -8,11 +8,24 @@ by ID or by name (the server resolves names → IDs).
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
+
+from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
-    from app.contracts.project_types import ProjectContext
+    from app.contracts.project_types import ProjectContext, TimeSignatureDict
     from app.core.state_store import StateStore
+
+
+class RegionContextEntry(TypedDict):
+    """A region's identity and position data, as injected into LLM context strings."""
+
+    name: str
+    id: str
+    trackId: str | None
+    noteCount: int
+    startBeat: float
+    durationBeats: float
 
 
 # ---------------------------------------------------------------------------
@@ -102,9 +115,9 @@ def format_project_context(project: ProjectContext) -> str:
     name = project.get("name", "Untitled")
     tempo = project.get("tempo", 120)
     key = project.get("key", "C")
-    _raw_ts: Any = project.get("timeSignature")
-    time_sig: str | dict[str, Any] = _raw_ts or "4/4"
-    if isinstance(time_sig, dict):
+    _raw_ts: str | TimeSignatureDict | None = project.get("timeSignature")
+    time_sig: str | TimeSignatureDict = _raw_ts or "4/4"
+    if not isinstance(time_sig, str):
         time_sig = f"{time_sig.get('numerator', 4)}/{time_sig.get('denominator', 4)}"
     tracks = project.get("tracks", [])
 
@@ -184,14 +197,14 @@ def build_entity_context_for_llm(store: "StateStore") -> str:
     tracks_info = [{"name": t.name, "id": t.id} for t in registry.list_tracks()]
     regions_info = []
     for r in registry.list_regions():
-        region_entry: dict[str, Any] = {
+        region_entry: RegionContextEntry = {
             "name": r.name,
             "id": r.id,
             "trackId": r.parent_id,
             "noteCount": len(store.get_region_notes(r.id)),
+            "startBeat": r.metadata.start_beat,
+            "durationBeats": r.metadata.duration_beats,
         }
-        region_entry["startBeat"] = r.metadata.start_beat
-        region_entry["durationBeats"] = r.metadata.duration_beats
         regions_info.append(region_entry)
     buses_info = [{"name": b.name, "id": b.id} for b in registry.list_buses()]
 

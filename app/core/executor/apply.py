@@ -7,11 +7,7 @@ from typing import TYPE_CHECKING
 
 from app.contracts.project_types import ProjectContext
 from app.contracts.json_types import (
-    AftertouchDict,
     AppliedRegionInfo,
-    CCEventDict,
-    NoteDict,
-    PitchBendDict,
     RegionAftertouchMap,
     RegionCCMap,
     RegionMetadataDB,
@@ -89,23 +85,14 @@ async def apply_variation_phrases(
                         if nc.after:
                             region_adds[region_id].append(nc.after.to_note_dict())
 
-                for cc_change in phrase.controller_changes:
-                    kind = cc_change.get("kind", "cc")
-                    beat = cc_change.get("beat", 0.0)
-                    value = cc_change.get("value", 0)
-                    if kind == "pitch_bend":
-                        region_pitch_bends.setdefault(region_id, []).append(
-                            PitchBendDict(beat=beat, value=value),
-                        )
-                    elif kind == "aftertouch":
-                        at: AftertouchDict = {"beat": beat, "value": value}
-                        if "pitch" in cc_change:
-                            at["pitch"] = cc_change["pitch"]
-                        region_aftertouch.setdefault(region_id, []).append(at)
-                    else:
-                        region_cc.setdefault(region_id, []).append(
-                            CCEventDict(cc=cc_change.get("cc", 0), beat=beat, value=value),
-                        )
+                for cc_ev in phrase.cc_events:
+                    region_cc.setdefault(region_id, []).append(cc_ev)
+
+                for pb_ev in phrase.pitch_bends:
+                    region_pitch_bends.setdefault(region_id, []).append(pb_ev)
+
+                for at_ev in phrase.aftertouch:
+                    region_aftertouch.setdefault(region_id, []).append(at_ev)
 
                 applied_phrases.append(phrase_id)
 

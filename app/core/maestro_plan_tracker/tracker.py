@@ -5,8 +5,6 @@ from __future__ import annotations
 import uuid as _uuid_mod
 from typing import TYPE_CHECKING
 
-from app.core.sse_utils import SSEEventInput
-
 from app.core.expansion import ToolCall
 from app.core.maestro_helpers import _human_label_for_tool, _humanize_style
 
@@ -30,6 +28,12 @@ from app.core.maestro_plan_tracker.constants import (
     _TRACK_CREATION_NAMES,
 )
 from app.core.maestro_plan_tracker.models import _PlanStep
+from app.protocol.events import (
+    PlanEvent,
+    PlanStepSchema,
+    PlanStepUpdateEvent,
+    MaestroEvent,
+)
 
 
 class _PlanTracker:
@@ -654,24 +658,23 @@ class _PlanTracker:
 
     # -- SSE events -----------------------------------------------------------
 
-    def to_plan_event(self) -> SSEEventInput:
-        return {
-            "type": "plan",
-            "planId": self.plan_id,
-            "title": self.title,
-            "steps": [
-                {
-                    "stepId": s.step_id,
-                    "label": s.label,
-                    "status": "pending",
-                    "phase": s.phase,
-                    **({"toolName": s.tool_name} if s.tool_name else {}),
-                    **({"detail": s.detail} if s.detail else {}),
-                    **({"parallelGroup": s.parallel_group} if s.parallel_group else {}),
-                }
+    def to_plan_event(self) -> PlanEvent:
+        return PlanEvent(
+            plan_id=self.plan_id,
+            title=self.title,
+            steps=[
+                PlanStepSchema(
+                    step_id=s.step_id,
+                    label=s.label,
+                    status="pending",
+                    phase=s.phase,
+                    tool_name=s.tool_name,
+                    detail=s.detail,
+                    parallel_group=s.parallel_group,
+                )
                 for s in self.steps
             ],
-        }
+        )
 
     def step_for_tool_index(self, index: int) -> _PlanStep | None:
         """Find the step a tool-call index belongs to (first iteration only)."""
@@ -794,21 +797,20 @@ class _PlanTracker:
                 return step
         return None
 
-    def activate_step(self, step_id: str) -> SSEEventInput:
+    def activate_step(self, step_id: str) -> PlanStepUpdateEvent:
         step = self.get_step(step_id)
         if step:
             step.status = "active"
         self._active_step_id = step_id
         self._active_step_ids.add(step_id)
-        return {
-            "type": "planStepUpdate",
-            "stepId": step_id,
-            "status": "active",
-            "phase": step.phase if step else "composition",
-        }
+        return PlanStepUpdateEvent(
+            step_id=step_id,
+            status="active",
+            phase=step.phase if step else "composition",
+        )
 
-    def complete_active_step(self) -> SSEEventInput | None:
-        """Complete the currently-active step; returns event dict or None."""
+    def complete_active_step(self) -> PlanStepUpdateEvent | None:
+        """Complete the currently-active step; returns event or None."""
         if not self._active_step_id:
             return None
         step = self.get_step(self._active_step_id)
@@ -817,19 +819,16 @@ class _PlanTracker:
         step.status = "completed"
         self._active_step_ids.discard(self._active_step_id)
         self._active_step_id = None
-        d: SSEEventInput = {
-            "type": "planStepUpdate",
-            "stepId": step.step_id,
-            "status": "completed",
-            "phase": step.phase,
-        }
-        if step.result:
-            d["result"] = step.result
-        return d
+        return PlanStepUpdateEvent(
+            step_id=step.step_id,
+            status="completed",
+            phase=step.phase,
+            result=step.result,
+        )
 
     def complete_step_by_id(
         self, step_id: str, result: str | None = None,
-    ) -> SSEEventInput:
+    ) -> PlanStepUpdateEvent:
         step = self.get_step(step_id)
         if step:
             step.status = "completed"
@@ -838,32 +837,26 @@ class _PlanTracker:
         if self._active_step_id == step_id:
             self._active_step_id = None
         self._active_step_ids.discard(step_id)
-        d: SSEEventInput = {
-            "type": "planStepUpdate",
-            "stepId": step_id,
-            "status": "completed",
-            "phase": step.phase if step else "composition",
-        }
-        if result:
-            d["result"] = result
-        return d
+        return PlanStepUpdateEvent(
+            step_id=step_id,
+            status="completed",
+            phase=step.phase if step else "composition",
+            result=result,
+        )
 
-    def complete_all_active_steps(self) -> list[SSEEventInput]:
-        """Complete every currently-active step. Returns list of event dicts."""
-        events: list[SSEEventInput] = []
+    def complete_all_active_steps(self) -> list[PlanStepUpdateEvent]:
+        """Complete every currently-active step."""
+        events: list[PlanStepUpdateEvent] = []
         for step_id in list(self._active_step_ids):
             step = self.get_step(step_id)
             if step and step.status == "active":
                 step.status = "completed"
-                d: SSEEventInput = {
-                    "type": "planStepUpdate",
-                    "stepId": step.step_id,
-                    "status": "completed",
-                    "phase": step.phase,
-                }
-                if step.result:
-                    d["result"] = step.result
-                events.append(d)
+                events.append(PlanStepUpdateEvent(
+                    step_id=step.step_id,
+                    status="completed",
+                    phase=step.phase,
+                    result=step.result,
+                ))
         self._active_step_ids.clear()
         self._active_step_id = None
         return events
@@ -880,23 +873,22 @@ class _PlanTracker:
                 return step
         return None
 
-    def finalize_pending_as_skipped(self) -> list[SSEEventInput]:
+    def finalize_pending_as_skipped(self) -> list[PlanStepUpdateEvent]:
         """Mark all remaining pending steps as skipped and return events.
 
         The Execution Timeline spec requires that no step is left in "pending"
         at plan completion — steps that were never activated must be emitted
         as "skipped" so the frontend can render them correctly.
         """
-        events: list[SSEEventInput] = []
+        events: list[PlanStepUpdateEvent] = []
         for step in self.steps:
             if step.status == "pending":
                 step.status = "skipped"
-                events.append({
-                    "type": "planStepUpdate",
-                    "stepId": step.step_id,
-                    "status": "skipped",
-                    "phase": step.phase,
-                })
+                events.append(PlanStepUpdateEvent(
+                    step_id=step.step_id,
+                    status="skipped",
+                    phase=step.phase,
+                ))
         return events
 
     def progress_context(self) -> str:

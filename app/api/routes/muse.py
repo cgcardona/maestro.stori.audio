@@ -15,19 +15,23 @@ Endpoint summary:
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts.json_types import RegionMetadataWire
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    PitchBendDict,
+    RegionMetadataWire,
+)
 from app.auth.dependencies import require_valid_token
 from app.core.state_store import get_or_create_store
 from app.core.tracing import create_trace_context
 from app.db import get_db
 from app.models.variation import (
+    ChangeType,
     MidiNoteSnapshot,
     NoteChange as DomainNoteChange,
     Phrase as DomainPhrase,
@@ -40,14 +44,23 @@ from app.services.muse_history_controller import (
     checkout_to_variation,
     merge_variations,
 )
-from app.services.muse_log_graph import build_muse_log_graph
+from app.services.muse_log_graph import MuseLogGraphResponse, build_muse_log_graph
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/muse", tags=["muse"])
 
 
-# ── Request / Response models ─────────────────────────────────────────────
+def _parse_change_type(raw: str) -> ChangeType:
+    """Narrow a wire-format string to the ChangeType literal."""
+    if raw == "added":
+        return "added"
+    if raw == "removed":
+        return "removed"
+    return "modified"
+
+
+# ── Request models ────────────────────────────────────────────────────────
 
 
 class SaveVariationRequest(BaseModel):
@@ -57,7 +70,7 @@ class SaveVariationRequest(BaseModel):
     conversation_id: str = "default"
     parent_variation_id: str | None = None
     parent2_variation_id: str | None = None
-    phrases: list[dict[str, Any]] = Field(default_factory=list)
+    phrases: list[dict[str, object]] = Field(default_factory=list)
     affected_tracks: list[str] = Field(default_factory=list)
     affected_regions: list[str] = Field(default_factory=list)
     beat_range: tuple[float, float] = (0.0, 8.0)
@@ -82,6 +95,173 @@ class MergeRequest(BaseModel):
     force: bool = False
 
 
+# ── Response models ───────────────────────────────────────────────────────
+
+
+class SaveVariationResponse(BaseModel):
+    """Confirmation that a variation was persisted to Muse history.
+
+    Returned by ``POST /muse/variations`` after the variation record has been
+    written to the database and the transaction committed.
+
+    Attributes:
+        variation_id: UUID of the variation that was saved.  Echoes back the
+            ID supplied in the request so the caller can correlate the response
+            without re-reading the request body.
+    """
+
+    variation_id: str = Field(
+        description="UUID of the variation that was saved."
+    )
+
+
+class SetHeadResponse(BaseModel):
+    """Confirmation that the HEAD pointer was moved.
+
+    Returned by ``POST /muse/head`` after the HEAD record has been updated and
+    the transaction committed.
+
+    Attributes:
+        head: UUID of the variation that is now HEAD.  Echoes back the ID
+            supplied in the request.
+    """
+
+    head: str = Field(
+        description="UUID of the variation that is now HEAD."
+    )
+
+
+class CheckoutExecutionStats(BaseModel):
+    """Execution statistics for a single plan-execution pass.
+
+    Shared by both ``CheckoutResponse`` and ``MergeResponse`` because both
+    operations run a checkout plan against the ``StateStore`` at the end.
+
+    Attributes:
+        executed: Number of tool-call steps that were executed successfully
+            during this checkout pass.
+        failed: Number of tool-call steps that failed during this checkout
+            pass.  A non-zero value indicates a partial checkout — the DAW
+            state may be inconsistent.
+        plan_hash: SHA-256 content hash of the serialised checkout plan (hex
+            string).  Identical hashes guarantee identical execution plans;
+            useful for deduplication and idempotency checks.
+        events: Ordered list of SSE event payloads that were emitted during
+            execution.  Each element is a raw ``dict[str, object]`` matching
+            the wire format of the corresponding ``MaestroEvent`` subclass.
+            Included so callers can replay or inspect the execution trace
+            without re-running the checkout.
+    """
+
+    executed: int = Field(
+        description="Number of tool-call steps executed successfully during this checkout pass."
+    )
+    failed: int = Field(
+        description=(
+            "Number of tool-call steps that failed. "
+            "Non-zero indicates a partial checkout — DAW state may be inconsistent."
+        )
+    )
+    plan_hash: str = Field(
+        description=(
+            "SHA-256 content hash of the serialised checkout plan (hex string). "
+            "Identical hashes guarantee identical execution plans."
+        )
+    )
+    events: list[dict[str, object]] = Field(
+        description=(
+            "Ordered list of SSE event payloads emitted during execution. "
+            "Each element is a raw dict matching the wire format of a MaestroEvent subclass."
+        )
+    )
+
+
+class CheckoutResponse(BaseModel):
+    """Full summary of a checkout operation — the musical equivalent of ``git checkout``.
+
+    Returned by ``POST /muse/checkout`` after the target variation has been
+    reconstructed, its checkout plan executed against ``StateStore``, and HEAD
+    moved.  Returns 409 instead if the working tree is dirty and ``force`` is
+    not set.
+
+    Attributes:
+        project_id: UUID of the project on which the checkout was performed.
+        from_variation_id: UUID of the variation that was HEAD before checkout,
+            or ``None`` if the project had no HEAD (first checkout).
+        to_variation_id: UUID of the variation that is now HEAD after checkout.
+        execution: Plan-execution statistics and event trace for this checkout
+            pass (see ``CheckoutExecutionStats``).
+        head_moved: ``True`` if the HEAD pointer was successfully updated to
+            ``to_variation_id``.  ``False`` would indicate an unexpected
+            no-op (e.g. already at target), though in practice the endpoint
+            raises on failure rather than returning ``False``.
+    """
+
+    project_id: str = Field(
+        description="UUID of the project on which the checkout was performed."
+    )
+    from_variation_id: str | None = Field(
+        description=(
+            "UUID of the variation that was HEAD before checkout, "
+            "or None if the project had no HEAD (first checkout)."
+        )
+    )
+    to_variation_id: str = Field(
+        description="UUID of the variation that is now HEAD after checkout."
+    )
+    execution: CheckoutExecutionStats = Field(
+        description="Plan-execution statistics and event trace for this checkout pass."
+    )
+    head_moved: bool = Field(
+        description="True if the HEAD pointer was successfully updated to to_variation_id."
+    )
+
+
+class MergeResponse(BaseModel):
+    """Full summary of a three-way merge — the musical equivalent of ``git merge``.
+
+    Returned by ``POST /muse/merge`` after the merge base is computed, the
+    three-way diff is applied, the merged state is checked out via plan
+    execution, and a merge commit with two parents is created.  Returns 409
+    instead if the merge has unresolvable conflicts.
+
+    Attributes:
+        project_id: UUID of the project on which the merge was performed.
+        merge_variation_id: UUID of the new merge commit (two parents:
+            ``left_id`` and ``right_id``).
+        left_id: UUID of the left (first) variation passed to the merge.
+        right_id: UUID of the right (second) variation passed to the merge.
+        execution: Plan-execution statistics and event trace for the checkout
+            pass that applied the merged state (see ``CheckoutExecutionStats``).
+        head_moved: ``True`` if HEAD was moved to ``merge_variation_id`` after
+            the merge commit was created.
+    """
+
+    project_id: str = Field(
+        description="UUID of the project on which the merge was performed."
+    )
+    merge_variation_id: str = Field(
+        description=(
+            "UUID of the new merge commit with two parents: left_id and right_id."
+        )
+    )
+    left_id: str = Field(
+        description="UUID of the left (first) variation passed to the merge."
+    )
+    right_id: str = Field(
+        description="UUID of the right (second) variation passed to the merge."
+    )
+    execution: CheckoutExecutionStats = Field(
+        description=(
+            "Plan-execution statistics and event trace for the checkout pass "
+            "that applied the merged state."
+        )
+    )
+    head_moved: bool = Field(
+        description="True if HEAD was moved to merge_variation_id after the merge commit was created."
+    )
+
+
 # ── POST /muse/variations ────────────────────────────────────────────────
 
 
@@ -89,7 +269,7 @@ class MergeRequest(BaseModel):
 async def save_variation(
     req: SaveVariationRequest,
     db: AsyncSession = Depends(get_db),
-) -> dict[str, str]:
+) -> SaveVariationResponse:
     """Persist a variation directly into Muse history.
 
     Accepts a complete variation payload (phrases, note changes,
@@ -98,23 +278,56 @@ async def save_variation(
     domain_phrases: list[DomainPhrase] = []
     for p in req.phrases:
         note_changes: list[DomainNoteChange] = []
-        for nc in p.get("note_changes", []):
+        _raw_nc = p.get("note_changes", [])
+        for nc in (_raw_nc if isinstance(_raw_nc, list) else []):
+            if not isinstance(nc, dict):
+                continue
             note_changes.append(DomainNoteChange(
-                note_id=nc["note_id"],
-                change_type=nc["change_type"],
-                before=MidiNoteSnapshot(**nc["before"]) if nc.get("before") else None,
-                after=MidiNoteSnapshot(**nc["after"]) if nc.get("after") else None,
+                note_id=str(nc.get("note_id", "")),
+                change_type=_parse_change_type(str(nc.get("change_type", ""))),
+                before=MidiNoteSnapshot(**nc["before"]) if isinstance(nc.get("before"), dict) else None,
+                after=MidiNoteSnapshot(**nc["after"]) if isinstance(nc.get("after"), dict) else None,
             ))
+        _raw_cc_events = p.get("cc_events", [])
+        _cc_events: list[CCEventDict] = [
+            CCEventDict(cc=int(e.get("cc", 0)), beat=float(e.get("beat", 0)), value=int(e.get("value", 0)))
+            for e in (_raw_cc_events if isinstance(_raw_cc_events, list) else [])
+            if isinstance(e, dict)
+        ]
+        _raw_pb = p.get("pitch_bends", [])
+        _pitch_bends: list[PitchBendDict] = [
+            PitchBendDict(beat=float(e.get("beat", 0)), value=int(e.get("value", 0)))
+            for e in (_raw_pb if isinstance(_raw_pb, list) else [])
+            if isinstance(e, dict)
+        ]
+        _raw_at = p.get("aftertouch", [])
+        _aftertouch: list[AftertouchDict] = []
+        for at_raw in (_raw_at if isinstance(_raw_at, list) else []):
+            if not isinstance(at_raw, dict):
+                continue
+            at_ev: AftertouchDict = {
+                "beat": float(at_raw.get("beat", 0)),
+                "value": int(at_raw.get("value", 0)),
+            }
+            if "pitch" in at_raw:
+                at_ev["pitch"] = int(at_raw["pitch"])
+            _aftertouch.append(at_ev)
+        _raw_tags = p.get("tags", [])
+        _tags: list[str] = [t for t in _raw_tags if isinstance(t, str)] if isinstance(_raw_tags, list) else []
+        _sb = p.get("start_beat", 0.0)
+        _eb = p.get("end_beat", 8.0)
         domain_phrases.append(DomainPhrase(
-            phrase_id=p["phrase_id"],
-            track_id=p["track_id"],
-            region_id=p["region_id"],
-            start_beat=p.get("start_beat", 0.0),
-            end_beat=p.get("end_beat", 8.0),
-            label=p.get("label", "Muse"),
+            phrase_id=str(p.get("phrase_id", "")),
+            track_id=str(p.get("track_id", "")),
+            region_id=str(p.get("region_id", "")),
+            start_beat=float(_sb) if isinstance(_sb, (int, float)) else 0.0,
+            end_beat=float(_eb) if isinstance(_eb, (int, float)) else 8.0,
+            label=str(p.get("label", "Muse")),
             note_changes=note_changes,
-            controller_changes=p.get("controller_changes", []),
-            tags=p.get("tags", []),
+            cc_events=_cc_events,
+            pitch_bends=_pitch_bends,
+            aftertouch=_aftertouch,
+            tags=_tags,
         ))
 
     variation = DomainVariation(
@@ -149,7 +362,7 @@ async def save_variation(
     await db.commit()
 
     logger.info("✅ Variation saved via route: %s", req.variation_id[:8])
-    return {"variation_id": req.variation_id}
+    return SaveVariationResponse(variation_id=req.variation_id)
 
 
 # ── POST /muse/head ──────────────────────────────────────────────────────
@@ -159,11 +372,11 @@ async def save_variation(
 async def set_head(
     req: SetHeadRequest,
     db: AsyncSession = Depends(get_db),
-) -> dict[str, str]:
-    """set the HEAD pointer for a project to a specific variation."""
+) -> SetHeadResponse:
+    """Set the HEAD pointer for a project to a specific variation."""
     await muse_repository.set_head(db, req.variation_id)
     await db.commit()
-    return {"head": req.variation_id}
+    return SetHeadResponse(head=req.variation_id)
 
 
 # ── GET /muse/log ────────────────────────────────────────────────────────
@@ -173,10 +386,10 @@ async def set_head(
 async def get_log(
     project_id: str,
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    """Return the full commit DAG for a project as ``MuseLogGraph`` JSON."""
+) -> MuseLogGraphResponse:
+    """Return the full commit DAG for a project as ``MuseLogGraphResponse``."""
     graph = await build_muse_log_graph(db, project_id)
-    return graph.to_dict()
+    return graph.to_response()
 
 
 # ── POST /muse/checkout ──────────────────────────────────────────────────
@@ -186,12 +399,11 @@ async def get_log(
 async def checkout(
     req: CheckoutRequest,
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
+) -> CheckoutResponse:
     """Checkout to a specific variation — musical ``git checkout``.
 
     Reconstructs the target state, generates a checkout plan, executes
-    it against StateStore, and moves HEAD.  Returns execution summary
-    and SSE-compatible events.
+    it against StateStore, and moves HEAD.
 
     Returns 409 if the working tree has uncommitted drift and
     ``force`` is not set.
@@ -209,16 +421,18 @@ async def checkout(
             force=req.force,
         )
         await db.commit()
-        return {
-            "project_id": summary.project_id,
-            "from": summary.from_variation_id,
-            "to": summary.to_variation_id,
-            "executed": summary.execution.executed,
-            "failed": summary.execution.failed,
-            "plan_hash": summary.execution.plan_hash,
-            "head_moved": summary.head_moved,
-            "events": list(summary.execution.events),
-        }
+        return CheckoutResponse(
+            project_id=summary.project_id,
+            from_variation_id=summary.from_variation_id,
+            to_variation_id=summary.to_variation_id,
+            execution=CheckoutExecutionStats(
+                executed=summary.execution.executed,
+                failed=summary.execution.failed,
+                plan_hash=summary.execution.plan_hash,
+                events=list(summary.execution.events),
+            ),
+            head_moved=summary.head_moved,
+        )
     except CheckoutBlockedError as e:
         raise HTTPException(status_code=409, detail={
             "error": "checkout_blocked",
@@ -236,7 +450,7 @@ async def checkout(
 async def merge(
     req: MergeRequest,
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
+) -> MergeResponse:
     """Three-way merge of two variations — musical ``git merge``.
 
     Computes the merge base, builds a three-way diff, and if
@@ -259,15 +473,19 @@ async def merge(
             force=req.force,
         )
         await db.commit()
-        return {
-            "project_id": summary.project_id,
-            "merge_variation_id": summary.merge_variation_id,
-            "left_id": summary.left_id,
-            "right_id": summary.right_id,
-            "executed": summary.execution.executed,
-            "failed": summary.execution.failed,
-            "head_moved": summary.head_moved,
-        }
+        return MergeResponse(
+            project_id=summary.project_id,
+            merge_variation_id=summary.merge_variation_id,
+            left_id=summary.left_id,
+            right_id=summary.right_id,
+            execution=CheckoutExecutionStats(
+                executed=summary.execution.executed,
+                failed=summary.execution.failed,
+                plan_hash=summary.execution.plan_hash,
+                events=list(summary.execution.events),
+            ),
+            head_moved=summary.head_moved,
+        )
     except MergeConflictError as e:
         raise HTTPException(status_code=409, detail={
             "error": "merge_conflict",

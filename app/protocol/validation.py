@@ -62,4 +62,9 @@ class ProtocolGuard:
 
     @property
     def terminated(self) -> bool:
+        """``True`` after a ``complete`` event has been emitted for this stream.
+
+        Any event emitted after ``terminated`` is ``True`` is a protocol
+        violation — the guard logs it and adds it to the returned violations list.
+        """
         return self._has_complete

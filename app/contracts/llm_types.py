@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Union
 
-from typing_extensions import Required, TypedDict
+from typing_extensions import NotRequired, Required, TypedDict
 
 # ── External API boundary (Any lives here, exactly once) ──────────────────────
 
@@ -86,3 +86,29 @@ ChatMessage = Union[
     ToolResultMessage,
 ]
 """Discriminated union of all OpenAI chat message shapes."""
+
+
+# ── Tool schema shapes (OpenAI function-calling format) ───────────────────────
+
+
+class ToolParametersDict(TypedDict, total=False):
+    """JSON Schema ``parameters`` block inside an OpenAI tool definition."""
+
+    type: str
+    properties: dict[str, object]
+    required: list[str]
+
+
+class ToolFunctionDict(TypedDict):
+    """The ``function`` field of an OpenAI tool definition."""
+
+    name: str
+    description: str
+    parameters: NotRequired[ToolParametersDict]
+
+
+class ToolSchemaDict(TypedDict):
+    """A single OpenAI-format tool definition (``{type: function, function: {...}}``)."""
+
+    type: str
+    function: ToolFunctionDict

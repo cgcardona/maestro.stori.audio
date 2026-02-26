@@ -10,7 +10,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.expansion import ToolCall
-from app.contracts.llm_types import ChatMessage
+from app.contracts.llm_types import ChatMessage, ToolSchemaDict
 from app.core.llm_client import (
     LLMClient,
     LLMProvider,
@@ -254,12 +254,11 @@ class TestPromptCaching:
             provider=LLMProvider.OPENROUTER, api_key="k", model="openai/gpt-4o"
         )
         messages: list[ChatMessage] = [{"role": "system", "content": "You are helpful"}]
-        tools = [{"type": "function", "function": {"name": "t"}}]
+        tools: list[ToolSchemaDict] = [{"type": "function", "function": {"name": "t", "description": ""}}]
         returned_msgs, returned_tools, system_blocks = client._enable_prompt_caching(
             messages, tools=tools
         )
         assert returned_msgs == messages
-        # Tools are returned as-is (no cache_control) so the caller can still use them
         assert returned_tools == tools
         assert "cache_control" not in returned_tools[0]
         assert system_blocks is None
@@ -304,10 +303,10 @@ class TestPromptCaching:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
         )
-        tools = [
-            {"type": "function", "function": {"name": "tool_a"}},
-            {"type": "function", "function": {"name": "tool_b"}},
-            {"type": "function", "function": {"name": "tool_c"}},
+        tools: list[ToolSchemaDict] = [
+            {"type": "function", "function": {"name": "tool_a", "description": ""}},
+            {"type": "function", "function": {"name": "tool_b", "description": ""}},
+            {"type": "function", "function": {"name": "tool_c", "description": ""}},
         ]
         user_msgs: list[ChatMessage] = [{"role": "user", "content": "hi"}]
         _, cached_tools, _ = client._enable_prompt_caching(user_msgs, tools=tools)
@@ -332,7 +331,7 @@ class TestPromptCaching:
         client = LLMClient(
             provider=LLMProvider.OPENROUTER, api_key="k", model=self.CLAUDE_MODEL
         )
-        tools = [{"type": "function", "function": {"name": "tool_a"}}]
+        tools: list[ToolSchemaDict] = [{"type": "function", "function": {"name": "tool_a", "description": ""}}]
         user_msgs: list[ChatMessage] = [{"role": "user", "content": "hi"}]
         _, cached_tools, _ = client._enable_prompt_caching(user_msgs, tools=tools)
         # Cached tools have cache_control; originals do not
@@ -450,7 +449,7 @@ class TestChat:
         result = await client.chat(
             system="You are a music AI",
             user="set tempo to 120",
-            tools=[{"type": "function", "function": {"name": "stori_set_tempo"}}],
+            tools=[{"type": "function", "function": {"name": "stori_set_tempo", "description": ""}}],
             tool_choice="required",
             context={"project_state": {"tempo": 100}},
         )

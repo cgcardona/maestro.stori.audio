@@ -13,10 +13,10 @@ Tools are additionally grouped by tier:
 
 from __future__ import annotations
 
-from typing import Any
+from app.contracts.llm_types import ToolSchemaDict
 
 # ---- Tier 1: Generators ------------------------------------------------------
-TIER1_TOOLS: list[dict[str, Any]] = [
+TIER1_TOOLS: list[ToolSchemaDict] = [
     {
         "type": "function",
         "function": {
@@ -75,7 +75,7 @@ TIER1_TOOLS: list[dict[str, Any]] = [
 
 
 # ---- Tier 2: DAW primitives --------------------------------------------------
-TIER2_TOOLS: list[dict[str, Any]] = [
+TIER2_TOOLS: list[ToolSchemaDict] = [
     # Project / transport
     {
         "type": "function",
@@ -520,4 +520,4 @@ TIER2_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
-ALL_TOOLS: list[dict[str, Any]] = TIER1_TOOLS + TIER2_TOOLS
+ALL_TOOLS: list[ToolSchemaDict] = TIER1_TOOLS + TIER2_TOOLS

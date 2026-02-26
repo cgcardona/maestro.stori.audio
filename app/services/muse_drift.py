@@ -99,6 +99,7 @@ class RegionDriftSummary:
 
     @property
     def is_clean(self) -> bool:
+        """``True`` when notes, CC, pitch bends, and aftertouch all have zero changes."""
         return (
             self.added == 0 and self.removed == 0 and self.modified == 0
             and self.cc_added == 0 and self.cc_removed == 0 and self.cc_modified == 0
@@ -125,6 +126,7 @@ class DriftReport:
 
     @property
     def total_changes(self) -> int:
+        """Sum of all note and controller changes across every region in the drift."""
         return sum(
             s.added + s.removed + s.modified
             + s.cc_added + s.cc_removed + s.cc_modified
@@ -157,6 +159,13 @@ class CommitConflictPayload:
 
     @classmethod
     def from_drift_report(cls, report: DriftReport) -> "CommitConflictPayload":
+        """Construct a lightweight conflict payload from a full ``DriftReport``.
+
+        Excludes ``sample_changes`` and full ``region_summaries`` to keep the
+        409 response body small.  The ``fingerprint_delta`` maps each dirty
+        region to ``(head_fingerprint, working_fingerprint)`` so the client
+        can identify exactly which regions changed without reading all note data.
+        """
         fp_delta: dict[str, tuple[str, str]] = {}
         for rid, summary in report.region_summaries.items():
             if not summary.is_clean:

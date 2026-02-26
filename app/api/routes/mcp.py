@@ -17,15 +17,17 @@ import asyncio
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Query
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import Field
+
 from app.models.base import CamelModel
 
 from app.contracts.mcp_types import MCPContentBlock, MCPToolDef
 from app.mcp.server import get_mcp_server, DAWMessage, ServerInfoDict, StoriMCPServer
 from app.auth.dependencies import require_valid_token
 from app.auth.tokens import validate_access_code, AccessCodeError
-from app.core.sse_utils import sse_event
+from app.protocol.emitter import ProtocolSerializationError, emit
+from app.protocol.events import ErrorEvent, MCPMessageEvent, MCPPingEvent
 from app.protocol.validation import ProtocolGuard
-from app.protocol.emitter import ProtocolSerializationError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -81,6 +83,56 @@ class ToolResponseBody(CamelModel):
 class MCPToolListResponse(CamelModel):
     """Response containing the list of available MCP tools."""
     tools: list[MCPToolDef]
+
+
+class ConnectionCreatedResponse(CamelModel):
+    """Server-issued connection ID for the MCP SSE flow.
+
+    Returned by ``POST /mcp/connection``.  The caller must include this ID in
+    subsequent ``GET /mcp/stream/{connection_id}`` (to receive tool calls) and
+    ``POST /mcp/response/{connection_id}`` (to post results) requests.  IDs
+    are valid for 5 minutes and are validated on every use.
+
+    Wire format: camelCase (via ``CamelModel``) — serialised as
+    ``{"connectionId": "…"}``.
+
+    Attributes:
+        connection_id: UUID issued by the server.  Opaque to the client;
+            must be treated as a single-session token and not persisted or
+            shared across sessions.
+    """
+
+    connection_id: str = Field(
+        description=(
+            "Server-issued UUID for this SSE session. "
+            "Valid for 5 minutes. Use in GET /mcp/stream/{id} and POST /mcp/response/{id}."
+        )
+    )
+
+
+class ToolResponseReceivedResponse(CamelModel):
+    """Acknowledgement that the DAW's tool-execution result was received.
+
+    Returned by ``POST /mcp/response/{connection_id}`` after the server has
+    handed the result off to the waiting MCP coroutine.  A ``200 OK`` with
+    this body means the result was queued; it does not guarantee the tool call
+    itself succeeded (that is reported via the SSE stream).
+
+    Wire format: camelCase (via ``CamelModel``) — serialised as
+    ``{"status": "ok"}``.
+
+    Attributes:
+        status: Always ``"ok"`` on success.  The endpoint raises ``404`` for
+            unknown or expired connection IDs rather than returning a non-ok
+            status here.
+    """
+
+    status: str = Field(
+        description=(
+            "Always 'ok' on success. "
+            "The endpoint raises 404 for unknown / expired connection IDs."
+        )
+    )
 
 
 @router.get("/tools")
@@ -223,14 +275,14 @@ async def daw_websocket(
 @router.post("/connection")
 async def create_connection(
     _auth: object = Depends(require_valid_token),
-) -> dict[str, str]:
+) -> ConnectionCreatedResponse:
     """
     Obtain a server-issued connection ID for the SSE flow.
     Use this ID in GET /stream/{connection_id} and POST /response/{connection_id}.
     ID is valid for 5 minutes. Requires authentication.
     """
     connection_id = _issue_connection_id()
-    return {"connectionId": connection_id}
+    return ConnectionCreatedResponse(connection_id=connection_id)
 
 
 @router.get("/stream/{connection_id}")
@@ -263,19 +315,13 @@ async def tool_stream(
                 try:
                     message = await asyncio.wait_for(queue.get(), timeout=30.0)
                     try:
-                        yield await sse_event({
-                            "type": "mcp.message",
-                            "payload": message,
-                        })
+                        yield emit(MCPMessageEvent(payload=message))
                     except ProtocolSerializationError as exc:
                         logger.error(f"❌ MCP stream protocol error: {exc}")
-                        yield await sse_event({
-                            "type": "error",
-                            "message": "Protocol serialization failure",
-                        })
+                        yield emit(ErrorEvent(message="Protocol serialization failure"))
                         return
                 except asyncio.TimeoutError:
-                    yield await sse_event({"type": "mcp.ping"})
+                    yield emit(MCPPingEvent())
         finally:
             server.unregister_daw(connection_id)
 
@@ -294,7 +340,7 @@ async def post_tool_response(
     connection_id: str,
     body: ToolResponseBody,
     _auth: object = Depends(require_valid_token),
-) -> dict[str, str]:
+) -> ToolResponseReceivedResponse:
     """
     Endpoint for DAW to post tool execution results. Requires authentication.
     connection_id must have been obtained from POST /mcp/connection.
@@ -310,4 +356,4 @@ async def post_tool_response(
         body.request_id,
         dict(body.result),
     )
-    return {"status": "ok"}
+    return ToolResponseReceivedResponse(status="ok")

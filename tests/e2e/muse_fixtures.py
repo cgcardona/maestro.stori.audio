@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing_extensions import NotRequired, TypedDict
 
-from app.contracts.json_types import NoteDict
+from app.contracts.json_types import CCEventDict, NoteDict
 
 # ── Fixed IDs ─────────────────────────────────────────────────────────────
 
@@ -41,19 +41,6 @@ _REGION_TRACK_MAP: dict[str, str] = {
 # ── Fixture entities ───────────────────────────────────────────────────────
 
 
-class MuseCCEvent(TypedDict):
-    """A MIDI CC event carried inside a Muse variation phrase.
-
-    ``kind`` acts as a discriminator for the controller_changes list (e.g. "cc",
-    "pitch_bend") so consumers can route without inspecting numeric fields.
-    """
-
-    kind: str
-    cc: int
-    beat: float
-    value: int
-
-
 class MuseNoteChange(TypedDict, total=False):
     """One note add/remove record in a region diff.
 
@@ -78,7 +65,9 @@ class MusePhrase(TypedDict):
     end_beat: float
     label: str
     note_changes: list[MuseNoteChange]
-    controller_changes: list[MuseCCEvent]
+    cc_events: list[CCEventDict]
+    pitch_bends: list[dict[str, object]]
+    aftertouch: list[dict[str, object]]
 
 
 class MuseVariationPayload(TypedDict, total=False):
@@ -162,22 +151,22 @@ def snapshot_keys_v3_conflict() -> dict[str, list[NoteDict]]:
     return {R_KEYS: notes}
 
 
-def cc_sustain_branch_a() -> dict[str, list[MuseCCEvent]]:
+def cc_sustain_branch_a() -> dict[str, list[CCEventDict]]:
     """CC64 sustain pattern for conflict branch A."""
     return {
         R_KEYS: [
-            MuseCCEvent(kind="cc", cc=64, beat=0.0, value=127),
-            MuseCCEvent(kind="cc", cc=64, beat=3.0, value=0),
+            CCEventDict(cc=64, beat=0.0, value=127),
+            CCEventDict(cc=64, beat=3.0, value=0),
         ],
     }
 
 
-def cc_sustain_branch_b() -> dict[str, list[MuseCCEvent]]:
+def cc_sustain_branch_b() -> dict[str, list[CCEventDict]]:
     """CC64 sustain pattern for conflict branch B (different values)."""
     return {
         R_KEYS: [
-            MuseCCEvent(kind="cc", cc=64, beat=0.0, value=64),
-            MuseCCEvent(kind="cc", cc=64, beat=2.0, value=0),
+            CCEventDict(cc=64, beat=0.0, value=64),
+            CCEventDict(cc=64, beat=2.0, value=0),
         ],
     }
 
@@ -197,7 +186,7 @@ def make_variation_payload(
     *,
     parent_variation_id: str | None = None,
     parent2_variation_id: str | None = None,
-    controller_changes: dict[str, list[MuseCCEvent]] | None = None,
+    cc_events: dict[str, list[CCEventDict]] | None = None,
 ) -> MuseVariationPayload:
     """Build a POST /muse/variations request body with proper NoteChange diffs."""
     phrases: list[MusePhrase] = []
@@ -230,7 +219,7 @@ def make_variation_payload(
                     after=None,
                 ))
 
-        cc = (controller_changes or {}).get(rid, [])
+        region_cc = (cc_events or {}).get(rid, [])
         tid = _track_for(rid)
 
         phrases.append(MusePhrase(
@@ -241,7 +230,9 @@ def make_variation_payload(
             end_beat=8.0,
             label=f"{intent} ({rid})",
             note_changes=note_changes,
-            controller_changes=cc,
+            cc_events=region_cc,
+            pitch_bends=[],
+            aftertouch=[],
         ))
 
     return MuseVariationPayload(

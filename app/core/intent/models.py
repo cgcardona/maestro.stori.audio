@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
+from app.contracts.llm_types import OpenAIToolChoice, ToolSchemaDict
 from app.core.intent_config import Intent, SSEState, IdiomMatch
 
 
@@ -20,7 +20,7 @@ class Slots:
     direction: str | None = None
     value_str: str | None = None
     idiom_match: IdiomMatch | None = None
-    extras: dict[str, Any] = field(default_factory=dict)
+    extras: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -30,9 +30,9 @@ class IntentResult:
     sse_state: SSEState
     confidence: float
     slots: Slots
-    tools: list[dict[str, Any]]
+    tools: list[ToolSchemaDict]
     allowed_tool_names: set[str]
-    tool_choice: str | dict[str, Any] | None
+    tool_choice: OpenAIToolChoice | None
     force_stop_after: bool
     requires_planner: bool = False
     reasons: tuple[str, ...] = ()

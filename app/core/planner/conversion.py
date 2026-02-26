@@ -20,15 +20,18 @@ class _ExistingTrackInfo(TypedDict, total=False):
 
 
 def _beats_per_bar(project_state: ProjectContext | None) -> int:
-    """Extract beats per bar from project state, defaulting to 4."""
+    """Extract beats per bar from project state, defaulting to 4.
+
+    Canonical formats (per ProjectContext contract):
+    - ``timeSignature: "4/4"`` — slash-delimited string
+    - ``timeSignature: {"numerator": 4, "denominator": 4}`` — TimeSignatureDict
+    """
     if project_state:
-        ts = project_state.get("time_signature") or project_state.get("timeSignature")
-        if isinstance(ts, (list, tuple)) and len(ts) >= 1:
-            return int(ts[0])
-        if isinstance(ts, dict):
-            return int(ts.get("numerator", 4))
+        ts = project_state.get("timeSignature")
         if isinstance(ts, str) and "/" in ts:
             return int(ts.split("/")[0])
+        if isinstance(ts, dict):
+            return int(ts.get("numerator", 4))
     return 4
 
 

@@ -224,17 +224,19 @@ All models use OpenRouter's `reasoning` parameter for Chain of Thought. Two even
 
 Production endpoints for the musical version control system. All routes require JWT auth (`Authorization: Bearer <token>`). Prefix: `/api/v1/muse/`.
 
+Every endpoint returns a named Pydantic entity — never a raw dict. See [`type_contracts.md`](type_contracts.md#http-response-entities) for the full entity reference.
+
 See [muse_vcs.md](../architecture/muse_vcs.md) for the full architecture reference.
 
 ### Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/muse/variations` | Save a variation (commit) into the history DAG |
-| `POST` | `/muse/head` | Set HEAD pointer to a specific variation |
-| `GET` | `/muse/log?project_id=X` | Return the full commit DAG as `MuseLogGraph` JSON |
-| `POST` | `/muse/checkout` | Checkout to a variation (time travel — reconstructs state) |
-| `POST` | `/muse/merge` | Three-way merge of two branch tips |
+| Method | Path | Response entity | Description |
+|--------|------|-----------------|-------------|
+| `POST` | `/muse/variations` | `SaveVariationResponse` | Save a variation (commit) into the history DAG |
+| `POST` | `/muse/head` | `SetHeadResponse` | Set HEAD pointer to a specific variation |
+| `GET` | `/muse/log?project_id=X` | `MuseLogGraphResponse` | Full commit DAG, topologically sorted |
+| `POST` | `/muse/checkout` | `CheckoutResponse` | Checkout to a variation (time travel) |
+| `POST` | `/muse/merge` | `MergeResponse` | Three-way merge of two branch tips |
 
 ### `POST /muse/variations`
 
@@ -254,30 +256,55 @@ Save a variation directly into the persistent history.
 | `affected_regions` | array | no | Region IDs affected |
 | `beat_range` | tuple | no | `[start, end]` (default `[0.0, 8.0]`) |
 
-**Response:** `{ "status": "saved", "variation_id": "..." }`
+**Response `200` — `SaveVariationResponse`:**
+
+```json
+{ "variation_id": "f3a4b..." }
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `variation_id` | string | UUID of the variation that was saved |
 
 ### `POST /muse/head`
 
-**Request body:** `{ "project_id": "...", "variation_id": "..." }`
-**Response:** `{ "status": "head_set", "variation_id": "..." }`
+**Request body:** `{ "variation_id": "..." }`
+
+**Response `200` — `SetHeadResponse`:**
+
+```json
+{ "head": "f3a4b..." }
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `head` | string | UUID of the variation that is now HEAD |
 
 ### `GET /muse/log`
 
 **Query params:** `project_id` (required)
-**Response:** `MuseLogGraph` JSON with `nodes` array. Each node:
+
+**Response `200` — `MuseLogGraphResponse`:**
 
 ```json
 {
-  "variationId": "...",
-  "parent": "..." | null,
-  "parent2": "..." | null,
-  "intent": "...",
-  "isHead": true | false,
-  "timestamp": "2026-02-24T..."
+  "projectId": "proj-uuid",
+  "head": "f3a4b...",
+  "nodes": [
+    {
+      "id": "f3a4b...",
+      "parent": "a1b2c...",
+      "parent2": null,
+      "isHead": true,
+      "timestamp": 1740614400.0,
+      "intent": "add funky bass",
+      "regions": ["region-uuid-1", "region-uuid-2"]
+    }
+  ]
 }
 ```
 
-Nodes are topologically sorted (Kahn's algorithm, deterministic tie-breaking).
+Nodes are topologically sorted (Kahn's algorithm — parents always before children; ties broken by timestamp, then UUID). See `MuseLogGraphResponse` and `MuseLogNodeResponse` in [`type_contracts.md`](type_contracts.md#http-response-entities).
 
 ### `POST /muse/checkout`
 
@@ -290,8 +317,47 @@ Nodes are topologically sorted (Kahn's algorithm, deterministic tie-breaking).
 | `conversation_id` | string | no | StateStore key (default `"default"`) |
 | `force` | bool | no | Force checkout despite drift (default `false`) |
 
-**Response (200):** `{ "status": "checked_out", "executed": N, "plan_hash": "..." }`
-**Response (409):** `{ "error": "checkout_blocked", "severity": "dirty", "total_changes": N }`
+**Response `200` — `CheckoutResponse`:**
+
+```json
+{
+  "project_id": "proj-uuid",
+  "from_variation_id": "a1b2c...",
+  "to_variation_id": "f3a4b...",
+  "execution": {
+    "executed": 5,
+    "failed": 0,
+    "plan_hash": "4a7f...",
+    "events": [...]
+  },
+  "head_moved": true
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `project_id` | string | Project the checkout ran on |
+| `from_variation_id` | string \| null | Previous HEAD (null if project had no HEAD) |
+| `to_variation_id` | string | New HEAD after checkout |
+| `execution` | `CheckoutExecutionStats` | Plan execution statistics (see below) |
+| `head_moved` | bool | Whether HEAD was successfully updated |
+
+**`CheckoutExecutionStats` fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `executed` | int | Tool-call steps executed successfully |
+| `failed` | int | Tool-call steps that failed (non-zero = partial checkout) |
+| `plan_hash` | string | SHA-256 of the checkout plan — identical hashes = identical plans |
+| `events` | array | SSE event payloads emitted during execution |
+
+**Response `409` — checkout blocked by dirty working tree:**
+
+```json
+{ "error": "checkout_blocked", "severity": "dirty", "total_changes": 12 }
+```
+
+**Response `404`** — target variation not found.
 
 ### `POST /muse/merge`
 
@@ -305,8 +371,34 @@ Nodes are topologically sorted (Kahn's algorithm, deterministic tie-breaking).
 | `conversation_id` | string | no | StateStore key (default `"default"`) |
 | `force` | bool | no | Force merge despite drift (default `false`) |
 
-**Response (200):** `{ "status": "merged", "merge_variation_id": "...", "executed": N }`
-**Response (409):** Merge conflict:
+**Response `200` — `MergeResponse`:**
+
+```json
+{
+  "project_id": "proj-uuid",
+  "merge_variation_id": "d4e5f...",
+  "left_id": "a1b2c...",
+  "right_id": "f3a4b...",
+  "execution": {
+    "executed": 8,
+    "failed": 0,
+    "plan_hash": "9b3a...",
+    "events": [...]
+  },
+  "head_moved": true
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `project_id` | string | Project the merge ran on |
+| `merge_variation_id` | string | UUID of the new merge commit (two parents) |
+| `left_id` | string | Left branch tip that was merged |
+| `right_id` | string | Right branch tip that was merged |
+| `execution` | `CheckoutExecutionStats` | Plan execution statistics |
+| `head_moved` | bool | Whether HEAD was moved to the merge commit |
+
+**Response `409` — merge conflict:**
 
 ```json
 {
@@ -314,6 +406,160 @@ Nodes are topologically sorted (Kahn's algorithm, deterministic tie-breaking).
   "conflicts": [
     { "region_id": "...", "type": "note_conflict", "description": "..." }
   ]
+}
+```
+
+---
+
+## Other HTTP Endpoints
+
+Non-streaming endpoints that return named Pydantic response entities. All require JWT auth unless stated otherwise. See [`type_contracts.md`](type_contracts.md#http-response-entities) for the complete entity field reference.
+
+### `GET /api/v1/validate-token`
+
+Validates the bearer token and returns budget info.
+
+**Response `200` — `ValidateTokenResponse`** (camelCase wire format):
+
+```json
+{
+  "valid": true,
+  "expiresAt": "2026-03-01T12:00:00+00:00",
+  "expiresInSeconds": 3600,
+  "budgetRemaining": 4.25,
+  "budgetLimit": 10.0
+}
+```
+
+`budgetRemaining` and `budgetLimit` are `null` when the user record is unavailable. The endpoint raises `401` rather than returning `valid: false`.
+
+### `POST /api/v1/maestro/preview`
+
+Generates a plan preview without executing it. Useful for showing users what Maestro will do before committing.
+
+**Response `200` — `PreviewMaestroResponse`** (camelCase wire format):
+
+When the prompt is COMPOSING:
+```json
+{
+  "previewAvailable": true,
+  "intent": "COMPOSING",
+  "sseState": "composing",
+  "preview": {
+    "valid": true,
+    "totalSteps": 12,
+    "generations": 3,
+    "edits": 9,
+    "toolCalls": [...],
+    "notes": ["Detected 4/4 time signature"],
+    "errors": [],
+    "warnings": []
+  }
+}
+```
+
+When the prompt is not COMPOSING:
+```json
+{
+  "previewAvailable": false,
+  "intent": "REASONING",
+  "sseState": "reasoning",
+  "reason": "Preview only available for COMPOSING mode (got reasoning)"
+}
+```
+
+### `POST /api/v1/mcp/connection`
+
+Obtain a server-issued connection ID for the SSE tool-streaming flow. ID is valid for 5 minutes.
+
+**Response `200` — `ConnectionCreatedResponse`** (camelCase wire format):
+
+```json
+{ "connectionId": "550e8400-e29b-41d4-a716-446655440000" }
+```
+
+Use the returned `connectionId` in:
+- `GET /api/v1/mcp/stream/{connectionId}` — open the SSE event stream
+- `POST /api/v1/mcp/response/{connectionId}` — deliver tool execution results
+
+### `POST /api/v1/mcp/response/{connectionId}`
+
+Post a tool execution result from the DAW back to the waiting MCP coroutine.
+
+**Response `200` — `ToolResponseReceivedResponse`:**
+
+```json
+{ "status": "ok" }
+```
+
+Returns `404` for unknown or expired connection IDs.
+
+### `POST /api/v1/variation/discard`
+
+Cancel and discard a variation by ID. Idempotent — variations already discarded, or not found in the store, return `ok: true` without error.
+
+**Response `200` — `DiscardVariationResponse`:**
+
+```json
+{ "ok": true }
+```
+
+Returns `409` if the variation is in a non-discardable terminal state other than `DISCARDED`.
+
+### `GET /api/v1/variation/{variation_id}`
+
+Poll the current status and phrase payload for a variation. For reconnect / non-streaming clients.
+
+**Response `200` — `GetVariationResponse`** (camelCase wire format):
+
+```json
+{
+  "variationId": "v-uuid",
+  "projectId": "proj-uuid",
+  "baseStateId": "muse",
+  "intent": "add a funky bass line",
+  "status": "committed",
+  "aiExplanation": "I added a syncopated bass groove...",
+  "affectedTracks": ["track-uuid"],
+  "affectedRegions": ["region-uuid"],
+  "phrases": [
+    {
+      "phraseId": "ph-uuid",
+      "sequence": 0,
+      "trackId": "track-uuid",
+      "regionId": "region-uuid",
+      "beatStart": 0.0,
+      "beatEnd": 8.0,
+      "label": "Verse Bass",
+      "tags": ["groove", "verse"],
+      "aiExplanation": "Syncopated 16th-note pattern...",
+      "diff": { ... }
+    }
+  ],
+  "phraseCount": 1,
+  "lastSequence": 0,
+  "createdAt": "2026-02-26T10:00:00+00:00",
+  "updatedAt": "2026-02-26T10:00:05+00:00",
+  "errorMessage": null
+}
+```
+
+`status` values: `"streaming"` | `"committed"` | `"discarded"` | `"error"` | `"pending"`.
+
+### `PATCH /api/v1/conversations/{conversation_id}`
+
+Update a conversation's title or linked project.
+
+**Request body:** `{ "title": "New title", "project_id": "proj-uuid" }` (all fields optional; send `project_id: "null"` to unlink).
+
+**Response `200` — `ConversationUpdateResponse`** (camelCase wire format):
+
+```json
+{
+  "id": "conv-uuid",
+  "title": "My new title",
+  "projectId": "proj-uuid",
+  "updatedAt": "2026-02-26T10:00:05+00:00"
 }
 ```
 

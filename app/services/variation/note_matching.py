@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections.abc import Sequence
-from typing import Callable
+from typing import Callable, Generic, TypeVar
 
 from app.contracts.json_types import (
     AftertouchDict,
@@ -20,7 +20,21 @@ PITCH_TOLERANCE = 0  # Exact pitch match required
 
 @dataclass
 class NoteMatch:
-    """A matched pair of notes (base and proposed)."""
+    """A matched pair of notes (base and proposed) from a diff alignment.
+
+    Produced by ``match_notes`` — one instance per note in either state.
+    Inspecting the four mutually-exclusive status properties tells callers
+    what happened to the note between the two snapshots.
+
+    Attributes:
+        base_note: Note from the HEAD (pre-execution) snapshot; ``None``
+            when the note exists only in the proposed state (added).
+        proposed_note: Note from the post-execution snapshot; ``None``
+            when the note exists only in the base state (removed).
+        base_index: Position of the note in the base list, or ``None`` if added.
+        proposed_index: Position of the note in the proposed list, or ``None`` if removed.
+    """
+
     base_note: NoteDict | None
     proposed_note: NoteDict | None
     base_index: int | None
@@ -28,20 +42,24 @@ class NoteMatch:
 
     @property
     def is_added(self) -> bool:
+        """``True`` when the note is present only in the proposed state."""
         return self.base_note is None and self.proposed_note is not None
 
     @property
     def is_removed(self) -> bool:
+        """``True`` when the note is present only in the base (HEAD) state."""
         return self.base_note is not None and self.proposed_note is None
 
     @property
     def is_modified(self) -> bool:
+        """``True`` when both notes are present but differ in pitch, timing, or velocity."""
         if self.base_note is None or self.proposed_note is None:
             return False
         return self._has_changes()
 
     @property
     def is_unchanged(self) -> bool:
+        """``True`` when both notes are present and identical within tolerance."""
         if self.base_note is None or self.proposed_note is None:
             return False
         return not self._has_changes()
@@ -168,30 +186,47 @@ def match_notes(
 
 EventDict = CCEventDict | PitchBendDict | AftertouchDict
 
+# Constrained to the three concrete event types so callers get the exact
+# element type back (e.g. list[CCEventDict] in → list[CCEventDict] out).
+_EV = TypeVar("_EV", CCEventDict, PitchBendDict, AftertouchDict)
+
 
 @dataclass
-class EventMatch:
-    """A matched pair of controller events (base and proposed)."""
+class EventMatch(Generic[_EV]):
+    """A matched pair of controller events (base and proposed).
 
-    base_event: EventDict | None
-    proposed_event: EventDict | None
+    Generic over the concrete event type (``CCEventDict``, ``PitchBendDict``,
+    ``AftertouchDict``) so match functions preserve the element type end-to-end
+    without requiring ``cast`` or overloaded signatures.
+
+    Attributes:
+        base_event: Event from the HEAD snapshot; ``None`` if the event is new.
+        proposed_event: Event from the post-execution snapshot; ``None`` if removed.
+    """
+
+    base_event: _EV | None
+    proposed_event: _EV | None
 
     @property
     def is_added(self) -> bool:
+        """``True`` when the event exists only in the proposed (new) state."""
         return self.base_event is None and self.proposed_event is not None
 
     @property
     def is_removed(self) -> bool:
+        """``True`` when the event exists only in the base (HEAD) state."""
         return self.base_event is not None and self.proposed_event is None
 
     @property
     def is_modified(self) -> bool:
+        """``True`` when both events are present but their ``value`` fields differ."""
         if self.base_event is None or self.proposed_event is None:
             return False
         return self.base_event.get("value") != self.proposed_event.get("value")
 
     @property
     def is_unchanged(self) -> bool:
+        """``True`` when both events are present and have the same ``value``."""
         if self.base_event is None or self.proposed_event is None:
             return False
         return not self.is_modified
@@ -219,12 +254,17 @@ def _aftertouch_events_match(base: EventDict, proposed: EventDict) -> bool:
 
 
 def _match_events(
-    base_events: Sequence[EventDict],
-    proposed_events: Sequence[EventDict],
+    base_events: Sequence[_EV],
+    proposed_events: Sequence[_EV],
     match_fn: Callable[[EventDict, EventDict], bool],
-) -> list[EventMatch]:
-    """Generic event matcher using a pluggable identity function."""
-    matches: list[EventMatch] = []
+) -> list[EventMatch[_EV]]:
+    """Generic event matcher using a pluggable identity function.
+
+    The match_fn takes the broader EventDict union (each concrete event type
+    is a member of that union) so the same helpers can be reused across all
+    event kinds without duplicating them.
+    """
+    matches: list[EventMatch[_EV]] = []
     base_matched: set[int] = set()
     proposed_matched: set[int] = set()
 
@@ -254,7 +294,7 @@ def _match_events(
 def match_cc_events(
     base_events: list[CCEventDict],
     proposed_events: list[CCEventDict],
-) -> list[EventMatch]:
+) -> list[EventMatch[CCEventDict]]:
     """Match CC events by CC number + beat timing."""
     return _match_events(base_events, proposed_events, _cc_events_match)
 
@@ -262,7 +302,7 @@ def match_cc_events(
 def match_pitch_bends(
     base_events: list[PitchBendDict],
     proposed_events: list[PitchBendDict],
-) -> list[EventMatch]:
+) -> list[EventMatch[PitchBendDict]]:
     """Match pitch bend events by beat timing."""
     return _match_events(base_events, proposed_events, _events_match_by_beat)
 
@@ -270,6 +310,6 @@ def match_pitch_bends(
 def match_aftertouch(
     base_events: list[AftertouchDict],
     proposed_events: list[AftertouchDict],
-) -> list[EventMatch]:
+) -> list[EventMatch[AftertouchDict]]:
     """Match aftertouch events by pitch (if poly) + beat timing."""
     return _match_events(base_events, proposed_events, _aftertouch_events_match)

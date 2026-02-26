@@ -28,9 +28,16 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [Pipeline types](#pipeline-types)
    - [Scoring types](#scoring-types)
 8. [Region Event Map Aliases](#region-event-map-aliases)
-9. [Tempo Convention](#tempo-convention)
-10. [The `Any` Quarantine](#the-any-quarantine)
-11. [Entity Hierarchy](#entity-hierarchy)
+9. [HTTP Response Entities](#http-response-entities)
+   - [Protocol Introspection](#protocol-introspection-appprotocolresponsespy)
+   - [Muse VCS](#muse-vcs-appapiroutesmusepy)
+   - [Maestro Core](#maestro-core-appapiroutesmaestropy)
+   - [MCP Endpoints](#mcp-endpoints-appapiroutesmcppy)
+   - [Variation Endpoints](#variation-endpoints)
+   - [Conversations](#conversations-appapiroutesconversationsmodelspy)
+10. [Tempo Convention](#tempo-convention)
+11. [The `Any` Quarantine](#the-any-quarantine)
+12. [Entity Hierarchy](#entity-hierarchy)
 
 ---
 
@@ -781,6 +788,328 @@ These type aliases replace the repeated pattern `dict[str, list[XxxDict]]` that 
 
 ---
 
+## HTTP Response Entities
+
+> Updated: 2026-02-26 | Reflects the named-entity sweep that eliminated all `dict[str, object]` and `dict[str, str]` return types from route handlers.
+
+All HTTP route handlers return **named Pydantic `BaseModel` entities**, never anonymous dicts. This makes the wire contract explicit, type-safe, and self-documenting. Every entity below has a class docstring and per-field `Field(description=...)` annotation in the source.
+
+**Base classes:**
+- `BaseModel` — plain Pydantic v2 model; wire format is snake_case.
+- `CamelModel` — extends `BaseModel` with `alias_generator=to_camel`; wire format is camelCase (matches the Stori DAW Swift convention). Routes using `CamelModel` responses must set `response_model_by_alias=True` on the decorator.
+
+---
+
+### Protocol Introspection (`app/protocol/responses.py`)
+
+#### `ProtocolInfoResponse`
+
+`BaseModel` — `GET /api/v1/protocol`
+
+Lightweight version/hash/event-list snapshot. Used for polling and drift detection.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `protocolVersion` | `str` | Semver string from `pyproject.toml` (e.g. `"1.4.2"`) |
+| `protocolHash` | `str` | SHA-256 hex hash of the full serialised schema |
+| `eventTypes` | `list[str]` | Alphabetically sorted registered SSE event type names |
+| `eventCount` | `int` | `len(eventTypes)` |
+
+#### `ProtocolEventsResponse`
+
+`BaseModel` — `GET /api/v1/protocol/events.json`
+
+Full JSON Schema for every registered SSE event type.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `protocolVersion` | `str` | Protocol version that produced these schemas |
+| `events` | `EventSchemaMap` | `dict[str, dict[str, object]]` — event name → JSON Schema object |
+
+#### `ProtocolToolsResponse`
+
+`BaseModel` — `GET /api/v1/protocol/tools.json`
+
+All registered MCP tool definitions in MCP wire format.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `protocolVersion` | `str` | Protocol version that produced these definitions |
+| `tools` | `list[MCPToolDef]` | Ordered list of MCP tool definitions |
+| `toolCount` | `int` | `len(tools)` |
+
+#### `ProtocolSchemaResponse`
+
+`BaseModel` — `GET /api/v1/protocol/schema.json`
+
+Unified schema snapshot. Cacheable by `protocolHash`. The DAW frontend uses this for full Swift type generation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `protocolVersion` | `str` | Protocol version that produced this snapshot |
+| `protocolHash` | `str` | SHA-256 hex content hash of this snapshot |
+| `events` | `EventSchemaMap` | `dict[str, dict[str, object]]` — all event schemas |
+| `enums` | `EnumDefinitionMap` | `dict[str, list[str]]` — enum name → sorted allowed values |
+| `tools` | `list[MCPToolDef]` | All registered tool definitions |
+| `toolCount` | `int` | `len(tools)` |
+| `eventCount` | `int` | `len(events)` |
+
+---
+
+### Muse VCS (`app/api/routes/muse.py`)
+
+#### `SaveVariationResponse`
+
+`BaseModel` — `POST /api/v1/muse/variations`
+
+Confirmation that a variation was persisted.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `variation_id` | `str` | UUID of the variation that was saved |
+
+#### `SetHeadResponse`
+
+`BaseModel` — `POST /api/v1/muse/head`
+
+Confirmation that the HEAD pointer was moved.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `head` | `str` | UUID of the variation that is now HEAD |
+
+#### `CheckoutExecutionStats`
+
+`BaseModel` — shared sub-entity embedded in `CheckoutResponse` and `MergeResponse`.
+
+Execution statistics from a single plan-execution pass.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `executed` | `int` | Tool-call steps executed successfully |
+| `failed` | `int` | Tool-call steps that failed (non-zero = partial checkout) |
+| `plan_hash` | `str` | SHA-256 content hash of the checkout plan (hex) |
+| `events` | `list[dict[str, object]]` | SSE event payloads emitted during execution, in order |
+
+#### `CheckoutResponse`
+
+`BaseModel` — `POST /api/v1/muse/checkout`
+
+Full summary of a checkout operation (musical `git checkout`). Returns `409` instead if working tree is dirty and `force=false`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `project_id` | `str` | UUID of the project |
+| `from_variation_id` | `str \| None` | Previous HEAD variation UUID (null if project had no HEAD) |
+| `to_variation_id` | `str` | New HEAD variation UUID after checkout |
+| `execution` | `CheckoutExecutionStats` | Plan execution statistics |
+| `head_moved` | `bool` | Whether HEAD was successfully updated |
+
+#### `MergeResponse`
+
+`BaseModel` — `POST /api/v1/muse/merge`
+
+Full summary of a three-way merge (musical `git merge`). Returns `409` with conflict details instead if the merge cannot auto-resolve.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `project_id` | `str` | UUID of the project |
+| `merge_variation_id` | `str` | UUID of the new merge commit (has two parents) |
+| `left_id` | `str` | UUID of the left branch tip |
+| `right_id` | `str` | UUID of the right branch tip |
+| `execution` | `CheckoutExecutionStats` | Plan execution statistics for the merge-checkout pass |
+| `head_moved` | `bool` | Whether HEAD was moved to the merge commit |
+
+#### `MuseLogNodeResponse`
+
+`BaseModel` — embedded in `MuseLogGraphResponse`. Produced by `MuseLogNode.to_response()`.
+
+Wire representation of a single commit node in the Muse DAG. All field names are camelCase (by declaration, not via `CamelModel`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | UUID of this variation (commit) |
+| `parent` | `str \| None` | UUID of the first parent (null for root commit) |
+| `parent2` | `str \| None` | UUID of the second parent (null for non-merge commits) |
+| `isHead` | `bool` | True if this is the current HEAD variation |
+| `timestamp` | `float` | POSIX timestamp (seconds since epoch) of commit time |
+| `intent` | `str \| None` | Free-text intent supplied at commit time |
+| `regions` | `list[str]` | Region IDs affected by this variation |
+
+**Method:**
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `to_response()` (on `MuseLogNode`) | `MuseLogNodeResponse` | Converts internal `MuseLogNode` dataclass to this wire entity. Translates snake_case field names to camelCase and converts `affected_regions` tuple to list. |
+
+#### `MuseLogGraphResponse`
+
+`BaseModel` — `GET /api/v1/muse/log`. Produced by `MuseLogGraph.to_response()`.
+
+Full commit DAG for a project, topologically sorted.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `projectId` | `str` | UUID of the project |
+| `head` | `str \| None` | UUID of the current HEAD variation (null if none set) |
+| `nodes` | `list[MuseLogNodeResponse]` | Topologically sorted nodes (parents before children) |
+
+**Method:**
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `to_response()` (on `MuseLogGraph`) | `MuseLogGraphResponse` | Converts internal `MuseLogGraph` dataclass to this wire entity. Calls `MuseLogNode.to_response()` on each node in order. |
+
+---
+
+### Maestro Core (`app/api/routes/maestro.py`)
+
+All entities extend `CamelModel` (wire format is camelCase; routes use `response_model_by_alias=True`).
+
+#### `ValidateTokenResponse`
+
+`CamelModel` — `GET /api/v1/validate-token`
+
+JWT validation result. Budget fields are populated when the `sub` claim resolves to a known user.
+
+| Field | Type | Wire key | Description |
+|-------|------|----------|-------------|
+| `valid` | `bool` | `valid` | Always `True` — endpoint raises `401` instead of returning `False` |
+| `expires_at` | `str` | `expiresAt` | ISO-8601 UTC timestamp of token expiry |
+| `expires_in_seconds` | `int` | `expiresInSeconds` | Seconds until expiry, clamped to `0` if past |
+| `budget_remaining` | `float \| None` | `budgetRemaining` | Remaining credit balance in cents; `null` if user record unavailable |
+| `budget_limit` | `float \| None` | `budgetLimit` | Maximum credit balance in cents; `null` if user record unavailable |
+
+#### `PlanPreviewResponse`
+
+`CamelModel` — embedded in `PreviewMaestroResponse`. Maps directly from `PlanPreview` TypedDict.
+
+| Field | Type | Wire key | Description |
+|-------|------|----------|-------------|
+| `valid` | `bool \| None` | `valid` | True if the plan passed validation |
+| `total_steps` | `int \| None` | `totalSteps` | Total tool-call steps in the plan |
+| `generations` | `int \| None` | `generations` | Number of generation tool calls (Tier 1) |
+| `edits` | `int \| None` | `edits` | Number of editor tool calls (Tier 2) |
+| `tool_calls` | `list[dict[str, object]]` | `toolCalls` | Ordered tool-call descriptors |
+| `notes` | `list[str]` | `notes` | Planner annotations (e.g. tempo/key inferences) |
+| `errors` | `list[str]` | `errors` | Validation errors that make the plan unexecutable |
+| `warnings` | `list[str]` | `warnings` | Non-fatal warnings |
+
+#### `PreviewMaestroResponse`
+
+`CamelModel` — `POST /api/v1/maestro/preview`
+
+Top-level preview envelope. `preview` is populated only when `previewAvailable=true`.
+
+| Field | Type | Wire key | Description |
+|-------|------|----------|-------------|
+| `preview_available` | `bool` | `previewAvailable` | True if the intent supports previews (COMPOSING only) |
+| `intent` | `str` | `intent` | Classified intent value (`"COMPOSING"`, `"REASONING"`, etc.) |
+| `sse_state` | `str` | `sseState` | SSE state string (`"composing"`, `"reasoning"`, etc.) |
+| `reason` | `str \| None` | `reason` | Why preview is unavailable; `null` when `previewAvailable=true` |
+| `preview` | `PlanPreviewResponse \| None` | `preview` | The generated plan; `null` when `previewAvailable=false` |
+
+---
+
+### MCP Endpoints (`app/api/routes/mcp.py`)
+
+All entities extend `CamelModel`.
+
+#### `ConnectionCreatedResponse`
+
+`CamelModel` — `POST /api/v1/mcp/connection`
+
+Server-issued connection ID for the MCP SSE flow. Valid for 5 minutes.
+
+| Field | Type | Wire key | Description |
+|-------|------|----------|-------------|
+| `connection_id` | `str` | `connectionId` | Server-issued UUID. Use in `/mcp/stream/{id}` and `/mcp/response/{id}` |
+
+#### `ToolResponseReceivedResponse`
+
+`CamelModel` — `POST /api/v1/mcp/response/{connection_id}`
+
+Acknowledgement that the DAW's tool-execution result was received.
+
+| Field | Type | Wire key | Description |
+|-------|------|----------|-------------|
+| `status` | `str` | `status` | Always `"ok"` on success; endpoint raises `404` for invalid connection IDs |
+
+---
+
+### Variation Endpoints
+
+#### `DiscardVariationResponse`
+
+`BaseModel` — `POST /api/v1/variation/discard`
+
+Acknowledgement that a variation was discarded (or was already in a discarded/not-found state). Endpoint raises `409` for non-discardable terminal states.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ok` | `bool` | Always `True` in the response body |
+
+#### `VariationPhraseResponse`
+
+`CamelModel` — embedded in `GetVariationResponse`
+
+One generated MIDI phrase within a polled variation.
+
+| Field | Type | Wire key | Description |
+|-------|------|----------|-------------|
+| `phrase_id` | `str` | `phraseId` | Stable UUID assigned at generation time |
+| `sequence` | `int` | `sequence` | Monotonically increasing index within the variation |
+| `track_id` | `str` | `trackId` | DAW track this phrase belongs to |
+| `region_id` | `str` | `regionId` | DAW region this phrase occupies |
+| `beat_start` | `float` | `beatStart` | Phrase start position in beats |
+| `beat_end` | `float` | `beatEnd` | Phrase end position in beats (`beat_end − beat_start` = duration) |
+| `label` | `str` | `label` | Human-readable display label |
+| `tags` | `list[str]` | `tags` | Categorisation tags |
+| `ai_explanation` | `str \| None` | `aiExplanation` | Natural-language explanation of what was generated |
+| `diff` | `dict[str, object]` | `diff` | MIDI delta in internal diff-JSON format (added/removed/modified notes + controller events) |
+
+#### `GetVariationResponse`
+
+`CamelModel` — `GET /api/v1/variation/{variation_id}`
+
+Full variation status and phrase payload for polling / reconnect clients.
+
+| Field | Type | Wire key | Description |
+|-------|------|----------|-------------|
+| `variation_id` | `str` | `variationId` | UUID of this variation |
+| `project_id` | `str` | `projectId` | Project UUID |
+| `base_state_id` | `str` | `baseStateId` | StateStore snapshot ID at generation start (typically `"muse"`) |
+| `intent` | `str` | `intent` | User's natural-language intent |
+| `status` | `str` | `status` | `"streaming"` \| `"committed"` \| `"discarded"` \| `"error"` \| `"pending"` |
+| `ai_explanation` | `str \| None` | `aiExplanation` | Top-level AI explanation of the variation |
+| `affected_tracks` | `list[str]` | `affectedTracks` | Track IDs modified by this variation |
+| `affected_regions` | `list[str]` | `affectedRegions` | Region IDs modified by this variation |
+| `phrases` | `list[VariationPhraseResponse]` | `phrases` | All phrases, ordered by `sequence` ascending |
+| `phrase_count` | `int` | `phraseCount` | `len(phrases)` |
+| `last_sequence` | `int` | `lastSequence` | Sequence number of the most recent phrase |
+| `created_at` | `str` | `createdAt` | ISO-8601 UTC creation timestamp |
+| `updated_at` | `str` | `updatedAt` | ISO-8601 UTC last-updated timestamp |
+| `error_message` | `str \| None` | `errorMessage` | Error description when `status == "error"` |
+
+---
+
+### Conversations (`app/api/routes/conversations/models.py`)
+
+#### `ConversationUpdateResponse`
+
+`CamelModel` — `PATCH /api/v1/conversations/{conversation_id}`
+
+Minimal confirmation of a successful conversation metadata update. Contains only the fields that may have changed.
+
+| Field | Type | Wire key | Description |
+|-------|------|----------|-------------|
+| `id` | `str` | `id` | UUID of the conversation that was updated |
+| `title` | `str` | `title` | Current title after the update |
+| `project_id` | `str \| None` | `projectId` | Linked project UUID; `null` if unlinked (`project_id: "null"` in request) |
+| `updated_at` | `str` | `updatedAt` | ISO-8601 UTC timestamp of the modification |
+
+---
+
 ## Tempo Convention
 
 **Tempo is always `int` (BPM) throughout the internal codebase.**
@@ -878,6 +1207,44 @@ Maestro Service (app/)
 │   └── tokens.py
 │       ├── TokenClaims                — decoded JWT payload
 │       └── AccessCodeError            — validation failure exception
+│
+├── HTTP Response Entities (Pydantic BaseModel — wire contract layer)
+│   │  All route handlers return a named entity; no anonymous dicts.
+│   │  BaseModel = snake_case wire.  CamelModel = camelCase wire.
+│   │
+│   ├── app/protocol/responses.py
+│   │   ├── ProtocolInfoResponse       — GET /protocol (version+hash+event list)
+│   │   ├── ProtocolEventsResponse     — GET /protocol/events.json (all schemas)
+│   │   ├── ProtocolToolsResponse      — GET /protocol/tools.json (all tools)
+│   │   └── ProtocolSchemaResponse     — GET /protocol/schema.json (unified snapshot)
+│   │
+│   ├── app/services/muse_log_graph.py
+│   │   ├── MuseLogNodeResponse        — one commit node in the DAG (camelCase fields)
+│   │   └── MuseLogGraphResponse       — full DAG for a project (camelCase fields)
+│   │
+│   ├── app/api/routes/muse.py
+│   │   ├── SaveVariationResponse      — POST /muse/variations confirmation
+│   │   ├── SetHeadResponse            — POST /muse/head confirmation
+│   │   ├── CheckoutExecutionStats     — shared sub-entity (checkout + merge)
+│   │   ├── CheckoutResponse           — POST /muse/checkout full summary
+│   │   └── MergeResponse              — POST /muse/merge full summary
+│   │
+│   ├── app/api/routes/maestro.py      — all CamelModel, response_model_by_alias=True
+│   │   ├── ValidateTokenResponse      — GET /validate-token
+│   │   ├── PlanPreviewResponse        — sub-entity embedded in PreviewMaestroResponse
+│   │   └── PreviewMaestroResponse     — POST /maestro/preview
+│   │
+│   ├── app/api/routes/mcp.py          — all CamelModel
+│   │   ├── ConnectionCreatedResponse  — POST /mcp/connection
+│   │   └── ToolResponseReceivedResponse — POST /mcp/response/{id}
+│   │
+│   ├── app/api/routes/variation/
+│   │   ├── DiscardVariationResponse   — POST /variation/discard (BaseModel)
+│   │   ├── VariationPhraseResponse    — sub-entity for GetVariationResponse (CamelModel)
+│   │   └── GetVariationResponse       — GET /variation/{id} (CamelModel)
+│   │
+│   └── app/api/routes/conversations/models.py
+│       └── ConversationUpdateResponse — PATCH /conversations/{id} (CamelModel)
 │
 ├── Services (app/services/)
 │   ├── assets.py

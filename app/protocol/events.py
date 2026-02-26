@@ -1,6 +1,6 @@
-"""Stori Protocol event models — single source of truth for SSE wire format.
+"""Maestro Protocol event models — single source of truth for SSE wire format.
 
-Every SSE event the backend emits is an instance of a StoriEvent subclass.
+Every SSE event the backend emits is an instance of a MaestroEvent subclass.
 Raw dicts are forbidden. The emitter validates and serializes through these
 models, guaranteeing wire-format consistency.
 
@@ -21,17 +21,20 @@ from typing import Any, Literal
 from pydantic import ConfigDict, Field
 
 from app.contracts.json_types import (
+    AftertouchDict,
     CCEnvelopeDict,
+    CCEventDict,
     EffectSummaryDict,
     NoteChangeDict,
+    PitchBendDict,
     ToolCallDict,
     TrackSummaryDict,
 )
 from app.models.base import CamelModel
-from app.protocol.version import STORI_PROTOCOL_VERSION
+from app.protocol.version import MAESTRO_VERSION
 
 
-class StoriEvent(CamelModel):
+class MaestroEvent(CamelModel):
     """Base class for all SSE events.
 
     ``seq`` and ``protocol_version`` are injected by the emitter, not
@@ -43,7 +46,7 @@ class StoriEvent(CamelModel):
 
     type: str
     seq: int = -1
-    protocol_version: str = STORI_PROTOCOL_VERSION
+    protocol_version: str = MAESTRO_VERSION
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -51,7 +54,7 @@ class StoriEvent(CamelModel):
 # ═══════════════════════════════════════════════════════════════════════
 
 
-class StateEvent(StoriEvent):
+class StateEvent(MaestroEvent):
     """Intent classification result. Always seq=0."""
 
     type: Literal["state"] = "state"
@@ -62,7 +65,7 @@ class StateEvent(StoriEvent):
     execution_mode: Literal["variation", "apply", "reasoning"] = "apply"
 
 
-class ReasoningEvent(StoriEvent):
+class ReasoningEvent(MaestroEvent):
     """Sanitized analysis summary for the user.
 
     Carries user-safe musical reasoning produced by ReasoningBuffer +
@@ -76,7 +79,7 @@ class ReasoningEvent(StoriEvent):
     section_name: str | None = None
 
 
-class ReasoningEndEvent(StoriEvent):
+class ReasoningEndEvent(MaestroEvent):
     """Marks end of a reasoning stream for an agent."""
 
     type: Literal["reasoningEnd"] = "reasoningEnd"
@@ -84,14 +87,14 @@ class ReasoningEndEvent(StoriEvent):
     section_name: str | None = None
 
 
-class ContentEvent(StoriEvent):
+class ContentEvent(MaestroEvent):
     """User-facing text response (incremental)."""
 
     type: Literal["content"] = "content"
     content: str
 
 
-class StatusEvent(StoriEvent):
+class StatusEvent(MaestroEvent):
     """Human-readable status message."""
 
     type: Literal["status"] = "status"
@@ -100,7 +103,7 @@ class StatusEvent(StoriEvent):
     section_name: str | None = None
 
 
-class ErrorEvent(StoriEvent):
+class ErrorEvent(MaestroEvent):
     """Error message (may be followed by CompleteEvent)."""
 
     type: Literal["error"] = "error"
@@ -109,7 +112,7 @@ class ErrorEvent(StoriEvent):
     code: str | None = None
 
 
-class CompleteEvent(StoriEvent):
+class CompleteEvent(MaestroEvent):
     """Stream termination. ALWAYS the final event."""
 
     type: Literal["complete"] = "complete"
@@ -151,7 +154,7 @@ class PlanStepSchema(CamelModel):
     phase: str = "composition"
 
 
-class PlanEvent(StoriEvent):
+class PlanEvent(MaestroEvent):
     """Structured execution plan."""
 
     type: Literal["plan"] = "plan"
@@ -160,7 +163,7 @@ class PlanEvent(StoriEvent):
     steps: list[PlanStepSchema]
 
 
-class PlanStepUpdateEvent(StoriEvent):
+class PlanStepUpdateEvent(MaestroEvent):
     """Step lifecycle transition."""
 
     type: Literal["planStepUpdate"] = "planStepUpdate"
@@ -176,7 +179,7 @@ class PlanStepUpdateEvent(StoriEvent):
 # ═══════════════════════════════════════════════════════════════════════
 
 
-class ToolStartEvent(StoriEvent):
+class ToolStartEvent(MaestroEvent):
     """Fires before tool execution begins."""
 
     type: Literal["toolStart"] = "toolStart"
@@ -187,7 +190,7 @@ class ToolStartEvent(StoriEvent):
     section_name: str | None = None
 
 
-class ToolCallEvent(StoriEvent):
+class ToolCallEvent(MaestroEvent):
     """Resolved tool call — FE applies this to DAW state."""
 
     type: Literal["toolCall"] = "toolCall"
@@ -201,7 +204,7 @@ class ToolCallEvent(StoriEvent):
     section_name: str | None = None
 
 
-class ToolErrorEvent(StoriEvent):
+class ToolErrorEvent(MaestroEvent):
     """Non-fatal tool validation or execution error."""
 
     type: Literal["toolError"] = "toolError"
@@ -217,7 +220,7 @@ class ToolErrorEvent(StoriEvent):
 # ═══════════════════════════════════════════════════════════════════════
 
 
-class PreflightEvent(StoriEvent):
+class PreflightEvent(MaestroEvent):
     """Pre-allocation hint for latency masking."""
 
     type: Literal["preflight"] = "preflight"
@@ -225,13 +228,13 @@ class PreflightEvent(StoriEvent):
     agent_id: str
     agent_role: str
     label: str
-    tool_name: str
+    tool_name: str | None = None
     parallel_group: str | None = None
     confidence: float = 0.9
     track_color: str | None = None
 
 
-class GeneratorStartEvent(StoriEvent):
+class GeneratorStartEvent(MaestroEvent):
     """Orpheus generation started."""
 
     type: Literal["generatorStart"] = "generatorStart"
@@ -244,7 +247,7 @@ class GeneratorStartEvent(StoriEvent):
     section_name: str | None = None
 
 
-class GeneratorCompleteEvent(StoriEvent):
+class GeneratorCompleteEvent(MaestroEvent):
     """Orpheus generation finished."""
 
     type: Literal["generatorComplete"] = "generatorComplete"
@@ -255,7 +258,7 @@ class GeneratorCompleteEvent(StoriEvent):
     section_name: str | None = None
 
 
-class AgentCompleteEvent(StoriEvent):
+class AgentCompleteEvent(MaestroEvent):
     """Instrument agent finished all sections."""
 
     type: Literal["agentComplete"] = "agentComplete"
@@ -268,7 +271,7 @@ class AgentCompleteEvent(StoriEvent):
 # ═══════════════════════════════════════════════════════════════════════
 
 
-class SummaryEvent(StoriEvent):
+class SummaryEvent(MaestroEvent):
     """Composition summary (tracks, regions, notes, effects)."""
 
     type: Literal["summary"] = "summary"
@@ -278,7 +281,7 @@ class SummaryEvent(StoriEvent):
     effects: int
 
 
-class SummaryFinalEvent(StoriEvent):
+class SummaryFinalEvent(MaestroEvent):
     """Rich composition summary from Agent Teams."""
 
     type: Literal["summary.final"] = "summary.final"
@@ -312,18 +315,7 @@ class NoteChangeSchema(CamelModel):
     after: NoteChangeDict | None = None
 
 
-class ControllerChangeSchema(CamelModel):
-    """Single controller change within a phrase."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    cc_number: int
-    change_type: Literal["added", "removed", "modified"]
-    before: NoteChangeDict | None = None
-    after: NoteChangeDict | None = None
-
-
-class MetaEvent(StoriEvent):
+class MetaEvent(MaestroEvent):
     """Variation summary (emitted before phrases)."""
 
     type: Literal["meta"] = "meta"
@@ -336,7 +328,7 @@ class MetaEvent(StoriEvent):
     note_counts: dict[str, int] | None = None
 
 
-class PhraseEvent(StoriEvent):
+class PhraseEvent(MaestroEvent):
     """One musical phrase in a variation."""
 
     type: Literal["phrase"] = "phrase"
@@ -349,10 +341,12 @@ class PhraseEvent(StoriEvent):
     tags: list[str] = Field(default_factory=list)
     explanation: str | None = None
     note_changes: list[NoteChangeSchema] = Field(default_factory=list)
-    controller_changes: list[ControllerChangeSchema] = Field(default_factory=list)
+    cc_events: list[CCEventDict] = Field(default_factory=list)
+    pitch_bends: list[PitchBendDict] = Field(default_factory=list)
+    aftertouch: list[AftertouchDict] = Field(default_factory=list)
 
 
-class DoneEvent(StoriEvent):
+class DoneEvent(MaestroEvent):
     """End-of-variation marker."""
 
     type: Literal["done"] = "done"
@@ -371,14 +365,14 @@ class DoneEvent(StoriEvent):
 # ═══════════════════════════════════════════════════════════════════════
 
 
-class MCPMessageEvent(StoriEvent):
+class MCPMessageEvent(MaestroEvent):
     """MCP tool-call message relayed over SSE."""
 
     type: Literal["mcp.message"] = "mcp.message"
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
-class MCPPingEvent(StoriEvent):
+class MCPPingEvent(MaestroEvent):
     """MCP SSE keepalive heartbeat."""
 
     type: Literal["mcp.ping"] = "mcp.ping"

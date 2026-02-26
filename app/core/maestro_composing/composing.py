@@ -7,7 +7,7 @@ import json
 import logging
 import time
 import uuid as _uuid_mod
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import AsyncIterator, Awaitable, Callable
 
 from app.contracts.json_types import NoteDict, RegionMetadataWire
 from app.contracts.project_types import ProjectContext
@@ -17,7 +17,20 @@ from app.core.intent import IntentResult
 from app.core.llm_client import LLMClient
 from app.core.planner import build_execution_plan_stream, ExecutionPlan
 from app.core.prompt_parser import ParsedPrompt
-from app.core.sse_utils import SSEEventInput, sse_event
+from app.protocol.emitter import emit
+from app.protocol.events import (
+    CompleteEvent,
+    ContentEvent,
+    DoneEvent,
+    ErrorEvent,
+    MetaEvent,
+    NoteChangeSchema,
+    PhraseEvent,
+    StatusEvent,
+    MaestroEvent,
+    ToolCallEvent,
+    ToolStartEvent,
+)
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext, trace_span
 from app.core.maestro_editing.tool_execution import phase_for_tool
@@ -55,7 +68,7 @@ async def _handle_composing(
     planner's LLM call so the user sees the agent thinking — same UX as
     EDITING mode.
     """
-    yield await sse_event({"type": "status", "message": "Thinking..."})
+    yield emit(StatusEvent(message="Thinking..."))
 
     _slots = getattr(route, "slots", None)
     _extras = getattr(_slots, "extras", None) if _slots is not None else None
@@ -66,6 +79,12 @@ async def _handle_composing(
     # ── Streaming planner: yields reasoning SSE events, then the plan ──
     plan: ExecutionPlan | None = None
     with trace_span(trace, "planner"):
+        from app.contracts.json_types import JSONObject
+        from app.protocol.emitter import parse_event as _parse
+
+        async def _emit_sse(data: JSONObject) -> str:
+            return emit(_parse(data))
+
         async for item in build_execution_plan_stream(
             user_prompt=prompt,
             project_state=project_context,
@@ -73,7 +92,7 @@ async def _handle_composing(
             llm=llm,
             parsed=parsed,
             usage_tracker=usage_tracker,
-            emit_sse=lambda data: sse_event(data),
+            emit_sse=_emit_sse,
         ):
             if isinstance(item, ExecutionPlan):
                 plan = item
@@ -87,30 +106,29 @@ async def _handle_composing(
             is_composition=True, store=store,
         )
         if len(composing_plan_tracker.steps) >= 1:
-            yield await sse_event(composing_plan_tracker.to_plan_event())
+            yield emit(composing_plan_tracker.to_plan_event())
 
         # PROPOSAL PHASE
         for tc in plan.tool_calls:
-            yield await sse_event({
-                "type": "toolCall",
-                "id": "",
-                "name": tc.name,
-                "label": _human_label_for_tool(tc.name, tc.params),
-                "phase": phase_for_tool(tc.name),
-                "params": tc.params,
-                "proposal": True,
-            })
+            yield emit(ToolCallEvent(
+                id="",
+                name=tc.name,
+                label=_human_label_for_tool(tc.name, tc.params),
+                phase=phase_for_tool(tc.name),
+                params=tc.params,
+                proposal=True,
+            ))
 
         # EXECUTION PHASE
         try:
             with trace_span(trace, "variation_generation", {"steps": len(plan.tool_calls)}):
                 from app.core.executor import execute_plan_variation
 
-                _event_queue: asyncio.Queue[SSEEventInput] = asyncio.Queue()
+                _event_queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
                 _active_step_by_track: dict[str, str] = {}
 
                 async def _on_pre_tool(
-                    tool_name: str, params: dict[str, Any],
+                    tool_name: str, params: dict[str, object],
                 ) -> None:
                     """Execution phase: planStepUpdate:active + toolStart."""
                     step = composing_plan_tracker.find_step_for_tool(
@@ -130,15 +148,14 @@ async def _handle_composing(
                             _active_step_by_track[track_key] = step.step_id
 
                     label = _human_label_for_tool(tool_name, params)
-                    await _event_queue.put({
-                        "type": "toolStart",
-                        "name": tool_name,
-                        "label": label,
-                        "phase": phase_for_tool(tool_name),
-                    })
+                    await _event_queue.put(ToolStartEvent(
+                        name=tool_name,
+                        label=label,
+                        phase=phase_for_tool(tool_name),
+                    ))
 
                 async def _on_post_tool(
-                    tool_name: str, resolved_params: dict[str, Any],
+                    tool_name: str, resolved_params: dict[str, object],
                 ) -> None:
                     """Execution phase: toolCall with real UUID after success.
 
@@ -151,15 +168,14 @@ async def _handle_composing(
                     call_id = str(_uuid_mod.uuid4())
                     emit_params = _enrich_params_with_track_context(resolved_params, store)
                     label = _human_label_for_tool(tool_name, emit_params)
-                    await _event_queue.put({
-                        "type": "toolCall",
-                        "id": call_id,
-                        "name": tool_name,
-                        "label": label,
-                        "phase": phase_for_tool(tool_name),
-                        "params": emit_params,
-                        "proposal": False,
-                    })
+                    await _event_queue.put(ToolCallEvent(
+                        id=call_id,
+                        name=tool_name,
+                        label=label,
+                        phase=phase_for_tool(tool_name),
+                        params=emit_params,
+                        proposal=False,
+                    ))
 
                 _VARIATION_TIMEOUT = 300
                 task = asyncio.create_task(
@@ -190,22 +206,23 @@ async def _handle_composing(
                             event_data = await asyncio.wait_for(
                                 _event_queue.get(), timeout=0.05,
                             )
-                            yield await sse_event(event_data)
+                            yield emit(event_data)
                         except asyncio.TimeoutError:
                             if task.done():
                                 break
                         await asyncio.sleep(0)
 
                     while not _event_queue.empty():
-                        yield await sse_event(await _event_queue.get())
+                        evt = await _event_queue.get()
+                        yield emit(evt)
 
                     variation = await task
 
                     for final_evt in composing_plan_tracker.complete_all_active_steps():
-                        yield await sse_event(final_evt)
+                        yield emit(final_evt)
 
                     for skip_evt in composing_plan_tracker.finalize_pending_as_skipped():
-                        yield await sse_event(skip_evt)
+                        yield emit(skip_evt)
 
                 except asyncio.TimeoutError:
                     logger.error(
@@ -213,24 +230,23 @@ async def _handle_composing(
                         f"after {_VARIATION_TIMEOUT}s"
                     )
                     _fail_variation_id = str(_uuid_mod.uuid4())
-                    yield await sse_event({
-                        "type": "error",
-                        "message": f"Generation timed out after {_VARIATION_TIMEOUT}s",
-                        "traceId": trace.trace_id,
-                    })
-                    yield await sse_event({
-                        "type": "done",
-                        "variationId": _fail_variation_id,
-                        "phraseCount": 0,
-                        "status": "failed",
-                    })
-                    yield await sse_event({
-                        "type": "complete",
-                        "success": False,
-                        "error": "timeout",
-                        "traceId": trace.trace_id,
-                        **_context_usage_fields(usage_tracker, llm.model),
-                    })
+                    yield emit(ErrorEvent(
+                        message=f"Generation timed out after {_VARIATION_TIMEOUT}s",
+                        trace_id=trace.trace_id,
+                    ))
+                    yield emit(DoneEvent(
+                        variation_id=_fail_variation_id,
+                        phrase_count=0,
+                        status="failed",
+                    ))
+                    _usage = _context_usage_fields(usage_tracker, llm.model)
+                    yield emit(CompleteEvent(
+                        success=False,
+                        error="timeout",
+                        trace_id=trace.trace_id,
+                        input_tokens=_usage["input_tokens"],
+                        context_window_tokens=_usage["context_window_tokens"],
+                    ))
                     return
 
                 if len(variation.phrases) == 0:
@@ -258,71 +274,73 @@ async def _handle_composing(
                 )
 
                 note_counts = variation.note_counts
-                yield await sse_event({
-                    "type": "meta",
-                    "variationId": variation.variation_id,
-                    "baseStateId": store.get_state_id(),
-                    "intent": variation.intent,
-                    "aiExplanation": variation.ai_explanation,
-                    "affectedTracks": variation.affected_tracks,
-                    "affectedRegions": variation.affected_regions,
-                    "noteCounts": note_counts,
-                })
+                yield emit(MetaEvent(
+                    variation_id=variation.variation_id,
+                    base_state_id=store.get_state_id(),
+                    intent=variation.intent,
+                    ai_explanation=variation.ai_explanation,
+                    affected_tracks=variation.affected_tracks,
+                    affected_regions=variation.affected_regions,
+                    note_counts=note_counts,
+                ))
 
                 for phrase in variation.phrases:
-                    yield await sse_event({
-                        "type": "phrase",
-                        "phraseId": phrase.phrase_id,
-                        "trackId": phrase.track_id,
-                        "regionId": phrase.region_id,
-                        "startBeat": phrase.start_beat,
-                        "endBeat": phrase.end_beat,
-                        "label": phrase.label,
-                        "tags": phrase.tags,
-                        "explanation": phrase.explanation,
-                        "noteChanges": [nc.model_dump(by_alias=True) for nc in phrase.note_changes],
-                        "controllerChanges": phrase.controller_changes,
-                    })
+                    yield emit(PhraseEvent(
+                        phrase_id=phrase.phrase_id,
+                        track_id=phrase.track_id,
+                        region_id=phrase.region_id,
+                        start_beat=phrase.start_beat,
+                        end_beat=phrase.end_beat,
+                        label=phrase.label,
+                        tags=phrase.tags,
+                        explanation=phrase.explanation,
+                        note_changes=[
+                            NoteChangeSchema.model_validate(nc.model_dump(by_alias=True))
+                            for nc in phrase.note_changes
+                        ],
+                        cc_events=phrase.cc_events,
+                        pitch_bends=phrase.pitch_bends,
+                        aftertouch=phrase.aftertouch,
+                    ))
 
-                yield await sse_event({
-                    "type": "done",
-                    "variationId": variation.variation_id,
-                    "phraseCount": len(variation.phrases),
-                })
+                yield emit(DoneEvent(
+                    variation_id=variation.variation_id,
+                    phrase_count=len(variation.phrases),
+                ))
 
-                yield await sse_event({
-                    "type": "complete",
-                    "success": True,
-                    "variationId": variation.variation_id,
-                    "totalChanges": variation.total_changes,
-                    "phraseCount": len(variation.phrases),
-                    "traceId": trace.trace_id,
-                    **_context_usage_fields(usage_tracker, llm.model),
-                })
+                _usage = _context_usage_fields(usage_tracker, llm.model)
+                yield emit(CompleteEvent(
+                    success=True,
+                    variation_id=variation.variation_id,
+                    total_changes=variation.total_changes,
+                    phrase_count=len(variation.phrases),
+                    trace_id=trace.trace_id,
+                    input_tokens=_usage["input_tokens"],
+                    context_window_tokens=_usage["context_window_tokens"],
+                ))
 
         except BaseException as e:
             logger.exception(
                 f"[{trace.trace_id[:8]}] Variation generation failed: {e}"
             )
             _fail_variation_id = str(_uuid_mod.uuid4())
-            yield await sse_event({
-                "type": "error",
-                "message": f"Generation failed: {e}",
-                "traceId": trace.trace_id,
-            })
-            yield await sse_event({
-                "type": "done",
-                "variationId": _fail_variation_id,
-                "phraseCount": 0,
-                "status": "failed",
-            })
-            yield await sse_event({
-                "type": "complete",
-                "success": False,
-                "error": str(e),
-                "traceId": trace.trace_id,
-                **_context_usage_fields(usage_tracker, llm.model),
-            })
+            yield emit(ErrorEvent(
+                message=f"Generation failed: {e}",
+                trace_id=trace.trace_id,
+            ))
+            yield emit(DoneEvent(
+                variation_id=_fail_variation_id,
+                phrase_count=0,
+                status="failed",
+            ))
+            _usage = _context_usage_fields(usage_tracker, llm.model)
+            yield emit(CompleteEvent(
+                success=False,
+                error=str(e),
+                trace_id=trace.trace_id,
+                input_tokens=_usage["input_tokens"],
+                context_window_tokens=_usage["context_window_tokens"],
+            ))
         return
     else:
         response_text = plan.llm_response_text if plan else None
@@ -345,32 +363,35 @@ async def _handle_composing(
             return
 
         if response_text:
-            yield await sse_event({
-                "type": "content",
-                "content": "I understand you want to generate music. To help me create exactly what you're looking for, "
-                           "could you tell me:\n"
-                           "- What style or genre? (e.g., 'lofi', 'jazz', 'electronic')\n"
-                           "- What tempo? (e.g., 90 BPM)\n"
-                           "- How many bars? (e.g., 8 bars)\n\n"
-                           "Example: 'Create an exotic melody at 100 BPM for 8 bars in C minor'",
-            })
+            yield emit(ContentEvent(
+                content=(
+                    "I understand you want to generate music. To help me create exactly what you're looking for, "
+                    "could you tell me:\n"
+                    "- What style or genre? (e.g., 'lofi', 'jazz', 'electronic')\n"
+                    "- What tempo? (e.g., 90 BPM)\n"
+                    "- How many bars? (e.g., 8 bars)\n\n"
+                    "Example: 'Create an exotic melody at 100 BPM for 8 bars in C minor'"
+                ),
+            ))
         else:
-            yield await sse_event({
-                "type": "content",
-                "content": "I need more information to generate music. Please specify:\n"
-                           "- Style/genre (e.g., 'boom bap', 'lofi', 'trap')\n"
-                           "- Tempo (e.g., 90 BPM)\n"
-                           "- Number of bars (e.g., 8 bars)\n\n"
-                           "Example: 'Make a boom bap beat at 90 BPM with drums and bass for 8 bars'",
-            })
+            yield emit(ContentEvent(
+                content=(
+                    "I need more information to generate music. Please specify:\n"
+                    "- Style/genre (e.g., 'boom bap', 'lofi', 'trap')\n"
+                    "- Tempo (e.g., 90 BPM)\n"
+                    "- Number of bars (e.g., 8 bars)\n\n"
+                    "Example: 'Make a boom bap beat at 90 BPM with drums and bass for 8 bars'"
+                ),
+            ))
 
-        yield await sse_event({
-            "type": "complete",
-            "success": True,
-            "toolCalls": [],
-            "traceId": trace.trace_id,
-            **_context_usage_fields(usage_tracker, llm.model),
-        })
+        _usage = _context_usage_fields(usage_tracker, llm.model)
+        yield emit(CompleteEvent(
+            success=True,
+            tool_calls=[],
+            trace_id=trace.trace_id,
+            input_tokens=_usage["input_tokens"],
+            context_window_tokens=_usage["context_window_tokens"],
+        ))
 
 
 # ---------------------------------------------------------------------------
@@ -432,7 +453,7 @@ async def _handle_composing_with_agent_teams(
     _at_route = _create_editing_composition_route(route)
 
     # ── 2. Run Agent Teams — intercept the ``complete`` event ──
-    _agent_complete: dict[str, Any] | None = None  # boundary: SSE complete event
+    _agent_complete: dict[str, object] | None = None  # boundary: SSE complete event
     _SSE_PREFIX = "data: "
 
     async for event_str in _handle_composition_agent_team(
@@ -530,59 +551,59 @@ async def _handle_composing_with_agent_teams(
     )
 
     # ── 6. Emit variation events ──
-    yield await sse_event({
-        "type": "meta",
-        "variationId": variation.variation_id,
-        "baseStateId": store.get_state_id(),
-        "intent": variation.intent,
-        "aiExplanation": variation.ai_explanation,
-        "affectedTracks": variation.affected_tracks,
-        "affectedRegions": variation.affected_regions,
-        "noteCounts": variation.note_counts,
-    })
+    yield emit(MetaEvent(
+        variation_id=variation.variation_id,
+        base_state_id=store.get_state_id(),
+        intent=variation.intent,
+        ai_explanation=variation.ai_explanation,
+        affected_tracks=variation.affected_tracks,
+        affected_regions=variation.affected_regions,
+        note_counts=variation.note_counts,
+    ))
 
     for phrase in variation.phrases:
-        yield await sse_event({
-            "type": "phrase",
-            "phraseId": phrase.phrase_id,
-            "trackId": phrase.track_id,
-            "regionId": phrase.region_id,
-            "startBeat": phrase.start_beat,
-            "endBeat": phrase.end_beat,
-            "label": phrase.label,
-            "tags": phrase.tags,
-            "explanation": phrase.explanation,
-            "noteChanges": [
-                nc.model_dump(by_alias=True)
+        yield emit(PhraseEvent(
+            phrase_id=phrase.phrase_id,
+            track_id=phrase.track_id,
+            region_id=phrase.region_id,
+            start_beat=phrase.start_beat,
+            end_beat=phrase.end_beat,
+            label=phrase.label,
+            tags=phrase.tags,
+            explanation=phrase.explanation,
+            note_changes=[
+                NoteChangeSchema.model_validate(nc.model_dump(by_alias=True))
                 for nc in phrase.note_changes
             ],
-            "controllerChanges": phrase.controller_changes,
-        })
+            cc_events=phrase.cc_events,
+            pitch_bends=phrase.pitch_bends,
+            aftertouch=phrase.aftertouch,
+        ))
 
-    yield await sse_event({
-        "type": "done",
-        "variationId": variation.variation_id,
-        "phraseCount": len(variation.phrases),
-    })
+    yield emit(DoneEvent(
+        variation_id=variation.variation_id,
+        phrase_count=len(variation.phrases),
+    ))
 
     # Merge Agent Teams success/warnings with variation metadata
-    _success = (
+    _success_raw = (
         _agent_complete.get("success", True)
         if _agent_complete else True
     )
-    _complete: dict[str, Any] = {
-        "type": "complete",
-        "success": _success,
-        "variationId": variation.variation_id,
-        "totalChanges": variation.total_changes,
-        "phraseCount": len(variation.phrases),
-        "traceId": trace.trace_id,
-        **_context_usage_fields(usage_tracker, llm.model),
-    }
-    if _agent_complete:
-        if "warnings" in _agent_complete:
-            _complete["warnings"] = _agent_complete["warnings"]
-        if "stateVersion" in _agent_complete:
-            _complete["stateVersion"] = _agent_complete["stateVersion"]
+    _success = bool(_success_raw)
+    _warnings_raw = _agent_complete.get("warnings") if _agent_complete else None
+    _warnings: list[str] | None = _warnings_raw if isinstance(_warnings_raw, list) else None
+    _sv_raw = _agent_complete.get("stateVersion") if _agent_complete else None
+    _state_version: int | None = _sv_raw if isinstance(_sv_raw, int) else None
 
-    yield await sse_event(_complete)
+    _usage = _context_usage_fields(usage_tracker, llm.model)
+    yield emit(CompleteEvent(
+        success=_success,
+        variation_id=variation.variation_id,
+        total_changes=variation.total_changes,
+        phrase_count=len(variation.phrases),
+        trace_id=trace.trace_id,
+        warnings=_warnings,
+        state_version=_state_version,
+        **_usage,
+    ))

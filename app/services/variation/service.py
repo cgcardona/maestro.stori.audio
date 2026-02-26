@@ -239,29 +239,30 @@ class VariationService:
 
             tags = _detect_change_tags(note_changes)
 
-            controller_changes: list[dict[str, Any]] = []
-            for cc_ev in cc_by_phrase.get(phrase_index, []):
-                controller_changes.append({
-                    "kind": "cc",
-                    "cc": cc_ev.get("cc"),
-                    "beat": cc_ev.get("beat", 0),
-                    "value": cc_ev.get("value", 0),
-                })
-            for pb_ev in pb_by_phrase.get(phrase_index, []):
-                controller_changes.append({
-                    "kind": "pitch_bend",
-                    "beat": pb_ev.get("beat", 0),
-                    "value": pb_ev.get("value", 0),
-                })
+            phrase_cc_events: list[CCEventDict] = [
+                CCEventDict(
+                    cc=cc_ev.get("cc", 0),
+                    beat=cc_ev.get("beat", 0),
+                    value=cc_ev.get("value", 0),
+                )
+                for cc_ev in cc_by_phrase.get(phrase_index, [])
+            ]
+            phrase_pitch_bends: list[PitchBendDict] = [
+                PitchBendDict(
+                    beat=pb_ev.get("beat", 0),
+                    value=pb_ev.get("value", 0),
+                )
+                for pb_ev in pb_by_phrase.get(phrase_index, [])
+            ]
+            phrase_aftertouch: list[AftertouchDict] = []
             for at_ev in at_by_phrase.get(phrase_index, []):
-                entry: dict[str, Any] = {
-                    "kind": "aftertouch",
+                at_entry: AftertouchDict = {
                     "beat": at_ev.get("beat", 0),
                     "value": at_ev.get("value", 0),
                 }
                 if "pitch" in at_ev:
-                    entry["pitch"] = at_ev["pitch"]
-                controller_changes.append(entry)
+                    at_entry["pitch"] = at_ev["pitch"]
+                phrase_aftertouch.append(at_entry)
 
             phrase = Phrase(
                 phrase_id=str(uuid.uuid4()),
@@ -271,7 +272,9 @@ class VariationService:
                 end_beat=abs_end,
                 label=_generate_bar_label(start_bar, end_bar),
                 note_changes=note_changes,
-                controller_changes=controller_changes,
+                cc_events=phrase_cc_events,
+                pitch_bends=phrase_pitch_bends,
+                aftertouch=phrase_aftertouch,
                 tags=tags,
             )
             phrases.append(phrase)
