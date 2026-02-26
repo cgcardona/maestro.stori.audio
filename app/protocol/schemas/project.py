@@ -13,6 +13,15 @@ from __future__ import annotations
 
 from pydantic import ConfigDict, Field
 
+from app.contracts.midi_types import (
+    BeatDuration,
+    BeatPosition,
+    MidiBPM,
+    MidiChannel,
+    MidiGMProgram,
+    MidiPitch,
+    MidiVelocity,
+)
 from app.models.base import CamelModel
 
 
@@ -22,11 +31,11 @@ class NoteSnapshot(CamelModel):
     model_config = ConfigDict(extra="allow")
 
     id: str | None = None
-    pitch: int = Field(ge=0, le=127)
-    start_beat: float = Field(ge=0)
-    duration_beats: float = Field(gt=0)
-    velocity: int = Field(default=100, ge=0, le=127)
-    channel: int = Field(default=0, ge=0, le=15)
+    pitch: MidiPitch
+    start_beat: BeatPosition
+    duration_beats: BeatDuration
+    velocity: MidiVelocity = 100
+    channel: MidiChannel = 0
 
 
 class RegionSnapshot(CamelModel):
@@ -49,7 +58,7 @@ class TrackSnapshot(CamelModel):
 
     id: str
     name: str | None = None
-    gm_program: int | None = Field(default=None, ge=0, le=127)
+    gm_program: MidiGMProgram | None = None
     drum_kit_id: str | None = None
     is_drums: bool | None = None
     volume: float | None = Field(default=None, ge=0.0, le=1.5)
@@ -81,7 +90,7 @@ class ProjectSnapshot(CamelModel):
 
     id: str
     name: str | None = None
-    tempo: int | None = Field(default=None, ge=40, le=240)
+    tempo: MidiBPM | None = None
     key: str | None = None
     time_signature: str | None = None
     schema_version: int | None = None

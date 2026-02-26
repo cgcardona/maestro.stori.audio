@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 
 from app.contracts.generation_types import CompositionContext
 from app.contracts.json_types import JSONValue
+from app.contracts.midi_types import _assert_range
 from app.core.maestro_agent_teams.signals import SectionSignals, SectionState
 
 
@@ -67,6 +68,10 @@ class CompositionContract:
 
     contract_version: int = 2
     contract_hash: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate MIDI primitive ranges at construction time."""
+        _assert_range(self.tempo, 20, 300, "tempo")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -107,6 +112,17 @@ class SectionSpec:
     contract_version: int = 1
     contract_hash: str = ""
 
+    def __post_init__(self) -> None:
+        """Validate structural ranges at construction time.
+
+        Beat positions are bar-aligned integers; durations are multiples
+        of the time-signature numerator, so all are whole numbers.
+        """
+        _assert_range(self.index, 0, 4096, "index")
+        _assert_range(self.start_beat, 0, 65536, "start_beat")
+        _assert_range(self.duration_beats, 1, 65536, "duration_beats")
+        _assert_range(self.bars, 1, 512, "bars")
+
 
 @dataclass(frozen=True)
 class SectionContract:
@@ -143,6 +159,10 @@ class SectionContract:
     contract_version: int = 1
     contract_hash: str = ""
     parent_contract_hash: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate MIDI primitive ranges at construction time."""
+        _assert_range(self.tempo, 20, 300, "tempo")
 
     # ── Derived properties (computed, not reinterpretable) ──
 
@@ -217,6 +237,12 @@ class InstrumentContract:
     contract_version: int = 1
     contract_hash: str = ""
     parent_contract_hash: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate MIDI primitive ranges at construction time."""
+        _assert_range(self.tempo, 20, 300, "tempo")
+        _assert_range(self.bars, 1, 512, "bars")
+        _assert_range(self.start_beat, 0, 65536, "start_beat")
 
     @property
     def is_drum(self) -> bool:

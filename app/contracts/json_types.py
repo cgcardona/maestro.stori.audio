@@ -37,6 +37,18 @@ from typing import Literal
 
 from typing_extensions import Required, TypedDict
 
+from app.contracts.midi_types import (
+    BeatDuration,
+    BeatPosition,
+    MidiAftertouchValue,
+    MidiCC,
+    MidiCCValue,
+    MidiChannel,
+    MidiPitch,
+    MidiPitchBend,
+    MidiVelocity,
+)
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Generic JSON types — use ONLY when the shape is truly unknown
 #
@@ -88,20 +100,27 @@ class NoteDict(TypedDict, total=False):
 
     Notes flow through many layers in both naming conventions.
     Using a single dict with all valid keys avoids friction.
+
+    Field ranges (enforced by Pydantic models at system boundaries):
+        pitch         0–127   MIDI note number
+        velocity      0–127   note-off at 0; audible range 1–127
+        channel       0–15    MIDI channel (drums = 9)
+        startBeat     ≥ 0.0   beat position (fractional allowed)
+        durationBeats > 0.0   beat duration (fractional allowed)
     """
 
-    pitch: int
-    velocity: int
-    channel: int
+    pitch: MidiPitch
+    velocity: MidiVelocity
+    channel: MidiChannel
     # camelCase (wire format from DAW / to DAW)
-    startBeat: float  # noqa: N815
-    durationBeats: float  # noqa: N815
+    startBeat: BeatPosition  # noqa: N815
+    durationBeats: BeatDuration  # noqa: N815
     noteId: str  # noqa: N815
     trackId: str  # noqa: N815
     regionId: str  # noqa: N815
     # snake_case (internal storage after normalization)
-    start_beat: float
-    duration_beats: float
+    start_beat: BeatPosition
+    duration_beats: BeatDuration
     note_id: str
     track_id: str
     region_id: str
@@ -118,18 +137,29 @@ InternalNoteDict = NoteDict
 
 
 class CCEventDict(TypedDict):
-    """A single MIDI Control Change event."""
+    """A single MIDI Control Change event.
 
-    cc: int
-    beat: float
-    value: int
+    Field ranges:
+        cc    0–127   controller number
+        beat  ≥ 0.0   beat position (fractional allowed)
+        value 0–127   controller value
+    """
+
+    cc: MidiCC
+    beat: BeatPosition
+    value: MidiCCValue
 
 
 class PitchBendDict(TypedDict):
-    """A single MIDI pitch bend event."""
+    """A single MIDI pitch bend event.
 
-    beat: float
-    value: int
+    Field ranges:
+        beat  ≥ 0.0          beat position (fractional allowed)
+        value −8192–8191     14-bit signed; 0 = centre, ±8192 = full deflection
+    """
+
+    beat: BeatPosition
+    value: MidiPitchBend
 
 
 class AftertouchDict(TypedDict, total=False):
@@ -137,11 +167,16 @@ class AftertouchDict(TypedDict, total=False):
 
     ``beat`` and ``value`` are always present.
     ``pitch`` is present only for polyphonic (per-key) aftertouch.
+
+    Field ranges:
+        beat  ≥ 0.0   beat position (fractional allowed)
+        value 0–127   pressure value
+        pitch 0–127   note number (poly aftertouch only)
     """
 
-    beat: Required[float]
-    value: Required[int]
-    pitch: int
+    beat: Required[BeatPosition]
+    value: Required[MidiAftertouchValue]
+    pitch: MidiPitch
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -283,16 +318,26 @@ class NoteChangeDict(TypedDict, total=False):
 
     Serialized form of ``MidiNoteSnapshot`` (camelCase keys, matching ``by_alias=True`` output).
     Also used for CC/pitch-bend snapshots where ``cc``, ``beat``, and ``value`` apply.
+
+    Field ranges:
+        pitch         0–127    MIDI note number
+        startBeat     ≥ 0.0    beat position (fractional allowed)
+        durationBeats > 0.0    beat duration (fractional allowed)
+        velocity      0–127    note velocity
+        channel       0–15     MIDI channel
+        cc            0–127    CC controller number
+        beat          ≥ 0.0    CC/bend/aftertouch beat position
+        value         varies   CC: 0–127; pitch bend: −8192–8191
     """
 
-    pitch: int
-    startBeat: float  # noqa: N815
-    durationBeats: float  # noqa: N815
-    velocity: int
-    channel: int
-    cc: int
-    beat: float
-    value: int
+    pitch: MidiPitch
+    startBeat: BeatPosition  # noqa: N815
+    durationBeats: BeatDuration  # noqa: N815
+    velocity: MidiVelocity
+    channel: MidiChannel
+    cc: MidiCC
+    beat: BeatPosition
+    value: int  # intentionally plain int: context-dependent (CC value vs. pitch bend)
 
 
 class NoteChangeEntryDict(TypedDict, total=False):

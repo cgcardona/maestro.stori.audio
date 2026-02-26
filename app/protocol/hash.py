@@ -40,7 +40,7 @@ def _tool_schemas_canonical() -> list[dict[str, object]]:
     from app.mcp.tools.registry import MCP_TOOLS
 
     tools: list[dict[str, object]] = []
-    for tool in sorted(MCP_TOOLS, key=lambda t: str(t["name"])):
+    for tool in sorted(MCP_TOOLS, key=lambda t: t["name"]):
         tools.append({
             "name": tool["name"],
             "inputSchema": tool.get("inputSchema", {}),

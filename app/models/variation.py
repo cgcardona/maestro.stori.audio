@@ -22,20 +22,28 @@ from app.contracts.json_types import (
     NoteDict,
     PitchBendDict,
 )
+from app.contracts.midi_types import (
+    BeatDuration,
+    BeatPosition,
+    MidiChannel,
+    MidiPitch,
+    MidiVelocity,
+)
 from app.models.base import CamelModel as _CamelModel
 
 
 class MidiNoteSnapshot(_CamelModel):
+    """Snapshot of a MIDI note's properties at a point in time.
+
+    Used in ``NoteChange`` to capture before/after state for a variation.
+    All MIDI fields are validated against their standard ranges on construction.
     """
-    Snapshot of a MIDI note's properties at a point in time.
-    
-    Used in NoteVariation to capture before/after state.
-    """
-    pitch: int = Field(..., ge=0, le=127, description="MIDI note number (0-127)")
-    start_beat: float = Field(..., ge=0, description="Start position in beats")
-    duration_beats: float = Field(..., gt=0, description="Duration in beats")
-    velocity: int = Field(default=100, ge=0, le=127, description="Note velocity (0-127)")
-    channel: int = Field(default=0, ge=0, le=15, description="MIDI channel (0-15)")
+
+    pitch: MidiPitch = Field(..., description="MIDI note number (0–127)")
+    start_beat: BeatPosition = Field(..., description="Start position in beats (≥ 0)")
+    duration_beats: BeatDuration = Field(..., description="Duration in beats (> 0)")
+    velocity: MidiVelocity = Field(default=100, description="Note velocity (0–127)")
+    channel: MidiChannel = Field(default=0, description="MIDI channel (0–15)")
     
     @classmethod
     def from_note_dict(cls, note: NoteDict) -> "MidiNoteSnapshot":

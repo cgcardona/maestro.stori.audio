@@ -1,8 +1,8 @@
 # Stori Maestro — Type Contracts Reference
 
-> Updated: 2026-02-26 | Reflects the full `Any`-elimination sweep. `Any` no longer exists in any production app file — `llm_types.py` is now a complete TypedDict hierarchy, not a quarantine.
+> Updated: 2026-02-26 | Reflects the full `Any`-elimination sweep and MIDI primitive constraint system. `Any` no longer exists in any production app file. All MIDI primitives carry range constraints at every layer — Pydantic validation, dataclass `__post_init__`, and named `Annotated` type aliases.
 
-This document is the single source of truth for every named entity (TypedDict, dataclass, Protocol, type alias) in the Maestro and Orpheus codebases. It covers the full API surface of each type: fields, types, optionality, and intended use.
+This document is the single source of truth for every named entity (TypedDict, dataclass, Protocol, type alias) in the Maestro codebase. It covers the full API surface of each type: fields, types, optionality, and intended use.
 
 ---
 
@@ -10,6 +10,7 @@ This document is the single source of truth for every named entity (TypedDict, d
 
 1. [Design Philosophy](#design-philosophy)
 2. [Maestro Contracts (`app/contracts/`)](#maestro-contracts)
+   - [midi_types.py](#midi_typespy)
    - [generation_types.py](#generation_typespy)
    - [llm_types.py](#llm_typespy)
    - [json_types.py](#json_typespy)
@@ -51,7 +52,7 @@ This document is the single source of truth for every named entity (TypedDict, d
 
 ## Design Philosophy
 
-Every entity in this codebase follows three rules:
+Every entity in this codebase follows four rules:
 
 1. **No `Any`.** `Any` does not appear in any production app file. LLM API shapes are described with full TypedDict hierarchies in `llm_types.py`. External untyped library boundaries (boto3, Pydantic's `model_json_schema`) are handled with `dict[str, object]` and Protocol types — never `Any`.
 
@@ -59,9 +60,54 @@ Every entity in this codebase follows three rules:
 
 3. **TypedDicts for data, dataclasses for behavior.** TypedDicts carry structured data across function boundaries. Dataclasses are used when the entity needs default values, computed properties, or is passed as a unit of domain logic.
 
+4. **MIDI primitives are range-constrained at every layer.** The canonical type aliases in `app/contracts/midi_types.py` define the single source of truth for all MIDI value ranges. These constraints propagate automatically through all three enforcement layers:
+   - **Pydantic `BaseModel` fields**: `Annotated[int, Field(ge=..., le=...)]` enforces at parse time. Invalid values raise `ValidationError` before reaching business logic.
+   - **Frozen dataclasses** (`contracts.py`): `__post_init__` calls `_assert_range` immediately at construction. Frozen semantics mean values are immutable and validated.
+   - **TypedDicts**: `Annotated` aliases self-document ranges; enforcement occurs at the Pydantic boundary layer that wraps them. Range comments in every TypedDict docstring serve as a contract for callers.
+
+### MIDI Primitive Ranges
+
+Defined in `app/contracts/midi_types.py`. Import from there — never define inline.
+
+| Type alias | Range | Use |
+|---|---|---|
+| `MidiPitch` | 0–127 | MIDI note number |
+| `MidiVelocity` | 0–127 | Note velocity (0 = note-off; 1–127 audible) |
+| `MidiChannel` | 0–15 | MIDI channel (drums = 9) |
+| `MidiCC` | 0–127 | CC controller number |
+| `MidiCCValue` | 0–127 | CC value |
+| `MidiAftertouchValue` | 0–127 | Pressure value |
+| `MidiPitchBend` | −8192–8191 | 14-bit signed; 0 = centre |
+| `MidiGMProgram` | 0–127 | General MIDI program (0-indexed) |
+| `MidiBPM` | 20–300 | Tempo in BPM — always an integer |
+| `BeatPosition` | ≥ 0.0 | Fractional beat position (note level) |
+| `BeatDuration` | > 0.0 | Fractional beat duration (note level) |
+| `ArrangementBeat` | ≥ 0 (int) | Bar-aligned section offset |
+| `ArrangementDuration` | ≥ 1 (int) | Section duration in beats |
+| `Bars` | ≥ 1 | Bar count |
+
+**Two-tier beat position design:** Note-level timing (`BeatPosition`, `BeatDuration`) is `float` because notes can start at fractional positions (e.g., beat 1.5 = the "and" of beat 1). Section-level timing (`ArrangementBeat`, `ArrangementDuration`) is `int` because sections are always bar-aligned — `duration_beats = bars × time_signature_numerator` is always a whole number.
+
 ---
 
 ## Maestro Contracts
+
+### `midi_types.py`
+
+**Path:** `app/contracts/midi_types.py`
+
+Single source of truth for all MIDI primitive ranges. Every field that carries a MIDI value imports its type alias from here instead of repeating `Field(ge=0, le=127)` inline.
+
+All aliases are `Annotated[int, Field(...)]` or `Annotated[float, Field(...)]`, which means:
+- Pydantic `BaseModel` fields pick up the constraint automatically.
+- TypedDict fields use the alias for self-documentation; enforcement happens at the Pydantic boundary.
+- Dataclass `__post_init__` methods call `_assert_range` (also exported from this module) for runtime enforcement without Pydantic.
+
+See the **MIDI Primitive Ranges** table in [Design Philosophy](#design-philosophy) for the complete listing.
+
+**Storpheus note:** `storpheus/storpheus_types.py` cannot import from `app/` (separate container). It mirrors the range constants as module-level `_MIDI_*` values and exports its own `_assert_range` helper.
+
+---
 
 ### `generation_types.py`
 
