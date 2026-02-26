@@ -33,7 +33,7 @@ jobs:
 
       - name: Typing ratchet (Any regression guard)
         run: |
-          python tools/typing_audit.py --max-any 1022
+          python tools/typing_audit.py --max-any 154
 
       - name: Run tests with coverage
         env:
