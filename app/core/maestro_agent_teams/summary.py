@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from app.contracts.json_types import ToolCallDict
+from app.contracts.json_types import (
+    CCEnvelopeDict,
+    CompositionSummary,
+    EffectSummaryDict,
+    ToolCallDict,
+    TrackSummaryDict,
+)
 from app.core.maestro_agent_teams.constants import _CC_NAMES
 
 
@@ -13,7 +17,7 @@ def _build_composition_summary(
     tempo: int | None = None,
     key: str | None = None,
     style: str | None = None,
-) -> dict[str, Any]:
+) -> CompositionSummary:
     """Aggregate composition metadata for the summary.final SSE event.
 
     Recognises the synthetic ``_reused_track`` tool name injected by the
@@ -24,8 +28,8 @@ def _build_composition_summary(
     ``text`` field is included so the frontend can display a completion
     paragraph below the agent execution feed.
     """
-    tracks_created: list[dict[str, Any]] = []
-    tracks_reused: list[dict[str, Any]] = []
+    tracks_created: list[TrackSummaryDict] = []
+    tracks_reused: list[TrackSummaryDict] = []
     regions_created = 0
     notes_generated = 0
     effects_added: list[dict[str, str]] = []
@@ -37,55 +41,66 @@ def _build_composition_summary(
         name = tc.get("tool", "")
         params = tc.get("params", {})
         if name == "stori_add_midi_track":
-            tracks_created.append({
-                "name": params.get("name", ""),
-                "instrument": params.get("_gmInstrumentName") or params.get("drumKitId") or "Unknown",
-                "trackId": params.get("trackId", ""),
-            })
+            _name = params.get("name")
+            _tid = params.get("trackId")
+            _inst = params.get("_gmInstrumentName") or params.get("drumKitId")
+            tracks_created.append(TrackSummaryDict(
+                name=_name if isinstance(_name, str) else "",
+                trackId=_tid if isinstance(_tid, str) else "",
+                instrument=_inst if isinstance(_inst, str) else "Unknown",
+            ))
         elif name == "_reused_track":
-            tracks_reused.append({
-                "name": params.get("name", ""),
-                "trackId": params.get("trackId", ""),
-            })
+            _name = params.get("name")
+            _tid = params.get("trackId")
+            tracks_reused.append(TrackSummaryDict(
+                name=_name if isinstance(_name, str) else "",
+                trackId=_tid if isinstance(_tid, str) else "",
+            ))
         elif name == "stori_add_midi_region":
             regions_created += 1
         elif name == "stori_add_notes":
-            notes_generated += len(params.get("notes", []))
+            _notes = params.get("notes", [])
+            notes_generated += len(_notes) if isinstance(_notes, list) else 0
         elif name == "stori_generate_midi":
-            notes_generated += params.get("_notesGenerated", 0)
+            _ng = params.get("_notesGenerated", 0)
+            notes_generated += _ng if isinstance(_ng, int) else 0
         elif name == "stori_add_insert_effect":
-            effects_added.append({
-                "trackId": params.get("trackId", ""),
-                "type": params.get("effectType") or params.get("type", ""),
-            })
+            _etid = params.get("trackId")
+            _etype = params.get("effectType") or params.get("type")
+            effects_added.append(EffectSummaryDict(
+                trackId=_etid if isinstance(_etid, str) else "",
+                type=_etype if isinstance(_etype, str) else "",
+            ))
         elif name == "stori_add_send":
             sends_created += 1
         elif name == "stori_add_midi_cc":
-            cc_num = int(params.get("cc", 0))
+            _cc_raw = params.get("cc", 0)
+            cc_num = _cc_raw if isinstance(_cc_raw, int) else 0
             cc_counts[cc_num] = _CC_NAMES.get(cc_num, f"CC {cc_num}")
         elif name == "stori_add_automation":
             automation_lanes += 1
 
-    result: dict[str, Any] = {
-        "tracksCreated": tracks_created,
-        "tracksReused": tracks_reused,
-        "trackCount": len(tracks_created) + len(tracks_reused),
-        "regionsCreated": regions_created,
-        "notesGenerated": notes_generated,
-        "effectsAdded": effects_added,
-        "effectCount": len(effects_added),
-        "sendsCreated": sends_created,
-        "ccEnvelopes": [{"cc": k, "name": v} for k, v in sorted(cc_counts.items())],
-        "automationLanes": automation_lanes,
-    }
-    result["text"] = _compose_summary_text(
-        result, tempo=tempo, key=key, style=style,
+    cc_envelopes: list[CCEnvelopeDict] = [
+        CCEnvelopeDict(cc=k, name=v) for k, v in sorted(cc_counts.items())
+    ]
+    result = CompositionSummary(
+        tracksCreated=tracks_created,
+        tracksReused=tracks_reused,
+        trackCount=len(tracks_created) + len(tracks_reused),
+        regionsCreated=regions_created,
+        notesGenerated=notes_generated,
+        effectsAdded=effects_added,
+        effectCount=len(effects_added),
+        sendsCreated=sends_created,
+        ccEnvelopes=cc_envelopes,
+        automationLanes=automation_lanes,
     )
+    result["text"] = _compose_summary_text(result, tempo=tempo, key=key, style=style)
     return result
 
 
 def _compose_summary_text(
-    summary: dict[str, Any],
+    summary: CompositionSummary,
     tempo: int | None = None,
     key: str | None = None,
     style: str | None = None,

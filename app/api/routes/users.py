@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import Field
@@ -20,6 +19,7 @@ from app.config import settings, APPROVED_MODELS, ALLOWED_MODEL_IDS
 from app.core.llm_client import LLMClient
 from app.db import get_db, User, UsageLog, AccessToken
 from app.auth.dependencies import require_valid_token
+from app.auth.tokens import TokenClaims
 from app.services.token_service import (
     revoke_token,
     revoke_all_user_tokens,
@@ -145,7 +145,7 @@ async def register_user(
 
 @router.get("/users/me", response_model=UserResponse, response_model_by_alias=True)
 async def get_current_user(
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """
@@ -231,7 +231,7 @@ async def list_models() -> ModelsResponse:
 async def update_user_budget(
     user_id: str,
     request: BudgetUpdateRequest,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """
@@ -316,7 +316,7 @@ class RevokeResponse(CamelModel):
 
 @router.get("/users/me/tokens", response_model=TokenListResponse, response_model_by_alias=True)
 async def list_my_tokens(
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> TokenListResponse:
     """
@@ -349,7 +349,7 @@ async def list_my_tokens(
 
 @router.post("/users/me/tokens/revoke-all", response_model=RevokeResponse, response_model_by_alias=True)
 async def revoke_my_tokens(
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> RevokeResponse:
     """
@@ -377,7 +377,7 @@ async def revoke_my_tokens(
 @router.post("/users/{user_id}/tokens/revoke-all", response_model=RevokeResponse, response_model_by_alias=True)
 async def admin_revoke_user_tokens(
     user_id: str,
-    token_claims: dict[str, Any] = Depends(require_valid_token),
+    token_claims: TokenClaims = Depends(require_valid_token),
     db: AsyncSession = Depends(get_db),
 ) -> RevokeResponse:
     """

@@ -13,10 +13,16 @@ Key concepts:
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 from pydantic import Field
 
-from app.contracts.json_types import NoteDict
+from app.contracts.json_types import (
+    AftertouchDict,
+    CCEventDict,
+    ControllerEventDict,
+    NoteDict,
+    PitchBendDict,
+)
 from app.models.base import CamelModel as _CamelModel
 
 
@@ -78,7 +84,7 @@ class NoteChange(_CamelModel):
         description="Proposed note state (None for 'removed')"
     )
     
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: object) -> None:
         """Validate that before/after match change_type."""
         if self.change_type == "added" and self.before is not None:
             raise ValueError("'added' notes must have before=None")
@@ -122,7 +128,7 @@ class Phrase(_CamelModel):
         default_factory=list,
         description="list of note changes in this phrase"
     )
-    controller_changes: list[dict[str, Any]] = Field(
+    controller_changes: list[ControllerEventDict] = Field(
         default_factory=list,
         description="MIDI CC, pitch bend, and aftertouch changes in this phrase",
     )
@@ -294,15 +300,15 @@ class UpdatedRegionPayload(_CamelModel):
     region_id: str
     track_id: str
     notes: list[MidiNoteSnapshot] = Field(default_factory=list)
-    cc_events: list[dict[str, Any]] = Field(
+    cc_events: list[CCEventDict] = Field(
         default_factory=list,
         description="MIDI CC events (sustain, expression, modulation, etc.)",
     )
-    pitch_bends: list[dict[str, Any]] = Field(
+    pitch_bends: list[PitchBendDict] = Field(
         default_factory=list,
         description="MIDI pitch bend events",
     )
-    aftertouch: list[dict[str, Any]] = Field(
+    aftertouch: list[AftertouchDict] = Field(
         default_factory=list,
         description="MIDI aftertouch events (channel pressure and poly key pressure)",
     )

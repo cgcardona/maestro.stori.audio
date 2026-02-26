@@ -200,6 +200,61 @@ class CCEnvelopeDict(TypedDict, total=False):
     pointCount: int  # noqa: N815
 
 
+class ControllerEventDict(TypedDict, total=False):
+    """A serialised MIDI controller change stored in Phrase.controller_changes.
+
+    The ``kind`` field discriminates the event type:
+    - ``"cc"``         → ``cc`` field present (CC number)
+    - ``"pitch_bend"`` → no extra fields
+    - ``"aftertouch"`` → optional ``pitch`` field (poly aftertouch only)
+    """
+
+    kind: str   # "cc" | "pitch_bend" | "aftertouch"
+    beat: float
+    value: int
+    cc: int     # CC number (kind="cc" only)
+    pitch: int  # MIDI pitch (kind="aftertouch", polyphonic only)
+
+
+class CompositionSummary(TypedDict, total=False):
+    """Aggregated metadata for the summary.final SSE event.
+
+    Produced by ``_build_composition_summary`` and consumed by the
+    SSE layer and frontend to display the completion paragraph.
+    """
+
+    tracksCreated: list[TrackSummaryDict]   # noqa: N815
+    tracksReused: list[TrackSummaryDict]    # noqa: N815
+    trackCount: int                          # noqa: N815
+    regionsCreated: int                      # noqa: N815
+    notesGenerated: int                      # noqa: N815
+    effectsAdded: list[EffectSummaryDict]   # noqa: N815
+    effectCount: int                         # noqa: N815
+    sendsCreated: int                        # noqa: N815
+    ccEnvelopes: list[CCEnvelopeDict]       # noqa: N815
+    automationLanes: int                     # noqa: N815
+    text: str
+
+
+class AppliedRegionInfo(TypedDict, total=False):
+    """Per-region result from applying variation phrases.
+
+    Produced by ``apply_variation_phrases`` and carried in
+    ``VariationApplyResult.updated_regions``.  All MIDI event lists are
+    the *full* post-commit state for the region (not just the delta).
+    """
+
+    region_id: str
+    track_id: str
+    notes: list[NoteDict]
+    cc_events: list[CCEventDict]
+    pitch_bends: list[PitchBendDict]
+    aftertouch: list[AftertouchDict]
+    start_beat: float | None
+    duration_beats: float | None
+    name: str | None
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Variation / note change types
 # ═══════════════════════════════════════════════════════════════════════════════

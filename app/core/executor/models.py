@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from app.contracts.json_types import (
     AftertouchDict,
+    AppliedRegionInfo,
     CCEventDict,
     NoteDict,
     PitchBendDict,
@@ -25,7 +25,7 @@ class ExecutionResult:
 
     tool_name: str
     success: bool
-    output: dict[str, Any]
+    output: dict[str, object]
     error: str | None = None
     entity_created: str | None = None
 
@@ -38,13 +38,13 @@ class ExecutionContext:
     transaction: Transaction
     trace: TraceContext
     results: list[ExecutionResult] = field(default_factory=list)
-    events: list[dict[str, Any]] = field(default_factory=list)
+    events: list[dict[str, object]] = field(default_factory=list)
 
     def add_result(
         self,
         tool_name: str,
         success: bool,
-        output: dict[str, Any],
+        output: dict[str, object],
         error: str | None = None,
         entity_created: str | None = None,
     ) -> None:
@@ -57,7 +57,7 @@ class ExecutionContext:
         ))
         log_tool_call(self.trace.trace_id, tool_name, output, success, error)
 
-    def add_event(self, event: dict[str, Any]) -> None:
+    def add_event(self, event: dict[str, object]) -> None:
         self.events.append(event)
 
     @property
@@ -156,5 +156,5 @@ class VariationApplyResult:
     notes_added: int
     notes_removed: int
     notes_modified: int
-    updated_regions: list[dict[str, Any]] = field(default_factory=list)
+    updated_regions: list[AppliedRegionInfo] = field(default_factory=list)
     error: str | None = None

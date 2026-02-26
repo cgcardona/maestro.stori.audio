@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from app.core.entity_registry import EntityRegistry
-from app.core.tool_validation.models import ValidationError
+from app.core.tool_validation.models import EntityResolutionResult, ValidationError
 from app.core.tool_validation.constants import _ENTITY_CREATING_SKIP
 
 logger = logging.getLogger(__name__)
@@ -56,9 +55,9 @@ def _find_closest_match(
 
 def _resolve_and_validate_entities(
     tool_name: str,
-    params: dict[str, Any],
+    params: dict[str, object],
     registry: EntityRegistry,
-) -> dict[str, Any]:
+) -> EntityResolutionResult:
     """
     Resolve entity name aliases to IDs and validate that referenced entities exist.
 
@@ -198,15 +197,13 @@ def _resolve_and_validate_entities(
 
 def resolve_tool_entities(
     tool_name: str,
-    params: dict[str, Any],
+    params: dict[str, object],
     registry: EntityRegistry,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Resolve entity names to IDs in tool call params.
 
     Public wrapper around ``_resolve_and_validate_entities`` that returns
     only the resolved params dict.  Callers who need validation errors
     should use ``validate_tool_call`` instead.
     """
-    result = _resolve_and_validate_entities(tool_name, params, registry)
-    resolved: dict[str, Any] = result["params"]
-    return resolved
+    return _resolve_and_validate_entities(tool_name, params, registry)["params"]

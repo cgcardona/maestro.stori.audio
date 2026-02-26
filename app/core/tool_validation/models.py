@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+
+from typing_extensions import TypedDict
 
 
 @dataclass
@@ -24,8 +25,8 @@ class ValidationResult:
 
     valid: bool
     tool_name: str
-    original_params: dict[str, Any]
-    resolved_params: dict[str, Any]
+    original_params: dict[str, object]
+    resolved_params: dict[str, object]
     errors: list[ValidationError]
     warnings: list[str]
 
@@ -34,3 +35,11 @@ class ValidationResult:
         if not self.errors:
             return ""
         return "; ".join(str(e) for e in self.errors)
+
+
+class EntityResolutionResult(TypedDict):
+    """Internal return type of ``_resolve_and_validate_entities``."""
+
+    params: dict[str, object]
+    errors: list[ValidationError]
+    warnings: list[str]

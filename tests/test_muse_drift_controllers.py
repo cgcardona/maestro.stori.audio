@@ -13,10 +13,8 @@ from __future__ import annotations
 import ast
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any
-
 import pytest
-from app.contracts.json_types import AftertouchDict, CCEventDict, NoteDict, PitchBendDict
+from app.contracts.json_types import AftertouchDict, CCEventDict, ControllerEventDict, NoteDict, PitchBendDict
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.database import Base
@@ -63,45 +61,42 @@ def _cc(cc_num: int, beat: float, value: int) -> CCEventDict:
     return {"cc": cc_num, "beat": beat, "value": value}
 
 
-def _cc_ctrl(cc_num: int, beat: float, value: int) -> dict[str, Any]:
+def _cc_ctrl(cc_num: int, beat: float, value: int) -> ControllerEventDict:
     """CC event with 'kind' discriminator for controller_changes persistence."""
-    return {"kind": "cc", "cc": cc_num, "beat": beat, "value": value}
+    return ControllerEventDict(kind="cc", cc=cc_num, beat=beat, value=value)
 
 
 def _pb(beat: float, value: int) -> PitchBendDict:
-
     return {"beat": beat, "value": value}
 
 
-def _pb_ctrl(beat: float, value: int) -> dict[str, Any]:
+def _pb_ctrl(beat: float, value: int) -> ControllerEventDict:
     """Pitch bend with 'kind' discriminator for controller_changes persistence."""
-    return {"kind": "pitch_bend", "beat": beat, "value": value}
+    return ControllerEventDict(kind="pitch_bend", beat=beat, value=value)
 
 
 def _at(beat: float, value: int, pitch: int | None = None) -> AftertouchDict:
-
     d: AftertouchDict = {"beat": beat, "value": value}
     if pitch is not None:
         d["pitch"] = pitch
     return d
 
 
-def _at_ctrl(beat: float, value: int, pitch: int | None = None) -> dict[str, Any]:
+def _at_ctrl(beat: float, value: int, pitch: int | None = None) -> ControllerEventDict:
     """Aftertouch with 'kind' discriminator for controller_changes persistence."""
-    d: dict[str, Any] = {"kind": "aftertouch", "beat": beat, "value": value}
+    d = ControllerEventDict(kind="aftertouch", beat=beat, value=value)
     if pitch is not None:
         d["pitch"] = pitch
     return d
 
 
 def _note(pitch: int, start: float) -> NoteDict:
-
     return {"pitch": pitch, "start_beat": start, "duration_beats": 1.0, "velocity": 100, "channel": 0}
 
 
 def _make_variation_with_controllers(
     notes: list[NoteDict],
-    controller_changes: list[dict[str, Any]],
+    controller_changes: list[ControllerEventDict],
     region_id: str = "region-1",
     track_id: str = "track-1",
 ) -> Variation:

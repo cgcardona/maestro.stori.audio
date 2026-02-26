@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from app.contracts.project_types import ProjectContext
 from app.contracts.json_types import (
     AftertouchDict,
+    AppliedRegionInfo,
     CCEventDict,
     NoteDict,
     PitchBendDict,
@@ -133,7 +134,7 @@ async def apply_variation_phrases(
             store.commit(tx)
 
             affected_region_ids = set(region_adds.keys()) | set(region_removals.keys())
-            updated_regions: list[dict[str, Any]] = []
+            updated_regions: list[AppliedRegionInfo] = []
 
             _rm = region_metadata or {}
 

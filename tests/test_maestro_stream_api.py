@@ -8,7 +8,6 @@ Covers:
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from typing import Any
 
 from app.db.models import User
 from httpx import AsyncClient
@@ -24,10 +23,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # ---------------------------------------------------------------------------
 
 
-def parse_sse_events(body: str) -> list[dict[str, Any]]:
-
+def parse_sse_events(body: str) -> list[dict[str, object]]:
     """Parse SSE event stream body into list of dicts."""
-    events = []
+    events: list[dict[str, object]] = []
     for line in body.split("\n"):
         line = line.strip()
         if line.startswith("data: "):
@@ -38,9 +36,8 @@ def parse_sse_events(body: str) -> list[dict[str, Any]]:
     return events
 
 
-def _make_maestro_body(**overrides: Any) -> dict[str, Any]:
-
-    base = {"prompt": "make a beat", "mode": "generate"}
+def _make_maestro_body(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {"prompt": "make a beat", "mode": "generate"}
     base.update(overrides)
     return base
 
@@ -144,7 +141,7 @@ class TestComposeStreamEndpoint:
         """Budget deduction runs after successful streaming; no budgetUpdate SSE event is emitted."""
         mock_deduct = AsyncMock(return_value=(test_user, MagicMock()))
 
-        async def fake_orchestrate(*args: object, **kwargs: Any) -> AsyncGenerator[str, None]:
+        async def fake_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
 
             usage_tracker = kwargs.get("usage_tracker")
             if usage_tracker:
@@ -217,7 +214,7 @@ class TestComposeStreamEndpoint:
 
         captured_history = {}
 
-        async def spy_orchestrate(*args: object, **kwargs: Any) -> AsyncGenerator[str, None]:
+        async def spy_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
 
             captured_history["history"] = kwargs.get("conversation_history", [])
             from app.core.sse_utils import sse_event

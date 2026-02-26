@@ -12,7 +12,6 @@ import inspect
 import json
 import re
 from pathlib import Path
-from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -868,7 +867,7 @@ class TestPhase2NoDuplicateHelpers:
 
 def _make_minimal(model_class: type[StoriEvent]) -> StoriEvent:
     """Construct a minimal valid instance of an event model."""
-    _MINIMAL: dict[str, dict[str, Any]] = {
+    _MINIMAL: dict[str, dict[str, object]] = {
         "state": {"state": "editing", "intent": "track.add", "confidence": 0.9, "trace_id": "t"},
         "reasoning": {"content": "thinking..."},
         "reasoningEnd": {"agent_id": "a1"},
