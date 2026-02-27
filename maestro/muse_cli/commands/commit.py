@@ -15,6 +15,17 @@ Algorithm
 7. Compute ``commit_id = sha256(sorted(parent_ids) | snapshot_id | message | timestamp)``.
 8. Persist to Postgres: upsert ``object`` rows → upsert ``snapshot`` row → insert ``commit`` row.
 9. Update ``.muse/refs/heads/<branch>`` to the new ``commit_id``.
+
+``--from-batch <path>``
+-----------------------
+When this flag is provided, the commit pipeline reads ``muse-batch.json``
+and restricts the snapshot to only the files listed in the manifest's
+``files`` array.  The ``commit_message_suggestion`` from the batch is used
+as the commit message, making this a fast path for::
+
+    muse commit --from-batch muse-batch.json
+
+without needing to specify ``-m``.
 """
 from __future__ import annotations
 
@@ -23,6 +34,7 @@ import datetime
 import json
 import logging
 import pathlib
+from typing import Optional
 
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,11 +53,75 @@ from maestro.muse_cli.snapshot import (
     build_snapshot_manifest,
     compute_commit_id,
     compute_snapshot_id,
+    hash_file,
 )
 
 logger = logging.getLogger(__name__)
 
 app = typer.Typer()
+
+
+# ---------------------------------------------------------------------------
+# Batch manifest helpers
+# ---------------------------------------------------------------------------
+
+
+def load_muse_batch(batch_path: pathlib.Path) -> dict[str, object]:
+    """Read and validate a muse-batch.json file.
+
+    Returns the parsed dict.  Raises ``typer.Exit`` with ``USER_ERROR`` if
+    the file is missing or malformed so the Typer callback surfaces a clean
+    message.
+    """
+    if not batch_path.exists():
+        typer.echo(f"❌ muse-batch.json not found: {batch_path}")
+        raise typer.Exit(code=ExitCode.USER_ERROR)
+    try:
+        data: dict[str, object] = json.loads(batch_path.read_text())
+    except json.JSONDecodeError as exc:
+        typer.echo(f"❌ Invalid JSON in {batch_path}: {exc}")
+        raise typer.Exit(code=ExitCode.USER_ERROR)
+    return data
+
+
+def build_snapshot_manifest_from_batch(
+    batch_data: dict[str, object],
+    repo_root: pathlib.Path,
+) -> dict[str, str]:
+    """Build a snapshot manifest restricted to files listed in a muse-batch.
+
+    Only files that actually exist on disk are included — missing files are
+    silently skipped (the batch may reference files from a different machine
+    or a partial run).
+
+    ``batch_data["files"]`` entries use paths relative to the repo root
+    (e.g. ``"muse-work/tracks/drums/jazz_4b_abc.mid"``).  The returned
+    manifest uses paths relative to ``muse-work/`` so it is compatible with
+    ``build_snapshot_manifest``.
+
+    Returns a ``{rel_path: object_id}`` dict where *rel_path* is relative to
+    ``muse-work/``.
+    """
+    workdir = repo_root / "muse-work"
+    raw_files = batch_data.get("files", [])
+    files: list[dict[str, object]] = list(raw_files) if isinstance(raw_files, list) else []
+    manifest: dict[str, str] = {}
+
+    for entry in files:
+        raw_path = str(entry.get("path", ""))
+        # Paths in the batch are relative to repo root, e.g. muse-work/tracks/…
+        abs_path = repo_root / raw_path
+        if not abs_path.exists() or not abs_path.is_file():
+            continue
+        # Key in the manifest is relative to muse-work/
+        try:
+            rel = abs_path.relative_to(workdir).as_posix()
+        except ValueError:
+            # File is outside muse-work/ — skip
+            continue
+        manifest[rel] = hash_file(abs_path)
+
+    return manifest
 
 
 # ---------------------------------------------------------------------------
@@ -58,12 +134,17 @@ async def _commit_async(
     message: str,
     root: pathlib.Path,
     session: AsyncSession,
+    batch_path: pathlib.Path | None = None,
 ) -> str:
     """Run the commit pipeline and return the new ``commit_id``.
 
     All filesystem and DB side-effects are isolated in this coroutine so
     tests can inject an in-memory SQLite session and a ``tmp_path`` root
     without touching a real database.
+
+    When *batch_path* is provided the commit is restricted to files listed in
+    ``muse-batch.json`` and the ``commit_message_suggestion`` from the batch
+    overrides *message*.
 
     Raises ``typer.Exit`` with the appropriate exit code on user errors so
     the Typer callback surfaces a clean message rather than a traceback.
@@ -87,19 +168,35 @@ async def _commit_async(
 
     parent_ids = [parent_commit_id] if parent_commit_id else []
 
-    # ── Walk working directory ───────────────────────────────────────────
+    # ── Build snapshot manifest ──────────────────────────────────────────
     workdir = root / "muse-work"
-    if not workdir.exists():
-        typer.echo(
-            "⚠️  No muse-work/ directory found. Generate some artifacts first.\n"
-            "     Tip: run the Maestro stress test to populate muse-work/."
-        )
-        raise typer.Exit(code=ExitCode.USER_ERROR)
 
-    manifest = build_snapshot_manifest(workdir)
-    if not manifest:
-        typer.echo("⚠️  muse-work/ is empty — nothing to commit.")
-        raise typer.Exit(code=ExitCode.USER_ERROR)
+    if batch_path is not None:
+        # Fast path: restrict snapshot to files listed in muse-batch.json
+        batch_data = load_muse_batch(batch_path)
+        suggestion = str(batch_data.get("commit_message_suggestion", "")).strip()
+        if suggestion:
+            message = suggestion
+        manifest = build_snapshot_manifest_from_batch(batch_data, root)
+        if not manifest:
+            typer.echo(
+                "⚠️  No files from muse-batch.json found on disk — nothing to commit.\n"
+                f"     Batch: {batch_path}"
+            )
+            raise typer.Exit(code=ExitCode.USER_ERROR)
+    else:
+        # Standard path: walk the entire muse-work/ directory
+        if not workdir.exists():
+            typer.echo(
+                "⚠️  No muse-work/ directory found. Generate some artifacts first.\n"
+                "     Tip: run the Maestro stress test to populate muse-work/."
+            )
+            raise typer.Exit(code=ExitCode.USER_ERROR)
+
+        manifest = build_snapshot_manifest(workdir)
+        if not manifest:
+            typer.echo("⚠️  muse-work/ is empty — nothing to commit.")
+            raise typer.Exit(code=ExitCode.USER_ERROR)
 
     snapshot_id = compute_snapshot_id(manifest)
 
@@ -160,14 +257,40 @@ async def _commit_async(
 @app.callback(invoke_without_command=True)
 def commit(
     ctx: typer.Context,
-    message: str = typer.Option(..., "-m", "--message", help="Commit message."),
+    message: Optional[str] = typer.Option(
+        None, "-m", "--message", help="Commit message."
+    ),
+    from_batch: Optional[str] = typer.Option(
+        None,
+        "--from-batch",
+        help=(
+            "Path to muse-batch.json produced by the stress test.  "
+            "Uses commit_message_suggestion from the batch and snapshots only "
+            "the files listed in files[].  Overrides -m when present."
+        ),
+    ),
 ) -> None:
     """Record the current muse-work/ state as a new version in history."""
+    # Validate that at least one of -m or --from-batch is provided
+    if from_batch is None and message is None:
+        typer.echo("❌ Provide either -m MESSAGE or --from-batch PATH.")
+        raise typer.Exit(code=ExitCode.USER_ERROR)
+
     root = require_repo()
+    batch_path = pathlib.Path(from_batch) if from_batch is not None else None
+
+    # message may be None when --from-batch is used; _commit_async will
+    # replace it with commit_message_suggestion from the batch.
+    effective_message = message or ""
 
     async def _run() -> None:
         async with open_session() as session:
-            await _commit_async(message=message, root=root, session=session)
+            await _commit_async(
+                message=effective_message,
+                root=root,
+                session=session,
+                batch_path=batch_path,
+            )
 
     try:
         asyncio.run(_run())
@@ -177,4 +300,3 @@ def commit(
         typer.echo(f"❌ muse commit failed: {exc}")
         logger.error("❌ muse commit error: %s", exc, exc_info=True)
         raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
-

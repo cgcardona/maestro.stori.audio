@@ -69,6 +69,37 @@ curl -X POST https://<your-api>/api/v1/users/register -H "Content-Type: applicat
 
 ---
 
+## Muse Hub CLI authentication
+
+All `/musehub/` routes require a valid JWT Bearer token. The Muse CLI reads this token from `.muse/config.toml` automatically — no `--token` flag needed on each command.
+
+**One-time setup:**
+
+1. Obtain a token via `POST /auth/token` (or the existing access-code flow):
+   ```bash
+   docker compose exec maestro python scripts/generate_access_code.py --user-id <device-uuid> --days 30
+   ```
+
+2. Add it to your local `.muse/config.toml`:
+   ```toml
+   [auth]
+   token = "eyJ..."
+   ```
+
+3. Add `.muse/config.toml` to `.gitignore` so the token is never committed:
+   ```
+   .muse/config.toml
+   ```
+
+4. All subsequent `muse push`, `muse pull`, and `muse hub` commands will pick up the token automatically. If the token is absent or empty the CLI exits with code `1` and prints:
+   ```
+   No auth token configured. Add `token = "..."` under `[auth]` in `.muse/config.toml`.
+   ```
+
+**Security note:** The token value is never logged. Log lines use `"Bearer ***"` as a placeholder. See [security.md](security.md#muse-hub-cli-token-storage) for full storage guidance.
+
+---
+
 ## Frontend (Swift)
 
 **Auth & identity parity:** The app should use the backend's single-identifier architecture (device UUID). Register, get JWT for maestro/MCP, use X-Device-ID only for assets.

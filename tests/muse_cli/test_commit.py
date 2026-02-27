@@ -19,7 +19,11 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from maestro.muse_cli.commands.commit import _commit_async
+from maestro.muse_cli.commands.commit import (
+    _commit_async,
+    build_snapshot_manifest_from_batch,
+    load_muse_batch,
+)
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.models import MuseCliCommit, MuseCliObject, MuseCliSnapshot
 from maestro.muse_cli.snapshot import (
@@ -322,3 +326,208 @@ async def test_commit_empty_workdir_exits_1(
             message="empty", root=tmp_path, session=muse_cli_db_session
         )
     assert exc_info.value.exit_code == ExitCode.USER_ERROR
+
+
+# ---------------------------------------------------------------------------
+# --from-batch fast path
+# ---------------------------------------------------------------------------
+
+
+def _write_muse_batch(
+    batch_root: pathlib.Path,
+    files: list[dict[str, object]],
+    run_id: str = "stress-test",
+    suggestion: str = "feat: jazz stress test",
+) -> pathlib.Path:
+    """Write a minimal muse-batch.json fixture and return its path."""
+    data = {
+        "run_id": run_id,
+        "generated_at": "2026-02-27T17:29:19Z",
+        "commit_message_suggestion": suggestion,
+        "files": files,
+        "provenance": {"prompt": "test", "model": "storpheus", "seed": run_id, "storpheus_version": "1.0"},
+    }
+    batch_path = batch_root / "muse-batch.json"
+    batch_path.write_text(json.dumps(data, indent=2))
+    return batch_path
+
+
+@pytest.mark.anyio
+async def test_commit_from_batch_uses_suggestion(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--from-batch uses commit_message_suggestion as the commit message."""
+    _init_muse_repo(tmp_path)
+    workdir = tmp_path / "muse-work" / "tracks" / "drums"
+    workdir.mkdir(parents=True)
+    mid_file = workdir / "jazz_4b_comp-0001.mid"
+    mid_file.write_bytes(b"MIDI-DATA")
+
+    batch_path = _write_muse_batch(
+        tmp_path,
+        files=[{
+            "path": "muse-work/tracks/drums/jazz_4b_comp-0001.mid",
+            "role": "midi",
+            "genre": "jazz",
+            "bars": 4,
+            "cached": False,
+        }],
+        suggestion="feat: jazz stress test",
+    )
+
+    commit_id = await _commit_async(
+        message="",  # overridden by batch suggestion
+        root=tmp_path,
+        session=muse_cli_db_session,
+        batch_path=batch_path,
+    )
+
+    result = await muse_cli_db_session.execute(
+        select(MuseCliCommit).where(MuseCliCommit.commit_id == commit_id)
+    )
+    row = result.scalar_one()
+    assert row.message == "feat: jazz stress test"
+
+
+@pytest.mark.anyio
+async def test_commit_from_batch_snapshots_listed_files_only(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--from-batch snapshots only files listed in files[], not the entire muse-work/."""
+    _init_muse_repo(tmp_path)
+
+    # Create two files in muse-work/
+    listed_dir = tmp_path / "muse-work" / "tracks" / "drums"
+    listed_dir.mkdir(parents=True)
+    listed_file = listed_dir / "jazz_4b_comp-0001.mid"
+    listed_file.write_bytes(b"LISTED-MIDI")
+
+    unlisted_dir = tmp_path / "muse-work" / "renders"
+    unlisted_dir.mkdir(parents=True)
+    unlisted_file = unlisted_dir / "house_8b_comp-9999.mp3"
+    unlisted_file.write_bytes(b"UNLISTED-MP3")
+
+    # Batch only references the MIDI file
+    batch_path = _write_muse_batch(
+        tmp_path,
+        files=[{
+            "path": "muse-work/tracks/drums/jazz_4b_comp-0001.mid",
+            "role": "midi",
+            "genre": "jazz",
+            "bars": 4,
+            "cached": False,
+        }],
+        suggestion="feat: partial batch commit",
+    )
+
+    commit_id = await _commit_async(
+        message="",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        batch_path=batch_path,
+    )
+
+    # Retrieve the snapshot manifest from DB
+    from maestro.muse_cli.db import get_head_snapshot_id
+    from maestro.muse_cli.models import MuseCliSnapshot
+    from sqlalchemy.future import select as sa_select
+
+    row = await muse_cli_db_session.execute(
+        select(MuseCliCommit).where(MuseCliCommit.commit_id == commit_id)
+    )
+    commit_row = row.scalar_one()
+    snap_row = await muse_cli_db_session.execute(
+        sa_select(MuseCliSnapshot).where(
+            MuseCliSnapshot.snapshot_id == commit_row.snapshot_id
+        )
+    )
+    snapshot = snap_row.scalar_one()
+    manifest: dict[str, str] = snapshot.manifest
+
+    # Only the listed MIDI file should be in the snapshot
+    assert any("jazz_4b_comp-0001.mid" in k for k in manifest.keys())
+    assert not any("house_8b_comp-9999.mp3" in k for k in manifest.keys()), (
+        "Unlisted files must NOT appear in the --from-batch snapshot"
+    )
+
+
+@pytest.mark.anyio
+async def test_commit_from_batch_missing_batch_file_exits_1(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """When muse-batch.json does not exist, commit exits USER_ERROR."""
+    import typer
+
+    _init_muse_repo(tmp_path)
+    nonexistent = tmp_path / "muse-batch.json"
+
+    with pytest.raises(typer.Exit) as exc_info:
+        await _commit_async(
+            message="",
+            root=tmp_path,
+            session=muse_cli_db_session,
+            batch_path=nonexistent,
+        )
+    assert exc_info.value.exit_code == ExitCode.USER_ERROR
+
+
+@pytest.mark.anyio
+async def test_commit_from_batch_all_files_missing_exits_1(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """When no listed files exist on disk, commit exits USER_ERROR."""
+    import typer
+
+    _init_muse_repo(tmp_path)
+    batch_path = _write_muse_batch(
+        tmp_path,
+        files=[{
+            "path": "muse-work/tracks/drums/nonexistent.mid",
+            "role": "midi",
+            "genre": "jazz",
+            "bars": 4,
+            "cached": False,
+        }],
+    )
+
+    with pytest.raises(typer.Exit) as exc_info:
+        await _commit_async(
+            message="",
+            root=tmp_path,
+            session=muse_cli_db_session,
+            batch_path=batch_path,
+        )
+    assert exc_info.value.exit_code == ExitCode.USER_ERROR
+
+
+def test_load_muse_batch_invalid_json_exits_1(tmp_path: pathlib.Path) -> None:
+    """load_muse_batch raises typer.Exit USER_ERROR on malformed JSON."""
+    import typer
+
+    bad_json = tmp_path / "muse-batch.json"
+    bad_json.write_text("{ not valid json }")
+
+    with pytest.raises(typer.Exit) as exc_info:
+        load_muse_batch(bad_json)
+    assert exc_info.value.exit_code == ExitCode.USER_ERROR
+
+
+def test_build_snapshot_manifest_from_batch_skips_missing_files(
+    tmp_path: pathlib.Path,
+) -> None:
+    """build_snapshot_manifest_from_batch silently skips files not on disk."""
+    workdir = tmp_path / "muse-work" / "tracks"
+    workdir.mkdir(parents=True)
+    existing = workdir / "jazz_4b.mid"
+    existing.write_bytes(b"MIDI")
+
+    batch_data: dict[str, object] = {
+        "files": [
+            {"path": "muse-work/tracks/jazz_4b.mid", "role": "midi"},
+            {"path": "muse-work/tracks/missing.mid", "role": "midi"},
+        ]
+    }
+
+    manifest = build_snapshot_manifest_from_batch(batch_data, tmp_path)
+    assert "tracks/jazz_4b.mid" in manifest
+    assert "tracks/missing.mid" not in manifest
