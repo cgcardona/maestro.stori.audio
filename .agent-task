@@ -1,0 +1,4 @@
+WORKFLOW=issue-to-pr
+ISSUE_NUMBER=37
+ISSUE_TITLE=feat: Maestro stress test → muse-work/ output contract with muse-batch.json manifest
+ISSUE_URL=https://github.com/cgcardona/maestro/issues/37
