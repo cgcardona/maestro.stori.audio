@@ -22,9 +22,15 @@ Usage:
     # Custom target
     docker compose exec storpheus python scripts/e2e/stress_test.py --url http://storpheus:10002
 
+    # Write artifacts into muse-work/ layout with manifest (for muse commit)
+    docker compose exec storpheus python scripts/e2e/stress_test.py --quick \\
+        --genre jazz,house --flush --output-dir ./muse-work
+
 Results are written to:
     stress_results_{timestamp}.json   — raw data
     stress_results_{timestamp}.html   — self-contained HTML report
+    muse-work/                        — structured artifact tree (when --output-dir is used)
+    muse-batch.json                   — manifest for ``muse commit --from-batch``
 """
 from __future__ import annotations
 
@@ -32,6 +38,7 @@ import argparse
 import asyncio
 import base64
 import json
+import pathlib
 import statistics
 import sys
 import time
@@ -1193,6 +1200,188 @@ async def fetch_run_artifacts(
     return artifacts
 
 
+# ── muse-work/ output contract ───────────────────────────────────────────────
+
+
+@dataclass
+class MuseBatchFile:
+    """One file entry in muse-batch.json describing a saved artifact."""
+
+    path: str       # relative to repo root, e.g. "muse-work/tracks/drums_bass/jazz_4b_comp-0001.mid"
+    role: str       # "midi" | "mp3" | "webp" | "meta"
+    genre: str
+    bars: int
+    cached: bool = False
+
+
+@dataclass
+class MuseBatch:
+    """The muse-batch.json manifest emitted after a stress run.
+
+    Consumed by ``muse commit --from-batch muse-batch.json`` to snapshot only
+    the files produced by this run, using the suggested commit message.
+    """
+
+    run_id: str
+    generated_at: str
+    commit_message_suggestion: str
+    files: list[MuseBatchFile]
+    provenance: dict[str, Any]
+
+
+def _sanitize_instruments(instruments: list[str]) -> str:
+    """Return a filesystem-safe instrument combo string (e.g. 'drums_bass_piano')."""
+    return "_".join(instruments)
+
+
+def save_artifacts_to_muse_work(
+    output_dir: pathlib.Path,
+    results: list[RequestResult],
+    artifacts: dict[str, ArtifactSet],
+) -> list[MuseBatchFile]:
+    """Decode and write artifacts into the muse-work/ directory structure.
+
+    Layout::
+
+        muse-work/
+          tracks/<instruments>/<genre>_<bars>b_<comp_id>.mid
+          renders/<genre>_<bars>b_<comp_id>.mp3
+          previews/<genre>_<bars>b_<comp_id>.webp
+          meta/<genre>_<bars>b_<comp_id>.json
+
+    Only successful results with available artifacts are written.  Failed
+    results are silently skipped so they never appear in muse-batch.json.
+
+    Returns a list of ``MuseBatchFile`` entries for every file saved.
+    """
+    batch_files: list[MuseBatchFile] = []
+
+    for r in results:
+        if not r.success or not r.composition_id:
+            continue
+        comp_id = r.composition_id
+        art = artifacts.get(comp_id)
+        instr_slug = _sanitize_instruments(r.instruments)
+        base_name = f"{r.genre}_{r.bars}b_{comp_id}"
+
+        # ── MIDI ─────────────────────────────────────────────────────────
+        if art and art.mid_b64:
+            subdir = output_dir / "tracks" / instr_slug
+            subdir.mkdir(parents=True, exist_ok=True)
+            mid_path = subdir / f"{base_name}.mid"
+            mid_path.write_bytes(base64.b64decode(art.mid_b64))
+            batch_files.append(MuseBatchFile(
+                path=f"muse-work/tracks/{instr_slug}/{base_name}.mid",
+                role="midi",
+                genre=r.genre,
+                bars=r.bars,
+                cached=r.cache_hit,
+            ))
+
+        # ── MP3 ──────────────────────────────────────────────────────────
+        if art and art.mp3_b64:
+            subdir = output_dir / "renders"
+            subdir.mkdir(parents=True, exist_ok=True)
+            mp3_path = subdir / f"{base_name}.mp3"
+            mp3_path.write_bytes(base64.b64decode(art.mp3_b64))
+            batch_files.append(MuseBatchFile(
+                path=f"muse-work/renders/{base_name}.mp3",
+                role="mp3",
+                genre=r.genre,
+                bars=r.bars,
+                cached=r.cache_hit,
+            ))
+
+        # ── WebP piano-roll ───────────────────────────────────────────────
+        if art and art.webp_b64:
+            subdir = output_dir / "previews"
+            subdir.mkdir(parents=True, exist_ok=True)
+            webp_path = subdir / f"{base_name}.webp"
+            webp_path.write_bytes(base64.b64decode(art.webp_b64))
+            batch_files.append(MuseBatchFile(
+                path=f"muse-work/previews/{base_name}.webp",
+                role="webp",
+                genre=r.genre,
+                bars=r.bars,
+                cached=r.cache_hit,
+            ))
+
+        # ── Metadata JSON ─────────────────────────────────────────────────
+        subdir = output_dir / "meta"
+        subdir.mkdir(parents=True, exist_ok=True)
+        meta_path = subdir / f"{base_name}.json"
+        meta: dict[str, Any] = {
+            "composition_id": comp_id,
+            "genre": r.genre,
+            "bars": r.bars,
+            "instruments": r.instruments,
+            "quality_preset": r.quality_preset,
+            "intent_profile": r.intent_profile,
+            "note_count": r.note_count,
+            "latency_ms": r.latency_ms,
+            "cache_hit": r.cache_hit,
+        }
+        meta_path.write_text(json.dumps(meta, indent=2))
+        batch_files.append(MuseBatchFile(
+            path=f"muse-work/meta/{base_name}.json",
+            role="meta",
+            genre=r.genre,
+            bars=r.bars,
+            cached=r.cache_hit,
+        ))
+
+    return batch_files
+
+
+def emit_muse_batch_json(
+    batch_root: pathlib.Path,
+    run_id: str,
+    generated_at: str,
+    batch_files: list[MuseBatchFile],
+    results: list[RequestResult],
+    provenance: dict[str, Any],
+) -> pathlib.Path:
+    """Write muse-batch.json to *batch_root* and return its path.
+
+    The commit_message_suggestion is derived from the distinct genres of
+    successful results included in batch_files.
+    """
+    genres_in_batch = sorted({f.genre for f in batch_files if f.role == "midi"})
+    if not genres_in_batch:
+        # Fall back to all successful genres when no MIDI artifacts were saved.
+        genres_in_batch = sorted({r.genre for r in results if r.success})
+
+    if len(genres_in_batch) == 1:
+        suggestion = f"feat: {genres_in_batch[0]} stress test"
+    elif len(genres_in_batch) <= 4:
+        suggestion = f"feat: {len(genres_in_batch)}-genre stress test ({', '.join(genres_in_batch)})"
+    else:
+        suggestion = f"feat: {len(genres_in_batch)}-genre stress test"
+
+    batch = MuseBatch(
+        run_id=run_id,
+        generated_at=generated_at,
+        commit_message_suggestion=suggestion,
+        files=batch_files,
+        provenance=provenance,
+    )
+
+    out_path = batch_root / "muse-batch.json"
+    out_path.write_text(
+        json.dumps(
+            {
+                "run_id": batch.run_id,
+                "generated_at": batch.generated_at,
+                "commit_message_suggestion": batch.commit_message_suggestion,
+                "files": [asdict(f) for f in batch.files],
+                "provenance": batch.provenance,
+            },
+            indent=2,
+        )
+    )
+    return out_path
+
+
 def _svg_bars(
     data: dict[str, float],
     color: str,
@@ -1797,6 +1986,15 @@ async def main() -> None:
         "--no-muse", action="store_true",
         help="Skip the Muse VCS phase (no commit graph in report)"
     )
+    parser.add_argument(
+        "--output-dir", default=None,
+        help=(
+            "Write artifacts into this muse-work/ directory and emit "
+            "muse-batch.json next to it.  Paths in muse-batch.json are "
+            "relative to the parent of --output-dir.  "
+            "Example: --output-dir ./muse-work"
+        ),
+    )
     args = parser.parse_args()
 
     genre_filter: list[str] | None = (
@@ -1904,6 +2102,35 @@ async def main() -> None:
     print("▸ Fetching generation artifacts...")
     artifacts = await fetch_run_artifacts(args.url, all_results)
     print(f"  Fetched artifacts for {len(artifacts)} generations")
+
+    # ── muse-work/ output contract ────────────────────────────────────────
+    if args.output_dir:
+        output_dir = pathlib.Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        batch_root = output_dir.parent
+
+        print(f"▸ Writing artifacts to {output_dir} ...")
+        batch_files = save_artifacts_to_muse_work(output_dir, all_results, artifacts)
+        print(f"  Saved {len(batch_files)} artifact file(s)")
+
+        provenance: dict[str, Any] = {
+            "prompt": f"stress_test.py --{mode}" + (f" --genre {args.genre}" if args.genre else ""),
+            "model": (diag or {}).get("model") or "storpheus",
+            "seed": run_id,
+            "storpheus_version": (diag or {}).get("version") or "unknown",
+        }
+        batch_path = emit_muse_batch_json(
+            batch_root=batch_root,
+            run_id=run_id,
+            generated_at=report.finished_at,
+            batch_files=batch_files,
+            results=all_results,
+            provenance=provenance,
+        )
+        print(f"  muse-batch.json: {batch_path}")
+        print(f"  Tip: muse commit --from-batch {batch_path}")
+    else:
+        batch_files = []
 
     # ── Muse VCS phase ────────────────────────────────────────────────────
     muse_result: MuseRunResult | None = None

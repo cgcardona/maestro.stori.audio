@@ -565,19 +565,23 @@ The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro Fa
 | `musehub_repos` | Remote repos (name, visibility, owner) |
 | `musehub_branches` | Branch pointers inside a repo |
 | `musehub_commits` | Commits pushed from CLI clients |
+| `musehub_issues` | Issue tracker entries per repo |
+| `musehub_pull_requests` | Pull requests proposing branch merges |
 
 ### Module Map
 
 ```
 maestro/
-├── db/musehub_models.py           — SQLAlchemy ORM models
-├── models/musehub.py              — Pydantic v2 request/response models
-├── services/musehub_repository.py — Async DB queries for repos/branches/commits
-├── services/musehub_issues.py    — Async DB queries for issues (single point of DB access)
+├── db/musehub_models.py                  — SQLAlchemy ORM models
+├── models/musehub.py                     — Pydantic v2 request/response models
+├── services/musehub_repository.py        — Async DB queries for repos/branches/commits
+├── services/musehub_issues.py            — Async DB queries for issues (single point of DB access)
+├── services/musehub_pull_requests.py     — Async DB queries for PRs (single point of DB access)
 └── api/routes/musehub/
-    ├── __init__.py               — Composes sub-routers under /musehub prefix
-    ├── repos.py                  — Repo/branch/commit route handlers
-    └── issues.py                 — Issue tracking route handlers
+    ├── __init__.py                       — Composes sub-routers under /musehub prefix
+    ├── repos.py                          — Repo/branch/commit route handlers
+    ├── issues.py                         — Issue tracking route handlers
+    └── pull_requests.py                  — Pull request route handlers
 ```
 
 ### Endpoints
@@ -600,6 +604,15 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}/issues/{number}` | Get a single issue by per-repo number |
 | POST | `/api/v1/musehub/repos/{id}/issues/{number}/close` | Close an issue |
 
+#### Pull Requests
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/musehub/repos/{id}/pull-requests` | Open a PR proposing to merge `from_branch` into `to_branch` |
+| GET | `/api/v1/musehub/repos/{id}/pull-requests` | List PRs (`?state=open\|merged\|closed\|all`) |
+| GET | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}` | Get a single PR by ID |
+| POST | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}/merge` | Merge an open PR |
+
 All endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
 
 ### Issue Workflow
@@ -611,12 +624,108 @@ Issues let musicians track production problems and creative tasks within a repo,
 - **States:** `open` (default on creation) → `closed` (via the close endpoint). No re-open at MVP.
 - **Filtering:** `GET /issues?state=all` includes both open and closed; `?label=bug` narrows by label.
 
+### Pull Request Workflow
+
+Pull requests let musicians propose merging one branch variation into another, enabling async review before incorporating changes into the canonical arrangement.
+
+- **States:** `open` (on creation) → `merged` (via merge endpoint) | `closed` (future: manual close).
+- **Merge strategy:** Only `merge_commit` at MVP. Creates a real merge commit on `to_branch` with two parent IDs (`[to_branch head, from_branch head]`), then advances the `to_branch` head pointer.
+- **Validation:** `from_branch == to_branch` → 422. Missing `from_branch` → 404. Already merged/closed → 409 on merge attempt.
+- **Filtering:** `GET /pull-requests?state=open` returns only open PRs. Default (`state=all`) returns all states.
+
 ### Architecture Boundary
 
 Service modules are the only place that touches `musehub_*` tables:
 - `musehub_repository.py` → `musehub_repos`, `musehub_branches`, `musehub_commits`
 - `musehub_issues.py` → `musehub_issues`
+- `musehub_pull_requests.py` → `musehub_pull_requests`
 
 Route handlers delegate all persistence to the service layer. No business logic in route handlers.
+
+---
+
+## Maestro → Muse Integration: Generate → Commit Pipeline
+
+The stress test (`scripts/e2e/stress_test.py`) produces music artifacts in a
+deterministic `muse-work/` layout consumable directly by `muse commit`.
+
+### Output Contract (`--output-dir ./muse-work`)
+
+```
+muse-work/
+  tracks/<instrument_combo>/<genre>_<bars>b_<composition_id>.mid
+  renders/<genre>_<bars>b_<composition_id>.mp3
+  previews/<genre>_<bars>b_<composition_id>.webp
+  meta/<genre>_<bars>b_<composition_id>.json
+muse-batch.json   (written next to muse-work/, i.e. in the repo root)
+```
+
+### `muse-batch.json` Schema
+
+```json
+{
+  "run_id": "stress-20260227_172919",
+  "generated_at": "2026-02-27T17:29:19Z",
+  "commit_message_suggestion": "feat: 2-genre stress test (jazz, house)",
+  "files": [
+    {
+      "path": "muse-work/tracks/drums_bass/jazz_4b_stress-20260227_172919-0000.mid",
+      "role": "midi",
+      "genre": "jazz",
+      "bars": 4,
+      "cached": false
+    }
+  ],
+  "provenance": {
+    "prompt": "stress_test.py --quick --genre jazz,house",
+    "model": "storpheus",
+    "seed": "stress-20260227_172919",
+    "storpheus_version": "1.0.0"
+  }
+}
+```
+
+**Field rules:**
+- `files[].path` — relative to repo root, always starts with `muse-work/`
+- `files[].role` — one of `"midi"`, `"mp3"`, `"webp"`, `"meta"`
+- `files[].cached` — `true` when the result was served from the Storpheus cache
+- Failed generations are **omitted** from `files[]`; only successful results appear
+- Cache hits **are included** in `files[]` with `"cached": true`
+
+### Fast-Path Commit: `muse commit --from-batch`
+
+```bash
+# Run stress test → write muse-work/ layout + muse-batch.json
+docker compose exec storpheus python scripts/e2e/stress_test.py \
+    --quick --genre jazz,house --flush --output-dir ./muse-work
+
+# Commit only the files produced by this run, using the suggested message
+muse commit --from-batch muse-batch.json
+```
+
+`muse commit --from-batch <path>`:
+1. Reads `muse-batch.json` from `<path>`
+2. Uses `commit_message_suggestion` as the commit message (overrides `-m`)
+3. Builds the snapshot manifest **restricted to files listed in `files[]`** — the rest of `muse-work/` is excluded
+4. Proceeds with the standard commit pipeline (snapshot → DB → HEAD pointer update)
+
+The `-m` flag is optional when `--from-batch` is present.  If both are supplied,
+`--from-batch`'s suggestion wins.
+
+### Workflow Summary
+
+```
+stress_test.py --output-dir ./muse-work
+       │
+       ├── saves artifacts → muse-work/{tracks,renders,previews,meta}/
+       └── emits muse-batch.json (manifest + commit_message_suggestion)
+              │
+              ▼
+muse commit --from-batch muse-batch.json
+       │
+       ├── reads batch → restrict snapshot to listed files
+       ├── uses commit_message_suggestion
+       └── creates versioned commit in Postgres
+```
 
 ---
