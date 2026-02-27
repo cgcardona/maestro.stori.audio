@@ -19,7 +19,7 @@ Single source-of-truth migration for Stori Maestro. Creates:
   - muse_cli_objects, muse_cli_snapshots, muse_cli_commits
 
   Muse Hub — remote collaboration backend
-  - musehub_repos, musehub_branches, musehub_commits
+  - musehub_repos, musehub_branches, musehub_commits, musehub_issues
 
 Fresh install:
   docker compose exec maestro alembic upgrade head
@@ -267,8 +267,37 @@ def upgrade() -> None:
     op.create_index("ix_musehub_commits_branch", "musehub_commits", ["branch"])
     op.create_index("ix_musehub_commits_timestamp", "musehub_commits", ["timestamp"])
 
+    # ── Muse Hub — issue tracking ─────────────────────────────────────────
+    op.create_table(
+        "musehub_issues",
+        sa.Column("issue_id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("number", sa.Integer(), nullable=False),
+        sa.Column("title", sa.String(500), nullable=False),
+        sa.Column("body", sa.Text(), nullable=False, server_default=""),
+        sa.Column("state", sa.String(20), nullable=False, server_default="open"),
+        sa.Column("labels", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("issue_id"),
+    )
+    op.create_index("ix_musehub_issues_repo_id", "musehub_issues", ["repo_id"])
+    op.create_index("ix_musehub_issues_number", "musehub_issues", ["number"])
+    op.create_index("ix_musehub_issues_state", "musehub_issues", ["state"])
+
 
 def downgrade() -> None:
+    # Muse Hub — issues
+    op.drop_index("ix_musehub_issues_state", table_name="musehub_issues")
+    op.drop_index("ix_musehub_issues_number", table_name="musehub_issues")
+    op.drop_index("ix_musehub_issues_repo_id", table_name="musehub_issues")
+    op.drop_table("musehub_issues")
+
     # Muse Hub
     op.drop_index("ix_musehub_commits_timestamp", table_name="musehub_commits")
     op.drop_index("ix_musehub_commits_branch", table_name="musehub_commits")
