@@ -47,27 +47,34 @@ they trip a restriction. Red-tier commands that reach the sandbox will prompt.
 
 ### Command Allowlist — paste this into the Cursor UI text field
 
-Copy the block below verbatim into **Cursor Settings → Agents → Auto-Run → Command Allowlist**:
+Clear the existing allowlist entirely, then paste the block below into
+**Cursor Settings → Agents → Auto-Run → Command Allowlist**.
+
+Rules for this format: commands only, no prose, no parentheses, no backticks.
+Cursor tokenises on commas and periods — keep each line to one category.
 
 ```
-File inspection: ls, ls -la, ls -lah, pwd, cat, head, tail, echo, wc, file, which, date, basename, dirname, printf, jq.
-Text processing: sort, uniq, tr, awk, sed (read-only, no -i flag), cut, xargs.
-Search: rg, ripgrep with any flags, grep with any flags, find with -name or -type (read-only).
-Filesystem safe writes in worktree: mkdir -p, cp, mv, touch, ln -s.
-Git read: git status, git log, git diff, git show, git branch, git fetch origin, git ls-remote, git rev-parse, git stash list, git worktree list, git ls-files, git merge-base, git describe, git cat-file.
-Git bisect: git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset.
-Git safe writes in feature branches only: git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git stash, git stash pop, git stash apply.
-Git push feature branches only: git push origin (non-main non-dev branches only).
-Git worktree management: git worktree add --detach, git worktree remove --force, git worktree prune.
-Docker inspection: docker compose ps, docker compose logs, docker compose config, docker ps, docker inspect.
-Docker exec maestro: docker compose exec maestro mypy, pytest, sh -c, python -m coverage, ls, cat, rg, grep, find, alembic history, alembic current, alembic heads, alembic upgrade head.
-Docker exec storpheus: docker compose exec storpheus mypy, pytest, sh -c, ls, cat, rg, grep.
-Docker exec postgres: docker compose exec postgres psql read-only SELECT queries.
-GitHub CLI reads: gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh issue view, gh issue list, gh run list, gh run view, gh release list, gh release view, gh api GET endpoints.
-GitHub CLI safe writes: gh pr create, gh pr checkout, gh pr merge with squash, gh pr comment, gh pr review, gh issue create, gh issue close, gh issue comment, gh issue edit add-label.
-Process inspection: ps aux, ps -ef, pgrep.
-Network read-only: curl GET only for local health checks, nc -z for port checking.
-Temporary files: writing and reading from /tmp.
+ls, ls -la, ls -lah, pwd, cat, head, tail, echo, wc, file, which, date, basename, dirname, printf, jq
+sort, uniq, tr, awk, sed, cut, xargs
+rg, grep, find, mkdir -p, cp, mv, touch, ln -s
+git status, git log, git diff, git show, git branch, git fetch, git stash list, git worktree list
+git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file
+git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset
+git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev
+git stash, git stash pop, git stash apply, git push origin
+git worktree add, git worktree remove --force, git worktree prune
+docker compose ps, docker compose logs, docker compose config, docker ps, docker inspect
+docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c
+docker compose exec maestro python -m coverage, docker compose exec maestro ls, docker compose exec maestro cat
+docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find
+docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head
+docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c
+docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep
+docker compose exec postgres psql
+gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, gh pr checkout, gh pr merge, gh pr comment, gh pr review
+gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit
+gh run list, gh run view, gh release list, gh release view, gh api
+ps aux, ps -ef, pgrep, nc -z, curl
 ```
 
 ---
