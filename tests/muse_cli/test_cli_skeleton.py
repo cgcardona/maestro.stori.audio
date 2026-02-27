@@ -29,8 +29,8 @@ ALL_SUBCOMMANDS = [
 # when invoked inside a repo with a bare .muse/ directory.
 # ``init``   is excluded: fully implemented (issue #31).
 # ``commit`` is excluded: fully implemented (issue #32).
+# ``log``    is excluded: fully implemented (issue #33).
 STUB_COMMANDS = [
-    "log",
     "checkout",
     "merge",
     "remote",
@@ -40,9 +40,9 @@ STUB_COMMANDS = [
 
 # Repo-dependent commands that exit 2 outside a .muse/ repo.
 # ``commit`` requires -m so its no-repo exit-2 test lives in test_commit.py.
+# ``log``    no-repo exit-2 test lives in test_log.py.
 REPO_DEPENDENT_COMMANDS = [
     "status",
-    "log",
     "checkout",
     "merge",
     "remote",

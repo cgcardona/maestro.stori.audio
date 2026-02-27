@@ -33,6 +33,7 @@ maestro/muse_cli/
     ├── init.py           — muse init  ✅ fully implemented
     ├── status.py         — muse status  ✅ branch + commit state display
     ├── commit.py         — muse commit  ✅ fully implemented (issue #32)
+    ├── log.py            — muse log    ✅ fully implemented (issue #33)
     ├── snapshot.py       — walk_workdir, hash_file, build_snapshot_manifest, compute IDs
     ├── models.py         — MuseCliCommit, MuseCliSnapshot, MuseCliObject (SQLAlchemy)
     ├── db.py             — open_session, upsert_object/snapshot/commit helpers
@@ -45,6 +46,45 @@ maestro/muse_cli/
 ```
 
 The CLI delegates to existing `maestro/services/muse_*.py` service modules. Stub subcommands print "not yet implemented" and exit 0.
+
+---
+
+## `muse log` Output Formats
+
+### Default (`git log` style)
+
+```
+commit a1b2c3d4e5f6...  (HEAD -> main)
+Parent: f9e8d7c6
+Date:   2026-02-27 17:30:00
+
+    boom bap demo take 1
+
+commit f9e8d7c6...
+Date:   2026-02-27 17:00:00
+
+    initial take
+```
+
+Commits are printed newest-first.  The first commit (root) has no `Parent:` line.
+
+### `--graph` mode
+
+Reuses `maestro.services.muse_log_render.render_ascii_graph` by adapting `MuseCliCommit` rows to the `MuseLogGraph`/`MuseLogNode` dataclasses the renderer expects.
+
+```
+* a1b2c3d4 boom bap demo take 1 (HEAD)
+* f9e8d7c6 initial take
+```
+
+Merge commits (two parents) require `muse merge` (issue #35) — `parent2_commit_id` is reserved for that iteration.
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--limit N` / `-n N` | 1000 | Cap the walk at N commits |
+| `--graph` | off | ASCII DAG mode |
 
 ---
 
