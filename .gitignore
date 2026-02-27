@@ -244,3 +244,8 @@ storpheus/artifacts_export/
 artifacts/
 .env.tourdeforce
 stori_tourdeforce/*.db
+
+# Cursor worktree coordination artifacts
+.agent-id
+.session-id
+.coord-*
