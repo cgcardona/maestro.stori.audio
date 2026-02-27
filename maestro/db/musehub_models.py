@@ -5,6 +5,7 @@ Tables:
 - musehub_branches: Named branch pointers inside a repo
 - musehub_commits: Remote commit records pushed from CLI clients
 - musehub_issues: Issue tracker entries per repo
+- musehub_pull_requests: Pull requests proposing branch merges
 """
 from __future__ import annotations
 

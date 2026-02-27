@@ -48,6 +48,7 @@ from maestro.muse_cli.db import (
     upsert_snapshot,
 )
 from maestro.muse_cli.errors import ExitCode
+from maestro.muse_cli.merge_engine import read_merge_state
 from maestro.muse_cli.models import MuseCliCommit
 from maestro.muse_cli.snapshot import (
     build_snapshot_manifest,
@@ -150,6 +151,17 @@ async def _commit_async(
     the Typer callback surfaces a clean message rather than a traceback.
     """
     muse_dir = root / ".muse"
+
+    # ── Guard: block commit while a conflicted merge is in progress ──────
+    merge_state = read_merge_state(root)
+    if merge_state is not None and merge_state.conflict_paths:
+        typer.echo(
+            "❌ You have unresolved merge conflicts.\n"
+            "   Fix conflicts in the listed files, then run 'muse commit'."
+        )
+        for path in sorted(merge_state.conflict_paths):
+            typer.echo(f"\tboth modified:   {path}")
+        raise typer.Exit(code=ExitCode.USER_ERROR)
 
     # ── Repo identity ────────────────────────────────────────────────────
     repo_data: dict[str, str] = json.loads((muse_dir / "repo.json").read_text())
