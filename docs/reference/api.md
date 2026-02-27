@@ -990,3 +990,78 @@ List commits for a repo, newest first.
   "total": 1
 }
 ```
+
+---
+
+## Muse Hub Issues API
+
+Issue tracker for Muse Hub repos — lets musicians open, filter, and close production/creative issues (e.g. "hi-hat / synth pad clash in measure 8"). All endpoints are under `/api/v1/musehub/repos/{repo_id}/issues/` and require `Authorization: Bearer <token>`.
+
+Issue numbers (`number`) are sequential per repo, starting at 1. Labels are free-form strings; no validation at MVP.
+
+### POST /api/v1/musehub/repos/{repo_id}/issues
+
+Create a new issue in `open` state.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | yes | Issue title (1–500 chars) |
+| `body` | string | no | Markdown description (default `""`) |
+| `labels` | string[] | no | Free-form label strings (default `[]`) |
+
+**Response (201):**
+
+```json
+{
+  "issueId": "550e8400-e29b-41d4-a716-446655440000",
+  "number": 1,
+  "title": "Hi-hat / synth pad clash in measure 8",
+  "body": "Frequencies clash around 8 kHz.",
+  "state": "open",
+  "labels": ["bug", "musical"],
+  "createdAt": "2026-02-27T20:00:00Z"
+}
+```
+
+### GET /api/v1/musehub/repos/{repo_id}/issues
+
+List issues for a repo.
+
+**Query params:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `state` | `open` \| `closed` \| `all` | `open` | Filter by state |
+| `label` | string | — | Filter to issues containing this label |
+
+**Response (200):**
+
+```json
+{
+  "issues": [
+    {
+      "issueId": "550e8400-e29b-41d4-a716-446655440000",
+      "number": 1,
+      "title": "Hi-hat / synth pad clash in measure 8",
+      "body": "Frequencies clash around 8 kHz.",
+      "state": "open",
+      "labels": ["bug"],
+      "createdAt": "2026-02-27T20:00:00Z"
+    }
+  ]
+}
+```
+
+### GET /api/v1/musehub/repos/{repo_id}/issues/{issue_number}
+
+Get a single issue by its per-repo sequential number.
+
+**Response (200):** Full issue object (same shape as above). Returns **404** if the issue number does not exist.
+
+### POST /api/v1/musehub/repos/{repo_id}/issues/{issue_number}/close
+
+Close an issue (set `state` → `"closed"`).
+
+**Response (200):** Updated issue object with `"state": "closed"`. Returns **404** if the issue number does not exist.

@@ -414,11 +414,17 @@ The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro Fa
 maestro/
 ├── db/musehub_models.py           — SQLAlchemy ORM models
 ├── models/musehub.py              — Pydantic v2 request/response models
-├── services/musehub_repository.py — Async DB queries (single point of DB access)
-└── api/routes/musehub.py          — FastAPI route handlers (thin — no business logic)
+├── services/musehub_repository.py — Async DB queries for repos/branches/commits
+├── services/musehub_issues.py    — Async DB queries for issues (single point of DB access)
+└── api/routes/musehub/
+    ├── __init__.py               — Composes sub-routers under /musehub prefix
+    ├── repos.py                  — Repo/branch/commit route handlers
+    └── issues.py                 — Issue tracking route handlers
 ```
 
 ### Endpoints
+
+#### Repos, Branches, Commits
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -427,10 +433,32 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}/branches` | List branches |
 | GET | `/api/v1/musehub/repos/{id}/commits` | List commits (newest first) |
 
+#### Issues
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/musehub/repos/{id}/issues` | Open a new issue (`state: open`) |
+| GET | `/api/v1/musehub/repos/{id}/issues` | List issues (`?state=open\|closed\|all`, `?label=<string>`) |
+| GET | `/api/v1/musehub/repos/{id}/issues/{number}` | Get a single issue by per-repo number |
+| POST | `/api/v1/musehub/repos/{id}/issues/{number}/close` | Close an issue |
+
 All endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
+
+### Issue Workflow
+
+Issues let musicians track production problems and creative tasks within a repo, keeping feedback close to the music data rather than in out-of-band chat.
+
+- **Issue numbers** are sequential per repo (1, 2, 3…) and independent across repos.
+- **Labels** are free-form strings — e.g. `bug`, `musical`, `timing`, `mix`. No validation at MVP.
+- **States:** `open` (default on creation) → `closed` (via the close endpoint). No re-open at MVP.
+- **Filtering:** `GET /issues?state=all` includes both open and closed; `?label=bug` narrows by label.
 
 ### Architecture Boundary
 
-`musehub_repository.py` is the only module that touches `musehub_*` tables. Route handlers delegate all persistence to it. No business logic in route handlers.
+Service modules are the only place that touches `musehub_*` tables:
+- `musehub_repository.py` → `musehub_repos`, `musehub_branches`, `musehub_commits`
+- `musehub_issues.py` → `musehub_issues`
+
+Route handlers delegate all persistence to the service layer. No business logic in route handlers.
 
 ---

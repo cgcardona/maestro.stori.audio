@@ -67,3 +67,32 @@ class CommitListResponse(CamelModel):
 
     commits: list[CommitResponse]
     total: int
+
+
+# ── Issue models ───────────────────────────────────────────────────────────────
+
+
+class IssueCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/issues."""
+
+    title: str = Field(..., min_length=1, max_length=500, description="Issue title")
+    body: str = Field("", description="Issue description (Markdown)")
+    labels: list[str] = Field(default_factory=list, description="Free-form label strings")
+
+
+class IssueResponse(CamelModel):
+    """Wire representation of a Muse Hub issue."""
+
+    issue_id: str
+    number: int
+    title: str
+    body: str
+    state: str
+    labels: list[str]
+    created_at: datetime
+
+
+class IssueListResponse(CamelModel):
+    """List of issues for a repo."""
+
+    issues: list[IssueResponse]

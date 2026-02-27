@@ -4,13 +4,14 @@ Tables:
 - musehub_repos: Remote repos (one per project/musician)
 - musehub_branches: Named branch pointers inside a repo
 - musehub_commits: Remote commit records pushed from CLI clients
+- musehub_issues: Issue tracker entries per repo
 """
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -43,6 +44,9 @@ class MusehubRepo(Base):
     )
     commits: Mapped[list[MusehubCommit]] = relationship(
         "MusehubCommit", back_populates="repo", cascade="all, delete-orphan"
+    )
+    issues: Mapped[list[MusehubIssue]] = relationship(
+        "MusehubIssue", back_populates="repo", cascade="all, delete-orphan"
     )
 
 
@@ -95,3 +99,34 @@ class MusehubCommit(Base):
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="commits")
+
+
+class MusehubIssue(Base):
+    """An issue opened against a Muse Hub repo.
+
+    ``number`` is auto-incremented per repo starting at 1 so musicians can
+    reference issues as ``#1``, ``#2``, etc., independently of the global PK.
+    ``labels`` is a JSON list of free-form strings (no validation at MVP).
+    """
+
+    __tablename__ = "musehub_issues"
+
+    issue_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Sequential per-repo issue number (1, 2, 3…)
+    number: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="open", index=True)
+    # JSON list of free-form label strings
+    labels: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="issues")
