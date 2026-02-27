@@ -908,3 +908,85 @@ Focused budget/fuel status for the Creative Fuel UI. Wraps the same data as `/ap
 | `stori_add_automation` | mixing |
 
 See also: [integrate.md](../guides/integrate.md) for MCP setup (stdio, Cursor, WebSocket DAW connection).
+
+---
+
+## Muse Hub API
+
+Remote collaboration backend for Muse VCS — the server-side equivalent of a Git remote. All endpoints are under `/api/v1/musehub/` and require `Authorization: Bearer <token>`.
+
+### POST /api/v1/musehub/repos
+
+Create a new remote Muse repository.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Repository name (1–255 chars) |
+| `visibility` | string | no | `"public"` or `"private"` (default `"private"`) |
+
+**Response (201):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | string (UUID) | Unique repo identifier |
+| `name` | string | Repo name |
+| `visibility` | string | `"public"` or `"private"` |
+| `ownerUserId` | string (UUID) | Authenticated user's ID |
+| `cloneUrl` | string | CLI-usable clone path |
+| `createdAt` | ISO 8601 | Creation timestamp |
+
+---
+
+### GET /api/v1/musehub/repos/{repo_id}
+
+Get metadata for an existing repo. Returns `404` if not found.
+
+---
+
+### GET /api/v1/musehub/repos/{repo_id}/branches
+
+List all branch pointers in a repo, ordered by name.
+
+**Response:**
+
+```json
+{
+  "branches": [
+    { "branchId": "...", "name": "main", "headCommitId": "abc123" }
+  ]
+}
+```
+
+---
+
+### GET /api/v1/musehub/repos/{repo_id}/commits
+
+List commits for a repo, newest first.
+
+**Query params:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `branch` | string | — | Filter by branch name |
+| `limit` | int | 50 | Max results (1–200) |
+
+**Response:**
+
+```json
+{
+  "commits": [
+    {
+      "commitId": "abc123",
+      "branch": "main",
+      "parentIds": ["def456"],
+      "message": "feat: jazz variation",
+      "author": "gabriel",
+      "timestamp": "2026-02-27T17:30:00Z",
+      "snapshotId": "snap-xyz"
+    }
+  ],
+  "total": 1
+}
+```
