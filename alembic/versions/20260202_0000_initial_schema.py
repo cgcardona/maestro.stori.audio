@@ -1,125 +1,134 @@
-"""Consolidated initial schema — all tables.
+"""Consolidated schema — all tables.
 
 Revision ID: 20260202_0000
 Revises:
 Create Date: 2026-02-02 00:00:00.000000
 
-Canonical initial migration for Stori Maestro. Creates:
-  - users, usage_logs, access_tokens
-  - conversations, conversation_messages, message_actions
-  - variations, phrases, note_changes (Muse persistent history)
+Single source-of-truth migration for Stori Maestro. Creates:
 
-Fresh install: drop the database (or delete SQLite file), then run:
-  alembic upgrade head
+  Auth & usage
+  - users, usage_logs, access_tokens
+
+  Conversations
+  - conversations, conversation_messages, message_actions
+
+  Muse VCS — DAW-level variation history
+  - variations, phrases, note_changes
+
+  Muse CLI — filesystem commit history
+  - muse_cli_objects, muse_cli_snapshots, muse_cli_commits
+
+Fresh install:
+  docker compose exec maestro alembic upgrade head
 """
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = '20260202_0000'
+revision = "20260202_0000"
 down_revision = None
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    # ── Users & auth ─────────────────────────────────────────────────
+    # ── Users & auth ─────────────────────────────────────────────────────
     op.create_table(
-        'users',
-        sa.Column('id', sa.String(length=36), nullable=False),
-        sa.Column('budget_cents', sa.Integer(), nullable=False, server_default='500'),
-        sa.Column('budget_limit_cents', sa.Integer(), nullable=False, server_default='500'),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.PrimaryKeyConstraint('id')
+        "users",
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("budget_cents", sa.Integer(), nullable=False, server_default="500"),
+        sa.Column("budget_limit_cents", sa.Integer(), nullable=False, server_default="500"),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.PrimaryKeyConstraint("id"),
     )
 
     op.create_table(
-        'usage_logs',
-        sa.Column('id', sa.String(length=36), nullable=False),
-        sa.Column('user_id', sa.String(length=36), nullable=False),
-        sa.Column('prompt', sa.Text(), nullable=True),
-        sa.Column('model', sa.String(length=100), nullable=False),
-        sa.Column('prompt_tokens', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('completion_tokens', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('cost_cents', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id')
+        "usage_logs",
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("user_id", sa.String(36), nullable=False),
+        sa.Column("prompt", sa.Text(), nullable=True),
+        sa.Column("model", sa.String(100), nullable=False),
+        sa.Column("prompt_tokens", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("completion_tokens", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("cost_cents", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index('ix_usage_logs_user_id', 'usage_logs', ['user_id'], unique=False)
-    op.create_index('ix_usage_logs_created_at', 'usage_logs', ['created_at'], unique=False)
+    op.create_index("ix_usage_logs_user_id", "usage_logs", ["user_id"])
+    op.create_index("ix_usage_logs_created_at", "usage_logs", ["created_at"])
 
     op.create_table(
-        'access_tokens',
-        sa.Column('id', sa.String(length=36), nullable=False),
-        sa.Column('user_id', sa.String(length=36), nullable=False),
-        sa.Column('token_hash', sa.String(length=64), nullable=False),
-        sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('revoked', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id')
+        "access_tokens",
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("user_id", sa.String(36), nullable=False),
+        sa.Column("token_hash", sa.String(64), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("revoked", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index('ix_access_tokens_user_id', 'access_tokens', ['user_id'], unique=False)
-    op.create_index('ix_access_tokens_token_hash', 'access_tokens', ['token_hash'], unique=True)
+    op.create_index("ix_access_tokens_user_id", "access_tokens", ["user_id"])
+    op.create_index("ix_access_tokens_token_hash", "access_tokens", ["token_hash"], unique=True)
 
-    # ── Conversations ────────────────────────────────────────────────
+    # ── Conversations ─────────────────────────────────────────────────────
     op.create_table(
-        'conversations',
-        sa.Column('id', sa.String(length=36), nullable=False),
-        sa.Column('user_id', sa.String(length=36), nullable=False),
-        sa.Column('project_id', sa.String(length=36), nullable=True),
-        sa.Column('title', sa.String(length=255), nullable=False, server_default='New Conversation'),
-        sa.Column('is_archived', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('project_context', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id')
+        "conversations",
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("user_id", sa.String(36), nullable=False),
+        sa.Column("project_id", sa.String(36), nullable=True),
+        sa.Column("title", sa.String(255), nullable=False, server_default="New Conversation"),
+        sa.Column("is_archived", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("project_context", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index('ix_conversations_user_id', 'conversations', ['user_id'], unique=False)
-    op.create_index('ix_conversations_project_id', 'conversations', ['project_id'], unique=False)
-    op.create_index('ix_conversations_is_archived', 'conversations', ['is_archived'], unique=False)
-    op.create_index('ix_conversations_updated_at', 'conversations', ['updated_at'], unique=False)
-
-    op.create_table(
-        'conversation_messages',
-        sa.Column('id', sa.String(length=36), nullable=False),
-        sa.Column('conversation_id', sa.String(length=36), nullable=False),
-        sa.Column('role', sa.String(length=20), nullable=False),
-        sa.Column('content', sa.Text(), nullable=False),
-        sa.Column('model_used', sa.String(length=100), nullable=True),
-        sa.Column('tokens_used', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column('cost_cents', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('tool_calls', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column('sse_events', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column('extra_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column('timestamp', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.ForeignKeyConstraint(['conversation_id'], ['conversations.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index('ix_conversation_messages_conversation_id', 'conversation_messages', ['conversation_id'], unique=False)
-    op.create_index('ix_conversation_messages_timestamp', 'conversation_messages', ['timestamp'], unique=False)
+    op.create_index("ix_conversations_user_id", "conversations", ["user_id"])
+    op.create_index("ix_conversations_project_id", "conversations", ["project_id"])
+    op.create_index("ix_conversations_is_archived", "conversations", ["is_archived"])
+    op.create_index("ix_conversations_updated_at", "conversations", ["updated_at"])
 
     op.create_table(
-        'message_actions',
-        sa.Column('id', sa.String(length=36), nullable=False),
-        sa.Column('message_id', sa.String(length=36), nullable=False),
-        sa.Column('action_type', sa.String(length=50), nullable=False),
-        sa.Column('description', sa.Text(), nullable=False),
-        sa.Column('success', sa.Boolean(), nullable=False),
-        sa.Column('error_message', sa.Text(), nullable=True),
-        sa.Column('extra_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column('timestamp', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.ForeignKeyConstraint(['message_id'], ['conversation_messages.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id')
+        "conversation_messages",
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("conversation_id", sa.String(36), nullable=False),
+        sa.Column("role", sa.String(20), nullable=False),
+        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("model_used", sa.String(100), nullable=True),
+        sa.Column("tokens_used", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("cost_cents", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("tool_calls", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("sse_events", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("extra_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.ForeignKeyConstraint(["conversation_id"], ["conversations.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index('ix_message_actions_message_id', 'message_actions', ['message_id'], unique=False)
+    op.create_index("ix_conversation_messages_conversation_id", "conversation_messages", ["conversation_id"])
+    op.create_index("ix_conversation_messages_timestamp", "conversation_messages", ["timestamp"])
 
-    # ── Muse persistent variation history ────────────────────────────
+    op.create_table(
+        "message_actions",
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("message_id", sa.String(36), nullable=False),
+        sa.Column("action_type", sa.String(50), nullable=False),
+        sa.Column("description", sa.Text(), nullable=False),
+        sa.Column("success", sa.Boolean(), nullable=False),
+        sa.Column("error_message", sa.Text(), nullable=True),
+        sa.Column("extra_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.ForeignKeyConstraint(["message_id"], ["conversation_messages.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_message_actions_message_id", "message_actions", ["message_id"])
+
+    # ── Muse VCS — DAW-level variation history ────────────────────────────
     op.create_table(
         "variations",
         sa.Column("variation_id", sa.String(36), nullable=False),
@@ -180,14 +189,76 @@ def upgrade() -> None:
     )
     op.create_index("ix_note_changes_phrase_id", "note_changes", ["phrase_id"])
 
+    # ── Muse CLI — filesystem commit history ──────────────────────────────
+    op.create_table(
+        "muse_cli_objects",
+        sa.Column("object_id", sa.String(64), nullable=False),
+        sa.Column("size_bytes", sa.Integer(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("object_id"),
+    )
+
+    op.create_table(
+        "muse_cli_snapshots",
+        sa.Column("snapshot_id", sa.String(64), nullable=False),
+        sa.Column("manifest", sa.JSON(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("snapshot_id"),
+    )
+
+    op.create_table(
+        "muse_cli_commits",
+        sa.Column("commit_id", sa.String(64), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("branch", sa.String(255), nullable=False),
+        sa.Column("parent_commit_id", sa.String(64), nullable=True),
+        sa.Column("snapshot_id", sa.String(64), nullable=False),
+        sa.Column("message", sa.Text(), nullable=False),
+        sa.Column("author", sa.String(255), nullable=False),
+        sa.Column("committed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["snapshot_id"], ["muse_cli_snapshots.snapshot_id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("commit_id"),
+    )
+    op.create_index("ix_muse_cli_commits_repo_id", "muse_cli_commits", ["repo_id"])
+    op.create_index("ix_muse_cli_commits_parent_commit_id", "muse_cli_commits", ["parent_commit_id"])
+
 
 def downgrade() -> None:
-    op.drop_table('note_changes')
-    op.drop_table('phrases')
-    op.drop_table('variations')
-    op.drop_table('message_actions')
-    op.drop_table('conversation_messages')
-    op.drop_table('conversations')
-    op.drop_table('access_tokens')
-    op.drop_table('usage_logs')
-    op.drop_table('users')
+    # Muse CLI
+    op.drop_index("ix_muse_cli_commits_parent_commit_id", table_name="muse_cli_commits")
+    op.drop_index("ix_muse_cli_commits_repo_id", table_name="muse_cli_commits")
+    op.drop_table("muse_cli_commits")
+    op.drop_table("muse_cli_snapshots")
+    op.drop_table("muse_cli_objects")
+
+    # Muse VCS
+    op.drop_index("ix_note_changes_phrase_id", table_name="note_changes")
+    op.drop_table("note_changes")
+    op.drop_index("ix_phrases_variation_id", table_name="phrases")
+    op.drop_table("phrases")
+    op.drop_index("ix_variations_parent_variation_id", table_name="variations")
+    op.drop_index("ix_variations_status", table_name="variations")
+    op.drop_index("ix_variations_project_id", table_name="variations")
+    op.drop_table("variations")
+
+    # Conversations
+    op.drop_index("ix_message_actions_message_id", table_name="message_actions")
+    op.drop_table("message_actions")
+    op.drop_index("ix_conversation_messages_timestamp", table_name="conversation_messages")
+    op.drop_index("ix_conversation_messages_conversation_id", table_name="conversation_messages")
+    op.drop_table("conversation_messages")
+    op.drop_index("ix_conversations_updated_at", table_name="conversations")
+    op.drop_index("ix_conversations_is_archived", table_name="conversations")
+    op.drop_index("ix_conversations_project_id", table_name="conversations")
+    op.drop_index("ix_conversations_user_id", table_name="conversations")
+    op.drop_table("conversations")
+
+    # Auth & usage
+    op.drop_index("ix_access_tokens_token_hash", table_name="access_tokens")
+    op.drop_index("ix_access_tokens_user_id", table_name="access_tokens")
+    op.drop_table("access_tokens")
+    op.drop_index("ix_usage_logs_created_at", table_name="usage_logs")
+    op.drop_index("ix_usage_logs_user_id", table_name="usage_logs")
+    op.drop_table("usage_logs")
+    op.drop_table("users")

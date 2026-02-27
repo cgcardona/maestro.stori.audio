@@ -14,6 +14,7 @@ from alembic import context
 from maestro.db.database import Base
 from maestro.db import models  # noqa: F401 - Import to register models
 from maestro.db import muse_models  # noqa: F401 - Register Muse tables
+from maestro.muse_cli import models as muse_cli_models  # noqa: F401 - Register Muse CLI tables
 from maestro.config import settings
 
 # Alembic Config object

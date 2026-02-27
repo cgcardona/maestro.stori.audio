@@ -167,6 +167,39 @@ echo '.muse/config.toml' >> .gitignore
 
 ---
 
+## Committing with `muse commit`
+
+After generating MIDI/MP3/piano roll artifacts into `muse-work/`, snapshot and version them:
+
+```bash
+# Record the current muse-work/ state as a new commit
+muse commit -m "boom bap demo take 1"
+# ✅ [main a1b2c3d4] boom bap demo take 1
+```
+
+**What happens internally:**
+
+1. Walks all files under `muse-work/`, computing `sha256(file_bytes)` for each.
+2. Builds a snapshot manifest `{rel_path: object_id}` and computes `snapshot_id`.
+3. If the snapshot hasn't changed since the last commit, exits 0: _"Nothing to commit, working tree clean"_.
+4. Derives `commit_id = sha256(parents | snapshot_id | message | timestamp)` — fully deterministic.
+5. Upserts object rows, snapshot row, and commit row to Postgres.
+6. Updates `.muse/refs/heads/main` (or current branch) to the new `commit_id`.
+
+**Prerequisites:**
+
+- `DATABASE_URL` must be set (always true inside Docker).
+- `alembic upgrade head` must have been run so the `muse_cli_*` tables exist.
+
+**Inside Docker (recommended):**
+
+```bash
+docker compose exec maestro sh -c "mkdir -p /tmp/demo && cd /tmp/demo && python -m maestro.muse_cli.app init"
+docker compose exec maestro sh -c "cd /tmp/demo && python -m maestro.muse_cli.app commit -m 'first take'"
+```
+
+---
+
 ## AWS credentials
 
 For S3 asset setup: create IAM user + access key in AWS Console (or use existing key). Run `scripts/deploy/setup-s3-assets.sh` with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`. Script can create a limited `stori-assets-app` user; put the **printed** env vars into server `.env`.
