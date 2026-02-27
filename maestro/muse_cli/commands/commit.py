@@ -126,6 +126,9 @@ async def _commit_async(
 
     # ── Persist snapshot ─────────────────────────────────────────────────
     await upsert_snapshot(session, manifest=manifest, snapshot_id=snapshot_id)
+    # Flush now so the snapshot row exists in the DB transaction before the
+    # commit row's FK constraint is checked on insert.
+    await session.flush()
 
     # ── Persist commit ───────────────────────────────────────────────────
     new_commit = MuseCliCommit(
