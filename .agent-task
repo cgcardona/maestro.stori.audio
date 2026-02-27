@@ -1,0 +1,4 @@
+WORKFLOW=issue-to-pr
+ISSUE_NUMBER=35
+ISSUE_TITLE=feat: `muse merge` — fast-forward and 3-way merge with path-level conflict detection
+ISSUE_URL=https://github.com/cgcardona/maestro/issues/35

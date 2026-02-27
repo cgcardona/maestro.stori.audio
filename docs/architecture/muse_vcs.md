@@ -41,9 +41,10 @@ maestro/muse_cli/
     │                        diff_workdir_vs_snapshot (added/modified/deleted/untracked sets)
     ├── models.py         — MuseCliCommit, MuseCliSnapshot, MuseCliObject (SQLAlchemy)
     ├── db.py             — open_session, upsert/get helpers, get_head_snapshot_manifest
-    ├── merge_engine.py   — read_merge_state(), MergeState dataclass (MERGE_STATE.json reader)
+    ├── merge_engine.py   — find_merge_base(), diff_snapshots(), detect_conflicts(),
+    │                        apply_merge(), read/write_merge_state(), MergeState dataclass
     ├── checkout.py       — muse checkout (stub — issue #34)
-    ├── merge.py          — muse merge   (stub — issue #35)
+    ├── merge.py          — muse merge   ✅ fast-forward + 3-way merge (issue #35)
     ├── remote.py         — muse remote  (stub — issue #38)
     ├── push.py           — muse push    (stub — issue #38)
     ├── pull.py           — muse pull    (stub — issue #38)
@@ -55,6 +56,53 @@ maestro/muse_cli/
 resolves a user-supplied path-or-commit-ID to a concrete `pathlib.Path` (see below).
 
 The CLI delegates to existing `maestro/services/muse_*.py` service modules. Stub subcommands print "not yet implemented" and exit 0.
+
+---
+
+## `muse merge` — Fast-Forward and 3-Way Merge
+
+`muse merge <branch>` integrates another branch into the current branch.
+
+### Algorithm
+
+1. **Guard** — If `.muse/MERGE_STATE.json` exists, a merge is already in progress. Exit 1 with: *"Merge in progress. Resolve conflicts and run `muse merge --continue`."*
+2. **Resolve commits** — Read HEAD commit ID for the current branch and the target branch from their `.muse/refs/heads/<branch>` ref files.
+3. **Find merge base** — BFS over the commit graph to find the LCA (Lowest Common Ancestor) of the two HEAD commits. Both `parent_commit_id` and `parent2_commit_id` are traversed (supporting existing merge commits).
+4. **Fast-forward** — If `base == ours`, the target is strictly ahead of current HEAD. Move the current branch pointer to `theirs` without creating a new commit.
+5. **Already up-to-date** — If `base == theirs`, current branch is already ahead. Exit 0.
+6. **3-way merge** — When branches have diverged:
+   - Compute `diff(base → ours)` and `diff(base → theirs)` at file-path granularity.
+   - Detect conflicts: paths changed on *both* sides since the base.
+   - If **no conflicts**: auto-merge (take the changed side for each path), create a merge commit with two parent IDs, advance the branch pointer.
+   - If **conflicts**: write `.muse/MERGE_STATE.json` and exit 1 with a conflict summary.
+
+### `MERGE_STATE.json` Schema
+
+Written on conflict, read by `muse status` and `muse commit` to block further operations:
+
+```json
+{
+    "base_commit":    "abc123...",
+    "ours_commit":    "def456...",
+    "theirs_commit":  "789abc...",
+    "conflict_paths": ["beat.mid", "lead.mp3"],
+    "other_branch":   "feature/experiment"
+}
+```
+
+All fields except `other_branch` are required. `conflict_paths` is sorted alphabetically.
+
+### Merge Commit
+
+A successful 3-way merge creates a commit with:
+- `parent_commit_id` = `ours_commit_id` (current branch HEAD at merge time)
+- `parent2_commit_id` = `theirs_commit_id` (target branch HEAD)
+- `snapshot_id` = merged manifest (non-conflicting changes from both sides)
+- `message` = `"Merge branch '<branch>' into <current_branch>"`
+
+### Path-Level Granularity (MVP)
+
+This merge implementation operates at **file-path level**. Two commits that modify the same file path (even if the changes are disjoint within the file) are treated as a conflict. Note-level merging (music-aware diffs inside MIDI files) is a future enhancement reserved for the existing `maestro/services/muse_merge.py` engine.
 
 ---
 

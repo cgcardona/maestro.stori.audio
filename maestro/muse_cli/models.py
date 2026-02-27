@@ -82,6 +82,9 @@ class MuseCliCommit(Base):
     parent_commit_id: Mapped[str | None] = mapped_column(
         String(64), nullable=True, index=True
     )
+    parent2_commit_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     snapshot_id: Mapped[str] = mapped_column(
         String(64),
         ForeignKey("muse_cli_snapshots.snapshot_id", ondelete="RESTRICT"),
