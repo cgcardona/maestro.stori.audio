@@ -34,7 +34,8 @@
 17. [Caching](#17-caching)
 18. [Constants Quick Reference](#18-constants-quick-reference)
 19. [Lessons Learned](#19-lessons-learned)
-20. [Troubleshooting](#20-troubleshooting)
+20. [Stress Test → muse-work/ Output Contract](#20-stress-test--muse-work-output-contract)
+21. [Troubleshooting](#21-troubleshooting)
 
 ---
 
@@ -1364,7 +1365,63 @@ continuity across sections.
 
 ---
 
-## 20. Troubleshooting
+## 20. Stress Test → muse-work/ Output Contract
+
+The stress test (`scripts/e2e/stress_test.py`) can write artifacts into a
+deterministic `muse-work/` layout that `muse commit` can snapshot directly.
+
+### Running the stress test with muse-work/ output
+
+```bash
+# Quick run — 1 request per genre, write muse-work/ layout + muse-batch.json
+docker compose exec storpheus python scripts/e2e/stress_test.py \
+    --quick --genre jazz,house --flush --output-dir ./muse-work
+
+# Then commit using the batch manifest
+muse commit --from-batch muse-batch.json
+```
+
+### Directory layout
+
+```
+muse-work/
+  tracks/<instrument_combo>/<genre>_<bars>b_<composition_id>.mid
+  renders/<genre>_<bars>b_<composition_id>.mp3
+  previews/<genre>_<bars>b_<composition_id>.webp
+  meta/<genre>_<bars>b_<composition_id>.json
+muse-batch.json
+```
+
+### `muse-batch.json` schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `run_id` | `string` | Unique run identifier, e.g. `"stress-20260227_172919"` |
+| `generated_at` | `string` | ISO-8601 UTC timestamp |
+| `commit_message_suggestion` | `string` | Suggested `muse commit` message |
+| `files` | `array` | One entry per saved artifact (see below) |
+| `provenance` | `object` | `prompt`, `model`, `seed`, `storpheus_version` |
+
+Each `files[]` entry:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `string` | Relative to repo root, starts with `muse-work/` |
+| `role` | `string` | `"midi"` \| `"mp3"` \| `"webp"` \| `"meta"` |
+| `genre` | `string` | Genre used for this generation |
+| `bars` | `int` | Bar count |
+| `cached` | `bool` | `true` if served from Storpheus cache |
+
+**Invariants:**
+- Failed generations are **excluded** from `files[]`
+- Cache hits are **included** with `"cached": true`
+- All paths are relative to the repo root (never absolute)
+
+See `docs/architecture/muse_vcs.md` for the full generate → commit workflow.
+
+---
+
+## 21. Troubleshooting
 
 ### "Random keyboard strokes" output
 

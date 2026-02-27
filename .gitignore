@@ -247,5 +247,6 @@ stori_tourdeforce/*.db
 
 # Cursor worktree coordination artifacts
 .agent-id
+.agent-task
 .session-id
 .coord-*
