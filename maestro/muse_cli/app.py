@@ -20,6 +20,7 @@ from maestro.muse_cli.commands import (
     push,
     remote,
     status,
+    swing,
 )
 
 cli = typer.Typer(
@@ -39,6 +40,7 @@ cli.add_typer(push.app, name="push", help="Upload local variations to a remote."
 cli.add_typer(pull.app, name="pull", help="Download remote variations locally.")
 cli.add_typer(open_cmd.app, name="open", help="Open an artifact in the system default app (macOS).")
 cli.add_typer(play.app, name="play", help="Play an audio artifact via afplay (macOS).")
+cli.add_typer(swing.app, name="swing", help="Analyze or annotate the swing factor of a composition.")
 
 
 if __name__ == "__main__":
