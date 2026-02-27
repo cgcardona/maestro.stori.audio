@@ -46,8 +46,6 @@ from maestro.muse_cli.snapshot import build_snapshot_manifest, compute_snapshot_
 
 logger = logging.getLogger(__name__)
 
-app = typer.Typer()
-
 # Branch names follow the same rules as Git: no spaces, no control chars,
 # no leading dots, no double dots, no trailing slash or dot.
 _BRANCH_RE = re.compile(r"^[a-zA-Z0-9._\-/]+$")
@@ -173,28 +171,20 @@ async def _checkout_async(
 
 
 # ---------------------------------------------------------------------------
-# Typer command
+# Synchronous runner (called from app.py @cli.command registration)
 # ---------------------------------------------------------------------------
 
 
-@app.callback(invoke_without_command=True)
-def checkout(
-    ctx: typer.Context,
-    branch: str = typer.Argument(..., help="Branch name to checkout or create."),
-    create: bool = typer.Option(
-        False,
-        "-b",
-        "--create",
-        help="Create a new branch at the current HEAD and switch to it.",
-    ),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Ignore uncommitted changes in muse-work/.",
-    ),
-) -> None:
-    """Create or switch branches; update .muse/HEAD."""
+def run_checkout(*, branch: str, create: bool, force: bool) -> None:
+    """Synchronous entry point wired to the CLI by ``app.py``.
+
+    Intentionally separated from the Typer decorator so that ``checkout``
+    can be registered as a plain ``@cli.command()`` (a Click *Command*, not
+    a *Group*).  Click Groups always invoke sub-contexts with
+    ``allow_interspersed_args=False``, which prevents options like
+    ``--force`` from being parsed when they appear *after* a positional
+    argument.  Registering as a plain command avoids the issue entirely.
+    """
     root = require_repo()
 
     async def _run() -> None:
