@@ -32,13 +32,12 @@ maestro/muse_cli/
     ├── __init__.py
     ├── init.py           — muse init  ✅ fully implemented
     ├── status.py         — muse status  ✅ branch + commit state display
-    ├── commit.py         — muse commit  ✅ fully implemented (issue #32)
-    ├── log.py            — muse log    ✅ fully implemented (issue #33)
+    ├── commit.py         — muse commit   ✅ fully implemented (issue #32)
+    ├── log.py            — muse log     ✅ fully implemented (issue #33)
+    ├── checkout.py       — muse checkout ✅ fully implemented (issue #34)
     ├── snapshot.py       — walk_workdir, hash_file, build_snapshot_manifest, compute IDs
     ├── models.py         — MuseCliCommit, MuseCliSnapshot, MuseCliObject (SQLAlchemy)
     ├── db.py             — open_session, upsert_object/snapshot/commit helpers
-    ├── log.py            — muse log     (stub — issue #33)
-    ├── checkout.py       — muse checkout (stub — issue #34)
     ├── merge.py          — muse merge   (stub — issue #35)
     ├── remote.py         — muse remote  (stub — issue #38)
     ├── push.py           — muse push    (stub — issue #38)
@@ -85,6 +84,51 @@ Merge commits (two parents) require `muse merge` (issue #35) — `parent2_commit
 |------|---------|-------------|
 | `--limit N` / `-n N` | 1000 | Cap the walk at N commits |
 | `--graph` | off | ASCII DAG mode |
+
+---
+
+## Branching Model
+
+### `muse checkout` — branch creation and HEAD pointer management
+
+Branches are tracked as files under `.muse/refs/heads/<branch-name>`, each containing the `commit_id` of the branch tip (the same convention as Git's packed-refs but in plain files).
+
+`.muse/HEAD` holds the symbolic ref of the currently active branch:
+
+```
+refs/heads/main
+```
+
+### Switching branches
+
+`muse checkout <branch>` rewrites `.muse/HEAD` to `refs/heads/<branch>`.  Subsequent `muse commit` and `muse log` calls read this file to know which branch to operate on.
+
+### Creating branches
+
+`muse checkout -b <branch>` forks from the current HEAD commit:
+
+1. Reads the current branch tip from `.muse/refs/heads/<current>`.
+2. Writes that same `commit_id` to `.muse/refs/heads/<new-branch>`.
+3. Rewrites `.muse/HEAD` to `refs/heads/<new-branch>`.
+
+The new branch starts with the same history as its parent — divergence happens on the next `muse commit`.
+
+### Dirty working-tree guard
+
+Before switching branches, `muse checkout` compares the on-disk `snapshot_id` of `muse-work/` against the last committed snapshot on the **current** branch.  If they differ the command exits `1` with a message.  Use `--force` / `-f` to bypass the guard.
+
+If the current branch has no commits yet (empty branch) the tree is never considered dirty.
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `-b` / `--create` | Create a new branch at current HEAD and switch to it |
+| `--force` / `-f` | Ignore uncommitted changes in `muse-work/` |
+
+### DB-level branch table
+
+A `muse_cli_branches` Postgres table is deferred to the `muse merge` iteration (issue #35), when multi-branch DAG queries will require stable foreign-key references.  Until then, branches live exclusively in `.muse/refs/heads/`.
 
 ---
 
