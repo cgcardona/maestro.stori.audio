@@ -4,7 +4,7 @@ Covers the chat_completion_stream method with mocked HTTP responses.
 """
 from __future__ import annotations
 
-from typing import Any
+from app.contracts.llm_types import OpenAIStreamChunk, ReasoningDetail, StreamDelta, ToolCallDelta, ToolCallFunctionDelta, UsageStats
 
 from collections.abc import AsyncIterator
 import json
@@ -61,11 +61,11 @@ def _sse_line(obj: object) -> str:
 
 
 def _choice_delta(
-    delta: object, finish_reason: str | None = None, usage: dict[str, int] | None = None
-) -> dict[str, Any]:
+    delta: StreamDelta, finish_reason: str | None = None, usage: UsageStats | None = None
+) -> OpenAIStreamChunk:
 
     """Build a streaming choice object."""
-    obj: dict[str, Any] = {"choices": [{"delta": delta, "finish_reason": finish_reason}]}
+    obj: OpenAIStreamChunk = {"choices": [{"delta": delta, "finish_reason": finish_reason}]}
     if usage:
         obj["usage"] = usage
     return obj
@@ -127,14 +127,14 @@ class TestChatCompletionStream:
         """Test streaming tool call accumulation."""
         client = self._make_client()
         tc_args = json.dumps({"tempo": 120})
-        tc_initial = {
+        tc_initial: StreamDelta = {
             "tool_calls": [
-                {"index": 0, "id": "tc-1", "function": {"name": "stori_set_tempo", "arguments": ""}}
+                ToolCallDelta(index=0, id="tc-1", function=ToolCallFunctionDelta(name="stori_set_tempo", arguments=""))
             ]
         }
-        tc_update = {
+        tc_update: StreamDelta = {
             "tool_calls": [
-                {"index": 0, "function": {"arguments": tc_args}}
+                ToolCallDelta(index=0, function=ToolCallFunctionDelta(arguments=tc_args))
             ]
         }
         lines = [
@@ -162,7 +162,7 @@ class TestChatCompletionStream:
 
         """Test streaming reasoning (thinking) tokens."""
         client = self._make_client(model="anthropic/claude-3.7-sonnet")
-        reasoning_detail = [{"type": "reasoning.text", "text": "Thinking..."}]
+        reasoning_detail: list[ReasoningDetail] = [{"type": "reasoning.text", "text": "Thinking..."}]
         lines = [
             _sse_line(_choice_delta({"reasoning_details": reasoning_detail})),
             _sse_line(_choice_delta({"content": "Here is the answer"})),

@@ -482,7 +482,7 @@ class StateEventData(TypedDict, total=False):
     """
 
     name: str
-    metadata: dict[str, object]
+    metadata: dict[str, JSONValue]
     parent_track_id: str
     description: str
     event_count: int

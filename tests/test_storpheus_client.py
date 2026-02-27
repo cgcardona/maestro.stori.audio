@@ -3,13 +3,13 @@ from __future__ import annotations
 
 from collections.abc import Generator
 import time as _time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.contracts.generation_types import GenerationContext
-from app.contracts.json_types import NoteDict
+from app.contracts.json_types import JSONObject, JSONValue, NoteDict
 from app.services.storpheus import StorpheusClient
 
 if TYPE_CHECKING:
@@ -37,14 +37,14 @@ def _submit_resp(
     job_id: str = _JOB_ID,
     status: str = "queued",
     position: int = 1,
-    result: dict[str, Any] | None = None,
+    result: JSONObject | None = None,
 ) -> MagicMock:
 
     """Mock HTTP response from POST /generate (submit)."""
     resp = MagicMock()
     resp.status_code = 200
     resp.raise_for_status = MagicMock()
-    data: dict[str, Any] = {"jobId": job_id, "status": status}
+    data: JSONObject = {"jobId": job_id, "status": status}
     if status == "queued":
         data["position"] = position
     if result is not None:
@@ -57,7 +57,7 @@ def _poll_resp(
     *,
     job_id: str = _JOB_ID,
     status: str = "complete",
-    result: dict[str, Any] | None = None,
+    result: JSONObject | None = None,
     error: str | None = None,
 ) -> MagicMock:
 
@@ -65,7 +65,7 @@ def _poll_resp(
     resp = MagicMock()
     resp.status_code = 200
     resp.raise_for_status = MagicMock()
-    data: dict[str, Any] = {"jobId": job_id, "status": status, "elapsed": 10.0}
+    data: JSONObject = {"jobId": job_id, "status": status, "elapsed": 10.0}
     if result is not None:
         data["result"] = result
     if error is not None:
@@ -74,10 +74,10 @@ def _poll_resp(
     return resp
 
 
-def _ok_gen_result(**overrides: Any) -> dict[str, Any]:
+def _ok_gen_result(**overrides: JSONValue) -> JSONObject:
 
     """A successful GenerateResponse-shaped dict."""
-    r = {
+    r: JSONObject = {
         "success": True,
         "notes": [{"pitch": 60, "start": 0}],
         "tool_calls": [],
@@ -282,13 +282,13 @@ def test_connection_limits_configured() -> None:
     import app.services.storpheus as storpheus_module
     from app.services.storpheus import get_storpheus_client, close_storpheus_client
 
-    created_kwargs: dict[str, Any] = {}
+    created_kwargs: dict[str, object] = {}
 
     original_init = httpx.AsyncClient.__init__
 
-    def capturing_init(self: Any, **kwargs: Any) -> None:
+    def capturing_init(self: httpx.AsyncClient, **kwargs: object) -> None:
         created_kwargs.update(kwargs)
-        original_init(self, **kwargs)
+        original_init(self, **kwargs)  # type: ignore[arg-type]  # httpx init accepts object kwargs at runtime
 
     storpheus_module._shared_client = None  # force fresh
     with patch("app.services.storpheus.settings") as m:
@@ -300,7 +300,7 @@ def test_connection_limits_configured() -> None:
             c._client = None  # force re-creation through the property
             _ = c.client
         limits = created_kwargs.get("limits")
-        assert limits is not None
+        assert isinstance(limits, httpx.Limits)
         assert limits.max_connections == 20
         assert limits.max_keepalive_connections == 10
 
@@ -742,7 +742,7 @@ class TestSemaphore:
         active = 0
         gate = asyncio.Event()
 
-        async def slow_post(*args: Any, **kwargs: object) -> MagicMock:
+        async def slow_post(*args: object, **kwargs: object) -> MagicMock:
 
             nonlocal peak, active
             active += 1

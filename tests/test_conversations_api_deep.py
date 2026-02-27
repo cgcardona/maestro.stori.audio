@@ -6,7 +6,7 @@ and streaming within conversation context.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from typing import Any
+from app.contracts.json_types import JSONObject
 
 from app.db.models import User
 from httpx import AsyncClient
@@ -27,14 +27,15 @@ USER_ID = "550e8400-e29b-41d4-a716-446655440000"
 # ---------------------------------------------------------------------------
 
 
-def parse_sse_events(body: str) -> list[dict[str, Any]]:
+def parse_sse_events(body: str) -> list[JSONObject]:
 
-    events = []
+    events: list[JSONObject] = []
     for line in body.split("\n"):
         line = line.strip()
         if line.startswith("data: "):
             try:
-                events.append(json.loads(line[6:]))
+                parsed: JSONObject = json.loads(line[6:])
+                events.append(parsed)
             except json.JSONDecodeError:
                 pass
     return events

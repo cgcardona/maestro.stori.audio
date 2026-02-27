@@ -12,21 +12,39 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Any
-
 import pytest
+from typing_extensions import TypedDict
 
 from app.contracts.json_types import (
     AftertouchDict,
     CCEventDict,
     NoteDict,
     PitchBendDict,
+    RegionAftertouchMap,
+    RegionCCMap,
+    RegionNotesMap,
+    RegionPitchBendMap,
 )
 from app.services.muse_checkout import (
     CheckoutPlan,
     REGION_RESET_THRESHOLD,
     build_checkout_plan,
 )
+
+
+class _PlanArgs(TypedDict, total=False):
+    """Keyword arguments for ``build_checkout_plan`` — mirrors its signature."""
+    project_id: str
+    target_variation_id: str
+    target_notes: RegionNotesMap
+    target_cc: RegionCCMap
+    target_pb: RegionPitchBendMap
+    target_at: RegionAftertouchMap
+    working_notes: RegionNotesMap
+    working_cc: RegionCCMap
+    working_pb: RegionPitchBendMap
+    working_at: RegionAftertouchMap
+    track_regions: dict[str, str]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -62,20 +80,20 @@ def _empty_plan_args(
     target_at: dict[str, list[AftertouchDict]] | None = None,
     working_at: dict[str, list[AftertouchDict]] | None = None,
     track_regions: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    return {
-        "project_id": "proj-1",
-        "target_variation_id": "var-1",
-        "target_notes": target_notes or {},
-        "working_notes": working_notes or {},
-        "target_cc": target_cc or {},
-        "working_cc": working_cc or {},
-        "target_pb": target_pb or {},
-        "working_pb": working_pb or {},
-        "target_at": target_at or {},
-        "working_at": working_at or {},
-        "track_regions": track_regions or {},
-    }
+) -> _PlanArgs:
+    return _PlanArgs(
+        project_id="proj-1",
+        target_variation_id="var-1",
+        target_notes=target_notes or {},
+        working_notes=working_notes or {},
+        target_cc=target_cc or {},
+        working_cc=working_cc or {},
+        target_pb=target_pb or {},
+        working_pb=working_pb or {},
+        target_at=target_at or {},
+        working_at=working_at or {},
+        track_regions=track_regions or {},
+    )
 
 
 # ---------------------------------------------------------------------------

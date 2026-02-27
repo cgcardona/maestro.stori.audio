@@ -11,7 +11,10 @@ Proves correctness of apply_variation_phrases() including:
 from __future__ import annotations
 
 import uuid
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from app.variation.storage.variation_store import PhraseRecord
 from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
@@ -517,7 +520,7 @@ class TestNoteChangeEntryDictRoundTrip:
     def _make_phrase_record(
         self,
         change_type: Literal["added", "removed", "modified"] = "added",
-    ) -> object:
+    ) -> "PhraseRecord":
         """Build a PhraseRecord whose diff_json was produced by build_phrase_payload."""
         from app.models.variation import Phrase, NoteChange, MidiNoteSnapshot
         from app.contracts.json_types import CCEventDict, PitchBendDict, AftertouchDict
@@ -550,7 +553,7 @@ class TestNoteChangeEntryDictRoundTrip:
             diff_json=build_phrase_payload(phrase),
         )
 
-    def _to_variation(self, pr: object) -> Variation:
+    def _to_variation(self, pr: "PhraseRecord") -> Variation:
         """Wrap a PhraseRecord in a VariationRecord and round-trip through _record_to_variation."""
         from app.variation.storage.variation_store import VariationRecord, PhraseRecord
         from app.api.routes.variation.commit import _record_to_variation

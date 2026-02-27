@@ -9,8 +9,6 @@ Tool validation ensures:
 """
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 from app.contracts.json_types import JSONValue
 from app.core.entity_registry import EntityRegistry
@@ -687,9 +685,9 @@ class TestGenerateMidiSchemaRegression:
 
     ALLOWED = {"stori_generate_midi"}
 
-    def _valid_params(self, **overrides: Any) -> dict[str, Any]:
+    def _valid_params(self, **overrides: JSONValue) -> dict[str, JSONValue]:
 
-        base = {
+        base: dict[str, JSONValue] = {
             "trackId": "00000000-0000-0000-0000-000000000001",
             "regionId": "00000000-0000-0000-0000-000000000002",
             "start_beat": 0.0,

@@ -5,6 +5,7 @@ import logging
 from pydantic import BaseModel, Field, field_validator
 from typing_extensions import TypedDict
 
+from app.contracts.json_types import JSONValue
 from app.contracts.project_types import ProjectContext
 from app.models.base import CamelModel
 
@@ -88,7 +89,7 @@ class MaestroRequest(CamelModel):
 
     @field_validator("project", mode="before")
     @classmethod
-    def validate_project_snapshot(cls, v: object) -> object:
+    def validate_project_snapshot(cls, v: JSONValue) -> JSONValue:
         """Validate the project payload against the ProjectSnapshot schema.
 
         Catches structural issues (invalid pitch, out-of-range tempo, etc.)

@@ -9,7 +9,6 @@ from __future__ import annotations
 import ast
 import inspect
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -143,7 +142,7 @@ class TestApplyVariationBoundary:
             ],
         )
 
-        def _boom(*a: Any, **kw: Any) -> None:
+        def _boom(conversation_id: str, project_id: str | None = None) -> None:
 
             raise AssertionError("apply_variation_phrases called get_or_create_store!")
 

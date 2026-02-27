@@ -5,7 +5,7 @@ SectionState thread-safe store, and bass telemetry enrichment in section_agent.
 """
 from __future__ import annotations
 
-from typing import Any
+from app.core.maestro_plan_tracker import _ToolCallOutcome
 import asyncio
 
 from app.contracts.generation_types import CompositionContext
@@ -381,9 +381,9 @@ class TestSectionAgentTelemetry:
             *,
             tc_id: str,
             tc_name: str,
-            resolved_args: dict[str, Any],
-            **kw: Any,
-        ) -> Any:
+            resolved_args: dict[str, JSONValue],
+            **kw: object,
+        ) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return region_outcome
             return gen_outcome
@@ -489,10 +489,10 @@ class TestSectionAgentTelemetry:
             *,
             tc_id: str,
             tc_name: str,
-            resolved_args: dict[str, Any],
+            resolved_args: dict[str, JSONValue],
             composition_context: CompositionContext | None = None,
-            **kw: Any,
-        ) -> Any:
+            **kw: object,
+        ) -> _ToolCallOutcome:
             if composition_context:
                 captured_ctx.append(composition_context)
             if tc_name == "stori_add_midi_region":
@@ -565,9 +565,9 @@ class TestSectionAgentTelemetry:
             *,
             tc_id: str,
             tc_name: str,
-            resolved_args: dict[str, Any],
-            **kw: Any,
-        ) -> Any:
+            resolved_args: dict[str, JSONValue],
+            **kw: object,
+        ) -> _ToolCallOutcome:
             if tc_name == "stori_add_midi_region":
                 return region_outcome
             return gen_outcome

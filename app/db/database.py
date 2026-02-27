@@ -6,7 +6,7 @@ Supports PostgreSQL (production) and SQLite (development).
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -53,7 +53,7 @@ async def init_db() -> None:
     database_url = get_database_url()
     logger.info(f"Initializing database: {database_url.split('@')[-1] if '@' in database_url else database_url}")
     
-    connect_args: dict[str, Any] = {}
+    connect_args: dict[str, object] = {}
     if database_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
     

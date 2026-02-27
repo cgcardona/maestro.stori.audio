@@ -10,7 +10,6 @@ Validates that:
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
 
 import pytest
 
@@ -48,10 +47,17 @@ _DEFAULT_PROFILE = RoleProfile(
 )
 
 
-def _make_role_profile(**overrides: Any) -> RoleProfile:
-
+def _make_role_profile(
+    syncopation_ratio: float | None = None,
+    swing_ratio: float | None = None,
+) -> RoleProfile:
     """Build a RoleProfile with optional field overrides."""
-    return dataclasses.replace(_DEFAULT_PROFILE, **overrides)
+    profile = _DEFAULT_PROFILE
+    if syncopation_ratio is not None:
+        profile = dataclasses.replace(profile, syncopation_ratio=syncopation_ratio)
+    if swing_ratio is not None:
+        profile = dataclasses.replace(profile, swing_ratio=swing_ratio)
+    return profile
 
 
 # ---------------------------------------------------------------------------

@@ -9,12 +9,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
-
 import pytest
 
 from app.contracts.generation_types import CompositionContext
-from app.contracts.json_types import JSONValue, NoteDict, TrackSummaryDict, json_list
+from app.contracts.json_types import CompositionSummary, JSONObject, JSONValue, NoteDict, TrackSummaryDict, json_list
 from app.contracts.pydantic_types import wrap_dict
 from app.core.tool_validation.constants import (
     TOOL_REQUIRED_FIELDS,
@@ -49,11 +47,11 @@ from app.protocol.events import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _parse_sse(raw: str) -> dict[str, Any]:
+def _parse_sse(raw: str) -> JSONObject:
     """Strip ``data: `` prefix and parse JSON payload."""
     assert raw.startswith("data: ")
-    parsed: dict[str, Any] = json.loads(raw[6:].strip())
-    return parsed
+    result: JSONObject = json.loads(raw[6:].strip())
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -106,8 +104,10 @@ class TestPlanEventContract:
         ))
         payload = _parse_sse(wire)
         assert payload["planId"]
-        for step in payload.get("steps", []):
-            assert step["stepId"]
+        steps = payload.get("steps")
+        assert isinstance(steps, list)
+        for step in steps:
+            assert isinstance(step, dict) and step.get("stepId")
 
 
 class TestPlanStepUpdateContract:
@@ -713,7 +713,7 @@ class TestCompleteEventSuccessField:
     The complete event must NOT report success=true in this case.
     """
 
-    def _make_summary(self, notes: int, regions: int) -> dict[str, Any]:
+    def _make_summary(self, notes: int, regions: int) -> CompositionSummary:
         """Build a minimal summary dict as _build_composition_summary would."""
         tracks_created: list[TrackSummaryDict] = (
             [{"name": "Bass", "trackId": "t1", "instrument": "bass"}] if regions else []
@@ -1027,7 +1027,8 @@ class TestPreflightTrackColorRegression:
         ))
         payload = _parse_sse(wire)
         assert "trackColor" in payload
-        assert payload["trackColor"].startswith("#")
+        track_color = payload["trackColor"]
+        assert isinstance(track_color, str) and track_color.startswith("#")
 
     def test_composition_palette_has_12_colors(self) -> None:
 
@@ -1063,30 +1064,33 @@ class TestStorpheusMetadataNoneRegression:
         Regression for P0: 'NoneType' object is not a mapping when
         Storpheus returns {"metadata": null} in its response JSON.
         """
-        data: dict[str, Any] = {
+        data: JSONObject = {
             "success": True,
             "notes": [{"pitch": 60}],
             "metadata": None,
         }
-        out = {**(data.get("metadata") or {}), "retry_count": 0}
+        metadata = data.get("metadata")
+        out = {**(metadata if isinstance(metadata, dict) else {}), "retry_count": 0}
         assert out == {"retry_count": 0}
 
     def test_metadata_missing_key(self) -> None:
 
         """Missing metadata key falls back to empty dict."""
-        data: dict[str, Any] = {"success": True, "notes": []}
-        out = {**(data.get("metadata") or {}), "retry_count": 1}
+        data: JSONObject = {"success": True, "notes": []}
+        metadata = data.get("metadata")
+        out = {**(metadata if isinstance(metadata, dict) else {}), "retry_count": 1}
         assert out == {"retry_count": 1}
 
     def test_metadata_present(self) -> None:
 
         """Valid metadata dict is preserved."""
-        data: dict[str, Any] = {
+        data: JSONObject = {
             "success": True,
             "notes": [],
             "metadata": {"model": "v2"},
         }
-        out = {**(data.get("metadata") or {}), "retry_count": 2}
+        metadata = data.get("metadata")
+        out = {**(metadata if isinstance(metadata, dict) else {}), "retry_count": 2}
         assert out == {"model": "v2", "retry_count": 2}
 
 
@@ -1135,13 +1139,14 @@ class TestCircuitBreakerContract:
     def test_circuit_open_error_message_format(self) -> None:
 
         """Fast-fail result has the expected error key for downstream detection."""
-        result: dict[str, Any] = {
+        result: JSONObject = {
             "success": False,
             "error": "storpheus_circuit_open",
             "message": "Storpheus music service is unavailable (circuit breaker open).",
         }
         assert result["error"] == "storpheus_circuit_open"
-        assert "circuit breaker" in result["message"].lower()
+        msg = result.get("message")
+        assert isinstance(msg, str) and "circuit breaker" in msg.lower()
 
 
 class TestL2ReasoningGuidanceContract:

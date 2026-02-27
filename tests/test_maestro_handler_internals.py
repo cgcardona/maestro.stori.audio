@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncGenerator, Iterable
-from typing import TYPE_CHECKING, Any, Callable, Never
+from typing import TYPE_CHECKING, Callable, Never
 
 if TYPE_CHECKING:
     from app.contracts.project_types import ProjectContext
@@ -16,9 +16,45 @@ if TYPE_CHECKING:
     from app.core.prompt_parser import ParsedPrompt
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from typing_extensions import Required, TypedDict
 
-from app.contracts.json_types import JSONValue, NoteDict, ToolCallDict, json_list
-from app.contracts.llm_types import ChatMessage
+from app.contracts.json_types import JSONObject, JSONValue, NoteDict, ToolCallDict, json_list
+from app.contracts.llm_types import (
+    ChatMessage,
+    OpenAIToolChoice,
+    StreamEvent,
+    ToolCallEntry,
+    ToolSchemaDict,
+)
+
+
+class _ParsedSSEEvent(TypedDict, total=False):
+    """Wire shape of a parsed SSE event from the Maestro protocol.
+
+    Used as the return type of ``_parse_events`` so every field access on
+    a parsed event is statically known.  All fields are optional (``total=False``)
+    except ``type`` which every SSE event carries.
+    """
+
+    type: Required[str]
+    content: str | None
+    text: str | None
+    message: str | None
+    name: str | None
+    params: dict[str, JSONValue]
+    variationId: str | None
+    baseStateId: str | None
+    phraseId: str | None
+    stepId: str | None
+    stepLabel: str | None
+    state: str | None
+    tracksReused: list[JSONObject]
+    toolCalls: list[JSONValue]
+    steps: list[JSONValue]
+    status: str
+    planId: str
+    success: bool
+    error: str | None
 from app.contracts.project_types import ProjectContext
 from app.protocol.events import MaestroEvent, PlanStepUpdateEvent, ReasoningEvent, ToolCallEvent
 from app.core.maestro_handlers import UsageTracker, orchestrate
@@ -34,7 +70,7 @@ from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
 
 
-def _parse_events(events: list[str]) -> list[dict[str, Any]]:
+def _parse_events(events: list[str]) -> list[_ParsedSSEEvent]:
 
     """Parse SSE event strings into dicts."""
     parsed = []
@@ -54,40 +90,43 @@ def _make_trace() -> TraceContext:
     return TraceContext(trace_id="test-trace-id")
 
 
-def _make_route(sse_state: SSEState = SSEState.REASONING, intent: Intent = Intent.UNKNOWN, **kwargs: object) -> IntentResult:
-
-    defaults: dict[str, Any] = dict(
+def _make_route(
+    sse_state: SSEState = SSEState.REASONING,
+    intent: Intent = Intent.UNKNOWN,
+    requires_planner: bool = False,
+    allowed_tool_names: set[str] | None = None,
+    tool_choice: OpenAIToolChoice | None = "none",
+    tools: list[ToolSchemaDict] | None = None,
+    confidence: float = 0.9,
+    force_stop_after: bool = False,
+) -> IntentResult:
+    from app.core.intent.models import Slots
+    return IntentResult(
         intent=intent,
         sse_state=sse_state,
-        confidence=0.9,
-        slots={},
-        tools=[],
-        allowed_tool_names=set(),
-        tool_choice="none",
-        force_stop_after=False,
-        requires_planner=False,
+        confidence=confidence,
+        slots=Slots(),
+        tools=tools or [],
+        allowed_tool_names=allowed_tool_names or set(),
+        tool_choice=tool_choice,
+        force_stop_after=force_stop_after,
+        requires_planner=requires_planner,
         reasons=(),
     )
-    defaults.update(kwargs)
-    return IntentResult(**defaults)
 
 
 def _response_to_stream(
     response: LLMResponse,
-) -> Callable[..., AsyncGenerator[dict[str, Any], None]]:
+) -> Callable[..., AsyncGenerator[StreamEvent, None]]:
     """Convert an LLMResponse to an async iterator matching chat_completion_stream protocol.
 
     Used to adapt tests that mocked chat_completion to the streaming API
     used by _run_instrument_agent.
     """
-    async def _stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
+    async def _stream(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
 
-        tool_calls_raw = [
-            {
-                "id": tc.id,
-                "type": "function",
-                "function": {"name": tc.name, "arguments": json.dumps(tc.params)},
-            }
+        tool_calls_raw: list[ToolCallEntry] = [
+            ToolCallEntry(id=tc.id, type="function", function={"name": tc.name, "arguments": json.dumps(tc.params)})
             for tc in response.tool_calls
         ]
         yield {
@@ -141,7 +180,7 @@ class TestHandleReasoning:
         assert "content" in types
         assert "complete" in types
         content_p = [p for p in payloads if p["type"] == "content"]
-        assert any("The answer is 4" in p.get("content", "") for p in content_p)
+        assert any("The answer is 4" in (p.get("content") or "") for p in content_p)
 
     @pytest.mark.anyio
     async def test_reasoning_model_streams_deltas(self) -> None:
@@ -151,7 +190,7 @@ class TestHandleReasoning:
         trace = _make_trace()
         route = _make_route(SSEState.REASONING, Intent.UNKNOWN)
 
-        async def fake_stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
+        async def fake_stream(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
 
             yield {"type": "reasoning_delta", "text": "Thinking about this..."}
             yield {"type": "content_delta", "text": "The answer."}
@@ -208,7 +247,7 @@ class TestHandleReasoning:
         payloads = _parse_events(events)
         content_events = [p for p in payloads if p["type"] == "content"]
         assert len(content_events) == 2
-        assert "RAG answer part 1" in content_events[0]["content"]
+        assert "RAG answer part 1" in (content_events[0].get("content") or "")
 
     @pytest.mark.anyio
     async def test_rag_fallback_on_error(self) -> None:
@@ -228,7 +267,7 @@ class TestHandleReasoning:
 
         payloads = _parse_events(events)
         content_events = [p for p in payloads if p["type"] == "content"]
-        assert any("Fallback answer" in p["content"] for p in content_events)
+        assert any("Fallback answer" in (p.get("content") or "") for p in content_events)
 
     @pytest.mark.anyio
     async def test_includes_conversation_history(self) -> None:
@@ -349,7 +388,8 @@ class TestHandleComposing:
         assert "content" in types
         assert "complete" in types
         content_p = next(p for p in payloads if p["type"] == "content")
-        assert "style" in content_p["content"].lower() or "genre" in content_p["content"].lower()
+        c = content_p.get("content") or ""
+        assert "style" in c.lower() or "genre" in c.lower()
 
     @pytest.mark.anyio
     async def test_empty_plan_no_response_text(self) -> None:
@@ -462,7 +502,7 @@ class TestHandleEditing:
         content_events = [p for p in payloads if p["type"] == "content"]
         # Content from first iteration + content from second iteration
         assert len(content_events) >= 1
-        all_content = " ".join(c["content"] for c in content_events)
+        all_content = " ".join(c.get("content") or "" for c in content_events)
         assert "tempo" in all_content.lower() or "120" in all_content
 
     @pytest.mark.anyio
@@ -500,7 +540,7 @@ class TestHandleEditing:
         payloads = _parse_events(events)
         content_events = [p for p in payloads if p["type"] == "content"]
         assert len(content_events) >= 1
-        all_content = " ".join(c["content"] for c in content_events)
+        all_content = " ".join(c.get("content") or "" for c in content_events)
         # Natural language preserved
         assert "Setting the tempo" in all_content
         assert "Done with tempo" in all_content
@@ -771,6 +811,7 @@ class TestHandleEditing:
         # trackId should be a valid UUID
         import uuid
         track_id = tc_events[0]["params"]["trackId"]
+        assert isinstance(track_id, str)
         uuid.UUID(track_id)  # should not raise
 
     @pytest.mark.anyio
@@ -862,7 +903,7 @@ class TestStreamLLMResponse:
         llm = _make_llm_mock(supports_reasoning=True)
         trace = _make_trace()
 
-        async def fake_stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
+        async def fake_stream(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
 
             yield {"type": "reasoning_delta", "text": "Let me think..."}
             yield {"type": "content_delta", "text": "Here's the answer."}
@@ -889,13 +930,13 @@ class TestStreamLLMResponse:
         llm = _make_llm_mock(supports_reasoning=True)
         trace = _make_trace()
 
-        async def fake_stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
+        async def fake_stream(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
 
             yield {
                 "type": "done",
                 "content": None,
                 "tool_calls": [
-                    {"id": "tc1", "function": {"name": "stori_set_tempo", "arguments": '{"tempo": 120}'}},
+                    ToolCallEntry(id="tc1", type="function", function={"name": "stori_set_tempo", "arguments": '{"tempo": 120}'}),
                 ],
                 "finish_reason": "tool_calls",
                 "usage": {},
@@ -937,7 +978,7 @@ class TestRetryComposingAsEditing:
         payloads = _parse_events(events)
         types = [p["type"] for p in payloads]
         assert "status" in types
-        retry_status = next(p for p in payloads if p["type"] == "status" and "Retry" in p.get("message", ""))
+        retry_status = next(p for p in payloads if p["type"] == "status" and "Retry" in (p.get("message") or ""))
         assert retry_status is not None
 
 
@@ -1032,7 +1073,7 @@ class TestOrchestrateExecutionModePolicy:
 
 class TestPlanTracker:
 
-    def _make_tool_calls(self, specs: list[tuple[str, dict[str, Any]]]) -> list[ToolCall]:  # boundary: tool call params
+    def _make_tool_calls(self, specs: list[tuple[str, dict[str, JSONValue]]]) -> list[ToolCall]:
 
         return [
             ToolCall(id=f"tc{i}", name=name, params=params)
@@ -1608,7 +1649,7 @@ class TestMatchRolesWithInferredRoles:
 class TestBuildFromPromptExpressiveSteps:
     """build_from_prompt surfaces Effects / MidiExpressiveness / Automation as plan steps."""
 
-    def _make_parsed(self, roles: list[str] | None = None, extensions: dict[str, Any] | None = None) -> ParsedPrompt:
+    def _make_parsed(self, roles: list[str] | None = None, extensions: dict[str, JSONValue] | None = None) -> ParsedPrompt:
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1723,7 +1764,7 @@ class TestBuildFromPromptExpressiveSteps:
 class TestStructuredPromptContextTranslation:
     """structured_prompt_context injects execution requirements for expressive blocks."""
 
-    def _make_parsed(self, extensions: dict[str, Any]) -> ParsedPrompt:
+    def _make_parsed(self, extensions: dict[str, JSONValue]) -> ParsedPrompt:
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1798,7 +1839,7 @@ class TestStructuredPromptContextTranslation:
 class TestPlanStepToolName:
     """_PlanStep.tool_name is included in the plan SSE event as toolName."""
 
-    def _make_tracker_from_prompt(self, roles: list[str] | None = None, extensions: dict[str, Any] | None = None, tempo: int | None = None, key: str | None = None) -> _PlanTracker:
+    def _make_tracker_from_prompt(self, roles: list[str] | None = None, extensions: dict[str, JSONValue] | None = None, tempo: int | None = None, key: str | None = None) -> _PlanTracker:
         from app.core.prompt_parser import ParsedPrompt
         from app.core.maestro_plan_tracker import _PlanTracker
         parsed = ParsedPrompt(
@@ -1913,7 +1954,7 @@ class TestPlanStepToolName:
 class TestGetMissingExpressiveSteps:
     """_get_missing_expressive_steps detects pending expressive tool calls."""
 
-    def _parsed(self, extensions: dict[str, Any]) -> ParsedPrompt:
+    def _parsed(self, extensions: dict[str, JSONValue]) -> ParsedPrompt:
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -1922,7 +1963,7 @@ class TestGetMissingExpressiveSteps:
             extensions=extensions,
         )
 
-    def _missing(self, extensions: dict[str, Any], tool_calls_collected: list[ToolCallDict] | None = None) -> list[str]:
+    def _missing(self, extensions: dict[str, JSONValue], tool_calls_collected: list[ToolCallDict] | None = None) -> list[str]:
 
         from app.core.maestro_editing import _get_missing_expressive_steps
         empty: list[ToolCallDict] = []
@@ -2020,7 +2061,7 @@ class TestGetMissingExpressiveSteps:
     def test_all_expressive_called_returns_empty(self) -> None:
 
         """When all expressive tools have been called, result is empty."""
-        extensions = {
+        extensions: dict[str, JSONValue] = {
             "effects": {"drums": {"compression": True}},
             "midiexpressiveness": {
                 "cc_curves": [{"cc": 91}],
@@ -2069,7 +2110,7 @@ class TestGetMissingExpressiveSteps:
 class TestBuildFromPromptReverbBus:
     """build_from_prompt adds a bus setup step when 2+ tracks need reverb."""
 
-    def _make_parsed(self, extensions: dict[str, Any]) -> ParsedPrompt:
+    def _make_parsed(self, extensions: dict[str, JSONValue]) -> ParsedPrompt:
         from app.core.prompt_parser import ParsedPrompt
         return ParsedPrompt(
             raw="STORI PROMPT",
@@ -2424,7 +2465,7 @@ class TestEnrichParamsWithTrackContext:
 class TestParallelGroup:
     """parallelGroup is emitted on instrument steps but not setup/mixing steps."""
 
-    def _make_tool_calls(self, specs: list[tuple[str, dict[str, Any]]]) -> list[ToolCall]:  # boundary: tool call params
+    def _make_tool_calls(self, specs: list[tuple[str, dict[str, JSONValue]]]) -> list[ToolCall]:
 
         return [
             ToolCall(id=f"tc{i}", name=name, params=params)
@@ -2638,7 +2679,7 @@ class TestMultiActiveSteps:
 class TestGroupIntoPhases:
     """_group_into_phases splits tool calls into setup / instruments / mixing."""
 
-    def _tc(self, name: str, params: dict[str, Any] | None = None) -> ToolCall:  # boundary: tool call params
+    def _tc(self, name: str, params: dict[str, JSONValue] | None = None) -> ToolCall:
 
         return ToolCall(name=name, params=params or {})
 
@@ -3284,7 +3325,7 @@ class TestRunInstrumentAgent:
         )
 
         llm = _make_llm_mock()
-        async def _failing_stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
+        async def _failing_stream(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
 
             raise RuntimeError("LLM down")
             yield  # type: ignore[unreachable]  # makes this an async generator
@@ -3508,13 +3549,13 @@ class TestAgentTeamFailureIsolation:
 
         agent_call_count = 0
 
-        def agent_stream_side_effect(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
+        def agent_stream_side_effect(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
 
             nonlocal agent_call_count
             agent_call_count += 1
             current_call = agent_call_count
 
-            async def _stream() -> AsyncGenerator[dict[str, Any], None]:
+            async def _stream() -> AsyncGenerator[StreamEvent, None]:
                 if current_call == 1:
                     raise RuntimeError("drums LLM failed")
                 response = LLMResponse(content=None, usage={})
@@ -3524,8 +3565,8 @@ class TestAgentTeamFailureIsolation:
                     ]
                 else:
                     response.tool_calls = []
-                tc_raw = [
-                    {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.params)}}
+                tc_raw: list[ToolCallEntry] = [
+                    ToolCallEntry(id=tc.id, type="function", function={"name": tc.name, "arguments": json.dumps(tc.params)})
                     for tc in response.tool_calls
                 ]
                 yield {"type": "done", "content": None, "tool_calls": tc_raw, "finish_reason": "stop", "usage": {}}
@@ -3555,7 +3596,7 @@ class TestAgentTeamFailureIsolation:
         store = StateStore(conversation_id="test-all-fail")
         trace = _make_trace()
 
-        def all_fail(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
+        def all_fail(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
 
             async def _fail() -> AsyncGenerator[Never, None]:
                 raise RuntimeError("all down")
@@ -3752,14 +3793,18 @@ class TestAgentTeamExistingTrackReuse:
             "add chorus",
             {"tracks": [{"name": "Drums", "id": "d1", "regions": []}]},
         )
-        captured_messages: list[dict[str, Any]] = []
+        captured_messages: list[ChatMessage] = []
 
-        def capture_stream(*args: object, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
-
-            captured_messages.extend(kwargs.get("messages", []))
-            r = LLMResponse(content=None, usage={})
-            r.tool_calls = []
-            async def _stream() -> AsyncGenerator[dict[str, Any], None]:
+        def capture_stream(
+            messages: list[ChatMessage],
+            tools: list[ToolSchemaDict] | None = None,
+            tool_choice: OpenAIToolChoice | None = None,
+            temperature: float | None = None,
+            max_tokens: int | None = None,
+            reasoning_fraction: float | None = None,
+        ) -> AsyncGenerator[StreamEvent, None]:
+            captured_messages.extend(messages)
+            async def _stream() -> AsyncGenerator[StreamEvent, None]:
                 yield {"type": "done", "content": None, "tool_calls": [], "finish_reason": "stop", "usage": {}}
             return _stream()
 
@@ -3788,7 +3833,7 @@ class TestAgentTeamExistingTrackReuse:
             start_beat=16,
         )
 
-        system_msgs = [m["content"] for m in captured_messages if m.get("role") == "system"]
+        system_msgs = [m["content"] for m in captured_messages if m["role"] == "system"]
         assert system_msgs, "System message must be sent"
         sys_text = system_msgs[0]
         assert "DO NOT call stori_add_midi_track" in sys_text
@@ -3821,15 +3866,18 @@ class TestAgentTeamExistingTrackReuse:
 
         captured_system_prompts: list[str] = []
 
-        def capture_stream(*args: object, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
-
-            msgs = kwargs.get("messages", args[0] if args else [])
-            for m in msgs:
-                if m.get("role") == "system":
+        def capture_stream(
+            messages: list[ChatMessage],
+            tools: list[ToolSchemaDict] | None = None,
+            tool_choice: OpenAIToolChoice | None = None,
+            temperature: float | None = None,
+            max_tokens: int | None = None,
+            reasoning_fraction: float | None = None,
+        ) -> AsyncGenerator[StreamEvent, None]:
+            for m in messages:
+                if m["role"] == "system":
                     captured_system_prompts.append(m["content"])
-            r = LLMResponse(content=None, usage={})
-            r.tool_calls = []
-            async def _stream() -> AsyncGenerator[dict[str, Any], None]:
+            async def _stream() -> AsyncGenerator[StreamEvent, None]:
                 yield {"type": "done", "content": None, "tool_calls": [], "finish_reason": "stop", "usage": {}}
             return _stream()
 
@@ -3872,15 +3920,18 @@ class TestAgentTeamExistingTrackReuse:
 
         captured_system_prompts: list[str] = []
 
-        def capture_stream(*args: object, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
-
-            msgs = kwargs.get("messages", args[0] if args else [])
-            for m in msgs:
-                if m.get("role") == "system":
+        def capture_stream(
+            messages: list[ChatMessage],
+            tools: list[ToolSchemaDict] | None = None,
+            tool_choice: OpenAIToolChoice | None = None,
+            temperature: float | None = None,
+            max_tokens: int | None = None,
+            reasoning_fraction: float | None = None,
+        ) -> AsyncGenerator[StreamEvent, None]:
+            for m in messages:
+                if m["role"] == "system":
                     captured_system_prompts.append(m["content"])
-            r = LLMResponse(content=None, usage={})
-            r.tool_calls = []
-            async def _stream() -> AsyncGenerator[dict[str, Any], None]:
+            async def _stream() -> AsyncGenerator[StreamEvent, None]:
                 yield {"type": "done", "content": None, "tool_calls": [], "finish_reason": "stop", "usage": {}}
             return _stream()
 
@@ -4100,15 +4151,15 @@ class TestAgentReasoningEventsCarryAgentId:
 
         llm = _make_llm_mock()
 
-        async def _stream_with_reasoning(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
+        async def _stream_with_reasoning(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
 
             yield {"type": "reasoning_delta", "text": "Walking bass follows chord roots"}
             resp = LLMResponse(content=None, usage={})
             resp.tool_calls = [
                 ToolCall(id="tc-r", name="stori_add_midi_track", params={"name": "Bass"}),
             ]
-            tc_raw = [
-                {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.params)}}
+            tc_raw: list[ToolCallEntry] = [
+                ToolCallEntry(id=tc.id, type="function", function={"name": tc.name, "arguments": json.dumps(tc.params)})
                 for tc in resp.tool_calls
             ]
             yield {"type": "done", "content": None, "tool_calls": tc_raw, "finish_reason": "stop", "usage": {}}

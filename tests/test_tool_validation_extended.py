@@ -14,7 +14,6 @@ Covers:
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
 from app.contracts.json_types import JSONValue
 
@@ -338,9 +337,9 @@ class TestValidateValueRanges:
 class TestValidateToolSpecificNotes:
     """stori_add_notes note-level validation."""
 
-    def _valid_note(self, **overrides: Any) -> dict[str, Any]:
+    def _valid_note(self, **overrides: JSONValue) -> dict[str, JSONValue]:
 
-        note = {"pitch": 60, "startBeat": 0, "durationBeats": 0.5, "velocity": 100}
+        note: dict[str, JSONValue] = {"pitch": 60, "startBeat": 0, "durationBeats": 0.5, "velocity": 100}
         note.update(overrides)
         return note
 

@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
-from typing import Any
-from unittest.mock import patch
+from contextlib import AbstractContextManager
+from unittest.mock import MagicMock, patch
 
 import jwt
 import pytest
@@ -43,7 +43,7 @@ _SECRET = "test-secret-for-unit-tests-only-32char"
 _ALGO = "HS256"
 
 
-def _patch_settings() -> Any:
+def _patch_settings() -> AbstractContextManager[MagicMock]:
     """Patch the settings object so tokens can be generated in tests."""
     return patch(
         "app.auth.tokens.settings",
@@ -52,10 +52,21 @@ def _patch_settings() -> Any:
     )
 
 
-def _make_token(**kwargs: Any) -> str:
-
+def _make_token(
+    user_id: str | None = None,
+    duration_hours: int | None = None,
+    duration_days: int | None = None,
+    duration_minutes: int | None = None,
+    is_admin: bool = False,
+) -> str:
     with _patch_settings():
-        return generate_access_code(**kwargs)
+        return generate_access_code(
+            user_id=user_id,
+            duration_hours=duration_hours,
+            duration_days=duration_days,
+            duration_minutes=duration_minutes,
+            is_admin=is_admin,
+        )
 
 
 # ===========================================================================

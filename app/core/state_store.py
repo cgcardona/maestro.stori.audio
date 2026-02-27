@@ -51,6 +51,7 @@ from app.contracts.json_types import (
     AftertouchDict,
     CCEventDict,
     InternalNoteDict,
+    JSONValue,
     NoteDict,
     PitchBendDict,
     RegionAftertouchMap,
@@ -473,14 +474,14 @@ class StateStore:
         self,
         name: str,
         track_id: str | None = None,
-        metadata: EntityMetadata | dict[str, object] | None = None,
+        metadata: EntityMetadata | dict[str, JSONValue] | None = None,
         transaction: Transaction | None = None,
     ) -> str:
         """Create a new track and record the event."""
         track_id = self._registry.create_track(name, track_id, metadata)
         
         _raw_meta = metadata.to_dict() if isinstance(metadata, EntityMetadata) else (metadata or {})
-        meta_dict: dict[str, object] = dict(_raw_meta)
+        meta_dict: dict[str, JSONValue] = dict(_raw_meta)
         self._append_event(
             event_type=EventType.TRACK_CREATED,
             entity_type=EntityType.TRACK,
@@ -496,14 +497,14 @@ class StateStore:
         name: str,
         parent_track_id: str,
         region_id: str | None = None,
-        metadata: EntityMetadata | dict[str, object] | None = None,
+        metadata: EntityMetadata | dict[str, JSONValue] | None = None,
         transaction: Transaction | None = None,
     ) -> str:
         """Create a new region and record the event."""
         region_id = self._registry.create_region(name, parent_track_id, region_id, metadata)
         
         _raw_region_meta = metadata.to_dict() if isinstance(metadata, EntityMetadata) else (metadata or {})
-        region_meta: dict[str, object] = dict(_raw_region_meta)
+        region_meta: dict[str, JSONValue] = dict(_raw_region_meta)
         self._append_event(
             event_type=EventType.REGION_CREATED,
             entity_type=EntityType.REGION,
@@ -522,14 +523,14 @@ class StateStore:
         self,
         name: str,
         bus_id: str | None = None,
-        metadata: EntityMetadata | dict[str, object] | None = None,
+        metadata: EntityMetadata | dict[str, JSONValue] | None = None,
         transaction: Transaction | None = None,
     ) -> str:
         """Create a new bus and record the event."""
         bus_id = self._registry.create_bus(name, bus_id, metadata)
         
         _raw_bus_meta = metadata.to_dict() if isinstance(metadata, EntityMetadata) else (metadata or {})
-        bus_meta: dict[str, object] = dict(_raw_bus_meta)
+        bus_meta: dict[str, JSONValue] = dict(_raw_bus_meta)
         self._append_event(
             event_type=EventType.BUS_CREATED,
             entity_type=EntityType.BUS,

@@ -19,6 +19,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from app.contracts.json_types import JSONValue
 from app.contracts.project_types import ProjectContext
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class EntityMetadata:
     extra: dict[str, str | int | float | bool] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, raw: dict[str, object] | None) -> EntityMetadata:
+    def from_dict(cls, raw: dict[str, JSONValue] | None) -> EntityMetadata:
         """Construct an ``EntityMetadata`` from a raw camelCase dict (DAW wire format).
 
         Accepts the same shapes the DAW sends in tool-call params and project
@@ -152,7 +153,7 @@ class EntityInfo:
         }
 
 
-def _coerce_metadata(raw: EntityMetadata | dict[str, object] | None) -> EntityMetadata:
+def _coerce_metadata(raw: EntityMetadata | dict[str, JSONValue] | None) -> EntityMetadata:
     """Accept either form and always return EntityMetadata."""
     if isinstance(raw, EntityMetadata):
         return raw
@@ -236,7 +237,7 @@ class EntityRegistry:
         self,
         name: str,
         track_id: str | None = None,
-        metadata: EntityMetadata | dict[str, object] | None = None,
+        metadata: EntityMetadata | dict[str, JSONValue] | None = None,
         owner_agent_id: str | None = None,
     ) -> str:
         """Create and register a new track."""
@@ -279,7 +280,7 @@ class EntityRegistry:
         name: str,
         parent_track_id: str,
         region_id: str | None = None,
-        metadata: EntityMetadata | dict[str, object] | None = None,
+        metadata: EntityMetadata | dict[str, JSONValue] | None = None,
         owner_agent_id: str | None = None,
     ) -> str:
         """
@@ -333,7 +334,7 @@ class EntityRegistry:
         self,
         name: str,
         bus_id: str | None = None,
-        metadata: EntityMetadata | dict[str, object] | None = None,
+        metadata: EntityMetadata | dict[str, JSONValue] | None = None,
     ) -> str:
         """Create and register a new bus."""
         bus_id = bus_id or str(uuid.uuid4())
@@ -620,7 +621,10 @@ class EntityRegistry:
                 self.create_track(
                     name=track_name,
                     track_id=track_id,
-                    metadata=dict(track),
+                    metadata=EntityMetadata(
+                        instrument=str(track.get("role") or ""),
+                        color=str(track.get("color") or ""),
+                    ),
                 )
         
         # Sync regions
@@ -639,7 +643,10 @@ class EntityRegistry:
                             name=region_name,
                             parent_track_id=track_id,
                             region_id=region_id,
-                            metadata=dict(region),
+                            metadata=EntityMetadata(
+                                start_beat=float(region.get("startBeat") or 0),
+                                duration_beats=float(region.get("durationBeats") or 0),
+                            ),
                         )
                     except ValueError:
                         logger.warning(f"⚠️ Could not sync region {region_id}: parent track not found")
@@ -653,7 +660,6 @@ class EntityRegistry:
                 self.create_bus(
                     name=bus_name,
                     bus_id=bus_id,
-                    metadata=dict(bus),
                 )
         
         logger.info(

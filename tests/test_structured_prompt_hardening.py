@@ -15,7 +15,6 @@ Covers the seams and integration points not fully exercised elsewhere:
 """
 from __future__ import annotations
 
-from typing import Any
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
@@ -33,7 +32,7 @@ from app.core.sanitize import normalise_user_input
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_prompt(**kwargs: Any) -> str:
+def _make_prompt(**kwargs: str) -> str:
 
     """Build a minimal valid structured prompt string from keyword fields."""
     lines = ["STORI PROMPT", f"Mode: {kwargs.pop('mode', 'compose')}"]

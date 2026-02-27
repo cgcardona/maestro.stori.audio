@@ -1,7 +1,7 @@
 """Tests for entity context builder (LLM prompt injection)."""
 from __future__ import annotations
 
-from typing import Any
+from app.contracts.json_types import JSONValue
 from unittest.mock import MagicMock
 
 from app.contracts.project_types import ProjectContext
@@ -16,7 +16,7 @@ def _make_entity(
     id: str,
     name: str,
     parent_id: str | None = None,
-    metadata: dict[str, Any] | None = None,
+    metadata: dict[str, JSONValue] | None = None,
 ) -> MagicMock:
     e = MagicMock()
     e.id = id
@@ -418,7 +418,7 @@ class TestFormatProjectContextRole:
 class TestAddNotesValidation:
     """stori_add_notes rejects fake shorthand params with a clear error."""
 
-    def _validate(self, params: dict[str, Any]) -> ValidationResult:
+    def _validate(self, params: dict[str, JSONValue]) -> ValidationResult:
         from app.core.tool_validation import validate_tool_call
         return validate_tool_call("stori_add_notes", params, {"stori_add_notes"}, registry=None)
 

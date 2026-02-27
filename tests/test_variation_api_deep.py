@@ -9,7 +9,6 @@ Supplements test_variation_api.py with deeper coverage of:
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -48,7 +47,6 @@ def _make_vrecord(
     project_id: str = "proj-1",
     base_state_id: str = "0",
     intent: str = "test intent",
-    **kwargs: Any,
 ) -> VariationRecord:
     """Build a VariationRecord for testing."""
     return VariationRecord(
@@ -57,7 +55,6 @@ def _make_vrecord(
         base_state_id=base_state_id,
         intent=intent,
         status=status,
-        **kwargs,
     )
 
 

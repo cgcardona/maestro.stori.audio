@@ -8,7 +8,12 @@ helpers (build_phrase_payload, note_change_to_wire, _snapshot_to_note_dict).
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
+
 import pytest
+
+if TYPE_CHECKING:
+    from app.models.variation import Phrase
 
 from app.variation.core.event_envelope import (
     AnyEnvelope,
@@ -518,7 +523,7 @@ class TestNoteChangeToWire:
 class TestBuildPhrasePayload:
     """build_phrase_payload produces a complete, typed PhrasePayload."""
 
-    def _make_phrase(self) -> object:
+    def _make_phrase(self) -> "Phrase":
         from app.models.variation import Phrase, NoteChange, MidiNoteSnapshot
         from app.contracts.json_types import CCEventDict, PitchBendDict, AftertouchDict
         return Phrase(

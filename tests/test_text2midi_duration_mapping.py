@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sys
 import logging
-from typing import Any
+from app.contracts.json_types import JSONObject
 from gradio_client import Client
 import mido
 
@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def run_max_length_to_beats_mapping(hf_token: str) -> list[dict[str, Any]]:
+def run_max_length_to_beats_mapping(hf_token: str) -> list[JSONObject]:
 
     """
     Test various max_length values to find the relationship to beat count.

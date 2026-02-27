@@ -15,7 +15,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from app.contracts.json_types import JSONValue, jint
 
 logger = logging.getLogger(__name__)
 
@@ -185,9 +185,9 @@ class RoleProfile:
         )
 
 
-def _build_profile(role: str, data: dict[str, Any]) -> RoleProfile:
+def _build_profile(role: str, data: dict[str, JSONValue]) -> RoleProfile:
     """Construct a RoleProfile from the raw heuristics JSON for one role."""
-    track_count = data.get("track_count", 0)
+    track_count = jint(data.get("track_count"))
 
     rest_ratio = _safe_median(data.get("rest_ratio"))
     notes_per_bar = _safe_median(data.get("notes_per_bar"))

@@ -8,7 +8,7 @@ Supplements test_executor.py with:
 """
 from __future__ import annotations
 
-from typing import Any
+from app.contracts.json_types import JSONValue
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -24,7 +24,8 @@ from app.core.executor import (
     VariationExecutionContext,
     VariationApplyResult,
 )
-from app.contracts.json_types import AftertouchDict, CCEventDict, NoteDict, PitchBendDict
+from app.contracts.generation_types import GenerationContext
+from app.contracts.json_types import AftertouchDict, CCEventDict, JSONValue, NoteDict, PitchBendDict
 from app.contracts.project_types import ProjectContext
 from app.services.backends.base import GenerationResult
 from app.core.expansion import ToolCall
@@ -159,9 +160,9 @@ class TestExecutePlanVariation:
     async def test_tool_event_callback_called_before_processing(self) -> None:
 
         """tool_event_callback is invoked before each tool call is processed."""
-        captured: list[tuple[str, str, dict[str, Any]]] = []
+        captured: list[tuple[str, str, dict[str, JSONValue]]] = []
 
-        async def _on_tool(call_id: str, name: str, params: dict[str, Any]) -> None:
+        async def _on_tool(call_id: str, name: str, params: dict[str, JSONValue]) -> None:
 
             captured.append((call_id, name, params))
 
@@ -530,11 +531,21 @@ class TestEmotionVectorIntegration:
             "Energy: Low"
         )
 
-        captured_kwargs: dict[str, Any] = {}
+        captured_context: GenerationContext | None = None
 
-        async def mock_generate(**kwargs: Any) -> GenerationResult:
+        async def mock_generate(
+            instrument: str,
+            style: str,
+            tempo: int,
+            bars: int,
+            key: str | None = None,
+            chords: list[str] | None = None,
+            preferred_backend: object = None,
+            context: GenerationContext | None = None,
+        ) -> GenerationResult:
+            nonlocal captured_context
             from app.services.backends.base import GenerationResult, GeneratorBackend
-            captured_kwargs.update(kwargs)
+            captured_context = context
             return GenerationResult(
                 success=True,
                 notes=[NoteDict(pitch=60, start_beat=0.0, duration_beats=1.0, velocity=80)],
@@ -594,9 +605,8 @@ class TestEmotionVectorIntegration:
                     )
 
         # emotion_vector should have been passed inside context=GenerationContext(...)
-        ctx = captured_kwargs.get("context")
-        assert ctx is not None, "expected context kwarg with GenerationContext"
-        ev = ctx.get("emotion_vector")
+        assert captured_context is not None, "expected context kwarg with GenerationContext"
+        ev = captured_context.get("emotion_vector")
         assert ev is not None
         assert ev.energy < 0.5
         assert ev.intimacy > 0.5
@@ -605,11 +615,21 @@ class TestEmotionVectorIntegration:
     async def test_no_explanation_skips_emotion_vector(self) -> None:
 
         """When explanation is None, emotion_vector is not passed (or is None)."""
-        captured_kwargs: dict[str, Any] = {}
+        captured_context: GenerationContext | None = None
 
-        async def mock_generate(**kwargs: Any) -> GenerationResult:
+        async def mock_generate(
+            instrument: str,
+            style: str,
+            tempo: int,
+            bars: int,
+            key: str | None = None,
+            chords: list[str] | None = None,
+            preferred_backend: object = None,
+            context: GenerationContext | None = None,
+        ) -> GenerationResult:
+            nonlocal captured_context
             from app.services.backends.base import GenerationResult, GeneratorBackend
-            captured_kwargs.update(kwargs)
+            captured_context = context
             return GenerationResult(
                 success=True,
                 notes=[],
@@ -669,17 +689,27 @@ class TestEmotionVectorIntegration:
                     )
 
         # emotion_vector should be None (no explanation provided)
-        assert captured_kwargs.get("emotion_vector") is None
+        assert captured_context is None or captured_context.get("emotion_vector") is None
 
     @pytest.mark.anyio
     async def test_quality_preset_forwarded_to_generator(self) -> None:
 
         """quality_preset passed to execute_plan_variation reaches mg.generate."""
-        captured_kwargs: dict[str, Any] = {}
+        captured_context: GenerationContext | None = None
 
-        async def mock_generate(**kwargs: Any) -> GenerationResult:
+        async def mock_generate(
+            instrument: str,
+            style: str,
+            tempo: int,
+            bars: int,
+            key: str | None = None,
+            chords: list[str] | None = None,
+            preferred_backend: object = None,
+            context: GenerationContext | None = None,
+        ) -> GenerationResult:
+            nonlocal captured_context
             from app.services.backends.base import GenerationResult, GeneratorBackend
-            captured_kwargs.update(kwargs)
+            captured_context = context
             return GenerationResult(
                 success=True,
                 notes=[],
@@ -738,9 +768,8 @@ class TestEmotionVectorIntegration:
                         quality_preset="fast",
                     )
 
-        ctx = captured_kwargs.get("context")
-        assert ctx is not None, "expected context kwarg with GenerationContext"
-        assert ctx.get("quality_preset") == "fast"
+        assert captured_context is not None, "expected context kwarg with GenerationContext"
+        assert captured_context.get("quality_preset") == "fast"
 
 
 # ---------------------------------------------------------------------------
@@ -792,9 +821,9 @@ class TestParallelGeneratorDispatch:
         call_order: list[str] = []
         in_flight: list[str] = []
 
-        async def fake_generate(*args: object, **kwargs: Any) -> MagicMock:
+        async def fake_generate(*args: object, **kwargs: object) -> MagicMock:
 
-            role = kwargs.get("instrument", "unknown")
+            role = str(kwargs.get("instrument") or "unknown")
             in_flight.append(role)
             await asyncio.sleep(0)  # yield so all tasks are in-flight together
             call_order.append(role)
@@ -842,9 +871,10 @@ class TestParallelGeneratorDispatch:
         """Phase ordering: setup → drums → bass → parallel melodic."""
         execution_order: list[str] = []
 
-        async def track_call(call_id: str, tool_name: str, params: dict[str, Any]) -> None:
+        async def track_call(call_id: str, tool_name: str, params: dict[str, JSONValue]) -> None:
 
-            execution_order.append(params.get("role", tool_name))
+            role = params.get("role")
+            execution_order.append(str(role) if isinstance(role, str) else tool_name)
 
         # Setup call (track creation)
         setup_call = ToolCall(

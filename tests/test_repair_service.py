@@ -4,7 +4,6 @@ Covers apply_drum_repair instructions and repair_drum_if_needed threshold logic.
 """
 from __future__ import annotations
 
-from typing import Any
 import random
 import pytest
 from app.contracts.json_types import NoteDict
@@ -12,13 +11,13 @@ from app.services.repair import apply_drum_repair, repair_drum_if_needed
 from app.core.music_spec_ir import DrumSpec, DrumConstraints, DensityTarget, DrumLayerSpec, default_drum_spec
 
 
-def _make_drum_spec(**overrides: Any) -> DrumSpec:
+def _make_drum_spec() -> DrumSpec:
 
     """Build a minimal DrumSpec for testing."""
     return default_drum_spec(style="boom_bap", bars=8)
 
 
-def _basic_kick_snare_hats(bars: Any = 4) -> list[NoteDict]:
+def _basic_kick_snare_hats(bars: int = 4) -> list[NoteDict]:
 
     """Generate a basic kick/snare/hat pattern."""
     notes: list[NoteDict] = []

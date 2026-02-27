@@ -4,7 +4,7 @@ Tests for RAG (Retrieval-Augmented Generation) service.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Generator
-from typing import Any
+from app.contracts.llm_types import StreamEvent
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
@@ -276,12 +276,12 @@ async def test_answer_with_context(rag_service: RAGService, mock_llm_client: Mag
     ]
     
     # Mock LLM streaming response using StreamEvent format
-    async def mock_stream(*args: object, **kwargs: object) -> AsyncGenerator[dict[str, Any], None]:
+    async def mock_stream(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
 
         yield {"type": "content_delta", "text": "Based on "}
         yield {"type": "content_delta", "text": "the docs, "}
         yield {"type": "content_delta", "text": "here's how..."}
-        yield {"type": "done", "finish_reason": "stop"}
+        yield {"type": "done", "content": None, "tool_calls": [], "finish_reason": "stop", "usage": {}}
     
     mock_llm_client.chat_completion_stream = mock_stream
     
