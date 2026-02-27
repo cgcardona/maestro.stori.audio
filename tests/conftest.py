@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator, Generator
-from typing import Any
-
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport

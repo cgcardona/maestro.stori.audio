@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 from app.core.intent_config import Intent, get_intent_config
 from app.core.intent.models import IntentResult, Slots

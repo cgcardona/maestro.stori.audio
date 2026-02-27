@@ -23,7 +23,6 @@ writes through. Zero test coverage previously. This file covers:
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
 
 import pytest
 

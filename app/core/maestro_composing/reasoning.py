@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 
 from app.contracts.llm_types import ChatMessage
 from app.contracts.project_types import ProjectContext

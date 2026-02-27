@@ -13,7 +13,6 @@ from __future__ import annotations
 import ast
 import uuid
 from pathlib import Path
-from typing import Any
 
 import pytest
 from app.contracts.json_types import (

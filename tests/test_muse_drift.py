@@ -26,7 +26,6 @@ from app.models.variation import (
     Variation,
 )
 from app.services import muse_repository
-from typing import Any
 
 from app.contracts.json_types import NoteDict
 

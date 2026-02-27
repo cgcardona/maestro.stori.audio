@@ -8,7 +8,6 @@ Start here when you want 100x phrase coverage.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 # Placeholder for future YAML-backed registries.
 # For now, keep a minimal map that the intent router can grow into.

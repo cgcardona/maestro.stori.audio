@@ -7,7 +7,6 @@ on I/O boundaries (tool execution, LLM).
 
 from __future__ import annotations
 
-from typing import Any
 import asyncio
 
 from app.protocol.events import MaestroEvent, ToolCallEvent

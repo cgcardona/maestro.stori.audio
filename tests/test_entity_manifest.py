@@ -13,7 +13,6 @@ Coverage:
 from __future__ import annotations
 
 import pytest
-from typing import Any
 from unittest.mock import MagicMock
 
 from app.contracts.json_types import JSONValue

@@ -2,30 +2,39 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from typing import Any, Callable
+from dataclasses import dataclass, field
+from typing import Callable, Generic, TypeVar
 
 logger = logging.getLogger(__name__)
 
+_R = TypeVar("_R")  # result type returned by generate_fn
+_N = TypeVar("_N")  # notes type passed between generate_fn and scorer_fn
+
 
 @dataclass
-class RejectionSamplingResult:
-    """Result of a rejection sampling loop."""
-    best_result: object | None  # Whatever generate_fn returns as first element
+class RejectionSamplingResult(Generic[_R]):
+    """Result of a rejection sampling loop.
+
+    Generic over ``_R``, the result type returned as the first element of
+    each ``generate_fn()`` call.  ``best_result`` is ``None`` only when
+    every generation attempt produced an empty result.
+    """
+
+    best_result: _R | None
     best_score: float
     attempts: int
     accepted: bool
-    all_scores: list[float]
+    all_scores: list[float] = field(default_factory=list)
 
 
 def rejection_sample(
-    generate_fn: Callable[..., Any],
-    scorer_fn: Callable[..., Any],
+    generate_fn: Callable[[], tuple[_R, _N | None]],
+    scorer_fn: Callable[[_N], tuple[float, object]],
     *,
     max_attempts: int = 6,
     accept_threshold: float = 0.75,
     early_stop_threshold: float = 0.85,
-) -> RejectionSamplingResult:
+) -> RejectionSamplingResult[_R]:
     """
     Rejection sampling loop with early stopping.
 

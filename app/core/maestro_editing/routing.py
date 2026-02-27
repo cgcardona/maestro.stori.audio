@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from app.contracts.project_types import ProjectContext
 from app.core.intent import Intent, IntentResult, SSEState
