@@ -32,7 +32,10 @@ maestro/muse_cli/
     ├── __init__.py
     ├── init.py           — muse init  ✅ fully implemented
     ├── status.py         — muse status  ✅ branch + commit state display
-    ├── commit.py         — muse commit  (stub — issue #32)
+    ├── commit.py         — muse commit  ✅ fully implemented (issue #32)
+    ├── snapshot.py       — walk_workdir, hash_file, build_snapshot_manifest, compute IDs
+    ├── models.py         — MuseCliCommit, MuseCliSnapshot, MuseCliObject (SQLAlchemy)
+    ├── db.py             — open_session, upsert_object/snapshot/commit helpers
     ├── log.py            — muse log     (stub — issue #33)
     ├── checkout.py       — muse checkout (stub — issue #34)
     ├── merge.py          — muse merge   (stub — issue #35)
@@ -42,6 +45,61 @@ maestro/muse_cli/
 ```
 
 The CLI delegates to existing `maestro/services/muse_*.py` service modules. Stub subcommands print "not yet implemented" and exit 0.
+
+---
+
+## Commit Data Model
+
+`muse commit` persists three content-addressed table types to Postgres:
+
+### `muse_cli_objects` — File blobs (sha256-keyed)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `object_id` | `String(64)` PK | `sha256(file_bytes)` hex digest |
+| `size_bytes` | `Integer` | Raw file size |
+| `created_at` | `DateTime(tz=True)` | Wall-clock insert time |
+
+Objects are deduplicated across commits: the same file committed on two branches is stored exactly once.
+
+### `muse_cli_snapshots` — Snapshot manifests
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `snapshot_id` | `String(64)` PK | `sha256(sorted("path:object_id" pairs))` |
+| `manifest` | `JSON` | `{rel_path: object_id}` mapping |
+| `created_at` | `DateTime(tz=True)` | Wall-clock insert time |
+
+Two identical working trees always produce the same `snapshot_id`.
+
+### `muse_cli_commits` — Commit history
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `commit_id` | `String(64)` PK | Deterministic sha256 (see below) |
+| `repo_id` | `String(36)` | UUID from `.muse/repo.json` |
+| `branch` | `String(255)` | Branch name at commit time |
+| `parent_commit_id` | `String(64)` nullable | Previous HEAD commit on branch |
+| `snapshot_id` | `String(64)` FK | Points to the snapshot row |
+| `message` | `Text` | User-supplied commit message |
+| `author` | `String(255)` | Reserved (empty for MVP) |
+| `committed_at` | `DateTime(tz=True)` | Timestamp used in hash derivation |
+| `created_at` | `DateTime(tz=True)` | Wall-clock DB insert time |
+
+### ID Derivation (deterministic)
+
+```
+object_id   = sha256(file_bytes)
+snapshot_id = sha256("|".join(sorted(f"{path}:{oid}" for path, oid in manifest.items())))
+commit_id   = sha256(
+                "|".join(sorted(parent_ids))
+                + "|" + snapshot_id
+                + "|" + message
+                + "|" + committed_at.isoformat()
+              )
+```
+
+Given the same working tree state, message, and timestamp two machines produce identical IDs. `sorted()` ensures insertion-order independence for both snapshot manifests and parent lists.
 
 ---
 
