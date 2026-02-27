@@ -518,21 +518,25 @@ The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro Fa
 | `musehub_branches` | Branch pointers inside a repo |
 | `musehub_commits` | Commits pushed from CLI clients |
 | `musehub_objects` | Binary artifact metadata (MIDI, MP3, WebP piano rolls) |
+| `musehub_issues` | Issue tracker entries per repo |
+| `musehub_pull_requests` | Pull requests proposing branch merges |
 
 ### Module Map
 
 ```
 maestro/
-├── db/musehub_models.py           — SQLAlchemy ORM models
-├── models/musehub.py              — Pydantic v2 request/response models
-├── services/musehub_repository.py — Async DB queries for repos/branches/commits
-├── services/musehub_issues.py     — Async DB queries for issues
-├── services/musehub_sync.py       — Push/pull sync protocol (ingest_push, compute_pull_delta)
+├── db/musehub_models.py                  — SQLAlchemy ORM models
+├── models/musehub.py                     — Pydantic v2 request/response models
+├── services/musehub_repository.py        — Async DB queries for repos/branches/commits
+├── services/musehub_issues.py            — Async DB queries for issues (single point of DB access)
+├── services/musehub_pull_requests.py     — Async DB queries for PRs (single point of DB access)
+├── services/musehub_sync.py              — Push/pull sync protocol (ingest_push, compute_pull_delta)
 └── api/routes/musehub/
-    ├── __init__.py               — Composes sub-routers under /musehub prefix
-    ├── repos.py                  — Repo/branch/commit route handlers
-    ├── issues.py                 — Issue tracking route handlers
-    └── sync.py                   — Push/pull sync route handlers
+    ├── __init__.py                       — Composes sub-routers under /musehub prefix
+    ├── repos.py                          — Repo/branch/commit route handlers
+    ├── issues.py                         — Issue tracking route handlers
+    ├── pull_requests.py                  — Pull request route handlers
+    └── sync.py                           — Push/pull sync route handlers
 ```
 
 ### Endpoints
@@ -555,6 +559,15 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}/issues/{number}` | Get a single issue by per-repo number |
 | POST | `/api/v1/musehub/repos/{id}/issues/{number}/close` | Close an issue |
 
+#### Pull Requests
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/musehub/repos/{id}/pull-requests` | Open a PR proposing to merge `from_branch` into `to_branch` |
+| GET | `/api/v1/musehub/repos/{id}/pull-requests` | List PRs (`?state=open\|merged\|closed\|all`) |
+| GET | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}` | Get a single PR by ID |
+| POST | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}/merge` | Merge an open PR |
+
 #### Sync Protocol
 
 | Method | Path | Description |
@@ -562,7 +575,7 @@ maestro/
 | POST | `/api/v1/musehub/repos/{id}/push` | Upload commits and objects (fast-forward enforced) |
 | POST | `/api/v1/musehub/repos/{id}/pull` | Fetch missing commits and objects |
 
-All endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-sync-protocol) for full field docs.
+All endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
 
 ### Issue Workflow
 
@@ -572,6 +585,15 @@ Issues let musicians track production problems and creative tasks within a repo,
 - **Labels** are free-form strings — e.g. `bug`, `musical`, `timing`, `mix`. No validation at MVP.
 - **States:** `open` (default on creation) → `closed` (via the close endpoint). No re-open at MVP.
 - **Filtering:** `GET /issues?state=all` includes both open and closed; `?label=bug` narrows by label.
+
+### Pull Request Workflow
+
+Pull requests let musicians propose merging one branch variation into another, enabling async review before incorporating changes into the canonical arrangement.
+
+- **States:** `open` (on creation) → `merged` (via merge endpoint) | `closed` (future: manual close).
+- **Merge strategy:** Only `merge_commit` at MVP. Creates a real merge commit on `to_branch` with two parent IDs (`[to_branch head, from_branch head]`), then advances the `to_branch` head pointer.
+- **Validation:** `from_branch == to_branch` → 422. Missing `from_branch` → 404. Already merged/closed → 409 on merge attempt.
+- **Filtering:** `GET /pull-requests?state=open` returns only open PRs. Default (`state=all`) returns all states.
 
 ### Sync Protocol Design
 
@@ -611,6 +633,7 @@ Only metadata (`object_id`, `path`, `size_bytes`, `disk_path`) is stored in Post
 Service modules are the only place that touches `musehub_*` tables:
 - `musehub_repository.py` → `musehub_repos`, `musehub_branches`, `musehub_commits`
 - `musehub_issues.py` → `musehub_issues`
+- `musehub_pull_requests.py` → `musehub_pull_requests`
 - `musehub_sync.py` → `musehub_commits`, `musehub_objects`, `musehub_branches` (sync path only)
 
 Route handlers delegate all persistence to the service layer. No business logic in route handlers.

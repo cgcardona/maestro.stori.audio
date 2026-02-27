@@ -1173,3 +1173,103 @@ Fetch commits and objects the caller does not yet have.
 |--------|------|------|
 | 404 | `"Repo not found"` | Unknown `repo_id` |
 | 401 | — | Missing or invalid Bearer token |
+
+---
+
+## Muse Hub Pull Requests API
+
+Pull request tracking for Muse Hub repos — lets musicians propose, review, and merge branch variations. All endpoints are under `/api/v1/musehub/repos/{repo_id}/pull-requests/` and require `Authorization: Bearer <token>`.
+
+**PR states:** `open` → `merged` | `closed`
+
+### POST /api/v1/musehub/repos/{repo_id}/pull-requests
+
+Open a new pull request proposing to merge `from_branch` into `to_branch`.
+
+**Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | yes | PR title (1–500 chars) |
+| `fromBranch` | string | yes | Source branch name |
+| `toBranch` | string | yes | Target branch name |
+| `body` | string | no | PR description (Markdown). Defaults to `""`. |
+
+**Response (201):**
+
+```json
+{
+  "prId": "b3d9f1e2-...",
+  "title": "Add neo-soul keys variation",
+  "body": "Dreamy chord voicings for the bridge.",
+  "state": "open",
+  "fromBranch": "neo-soul-experiment",
+  "toBranch": "main",
+  "mergeCommitId": null,
+  "createdAt": "2026-02-27T12:00:00Z"
+}
+```
+
+**Errors:**
+- **422** — `fromBranch == toBranch`
+- **404** — `fromBranch` does not exist in the repo
+- **404** — repo not found
+
+### GET /api/v1/musehub/repos/{repo_id}/pull-requests
+
+List pull requests for a repo, ordered by creation time ascending.
+
+**Query params:**
+
+| Param | Values | Default | Description |
+|-------|--------|---------|-------------|
+| `state` | `open` \| `merged` \| `closed` \| `all` | `all` | Filter by PR state |
+
+**Response (200):**
+
+```json
+{
+  "pullRequests": [
+    {
+      "prId": "...",
+      "title": "...",
+      "state": "open",
+      "fromBranch": "feature",
+      "toBranch": "main",
+      "mergeCommitId": null,
+      "createdAt": "..."
+    }
+  ]
+}
+```
+
+### GET /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}
+
+Get a single PR by ID.
+
+**Response (200):** Full PR object (same shape as above). Returns **404** if the PR or repo is not found.
+
+### POST /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/merge
+
+Merge an open PR using `merge_commit` strategy.
+
+Creates a merge commit on `to_branch` with parent IDs `[to_branch head, from_branch head]`, advances the `to_branch` head pointer, and sets PR state to `merged`.
+
+**Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `mergeStrategy` | `"merge_commit"` | no | Only `merge_commit` is supported at MVP. Defaults to `"merge_commit"`. |
+
+**Response (200):**
+
+```json
+{
+  "merged": true,
+  "mergeCommitId": "aabbcc..."
+}
+```
+
+**Errors:**
+- **404** — PR or repo not found
+- **409** — PR is already merged or closed
