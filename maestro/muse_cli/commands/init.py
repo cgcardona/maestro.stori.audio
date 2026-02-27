@@ -115,7 +115,9 @@ def init(
         typer.echo(
             f"❌ Permission denied: cannot write to {cwd}.\n"
             "Run `muse init` from a directory you have write access to.\n"
-            "Tip: if running inside Docker, use a writable path such as /tmp/my-project."
+            "Tip: if running inside Docker, create a writable directory first:\n"
+            "  docker compose exec maestro sh -c "
+            '"mkdir -p /tmp/my-project && cd /tmp/my-project && python -m maestro.muse_cli.app init"'
         )
         logger.error("❌ Permission denied creating .muse/ in %s", cwd)
         raise typer.Exit(code=ExitCode.USER_ERROR)

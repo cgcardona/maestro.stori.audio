@@ -240,6 +240,7 @@ def test_init_permission_error_exits_1(
     assert result.exit_code == int(ExitCode.USER_ERROR), result.output
     assert "Permission denied" in result.output
     assert "write access" in result.output
+    assert "mkdir -p" in result.output
     # Must NOT produce a raw Python traceback.
     assert "Traceback" not in result.output
     assert "PermissionError" not in result.output
