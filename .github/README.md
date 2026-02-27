@@ -179,3 +179,27 @@ repo, ever.
 | **C** | Fix works but quality bar not met. | Do NOT merge |
 | **D** | Unsafe, incomplete, or breaks a contract. | Do NOT merge |
 | **F** | Regression, security hole, or architectural violation. | Reject |
+
+---
+
+## Agent failure safeguards
+
+Five failure patterns observed in production parallel-agent workflows. Each prompt in this directory is written to prevent them.
+
+### 1. Idempotency gate (prevent duplicate work)
+Before creating any issue or PR, query GitHub for existing matching artifacts. Creating a duplicate is worse than skipping — it fragments discussion, wastes implementation cycles, and causes race conditions when multiple agents run in parallel. Every agent checks first; acts second.
+
+### 2. No output filtering on build/test commands (prevent false pass)
+Never pipe `mypy` or `pytest` output through `grep`, `head`, or `tail`. The process exit code is the authoritative signal. Filtering it can swallow failure lines and produce a false "all good." Run commands unfiltered; capture to a file only if log size is a concern.
+
+### 3. Red-flag log scan (prevent false pass on live errors)
+After any test run, scan the full output for: `ERROR`, `Traceback`, `toolError`, `FAILED`, `AssertionError`, `circuit_breaker_open`. A clean summary line at the end does not mean the run was clean if any of these appear earlier. Any red-flag = the run is not clean.
+
+### 4. Type-system callee-first rule (prevent mypy box-checking)
+When mypy reports a type error, fix the callee's return type — never cast at the call site. `cast()` at call sites and proliferating `Any` across internal layers are signs that the type system is being worked around, not fixed. `# type: ignore` is only acceptable at explicit 3rd-party adapter boundaries with an inline explanation.
+
+### 5. Cascading failure scan (prevent sibling test blindness)
+A fix that changes a shared constant, model field, or contract shape often breaks more than one test file. After the target tests pass, search for similar assertions across the rest of the test suite before declaring the fix complete. File all related fixes in the same commit.
+
+### 6. Proof of work before self-destruct (prevent false completion)
+An agent reporting "Done" without a concrete artifact URL (issue URL, PR URL) is not done — it has failed silently. Every agent must report explicit, verifiable artifacts. An empty list is a failure, not a success.
