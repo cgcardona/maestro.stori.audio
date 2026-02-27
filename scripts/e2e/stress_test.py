@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Orpheus Stress Test — Comprehensive throughput, latency, and quality assessment.
+Storpheus Stress Test — Comprehensive throughput, latency, and quality assessment.
 
 Sends a matrix of generation requests spanning every genre, instrument combo,
 bar count, quality preset, and intent vector extreme the system supports.
@@ -8,22 +8,23 @@ Captures per-request latency, token throughput, note density, and error rates.
 
 Usage:
     # Quick smoke test (1 request per genre, fast preset)
-    python stress_test.py --quick
+    docker compose exec storpheus python scripts/e2e/stress_test.py --quick
 
     # Standard sweep (all genres × bar counts × presets)
-    python stress_test.py
+    docker compose exec storpheus python scripts/e2e/stress_test.py
 
     # Full matrix (all genres × instruments × bars × presets × intent vectors)
-    python stress_test.py --full
+    docker compose exec storpheus python scripts/e2e/stress_test.py --full
 
     # Concurrency test (how many parallel requests before degradation)
-    python stress_test.py --concurrency
+    docker compose exec storpheus python scripts/e2e/stress_test.py --concurrency
 
     # Custom target
-    python stress_test.py --url http://my-orpheus:10002
+    docker compose exec storpheus python scripts/e2e/stress_test.py --url http://storpheus:10002
 
-Results are written to stress_results_{timestamp}.json with a human-readable
-summary printed to stdout.
+Results are written to:
+    stress_results_{timestamp}.json   — raw data
+    stress_results_{timestamp}.html   — self-contained HTML report
 """
 from __future__ import annotations
 
@@ -341,10 +342,176 @@ def build_report(results: list[RequestResult]) -> StressReport:
     return report
 
 
+def build_html_report(report: StressReport, mode: str, url: str) -> str:
+    """Render a self-contained HTML stress report from a StressReport."""
+
+    def _rate(ok: int, total: int) -> str:
+        if total == 0:
+            return "—"
+        pct = 100 * ok / total
+        colour = "#16a34a" if pct >= 90 else "#ca8a04" if pct >= 70 else "#dc2626"
+        return f'<span style="color:{colour};font-weight:600">{pct:.0f}%</span>'
+
+    def _ms(v: float) -> str:
+        return f"{v:,.0f}" if v else "—"
+
+    def _table(title: str, data: dict[str, dict[str, Any]]) -> str:
+        if not data:
+            return ""
+        rows = ""
+        for k, v in data.items():
+            success_rate = _rate(v["success"], v["total"])
+            rows += (
+                f"<tr>"
+                f"<td>{k}</td>"
+                f"<td>{v['total']}</td>"
+                f"<td>{v['success']}</td>"
+                f"<td>{v['failed']}</td>"
+                f"<td>{success_rate}</td>"
+                f"<td>{_ms(v['latency_mean_ms'])}</td>"
+                f"<td>{_ms(v['latency_p95_ms'])}</td>"
+                f"<td>{v['avg_notes']:.1f}</td>"
+                f"</tr>"
+            )
+        return f"""
+        <h2>{title}</h2>
+        <table>
+          <thead><tr>
+            <th>Key</th><th>Total</th><th>OK</th><th>Fail</th>
+            <th>Rate</th><th>Mean ms</th><th>P95 ms</th><th>Avg notes</th>
+          </tr></thead>
+          <tbody>{rows}</tbody>
+        </table>"""
+
+    def _concurrency_table() -> str:
+        if not report.concurrency_results:
+            return ""
+        rows = ""
+        for cr in report.concurrency_results:
+            rows += (
+                f"<tr>"
+                f"<td>{cr['concurrency']}</td>"
+                f"<td>{cr['success']}</td>"
+                f"<td>{cr['failed']}</td>"
+                f"<td>{_ms(cr['latency_mean_ms'])}</td>"
+                f"<td>{_ms(cr['latency_p95_ms'])}</td>"
+                f"<td>{_ms(cr['wall_time_ms'])}</td>"
+                f"</tr>"
+            )
+        return f"""
+        <h2>Concurrency Scaling</h2>
+        <table>
+          <thead><tr>
+            <th>Parallel</th><th>OK</th><th>Fail</th>
+            <th>Mean ms</th><th>P95 ms</th><th>Wall ms</th>
+          </tr></thead>
+          <tbody>{rows}</tbody>
+        </table>"""
+
+    def _errors_table() -> str:
+        if not report.errors:
+            return ""
+        rows = "".join(
+            f"<tr><td>{count}</td><td>{err}</td></tr>"
+            for err, count in sorted(report.errors.items(), key=lambda x: -x[1])
+        )
+        return f"""
+        <h2>Errors</h2>
+        <table>
+          <thead><tr><th>Count</th><th>Error</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>"""
+
+    overall_rate = _rate(report.successful, report.total_requests)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Storpheus Stress Report — {report.started_at[:10]}</title>
+  <style>
+    *, *::before, *::after {{ box-sizing: border-box; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      background: #0f172a; color: #e2e8f0; margin: 0; padding: 2rem;
+    }}
+    h1 {{ font-size: 1.6rem; margin-bottom: 0.25rem; color: #f8fafc; }}
+    .meta {{ font-size: 0.8rem; color: #64748b; margin-bottom: 2rem; }}
+    .kpi-grid {{
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 1rem; margin-bottom: 2.5rem;
+    }}
+    .kpi {{
+      background: #1e293b; border-radius: 8px; padding: 1rem;
+      border: 1px solid #334155;
+    }}
+    .kpi .label {{ font-size: 0.7rem; color: #94a3b8; text-transform: uppercase;
+      letter-spacing: 0.05em; }}
+    .kpi .value {{ font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem; }}
+    h2 {{ font-size: 1rem; color: #94a3b8; text-transform: uppercase;
+      letter-spacing: 0.08em; margin: 2rem 0 0.75rem; border-bottom: 1px solid #1e293b;
+      padding-bottom: 0.5rem; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 0.85rem;
+      margin-bottom: 1.5rem; }}
+    th {{ text-align: left; padding: 0.5rem 0.75rem; background: #1e293b;
+      color: #94a3b8; font-weight: 500; font-size: 0.75rem;
+      text-transform: uppercase; letter-spacing: 0.05em; }}
+    td {{ padding: 0.45rem 0.75rem; border-bottom: 1px solid #1e293b; }}
+    tr:hover td {{ background: #1e293b44; }}
+    .footer {{ margin-top: 3rem; font-size: 0.75rem; color: #475569; }}
+  </style>
+</head>
+<body>
+  <h1>Storpheus Stress Report</h1>
+  <p class="meta">
+    Mode: <strong>{mode}</strong> &nbsp;·&nbsp;
+    Target: <strong>{url}</strong> &nbsp;·&nbsp;
+    {report.started_at} → {report.finished_at}
+  </p>
+
+  <div class="kpi-grid">
+    <div class="kpi"><div class="label">Total</div>
+      <div class="value">{report.total_requests}</div></div>
+    <div class="kpi"><div class="label">Success rate</div>
+      <div class="value">{overall_rate}</div></div>
+    <div class="kpi"><div class="label">Failed</div>
+      <div class="value" style="color:#dc2626">{report.failed}</div></div>
+    <div class="kpi"><div class="label">Cache hits</div>
+      <div class="value">{report.cache_hits}</div></div>
+    <div class="kpi"><div class="label">Mean latency</div>
+      <div class="value">{_ms(report.latency_mean_ms)} ms</div></div>
+    <div class="kpi"><div class="label">P50</div>
+      <div class="value">{_ms(report.latency_p50_ms)} ms</div></div>
+    <div class="kpi"><div class="label">P95</div>
+      <div class="value">{_ms(report.latency_p95_ms)} ms</div></div>
+    <div class="kpi"><div class="label">P99</div>
+      <div class="value">{_ms(report.latency_p99_ms)} ms</div></div>
+    <div class="kpi"><div class="label">Total notes</div>
+      <div class="value">{report.total_notes_generated:,}</div></div>
+    <div class="kpi"><div class="label">Avg notes/req</div>
+      <div class="value">{report.avg_notes_per_request:.1f}</div></div>
+    <div class="kpi"><div class="label">Avg notes/bar</div>
+      <div class="value">{report.avg_notes_per_bar:.1f}</div></div>
+  </div>
+
+  {_table("By Genre", report.per_genre)}
+  {_table("By Quality Preset", report.per_preset)}
+  {_table("By Bar Count", report.per_bar_count)}
+  {_table("By Intent Profile", report.per_intent)}
+  {_table("By Instrument Combo", report.per_instrument_combo)}
+  {_concurrency_table()}
+  {_errors_table()}
+
+  <p class="footer">Generated by scripts/e2e/stress_test.py &nbsp;·&nbsp; Maestro</p>
+</body>
+</html>"""
+
+
 def print_report(report: StressReport) -> None:
     W = 72
     print("\n" + "=" * W)
-    print("  ORPHEUS STRESS TEST REPORT")
+    print("  STORPHEUS STRESS TEST REPORT")
     print("=" * W)
     print(f"  Started:  {report.started_at}")
     print(f"  Finished: {report.finished_at}")
@@ -601,8 +768,8 @@ async def check_diagnostics(url: str) -> dict[Any, Any] | None:
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description="Orpheus Stress Test")
-    parser.add_argument("--url", default=ORPHEUS_URL, help="Orpheus base URL")
+    parser = argparse.ArgumentParser(description="Storpheus Stress Test")
+    parser.add_argument("--url", default=ORPHEUS_URL, help="Storpheus base URL")
     parser.add_argument("--quick", action="store_true", help="Quick smoke test (15 requests)")
     parser.add_argument("--full", action="store_true", help="Full matrix (thousands of requests)")
     parser.add_argument("--sweep", action="store_true", help="Parameter sweep (temperature × top_p)")
@@ -613,14 +780,14 @@ async def main() -> None:
     args = parser.parse_args()
 
     print("╔══════════════════════════════════════════════════════════╗")
-    print("║         ORPHEUS STRESS TEST — the infinite riff          ║")
+    print("║       STORPHEUS STRESS TEST — the infinite riff          ║")
     print("╚══════════════════════════════════════════════════════════╝")
     print()
 
-    print("▸ Checking Orpheus health...")
+    print("▸ Checking Storpheus health...")
     healthy = await check_health(args.url)
     if not healthy:
-        print("  ✗ Orpheus is not reachable. Aborting.")
+        print("  ✗ Storpheus is not reachable. Aborting.")
         sys.exit(1)
 
     diag = await check_diagnostics(args.url)
@@ -698,11 +865,18 @@ async def main() -> None:
     print_report(report)
 
     # Save JSON
-    out_path = args.output or f"stress_results_{ts}.json"
+    json_path = args.output or f"stress_results_{ts}.json"
     report_dict = asdict(report)
-    with open(out_path, "w") as f:
+    with open(json_path, "w") as f:
         json.dump(report_dict, f, indent=2, default=str)
-    print(f"  Full results saved to: {out_path}")
+    print(f"  JSON results: {json_path}")
+
+    # Save HTML report
+    html_path = json_path.replace(".json", ".html")
+    html = build_html_report(report, mode=mode, url=args.url)
+    with open(html_path, "w") as f:
+        f.write(html)
+    print(f"  HTML report:  {html_path}")
 
 
 if __name__ == "__main__":
