@@ -101,3 +101,23 @@ async def get_head_snapshot_id(
     )
     row = result.scalar_one_or_none()
     return row
+
+
+async def get_head_snapshot_manifest(
+    session: AsyncSession, repo_id: str, branch: str
+) -> dict[str, str] | None:
+    """Return the file manifest of the most recent commit on *branch*, or None.
+
+    Fetches the latest commit's ``snapshot_id`` and then loads the
+    corresponding :class:`MuseCliSnapshot` row to retrieve its manifest.
+    Returns ``None`` when the branch has no commits or the snapshot row is
+    missing (which should not occur in a consistent database).
+    """
+    snapshot_id = await get_head_snapshot_id(session, repo_id, branch)
+    if snapshot_id is None:
+        return None
+    snapshot = await session.get(MuseCliSnapshot, snapshot_id)
+    if snapshot is None:
+        logger.warning("⚠️ Snapshot %s referenced by HEAD not found in DB", snapshot_id[:8])
+        return None
+    return dict(snapshot.manifest)
