@@ -40,11 +40,13 @@ REPO=$(git rev-parse --show-toplevel)
 PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
 cd "$REPO"
 
-# --- define issues (confirm they are independent — zero file overlap) ---
+# --- define issues (confirmed independent — zero file overlap) ---
 declare -a ISSUES=(
-  "42|Fix: <issue title 1>"
-  "43|Fix: <issue title 2>"
-  "44|Fix: <issue title 3>"
+  "35|feat: \`muse merge\` — fast-forward and 3-way merge with path-level conflict detection"
+  "37|feat: Maestro stress test → muse-work/ output contract with muse-batch.json manifest"
+  "40|feat: Muse Hub push/pull sync protocol — batch commit and object transfer"
+  "41|feat: Muse Hub pull requests — create, list, and merge PRs between branches"
+  "47|feat: Muse Hub JWT auth integration — CLI token storage and Hub request authentication"
 )
 
 # --- create worktrees + task files ---
