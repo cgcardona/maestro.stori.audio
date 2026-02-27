@@ -110,6 +110,96 @@ For SQLite: delete the DB file (e.g. `/data/maestro.db` in the container or your
 
 ---
 
+## Installing the `muse` CLI
+
+The `muse` command is registered as a console script in `pyproject.toml`. Inside the Docker container it is available after `pip install -e .`; outside Docker you can install it into a virtualenv the same way:
+
+```bash
+# Inside the container (already done at build time):
+pip install -e .
+
+# Verify:
+muse --help
+```
+
+Available subcommands: `init`, `status`, `commit`, `log`, `checkout`, `merge`, `remote`, `push`, `pull`. All commands except `init` require a `.muse/` directory in the current (or ancestor) directory; without one they exit with code 2.
+
+---
+
+## Initialising a Muse repo
+
+Run `muse init` inside any project directory to create a local Muse repository:
+
+```bash
+mkdir my-music-project && cd my-music-project
+muse init
+# ✅ Initialised Muse repository in /path/to/my-music-project/.muse
+```
+
+This writes the following files:
+
+| File | Contents |
+|------|----------|
+| `.muse/repo.json` | `repo_id` (UUID), `schema_version`, `created_at` |
+| `.muse/HEAD` | `refs/heads/main` |
+| `.muse/refs/heads/main` | empty — no commits yet |
+| `.muse/config.toml` | `[user]`, `[auth]`, `[remotes]` stubs |
+
+Verify with `muse status`:
+
+```bash
+muse status
+# On branch main, no commits yet
+```
+
+**Re-initialise** an existing repo (preserves `repo_id` and `config.toml`):
+
+```bash
+muse init --force
+# ✅ Reinitialised Muse repository in /path/to/my-music-project/.muse
+```
+
+**Security:** `.muse/config.toml` stores your Muse Hub auth token. Add `.muse/` to your `.gitignore` to prevent accidental exposure:
+
+```bash
+echo '.muse/config.toml' >> .gitignore
+```
+
+---
+
+## Committing with `muse commit`
+
+After generating MIDI/MP3/piano roll artifacts into `muse-work/`, snapshot and version them:
+
+```bash
+# Record the current muse-work/ state as a new commit
+muse commit -m "boom bap demo take 1"
+# ✅ [main a1b2c3d4] boom bap demo take 1
+```
+
+**What happens internally:**
+
+1. Walks all files under `muse-work/`, computing `sha256(file_bytes)` for each.
+2. Builds a snapshot manifest `{rel_path: object_id}` and computes `snapshot_id`.
+3. If the snapshot hasn't changed since the last commit, exits 0: _"Nothing to commit, working tree clean"_.
+4. Derives `commit_id = sha256(parents | snapshot_id | message | timestamp)` — fully deterministic.
+5. Upserts object rows, snapshot row, and commit row to Postgres.
+6. Updates `.muse/refs/heads/main` (or current branch) to the new `commit_id`.
+
+**Prerequisites:**
+
+- `DATABASE_URL` must be set (always true inside Docker).
+- `alembic upgrade head` must have been run so the `muse_cli_*` tables exist.
+
+**Inside Docker (recommended):**
+
+```bash
+docker compose exec maestro sh -c "mkdir -p /tmp/demo && cd /tmp/demo && python -m maestro.muse_cli.app init"
+docker compose exec maestro sh -c "cd /tmp/demo && python -m maestro.muse_cli.app commit -m 'first take'"
+```
+
+---
+
 ## AWS credentials
 
 For S3 asset setup: create IAM user + access key in AWS Console (or use existing key). Run `scripts/deploy/setup-s3-assets.sh` with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`. Script can create a limited `stori-assets-app` user; put the **printed** env vars into server `.env`.

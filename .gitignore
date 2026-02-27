@@ -232,8 +232,13 @@ logs.txt
 storpheus/seed.mid
 storpheus/generated.mid
 
-# Stress test result dumps
-stress_results_*.json
+# Stress test result dumps and generated HTML reports
+scripts/e2e/stress_results_*.json
+scripts/e2e/stress_results_*.html
+scripts/e2e/stress_results_latest.html
+
+# Storpheus artifact exports (generated during inference, fetched by stress test)
+storpheus/artifacts_export/
 
 # Tour de Force artifacts and secrets
 artifacts/

@@ -20,6 +20,229 @@ Muse is a persistent, Git-style version control system for musical compositions.
 
 ## Module Map
 
+### CLI Entry Point
+
+```
+maestro/muse_cli/
+├── __init__.py          — Package marker
+├── app.py               — Typer application root (console script: `muse`)
+├── errors.py            — Exit-code enum (0 success / 1 user / 2 repo / 3 internal) + exceptions
+├── _repo.py             — Repository detection (.muse/ directory walker)
+└── commands/
+    ├── __init__.py
+    ├── init.py           — muse init  ✅ fully implemented
+    ├── status.py         — muse status  ✅ branch + commit state display
+    ├── commit.py         — muse commit   ✅ fully implemented (issue #32)
+    ├── log.py            — muse log     ✅ fully implemented (issue #33)
+    ├── checkout.py       — muse checkout ✅ fully implemented (issue #34)
+    ├── snapshot.py       — walk_workdir, hash_file, build_snapshot_manifest, compute IDs
+    ├── models.py         — MuseCliCommit, MuseCliSnapshot, MuseCliObject (SQLAlchemy)
+    ├── db.py             — open_session, upsert_object/snapshot/commit helpers
+    ├── merge.py          — muse merge   (stub — issue #35)
+    ├── remote.py         — muse remote  (stub — issue #38)
+    ├── push.py           — muse push    (stub — issue #38)
+    └── pull.py           — muse pull    (stub — issue #38)
+```
+
+The CLI delegates to existing `maestro/services/muse_*.py` service modules. Stub subcommands print "not yet implemented" and exit 0.
+
+---
+
+## `muse log` Output Formats
+
+### Default (`git log` style)
+
+```
+commit a1b2c3d4e5f6...  (HEAD -> main)
+Parent: f9e8d7c6
+Date:   2026-02-27 17:30:00
+
+    boom bap demo take 1
+
+commit f9e8d7c6...
+Date:   2026-02-27 17:00:00
+
+    initial take
+```
+
+Commits are printed newest-first.  The first commit (root) has no `Parent:` line.
+
+### `--graph` mode
+
+Reuses `maestro.services.muse_log_render.render_ascii_graph` by adapting `MuseCliCommit` rows to the `MuseLogGraph`/`MuseLogNode` dataclasses the renderer expects.
+
+```
+* a1b2c3d4 boom bap demo take 1 (HEAD)
+* f9e8d7c6 initial take
+```
+
+Merge commits (two parents) require `muse merge` (issue #35) — `parent2_commit_id` is reserved for that iteration.
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--limit N` / `-n N` | 1000 | Cap the walk at N commits |
+| `--graph` | off | ASCII DAG mode |
+
+---
+
+## Branching Model
+
+### `muse checkout` — branch creation and HEAD pointer management
+
+Branches are tracked as files under `.muse/refs/heads/<branch-name>`, each containing the `commit_id` of the branch tip (the same convention as Git's packed-refs but in plain files).
+
+`.muse/HEAD` holds the symbolic ref of the currently active branch:
+
+```
+refs/heads/main
+```
+
+### Switching branches
+
+`muse checkout <branch>` rewrites `.muse/HEAD` to `refs/heads/<branch>`.  Subsequent `muse commit` and `muse log` calls read this file to know which branch to operate on.
+
+### Creating branches
+
+`muse checkout -b <branch>` forks from the current HEAD commit:
+
+1. Reads the current branch tip from `.muse/refs/heads/<current>`.
+2. Writes that same `commit_id` to `.muse/refs/heads/<new-branch>`.
+3. Rewrites `.muse/HEAD` to `refs/heads/<new-branch>`.
+
+The new branch starts with the same history as its parent — divergence happens on the next `muse commit`.
+
+### Dirty working-tree guard
+
+Before switching branches, `muse checkout` compares the on-disk `snapshot_id` of `muse-work/` against the last committed snapshot on the **current** branch.  If they differ the command exits `1` with a message.  Use `--force` / `-f` to bypass the guard.
+
+If the current branch has no commits yet (empty branch) the tree is never considered dirty.
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `-b` / `--create` | Create a new branch at current HEAD and switch to it |
+| `--force` / `-f` | Ignore uncommitted changes in `muse-work/` |
+
+### DB-level branch table
+
+A `muse_cli_branches` Postgres table is deferred to the `muse merge` iteration (issue #35), when multi-branch DAG queries will require stable foreign-key references.  Until then, branches live exclusively in `.muse/refs/heads/`.
+
+---
+
+## Commit Data Model
+
+`muse commit` persists three content-addressed table types to Postgres:
+
+### `muse_cli_objects` — File blobs (sha256-keyed)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `object_id` | `String(64)` PK | `sha256(file_bytes)` hex digest |
+| `size_bytes` | `Integer` | Raw file size |
+| `created_at` | `DateTime(tz=True)` | Wall-clock insert time |
+
+Objects are deduplicated across commits: the same file committed on two branches is stored exactly once.
+
+### `muse_cli_snapshots` — Snapshot manifests
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `snapshot_id` | `String(64)` PK | `sha256(sorted("path:object_id" pairs))` |
+| `manifest` | `JSON` | `{rel_path: object_id}` mapping |
+| `created_at` | `DateTime(tz=True)` | Wall-clock insert time |
+
+Two identical working trees always produce the same `snapshot_id`.
+
+### `muse_cli_commits` — Commit history
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `commit_id` | `String(64)` PK | Deterministic sha256 (see below) |
+| `repo_id` | `String(36)` | UUID from `.muse/repo.json` |
+| `branch` | `String(255)` | Branch name at commit time |
+| `parent_commit_id` | `String(64)` nullable | Previous HEAD commit on branch |
+| `snapshot_id` | `String(64)` FK | Points to the snapshot row |
+| `message` | `Text` | User-supplied commit message |
+| `author` | `String(255)` | Reserved (empty for MVP) |
+| `committed_at` | `DateTime(tz=True)` | Timestamp used in hash derivation |
+| `created_at` | `DateTime(tz=True)` | Wall-clock DB insert time |
+
+### ID Derivation (deterministic)
+
+```
+object_id   = sha256(file_bytes)
+snapshot_id = sha256("|".join(sorted(f"{path}:{oid}" for path, oid in manifest.items())))
+commit_id   = sha256(
+                "|".join(sorted(parent_ids))
+                + "|" + snapshot_id
+                + "|" + message
+                + "|" + committed_at.isoformat()
+              )
+```
+
+Given the same working tree state, message, and timestamp two machines produce identical IDs. `sorted()` ensures insertion-order independence for both snapshot manifests and parent lists.
+
+---
+
+## Local Repository Structure (`.muse/`)
+
+`muse init` creates the following layout in the current working directory:
+
+```
+.muse/
+  repo.json          Repo identity: repo_id (UUID), schema_version, created_at
+  HEAD               Current branch pointer, e.g. "refs/heads/main"
+  config.toml        [user], [auth], [remotes] configuration
+  refs/
+    heads/
+      main           Commit ID of branch HEAD (empty = no commits yet)
+      <branch>       One file per branch
+```
+
+### File semantics
+
+| File | Source of truth for | Notes |
+|------|-------------------|-------|
+| `repo.json` | Repo identity | `repo_id` persists across `--force` reinitialise |
+| `HEAD` | Current branch name | Always `refs/heads/<branch>` |
+| `refs/heads/<branch>` | Branch → commit pointer | Empty string = branch has no commits yet |
+| `config.toml` | User identity, auth token, remotes | Not overwritten on `--force` |
+
+### Repo-root detection
+
+Every CLI command locates the active repo by walking up the directory tree until `.muse/` is found:
+
+```python
+# maestro/muse_cli/_repo.py
+find_repo_root(start: Path | None = None) -> Path | None
+```
+
+- Returns the directory containing `.muse/`, or `None` if not found (never raises).
+- Set `MUSE_REPO_ROOT=/path/to/repo` to override traversal (useful in tests and scripts).
+- `require_repo()` wraps `find_repo_root()` for command callbacks: exits 2 with "Not a Muse repository. Run `muse init`." if root is `None`.
+
+### `config.toml` example
+
+```toml
+[user]
+name = "Gabriel"
+email = "g@example.com"
+
+[auth]
+token = "eyJ..."     # Muse Hub Bearer token — keep out of version control
+
+[remotes]
+[remotes.origin]
+url = "https://story.audio/musehub/repos/abcd1234"
+```
+
+> **Security note:** `.muse/config.toml` contains the Hub auth token. Add `.muse/config.toml` to `.gitignore` (or `.museignore`) to prevent accidental exposure.
+
+### VCS Services
+
 ```
 app/services/
 ├── muse_repository.py        — Persistence adapter (DB reads/writes)
