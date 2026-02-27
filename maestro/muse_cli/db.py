@@ -103,6 +103,30 @@ async def get_head_snapshot_id(
     return row
 
 
+async def get_commit_snapshot_manifest(
+    session: AsyncSession, commit_id: str
+) -> dict[str, str] | None:
+    """Return the file manifest for the snapshot attached to *commit_id*, or None.
+
+    Fetches the :class:`MuseCliCommit` row by primary key, then loads its
+    :class:`MuseCliSnapshot` to retrieve the manifest.  Returns ``None``
+    when either row is missing (which should not occur in a consistent DB).
+    """
+    commit = await session.get(MuseCliCommit, commit_id)
+    if commit is None:
+        logger.warning("⚠️ Commit %s not found in DB", commit_id[:8])
+        return None
+    snapshot = await session.get(MuseCliSnapshot, commit.snapshot_id)
+    if snapshot is None:
+        logger.warning(
+            "⚠️ Snapshot %s referenced by commit %s not found in DB",
+            commit.snapshot_id[:8],
+            commit_id[:8],
+        )
+        return None
+    return dict(snapshot.manifest)
+
+
 async def get_head_snapshot_manifest(
     session: AsyncSession, repo_id: str, branch: str
 ) -> dict[str, str] | None:

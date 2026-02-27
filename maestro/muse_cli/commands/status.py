@@ -88,14 +88,14 @@ async def _status_async(
 
     # -- In-progress merge --
     merge_state = read_merge_state(root)
-    if merge_state is not None and merge_state.conflicts:
+    if merge_state is not None and merge_state.conflict_paths:
         typer.echo(f"On branch {branch}")
         typer.echo("")
         typer.echo("You have unmerged paths.")
         typer.echo('  (fix conflicts and run "muse commit")')
         typer.echo("")
         typer.echo("Unmerged paths:")
-        for conflict_path in sorted(merge_state.conflicts):
+        for conflict_path in sorted(merge_state.conflict_paths):
             typer.echo(f"\tboth modified:   {conflict_path}")
         typer.echo("")
         return
