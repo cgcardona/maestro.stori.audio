@@ -1,0 +1,4 @@
+WORKFLOW=issue-to-pr
+ISSUE_NUMBER=47
+ISSUE_TITLE=feat: Muse Hub JWT auth integration — CLI token storage and Hub request authentication
+ISSUE_URL=https://github.com/cgcardona/maestro/issues/47
