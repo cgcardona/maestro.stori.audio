@@ -48,6 +48,24 @@ This document is the single source of truth for every named entity (TypedDict, d
 12. [Tempo Convention](#tempo-convention)
 13. [`Any` Status](#any-status)
 14. [Entity Hierarchy](#entity-hierarchy)
+15. [Entity Graph (Mermaid)](#entity-graph-mermaid)
+    - [Diagram 1 — JSON Type Universe](#diagram-1--json-type-universe)
+    - [Diagram 2 — MIDI Primitives](#diagram-2--midi-primitives)
+    - [Diagram 3 — MIDI Event TypedDicts & Region Maps](#diagram-3--midi-event-typeddicts--region-maps)
+    - [Diagram 4 — LLM Wire Types: Messages & Streaming](#diagram-4--llm-wire-types-messages--streaming)
+    - [Diagram 5 — Pydantic Base & Request Models](#diagram-5--pydantic-base--request-models)
+    - [Diagram 6 — SSE Event Hierarchy (MaestroEvent)](#diagram-6--sse-event-hierarchy-maestroevent)
+    - [Diagram 7 — Variation Pydantic Models](#diagram-7--variation-pydantic-models)
+    - [Diagram 8 — Generation & Backend Pipeline](#diagram-8--generation--backend-pipeline)
+    - [Diagram 9 — Music Spec IR](#diagram-9--music-spec-ir)
+    - [Diagram 10 — Variation Layer Runtime](#diagram-10--variation-layer-runtime)
+    - [Diagram 11 — Agent Contracts & Composition Protocol](#diagram-11--agent-contracts--composition-protocol)
+    - [Diagram 12 — State Store & Entity Registry](#diagram-12--state-store--entity-registry)
+    - [Diagram 13 — Project & Context TypedDicts](#diagram-13--project--context-typeddicts)
+    - [Diagram 14 — Storpheus Service Types](#diagram-14--storpheus-service-types)
+    - [Diagram 15 — Asset Service & S3 Protocols](#diagram-15--asset-service--s3-protocols)
+    - [Diagram 16 — HTTP Response Models](#diagram-16--http-response-models)
+    - [Diagram 17 — MCP JSON-RPC TypedDicts](#diagram-17--mcp-json-rpc-typeddicts)
 
 ---
 
@@ -1914,4 +1932,1159 @@ Storpheus Service (storpheus/)
     └── Scoring
         ├── ScoringParams              — @dataclass, candidate scoring config
         └── BestCandidate              — @dataclass, winning generation candidate
+```
+
+---
+
+## Entity Graph (Mermaid)
+
+Sixteen class diagrams organized by architectural layer. Each diagram is self-contained. Cross-diagram references are noted in prose above each diagram.
+
+**Arrow conventions**
+
+| Arrow | Meaning |
+|---|---|
+| `<\|--` | Inherits / extends |
+| `*--` | Composes (owns lifecycle) |
+| `-->` | References / associates |
+| `..>` | Depends on at call site |
+
+**Stereotype key**
+
+| Stereotype | Python kind |
+|---|---|
+| `<<TypeAlias>>` | `type` / `TypeAlias` |
+| `<<TypedDict>>` | `TypedDict` |
+| `<<dataclass>>` | `@dataclass` |
+| `<<frozen>>` | `@dataclass(frozen=True)` |
+| `<<Generic>>` | Generic dataclass with `TypeVar` |
+| `<<Protocol>>` | `Protocol` |
+| `<<ABC>>` | `ABC` abstract base |
+| `<<Pydantic>>` | `BaseModel` subclass |
+| `<<RootModel>>` | `RootModel` subclass |
+| `<<Enum>>` | `str, Enum` |
+| `<<Union>>` | `Union[...]` type alias |
+| `<<Exception>>` | `Exception` subclass |
+
+---
+
+### Diagram 1 — JSON Type Universe
+
+Foundational recursive types. Every other structured type in the codebase is either a `TypedDict` whose values are `JSONValue`, or a Pydantic model that serializes to `JSONObject`. `PydanticJson` is the sole `RootModel` used to make recursive `JSONValue` Pydantic-compatible.
+
+```mermaid
+classDiagram
+    class JSONScalar {
+        <<TypeAlias>>
+        str or int or float or bool or None
+    }
+    class JSONValue {
+        <<TypeAlias>>
+        JSONScalar or list~JSONValue~ or JSONObject
+    }
+    class JSONObject {
+        <<TypeAlias>>
+        dict~str, JSONValue~
+    }
+    class PydanticJson {
+        <<RootModel>>
+        +root : JSONValue
+    }
+    class EventJsonSchema {
+        <<TypeAlias>>
+        dict~str, JSONValue~
+    }
+    class EventSchemaMap {
+        <<TypeAlias>>
+        dict~str, EventJsonSchema~
+    }
+    class EnumDefinitionMap {
+        <<TypeAlias>>
+        dict~str, list~str~~
+    }
+
+    JSONScalar --> JSONValue : element-of
+    JSONValue --> JSONObject : specializes
+    PydanticJson --> JSONValue : wraps
+    EventJsonSchema --> JSONValue : values
+    EventSchemaMap --> EventJsonSchema : contains
+```
+
+---
+
+### Diagram 2 — MIDI Primitives
+
+All named `Annotated` integer/float type aliases. They are the single source of truth for range enforcement — Pydantic fields, dataclass `__post_init__`, and TypedDict docstrings all reference these aliases.
+
+```mermaid
+classDiagram
+    class MidiPitch { <<TypeAlias>> int 0-127 }
+    class MidiVelocity { <<TypeAlias>> int 0-127 }
+    class MidiChannel { <<TypeAlias>> int 0-15 }
+    class MidiCC { <<TypeAlias>> int 0-127 }
+    class MidiCCValue { <<TypeAlias>> int 0-127 }
+    class MidiAftertouchValue { <<TypeAlias>> int 0-127 }
+    class MidiGMProgram { <<TypeAlias>> int 0-127 }
+    class MidiPitchBend { <<TypeAlias>> int -8192 to 8191 }
+    class MidiBPM { <<TypeAlias>> int 20-300 }
+    class BeatPosition { <<TypeAlias>> float ge=0.0 }
+    class BeatDuration { <<TypeAlias>> float gt=0.0 }
+    class ArrangementBeat { <<TypeAlias>> int ge=0 }
+    class ArrangementDuration { <<TypeAlias>> int ge=1 }
+    class Bars { <<TypeAlias>> int ge=1 }
+```
+
+---
+
+### Diagram 3 — MIDI Event TypedDicts & Region Maps
+
+The four MIDI event TypedDicts and their `RegionXxxMap` collection aliases. These flow from Storpheus → backends → state store → SSE events.
+
+```mermaid
+classDiagram
+    class NoteDict {
+        <<TypedDict>>
+        +pitch : MidiPitch
+        +velocity : MidiVelocity
+        +start_beat : BeatPosition
+        +duration : BeatDuration
+        +channel : MidiChannel
+    }
+    class CCEventDict {
+        <<TypedDict>>
+        +beat : BeatPosition
+        +controller : MidiCC
+        +value : MidiCCValue
+    }
+    class PitchBendDict {
+        <<TypedDict>>
+        +beat : BeatPosition
+        +value : MidiPitchBend
+    }
+    class AftertouchDict {
+        <<TypedDict>>
+        +beat : BeatPosition
+        +value : MidiAftertouchValue
+        +pitch : MidiPitch
+    }
+    class RegionNotesMap { <<TypeAlias>> dict~str, list~NoteDict~~ }
+    class RegionCCMap { <<TypeAlias>> dict~str, list~CCEventDict~~ }
+    class RegionPitchBendMap { <<TypeAlias>> dict~str, list~PitchBendDict~~ }
+    class RegionAftertouchMap { <<TypeAlias>> dict~str, list~AftertouchDict~~ }
+
+    NoteDict --> MidiPitch
+    NoteDict --> MidiVelocity
+    NoteDict --> BeatPosition
+    NoteDict --> BeatDuration
+    NoteDict --> MidiChannel
+    CCEventDict --> MidiCC
+    CCEventDict --> MidiCCValue
+    CCEventDict --> BeatPosition
+    PitchBendDict --> MidiPitchBend
+    PitchBendDict --> BeatPosition
+    AftertouchDict --> MidiAftertouchValue
+    AftertouchDict --> MidiPitch
+    AftertouchDict --> BeatPosition
+    RegionNotesMap --> NoteDict
+    RegionCCMap --> CCEventDict
+    RegionPitchBendMap --> PitchBendDict
+    RegionAftertouchMap --> AftertouchDict
+```
+
+---
+
+### Diagram 4 — LLM Wire Types: Messages & Streaming
+
+The full OpenAI/OpenRouter protocol surface. `ChatMessage` and `StreamEvent` are the two discriminated unions consumed and produced by `LLMClient`. The `OpenAIRequestPayload` is the wire shape sent to the API; `OpenAIStreamChunk` is what comes back on the SSE stream.
+
+```mermaid
+classDiagram
+    class SystemMessage { <<TypedDict>> +role : str; +content : str }
+    class UserMessage { <<TypedDict>> +role : str; +content : str }
+    class AssistantMessage {
+        <<TypedDict>>
+        +role : str
+        +content : str
+        +tool_calls : list~ToolCallEntry~
+    }
+    class ToolResultMessage { <<TypedDict>> +role : str; +tool_call_id : str; +content : str }
+    class ToolCallEntry {
+        <<TypedDict>>
+        +id : str
+        +type : str
+        +function : ToolCallFunction
+    }
+    class ToolCallFunction { <<TypedDict>> +name : str; +arguments : str }
+    class ChatMessage {
+        <<Union>>
+        SystemMessage or UserMessage or AssistantMessage or ToolResultMessage
+    }
+
+    class ReasoningDeltaEvent { <<TypedDict>> +type : str; +delta : str }
+    class ContentDeltaEvent { <<TypedDict>> +type : str; +delta : str }
+    class DoneStreamEvent { <<TypedDict>> +type : str; +usage : UsageStats }
+    class StreamEvent {
+        <<Union>>
+        ReasoningDeltaEvent or ContentDeltaEvent or DoneStreamEvent
+    }
+    class UsageStats { <<TypedDict>> +prompt_tokens : int; +completion_tokens : int; +total_tokens : int }
+
+    class OpenAIStreamChunk {
+        <<TypedDict>>
+        +id : str
+        +choices : list~StreamChoice~
+        +usage : UsageStats
+    }
+    class StreamChoice { <<TypedDict>> +index : int; +delta : StreamDelta }
+    class StreamDelta { <<TypedDict>> +content : str; +tool_calls : list~ToolCallDelta~ }
+    class ToolCallDelta { <<TypedDict>> +index : int; +function : ToolCallFunctionDelta }
+    class ToolCallFunctionDelta { <<TypedDict>> +name : str; +arguments : str }
+
+    class OpenAIRequestPayload {
+        <<TypedDict>>
+        +model : str
+        +messages : list~ChatMessage~
+        +tools : list~ToolSchemaDict~
+        +stream : bool
+        +provider : ProviderConfig
+        +thinking : ReasoningConfig
+    }
+    class ToolSchemaDict { <<TypedDict>> +type : str; +function : ToolFunctionDict }
+    class ToolFunctionDict { <<TypedDict>> +name : str; +description : str; +parameters : ToolParametersDict }
+    class ToolParametersDict { <<TypedDict>> +type : str; +required : list~str~ }
+    class CachedToolSchemaDict { <<TypedDict>> +cache_control : CacheControlDict }
+    class CacheControlDict { <<TypedDict>> +type : str }
+    class ProviderConfig { <<TypedDict>> +order : list~str~; +allow_fallbacks : bool }
+    class ReasoningConfig { <<TypedDict>> +max_tokens : int }
+
+    ChatMessage --> SystemMessage
+    ChatMessage --> UserMessage
+    ChatMessage --> AssistantMessage
+    ChatMessage --> ToolResultMessage
+    AssistantMessage --> ToolCallEntry
+    ToolCallEntry --> ToolCallFunction
+
+    StreamEvent --> ReasoningDeltaEvent
+    StreamEvent --> ContentDeltaEvent
+    StreamEvent --> DoneStreamEvent
+    DoneStreamEvent --> UsageStats
+    OpenAIStreamChunk --> StreamChoice
+    OpenAIStreamChunk --> UsageStats
+    StreamChoice --> StreamDelta
+    StreamDelta --> ToolCallDelta
+    ToolCallDelta --> ToolCallFunctionDelta
+
+    OpenAIRequestPayload --> ChatMessage
+    OpenAIRequestPayload --> ToolSchemaDict
+    OpenAIRequestPayload --> ProviderConfig
+    OpenAIRequestPayload --> ReasoningConfig
+    ToolSchemaDict --> ToolFunctionDict
+    ToolFunctionDict --> ToolParametersDict
+    CachedToolSchemaDict --> CacheControlDict
+```
+
+---
+
+### Diagram 5 — Pydantic Base & Request Models
+
+`CamelModel` is the single base for all camelCase wire models. All request bodies coming from the Stori frontend inherit from it. `GenerateRequest` is the sole internal endpoint that uses plain `BaseModel`.
+
+```mermaid
+classDiagram
+    class BaseModel { <<Pydantic>> }
+    class CamelModel {
+        <<Pydantic>>
+        alias_generator : to_camel
+        populate_by_name : True
+    }
+    BaseModel <|-- CamelModel
+
+    class MaestroRequest {
+        <<Pydantic>>
+        +conversation_id : str
+        +message : str
+        +project : ProjectContext
+        +mode : str
+    }
+    class GenerateRequest {
+        <<Pydantic>>
+        +role : str
+        +context : GenerationContext
+    }
+    class ProposeVariationRequest {
+        <<Pydantic>>
+        +region_id : str
+        +phrase : str
+        +scope : ProposeVariationScopeDict
+        +options : ProposeVariationOptionsDict
+    }
+    class CommitVariationRequest { <<Pydantic>> +variation_id : str }
+    class DiscardVariationRequest { <<Pydantic>> +variation_id : str }
+
+    class MCPPropertyDefWire { <<Pydantic>> +type : str; +description : str; +enum : list~str~ }
+    class MCPInputSchemaWire {
+        <<Pydantic>>
+        +type : str
+        +properties : dict~str, MCPPropertyDefWire~
+        +required : list~str~
+    }
+    class MCPToolDefWire {
+        <<Pydantic>>
+        +name : str
+        +description : str
+        +inputSchema : MCPInputSchemaWire
+    }
+
+    CamelModel <|-- MaestroRequest
+    BaseModel <|-- GenerateRequest
+    CamelModel <|-- ProposeVariationRequest
+    CamelModel <|-- CommitVariationRequest
+    CamelModel <|-- DiscardVariationRequest
+    BaseModel <|-- MCPPropertyDefWire
+    BaseModel <|-- MCPInputSchemaWire
+    BaseModel <|-- MCPToolDefWire
+    MCPToolDefWire --> MCPInputSchemaWire
+    MCPInputSchemaWire --> MCPPropertyDefWire
+```
+
+---
+
+### Diagram 6 — SSE Event Hierarchy (MaestroEvent)
+
+All server-sent events inherit from `MaestroEvent`. Discriminated on the `event` field. `ToolCallWire` and `PlanStepSchema` are CamelModel sub-entities embedded in events.
+
+```mermaid
+classDiagram
+    class CamelModel { <<Pydantic>> }
+    class MaestroEvent { <<Pydantic>> +event : str }
+    CamelModel <|-- MaestroEvent
+
+    class ToolCallWire { <<Pydantic>> +id : str; +name : str; +arguments : JSONObject }
+    class PlanStepSchema { <<Pydantic>> +step_id : str; +tool : str; +status : str; +description : str }
+    class NoteChangeSchema { <<Pydantic>> +change_type : str; +before : dict; +after : dict }
+    CamelModel <|-- ToolCallWire
+    CamelModel <|-- PlanStepSchema
+    CamelModel <|-- NoteChangeSchema
+
+    class StateEvent { <<Pydantic>> +intent : str; +mode : str }
+    class ReasoningEvent { <<Pydantic>> +content : str }
+    class ReasoningEndEvent { <<Pydantic>> }
+    class ContentEvent { <<Pydantic>> +content : str }
+    class StatusEvent { <<Pydantic>> +message : str }
+    class ErrorEvent { <<Pydantic>> +message : str }
+    class CompleteEvent { <<Pydantic>> }
+    class PlanEvent { <<Pydantic>> +steps : list~PlanStepSchema~ }
+    class PlanStepUpdateEvent { <<Pydantic>> +step_id : str; +status : str }
+    class ToolStartEvent { <<Pydantic>> +tool : str }
+    class ToolCallEvent { <<Pydantic>> +tool_call : ToolCallWire }
+    class ToolErrorEvent { <<Pydantic>> +tool : str; +error : str }
+    class PreflightEvent { <<Pydantic>> }
+    class GeneratorStartEvent { <<Pydantic>> +role : str }
+    class GeneratorCompleteEvent { <<Pydantic>> +role : str; +notes_count : int }
+    class AgentCompleteEvent { <<Pydantic>> +role : str }
+    class SummaryEvent { <<Pydantic>> }
+    class SummaryFinalEvent { <<Pydantic>> }
+    class MetaEvent { <<Pydantic>> +variation_id : str }
+    class PhraseEvent { <<Pydantic>> +phrase_id : str }
+    class DoneEvent { <<Pydantic>> +variation_id : str }
+    class MCPMessageEvent { <<Pydantic>> +connection_id : str }
+    class MCPPingEvent { <<Pydantic>> }
+
+    MaestroEvent <|-- StateEvent
+    MaestroEvent <|-- ReasoningEvent
+    MaestroEvent <|-- ReasoningEndEvent
+    MaestroEvent <|-- ContentEvent
+    MaestroEvent <|-- StatusEvent
+    MaestroEvent <|-- ErrorEvent
+    MaestroEvent <|-- CompleteEvent
+    MaestroEvent <|-- PlanEvent
+    MaestroEvent <|-- PlanStepUpdateEvent
+    MaestroEvent <|-- ToolStartEvent
+    MaestroEvent <|-- ToolCallEvent
+    MaestroEvent <|-- ToolErrorEvent
+    MaestroEvent <|-- PreflightEvent
+    MaestroEvent <|-- GeneratorStartEvent
+    MaestroEvent <|-- GeneratorCompleteEvent
+    MaestroEvent <|-- AgentCompleteEvent
+    MaestroEvent <|-- SummaryEvent
+    MaestroEvent <|-- SummaryFinalEvent
+    MaestroEvent <|-- MetaEvent
+    MaestroEvent <|-- PhraseEvent
+    MaestroEvent <|-- DoneEvent
+    MaestroEvent <|-- MCPMessageEvent
+    MaestroEvent <|-- MCPPingEvent
+    PlanEvent --> PlanStepSchema
+    ToolCallEvent --> ToolCallWire
+```
+
+---
+
+### Diagram 7 — Variation Pydantic Models
+
+The full variation proposal / commit / discard surface as seen by the Stori frontend. All fields are camelCase on the wire. `NoteChange` embeds two `MidiNoteSnapshot` instances (before/after).
+
+```mermaid
+classDiagram
+    class CamelModel { <<Pydantic>> }
+    class MidiNoteSnapshot {
+        <<Pydantic>>
+        +pitch : int
+        +velocity : int
+        +startBeat : float
+        +duration : float
+        +channel : int
+    }
+    class NoteChange {
+        <<Pydantic>>
+        +changeType : ChangeType
+        +before : MidiNoteSnapshot
+        +after : MidiNoteSnapshot
+    }
+    class Phrase {
+        <<Pydantic>>
+        +phraseId : str
+        +regionId : str
+        +noteChanges : list~NoteChange~
+    }
+    class Variation {
+        <<Pydantic>>
+        +variationId : str
+        +phrases : list~Phrase~
+    }
+    class ProposeVariationResponse {
+        <<Pydantic>>
+        +variationId : str
+        +variation : Variation
+    }
+    class UpdatedRegionPayload {
+        <<Pydantic>>
+        +regionId : str
+        +notes : list
+    }
+    class CommitVariationResponse {
+        <<Pydantic>>
+        +variationId : str
+        +regions : list~UpdatedRegionPayload~
+    }
+    class ChangeType { <<TypeAlias>> added or removed or modified }
+    class VariationTag { <<TypeAlias>> pitchChange or rhythmChange or velocityChange or timingChange }
+
+    CamelModel <|-- MidiNoteSnapshot
+    CamelModel <|-- NoteChange
+    CamelModel <|-- Phrase
+    CamelModel <|-- Variation
+    CamelModel <|-- ProposeVariationResponse
+    CamelModel <|-- UpdatedRegionPayload
+    CamelModel <|-- CommitVariationResponse
+    NoteChange --> MidiNoteSnapshot : before
+    NoteChange --> MidiNoteSnapshot : after
+    NoteChange --> ChangeType
+    Phrase --> NoteChange
+    Variation --> Phrase
+    ProposeVariationResponse --> Variation
+    CommitVariationResponse --> UpdatedRegionPayload
+```
+
+---
+
+### Diagram 8 — Generation & Backend Pipeline
+
+`MusicGeneratorBackend` is the ABC that all backend implementations fulfill. `GenerationResult` is the single output contract. `RejectionSamplingResult` is generic over the result type `_R` and used by the critic to select the best candidate.
+
+```mermaid
+classDiagram
+    class MusicGeneratorBackend {
+        <<ABC>>
+        +generate(context : GenerationContext) GenerationResult
+        +backend_type : GeneratorBackend
+    }
+    class GeneratorBackend {
+        <<Enum>>
+        STORPHEUS
+        TEXT2MIDI
+        HUGGINGFACE_MELODY
+        DRUM_IR
+        BASS_IR
+        HARMONIC_IR
+        MELODY_IR
+    }
+    class GenerationContext {
+        <<TypedDict>>
+        +role : str
+        +tempo : MidiBPM
+        +bars : Bars
+        +chord_progression : list~str~
+        +section_name : str
+    }
+    class GenerationMetadata {
+        <<TypedDict>>
+        +model : str
+        +duration_ms : float
+        +attempts : int
+        +storpheus_metadata : JSONObject
+    }
+    class GenerationResult {
+        <<dataclass>>
+        +success : bool
+        +notes : list~NoteDict~
+        +metadata : GenerationMetadata
+        +error : str
+        +channel_notes : RegionNotesMap
+        +cc_events : list~CCEventDict~
+        +pitch_bends : list~PitchBendDict~
+        +aftertouch : list~AftertouchDict~
+    }
+    class RejectionSamplingResult~_R~ {
+        <<Generic dataclass>>
+        +best_result : _R
+        +best_score : float
+        +attempts : int
+        +accepted : bool
+        +all_scores : list~float~
+    }
+    class CompositionContext {
+        <<TypedDict>>
+        +project_context : ProjectContext
+        +existing_notes : RegionNotesMap
+        +role : str
+    }
+    class RoleResult {
+        <<TypedDict>>
+        +role : str
+        +notes : list~NoteDict~
+        +metadata : GenerationMetadata
+    }
+    class UnifiedGenerationOutput {
+        <<TypedDict>>
+        +results : dict~str, RoleResult~
+        +success : bool
+    }
+
+    MusicGeneratorBackend --> GenerationResult : produces
+    MusicGeneratorBackend --> GenerationContext : consumes
+    MusicGeneratorBackend --> GeneratorBackend : identified by
+    GenerationResult --> GenerationMetadata
+    GenerationResult --> NoteDict
+    UnifiedGenerationOutput --> RoleResult
+    RoleResult --> GenerationMetadata
+```
+
+---
+
+### Diagram 9 — Music Spec IR
+
+The full intermediate representation for a planned composition. `MusicSpec` is the root; it decomposes into per-instrument specs that are consumed by the backend renderers (drum IR, bass IR, harmonic IR, melody IR).
+
+```mermaid
+classDiagram
+    class MusicSpec {
+        <<dataclass>>
+        +global_spec : GlobalSpec
+        +drum_spec : DrumSpec
+        +bass_spec : BassSpec
+        +harmonic_spec : HarmonicSpec
+        +melody_spec : MelodySpec
+        +section_map : list~SectionMapEntry~
+    }
+    class GlobalSpec {
+        <<dataclass>>
+        +bpm : MidiBPM
+        +bars : Bars
+        +time_sig_num : int
+        +time_sig_den : int
+        +key : str
+    }
+    class SectionMapEntry {
+        <<dataclass>>
+        +name : str
+        +start_bar : int
+        +length_bars : int
+    }
+    class DrumSpec {
+        <<dataclass>>
+        +layers : dict~str, DrumLayerSpec~
+        +constraints : DrumConstraints
+    }
+    class DrumLayerSpec {
+        <<dataclass>>
+        +role : str
+        +density : DensityTarget
+        +velocity_range : tuple~int, int~
+    }
+    class DrumConstraints {
+        <<dataclass>>
+        +max_simultaneous : int
+    }
+    class DensityTarget {
+        <<dataclass>>
+        +min_hits_per_bar : float
+        +max_hits_per_bar : float
+    }
+    class BassSpec {
+        <<dataclass>>
+        +density : BassDensityTarget
+        +note_length : BassNoteLength
+        +style : str
+    }
+    class BassDensityTarget {
+        <<dataclass>>
+        +min_notes_per_bar : float
+        +max_notes_per_bar : float
+    }
+    class BassNoteLength {
+        <<dataclass>>
+        +min_beats : float
+        +max_beats : float
+    }
+    class HarmonicSpec {
+        <<dataclass>>
+        +chord_schedule : list~ChordScheduleEntry~
+        +voicing_style : str
+    }
+    class ChordScheduleEntry {
+        <<dataclass>>
+        +bar : int
+        +chord : str
+    }
+    class MelodySpec {
+        <<dataclass>>
+        +style_hint : str
+        +scale : str
+        +register : str
+    }
+
+    MusicSpec *-- GlobalSpec
+    MusicSpec *-- DrumSpec
+    MusicSpec *-- BassSpec
+    MusicSpec *-- HarmonicSpec
+    MusicSpec *-- MelodySpec
+    MusicSpec *-- SectionMapEntry
+    DrumSpec *-- DrumLayerSpec
+    DrumSpec *-- DrumConstraints
+    DrumLayerSpec *-- DensityTarget
+    BassSpec *-- BassDensityTarget
+    BassSpec *-- BassNoteLength
+    HarmonicSpec *-- ChordScheduleEntry
+```
+
+---
+
+### Diagram 10 — Variation Layer Runtime
+
+The variation streaming pipeline. `EventEnvelope[_P]` is a generic frozen dataclass; the four payload TypedDicts are the concrete type arguments. `VariationRecord` and `PhraseRecord` are the storage-layer counterparts consumed by `VariationStore`.
+
+```mermaid
+classDiagram
+    class EventEnvelope~_P~ {
+        <<frozen Generic dataclass>>
+        +sequence : int
+        +type : EventType
+        +payload : _P
+        +conversation_id : str
+    }
+    class SequenceCounter {
+        <<dataclass>>
+        -_value : int
+        +next() int
+        +current() int
+    }
+    class EventType { <<TypeAlias>> meta or phrase or done or error or heartbeat }
+    class MetaPayload { <<TypedDict>> +variation_id : str; +region_ids : list~str~; +phrase_count : int }
+    class PhrasePayload { <<TypedDict>> +phrase_id : str; +region_id : str; +note_count : int }
+    class DonePayload { <<TypedDict>> +variation_id : str; +phrase_count : int }
+    class ErrorPayload { <<TypedDict>> +code : str; +message : str }
+    class EnvelopePayload {
+        <<Union>>
+        MetaPayload or PhrasePayload or DonePayload or ErrorPayload
+    }
+
+    class NoteChangeDict {
+        <<TypedDict>>
+        +pitch : MidiPitch
+        +velocity : MidiVelocity
+        +start_beat : BeatPosition
+        +duration : BeatDuration
+    }
+    class NoteChangeEntryDict {
+        <<TypedDict>>
+        +change_type : str
+        +before : NoteChangeDict
+        +after : NoteChangeDict
+    }
+    class PhraseRecord {
+        <<dataclass>>
+        +phrase_id : str
+        +region_id : str
+        +conversation_id : str
+        +note_changes : list~NoteChangeEntryDict~
+    }
+    class VariationRecord {
+        <<dataclass>>
+        +variation_id : str
+        +conversation_id : str
+        +region_ids : list~str~
+        +phrases : list~PhraseRecord~
+        +sequence_counter : SequenceCounter
+    }
+    class VariationStore {
+        <<class>>
+        +create(conversation_id, region_ids) VariationRecord
+        +get(variation_id) VariationRecord
+        +commit(variation_id) VariationRecord
+        +discard(variation_id) void
+    }
+
+    EventEnvelope --> EnvelopePayload : payload
+    EventEnvelope --> EventType : type
+    EventEnvelope --> SequenceCounter : sequenced-by
+    EnvelopePayload --> MetaPayload
+    EnvelopePayload --> PhrasePayload
+    EnvelopePayload --> DonePayload
+    EnvelopePayload --> ErrorPayload
+    VariationRecord *-- PhraseRecord
+    VariationRecord *-- SequenceCounter
+    VariationStore --> VariationRecord : manages
+    PhraseRecord --> NoteChangeEntryDict
+    NoteChangeEntryDict --> NoteChangeDict : before
+    NoteChangeEntryDict --> NoteChangeDict : after
+```
+
+---
+
+### Diagram 11 — Agent Contracts & Composition Protocol
+
+Frozen dataclasses that form the cryptographic lineage chain for multi-agent composition. Each contract carries a `hash` field computed from its own content so that agents can detect tampering. `ProtocolViolationError` is raised when hash verification fails.
+
+```mermaid
+classDiagram
+    class CompositionContract {
+        <<frozen dataclass>>
+        +contract_id : str
+        +project_id : str
+        +conversation_id : str
+        +sections : tuple~SectionSpec~
+        +bars : int
+        +bpm : float
+        +time_signature : str
+        +hash : str
+    }
+    class SectionSpec {
+        <<frozen dataclass>>
+        +section_id : str
+        +name : str
+        +bars : int
+        +start_bar : int
+        +description : str
+    }
+    class InstrumentContract {
+        <<frozen dataclass>>
+        +contract_id : str
+        +role : str
+        +composition_hash : str
+        +sections : tuple~SectionSpec~
+        +chord_schedule : list~ChordScheduleEntry~
+        +hash : str
+    }
+    class SectionContract {
+        <<frozen dataclass>>
+        +contract_id : str
+        +role : str
+        +section : SectionSpec
+        +instrument_hash : str
+        +hash : str
+    }
+    class RuntimeContext {
+        <<frozen dataclass>>
+        +project_id : str
+        +conversation_id : str
+        +composition_contract : CompositionContract
+    }
+    class ExecutionServices {
+        <<dataclass>>
+        +event_queue : asyncio.Queue
+        +state_store : StateStore
+        +token_budget : int
+    }
+    class ProtocolViolationError { <<Exception>> }
+
+    CompositionContract *-- SectionSpec
+    InstrumentContract *-- SectionSpec
+    SectionContract --> SectionSpec
+    RuntimeContext --> CompositionContract
+    ExecutionServices --> StateStore
+```
+
+---
+
+### Diagram 12 — State Store & Entity Registry
+
+`StateStore` is the single mutable spine of a conversation. It owns the `EntityRegistry` and emits `StateEvent` records as DAW entities are created and notes are written. `StateSnapshot` is the immutable view produced on demand.
+
+```mermaid
+classDiagram
+    class StateStore {
+        <<class>>
+        +conversation_id : str
+        +project_id : str
+        +get_snapshot() StateSnapshot
+        +apply_event(e : StateEvent) void
+        +begin_transaction() Transaction
+    }
+    class StateEvent {
+        <<dataclass>>
+        +event_type : EventType
+        +entity_id : str
+        +data : StateEventData
+        +timestamp : datetime
+    }
+    class Transaction {
+        <<dataclass>>
+        +events : list~StateEvent~
+        +commit() void
+        +rollback() void
+    }
+    class StateSnapshot {
+        <<dataclass>>
+        +version : int
+        +tracks : dict
+        +regions : dict
+        +buses : dict
+        +composition_states : dict
+    }
+    class CompositionState {
+        <<dataclass>>
+        +role : str
+        +notes : list~NoteDict~
+        +metadata : GenerationMetadata
+        +region_id : str
+    }
+    class EventType {
+        <<Enum>>
+        TRACK_CREATED
+        REGION_CREATED
+        BUS_CREATED
+        NOTES_WRITTEN
+        METADATA_UPDATED
+    }
+    class StateEventData {
+        <<TypedDict>>
+        +entity_id : str
+        +entity_type : str
+        +metadata : JSONObject
+    }
+    class EntityRegistry {
+        <<class>>
+        +create_track(name, role, meta) EntityInfo
+        +create_region(track_id, meta) EntityInfo
+        +get_entity(entity_id) EntityInfo
+        +list_tracks() list~EntityInfo~
+    }
+    class EntityInfo {
+        <<dataclass>>
+        +entity_id : str
+        +entity_type : EntityType
+        +name : str
+        +metadata : EntityMetadata
+    }
+    class EntityMetadata {
+        <<dataclass>>
+        +role : str
+        +instrument : str
+        +gm_program : int
+        +channel : int
+    }
+    class EntityType {
+        <<Enum>>
+        TRACK
+        REGION
+        BUS
+    }
+
+    StateStore --> StateSnapshot : produces
+    StateStore --> EntityRegistry : owns
+    StateStore --> StateEvent : records
+    StateEvent --> StateEventData
+    StateEvent --> EventType
+    Transaction --> StateEvent
+    StateSnapshot --> CompositionState
+    EntityRegistry --> EntityInfo : manages
+    EntityInfo --> EntityMetadata
+    EntityInfo --> EntityType
+```
+
+---
+
+### Diagram 13 — Project & Context TypedDicts
+
+The full DAW project state snapshot sent from the Stori frontend with every `MaestroRequest`. `ProjectContext` is the root; it nests tracks, regions, buses, and mixer state.
+
+```mermaid
+classDiagram
+    class ProjectContext {
+        <<TypedDict>>
+        +project_id : str
+        +tracks : list~ProjectTrack~
+        +buses : list~BusDict~
+        +tempo : MidiBPM
+        +time_signature : TimeSignatureDict
+        +key : str
+        +bars : int
+    }
+    class ProjectTrack {
+        <<TypedDict>>
+        +track_id : str
+        +name : str
+        +role : str
+        +instrument : str
+        +regions : list~ProjectRegion~
+        +mixer : MixerSettingsDict
+        +automation : list~AutomationLaneDict~
+    }
+    class ProjectRegion {
+        <<TypedDict>>
+        +region_id : str
+        +start_beat : BeatPosition
+        +duration : BeatDuration
+        +name : str
+    }
+    class MixerSettingsDict {
+        <<TypedDict>>
+        +volume : float
+        +pan : float
+        +mute : bool
+        +solo : bool
+    }
+    class AutomationLaneDict { <<TypedDict>> +parameter : str; +events : list }
+    class BusDict { <<TypedDict>> +bus_id : str; +name : str; +sends : list~str~ }
+    class TimeSignatureDict { <<TypedDict>> +numerator : int; +denominator : int }
+    class ProposeVariationScopeDict { <<TypedDict>> +region_ids : list~str~; +track_ids : list~str~ }
+    class ProposeVariationOptionsDict { <<TypedDict>> +temperature : float; +max_phrases : int }
+    class RoleProfile {
+        <<frozen dataclass>>
+        +role : str
+        +rest_ratio : float
+        +density : float
+        +velocity_mean : float
+        +velocity_std : float
+        +typical_duration_beats : float
+    }
+
+    ProjectContext --> ProjectTrack
+    ProjectContext --> BusDict
+    ProjectContext --> TimeSignatureDict
+    ProjectTrack --> ProjectRegion
+    ProjectTrack --> MixerSettingsDict
+    ProjectTrack --> AutomationLaneDict
+```
+
+---
+
+### Diagram 14 — Storpheus Service Types
+
+`StorpheusClient` owns a `_CircuitBreaker` and communicates with the Storpheus FastAPI service. The Storpheus-internal types (`StorpheusNoteDict`, etc.) are snake_case and parallel to the Maestro-side `NoteDict` family; they are translated at the backend boundary.
+
+```mermaid
+classDiagram
+    class StorpheusClient {
+        <<class>>
+        +generate(role, context) StorpheusRawResponse
+        +health_check() bool
+    }
+    class _CircuitBreaker {
+        <<class>>
+        -_failure_count : int
+        -_state : str
+        +record_success() void
+        +record_failure() void
+        +is_open() bool
+    }
+    class StorpheusRawResponse {
+        <<TypedDict>>
+        +notes : list~StorpheusNoteDict~
+        +cc_events : list~StorpheusCCEvent~
+        +pitch_bends : list~StorpheusPitchBend~
+        +metadata : JSONObject
+    }
+    class StorpheusNoteDict { <<TypedDict>> +pitch : int; +velocity : int; +start_beat : float; +duration : float; +channel : int }
+    class StorpheusCCEvent { <<TypedDict>> +beat : float; +controller : int; +value : int }
+    class StorpheusPitchBend { <<TypedDict>> +beat : float; +value : int }
+    class StorpheusAftertouch { <<TypedDict>> +beat : float; +value : int; +pitch : int }
+    class ParsedMidiResult {
+        <<TypedDict>>
+        +notes : list~StorpheusNoteDict~
+        +cc_events : list~StorpheusCCEvent~
+        +channels : list~int~
+    }
+    class WireNoteDict { <<TypedDict>> +pitch : int; +velocity : int; +startBeat : float; +duration : float }
+    class CacheKeyData { <<TypedDict>> +role : str; +tempo : int; +bars : int; +chord_hash : str }
+    class FulfillmentReport { <<TypedDict>> +satisfied : bool; +violations : list~str~; +score : float }
+    class GradioGenerationParams { <<TypedDict>> +model_name : str; +seed : int; +temperature : float }
+    class GenerationComparison { <<TypedDict>> +candidate_a_score : float; +candidate_b_score : float; +winner : str }
+    class ScoringParams { <<dataclass>> +role : str; +bars : int; +tempo : int; +target_density : float }
+    class BestCandidate { <<dataclass>> +notes : list; +score : float; +attempts : int }
+
+    StorpheusClient --> _CircuitBreaker : guards with
+    StorpheusClient --> StorpheusRawResponse : returns
+    StorpheusRawResponse --> StorpheusNoteDict
+    StorpheusRawResponse --> StorpheusCCEvent
+    StorpheusRawResponse --> StorpheusPitchBend
+    ParsedMidiResult --> StorpheusNoteDict
+    ParsedMidiResult --> StorpheusCCEvent
+```
+
+---
+
+### Diagram 15 — Asset Service & S3 Protocols
+
+Structural `Protocol` types that wrap boto3 without importing it. `_S3Client` is the structural interface satisfied by any boto3 S3 client; `_S3StreamingBody` is the structural interface for the streaming body it returns.
+
+```mermaid
+classDiagram
+    class _S3StreamingBody { <<Protocol>> +read(size : int) bytes }
+    class _S3Client {
+        <<Protocol>>
+        +get_object(Bucket : str, Key : str) _GetObjectResponse
+    }
+    class _GetObjectResponse {
+        <<TypedDict>>
+        +Body : _S3StreamingBody
+        +ContentLength : int
+        +ContentType : str
+    }
+    class DrumKitInfo { <<TypedDict>> +name : str; +path : str; +description : str; +sample_count : int }
+    class SoundFontInfo { <<TypedDict>> +name : str; +path : str; +format : str }
+    class AssetServiceUnavailableError { <<Exception>> }
+
+    _S3Client --> _GetObjectResponse : returns
+    _GetObjectResponse --> _S3StreamingBody : Body
+```
+
+---
+
+### Diagram 16 — HTTP Response Models
+
+Every route handler returns a named Pydantic entity. `BaseModel` = snake_case wire; `CamelModel` = camelCase wire (used by all Stori-facing endpoints). No anonymous dicts cross the HTTP boundary.
+
+```mermaid
+classDiagram
+    class BaseModel { <<Pydantic>> }
+    class CamelModel { <<Pydantic>> }
+    BaseModel <|-- CamelModel
+
+    class ProtocolInfoResponse { <<Pydantic>> +version : str; +golden_hash : str; +events : list~str~ }
+    class ProtocolEventsResponse { <<Pydantic>> +events : EventSchemaMap }
+    class ProtocolToolsResponse { <<Pydantic>> +tools : list~MCPToolDefWire~ }
+    class ProtocolSchemaResponse { <<Pydantic>> +schema : dict }
+
+    class MuseLogNodeResponse { <<Pydantic>> +commitHash : str; +parentHash : str; +message : str; +createdAt : str }
+    class MuseLogGraphResponse { <<Pydantic>> +nodes : list~MuseLogNodeResponse~; +head : str }
+
+    class SaveVariationResponse { <<Pydantic>> +variationId : str; +commitHash : str }
+    class SetHeadResponse { <<Pydantic>> +head : str }
+    class CheckoutExecutionStats { <<Pydantic>> +regions_restored : int; +notes_written : int; +duration_ms : float }
+    class CheckoutResponse { <<Pydantic>> +commitHash : str; +stats : CheckoutExecutionStats }
+    class MergeResponse { <<Pydantic>> +mergeHash : str; +conflicts : int; +stats : CheckoutExecutionStats }
+
+    class ValidateTokenResponse { <<Pydantic>> +valid : bool; +user_id : str }
+    class PlanPreviewResponse { <<Pydantic>> +steps : list~PlanStepSchema~ }
+    class PreviewMaestroResponse { <<Pydantic>> +plan : PlanPreviewResponse; +intent : str }
+
+    class ConnectionCreatedResponse { <<Pydantic>> +connection_id : str }
+    class ToolResponseReceivedResponse { <<Pydantic>> +acknowledged : bool }
+
+    class DiscardVariationResponse { <<Pydantic>> +discarded : bool; +variation_id : str }
+    class VariationPhraseResponse { <<Pydantic>> +phraseId : str; +regionId : str }
+    class GetVariationResponse { <<Pydantic>> +variationId : str; +phrases : list~VariationPhraseResponse~ }
+    class ConversationUpdateResponse { <<Pydantic>> +conversationId : str; +updated : bool }
+
+    BaseModel <|-- ProtocolInfoResponse
+    BaseModel <|-- ProtocolEventsResponse
+    BaseModel <|-- ProtocolToolsResponse
+    BaseModel <|-- ProtocolSchemaResponse
+    CamelModel <|-- MuseLogNodeResponse
+    CamelModel <|-- MuseLogGraphResponse
+    MuseLogGraphResponse --> MuseLogNodeResponse
+    CamelModel <|-- SaveVariationResponse
+    CamelModel <|-- SetHeadResponse
+    CamelModel <|-- CheckoutExecutionStats
+    CamelModel <|-- CheckoutResponse
+    CamelModel <|-- MergeResponse
+    CheckoutResponse --> CheckoutExecutionStats
+    MergeResponse --> CheckoutExecutionStats
+    CamelModel <|-- ValidateTokenResponse
+    CamelModel <|-- PlanPreviewResponse
+    CamelModel <|-- PreviewMaestroResponse
+    PreviewMaestroResponse --> PlanPreviewResponse
+    CamelModel <|-- ConnectionCreatedResponse
+    CamelModel <|-- ToolResponseReceivedResponse
+    BaseModel <|-- DiscardVariationResponse
+    CamelModel <|-- VariationPhraseResponse
+    CamelModel <|-- GetVariationResponse
+    GetVariationResponse --> VariationPhraseResponse
+    CamelModel <|-- ConversationUpdateResponse
+```
+
+---
+
+### Diagram 17 — MCP JSON-RPC TypedDicts
+
+The full MCP JSON-RPC 2.0 wire protocol. `MCPRequest` arrives from the client; one of the `MCPMethodResponse` union members is returned. `DAWToolCallMessage` and `DAWToolResponse` are the WebSocket messages between Maestro and the Stori DAW.
+
+```mermaid
+classDiagram
+    class MCPRequest {
+        <<TypedDict>>
+        +jsonrpc : str
+        +method : str
+        +id : int
+        +params : JSONObject
+    }
+    class MCPSuccessResponse { <<TypedDict>> +jsonrpc : str; +id : int; +result : JSONObject }
+    class MCPErrorDetail { <<TypedDict>> +code : int; +message : str }
+    class MCPErrorResponse { <<TypedDict>> +jsonrpc : str; +id : int; +error : MCPErrorDetail }
+    class MCPResponse { <<Union>> MCPSuccessResponse or MCPErrorResponse }
+
+    class MCPCapabilities {
+        <<TypedDict>>
+        +tools : MCPToolsCapability
+        +resources : MCPResourcesCapability
+    }
+    class MCPToolsCapability { <<TypedDict>> +listChanged : bool }
+    class MCPResourcesCapability { <<TypedDict>> +listChanged : bool }
+    class MCPServerInfo { <<TypedDict>> +name : str; +version : str }
+    class MCPInitializeResult {
+        <<TypedDict>>
+        +capabilities : MCPCapabilities
+        +serverInfo : MCPServerInfo
+    }
+    class MCPToolDef {
+        <<TypedDict>>
+        +name : str
+        +description : str
+        +inputSchema : MCPInputSchema
+    }
+    class MCPInputSchema {
+        <<TypedDict>>
+        +type : str
+        +properties : JSONObject
+        +required : list~str~
+    }
+    class MCPPropertyDef { <<TypedDict>> +type : str; +description : str }
+    class MCPToolsListResult { <<TypedDict>> +tools : list~MCPToolDef~ }
+    class MCPCallResult { <<TypedDict>> +content : list~MCPContentBlock~; +isError : bool }
+    class MCPContentBlock { <<TypedDict>> +type : str; +text : str }
+    class DAWToolCallMessage { <<TypedDict>> +tool : str; +arguments : JSONObject; +connection_id : str }
+    class DAWToolResponse { <<TypedDict>> +connection_id : str; +result : JSONObject; +error : str }
+
+    MCPResponse --> MCPSuccessResponse
+    MCPResponse --> MCPErrorResponse
+    MCPErrorResponse --> MCPErrorDetail
+    MCPCapabilities --> MCPToolsCapability
+    MCPCapabilities --> MCPResourcesCapability
+    MCPInitializeResult --> MCPCapabilities
+    MCPInitializeResult --> MCPServerInfo
+    MCPToolsListResult --> MCPToolDef
+    MCPToolDef --> MCPInputSchema
+    MCPInputSchema --> MCPPropertyDef
+    MCPCallResult --> MCPContentBlock
 ```
