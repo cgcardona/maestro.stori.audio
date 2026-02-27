@@ -18,7 +18,9 @@ Kickoff (coordinator)
 
 Agent (per worktree)
   └─ cat .agent-task                        ← knows exactly what to do
-  └─ gh pr checkout <N>                     ← checks out the PR branch
+  └─ gh pr view <N> --json state,...        ← CHECK FIRST: merged/closed/approved?
+                                               if so → stop + self-destruct
+  └─ gh pr checkout <N>                     ← checks out the PR branch (only if open)
   └─ review → grade → merge (or reject)
   └─ git worktree remove --force <path>     ← self-destructs when done
   └─ git -C <main-repo> worktree prune      ← cleans up the ref
@@ -40,9 +42,11 @@ cd "$REPO"
 
 # --- define PRs ---
 declare -a PRS=(
-  "58|feat: muse status — working tree diff, staged files, and in-progress merge display"
-  "59|feat: Muse Hub issues — create and list music project issues"
-  "60|feat: muse open / muse play — CLI artifact preview and local playback"
+  "61|feat: Muse Hub JWT auth integration — CLI token storage and Hub request authentication"
+  "62|feat: Muse Hub pull requests — create, list, and merge PRs between branches"
+  "63|feat: Maestro stress test → muse-work/ output contract with muse-batch.json manifest"
+  "64|feat: Muse Hub push/pull sync protocol — batch commit and object transfer"
+  "65|feat: muse merge — fast-forward and 3-way merge with path-level conflict detection"
 )
 
 # --- create worktrees + task files ---
@@ -130,27 +134,57 @@ STEP 1 — DERIVE PATHS:
   # Your worktree is live in Docker at /worktrees/$WTNAME — NO file copying needed.
   # All docker compose commands: cd "$REPO" && docker compose exec maestro <cmd>
 
-STEP 2 — CHECKOUT & SYNC:
+STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
+  ⚠️  Query GitHub first. Do NOT checkout a branch, run mypy, or add a review
+  comment until you have confirmed the PR is still open and unreviewed.
+  This is the idempotency gate.
+
+  # 1. What is the current state of this PR?
+  gh pr view <N> --json state,mergedAt,reviews,reviewDecision,headRefName
+
+  Decision matrix — act on the FIRST match:
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │ state = "MERGED"   → STOP. Report already merged. Self-destruct.      │
+  │ state = "CLOSED"   → STOP. Report already closed/rejected. Self-dest. │
+  │ reviewDecision =   │                                                   │
+  │   "APPROVED"       → STOP. Report already approved. Self-destruct.    │
+  │ state = "OPEN",    │                                                   │
+  │   no approval yet  → Continue to STEP 3 (full review).                │
+  └────────────────────────────────────────────────────────────────────────┘
+
+  Self-destruct when stopping early:
+    WORKTREE=$(pwd)
+    cd "$REPO"
+    git worktree remove --force "$WORKTREE"
+    git worktree prune
+
+STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   gh pr checkout <N>
   git fetch origin && git merge origin/dev
 
-STEP 3 — REVIEW:
+STEP 4 — REVIEW:
   Read and follow every step in .github/PR_REVIEW_PROMPT.md exactly.
   1. Context — read PR description, referenced issue, commits, files changed
   2. Deep review — work through all applicable checklist sections (3a–3j)
   3. Add/fix tests if weak or missing
-  4. Run mypy and tests (Docker-native, using $REPO and $WTNAME from STEP 1)
-  5. Grade the PR (A/B/C/D/F) — OUTPUT GRADE FIRST before any merge command
-  6. Merge ONLY if grade is A or B and you have written "Approved for merge"
-  7. After merge: close the referenced issue
+  4. Run mypy and tests (Docker-native, using $REPO and $WTNAME from STEP 1).
+     ⚠️  Never pipe mypy/pytest through grep/head/tail — full output, exit code is authoritative.
+  5. Red-flag scan — before claiming tests pass, scan the FULL output for:
+       ERROR, Traceback, toolError, circuit_breaker_open, FAILED, AssertionError
+     Any red-flag = the run is not clean, regardless of the final summary line.
+  6. Grade the PR (A/B/C/D/F) — OUTPUT GRADE FIRST before any merge command
+  7. Merge ONLY if grade is A or B and you have written "Approved for merge"
+  8. After merge: close the referenced issue
 
-STEP 4 — SELF-DESTRUCT (always run this, merge or not):
+STEP 5 — SELF-DESTRUCT (always run this, merge or not, early stop or not):
   WORKTREE=$(pwd)
   cd "$REPO"
   git worktree remove --force "$WORKTREE"
   git worktree prune
 
 ⚠️  NEVER copy files to the main repo for testing.
+⚠️  NEVER start a review without completing STEP 2. Skipping the check causes
+    duplicate review passes and redundant merge attempts.
 
 CRITICAL: You MUST output your grade and "Approved for merge" OR "Not approved — do not merge"
 BEFORE running any gh pr merge command.
