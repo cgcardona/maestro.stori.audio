@@ -45,10 +45,42 @@ maestro/muse_cli/
     ├── merge.py          — muse merge   (stub — issue #35)
     ├── remote.py         — muse remote  (stub — issue #38)
     ├── push.py           — muse push    (stub — issue #38)
-    └── pull.py           — muse pull    (stub — issue #38)
+    ├── pull.py           — muse pull    (stub — issue #38)
+    ├── open_cmd.py       — muse open    ✅ macOS artifact preview (issue #45)
+    └── play.py           — muse play    ✅ macOS audio playback via afplay (issue #45)
 ```
 
+`maestro/muse_cli/artifact_resolver.py` — `resolve_artifact_async()` / `resolve_artifact()`:
+resolves a user-supplied path-or-commit-ID to a concrete `pathlib.Path` (see below).
+
 The CLI delegates to existing `maestro/services/muse_*.py` service modules. Stub subcommands print "not yet implemented" and exit 0.
+
+---
+
+## Artifact Resolution (`artifact_resolver.py`)
+
+`resolve_artifact_async(path_or_commit_id, root, session)` resolves a user-supplied
+string to a concrete `pathlib.Path` in this priority order:
+
+1. **Direct filesystem path** — if the argument exists on disk, return it as-is.
+   No DB query is needed.
+2. **Relative to `muse-work/`** — if `<root>/muse-work/<arg>` exists, return that.
+3. **Commit-ID prefix** — if the argument is 4–64 lowercase hex characters:
+   - Query `muse_cli_commits` for commits whose `commit_id` starts with the prefix.
+   - If exactly one match: load its `MuseCliSnapshot` manifest.
+   - If the snapshot has one file: resolve `<root>/muse-work/<file>`.
+   - If the snapshot has multiple files: prompt the user to select one interactively.
+   - Exit 1 if the prefix is ambiguous (> 1 commit) or the file no longer exists
+     in the working tree.
+
+### Why files must still exist in `muse-work/`
+
+Muse stores **metadata** (file paths → sha256 hashes) in Postgres, not the raw
+bytes. The actual content lives only on the local filesystem in `muse-work/`.
+If a user deletes or overwrites a file after committing, the snapshot manifest
+knows what _was_ there but the bytes are gone. `muse open` / `muse play` will
+exit 1 with a clear error in that case.
+
 
 ---
 

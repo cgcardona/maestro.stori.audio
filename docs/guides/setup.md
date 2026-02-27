@@ -198,6 +198,51 @@ docker compose exec maestro sh -c "mkdir -p /tmp/demo && cd /tmp/demo && python 
 docker compose exec maestro sh -c "cd /tmp/demo && python -m maestro.muse_cli.app commit -m 'first take'"
 ```
 
+
+---
+
+## Previewing artifacts: `muse open` and `muse play` (macOS only)
+
+`muse open` and `muse play` are **macOS-only** commands that let you preview
+artifacts directly from the terminal without leaving your workflow.
+
+### `muse open <path-or-commit-id>`
+
+Opens an artifact with the system default application:
+
+| File type | Default app |
+|-----------|-------------|
+| `.mid`    | Stori DAW or GarageBand |
+| `.webp` / `.png` | Preview |
+| `.mp3`    | QuickTime |
+
+```bash
+# Open a file from the working tree
+muse open muse-work/tracks/jazz_4b_run1.mid
+
+# Open a file from a committed snapshot (prompts to select if multiple files)
+muse open a1b2c3d4
+```
+
+### `muse play <path-or-commit-id>`
+
+Plays audio artifacts via `afplay` (no UI window, exits when done):
+
+```bash
+# Play an MP3 from the working tree
+muse play muse-work/renders/jazz_4b_run1.mp3
+
+# Play from a commit snapshot using a short commit ID
+muse play a1b2c3d4
+```
+
+- **`.mp3` / `.wav` / `.aiff` / `.m4a`** — played via `afplay`.
+- **`.mid`** — `afplay` does not support MIDI; falls back to `open`, which
+  hands the file off to the system default MIDI app.
+
+> **Note:** Both commands exit 1 with a clear message (`❌ muse open/play requires macOS`)
+> when run on non-macOS platforms (e.g., inside Docker on Linux).
+
 ---
 
 ## AWS credentials
