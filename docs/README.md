@@ -95,3 +95,17 @@ Frontend integration guide for project state serialization: how to build the `pr
 
 Security audit summary, go-live checklist, and service exposure (Qdrant, DB, nginx SSL).
 
+---
+
+## 11. Agent Workflows
+
+| Doc | Purpose |
+|-----|---------|
+| [../.github/README.md](../.github/README.md) | Overview of all agent workflows — single and parallel |
+| [../.github/CREATE_ISSUES_PROMPT.md](../.github/CREATE_ISSUES_PROMPT.md) | Single agent: bug reports → GitHub issues |
+| [../.github/CREATE_PR_PROMPT.md](../.github/CREATE_PR_PROMPT.md) | Single agent: issue → feature PR |
+| [../.github/PR_REVIEW_PROMPT.md](../.github/PR_REVIEW_PROMPT.md) | Single agent: PR review → grade → merge |
+| [../.cursor/PARALLEL_BUGS_TO_ISSUES.md](../.cursor/PARALLEL_BUGS_TO_ISSUES.md) | Parallel: N agents filing GitHub issues |
+| [../.cursor/PARALLEL_ISSUE_TO_PR.md](../.cursor/PARALLEL_ISSUE_TO_PR.md) | Parallel: N agents implementing feature PRs |
+| [../.cursor/PARALLEL_PR_REVIEW.md](../.cursor/PARALLEL_PR_REVIEW.md) | Parallel: N agents reviewing and merging PRs |
+

@@ -12,6 +12,7 @@
 # │  Dockerfile changed        │  tests/**/*.py                         │
 # │  New top-level dir added   │  scripts/**                            │
 # │  (not yet in volumes below)│  alembic/**                            │
+# │                            │  /worktrees/<id>/**  (worktrees)       │
 # │                            │  tourdeforce/**                  │
 # │                            │  tools/**                              │
 # │                            │  pyproject.toml                        │
@@ -33,6 +34,9 @@ services:
       - ./alembic:/app/alembic
       - ./tourdeforce:/app/tourdeforce
       - ./pyproject.toml:/app/pyproject.toml
+      # Cursor worktrees — agents run mypy/pytest directly against their worktree
+      # via PYTHONPATH=/worktrees/<id>. No file copies needed. See .cursor/PARALLEL_ISSUE_TO_PR.md.
+      - /Users/gabriel/.cursor/worktrees/maestro:/worktrees
 
   storpheus:
     volumes:

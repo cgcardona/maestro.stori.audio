@@ -1,94 +1,194 @@
-# Parallel Agent Kickoff — Issue → PR (N agents)
+# Parallel Agent Kickoff — Issue → PR
 
-Coordination template for **CREATE_PR_PROMPT.md**.
-Each agent claims a task number, picks up the matching GitHub issue, implements the fix, and opens a PR.
+Each agent gets its own ephemeral worktree. Worktrees are created at kickoff,
+named by issue number, and **deleted by the agent when its job is done**.
+The branch and PR live on GitHub regardless — the local worktree is just a
+working directory.
 
 ---
 
-## Environment (read before doing anything else)
+## Architecture
+
+```
+Kickoff (coordinator)
+  └─ for each issue:
+       git worktree add .../issue-<N>  dev  ← fresh worktree, named by issue
+       write .agent-task into it            ← task assignment, no guessing
+       launch agent in that directory
+
+Agent (per worktree)
+  └─ cat .agent-task                        ← knows exactly what to do
+  └─ git checkout -b fix/<description>      ← creates feature branch
+  └─ implement → mypy → tests → commit → push → gh pr create
+  └─ WORKTREE=$(pwd)                        ← self-destructs when done
+     cd "$REPO"
+     git worktree remove --force "$WORKTREE"
+     git worktree prune
+```
+
+Worktrees are **not** kept around between cycles. If an agent crashes before
+cleanup, run `git worktree prune` from the main repo.
+
+---
+
+## Setup — run this before launching agents
+
+Run from anywhere inside the main repo. Paths are derived automatically.
+
+```bash
+REPO=$(git rev-parse --show-toplevel)
+PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
+cd "$REPO"
+
+# --- define issues (confirm they are independent — zero file overlap) ---
+declare -a ISSUES=(
+  "42|Fix: <issue title 1>"
+  "43|Fix: <issue title 2>"
+  "44|Fix: <issue title 3>"
+)
+
+# --- create worktrees + task files ---
+for entry in "${ISSUES[@]}"; do
+  NUM="${entry%%|*}"
+  TITLE="${entry##*|}"
+  WT="$PRTREES/issue-$NUM"
+  git worktree add "$WT" dev
+  printf "WORKFLOW=issue-to-pr\nISSUE_NUMBER=%s\nISSUE_TITLE=%s\nISSUE_URL=https://github.com/cgcardona/maestro/issues/%s\n" \
+    "$NUM" "$TITLE" "$NUM" > "$WT/.agent-task"
+  echo "✅ worktree issue-$NUM ready"
+done
+
+git worktree list
+```
+
+After running this, open one Cursor composer window per worktree, each rooted
+in its `issue-<N>` directory, and paste the Kickoff Prompt below.
+
+---
+
+## Environment (agents read this first)
 
 **You are running inside a Cursor worktree.** Your working directory is NOT the main repo.
 
+```bash
+# Derive paths — run these at the start of your session
+REPO=$(git worktree list | head -1 | awk '{print $1}')   # main repo
+WTNAME=$(basename "$(pwd)")                               # this worktree's name
+# Docker path to your worktree: /worktrees/$WTNAME
+```
+
 | Item | Value |
 |------|-------|
-| Your worktree root | `/Users/gabriel/.cursor/worktrees/maestro/<id>/` (wherever you are) |
-| Main repo (bind-mounted into Docker) | `/Users/gabriel/dev/tellurstori/maestro` |
-| Docker compose location | `/Users/gabriel/dev/tellurstori/maestro` |
+| Your worktree root | current directory (contains `.agent-task`) |
+| Main repo | first entry of `git worktree list` |
+| Docker compose location | main repo |
+| Your worktree inside Docker | `/worktrees/$WTNAME` |
 
 **All `docker compose exec` commands must be run from the main repo:**
 ```bash
-cd /Users/gabriel/dev/tellurstori/maestro && docker compose exec maestro <cmd>
+cd "$REPO" && docker compose exec maestro <cmd>
 ```
 
-**Bind-mount caveat:** Docker only sees files in the main repo's `maestro/` directory.
-- For files you create in this worktree that are NOT yet in the main repo, use `docker cp` to stage them into the container before running mypy/tests:
-  ```bash
-  docker cp <worktree-path>/maestro/path/to/file.py maestro-app:/app/maestro/path/to/file.py
-  ```
-- For modified existing files: temporarily copy them to the main repo, run mypy/tests, then revert.
+### Docker sees your worktree directly — no file copying needed
 
----
+`docker-compose.override.yml` bind-mounts the entire worktrees directory into
+the container. After creating your feature branch, your worktree's code is
+**immediately live inside the container at `/worktrees/$WTNAME/`**:
 
-## Self-assignment
-
-Read `.agent-id` in your working directory. If it doesn't exist (the setup script may not have run in worktrees), determine your task number from your worktree directory name:
-- First worktree alphabetically (e.g. `auu`) → Agent **1**
-- Second worktree (e.g. `iip`) → Agent **2**
-- And so on
-
-Write your assigned number to `.agent-id` before proceeding:
 ```bash
-echo "1" > .agent-id   # or 2, 3, etc.
+REPO=$(git worktree list | head -1 | awk '{print $1}')
+WTNAME=$(basename "$(pwd)")
+
+# mypy
+cd "$REPO" && docker compose exec maestro sh -c \
+  "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+
+# pytest (specific file)
+cd "$REPO" && docker compose exec maestro sh -c \
+  "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
 ```
+
+**⚠️ NEVER copy files into the main repo** for testing purposes. That pollutes
+the `dev` branch with uncommitted changes.
+
+> **Alembic exception:** `alembic revision --autogenerate` must run from the main repo
+> because it needs a live DB connection. After generating, immediately `git mv` the
+> migration file into your worktree and delete the copy from the main repo.
 
 ---
 
 ## Kickoff Prompt
 
 ```
-PARALLEL AGENT COORDINATION
+PARALLEL AGENT COORDINATION — ISSUE TO PR
 
-ENVIRONMENT SETUP (do this first):
-1. Your worktree is at your current working directory (run `pwd` to confirm).
-2. The main repo and Docker bind-mount are at /Users/gabriel/dev/tellurstori/maestro.
-3. All docker compose commands: cd /Users/gabriel/dev/tellurstori/maestro && docker compose exec maestro <cmd>
-4. New files you create in the worktree are NOT visible in Docker automatically.
-   Use: docker cp <your-file> maestro-app:/app/maestro/<path> before running mypy.
+STEP 0 — READ YOUR TASK:
+  cat .agent-task
+  This file tells you your issue number, title, and URL. Substitute your actual
+  issue number wherever you see <N> below.
 
-SELF-ASSIGNMENT:
-Read .agent-id in your working directory. If missing, use your worktree folder name:
-- first alphabetically (e.g. auu) → 1
-- second (e.g. iip) → 2
-Write it: echo "N" > .agent-id
+STEP 1 — DERIVE PATHS:
+  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  WTNAME=$(basename "$(pwd)")
+  # Your worktree is live in Docker at /worktrees/$WTNAME — NO file copying needed.
+  # All docker compose commands: cd "$REPO" && docker compose exec maestro <cmd>
 
-TASKS (execute ONLY the task matching your number):
+STEP 2 — IMPLEMENT:
+  Read and follow every step in .github/CREATE_PR_PROMPT.md exactly.
+  Steps: issue analysis → branch (from dev) → implement → mypy → tests → commit → docs → PR.
 
-**Agent 1:** https://github.com/cgcardona/maestro/issues/ISSUE_NUMBER_1
-ISSUE_TITLE_1
+  mypy:
+    cd "$REPO" && docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
 
-**Agent 2:** https://github.com/cgcardona/maestro/issues/ISSUE_NUMBER_2
-ISSUE_TITLE_2
+  pytest:
+    cd "$REPO" && docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
 
-WORKFLOW:
-Read and follow every step in .github/CREATE_PR_PROMPT.md exactly.
-Steps: issue analysis → branch (from dev) → implement → mypy → tests → run tests → commit → docs → PR via gh pr create.
+STEP 3 — SELF-DESTRUCT (always run this after the PR is open):
+  WORKTREE=$(pwd)
+  cd "$REPO"
+  git worktree remove --force "$WORKTREE"
+  git worktree prune
 
-Report: agent ID, PR URL, fix summary, tests added, any protocol changes.
+⚠️  NEVER copy files to the main repo for testing.
+
+Report: issue number, PR URL, fix summary, tests added, any protocol changes requiring handoff.
 ```
 
 ---
 
 ## Before launching
 
-1. Fill in `ISSUE_NUMBER_1`, `ISSUE_TITLE_1`, etc. above with your chosen decoupled issues.
-2. Confirm issues are **not sequential and not dependent** on each other.
-3. Confirm `dev` branch is up to date: `git -C /Users/gabriel/dev/tellurstori/maestro pull origin dev`
-4. Confirm Docker is running: `docker compose -f /Users/gabriel/dev/tellurstori/maestro/docker-compose.yml ps`
+1. Confirm issues are open and independent (zero file overlap between them):
+   `gh issue list --state open`
+2. Run the Setup script above — confirm worktrees appear: `git worktree list`
+3. Confirm Docker is running and the worktrees mount is live:
+   ```bash
+   REPO=$(git rev-parse --show-toplevel)
+   docker compose -f "$REPO/docker-compose.yml" ps
+   docker compose exec maestro ls /worktrees/
+   ```
+4. Confirm `dev` is up to date:
+   ```bash
+   git -C "$(git rev-parse --show-toplevel)" pull origin dev
+   ```
 
 ---
 
 ## After agents complete
 
-1. Click **Apply** on each worktree card in Cursor (or review each PR on GitHub separately).
-2. Run `git worktree list` to see all active worktrees.
-3. Run `git -C /Users/gabriel/dev/tellurstori/maestro pull origin dev` after merging.
+- Review opened PRs on GitHub: `gh pr list --state open`
+- Verify no stale worktrees remain: `git worktree list` — should show only the main repo.
+  If any linger (agent crashed before cleanup):
+  ```bash
+  git -C "$(git rev-parse --show-toplevel)" worktree prune
+  ```
+- Verify main repo is clean: `git -C "$(git rev-parse --show-toplevel)" status`
+  Must show **nothing to commit, working tree clean**. If not, clean up:
+  ```bash
+  REPO=$(git rev-parse --show-toplevel)
+  git -C "$REPO" restore --staged .
+  git -C "$REPO" restore .
+  ```
+- PRs are immediately available for the **PARALLEL_PR_REVIEW.md** workflow.
