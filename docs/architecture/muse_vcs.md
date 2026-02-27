@@ -379,3 +379,42 @@ Exercises: commit → branch → merge → conflict detection → checkout trave
 Produces: ASCII graph, JSON dump, summary table. See `muse_e2e_demo.md` for details.
 
 ---
+
+## Muse Hub — Remote Backend
+
+The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro FastAPI app. It provides remote repo hosting for CLI clients using `muse push` and `muse pull`.
+
+### DB Tables
+
+| Table | Purpose |
+|-------|---------|
+| `musehub_repos` | Remote repos (name, visibility, owner) |
+| `musehub_branches` | Branch pointers inside a repo |
+| `musehub_commits` | Commits pushed from CLI clients |
+
+### Module Map
+
+```
+maestro/
+├── db/musehub_models.py           — SQLAlchemy ORM models
+├── models/musehub.py              — Pydantic v2 request/response models
+├── services/musehub_repository.py — Async DB queries (single point of DB access)
+└── api/routes/musehub.py          — FastAPI route handlers (thin — no business logic)
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/musehub/repos` | Create remote repo |
+| GET | `/api/v1/musehub/repos/{id}` | Get repo metadata |
+| GET | `/api/v1/musehub/repos/{id}/branches` | List branches |
+| GET | `/api/v1/musehub/repos/{id}/commits` | List commits (newest first) |
+
+All endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
+
+### Architecture Boundary
+
+`musehub_repository.py` is the only module that touches `musehub_*` tables. Route handlers delegate all persistence to it. No business logic in route handlers.
+
+---
