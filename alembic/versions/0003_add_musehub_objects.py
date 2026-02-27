@@ -1,7 +1,7 @@
 """Add musehub_objects table for binary artifact storage.
 
-Revision ID: 0002
-Revises: 0001
+Revision ID: 0003
+Revises: 0002
 Create Date: 2026-02-27 00:00:00.000000
 
 Adds the musehub_objects table introduced by the push/pull sync protocol
@@ -13,8 +13,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0002"
-down_revision = "0001"
+revision = "0003"
+down_revision = "0002"
 branch_labels = None
 depends_on = None
 
