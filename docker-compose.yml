@@ -82,6 +82,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: maestro
     container_name: maestro-app
     restart: unless-stopped
     ports:

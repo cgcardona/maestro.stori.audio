@@ -12,28 +12,54 @@ Each agent claims a task number, picks up the matching GitHub issue, implements 
 | Item | Value |
 |------|-------|
 | Your worktree root | `/Users/gabriel/.cursor/worktrees/maestro/<id>/` (wherever you are) |
-| Main repo (bind-mounted into Docker) | `/Users/gabriel/dev/tellurstori/maestro` |
+| Main repo | `/Users/gabriel/dev/tellurstori/maestro` |
 | Docker compose location | `/Users/gabriel/dev/tellurstori/maestro` |
+| Your worktree inside Docker | `/worktrees/<id>/` |
 
 **All `docker compose exec` commands must be run from the main repo:**
 ```bash
 cd /Users/gabriel/dev/tellurstori/maestro && docker compose exec maestro <cmd>
 ```
 
-**Bind-mount caveat:** Docker only sees files in the main repo's `maestro/` directory.
-- For files you create in this worktree that are NOT yet in the main repo, use `docker cp` to stage them into the container before running mypy/tests:
-  ```bash
-  docker cp <worktree-path>/maestro/path/to/file.py maestro-app:/app/maestro/path/to/file.py
-  ```
-- For modified existing files: temporarily copy them to the main repo, run mypy/tests, then revert.
+### Docker sees your worktree directly — no file copying needed
+
+`docker-compose.override.yml` bind-mounts the entire worktrees directory:
+
+```
+/Users/gabriel/.cursor/worktrees/maestro  →  /worktrees  (inside container)
+```
+
+So your worktree at `/Users/gabriel/.cursor/worktrees/maestro/eas/` is live inside the
+container at `/worktrees/eas/`. **Run mypy and tests directly against your worktree path**
+by prepending `PYTHONPATH=/worktrees/<id>`:
+
+```bash
+# mypy
+cd /Users/gabriel/dev/tellurstori/maestro && \
+  docker compose exec maestro sh -c "PYTHONPATH=/worktrees/<id> mypy /worktrees/<id>/maestro/ /worktrees/<id>/tests/"
+
+# pytest (specific file)
+cd /Users/gabriel/dev/tellurstori/maestro && \
+  docker compose exec maestro sh -c "PYTHONPATH=/worktrees/<id> pytest /worktrees/<id>/tests/path/to/test_file.py -v"
+```
+
+**⚠️ NEVER copy files into the main repo** (`/Users/gabriel/dev/tellurstori/maestro`) for
+testing purposes. The bind-mount makes that unnecessary, and leftover copies pollute the `dev`
+branch with uncommitted changes that don't belong there.
+
+> **Alembic exception:** `alembic revision --autogenerate` must still run from the main repo
+> because Alembic writes the migration file to disk and needs a live DB connection. After
+> generating, immediately `git mv` the migration file into your worktree and delete the copy
+> from the main repo before committing.
 
 ---
 
 ## Self-assignment
 
 Read `.agent-id` in your working directory. If it doesn't exist (the setup script may not have run in worktrees), determine your task number from your worktree directory name:
-- First worktree alphabetically (e.g. `auu`) → Agent **1**
-- Second worktree (e.g. `iip`) → Agent **2**
+- First worktree alphabetically (e.g. `eas`) → Agent **1**
+- Second worktree (e.g. `jzx`) → Agent **2**
+- Third worktree (e.g. `wfk`) → Agent **3**
 - And so on
 
 Write your assigned number to `.agent-id` before proceeding:
@@ -50,15 +76,16 @@ PARALLEL AGENT COORDINATION
 
 ENVIRONMENT SETUP (do this first):
 1. Your worktree is at your current working directory (run `pwd` to confirm).
-2. The main repo and Docker bind-mount are at /Users/gabriel/dev/tellurstori/maestro.
+   Determine your <id> — the last path component (e.g. "eas", "jzx", "wfk").
+2. The main repo is at /Users/gabriel/dev/tellurstori/maestro.
 3. All docker compose commands: cd /Users/gabriel/dev/tellurstori/maestro && docker compose exec maestro <cmd>
-4. New files you create in the worktree are NOT visible in Docker automatically.
-   Use: docker cp <your-file> maestro-app:/app/maestro/<path> before running mypy.
+4. Your worktree IS visible inside Docker at /worktrees/<id>/ — NO file copying required.
 
 SELF-ASSIGNMENT:
 Read .agent-id in your working directory. If missing, use your worktree folder name:
-- first alphabetically (e.g. auu) → 1
-- second (e.g. iip) → 2
+- first alphabetically (e.g. eas) → 1
+- second (e.g. jzx) → 2
+- third (e.g. wfk) → 3
 Write it: echo "N" > .agent-id
 
 TASKS (execute ONLY the task matching your number):
@@ -69,9 +96,31 @@ ISSUE_TITLE_1
 **Agent 2:** https://github.com/cgcardona/maestro/issues/ISSUE_NUMBER_2
 ISSUE_TITLE_2
 
+**Agent 3:** https://github.com/cgcardona/maestro/issues/ISSUE_NUMBER_3
+ISSUE_TITLE_3
+
+VERIFICATION (Docker-native — no copying):
+Replace <id> with your worktree folder name (e.g. eas, jzx, wfk).
+
+  mypy:
+    cd /Users/gabriel/dev/tellurstori/maestro && \
+    docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/<id> mypy /worktrees/<id>/maestro/ /worktrees/<id>/tests/"
+
+  pytest (specific file):
+    cd /Users/gabriel/dev/tellurstori/maestro && \
+    docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/<id> pytest /worktrees/<id>/tests/path/to/test_file.py -v"
+
+⚠️  NEVER copy files to /Users/gabriel/dev/tellurstori/maestro for testing.
+    That pollutes the dev branch. Your worktree is already live in Docker.
+
+⚠️  Alembic migrations only: run `alembic revision --autogenerate` from the main repo,
+    then immediately move the generated file into your worktree and delete the main-repo copy.
+
 WORKFLOW:
 Read and follow every step in .github/CREATE_PR_PROMPT.md exactly.
-Steps: issue analysis → branch (from dev) → implement → mypy → tests → run tests → commit → docs → PR via gh pr create.
+Steps: issue analysis → branch (from dev) → implement → mypy → tests → commit → docs → PR via gh pr create.
 
 Report: agent ID, PR URL, fix summary, tests added, any protocol changes.
 ```
@@ -80,10 +129,14 @@ Report: agent ID, PR URL, fix summary, tests added, any protocol changes.
 
 ## Before launching
 
-1. Fill in `ISSUE_NUMBER_1`, `ISSUE_TITLE_1`, etc. above with your chosen decoupled issues.
-2. Confirm issues are **not sequential and not dependent** on each other.
-3. Confirm `dev` branch is up to date: `git -C /Users/gabriel/dev/tellurstori/maestro pull origin dev`
-4. Confirm Docker is running: `docker compose -f /Users/gabriel/dev/tellurstori/maestro/docker-compose.yml ps`
+1. Fill in `ISSUE_NUMBER_1/2/3` and `ISSUE_TITLE_1/2/3` above with your chosen decoupled issues.
+2. Confirm issues are **not sequential and not dependent** on each other (zero file overlap).
+3. Confirm Docker is running and the worktrees mount is live:
+   ```bash
+   docker compose -f /Users/gabriel/dev/tellurstori/maestro/docker-compose.yml ps
+   docker compose exec maestro ls /worktrees/
+   ```
+4. Confirm `dev` branch is up to date: `git -C /Users/gabriel/dev/tellurstori/maestro pull origin dev`
 
 ---
 
@@ -91,4 +144,11 @@ Report: agent ID, PR URL, fix summary, tests added, any protocol changes.
 
 1. Click **Apply** on each worktree card in Cursor (or review each PR on GitHub separately).
 2. Run `git worktree list` to see all active worktrees.
-3. Run `git -C /Users/gabriel/dev/tellurstori/maestro pull origin dev` after merging.
+3. Run `git -C /Users/gabriel/dev/tellurstori/maestro status` — it must show **nothing to commit, working tree clean**.
+   If it shows any changes: agents copied files instead of using the bind-mount. Run:
+   ```bash
+   git -C /Users/gabriel/dev/tellurstori/maestro restore --staged .
+   git -C /Users/gabriel/dev/tellurstori/maestro restore .
+   # Then delete any new untracked files left behind (check git status output)
+   ```
+4. Run `git -C /Users/gabriel/dev/tellurstori/maestro pull origin dev` after merging.

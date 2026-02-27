@@ -22,8 +22,9 @@ Each agent claims a task number and converts its assigned batch of bug reports i
 ## Self-assignment
 
 Read `.agent-id` in your working directory. If it doesn't exist (the setup script may not have run in worktrees), determine your task number from your worktree directory name:
-- First worktree alphabetically (e.g. `auu`) → Agent **1**
-- Second worktree (e.g. `iip`) → Agent **2**
+- First worktree alphabetically (e.g. `eas`) → Agent **1**
+- Second worktree (e.g. `jzx`) → Agent **2**
+- Third worktree (e.g. `wfk`) → Agent **3**
 - And so on
 
 Write your assigned number to `.agent-id`:
@@ -45,8 +46,9 @@ ENVIRONMENT SETUP (do this first):
 
 SELF-ASSIGNMENT:
 Read .agent-id in your working directory. If missing, use your worktree folder name:
-- first alphabetically (e.g. auu) → 1
-- second (e.g. iip) → 2
+- first alphabetically (e.g. eas) → 1
+- second (e.g. jzx) → 2
+- third (e.g. wfk) → 3
 Write it: echo "N" > .agent-id
 
 TASKS (execute ONLY the task matching your number):
@@ -61,6 +63,12 @@ BUG_1C: <paste bug report>
 BUG_2A: <paste bug report>
 BUG_2B: <paste bug report>
 BUG_2C: <paste bug report>
+(one issue per bug)
+
+**Agent 3 — Bugs:**
+BUG_3A: <paste bug report>
+BUG_3B: <paste bug report>
+BUG_3C: <paste bug report>
 (one issue per bug)
 
 WORKFLOW:
