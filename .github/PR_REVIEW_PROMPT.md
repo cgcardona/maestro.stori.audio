@@ -70,6 +70,7 @@ Review with production paranoia. Work through each applicable section.
 - [ ] Docstrings on all new public modules, classes, and functions
 - [ ] No dead code left behind (remove, don't comment out)
 - [ ] `STORI_*` env vars accessed via `maestro.config.settings`
+- [ ] **Type-system evasion absent:** no `cast(...)` at call sites to silence callee errors; callee return types fixed at the source. No `dict[str, Any]` or `list[dict]` crossing internal layer boundaries — typed Pydantic models or dataclasses required. `# type: ignore` only at explicit 3rd-party adapter boundaries with justification.
 
 ---
 
@@ -184,6 +185,12 @@ docker compose exec storpheus pytest storpheus/test_<relevant_file>.py -v
 # Full coverage (for broad changes)
 docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"
 ```
+
+**Never pipe output through `grep`, `head`, or `tail`.** The process exit code is authoritative — filtering it causes false passes. Capture full output to a file if log size is a concern.
+
+**Red-flag scan:** Before reporting that tests pass, scan the FULL output for:
+`ERROR`, `Traceback`, `toolError`, `circuit_breaker_open`, `FAILED`, `AssertionError`
+Any red-flag in the output means the run is not clean, regardless of the final summary line.
 
 ---
 
