@@ -110,6 +110,22 @@ For SQLite: delete the DB file (e.g. `/data/maestro.db` in the container or your
 
 ---
 
+## Installing the `muse` CLI
+
+The `muse` command is registered as a console script in `pyproject.toml`. Inside the Docker container it is available after `pip install -e .`; outside Docker you can install it into a virtualenv the same way:
+
+```bash
+# Inside the container (already done at build time):
+pip install -e .
+
+# Verify:
+muse --help
+```
+
+Available subcommands: `init`, `status`, `commit`, `log`, `checkout`, `merge`, `remote`, `push`, `pull`. All commands except `init` require a `.muse/` directory in the current (or ancestor) directory; without one they exit with code 2.
+
+---
+
 ## AWS credentials
 
 For S3 asset setup: create IAM user + access key in AWS Console (or use existing key). Run `scripts/deploy/setup-s3-assets.sh` with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`. Script can create a limited `stori-assets-app` user; put the **printed** env vars into server `.env`.

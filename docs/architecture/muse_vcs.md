@@ -20,6 +20,31 @@ Muse is a persistent, Git-style version control system for musical compositions.
 
 ## Module Map
 
+### CLI Entry Point
+
+```
+maestro/muse_cli/
+├── __init__.py          — Package marker
+├── app.py               — Typer application root (console script: `muse`)
+├── errors.py            — Exit-code enum (0 success / 1 user / 2 repo / 3 internal) + exceptions
+├── _repo.py             — Repository detection (.muse/ directory walker)
+└── commands/
+    ├── __init__.py
+    ├── init.py           — muse init
+    ├── status.py         — muse status
+    ├── commit.py         — muse commit
+    ├── log.py            — muse log
+    ├── checkout.py       — muse checkout
+    ├── merge.py          — muse merge
+    ├── remote.py         — muse remote
+    ├── push.py           — muse push
+    └── pull.py           — muse pull
+```
+
+The CLI delegates to existing `maestro/services/muse_*.py` service modules. Subcommands are currently stubs — each prints "not yet implemented" and exits 0.
+
+### VCS Services
+
 ```
 app/services/
 ├── muse_repository.py        — Persistence adapter (DB reads/writes)
