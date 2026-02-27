@@ -89,7 +89,7 @@ async def _merge_async(
 
     # ── Repo identity ────────────────────────────────────────────────────
     repo_data: dict[str, str] = json.loads((muse_dir / "repo.json").read_text())
-    repo_id = repo_data["repo_id"]  # noqa: F841 — kept for future remote-scoped ops
+    repo_id = repo_data["repo_id"]
 
     # ── Current branch ───────────────────────────────────────────────────
     head_ref = (muse_dir / "HEAD").read_text().strip()   # "refs/heads/main"
@@ -192,7 +192,7 @@ async def _merge_async(
 
     merge_commit = MuseCliCommit(
         commit_id=merge_commit_id,
-        repo_id=repo_data["repo_id"],
+        repo_id=repo_id,
         branch=current_branch,
         parent_commit_id=ours_commit_id,
         parent2_commit_id=theirs_commit_id,

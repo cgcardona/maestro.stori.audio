@@ -33,7 +33,6 @@ from maestro.muse_cli.snapshot import compute_snapshot_id
 
 
 def _make_commit(
-    session: AsyncSession,
     *,
     parent: str | None = None,
     parent2: str | None = None,
