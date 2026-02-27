@@ -126,6 +126,47 @@ Available subcommands: `init`, `status`, `commit`, `log`, `checkout`, `merge`, `
 
 ---
 
+## Initialising a Muse repo
+
+Run `muse init` inside any project directory to create a local Muse repository:
+
+```bash
+mkdir my-music-project && cd my-music-project
+muse init
+# ✅ Initialised Muse repository in /path/to/my-music-project/.muse
+```
+
+This writes the following files:
+
+| File | Contents |
+|------|----------|
+| `.muse/repo.json` | `repo_id` (UUID), `schema_version`, `created_at` |
+| `.muse/HEAD` | `refs/heads/main` |
+| `.muse/refs/heads/main` | empty — no commits yet |
+| `.muse/config.toml` | `[user]`, `[auth]`, `[remotes]` stubs |
+
+Verify with `muse status`:
+
+```bash
+muse status
+# On branch main, no commits yet
+```
+
+**Re-initialise** an existing repo (preserves `repo_id` and `config.toml`):
+
+```bash
+muse init --force
+# ✅ Reinitialised Muse repository in /path/to/my-music-project/.muse
+```
+
+**Security:** `.muse/config.toml` stores your Muse Hub auth token. Add `.muse/` to your `.gitignore` to prevent accidental exposure:
+
+```bash
+echo '.muse/config.toml' >> .gitignore
+```
+
+---
+
 ## AWS credentials
 
 For S3 asset setup: create IAM user + access key in AWS Console (or use existing key). Run `scripts/deploy/setup-s3-assets.sh` with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`. Script can create a limited `stori-assets-app` user; put the **printed** env vars into server `.env`.

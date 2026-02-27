@@ -25,6 +25,19 @@ ALL_SUBCOMMANDS = [
     "pull",
 ]
 
+# Commands that are not yet fully implemented — they print "not yet implemented"
+# when invoked inside a repo with a bare .muse/ directory.
+# ``init`` is excluded: it is fully implemented (issue #31).
+STUB_COMMANDS = [
+    "commit",
+    "log",
+    "checkout",
+    "merge",
+    "remote",
+    "push",
+    "pull",
+]
+
 REPO_DEPENDENT_COMMANDS = [
     "status",
     "commit",
@@ -45,9 +58,9 @@ def test_cli_help_exits_zero() -> None:
         assert cmd in result.output
 
 
-@pytest.mark.parametrize("cmd", ALL_SUBCOMMANDS)
+@pytest.mark.parametrize("cmd", STUB_COMMANDS)
 def test_cli_subcommand_stub_exits_zero(cmd: str, tmp_path: pathlib.Path) -> None:
-    """Each stub exits 0 when run inside a valid Muse repository."""
+    """Each not-yet-implemented stub exits 0 when run inside a Muse repository."""
     muse_dir = tmp_path / ".muse"
     muse_dir.mkdir()
     prev = os.getcwd()
