@@ -1,4 +1,4 @@
-"""Pydantic models for the Stori Maestro API."""
+"""Pydantic models for the Maestro API."""
 from __future__ import annotations
 
 from app.models.requests import MaestroRequest, GenerateRequest

@@ -4,7 +4,7 @@ Text2MIDI Generator Backend.
 Wraps the Text2MidiBackend to implement the MusicGeneratorBackend interface,
 making neural generation available through the standard MusicGenerator pipeline.
 
-This is the primary generation backend for Stori - uses the amaai-lab/text2midi
+This is the primary generation backend for Maestro - uses the amaai-lab/text2midi
 model via HuggingFace Spaces to generate high-quality MIDI from natural language.
 """
 from __future__ import annotations

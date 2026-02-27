@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.contracts.json_types import CCEventDict, NoteDict
 from app.core.state_store import StateStore
 from app.core.tracing import TraceContext
-from app.core.tool_names import ToolName
+from app.core.tools import ToolName
 from app.db.database import Base
 from app.db import muse_models  # noqa: F401 — register tables
 from app.models.variation import (

@@ -1,4 +1,4 @@
-"""Request models for the Stori Maestro API."""
+"""Request models for the Maestro API."""
 from __future__ import annotations
 
 import logging

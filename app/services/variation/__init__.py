@@ -1,4 +1,4 @@
-"""Variation Service for the Stori Maestro."""
+"""Variation Service for Maestro."""
 from __future__ import annotations
 
 from app.services.variation.note_matching import (

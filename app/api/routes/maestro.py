@@ -1,5 +1,5 @@
 """
-Stori Maestro API - Composition Endpoints
+Maestro API — Composition Endpoints
 
 Cursor-of-DAWs Architecture:
 1. Intent Router classifies prompts → SSEState + tool allowlist

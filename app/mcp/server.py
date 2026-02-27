@@ -1,8 +1,7 @@
-"""
-Stori MCP Server
+"""Maestro MCP Server — DAW control via Model Context Protocol.
 
-Model Context Protocol server for DAW control.
-Allows Claude, Cursor, and other MCP clients to control Stori DAW.
+Allows Claude, Cursor, and other MCP clients to control the
+connected DAW (e.g. Stori) through the Maestro backend.
 """
 from __future__ import annotations
 
@@ -53,15 +52,12 @@ class DAWConnection:
     pending_responses: dict[str, asyncio.Future[DAWToolResponse]] = field(default_factory=dict)
 
 
-class StoriMCPServer:
-    """
-    MCP Server for Stori DAW control.
-    
-    This server:
-    1. Exposes DAW control tools via MCP protocol
-    2. Forwards tool calls to connected Swift DAW clients
-    3. Executes generation tools server-side (calling Orpheus)
-    4. Returns results back to the MCP client (Claude, etc.)
+class MaestroMCPServer:
+    """MCP Server for DAW control.
+
+    Exposes DAW control tools via MCP protocol, forwards tool calls to
+    connected DAW clients, executes generation tools server-side
+    (calling Orpheus), and returns results back to MCP clients.
     """
     
     def __init__(self) -> None:
@@ -376,12 +372,12 @@ class StoriMCPServer:
 
 
 # Singleton instance
-_server: StoriMCPServer | None = None
+_server: MaestroMCPServer | None = None
 
 
-def get_mcp_server() -> StoriMCPServer:
+def get_mcp_server() -> MaestroMCPServer:
     """Get the singleton MCP server instance."""
     global _server
     if _server is None:
-        _server = StoriMCPServer()
+        _server = MaestroMCPServer()
     return _server

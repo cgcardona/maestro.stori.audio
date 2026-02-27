@@ -1,5 +1,5 @@
 """
-Intent routing package for Stori Maestro.
+Intent routing package for Maestro.
 
 Routes user prompts to the appropriate execution path (REASONING/EDITING/COMPOSING).
 

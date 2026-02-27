@@ -54,7 +54,7 @@ async def protocol_events() -> ProtocolEventsResponse:
 @router.get("/protocol/tools.json")
 async def protocol_tools() -> ProtocolToolsResponse:
     """Unified tool schema (MCP format) for all registered tools."""
-    from app.mcp.tools.registry import MCP_TOOLS
+    from app.mcp.tools import MCP_TOOLS
 
     return ProtocolToolsResponse(
         protocolVersion=MAESTRO_VERSION,
@@ -70,7 +70,7 @@ async def protocol_schema() -> ProtocolSchemaResponse:
     Single fetch for FE type generation, cacheable by protocolHash.
     """
     from app.core.intent_config.enums import SSEState, Intent
-    from app.mcp.tools.registry import MCP_TOOLS
+    from app.mcp.tools import MCP_TOOLS
 
     return ProtocolSchemaResponse(
         protocolVersion=MAESTRO_VERSION,

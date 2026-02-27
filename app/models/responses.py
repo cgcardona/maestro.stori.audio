@@ -1,4 +1,4 @@
-"""Response models for the Stori Maestro API."""
+"""Response models for the Maestro API."""
 from __future__ import annotations
 
 from pydantic import BaseModel, Field

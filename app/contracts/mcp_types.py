@@ -62,7 +62,7 @@ from app.contracts.pydantic_types import PydanticJson
 class MCPPropertyDef(TypedDict, total=False):
     """JSON Schema definition for a single MCP tool property.
 
-    Covers the subset of JSON Schema used in Stori MCP tool definitions.
+    Covers the subset of JSON Schema used in MCP tool definitions.
     All constraint fields (``enum``, ``minimum``, etc.) are optional.
     """
 

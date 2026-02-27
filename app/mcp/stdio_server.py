@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""
-Stori MCP Stdio Server
+"""Maestro MCP Stdio Server — standalone MCP server via stdio.
 
-Standalone MCP server that communicates via stdio.
-This can be registered with Cursor or Claude Desktop.
-
-When MAESTRO_MCP_URL and MCP_TOKEN are set, DAW tool calls are
-proxied to the Maestro backend (where the Stori app WebSocket is registered).
-That way Cursor and the Stori app share the same DAW connection.
+Registered with Cursor or Claude Desktop.  When MAESTRO_MCP_URL and
+MCP_TOKEN are set, DAW tool calls are proxied to the Maestro backend
+(where the DAW WebSocket is registered).  That way Cursor and the DAW
+app share the same connection.
 
 Usage:
     python -m app.mcp.stdio_server
-    # With proxy (Cursor → backend → Stori WebSocket):
+    # With proxy (Cursor → backend → DAW WebSocket):
     MAESTRO_MCP_URL=http://localhost:10001 MCP_TOKEN=<jwt> python -m app.mcp.stdio_server
 """
 from __future__ import annotations

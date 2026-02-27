@@ -1,4 +1,4 @@
-"""GET /variation/stream — SSE stream using Stori Protocol events."""
+"""GET /variation/stream — SSE stream using Wire Protocol events."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def _envelope_to_protocol_dict(envelope: AnyEnvelope) -> dict[str, object]:
-    """Convert an EventEnvelope to a Stori Protocol event dict."""
+    """Convert an EventEnvelope to a Wire Protocol event dict."""
     etype = envelope.type
     payload = envelope.payload
 
@@ -82,7 +82,7 @@ async def stream_variation(
     token_claims: TokenClaims = Depends(require_valid_token),
 ) -> StreamingResponse:
     """
-    Stream variation events via SSE using Stori Protocol.
+    Stream variation events via SSE using Wire Protocol.
 
     Emits typed protocol events (meta, phrase, done, error)
     validated through the protocol emitter.

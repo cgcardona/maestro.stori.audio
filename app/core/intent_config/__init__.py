@@ -1,5 +1,5 @@
 """
-Centralized Intent Configuration for Stori Maestro.
+Centralized Intent Configuration for Maestro.
 
 Single source of truth for:
 1. Intent → Allowed Tools mapping

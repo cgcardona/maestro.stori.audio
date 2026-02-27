@@ -1,16 +1,11 @@
-"""MCP tool access — delegates to the Stori DAW adapter's tool registry.
+"""Stori DAW tool definitions in MCP wire format.
 
-MCP transport code imports tool definitions from here.  The canonical
-definitions live in ``app.daw.stori.tool_registry``.
+Each sub-module defines one category of tools as ``list[MCPToolDef]``.
+The combined registry and derived sets live in
+``app.daw.stori.tool_registry``.
 """
 from __future__ import annotations
 
-from app.daw.stori.tool_registry import (
-    MCP_TOOLS,
-    TOOL_CATEGORIES,
-    SERVER_SIDE_TOOLS,
-    DAW_TOOLS,
-)
 from app.daw.stori.tools.project import PROJECT_TOOLS
 from app.daw.stori.tools.track import TRACK_TOOLS
 from app.daw.stori.tools.region import REGION_TOOLS
@@ -33,8 +28,4 @@ __all__ = [
     "GENERATION_TOOLS",
     "PLAYBACK_TOOLS",
     "UI_TOOLS",
-    "MCP_TOOLS",
-    "TOOL_CATEGORIES",
-    "SERVER_SIDE_TOOLS",
-    "DAW_TOOLS",
 ]

@@ -1,30 +1,30 @@
-"""
-Tool definitions and metadata for the Stori Maestro.
+"""Tool metadata and schema access for the Maestro orchestrator.
 
-Tools are classified by kind:
-  * PRIMITIVE (deterministic, reversible, single-mutation) — safe for direct LLM use
-  * GENERATOR (creative / stochastic / expensive)          — planner-gated
-  * MACRO     (multi-step convenience)                     — never directly callable by LLM
+Generic tool classification types (``ToolTier``, ``ToolKind``,
+``ToolMeta``) live in ``app.core.tools.metadata``.  Stori-specific
+tool registrations, schemas, and derived sets live in
+``app.daw.stori.tool_registry``.
 
-And by tier:
-  * Tier 1: server-side generation/execution
-  * Tier 2: client-side DAW control (Swift)
+This package re-exports both for convenience so existing callers
+can continue to use ``from app.core.tools import …``.
 """
 from __future__ import annotations
 
 from app.core.tools.metadata import ToolTier, ToolKind, ToolMeta
-from app.core.tools.definitions import TIER1_TOOLS, TIER2_TOOLS, ALL_TOOLS
-from app.core.tools.registry import (
+from app.daw.stori.tool_registry import (
     build_tool_registry,
     get_tool_meta,
     tools_by_kind,
     tool_schema_by_name,
 )
+from app.daw.stori.tool_schemas import TIER1_TOOLS, TIER2_TOOLS, ALL_TOOLS
+from app.daw.stori.tool_names import ToolName
 
 __all__ = [
     "ToolTier",
     "ToolKind",
     "ToolMeta",
+    "ToolName",
     "TIER1_TOOLS",
     "TIER2_TOOLS",
     "ALL_TOOLS",

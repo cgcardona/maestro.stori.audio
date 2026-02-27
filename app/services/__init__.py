@@ -1,4 +1,4 @@
-"""Services for the Stori Maestro."""
+"""Services for Maestro."""
 from __future__ import annotations
 
 from app.services.storpheus import StorpheusClient

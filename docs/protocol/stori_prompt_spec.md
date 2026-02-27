@@ -1433,8 +1433,8 @@ Tests: `tests/test_storpheus_client.py` (`TestGpuColdStartRetry`).
 | **MIDI analysis tooling (reference corpus)** | Done | `scripts/analyze_midi.py`, `scripts/download_reference_midi.py` |
 | **Auto-section parsing (single-prompt multi-part)** | Done | `app/core/maestro_agent_teams/sections.py` |
 | **Multi-section agent pipeline (per-section region+generate)** | Done | `app/core/maestro_agent_teams/agent.py` |
-| **stori_generate_midi: trackId/regionId/start_beat required** | Done | `app/core/tools/definitions.py`, `app/core/maestro_editing/tool_execution.py` |
-| **Instrument-specific prompt field on stori_generate_midi** | Done | `app/core/tools/definitions.py`, `app/core/maestro_agent_teams/agent.py` |
+| **stori_generate_midi: trackId/regionId/start_beat required** | Done | `app/daw/stori/tool_schemas.py`, `app/core/maestro_editing/tool_execution.py` |
+| **Instrument-specific prompt field on stori_generate_midi** | Done | `app/daw/stori/tool_schemas.py`, `app/core/maestro_agent_teams/agent.py` |
 | **GPU retry (3x backoff: 5s/15s/30s)** | Done | `app/services/storpheus.py` |
 | **GPU warm-up probe before composition** | Done | `app/core/maestro_agent_teams/coordinator.py` |
 | **Structured diagnostic logging for stori_generate_midi** | Done | `app/core/maestro_editing/tool_execution.py` |

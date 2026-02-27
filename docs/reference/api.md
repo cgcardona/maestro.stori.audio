@@ -1,6 +1,6 @@
 # API & MCP tools reference
 
-Streaming (SSE), event types, models, and the full MCP tool set in one place. Tool definitions live in `app/mcp/tools.py`; validation in `app/core/tool_validation/`.
+Streaming (SSE), event types, models, and the full MCP tool set in one place. Tool definitions live in `app/daw/stori/tools/`; validation in `app/core/tool_validation/`.
 
 ---
 
@@ -202,7 +202,7 @@ Track names use title-case with spaces and are consistent across all steps refer
 | Phase | Tools | Description |
 |-------|-------|-------------|
 | `setup` | `stori_create_project`, `stori_set_tempo`, `stori_set_key`, `stori_add_midi_track`, `stori_add_midi_region`, `stori_set_midi_program`, `stori_set_track_name/color/icon`, `stori_play/stop`, `stori_set_playhead`, `stori_show_panel`, `stori_set_zoom` | Session scaffolding: project config, track creation, transport, UI |
-| `composition` | `stori_add_notes`, `stori_generate_midi/drums/bass/chords/melody` | Creative content: writing notes, MIDI generation |
+| `composition` | `stori_add_notes`, `stori_generate_midi` | Creative content: writing notes, MIDI generation |
 | `arrangement` | `stori_move_region`, `stori_transpose_notes`, `stori_clear_notes`, `stori_quantize_notes`, `stori_apply_swing` | Structural editing after initial writing |
 | `soundDesign` | `stori_add_insert_effect` | Tone shaping: insert effects (EQ, compression, reverb…) |
 | `expression` | `stori_add_midi_cc`, `stori_add_pitch_bend`, `stori_add_aftertouch` | Performance data: MIDI CC, pitch bend, humanisation |
@@ -567,7 +567,7 @@ Update a conversation's title or linked project.
 
 ## MCP tool routing
 
-- **Server-side (Maestro):** Generation tools (`stori_generate_*`) run in the Maestro backend and return MIDI/result payloads.
+- **Server-side (Maestro):** The generation tool (`stori_generate_midi`) runs in the Maestro backend and returns MIDI/result payloads.
 - **DAW (Swift):** All other tools are forwarded to the connected Stori app over WebSocket. The DAW executes the action and returns a `tool_response` with `request_id` and `result`.
 
 Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mcp/tools`.
@@ -664,20 +664,16 @@ Do NOT send arbitrary strings — the client rejects icons not in the compiled a
 
 ---
 
-## 2. Composition — creative content (6 tools)
+## 2. Composition — creative content (2 tools)
 
 Writing notes and generating MIDI via the Orpheus music model.
 
 | Tool | Description | Key parameters |
 |------|-------------|-----------------|
 | `stori_add_notes` | Add MIDI notes to region. | `regionId`, `notes` — each note **must** have `pitch` (0–127), `velocity` (1–127), `startBeat` (>=0), `durationBeats` (>0). Server backfills defaults if missing. |
-| `stori_generate_midi` | Generate MIDI for a role (preferred). | `role`, `style`, `tempo`, `bars` (required); `key`, `constraints` |
-| `stori_generate_drums` | Generate drum pattern (deprecated). | `style`, `tempo`; `bars`, `complexity` |
-| `stori_generate_bass` | Generate bass line (deprecated). | `style`, `tempo`, `bars`; `key`, `chords` |
-| `stori_generate_melody` | Generate melody (deprecated). | `style`, `tempo`, `bars`; `key`, `scale`, `octave` |
-| `stori_generate_chords` | Generate chord part (deprecated). | `style`, `tempo`, `bars`; `key`, `progression` |
+| `stori_generate_midi` | Generate MIDI for a role. | `role`, `style`, `tempo`, `bars` (required); `key`, `constraints` |
 
-**Generation tools (server-side, internal):** `stori_generate_*` tools run inside Maestro and call the Orpheus music model. They are **never emitted as `toolCall` events** in the SSE stream — the server translates their output into `stori_add_notes` (and optionally `stori_add_midi_cc` / `stori_add_pitch_bend`) before forwarding to the client.
+**Generation tool (server-side, internal):** `stori_generate_midi` runs inside Maestro and calls the Orpheus music model. It is **never emitted as a `toolCall` event** in the SSE stream — the server translates its output into `stori_add_notes` (and optionally `stori_add_midi_cc` / `stori_add_pitch_bend`) before forwarding to the client.
 
 ---
 
@@ -861,13 +857,13 @@ Focused budget/fuel status for the Creative Fuel UI. Wraps the same data as `/ap
 | Phase | SSE value | Count | Purpose |
 |-------|-----------|-------|---------|
 | 1. Setup | `setup` | 15 | Project config, tracks, regions, instruments, transport, UI |
-| 2. Composition | `composition` | 6 | Notes and MIDI generation (Orpheus) |
+| 2. Composition | `composition` | 2 | Notes and MIDI generation (Orpheus) |
 | 3. Arrangement | `arrangement` | 7 | Move, duplicate, delete, transpose, quantize, swing, clear |
 | 4. Sound Design | `soundDesign` | 1 | Insert effects |
 | 5. Expression | `expression` | 3 | MIDI CC, pitch bend, aftertouch |
 | 6. Mixing | `mixing` | 7 | Volume, pan, mute/solo, buses, sends, automation |
 
-**Total: 39** distinct tools. Generation tools run server-side and are never emitted as SSE `toolCall` events; all others are forwarded to the DAW when connected.
+**Total: 35** distinct tools. The generation tool (`stori_generate_midi`) runs server-side and is never emitted as an SSE `toolCall` event; all others are forwarded to the DAW when connected.
 
 ---
 
@@ -892,10 +888,6 @@ Focused budget/fuel status for the Creative Fuel UI. Wraps the same data as `/ap
 | `stori_set_zoom` | setup |
 | `stori_add_notes` | composition |
 | `stori_generate_midi` | composition |
-| `stori_generate_drums` | composition |
-| `stori_generate_bass` | composition |
-| `stori_generate_melody` | composition |
-| `stori_generate_chords` | composition |
 | `stori_move_region` | arrangement |
 | `stori_duplicate_region` | arrangement |
 | `stori_delete_region` | arrangement |

@@ -50,8 +50,8 @@ COPY --chown=stori:stori scripts/ ./scripts/
 COPY --chown=stori:stori tools/ ./tools/
 COPY --chown=stori:stori alembic/ ./alembic/
 COPY --chown=stori:stori stori_tourdeforce/ ./stori_tourdeforce/
-COPY --chown=stori:stori reference_midi/ ./reference_midi/
-COPY --chown=stori:stori alembic.ini pyproject.toml mvp_happy_path.py ./
+COPY --chown=stori:stori alembic.ini pyproject.toml ./
+COPY --chown=stori:stori scripts/e2e/mvp_happy_path.py ./
 COPY --chown=stori:stori entrypoint.sh ./
 
 # Create data directory for SQLite with proper permissions

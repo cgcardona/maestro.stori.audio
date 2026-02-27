@@ -1,4 +1,4 @@
-"""Persistent StateStore for Stori Maestro — Maestro's in-memory working tree.
+"""Persistent StateStore for Maestro — Maestro's in-memory working tree.
 
 Boundary rules (enforced by convention, verified in tests):
 

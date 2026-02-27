@@ -1,5 +1,5 @@
 """
-Plan Schema Validation for Stori Maestro.
+Plan Schema Validation for Maestro.
 
 Pydantic schemas for validating LLM-generated execution plans.
 

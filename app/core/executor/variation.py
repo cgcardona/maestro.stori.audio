@@ -40,7 +40,7 @@ from app.contracts.json_types import (
     jint,
 )
 from app.core.expansion import ToolCall, dedupe_tool_calls
-from app.core.tool_names import ToolName
+from app.core.tools import ToolName
 from app.core.tools import get_tool_meta, ToolTier, ToolKind
 from app.core.tracing import get_trace_context, trace_span
 from app.core.emotion_vector import EmotionVector, emotion_vector_from_stori_prompt

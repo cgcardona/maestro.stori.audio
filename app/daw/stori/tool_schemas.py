@@ -1,16 +1,14 @@
-"""
-Tool definitions in OpenAI tool schema format.
+"""Stori DAW tool definitions in OpenAI function-calling format.
 
-Tools are classified into:
-  * PRIMITIVE (deterministic, reversible, single-mutation)  -> safe for direct LLM use
-  * GENERATOR  (creative / stochastic / expensive)          -> planner-gated
-  * MACRO      (multi-step convenience)                     -> never directly callable by LLM
+These schemas are sent to the LLM for tool selection.  They mirror the
+MCP definitions in ``app.daw.stori.tools`` but use the OpenAI
+``{"type": "function", "function": {...}}`` shape required by the
+LLM client.
 
 Tools are additionally grouped by tier:
   * Tier 1: server-side generation/execution
   * Tier 2: client-side DAW control (Swift)
 """
-
 from __future__ import annotations
 
 from app.contracts.llm_types import ToolSchemaDict

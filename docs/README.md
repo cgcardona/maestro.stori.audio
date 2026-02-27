@@ -35,7 +35,7 @@ API base URL, auth (JWT), access codes, frontend (Swift, assets), MCP (Cursor/Cl
 
 ## 3. [reference/api.md](reference/api.md)
 
-API and MCP tools in one place: maestro stream (SSE), all event types (`state`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `toolError`, `reasoning`, `budgetUpdate`, `complete`, and composing events), request body fields (`humanizeProfile`, `qualityPreset`, `swing`), variable refs, models (OpenRouter), the **Maestro Default UI endpoints** (placeholders, prompt chips, prompt cards, template lookup, budget status), and the full MCP tool reference (all 41 tools with parameters and routing). Use with Stori app, Cursor/Claude, or HTTP MCP. Programmatic list: `GET /api/v1/mcp/tools` or `app/mcp/tools.py`.
+API and MCP tools in one place: maestro stream (SSE), all event types (`state`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `toolError`, `reasoning`, `budgetUpdate`, `complete`, and composing events), request body fields (`humanizeProfile`, `qualityPreset`, `swing`), variable refs, models (OpenRouter), the **Maestro Default UI endpoints** (placeholders, prompt chips, prompt cards, template lookup, budget status), and the full MCP tool reference (all 35 tools with parameters and routing). Use with Stori app, Cursor/Claude, or HTTP MCP. Programmatic list: `GET /api/v1/mcp/tools` or `app/daw/stori/tools/`.
 
 ---
 

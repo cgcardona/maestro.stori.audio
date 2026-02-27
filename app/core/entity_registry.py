@@ -1,5 +1,5 @@
 """
-Entity Registry for Stori Maestro (Cursor-of-DAWs).
+Entity Registry for Maestro.
 
 This is the **authoritative source of truth** for entity IDs in a project/conversation.
 

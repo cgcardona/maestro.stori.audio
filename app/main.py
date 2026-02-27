@@ -1,5 +1,5 @@
 """
-Stori Maestro API
+Maestro API
 
 FastAPI application for AI-powered music composition.
 """

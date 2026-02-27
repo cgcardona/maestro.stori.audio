@@ -1,5 +1,5 @@
 """
-Variation models for the Stori Maestro.
+Variation models for Maestro.
 
 A Variation represents a proposed musical change that can be reviewed
 before being applied. It consists of phrases (grouped changes) that can

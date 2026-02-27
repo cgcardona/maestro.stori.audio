@@ -1,5 +1,5 @@
 """
-Database module for Stori Maestro.
+Database module for Maestro.
 
 Provides async SQLAlchemy support with PostgreSQL and SQLite.
 """

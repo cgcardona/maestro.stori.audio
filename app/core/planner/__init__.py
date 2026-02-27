@@ -1,5 +1,5 @@
 """
-Planner package for Stori Maestro.
+Planner package for Maestro.
 
 Converts natural language music requests into validated execution plans.
 

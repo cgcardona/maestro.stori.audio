@@ -1,8 +1,8 @@
 """Tool metadata models and enums.
 
-``ToolTier`` and ``ToolKind`` classify every Stori DAW tool for routing,
+``ToolTier`` and ``ToolKind`` classify every DAW tool for routing,
 planner gating, and allowlist construction.  ``ToolMeta`` is the single
-authoritative record per tool — populated once in ``app/core/tools/registry.py``
+authoritative record per tool — populated once in ``app/daw/stori/tool_registry.py``
 and queried everywhere else.
 """
 
@@ -16,7 +16,7 @@ class ToolTier(str, Enum):
     """Execution tier for a tool — determines where it runs.
 
     ``TIER1`` tools execute server-side inside Maestro (e.g. generation).
-    ``TIER2`` tools are forwarded to the connected Stori DAW for client-side
+    ``TIER2`` tools are forwarded to the connected DAW for client-side
     execution and always appear in SSE ``toolCall`` events.
     """
 
@@ -39,7 +39,7 @@ class ToolKind(str, Enum):
 
 @dataclass(frozen=True)
 class ToolMeta:
-    """Immutable metadata record for one registered Stori tool.
+    """Immutable metadata record for one registered DAW tool.
 
     One instance is created per tool in ``build_tool_registry()`` and stored
     in the module-level ``_TOOL_META`` dict.  All downstream code reads from

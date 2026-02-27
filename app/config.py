@@ -1,5 +1,5 @@
 """
-Stori Maestro Configuration
+Maestro Configuration
 
 Environment-based configuration for the Maestro service.
 """
@@ -19,7 +19,7 @@ def _app_version_from_package() -> str:
     return MAESTRO_VERSION
 
 
-# Models shown in the Stori Maestro model picker.
+# Models shown in the Maestro model picker.
 # Update this list when new versions ship; slugs must match OpenRouter IDs exactly.
 # Sorted cheapest-first by convention; the endpoint re-sorts by cost anyway.
 ALLOWED_MODEL_IDS: list[str] = [
@@ -62,7 +62,7 @@ APPROVED_MODELS: dict[str, dict[str, str | float]] = {
 
 
 # Context window sizes (input token capacity) per supported model.
-# Stori only supports the two models listed in ALLOWED_MODEL_IDS; anything else
+# Maestro only supports the two models listed in ALLOWED_MODEL_IDS; anything else
 # returns 0 so the frontend leaves the context-usage ring at its previous value.
 CONTEXT_WINDOW_TOKENS: dict[str, int] = {
     "anthropic/claude-sonnet-4.6": 200_000,

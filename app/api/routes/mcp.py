@@ -24,7 +24,7 @@ from app.contracts.pydantic_types import PydanticJson, unwrap_dict
 from app.models.base import CamelModel
 
 from app.contracts.mcp_types import DAWToolCallMessage, DAWToolResponse, MCPContentBlock, MCPServerInfo, MCPToolDef, MCPToolDefWire
-from app.mcp.server import get_mcp_server, StoriMCPServer
+from app.mcp.server import get_mcp_server, MaestroMCPServer
 from app.auth.dependencies import require_valid_token
 from app.auth.tokens import validate_access_code, AccessCodeError
 from app.protocol.emitter import ProtocolSerializationError, emit

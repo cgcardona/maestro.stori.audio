@@ -37,7 +37,7 @@ def _event_schemas_canonical() -> list[dict[str, object]]:
 
 def _tool_schemas_canonical() -> list[dict[str, object]]:
     """Extract canonical tool schemas from the MCP registry, sorted by name."""
-    from app.mcp.tools.registry import MCP_TOOLS
+    from app.mcp.tools import MCP_TOOLS
 
     tools: list[dict[str, object]] = []
     for tool in sorted(MCP_TOOLS, key=lambda t: t["name"]):

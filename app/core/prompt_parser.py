@@ -1,5 +1,5 @@
 """
-Structured prompt parser for Stori Maestro.
+Structured prompt parser for Maestro.
 
 Format: a sentinel header line followed by a YAML document.
 

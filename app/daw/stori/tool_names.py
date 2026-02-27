@@ -1,5 +1,8 @@
-"""Canonical tool name enum — replace scattered string comparisons."""
+"""Canonical tool name enum — the Stori DAW tool vocabulary.
 
+These are the ``stori_*`` wire names that the macOS client expects.
+They must never be renamed — they are the DAW tool contract.
+"""
 from __future__ import annotations
 
 from enum import Enum

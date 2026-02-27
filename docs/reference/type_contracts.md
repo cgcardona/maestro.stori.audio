@@ -1,4 +1,4 @@
-# Stori Maestro — Type Contracts Reference
+# Maestro — Type Contracts Reference
 
 > Updated: 2026-02-26 | Reflects the full `Any`-elimination sweep and MIDI primitive constraint system. `Any` no longer exists in any production app file. All MIDI primitives carry range constraints at every layer — Pydantic validation, dataclass `__post_init__`, and named `Annotated` type aliases.
 
@@ -37,6 +37,10 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [MIDI event types](#midi-event-types)
    - [Pipeline types](#pipeline-types)
    - [Scoring types](#scoring-types)
+8. [DAW Adapter Layer (`app/daw/`)](#daw-adapter-layer)
+   - [Ports (`app/daw/ports.py`)](#ports-appdawportspy)
+   - [Phase Mapping (`app/daw/stori/phase_map.py`)](#phase-mapping-appdawstoriphase_mappy)
+   - [Tool Registry (`app/daw/stori/tool_registry.py`)](#tool-registry-appdawstoritool_registrypy)
 10. [Region Event Map Aliases](#region-event-map-aliases)
 11. [HTTP Response Entities](#http-response-entities)
     - [Protocol Introspection](#protocol-introspection-appprotocolresponsespy)
@@ -66,6 +70,7 @@ This document is the single source of truth for every named entity (TypedDict, d
     - [Diagram 15 — Asset Service & S3 Protocols](#diagram-15--asset-service--s3-protocols)
     - [Diagram 16 — HTTP Response Models](#diagram-16--http-response-models)
     - [Diagram 17 — MCP JSON-RPC TypedDicts](#diagram-17--mcp-json-rpc-typeddicts)
+    - [Diagram 18 — DAW Adapter & Phase Mapping](#diagram-18--daw-adapter--phase-mapping)
 
 ---
 
@@ -1341,6 +1346,94 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 | `parsed` | `ParsedMidiResult` | Fully parsed MIDI events by channel |
 | `flat_notes` | `list[StorpheusNoteDict]` | Flattened note list across all channels |
 | `batch_idx` | `int` | Index in the generation batch (for logging) |
+
+---
+
+## DAW Adapter Layer
+
+The `app/daw/` package isolates all DAW-specific vocabulary behind a protocol boundary. Maestro core depends only on `DAWAdapter` and `ToolRegistry` — never on concrete adapter internals.
+
+### Ports (`app/daw/ports.py`)
+
+#### `ToolRegistry`
+
+`@dataclass(frozen=True)` — Immutable snapshot of every tool a DAW adapter exposes. Created once by the concrete adapter and never mutated.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mcp_tools` | `list[MCPToolDef]` | MCP-format tool definitions (wire contract) |
+| `tool_schemas` | `list[ToolSchemaDict]` | OpenAI function-calling format (sent to LLM) |
+| `tool_meta` | `ToolMetaRegistry` | Per-tool metadata keyed by canonical name |
+| `server_side_tools` | `frozenset[str]` | Names of tools that execute server-side |
+| `daw_tools` | `frozenset[str]` | Names of tools forwarded to the DAW client |
+| `categories` | `dict[str, str]` | Tool name → category string |
+
+#### `DAWAdapter`
+
+`Protocol, @runtime_checkable` — The port that every DAW integration must satisfy. Maestro core calls these methods; the concrete adapter wires them to DAW-specific vocabulary, validation, and transport.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `registry` | `@property → ToolRegistry` | Full tool vocabulary for this DAW |
+| `validate_tool_call` | `(name, params, allowed_tools) → ValidationResult` | Validate a tool call against the DAW's schema |
+| `phase_for_tool` | `(name) → str` | Classify a tool into `"setup"`, `"instrument"`, or `"mixing"` |
+
+---
+
+### Phase Mapping (`app/daw/stori/phase_map.py`)
+
+#### `InstrumentGroups`
+
+`TypeAlias = dict[str, list[ToolCall]]` — Tool calls grouped by instrument name (lowercased). Key is the normalised instrument name (e.g. `"drums"`, `"bass"`). Value is the ordered list of tool calls belonging to that instrument.
+
+**Where used:**
+
+| Module | Usage |
+|--------|-------|
+| `app/daw/stori/phase_map.py` | Return type component of `group_into_phases`; local variable in grouping logic |
+| `app/core/executor/phases.py` | Re-exported for executor access |
+| `app/core/executor/variation.py` | Destructured from `PhaseSplit` for parallel instrument dispatch |
+
+#### `PhaseSplit`
+
+`NamedTuple` — Result of splitting tool calls into three execution phases. Replaces the naked `tuple[list[ToolCall], dict[str, list[ToolCall]], list[str], list[ToolCall]]` return type.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `setup` | `list[ToolCall]` | Phase 1 — project-level calls (tempo, key) |
+| `instruments` | `InstrumentGroups` | Phase 2 — per-instrument tool calls grouped by name |
+| `instrument_order` | `list[str]` | Insertion-order list of instrument keys in `instruments` |
+| `mixing` | `list[ToolCall]` | Phase 3 — shared bus routing, volume, pan |
+
+As a `NamedTuple`, `PhaseSplit` supports both named field access (`split.instruments`) and positional destructuring (`setup, instruments, order, mixing = split`).
+
+**Where used:**
+
+| Module | Usage |
+|--------|-------|
+| `app/daw/stori/phase_map.py` | Return type of `group_into_phases()` |
+| `app/core/executor/variation.py` | Destructured in `execute_tools_for_variation()` for three-phase dispatch |
+| `tests/test_maestro_handler_internals.py` | Destructured in `TestGroupIntoPhases` assertions |
+
+---
+
+### Tool Registry (`app/daw/stori/tool_registry.py`)
+
+#### `ToolMetaRegistry`
+
+**Defined in:** `app/daw/ports.py`
+
+`TypeAlias = dict[str, ToolMeta]` — Tool name → `ToolMeta` mapping. This is the authoritative registry populated by `build_tool_registry()` and queried by `get_tool_meta()`, `tools_by_kind()`, etc.
+
+| Module | Usage |
+|--------|-------|
+| `app/daw/ports.py` | `ToolRegistry.tool_meta` field type (canonical definition) |
+| `app/daw/stori/tool_registry.py` | Module-level `_TOOL_META` store; return type of `build_tool_registry()` |
+| `app/daw/stori/adapter.py` | Passed to `ToolRegistry` constructor |
+
+#### `ToolCategoryEntry`
+
+`TypeAlias = tuple[str, list[MCPToolDef]]` — A (category_name, tools) pair used to build the tool → category mapping. Example: `("track", TRACK_TOOLS)`.
 
 ---
 
@@ -3087,4 +3180,69 @@ classDiagram
     MCPToolDef --> MCPInputSchema
     MCPInputSchema --> MCPPropertyDef
     MCPCallResult --> MCPContentBlock
+```
+
+---
+
+### Diagram 18 — DAW Adapter & Phase Mapping
+
+The DAW adapter protocol (`app/daw/ports.py`) and its Stori implementation (`app/daw/stori/`). Maestro core depends only on `DAWAdapter` and `ToolRegistry` — never on concrete adapter internals. `PhaseSplit` replaces naked tuples in the phase-grouping pipeline.
+
+```mermaid
+classDiagram
+    class DAWAdapter {
+        <<Protocol>>
+        +registry : ToolRegistry
+        +validate_tool_call(name, params, allowed_tools) ValidationResult
+        +phase_for_tool(name) str
+    }
+    class ToolRegistry {
+        <<frozen dataclass>>
+        +mcp_tools : list~MCPToolDef~
+        +tool_schemas : list~ToolSchemaDict~
+        +tool_meta : ToolMetaRegistry
+        +server_side_tools : frozenset~str~
+        +daw_tools : frozenset~str~
+        +categories : dict~str, str~
+    }
+    class ToolMeta {
+        <<frozen dataclass>>
+        +name : str
+        +tier : ToolTier
+        +kind : ToolKind
+        +creates_entity : str | None
+        +id_fields : tuple~str~
+        +reversible : bool
+        +planner_only : bool
+        +deprecated : bool
+    }
+    class ToolTier { <<Enum>> TIER1; TIER2 }
+    class ToolKind { <<Enum>> PRIMITIVE; GENERATOR; MACRO }
+    class StoriDAWAdapter {
+        +registry : ToolRegistry
+        +validate_tool_call()
+        +phase_for_tool()
+    }
+    class PhaseSplit {
+        <<NamedTuple>>
+        +setup : list~ToolCall~
+        +instruments : InstrumentGroups
+        +instrument_order : list~str~
+        +mixing : list~ToolCall~
+    }
+    class ToolName {
+        <<str Enum>>
+        ADD_MIDI_TRACK
+        ADD_NOTES
+        GENERATE_MIDI
+        ...
+    }
+
+    DAWAdapter <|.. StoriDAWAdapter : implements
+    DAWAdapter --> ToolRegistry : registry
+    ToolRegistry --> ToolMeta : tool_meta values
+    ToolMeta --> ToolTier
+    ToolMeta --> ToolKind
+    StoriDAWAdapter ..> PhaseSplit : group_into_phases() returns
+    StoriDAWAdapter ..> ToolName : tool vocabulary
 ```

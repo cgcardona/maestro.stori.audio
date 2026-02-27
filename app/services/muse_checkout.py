@@ -34,7 +34,7 @@ from app.contracts.json_types import (
     RegionPitchBendMap,
     json_list,
 )
-from app.core.tool_names import ToolName
+from app.core.tools import ToolName
 from app.services.muse_drift import _fingerprint, _combined_fingerprint
 from app.services.variation.note_matching import (
     match_notes,

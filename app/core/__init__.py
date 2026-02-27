@@ -1,5 +1,5 @@
 """
-Stori Maestro Core - Cursor-of-DAWs Architecture.
+Maestro Core — Cursor-of-DAWs Architecture.
 
 Core orchestration pipeline modules:
 

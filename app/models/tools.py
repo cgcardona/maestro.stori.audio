@@ -1,4 +1,4 @@
-"""Tool-related models for the Stori Maestro."""
+"""Tool-related models for Maestro."""
 from __future__ import annotations
 
 from pydantic import BaseModel, Field

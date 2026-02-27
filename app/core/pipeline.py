@@ -1,5 +1,5 @@
 """
-Maestro Pipeline for Stori.
+Maestro Pipeline.
 
 Main entry point for processing user prompts through the intent → execution flow.
 

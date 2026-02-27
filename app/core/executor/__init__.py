@@ -1,4 +1,4 @@
-"""Executor package for Stori Maestro.
+"""Executor package for Maestro.
 
 Variation pipeline (two-phase):
 
@@ -31,6 +31,8 @@ from app.core.executor.phases import (
     _PHASE3_TOOLS,
     _get_instrument_for_call,
     _group_into_phases,
+    InstrumentGroups,
+    PhaseSplit,
 )
 from app.core.executor.execution import _execute_single_call, _execute_generator
 from app.core.executor.variation import (
@@ -64,6 +66,8 @@ __all__ = [
     "_PHASE3_TOOLS",
     "_get_instrument_for_call",
     "_group_into_phases",
+    "InstrumentGroups",
+    "PhaseSplit",
     # Execution
     "_execute_single_call",
     "_execute_generator",

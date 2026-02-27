@@ -1,5 +1,5 @@
 """
-LLM Client for Stori Maestro (Cursor-of-DAWs).
+LLM Client for Maestro.
 
 Provides a clean interface for LLM interactions with:
 - OpenRouter support

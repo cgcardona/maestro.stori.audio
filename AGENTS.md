@@ -92,8 +92,9 @@ When your changes affect another agent's domain (e.g., backend changes that requ
 app/
   api/routes/      → Thin HTTP handlers (no business logic)
   core/            → Intent, pipeline, maestro handlers, agent teams, executor
+  daw/             → DAW adapter protocol (ports.py) and Stori implementation (stori/)
   services/        → RAG, music generation, external integrations
-  mcp/             → MCP tool definitions and server
+  mcp/             → MCP server and transport (delegates tools to daw/)
   auth/            → JWT validation, dependencies
   db/              → Database models, sessions
   protocol/        → SSE events, version, hashing

@@ -1,5 +1,5 @@
 """
-Stori Maestro Authentication Module
+Maestro Authentication Module
 
 Provides JWT-based access token generation and validation.
 """
