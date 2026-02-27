@@ -30,9 +30,9 @@ ALL_SUBCOMMANDS = [
 # ``init``   is excluded: fully implemented (issue #31).
 # ``commit`` is excluded: fully implemented (issue #32).
 # ``log``    is excluded: fully implemented (issue #33).
+# ``merge``  is excluded: fully implemented (issue #35).
 STUB_COMMANDS = [
     "checkout",
-    "merge",
     "remote",
     "push",
     "pull",
@@ -41,10 +41,10 @@ STUB_COMMANDS = [
 # Repo-dependent commands that exit 2 outside a .muse/ repo.
 # ``commit`` requires -m so its no-repo exit-2 test lives in test_commit.py.
 # ``log``    no-repo exit-2 test lives in test_log.py.
+# ``merge``  requires a BRANCH arg — repo check tested in test_merge.py.
 REPO_DEPENDENT_COMMANDS = [
     "status",
     "checkout",
-    "merge",
     "remote",
     "push",
     "pull",
