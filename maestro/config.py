@@ -195,6 +195,11 @@ class Settings(BaseSettings):
     maestro_mcp_url: str | None = None  # e.g. http://localhost:10001
     mcp_token: str | None = None  # JWT for Authorization: Bearer when proxying
 
+    # Muse Hub object storage — binary artifacts (MIDI, MP3, WebP) written here as
+    # flat files under <musehub_objects_dir>/<repo_id>/<object_id>.
+    # Mount this path on a persistent volume in production.
+    musehub_objects_dir: str = "/data/musehub/objects"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

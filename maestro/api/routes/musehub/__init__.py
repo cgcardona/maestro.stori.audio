@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from maestro.api.routes.musehub import issues, repos
+from maestro.api.routes.musehub import issues, repos, sync
 
 router = APIRouter(prefix="/musehub", tags=["musehub"])
 
 router.include_router(repos.router)
 router.include_router(issues.router)
+router.include_router(sync.router)
 
 __all__ = ["router"]

@@ -517,6 +517,7 @@ The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro Fa
 | `musehub_repos` | Remote repos (name, visibility, owner) |
 | `musehub_branches` | Branch pointers inside a repo |
 | `musehub_commits` | Commits pushed from CLI clients |
+| `musehub_objects` | Binary artifact metadata (MIDI, MP3, WebP piano rolls) |
 
 ### Module Map
 
@@ -525,11 +526,13 @@ maestro/
 ├── db/musehub_models.py           — SQLAlchemy ORM models
 ├── models/musehub.py              — Pydantic v2 request/response models
 ├── services/musehub_repository.py — Async DB queries for repos/branches/commits
-├── services/musehub_issues.py    — Async DB queries for issues (single point of DB access)
+├── services/musehub_issues.py     — Async DB queries for issues
+├── services/musehub_sync.py       — Push/pull sync protocol (ingest_push, compute_pull_delta)
 └── api/routes/musehub/
     ├── __init__.py               — Composes sub-routers under /musehub prefix
     ├── repos.py                  — Repo/branch/commit route handlers
-    └── issues.py                 — Issue tracking route handlers
+    ├── issues.py                 — Issue tracking route handlers
+    └── sync.py                   — Push/pull sync route handlers
 ```
 
 ### Endpoints
@@ -552,7 +555,14 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}/issues/{number}` | Get a single issue by per-repo number |
 | POST | `/api/v1/musehub/repos/{id}/issues/{number}/close` | Close an issue |
 
-All endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
+#### Sync Protocol
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/musehub/repos/{id}/push` | Upload commits and objects (fast-forward enforced) |
+| POST | `/api/v1/musehub/repos/{id}/pull` | Fetch missing commits and objects |
+
+All endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-sync-protocol) for full field docs.
 
 ### Issue Workflow
 
@@ -563,11 +573,45 @@ Issues let musicians track production problems and creative tasks within a repo,
 - **States:** `open` (default on creation) → `closed` (via the close endpoint). No re-open at MVP.
 - **Filtering:** `GET /issues?state=all` includes both open and closed; `?label=bug` narrows by label.
 
+### Sync Protocol Design
+
+The push/pull protocol is intentionally simple for MVP:
+
+#### Push — fast-forward enforcement
+
+A push is accepted when one of the following is true:
+1. The branch has no head yet (first push).
+2. `headCommitId` equals the current remote head (no-op).
+3. The current remote head appears in the ancestry graph of the pushed commits — i.e. the client built on top of the remote head.
+
+When none of these conditions hold the push is **rejected with HTTP 409** and body `{"error": "non_fast_forward"}`. Set `force: true` in the request to overwrite the remote head regardless (equivalent to `git push --force`).
+
+Commits and objects are **upserted by ID** — re-pushing the same content is safe and idempotent.
+
+#### Pull — exclusion-list delta
+
+The client sends `haveCommits` and `haveObjects` as exclusion lists. The Hub returns all commits for the requested branch and all objects for the repo that are NOT in those lists. No ancestry traversal is performed — the client receives the full delta in one response.
+
+**MVP limitation:** Large objects (> 1 MB) are base64-encoded inline. Pre-signed URL upload is planned as a follow-up.
+
+#### Object storage
+
+Binary artifact bytes are written to disk at:
+
+```
+<settings.musehub_objects_dir>/<repo_id>/<object_id_with_colon_replaced_by_dash>
+```
+
+Default: `/data/musehub/objects`. Mount this path on a persistent volume in production.
+
+Only metadata (`object_id`, `path`, `size_bytes`, `disk_path`) is stored in Postgres; the bytes live on disk.
+
 ### Architecture Boundary
 
 Service modules are the only place that touches `musehub_*` tables:
 - `musehub_repository.py` → `musehub_repos`, `musehub_branches`, `musehub_commits`
 - `musehub_issues.py` → `musehub_issues`
+- `musehub_sync.py` → `musehub_commits`, `musehub_objects`, `musehub_branches` (sync path only)
 
 Route handlers delegate all persistence to the service layer. No business logic in route handlers.
 

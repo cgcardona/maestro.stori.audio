@@ -1065,3 +1065,111 @@ Get a single issue by its per-repo sequential number.
 Close an issue (set `state` → `"closed"`).
 
 **Response (200):** Updated issue object with `"state": "closed"`. Returns **404** if the issue number does not exist.
+
+---
+
+## Muse Hub Sync Protocol
+
+Push/pull endpoints that transfer commits and binary objects between local Muse repos and the Muse Hub. These are the core data-movement endpoints that `muse push` and `muse pull` call.
+
+All endpoints require `Authorization: Bearer <token>`.
+
+Object content is base64-encoded in `content_b64`. For MVP, objects up to ~1 MB are transferred inline; larger files will use pre-signed URLs in a future release.
+
+### POST /api/v1/musehub/repos/{repo_id}/push
+
+Upload commits and binary objects to the Hub. Enforces fast-forward semantics.
+
+**Request body:**
+
+```json
+{
+  "branch": "main",
+  "headCommitId": "c123...",
+  "commits": [
+    {
+      "commitId": "c123...",
+      "parentIds": ["c000..."],
+      "message": "Add jazz bassline",
+      "timestamp": "2024-01-15T10:30:00Z",
+      "snapshotId": "snap001",
+      "author": "gabriel"
+    }
+  ],
+  "objects": [
+    {
+      "objectId": "sha256:aabbcc...",
+      "path": "tracks/jazz_4b.mid",
+      "contentB64": "<base64>"
+    }
+  ],
+  "force": false
+}
+```
+
+**Response (200):**
+
+```json
+{ "ok": true, "remoteHead": "c123..." }
+```
+
+**Error responses:**
+
+| Status | Body | When |
+|--------|------|------|
+| 404 | `"Repo not found"` | Unknown `repo_id` |
+| 409 | `{"error": "non_fast_forward"}` | Remote head is not an ancestor of `headCommitId` and `force` is `false` |
+| 401 | — | Missing or invalid Bearer token |
+
+**Non-fast-forward semantics:** A push is accepted when (a) the branch has no head yet, (b) `headCommitId` equals the current remote head, or (c) the current remote head appears in the ancestry graph of the pushed commits. Set `force: true` to overwrite regardless.
+
+**Idempotency:** Commits and objects that already exist (by ID) are silently skipped — re-pushing is safe.
+
+### POST /api/v1/musehub/repos/{repo_id}/pull
+
+Fetch commits and objects the caller does not yet have.
+
+**Request body:**
+
+```json
+{
+  "branch": "main",
+  "haveCommits": ["c001", "c002"],
+  "haveObjects": ["sha256:aaa...", "sha256:bbb..."]
+}
+```
+
+`haveCommits` and `haveObjects` are exclusion lists — pass empty arrays to receive everything.
+
+**Response (200):**
+
+```json
+{
+  "commits": [
+    {
+      "commitId": "c003",
+      "branch": "main",
+      "parentIds": ["c002"],
+      "message": "Add piano chord voicings",
+      "author": "rene",
+      "timestamp": "2024-01-16T09:00:00Z",
+      "snapshotId": null
+    }
+  ],
+  "objects": [
+    {
+      "objectId": "sha256:ccddee...",
+      "path": "tracks/piano.mid",
+      "contentB64": "<base64>"
+    }
+  ],
+  "remoteHead": "c003"
+}
+```
+
+**Error responses:**
+
+| Status | Body | When |
+|--------|------|------|
+| 404 | `"Repo not found"` | Unknown `repo_id` |
+| 401 | — | Missing or invalid Bearer token |

@@ -34,7 +34,8 @@ async def _create_repo(client: AsyncClient, auth_headers: dict[str, str], name: 
         headers=auth_headers,
     )
     assert response.status_code == 201
-    return response.json()["repoId"]
+    repo_id: str = response.json()["repoId"]
+    return repo_id
 
 
 async def _create_issue(
@@ -51,7 +52,8 @@ async def _create_issue(
         headers=auth_headers,
     )
     assert response.status_code == 201
-    return response.json()
+    issue: dict[str, object] = response.json()
+    return issue
 
 
 # ---------------------------------------------------------------------------
