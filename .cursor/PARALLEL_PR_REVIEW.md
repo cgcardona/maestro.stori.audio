@@ -31,13 +31,12 @@ cleanup, run `git worktree prune` from the main repo.
 
 ## Setup — run this before launching agents
 
-Replace the PR list as needed. This creates one worktree per PR and writes the
-task assignment file into each.
+Run from anywhere inside the main repo. Paths are derived automatically.
 
 ```bash
-REPO=/Users/gabriel/dev/tellurstori/maestro
-PRTREES=/Users/gabriel/.cursor/worktrees/maestro
-cd $REPO
+REPO=$(git rev-parse --show-toplevel)
+PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
+cd "$REPO"
 
 # --- define PRs ---
 declare -a PRS=(
@@ -52,7 +51,7 @@ for entry in "${PRS[@]}"; do
   TITLE="${entry##*|}"
   WT="$PRTREES/pr-$NUM"
   git worktree add "$WT" dev
-  printf "PR_NUMBER=%s\nPR_TITLE=%s\nPR_URL=https://github.com/cgcardona/maestro/pull/%s\n" \
+  printf "WORKFLOW=pr-review\nPR_NUMBER=%s\nPR_TITLE=%s\nPR_URL=https://github.com/cgcardona/maestro/pull/%s\n" \
     "$NUM" "$TITLE" "$NUM" > "$WT/.agent-task"
   echo "✅ worktree pr-$NUM ready"
 done
@@ -69,43 +68,46 @@ in its `pr-<N>` directory, and paste the Kickoff Prompt below.
 
 **You are running inside a Cursor worktree.** Your working directory is NOT the main repo.
 
+```bash
+# Derive paths — run these at the start of your session
+REPO=$(git worktree list | head -1 | awk '{print $1}')   # main repo
+WTNAME=$(basename "$(pwd)")                               # this worktree's name
+# Docker path to your worktree: /worktrees/$WTNAME
+```
+
 | Item | Value |
 |------|-------|
-| Your worktree root | the directory you opened in (contains `.agent-task`) |
-| Main repo | `/Users/gabriel/dev/tellurstori/maestro` |
-| Docker compose location | `/Users/gabriel/dev/tellurstori/maestro` |
-| Your worktree inside Docker | `/worktrees/pr-<N>/` |
+| Your worktree root | current directory (contains `.agent-task`) |
+| Main repo | first entry of `git worktree list` |
+| Docker compose location | main repo |
+| Your worktree inside Docker | `/worktrees/$WTNAME` |
 
 **All `docker compose exec` commands must be run from the main repo:**
 ```bash
-cd /Users/gabriel/dev/tellurstori/maestro && docker compose exec maestro <cmd>
+cd "$REPO" && docker compose exec maestro <cmd>
 ```
 
 ### Docker sees your worktree directly — no file copying needed
 
-`docker-compose.override.yml` bind-mounts the entire worktrees directory:
-
-```
-/Users/gabriel/.cursor/worktrees/maestro  →  /worktrees  (inside container)
-```
-
-After checking out the PR branch, your worktree's code is **immediately live
-inside the container at `/worktrees/pr-<N>/`**. Run mypy and tests directly:
+`docker-compose.override.yml` bind-mounts the entire worktrees directory into
+the container. After checking out the PR branch, your worktree's code is
+**immediately live inside the container at `/worktrees/$WTNAME/`**:
 
 ```bash
+REPO=$(git worktree list | head -1 | awk '{print $1}')
+WTNAME=$(basename "$(pwd)")
+
 # mypy
-cd /Users/gabriel/dev/tellurstori/maestro && \
-  docker compose exec maestro sh -c \
-    "PYTHONPATH=/worktrees/pr-<N> mypy /worktrees/pr-<N>/maestro/ /worktrees/pr-<N>/tests/"
+cd "$REPO" && docker compose exec maestro sh -c \
+  "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
 
 # pytest (specific file)
-cd /Users/gabriel/dev/tellurstori/maestro && \
-  docker compose exec maestro sh -c \
-    "PYTHONPATH=/worktrees/pr-<N> pytest /worktrees/pr-<N>/tests/path/to/test_file.py -v"
+cd "$REPO" && docker compose exec maestro sh -c \
+  "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
 ```
 
-**⚠️ NEVER copy files into the main repo** (`/Users/gabriel/dev/tellurstori/maestro`) for
-testing purposes. That pollutes the `dev` branch with uncommitted changes that don't belong there.
+**⚠️ NEVER copy files into the main repo** for testing purposes. That pollutes
+the `dev` branch with uncommitted changes that don't belong there.
 
 > **Alembic exception:** If the PR includes a migration, verify migration correctness by
 > reading the file rather than applying it during review.
@@ -119,16 +121,16 @@ PARALLEL AGENT COORDINATION — PR REVIEW
 
 STEP 0 — READ YOUR TASK:
   cat .agent-task
-  This file tells you your PR number, title, and URL. All instructions below
-  use <N> as a placeholder — substitute your actual PR number everywhere.
+  This file tells you your PR number, title, and URL. Substitute your actual
+  PR number wherever you see <N> below.
 
-STEP 1 — ENVIRONMENT:
-  - Main repo: /Users/gabriel/dev/tellurstori/maestro
-  - All docker compose commands: cd /Users/gabriel/dev/tellurstori/maestro && docker compose exec maestro <cmd>
-  - Your worktree is live in Docker at /worktrees/pr-<N>/ — NO file copying needed.
+STEP 1 — DERIVE PATHS:
+  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  WTNAME=$(basename "$(pwd)")
+  # Your worktree is live in Docker at /worktrees/$WTNAME — NO file copying needed.
+  # All docker compose commands: cd "$REPO" && docker compose exec maestro <cmd>
 
 STEP 2 — CHECKOUT & SYNC:
-  cd <your worktree root>
   gh pr checkout <N>
   git fetch origin && git merge origin/dev
 
@@ -137,18 +139,18 @@ STEP 3 — REVIEW:
   1. Context — read PR description, referenced issue, commits, files changed
   2. Deep review — work through all applicable checklist sections (3a–3j)
   3. Add/fix tests if weak or missing
-  4. Run mypy and tests (Docker-native, per STEP 1 above)
+  4. Run mypy and tests (Docker-native, using $REPO and $WTNAME from STEP 1)
   5. Grade the PR (A/B/C/D/F) — OUTPUT GRADE FIRST before any merge command
   6. Merge ONLY if grade is A or B and you have written "Approved for merge"
   7. After merge: close the referenced issue
 
 STEP 4 — SELF-DESTRUCT (always run this, merge or not):
   WORKTREE=$(pwd)
-  cd /Users/gabriel/dev/tellurstori/maestro
+  cd "$REPO"
   git worktree remove --force "$WORKTREE"
   git worktree prune
 
-⚠️  NEVER copy files to /Users/gabriel/dev/tellurstori/maestro for testing.
+⚠️  NEVER copy files to the main repo for testing.
 
 CRITICAL: You MUST output your grade and "Approved for merge" OR "Not approved — do not merge"
 BEFORE running any gh pr merge command.
@@ -174,27 +176,32 @@ Report: PR number, grade, merge status, any improvements made, follow-up issues 
 
 1. Confirm PRs are open: `gh pr list --state open`
 2. Run the Setup script above — confirm worktrees appear: `git worktree list`
-3. Confirm Docker is running and worktrees mount is live:
+3. Confirm Docker is running and the worktrees mount is live:
    ```bash
-   docker compose -f /Users/gabriel/dev/tellurstori/maestro/docker-compose.yml ps
+   REPO=$(git rev-parse --show-toplevel)
+   docker compose -f "$REPO/docker-compose.yml" ps
    docker compose exec maestro ls /worktrees/
    ```
-4. Confirm `dev` is up to date: `git -C /Users/gabriel/dev/tellurstori/maestro pull origin dev`
+4. Confirm `dev` is up to date:
+   ```bash
+   git -C "$(git rev-parse --show-toplevel)" pull origin dev
+   ```
 
 ---
 
 ## After agents complete
 
 - Check GitHub for merged PRs and closed issues.
-- Pull `dev` locally: `git -C /Users/gabriel/dev/tellurstori/maestro pull origin dev`
+- Pull `dev` locally: `git -C "$(git rev-parse --show-toplevel)" pull origin dev`
 - Verify no stale worktrees remain: `git worktree list` — should show only the main repo.
   If any linger (agent crashed before cleanup):
   ```bash
-  git -C /Users/gabriel/dev/tellurstori/maestro worktree prune
+  git -C "$(git rev-parse --show-toplevel)" worktree prune
   ```
-- Verify main repo is clean: `git -C /Users/gabriel/dev/tellurstori/maestro status`
-  Must show **nothing to commit, working tree clean**. If not, agents copied files — clean up:
+- Verify main repo is clean: `git -C "$(git rev-parse --show-toplevel)" status`
+  Must show **nothing to commit, working tree clean**. If not, clean up:
   ```bash
-  git -C /Users/gabriel/dev/tellurstori/maestro restore --staged .
-  git -C /Users/gabriel/dev/tellurstori/maestro restore .
+  REPO=$(git rev-parse --show-toplevel)
+  git -C "$REPO" restore --staged .
+  git -C "$REPO" restore .
   ```
