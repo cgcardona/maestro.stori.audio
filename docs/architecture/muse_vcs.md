@@ -34,13 +34,14 @@ maestro/muse_cli/
 └── commands/
     ├── __init__.py
     ├── init.py           — muse init  ✅ fully implemented
-    ├── status.py         — muse status  ✅ branch + commit state display
+    ├── status.py         — muse status  ✅ fully implemented (issue #44)
     ├── commit.py         — muse commit  ✅ fully implemented (issue #32)
     ├── log.py            — muse log    ✅ fully implemented (issue #33)
-    ├── snapshot.py       — walk_workdir, hash_file, build_snapshot_manifest, compute IDs
+    ├── snapshot.py       — walk_workdir, hash_file, build_snapshot_manifest, compute IDs,
+    │                        diff_workdir_vs_snapshot (added/modified/deleted/untracked sets)
     ├── models.py         — MuseCliCommit, MuseCliSnapshot, MuseCliObject (SQLAlchemy)
-    ├── db.py             — open_session, upsert_object/snapshot/commit helpers
-    ├── log.py            — muse log     (stub — issue #33)
+    ├── db.py             — open_session, upsert/get helpers, get_head_snapshot_manifest
+    ├── merge_engine.py   — read_merge_state(), MergeState dataclass (MERGE_STATE.json reader)
     ├── checkout.py       — muse checkout (stub — issue #34)
     ├── merge.py          — muse merge   (stub — issue #35)
     ├── remote.py         — muse remote  (stub — issue #38)
@@ -81,6 +82,83 @@ If a user deletes or overwrites a file after committing, the snapshot manifest
 knows what _was_ there but the bytes are gone. `muse open` / `muse play` will
 exit 1 with a clear error in that case.
 
+---
+
+## `muse status` Output Formats
+
+`muse status` operates in three modes depending on repository state.
+
+### Mode 1 — Clean working tree
+
+No changes since the last commit:
+
+```
+On branch main
+nothing to commit, working tree clean
+```
+
+### Mode 2 — Uncommitted changes
+
+Files have been modified, added, or deleted relative to the last snapshot:
+
+```
+On branch main
+
+Changes since last commit:
+  (use "muse commit -m <msg>" to record changes)
+
+        modified:   beat.mid
+        new file:   lead.mp3
+        deleted:    scratch.mid
+```
+
+- `modified:` — file exists in both the last snapshot and `muse-work/` but its sha256 hash differs.
+- `new file:` — file is present in `muse-work/` but absent from the last committed snapshot.
+- `deleted:` — file was in the last committed snapshot but is no longer present in `muse-work/`.
+
+### Mode 3 — In-progress merge
+
+When `.muse/MERGE_STATE.json` exists (written by `muse merge` when conflicts are detected):
+
+```
+On branch main
+
+You have unmerged paths.
+  (fix conflicts and run "muse commit")
+
+Unmerged paths:
+        both modified:   beat.mid
+        both modified:   lead.mp3
+```
+
+Resolve conflicts manually, then `muse commit` to record the merge.
+
+### No commits yet
+
+On a branch that has never been committed to:
+
+```
+On branch main, no commits yet
+
+Untracked files:
+  (use "muse commit -m <msg>" to record changes)
+
+        beat.mid
+```
+
+If `muse-work/` is empty or missing: `On branch main, no commits yet` (single line).
+
+### Implementation
+
+| Layer | File | Responsibility |
+|-------|------|----------------|
+| Command | `maestro/muse_cli/commands/status.py` | Typer callback + `_status_async` |
+| Diff engine | `maestro/muse_cli/snapshot.py` | `diff_workdir_vs_snapshot()` |
+| Merge reader | `maestro/muse_cli/merge_engine.py` | `read_merge_state()` / `MergeState` |
+| DB helper | `maestro/muse_cli/db.py` | `get_head_snapshot_manifest()` |
+
+`_status_async` is the injectable async core (tested directly without a running server).
+Exit codes: 0 success, 2 outside a Muse repo, 3 internal error.
 
 ---
 

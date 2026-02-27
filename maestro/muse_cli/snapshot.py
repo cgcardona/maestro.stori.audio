@@ -68,6 +68,43 @@ def compute_snapshot_id(manifest: dict[str, str]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def diff_workdir_vs_snapshot(
+    workdir: pathlib.Path,
+    last_manifest: dict[str, str],
+) -> tuple[set[str], set[str], set[str], set[str]]:
+    """Compare *workdir* against *last_manifest* from the previous commit.
+
+    Returns a tuple of four disjoint path sets:
+
+    - ``added``     — files in *workdir* absent from *last_manifest*
+                      (new files since the last commit).
+    - ``modified``  — files present in both but with a differing sha256 hash.
+    - ``deleted``   — files in *last_manifest* absent from *workdir*.
+    - ``untracked`` — non-empty only when *last_manifest* is empty (i.e. the
+                      branch has no commits yet): every file in *workdir* is
+                      treated as untracked rather than as newly-added.
+
+    All paths use POSIX separators for cross-platform reproducibility.
+    """
+    if not workdir.exists():
+        # Nothing on disk — every previously committed path is deleted.
+        return set(), set(), set(last_manifest.keys()), set()
+
+    current_manifest = walk_workdir(workdir)
+    current_paths = set(current_manifest.keys())
+    last_paths = set(last_manifest.keys())
+
+    if not last_paths:
+        # No prior snapshot — all working-tree files are untracked.
+        return set(), set(), set(), current_paths
+
+    added = current_paths - last_paths
+    deleted = last_paths - current_paths
+    common = current_paths & last_paths
+    modified = {p for p in common if current_manifest[p] != last_manifest[p]}
+    return added, modified, deleted, set()
+
+
 def compute_commit_id(
     parent_ids: list[str],
     snapshot_id: str,
