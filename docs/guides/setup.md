@@ -92,20 +92,20 @@ For SQLite: delete the DB file (e.g. `/data/stori.db` in the container or your l
 
 ## Deploy (day-to-day)
 
-- **Restart:** `ssh stage.stori.audio 'cd ~/maestro.stori.audio && docker compose restart maestro'`
-- **Sync code:** `rsync -avz --exclude '.git' --exclude '__pycache__' --exclude '.env' ./ stage.stori.audio:~/maestro.stori.audio/`
+- **Restart:** `ssh your-host 'cd ~/maestro && docker compose restart maestro'`
+- **Sync code:** `rsync -avz --exclude '.git' --exclude '__pycache__' --exclude '.env' ./ your-host:~/maestro/`
 - **Recreate (pick up .env):** `docker compose up -d --force-recreate maestro`
 - **S3 assets:** Run `scripts/deploy/setup-s3-assets.sh` with AWS credentials; add printed vars to `.env`. Upload assets via `scripts/upload_assets_to_s3.py` (e.g. inside container).
 - **Uninstall:** `docker compose down`; disable systemd: `sudo systemctl disable maestro-stori && sudo systemctl stop maestro-stori`.
 
 ---
 
-## New instance (e.g. stage.stori.audio)
+## New instance (e.g. stage.your-domain.com)
 
 1. **EC2:** Ubuntu 22.04, t3.medium, SSH + HTTP + HTTPS; note public IP.
 2. **DNS:** A record for your domain → instance IP; wait for propagation.
-3. **Code:** rsync repo (exclude `.git`, `.env`) to `ubuntu@IP:~/maestro.stori.audio/`.
-4. **On server:** `cd ~/maestro.stori.audio`, `cp .env.example .env`, edit (OpenRouter, DB password, domain, CORS). Run `sudo ./scripts/deploy/setup-instance.sh --domain stage.stori.audio` (or your domain) for Docker, nginx, SSL, systemd.
+3. **Code:** rsync repo (exclude `.git`, `.env`) to `ubuntu@IP:~/maestro/`.
+4. **On server:** `cd ~/maestro`, `cp .env.example .env`, edit (OpenRouter, DB password, domain, CORS). Run `sudo ./scripts/deploy/setup-instance.sh --domain stage.your-domain.com` (or your domain) for Docker, nginx, SSL, systemd.
 5. **CORS / security:** Run `bash scripts/deploy/update-env-security.sh` so CORS is not wildcard.
 
 ---

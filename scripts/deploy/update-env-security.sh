@@ -46,7 +46,7 @@ if grep -q "^STORI_CORS_ORIGINS=" "$ENV_FILE" 2>/dev/null; then
         echo "   This is a SECURITY RISK in production!"
         echo ""
         echo "   Recommended value:"
-        echo "   STORI_CORS_ORIGINS=https://stage.stori.audio,stori://"
+        echo "   STORI_CORS_ORIGINS=https://your-domain.com,stori://"
         echo ""
         read -p "   Update now? (yes/no): " update_cors
         if [ "$update_cors" = "yes" ]; then
@@ -70,7 +70,7 @@ else
 # =============================================================================
 # NEVER use "*" in production! Specify exact origins.
 # Comma-separated list of allowed origins
-STORI_CORS_ORIGINS=https://stage.stori.audio,stori://
+STORI_CORS_ORIGINS=https://your-domain.com,stori://
 EOF
         echo "   ✅ CORS configuration added"
     fi

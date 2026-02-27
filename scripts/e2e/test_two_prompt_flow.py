@@ -7,7 +7,7 @@ Prompt 2 → project with content → COMPOSING → variation returned
 
 Usage:
     python scripts/e2e/test_two_prompt_flow.py <jwt-token>
-    python scripts/e2e/test_two_prompt_flow.py <jwt-token> --api https://stage.stori.audio/api/v1
+    python scripts/e2e/test_two_prompt_flow.py <jwt-token> --api https://your-domain.com/api/v1
 """
 from __future__ import annotations
 

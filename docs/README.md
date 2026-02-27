@@ -1,8 +1,8 @@
-# Maestro Stori Audio – Documentation
+# Maestro – Documentation
 
 **Stori — the infinite music machine.** Use these docs in order: read only what you need. Start with [guides/setup.md](guides/setup.md), then [guides/integrate.md](guides/integrate.md). Script paths are from **repo root**.
 
-**Environments:** local, **stage.stori.audio**, **maestro.stori.audio**.
+**Environments:** local, stage, production (use your own domains).
 
 ---
 

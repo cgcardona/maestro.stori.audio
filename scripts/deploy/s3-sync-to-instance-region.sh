@@ -6,7 +6,7 @@
 # Usage (on server; app user in .env often lacks CreateBucket - use migration user):
 #   export MIGRATION_AWS_ACCESS_KEY_ID=AKIA...
 #   export MIGRATION_AWS_SECRET_ACCESS_KEY=...
-#   ENV_FILE=/home/ubuntu/maestro.stori.audio/.env ./scripts/deploy/s3-sync-to-instance-region.sh
+#   ENV_FILE=/home/ubuntu/maestro/.env ./scripts/deploy/s3-sync-to-instance-region.sh
 #
 # Or from repo root with only .env (fails if app user cannot create buckets):
 #   ./scripts/deploy/s3-sync-to-instance-region.sh

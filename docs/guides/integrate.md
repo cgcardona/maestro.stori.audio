@@ -6,7 +6,7 @@ API base URL, auth, Swift/DAW integration, and MCP (Cursor/Claude) in one place.
 
 ## API & auth
 
-- **Base URL:** e.g. `https://stage.stori.audio` or `https://maestro.stori.audio` (no trailing slash). Use for health, maestro, conversations, assets.
+- **Base URL:** e.g. `https://your-domain.com` (no trailing slash). Use for health, maestro, conversations, assets.
 - **Auth:** `Authorization: Bearer <access_token>` on every request **except** `GET /api/v1/health` and **except asset endpoints** (see below). 401 → token missing/invalid/expired; re-auth or refresh.
 - **Health:** `GET /api/v1/health` — no auth. Use before authenticated calls.
 
@@ -74,7 +74,7 @@ curl -X POST https://<your-api>/api/v1/users/register -H "Content-Type: applicat
 **Auth & identity parity:** The app should use the backend's single-identifier architecture (device UUID). Register, get JWT for maestro/MCP, use X-Device-ID only for assets.
 
 - **Assets:** Asset endpoints use **X-Device-ID only** (no JWT). Send header `X-Device-ID: <device-uuid>` (the app’s per-install UUID). List drum kits: `GET /api/v1/assets/drum-kits`. Download URL: `GET /api/v1/assets/drum-kits/{id}/download-url` → response has `url` (presigned S3, use within 30 min) and `expires_at`.
-- **CORS:** Backend allows origins in `CORS_ORIGINS` (e.g. `https://stage.stori.audio`, `stori://`). No wildcard in prod.
+- **CORS:** Backend allows origins in `CORS_ORIGINS` (e.g. `https://your-app-domain.com`, `stori://`). No wildcard in prod.
 - **Stage:** `/docs` and `/openapi.json` are off when `DEBUG=false`; use local or debug backend for interactive docs.
 
 ---
@@ -161,7 +161,7 @@ So an LLM client can list and call tools.
     "cwd": "REPO_ROOT"
   }
   ```
-  Replace `REPO_ROOT` with your repo path (e.g. `/Users/you/maestro.stori.audio`). Ensure Docker is running and the stack is up (`docker compose up -d`).
+  Replace `REPO_ROOT` with your repo path. Ensure Docker is running and the stack is up (`docker compose up -d`).
 
   **Local Python:**
   ```json

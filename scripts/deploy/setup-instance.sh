@@ -9,7 +9,7 @@
 # - Nginx reverse proxy with Let's Encrypt SSL
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/cgcardona/maestro.stori.audio/main/scripts/deploy/setup-instance.sh | sudo bash -s -- [options]
+#   curl -sSL https://raw.githubusercontent.com/cgcardona/maestro/main/scripts/deploy/setup-instance.sh | sudo bash -s -- [options]
 #
 # Or after cloning:
 #   sudo ./deploy/setup-instance.sh [options]
@@ -31,7 +31,7 @@ EMAIL=""
 BRANCH="main"
 SKIP_SSL=false
 NO_CLONE=false
-REPO_URL="https://github.com/cgcardona/maestro.stori.audio.git"
+REPO_URL="https://github.com/cgcardona/maestro.git"
 INSTALL_DIR="/opt/stori"
 
 # Colors for output
@@ -314,7 +314,7 @@ log_info "Creating systemd service..."
 
 SERVICE_FILE="$INSTALL_DIR/deploy/systemd/maestro-stori.service"
 if [ -f "$SERVICE_FILE" ]; then
-    sed "s|/home/ubuntu/maestro.stori.audio|$INSTALL_DIR|g" "$SERVICE_FILE" > /etc/systemd/system/maestro-stori.service
+    sed "s|/opt/maestro|$INSTALL_DIR|g" "$SERVICE_FILE" > /etc/systemd/system/maestro-stori.service
     chmod 644 /etc/systemd/system/maestro-stori.service
 else
     log_error "Service file not found: $SERVICE_FILE"

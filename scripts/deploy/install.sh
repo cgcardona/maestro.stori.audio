@@ -29,8 +29,7 @@ if [ ! -f "$SERVICE_FILE" ]; then
 fi
 
 echo "📦 Installing maestro-stori (Docker Compose on boot)..."
-sed "s|/home/ubuntu/maestro.stori.audio|$PROJECT_ROOT|g" \
-    "$SERVICE_FILE" > "/etc/systemd/system/maestro-stori.service"
+sed "s|/opt/maestro|$PROJECT_ROOT|g" \
     "$SERVICE_FILE" > "/etc/systemd/system/maestro-stori.service"
 chmod 644 "/etc/systemd/system/maestro-stori.service"
 echo "   ✓ maestro-stori.service installed"

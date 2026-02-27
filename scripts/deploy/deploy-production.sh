@@ -30,7 +30,7 @@ fi
 if grep -q "STORI_CORS_ORIGINS=\*" .env 2>/dev/null; then
     echo "⚠️  WARNING: CORS is set to wildcard (*) in .env"
     echo "   This is a SECURITY RISK in production!"
-    echo "   Set STORI_CORS_ORIGINS=https://stage.stori.audio,stori://"
+    echo "   Set STORI_CORS_ORIGINS=https://your-domain.com,stori://"
     read -p "   Continue anyway? (yes/no): " continue
     if [ "$continue" != "yes" ]; then
         exit 1
@@ -88,7 +88,7 @@ done
 
 echo ""
 echo "7. Verifying external access..."
-if curl -sf https://stage.stori.audio/api/v1/health > /dev/null 2>&1; then
+if curl -sf https://your-domain.com/api/v1/health > /dev/null 2>&1; then
     echo "✅ External API accessible"
 else
     echo "⚠️  External API check failed - check nginx logs"
@@ -110,5 +110,5 @@ echo "  docker logs -f maestro-stori-nginx"
 echo ""
 echo "Check status:"
 echo "  docker ps"
-echo "  curl https://stage.stori.audio/api/v1/health"
+echo "  curl https://your-domain.com/api/v1/health"
 echo ""
