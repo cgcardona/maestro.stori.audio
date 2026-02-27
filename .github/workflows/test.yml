@@ -1,13 +1,15 @@
-# Stori Maestro — Test & Coverage
+# Maestro — Test & Coverage
 #
+# Runs on PRs and direct pushes targeting main only.
+# Feature branches merge into dev freely without triggering CI.
 # Runs the full test suite with coverage. Fails if coverage drops below threshold (pyproject.toml fail_under).
 name: Test & Coverage
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
-    branches: [main, dev]
+    branches: [main]
 
 jobs:
   test:
@@ -23,8 +25,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install -r requirements.txt
           pip install -e ".[dev]"
-          pip install aiosqlite  # in-memory SQLite for tests
 
       - name: Type check (mypy)
         run: |
