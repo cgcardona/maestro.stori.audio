@@ -76,7 +76,7 @@ class TestEnvelopeConstruction:
         )
 
         with pytest.raises(AttributeError):
-            envelope.sequence = 2  # type: ignore[misc]
+            setattr(envelope, "sequence", 2)
 
     def test_envelope_to_dict(self) -> None:
 
@@ -574,7 +574,9 @@ class TestBuildPhrasePayload:
         assert ncs[0]["noteId"] == "nc-1"
         assert ncs[0]["changeType"] == "added"
         assert ncs[0]["before"] is None
-        assert ncs[0]["after"]["pitch"] == 60  # type: ignore[index]
+        after = ncs[0]["after"]
+        assert after is not None
+        assert after["pitch"] == 60
 
     def test_cc_pitch_aftertouch_passthrough(self) -> None:
         """CC, pitch-bend, and aftertouch lists are passed through unchanged."""

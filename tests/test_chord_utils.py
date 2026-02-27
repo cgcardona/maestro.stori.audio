@@ -41,7 +41,7 @@ class TestChordRootPitchClass:
     def test_empty_or_none_defaults_to_c(self) -> None:
 
         assert chord_root_pitch_class("") == 0
-        assert chord_root_pitch_class(None) == 0  # type: ignore[arg-type]  # intentional None: testing defensive default
+        assert chord_root_pitch_class(None) == 0
 
     def test_strips_whitespace(self) -> None:
 

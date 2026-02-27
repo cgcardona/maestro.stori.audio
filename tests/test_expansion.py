@@ -104,7 +104,7 @@ class TestToolCallFrozen:
 
         tc = ToolCall(name="stori_play", params={})
         with pytest.raises((TypeError, AttributeError)):
-            tc.name = "stori_stop"  # type: ignore[misc]
+            setattr(tc, "name", "stori_stop")
 
     def test_equality(self) -> None:
 

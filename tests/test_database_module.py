@@ -31,11 +31,14 @@ async def test_init_db_and_close_db_lifecycle() -> None:
     with patch.object(database.settings, "database_url", "sqlite+aiosqlite:///:memory:"):
         with patch.object(database.settings, "debug", False):
             await database.init_db()
-            assert database._engine is not None
-            assert database._async_session_factory is not None
+            # Assert via locals so attribute narrowing doesn't outlive close_db()
+            init_engine = database._engine
+            init_factory = database._async_session_factory
+            assert init_engine is not None
+            assert init_factory is not None
             await database.close_db()
             assert database._engine is None
-            assert database._async_session_factory is None  # type: ignore[unreachable]  # mypy narrows to non-None after l.35; close_db resets it
+            assert database._async_session_factory is None
 
 
 @pytest.mark.asyncio

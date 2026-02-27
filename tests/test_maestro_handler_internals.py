@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncGenerator, Iterable
-from typing import TYPE_CHECKING, Callable, Never
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from app.contracts.project_types import ProjectContext
@@ -1253,8 +1253,8 @@ class TestPlanTracker:
         assert complete_evt is not None
         assert complete_evt.status == "completed"
         assert complete_evt.result == "set 72 BPM"
+        assert tracker.steps[0].status == "completed"
         assert tracker._active_step_id is None
-        assert tracker.steps[0].status == "completed"  # type: ignore[unreachable]
 
     def test_step_for_tool_index(self) -> None:
 
@@ -3326,9 +3326,10 @@ class TestRunInstrumentAgent:
 
         llm = _make_llm_mock()
         async def _failing_stream(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
-
+            _no_events: list[StreamEvent] = []
+            for _e in _no_events:
+                yield _e  # loop body never executes; required to make this an async generator
             raise RuntimeError("LLM down")
-            yield  # type: ignore[unreachable]  # makes this an async generator
         llm.chat_completion_stream = MagicMock(side_effect=_failing_stream)
         trace = _make_trace()
 
@@ -3598,9 +3599,11 @@ class TestAgentTeamFailureIsolation:
 
         def all_fail(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
 
-            async def _fail() -> AsyncGenerator[Never, None]:
+            async def _fail() -> AsyncGenerator[StreamEvent, None]:
+                _no_events: list[StreamEvent] = []
+                for _e in _no_events:
+                    yield _e  # loop body never executes; required to make this an async generator
                 raise RuntimeError("all down")
-                yield  # type: ignore[unreachable]  # makes this an async generator; raise always fires first
             return _fail()
 
         llm = _make_llm_mock()

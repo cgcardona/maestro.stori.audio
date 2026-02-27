@@ -15,6 +15,8 @@ Covers the seams and integration points not fully exercised elsewhere:
 """
 from __future__ import annotations
 
+from typing import Literal
+
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
@@ -507,9 +509,14 @@ class TestStructuredPromptContextCompleteness:
 class TestSequentialContextAllKinds:
     """sequential_context must produce meaningful text for every Position kind."""
 
-    def _pos(self, kind: str, ref: str | None = None,
-             ref2: str | None = None, offset: float = 0.0) -> PositionSpec:
-        return PositionSpec(kind=kind, ref=ref, ref2=ref2, offset=offset)  # type: ignore[arg-type]  # kind validated by caller
+    def _pos(
+        self,
+        kind: Literal["after", "before", "alongside", "between", "within", "absolute", "last"],
+        ref: str | None = None,
+        ref2: str | None = None,
+        offset: float = 0.0,
+    ) -> PositionSpec:
+        return PositionSpec(kind=kind, ref=ref, ref2=ref2, offset=offset)
 
     def test_absolute_mentions_beat(self) -> None:
 

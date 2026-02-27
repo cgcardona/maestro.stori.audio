@@ -95,6 +95,7 @@ class GenerationMetadata(TypedDict, total=False):
     repaired: bool              # True when the drum/IR output was repaired after scoring
     hf_params: dict[str, JSONValue]  # HuggingFace inference params (huggingface_melody)
     raw_note_count: int         # raw note count before post-processing (huggingface_melody)
+    storpheus_metadata: dict[str, JSONValue]  # raw metadata blob from Storpheus response
 
 
 @dataclass

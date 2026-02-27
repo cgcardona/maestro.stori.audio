@@ -120,12 +120,17 @@ app = FastAPI(
     openapi_url="/openapi.json" if settings.debug else None,
 )
 
+# Adapter: FastAPI expects (Request, Exception) but slowapi's handler
+# takes (Request, RateLimitExceeded). Narrow inside so the outer
+# signature satisfies FastAPI's type contract.
+def _handle_rate_limit(request: Request, exc: Exception) -> Response:
+    if isinstance(exc, RateLimitExceeded):
+        return _rate_limit_exceeded_handler(request, exc)
+    raise exc
+
 # Add rate limiter to app state and exception handler
 app.state.limiter = limiter
-app.add_exception_handler(
-    RateLimitExceeded,
-    _rate_limit_exceeded_handler,  # type: ignore[arg-type]  # slowapi handler signature is (Request, RateLimitExceeded) not (Request, Exception)
-)
+app.add_exception_handler(RateLimitExceeded, _handle_rate_limit)
 
 # Security headers middleware (added first, runs last)
 app.add_middleware(SecurityHeadersMiddleware)

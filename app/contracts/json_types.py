@@ -605,19 +605,15 @@ def jint(v: JSONValue, default: int = 0) -> int:
 
 # ─── List coercion helper ──────────────────────────────────────────────────────
 #
-# Python lists are invariant: ``list[NoteDict]`` is NOT assignable to
-# ``list[JSONValue]`` even though every NoteDict value is a valid JSONValue.
-# Mypy enforces this strictly — dict itself is invariant in its value type,
-# so even ``Iterable[dict[str, JSONValue]]`` rejects ``list[NoteDict]``.
+# Python lists are invariant and TypedDicts are not subtypes of
+# ``dict[str, JSONValue]`` in mypy's type system even when all their value
+# types are JSONValue-compatible.  The principled solution (no ``cast()``, no
+# per-call ``type: ignore``) is ``@overload`` declarations: enumerate every
+# domain TypedDict explicitly so call sites are validated precisely.  The
+# single ``type: ignore[arg-type]`` lives only inside the implementation body —
+# it is the designated coercion boundary for the whole codebase.
 #
-# The principled solution (no ``cast()``, no per-call ``type: ignore``) is
-# ``@overload`` declarations: enumerate every domain TypedDict explicitly so
-# mypy resolves call sites against the precise overloads.  The implementation
-# body uses ``Iterable[object]`` to accept any of the overloads, with a single
-# ``type: ignore[arg-type]`` at the internal coercion point.
-#
-# To add a new TypedDict, add an ``@overload`` line here.  Do NOT add ``cast()``
-# at any call site.
+# To add a new TypedDict overload: add one ``@overload`` line here.
 
 
 @overload
@@ -634,20 +630,18 @@ def json_list(items: Iterable[object]) -> list[JSONValue]:
     """Coerce an iterable of music-domain TypedDicts to ``list[JSONValue]``.
 
     This is the **single designated list-coercion boundary** in the codebase.
-    Call it whenever a ``list[SomeDomainDict]`` must be placed into a position
-    that expects ``list[JSONValue]`` (e.g. a ``params`` dict, a ``JSONObject``
-    field, an SSE event body).
+    Each overload is typed precisely for a specific domain dict so call sites
+    are statically verified without needing ``cast()`` or ``type: ignore``::
 
-    Each overload is typed precisely for a specific domain dict.  The
-    implementation uses ``Iterable[object]`` so mypy validates call sites against
-    the overloads, not the implementation signature.  The single
-    ``type: ignore[arg-type]`` is the sole coercion point — callers never need
-    ``cast()`` or ``type: ignore``::
+        params["notes"]     = json_list(result.notes)      # list[NoteDict]
+        params["cc_events"] = json_list(result.cc_events)  # list[CCEventDict]
 
-        params["notes"] = json_list(result.notes)        # list[NoteDict]
-        params["cc_events"] = json_list(result.cc_events) # list[CCEventDict]
+    The implementation uses ``Iterable[object]`` so mypy validates call sites
+    against the overloads, not the body.  The ``type: ignore[arg-type]`` below
+    is intentional: mypy cannot prove TypedDict ⊆ dict[str, JSONValue] due to
+    dict invariance.  This is the ONE place where that coercion is accepted.
     """
     result: list[JSONValue] = []
     for item in items:
-        result.append(item)  # type: ignore[arg-type]  # boundary: domain dict → JSONValue
+        result.append(item)  # type: ignore[arg-type]
     return result

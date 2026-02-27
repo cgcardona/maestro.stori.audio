@@ -65,7 +65,7 @@ class TestSectionTelemetryDataclass:
             velocity_mean=80.0, velocity_variance=10.0,
         )
         with pytest.raises(AttributeError):
-            t.energy_level = 0.9  # type: ignore[misc]
+            setattr(t, "energy_level", 0.9)
 
     def test_fields_accessible(self) -> None:
 

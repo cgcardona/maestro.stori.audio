@@ -282,13 +282,21 @@ def test_connection_limits_configured() -> None:
     import app.services.storpheus as storpheus_module
     from app.services.storpheus import get_storpheus_client, close_storpheus_client
 
-    created_kwargs: dict[str, object] = {}
+    captured_limits: httpx.Limits | None = None
 
     original_init = httpx.AsyncClient.__init__
 
-    def capturing_init(self: httpx.AsyncClient, **kwargs: object) -> None:
-        created_kwargs.update(kwargs)
-        original_init(self, **kwargs)  # type: ignore[arg-type]  # httpx init accepts object kwargs at runtime
+    def capturing_init(
+        self: httpx.AsyncClient,
+        *,
+        timeout: httpx.Timeout | None = None,
+        limits: httpx.Limits = httpx.Limits(),
+        headers: dict[str, str] | None = None,
+        **_rest: object,
+    ) -> None:
+        nonlocal captured_limits
+        captured_limits = limits
+        original_init(self, timeout=timeout, limits=limits, headers=headers)
 
     storpheus_module._shared_client = None  # force fresh
     with patch("app.services.storpheus.settings") as m:
@@ -299,10 +307,9 @@ def test_connection_limits_configured() -> None:
         with patch.object(httpx.AsyncClient, "__init__", capturing_init):
             c._client = None  # force re-creation through the property
             _ = c.client
-        limits = created_kwargs.get("limits")
-        assert isinstance(limits, httpx.Limits)
-        assert limits.max_connections == 20
-        assert limits.max_keepalive_connections == 10
+        assert isinstance(captured_limits, httpx.Limits)
+        assert captured_limits.max_connections == 20
+        assert captured_limits.max_keepalive_connections == 10
 
 
 # =============================================================================

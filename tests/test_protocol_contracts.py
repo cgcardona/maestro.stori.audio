@@ -1251,9 +1251,9 @@ class TestRegionCollisionCanonicalOverride:
         )
         import pytest
         with pytest.raises(AttributeError):
-            contract.track_id = "trk-hacked"  # type: ignore[misc]
+            setattr(contract, "track_id", "trk-hacked")
         with pytest.raises(AttributeError):
-            contract.section = spec  # type: ignore[misc]
+            setattr(contract, "section", spec)
 
     def test_section_child_uses_contract_not_tc_params(self) -> None:
 
@@ -1524,9 +1524,9 @@ class TestAgentContractProtocol:
             bars=8, character="Full energy", role_brief="Drive the hook",
         )
         with pytest.raises(AttributeError):
-            spec.start_beat = 999  # type: ignore[misc]
+            setattr(spec, "start_beat", 999)
         with pytest.raises(AttributeError):
-            spec.name = "hacked"  # type: ignore[misc]
+            setattr(spec, "name", "hacked")
 
     def test_section_contract_frozen(self) -> None:
 
@@ -1543,9 +1543,9 @@ class TestAgentContractProtocol:
             region_name="Chords – intro",
         )
         with pytest.raises(AttributeError):
-            contract.role = "drums"  # type: ignore[misc]
+            setattr(contract, "role", "drums")
         with pytest.raises(AttributeError):
-            contract.tempo = 200  # type: ignore[misc]
+            setattr(contract, "tempo", 200)
 
     def test_contract_derived_properties(self) -> None:
 
@@ -1668,9 +1668,9 @@ class TestInstrumentContractProtocol:
             assigned_color="#FF0000", gm_guidance="",
         )
         with pytest.raises(AttributeError):
-            contract.role = "bass"  # type: ignore[misc]
+            setattr(contract, "role", "bass")
         with pytest.raises(AttributeError):
-            contract.tempo = 200  # type: ignore[misc]
+            setattr(contract, "tempo", 200)
 
     def test_instrument_contract_derived_properties(self) -> None:
 
@@ -1761,7 +1761,7 @@ class TestRuntimeContextProtocol:
         import pytest
         ctx = RuntimeContext(raw_prompt="test", quality_preset="quality")
         with pytest.raises(AttributeError):
-            ctx.raw_prompt = "hacked"  # type: ignore[misc]
+            setattr(ctx, "raw_prompt", "hacked")
 
     def test_with_drum_telemetry_returns_new_instance(self) -> None:
 

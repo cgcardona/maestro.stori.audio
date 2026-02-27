@@ -269,7 +269,7 @@ class StorpheusBackend(MusicGeneratorBackend):
             meta: GenerationMetadata = {}
             _meta_raw = result.get("metadata")
             if isinstance(_meta_raw, dict):
-                meta.update(_meta_raw)  # type: ignore[typeddict-item]  # boundary: Storpheus dict[str, JSONValue] → GenerationMetadata (total=False)
+                meta["storpheus_metadata"] = _meta_raw
             meta["trace_id"] = trace_id
             meta["intent_hash"] = intent_hash
 
@@ -432,7 +432,7 @@ class StorpheusBackend(MusicGeneratorBackend):
             meta: GenerationMetadata = {}
             _meta_raw = result.get("metadata")
             if isinstance(_meta_raw, dict):
-                meta.update(_meta_raw)  # type: ignore[typeddict-item]  # boundary: Storpheus dict[str, JSONValue] → GenerationMetadata (total=False)
+                meta["storpheus_metadata"] = _meta_raw
             meta["trace_id"] = trace_id
             meta["intent_hash"] = intent_hash
             meta["unified_instruments"] = instruments

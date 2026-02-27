@@ -42,7 +42,7 @@ class TestRoleProfileLoading:
     def test_profiles_are_frozen(self) -> None:
 
         with pytest.raises(AttributeError):
-            ROLE_PROFILES["lead"].rest_ratio = 0.99  # type: ignore[misc]
+            setattr(ROLE_PROFILES["lead"], "rest_ratio", 0.99)
 
 
 class TestRoleProfileFields:

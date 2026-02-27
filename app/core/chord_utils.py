@@ -12,7 +12,7 @@ _ROOT_PC = {
 }
 
 
-def chord_root_pitch_class(chord_name: str) -> int:
+def chord_root_pitch_class(chord_name: str | None) -> int:
     """Parse chord name to root pitch class (0-11). Cm -> 0, Eb -> 3."""
     s = (chord_name or "C").strip()
     if not s:

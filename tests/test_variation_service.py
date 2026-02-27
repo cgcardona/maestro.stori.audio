@@ -165,7 +165,7 @@ class TestNotesMatch:
 
     def test_none_pitch_returns_false(self) -> None:
 
-        assert not _notes_match({"pitch": None, "start_beat": 0}, _note())  # type: ignore[typeddict-item]  # intentional None for edge-case test
+        assert not _notes_match({"start_beat": 0}, _note())  # NoteDict is total=False; absent pitch → get() returns None
 
 
 # ===========================================================================

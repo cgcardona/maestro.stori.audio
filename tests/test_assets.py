@@ -88,17 +88,26 @@ async def test_bundle_download_url_valid_uuid(asset_client: AsyncClient) -> None
 async def test_asset_endpoint_returns_429_when_rate_limited(asset_client: AsyncClient) -> None:
 
     """When rate limit is exceeded, asset endpoint returns 429."""
-    from types import SimpleNamespace
     from unittest.mock import patch
 
+    from limits import parse as parse_rate_limit
     from slowapi.errors import RateLimitExceeded
+    from slowapi.wrappers import Limit
 
-    # RateLimitExceeded(limit) expects a Limit-like object with .error_message and .limit
-    fake_limit = SimpleNamespace(error_message="1 per minute", limit="1/minute")
-    # Patch the service call used by the route so the handler raises and app returns 429
+    fake_limit = Limit(
+        limit=parse_rate_limit("1/minute"),
+        key_func=lambda: "",
+        scope=None,
+        per_method=False,
+        methods=None,
+        error_message="1 per minute",
+        exempt_when=None,
+        cost=1,
+        override_defaults=False,
+    )
     with patch(
         "app.services.assets.list_drum_kits",
-        side_effect=RateLimitExceeded(fake_limit),  # type: ignore[arg-type]  # duck-typed fake; SimpleNamespace matches Limit protocol
+        side_effect=RateLimitExceeded(fake_limit),
     ):
         response = await asset_client.get(
             "/api/v1/assets/drum-kits",

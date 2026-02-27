@@ -18,6 +18,7 @@ Coverage:
 """
 from __future__ import annotations
 
+from typing import Literal
 
 import pytest
 
@@ -180,9 +181,15 @@ class TestStructuredPromptContextStandalone:
 class TestSequentialContextStandalone:
     """sequential_context emits ARRANGEMENT POSITION block for each kind."""
 
-    def _pos(self, kind: str, ref: str | None = None, ref2: str | None = None,
-             offset: float = 0.0, beat: float | None = None) -> PositionSpec:
-        return PositionSpec(kind=kind, ref=ref, ref2=ref2, offset=offset, beat=beat)  # type: ignore[arg-type]  # kind validated by caller
+    def _pos(
+        self,
+        kind: Literal["after", "before", "alongside", "between", "within", "absolute", "last"],
+        ref: str | None = None,
+        ref2: str | None = None,
+        offset: float = 0.0,
+        beat: float | None = None,
+    ) -> PositionSpec:
+        return PositionSpec(kind=kind, ref=ref, ref2=ref2, offset=offset, beat=beat)
 
     def test_arrangement_position_sentinel(self) -> None:
 
