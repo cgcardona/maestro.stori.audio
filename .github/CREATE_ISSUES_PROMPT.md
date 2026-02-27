@@ -239,6 +239,39 @@ Suggest labels from the set below. Add `blocks #N` or `related to #N` where appl
 - No `print()`, no hardcoded secrets, no `# type: ignore` without a stated reason — call these out if a fix would introduce them.
 - **Idempotency:** Before creating any issue, search for an existing one with a matching title (`gh issue list --search "..."  --state all`). Creating a duplicate issue is worse than skipping — duplicates fragment discussion and waste PR cycles.
 
+### Issue independence (critical for parallel agent workflows)
+
+Issues are assigned to parallel agents. Regressions occur when agents work on
+overlapping code simultaneously and merge without awareness of each other.
+Every issue you write must either be fully independent or explicitly declare its
+dependencies.
+
+**Independence checklist — an issue is safe for parallel assignment when:**
+- [ ] It touches files no other open issue touches (zero file overlap)
+- [ ] It does not require a shared Alembic migration (schema changes must be serialized)
+- [ ] It does not modify shared constants, config, or protocol event shapes at the same time as another issue
+- [ ] It does not rely on a runtime state change introduced by another open issue
+
+**If an issue IS dependent on another:**
+1. Add a `**Depends on #N**` line at the top of the description.
+2. Add `**Must be implemented after #N is merged and deployed.**`
+3. Label it `blocked`.
+4. In section 12 (Labels), add `blocks #N` or `depends on #N` cross-references.
+5. Do NOT assign it to a parallel agent until #N is fully merged.
+
+**If two issues MUST be sequential (A before B):**
+- Issue B must explicitly state: `Depends on #A — do not start until #A is merged to dev.`
+- Issue A must state: `Blocks #B — merge this first.`
+- Coordinator: verify `gh pr list --state merged` shows #A before launching agent for #B.
+
+**File overlap detection (run before launching agents):**
+```bash
+# Quick check: which files does each issue's branch touch?
+git diff origin/dev...origin/<branch-A> --name-only
+git diff origin/dev...origin/<branch-B> --name-only
+# Any overlap = serialization required
+```
+
 ---
 
 ## EXAMPLE (abbreviated)

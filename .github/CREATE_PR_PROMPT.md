@@ -21,6 +21,11 @@ Assume the system is running in production, serving real DAW users and MCP clien
 
 ## HARD CONSTRAINTS
 
+- **Alembic migrations — single file only.** During development there is exactly
+  one migration: `alembic/versions/0001_consolidated_schema.py`. If your fix
+  requires a schema change, add the column/table directly into `0001` — do NOT
+  create a new migration file (`0002_*`, etc.). After editing `0001`, rebuild the
+  DB locally: `docker compose exec postgres psql -U maestro -d maestro -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO maestro;"` then `docker compose exec maestro alembic upgrade head`.
 - **Base branch:** `dev`
 - **Language:** Python 3.11+
 - **Framework:** FastAPI, Pydantic v2, fully async
@@ -150,20 +155,40 @@ All async tests use `@pytest.mark.anyio`. Shared fixtures go in `tests/conftest.
 
 ## STEP 6 — RUN RELEVANT TESTS
 
+### Which tests to run
+
+Run **targeted tests only** — the tests for the code you wrote and any tests
+you had to fix. The full suite takes several minutes and is the responsibility
+of developers running locally and of CI before merging to `main`. Do not run
+the full suite unless your change touches shared infrastructure that could cause
+widespread failures.
+
 ```bash
-# Run the specific test file
-docker compose exec maestro pytest tests/test_<relevant_file>.py -v
+# Run the specific test file(s) for this fix
+cd "$REPO" && docker compose exec maestro sh -c \
+  "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/test_<relevant_file>.py -v"
 
 # If Storpheus is affected
-docker compose exec storpheus pytest storpheus/test_<relevant_file>.py -v
-
-# Coverage check (run full suite if changes are broad)
-docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"
+cd "$REPO" && docker compose exec storpheus pytest storpheus/test_<relevant_file>.py -v
 ```
 
-**Never pipe test output through `grep`, `head`, or `tail`.** The process exit code is the authoritative signal — filtering it causes false passes and false failures. Capture full output to a file if log size is a concern.
+**Never pipe test output through `grep`, `head`, or `tail`.** The process exit code is the authoritative signal — filtering it causes false passes and false failures.
 
 **Cascading failure scan:** After your target tests pass, search for similar assertions or fixtures that may be affected by the same root change (shared constant, model field, contract shape). Fix all impacted tests in the same commit — do not leave sibling failures for a later round.
+
+### Broken tests from other agents — fix them
+
+**If you encounter a failing test that your change did NOT introduce:**
+fix it before opening your PR. Broken tests inherited from dev mean the next
+agent works from a broken baseline. One broken test compounds into five.
+
+Procedure:
+1. Read the failing test and the code it tests.
+2. Determine the root cause — did dev's code regress, or is the test stale?
+3. Fix whichever is wrong with a minimal, targeted change.
+4. Include the fix in your branch with a clear commit message:
+   `fix: repair broken test <test_name> (pre-existing failure)`
+5. Note it in your PR description under "Tests fixed."
 
 ---
 

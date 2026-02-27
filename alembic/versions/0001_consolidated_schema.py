@@ -17,9 +17,12 @@ Single source-of-truth migration for Stori Maestro. Creates:
 
   Muse CLI — filesystem commit history
   - muse_cli_objects, muse_cli_snapshots, muse_cli_commits
+    (includes parent2_commit_id for merge commits)
 
   Muse Hub — remote collaboration backend
-  - musehub_repos, musehub_branches, musehub_commits, musehub_issues, musehub_pull_requests
+  - musehub_repos, musehub_branches, musehub_commits, musehub_issues
+  - musehub_pull_requests (PR workflow between branches)
+  - musehub_objects (content-addressed binary artifact storage)
 
 Fresh install:
   docker compose exec maestro alembic upgrade head
@@ -215,6 +218,7 @@ def upgrade() -> None:
         sa.Column("repo_id", sa.String(36), nullable=False),
         sa.Column("branch", sa.String(255), nullable=False),
         sa.Column("parent_commit_id", sa.String(64), nullable=True),
+        sa.Column("parent2_commit_id", sa.String(64), nullable=True),
         sa.Column("snapshot_id", sa.String(64), nullable=False),
         sa.Column("message", sa.Text(), nullable=False),
         sa.Column("author", sa.String(255), nullable=False),
@@ -225,6 +229,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_muse_cli_commits_repo_id", "muse_cli_commits", ["repo_id"])
     op.create_index("ix_muse_cli_commits_parent_commit_id", "muse_cli_commits", ["parent_commit_id"])
+    op.create_index("ix_muse_cli_commits_parent2_commit_id", "muse_cli_commits", ["parent2_commit_id"])
 
     # ── Muse Hub — remote collaboration backend ───────────────────────────
     op.create_table(
@@ -313,8 +318,31 @@ def upgrade() -> None:
     op.create_index("ix_musehub_pull_requests_repo_id", "musehub_pull_requests", ["repo_id"])
     op.create_index("ix_musehub_pull_requests_state", "musehub_pull_requests", ["state"])
 
+    # ── Muse Hub — binary artifact storage ───────────────────────────────
+    op.create_table(
+        "musehub_objects",
+        sa.Column("object_id", sa.String(128), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("path", sa.String(1024), nullable=False),
+        sa.Column("size_bytes", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("disk_path", sa.String(2048), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("object_id"),
+    )
+    op.create_index("ix_musehub_objects_repo_id", "musehub_objects", ["repo_id"])
+
 
 def downgrade() -> None:
+    # Muse Hub — binary artifact storage
+    op.drop_index("ix_musehub_objects_repo_id", table_name="musehub_objects")
+    op.drop_table("musehub_objects")
+
     # Muse Hub — pull requests
     op.drop_index("ix_musehub_pull_requests_state", table_name="musehub_pull_requests")
     op.drop_index("ix_musehub_pull_requests_repo_id", table_name="musehub_pull_requests")
@@ -337,6 +365,7 @@ def downgrade() -> None:
     op.drop_table("musehub_repos")
 
     # Muse CLI
+    op.drop_index("ix_muse_cli_commits_parent2_commit_id", table_name="muse_cli_commits")
     op.drop_index("ix_muse_cli_commits_parent_commit_id", table_name="muse_cli_commits")
     op.drop_index("ix_muse_cli_commits_repo_id", table_name="muse_cli_commits")
     op.drop_table("muse_cli_commits")

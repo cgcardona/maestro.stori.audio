@@ -12,20 +12,22 @@ working directory.
 ```
 Kickoff (coordinator)
   └─ for each issue:
-       git worktree add .../issue-<N>  dev  ← fresh worktree, named by issue
-       write .agent-task into it            ← task assignment, no guessing
+       DEV_SHA=$(git rev-parse dev)
+       git worktree add --detach .../issue-<N> "$DEV_SHA"  ← detached HEAD at dev tip
+       write .agent-task into it                            ← task assignment, no guessing
        launch agent in that directory
 
 Agent (per worktree)
   └─ cat .agent-task                        ← knows exactly what to do
   └─ gh pr list --search "closes #<N>"     ← CHECK FIRST: existing PR or branch?
      git ls-remote origin | grep issue-<N>   if found → stop + self-destruct
-  └─ git checkout -b fix/<description>      ← creates feature branch (only if new)
-  └─ implement → mypy → tests → commit → push → gh pr create
-  └─ WORKTREE=$(pwd)                        ← self-destructs when done
-     cd "$REPO"
-     git worktree remove --force "$WORKTREE"
-     git worktree prune
+  └─ git checkout -b feat/<description>     ← creates feature branch (only if new)
+  └─ implement → mypy → tests → commit      ← build the fix
+  └─ git fetch origin && git merge origin/dev  ← sync dev before pushing
+  └─ resolve conflicts if any → re-run mypy + tests
+  └─ git push → gh pr create
+  └─ git worktree remove --force <path>     ← self-destructs when done
+  └─ git worktree prune
 ```
 
 Worktrees are **not** kept around between cycles. If an agent crashes before
@@ -33,18 +35,48 @@ cleanup, run `git worktree prune` from the main repo.
 
 ---
 
+## Issue independence — read before launching
+
+**Parallel agents can introduce regressions when issues overlap.**
+
+Before assigning issues to agents, confirm each issue is fully independent:
+
+- **Zero file overlap** — two agents must not modify the same file. If they do,
+  the second agent's pre-push sync will produce conflicts and risk overwriting
+  the first agent's work.
+- **No shared schema changes** — Alembic migrations must be sequential. If two
+  issues both require a migration, do them in order, not in parallel.
+- **No shared config or constant changes** — changes to `maestro/config.py`,
+  `maestro/protocol/events.py`, or `_GM_ALIASES` must be serialized.
+
+If issues are **dependent** (B cannot ship without A):
+1. State it in the issue body: `**Depends on #A** — implement after #A is merged.`
+2. Label it `blocked`.
+3. Do **not** assign it to a parallel agent until #A is merged.
+4. Only then is it safe to run in the next parallel batch.
+
+---
+
 ## Setup — run this before launching agents
 
 Run from anywhere inside the main repo. Paths are derived automatically.
 
+> **Critical:** Worktrees use `--detach` at the dev tip SHA — never branch name
+> `dev` directly. This prevents the "dev is already used by worktree" error when
+> the main repo has `dev` checked out.
+
 ```bash
 REPO=$(git rev-parse --show-toplevel)
 PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
+mkdir -p "$PRTREES"
 cd "$REPO"
+
+# Snapshot dev tip — all worktrees start here; agents branch from here in STEP 3
+DEV_SHA=$(git rev-parse dev)
 
 # --- define issues (confirmed independent — zero file overlap) ---
 declare -a ISSUES=(
-  "35|feat: \`muse merge\` — fast-forward and 3-way merge with path-level conflict detection"
+  "35|feat: muse merge — fast-forward and 3-way merge with path-level conflict detection"
   "37|feat: Maestro stress test → muse-work/ output contract with muse-batch.json manifest"
   "40|feat: Muse Hub push/pull sync protocol — batch commit and object transfer"
   "41|feat: Muse Hub pull requests — create, list, and merge PRs between branches"
@@ -56,7 +88,11 @@ for entry in "${ISSUES[@]}"; do
   NUM="${entry%%|*}"
   TITLE="${entry##*|}"
   WT="$PRTREES/issue-$NUM"
-  git worktree add "$WT" dev
+  if [ -d "$WT" ]; then
+    echo "⚠️  worktree issue-$NUM already exists, skipping"
+    continue
+  fi
+  git worktree add --detach "$WT" "$DEV_SHA"
   printf "WORKFLOW=issue-to-pr\nISSUE_NUMBER=%s\nISSUE_TITLE=%s\nISSUE_URL=https://github.com/cgcardona/maestro/issues/%s\n" \
     "$NUM" "$TITLE" "$NUM" > "$WT/.agent-task"
   echo "✅ worktree issue-$NUM ready"
@@ -119,12 +155,23 @@ the `dev` branch with uncommitted changes.
 > because it needs a live DB connection. After generating, immediately `git mv` the
 > migration file into your worktree and delete the copy from the main repo.
 
+### Command policy
+
+Consult `.cursor/AGENT_COMMAND_POLICY.md` for the full tier list. Summary:
+- **Green (auto-allow):** `ls`, `git status/log/diff/fetch`, `gh pr view`, `mypy`, `pytest`, `rg`
+- **Yellow (review before running):** `docker compose build`, `rm <single file>`, `git rebase`
+- **Red (never):** `rm -rf`, `git push --force`, `git push origin dev`, `docker system prune`
+
 ---
 
 ## Kickoff Prompt
 
 ```
 PARALLEL AGENT COORDINATION — ISSUE TO PR
+
+Read .cursor/AGENT_COMMAND_POLICY.md before issuing any shell commands.
+Green-tier commands run without confirmation. Yellow = check scope first.
+Red = never, ask the user instead.
 
 STEP 0 — READ YOUR TASK:
   cat .agent-task
@@ -166,6 +213,9 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   Read and follow every step in .github/CREATE_PR_PROMPT.md exactly.
   Steps: issue analysis → branch (from dev) → implement → mypy → tests → commit → docs → PR.
 
+  # Create your feature branch from current HEAD (already at dev tip)
+  git checkout -b feat/<short-description>
+
   mypy (run BEFORE tests — fix all type errors first):
     cd "$REPO" && docker compose exec maestro sh -c \
       "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
@@ -177,16 +227,85 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
     - If the same mypy error appears after two fix attempts, stop and rethink the type design.
       Do NOT loop with incremental tweaks — change strategy.
 
-  pytest (never pipe through grep/head/tail — exit code is authoritative):
+  pytest — TARGETED TESTS ONLY (never the full suite):
     cd "$REPO" && docker compose exec maestro sh -c \
       "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
+
+  The full suite takes several minutes and is the responsibility of developers/CI,
+  not parallel agents. Run only the test files directly related to your changes.
 
   After tests pass — cascading failure scan:
     Search for similar assertions or fixtures across other test files before declaring complete.
     A fix that changes a constant, model field, or shared contract likely affects more than one
     test file. Find and fix all of them in the same commit.
 
-STEP 4 — SELF-DESTRUCT (always run this after the PR is open or after an early stop):
+  Broken tests from other agents — fix them anyway:
+    If you encounter a failing test that your implementation did NOT introduce,
+    fix it before opening your PR. Include the fix in your branch with message:
+    "fix: repair broken test <name> (pre-existing failure from dev)"
+    Note it in your PR description. Never leave a broken test for the next agent.
+
+STEP 4 — PRE-PUSH SYNC (critical — always run before pushing):
+  ⚠️  Other agents may have merged PRs while you were implementing. Sync with dev
+  NOW to catch conflicts locally rather than at merge time.
+
+  git fetch origin
+  git merge origin/dev
+
+  ── If git merge reports conflicts ──────────────────────────────────────────
+  │ You have full command-line authority to resolve them. Guidance:           │
+  │                                                                           │
+  │ 1. Inspect what conflicted:                                               │
+  │      git status        ← shows conflicted files                          │
+  │      git diff          ← shows the conflict markers                      │
+  │                                                                           │
+  │ 2. Resolution philosophy:                                                 │
+  │    • Conflicts in NEW files this branch introduces: keep this branch.    │
+  │    • Conflicts in files ALSO changed on dev: read BOTH sides carefully.  │
+  │      Preserve the work from dev PLUS your additions. If they are truly   │
+  │      incompatible, stop and explain to the user before proceeding.        │
+  │    • If a conflict reveals that dev already contains your feature        │
+  │      (another agent landed the same fix): stop and self-destruct.        │
+  │                                                                           │
+  │ 3. Resolve, stage, and commit:                                            │
+  │      git add <resolved-files>                                             │
+  │      git commit -m "chore: resolve merge conflicts with origin/dev"      │
+  │                                                                           │
+  │ 4. After resolving: re-run mypy AND tests before pushing.                │
+  │    Incorrectly resolved conflicts will surface as type errors or failures.│
+  │                                                                           │
+  │ 5. Advanced tools available:                                              │
+  │      git log --oneline origin/dev...HEAD  ← commits this branch adds    │
+  │      git diff origin/dev...HEAD           ← full delta vs dev            │
+  │      git bisect start/bad/good            ← regression hunting           │
+  │      git log --oneline --graph --all      ← full branch picture          │
+  └───────────────────────────────────────────────────────────────────────────
+
+STEP 5 — PUSH & CREATE PR:
+  git push origin feat/<short-description>
+
+  gh pr create \
+    --base dev \
+    --head feat/<short-description> \
+    --title "feat: <issue title>" \
+    --body "$(cat <<'EOF'
+  ## Summary
+  Closes #<N> — <one-line description>.
+
+  ## Root Cause / Motivation
+  <What was wrong or missing and why>
+
+  ## Solution
+  <What was changed and why this approach>
+
+  ## Verification
+  - [ ] mypy clean
+  - [ ] Tests pass
+  - [ ] Docs updated
+  EOF
+  )"
+
+STEP 6 — SELF-DESTRUCT (always run this after the PR is open or after an early stop):
   WORKTREE=$(pwd)
   cd "$REPO"
   git worktree remove --force "$WORKTREE"
@@ -195,6 +314,8 @@ STEP 4 — SELF-DESTRUCT (always run this after the PR is open or after an early
 ⚠️  NEVER copy files to the main repo for testing.
 ⚠️  NEVER start implementation without completing STEP 2. Skipping the check
     causes duplicate branches, duplicate PRs, and wasted cycles.
+⚠️  NEVER push without running STEP 4 (pre-push sync). This is the primary
+    defence against merge conflicts and regressions on dev.
 
 Report: issue number, PR URL (existing or newly created), fix summary, tests added,
 any protocol changes requiring handoff.
@@ -205,18 +326,22 @@ any protocol changes requiring handoff.
 
 ## Before launching
 
-1. Confirm issues are open and independent (zero file overlap between them):
-   `gh issue list --state open`
-2. Run the Setup script above — confirm worktrees appear: `git worktree list`
-3. Confirm Docker is running and the worktrees mount is live:
+1. **Confirm issues are open and independent** (zero file overlap between them):
+   ```bash
+   gh issue list --state open
+   # For each pair, verify no shared files:
+   gh issue view <N> --json body   # check "Files / modules" section
+   ```
+2. **Confirm `dev` is up to date:**
+   ```bash
+   git -C "$(git rev-parse --show-toplevel)" pull origin dev
+   ```
+3. Run the Setup script above — confirm worktrees appear: `git worktree list`
+4. Confirm Docker is running and the worktrees mount is live:
    ```bash
    REPO=$(git rev-parse --show-toplevel)
    docker compose -f "$REPO/docker-compose.yml" ps
    docker compose exec maestro ls /worktrees/
-   ```
-4. Confirm `dev` is up to date:
-   ```bash
-   git -C "$(git rev-parse --show-toplevel)" pull origin dev
    ```
 
 ---

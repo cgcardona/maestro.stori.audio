@@ -11,8 +11,9 @@ No branch, no Docker — pure `gh issue create`.
 ```
 Kickoff (coordinator)
   └─ for each batch of bugs:
-       git worktree add .../batch-<N>  dev   ← fresh worktree, named by batch
-       write .agent-task into it             ← bug assignments, no guessing
+       DEV_SHA=$(git rev-parse dev)
+       git worktree add --detach .../batch-<N> "$DEV_SHA"  ← detached HEAD at dev tip
+       write .agent-task into it                            ← bug assignments, no guessing
        launch agent in that directory
 
 Agent (per worktree)
@@ -40,9 +41,15 @@ cd "$REPO"
 # Number of agents (one per batch)
 NUM_AGENTS=3
 
+DEV_SHA=$(git rev-parse dev)
+
 for i in $(seq 1 $NUM_AGENTS); do
   WT="$PRTREES/batch-$i"
-  git worktree add "$WT" dev
+  if [ -d "$WT" ]; then
+    echo "⚠️  worktree batch-$i already exists, skipping"
+    continue
+  fi
+  git worktree add --detach "$WT" "$DEV_SHA"
   cat > "$WT/.agent-task" <<EOF
 WORKFLOW=bugs-to-issues
 BATCH_NUM=$i

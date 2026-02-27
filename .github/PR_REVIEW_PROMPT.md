@@ -45,10 +45,74 @@ git fetch origin
 git merge origin/dev
 ```
 
-If conflicts exist:
-- Resolve carefully
-- Prefer `dev` behavior unless the PR clearly improves it
-- Commit conflict resolutions cleanly with a descriptive message
+### Conflict resolution (if merge reports conflicts)
+
+You have full command-line authority. Work through this in order:
+
+**1. Understand the conflict landscape:**
+```bash
+git status                          # which files are conflicted
+git diff                            # view conflict markers
+git log --oneline origin/dev...HEAD # commits this PR adds on top of dev
+git diff origin/dev...HEAD          # full delta this PR introduces
+```
+
+**2. Resolution philosophy:**
+- Conflicts in **new files this PR introduces** → keep this PR's version entirely.
+- Conflicts in files **also changed on dev** → read both sides carefully:
+  - Preserve the dev change PLUS the PR's additions. Both likely need to survive.
+  - If they are semantically incompatible, explain the incompatibility before choosing.
+- If the conflict reveals that **dev already contains this PR's fix** (another agent landed the same work) → downgrade grade and explain; do not double-apply.
+- If resolution requires judgment calls you are not confident about → stop, leave the PR open, and report the ambiguity to the user.
+
+**3. Resolve, stage, commit:**
+```bash
+# After editing each conflicted file to remove markers:
+git add <resolved-file>
+git commit -m "chore: resolve merge conflicts with origin/dev"
+```
+
+**4. After resolving, always re-run mypy + tests** — incorrect conflict resolution surfaces as type errors or test failures.
+
+**5. Advanced tools available:**
+```bash
+git bisect start/bad/good/log/reset    # regression hunting
+git log --oneline --graph --all        # full branch graph
+git show <commit>                      # inspect any commit
+git diff <A>..<B> -- <file>            # targeted file diff
+```
+
+### Pre-merge re-sync (just before merging)
+
+Other agents may merge PRs while you are reviewing. Immediately before running
+`gh pr merge`, re-sync one final time:
+
+```bash
+git fetch origin
+git merge origin/dev
+```
+
+If new conflicts appear after the final sync, resolve them and re-run tests
+before merging. If the conflicts are non-trivial and introduce risk, note them
+in the grade reasoning and file a follow-up issue.
+
+### Regression check
+
+Before merging, confirm no regressions were introduced by checking what
+landed on dev since this branch diverged:
+
+```bash
+git log --oneline HEAD..origin/dev       # new commits on dev since branch point
+git diff HEAD..origin/dev --name-only    # files those commits touch
+```
+
+If any of those files overlap with this PR's changes, run the full test suite:
+```bash
+cd "$REPO" && docker compose exec maestro sh -c \
+  "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/ -v --timeout=60"
+```
+
+Any regression found drops the grade to **D** regardless of the PR's own quality.
 
 ---
 
@@ -118,7 +182,7 @@ Review with production paranoia. Work through each applicable section.
 - [ ] Branch pointer updates are transactional
 - [ ] Checkout / merge operations are idempotent
 - [ ] Replay produces identical output for identical commit + seed inputs
-- [ ] Postgres schema changes include an Alembic migration
+- [ ] Postgres schema changes are folded into `alembic/versions/0001_consolidated_schema.py` — there must be exactly ONE migration file during development. If the PR created `0002_*` or any new migration file, that is a blocker. Move the changes into `0001` and delete the extra file before merging.
 
 ---
 
@@ -171,19 +235,33 @@ If tests are weak or missing:
 
 ## STEP 5 — RUN MYPY AND TESTS
 
-```bash
-# Type check first
-docker compose exec maestro mypy maestro/ tests/
-docker compose exec storpheus mypy .
+### Which tests to run
 
-# Relevant test file
-docker compose exec maestro pytest tests/test_<relevant_file>.py -v
+Run **targeted tests only** — tests directly related to this PR's changes and any
+tests you had to fix. The full suite takes several minutes and is reserved for
+developers running locally or for CI before merging to `main`. Do not run the
+full suite unless the PR touches shared infrastructure (config, pipeline,
+protocol) that could cause widespread failures.
+
+**How to identify the right test files:**
+```bash
+# See which test files are related to the changed source files
+git diff origin/dev...HEAD --name-only | grep "^maestro/" | sed 's|maestro/|tests/|' | sed 's|\.py$|_test.py|'
+# Also check tests/ directly for any file matching the module name
+```
+
+```bash
+# Type check first (both services — always)
+cd "$REPO" && docker compose exec maestro sh -c \
+  "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+cd "$REPO" && docker compose exec storpheus mypy .
+
+# Targeted test files (substitute actual paths)
+cd "$REPO" && docker compose exec maestro sh -c \
+  "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/test_<relevant>.py -v"
 
 # Storpheus if affected
-docker compose exec storpheus pytest storpheus/test_<relevant_file>.py -v
-
-# Full coverage (for broad changes)
-docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"
+cd "$REPO" && docker compose exec storpheus pytest storpheus/test_<relevant>.py -v
 ```
 
 **Never pipe output through `grep`, `head`, or `tail`.** The process exit code is authoritative — filtering it causes false passes. Capture full output to a file if log size is a concern.
@@ -191,6 +269,23 @@ docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python
 **Red-flag scan:** Before reporting that tests pass, scan the FULL output for:
 `ERROR`, `Traceback`, `toolError`, `circuit_breaker_open`, `FAILED`, `AssertionError`
 Any red-flag in the output means the run is not clean, regardless of the final summary line.
+
+### Broken tests from other PRs — fix them
+
+**If you encounter a failing test that was NOT introduced by this PR:**
+you are still responsible for fixing it before merging. Broken tests on dev
+mean the next agent inherits a broken baseline. Do not leave them behind.
+
+Procedure:
+1. Read the failing test and the source it is testing.
+2. Determine: did dev's code break the test, or did this PR break it?
+3. Fix whichever is wrong — the test or the code — with a minimal, correct change.
+4. Commit the fix alongside this PR's changes with a clear message:
+   `fix: repair broken test <test_name> (pre-existing failure from dev)`
+5. Note the fix in your final report under "Improvements made during review."
+
+The full test suite is run by developers and CI, not by review agents. Your job
+is to ensure the tests YOU ran are clean — and to fix any broken ones you find.
 
 ---
 
