@@ -10,6 +10,58 @@ references this policy.
 
 ---
 
+## Cursor Auto-Run Configuration (one-time setup)
+
+Cursor has a formal mechanism for this. Configure it once and it applies to all agents:
+
+### Step 1 — Set Auto-Run Mode to "Run in Sandbox"
+
+`Cmd+Shift+J` → Cursor Settings → Agents → Auto-Run → **Run in Sandbox**
+
+This is the correct middle ground:
+- Green-tier commands run automatically inside a sandboxed environment (no "Allow" click)
+- Commands that fail sandbox restrictions prompt you once — that's your graylist in action
+- The sandbox prevents filesystem and network access outside defined boundaries
+
+### Step 2 — Add the Command Allowlist (natural-language text field)
+
+In the same Auto-Run panel, paste this into the **Command Allowlist** text field.
+These commands bypass even the sandbox and run immediately:
+
+```
+Docker: docker compose exec maestro and storpheus for mypy, pytest, sh -c commands
+Docker: docker compose ps, docker compose logs, docker compose build
+Git read commands: git status, git log, git diff, git show, git branch, git fetch, git rev-parse
+Git write in feature branches: git checkout -b, git add, git commit, git push origin (non-main/dev)
+Git worktree operations: git worktree add --detach, git worktree remove --force, git worktree list
+GitHub CLI reads: gh pr view, gh pr list, gh issue view, gh issue list, gh auth status
+GitHub CLI safe writes: gh pr create, gh pr merge with grade output, gh issue create, gh issue close
+Search commands: rg, grep, find (read-only)
+File inspection: ls, cat, head, tail, wc, file, which, pwd, echo
+Safe creates within worktree: mkdir -p, cp, mv
+```
+
+### Step 3 — Workspace sandbox.json (already configured)
+
+`.cursor/sandbox.json` in this repo grants the sandbox access to:
+- Docker socket (`/var/run/docker.sock`) — required for all `docker compose exec` commands
+- Worktrees directory (`~/.cursor/worktrees`) — required for parallel agent workflows
+- Full outbound network — required for GitHub CLI, Docker Hub, OpenRouter
+
+No further configuration needed for this repo.
+
+### What this achieves
+
+| Tier | Cursor behavior |
+|------|----------------|
+| Green (safe, frequent) | In Allowlist → runs immediately, no prompt |
+| Yellow (scoped, occasional) | Sandbox runs but may fail → one-time prompt per command pattern |
+| Red (destructive) | Blocked by sandbox + not in allowlist → prompt, then user should deny |
+
+---
+
+---
+
 ## Tier 1 — Green (Auto-allow, no confirmation needed)
 
 These commands are read-only or narrowly scoped writes that cannot cause harm.

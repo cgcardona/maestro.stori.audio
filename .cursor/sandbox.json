@@ -1,0 +1,13 @@
+{
+  "networkPolicy": {
+    "default": "allow"
+  },
+  "additionalReadwritePaths": [
+    "/var/run/docker.sock",
+    "/Users/gabriel/.cursor/worktrees"
+  ],
+  "additionalReadonlyPaths": [
+    "/usr/local/bin",
+    "/opt/homebrew/bin"
+  ]
+}

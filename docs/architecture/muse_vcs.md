@@ -18,6 +18,63 @@ Muse is a persistent, Git-style version control system for musical compositions.
 
 ---
 
+## Why Muse and not Git?
+
+> *"Can't we just commit MIDI files to Git?"*
+
+You can. And you'll immediately discover everything Git cannot tell you about music.
+
+### The core problem: Git sees music as bytes, not music
+
+`git diff` on a MIDI file produces binary noise. `git log` tells you "file changed." That's it. Git is a filesystem historian — it records *which bytes* changed, not *what happened musically*.
+
+Music is **multidimensional** and **happens in time**. A single session commit might simultaneously change the key, the groove, the instrumentation, the dynamic arc, and the emotional character — dimensions that share zero representation in Git's diff model.
+
+### What Muse can do that Git categorically cannot
+
+| Question | Git | Muse |
+|----------|-----|------|
+| What key is this arrangement in? | ❌ | ✅ `muse key HEAD` |
+| How did the chord progression change between commit 12 and commit 47? | ❌ | ✅ `muse diff HEAD~35 HEAD --harmonic` |
+| When did the song modulate from Eb major to F minor? | ❌ | ✅ `muse find --harmony "key=F minor"` |
+| Did the groove get tighter or looser over 200 commits? | ❌ | ✅ `muse groove-check HEAD~200 HEAD` |
+| Find me all versions where the chorus had a string layer | ❌ | ✅ `muse find --structure "has=strings" --structure "section=chorus"` |
+| Where does the main motif first appear, and how was it transformed? | ❌ | ✅ `muse motif track "main-theme"` |
+| What was the arrangement before we cut the bridge? | ❌ | ✅ `muse arrange HEAD~10` |
+| How musically similar are these two alternative mixes? | ❌ | ✅ `muse similarity mix-a mix-b` |
+| "Find a melancholic minor-key version with sparse texture" | ❌ | ✅ `muse recall "melancholic minor sparse"` |
+| What is the full musical state of this project for AI generation? | ❌ | ✅ `muse context --json` |
+
+### Music is multidimensional — diffs should be too
+
+When a producer changes a session, five things may change at once:
+
+- **Harmonic** — a new chord substitution shifts the tension profile
+- **Rhythmic** — the drummer's part gets slightly more swing
+- **Structural** — a breakdown section is added before the final chorus
+- **Dynamic** — the overall level is pushed 6dB louder in the chorus
+- **Melodic** — the piano melody gets a new phrase in bar 7
+
+Git records all of this as: *"beat.mid changed."*
+
+Muse records all of this as five orthogonal dimensions, each independently queryable, diffable, and searchable across the full commit history.
+
+### Muse as AI musical memory
+
+This is where the difference is sharpest. An AI agent generating music needs to answer:
+
+- What key are we in right now?
+- What's the established chord progression?
+- Which sections already have strings? Which don't?
+- Has the energy been building or falling across the last 10 commits?
+- What emotional arc are we maintaining?
+
+`muse context --json` answers all of this in one call — a structured document containing the key, tempo, mode, chord progression, arrangement matrix, dynamic arc, emotional state, and 10-commit evolutionary history. An agent with this context makes musically coherent decisions. An agent without it is generating blind.
+
+Git provides zero of this. Muse was built because musical creativity is multidimensional, happens in time, and deserves version control that understands music — not just files.
+
+---
+
 ## Module Map
 
 ### CLI Entry Point
