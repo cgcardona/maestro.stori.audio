@@ -37,6 +37,30 @@ Full audit (infrastructure, Docker, Nginx, FastAPI, JWT, assets, secrets, DB, DD
 
 ---
 
+## Muse Hub CLI token storage
+
+The Muse CLI reads your Hub auth token from `.muse/config.toml` under `[auth] token`.
+
+**Storage rules:**
+
+- `.muse/config.toml` **must** be added to `.gitignore` (and `.museignore` if applicable) — it holds your token and should never be committed to version control.
+- The token is read from disk only when a Hub request is made; it is never cached in memory between CLI invocations.
+- The raw token value is **never written to any log** — log lines use `"Bearer ***"` as a placeholder. Verify with `--log-level debug` if needed.
+- `muse remote -v` and similar commands must mask the token in any output.
+
+**MVP limitations:**
+
+- No token rotation or automatic refresh is implemented. When a token expires, obtain a new one via `POST /auth/token` and update `config.toml` manually.
+- Revocation is handled server-side; the CLI has no revocation cache.
+
+**Example `.gitignore` entry:**
+
+```
+.muse/config.toml
+```
+
+---
+
 ## JWT token boundary validation
 
 **File:** `app/auth/tokens.py` — `validate_access_code`
