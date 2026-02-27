@@ -96,3 +96,51 @@ class IssueListResponse(CamelModel):
     """List of issues for a repo."""
 
     issues: list[IssueResponse]
+
+
+# ── Pull request models ────────────────────────────────────────────────────────
+
+
+class PRCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/pull-requests."""
+
+    title: str = Field(..., min_length=1, max_length=500, description="PR title")
+    from_branch: str = Field(..., min_length=1, max_length=255, description="Source branch name")
+    to_branch: str = Field(..., min_length=1, max_length=255, description="Target branch name")
+    body: str = Field("", description="PR description (Markdown)")
+
+
+class PRResponse(CamelModel):
+    """Wire representation of a Muse Hub pull request."""
+
+    pr_id: str
+    title: str
+    body: str
+    state: str
+    from_branch: str
+    to_branch: str
+    merge_commit_id: str | None = None
+    created_at: datetime
+
+
+class PRListResponse(CamelModel):
+    """List of pull requests for a repo."""
+
+    pull_requests: list[PRResponse]
+
+
+class PRMergeRequest(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/merge."""
+
+    merge_strategy: str = Field(
+        "merge_commit",
+        pattern="^(merge_commit)$",
+        description="Merge strategy — only 'merge_commit' is supported at MVP",
+    )
+
+
+class PRMergeResponse(CamelModel):
+    """Confirmation that a PR was merged."""
+
+    merged: bool
+    merge_commit_id: str

@@ -1,0 +1,4 @@
+WORKFLOW=issue-to-pr
+ISSUE_NUMBER=41
+ISSUE_TITLE=feat: Muse Hub pull requests — create, list, and merge PRs between branches
+ISSUE_URL=https://github.com/cgcardona/maestro/issues/41
