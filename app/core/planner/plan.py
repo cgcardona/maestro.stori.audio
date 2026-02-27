@@ -30,7 +30,7 @@ SSEEventDict = JSONObject  # SSE event wire dict — JSON object emitted to the 
 
 from app.core.expansion import ToolCall
 from app.core.intent import IntentResult
-from app.core.prompt_parser import ParsedPrompt
+from app.prompts import MaestroPrompt
 from app.core.prompts import (
     composing_prompt,
     resolve_position,
@@ -105,7 +105,7 @@ def _finalise_plan(
 
 
 def _try_deterministic_plan(
-    parsed: ParsedPrompt,
+    parsed: MaestroPrompt,
     start_beat: float = 0.0,
     project_state: ProjectState | None = None,
 ) -> ExecutionPlan | None:
@@ -199,7 +199,7 @@ async def build_execution_plan(
     project_state: ProjectState,
     route: IntentResult,
     llm: "LLMClient",
-    parsed: ParsedPrompt | None = None,
+    parsed: MaestroPrompt | None = None,
     usage_tracker: "UsageTracker" | None = None,
 ) -> ExecutionPlan:
     """Ask the LLM for a structured JSON plan for composing.
@@ -259,7 +259,7 @@ async def build_execution_plan_stream(
     project_state: ProjectState,
     route: IntentResult,
     llm: "LLMClient",
-    parsed: ParsedPrompt | None = None,
+    parsed: MaestroPrompt | None = None,
     usage_tracker: "UsageTracker" | None = None,
     emit_sse: Callable[[SSEEventDict], Awaitable[str]] | None = None,
 ) -> AsyncIterator[ExecutionPlan | str]:
@@ -396,7 +396,7 @@ async def preview_plan(
     project_state: ProjectState,
     route: IntentResult,
     llm: "LLMClient",
-    parsed: ParsedPrompt | None = None,
+    parsed: MaestroPrompt | None = None,
 ) -> PlanPreview:
     """Generate a plan preview without executing."""
     plan = await build_execution_plan(user_prompt, project_state, route, llm, parsed=parsed)

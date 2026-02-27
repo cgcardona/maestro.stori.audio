@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-End-to-end two-prompt STORI PROMPT flow test.
+End-to-end two-prompt MAESTRO PROMPT flow test.
 
 Prompt 1 → empty project → EDITING → tool calls applied → project built
 Prompt 2 → project with content → COMPOSING → variation returned
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # ─── Prompts ──────────────────────────────────────────────────────────────────
 
 PROMPT_1 = """\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: intro
 Position: at 0
@@ -96,7 +96,7 @@ Texture:
 """
 
 PROMPT_2 = """\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Position: after intro

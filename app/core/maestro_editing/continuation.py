@@ -8,7 +8,7 @@ from app.contracts.json_types import JSONValue, ToolCallDict
 
 if TYPE_CHECKING:
     from app.core.state_store import StateStore
-    from app.core.prompt_parser import ParsedPrompt
+    from app.prompts import MaestroDimensions, MaestroPrompt
 
 
 def _get_incomplete_tracks(
@@ -48,13 +48,13 @@ def _get_incomplete_tracks(
 
 
 def _get_missing_expressive_steps(
-    parsed: "ParsedPrompt" | None,
+    parsed: "MaestroPrompt" | None,
     tool_calls_collected: list[ToolCallDict],
 ) -> list[str]:
     """Return human-readable descriptions of expressive steps not yet executed.
 
     Checks Effects, MidiExpressiveness, and Automation blocks from the parsed
-    STORI PROMPT against the tool calls already made this session. Returns an
+    MAESTRO PROMPT against the tool calls already made this session. Returns an
     empty list when everything has been called (or when the parsed prompt has
     no expressive blocks).
     """
@@ -62,7 +62,7 @@ def _get_missing_expressive_steps(
         return []
 
     # Keys are lowercased by the parser (prompt_parser.py line 177)
-    extensions: dict[str, JSONValue] = parsed.extensions or {}
+    extensions: MaestroDimensions = parsed.extensions or {}
     called_tools = {tc["tool"] for tc in tool_calls_collected}
 
     missing: list[str] = []

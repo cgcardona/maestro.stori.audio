@@ -7,7 +7,7 @@ from app.core.intent.models import SlotsExtrasDict
 from app.core.intent_config import Intent, IdiomMatch, match_producer_idiom
 from app.core.intent.models import IntentResult, Slots
 from app.core.intent.builder import _build_result
-from app.core.prompt_parser import ParsedPrompt
+from app.prompts import MaestroPrompt
 
 _MODE_TO_INTENT: dict[str, Intent] = {
     "compose": Intent.GENERATE_MUSIC,
@@ -18,7 +18,7 @@ _MODE_TO_INTENT: dict[str, Intent] = {
 _EDIT_DEFAULT_INTENT = Intent.MIX_ENERGY
 
 
-def _infer_edit_intent(parsed: ParsedPrompt) -> Intent:
+def _infer_edit_intent(parsed: MaestroPrompt) -> Intent:
     """Pick the most appropriate edit intent from vibes/constraints."""
     if parsed.vibes:
         best_match: IdiomMatch | None = None
@@ -38,7 +38,7 @@ def _infer_edit_intent(parsed: ParsedPrompt) -> Intent:
     return _EDIT_DEFAULT_INTENT
 
 
-def _route_from_parsed_prompt(parsed: ParsedPrompt) -> IntentResult:
+def _route_from_parsed_prompt(parsed: MaestroPrompt) -> IntentResult:
     """
     Build an IntentResult directly from a parsed structured prompt.
 

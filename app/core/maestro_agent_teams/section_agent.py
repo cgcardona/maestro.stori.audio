@@ -12,7 +12,7 @@ Contract model (v1):
     Advisory fields like ``l2_generate_prompt`` are clearly marked and may
     be overridden by canonical descriptions baked into the contract.
 
-Optional refinement: when the STORI PROMPT specifies expressive tools
+Optional refinement: when the MAESTRO PROMPT specifies expressive tools
 (CC curves, pitch bend, automation), a small focused LLM call adds them
 after generation completes.
 

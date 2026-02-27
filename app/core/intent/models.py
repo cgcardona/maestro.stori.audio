@@ -10,7 +10,7 @@ from app.contracts.llm_types import OpenAIToolChoice, ToolSchemaDict
 from app.core.intent_config import Intent, SSEState, IdiomMatch
 
 if TYPE_CHECKING:
-    from app.core.prompt_parser import ParsedPrompt
+    from app.prompts import MaestroPrompt
 
 
 class SlotsExtrasDict(TypedDict, total=False):
@@ -20,7 +20,7 @@ class SlotsExtrasDict(TypedDict, total=False):
     specific part of the intent routing / parsing pipeline:
 
     parsed_prompt
-        The fully parsed structured STORI PROMPT, present only when the request
+        The fully parsed structured MAESTRO PROMPT, present only when the request
         was a structured prompt (not natural language).
     visible
         UI panel visibility flag from ``stori_show_panel`` / hide patterns.
@@ -34,7 +34,7 @@ class SlotsExtrasDict(TypedDict, total=False):
         Musical style tag extracted during intent parsing.
     """
 
-    parsed_prompt: ParsedPrompt
+    parsed_prompt: MaestroPrompt
     visible: bool
     target: str
     matched_phrase: str

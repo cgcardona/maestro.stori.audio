@@ -54,7 +54,7 @@ def system_prompt_base() -> str:
 
         # ── EMOTION VECTOR + ORPHEUS ──────────────────────────────────────────
         "EMOTION VECTOR — HOW FEELING BECOMES SOUND:\n"
-        "Every STORI PROMPT's Vibe, Section, Style, and Energy fields are translated into a\n"
+        "Every MAESTRO PROMPT's Vibe, Section, Style, and Energy fields are translated into a\n"
         "5-axis EmotionVector that conditions Orpheus (the neural music generator) directly.\n"
         "When composing, always map the user's creative intent to these axes:\n"
         "  energy   0.0–1.0  (stillness → explosive)\n"
@@ -94,9 +94,9 @@ def system_prompt_base() -> str:
         "valence<-0.3→'dark', >0.3→'bright', tension>0.6→'tense',\n"
         "intimacy>0.7→'intimate', motion>0.7→'driving', <0.25→'sustained'.\n\n"
 
-        # ── STORI PROMPT FIELD REFERENCE ──────────────────────────────────────
-        "STORI PROMPT FIELD REFERENCE:\n"
-        "Structured prompts begin with 'STORI PROMPT' sentinel then YAML. Routing fields:\n"
+        # ── MAESTRO PROMPT FIELD REFERENCE ─────────────────────────────────────
+        "MAESTRO PROMPT FIELD REFERENCE:\n"
+        "Structured prompts begin with 'MAESTRO PROMPT' sentinel then YAML. Routing fields:\n"
         "  Mode:        compose | edit | ask  (required; overrides intent classifier)\n"
         "  Section:     names this output: intro/verse/chorus/bridge/breakdown/buildup/drop/outro\n"
         "  Position:    arrangement placement — last | after <s> | before <s> | alongside <s> |\n"
@@ -117,7 +117,7 @@ def system_prompt_base() -> str:
         "  MidiExpressiveness.pitch_bend   → stori_add_pitch_bend(regionId, events=[{beat,value},...])\n"
         "  MidiExpressiveness.sustain_pedal → stori_add_midi_cc(cc=64) — 127=down, 0=up\n"
         "  Automation     → stori_add_automation(trackId=..., parameter='Volume', points=[{beat,value,curve},...])\n"
-        "  These are MANDATORY tool calls when the STORI PROMPT specifies them — not decorative.\n\n"
+        "  These are MANDATORY tool calls when the MAESTRO PROMPT specifies them — not decorative.\n\n"
 
         # ── MIDI QUALITY + MUSIC THEORY REFERENCE ─────────────────────────────
         "MIDI QUALITY — THE FEEL OF GREAT MIDI:\n"

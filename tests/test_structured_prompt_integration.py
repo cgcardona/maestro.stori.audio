@@ -16,7 +16,7 @@ from app.core.intent import Intent, IntentResult, Slots, SSEState
 from app.core.intent.models import SlotsExtrasDict
 from app.core.intent_config import IdiomMatch, match_weighted_vibes
 from app.core.planner import ExecutionPlan, build_execution_plan
-from app.core.prompt_parser import ParsedPrompt, TargetSpec, VibeWeight
+from app.prompts import MaestroPrompt, TargetSpec, VibeWeight
 from app.core.prompts import structured_prompt_context
 
 
@@ -30,8 +30,8 @@ class TestDeterministicPlan:
     async def test_full_structured_prompt_produces_deterministic_plan(self) -> None:
 
         """Style + tempo + roles + bars → deterministic plan, no LLM call."""
-        parsed = ParsedPrompt(
-            raw="STORI PROMPT...",
+        parsed = MaestroPrompt(
+            raw="MAESTRO PROMPT...",
             mode="compose",
             request="build a groove",
             style="melodic techno",
@@ -69,8 +69,8 @@ class TestDeterministicPlan:
     async def test_partial_structured_prompt_falls_back_to_llm(self) -> None:
 
         """Missing bars → can't build deterministic plan → uses LLM."""
-        parsed = ParsedPrompt(
-            raw="STORI PROMPT...",
+        parsed = MaestroPrompt(
+            raw="MAESTRO PROMPT...",
             mode="compose",
             request="build a groove",
             style="melodic techno",
@@ -116,7 +116,7 @@ class TestDeterministicPlan:
     async def test_deterministic_plan_respects_key(self) -> None:
 
         """Key from parsed prompt should be in the generation steps."""
-        parsed = ParsedPrompt(
+        parsed = MaestroPrompt(
             raw="...",
             mode="compose",
             request="go",
@@ -145,7 +145,7 @@ class TestDeterministicPlan:
     async def test_constraints_passed_through(self) -> None:
 
         """Non-bars constraints should appear in the plan."""
-        parsed = ParsedPrompt(
+        parsed = MaestroPrompt(
             raw="...",
             mode="compose",
             request="go",
@@ -178,7 +178,7 @@ class TestStructuredPromptContext:
 
     def test_full_context_output(self) -> None:
 
-        parsed = ParsedPrompt(
+        parsed = MaestroPrompt(
             raw="...",
             mode="compose",
             request="go",
@@ -207,7 +207,7 @@ class TestStructuredPromptContext:
 
     def test_minimal_context_output(self) -> None:
 
-        parsed = ParsedPrompt(
+        parsed = MaestroPrompt(
             raw="...",
             mode="ask",
             request="why?",
@@ -221,7 +221,7 @@ class TestStructuredPromptContext:
 
     def test_target_with_name(self) -> None:
 
-        parsed = ParsedPrompt(
+        parsed = MaestroPrompt(
             raw="...",
             mode="edit",
             request="eq it",
@@ -233,7 +233,7 @@ class TestStructuredPromptContext:
 
     def test_unweighted_vibe_no_weight_label(self) -> None:
 
-        parsed = ParsedPrompt(
+        parsed = MaestroPrompt(
             raw="...",
             mode="edit",
             request="fix",
@@ -315,7 +315,7 @@ class TestWeightedVibes:
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 
-def _make_composing_route(parsed: ParsedPrompt | None = None) -> IntentResult:
+def _make_composing_route(parsed: MaestroPrompt | None = None) -> IntentResult:
 
     """Build a minimal COMPOSING IntentResult for testing."""
     extras: SlotsExtrasDict = {}

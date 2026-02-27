@@ -17,7 +17,7 @@ from app.core.entity_context import format_project_context
 from app.core.intent import IntentResult
 from app.core.llm_client import LLMClient
 from app.core.planner import build_execution_plan_stream, ExecutionPlan
-from app.core.prompt_parser import ParsedPrompt
+from app.prompts import MaestroPrompt
 from app.protocol.emitter import emit
 from app.protocol.events import (
     CompleteEvent,
@@ -73,7 +73,7 @@ async def _handle_composing(
 
     _slots = getattr(route, "slots", None)
     _extras = getattr(_slots, "extras", None) if _slots is not None else None
-    parsed: ParsedPrompt | None = (
+    parsed: MaestroPrompt | None = (
         _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
     )
 
@@ -403,7 +403,7 @@ async def _handle_composing(
 async def _handle_composing_with_agent_teams(
     prompt: str,
     project_context: ProjectContext,
-    parsed: ParsedPrompt,
+    parsed: MaestroPrompt,
     route: IntentResult,
     llm: LLMClient,
     store: StateStore,

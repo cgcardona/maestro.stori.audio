@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class GenerationStep(BaseModel):
     """A single MIDI generation step in an execution plan.
 
-    Produced by the planner from a ``ParsedPrompt`` and validated before
+    Produced by the planner from a ``MaestroPrompt`` and validated before
     the plan is handed to the executor.  Every ``GenerationStep`` maps to
     one ``stori_generate_midi`` tool call.
 
@@ -28,7 +28,7 @@ class GenerationStep(BaseModel):
         GenerationStep(role="drums", style="boom bap", bars=8, tempo=90, key="Cm")
 
     ``constraints`` holds arbitrary key-value generation hints (density,
-    syncopation, swing, etc.) parsed from the STORI PROMPT ``Constraints:``
+    syncopation, swing, etc.) parsed from the MAESTRO PROMPT ``Constraints:``
     block.  It is typed ``dict[str, PydanticJson]`` — not ``dict[str, JSONValue]``
     — because this model is a Pydantic ``BaseModel``.  Convert to/from
     ``dict[str, JSONValue]`` at call sites using ``wrap_dict`` / ``unwrap_dict``
@@ -47,7 +47,7 @@ class GenerationStep(BaseModel):
         default=None,
         description=(
             "Additional generation constraints (density, syncopation, swing, etc.) "
-            "from the STORI PROMPT Constraints block.  PydanticJson instead of JSONValue "
+            "from the MAESTRO PROMPT Constraints block.  PydanticJson instead of JSONValue "
             "because this field lives in a Pydantic BaseModel — use wrap_dict/unwrap_dict "
             "to cross the boundary."
         ),

@@ -1,13 +1,13 @@
-"""Tests for Stori structured prompt parser (app/core/prompt_parser.py)."""
+"""Tests for the Maestro structured prompt parser (app/prompts/parser.py)."""
 from __future__ import annotations
 
 import pytest
 
 from app.contracts.project_types import ProjectContext
 
-from app.core.prompt_parser import (
+from app.prompts import (
     AfterSpec,
-    ParsedPrompt,
+    MaestroPrompt,
     PositionSpec,
     TargetSpec,
     VibeWeight,
@@ -22,7 +22,7 @@ class TestFullParse:
     """Spec Example 1: compose with all fields populated."""
 
     PROMPT = (
-        "STORI PROMPT\n"
+        "MAESTRO PROMPT\n"
         "Mode: compose\n"
         "Target: project\n"
         "Style: melodic techno\n"
@@ -123,7 +123,7 @@ class TestEditTrackParse:
     """Spec Example 2: edit mode targeting a specific track."""
 
     PROMPT = (
-        "STORI PROMPT\n"
+        "MAESTRO PROMPT\n"
         "Mode: edit\n"
         "Target: track:Bass\n"
         "\n"
@@ -173,7 +173,7 @@ class TestAskParse:
     """Spec Example 3: ask mode (reasoning only)."""
 
     PROMPT = (
-        "STORI PROMPT\n"
+        "MAESTRO PROMPT\n"
         "Mode: ask\n"
         "Target: project\n"
         "\n"
@@ -208,7 +208,7 @@ class TestAskParse:
 class TestMinimalPrompt:
     def test_mode_and_request_only(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nRequest: make a beat"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRequest: make a beat"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.mode == "compose"
@@ -225,22 +225,23 @@ class TestMinimalPrompt:
 # ─── Case insensitivity ─────────────────────────────────────────────────────
 
 
-class TestCaseInsensitivity:
-    def test_header_case_insensitive(self) -> None:
+class TestHeaderCaseSensitivity:
+    def test_legacy_stori_prompt_rejected(self) -> None:
+        """Legacy ``stori prompt`` (any case) raises UnsupportedPromptHeader."""
+        from app.prompts.errors import UnsupportedPromptHeader
 
-        prompt = "stori prompt\nMode: compose\nRequest: make a beat"
+        with pytest.raises(UnsupportedPromptHeader):
+            parse_prompt("stori prompt\nMode: compose\nRequest: make a beat")
+
+    def test_mixed_case_maestro_prompt_returns_none(self) -> None:
+        """Only exact ``MAESTRO PROMPT`` is accepted; mixed case falls through."""
+        prompt = "Maestro Prompt\nMode: compose\nRequest: make a beat"
         result = parse_prompt(prompt)
-        assert result is not None
-
-    def test_header_mixed_case(self) -> None:
-
-        prompt = "Stori Prompt\nMode: compose\nRequest: make a beat"
-        result = parse_prompt(prompt)
-        assert result is not None
+        assert result is None
 
     def test_field_names_case_insensitive(self) -> None:
 
-        prompt = "STORI PROMPT\nMODE: compose\nSTYLE: jazz\nREQUEST: play jazz"
+        prompt = "MAESTRO PROMPT\nMODE: compose\nSTYLE: jazz\nREQUEST: play jazz"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.mode == "compose"
@@ -248,14 +249,14 @@ class TestCaseInsensitivity:
 
     def test_mode_value_case_insensitive(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: COMPOSE\nRequest: make a beat"
+        prompt = "MAESTRO PROMPT\nMode: COMPOSE\nRequest: make a beat"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.mode == "compose"
 
     def test_mode_value_mixed_case(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: Edit\nRequest: change something"
+        prompt = "MAESTRO PROMPT\nMode: Edit\nRequest: change something"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.mode == "edit"
@@ -267,21 +268,21 @@ class TestCaseInsensitivity:
 class TestTargetParsing:
     def test_project(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nTarget: project\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nTarget: project\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.target == TargetSpec(kind="project")
 
     def test_selection(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: edit\nTarget: selection\nRequest: fix it"
+        prompt = "MAESTRO PROMPT\nMode: edit\nTarget: selection\nRequest: fix it"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.target == TargetSpec(kind="selection")
 
     def test_track_with_name(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: edit\nTarget: track:Lead Synth\nRequest: eq it"
+        prompt = "MAESTRO PROMPT\nMode: edit\nTarget: track:Lead Synth\nRequest: eq it"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.target is not None
@@ -290,7 +291,7 @@ class TestTargetParsing:
 
     def test_region_with_name(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: edit\nTarget: region:Verse A\nRequest: quantize"
+        prompt = "MAESTRO PROMPT\nMode: edit\nTarget: region:Verse A\nRequest: quantize"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.target is not None
@@ -304,21 +305,21 @@ class TestTargetParsing:
 class TestTempoParsing:
     def test_bare_number(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nTempo: 140\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nTempo: 140\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.tempo == 140
 
     def test_with_bpm_suffix(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nTempo: 92 bpm\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nTempo: 92 bpm\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.tempo == 92
 
     def test_bpm_no_space(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nTempo: 110bpm\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nTempo: 110bpm\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.tempo == 110
@@ -330,7 +331,7 @@ class TestTempoParsing:
 class TestRoleParsing:
     def test_inline_comma_separated(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nRole: kick, bass, arp\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRole: kick, bass, arp\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.roles == ["kick", "bass", "arp"]
@@ -338,7 +339,7 @@ class TestRoleParsing:
     def test_yaml_style_list(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Role:\n- drums\n- bass\n- melody\n"
             "Request: go"
         )
@@ -348,7 +349,7 @@ class TestRoleParsing:
 
     def test_single_role_inline(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nRole: bassline\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRole: bassline\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.roles == ["bassline"]
@@ -361,7 +362,7 @@ class TestConstraintParsing:
     def test_key_value_pairs(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Constraints:\n- bars: 8\n- density: sparse\n"
             "Request: go"
         )
@@ -373,7 +374,7 @@ class TestConstraintParsing:
     def test_bare_flag_items(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Constraints:\n- no reverb\n"
             "Request: go"
         )
@@ -384,7 +385,7 @@ class TestConstraintParsing:
     def test_numeric_coercion(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Constraints:\n- gm_program: 38\n"
             "Request: go"
         )
@@ -401,7 +402,7 @@ class TestVibeParsing:
     def test_unweighted_vibes(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: edit\n"
+            "MAESTRO PROMPT\nMode: edit\n"
             "Vibe:\n- darker\n- punchier\n"
             "Request: fix it"
         )
@@ -415,7 +416,7 @@ class TestVibeParsing:
     def test_weighted_vibes(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: edit\n"
+            "MAESTRO PROMPT\nMode: edit\n"
             "Vibe:\n- darker:2\n- wider:1\n- aggressive:3\n"
             "Request: mix it"
         )
@@ -428,7 +429,7 @@ class TestVibeParsing:
     def test_inline_comma_separated_vibes(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: edit\n"
+            "MAESTRO PROMPT\nMode: edit\n"
             "Vibe: darker, wider\n"
             "Request: mix"
         )
@@ -458,9 +459,9 @@ class TestNonStructuredFallthrough:
 
         assert parse_prompt("play") is None
 
-    def test_question_about_stori_prompt(self) -> None:
+    def test_question_about_maestro_prompt(self) -> None:
 
-        assert parse_prompt("Tell me about the STORI PROMPT format") is None
+        assert parse_prompt("Tell me about the MAESTRO PROMPT format") is None
 
     def test_empty_string(self) -> None:
 
@@ -472,34 +473,34 @@ class TestNonStructuredFallthrough:
 
     def test_header_only_no_fields(self) -> None:
 
-        assert parse_prompt("STORI PROMPT") is None
+        assert parse_prompt("MAESTRO PROMPT") is None
 
     def test_header_with_no_mode(self) -> None:
 
-        assert parse_prompt("STORI PROMPT\nRequest: do something") is None
+        assert parse_prompt("MAESTRO PROMPT\nRequest: do something") is None
 
     def test_header_with_no_request(self) -> None:
 
         """Mode: compose without Request synthesises a default request."""
-        result = parse_prompt("STORI PROMPT\nMode: compose")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose")
         assert result is not None
         assert result.mode == "compose"
         assert result.request  # synthesised default
 
     def test_invalid_mode_value(self) -> None:
 
-        assert parse_prompt("STORI PROMPT\nMode: destroy\nRequest: go") is None
+        assert parse_prompt("MAESTRO PROMPT\nMode: destroy\nRequest: go") is None
 
-    def test_stori_prompt_midsentence(self) -> None:
+    def test_maestro_prompt_midsentence(self) -> None:
 
-        """'STORI PROMPT' appearing mid-text should not trigger parsing."""
-        assert parse_prompt("Hey can you explain STORI PROMPT to me?") is None
+        """'MAESTRO PROMPT' appearing mid-text should not trigger parsing."""
+        assert parse_prompt("Hey can you explain MAESTRO PROMPT to me?") is None
 
     def test_invalid_yaml_body_returns_none(self) -> None:
 
         """Body that is not valid YAML falls through to NL pipeline — no fallback."""
         bad = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request:\n"
             "This line: has a colon that breaks YAML parsing mid-key\n"
@@ -514,14 +515,14 @@ class TestNonStructuredFallthrough:
 class TestWhitespaceTolerance:
     def test_leading_whitespace(self) -> None:
 
-        prompt = "  \n  STORI PROMPT\nMode: compose\nRequest: go"
+        prompt = "  \n  MAESTRO PROMPT\nMode: compose\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
 
     def test_extra_blank_lines_between_fields(self) -> None:
 
         prompt = (
-            "STORI PROMPT\n\n"
+            "MAESTRO PROMPT\n\n"
             "Mode: compose\n\n"
             "Style: jazz\n\n"
             "Request: make jazz"
@@ -532,7 +533,7 @@ class TestWhitespaceTolerance:
 
     def test_trailing_whitespace_on_values(self) -> None:
 
-        prompt = "STORI PROMPT\nMode:  compose  \nRequest:  do it  "
+        prompt = "MAESTRO PROMPT\nMode:  compose  \nRequest:  do it  "
         result = parse_prompt(prompt)
         assert result is not None
         assert result.mode == "compose"
@@ -547,7 +548,7 @@ class TestMultiLineRequest:
 
         """Multi-line Request uses YAML block scalar (|)."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request: |\n"
             "  Build an evolving groove.\n"
@@ -570,7 +571,7 @@ class TestMixedStructureAndFreeform:
     def test_freeform_request_inline(self) -> None:
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request: give me a darker techno intro at 126 bpm in F#m\n"
         )
@@ -587,7 +588,7 @@ class TestMixedStructureAndFreeform:
 class TestRawPreserved:
     def test_raw_contains_original_text(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: ask\nRequest: help me"
+        prompt = "MAESTRO PROMPT\nMode: ask\nRequest: help me"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.raw == prompt
@@ -601,14 +602,14 @@ class TestYamlBodyParsing:
 
     def test_yaml_list_for_role(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nRole:\n  - drums\n  - bass\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRole:\n  - drums\n  - bass\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.roles == ["drums", "bass"]
 
     def test_yaml_inline_list_for_role(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nRole: [kick, bass, arp]\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRole: [kick, bass, arp]\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.roles == ["kick", "bass", "arp"]
@@ -616,7 +617,7 @@ class TestYamlBodyParsing:
     def test_yaml_nested_constraints(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Constraints:\n  bars: 8\n  density: sparse\nRequest: go"
         )
         result = parse_prompt(prompt)
@@ -627,7 +628,7 @@ class TestYamlBodyParsing:
     def test_yaml_block_scalar_request(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Request: |\n  Line one.\n  Line two.\n"
         )
         result = parse_prompt(prompt)
@@ -637,14 +638,14 @@ class TestYamlBodyParsing:
 
     def test_yaml_tempo_as_integer(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nTempo: 75\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nTempo: 75\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.tempo == 75
 
     def test_yaml_vibe_x_weight_syntax(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nVibe: [dusty x3, warm x2]\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nVibe: [dusty x3, warm x2]\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert any(v.vibe == "dusty" and v.weight == 3 for v in result.vibes)
@@ -655,10 +656,10 @@ class TestYamlBodyParsing:
 
 
 class TestMaestroExtensions:
-    """Unknown top-level fields land in ParsedPrompt.extensions."""
+    """Unknown top-level fields land in MaestroPrompt.extensions."""
 
     _PROMPT = (
-        "STORI PROMPT\n"
+        "MAESTRO PROMPT\n"
         "Mode: compose\n"
         "Request: verse groove\n"
         "Harmony:\n"
@@ -723,7 +724,7 @@ class TestMaestroExtensions:
 
     def test_no_maestro_fields_when_empty(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: ask\nRequest: help")
+        result = parse_prompt("MAESTRO PROMPT\nMode: ask\nRequest: help")
         assert result is not None
         assert result.has_maestro_fields is False
 
@@ -731,7 +732,7 @@ class TestMaestroExtensions:
 
         """The full Maestro example from the spec must parse cleanly."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Section: verse\n"
             "Position: after intro + 2\n"
@@ -789,19 +790,19 @@ class TestMaestroExtensions:
 class TestSectionField:
     def test_section_parsed_to_lowercase(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: compose\nSection: Intro\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose\nSection: Intro\nRequest: go")
         assert result is not None
         assert result.section == "intro"
 
     def test_section_absent_is_none(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: compose\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose\nRequest: go")
         assert result is not None
         assert result.section is None
 
     def test_section_verse(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: compose\nSection: verse\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose\nSection: verse\nRequest: go")
         assert result is not None
         assert result.section == "verse"
 
@@ -814,7 +815,7 @@ class TestPositionField:
 
     def _p(self, position_val: str) -> PositionSpec | None:
 
-        result = parse_prompt(f"STORI PROMPT\nMode: compose\nPosition: {position_val}\nRequest: go")
+        result = parse_prompt(f"MAESTRO PROMPT\nMode: compose\nPosition: {position_val}\nRequest: go")
         assert result is not None
         return result.position
 
@@ -895,20 +896,20 @@ class TestPositionField:
     # Absent
     def test_position_absent_is_none(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: compose\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose\nRequest: go")
         assert result is not None and result.position is None
 
     # After: alias still works
     def test_after_alias_maps_to_after_kind(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: compose\nAfter: intro\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose\nAfter: intro\nRequest: go")
         assert result is not None
         pos = result.position
         assert pos is not None and pos.kind == "after" and pos.ref == "intro"
 
     def test_after_alias_last(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: compose\nAfter: last\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose\nAfter: last\nRequest: go")
         assert result is not None
         pos = result.position
         assert pos is not None and pos.kind == "last"
@@ -917,7 +918,7 @@ class TestPositionField:
 
         """Position: takes precedence over After: when both are present."""
         result = parse_prompt(
-            "STORI PROMPT\nMode: compose\nPosition: alongside verse\nAfter: intro\nRequest: go"
+            "MAESTRO PROMPT\nMode: compose\nPosition: alongside verse\nAfter: intro\nRequest: go"
         )
         assert result is not None
         pos = result.position
@@ -926,7 +927,7 @@ class TestPositionField:
     # .after property is backwards-compatible
     def test_after_property_alias(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: compose\nPosition: after chorus\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose\nPosition: after chorus\nRequest: go")
         assert result is not None
         assert result.after is result.position
 

@@ -1,14 +1,14 @@
-"""Structured prompt context builders for parsed STORI PROMPTs."""
+"""Structured prompt context builders for parsed MAESTRO PROMPTs."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.core.prompt_parser import ParsedPrompt
+    from app.prompts import MaestroPrompt
 
 
-def _structured_routing_lines(parsed: "ParsedPrompt") -> list[str]:
+def _structured_routing_lines(parsed: "MaestroPrompt") -> list[str]:
     """Build the routing-field lines shared by both context helpers."""
     lines: list[str] = ["", "═══ STORI STRUCTURED INPUT ═══"]
     lines.append(f"Mode: {parsed.mode}")
@@ -42,7 +42,7 @@ def _structured_routing_lines(parsed: "ParsedPrompt") -> list[str]:
     return lines
 
 
-def structured_prompt_routing_context(parsed: "ParsedPrompt") -> str:
+def structured_prompt_routing_context(parsed: "MaestroPrompt") -> str:
     """Routing fields only — no Maestro extension dimensions.
 
     Used by the planner, which only needs to decide *what tools to call*
@@ -54,7 +54,7 @@ def structured_prompt_routing_context(parsed: "ParsedPrompt") -> str:
     return "\n".join(lines)
 
 
-def structured_prompt_context(parsed: "ParsedPrompt") -> str:
+def structured_prompt_context(parsed: "MaestroPrompt") -> str:
     """Full structured context: routing fields + Maestro extension dimensions.
 
     Used by the EDITING LLM, which needs the creative brief to generate

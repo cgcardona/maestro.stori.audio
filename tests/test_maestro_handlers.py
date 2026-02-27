@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 if TYPE_CHECKING:
     from app.core.planner import ExecutionPlan
-    from app.core.prompt_parser import ParsedPrompt
+    from app.prompts import MaestroPrompt
     from app.core.state_store import StateStore
 
 from app.contracts.json_types import NoteDict, ToolCallDict
@@ -1119,10 +1119,10 @@ class TestComposingUnifiedSSE:
 class TestAgentTeamsVariationRouting:
     """Verify that Mode: compose routes through Agent Teams + Variation."""
 
-    def _make_parsed_prompt(self, roles: list[str]) -> ParsedPrompt:
-        from app.core.prompt_parser import ParsedPrompt
-        return ParsedPrompt(
-            raw="STORI PROMPT\nMode: compose",
+    def _make_parsed_prompt(self, roles: list[str]) -> MaestroPrompt:
+        from app.prompts import MaestroPrompt
+        return MaestroPrompt(
+            raw="MAESTRO PROMPT\nMode: compose",
             mode="compose",
             request="make a beat",
             style="house",
@@ -1131,7 +1131,7 @@ class TestAgentTeamsVariationRouting:
             roles=roles,
         )
 
-    def _make_composing_route(self, parsed: ParsedPrompt) -> IntentResult:
+    def _make_composing_route(self, parsed: MaestroPrompt) -> IntentResult:
 
         return IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -1171,7 +1171,7 @@ class TestAgentTeamsVariationRouting:
         ):
             events = []
             async for event in orchestrate(
-                "STORI PROMPT\nMode: compose",
+                "MAESTRO PROMPT\nMode: compose",
                 project_context=_NON_EMPTY_PROJECT,
             ):
                 events.append(event)
@@ -1204,7 +1204,7 @@ class TestAgentTeamsVariationRouting:
         ):
             events = []
             async for event in orchestrate(
-                "STORI PROMPT\nMode: compose",
+                "MAESTRO PROMPT\nMode: compose",
                 project_context=_NON_EMPTY_PROJECT,
             ):
                 events.append(event)
@@ -1259,7 +1259,6 @@ class TestAgentTeamsVariationRouting:
         from app.core.maestro_composing.composing import (
             _handle_composing_with_agent_teams,
         )
-        from app.core.prompt_parser import ParsedPrompt
         from app.core.state_store import StateStore
         from app.core.tracing import create_trace_context
         from app.models.variation import Variation, Phrase, NoteChange, MidiNoteSnapshot

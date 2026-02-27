@@ -31,7 +31,7 @@ ORPHEUS_URL = "http://storpheus:10002"
 OUTPUT_DIR = Path("/data/mvp_output")
 
 PROMPT = """\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: intro
 Style: neo-soul

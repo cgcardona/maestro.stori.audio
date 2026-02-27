@@ -1,6 +1,6 @@
 # Maestro — Type Contracts Reference
 
-> Updated: 2026-02-26 | Reflects the full `Any`-elimination sweep and MIDI primitive constraint system. `Any` no longer exists in any production app file. All MIDI primitives carry range constraints at every layer — Pydantic validation, dataclass `__post_init__`, and named `Annotated` type aliases.
+> Updated: 2026-02-27 | Reflects the full `Any`-elimination sweep, MIDI primitive constraint system, and Structured Prompt DSL type hierarchy. `Any` no longer exists in any production app file. All MIDI primitives carry range constraints at every layer — Pydantic validation, dataclass `__post_init__`, and named `Annotated` type aliases. Named type aliases (`MaestroDimensions`, `PromptConstraints`) replace naked `dict[str, JSONValue]` throughout the prompt pipeline.
 
 This document is the single source of truth for every named entity (TypedDict, dataclass, Protocol, type alias) in the Maestro codebase. It covers the full API surface of each type: fields, types, optionality, and intended use.
 
@@ -41,6 +41,14 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [Ports (`app/daw/ports.py`)](#ports-appdawportspy)
    - [Phase Mapping (`app/daw/stori/phase_map.py`)](#phase-mapping-appdawstoriphase_mappy)
    - [Tool Registry (`app/daw/stori/tool_registry.py`)](#tool-registry-appdawstoritool_registrypy)
+9. [Structured Prompt DSL (`app/prompts/`)](#structured-prompt-dsl)
+   - [Type Aliases](#prompt-type-aliases)
+   - [TargetSpec](#targetspec)
+   - [PositionSpec](#positionspec)
+   - [VibeWeight](#vibeweight)
+   - [StructuredPrompt](#structuredprompt)
+   - [MaestroPrompt](#maestroprompt)
+   - [Error Hierarchy](#prompt-error-hierarchy)
 10. [Region Event Map Aliases](#region-event-map-aliases)
 11. [HTTP Response Entities](#http-response-entities)
     - [Protocol Introspection](#protocol-introspection-appprotocolresponsespy)
@@ -71,6 +79,7 @@ This document is the single source of truth for every named entity (TypedDict, d
     - [Diagram 16 — HTTP Response Models](#diagram-16--http-response-models)
     - [Diagram 17 — MCP JSON-RPC TypedDicts](#diagram-17--mcp-json-rpc-typeddicts)
     - [Diagram 18 — DAW Adapter & Phase Mapping](#diagram-18--daw-adapter--phase-mapping)
+    - [Diagram 19 — Structured Prompt DSL](#diagram-19--structured-prompt-dsl)
 
 ---
 
@@ -1437,6 +1446,181 @@ As a `NamedTuple`, `PhaseSplit` supports both named field access (`split.instrum
 
 ---
 
+## Structured Prompt DSL
+
+**Path:** `app/prompts/`
+
+The Maestro Structured Prompt DSL is a YAML-based language embedded inside a sentinel header (`MAESTRO PROMPT`). The parser produces a `MaestroPrompt` dataclass that downstream code consumes for intent routing, plan generation, context injection, and agent team orchestration.
+
+All types are frozen-semantics dataclasses. Two named type aliases (`MaestroDimensions`, `PromptConstraints`) replace naked `dict[str, JSONValue]` throughout the prompt pipeline.
+
+### Prompt Type Aliases
+
+**Path:** `app/prompts/base.py`
+
+| Alias | Underlying type | Description |
+|-------|----------------|-------------|
+| `MaestroDimensions` | `dict[str, JSONValue]` | Open-vocabulary Maestro dimension block (Harmony, Melody, Rhythm, Dynamics, …). Unknown top-level YAML keys land here and are injected verbatim into the LLM system prompt. The vocabulary is open — invent new dimensions and they work immediately. |
+| `PromptConstraints` | `dict[str, JSONValue]` | Generation constraint block parsed from the `Constraints:` YAML key. Keys are lowercased at parse time. Values are scalars or simple structures that downstream generation code interprets (e.g. `bars`, `density`, `no_effects`). |
+
+**Usage sites:**
+
+| Alias | File | Role |
+|-------|------|------|
+| `MaestroDimensions` | `app/prompts/base.py` | `StructuredPrompt.extensions` field type |
+| `MaestroDimensions` | `app/core/maestro_editing/continuation.py` | Local binding for expressive step detection |
+| `PromptConstraints` | `app/prompts/base.py` | `StructuredPrompt.constraints` field type |
+| `PromptConstraints` | `app/prompts/parser.py` | `_parse_constraints()` return type |
+
+---
+
+### `TargetSpec`
+
+`@dataclass` — Scope anchor for a structured prompt editing operation.
+
+Identifies which DAW entity the operation targets. When `kind` is `"track"` or `"region"`, `name` holds the human-readable label (e.g. `"Drums"`); the server resolves it to a UUID via EntityRegistry.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `kind` | `Literal["project", "selection", "track", "region"]` | *(required)* | Entity scope |
+| `name` | `str \| None` | `None` | Human-readable label (for `track`/`region`) |
+
+---
+
+### `PositionSpec`
+
+`@dataclass` — Arrangement placement for section sequencing.
+
+Parsed from the `Position:` or `After:` YAML key. Supports seven placement modes for expressing any arrangement relationship between sections.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `kind` | `Literal["after", "before", "alongside", "between", "within", "absolute", "last"]` | *(required)* | Placement mode |
+| `ref` | `str \| None` | `None` | Reference section name (lowercased) |
+| `ref2` | `str \| None` | `None` | Second reference (only for `"between"`) |
+| `offset` | `float` | `0.0` | Beat offset from computed position |
+| `beat` | `float \| None` | `None` | Explicit beat number (only for `"absolute"`) |
+
+**Placement mode semantics:**
+
+| Kind | Meaning | Example |
+|------|---------|---------|
+| `after` | Sequential — start after ref section ends | `Position: after intro` |
+| `before` | Insert / pickup — start before ref begins | `Position: before chorus` |
+| `alongside` | Parallel layer — same start beat as ref | `Position: alongside verse` |
+| `between` | Transition bridge — fills gap between ref and ref2 | `Position: between verse chorus` |
+| `within` | Nested — relative offset inside ref | `Position: within verse bar 3` |
+| `absolute` | Explicit beat number | `Position: beat 32` or `Position: bar 9` |
+| `last` | After all existing content in the project | `Position: last` |
+
+**`AfterSpec`** is a type alias for `PositionSpec` — backwards-compatible synonym used at import sites that predate the generalised position model.
+
+---
+
+### `VibeWeight`
+
+`@dataclass` — A single vibe keyword with an optional repetition weight.
+
+Parsed from the `Vibe:` block. Higher weights bias the EmotionVector derivation toward that mood axis (the weight is applied as a multiplier when blending vibe contributions).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `vibe` | `str` | *(required)* | Mood keyword (lowercased) |
+| `weight` | `int` | `1` | Repetition multiplier for EmotionVector blending |
+
+**Weight syntax** (in `Vibe:` string items):
+
+| Syntax | Example | Result |
+|--------|---------|--------|
+| `keyword x<N>` | `dusty x3` | `VibeWeight("dusty", 3)` |
+| `keyword:<N>` | `dusty:3` | `VibeWeight("dusty", 3)` |
+| YAML dict | `{dusty: 3}` | `VibeWeight("dusty", 3)` |
+| bare keyword | `dusty` | `VibeWeight("dusty", 1)` |
+
+---
+
+### `StructuredPrompt`
+
+`@dataclass` — Base class for all structured prompt dialects.
+
+Routing fields are typed attributes parsed deterministically by Python. All other top-level YAML keys land in `extensions` (typed as `MaestroDimensions`) and are injected verbatim into the Maestro LLM system prompt.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `raw` | `str` | *(required)* | Original prompt text (for logging/debugging) |
+| `mode` | `Literal["compose", "edit", "ask"]` | *(required)* | Execution mode — drives intent routing |
+| `request` | `str` | *(required)* | Natural-language request body |
+| `prompt_kind` | `str` | `"maestro"` | Dialect discriminant |
+| `version` | `int` | `1` | Prompt format version |
+| `section` | `str \| None` | `None` | Section name (lowercased) |
+| `position` | `PositionSpec \| None` | `None` | Arrangement placement |
+| `target` | `TargetSpec \| None` | `None` | Edit scope anchor |
+| `style` | `str \| None` | `None` | Genre/style (e.g. `"house"`, `"jazz"`) |
+| `key` | `str \| None` | `None` | Musical key (e.g. `"Am"`, `"C"`) |
+| `tempo` | `int \| None` | `None` | BPM — always a whole integer |
+| `energy` | `str \| None` | `None` | Energy level (lowercased) |
+| `roles` | `list[str]` | `[]` | Instrument roles to generate |
+| `constraints` | `PromptConstraints` | `{}` | Generation constraints block |
+| `vibes` | `list[VibeWeight]` | `[]` | Mood keywords with weights |
+| `extensions` | `MaestroDimensions` | `{}` | Open-vocabulary dimension block |
+
+**Computed properties:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `after` | `PositionSpec \| None` | Backwards-compatible alias for `position` |
+| `has_maestro_fields` | `bool` | `True` when `extensions` is non-empty |
+
+---
+
+### `MaestroPrompt`
+
+`@dataclass`, subclass of `StructuredPrompt` — Canonical Maestro structured prompt.
+
+Currently identical to `StructuredPrompt` with `prompt_kind = "maestro"`. Exists as a named type so downstream code can `isinstance`-check for the Maestro dialect and to provide a clean seam for future dialect-specific invariants.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `prompt_kind` | `str` | `"maestro"` | Fixed dialect discriminant |
+
+All other fields are inherited from `StructuredPrompt`.
+
+---
+
+### Prompt Error Hierarchy
+
+**Path:** `app/prompts/errors.py`
+
+Three exception classes form a hierarchy for structured error reporting. They are raised by the parser and caught by route handlers to produce structured 400 responses — they are *not* logged as server errors.
+
+| Exception | Parent | Description |
+|-----------|--------|-------------|
+| `PromptParseError` | `Exception` | Base class for all prompt-parsing failures |
+| `UnsupportedPromptHeader` | `PromptParseError` | Recognised but unsupported header (e.g. legacy `STORI PROMPT`). Carries `header: str`. |
+| `InvalidMaestroPrompt` | `PromptParseError` | Valid header but invalid YAML or field values. Carries `details: list[str]` with all validation failures for batch reporting. |
+
+---
+
+### `parse_prompt()`
+
+**Path:** `app/prompts/parser.py`
+
+`parse_prompt(text: str) -> MaestroPrompt | None` — The public entry point.
+
+| Input | Output | Meaning |
+|-------|--------|---------|
+| Text with `MAESTRO PROMPT` header + valid YAML | `MaestroPrompt` | Successfully parsed structured prompt |
+| Natural language (no header) | `None` | Not a structured prompt; NL pipeline handles it |
+| `STORI PROMPT` header | *raises* `UnsupportedPromptHeader` | Legacy header rejected |
+| Valid header + invalid YAML/fields | *raises* `InvalidMaestroPrompt` | Structured but malformed |
+
+**Internal field routing:** The parser splits top-level YAML keys into two sets:
+
+1. **Routing fields** (`_ROUTING_FIELDS`): `mode`, `section`, `position`, `after`, `target`, `style`, `key`, `tempo`, `energy`, `role`, `constraints`, `vibe`, `request` — parsed deterministically into typed `StructuredPrompt` attributes.
+2. **Maestro dimensions** (everything else): land in `MaestroPrompt.extensions` (`MaestroDimensions`) and are injected verbatim into the LLM system prompt as YAML.
+
+---
+
 ## Region Event Map Aliases
 
 **Path:** `app/contracts/json_types.py`
@@ -1927,6 +2111,27 @@ Maestro Service (app/)
 │       ├── ProjectTrack               — a DAW track with all metadata
 │       ├── BusDict                    — an audio bus
 │       └── ProjectContext             — full DAW project state (from frontend)
+│
+├── Prompt DSL (app/prompts/)
+│   ├── base.py                        — type aliases + base dataclasses
+│   │   ├── MaestroDimensions          — dict[str, JSONValue] alias (open-vocabulary dimensions)
+│   │   ├── PromptConstraints          — dict[str, JSONValue] alias (generation constraints)
+│   │   ├── TargetSpec                 — @dataclass: edit scope anchor (project/selection/track/region)
+│   │   ├── PositionSpec               — @dataclass: arrangement placement (7 modes)
+│   │   ├── AfterSpec                  — type alias for PositionSpec (backwards compat)
+│   │   ├── VibeWeight                 — @dataclass: mood keyword + weight multiplier
+│   │   └── StructuredPrompt           — @dataclass: base prompt with routing + extensions
+│   │
+│   ├── maestro.py
+│   │   └── MaestroPrompt             — @dataclass: canonical prompt dialect (extends StructuredPrompt)
+│   │
+│   ├── errors.py
+│   │   ├── PromptParseError          — base exception for parse failures
+│   │   ├── UnsupportedPromptHeader   — legacy header rejected
+│   │   └── InvalidMaestroPrompt      — valid header, invalid YAML/fields
+│   │
+│   └── parser.py
+│       └── parse_prompt()            — text → MaestroPrompt | None
 │
 ├── Auth (app/auth/)
 │   └── tokens.py
@@ -3245,4 +3450,98 @@ classDiagram
     ToolMeta --> ToolKind
     StoriDAWAdapter ..> PhaseSplit : group_into_phases() returns
     StoriDAWAdapter ..> ToolName : tool vocabulary
+```
+
+---
+
+### Diagram 19 — Structured Prompt DSL
+
+The complete Maestro Structured Prompt type hierarchy. `StructuredPrompt` is the extensible base; `MaestroPrompt` is the canonical (and currently only) dialect. Two named type aliases (`MaestroDimensions`, `PromptConstraints`) replace naked `dict[str, JSONValue]` throughout the pipeline. `parse_prompt()` produces a `MaestroPrompt` or `None`; errors are typed exceptions, not strings.
+
+```mermaid
+classDiagram
+    direction TB
+
+    class MaestroDimensions {
+        <<TypeAlias>>
+        dict~str, JSONValue~
+    }
+    class PromptConstraints {
+        <<TypeAlias>>
+        dict~str, JSONValue~
+    }
+
+    class TargetSpec {
+        <<dataclass>>
+        +kind : Literal[project, selection, track, region]
+        +name : str | None
+    }
+    class PositionSpec {
+        <<dataclass>>
+        +kind : Literal[after, before, alongside, between, within, absolute, last]
+        +ref : str | None
+        +ref2 : str | None
+        +offset : float
+        +beat : float | None
+    }
+    class VibeWeight {
+        <<dataclass>>
+        +vibe : str
+        +weight : int
+    }
+
+    class StructuredPrompt {
+        <<dataclass>>
+        +raw : str
+        +mode : Literal[compose, edit, ask]
+        +request : str
+        +prompt_kind : str
+        +version : int
+        +section : str | None
+        +position : PositionSpec | None
+        +target : TargetSpec | None
+        +style : str | None
+        +key : str | None
+        +tempo : int | None
+        +energy : str | None
+        +roles : list~str~
+        +constraints : PromptConstraints
+        +vibes : list~VibeWeight~
+        +extensions : MaestroDimensions
+        +after() PositionSpec | None
+        +has_maestro_fields() bool
+    }
+
+    class MaestroPrompt {
+        <<dataclass>>
+        +prompt_kind : str = maestro
+    }
+
+    class PromptParseError {
+        <<Exception>>
+    }
+    class UnsupportedPromptHeader {
+        <<Exception>>
+        +header : str
+    }
+    class InvalidMaestroPrompt {
+        <<Exception>>
+        +details : list~str~
+    }
+
+    class parse_prompt {
+        <<function>>
+        text str → MaestroPrompt | None
+    }
+
+    StructuredPrompt --> PositionSpec : position
+    StructuredPrompt --> TargetSpec : target
+    StructuredPrompt --> VibeWeight : vibes list
+    StructuredPrompt --> PromptConstraints : constraints
+    StructuredPrompt --> MaestroDimensions : extensions
+    MaestroPrompt --|> StructuredPrompt : extends
+    PromptParseError <|-- UnsupportedPromptHeader
+    PromptParseError <|-- InvalidMaestroPrompt
+    parse_prompt ..> MaestroPrompt : produces
+    parse_prompt ..> PromptParseError : raises
 ```

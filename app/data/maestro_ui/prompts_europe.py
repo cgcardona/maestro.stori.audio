@@ -1,4 +1,4 @@
-"""STORI PROMPT pool — Europe region.
+"""MAESTRO PROMPT pool — Europe region.
 
 Covers: melodic techno, liquid D&B, minimal deep house, synthwave,
 post-rock, classical string quartet, psytrance, Nordic ambient folk,
@@ -17,7 +17,7 @@ PROMPTS_EUROPE: list[PromptItem] = [
         title="Melodic techno drop \u00b7 Am \u00b7 128 BPM",
         preview="Mode: compose \u00b7 Section: drop\nStyle: melodic techno \u00b7 Key: Am \u00b7 128 BPM\nRole: kick, bass, lead, pads, perc\nVibe: hypnotic x3, driving x2, euphoric",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: drop
 Style: melodic techno
@@ -306,7 +306,7 @@ Automation:
         title="Liquid drum & bass \u00b7 Dm \u00b7 174 BPM",
         preview="Mode: compose \u00b7 Section: drop\nStyle: liquid drum & bass \u00b7 Key: Dm \u00b7 174 BPM\nRole: drums, reese bass, pad, melody\nVibe: flowing x2, melancholic x2, driving, energetic",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: drop
 Style: liquid drum and bass
@@ -527,7 +527,7 @@ Automation:
         title="Minimal deep house \u00b7 Am \u00b7 122 BPM",
         preview="Mode: compose \u00b7 Section: drop\nStyle: minimal deep house \u00b7 Key: Am \u00b7 122 BPM\nRole: kick, bass, chord stab, perc, texture\nVibe: hypnotic x3, atmospheric x2, minimal, groovy",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: drop
 Style: minimal deep house
@@ -745,7 +745,7 @@ Automation:
         title="Synthwave night drive \u00b7 Cm \u00b7 118 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: synthwave / retrowave \u00b7 Key: Cm \u00b7 118 BPM\nRole: lead, bass, pads, drums, arp\nVibe: nostalgic x3, cinematic x2, driving, dark",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: synthwave retrowave
@@ -988,7 +988,7 @@ Automation:
         title="Post-rock crescendo \u00b7 Em \u00b7 98 BPM",
         preview="Mode: compose \u00b7 Section: buildup\nStyle: post-rock \u00b7 Key: Em \u00b7 98 BPM\nRole: guitars, bass, drums, keys\nVibe: cinematic x3, tense x2, intense, atmospheric",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: buildup
 Style: post-rock
@@ -1249,7 +1249,7 @@ Automation:
         title="String quartet \u00b7 G major \u00b7 76 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: classical chamber \u00b7 Key: G \u00b7 76 BPM\nRole: violin I, violin II, viola, cello\nVibe: intimate x3, bittersweet x2, peaceful, flowing",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: classical chamber
@@ -1518,7 +1518,7 @@ Automation:
         title="Hypnotic psytrance \u00b7 Am \u00b7 145 BPM",
         preview="Mode: compose \u00b7 Section: drop\nStyle: psytrance \u00b7 Key: Am \u00b7 145 BPM\nRole: kick, bass, lead, atmosphere\nVibe: hypnotic x4, tense x2, intense, driving",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: drop
 Style: psytrance
@@ -1762,7 +1762,7 @@ Automation:
         title="Nordic ambient folk \u00b7 Em \u00b7 63 BPM",
         preview="Mode: compose \u00b7 Section: intro\nStyle: Nordic ambient folk \u00b7 Key: Em \u00b7 63 BPM\nRole: folk strings, piano, vocals, drone\nVibe: atmospheric x3, melancholic x2, intimate, dreamy",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: intro
 Style: Nordic ambient folk
@@ -2018,7 +2018,7 @@ Automation:
         title="Flamenco fusion \u00b7 Am phrygian \u00b7 176 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: flamenco fusion \u00b7 Key: Am phrygian \u00b7 176 BPM\nRole: guitar, cajon, bass, pad, palmas\nVibe: intense x3, tense x2, driving, mysterious",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: flamenco fusion
@@ -2275,7 +2275,7 @@ Automation:
         title="UK garage steppers \u00b7 Dbm \u00b7 130 BPM",
         preview="Mode: compose \u00b7 Section: drop\nStyle: UK garage / 2-step \u00b7 Key: Dbm \u00b7 130 BPM\nRole: drums, bass, vocal chop, synth pad\nVibe: groovy x3, energetic x2, dark, atmospheric",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: drop
 Style: UK garage 2-step
@@ -2518,7 +2518,7 @@ Automation:
         title="Anatolian psych rock \u00b7 Em \u00b7 125 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Anatolian psychedelic rock \u00b7 Key: Em \u00b7 125 BPM\nRole: rock organ, electric saz, bass, drums, strings\nVibe: psychedelic x3, driving x2, mystical, fuzzy, Turkish",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Anatolian psychedelic rock
@@ -2750,7 +2750,7 @@ Automation:
         title="Klezmer wedding \u00b7 Dm \u00b7 140 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: klezmer \u00b7 Key: Dm \u00b7 140 BPM\nRole: clarinet, violin, accordion, bass, drums\nVibe: joyful x3, frantic x2, bittersweet, dancing, celebration",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: klezmer
@@ -3013,7 +3013,7 @@ Automation:
         title="Baroque suite \u00b7 D major \u00b7 108 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Baroque dance suite \u00b7 Key: D \u00b7 108 BPM\nRole: harpsichord, oboe, English horn, cello\nVibe: elegant x3, stately x2, ornamental, noble, bright",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Baroque dance suite
@@ -3269,7 +3269,7 @@ Automation:
         title="Balkan brass \u00b7 Gm \u00b7 160 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Balkan brass / \u010do\u010dek \u00b7 Key: Gm \u00b7 160 BPM\nRole: trumpet, trombone, tuba, snare, bass drum\nVibe: frantic x3, joyful x2, wild, virtuosic, celebration",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Balkan brass cocek

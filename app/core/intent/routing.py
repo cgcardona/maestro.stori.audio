@@ -24,7 +24,7 @@ from app.core.intent.detection import (
 from app.core.intent.patterns import RULES, _extract_slots
 from app.core.intent.builder import _build_result, _clarify
 from app.core.intent.structured import _route_from_parsed_prompt
-from app.core.prompt_parser import parse_prompt
+from app.prompts import parse_prompt
 from app.core.prompts import intent_classification_prompt, INTENT_CLASSIFICATION_SYSTEM
 
 logger = logging.getLogger(__name__)

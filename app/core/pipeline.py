@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 from app.core.intent import get_intent_result, SSEState, IntentResult, Intent
 from app.core.planner import build_execution_plan, build_execution_plan_stream, ExecutionPlan
-from app.core.prompt_parser import ParsedPrompt
+from app.prompts import MaestroPrompt
 from app.core.llm_client import LLMClient, LLMResponse
 from app.core.prompts import system_prompt_base, editing_prompt, composing_prompt, resolve_position, sequential_context, structured_prompt_context
 from app.core.tools import ALL_TOOLS
@@ -97,7 +97,7 @@ async def run_pipeline(
         return PipelineOutput(route=route, llm_response=resp)
 
     _parsed_raw = route.slots.extras.get("parsed_prompt")
-    parsed: ParsedPrompt | None = _parsed_raw if isinstance(_parsed_raw, ParsedPrompt) else None
+    parsed: MaestroPrompt | None = _parsed_raw if isinstance(_parsed_raw, MaestroPrompt) else None
 
     # COMPOSING: planner path
     if route.sse_state == SSEState.COMPOSING or route.intent == Intent.GENERATE_MUSIC:

@@ -13,13 +13,13 @@ Streaming (SSE), event types, models, and the full MCP tool set in one place. To
 
 The backend determines execution mode from intent classification: COMPOSING -> variation (human review), EDITING -> apply (immediate). See [architecture.md](architecture.md).
 
-The `prompt` field accepts both natural language and the **Stori structured prompt** format. When a prompt begins with `STORI PROMPT`, it is parsed as a structured prompt and routed deterministically by the `Mode` field, bypassing NL classification. See [stori_prompt_spec.md](../protocol/stori_prompt_spec.md).
+The `prompt` field accepts both natural language and the **Maestro structured prompt** format. When a prompt begins with `MAESTRO PROMPT`, it is parsed as a structured prompt and routed deterministically by the `Mode` field, bypassing NL classification. See [maestro_prompt_spec.md](../protocol/maestro_prompt_spec.md).
 
 ### Request body fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `prompt` | string | yes | Natural language or STORI PROMPT text |
+| `prompt` | string | yes | Natural language or MAESTRO PROMPT text |
 | `project` | object | no | Full DAW project snapshot (tracks, regions, buses, tempo, key). See [fe_project_state_sync.md](../guides/fe_project_state_sync.md). |
 | `conversationId` | string (UUID) | no | Conversation ID for multi-turn context. Send the same ID for every request in a session. |
 | `model` | string | no | LLM model override. Supported: `anthropic/claude-sonnet-4.6` (default), `anthropic/claude-opus-4.6`. |
@@ -130,7 +130,7 @@ state → reasoning* → content → complete
 
 ### Parallel execution (Agent Teams)
 
-Multi-instrument STORI PROMPT compositions (2+ roles) run each instrument as an independent LLM session — one dedicated HTTP call to the LLM API per instrument, all in-flight simultaneously. This is genuine Agent Teams parallelism, not sequential async task sharing.
+Multi-instrument MAESTRO PROMPT compositions (2+ roles) run each instrument as an independent LLM session — one dedicated HTTP call to the LLM API per instrument, all in-flight simultaneously. This is genuine Agent Teams parallelism, not sequential async task sharing.
 
 **Event interleaving during Phase 2:**
 
@@ -701,9 +701,9 @@ Insert effects that shape the tone of each instrument.
 |------|-------------|-----------------|
 | `stori_add_insert_effect` | Add insert effect. | `trackId`, `type` (reverb, delay, compressor, eq, distortion, overdrive, filter, chorus, tremolo, phaser, flanger, modulation) |
 
-**Auto-inference from STORI PROMPTs:** The planner infers effects from `Style` and `Role` fields before any LLM call — drums always get a compressor, pads/lead get a reverb send, and style-specific inserts (distortion for rock, filter for lo-fi, etc.) are added automatically. Suppress with `Constraints: no_effects: true`.
+**Auto-inference from MAESTRO PROMPTs:** The planner infers effects from `Style` and `Role` fields before any LLM call — drums always get a compressor, pads/lead get a reverb send, and style-specific inserts (distortion for rock, filter for lo-fi, etc.) are added automatically. Suppress with `Constraints: no_effects: true`.
 
-**Translation from STORI PROMPT `Effects` block:** When a structured prompt includes an `Effects:` YAML block, every entry is translated into a `stori_add_insert_effect` call. Reverb is routed via a shared `Reverb` bus (`stori_ensure_bus` → `stori_add_send`), never as a direct insert, so `stori_ensure_bus` is always guaranteed to precede any `stori_add_send` for the same bus name.
+**Translation from MAESTRO PROMPT `Effects` block:** When a structured prompt includes an `Effects:` YAML block, every entry is translated into a `stori_add_insert_effect` call. Reverb is routed via a shared `Reverb` bus (`stori_ensure_bus` → `stori_add_send`), never as a direct insert, so `stori_ensure_bus` is always guaranteed to precede any `stori_add_send` for the same bus name.
 
 ---
 
@@ -717,7 +717,7 @@ MIDI CC, pitch bend, and aftertouch — the data a performer creates in real tim
 | `stori_add_pitch_bend` | Add pitch bend events to a region. | `regionId` (**required**), `events` — each **must** have `beat` and `value` (−8192 to +8191). |
 | `stori_add_aftertouch` | Add aftertouch events (channel or polyphonic). | `regionId`, `events` (each `{beat, value}` or `{beat, value, pitch}`) |
 
-**Translation from STORI PROMPT `MidiExpressiveness` block:** `cc_curves` entries → `stori_add_midi_cc`; `pitch_bend` style → `stori_add_pitch_bend`; `sustain_pedal` → `stori_add_midi_cc` with CC 64 (127=down, 0=up). These calls happen after notes are added to the region.
+**Translation from MAESTRO PROMPT `MidiExpressiveness` block:** `cc_curves` entries → `stori_add_midi_cc`; `pitch_bend` style → `stori_add_pitch_bend`; `sustain_pedal` → `stori_add_midi_cc` with CC 64 (127=down, 0=up). These calls happen after notes are added to the region.
 
 ---
 
@@ -735,7 +735,7 @@ Volume, pan, mute/solo, bus routing, sends, and automation.
 | `stori_add_send` | Send track to bus. | `trackId`, `busId`, `levelDb` |
 | `stori_add_automation` | Add track-level automation curves. | `trackId`, `parameter`, `points` — each point **must** have `beat` and `value`. `curve` defaults to `"linear"`. |
 
-**Translation from STORI PROMPT `Automation` block:** Each lane → `stori_add_automation` using the trackId returned by `stori_add_midi_track`.
+**Translation from MAESTRO PROMPT `Automation` block:** Each lane → `stori_add_automation` using the trackId returned by `stori_add_midi_track`.
 
 ---
 
@@ -759,16 +759,16 @@ Rotating strings for the hero prompt input. The client cycles through them every
 **Endpoint:** `GET /api/v1/maestro/prompts`
 **Auth:** none
 
-Returns 4 randomly sampled STORI PROMPT inspiration cards from a curated pool of 50. Each call returns a different set. Styles span every continent and tradition: lo-fi boom bap, melodic techno, cinematic orchestral, Afrobeats, ambient drone, jazz, dark trap, bossa nova, funk, neo-soul, drum & bass, minimal house, synthwave, post-rock, reggaeton, classical string quartet, psytrance, indie folk, New Orleans brass, Nordic ambient, flamenco, UK garage, West African polyrhythm, Ethio-jazz, Gnawa trance, North Indian raga, Balinese gamelan, Japanese zen, Korean sanjo, Qawwali devotional, Arabic maqam, Anatolian psych rock, Colombian cumbia, Argentine tango nuevo, Andean huayno, Jamaican dancehall, Trinidad soca, klezmer, Baroque suite, Balkan brass, Appalachian bluegrass, gospel, Polynesian/Taiko fusion, Sufi ney meditation, Gregorian chant, progressive rock, Afro-Cuban rumba, minimalist phasing, full hip-hop song, and through-composed cinematic score.
+Returns 4 randomly sampled MAESTRO PROMPT inspiration cards from a curated pool of 50. Each call returns a different set. Styles span every continent and tradition: lo-fi boom bap, melodic techno, cinematic orchestral, Afrobeats, ambient drone, jazz, dark trap, bossa nova, funk, neo-soul, drum & bass, minimal house, synthwave, post-rock, reggaeton, classical string quartet, psytrance, indie folk, New Orleans brass, Nordic ambient, flamenco, UK garage, West African polyrhythm, Ethio-jazz, Gnawa trance, North Indian raga, Balinese gamelan, Japanese zen, Korean sanjo, Qawwali devotional, Arabic maqam, Anatolian psych rock, Colombian cumbia, Argentine tango nuevo, Andean huayno, Jamaican dancehall, Trinidad soca, klezmer, Baroque suite, Balkan brass, Appalachian bluegrass, gospel, Polynesian/Taiko fusion, Sufi ney meditation, Gregorian chant, progressive rock, Afro-Cuban rumba, minimalist phasing, full hip-hop song, and through-composed cinematic score.
 
-Every `fullPrompt` is a complete STORI PROMPT YAML using the full spec breadth — injected verbatim into the compose input on tap.
+Every `fullPrompt` is a complete MAESTRO PROMPT YAML using the full spec breadth — injected verbatim into the compose input on tap.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | string | Unique slug |
 | `title` | string | Human label, e.g. `"Lo-fi boom bap · Cm · 75 BPM"` |
 | `preview` | string | First 3–4 YAML lines visible in the card |
-| `fullPrompt` | string | Complete STORI PROMPT YAML |
+| `fullPrompt` | string | Complete MAESTRO PROMPT YAML |
 
 ```json
 {
@@ -777,7 +777,7 @@ Every `fullPrompt` is a complete STORI PROMPT YAML using the full spec breadth �
       "id": "lofi_boom_bap",
       "title": "Lo-fi boom bap · Cm · 75 BPM",
       "preview": "Mode: compose · Section: verse\nStyle: lofi hip hop · Key: Cm · 75 BPM\nRole: drums, bass, piano, melody\nVibe: dusty x3, warm x2, melancholic",
-      "fullPrompt": "STORI PROMPT\nMode: compose\n..."
+      "fullPrompt": "MAESTRO PROMPT\nMode: compose\n..."
     }
   ]
 }
@@ -788,7 +788,7 @@ Every `fullPrompt` is a complete STORI PROMPT YAML using the full spec breadth �
 **Endpoint:** `GET /api/v1/maestro/prompts/{prompt_id}`
 **Auth:** none
 
-Fetches a single STORI PROMPT inspiration card by its stable slug ID — the same shape as the carousel. Use this to re-fetch a card the user previously tapped, deep-link to a specific style, or seed the compose input programmatically.
+Fetches a single MAESTRO PROMPT inspiration card by its stable slug ID — the same shape as the carousel. Use this to re-fetch a card the user previously tapped, deep-link to a specific style, or seed the compose input programmatically.
 
 `prompt_id` must match an ID from the pool. Returns 404 if unknown.
 
@@ -797,7 +797,7 @@ Fetches a single STORI PROMPT inspiration card by its stable slug ID — the sam
 | `id` | string | Unique slug (same as requested) |
 | `title` | string | Human label, e.g. `"Melodic techno drop · Am · 128 BPM"` |
 | `preview` | string | First 3–4 YAML lines visible in the card |
-| `fullPrompt` | string | Complete STORI PROMPT YAML, ready for the compose input |
+| `fullPrompt` | string | Complete MAESTRO PROMPT YAML, ready for the compose input |
 
 **Example IDs** (non-exhaustive):
 
@@ -823,7 +823,7 @@ GET /api/v1/maestro/prompts/melodic_techno_drop
   "id": "melodic_techno_drop",
   "title": "Melodic techno drop · Am · 128 BPM",
   "preview": "Mode: compose · Section: drop\nStyle: melodic techno · Key: Am · 128 BPM\nRole: kick, bass, lead, pads, perc\nVibe: hypnotic x3, driving x2, euphoric",
-  "fullPrompt": "STORI PROMPT\nMode: compose\n..."
+  "fullPrompt": "MAESTRO PROMPT\nMode: compose\n..."
 }
 ```
 

@@ -21,7 +21,7 @@ How the backend works: one engine, two entry points; request flow; intent; execu
    - REASONING -> no tools
 4. **REASONING:** Chat only; no tools; stream `reasoning` + `content` events.
 5. **EDITING:** LLM gets a tool allowlist; emits tool calls; server validates and resolves entity IDs. Emits a structured `plan` event (checklist of steps) before the first tool call, then `planStepUpdate` events bracketing each step, and `toolStart` + `toolCall` events for each tool.
-6. **COMPOSING:** Two sub-paths based on whether the prompt is a structured STORI PROMPT with roles:
+6. **COMPOSING:** Two sub-paths based on whether the prompt is a structured MAESTRO PROMPT with roles:
    - **Structured (Mode: compose + roles):** Agent Teams runs per-instrument agents with streaming reasoning, then captures all generated notes and computes a Variation for commit/discard review. The SSE stream emits both `reasoning`/`toolCall` events (real-time per-agent chain-of-thought) AND `meta`/`phrase`/`done` events (Variation for the review UI). Single-instrument compose also uses this path — the instrument count determines parallelism, not the execution path.
    - **Freeform (no parsed prompt):** Planner produces a plan (JSON), typed as `PlanJsonDict` at the wire boundary (`app/core/plan_schemas/plan_json_types.py`), then validated by `validate_plan_json` → `build_plan_from_dict` → Pydantic `ExecutionPlanSchema`; executor simulates it without mutation; server streams Variation events (`meta`, `phrase*`, `done`). The planner is **project-context-aware**: it checks existing tracks by name and instrument type before proposing new ones, reuses existing track UUIDs in region and generator calls, and maps abstract roles (e.g. "melody") to matching existing instruments (e.g. an "Organ" track).
 7. **Stream:** Events include `state`, `reasoning`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `toolError`, `meta`, `phrase`, `done`, `budgetUpdate`, `complete`, `error`. Variable refs (`$0.trackId`) resolved server-side. `complete` is **always the final event**, even on errors (`success: false`).
@@ -84,14 +84,14 @@ Classify first, then execute. **REASONING** = questions, no tools. **EDITING** =
 
 ## Structured prompts
 
-Power users can bypass NL classification entirely with a structured prompt format. See [stori_prompt_spec.md](../protocol/stori_prompt_spec.md).
+Power users can bypass NL classification entirely with a structured prompt format. See [maestro_prompt_spec.md](../protocol/maestro_prompt_spec.md).
 
 ```
 User prompt arrives
         │
         ▼
 ┌──────────────────┐
-│  parse_prompt()  │ ← detect "STORI PROMPT" header
+│  parse_prompt()  │ ← detect "MAESTRO PROMPT" header
 └────────┬─────────┘
          │
     returns ParsedPrompt?
@@ -138,11 +138,11 @@ When a structured prompt specifies `Style` and `Role`, the planner infers effect
 
 Implementation: `app/core/planner._infer_mix_steps`, wired into `plan_from_parsed_prompt` and `_schema_to_tool_calls`.
 
-### 2. STORI PROMPT block translation
+### 2. MAESTRO PROMPT block translation
 
-When a STORI PROMPT includes `Effects:`, `MidiExpressiveness:`, or `Automation:` blocks, every entry is translated into the corresponding tool call. These are **mandatory** — the system prompt explicitly instructs the LLM to treat them as an execution checklist, not decorative prose.
+When a MAESTRO PROMPT includes `Effects:`, `MidiExpressiveness:`, or `Automation:` blocks, every entry is translated into the corresponding tool call. These are **mandatory** — the system prompt explicitly instructs the LLM to treat them as an execution checklist, not decorative prose.
 
-| STORI PROMPT block | Translated to |
+| MAESTRO PROMPT block | Translated to |
 |---|---|
 | `Effects.drums.compression` | `stori_add_insert_effect(type="compressor")` |
 | `Effects.drums.room/reverb` | `stori_add_insert_effect(type="reverb")` or reverb bus send |
@@ -163,7 +163,7 @@ Implementation: `app/core/prompts.structured_prompt_context` (translation mandat
 
 ## Agent Teams — three-level parallel composition
 
-STORI PROMPT compositions with `Mode: compose` and roles (1+) use **Agent Teams**: a three-level agent hierarchy that enables both instrument-level and section-level parallelism. Single-instrument compose also uses this path — the instrument count determines parallelism (1 agent vs N parallel agents), not the execution path. All Agent Teams compositions produce a Variation for commit/discard review via `_handle_composing_with_agent_teams`.
+MAESTRO PROMPT compositions with `Mode: compose` and roles (1+) use **Agent Teams**: a three-level agent hierarchy that enables both instrument-level and section-level parallelism. Single-instrument compose also uses this path — the instrument count determines parallelism (1 agent vs N parallel agents), not the execution path. All Agent Teams compositions produce a Variation for commit/discard review via `_handle_composing_with_agent_teams`.
 
 ### Architecture levels
 
@@ -379,14 +379,14 @@ For single-section compositions, the parent uses the sequential execution path (
 11. If drums: call `section_signals.signal_complete(section_id, contract_hash=..., success=True, drum_notes=...)`
 12. Emit `status` SSE event: `"{instrument} / {section}: N notes generated"`
 13. **Execution attestation:** compute `execution_hash = SHA256(contract_hash + trace_id)`, store on `result.execution_hash`. This binds the result to the specific session — the same contract re-run in a different composition produces a different `execution_hash`, preventing replay attacks.
-14. Optional: if the STORI PROMPT specifies `MidiExpressiveness` or `Automation`, run a **streamed** refinement LLM call (see below)
+14. Optional: if the MAESTRO PROMPT specifies `MidiExpressiveness` or `Automation`, run a **streamed** refinement LLM call (see below)
 15. Return `SectionResult` to parent
 
 Drum children always signal — even on failure (`signal_complete(section_id, contract_hash=..., success=False)`) — to prevent bass children from hanging indefinitely.
 
 ### Expression refinement (Level 3 streamed LLM call)
 
-When the STORI PROMPT contains `MidiExpressiveness:` or `Automation:` blocks, section children make one small streamed LLM call after generation to add CC curves and pitch bends. This call:
+When the MAESTRO PROMPT contains `MidiExpressiveness:` or `Automation:` blocks, section children make one small streamed LLM call after generation to add CC curves and pitch bends. This call:
 
 - **Extracts** the relevant `MidiExpressiveness:` and `Automation:` YAML blocks from the raw prompt and includes them verbatim in the system message — the LLM sees the exact CC numbers, value ranges, and sweep descriptions the composer specified.
 - **Streams reasoning** via `chat_completion_stream` with `reasoning_fraction` matching the parent's setting. Reasoning events are emitted as SSE `type: "reasoning"` tagged with both `agentId` and `sectionName`, so the GUI can display per-section musical thinking in real time alongside the parent's instrument-level CoT.
@@ -496,7 +496,7 @@ Implementation: `app/core/entity_registry.py`. Tests: `tests/test_entity_manifes
 
 ### Routing, SSE, isolation, safety
 
-**Routing:** Structured STORI PROMPTs with `Mode: compose` and roles (1+) route through `_handle_composing_with_agent_teams` in the COMPOSING section. This wrapper runs Agent Teams for streaming per-agent reasoning, then computes a Variation from the StateStore's accumulated notes for commit/discard review. The `executionMode` in the `state` SSE event is `"variation"` so the frontend shows the Variation Review UI. Non-structured multi-instrument requests (`execution_mode="apply"` + 2+ roles without explicit compose) still intercept before the standard EDITING path. Single-instrument non-structured requests and all freeform requests fall through to `_handle_editing` or `_handle_composing` unchanged.
+**Routing:** Structured MAESTRO PROMPTs with `Mode: compose` and roles (1+) route through `_handle_composing_with_agent_teams` in the COMPOSING section. This wrapper runs Agent Teams for streaming per-agent reasoning, then computes a Variation from the StateStore's accumulated notes for commit/discard review. The `executionMode` in the `state` SSE event is `"variation"` so the frontend shows the Variation Review UI. Non-structured multi-instrument requests (`execution_mode="apply"` + 2+ roles without explicit compose) still intercept before the standard EDITING path. Single-instrument non-structured requests and all freeform requests fall through to `_handle_editing` or `_handle_composing` unchanged.
 
 **SSE contract:** Plan steps for instruments carry `parallelGroup: "instruments"`. Phase 1 and Phase 3 steps have no `parallelGroup`. Multiple `planStepUpdate(active)` events fire simultaneously during Phase 2 as parents start. Every `planStepUpdate(active)` for an instrument content step is followed by exactly one `planStepUpdate(completed)` (or `planStepUpdate(failed)`) when the instrument agent finishes — no step remains in "active" after the stream ends. Section children tag their SSE events with both `agentId` and `sectionName` for frontend grouping — this includes `status`, `reasoning`, `toolCall`, `toolStart`, `toolError`, `generatorStart`, `generatorComplete`, and `content` events. `generatorStart` and `generatorComplete` additionally carry `agentId` baked in at source (in `_execute_agent_generator`) so the field is present regardless of the execution path. The `reasoning` events from Level 3 expression refinement carry `sectionName` to distinguish them from the parent's instrument-level reasoning. Tool calls from different instruments and sections interleave in the SSE stream — the frontend groups by `stepId`, so interleaving is handled naturally.
 
@@ -640,10 +640,10 @@ Every Storpheus generation call is conditioned by a 5-axis **EmotionVector** der
 **Derivation pipeline:**
 
 ```
-STORI PROMPT
+MAESTRO PROMPT
     │
     ▼
-emotion_vector_from_stori_prompt()          ← app/core/emotion_vector.py
+emotion_vector_from_maestro_prompt()          ← app/core/emotion_vector.py
     │  parses: Vibe keywords, Energy level,
     │          Section preset, Style/genre
     │  blends contributions by weighted average
@@ -666,7 +666,7 @@ Storpheus JobQueue (asyncio.Queue, 2 workers)
 HF Space gradio_client.predict()
 ```
 
-For **STORI PROMPTs**: `Vibe`, `Section`, `Style`, and `Energy` fields contribute. Everything in `Expression`, `Dynamics`, `Orchestration`, etc. continues to reach the LLM Maestro context unchanged — those dimensions inform the *plan*, while the EmotionVector conditions the *generator*.
+For **MAESTRO PROMPTs**: `Vibe`, `Section`, `Style`, and `Energy` fields contribute. Everything in `Expression`, `Dynamics`, `Orchestration`, etc. continues to reach the LLM Maestro context unchanged — those dimensions inform the *plan*, while the EmotionVector conditions the *generator*.
 
 For **natural language** prompts: the EmotionVector is not derived (no structured fields to parse). The LLM's plan and tool parameters carry the full expressive brief.
 

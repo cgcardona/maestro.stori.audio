@@ -9,7 +9,7 @@ from stori_tourdeforce.scenarios import (
     DEEP_BRANCHING_SCENARIO,
     MINIMAL_SCENARIO,
     STANDARD_SCENARIO,
-    build_edit_stori_prompt,
+    build_edit_maestro_prompt,
     get_scenario,
 )
 from stori_tourdeforce.runner import Runner
@@ -232,27 +232,27 @@ class TestGetScenario:
         assert s1.name == s2.name
 
 
-class TestBuildEditStoriPrompt:
-    """Tests for the STORI PROMPT builder used in edit branches."""
+class TestBuildEditMaestroPrompt:
+    """Tests for the MAESTRO PROMPT builder used in edit branches."""
 
     def test_sentinel_header(self) -> None:
 
-        prompt = build_edit_stori_prompt("tighten bass", ["bass", "drums"])
-        assert prompt.startswith("STORI PROMPT\n")
+        prompt = build_edit_maestro_prompt("tighten bass", ["bass", "drums"])
+        assert prompt.startswith("MAESTRO PROMPT\n")
 
     def test_mode_compose(self) -> None:
 
-        prompt = build_edit_stori_prompt("tighten bass", ["bass", "drums"])
+        prompt = build_edit_maestro_prompt("tighten bass", ["bass", "drums"])
         assert "Mode: compose" in prompt
 
     def test_roles_included(self) -> None:
 
-        prompt = build_edit_stori_prompt("tighten bass", ["bass", "drums", "keys"])
+        prompt = build_edit_maestro_prompt("tighten bass", ["bass", "drums", "keys"])
         assert "Role: [bass, drums, keys]" in prompt
 
     def test_style_key_tempo(self) -> None:
 
-        prompt = build_edit_stori_prompt(
+        prompt = build_edit_maestro_prompt(
             "edit", ["bass"], style="jazz", key="Dm", tempo=120, bars=16,
         )
         assert "Style: jazz" in prompt
@@ -262,18 +262,18 @@ class TestBuildEditStoriPrompt:
 
     def test_request_included(self) -> None:
 
-        prompt = build_edit_stori_prompt("tighten the groove", ["bass"])
+        prompt = build_edit_maestro_prompt("tighten the groove", ["bass"])
         assert "tighten the groove" in prompt
         assert "Build on the existing composition" in prompt
 
 
 class TestExtractComposeContext:
-    """Tests for _extract_compose_context which parses STORI PROMPT YAML."""
+    """Tests for _extract_compose_context which parses MAESTRO PROMPT YAML."""
 
     def test_parses_style_key_tempo(self) -> None:
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Style: neo-soul\n"
             "Key: Fm\n"

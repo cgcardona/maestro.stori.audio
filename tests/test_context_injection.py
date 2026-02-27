@@ -14,7 +14,7 @@ Coverage:
   3. Combined output — no duplicate sentinels, correct ordering
   4. System prompt assembly (system_prompt_base + composing/editing + context)
   5. No conflicts when both blocks are present vs. absent
-  6. Fields absent from ParsedPrompt are not spuriously injected
+  6. Fields absent from MaestroPrompt are not spuriously injected
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from typing import Literal
 import pytest
 
 from app.contracts.project_types import ProjectContext
-from app.core.prompt_parser import parse_prompt, ParsedPrompt, PositionSpec
+from app.prompts import parse_prompt, MaestroPrompt, PositionSpec
 from app.core.prompts import (
     structured_prompt_context,
     structured_prompt_routing_context,
@@ -39,14 +39,14 @@ from app.core.prompts import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _parse(prompt: str) -> ParsedPrompt:
+def _parse(prompt: str) -> MaestroPrompt:
 
     result = parse_prompt(prompt)
     assert result is not None
     return result
 
 
-def _full_composing_system(parsed: ParsedPrompt, project_state: ProjectContext | None = None) -> str:
+def _full_composing_system(parsed: MaestroPrompt, project_state: ProjectContext | None = None) -> str:
 
     """Assemble the exact system prompt that build_execution_plan injects."""
     project_state = project_state or {}
@@ -58,7 +58,7 @@ def _full_composing_system(parsed: ParsedPrompt, project_state: ProjectContext |
     return sys
 
 
-def _full_editing_system(parsed: ParsedPrompt, project_state: ProjectContext | None = None) -> str:
+def _full_editing_system(parsed: MaestroPrompt, project_state: ProjectContext | None = None) -> str:
 
     """Assemble the system prompt that run_pipeline injects for EDITING."""
     project_state = project_state or {}
@@ -79,72 +79,72 @@ class TestStructuredPromptContextStandalone:
 
     def test_sentinel_header_present(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "═══ STORI STRUCTURED INPUT ═══" in ctx
 
     def test_closing_sentinel_present(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "═════════════════════════════════════" in ctx
 
     def test_do_not_reinfer_instruction(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Do not re-infer" in ctx
 
     def test_mode_always_emitted(self) -> None:
 
         for mode in ("compose", "edit", "ask"):
-            parsed = _parse(f"STORI PROMPT\nMode: {mode}\nRequest: go")
+            parsed = _parse(f"MAESTRO PROMPT\nMode: {mode}\nRequest: go")
             ctx = structured_prompt_context(parsed)
             assert f"Mode: {mode}" in ctx
 
     def test_section_emitted_when_set(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nSection: chorus\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nSection: chorus\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "chorus" in ctx
 
     def test_section_absent_when_not_set(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Section:" not in ctx
 
     def test_style_emitted(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nStyle: techno\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nStyle: techno\nRequest: go")
         assert "techno" in structured_prompt_context(parsed)
 
     def test_key_emitted(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nKey: F#m\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nKey: F#m\nRequest: go")
         assert "F#m" in structured_prompt_context(parsed)
 
     def test_tempo_emitted(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nTempo: 140\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nTempo: 140\nRequest: go")
         assert "140" in structured_prompt_context(parsed)
 
     def test_roles_emitted(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRole: kick, bass, arp\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRole: kick, bass, arp\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "kick" in ctx and "bass" in ctx and "arp" in ctx
 
     def test_target_emitted(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: edit\nTarget: track:Bass\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: edit\nTarget: track:Bass\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "track" in ctx and "Bass" in ctx
 
     def test_maestro_dims_in_context(self) -> None:
 
         parsed = _parse(
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Harmony:\n  progression: ii-V-I\n"
             "Request: go\n"
         )
@@ -154,19 +154,19 @@ class TestStructuredPromptContextStandalone:
 
     def test_no_maestro_dims_when_none(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         assert "MAESTRO DIMENSIONS" not in structured_prompt_context(parsed)
 
     def test_weighted_vibes_show_weight(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nVibe:\n- darker:3\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nVibe:\n- darker:3\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "darker" in ctx and "3" in ctx
 
     def test_constraints_emitted(self) -> None:
 
         parsed = _parse(
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Constraints:\n  bars: 16\n  density: high\n"
             "Request: go\n"
         )
@@ -270,7 +270,7 @@ class TestCombinedContextNoDuplicates:
     def test_arrangement_position_appears_exactly_once(self) -> None:
 
         ctx = self._combined(
-            "STORI PROMPT\nMode: compose\nSection: verse\nPosition: after intro\nRequest: go",
+            "MAESTRO PROMPT\nMode: compose\nSection: verse\nPosition: after intro\nRequest: go",
             {"tracks": [{"name": "intro", "regions": [
                 {"name": "intro", "startBeat": 0, "durationBeats": 16}
             ]}]},
@@ -280,14 +280,14 @@ class TestCombinedContextNoDuplicates:
     def test_stori_structured_sentinel_exactly_once(self) -> None:
 
         ctx = self._combined(
-            "STORI PROMPT\nMode: compose\nPosition: at 32\nRequest: go"
+            "MAESTRO PROMPT\nMode: compose\nPosition: at 32\nRequest: go"
         )
         assert ctx.count("═══ STORI STRUCTURED INPUT ═══") == 1
 
     def test_structured_context_before_sequential_context(self) -> None:
 
         ctx = self._combined(
-            "STORI PROMPT\nMode: compose\nSection: verse\nPosition: after intro\nRequest: go",
+            "MAESTRO PROMPT\nMode: compose\nSection: verse\nPosition: after intro\nRequest: go",
             {"tracks": [{"name": "intro", "regions": [
                 {"name": "intro", "startBeat": 0, "durationBeats": 16}
             ]}]},
@@ -299,19 +299,19 @@ class TestCombinedContextNoDuplicates:
     def test_mode_field_not_duplicated(self) -> None:
 
         ctx = self._combined(
-            "STORI PROMPT\nMode: compose\nPosition: last\nRequest: go"
+            "MAESTRO PROMPT\nMode: compose\nPosition: last\nRequest: go"
         )
         assert ctx.count("Mode: compose") == 1
 
     def test_no_position_no_arrangement_block(self) -> None:
 
-        ctx = self._combined("STORI PROMPT\nMode: compose\nRequest: go")
+        ctx = self._combined("MAESTRO PROMPT\nMode: compose\nRequest: go")
         assert "ARRANGEMENT POSITION" not in ctx
 
     def test_all_maestro_dims_and_position_coexist(self) -> None:
 
         ctx = self._combined(
-            "STORI PROMPT\nMode: compose\nSection: verse\nPosition: after intro\n"
+            "MAESTRO PROMPT\nMode: compose\nSection: verse\nPosition: after intro\n"
             "Harmony:\n  progression: ii-V-I\n"
             "Request: go",
             {"tracks": [{"name": "intro", "regions": [
@@ -333,14 +333,14 @@ class TestFullSystemPromptAssembly:
 
     def test_composing_system_has_base(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         sys = _full_composing_system(parsed)
         # system_prompt_base() returns the Stori identity section
         assert "Stori" in sys or "maestro" in sys.lower() or "composing" in sys.lower()
 
     def test_composing_system_has_structured_block(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nStyle: jazz\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nStyle: jazz\nRequest: go")
         sys = _full_composing_system(parsed)
         assert "STORI STRUCTURED INPUT" in sys
         assert "jazz" in sys
@@ -348,7 +348,7 @@ class TestFullSystemPromptAssembly:
     def test_composing_system_with_position_has_arrangement_block(self) -> None:
 
         parsed = _parse(
-            "STORI PROMPT\nMode: compose\nSection: verse\nPosition: after intro\nRequest: go"
+            "MAESTRO PROMPT\nMode: compose\nSection: verse\nPosition: after intro\nRequest: go"
         )
         project: ProjectContext = {"tracks": [
             {"name": "intro", "regions": [
@@ -361,77 +361,77 @@ class TestFullSystemPromptAssembly:
 
     def test_editing_system_has_structured_block(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: edit\nTarget: track:Drums\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: edit\nTarget: track:Drums\nRequest: go")
         sys = _full_editing_system(parsed)
         assert "STORI STRUCTURED INPUT" in sys
         assert "edit" in sys
 
     def test_system_prompt_is_string(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         sys = _full_composing_system(parsed)
         assert isinstance(sys, str)
         assert len(sys) > 100
 
     def test_do_not_reinfer_present(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nStyle: jazz\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nStyle: jazz\nRequest: go")
         sys = _full_composing_system(parsed)
         assert "Do not re-infer" in sys
 
 
 # ===========================================================================
-# 5. Fields absent from ParsedPrompt not spuriously injected
+# 5. Fields absent from MaestroPrompt not spuriously injected
 # ===========================================================================
 
 class TestAbsentFieldsNotInjected:
-    """Fields that are None/empty in ParsedPrompt must not appear in context."""
+    """Fields that are None/empty in MaestroPrompt must not appear in context."""
 
     def test_style_absent_when_not_set(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Style:" not in ctx
 
     def test_key_absent_when_not_set(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Key:" not in ctx
 
     def test_tempo_absent_when_not_set(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Tempo:" not in ctx
 
     def test_roles_absent_when_not_set(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Roles:" not in ctx
 
     def test_target_absent_when_not_set(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Target:" not in ctx
 
     def test_section_absent_when_not_set(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Section:" not in ctx
 
     def test_constraints_absent_when_not_set(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Constraints:" not in ctx
 
     def test_vibes_absent_when_not_set(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Vibes:" not in ctx
 
@@ -447,7 +447,7 @@ class TestStructuredPromptRoutingContext:
 
         """The planner should never see Harmony/Melody/etc. extensions."""
         parsed = _parse(
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Harmony: ii-V-I\nMelody: scalar runs\n"
             "Request: go\n"
         )
@@ -458,45 +458,45 @@ class TestStructuredPromptRoutingContext:
 
     def test_routing_includes_mode(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_routing_context(parsed)
         assert "Mode: compose" in ctx
 
     def test_routing_includes_style(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nStyle: techno\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nStyle: techno\nRequest: go")
         ctx = structured_prompt_routing_context(parsed)
         assert "techno" in ctx
 
     def test_routing_includes_key(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nKey: Dm\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nKey: Dm\nRequest: go")
         ctx = structured_prompt_routing_context(parsed)
         assert "Dm" in ctx
 
     def test_routing_includes_tempo(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nTempo: 128\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nTempo: 128\nRequest: go")
         ctx = structured_prompt_routing_context(parsed)
         assert "128" in ctx
 
     def test_routing_includes_roles(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nRole: drums, bass\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nRole: drums, bass\nRequest: go")
         ctx = structured_prompt_routing_context(parsed)
         assert "drums" in ctx
         assert "bass" in ctx
 
     def test_routing_includes_vibes(self) -> None:
 
-        parsed = _parse("STORI PROMPT\nMode: compose\nVibe:\n- dark:2\nRequest: go")
+        parsed = _parse("MAESTRO PROMPT\nMode: compose\nVibe:\n- dark:2\nRequest: go")
         ctx = structured_prompt_routing_context(parsed)
         assert "dark" in ctx
 
     def test_routing_includes_constraints(self) -> None:
 
         parsed = _parse(
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Constraints:\n  bars: 16\n  density: high\n"
             "Request: go\n"
         )
@@ -507,7 +507,7 @@ class TestStructuredPromptRoutingContext:
 
         """Routing context must be strictly shorter when extensions are present."""
         parsed = _parse(
-            "STORI PROMPT\nMode: compose\nStyle: jazz\n"
+            "MAESTRO PROMPT\nMode: compose\nStyle: jazz\n"
             "Harmony: ii-V-I\nMelody: bebop phrases\n"
             "Rhythm: swung 8ths\nDynamics: mp to ff crescendo\n"
             "Request: go\n"
@@ -520,7 +520,7 @@ class TestStructuredPromptRoutingContext:
 
         """structured_prompt_context unchanged — still has MAESTRO DIMENSIONS."""
         parsed = _parse(
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Harmony: ii-V-I\n"
             "Request: go\n"
         )

@@ -1,4 +1,4 @@
-"""STORI PROMPT pool — Cinematic & Experimental.
+"""MAESTRO PROMPT pool — Cinematic & Experimental.
 
 Covers: cinematic orchestral buildup, ambient drone, and future
 additions (Sufi ney meditation, Gregorian chant ambient, progressive
@@ -17,7 +17,7 @@ PROMPTS_CINEMATIC: list[PromptItem] = [
         title="Cinematic orchestral buildup \u00b7 Dm \u00b7 88 BPM",
         preview="Mode: compose \u00b7 Section: buildup\nStyle: cinematic orchestral \u00b7 Key: Dm \u00b7 88 BPM\nRole: strings, brass, timpani, choir pad\nVibe: cinematic x3, tense x2, triumphant",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: buildup
 Style: cinematic orchestral
@@ -326,7 +326,7 @@ Automation:
         title="Ambient drone \u00b7 D \u00b7 58 BPM",
         preview="Mode: compose \u00b7 Section: intro\nStyle: ambient / drone \u00b7 Key: D \u00b7 58 BPM\nRole: pads, arp, sub drone, texture, piano\nVibe: dreamy x3, atmospheric x2, minimal, peaceful",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: intro
 Style: ambient drone
@@ -589,7 +589,7 @@ Automation:
         title="Polynesian/Taiko fusion \u00b7 Am \u00b7 80 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Polynesian / Taiko fusion \u00b7 Key: Am \u00b7 80 BPM\nRole: taiko, pan flute, log drums, choir\nVibe: ceremonial x3, powerful x2, ancient, oceanic, sacred",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Polynesian Taiko fusion
@@ -835,7 +835,7 @@ Automation:
         title="Sufi ney meditation \u00b7 Dm \u00b7 60 BPM",
         preview="Mode: compose \u00b7 Section: intro\nStyle: Sufi meditation \u00b7 Key: Dm \u00b7 60 BPM\nRole: ney flute, frame drum, drone\nVibe: meditative x4, spiritual x3, whirling, trance, sacred",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: intro
 Style: Sufi meditation
@@ -1082,7 +1082,7 @@ Automation:
         title="Gregorian chant ambient \u00b7 D dorian \u00b7 52 BPM",
         preview="Mode: compose \u00b7 Section: intro\nStyle: Gregorian chant ambient \u00b7 Key: D dorian \u00b7 52 BPM\nRole: choir, drone, bells\nVibe: sacred x4, ancient x3, still, stone, eternal",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: intro
 Style: Gregorian chant ambient
@@ -1328,7 +1328,7 @@ Automation:
         title="Progressive rock 5/4 \u00b7 Em \u00b7 138 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: progressive rock \u00b7 Key: Em \u00b7 138 BPM\nRole: marimba, vibraphone, bass, drums, mellotron\nVibe: complex x3, driving x2, cerebral, virtuosic, angular",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: progressive rock
@@ -1596,7 +1596,7 @@ Automation:
         title="Afro-Cuban rumba \u00b7 C \u00b7 105 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Afro-Cuban rumba \u00b7 Key: C \u00b7 105 BPM\nRole: congas, claves, tres guitar, bass, pan flute\nVibe: groovy x3, communal x2, earthy, sacred, Havana",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Afro-Cuban rumba
@@ -1857,7 +1857,7 @@ Automation:
         title="Minimalist phasing \u00b7 C \u00b7 120 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: minimalist / phasing \u00b7 Key: C \u00b7 120 BPM\nRole: marimba 1, marimba 2, vibraphone\nVibe: hypnotic x4, precise x2, evolving, mathematical, meditative",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: minimalist phasing
@@ -2105,7 +2105,7 @@ Automation:
         title="Cinematic score \u00b7 Cm \u00b7 68 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: cinematic score \u00b7 Key: Cm \u00b7 68 BPM\nRole: strings, piano, brass, choir, timpani\nVibe: epic x3, dramatic x2, cinematic, emotional, vast",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: cinematic score through-composed

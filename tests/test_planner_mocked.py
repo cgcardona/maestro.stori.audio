@@ -34,7 +34,7 @@ from app.core.planner import (
     build_execution_plan_stream,
     build_plan_from_dict,
 )
-from app.core.prompt_parser import parse_prompt, ParsedPrompt, PositionSpec
+from app.prompts import parse_prompt, MaestroPrompt, PositionSpec
 from app.core.intent import IntentResult, Intent, SSEState
 from app.core.expansion import ToolCall
 from app.core.plan_schemas import ExecutionPlanSchema
@@ -66,10 +66,9 @@ def _minimal_parsed(
     roles: list[str] | None = None,
     bars: int = 8,
     position: PositionSpec | None = None,
-) -> ParsedPrompt:
-    """Build a ParsedPrompt directly for deterministic-plan tests."""
-    from app.core.prompt_parser import ParsedPrompt
-    return ParsedPrompt(
+) -> MaestroPrompt:
+    """Build a MaestroPrompt directly for deterministic-plan tests."""
+    return MaestroPrompt(
         mode="compose",
         request="make a beat",
         style=style,
@@ -78,7 +77,7 @@ def _minimal_parsed(
         roles=["kick", "bass"] if roles is None else roles,
         constraints={"bars": bars},
         position=position,
-        raw="STORI PROMPT\n...",
+        raw="MAESTRO PROMPT\n...",
     )
 
 
@@ -585,7 +584,7 @@ class TestBuildExecutionPlanMocked:
         parsed = _minimal_parsed()
         llm = AsyncMock()
         plan = await build_execution_plan(
-            user_prompt="STORI PROMPT\nMode: compose\n...",
+            user_prompt="MAESTRO PROMPT\nMode: compose\n...",
             project_state={},
             route=_make_route(),
             llm=llm,
@@ -604,7 +603,7 @@ class TestBuildExecutionPlanMocked:
         parsed.constraints = {}  # missing bars → deterministic path impossible
         llm = _llm_with_response(_valid_plan_json())
         plan = await build_execution_plan(
-            user_prompt="STORI PROMPT\nMode: compose\n...",
+            user_prompt="MAESTRO PROMPT\nMode: compose\n...",
             project_state={},
             route=_make_route(),
             llm=llm,
@@ -787,7 +786,7 @@ class TestPositionToBeatRegressionFull:
         from app.core.prompts import resolve_position
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Style: house\n"
             "Tempo: 128\n"
@@ -829,7 +828,7 @@ class TestPositionToBeatRegressionFull:
 
         """Without Position:, regions default to startBeat=0."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Style: house\n"
             "Tempo: 128\n"

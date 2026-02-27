@@ -1,4 +1,4 @@
-"""STORI PROMPT pool — Global region (Africa, Middle East, Asia, Oceania).
+"""MAESTRO PROMPT pool — Global region (Africa, Middle East, Asia, Oceania).
 
 Covers: Afrobeats, and future additions (West African polyrhythmic,
 Ethio-jazz, Gnawa, North Indian raga, Balinese gamelan, Japanese zen,
@@ -17,7 +17,7 @@ PROMPTS_GLOBAL: list[PromptItem] = [
         title="Afrobeats pocket \u00b7 Gb \u00b7 102 BPM",
         preview="Mode: compose \u00b7 Section: chorus\nStyle: Afrobeats \u00b7 Key: Gb \u00b7 102 BPM\nRole: drums, bass, keys, perc, melody, guitar\nVibe: joyful x3, groovy x2, warm, bouncy",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: chorus
 Style: Afrobeats
@@ -273,7 +273,7 @@ Automation:
         title="West African polyrhythm \u00b7 C \u00b7 110 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: West African polyrhythmic \u00b7 Key: C \u00b7 110 BPM\nRole: djembe, dundun, balafon, kora, shekere\nVibe: joyful x3, communal x2, hypnotic, earthy, sacred",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: West African polyrhythmic
@@ -520,7 +520,7 @@ Automation:
         title="Ethio-jazz \u00b7 C minor \u00b7 92 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Ethio-jazz \u00b7 Key: Cm \u00b7 92 BPM\nRole: vibraphone, organ, alto sax, bass, drums\nVibe: mysterious x3, groovy x2, melancholic, hypnotic",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Ethio-jazz
@@ -756,7 +756,7 @@ Automation:
         title="Gnawa trance ceremony \u00b7 Gm \u00b7 78 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Gnawa trance \u00b7 Key: Gm \u00b7 78 BPM\nRole: guembri, qraqeb, voice, bass drone\nVibe: hypnotic x4, spiritual x3, ancient, trance",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Gnawa trance
@@ -995,7 +995,7 @@ Automation:
         title="Raga Yaman \u00b7 C Lydian \u00b7 72 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Hindustani classical \u00b7 Key: C Lydian \u00b7 72 BPM\nRole: sitar, tabla, tanpura drone\nVibe: meditative x3, luminous x2, devotional, flowing, sacred",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Hindustani classical
@@ -1250,7 +1250,7 @@ Automation:
         title="Balinese gamelan \u00b7 D pelog \u00b7 88 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Balinese gamelan \u00b7 Key: D \u00b7 88 BPM\nRole: gangsa, jegogan, reyong, kendang, gong\nVibe: shimmering x3, hypnotic x2, sacred, interlocking, bright",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Balinese gamelan
@@ -1482,7 +1482,7 @@ Automation:
         title="Japanese zen \u00b7 D minor \u00b7 50 BPM",
         preview="Mode: compose \u00b7 Section: intro\nStyle: Japanese traditional / zen \u00b7 Key: Dm \u00b7 50 BPM\nRole: shakuhachi, koto, silence\nVibe: meditative x4, still x3, sacred, empty, vast",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: intro
 Style: Japanese traditional zen
@@ -1718,7 +1718,7 @@ Automation:
         title="Korean sanjo fusion \u00b7 Am \u00b7 66-132 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Korean sanjo / pansori \u00b7 Key: Am \u00b7 66 BPM\nRole: gayageum, janggu, haegeum\nVibe: dramatic x3, intense x2, melancholic, virtuosic, soul-rending",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Korean sanjo pansori fusion
@@ -1966,7 +1966,7 @@ Automation:
         title="Qawwali devotional \u00b7 Bbm \u00b7 84 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Qawwali / Sufi devotional \u00b7 Key: Bbm \u00b7 84 BPM\nRole: harmonium, choir, tabla, clapping\nVibe: ecstatic x3, devotional x3, building, communal, sacred",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Qawwali Sufi devotional
@@ -2214,7 +2214,7 @@ Automation:
         title="Arabic maqam Hijaz \u00b7 D Hijaz \u00b7 85 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Arabic maqam \u00b7 Key: D Hijaz \u00b7 85 BPM\nRole: oud, ney, qanun, riq, bass drone\nVibe: mysterious x3, passionate x2, ancient, ornamental, yearning",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Arabic maqam
@@ -2470,7 +2470,7 @@ Automation:
         title="Pocket groove · Fm · 92 BPM · 8 bars",
         preview="Mode: compose · Section: intro → groove\nStyle: neo-soul · Key: Fm · 92 BPM\nRole: drums, bass, keys\nVibe: warm x2, groovy x2, intimate",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: intro
 Style: neo-soul

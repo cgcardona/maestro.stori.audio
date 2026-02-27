@@ -15,7 +15,7 @@ from app.core.intent_config import (
 from app.core.tools import ALL_TOOLS
 
 if TYPE_CHECKING:
-    from app.core.prompt_parser import ParsedPrompt
+    from app.prompts import MaestroPrompt
 
 
 def _project_needs_structure(project_context: ProjectContext) -> bool:
@@ -30,7 +30,7 @@ def _project_needs_structure(project_context: ProjectContext) -> bool:
 
 
 def _is_additive_composition(
-    parsed: "ParsedPrompt" | None,
+    parsed: "MaestroPrompt" | None,
     project_context: ProjectContext,
 ) -> bool:
     """Detect if a composition request creates a new section (EDITING, not COMPOSING).
@@ -40,7 +40,7 @@ def _is_additive_composition(
     EDITING mode is preferred because the content is additive — there is
     nothing to diff against, and COMPOSING with phraseCount: 0 is always a bug.
 
-    STORI PROMPTs with 2+ roles always return True: they spawn Agent Teams
+    MAESTRO PROMPTs with 2+ roles always return True: they spawn Agent Teams
     regardless of whether the named tracks already exist, because the prompt
     always places new timeline content (new regions at a later beat position).
     Routing confidence and existing-track state are both irrelevant here.
@@ -48,10 +48,10 @@ def _is_additive_composition(
     if not parsed:
         return False
 
-    # A structured STORI PROMPT (2+ roles) always runs Agent Teams — even when
+    # A structured MAESTRO PROMPT (2+ roles) always runs Agent Teams — even when
     # all tracks exist. The prompt creates new regions at later beat positions,
     # so it is always additive. This prevents the composing/variation pipeline
-    # from intercepting STORI PROMPTs and producing clarification questions.
+    # from intercepting MAESTRO PROMPTs and producing clarification questions.
     if parsed.roles and len(parsed.roles) >= 2:
         return True
 

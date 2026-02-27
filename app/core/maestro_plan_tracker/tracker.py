@@ -16,7 +16,7 @@ def _sp(v: JSONValue, default: str = "") -> str:
 
 if TYPE_CHECKING:
     from app.contracts.project_types import ProjectContext
-    from app.core.prompt_parser import ParsedPrompt
+    from app.prompts import MaestroPrompt
     from app.core.state_store import StateStore
 from app.core.maestro_plan_tracker.constants import (
     _AGENT_TEAM_PHASE3_TOOLS,
@@ -87,7 +87,7 @@ class _PlanTracker:
         style: str | None = None
         section: str | None = None
 
-        if prompt.startswith("STORI PROMPT"):
+        if prompt.startswith("MAESTRO PROMPT"):
             for line in prompt.splitlines():
                 stripped = line.strip()
                 if stripped.lower().startswith("section:"):
@@ -118,7 +118,7 @@ class _PlanTracker:
         short = prompt[:80].rstrip()
         if len(prompt) > 80:
             short = short.rsplit(" ", 1)[0] or short
-        if short.startswith("STORI PROMPT"):
+        if short.startswith("MAESTRO PROMPT"):
             return "Composing"
         return f"Building {short}" if len(short) < 40 else short
 
@@ -418,11 +418,11 @@ class _PlanTracker:
 
     def build_from_prompt(
         self,
-        parsed: ParsedPrompt,
+        parsed: MaestroPrompt,
         prompt: str,
         project_context: ProjectContext,
     ) -> None:
-        """Build a skeleton plan from a parsed STORI PROMPT before any LLM call.
+        """Build a skeleton plan from a parsed MAESTRO PROMPT before any LLM call.
 
         Creates one pending step per expected action derived from the prompt's
         routing fields (Tempo, Key, Role, Style, Section) so the TODO list

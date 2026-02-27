@@ -199,10 +199,10 @@ def get_refinement_delta(command: str) -> dict[str, float] | None:
 
 
 # =============================================================================
-# STORI PROMPT → EmotionVector Parser
+# MAESTRO PROMPT → EmotionVector Parser
 # =============================================================================
 
-# Keyword → partial emotion axis overrides derived from STORI PROMPT Vibe field.
+# Keyword → partial emotion axis overrides derived from MAESTRO PROMPT Vibe field.
 # Values are targets; parsing blends multiple keywords by averaging.
 _VIBE_KEYWORD_MAP: dict[str, dict[str, float]] = {
     # Valence (dark ↔ bright)
@@ -291,9 +291,9 @@ EMOTION_PRESETS.setdefault(
 )
 
 
-def emotion_vector_from_stori_prompt(text: str) -> EmotionVector:
+def emotion_vector_from_maestro_prompt(text: str) -> EmotionVector:
     """
-    Derive an EmotionVector from a STORI PROMPT YAML block.
+    Derive an EmotionVector from a MAESTRO PROMPT YAML block.
 
     Parses Vibe, Energy, Section, and Style fields and blends their
     contributions into a 5-axis emotion vector.  Falls back to the

@@ -25,7 +25,7 @@ is the client serializing and sending it on every request.
 
 ```json
 {
-  "prompt": "<raw prompt text — preserve verbatim, including STORI PROMPT header>",
+  "prompt": "<raw prompt text — preserve verbatim, including MAESTRO PROMPT header>",
   "conversation_id": "8fa3c1d2-...",
   "model": null,
   "store_prompt": true,
@@ -326,8 +326,8 @@ If not already done:
 
 ### 5. Preserve prompt text verbatim
 
-When the user types or pastes a Stori Structured Prompt (starts with
-`STORI PROMPT`), send the raw text to the backend without any preprocessing,
+When the user types or pastes a Maestro Structured Prompt (starts with
+`MAESTRO PROMPT`), send the raw text to the backend without any preprocessing,
 trimming of blank lines, or encoding. The YAML parser is whitespace-sensitive.
 
 ---
@@ -344,7 +344,7 @@ trimming of blank lines, or encoding. The YAML parser is whitespace-sensitive.
 - [ ] `conversation_id` is the same UUID for all prompts within a project
   session and is present on every request.
 - [ ] `project.projectId` is present and stable for the lifetime of the project.
-- [ ] Structured prompts that start with `STORI PROMPT` arrive at the backend
+- [ ] Structured prompts that start with `MAESTRO PROMPT` arrive at the backend
   with the header intact and all YAML indentation preserved.
 - [ ] `stori_ensure_bus` tool calls result in the bus appearing in
   `project.buses` on the next request.

@@ -1,7 +1,7 @@
-"""STORI PROMPT section parser for multi-section MIDI composition.
+"""MAESTRO PROMPT section parser for multi-section MIDI composition.
 
 Detects named musical sections (intro, verse, chorus, bridge, outro, build,
-drop, breakdown) in the user's STORI PROMPT and maps each to beat ranges so
+drop, breakdown) in the user's MAESTRO PROMPT and maps each to beat ranges so
 every instrument agent can generate section-appropriate MIDI regions.
 
 If no sections are detected the full arrangement is returned as one section.
@@ -211,7 +211,7 @@ def _get_section_role_description(section_name: str, role: str) -> str:
 
 
 def _parse_form_structure(prompt: str) -> list[str] | None:
-    """Extract section names from the ``Form: structure:`` field in a STORI PROMPT.
+    """Extract section names from the ``Form: structure:`` field in a MAESTRO PROMPT.
 
     This is the authoritative source of section layout — it takes precedence
     over keyword scanning of narrative text, which produces false positives
@@ -241,10 +241,10 @@ def parse_sections(
     bars: int,
     roles: list[str],
 ) -> list[SectionDict]:
-    """Parse a STORI PROMPT into musical sections with beat ranges.
+    """Parse a MAESTRO PROMPT into musical sections with beat ranges.
 
     Args:
-        prompt: Raw STORI PROMPT text from the user.
+        prompt: Raw MAESTRO PROMPT text from the user.
         bars: Total number of bars in the composition.
         roles: Instrument roles being generated (e.g. ['drums', 'bass', 'chords']).
 
@@ -274,7 +274,7 @@ def parse_sections(
 
     if not ordered:
         logger.debug(
-            "No sections detected in STORI PROMPT "
+            "No sections detected in MAESTRO PROMPT "
             "— using single full-arrangement section"
         )
         return _single_section(beats_total, roles)
@@ -288,7 +288,7 @@ def parse_sections(
 def _detect_sections_by_keywords(prompt: str) -> list[str]:
     """Detect section names by scanning the prompt for keywords.
 
-    Falls back to this when the STORI PROMPT lacks an explicit
+    Falls back to this when the MAESTRO PROMPT lacks an explicit
     ``Form: structure:`` field.
     """
     prompt_lower = prompt.lower()
@@ -353,7 +353,7 @@ def _build_sections(
         current_beat += length
 
     logger.info(
-        f"Parsed {len(sections)} sections from STORI PROMPT: "
+        f"Parsed {len(sections)} sections from MAESTRO PROMPT: "
         + ", ".join(f"{s['name']}({int(s['length_beats'])}b)" for s in sections)
     )
     return sections

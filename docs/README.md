@@ -73,7 +73,7 @@ Frontend integration guide for project state serialization: how to build the `pr
 
 | Doc | Description |
 |-----|-------------|
-| [protocol/stori_prompt_spec.md](protocol/stori_prompt_spec.md) | **Stori Structured Prompt:** prompt format for expert-level control. |
+| [protocol/maestro_prompt_spec.md](protocol/maestro_prompt_spec.md) | **Maestro Structured Prompt:** prompt format for expert-level control. |
 | [protocol/muse_variation_spec.md](protocol/muse_variation_spec.md) | Muse / Variation: end-to-end UX + technical contract. |
 | [protocol/variation_api.md](protocol/variation_api.md) | **Variation API:** wire contract, endpoints, SSE events, error codes. |
 | [protocol/terminology.md](protocol/terminology.md) | Canonical vocabulary for Muse/Variations (normative). |

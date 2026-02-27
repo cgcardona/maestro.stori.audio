@@ -43,7 +43,7 @@ from app.core.expansion import ToolCall, dedupe_tool_calls
 from app.core.tools import ToolName
 from app.core.tools import get_tool_meta, ToolTier, ToolKind
 from app.core.tracing import get_trace_context, trace_span
-from app.core.emotion_vector import EmotionVector, emotion_vector_from_stori_prompt
+from app.core.emotion_vector import EmotionVector, emotion_vector_from_maestro_prompt
 from app.core.state_store import get_or_create_store
 from app.core.executor.models import VariationContext, VariationExecutionContext
 from app.core.executor.phases import _group_into_phases
@@ -463,7 +463,7 @@ async def execute_tools_for_variation(
 
     emotion_vector: EmotionVector | None = None
     if explanation:
-        emotion_vector = emotion_vector_from_stori_prompt(explanation)
+        emotion_vector = emotion_vector_from_maestro_prompt(explanation)
         logger.info(f"🎭 Emotion vector derived: {emotion_vector}")
 
     phase1, instrument_groups, instrument_order, phase3 = _group_into_phases(tool_calls)

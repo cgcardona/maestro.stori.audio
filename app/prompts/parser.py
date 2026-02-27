@@ -1,14 +1,13 @@
-"""
-Structured prompt parser for Maestro.
+"""Structured prompt parser for Maestro.
 
 Format: a sentinel header line followed by a YAML document.
 
-    STORI PROMPT
+    MAESTRO PROMPT
     <YAML body>
 
-The sentinel "STORI PROMPT" (case-insensitive) is the trigger. Everything
-after it must be valid YAML. If YAML parsing fails the prompt is treated as
-natural language and the NL pipeline handles it — no fallback, no guessing.
+The sentinel ``MAESTRO PROMPT`` (exact, case-sensitive) is the trigger.
+Everything after it must be valid YAML.  If YAML parsing fails the prompt
+is treated as natural language and the NL pipeline handles it.
 
 Routing fields (parsed deterministically by Python):
     Mode, Section, Position, Target, Style, Key, Tempo, Role, Constraints,
@@ -18,29 +17,37 @@ Maestro dimensions (all other top-level keys):
     Harmony, Melody, Rhythm, Dynamics, Orchestration, Effects, Expression,
     Texture, Form, Automation, … and any future fields.
 
-    These land in ParsedPrompt.extensions and are injected verbatim into the
-    Maestro LLM system prompt as YAML. The vocabulary is open — invent new
-    dimensions and they work immediately.
+    These land in MaestroPrompt.extensions and are injected verbatim into
+    the Maestro LLM system prompt as YAML.  The vocabulary is open — invent
+    new dimensions and they work immediately.
 
-See docs/protocol/stori_prompt_spec.md for the full specification.
+See docs/protocol/maestro_prompt_spec.md for the full specification.
 """
-
 from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
 from typing import Literal
 
 from app.contracts.json_types import JSONValue, jint
+from app.prompts.base import (
+    AfterSpec,
+    PositionSpec,
+    PromptConstraints,
+    TargetSpec,
+    VibeWeight,
+)
+from app.prompts.errors import InvalidMaestroPrompt, UnsupportedPromptHeader
+from app.prompts.maestro import MaestroPrompt
 
 import yaml
 
 logger = logging.getLogger(__name__)
 
-# ─── Sentinel ────────────────────────────────────────────────────────────────
+# ─── Sentinels ────────────────────────────────────────────────────────────────
 
-_HEADER_RE = re.compile(r"^\s*stori\s+prompt\s*$", re.IGNORECASE)
+_HEADER_RE = re.compile(r"^\s*MAESTRO PROMPT\s*$")
+_LEGACY_HEADER_RE = re.compile(r"^\s*STORI\s+PROMPT\s*$", re.IGNORECASE)
 
 # ─── Routing field set (lowercase) ───────────────────────────────────────────
 
@@ -69,17 +76,11 @@ _POS_KEYWORDS = ("after", "before", "alongside", "between", "within", "last")
 
 
 def _as_mode(raw: str) -> Literal["compose", "edit", "ask"]:
-    """Narrow a pre-validated mode string to the ``Literal["compose", "edit", "ask"]`` type.
-
-    Python's type system cannot statically prove that an arbitrary ``str`` is one
-    of the three mode literals, even when the caller has already checked membership
-    (e.g. ``if raw.lower() in {"compose", "edit", "ask"}``).  This helper
-    encapsulates the exhaustive ``if/elif`` branching that mypy accepts as a
-    genuine type narrowing, avoiding any ``cast()`` or ignore comments.
+    """Narrow a pre-validated mode string to the mode Literal type.
 
     Callers **must** have already confirmed ``raw.lower()`` is in
-    ``("compose", "edit", "ask")`` before calling this; the fallthrough returns
-    ``"compose"`` as the default mode.
+    ``("compose", "edit", "ask")`` before calling this; the fallthrough
+    returns ``"compose"`` as the default mode.
     """
     lower = raw.lower()
     if lower == "edit":
@@ -89,130 +90,36 @@ def _as_mode(raw: str) -> Literal["compose", "edit", "ask"]:
     return "compose"
 
 
-# ─── Data classes ─────────────────────────────────────────────────────────────
-
-
-@dataclass
-class TargetSpec:
-    """Scope anchor for a STORI PROMPT editing operation.
-
-    Identifies which DAW entity the operation targets.  When ``kind`` is
-    ``"track"`` or ``"region"``, ``name`` holds the human-readable label
-    (e.g. ``"Drums"``); the server resolves it to a UUID via EntityRegistry.
-
-    Attributes:
-        kind: Granularity of the target — ``"project"`` (whole project),
-            ``"selection"`` (currently selected items in the DAW),
-            ``"track"`` (named track), or ``"region"`` (named region).
-        name: Display name of the target when ``kind`` is ``"track"`` or
-            ``"region"``; ``None`` for ``"project"`` and ``"selection"``.
-    """
-
-    kind: Literal["project", "selection", "track", "region"]
-    name: str | None = None
-
-
-@dataclass
-class PositionSpec:
-    """Arrangement placement.
-
-    kind        description
-    ──────────  ────────────────────────────────────────────────────────────
-    after       sequential — start after ref section ends
-    before      insert / pickup — start before ref section begins
-    alongside   parallel layer — same start beat as ref
-    between     transition bridge — fills gap between ref and ref2
-    within      nested — relative offset inside ref
-    absolute    explicit beat number
-    last        after all existing content in the project
-    """
-    kind: Literal["after", "before", "alongside", "between", "within", "absolute", "last"]
-    ref: str | None = None
-    ref2: str | None = None
-    offset: float = 0.0
-    beat: float | None = None
-
-
-# Backwards-compatible alias
-AfterSpec = PositionSpec
-
-
-@dataclass
-class VibeWeight:
-    """A single vibe keyword with an optional repetition weight.
-
-    Parsed from the ``Vibe:`` block, e.g. ``dusty x3`` → ``VibeWeight("dusty", 3)``.
-    Higher weights bias the EmotionVector derivation toward that mood axis
-    (the weight is applied as a multiplier when blending vibe contributions).
-
-    Attributes:
-        vibe: Lowercase vibe keyword (e.g. ``"dusty"``, ``"driving"``, ``"warm"``).
-        weight: Repetition count from ``x<N>`` syntax; defaults to 1.
-    """
-
-    vibe: str
-    weight: int = 1
-
-
-@dataclass
-class ParsedPrompt:
-    """Parsed Stori Structured Prompt.
-
-    Routing fields are typed attributes. All other top-level YAML keys land in
-    ``extensions`` and are injected verbatim into the Maestro LLM system prompt.
-    """
-    raw: str
-    mode: Literal["compose", "edit", "ask"]
-    request: str
-    section: str | None = None
-    position: PositionSpec | None = None
-    target: TargetSpec | None = None
-    style: str | None = None
-    key: str | None = None
-    tempo: int | None = None
-    energy: str | None = None
-    roles: list[str] = field(default_factory=list)
-    constraints: dict[str, JSONValue] = field(default_factory=dict)
-    vibes: list[VibeWeight] = field(default_factory=list)
-    extensions: dict[str, JSONValue] = field(default_factory=dict)
-
-    @property
-    def after(self) -> PositionSpec | None:
-        """Backwards-compatible alias for position."""
-        return self.position
-
-    @property
-    def has_maestro_fields(self) -> bool:
-        """True when the prompt includes unrecognised top-level YAML keys.
-
-        Unknown keys land in ``extensions`` and are injected verbatim into the
-        Maestro LLM system prompt, giving power users a direct channel to add
-        extra instructions without modifying the parser.
-        """
-        return bool(self.extensions)
-
-
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 
-def parse_prompt(text: str) -> ParsedPrompt | None:
-    """Parse a Stori Structured Prompt.
+def parse_prompt(text: str) -> MaestroPrompt | None:
+    """Parse a Maestro Structured Prompt.
 
-    Returns ParsedPrompt on success, None to fall through to the NL pipeline.
+    Returns ``MaestroPrompt`` on success, ``None`` when the text is natural
+    language (no header found).
 
-    The body after the sentinel must be valid YAML. Invalid YAML → None.
+    Raises:
+        UnsupportedPromptHeader: if the header is the legacy ``STORI PROMPT``.
+        InvalidMaestroPrompt: if the header is valid but YAML/fields are not.
     """
     if not text or not text.strip():
         return None
 
-    lines = text.strip().splitlines()
+    # Strip leading BOM (U+FEFF) — the sanitizer does this too, but
+    # belt-and-suspenders for callers that bypass sanitisation.
+    cleaned = text.lstrip("\ufeff")
+    lines = cleaned.strip().splitlines()
 
     # Sentinel must be the first non-empty line
     header_idx = -1
     for i, line in enumerate(lines):
-        if line.strip():
-            if _HEADER_RE.match(line.strip()):
+        stripped = line.strip()
+        if stripped:
+            if _HEADER_RE.match(stripped):
                 header_idx = i
+            elif _LEGACY_HEADER_RE.match(stripped):
+                raise UnsupportedPromptHeader("STORI PROMPT")
             break
 
     if header_idx < 0:
@@ -223,7 +130,7 @@ def parse_prompt(text: str) -> ParsedPrompt | None:
     try:
         raw_data = yaml.safe_load(body)
     except yaml.YAMLError as exc:
-        logger.debug("Stori Prompt YAML parse failed — treating as NL: %s", exc)
+        logger.debug("Maestro Prompt YAML parse failed — treating as NL: %s", exc)
         return None
 
     if not isinstance(raw_data, dict):
@@ -237,7 +144,7 @@ def parse_prompt(text: str) -> ParsedPrompt | None:
     if not mode_raw or mode_raw.lower() not in ("compose", "edit", "ask"):
         return None
 
-    # Request: required for edit/ask, optional for compose (synthesized from dimensions)
+    # Request: required for edit/ask, optional for compose (synthesized)
     request_val = _str(data.get("request"))
     if not request_val:
         if mode_raw.lower() == "compose":
@@ -262,7 +169,7 @@ def parse_prompt(text: str) -> ParsedPrompt | None:
 
     extensions = {k: v for k, v in data.items() if k not in _ROUTING_FIELDS}
 
-    return ParsedPrompt(
+    return MaestroPrompt(
         raw=text,
         mode=_as_mode(mode_raw),
         request=request_val,
@@ -322,18 +229,17 @@ def _parse_roles(v: JSONValue) -> list[str]:
         return []
     if isinstance(v, list):
         return [_LIST_BULLET_RE.sub("", str(i)).strip() for i in v if str(i).strip()]
-    # Inline comma-separated string
     return [p.strip() for p in str(v).split(",") if p.strip()]
 
 
-def _parse_constraints(v: JSONValue) -> dict[str, JSONValue]:
+def _parse_constraints(v: JSONValue) -> PromptConstraints:
     """Constraints: dict | list of {k: v} dicts | string."""
     if v is None:
         return {}
     if isinstance(v, dict):
         return {str(k).lower(): val for k, val in v.items()}
     if isinstance(v, list):
-        out: dict[str, JSONValue] = {}
+        out: PromptConstraints = {}
         for item in v:
             if isinstance(item, dict):
                 for k, val in item.items():
@@ -371,19 +277,16 @@ def _parse_vibes(v: JSONValue) -> list[VibeWeight]:
     vibes: list[VibeWeight] = []
     for item in raw:
         if isinstance(item, dict):
-            # {name: weight} form
             for name, weight in item.items():
                 vibes.append(VibeWeight(vibe=str(name).strip().lower(), weight=jint(weight)))
             continue
         s = _LIST_BULLET_RE.sub("", str(item)).strip()
         if not s:
             continue
-        # "dusty x3"
         m = _VIBE_X_WEIGHT_RE.match(s)
         if m:
             vibes.append(VibeWeight(vibe=m.group(1).strip().lower(), weight=int(m.group(2))))
             continue
-        # "dusty:3" (no space around colon)
         m2 = _VIBE_COLON_WEIGHT_RE.match(s)
         if m2:
             vibes.append(VibeWeight(vibe=m2.group(1).strip().lower(), weight=int(m2.group(2))))
@@ -460,3 +363,9 @@ def _coerce(v: str) -> int | float | str:
     except ValueError:
         pass
     return v
+
+
+__all__ = [
+    "parse_prompt",
+    "AfterSpec",
+]

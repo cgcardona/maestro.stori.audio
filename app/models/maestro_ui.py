@@ -17,12 +17,12 @@ from app.models.base import CamelModel
 # ---------------------------------------------------------------------------
 
 class PromptItem(CamelModel):
-    """One curated STORI PROMPT example returned in the inspiration carousel."""
+    """One curated MAESTRO PROMPT example returned in the inspiration carousel."""
 
     id: str
     title: str = Field(description="Human label, e.g. 'Lo-fi boom bap · Cm · 75 BPM'")
     preview: str = Field(description="First 3–4 YAML lines visible in the card")
-    full_prompt: str = Field(description="Complete STORI PROMPT YAML — injected verbatim into the input on tap")
+    full_prompt: str = Field(description="Complete MAESTRO PROMPT YAML — injected verbatim into the input on tap")
 
 
 class PromptsResponse(CamelModel):

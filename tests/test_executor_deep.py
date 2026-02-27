@@ -520,11 +520,11 @@ class TestEmotionVectorIntegration:
     """Tests that execute_plan_variation derives and passes emotion_vector to mg.generate."""
 
     @pytest.mark.anyio
-    async def test_emotion_vector_derived_from_stori_prompt(self) -> None:
+    async def test_emotion_vector_derived_from_maestro_prompt(self) -> None:
 
-        """When explanation contains a STORI PROMPT, emotion_vector is derived and passed."""
-        stori_prompt = (
-            "STORI PROMPT\n"
+        """When explanation contains a MAESTRO PROMPT, emotion_vector is derived and passed."""
+        maestro_prompt = (
+            "MAESTRO PROMPT\n"
             "Section: Verse\n"
             "Style: Lofi Hip-Hop\n"
             "Vibe: Melancholic, warm\n"
@@ -601,7 +601,7 @@ class TestEmotionVectorIntegration:
                         tool_calls=[generator_call],
                         project_state={},
                         intent="compose lofi verse",
-                        explanation=stori_prompt,
+                        explanation=maestro_prompt,
                     )
 
         # emotion_vector should have been passed inside context=GenerationContext(...)

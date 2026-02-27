@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.contracts.project_types import ProjectContext, ProjectTrack
-    from app.core.prompt_parser import AfterSpec, PositionSpec
+    from app.prompts import AfterSpec, PositionSpec
 
 
 def _tracks_matching(label: str | None, tracks: list[ProjectTrack]) -> list[ProjectTrack]:

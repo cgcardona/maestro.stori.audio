@@ -26,10 +26,10 @@ from typing_extensions import TypedDict
 if TYPE_CHECKING:
     from app.contracts.project_types import ProjectContext
     from app.core.intent import IntentResult
-    from app.core.prompt_parser import ParsedPrompt
+    from app.prompts import MaestroPrompt
 
 from app.config import settings
-from app.core.emotion_vector import emotion_vector_from_stori_prompt
+from app.core.emotion_vector import emotion_vector_from_maestro_prompt
 from app.core.llm_client import LLMClient
 from app.core.prompts import system_prompt_base
 from app.core.state_store import StateStore
@@ -111,7 +111,7 @@ def _parse_bars_from_text(text: str) -> int | None:
 async def _handle_composition_agent_team(
     prompt: str,
     project_context: "ProjectContext",
-    parsed: "ParsedPrompt",
+    parsed: "MaestroPrompt",
     route: "IntentResult",
     llm: LLMClient,
     store: StateStore,
@@ -119,7 +119,7 @@ async def _handle_composition_agent_team(
     usage_tracker: "UsageTracker" | None,
     is_cancelled: Callable[[], Awaitable[bool]] | None = None,
 ) -> AsyncIterator[str]:
-    """Agent Teams coordinator for multi-instrument STORI PROMPT compositions.
+    """Agent Teams coordinator for multi-instrument MAESTRO PROMPT compositions.
 
     Three-level, three-phase execution:
 
@@ -134,7 +134,7 @@ async def _handle_composition_agent_team(
     - **Phase 3** (sequential): optional mixing coordinator LLM call for
       shared buses, sends, and volume adjustments.
     """
-    # Coordinator reasoning is suppressed for STORI PROMPT requests.
+    # Coordinator reasoning is suppressed for MAESTRO PROMPT requests.
     # The structured prompt already encodes full intent; emitting reasoning
     # tokens would add latency and cost with no user value.
     # Per-agent reasoning is emitted with agentId during Phase 2 instead.
@@ -343,7 +343,7 @@ async def _handle_composition_agent_team(
                 ),
             ))
 
-    # ── Section parsing: decompose STORI PROMPT into musical sections ──
+    # ── Section parsing: decompose MAESTRO PROMPT into musical sections ──
     _sections = parse_sections(
         prompt=prompt,
         bars=bars,
@@ -368,7 +368,7 @@ async def _handle_composition_agent_team(
     # ── Build composition context for Storpheus routing ──
     _emotion_vector = None
     try:
-        _emotion_vector = emotion_vector_from_stori_prompt(prompt)
+        _emotion_vector = emotion_vector_from_maestro_prompt(prompt)
     except Exception as _ev_exc:
         logger.warning(
             f"[{trace.trace_id[:8]}] EmotionVector parse failed: {_ev_exc}"

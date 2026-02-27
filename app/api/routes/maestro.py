@@ -52,6 +52,7 @@ from app.core.composition_limiter import (
 from app.core.intent import get_intent_result_with_llm, SSEState
 from app.core.llm_client import LLMClient
 from app.core.planner import preview_plan
+from app.prompts.errors import UnsupportedPromptHeader
 from app.core.stream_utils import SSESequencer
 from app.protocol.emitter import ProtocolSerializationError, emit
 from app.protocol.events import CompleteEvent, ErrorEvent
@@ -334,6 +335,16 @@ async def stream_maestro(
     # suspenders pass for anything Pydantic doesn't catch.
     safe_prompt = normalise_user_input(maestro_request.prompt)
 
+    # Reject legacy STORI PROMPT header before entering the SSE generator.
+    from app.prompts.parser import parse_prompt as _probe_prompt
+    try:
+        _probe_prompt(safe_prompt)
+    except UnsupportedPromptHeader as e:
+        raise HTTPException(status_code=400, detail={
+            "error": "invalid_prompt",
+            "message": str(e),
+        })
+
     # Load conversation history if conversation_id is provided.
     # Ownership check: join through Conversation so we only load messages
     # that belong to the authenticated user — prevents IDOR where a caller
@@ -484,6 +495,15 @@ async def preview_maestro(
     llm = LLMClient(model=selected_model)
 
     safe_prompt = normalise_user_input(maestro_request.prompt)
+
+    from app.prompts.parser import parse_prompt as _probe_prompt
+    try:
+        _probe_prompt(safe_prompt)
+    except UnsupportedPromptHeader as e:
+        raise HTTPException(status_code=400, detail={
+            "error": "invalid_prompt",
+            "message": str(e),
+        })
 
     try:
         route = await get_intent_result_with_llm(

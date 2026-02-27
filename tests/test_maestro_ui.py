@@ -91,17 +91,17 @@ class TestPrompts:
     @pytest.mark.anyio
     async def test_full_prompt_starts_with_sentinel(self, client: AsyncClient, db_session: AsyncSession) -> None:
 
-        """Every fullPrompt must begin with STORI PROMPT."""
+        """Every fullPrompt must begin with MAESTRO PROMPT."""
         data = (await client.get("/api/v1/maestro/prompts")).json()
         for item in data["prompts"]:
-            assert item["fullPrompt"].startswith("STORI PROMPT"), (
-                f"Item '{item['id']}' fullPrompt doesn't start with 'STORI PROMPT'"
+            assert item["fullPrompt"].startswith("MAESTRO PROMPT"), (
+                f"Item '{item['id']}' fullPrompt doesn't start with 'MAESTRO PROMPT'"
             )
 
     @pytest.mark.anyio
     async def test_full_prompt_contains_required_fields(self, client: AsyncClient, db_session: AsyncSession) -> None:
 
-        """Every fullPrompt contains the mandatory STORI PROMPT spec fields."""
+        """Every fullPrompt contains the mandatory MAESTRO PROMPT spec fields."""
         required_fields = ["Mode:", "Style:", "Key:", "Tempo:", "Role:", "Vibe:", "Request:"]
         data = (await client.get("/api/v1/maestro/prompts")).json()
         for item in data["prompts"]:
@@ -443,10 +443,10 @@ class TestDataIntegrity:
 
     def test_all_prompts_start_with_sentinel(self) -> None:
 
-        """Every fullPrompt in the pool starts with STORI PROMPT."""
+        """Every fullPrompt in the pool starts with MAESTRO PROMPT."""
         for p in PROMPT_POOL:
-            assert p.full_prompt.startswith("STORI PROMPT"), (
-                f"Pool item '{p.id}' doesn't start with STORI PROMPT"
+            assert p.full_prompt.startswith("MAESTRO PROMPT"), (
+                f"Pool item '{p.id}' doesn't start with MAESTRO PROMPT"
             )
 
     def test_all_prompts_have_required_routing_fields(self) -> None:

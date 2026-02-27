@@ -34,7 +34,7 @@ class ProposeVariationOptionsDict(TypedDict, total=False):
     barSize: int
     stream: bool
 
-# Generous limit — comfortably fits long STORI PROMPT YAML with Maestro dimensions.
+# Generous limit — comfortably fits long MAESTRO PROMPT YAML with Maestro dimensions.
 # The nginx layer guards against large binary payloads; this catches oversized text.
 _MAX_PROMPT_BYTES = 32_768   # 32 KB
 

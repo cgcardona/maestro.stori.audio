@@ -25,7 +25,7 @@ from app.contracts.project_types import ProjectContext
 
 from app.core.intent import Intent, IntentResult, SSEState, get_intent_result_with_llm
 from app.core.llm_client import LLMClient
-from app.core.prompt_parser import ParsedPrompt
+from app.prompts import MaestroPrompt
 from app.core.state_store import StateStore, get_or_create_store
 from app.core.tracing import (
     clear_trace_context,
@@ -110,7 +110,7 @@ async def orchestrate(
 
                 _orch_slots = getattr(route, "slots", None)
                 _orch_extras = getattr(_orch_slots, "extras", None) if _orch_slots is not None else None
-                _orch_parsed: ParsedPrompt | None = (
+                _orch_parsed: MaestroPrompt | None = (
                     _orch_extras.get("parsed_prompt") if isinstance(_orch_extras, dict) else None
                 )
 
@@ -118,7 +118,7 @@ async def orchestrate(
                 # COMPOSING → variation (music generation requires human review)
                 #   EXCEPT: empty project → override to EDITING (can't diff against nothing)
                 #   EXCEPT: additive composition (new section / new tracks) → EDITING
-                #   OVERRIDE: explicit `Mode: compose` in STORI PROMPT always stays COMPOSING
+                #   OVERRIDE: explicit `Mode: compose` in MAESTRO PROMPT always stays COMPOSING
                 # EDITING   → apply (structural ops execute directly)
                 # REASONING → n/a (no tools)
                 _explicit_compose = (
@@ -129,7 +129,7 @@ async def orchestrate(
                     if _explicit_compose:
                         execution_mode = "variation"
                         logger.info(
-                            f"🎵 Explicit Mode: compose in STORI PROMPT — "
+                            f"🎵 Explicit Mode: compose in MAESTRO PROMPT — "
                             f"staying COMPOSING (Orpheus generation)"
                         )
                     elif _project_needs_structure(project_context):
@@ -236,9 +236,9 @@ async def orchestrate(
             # =================================================================
 
             # ── Agent Teams intercept ──
-            # Multi-instrument STORI PROMPT compositions (2+ roles, apply mode)
+            # Multi-instrument MAESTRO PROMPT compositions (2+ roles, apply mode)
             # spawn one independent LLM session per instrument running in
-            # parallel. Single-instrument and non-STORI-PROMPT requests fall
+            # parallel. Single-instrument and non-MAESTRO-PROMPT requests fall
             # through to the standard _handle_editing path unchanged.
             if (
                 route.intent == Intent.GENERATE_MUSIC

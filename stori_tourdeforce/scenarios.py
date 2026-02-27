@@ -415,10 +415,10 @@ def get_scenario(run_index: int, seed: int) -> Scenario:
     return ALL_SCENARIOS[run_index % len(ALL_SCENARIOS)]
 
 
-# ── STORI PROMPT builder ─────────────────────────────────────────────────
+# ── MAESTRO PROMPT builder ─────────────────────────────────────────────────
 
 
-def build_edit_stori_prompt(
+def build_edit_maestro_prompt(
     request: str,
     roles: list[str],
     *,
@@ -427,7 +427,7 @@ def build_edit_stori_prompt(
     tempo: int = 90,
     bars: int = 8,
 ) -> str:
-    """Wrap an edit description into a structured STORI PROMPT.
+    """Wrap an edit description into a structured MAESTRO PROMPT.
 
     The ``Mode: compose`` sentinel routes the prompt through the full
     Storpheus generation pipeline (Intent.GENERATE_MUSIC) instead of the
@@ -436,7 +436,7 @@ def build_edit_stori_prompt(
     role_yaml = ", ".join(roles)
     request_lines = request.strip().replace("\n", "\n  ")
     return (
-        "STORI PROMPT\n"
+        "MAESTRO PROMPT\n"
         "Mode: compose\n"
         f"Style: {style}\n"
         f"Key: {key}\n"

@@ -125,7 +125,7 @@ class PromptServiceClient:
         """Adapt to the actual response shape — auto-detect format.
 
         The Maestro UI endpoint returns { prompts: [{ id, title, preview, fullPrompt }] }.
-        We use fullPrompt as the prompt text (complete STORI PROMPT YAML).
+        We use fullPrompt as the prompt text (complete MAESTRO PROMPT YAML).
         """
         if isinstance(body, dict) and "prompts" in body:
             return [

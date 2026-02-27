@@ -2,7 +2,7 @@
 
 Serves the creative launchpad data consumed by the macOS client:
   - Rotating placeholder strings for the hero prompt input
-  - 4 randomly sampled STORI PROMPT inspiration cards
+  - 4 randomly sampled MAESTRO PROMPT inspiration cards
   - Individual prompt template lookup
   - Focused budget / Creative Fuel status
 """
@@ -86,17 +86,17 @@ async def get_placeholders() -> PlaceholdersResponse:
     response_model_by_alias=True,
 )
 async def get_prompts() -> PromptsResponse:
-    """Return 4 randomly sampled STORI PROMPT inspiration cards.
+    """Return 4 randomly sampled MAESTRO PROMPT inspiration cards.
 
     Each call returns a different random set drawn from a curated pool of
-    50 full STORI PROMPTs spanning genres, traditions, and time signatures
+    50 full MAESTRO PROMPTs spanning genres, traditions, and time signatures
     from every continent. No auth required.
 
     Each item carries:
       - id         — unique slug
       - title      — human label (e.g. "Lo-fi boom bap · Cm · 75 BPM")
       - preview    — first 3–4 YAML lines visible in the card
-      - fullPrompt — complete STORI PROMPT YAML, injected verbatim on tap
+      - fullPrompt — complete MAESTRO PROMPT YAML, injected verbatim on tap
     """
     sample_size = min(_PROMPTS_SAMPLE_SIZE, len(PROMPT_POOL))
     sampled = random.sample(PROMPT_POOL, sample_size)
@@ -114,7 +114,7 @@ async def get_prompts() -> PromptsResponse:
     response_model_by_alias=True,
 )
 async def get_prompt_by_id(prompt_id: str) -> PromptItem:
-    """Fetch a single STORI PROMPT inspiration card by its slug ID.
+    """Fetch a single MAESTRO PROMPT inspiration card by its slug ID.
 
     IDs are stable slugs from the curated pool, e.g.:
       melodic_techno_drop, jamaican_dancehall, lo_fi_boom_bap,

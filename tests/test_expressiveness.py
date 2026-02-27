@@ -846,15 +846,15 @@ class TestBeatsPerBar:
 
 
 class TestPromptParserEnergy:
-    """Tests that Energy field is parsed from STORI PROMPT."""
+    """Tests that Energy field is parsed from MAESTRO PROMPT."""
 
     def test_energy_parsed(self) -> None:
 
         """Energy field is extracted as typed attribute."""
-        from app.core.prompt_parser import parse_prompt
+        from app.prompts import parse_prompt
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Energy: high\n"
             "Request: some music\n"
@@ -866,10 +866,10 @@ class TestPromptParserEnergy:
     def test_energy_not_in_extensions(self) -> None:
 
         """Energy field is routing, not an extension."""
-        from app.core.prompt_parser import parse_prompt
+        from app.prompts import parse_prompt
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Energy: low\n"
             "Request: some music\n"
@@ -881,10 +881,10 @@ class TestPromptParserEnergy:
     def test_energy_optional(self) -> None:
 
         """Energy is optional — None when absent."""
-        from app.core.prompt_parser import parse_prompt
+        from app.prompts import parse_prompt
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request: some music\n"
         )
@@ -895,10 +895,10 @@ class TestPromptParserEnergy:
     def test_energy_case_insensitive(self) -> None:
 
         """Energy value is normalised to lowercase."""
-        from app.core.prompt_parser import parse_prompt
+        from app.prompts import parse_prompt
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Energy: Very High\n"
             "Request: some music\n"

@@ -1,4 +1,4 @@
-"""Tests for the STORI PROMPT section parser.
+"""Tests for the MAESTRO PROMPT section parser.
 
 Regression suite for the multi-section MIDI generation feature: ensures
 parse_sections() correctly detects named sections, assigns beat ranges that
@@ -377,7 +377,7 @@ class TestFormStructureParsing:
     def test_parse_form_structure_two_sections(self) -> None:
 
         """Two-section structure is parsed correctly."""
-        prompt = "STORI PROMPT\nForm:\n  structure: intro-groove\n  development:"
+        prompt = "MAESTRO PROMPT\nForm:\n  structure: intro-groove\n  development:"
         result = _parse_form_structure(prompt)
         assert result == ["intro", "groove"]
 
@@ -406,7 +406,7 @@ class TestFormStructureParsing:
 
         """Form.structure takes priority — narrative 'chorus' is ignored."""
         prompt = """\
-STORI PROMPT
+MAESTRO PROMPT
 Section: intro
 Style: neo-soul
 Role: [drums, bass, keys]

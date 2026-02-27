@@ -29,7 +29,7 @@ from stori_tourdeforce.analyzers.midi import analyze_tool_call_notes
 from stori_tourdeforce.analyzers.graph import GraphAnalyzer
 from stori_tourdeforce.analyzers.run import RunAnalyzer
 from stori_tourdeforce.scenarios import (
-    CheckoutStep, ConflictBranchSpec, Scenario, Wave, build_edit_stori_prompt,
+    CheckoutStep, ConflictBranchSpec, Scenario, Wave, build_edit_maestro_prompt,
     get_scenario,
 )
 
@@ -735,7 +735,7 @@ class Runner:
         accumulated_tool_calls: list[dict[str, Any]],
         compose_ctx: dict[str, Any],
     ) -> tuple[str, MaestroResult]:
-        """Run a single edit branch: STORI PROMPT compose → MUSE commit.
+        """Run a single edit branch: MAESTRO PROMPT compose → MUSE commit.
 
         Returns (commit_id, edit_maestro_result) so callers can accumulate
         the new tool calls and download artifacts.
@@ -747,7 +747,7 @@ class Runner:
             tempo=compose_ctx.get("tempo", 90),
         )
 
-        stori_prompt = build_edit_stori_prompt(
+        stori_prompt = build_edit_maestro_prompt(
             request=edit_step.edit_prompt,
             roles=compose_ctx.get("roles", ["bass", "drums"]),
             style=compose_ctx.get("style", "boom bap"),
@@ -812,7 +812,7 @@ class Runner:
 
     @staticmethod
     def _extract_compose_context(prompt_text: str) -> dict[str, Any]:
-        """Parse style/key/tempo/roles from a STORI PROMPT for re-use in edits."""
+        """Parse style/key/tempo/roles from a MAESTRO PROMPT for re-use in edits."""
         ctx: dict[str, Any] = {
             "style": "boom bap",
             "key": "Am",

@@ -1,6 +1,6 @@
-# Stori Structured Prompt — Format Specification
+# Maestro Structured Prompt — Format Specification
 
-> The Stori Structured Prompt is the interface between human musical intent
+> The Maestro Structured Prompt is the interface between human musical intent
 > and an AI Maestro that knows everything about music theory, composition,
 > melody, rhythm, voicings, orchestration, and expression.
 >
@@ -11,7 +11,7 @@
 
 ## Philosophy
 
-Music is a multifaceted jewel. The Stori Structured Prompt is designed to
+Music is a multifaceted jewel. The Maestro Structured Prompt is designed to
 honour every facet:
 
 - **Arrangement** — where in time
@@ -35,14 +35,14 @@ reliably convey.
 
 ## Format
 
-The Stori Structured Prompt is a **YAML document with a sentinel header**.
+The Maestro Structured Prompt is a **YAML document with a sentinel header**.
 
 ```
-STORI PROMPT
+MAESTRO PROMPT
 <YAML body>
 ```
 
-The sentinel line `STORI PROMPT` (case-insensitive) is not YAML — it is
+The sentinel line `MAESTRO PROMPT` (case-insensitive) is not YAML — it is
 a recognisable trigger that no natural language prompt would begin with.
 Everything after it is a standard YAML document.
 
@@ -67,7 +67,7 @@ intent classification, arrangement positioning, and planner routing.
 All other fields are **Maestro Dimensions** (see below).
 
 ```yaml
-STORI PROMPT
+MAESTRO PROMPT
 Mode:         # required — compose | edit | ask
 Section:      # optional — names this prompt's output section
 Position:     # optional — arrangement placement (see below)
@@ -722,7 +722,7 @@ The plan tracker surfaces these as per-track steps with canonical labels: `"Add 
 
 ## EmotionVector — 5-Axis Conditioning System
 
-Every STORI PROMPT is automatically translated into a 5-axis **EmotionVector**
+Every MAESTRO PROMPT is automatically translated into a 5-axis **EmotionVector**
 that flows all the way into Orpheus as a numeric conditioning signal. The richer
 your `Vibe`, `Section`, `Style`, and `Energy` fields, the more precisely Orpheus
 generates music that matches your creative intent — not just stylistically, but
@@ -910,10 +910,10 @@ for re-generation:
 
 ## Full Maestro Example
 
-A complete Stori Structured Prompt that leaves nothing to inference:
+A complete Maestro Structured Prompt that leaves nothing to inference:
 
 ```yaml
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Position: after intro + 2
@@ -1020,7 +1020,7 @@ Build a full song section by section:
 
 **Prompt 1 — Intro:**
 ```yaml
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: intro
 Style: lofi hip hop
@@ -1035,7 +1035,7 @@ Request: Floating atmospheric intro, warm and spacious.
 
 **Prompt 2 — Verse (after intro):**
 ```yaml
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Position: after intro
@@ -1050,7 +1050,7 @@ Request: Verse groove — lazy boom bap, deep bass, chord stabs.
 
 **Prompt 3 — Pre-chorus fill (pickup into chorus):**
 ```yaml
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: pre-chorus fill
 Position: before chorus - 4
@@ -1062,7 +1062,7 @@ Request: 1-bar drum fill building into the chorus.
 
 **Prompt 4 — Chorus (alongside verse, denser):**
 ```yaml
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: chorus
 Position: after verse
@@ -1122,7 +1122,7 @@ become actual MIDI data in the DAW. Every link in this chain is implemented.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  STORI PROMPT                                                            │
+│  MAESTRO PROMPT                                                            │
 │  ┌─────────────┐  ┌─────────────────┐  ┌────────────┐  ┌─────────────┐ │
 │  │ Routing      │  │ Content Dims    │  │ Effects    │  │MidiExpress- │ │
 │  │ Mode, Style, │  │ Harmony, Melody,│  │ drums:     │  │iveness /    │ │
@@ -1193,7 +1193,7 @@ become actual MIDI data in the DAW. Every link in this chain is implemented.
    └──────────────────────────────────────────────┘
 ```
 
-**Key insight:** A STORI PROMPT's expressive blocks flow through four parallel paths:
+**Key insight:** A MAESTRO PROMPT's expressive blocks flow through four parallel paths:
 
 **Path A — LLM context (content dims):** `Harmony`, `Melody`, `Rhythm`, `Dynamics`, `Orchestration`, `Expression`, `Texture`, `Form` are injected verbatim into the Maestro system prompt. The LLM reads them and produces richer notes, voicings, rhythms, and dynamics.
 
@@ -1444,7 +1444,7 @@ Tests: `tests/test_storpheus_client.py` (`TestGpuColdStartRetry`).
 `Vibe`, `Section`, `Style`, and `Energy` fields are **parsed twice**:
 
 1. **LLM context** — all fields injected into the Maestro system prompt for planning.
-2. **Orpheus conditioning** — `emotion_vector_from_stori_prompt()` blends these into a 5-axis EmotionVector forwarded to Orpheus as `tone_brightness`, `energy_intensity`, and `musical_goals`. A prompt with `Vibe: melancholic, sparse` generates measurably different notes than `Vibe: euphoric, driving` — the vibe vocabulary flows all the way to the generator.
+2. **Orpheus conditioning** — `emotion_vector_from_maestro_prompt()` blends these into a 5-axis EmotionVector forwarded to Orpheus as `tone_brightness`, `energy_intensity`, and `musical_goals`. A prompt with `Vibe: melancholic, sparse` generates measurably different notes than `Vibe: euphoric, driving` — the vibe vocabulary flows all the way to the generator.
 
 `Effects`, `MidiExpressiveness`, and `Automation` blocks flow through a **third path** — mandatory tool call translation:
 

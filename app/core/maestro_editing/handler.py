@@ -18,7 +18,7 @@ from app.protocol.events import ToolCallWire
 from app.core.expansion import ToolCall
 from app.core.intent import Intent, IntentResult, SSEState
 from app.core.llm_client import LLMClient, enforce_single_tool
-from app.core.prompt_parser import ParsedPrompt
+from app.prompts import MaestroPrompt
 from app.core.prompts import (
     editing_composition_prompt,
     editing_prompt,
@@ -92,7 +92,7 @@ async def _run_llm_tool_loop(
 
     _slots = getattr(route, "slots", None)
     _extras = getattr(_slots, "extras", None) if _slots is not None else None
-    parsed: ParsedPrompt | None = _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
+    parsed: MaestroPrompt | None = _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
     if parsed is not None:
         sys_prompt += structured_prompt_context(parsed)
         if parsed.position is not None:
@@ -386,7 +386,7 @@ async def _handle_editing_apply(
     is_composition = route.intent == Intent.GENERATE_MUSIC
     _slots = getattr(route, "slots", None)
     _extras = getattr(_slots, "extras", None) if _slots is not None else None
-    parsed: ParsedPrompt | None = _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
+    parsed: MaestroPrompt | None = _extras.get("parsed_prompt") if isinstance(_extras, dict) else None
 
     plan_tracker: _PlanTracker | None = None
     if is_composition and parsed is not None:

@@ -1,4 +1,4 @@
-"""STORI PROMPT pool — Americas region.
+"""MAESTRO PROMPT pool — Americas region.
 
 Covers: lo-fi boom bap, dark trap, funk, neo-soul, jazz, bossa nova,
 New Orleans brass, indie folk, reggaeton, and future additions
@@ -16,7 +16,7 @@ PROMPTS_AMERICAS: list[PromptItem] = [
         title="Lo-fi boom bap \u00b7 Cm \u00b7 75 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: lofi hip hop \u00b7 Key: Cm \u00b7 75 BPM\nRole: drums, bass, piano, melody\nVibe: dusty x3, warm x2, melancholic",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: lofi hip hop
@@ -242,7 +242,7 @@ Automation:
         title="Jazz reharmonization \u00b7 Bb \u00b7 120 BPM",
         preview="Mode: compose \u00b7 Section: bridge\nStyle: bebop jazz \u00b7 Key: Bb \u00b7 120 BPM\nRole: piano, upright bass, drums\nVibe: jazzy x2, mysterious x2, bittersweet, flowing",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: bridge
 Style: bebop jazz
@@ -517,7 +517,7 @@ Automation:
         title="Dark trap \u00b7 Fm \u00b7 140 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: dark trap \u00b7 Key: Fm \u00b7 140 BPM\nRole: drums, 808, pad, melody, vocal chop\nVibe: dark x3, haunting x2, brooding, aggressive",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: dark trap
@@ -745,7 +745,7 @@ Automation:
         title="Bossa nova \u00b7 Em \u00b7 132 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: bossa nova \u00b7 Key: Em \u00b7 132 BPM\nRole: guitar, bass, drums, flute\nVibe: warm x3, intimate x2, nostalgic, flowing",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: bossa nova
@@ -987,7 +987,7 @@ Automation:
         title="Funk pocket \u00b7 E \u00b7 108 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: classic funk \u00b7 Key: E \u00b7 108 BPM\nRole: drums, bass, guitar, keys, horns\nVibe: groovy x3, joyful x2, driving, energetic",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: classic funk
@@ -1212,7 +1212,7 @@ Automation:
         title="Neo-soul groove \u00b7 Gm \u00b7 83 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: neo-soul \u00b7 Key: Gm \u00b7 83 BPM\nRole: drums, bass, keys, guitar, melody\nVibe: warm x3, intimate x2, melancholic, groovy",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: neo-soul
@@ -1459,7 +1459,7 @@ Automation:
         title="Reggaeton dembow \u00b7 Bbm \u00b7 96 BPM",
         preview="Mode: compose \u00b7 Section: chorus\nStyle: reggaeton \u00b7 Key: Bbm \u00b7 96 BPM\nRole: drums, bass, synth chord, perc, vocal lead\nVibe: energetic x3, driving x2, dark, bouncy",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: chorus
 Style: reggaeton
@@ -1662,7 +1662,7 @@ Automation:
         title="Indie folk ballad \u00b7 G \u00b7 70 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: indie folk \u00b7 Key: G \u00b7 70 BPM\nRole: acoustic guitar, piano, bass, melody\nVibe: intimate x3, melancholic x2, nostalgic, peaceful",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: indie folk
@@ -1895,7 +1895,7 @@ Automation:
         title="New Orleans second line \u00b7 F \u00b7 98 BPM",
         preview="Mode: compose \u00b7 Section: chorus\nStyle: New Orleans brass / second line \u00b7 Key: F \u00b7 98 BPM\nRole: drums, tuba, trumpet, trombone, sax\nVibe: joyful x4, groovy x2, bouncy, energetic",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: chorus
 Style: New Orleans brass second line
@@ -2124,7 +2124,7 @@ Automation:
         title="Colombian cumbia \u00b7 C \u00b7 90 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Colombian cumbia \u00b7 Key: C \u00b7 90 BPM\nRole: accordion, gaita, tumbadora, guacharaca, bass\nVibe: tropical x3, joyful x2, groovy, earthy, celebratory",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Colombian cumbia
@@ -2360,7 +2360,7 @@ Automation:
         title="Tango nuevo \u00b7 Dm \u00b7 66 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: tango nuevo \u00b7 Key: Dm \u00b7 66 BPM\nRole: bandoneon, piano, violin, bass\nVibe: passionate x3, melancholic x2, dramatic, tense, Buenos Aires",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: tango nuevo
@@ -2628,7 +2628,7 @@ Automation:
         title="Andean huayno \u00b7 Em \u00b7 100 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Andean huayno \u00b7 Key: Em \u00b7 100 BPM\nRole: quena, charango, bombo, zampo\u00f1a\nVibe: spiritual x3, earthy x2, melancholic, high-altitude, ancestral",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Andean huayno
@@ -2851,7 +2851,7 @@ Automation:
         title="Jamaican dancehall \u00b7 F#m \u00b7 90 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: Jamaican dancehall \u00b7 Key: F#m \u00b7 90 BPM\nRole: drums, bass, synth, organ bubble\nVibe: dark x3, bouncy x2, driving, bass-heavy, yard",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: Jamaican dancehall
@@ -3085,7 +3085,7 @@ Automation:
         title="Trinidad calypso/soca \u00b7 Bb \u00b7 128 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: soca / calypso \u00b7 Key: Bb \u00b7 128 BPM\nRole: steel drums, bass, brass, drums\nVibe: joyful x4, bright x2, carnival, sunshine, dancing",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: soca calypso
@@ -3312,7 +3312,7 @@ Automation:
         title="Appalachian bluegrass \u00b7 G \u00b7 145 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: bluegrass \u00b7 Key: G \u00b7 145 BPM\nRole: banjo, fiddle, mandolin, upright bass\nVibe: driving x3, joyful x2, earthy, virtuosic, Appalachian",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: bluegrass
@@ -3545,7 +3545,7 @@ Automation:
         title="Gospel choir \u00b7 Ab \u00b7 72 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: gospel \u00b7 Key: Ab \u00b7 72 BPM\nRole: choir, church organ, piano, bass, drums\nVibe: uplifting x4, spiritual x2, powerful, communal, sacred",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: gospel
@@ -3818,7 +3818,7 @@ Automation:
         title="Hip-hop full song \u00b7 Fm \u00b7 88 BPM",
         preview="Mode: compose \u00b7 Section: verse\nStyle: hip-hop / boom bap \u00b7 Key: Fm \u00b7 88 BPM\nRole: drums, bass, rhodes, strings, vocal lead\nVibe: soulful x3, hard x2, cinematic, storytelling, street",
         full_prompt="""\
-STORI PROMPT
+MAESTRO PROMPT
 Mode: compose
 Section: verse
 Style: hip-hop boom bap

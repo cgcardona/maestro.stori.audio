@@ -55,7 +55,7 @@ def match_weighted_vibes(vibes: list[tuple[str, int]]) -> list[IdiomMatch]:
     Match weighted vibes from a structured prompt against the idiom lexicon.
 
     Args:
-        vibes: list of (vibe_text, weight) tuples from ParsedPrompt.vibes
+        vibes: list of (vibe_text, weight) tuples from MaestroPrompt.vibes
 
     Returns:
         IdiomMatch objects with weights set, sorted by weight descending.

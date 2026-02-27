@@ -206,7 +206,7 @@ class TestStructuredPromptComposingFastPath:
         llm = AsyncMock()
         output = await run_pipeline(
             user_prompt=(
-                "STORI PROMPT\n"
+                "MAESTRO PROMPT\n"
                 "Mode: compose\n"
                 "Style: house\n"
                 "Tempo: 128\n"
@@ -232,7 +232,7 @@ class TestStructuredPromptComposingFastPath:
         llm = AsyncMock()
         output = await run_pipeline(
             user_prompt=(
-                "STORI PROMPT\n"
+                "MAESTRO PROMPT\n"
                 "Mode: compose\n"
                 "Style: techno\n"
                 "Tempo: 140\n"
@@ -263,7 +263,7 @@ class TestStructuredPromptComposingFastPath:
         llm = _mock_llm_with_plan()
         output = await run_pipeline(
             user_prompt=(
-                "STORI PROMPT\n"
+                "MAESTRO PROMPT\n"
                 "Mode: compose\n"
                 "Style: house\n"
                 "Tempo: 128\n"
@@ -302,7 +302,7 @@ class TestStructuredPromptEditingPath:
         llm = _mock_llm()
         output = await run_pipeline(
             user_prompt=(
-                "STORI PROMPT\n"
+                "MAESTRO PROMPT\n"
                 "Mode: edit\n"
                 "Target: track:Drums\n"
                 "Vibe:\n"
@@ -324,7 +324,7 @@ class TestStructuredPromptEditingPath:
         llm = _mock_llm()
         await run_pipeline(
             user_prompt=(
-                "STORI PROMPT\n"
+                "MAESTRO PROMPT\n"
                 "Mode: edit\n"
                 "Target: track:Bass\n"
                 "Vibe:\n"
@@ -396,7 +396,7 @@ class TestPipelineEdgeCases:
         """Mode: ask routes to REASONING."""
         llm = _mock_llm("Here's how EQ works...")
         output = await run_pipeline(
-            "STORI PROMPT\nMode: ask\nRequest: How does EQ work?",
+            "MAESTRO PROMPT\nMode: ask\nRequest: How does EQ work?",
             {},
             llm,
         )

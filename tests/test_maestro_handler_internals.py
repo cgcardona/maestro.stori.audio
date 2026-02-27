@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Callable
 if TYPE_CHECKING:
     from app.contracts.project_types import ProjectContext
     from app.core.maestro_plan_tracker import _PlanTracker
-    from app.core.prompt_parser import ParsedPrompt
+    from app.prompts import MaestroDimensions, MaestroPrompt
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from typing_extensions import Required, TypedDict
@@ -1198,9 +1198,9 @@ class TestPlanTracker:
     def test_build_from_prompt_creates_upfront_plan(self) -> None:
 
         """build_from_prompt() generates per-track steps with canonical labels."""
-        from app.core.prompt_parser import ParsedPrompt
-        parsed = ParsedPrompt(
-            raw="STORI PROMPT\nMode: compose",
+        from app.prompts import MaestroPrompt
+        parsed = MaestroPrompt(
+            raw="MAESTRO PROMPT\nMode: compose",
             mode="compose",
             request="Ska intro",
             tempo=165,
@@ -1210,7 +1210,7 @@ class TestPlanTracker:
             style="third wave ska",
         )
         tracker = _PlanTracker()
-        tracker.build_from_prompt(parsed, "STORI PROMPT\nMode: compose\nSection: intro\nStyle: third wave ska", {})
+        tracker.build_from_prompt(parsed, "MAESTRO PROMPT\nMode: compose\nSection: intro\nStyle: third wave ska", {})
         labels = [s.label for s in tracker.steps]
         # tempo + key + (create+content)*3 roles + effects step = 9 steps
         assert any("165" in l for l in labels)
@@ -1224,8 +1224,8 @@ class TestPlanTracker:
     def test_build_from_prompt_no_roles_adds_placeholder(self) -> None:
 
         """Without roles, build_from_prompt adds a generic placeholder step."""
-        from app.core.prompt_parser import ParsedPrompt
-        parsed = ParsedPrompt(raw="STORI PROMPT\nMode: compose", mode="compose", request="make something", tempo=120)
+        from app.prompts import MaestroPrompt
+        parsed = MaestroPrompt(raw="MAESTRO PROMPT\nMode: compose", mode="compose", request="make something", tempo=120)
         tracker = _PlanTracker()
         tracker.build_from_prompt(parsed, "make something", {})
         labels = [s.label for s in tracker.steps]
@@ -1518,10 +1518,10 @@ class TestCompleteEventOnError:
 class TestBuildFromPromptNoOpSkip:
     """build_from_prompt omits tempo/key steps when project already matches."""
 
-    def _make_parsed(self, tempo: int | None = None, key: str | None = None, roles: list[str] | None = None) -> ParsedPrompt:
-        from app.core.prompt_parser import ParsedPrompt
-        return ParsedPrompt(
-            raw="STORI PROMPT",
+    def _make_parsed(self, tempo: int | None = None, key: str | None = None, roles: list[str] | None = None) -> MaestroPrompt:
+        from app.prompts import MaestroPrompt
+        return MaestroPrompt(
+            raw="MAESTRO PROMPT",
             mode="compose",
             request="make a beat",
             tempo=tempo,
@@ -1649,10 +1649,10 @@ class TestMatchRolesWithInferredRoles:
 class TestBuildFromPromptExpressiveSteps:
     """build_from_prompt surfaces Effects / MidiExpressiveness / Automation as plan steps."""
 
-    def _make_parsed(self, roles: list[str] | None = None, extensions: dict[str, JSONValue] | None = None) -> ParsedPrompt:
-        from app.core.prompt_parser import ParsedPrompt
-        return ParsedPrompt(
-            raw="STORI PROMPT",
+    def _make_parsed(self, roles: list[str] | None = None, extensions: MaestroDimensions | None = None) -> MaestroPrompt:
+        from app.prompts import MaestroPrompt
+        return MaestroPrompt(
+            raw="MAESTRO PROMPT",
             mode="compose",
             request="make music",
             tempo=120,
@@ -1764,10 +1764,10 @@ class TestBuildFromPromptExpressiveSteps:
 class TestStructuredPromptContextTranslation:
     """structured_prompt_context injects execution requirements for expressive blocks."""
 
-    def _make_parsed(self, extensions: dict[str, JSONValue]) -> ParsedPrompt:
-        from app.core.prompt_parser import ParsedPrompt
-        return ParsedPrompt(
-            raw="STORI PROMPT",
+    def _make_parsed(self, extensions: MaestroDimensions) -> MaestroPrompt:
+        from app.prompts import MaestroPrompt
+        return MaestroPrompt(
+            raw="MAESTRO PROMPT",
             mode="compose",
             request="make music",
             extensions=extensions,
@@ -1839,11 +1839,11 @@ class TestStructuredPromptContextTranslation:
 class TestPlanStepToolName:
     """_PlanStep.tool_name is included in the plan SSE event as toolName."""
 
-    def _make_tracker_from_prompt(self, roles: list[str] | None = None, extensions: dict[str, JSONValue] | None = None, tempo: int | None = None, key: str | None = None) -> _PlanTracker:
-        from app.core.prompt_parser import ParsedPrompt
+    def _make_tracker_from_prompt(self, roles: list[str] | None = None, extensions: MaestroDimensions | None = None, tempo: int | None = None, key: str | None = None) -> _PlanTracker:
+        from app.prompts import MaestroPrompt
         from app.core.maestro_plan_tracker import _PlanTracker
-        parsed = ParsedPrompt(
-            raw="STORI PROMPT",
+        parsed = MaestroPrompt(
+            raw="MAESTRO PROMPT",
             mode="compose",
             request="make music",
             tempo=tempo or 120,
@@ -1954,16 +1954,16 @@ class TestPlanStepToolName:
 class TestGetMissingExpressiveSteps:
     """_get_missing_expressive_steps detects pending expressive tool calls."""
 
-    def _parsed(self, extensions: dict[str, JSONValue]) -> ParsedPrompt:
-        from app.core.prompt_parser import ParsedPrompt
-        return ParsedPrompt(
-            raw="STORI PROMPT",
+    def _parsed(self, extensions: MaestroDimensions) -> MaestroPrompt:
+        from app.prompts import MaestroPrompt
+        return MaestroPrompt(
+            raw="MAESTRO PROMPT",
             mode="compose",
             request="test",
             extensions=extensions,
         )
 
-    def _missing(self, extensions: dict[str, JSONValue], tool_calls_collected: list[ToolCallDict] | None = None) -> list[str]:
+    def _missing(self, extensions: MaestroDimensions, tool_calls_collected: list[ToolCallDict] | None = None) -> list[str]:
 
         from app.core.maestro_editing import _get_missing_expressive_steps
         empty: list[ToolCallDict] = []
@@ -1980,7 +1980,7 @@ class TestGetMissingExpressiveSteps:
 
     def test_no_extensions_returns_empty(self) -> None:
 
-        """ParsedPrompt with no extensions → no missing steps."""
+        """MaestroPrompt with no extensions → no missing steps."""
         assert self._missing({}) == []
 
     def test_effects_block_present_but_not_called(self) -> None:
@@ -2061,7 +2061,7 @@ class TestGetMissingExpressiveSteps:
     def test_all_expressive_called_returns_empty(self) -> None:
 
         """When all expressive tools have been called, result is empty."""
-        extensions: dict[str, JSONValue] = {
+        extensions: MaestroDimensions = {
             "effects": {"drums": {"compression": True}},
             "midiexpressiveness": {
                 "cc_curves": [{"cc": 91}],
@@ -2110,10 +2110,10 @@ class TestGetMissingExpressiveSteps:
 class TestBuildFromPromptReverbBus:
     """build_from_prompt adds a bus setup step when 2+ tracks need reverb."""
 
-    def _make_parsed(self, extensions: dict[str, JSONValue]) -> ParsedPrompt:
-        from app.core.prompt_parser import ParsedPrompt
-        return ParsedPrompt(
-            raw="STORI PROMPT",
+    def _make_parsed(self, extensions: MaestroDimensions) -> MaestroPrompt:
+        from app.prompts import MaestroPrompt
+        return MaestroPrompt(
+            raw="MAESTRO PROMPT",
             mode="compose",
             request="make music",
             roles=["piano", "lead"],
@@ -2526,9 +2526,9 @@ class TestParallelGroup:
     def test_build_from_prompt_annotates_parallel_group(self) -> None:
 
         """build_from_prompt tags role steps with parallelGroup='instruments'."""
-        from app.core.prompt_parser import ParsedPrompt
-        parsed = ParsedPrompt(
-            raw="STORI PROMPT",
+        from app.prompts import MaestroPrompt
+        parsed = MaestroPrompt(
+            raw="MAESTRO PROMPT",
             mode="compose",
             request="make a groove",
             tempo=90,
@@ -2785,10 +2785,10 @@ def _make_parsed_multi(
     roles: list[str] | None = None,
     style: str = "funk",
     bars: int = 4,
-) -> ParsedPrompt:
-    from app.core.prompt_parser import ParsedPrompt
-    return ParsedPrompt(
-        raw="STORI PROMPT",
+) -> MaestroPrompt:
+    from app.prompts import MaestroPrompt
+    return MaestroPrompt(
+        raw="MAESTRO PROMPT",
         mode="compose",
         request="make a funk groove",
         tempo=tempo,
@@ -2800,9 +2800,9 @@ def _make_parsed_multi(
 
 
 class TestAgentTeamRouting:
-    """orchestrate() routes multi-role STORI PROMPT to agent-team handler."""
+    """orchestrate() routes multi-role MAESTRO PROMPT to agent-team handler."""
 
-    def _make_intent_result(self, intent: Intent, sse_state: SSEState, parsed: ParsedPrompt | None = None) -> IntentResult:
+    def _make_intent_result(self, intent: Intent, sse_state: SSEState, parsed: MaestroPrompt | None = None) -> IntentResult:
 
         from app.core.intent import IntentResult
         slots = MagicMock()
@@ -2823,7 +2823,7 @@ class TestAgentTeamRouting:
     @pytest.mark.anyio
     async def test_multi_role_routes_to_agent_team(self) -> None:
 
-        """Multi-role STORI PROMPT with GENERATE_MUSIC + apply mode uses agent-team handler."""
+        """Multi-role MAESTRO PROMPT with GENERATE_MUSIC + apply mode uses agent-team handler."""
         from app.core.intent import Intent, SSEState
         from app.core.maestro_agent_teams import _handle_composition_agent_team
 
@@ -2857,7 +2857,7 @@ class TestAgentTeamRouting:
     @pytest.mark.anyio
     async def test_single_role_uses_editing_handler(self) -> None:
 
-        """Single-role STORI PROMPT still routes to _handle_editing."""
+        """Single-role MAESTRO PROMPT still routes to _handle_editing."""
         from app.core.intent import Intent, SSEState
 
         parsed = _make_parsed_multi(roles=["drums"])
@@ -3624,9 +3624,9 @@ class TestAgentTeamFailureIsolation:
 # =============================================================================
 
 class TestIsAdditiveCompositionBug3:
-    """_is_additive_composition returns True for STORI PROMPTs with 2+ roles.
+    """_is_additive_composition returns True for MAESTRO PROMPTs with 2+ roles.
 
-    Regression test for Bug 3: the third STORI PROMPT (horn break, roles:
+    Regression test for Bug 3: the third MAESTRO PROMPT (horn break, roles:
     drums + horns) was routed to the composing/variation pipeline because
     _is_additive_composition returned False (both tracks already existed).
     The fix: any parsed prompt with 2+ roles always returns True.
@@ -3634,7 +3634,7 @@ class TestIsAdditiveCompositionBug3:
 
     def test_two_roles_returns_true_even_when_all_tracks_exist(self) -> None:
 
-        """2-role STORI PROMPT → True even if both tracks already exist."""
+        """2-role MAESTRO PROMPT → True even if both tracks already exist."""
         from app.core.maestro_editing import _is_additive_composition
 
         parsed = _make_parsed_multi(roles=["drums", "horns"])
@@ -3892,7 +3892,7 @@ class TestAgentTeamExistingTrackReuse:
         ):
             pass
 
-        # Each of 4 agents uses 1+ calls (no coordinator reasoning for STORI PROMPTs)
+        # Each of 4 agents uses 1+ calls (no coordinator reasoning for MAESTRO PROMPTs)
         assert len(captured_system_prompts) >= 4, (
             f"Expected at least 4 agent system prompts, got {len(captured_system_prompts)}"
         )
@@ -3963,8 +3963,8 @@ class TestAgentTeamExistingTrackReuse:
 # =============================================================================
 
 
-class TestSuppressCoordinatorReasoningForStoriPrompt:
-    """Coordinator reasoning is suppressed for STORI PROMPT requests."""
+class TestSuppressCoordinatorReasoningForMaestroPrompt:
+    """Coordinator reasoning is suppressed for MAESTRO PROMPT requests."""
 
     def _make_route_for_team(self) -> IntentResult:
 
@@ -3989,7 +3989,7 @@ class TestSuppressCoordinatorReasoningForStoriPrompt:
     @pytest.mark.anyio
     async def test_no_reasoning_events_from_coordinator(self) -> None:
 
-        """STORI PROMPT compositions emit zero reasoning events without agentId."""
+        """MAESTRO PROMPT compositions emit zero reasoning events without agentId."""
         from app.core.maestro_agent_teams import _handle_composition_agent_team
 
         parsed = _make_parsed_multi(roles=["drums", "bass"])
@@ -4004,7 +4004,7 @@ class TestSuppressCoordinatorReasoningForStoriPrompt:
 
         events = []
         async for e in _handle_composition_agent_team(
-            "STORI PROMPT\nTempo: 92\nKey: Cm", {}, parsed, route, llm, store, trace, None
+            "MAESTRO PROMPT\nTempo: 92\nKey: Cm", {}, parsed, route, llm, store, trace, None
         ):
             events.append(e)
 

@@ -10,7 +10,7 @@ What we strip:
   - Zero-width and invisible formatting characters (ZWSP, ZWJ, BOM, etc.)
   - Runs of 3+ consecutive blank lines collapsed to 2
 
-What we preserve (all are legitimate in STORI PROMPTs or natural language):
+What we preserve (all are legitimate in MAESTRO PROMPTs or natural language):
   - Em dash —, en dash –, arrows →, bullet •
   - Smart quotes " " ' '
   - All printable Unicode above U+009F that is not in the invisible set
@@ -45,7 +45,7 @@ def normalise_user_input(raw: str) -> str:
     """
     Normalise user-supplied text for safe inclusion in LLM prompts.
 
-    Safe for both free-form natural language and STORI PROMPT YAML:
+    Safe for both free-form natural language and MAESTRO PROMPT YAML:
     YAML indentation, block scalars, and special music characters are
     preserved; only genuinely invisible or control characters are stripped.
     """
