@@ -1,4 +1,4 @@
-"""Muse Hub API routes — remote repo management for the Muse VCS.
+"""Muse Hub repo, branch, and commit route handlers.
 
 Endpoint summary:
   POST /musehub/repos                        — create a new remote repo
@@ -29,7 +29,7 @@ from maestro.services import musehub_repository
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/musehub", tags=["musehub"])
+router = APIRouter()
 
 
 @router.post(
@@ -83,7 +83,6 @@ async def list_branches(
     _: TokenClaims = Depends(require_valid_token),
 ) -> BranchListResponse:
     """Return all branch pointers for a repo, ordered by name."""
-    # Confirm repo exists before querying branches.
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
