@@ -6,10 +6,10 @@ from httpx import AsyncClient
 
 import pytest
 import pytest_asyncio
-from app.main import app
-from app.auth.dependencies import require_valid_token
-from app.mcp.server import MaestroMCPServer, ToolCallResult
-from app.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, DAW_TOOLS, TOOL_CATEGORIES
+from maestro.main import app
+from maestro.auth.dependencies import require_valid_token
+from maestro.mcp.server import MaestroMCPServer, ToolCallResult
+from maestro.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, DAW_TOOLS, TOOL_CATEGORIES
 
 
 class TestMCPTools:

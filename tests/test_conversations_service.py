@@ -10,8 +10,8 @@ import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.db.models import Conversation, ConversationMessage, MessageAction
-from app.services.conversations import (
+from maestro.db.models import Conversation, ConversationMessage, MessageAction
+from maestro.services.conversations import (
     create_conversation,
     get_conversation,
     list_conversations,

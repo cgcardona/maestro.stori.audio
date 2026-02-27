@@ -20,14 +20,14 @@ from typing import Literal
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
-from app.contracts.project_types import ProjectContext, ProjectRegion, ProjectTrack
-from app.prompts import parse_prompt, MaestroPrompt, PositionSpec
-from app.core.prompts import (
+from maestro.contracts.project_types import ProjectContext, ProjectRegion, ProjectTrack
+from maestro.prompts import parse_prompt, MaestroPrompt, PositionSpec
+from maestro.core.prompts import (
     structured_prompt_context,
     sequential_context,
     resolve_position,
 )
-from app.core.sanitize import normalise_user_input
+from maestro.core.sanitize import normalise_user_input
 
 
 # ---------------------------------------------------------------------------
@@ -597,7 +597,7 @@ class TestPositionPlannerRegression:
     def test_position_after_section_resolves_to_section_end(self, project_with_intro: ProjectContext) -> None:
 
         """resolve_position(after intro) = 64 when intro is 64 beats long."""
-        from app.prompts import parse_prompt
+        from maestro.prompts import parse_prompt
 
         prompt = (
             "MAESTRO PROMPT\n"
@@ -622,8 +622,8 @@ class TestPositionPlannerRegression:
     async def test_deterministic_plan_applies_position_offset(self, project_with_intro: ProjectContext) -> None:
 
         """_try_deterministic_plan applies start_beat so region startBeats are >= 64."""
-        from app.core.planner import _try_deterministic_plan
-        from app.prompts import parse_prompt
+        from maestro.core.planner import _try_deterministic_plan
+        from maestro.prompts import parse_prompt
 
         prompt = (
             "MAESTRO PROMPT\n"

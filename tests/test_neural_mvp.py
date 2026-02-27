@@ -11,8 +11,8 @@ Tests:
 from __future__ import annotations
 
 import pytest
-from app.contracts.json_types import NoteDict, jfloat, jint
-from app.core.emotion_vector import (
+from maestro.contracts.json_types import NoteDict, jfloat, jint
+from maestro.core.emotion_vector import (
     EmotionVector,
     emotion_to_constraints,
     get_emotion_preset,
@@ -20,17 +20,17 @@ from app.core.emotion_vector import (
     emotion_vector_from_maestro_prompt,
     EMOTION_PRESETS,
 )
-from app.services.neural.tokenizer import MidiTokenizer, TokenizerConfig
-from app.services.neural.melody_generator import (
+from maestro.services.neural.tokenizer import MidiTokenizer, TokenizerConfig
+from maestro.services.neural.melody_generator import (
     NeuralMelodyGenerator,
     MelodyGenerationRequest,
     MockNeuralMelodyBackend,
 )
-from app.services.neural.huggingface_melody import (
+from maestro.services.neural.huggingface_melody import (
     HuggingFaceMelodyBackend,
     HF_MODELS,
 )
-from app.services.neural.text2midi_backend import (
+from maestro.services.neural.text2midi_backend import (
     emotion_to_text_description,
 )
 

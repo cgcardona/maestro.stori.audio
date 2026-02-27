@@ -22,9 +22,9 @@ from typing import Literal
 
 import pytest
 
-from app.contracts.project_types import ProjectContext
-from app.prompts import parse_prompt, MaestroPrompt, PositionSpec
-from app.core.prompts import (
+from maestro.contracts.project_types import ProjectContext
+from maestro.prompts import parse_prompt, MaestroPrompt, PositionSpec
+from maestro.core.prompts import (
     structured_prompt_context,
     structured_prompt_routing_context,
     sequential_context,

@@ -1,5 +1,5 @@
 [project]
-name = "maestro-stori"
+name = "maestro"
 version = "0.1.4"
 description = "AI-powered music composition service for Stori DAW"
 readme = "README.md"
@@ -33,9 +33,9 @@ cache_dir = "/tmp/pytest_cache"
 addopts = "-v --tb=short"
 
 [tool.coverage.run]
-source = ["app"]
+source = ["maestro"]
 branch = true
-omit = ["app/__init__.py", "*/tests/*"]
+omit = ["maestro/__init__.py", "*/tests/*"]
 
 [tool.coverage.report]
 # Coverage gate: raised from 64% to 80% after test supercharge (Feb 2026).
@@ -62,7 +62,7 @@ module = ["tests.*"]
 disallow_untyped_decorators = false
 
 [[tool.mypy.overrides]]
-module = ["app.services.assets", "app.services.neural.text2midi_backend"]
+module = ["maestro.services.assets", "maestro.services.neural.text2midi_backend"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -70,4 +70,4 @@ module = ["boto3", "botocore.*", "gradio_client", "mido", "yaml"]
 ignore_missing_imports = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["maestro"]

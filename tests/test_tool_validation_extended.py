@@ -15,10 +15,10 @@ Covers:
 from __future__ import annotations
 
 import pytest
-from app.contracts.json_types import JSONValue
+from maestro.contracts.json_types import JSONValue
 
-from app.core.entity_registry import EntityRegistry
-from app.core.tool_validation import (
+from maestro.core.entity_registry import EntityRegistry
+from maestro.core.tool_validation import (
     ValidationError,
     ValidationResult,
     _find_closest_match,

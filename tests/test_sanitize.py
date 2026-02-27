@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 import unicodedata
 
-from app.core.sanitize import normalise_user_input
+from maestro.core.sanitize import normalise_user_input
 
 
 # ===========================================================================
@@ -307,14 +307,14 @@ class TestStructuredPromptRoundTrip:
 
     def test_minimal_prompt_survives(self) -> None:
 
-        from app.prompts import parse_prompt
+        from maestro.prompts import parse_prompt
         prompt = "MAESTRO PROMPT\nMode: compose\nRequest: go"
         result = parse_prompt(normalise_user_input(prompt))
         assert result is not None
 
     def test_full_structured_prompt_survives(self) -> None:
 
-        from app.prompts import parse_prompt
+        from maestro.prompts import parse_prompt
         prompt = (
             "MAESTRO PROMPT\n"
             "Mode: compose\n"
@@ -338,21 +338,21 @@ class TestStructuredPromptRoundTrip:
 
     def test_prompt_with_crlf_line_endings_parses(self) -> None:
 
-        from app.prompts import parse_prompt
+        from maestro.prompts import parse_prompt
         prompt = "MAESTRO PROMPT\r\nMode: compose\r\nRequest: go\r\n"
         result = parse_prompt(normalise_user_input(prompt))
         assert result is not None
 
     def test_prompt_with_invisible_chars_stripped_then_parses(self) -> None:
 
-        from app.prompts import parse_prompt
+        from maestro.prompts import parse_prompt
         prompt = "MAESTRO\u200b PROMPT\nMode: compose\nRequest: go"
         result = parse_prompt(normalise_user_input(prompt))
         assert result is not None
 
     def test_prompt_with_control_chars_stripped_then_parses(self) -> None:
 
-        from app.prompts import parse_prompt
+        from maestro.prompts import parse_prompt
         prompt = "MAESTRO PROMPT\nMode: compose\nRequest: make\x00 a beat"
         result = parse_prompt(normalise_user_input(prompt))
         assert result is not None
@@ -360,7 +360,7 @@ class TestStructuredPromptRoundTrip:
 
     def test_yaml_block_scalar_indentation_preserved(self) -> None:
 
-        from app.prompts import parse_prompt
+        from maestro.prompts import parse_prompt
         prompt = (
             "MAESTRO PROMPT\n"
             "Mode: compose\n"

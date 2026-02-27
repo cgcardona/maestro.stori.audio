@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.contracts.project_types import ProjectContext
+from maestro.contracts.project_types import ProjectContext
 
-from app.prompts import (
+from maestro.prompts import (
     AfterSpec,
     MaestroPrompt,
     PositionSpec,
@@ -228,7 +228,7 @@ class TestMinimalPrompt:
 class TestHeaderCaseSensitivity:
     def test_legacy_stori_prompt_rejected(self) -> None:
         """Legacy ``stori prompt`` (any case) raises UnsupportedPromptHeader."""
-        from app.prompts.errors import UnsupportedPromptHeader
+        from maestro.prompts.errors import UnsupportedPromptHeader
 
         with pytest.raises(UnsupportedPromptHeader):
             parse_prompt("stori prompt\nMode: compose\nRequest: make a beat")
@@ -958,7 +958,7 @@ class TestResolvePosition:
 
     def _resolve(self, pos: PositionSpec) -> float:
 
-        from app.core.prompts import resolve_position
+        from maestro.core.prompts import resolve_position
         return resolve_position(pos, self._PROJECT)
 
     def test_absolute(self) -> None:
@@ -975,7 +975,7 @@ class TestResolvePosition:
 
     def test_last_empty_project(self) -> None:
 
-        from app.core.prompts import resolve_position
+        from maestro.core.prompts import resolve_position
         assert resolve_position(PositionSpec(kind="last"), {}) == 0.0
 
     def test_after_intro(self) -> None:
@@ -1022,6 +1022,6 @@ class TestResolvePosition:
 
     def test_backwards_compat_resolve_after_beat(self) -> None:
 
-        from app.core.prompts import resolve_after_beat
+        from maestro.core.prompts import resolve_after_beat
         pos = PositionSpec(kind="after", ref="intro")
         assert resolve_after_beat(pos, self._PROJECT) == 20.0

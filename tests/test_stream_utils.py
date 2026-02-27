@@ -4,10 +4,10 @@ from __future__ import annotations
 import json
 import pytest
 
-from app.contracts.pydantic_types import wrap_dict
-from app.core.stream_utils import ReasoningBuffer, sanitize_reasoning, strip_tool_echoes
-from app.protocol.emitter import emit
-from app.protocol.events import StatusEvent, ToolCallEvent
+from maestro.contracts.pydantic_types import wrap_dict
+from maestro.core.stream_utils import ReasoningBuffer, sanitize_reasoning, strip_tool_echoes
+from maestro.protocol.emitter import emit
+from maestro.protocol.events import StatusEvent, ToolCallEvent
 
 
 class TestEmit:
@@ -37,7 +37,7 @@ class TestEmit:
     def test_rejects_unregistered_event_type(self) -> None:
 
         """Event with unknown type raises ValueError."""
-        from app.protocol.events import MaestroEvent
+        from maestro.protocol.events import MaestroEvent
         event = MaestroEvent(type="nonexistent_event_type")
         with pytest.raises(ValueError, match="Unknown event type"):
             emit(event)

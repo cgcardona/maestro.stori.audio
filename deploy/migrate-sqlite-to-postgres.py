@@ -9,7 +9,7 @@ This script migrates all data from the SQLite database to PostgreSQL:
 
 Usage:
     python deploy/migrate-sqlite-to-postgres.py \
-        --sqlite sqlite:///path/to/stori.db \
+        --sqlite sqlite:///path/to/maestro.db \
         --postgres postgresql://user:pass@host/db
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 # Run from repo root so app is importable
 sys.path.insert(0, '.')
 
-from app.db.models import User, UsageLog, AccessToken
+from maestro.db.models import User, UsageLog, AccessToken
 
 logging.basicConfig(
     level=logging.INFO,
@@ -154,7 +154,7 @@ def main():
     )
     parser.add_argument(
         "--sqlite",
-        default="sqlite:///stori.db",
+        default="sqlite:///maestro.db",
         help="SQLite database URL"
     )
     parser.add_argument(
@@ -173,7 +173,7 @@ def main():
     if not args.postgres or not args.postgres.strip():
         logger.error(
             "PostgreSQL URL required. set DATABASE_URL or pass --postgres "
-            "(e.g. postgresql+asyncpg://stori:YOUR_PASSWORD@localhost:5432/stori)."
+            "(e.g. postgresql+asyncpg://maestro:YOUR_PASSWORD@localhost:5432/maestro)."
         )
         sys.exit(1)
     

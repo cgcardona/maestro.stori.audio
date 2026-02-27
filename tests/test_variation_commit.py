@@ -14,18 +14,18 @@ import uuid
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from app.variation.storage.variation_store import PhraseRecord
+    from maestro.variation.storage.variation_store import PhraseRecord
 from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
 
-from app.models.variation import (
+from maestro.models.variation import (
     Variation,
     Phrase,
     NoteChange,
     MidiNoteSnapshot,
 )
-from app.core.executor import apply_variation_phrases, VariationApplyResult
+from maestro.core.executor import apply_variation_phrases, VariationApplyResult
 
 
 def _make_test_variation(
@@ -381,7 +381,7 @@ class TestUpdatedRegions:
     async def test_updated_regions_returned_with_notes(self) -> None:
 
         """Commit should return updated_regions with full note data for affected regions."""
-        from app.core.state_store import StateStore, clear_all_stores
+        from maestro.core.state_store import StateStore, clear_all_stores
 
         clear_all_stores()
         store = StateStore(conversation_id="test-updated-regions")
@@ -441,7 +441,7 @@ class TestUpdatedRegions:
     async def test_updated_regions_after_removal(self) -> None:
 
         """Commit with removals should return updated_regions minus removed notes."""
-        from app.core.state_store import StateStore, clear_all_stores
+        from maestro.core.state_store import StateStore, clear_all_stores
 
         clear_all_stores()
         store = StateStore(conversation_id="test-removal-regions")
@@ -522,10 +522,10 @@ class TestNoteChangeEntryDictRoundTrip:
         change_type: Literal["added", "removed", "modified"] = "added",
     ) -> "PhraseRecord":
         """Build a PhraseRecord whose diff_json was produced by build_phrase_payload."""
-        from app.models.variation import Phrase, NoteChange, MidiNoteSnapshot
-        from app.contracts.json_types import CCEventDict, PitchBendDict, AftertouchDict
-        from app.variation.core.event_envelope import build_phrase_payload
-        from app.variation.storage.variation_store import PhraseRecord
+        from maestro.models.variation import Phrase, NoteChange, MidiNoteSnapshot
+        from maestro.contracts.json_types import CCEventDict, PitchBendDict, AftertouchDict
+        from maestro.variation.core.event_envelope import build_phrase_payload
+        from maestro.variation.storage.variation_store import PhraseRecord
 
         before = MidiNoteSnapshot(pitch=60, start_beat=0.0, duration_beats=1.0) if change_type != "added" else None
         after = MidiNoteSnapshot(pitch=62, start_beat=0.0, duration_beats=1.0) if change_type != "removed" else None
@@ -555,8 +555,8 @@ class TestNoteChangeEntryDictRoundTrip:
 
     def _to_variation(self, pr: "PhraseRecord") -> Variation:
         """Wrap a PhraseRecord in a VariationRecord and round-trip through _record_to_variation."""
-        from app.variation.storage.variation_store import VariationRecord, PhraseRecord
-        from app.api.routes.variation.commit import _record_to_variation
+        from maestro.variation.storage.variation_store import VariationRecord, PhraseRecord
+        from maestro.api.routes.variation.commit import _record_to_variation
 
         assert isinstance(pr, PhraseRecord)
         record = VariationRecord(
@@ -624,7 +624,7 @@ class TestAftertouchDictContract:
 
     def test_beat_and_value_are_required(self) -> None:
         """Both beat and value must be provided — pitch is optional."""
-        from app.contracts.json_types import AftertouchDict
+        from maestro.contracts.json_types import AftertouchDict
         at: AftertouchDict = {"beat": 1.5, "value": 64}
         assert at["beat"] == 1.5
         assert at["value"] == 64
@@ -632,19 +632,19 @@ class TestAftertouchDictContract:
 
     def test_polyphonic_aftertouch_includes_pitch(self) -> None:
         """Polyphonic aftertouch adds the optional pitch key."""
-        from app.contracts.json_types import AftertouchDict
+        from maestro.contracts.json_types import AftertouchDict
         at: AftertouchDict = {"beat": 0.5, "value": 80, "pitch": 60}
         assert at["pitch"] == 60
 
     def test_beat_type_is_float(self) -> None:
         """beat is Required[float] — integer literal is also float-compatible."""
-        from app.contracts.json_types import AftertouchDict
+        from maestro.contracts.json_types import AftertouchDict
         at: AftertouchDict = {"beat": 0, "value": 127}  # 0 coerces to float at runtime
         assert isinstance(at["beat"], (int, float))
 
     def test_value_range(self) -> None:
         """value is Required[int] in range 0-127."""
-        from app.contracts.json_types import AftertouchDict
+        from maestro.contracts.json_types import AftertouchDict
         for v in (0, 64, 127):
             at: AftertouchDict = {"beat": 0.0, "value": v}
             assert at["value"] == v

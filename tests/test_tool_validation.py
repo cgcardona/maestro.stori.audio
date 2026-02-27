@@ -10,9 +10,9 @@ Tool validation ensures:
 from __future__ import annotations
 
 import pytest
-from app.contracts.json_types import JSONValue
-from app.core.entity_registry import EntityRegistry
-from app.core.tool_validation import (
+from maestro.contracts.json_types import JSONValue
+from maestro.core.entity_registry import EntityRegistry
+from maestro.core.tool_validation import (
     validate_tool_call,
     validate_tool_call_simple,
     ValidationError,
@@ -603,7 +603,7 @@ class TestAddAutomationValidation:
     def test_all_canonical_parameters_accepted(self) -> None:
 
         """Every canonical parameter string must be accepted."""
-        from app.core.tool_validation import AUTOMATION_CANONICAL_PARAMETERS
+        from maestro.core.tool_validation import AUTOMATION_CANONICAL_PARAMETERS
         registry = EntityRegistry()
         track_id = registry.create_track("T")
         for param in AUTOMATION_CANONICAL_PARAMETERS:

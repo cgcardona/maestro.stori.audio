@@ -9,9 +9,9 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.core.expansion import ToolCall
-from app.contracts.llm_types import ChatMessage, OpenAIResponse, ToolSchemaDict
-from app.core.llm_client import (
+from maestro.core.expansion import ToolCall
+from maestro.contracts.llm_types import ChatMessage, OpenAIResponse, ToolSchemaDict
+from maestro.core.llm_client import (
     LLMClient,
     LLMProvider,
     LLMResponse,
@@ -77,7 +77,7 @@ class TestLLMResponse:
 
 class TestLLMClientInit:
 
-    @patch("app.core.llm_client.settings")
+    @patch("maestro.core.llm_client.settings")
     def test_default_init(self, mock_settings: MagicMock) -> None:
 
         mock_settings.llm_provider = "openrouter"
@@ -465,7 +465,7 @@ class TestChat:
 class TestGetLLMClient:
 
     @pytest.mark.anyio
-    @patch("app.core.llm_client.settings")
+    @patch("maestro.core.llm_client.settings")
     async def test_returns_client(self, mock_settings: MagicMock) -> None:
 
         mock_settings.llm_provider = "openrouter"

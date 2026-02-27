@@ -10,8 +10,8 @@ Tests proving the integrity guarantees of the contract/hash system:
 
 from __future__ import annotations
 
-from app.contracts.json_types import JSONObject, JSONValue
-from app.contracts.pydantic_types import wrap_dict
+from maestro.contracts.json_types import JSONObject, JSONValue
+from maestro.contracts.pydantic_types import wrap_dict
 import asyncio
 
 import json
@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.contracts.hash_utils import (
+from maestro.contracts.hash_utils import (
     _HASH_EXCLUDED_FIELDS,
     canonical_contract_dict,
     compute_contract_hash,
@@ -28,23 +28,23 @@ from app.contracts.hash_utils import (
     seal_contract,
     verify_contract_hash,
 )
-from app.core.maestro_agent_teams.contracts import (
+from maestro.core.maestro_agent_teams.contracts import (
     CompositionContract,
     InstrumentContract,
     ProtocolViolationError,
     SectionContract,
     SectionSpec,
 )
-from app.core.maestro_agent_teams.section_agent import (
+from maestro.core.maestro_agent_teams.section_agent import (
     SectionResult,
     _run_section_child,
 )
-from app.core.maestro_agent_teams.signals import SectionSignalResult, SectionSignals
-from app.core.expansion import ToolCall
-from app.core.maestro_plan_tracker import _ToolCallOutcome
-from app.core.state_store import StateStore
-from app.core.tracing import TraceContext
-from app.protocol.events import MaestroEvent, ToolCallEvent
+from maestro.core.maestro_agent_teams.signals import SectionSignalResult, SectionSignals
+from maestro.core.expansion import ToolCall
+from maestro.core.maestro_plan_tracker import _ToolCallOutcome
+from maestro.core.state_store import StateStore
+from maestro.core.tracing import TraceContext
+from maestro.protocol.events import MaestroEvent, ToolCallEvent
 
 
 def _spec(name: str = "verse", index: int = 0, start: int = 0, beats: int = 16) -> SectionSpec:
@@ -347,7 +347,7 @@ class TestExecutionAttestation:
         trace = TraceContext(trace_id="exec-trace-001")
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
@@ -441,7 +441,7 @@ class TestSignalLineageBinding:
         This tests the internal verification path: signal was stored
         under the correct key but contains a mismatched contract_hash.
         """
-        from app.core.maestro_agent_teams.signals import _signal_key
+        from maestro.core.maestro_agent_teams.signals import _signal_key
 
         ch = "correct_hash_1234"
         signals = SectionSignals.from_section_ids(["0:verse"], [ch])
@@ -531,7 +531,7 @@ class TestReplayAttackPrevention:
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result_1 = await _run_section_child(
@@ -547,7 +547,7 @@ class TestReplayAttackPrevention:
 
         queue2: asyncio.Queue[MaestroEvent] = asyncio.Queue()
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result_2 = await _run_section_child(

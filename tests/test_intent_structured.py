@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.intent import (
+from maestro.core.intent import (
     Intent,
     IntentResult,
     SSEState,
     get_intent_result,
 )
-from app.prompts import MaestroPrompt
+from maestro.prompts import MaestroPrompt
 
 
 # ─── Mode: compose → COMPOSING ──────────────────────────────────────────────

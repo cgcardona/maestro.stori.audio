@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.contracts.generation_types import GenerationContext
-from app.contracts.json_types import JSONObject, JSONValue, NoteDict
-from app.services.storpheus import StorpheusClient
+from maestro.contracts.generation_types import GenerationContext
+from maestro.contracts.json_types import JSONObject, JSONValue, NoteDict
+from maestro.services.storpheus import StorpheusClient
 
 if TYPE_CHECKING:
-    from app.services.backends.storpheus import StorpheusBackend
+    from maestro.services.backends.storpheus import StorpheusBackend
 
 
 def _patch_settings(m: MagicMock) -> None:
@@ -89,7 +89,7 @@ def _ok_gen_result(**overrides: JSONValue) -> JSONObject:
 
 @pytest.fixture
 def client() -> Generator[StorpheusClient, None, None]:
-    with patch("app.services.storpheus.settings") as m:
+    with patch("maestro.services.storpheus.settings") as m:
         _patch_settings(m)
         yield StorpheusClient()
 
@@ -191,7 +191,7 @@ async def test_generate_submit_http_error_returns_error_dict(client: StorpheusCl
     client._client.post = AsyncMock(
         side_effect=httpx.HTTPStatusError("500", request=MagicMock(), response=mock_resp)
     )
-    with patch("app.services.storpheus.asyncio.sleep", new_callable=AsyncMock):
+    with patch("maestro.services.storpheus.asyncio.sleep", new_callable=AsyncMock):
         result = await client.generate(genre="x", tempo=90)
     assert result["success"] is False
     assert "error" in result
@@ -223,8 +223,8 @@ async def test_close_clears_client(client: StorpheusClient) -> None:
 
 def test_get_storpheus_client_returns_singleton() -> None:
     """get_storpheus_client() returns the same instance on repeated calls (sync — no loop needed)."""
-    import app.services.storpheus as storpheus_module
-    from app.services.storpheus import get_storpheus_client
+    import maestro.services.storpheus as storpheus_module
+    from maestro.services.storpheus import get_storpheus_client
     storpheus_module._shared_client = None  # reset
     c1 = get_storpheus_client()
     c2 = get_storpheus_client()
@@ -234,8 +234,8 @@ def test_get_storpheus_client_returns_singleton() -> None:
 
 def test_close_storpheus_client_resets_singleton() -> None:
     """close_storpheus_client() clears the singleton so the next call makes a fresh one."""
-    import app.services.storpheus as storpheus_module
-    from app.services.storpheus import get_storpheus_client
+    import maestro.services.storpheus as storpheus_module
+    from maestro.services.storpheus import get_storpheus_client
     storpheus_module._shared_client = None  # start clean
     c1 = get_storpheus_client()
     # Directly reset the module-level variable (avoids async close complications)
@@ -248,7 +248,7 @@ def test_close_storpheus_client_resets_singleton() -> None:
 @pytest.mark.asyncio
 async def test_warmup_succeeds_when_healthy() -> None:
     """warmup() logs success when health_check returns True."""
-    from app.services.storpheus import get_storpheus_client, close_storpheus_client
+    from maestro.services.storpheus import get_storpheus_client, close_storpheus_client
     await close_storpheus_client()
     c = get_storpheus_client()
     mock_inner = MagicMock()
@@ -263,7 +263,7 @@ async def test_warmup_succeeds_when_healthy() -> None:
 @pytest.mark.asyncio
 async def test_warmup_tolerates_connection_failure() -> None:
     """warmup() does not raise even when Orpheus is unreachable."""
-    from app.services.storpheus import get_storpheus_client, close_storpheus_client
+    from maestro.services.storpheus import get_storpheus_client, close_storpheus_client
     await close_storpheus_client()
     c = get_storpheus_client()
     import httpx
@@ -279,8 +279,8 @@ async def test_warmup_tolerates_connection_failure() -> None:
 def test_connection_limits_configured() -> None:
     """The StorpheusClient passes explicit connection limits when creating the AsyncClient."""
     import httpx
-    import app.services.storpheus as storpheus_module
-    from app.services.storpheus import get_storpheus_client, close_storpheus_client
+    import maestro.services.storpheus as storpheus_module
+    from maestro.services.storpheus import get_storpheus_client, close_storpheus_client
 
     captured_limits: httpx.Limits | None = None
 
@@ -299,7 +299,7 @@ def test_connection_limits_configured() -> None:
         original_init(self, timeout=timeout, limits=limits, headers=headers)
 
     storpheus_module._shared_client = None  # force fresh
-    with patch("app.services.storpheus.settings") as m:
+    with patch("maestro.services.storpheus.settings") as m:
         _patch_settings(m)
         m.storpheus_max_concurrent = 4
         storpheus_module._shared_client = None
@@ -320,12 +320,12 @@ class TestStorpheusBackendEmotionMapping:
     """Tests that StorpheusBackend correctly maps EmotionVector to StorpheusClient fields."""
 
     def teardown_method(self) -> None:
-        import app.services.storpheus as storpheus_module
+        import maestro.services.storpheus as storpheus_module
         storpheus_module._shared_client = None
 
     def _make_backend(self, mock_client: MagicMock) -> StorpheusBackend:
-        from app.services.backends.storpheus import StorpheusBackend
-        import app.services.storpheus as storpheus_module
+        from maestro.services.backends.storpheus import StorpheusBackend
+        import maestro.services.storpheus as storpheus_module
         storpheus_module._shared_client = mock_client
         return StorpheusBackend()
 
@@ -360,7 +360,7 @@ class TestStorpheusBackendEmotionMapping:
     async def test_dark_emotion_vector_sends_full_ev(self) -> None:
 
         """High negative valence → full emotion_vector transmitted, dark goal derived."""
-        from app.core.emotion_vector import EmotionVector
+        from maestro.core.emotion_vector import EmotionVector
         mock_client = self._make_mock_client()
         backend = self._make_backend(mock_client)
 
@@ -377,7 +377,7 @@ class TestStorpheusBackendEmotionMapping:
     async def test_euphoric_emotion_vector_sends_canonical_blocks(self) -> None:
 
         """High energy/valence → full emotion_vector and constraints transmitted."""
-        from app.core.emotion_vector import EmotionVector
+        from maestro.core.emotion_vector import EmotionVector
         mock_client = self._make_mock_client()
         backend = self._make_backend(mock_client)
 
@@ -397,7 +397,7 @@ class TestStorpheusBackendEmotionMapping:
     async def test_intimate_sparse_emotion_vector(self) -> None:
 
         """High intimacy + low motion → intimate and sustained goals."""
-        from app.core.emotion_vector import EmotionVector
+        from maestro.core.emotion_vector import EmotionVector
         mock_client = self._make_mock_client()
         backend = self._make_backend(mock_client)
 
@@ -413,7 +413,7 @@ class TestStorpheusBackendEmotionMapping:
     async def test_quality_preset_forwarded(self) -> None:
 
         """quality_preset kwarg reaches StorpheusClient.generate."""
-        from app.core.emotion_vector import EmotionVector
+        from maestro.core.emotion_vector import EmotionVector
         mock_client = self._make_mock_client()
         backend = self._make_backend(mock_client)
 
@@ -431,8 +431,8 @@ class TestStorpheusNoteNormalization:
     """Notes from Orpheus may use snake_case keys; backend must normalize to camelCase."""
 
     def _make_backend(self, mock_client: MagicMock) -> StorpheusBackend:
-        from app.services.backends.storpheus import StorpheusBackend
-        import app.services.storpheus as storpheus_module
+        from maestro.services.backends.storpheus import StorpheusBackend
+        import maestro.services.storpheus as storpheus_module
         storpheus_module._shared_client = mock_client
         return StorpheusBackend()
 
@@ -496,13 +496,13 @@ class TestStorpheusBeatRescaling:
     """Notes compressed into a short window must be rescaled to the target bars."""
 
     def teardown_method(self) -> None:
-        import app.services.storpheus as storpheus_module
+        import maestro.services.storpheus as storpheus_module
         storpheus_module._shared_client = None
 
     def _make_backend(self, mock_client: MagicMock) -> StorpheusBackend:
-        from app.services.backends import storpheus as storpheus_backend
-        from app.services.backends.storpheus import StorpheusBackend
-        import app.services.storpheus as storpheus_module
+        from maestro.services.backends import storpheus as storpheus_backend
+        from maestro.services.backends.storpheus import StorpheusBackend
+        import maestro.services.storpheus as storpheus_module
         storpheus_module._shared_client = mock_client
         storpheus_backend.ENABLE_BEAT_RESCALING = True
         return StorpheusBackend()
@@ -604,7 +604,7 @@ class TestSubmitAndPoll:
     @pytest.fixture
     def client(self) -> Generator[StorpheusClient, None, None]:
 
-        with patch("app.services.storpheus.settings") as m:
+        with patch("maestro.services.storpheus.settings") as m:
             _patch_settings(m)
             yield StorpheusClient()
 
@@ -627,7 +627,7 @@ class TestSubmitAndPoll:
     async def test_poll_exhausted_returns_timeout(self, client: StorpheusClient) -> None:
 
         """When max polls are exhausted the client reports a timeout."""
-        with patch("app.services.storpheus.settings") as m:
+        with patch("maestro.services.storpheus.settings") as m:
             _patch_settings(m)
             m.storpheus_poll_max_attempts = 2
             c = StorpheusClient()
@@ -652,7 +652,7 @@ class TestSubmitAndPoll:
         client._client.post = AsyncMock(side_effect=[full_resp, _submit_resp()])
         client._client.get = AsyncMock(return_value=_poll_resp(result=_ok_gen_result()))
 
-        with patch("app.services.storpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("maestro.services.storpheus.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             result = await client.generate(genre="house", tempo=128, bars=4)
 
         assert result["success"] is True
@@ -668,7 +668,7 @@ class TestSubmitAndPoll:
         client._client = MagicMock()
         client._client.post = AsyncMock(return_value=full_resp)
 
-        with patch("app.services.storpheus.asyncio.sleep", new_callable=AsyncMock):
+        with patch("maestro.services.storpheus.asyncio.sleep", new_callable=AsyncMock):
             result = await client.generate(genre="trap", tempo=140, bars=8)
 
         assert result["success"] is False
@@ -717,7 +717,7 @@ class TestSemaphore:
     def test_semaphore_configurable(self) -> None:
 
         """max_concurrent param controls semaphore capacity."""
-        with patch("app.services.storpheus.settings") as m:
+        with patch("maestro.services.storpheus.settings") as m:
             _patch_settings(m)
             m.storpheus_max_concurrent = 5
             c = StorpheusClient()
@@ -727,7 +727,7 @@ class TestSemaphore:
     def test_semaphore_explicit_override(self) -> None:
 
         """Explicit max_concurrent kwarg overrides the config value."""
-        with patch("app.services.storpheus.settings") as m:
+        with patch("maestro.services.storpheus.settings") as m:
             _patch_settings(m)
             c = StorpheusClient(max_concurrent=7)
             assert c._max_concurrent == 7
@@ -740,7 +740,7 @@ class TestSemaphore:
         import asyncio
 
         max_concurrent = 2
-        with patch("app.services.storpheus.settings") as m:
+        with patch("maestro.services.storpheus.settings") as m:
             _patch_settings(m)
             m.storpheus_max_concurrent = max_concurrent
             c = StorpheusClient()
@@ -775,7 +775,7 @@ class TestSemaphore:
     async def test_semaphore_releases_on_error(self) -> None:
 
         """Semaphore slot is released even when generate() hits an error."""
-        with patch("app.services.storpheus.settings") as m:
+        with patch("maestro.services.storpheus.settings") as m:
             _patch_settings(m)
             m.storpheus_max_concurrent = 1
             c = StorpheusClient()
@@ -793,7 +793,7 @@ class TestIntentGoalsPayload:
 
     def _make_client(self) -> StorpheusClient:
 
-        with patch("app.services.storpheus.settings") as m:
+        with patch("maestro.services.storpheus.settings") as m:
             _patch_settings(m)
             return StorpheusClient()
 
@@ -823,7 +823,7 @@ class TestIntentGoalsPayload:
             return_value=_submit_resp(status="complete", result=_ok_gen_result())
         )
 
-        from app.contracts.json_types import IntentGoalDict
+        from maestro.contracts.json_types import IntentGoalDict
         goals: list[IntentGoalDict] = [
             {"name": "dark", "weight": 1.0, "constraint_type": "mood"},
             {"name": "energetic", "weight": 0.8, "constraint_type": "mood"},
@@ -861,7 +861,7 @@ class TestCorrelationId:
 
     def _make_client(self) -> StorpheusClient:
 
-        with patch("app.services.storpheus.settings") as m:
+        with patch("maestro.services.storpheus.settings") as m:
             _patch_settings(m)
             return StorpheusClient()
 
@@ -912,7 +912,7 @@ class TestCircuitBreaker:
     @pytest.fixture
     def client(self) -> Generator[StorpheusClient, None, None]:
 
-        with patch("app.services.storpheus.settings") as m:
+        with patch("maestro.services.storpheus.settings") as m:
             _patch_settings(m)
             m.storpheus_cb_threshold = 2
             m.storpheus_cb_cooldown = 60

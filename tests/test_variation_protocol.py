@@ -24,13 +24,13 @@ from dataclasses import dataclass
 
 import pytest
 
-from app.variation.core.state_machine import (
+from maestro.variation.core.state_machine import (
     VariationStatus,
     InvalidTransitionError,
     can_commit,
     can_discard,
 )
-from app.variation.core.event_envelope import (
+from maestro.variation.core.event_envelope import (
     AnyEnvelope,
     EventEnvelope,
     SequenceCounter,
@@ -39,20 +39,20 @@ from app.variation.core.event_envelope import (
     build_meta_envelope,
     build_phrase_envelope,
 )
-from app.variation.storage.variation_store import (
+from maestro.variation.storage.variation_store import (
     VariationStore,
     VariationRecord,
     PhraseRecord,
 )
-from app.variation.streaming.sse_broadcaster import SSEBroadcaster
-from app.variation.streaming.stream_router import publish_event, close_variation_stream
-from app.models.variation import (
+from maestro.variation.streaming.sse_broadcaster import SSEBroadcaster
+from maestro.variation.streaming.stream_router import publish_event, close_variation_stream
+from maestro.models.variation import (
     Variation,
     Phrase,
     NoteChange,
     MidiNoteSnapshot,
 )
-from app.core.executor import apply_variation_phrases, VariationApplyResult
+from maestro.core.executor import apply_variation_phrases, VariationApplyResult
 
 
 # =============================================================================
@@ -299,7 +299,7 @@ class TestCommitCorrectness:
     def test_record_to_variation_roundtrip(self, ready_record: VariationRecord) -> None:
 
         """Phrases stored in record can be converted to Variation model."""
-        from app.api.routes.variation import _record_to_variation
+        from maestro.api.routes.variation import _record_to_variation
         variation = _record_to_variation(ready_record)
 
         assert variation.variation_id == ready_record.variation_id
@@ -310,7 +310,7 @@ class TestCommitCorrectness:
     def test_partial_acceptance(self, ready_record: VariationRecord) -> None:
 
         """INVARIANT: Only accepted phrase IDs are applied."""
-        from app.api.routes.variation import _record_to_variation
+        from maestro.api.routes.variation import _record_to_variation
         variation = _record_to_variation(ready_record)
 
         # Only first phrase
@@ -536,7 +536,7 @@ class TestStreamRouter:
     async def test_publish_event_routes_to_sse(self) -> None:
 
         """publish_event() delivers to SSE subscribers."""
-        from app.variation.streaming.sse_broadcaster import (
+        from maestro.variation.streaming.sse_broadcaster import (
             get_sse_broadcaster,
             reset_sse_broadcaster,
         )

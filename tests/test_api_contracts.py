@@ -71,7 +71,7 @@ class TestHealthFullEndpoint:
     async def test_status_200_or_503(self, client: AsyncClient) -> None:
 
         with patch(
-            "app.services.storpheus.StorpheusClient.health_check",
+            "maestro.services.storpheus.StorpheusClient.health_check",
             new_callable=AsyncMock,
             return_value=False,
         ):
@@ -82,7 +82,7 @@ class TestHealthFullEndpoint:
     async def test_response_has_status_and_dependencies(self, client: AsyncClient) -> None:
 
         with patch(
-            "app.services.storpheus.StorpheusClient.health_check",
+            "maestro.services.storpheus.StorpheusClient.health_check",
             new_callable=AsyncMock,
             return_value=False,
         ):

@@ -8,11 +8,11 @@
 # ├─────────────────────────────────────────────────────────────────────┤
 # │  REBUILD REQUIRED          │  NO REBUILD — live via bind-mount      │
 # ├────────────────────────────┼────────────────────────────────────────┤
-# │  requirements.txt changed  │  app/**/*.py                           │
+# │  requirements.txt changed  │  maestro/**/*.py                       │
 # │  Dockerfile changed        │  tests/**/*.py                         │
 # │  New top-level dir added   │  scripts/**                            │
 # │  (not yet in volumes below)│  alembic/**                            │
-# │                            │  stori_tourdeforce/**                  │
+# │                            │  tourdeforce/**                  │
 # │                            │  tools/**                              │
 # │                            │  pyproject.toml                        │
 # │                            │  storpheus/**/*.py                     │
@@ -26,12 +26,12 @@ services:
   maestro:
     volumes:
       - maestro_data:/data
-      - ./app:/app/app
+      - ./maestro:/app/maestro
       - ./tests:/app/tests
       - ./scripts:/app/scripts
       - ./tools:/app/tools
       - ./alembic:/app/alembic
-      - ./stori_tourdeforce:/app/stori_tourdeforce
+      - ./tourdeforce:/app/tourdeforce
       - ./pyproject.toml:/app/pyproject.toml
 
   storpheus:

@@ -1,6 +1,6 @@
 # API & MCP tools reference
 
-Streaming (SSE), event types, models, and the full MCP tool set in one place. Tool definitions live in `app/daw/stori/tools/`; validation in `app/core/tool_validation/`.
+Streaming (SSE), event types, models, and the full MCP tool set in one place. Tool definitions live in `maestro/daw/stori/tools/`; validation in `maestro/core/tool_validation/`.
 
 ---
 
@@ -105,7 +105,7 @@ Emitted on `GET /api/v1/mcp/stream/{connection_id}`. All events use the Stori Pr
 
 ### Protocol enforcement
 
-All SSE events across every streaming endpoint (maestro, conversations, MCP, variation) are validated through the Stori Protocol emitter (`app/protocol/emitter.py`). Raw `json.dumps` emission is forbidden in streaming code. If an event fails protocol validation, the stream emits an `error` event followed by `complete(success: false)` and terminates. There is no production fallback that emits unvalidated payloads.
+All SSE events across every streaming endpoint (maestro, conversations, MCP, variation) are validated through the Stori Protocol emitter (`maestro/protocol/emitter.py`). Raw `json.dumps` emission is forbidden in streaming code. If an event fails protocol validation, the stream emits an `error` event followed by `complete(success: false)` and terminates. There is no production fallback that emits unvalidated payloads.
 
 ### Event ordering
 
@@ -572,7 +572,7 @@ Update a conversation's title or linked project.
 
 Same tool set for Stori app (SSE) and MCP. Full list and params: `GET /api/v1/mcp/tools`.
 
-**Parameter alignment** (with `app/core/tool_validation/`):
+**Parameter alignment** (with `maestro/core/tool_validation/`):
 
 - **Track volume:** `volumeDb` (dB; 0 = unity). Not 0–1.
 - **Track pan:** `pan` in range -100 (left) to 100 (right).

@@ -13,13 +13,13 @@ import logging
 
 import pytest
 import asyncio
-from app.services.neural.text2midi_backend import (
+from maestro.services.neural.text2midi_backend import (
     Text2MidiBackend,
     Text2MidiMelodyBackend,
     emotion_to_text_description,
 )
-from app.services.neural.melody_generator import MelodyGenerationRequest
-from app.core.emotion_vector import EmotionVector
+from maestro.services.neural.melody_generator import MelodyGenerationRequest
+from maestro.core.emotion_vector import EmotionVector
 
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,7 @@ import re
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.core.intent import (
+from maestro.core.intent import (
     get_intent_result,
     get_intent_result_with_llm,
     Intent,

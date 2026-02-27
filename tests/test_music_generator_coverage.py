@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from dataclasses import dataclass
 
-from app.services.music_generator import (
+from maestro.services.music_generator import (
     MusicGenerator,
     QualityPresetConfig,
     CoupledGenState,
@@ -16,8 +16,8 @@ from app.services.music_generator import (
     get_music_generator,
     reset_music_generator,
 )
-from app.contracts.json_types import NoteDict
-from app.services.backends.base import GenerationResult
+from maestro.contracts.json_types import NoteDict
+from maestro.services.backends.base import GenerationResult
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +135,7 @@ class TestScorerForInstrument:
 
     def _mg(self) -> MusicGenerator:
 
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = MusicGenerator()
         mg._generation_context = None
         return mg
@@ -143,14 +143,14 @@ class TestScorerForInstrument:
     def test_drums_returns_scorer(self) -> None:
 
         """Drums role always gets a scorer (enables rejection sampling for Storpheus)."""
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
         scorer = mg._scorer_for_instrument("drums", GeneratorBackend.STORPHEUS, bars=4, style="trap")
         assert scorer is not None
 
     def test_bass_returns_scorer(self) -> None:
 
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
         scorer = mg._scorer_for_instrument("bass", GeneratorBackend.STORPHEUS, bars=4, style="trap")
         assert scorer is not None
@@ -158,7 +158,7 @@ class TestScorerForInstrument:
     def test_organ_returns_scorer(self) -> None:
 
         """Melodic instruments (organ) also get a scorer — chord scoring."""
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
         scorer = mg._scorer_for_instrument("organ", GeneratorBackend.STORPHEUS, bars=4, style="ska")
         assert scorer is not None
@@ -166,7 +166,7 @@ class TestScorerForInstrument:
     def test_unknown_role_returns_none(self) -> None:
 
         """Unknown instrument roles return None (no scoring, single generation)."""
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
         scorer = mg._scorer_for_instrument("theremin", GeneratorBackend.STORPHEUS, bars=4, style="lofi")
         assert scorer is None
@@ -174,7 +174,7 @@ class TestScorerForInstrument:
     def test_drum_ir_backend_overrides_role(self) -> None:
 
         """DRUM_IR backend always uses drum scoring regardless of role name."""
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
         scorer = mg._scorer_for_instrument("mystery", GeneratorBackend.DRUM_IR, bars=4, style="jazz")
         assert scorer is not None
@@ -194,14 +194,14 @@ class TestCandidatesForRole:
     def test_drums_keeps_full_candidates(self) -> None:
 
         """Drums keeps the full quality-preset candidate count."""
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]  # num_candidates=4
         assert mg._candidates_for_role("drums", config, GeneratorBackend.STORPHEUS) == 4
 
     def test_bass_keeps_full_candidates(self) -> None:
 
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]
         assert mg._candidates_for_role("bass", config, GeneratorBackend.STORPHEUS) == 4
@@ -209,14 +209,14 @@ class TestCandidatesForRole:
     def test_organ_capped_at_two_for_quality(self) -> None:
 
         """Melodic instruments are capped at 2 candidates for quality preset."""
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]  # num_candidates=6
         assert mg._candidates_for_role("organ", config, GeneratorBackend.STORPHEUS) == 2
 
     def test_guitar_capped_at_two_for_quality(self) -> None:
 
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]
         assert mg._candidates_for_role("guitar", config, GeneratorBackend.STORPHEUS) == 2
@@ -224,7 +224,7 @@ class TestCandidatesForRole:
     def test_non_storpheus_backend_untouched(self) -> None:
 
         """IR backends are not modified — they have their own scoring logic."""
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["quality"]
         assert mg._candidates_for_role("organ", config, GeneratorBackend.HARMONIC_IR) == 4
@@ -232,7 +232,7 @@ class TestCandidatesForRole:
     def test_balanced_preset_melodic_unchanged(self) -> None:
 
         """Balanced preset (2 candidates) is not further reduced for melodic tracks."""
-        from app.services.backends.base import GeneratorBackend
+        from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
         config = QUALITY_PRESETS["balanced"]  # num_candidates=2
         assert mg._candidates_for_role("organ", config, GeneratorBackend.STORPHEUS) == 2
@@ -250,7 +250,7 @@ class TestParallelCandidateGeneration:
 
         """Quality preset dispatches all candidates concurrently (asyncio.gather)."""
         import asyncio
-        from app.services.backends.base import GeneratorBackend, GenerationResult
+        from maestro.services.backends.base import GeneratorBackend, GenerationResult
 
         mg = MusicGenerator()
         config = QUALITY_PRESETS["quality"]  # 6 candidates
@@ -296,7 +296,7 @@ class TestParallelCandidateGeneration:
 
         """The candidate with the highest critic score is returned."""
         import asyncio
-        from app.services.backends.base import GeneratorBackend, GenerationResult
+        from maestro.services.backends.base import GeneratorBackend, GenerationResult
 
         mg = MusicGenerator()
         config = QUALITY_PRESETS["balanced"]  # 2 candidates
@@ -320,7 +320,7 @@ class TestParallelCandidateGeneration:
         mock_backend.backend_type = GeneratorBackend.STORPHEUS
 
         with patch(
-            "app.services.music_generator.MusicGenerator._scorer_for_instrument",
+            "maestro.services.music_generator.MusicGenerator._scorer_for_instrument",
             return_value=lambda notes: (scores_assigned.pop(0) if scores_assigned else 0.0, None),
         ):
             result = await mg._generate_with_coupling(
@@ -343,7 +343,7 @@ class TestParallelCandidateGeneration:
     async def test_all_candidates_fail_falls_through(self) -> None:
 
         """If all parallel candidates fail, falls through to single generation."""
-        from app.services.backends.base import GeneratorBackend, GenerationResult
+        from maestro.services.backends.base import GeneratorBackend, GenerationResult
 
         mg = MusicGenerator()
         config = QUALITY_PRESETS["balanced"]

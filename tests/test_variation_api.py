@@ -18,10 +18,10 @@ import pytest_asyncio
 import uuid
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.main import app
-from app.auth.dependencies import require_valid_token
-from app.models.variation import Variation, Phrase, NoteChange, MidiNoteSnapshot
-from app.models.requests import (
+from maestro.main import app
+from maestro.auth.dependencies import require_valid_token
+from maestro.models.variation import Variation, Phrase, NoteChange, MidiNoteSnapshot
+from maestro.models.requests import (
     ProposeVariationRequest,
     CommitVariationRequest,
     DiscardVariationRequest,
@@ -127,10 +127,10 @@ class TestProposeVariation:
         mock_auth_token: dict[str, str],
     ) -> None:
         """Test successful variation proposal returns 200 with variation_id and stream_url."""
-        with patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock), \
-             patch("app.api.routes.variation.propose.get_or_create_store") as mock_store, \
-             patch("app.api.routes.variation.propose.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation.propose._run_generation", new_callable=AsyncMock):
+        with patch("maestro.api.routes.variation.propose.check_budget", new_callable=AsyncMock), \
+             patch("maestro.api.routes.variation.propose.get_or_create_store") as mock_store, \
+             patch("maestro.api.routes.variation.propose.get_variation_store") as mock_vstore, \
+             patch("maestro.api.routes.variation.propose._run_generation", new_callable=AsyncMock):
 
             # Setup mocks
             mock_store_instance = MagicMock()
@@ -179,8 +179,8 @@ class TestProposeVariation:
     ) -> None:
         """Test variation proposal with state conflict."""
         with \
-             patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock), \
-             patch("app.api.routes.variation.propose.get_or_create_store") as mock_store:
+             patch("maestro.api.routes.variation.propose.check_budget", new_callable=AsyncMock), \
+             patch("maestro.api.routes.variation.propose.get_or_create_store") as mock_store:
             
             # Setup mock store with mismatched state
             mock_store_instance = MagicMock()
@@ -220,10 +220,10 @@ class TestProposeVariation:
         stream (error + done(status=failed)), not the propose response.
         """
         with \
-             patch("app.api.routes.variation.propose.check_budget", new_callable=AsyncMock), \
-             patch("app.api.routes.variation.propose.get_or_create_store") as mock_store, \
-             patch("app.api.routes.variation.propose.get_variation_store") as mock_vstore, \
-             patch("app.api.routes.variation.propose._run_generation", new_callable=AsyncMock):
+             patch("maestro.api.routes.variation.propose.check_budget", new_callable=AsyncMock), \
+             patch("maestro.api.routes.variation.propose.get_or_create_store") as mock_store, \
+             patch("maestro.api.routes.variation.propose.get_variation_store") as mock_vstore, \
+             patch("maestro.api.routes.variation.propose._run_generation", new_callable=AsyncMock):
 
             # Setup mocks
             mock_store_instance = MagicMock()
@@ -271,7 +271,7 @@ class TestCommitVariation:
         sample_variation: Variation,
     ) -> None:
         """When variation is not in store, commit returns 404."""
-        with patch("app.api.routes.variation.commit.get_variation_store") as mock_vstore:
+        with patch("maestro.api.routes.variation.commit.get_variation_store") as mock_vstore:
             mock_vstore_instance = MagicMock()
             mock_vstore_instance.get.return_value = None
             mock_vstore.return_value = mock_vstore_instance
@@ -377,7 +377,7 @@ class TestStateStoreIntegration:
     def test_get_state_id(self) -> None:
 
         """Test get_state_id returns string version."""
-        from app.core.state_store import StateStore
+        from maestro.core.state_store import StateStore
         
         store = StateStore(project_id="proj-1")
         state_id = store.get_state_id()
@@ -388,7 +388,7 @@ class TestStateStoreIntegration:
     def test_check_state_id_match(self) -> None:
 
         """Test check_state_id with matching version."""
-        from app.core.state_store import StateStore
+        from maestro.core.state_store import StateStore
         
         store = StateStore(project_id="proj-1")
         
@@ -398,7 +398,7 @@ class TestStateStoreIntegration:
     def test_check_state_id_mismatch(self) -> None:
 
         """Test check_state_id with mismatched version."""
-        from app.core.state_store import StateStore
+        from maestro.core.state_store import StateStore
         
         store = StateStore(project_id="proj-1")
         
@@ -408,7 +408,7 @@ class TestStateStoreIntegration:
     def test_check_state_id_invalid_format(self) -> None:
 
         """Test check_state_id with invalid format."""
-        from app.core.state_store import StateStore
+        from maestro.core.state_store import StateStore
         
         store = StateStore(project_id="proj-1")
         

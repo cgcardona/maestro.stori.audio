@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.contracts.project_types import ProjectContext
-from app.core.entity_registry import (
+from maestro.contracts.project_types import ProjectContext
+from maestro.core.entity_registry import (
     EntityRegistry,
     EntityType,
     EntityInfo,

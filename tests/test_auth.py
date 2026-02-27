@@ -11,13 +11,13 @@ import jwt
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from app.auth.tokens import (
+from maestro.auth.tokens import (
     generate_access_code,
     validate_access_code,
     get_token_expiration,
     AccessCodeError,
 )
-from app.config import settings
+from maestro.config import settings
 
 
 # Test secret for unit tests

@@ -15,12 +15,12 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts.llm_types import ChatMessage
-from app.contracts.pydantic_types import wrap_dict
-from app.core.maestro_handlers import UsageTracker
-from app.db.models import User
-from app.protocol.emitter import ProtocolSerializationError, emit, parse_event
-from app.protocol.events import (
+from maestro.contracts.llm_types import ChatMessage
+from maestro.contracts.pydantic_types import wrap_dict
+from maestro.core.maestro_handlers import UsageTracker
+from maestro.db.models import User
+from maestro.protocol.emitter import ProtocolSerializationError, emit, parse_event
+from maestro.protocol.events import (
     CompleteEvent,
     ErrorEvent,
     MaestroEvent,
@@ -97,7 +97,7 @@ class TestComposeStreamEndpoint:
             yield emit(StateEvent(state="composing", intent="compose", confidence=0.9, trace_id="t-0"))
             yield emit(CompleteEvent(success=True, trace_id="t-0"))
 
-        with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
+        with patch("maestro.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
                 "/api/v1/maestro/stream",
                 json=_make_maestro_body(),
@@ -116,7 +116,7 @@ class TestComposeStreamEndpoint:
             yield emit(ToolCallEvent(id="tc-1", name="stori_set_tempo", params=wrap_dict({"tempo": 120})))
             yield emit(CompleteEvent(success=True, trace_id="t-1", tool_calls=[]))
 
-        with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
+        with patch("maestro.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
                 "/api/v1/maestro/stream",
                 json=_make_maestro_body(),
@@ -132,9 +132,9 @@ class TestComposeStreamEndpoint:
     async def test_maestro_stream_budget_insufficient_402(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User, db_session: AsyncSession) -> None:
 
         """When budget is insufficient, return 402."""
-        from app.services.budget import InsufficientBudgetError
+        from maestro.services.budget import InsufficientBudgetError
 
-        with patch("app.api.routes.maestro.check_budget", new_callable=AsyncMock) as mock_check:
+        with patch("maestro.api.routes.maestro.check_budget", new_callable=AsyncMock) as mock_check:
             mock_check.side_effect = InsufficientBudgetError(0, 100)
             resp = await client.post(
                 "/api/v1/maestro/stream",
@@ -165,8 +165,8 @@ class TestComposeStreamEndpoint:
             yield emit(CompleteEvent(success=True, trace_id="t-1"))
 
         with (
-            patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate),
-            patch("app.api.routes.maestro.deduct_budget", mock_deduct),
+            patch("maestro.api.routes.maestro.orchestrate", side_effect=fake_orchestrate),
+            patch("maestro.api.routes.maestro.deduct_budget", mock_deduct),
         ):
             resp = await client.post(
                 "/api/v1/maestro/stream",
@@ -191,7 +191,7 @@ class TestComposeStreamEndpoint:
             yield emit(StateEvent(state="editing", intent="track.add", confidence=0.9, trace_id="t-1"))
             raise RuntimeError("backend exploded")
 
-        with patch("app.api.routes.maestro.orchestrate", side_effect=failing_orchestrate):
+        with patch("maestro.api.routes.maestro.orchestrate", side_effect=failing_orchestrate):
             resp = await client.post(
                 "/api/v1/maestro/stream",
                 json=_make_maestro_body(),
@@ -206,7 +206,7 @@ class TestComposeStreamEndpoint:
     async def test_maestro_stream_loads_conversation_history(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User, db_session: AsyncSession) -> None:
 
         """When conversation_id is provided, loads history from DB."""
-        from app.db.models import Conversation, ConversationMessage
+        from maestro.db.models import Conversation, ConversationMessage
 
         conv_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
         conv = Conversation(
@@ -243,7 +243,7 @@ class TestComposeStreamEndpoint:
             yield emit(StateEvent(state="editing", intent="track.add", confidence=0.9, trace_id="t-1"))
             yield emit(CompleteEvent(success=True, trace_id="t-1"))
 
-        with patch("app.api.routes.maestro.orchestrate", side_effect=spy_orchestrate):
+        with patch("maestro.api.routes.maestro.orchestrate", side_effect=spy_orchestrate):
             resp = await client.post(
                 "/api/v1/maestro/stream",
                 json=_make_maestro_body(conversation_id=conv_id),
@@ -268,7 +268,7 @@ class TestComposeStreamEndpoint:
             yield emit(StateEvent(state="editing", intent="track.add", confidence=0.9, trace_id="t-1"))
             yield emit(CompleteEvent(success=True, trace_id="t-1"))
 
-        with patch("app.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
+        with patch("maestro.api.routes.maestro.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
                 "/api/v1/maestro/stream",
                 json=_make_maestro_body(),
@@ -290,7 +290,7 @@ class TestComposePreviewEndpoint:
     async def test_preview_composing_returns_plan(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
 
         """COMPOSING intent returns preview_available=True with plan."""
-        from app.core.intent import IntentResult, Intent, Slots, SSEState
+        from maestro.core.intent import IntentResult, Intent, Slots, SSEState
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -306,9 +306,9 @@ class TestComposePreviewEndpoint:
         )
 
         with (
-            patch("app.api.routes.maestro.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
-            patch("app.api.routes.maestro.preview_plan", new_callable=AsyncMock, return_value={"steps": []}),
-            patch("app.api.routes.maestro.LLMClient") as mock_cls,
+            patch("maestro.api.routes.maestro.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
+            patch("maestro.api.routes.maestro.preview_plan", new_callable=AsyncMock, return_value={"steps": []}),
+            patch("maestro.api.routes.maestro.LLMClient") as mock_cls,
         ):
             mock_llm = MagicMock()
             mock_llm.close = AsyncMock()
@@ -328,7 +328,7 @@ class TestComposePreviewEndpoint:
     async def test_preview_non_composing_returns_unavailable(self, client: AsyncClient, auth_headers: dict[str, str], test_user: User) -> None:
 
         """Non-COMPOSING intent returns preview_available=False."""
-        from app.core.intent import IntentResult, Intent, Slots, SSEState
+        from maestro.core.intent import IntentResult, Intent, Slots, SSEState
 
         fake_route = IntentResult(
             intent=Intent.UNKNOWN,
@@ -344,8 +344,8 @@ class TestComposePreviewEndpoint:
         )
 
         with (
-            patch("app.api.routes.maestro.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
-            patch("app.api.routes.maestro.LLMClient") as mock_cls,
+            patch("maestro.api.routes.maestro.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route),
+            patch("maestro.api.routes.maestro.LLMClient") as mock_cls,
         ):
             mock_llm = MagicMock()
             mock_llm.close = AsyncMock()

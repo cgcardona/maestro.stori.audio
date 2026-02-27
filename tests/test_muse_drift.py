@@ -17,26 +17,26 @@ import pytest
 from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.db.database import Base
-from app.db import muse_models  # noqa: F401 — register tables
-from app.models.variation import (
+from maestro.db.database import Base
+from maestro.db import muse_models  # noqa: F401 — register tables
+from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,
     Phrase,
     Variation,
 )
-from app.services import muse_repository
+from maestro.services import muse_repository
 
-from app.contracts.json_types import NoteDict
+from maestro.contracts.json_types import NoteDict
 
-from app.services.muse_drift import (
+from maestro.services.muse_drift import (
     DriftReport,
     DriftSeverity,
     RegionDriftSummary,
     compute_drift_report,
     _fingerprint,
 )
-from app.services.muse_replay import reconstruct_head_snapshot, HeadSnapshot
+from maestro.services.muse_replay import reconstruct_head_snapshot, HeadSnapshot
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
@@ -564,7 +564,7 @@ class TestMuseDriftBoundary:
 
         """muse_drift must not import StateStore, executor, or LLM handlers."""
         import importlib
-        spec = importlib.util.find_spec("app.services.muse_drift")
+        spec = importlib.util.find_spec("maestro.services.muse_drift")
         assert spec is not None and spec.origin is not None
 
         with open(spec.origin) as f:
@@ -591,7 +591,7 @@ class TestMuseDriftBoundary:
 
         """muse_drift must not call get_or_create_store (AST-level check)."""
         import importlib
-        spec = importlib.util.find_spec("app.services.muse_drift")
+        spec = importlib.util.find_spec("maestro.services.muse_drift")
         assert spec is not None and spec.origin is not None
 
         with open(spec.origin) as f:

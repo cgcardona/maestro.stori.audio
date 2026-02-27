@@ -18,25 +18,25 @@ from pathlib import Path
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.contracts.json_types import CCEventDict, NoteDict
-from app.core.state_store import StateStore
-from app.core.tracing import TraceContext
-from app.core.tools import ToolName
-from app.db.database import Base
-from app.db import muse_models  # noqa: F401 — register tables
-from app.models.variation import (
+from maestro.contracts.json_types import CCEventDict, NoteDict
+from maestro.core.state_store import StateStore
+from maestro.core.tracing import TraceContext
+from maestro.core.tools import ToolName
+from maestro.db.database import Base
+from maestro.db import muse_models  # noqa: F401 — register tables
+from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,
     Phrase,
     Variation,
 )
-from app.services import muse_repository
-from app.services.muse_checkout import build_checkout_plan
-from app.services.muse_checkout_executor import (
+from maestro.services import muse_repository
+from maestro.services.muse_checkout import build_checkout_plan
+from maestro.services.muse_checkout_executor import (
     CheckoutExecutionResult,
     execute_checkout_plan,
 )
-from app.services.muse_history_controller import (
+from maestro.services.muse_history_controller import (
     CheckoutBlockedError,
     CheckoutSummary,
     checkout_to_variation,
@@ -379,7 +379,7 @@ class TestCheckoutExecutorBoundary:
 
     def test_no_handler_imports(self) -> None:
 
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout_executor.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "muse_checkout_executor.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"maestro_handlers", "maestro_editing", "maestro_composing"}
         for node in ast.walk(tree):
@@ -391,7 +391,7 @@ class TestCheckoutExecutorBoundary:
 
     def test_no_variation_service_import(self) -> None:
 
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout_executor.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "muse_checkout_executor.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -402,7 +402,7 @@ class TestCheckoutExecutorBoundary:
 
     def test_no_replay_internals_import(self) -> None:
 
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout_executor.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "muse_checkout_executor.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:

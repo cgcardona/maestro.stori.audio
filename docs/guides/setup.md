@@ -73,9 +73,9 @@ Orpheus (when backed by a Hugging Face Gradio Space) needs a Hugging Face API to
    ```
 2. **Drop and recreate the database:**
    ```bash
-   docker compose exec -T postgres psql -U stori -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'stori' AND pid <> pg_backend_pid();"
-   docker compose exec -T postgres psql -U stori -d postgres -c "DROP DATABASE IF EXISTS stori;"
-   docker compose exec -T postgres psql -U stori -d postgres -c "CREATE DATABASE stori;"
+   docker compose exec -T postgres psql --U maestro -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'maestro' AND pid <> pg_backend_pid();"
+   docker compose exec -T postgres psql --U maestro -d postgres -c "DROP DATABASE IF EXISTS maestro;"
+   docker compose exec -T postgres psql --U maestro -d postgres -c "CREATE DATABASE maestro;"
    ```
 3. **Run migrations** in a one-off container (so the app does not create tables on startup first). Migrations require `DATABASE_URL` or `DB_PASSWORD` (with Docker Postgres); see `.env.example`.
    ```bash
@@ -86,7 +86,7 @@ Orpheus (when backed by a Hugging Face Gradio Space) needs a Hugging Face API to
    docker compose up -d maestro
    ```
 
-For SQLite: delete the DB file (e.g. `/data/stori.db` in the container or your local path), then run `alembic upgrade head` before or after starting the app.
+For SQLite: delete the DB file (e.g. `/data/maestro.db` in the container or your local path), then run `alembic upgrade head` before or after starting the app.
 
 ---
 
@@ -96,7 +96,7 @@ For SQLite: delete the DB file (e.g. `/data/stori.db` in the container or your l
 - **Sync code:** `rsync -avz --exclude '.git' --exclude '__pycache__' --exclude '.env' ./ your-host:~/maestro/`
 - **Recreate (pick up .env):** `docker compose up -d --force-recreate maestro`
 - **S3 assets:** Run `scripts/deploy/setup-s3-assets.sh` with AWS credentials; add printed vars to `.env`. Upload assets via `scripts/upload_assets_to_s3.py` (e.g. inside container).
-- **Uninstall:** `docker compose down`; disable systemd: `sudo systemctl disable maestro-stori && sudo systemctl stop maestro-stori`.
+- **Uninstall:** `docker compose down`; disable systemd: `sudo systemctl disable && sudo systemctl stop `.
 
 ---
 

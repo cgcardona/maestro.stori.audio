@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from stori_tourdeforce.models import (
+from tourdeforce.models import (
     Event,
     MidiMetrics,
     RunResult,

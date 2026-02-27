@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import pytest
-from app.services.music_generator import MusicGenerator
-from app.contracts.json_types import NoteDict
-from app.services.backends.base import GeneratorBackend, GenerationResult
+from maestro.services.music_generator import MusicGenerator
+from maestro.contracts.json_types import NoteDict
+from maestro.services.backends.base import GeneratorBackend, GenerationResult
 
 
 class TestMusicGenerator:

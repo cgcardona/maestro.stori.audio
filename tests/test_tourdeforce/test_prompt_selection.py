@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from stori_tourdeforce.models import stable_hash
+from tourdeforce.models import stable_hash
 
 
 class TestStableHash:

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 from botocore.exceptions import ClientError, NoCredentialsError
 
-from app.services.assets import (
+from maestro.services.assets import (
     list_drum_kits,
     list_soundfonts,
     get_drum_kit_download_url,
@@ -40,14 +40,14 @@ def _make_client_error(code: str = "NoSuchKey") -> ClientError:
 
 class TestListDrumKits:
 
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets.settings")
     def test_no_bucket_returns_empty(self, mock_settings: MagicMock) -> None:
 
         mock_settings.aws_s3_asset_bucket = ""
         assert list_drum_kits() == []
 
-    @patch("app.services.assets._get_object_json")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._get_object_json")
+    @patch("maestro.services.assets.settings")
     def test_manifest_found(self, mock_settings: MagicMock, mock_get: MagicMock) -> None:
 
         mock_settings.aws_s3_asset_bucket = "test-bucket"
@@ -58,8 +58,8 @@ class TestListDrumKits:
         assert len(result) == 1
         assert result[0]["id"] == "tr909"
 
-    @patch("app.services.assets._get_object_json")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._get_object_json")
+    @patch("maestro.services.assets.settings")
     def test_manifest_missing_returns_defaults(self, mock_settings: MagicMock, mock_get: MagicMock) -> None:
 
         mock_settings.aws_s3_asset_bucket = "test-bucket"
@@ -75,14 +75,14 @@ class TestListDrumKits:
 
 class TestListSoundfonts:
 
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets.settings")
     def test_no_bucket_returns_empty(self, mock_settings: MagicMock) -> None:
 
         mock_settings.aws_s3_asset_bucket = ""
         assert list_soundfonts() == []
 
-    @patch("app.services.assets._get_object_json")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._get_object_json")
+    @patch("maestro.services.assets.settings")
     def test_manifest_found(self, mock_settings: MagicMock, mock_get: MagicMock) -> None:
 
         mock_settings.aws_s3_asset_bucket = "test-bucket"
@@ -92,8 +92,8 @@ class TestListSoundfonts:
         result = list_soundfonts()
         assert len(result) == 1
 
-    @patch("app.services.assets._get_object_json")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._get_object_json")
+    @patch("maestro.services.assets.settings")
     def test_manifest_missing_returns_defaults(self, mock_settings: MagicMock, mock_get: MagicMock) -> None:
 
         mock_settings.aws_s3_asset_bucket = "test-bucket"
@@ -109,10 +109,10 @@ class TestListSoundfonts:
 
 class TestGetDrumKitDownloadURL:
 
-    @patch("app.services.assets._s3_client")
-    @patch("app.services.assets._bucket", return_value="test-bucket")
-    @patch("app.services.assets.list_drum_kits")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._s3_client")
+    @patch("maestro.services.assets._bucket", return_value="test-bucket")
+    @patch("maestro.services.assets.list_drum_kits")
+    @patch("maestro.services.assets.settings")
     def test_happy_path(self, mock_settings: MagicMock, mock_list: MagicMock, mock_bucket: MagicMock, mock_s3: MagicMock) -> None:
 
         mock_settings.presign_expiry_seconds = 3600
@@ -125,17 +125,17 @@ class TestGetDrumKitDownloadURL:
         assert "tr909" in url
         assert isinstance(expires_at, datetime)
 
-    @patch("app.services.assets.list_drum_kits")
+    @patch("maestro.services.assets.list_drum_kits")
     def test_unknown_kit_raises(self, mock_list: MagicMock) -> None:
 
         mock_list.return_value = [{"id": "tr909"}]
         with pytest.raises(KeyError, match="unknown-kit"):
             get_drum_kit_download_url("unknown-kit")
 
-    @patch("app.services.assets._s3_client")
-    @patch("app.services.assets._bucket", return_value="test-bucket")
-    @patch("app.services.assets.list_drum_kits")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._s3_client")
+    @patch("maestro.services.assets._bucket", return_value="test-bucket")
+    @patch("maestro.services.assets.list_drum_kits")
+    @patch("maestro.services.assets.settings")
     def test_no_credentials(self, mock_settings: MagicMock, mock_list: MagicMock, mock_bucket: MagicMock, mock_s3: MagicMock) -> None:
 
         mock_settings.presign_expiry_seconds = 3600
@@ -155,10 +155,10 @@ class TestGetDrumKitDownloadURL:
 
 class TestGetSoundfontDownloadURL:
 
-    @patch("app.services.assets._s3_client")
-    @patch("app.services.assets._bucket", return_value="test-bucket")
-    @patch("app.services.assets.list_soundfonts")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._s3_client")
+    @patch("maestro.services.assets._bucket", return_value="test-bucket")
+    @patch("maestro.services.assets.list_soundfonts")
+    @patch("maestro.services.assets.settings")
     def test_happy_path(self, mock_settings: MagicMock, mock_list: MagicMock, mock_bucket: MagicMock, mock_s3: MagicMock) -> None:
 
         mock_settings.presign_expiry_seconds = 3600
@@ -173,8 +173,8 @@ class TestGetSoundfontDownloadURL:
         url, expires_at = get_soundfont_download_url("fluidr3_gm")
         assert "FluidR3_GM" in url
 
-    @patch("app.services.assets.list_soundfonts")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets.list_soundfonts")
+    @patch("maestro.services.assets.settings")
     def test_unknown_soundfont_raises(self, mock_settings: MagicMock, mock_list: MagicMock) -> None:
 
         mock_settings.presign_expiry_seconds = 3600
@@ -182,10 +182,10 @@ class TestGetSoundfontDownloadURL:
         with pytest.raises(KeyError, match="unknown"):
             get_soundfont_download_url("unknown")
 
-    @patch("app.services.assets._s3_client")
-    @patch("app.services.assets._bucket", return_value="test-bucket")
-    @patch("app.services.assets.list_soundfonts")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._s3_client")
+    @patch("maestro.services.assets._bucket", return_value="test-bucket")
+    @patch("maestro.services.assets.list_soundfonts")
+    @patch("maestro.services.assets.settings")
     def test_s3_404_raises_key_error(self, mock_settings: MagicMock, mock_list: MagicMock, mock_bucket: MagicMock, mock_s3: MagicMock) -> None:
 
         mock_settings.presign_expiry_seconds = 3600
@@ -205,9 +205,9 @@ class TestGetSoundfontDownloadURL:
 
 class TestGetBundleDownloadURL:
 
-    @patch("app.services.assets._s3_client")
-    @patch("app.services.assets._bucket", return_value="test-bucket")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._s3_client")
+    @patch("maestro.services.assets._bucket", return_value="test-bucket")
+    @patch("maestro.services.assets.settings")
     def test_happy_path(self, mock_settings: MagicMock, mock_bucket: MagicMock, mock_s3: MagicMock) -> None:
 
         mock_settings.presign_expiry_seconds = 3600
@@ -219,9 +219,9 @@ class TestGetBundleDownloadURL:
         url, expires_at = get_bundle_download_url()
         assert "bundle" in url
 
-    @patch("app.services.assets._s3_client")
-    @patch("app.services.assets._bucket", return_value="test-bucket")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._s3_client")
+    @patch("maestro.services.assets._bucket", return_value="test-bucket")
+    @patch("maestro.services.assets.settings")
     def test_bundle_missing(self, mock_settings: MagicMock, mock_bucket: MagicMock, mock_s3: MagicMock) -> None:
 
         mock_settings.presign_expiry_seconds = 3600
@@ -232,9 +232,9 @@ class TestGetBundleDownloadURL:
         with pytest.raises(KeyError, match="Bundle not found"):
             get_bundle_download_url()
 
-    @patch("app.services.assets._s3_client")
-    @patch("app.services.assets._bucket", return_value="test-bucket")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._s3_client")
+    @patch("maestro.services.assets._bucket", return_value="test-bucket")
+    @patch("maestro.services.assets.settings")
     def test_no_credentials(self, mock_settings: MagicMock, mock_bucket: MagicMock, mock_s3: MagicMock) -> None:
 
         mock_settings.presign_expiry_seconds = 3600
@@ -253,15 +253,15 @@ class TestGetBundleDownloadURL:
 
 class TestCheckS3Reachable:
 
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets.settings")
     def test_no_bucket(self, mock_settings: MagicMock) -> None:
 
         mock_settings.aws_s3_asset_bucket = ""
         assert check_s3_reachable() is False
 
-    @patch("app.services.assets._s3_client")
-    @patch("app.services.assets._bucket", return_value="test-bucket")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._s3_client")
+    @patch("maestro.services.assets._bucket", return_value="test-bucket")
+    @patch("maestro.services.assets.settings")
     def test_reachable(self, mock_settings: MagicMock, mock_bucket: MagicMock, mock_s3: MagicMock) -> None:
 
         mock_settings.aws_s3_asset_bucket = "test-bucket"
@@ -270,9 +270,9 @@ class TestCheckS3Reachable:
         mock_s3.return_value = mock_client
         assert check_s3_reachable() is True
 
-    @patch("app.services.assets._s3_client")
-    @patch("app.services.assets._bucket", return_value="test-bucket")
-    @patch("app.services.assets.settings")
+    @patch("maestro.services.assets._s3_client")
+    @patch("maestro.services.assets._bucket", return_value="test-bucket")
+    @patch("maestro.services.assets.settings")
     def test_unreachable(self, mock_settings: MagicMock, mock_bucket: MagicMock, mock_s3: MagicMock) -> None:
 
         mock_settings.aws_s3_asset_bucket = "test-bucket"

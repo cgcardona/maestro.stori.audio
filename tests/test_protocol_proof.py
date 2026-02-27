@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.protocol.events import MaestroEvent, ToolCallEvent
+from maestro.protocol.events import MaestroEvent, ToolCallEvent
 import hashlib
 import json
 from dataclasses import fields
@@ -17,14 +17,14 @@ from unittest.mock import patch
 
 import pytest
 
-from app.contracts.hash_utils import (
+from maestro.contracts.hash_utils import (
     _HASH_EXCLUDED_FIELDS,
     canonical_contract_dict,
     compute_contract_hash,
     seal_contract,
     verify_contract_hash,
 )
-from app.core.maestro_agent_teams.contracts import (
+from maestro.core.maestro_agent_teams.contracts import (
     CompositionContract,
     ExecutionServices,
     InstrumentContract,
@@ -32,16 +32,16 @@ from app.core.maestro_agent_teams.contracts import (
     SectionContract,
     SectionSpec,
 )
-from app.core.maestro_agent_teams.section_agent import (
+from maestro.core.maestro_agent_teams.section_agent import (
     SectionResult,
     _run_section_child,
 )
-from app.core.expansion import ToolCall
-from app.contracts.json_types import JSONValue
-from app.contracts.pydantic_types import wrap_dict
-from app.core.maestro_plan_tracker import _ToolCallOutcome
-from app.core.state_store import StateStore
-from app.core.tracing import TraceContext
+from maestro.core.expansion import ToolCall
+from maestro.contracts.json_types import JSONValue
+from maestro.contracts.pydantic_types import wrap_dict
+from maestro.core.maestro_plan_tracker import _ToolCallOutcome
+from maestro.core.state_store import StateStore
+from maestro.core.tracing import TraceContext
 
 
 def _spec(name: str = "verse", index: int = 0, start: int = 0, beats: int = 16) -> SectionSpec:
@@ -338,7 +338,7 @@ class TestSingleSectionLockdown:
         )
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
@@ -379,7 +379,7 @@ class TestRuntimeContextFreeze:
     def test_emotion_vector_type_is_frozen_tuple(self) -> None:
 
         """emotion_vector is stored as tuple[tuple[str, float], ...]."""
-        from app.core.emotion_vector import EmotionVector
+        from maestro.core.emotion_vector import EmotionVector
 
         ev = EmotionVector(energy=0.8, valence=0.3, tension=0.4, intimacy=0.5, motion=0.6)
         frozen = RuntimeContext.freeze_emotion_vector(ev)
@@ -399,7 +399,7 @@ class TestRuntimeContextFreeze:
     def test_frozen_tuple_mutation_raises(self) -> None:
 
         """emotion_vector is stored as tuple-of-tuples — tuples are immutable by Python spec."""
-        from app.core.emotion_vector import EmotionVector
+        from maestro.core.emotion_vector import EmotionVector
 
         ev = EmotionVector(energy=0.8, valence=0.3)
         frozen = RuntimeContext.freeze_emotion_vector(ev)
@@ -415,7 +415,7 @@ class TestRuntimeContextFreeze:
     def test_composition_context_returns_mapping_proxy(self) -> None:
 
         """to_composition_context returns MappingProxyType — no dict mutation."""
-        from app.core.emotion_vector import EmotionVector
+        from maestro.core.emotion_vector import EmotionVector
 
         ev = EmotionVector(energy=0.8, valence=0.3)
         frozen = RuntimeContext.freeze_emotion_vector(ev)
@@ -559,7 +559,7 @@ class TestExecutionAttestation:
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(

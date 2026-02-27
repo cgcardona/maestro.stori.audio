@@ -2,7 +2,7 @@
 #
 # Runs on PRs and direct pushes targeting main only.
 # Feature branches merge into dev freely without triggering CI.
-# Runs the full test suite with coverage. Fails if coverage drops below threshold (pyproject.toml fail_under).
+# Two jobs: maestro (app/ + tests/) and storpheus (storpheus/).
 name: Test & Coverage
 
 on:
@@ -12,7 +12,8 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  maestro:
+    name: Maestro (app/ + tests/)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +31,7 @@ jobs:
 
       - name: Type check (mypy)
         run: |
-          python -m mypy -p app
+          python -m mypy -p maestro
           python -m mypy -p tests
 
       - name: Typing ratchet (Any regression guard)
@@ -43,3 +44,28 @@ jobs:
         run: |
           coverage run -m pytest tests/ -v --tb=short
           coverage report --fail-under=80 --show-missing
+
+  storpheus:
+    name: Storpheus (storpheus/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r storpheus/requirements.txt
+          pip install mypy pytest pytest-asyncio anyio
+
+      - name: Type check (mypy)
+        run: |
+          python -m mypy storpheus/
+
+      - name: Run tests
+        run: |
+          pytest storpheus/test_*.py -v --tb=short

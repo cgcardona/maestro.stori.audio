@@ -4,19 +4,19 @@ Tests for RAG (Retrieval-Augmented Generation) service.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Generator
-from app.contracts.llm_types import StreamEvent
+from maestro.contracts.llm_types import StreamEvent
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 
-from app.services.rag import RAGService, RAGChunk, is_collection_stats
-from app.core.llm_client import LLMClient
+from maestro.services.rag import RAGService, RAGChunk, is_collection_stats
+from maestro.core.llm_client import LLMClient
 
 
 @pytest.fixture
 def mock_qdrant() -> Generator[MagicMock, None, None]:
     """Mock Qdrant client."""
-    with patch("app.services.rag.QdrantClient") as mock:
+    with patch("maestro.services.rag.QdrantClient") as mock:
         yield mock.return_value
 
 
@@ -31,7 +31,7 @@ def mock_llm_client() -> MagicMock:
 def rag_service(mock_qdrant: MagicMock, mock_llm_client: MagicMock) -> RAGService:
 
     """Create RAG service with mocks."""
-    with patch("app.services.rag.get_settings") as mock_settings:
+    with patch("maestro.services.rag.get_settings") as mock_settings:
         mock_settings.return_value.hf_api_key = "test_key"
         mock_settings.return_value.qdrant_host = "localhost"
         mock_settings.return_value.qdrant_port = 6333
@@ -299,7 +299,7 @@ async def test_answer_with_context(rag_service: RAGService, mock_llm_client: Mag
 async def test_answer_no_llm_client(mock_qdrant: MagicMock) -> None:
 
     """Test answer generation without LLM client (fallback)."""
-    with patch("app.services.rag.get_settings") as mock_settings:
+    with patch("maestro.services.rag.get_settings") as mock_settings:
         mock_settings.return_value.hf_api_key = "test_key"
         mock_settings.return_value.qdrant_host = "localhost"
         mock_settings.return_value.qdrant_port = 6333

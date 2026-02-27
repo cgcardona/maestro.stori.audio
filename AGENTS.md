@@ -89,7 +89,7 @@ When your changes affect another agent's domain (e.g., backend changes that requ
 ### Backend (this repo)
 
 ```
-app/
+maestro/
   api/routes/      → Thin HTTP handlers (no business logic)
   core/            → Intent, pipeline, maestro handlers, agent teams, executor
   daw/             → DAW adapter protocol (ports.py) and Stori implementation (stori/)
@@ -110,7 +110,7 @@ storpheus/
 Views → ViewModels → Services → Models
 ```
 
-The backend serves the frontend via SSE streaming and tool calls. The SSE event contract (`app/protocol/`) is the API boundary. Changes to event shapes, tool schemas, or endpoint signatures require a handoff.
+The backend serves the frontend via SSE streaming and tool calls. The SSE event contract (`maestro/protocol/`) is the API boundary. Changes to event shapes, tool schemas, or endpoint signatures require a handoff.
 
 ---
 
@@ -131,7 +131,7 @@ Before considering work complete, run in this order (mypy first so type fixes do
 
 > **Dev bind mounts are active.** Your host file edits are instantly visible inside the container — do NOT rebuild for code changes. Only rebuild when `requirements.txt`, `Dockerfile`, or `entrypoint.sh` change.
 
-1. [ ] `docker compose exec maestro mypy app/ tests/` — clean
+1. [ ] `docker compose exec maestro mypy maestro/ tests/` — clean
 2. [ ] `docker compose exec storpheus mypy .` — clean
 3. [ ] Relevant test file passes: `docker compose exec <service> pytest <file> -v`
 4. [ ] Regression test added (if bug fix)

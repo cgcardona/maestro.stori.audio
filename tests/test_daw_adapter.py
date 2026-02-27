@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.contracts.json_types import JSONValue
-from app.core.expansion import ToolCall
+from maestro.contracts.json_types import JSONValue
+from maestro.core.expansion import ToolCall
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +33,7 @@ class TestPhaseSplit:
 
     def test_named_field_access(self) -> None:
         """PhaseSplit fields are accessible by name."""
-        from app.daw.stori.phase_map import PhaseSplit, group_into_phases
+        from maestro.daw.stori.phase_map import PhaseSplit, group_into_phases
 
         result = group_into_phases(self._sample_calls())
         assert isinstance(result, PhaseSplit)
@@ -47,7 +47,7 @@ class TestPhaseSplit:
 
     def test_positional_destructuring(self) -> None:
         """PhaseSplit supports tuple-style positional unpacking."""
-        from app.daw.stori.phase_map import group_into_phases
+        from maestro.daw.stori.phase_map import group_into_phases
 
         setup, instruments, order, mixing = group_into_phases(self._sample_calls())
         assert len(setup) == 1
@@ -57,7 +57,7 @@ class TestPhaseSplit:
 
     def test_empty_input_all_fields_empty(self) -> None:
         """Empty tool call list produces PhaseSplit with all empty fields."""
-        from app.daw.stori.phase_map import PhaseSplit, group_into_phases
+        from maestro.daw.stori.phase_map import PhaseSplit, group_into_phases
 
         result = group_into_phases([])
         assert isinstance(result, PhaseSplit)
@@ -68,7 +68,7 @@ class TestPhaseSplit:
 
     def test_is_tuple_subclass(self) -> None:
         """PhaseSplit is a tuple (NamedTuple contract)."""
-        from app.daw.stori.phase_map import PhaseSplit, group_into_phases
+        from maestro.daw.stori.phase_map import PhaseSplit, group_into_phases
 
         result = group_into_phases(self._sample_calls())
         assert isinstance(result, tuple)
@@ -76,7 +76,7 @@ class TestPhaseSplit:
 
     def test_setup_only(self) -> None:
         """All-setup calls land exclusively in the setup field."""
-        from app.daw.stori.phase_map import group_into_phases
+        from maestro.daw.stori.phase_map import group_into_phases
 
         calls = [
             self._tc("stori_set_tempo", {"tempo": 90}),
@@ -89,7 +89,7 @@ class TestPhaseSplit:
 
     def test_mixing_only(self) -> None:
         """All-mixing calls land exclusively in the mixing field."""
-        from app.daw.stori.phase_map import group_into_phases
+        from maestro.daw.stori.phase_map import group_into_phases
 
         calls = [
             self._tc("stori_ensure_bus", {"name": "Reverb"}),
@@ -106,7 +106,7 @@ class TestPhaseSplit:
 
     def test_multiple_instruments_grouped(self) -> None:
         """Multiple instruments produce separate groups with preserved order."""
-        from app.daw.stori.phase_map import group_into_phases
+        from maestro.daw.stori.phase_map import group_into_phases
 
         calls = [
             self._tc("stori_add_midi_track", {"name": "Strings"}),
@@ -121,7 +121,7 @@ class TestPhaseSplit:
 
     def test_unresolvable_instrument_falls_to_mixing(self) -> None:
         """Calls without a resolvable instrument go to mixing phase."""
-        from app.daw.stori.phase_map import group_into_phases
+        from maestro.daw.stori.phase_map import group_into_phases
 
         calls = [self._tc("stori_add_insert_effect", {"type": "reverb"})]
         result = group_into_phases(calls)
@@ -142,7 +142,7 @@ class TestInstrumentGroups:
 
     def test_keys_are_lowercased(self) -> None:
         """Instrument group keys are normalised to lowercase."""
-        from app.daw.stori.phase_map import group_into_phases
+        from maestro.daw.stori.phase_map import group_into_phases
 
         calls = [
             self._tc("stori_add_midi_track", {"name": "Electric Piano"}),
@@ -154,7 +154,7 @@ class TestInstrumentGroups:
 
     def test_duplicate_instrument_appends(self) -> None:
         """Multiple calls for the same instrument accumulate in one group."""
-        from app.daw.stori.phase_map import group_into_phases
+        from maestro.daw.stori.phase_map import group_into_phases
 
         calls = [
             self._tc("stori_add_midi_track", {"name": "Bass"}),
@@ -175,8 +175,8 @@ class TestToolMetaRegistry:
 
     def test_type_alias_matches_registry(self) -> None:
         """build_tool_registry() returns a ToolMetaRegistry (dict[str, ToolMeta])."""
-        from app.daw.ports import ToolMetaRegistry
-        from app.daw.stori.tool_registry import build_tool_registry
+        from maestro.daw.ports import ToolMetaRegistry
+        from maestro.daw.stori.tool_registry import build_tool_registry
 
         reg = build_tool_registry()
         assert isinstance(reg, dict)
@@ -188,7 +188,7 @@ class TestToolMetaRegistry:
 
     def test_registry_is_idempotent(self) -> None:
         """Calling build_tool_registry() twice returns the same object."""
-        from app.daw.stori.tool_registry import build_tool_registry
+        from maestro.daw.stori.tool_registry import build_tool_registry
 
         first = build_tool_registry()
         second = build_tool_registry()
@@ -196,7 +196,7 @@ class TestToolMetaRegistry:
 
     def test_every_mcp_tool_has_meta(self) -> None:
         """Every MCP tool definition has a corresponding ToolMeta entry."""
-        from app.daw.stori.tool_registry import MCP_TOOLS, build_tool_registry
+        from maestro.daw.stori.tool_registry import MCP_TOOLS, build_tool_registry
 
         reg = build_tool_registry()
         for tool in MCP_TOOLS:
@@ -205,7 +205,7 @@ class TestToolMetaRegistry:
 
     def test_server_side_daw_partition(self) -> None:
         """SERVER_SIDE_TOOLS and DAW_TOOLS are a complete, disjoint partition."""
-        from app.daw.stori.tool_registry import MCP_TOOLS, SERVER_SIDE_TOOLS, DAW_TOOLS
+        from maestro.daw.stori.tool_registry import MCP_TOOLS, SERVER_SIDE_TOOLS, DAW_TOOLS
 
         all_names = {t["name"] for t in MCP_TOOLS}
         assert SERVER_SIDE_TOOLS | DAW_TOOLS == all_names
@@ -222,7 +222,7 @@ class TestToolCategoryEntry:
 
     def test_every_tool_has_a_category(self) -> None:
         """TOOL_CATEGORIES covers every MCP tool."""
-        from app.daw.stori.tool_registry import MCP_TOOLS, TOOL_CATEGORIES
+        from maestro.daw.stori.tool_registry import MCP_TOOLS, TOOL_CATEGORIES
 
         for tool in MCP_TOOLS:
             assert tool["name"] in TOOL_CATEGORIES, (
@@ -231,7 +231,7 @@ class TestToolCategoryEntry:
 
     def test_categories_are_known_strings(self) -> None:
         """All category values are one of the expected category names."""
-        from app.daw.stori.tool_registry import TOOL_CATEGORIES
+        from maestro.daw.stori.tool_registry import TOOL_CATEGORIES
 
         known = {"project", "track", "region", "note", "effects", "automation",
                  "midi_control", "generation", "playback", "ui"}
@@ -251,15 +251,15 @@ class TestStoriDAWAdapter:
 
     def test_protocol_conformance(self) -> None:
         """StoriDAWAdapter is a runtime-checkable DAWAdapter."""
-        from app.daw.ports import DAWAdapter
-        from app.daw.stori.adapter import StoriDAWAdapter
+        from maestro.daw.ports import DAWAdapter
+        from maestro.daw.stori.adapter import StoriDAWAdapter
 
         adapter = StoriDAWAdapter()
         assert isinstance(adapter, DAWAdapter)
 
     def test_registry_is_frozen(self) -> None:
         """ToolRegistry returned by the adapter is immutable."""
-        from app.daw.stori.adapter import StoriDAWAdapter
+        from maestro.daw.stori.adapter import StoriDAWAdapter
 
         adapter = StoriDAWAdapter()
         with pytest.raises(AttributeError):
@@ -267,7 +267,7 @@ class TestStoriDAWAdapter:
 
     def test_registry_has_mcp_and_llm_tools(self) -> None:
         """Registry exposes both MCP wire defs and LLM schemas."""
-        from app.daw.stori.adapter import StoriDAWAdapter
+        from maestro.daw.stori.adapter import StoriDAWAdapter
 
         reg = StoriDAWAdapter().registry
         assert len(reg.mcp_tools) >= 34
@@ -275,14 +275,14 @@ class TestStoriDAWAdapter:
 
     def test_registry_tool_meta_populated(self) -> None:
         """Registry tool_meta dict is populated with ToolMeta entries."""
-        from app.daw.stori.adapter import StoriDAWAdapter
+        from maestro.daw.stori.adapter import StoriDAWAdapter
 
         reg = StoriDAWAdapter().registry
         assert len(reg.tool_meta) >= 29
 
     def test_validate_tool_call_valid(self) -> None:
         """Valid tool call passes validation."""
-        from app.daw.stori.adapter import StoriDAWAdapter
+        from maestro.daw.stori.adapter import StoriDAWAdapter
 
         adapter = StoriDAWAdapter()
         result = adapter.validate_tool_call(
@@ -294,7 +294,7 @@ class TestStoriDAWAdapter:
 
     def test_validate_tool_call_not_in_allowed_set(self) -> None:
         """Tool not in allowed_tools set fails validation."""
-        from app.daw.stori.adapter import StoriDAWAdapter
+        from maestro.daw.stori.adapter import StoriDAWAdapter
 
         adapter = StoriDAWAdapter()
         result = adapter.validate_tool_call(
@@ -306,7 +306,7 @@ class TestStoriDAWAdapter:
 
     def test_phase_for_tool_all_phases(self) -> None:
         """phase_for_tool covers setup, instrument, and mixing."""
-        from app.daw.stori.adapter import StoriDAWAdapter
+        from maestro.daw.stori.adapter import StoriDAWAdapter
 
         adapter = StoriDAWAdapter()
         assert adapter.phase_for_tool("stori_set_tempo") == "setup"
@@ -320,7 +320,7 @@ class TestStoriDAWAdapter:
 
     def test_singleton_get_daw_adapter(self) -> None:
         """get_daw_adapter returns the same singleton instance."""
-        from app.daw.stori.adapter import get_daw_adapter
+        from maestro.daw.stori.adapter import get_daw_adapter
 
         a = get_daw_adapter()
         b = get_daw_adapter()
@@ -337,14 +337,14 @@ class TestToolRegistryFields:
 
     def test_server_side_and_daw_disjoint(self) -> None:
         """server_side_tools and daw_tools don't overlap."""
-        from app.daw.stori.adapter import StoriDAWAdapter
+        from maestro.daw.stori.adapter import StoriDAWAdapter
 
         reg = StoriDAWAdapter().registry
         assert reg.server_side_tools & reg.daw_tools == frozenset()
 
     def test_all_mcp_tools_classified(self) -> None:
         """Every MCP tool is either server-side or DAW-side."""
-        from app.daw.stori.adapter import StoriDAWAdapter
+        from maestro.daw.stori.adapter import StoriDAWAdapter
 
         reg = StoriDAWAdapter().registry
         mcp_names = {t["name"] for t in reg.mcp_tools}
@@ -353,7 +353,7 @@ class TestToolRegistryFields:
 
     def test_categories_cover_mcp_tools(self) -> None:
         """Every MCP tool has a category entry."""
-        from app.daw.stori.adapter import StoriDAWAdapter
+        from maestro.daw.stori.adapter import StoriDAWAdapter
 
         reg = StoriDAWAdapter().registry
         for tool in reg.mcp_tools:
@@ -369,16 +369,16 @@ class TestReExports:
     """Named types are re-exported through the executor package."""
 
     def test_phase_split_importable_from_executor(self) -> None:
-        """PhaseSplit is importable from app.core.executor."""
-        from app.core.executor import PhaseSplit
+        """PhaseSplit is importable from maestro.core.executor."""
+        from maestro.core.executor import PhaseSplit
         assert PhaseSplit is not None
 
     def test_instrument_groups_importable_from_executor(self) -> None:
-        """InstrumentGroups is importable from app.core.executor."""
-        from app.core.executor import InstrumentGroups
+        """InstrumentGroups is importable from maestro.core.executor."""
+        from maestro.core.executor import InstrumentGroups
         assert InstrumentGroups is not None
 
     def test_tool_meta_registry_importable_from_ports(self) -> None:
-        """ToolMetaRegistry is importable from app.daw.ports."""
-        from app.daw.ports import ToolMetaRegistry
+        """ToolMetaRegistry is importable from maestro.daw.ports."""
+        from maestro.daw.ports import ToolMetaRegistry
         assert ToolMetaRegistry is not None

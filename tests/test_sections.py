@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.maestro_agent_teams.sections import (
+from maestro.core.maestro_agent_teams.sections import (
     parse_sections,
     _get_section_role_description,
     _parse_form_structure,
@@ -449,7 +449,7 @@ Form:
         text (chorus in Effects, solo/bridge/verse/build in descriptions),
         making generation impossible within max_turns=3.
         """
-        from app.data.maestro_ui.prompts_global import PROMPTS_GLOBAL
+        from maestro.data.maestro_ui.prompts_global import PROMPTS_GLOBAL
 
         prompt = next(p for p in PROMPTS_GLOBAL if p.id == "e2e_pocket_groove")
         sections = parse_sections(

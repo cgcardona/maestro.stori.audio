@@ -10,13 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import pytest
 
 
-from app.api.routes.conversations import (
+from maestro.api.routes.conversations import (
     normalize_tool_arguments,
     build_conversation_history_for_llm,
 )
-from app.protocol.emitter import emit
-from app.protocol.events import ContentEvent
-from app.db.models import ConversationMessage
+from maestro.protocol.emitter import emit
+from maestro.protocol.events import ContentEvent
+from maestro.db.models import ConversationMessage
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +213,7 @@ class TestConversationSearchAPI:
     @pytest.mark.anyio
     async def test_search_endpoint(self, client: AsyncClient, auth_headers: dict[str, str], db_session: AsyncSession) -> None:
 
-        from app.services.conversations import create_conversation
+        from maestro.services.conversations import create_conversation
         user_id = (await client.get("/api/v1/users/me", headers=auth_headers)).json().get("userId")
         if not user_id:
             pytest.skip("No user_id in /me response")
@@ -353,7 +353,7 @@ class TestConversationGetDetail:
         conv_id = resp.json()["id"]
 
         # Manually add a message via service
-        from app.services.conversations import add_message
+        from maestro.services.conversations import add_message
         await add_message(db_session, conv_id, "user", "test content")
         await db_session.commit()
 
@@ -377,7 +377,7 @@ class TestConversationGetDetail:
         )
         conv_id = resp.json()["id"]
 
-        from app.services.conversations import add_message
+        from maestro.services.conversations import add_message
         await add_message(
             db_session, conv_id, "assistant", "Done",
             tool_calls=[{

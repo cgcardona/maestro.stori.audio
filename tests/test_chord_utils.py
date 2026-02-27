@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.chord_utils import (
+from maestro.core.chord_utils import (
     chord_root_pitch_class,
     chord_to_root_and_fifth_midi,
     chord_to_scale_degrees,

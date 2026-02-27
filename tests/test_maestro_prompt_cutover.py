@@ -13,8 +13,8 @@ import pathlib
 
 import pytest
 
-from app.prompts import MaestroPrompt, parse_prompt
-from app.prompts.errors import UnsupportedPromptHeader
+from maestro.prompts import MaestroPrompt, parse_prompt
+from maestro.prompts.errors import UnsupportedPromptHeader
 
 
 # ─── Parser: MAESTRO PROMPT acceptance ──────────────────────────────────────
@@ -97,7 +97,7 @@ class TestPromptPoolGuard:
     """Every curated prompt in the pool must use MAESTRO PROMPT header."""
 
     def test_all_fullprompts_use_maestro_header(self) -> None:
-        from app.data.maestro_ui.prompt_pool import PROMPT_POOL
+        from maestro.data.maestro_ui.prompt_pool import PROMPT_POOL
 
         for item in PROMPT_POOL:
             assert item.full_prompt.startswith("MAESTRO PROMPT"), (
@@ -106,7 +106,7 @@ class TestPromptPoolGuard:
             )
 
     def test_no_stori_prompt_in_pool(self) -> None:
-        from app.data.maestro_ui.prompt_pool import PROMPT_POOL
+        from maestro.data.maestro_ui.prompt_pool import PROMPT_POOL
 
         for item in PROMPT_POOL:
             assert "STORI PROMPT" not in item.full_prompt, (
@@ -125,9 +125,9 @@ _LEGACY_PATTERNS = [
 ]
 
 _ALLOWLIST_PATHS = {
-    "app/prompts/errors.py",
-    "app/prompts/parser.py",
-    "app/api/routes/maestro.py",
+    "maestro/prompts/errors.py",
+    "maestro/prompts/parser.py",
+    "maestro/api/routes/maestro.py",
     "tests/test_maestro_prompt_cutover.py",
 }
 

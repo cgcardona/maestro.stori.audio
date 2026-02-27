@@ -27,7 +27,7 @@ import uuid as uuid_module
 # Add the app directory to the path so we can import from it
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.auth.tokens import generate_access_code, get_token_expiration, AccessCodeError
+from maestro.auth.tokens import generate_access_code, get_token_expiration, AccessCodeError
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)

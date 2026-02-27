@@ -17,7 +17,7 @@ import typing
 import pytest
 from pydantic import ValidationError
 
-from app.protocol.events import (
+from maestro.protocol.events import (
     MaestroEvent,
     StateEvent,
     ReasoningEvent,
@@ -42,12 +42,12 @@ from app.protocol.events import (
     NoteChangeSchema,
     DoneEvent,
 )
-from app.contracts.json_types import JSONObject
-from app.protocol.registry import EVENT_REGISTRY, ALL_EVENT_TYPES
-from app.protocol.emitter import emit, parse_event, ProtocolSerializationError
-from app.protocol.validation import ProtocolGuard
-from app.protocol.version import MAESTRO_VERSION, is_compatible
-from app.protocol.schemas.project import ProjectSnapshot
+from maestro.contracts.json_types import JSONObject
+from maestro.protocol.registry import EVENT_REGISTRY, ALL_EVENT_TYPES
+from maestro.protocol.emitter import emit, parse_event, ProtocolSerializationError
+from maestro.protocol.validation import ProtocolGuard
+from maestro.protocol.version import MAESTRO_VERSION, is_compatible
+from maestro.protocol.schemas.project import ProjectSnapshot
 
 
 def _serialize_event(data: JSONObject) -> str:
@@ -73,13 +73,13 @@ class TestProtocolVersion:
 
     def test_compatible_same_major(self) -> None:
 
-        from app.protocol.version import MAESTRO_VERSION_MAJOR
+        from maestro.protocol.version import MAESTRO_VERSION_MAJOR
         assert is_compatible(f"{MAESTRO_VERSION_MAJOR}.0.0")
         assert is_compatible(f"{MAESTRO_VERSION_MAJOR}.5.3")
 
     def test_incompatible_different_major(self) -> None:
 
-        from app.protocol.version import MAESTRO_VERSION_MAJOR
+        from maestro.protocol.version import MAESTRO_VERSION_MAJOR
         assert not is_compatible(f"{MAESTRO_VERSION_MAJOR + 1}.0.0")
         if MAESTRO_VERSION_MAJOR > 0:
             assert not is_compatible(f"{MAESTRO_VERSION_MAJOR - 1}.0.0")
@@ -99,7 +99,7 @@ class TestEventRegistry:
     def test_all_event_types_registered(self) -> None:
 
         """Every MaestroEvent subclass in events.py has a registry entry."""
-        from app.protocol import events as events_module
+        from maestro.protocol import events as events_module
 
         all_subclasses = set()
         for name, obj in inspect.getmembers(events_module, inspect.isclass):
@@ -490,7 +490,7 @@ class TestProtocolHash:
     def test_hash_is_deterministic(self) -> None:
 
         """Same code → same hash on repeated calls."""
-        from app.protocol.hash import compute_protocol_hash
+        from maestro.protocol.hash import compute_protocol_hash
 
         h1 = compute_protocol_hash()
         h2 = compute_protocol_hash()
@@ -498,14 +498,14 @@ class TestProtocolHash:
 
     def test_hash_is_64_hex_chars(self) -> None:
 
-        from app.protocol.hash import compute_protocol_hash
+        from maestro.protocol.hash import compute_protocol_hash
 
         h = compute_protocol_hash()
         assert re.match(r"^[0-9a-f]{64}$", h)
 
     def test_short_hash_is_16_chars(self) -> None:
 
-        from app.protocol.hash import compute_protocol_hash_short
+        from maestro.protocol.hash import compute_protocol_hash_short
 
         h = compute_protocol_hash_short()
         assert len(h) == 16
@@ -515,11 +515,11 @@ class TestProtocolHash:
         """Protocol hash matches the committed golden hash.
 
         If this fails, the protocol surface changed. Update GOLDEN_HASH:
-            python -c "from app.protocol.hash import compute_protocol_hash; print(compute_protocol_hash())"
+            python -c "from maestro.protocol.hash import compute_protocol_hash; print(compute_protocol_hash())"
         """
-        from app.protocol.hash import compute_protocol_hash
+        from maestro.protocol.hash import compute_protocol_hash
 
-        golden_path = Path(__file__).resolve().parent.parent / "app" / "protocol" / "GOLDEN_HASH"
+        golden_path = Path(__file__).resolve().parent.parent / "maestro" / "protocol" / "GOLDEN_HASH"
         if not golden_path.exists():
             pytest.skip("GOLDEN_HASH file not yet created — run once to capture initial value")
 
@@ -584,12 +584,12 @@ class TestProtocolGuard:
 _TYPE_PATTERN = re.compile(r'"type"\s*:\s*"([^"]+)"')
 
 _HANDLER_DIRS = [
-    "app/core/maestro_editing",
-    "app/core/maestro_composing",
-    "app/core/maestro_agent_teams",
-    "app/core/maestro_plan_tracker",
-    "app/core/maestro_handlers.py",
-    "app/core/maestro_helpers.py",
+    "maestro/core/maestro_editing",
+    "maestro/core/maestro_composing",
+    "maestro/core/maestro_agent_teams",
+    "maestro/core/maestro_plan_tracker",
+    "maestro/core/maestro_handlers.py",
+    "maestro/core/maestro_helpers.py",
 ]
 
 _NON_EVENT_TYPES = {"function", "text", "access"}
@@ -745,14 +745,14 @@ class TestProtocolGuardEnforcedGlobally:
     def _has_guard_import(text: str) -> bool:
 
         return (
-            "from app.protocol.validation import ProtocolGuard" in text
-            or "from app.core.stream_utils import" in text
+            "from maestro.protocol.validation import ProtocolGuard" in text
+            or "from maestro.core.stream_utils import" in text
         )
 
     def test_maestro_route_has_guard(self) -> None:
 
         """maestro.py uses ProtocolGuard (directly or via SSESequencer)."""
-        source = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "maestro.py"
+        source = Path(__file__).resolve().parent.parent / "maestro" / "api" / "routes" / "maestro.py"
         text = source.read_text()
         assert self._has_guard(text)
         assert self._has_guard_import(text)
@@ -762,7 +762,7 @@ class TestProtocolGuardEnforcedGlobally:
         """messages.py uses ProtocolGuard (directly or via SSESequencer)."""
         source = (
             Path(__file__).resolve().parent.parent
-            / "app" / "api" / "routes" / "conversations" / "messages.py"
+            / "maestro" / "api" / "routes" / "conversations" / "messages.py"
         )
         text = source.read_text()
         assert self._has_guard(text)
@@ -771,7 +771,7 @@ class TestProtocolGuardEnforcedGlobally:
     def test_mcp_route_has_guard(self) -> None:
 
         """mcp.py instantiates ProtocolGuard in event_generator."""
-        source = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "mcp.py"
+        source = Path(__file__).resolve().parent.parent / "maestro" / "api" / "routes" / "mcp.py"
         text = source.read_text()
         assert self._has_guard(text)
         assert self._has_guard_import(text)
@@ -781,7 +781,7 @@ class TestProtocolGuardEnforcedGlobally:
         """variation/stream.py instantiates ProtocolGuard."""
         source = (
             Path(__file__).resolve().parent.parent
-            / "app" / "api" / "routes" / "variation" / "stream.py"
+            / "maestro" / "api" / "routes" / "variation" / "stream.py"
         )
         text = source.read_text()
         assert self._has_guard(text)
@@ -792,10 +792,10 @@ class TestProtocolGuardEnforcedGlobally:
         """All four streaming routes use ProtocolGuard (directly or via SSESequencer)."""
         base = Path(__file__).resolve().parent.parent
         routes = [
-            base / "app" / "api" / "routes" / "maestro.py",
-            base / "app" / "api" / "routes" / "conversations" / "messages.py",
-            base / "app" / "api" / "routes" / "mcp.py",
-            base / "app" / "api" / "routes" / "variation" / "stream.py",
+            base / "maestro" / "api" / "routes" / "maestro.py",
+            base / "maestro" / "api" / "routes" / "conversations" / "messages.py",
+            base / "maestro" / "api" / "routes" / "mcp.py",
+            base / "maestro" / "api" / "routes" / "variation" / "stream.py",
         ]
         for route in routes:
             text = route.read_text()
@@ -810,7 +810,7 @@ class TestPhase2ProjectSnapshotValidation:
 
     def test_valid_project_passes(self) -> None:
 
-        from app.models.requests import MaestroRequest
+        from maestro.models.requests import MaestroRequest
         req = MaestroRequest(prompt="test", project={"id": "p1", "tempo": 90})
         assert req.project is not None
         assert req.project["id"] == "p1"
@@ -818,13 +818,13 @@ class TestPhase2ProjectSnapshotValidation:
     def test_invalid_project_nullified(self) -> None:
 
         """Invalid project payload is set to None (not 422)."""
-        from app.models.requests import MaestroRequest
+        from maestro.models.requests import MaestroRequest
         req = MaestroRequest(prompt="test", project={"id": "p1", "tempo": -10})
         assert req.project is None
 
     def test_project_none_passes(self) -> None:
 
-        from app.models.requests import MaestroRequest
+        from maestro.models.requests import MaestroRequest
         req = MaestroRequest(prompt="test", project=None)
         assert req.project is None
 
@@ -836,7 +836,7 @@ class TestPhase2ProjectSnapshotValidation:
         project state back to the DAW, so stripping unknown keys is safe.
         If a new field is needed, add it to ProjectContext.
         """
-        from app.models.requests import MaestroRequest
+        from maestro.models.requests import MaestroRequest
 
         req = MaestroRequest.model_validate({"prompt": "test", "project": {"id": "p1", "futureField": "ok"}})
         assert req.project is not None
@@ -851,7 +851,7 @@ class TestPhase2NoDuplicateHelpers:
 
         source = (
             Path(__file__).resolve().parent.parent
-            / "app" / "api" / "routes" / "conversations" / "helpers.py"
+            / "maestro" / "api" / "routes" / "conversations" / "helpers.py"
         )
         text = source.read_text()
         assert "def sse_event" not in text
@@ -922,7 +922,7 @@ class TestProtocolConvergenceFinal:
     def test_no_raw_sse_fallback_in_emitter(self) -> None:
 
         """emitter.py must not contain _raw_sse or production fallback logic."""
-        source = Path(__file__).resolve().parent.parent / "app" / "protocol" / "emitter.py"
+        source = Path(__file__).resolve().parent.parent / "maestro" / "protocol" / "emitter.py"
         text = source.read_text()
         assert "_raw_sse" not in text, "Legacy _raw_sse function must be removed"
         assert "emitting raw dict" not in text, "Raw dict fallback message must be removed"
@@ -933,8 +933,8 @@ class TestProtocolConvergenceFinal:
         """All streaming routes must use sse_event() or emit(), not json.dumps for SSE."""
         base = Path(__file__).resolve().parent.parent
         routes = [
-            base / "app" / "api" / "routes" / "conversations" / "messages.py",
-            base / "app" / "api" / "routes" / "variation" / "stream.py",
+            base / "maestro" / "api" / "routes" / "conversations" / "messages.py",
+            base / "maestro" / "api" / "routes" / "variation" / "stream.py",
         ]
         for route in routes:
             text = route.read_text()
@@ -948,7 +948,7 @@ class TestProtocolConvergenceFinal:
         assert "mcp.message" in ALL_EVENT_TYPES
         assert "mcp.ping" in ALL_EVENT_TYPES
 
-        from app.protocol.events import MCPMessageEvent, MCPPingEvent
+        from maestro.protocol.events import MCPMessageEvent, MCPPingEvent
 
         msg = MCPMessageEvent(payload={"tool": "test"})
         assert msg.type == "mcp.message"
@@ -973,7 +973,7 @@ class TestProtocolConvergenceFinal:
         """variation/stream.py must not call EventEnvelope.to_sse()."""
         source = (
             Path(__file__).resolve().parent.parent
-            / "app" / "api" / "routes" / "variation" / "stream.py"
+            / "maestro" / "api" / "routes" / "variation" / "stream.py"
         )
         text = source.read_text()
         assert ".to_sse()" not in text, "EventEnvelope.to_sse() must be replaced by sse_event()"
@@ -982,7 +982,7 @@ class TestProtocolConvergenceFinal:
     def test_mcp_route_no_raw_json_dumps_sse(self) -> None:
 
         """mcp.py must not use json.dumps for SSE emission."""
-        source = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "mcp.py"
+        source = Path(__file__).resolve().parent.parent / "maestro" / "api" / "routes" / "mcp.py"
         text = source.read_text()
         import re
         sse_json_dumps = re.findall(r'f"data:.*json\.dumps', text)
@@ -1003,8 +1003,8 @@ class TestProtocolConvergenceFinal:
         }
 
         scan_dirs = [
-            base / "app" / "api" / "routes",
-            base / "app" / "core",
+            base / "maestro" / "api" / "routes",
+            base / "maestro" / "core",
         ]
         violations = []
         for scan_dir in scan_dirs:

@@ -18,7 +18,7 @@ We run tests **in Docker** so everyone (Mac, Linux, CI) uses the same environmen
 
 ```bash
 # Maestro (app + tests)
-docker compose exec maestro mypy app/ tests/
+docker compose exec maestro mypy maestro/ tests/
 
 # Storpheus
 docker compose exec storpheus mypy . --exclude venv

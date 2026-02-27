@@ -10,7 +10,7 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.mcp.server import (
+from maestro.mcp.server import (
     MaestroMCPServer,
     ToolCallResult,
     DAWConnection,
@@ -19,8 +19,8 @@ from app.mcp.server import (
 
 @pytest.fixture
 def mcp_server() -> MaestroMCPServer:
-    from app.protocol.version import MAESTRO_VERSION
-    with patch("app.config.get_settings") as mock_settings:
+    from maestro.protocol.version import MAESTRO_VERSION
+    with patch("maestro.config.get_settings") as mock_settings:
         mock_settings.return_value = MagicMock(app_version=MAESTRO_VERSION)
         server = MaestroMCPServer()
     return server
@@ -121,7 +121,7 @@ class TestMaestroMCPServer:
     @pytest.mark.anyio
     async def test_receive_tool_response_success(self, mcp_server: MaestroMCPServer) -> None:
         """A successful DAWToolResponse is resolved into the pending Future."""
-        from app.contracts.mcp_types import DAWToolResponse
+        from maestro.contracts.mcp_types import DAWToolResponse
         cb = AsyncMock()
         mcp_server.register_daw("daw-1", cb)
         loop = asyncio.get_event_loop()
@@ -135,7 +135,7 @@ class TestMaestroMCPServer:
     @pytest.mark.anyio
     async def test_receive_tool_response_failure(self, mcp_server: MaestroMCPServer) -> None:
         """A failed DAWToolResponse is resolved with success=False."""
-        from app.contracts.mcp_types import DAWToolResponse
+        from maestro.contracts.mcp_types import DAWToolResponse
         cb = AsyncMock()
         mcp_server.register_daw("daw-1", cb)
         loop = asyncio.get_event_loop()
@@ -148,12 +148,12 @@ class TestMaestroMCPServer:
 
     def test_receive_response_nonexistent_connection(self, mcp_server: MaestroMCPServer) -> None:
         """Delivering to an unknown connection ID is a no-op (never raises)."""
-        from app.contracts.mcp_types import DAWToolResponse
+        from maestro.contracts.mcp_types import DAWToolResponse
         mcp_server.receive_tool_response("ghost", "req-1", {"success": False})
 
     def test_receive_response_nonexistent_request(self, mcp_server: MaestroMCPServer) -> None:
         """Delivering to an unknown request ID for a known DAW is a no-op."""
-        from app.contracts.mcp_types import DAWToolResponse
+        from maestro.contracts.mcp_types import DAWToolResponse
         cb = AsyncMock()
         mcp_server.register_daw("daw-1", cb)
         mcp_server.receive_tool_response("daw-1", "no-req", {"success": False})

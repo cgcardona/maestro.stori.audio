@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sys
 import logging
-from app.contracts.json_types import JSONObject
+from maestro.contracts.json_types import JSONObject
 from gradio_client import Client
 import mido
 

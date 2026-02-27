@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from typing_extensions import TypedDict
 
-from app.contracts.json_types import (
+from maestro.contracts.json_types import (
     AftertouchDict,
     CCEventDict,
     NoteDict,
@@ -25,7 +25,7 @@ from app.contracts.json_types import (
     RegionNotesMap,
     RegionPitchBendMap,
 )
-from app.services.muse_checkout import (
+from maestro.services.muse_checkout import (
     CheckoutPlan,
     REGION_RESET_THRESHOLD,
     build_checkout_plan,
@@ -379,7 +379,7 @@ class TestCheckoutBoundary:
 
     def test_no_state_store_or_executor_import(self) -> None:
 
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "muse_checkout.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
         for node in ast.walk(tree):
@@ -391,7 +391,7 @@ class TestCheckoutBoundary:
 
     def test_no_forbidden_names(self) -> None:
 
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "muse_checkout.py"
         tree = ast.parse(filepath.read_text())
         forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
         for node in ast.walk(tree):
@@ -403,7 +403,7 @@ class TestCheckoutBoundary:
 
     def test_no_get_or_create_store_call(self) -> None:
 
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_checkout.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "muse_checkout.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):

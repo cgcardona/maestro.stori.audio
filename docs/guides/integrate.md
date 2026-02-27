@@ -98,7 +98,7 @@ Stori Maestro is an MCP server. Cursor, Claude Desktop, or any MCP client can li
     "-e", "MAESTRO_MCP_URL=http://localhost:10001",
     "-e", "MCP_TOKEN=YOUR_JWT",
     "maestro",
-    "python", "-m", "app.mcp.stdio_server"
+    "python", "-m", "maestro.mcp.stdio_server"
   ],
   "cwd": "REPO_ROOT"
 }
@@ -114,7 +114,7 @@ Tool list and parameters: see [api.md](../reference/api.md#tools).
 
 ### MCP MVP: prove it works
 
-You already have: HTTP endpoints (list/call with Bearer), stdio server (`app.mcp.stdio_server`), WebSocket for DAW, and server-side generation tools (e.g. `stori_generate_drums`) that run without a connected DAW. To **prove the MCP idea** end-to-end:
+You already have: HTTP endpoints (list/call with Bearer), stdio server (`maestro.mcp.stdio_server`), WebSocket for DAW, and server-side generation tools (e.g. `stori_generate_drums`) that run without a connected DAW. To **prove the MCP idea** end-to-end:
 
 **1. Prove “list tools + call one tool” (no DAW)**  
 Use the **HTTP** API so you don’t depend on Cursor/Claude or Swift.
@@ -135,12 +135,12 @@ So an LLM client can list and call tools.
 **2a. Verify the stdio server starts** (from repo root):
 
 - **Option A – Docker** (recommended; uses container env and no local Python deps):  
-  `docker compose exec -T maestro python -m app.mcp.stdio_server`  
+  `docker compose exec -T maestro python -m maestro.mcp.stdio_server`  
   Pipe two JSON-RPC lines to confirm:  
-  `(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'; sleep 0.3) | docker compose exec -T maestro python -m app.mcp.stdio_server 2>/dev/null`  
+  `(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'; sleep 0.3) | docker compose exec -T maestro python -m maestro.mcp.stdio_server 2>/dev/null`  
   You should see two JSON lines on stdout (initialize result + tools list).
 - **Option B – Local Python**: from repo root with a venv that has the app and deps (`pip install -e .`):  
-  `python -m app.mcp.stdio_server`  
+  `python -m maestro.mcp.stdio_server`  
   You should see “Stori MCP Server starting…” on stderr.
 
 **2b. Add the MCP server in Cursor**
@@ -156,7 +156,7 @@ So an LLM client can list and call tools.
     "args": [
       "compose", "-f", "REPO_ROOT/docker-compose.yml",
       "exec", "-T", "maestro",
-      "python", "-m", "app.mcp.stdio_server"
+      "python", "-m", "maestro.mcp.stdio_server"
     ],
     "cwd": "REPO_ROOT"
   }
@@ -167,13 +167,13 @@ So an LLM client can list and call tools.
   ```json
   "stori-daw": {
     "command": "python",
-    "args": ["-m", "app.mcp.stdio_server"],
+    "args": ["-m", "maestro.mcp.stdio_server"],
     "cwd": "REPO_ROOT"
   }
   ```
   Requires a venv (or env) with the app installed and deps (e.g. `pip install -e .`).
 
-- Restart Cursor (or **Developer: Reload Window**) so it starts the server. If you see **"Found 0 tools"** after changing config, do a full window reload (not just resaving `mcp.json`). To verify the server returns tools from the container: run `tools/list` via stdio (see [api.md](../reference/api.md)); from repo root you can pipe `initialize` + `tools/list` JSON lines into `docker compose exec -T maestro python -m app.mcp.stdio_server` and check the last line has `"result":{"tools":[...]}` with 41 tools.
+- Restart Cursor (or **Developer: Reload Window**) so it starts the server. If you see **"Found 0 tools"** after changing config, do a full window reload (not just resaving `mcp.json`). To verify the server returns tools from the container: run `tools/list` via stdio (see [api.md](../reference/api.md)); from repo root you can pipe `initialize` + `tools/list` JSON lines into `docker compose exec -T maestro python -m maestro.mcp.stdio_server` and check the last line has `"result":{"tools":[...]}` with 41 tools.
 
 **2c. Test in Cursor**
 

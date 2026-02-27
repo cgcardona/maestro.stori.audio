@@ -14,10 +14,10 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 
-from app.main import app
-from app.db.models import User, UsageLog
-from app.auth.tokens import create_access_token
-from app.services import budget
+from maestro.main import app
+from maestro.db.models import User, UsageLog
+from maestro.auth.tokens import create_access_token
+from maestro.services import budget
 
 
 # =============================================================================

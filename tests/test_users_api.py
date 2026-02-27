@@ -4,14 +4,14 @@ Covers registration, profile retrieval, model listing, token management.
 """
 from __future__ import annotations
 
-from app.db.models import User
+from maestro.db.models import User
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock, patch
 
-from app.config import ALLOWED_MODEL_IDS, APPROVED_MODELS
+from maestro.config import ALLOWED_MODEL_IDS, APPROVED_MODELS
 
 
 class TestRegisterUser:
@@ -148,7 +148,7 @@ class TestListModels:
     async def test_list_models_fallback_when_allowlist_empty(self, client: AsyncClient, db_session: AsyncSession) -> None:
 
         """Falls back to Claude models and logs a warning when allowlist has no APPROVED_MODELS matches."""
-        with patch("app.api.routes.users.ALLOWED_MODEL_IDS", ["anthropic/claude-does-not-exist-99"]):
+        with patch("maestro.api.routes.users.ALLOWED_MODEL_IDS", ["anthropic/claude-does-not-exist-99"]):
             resp = await client.get("/api/v1/models")
         assert resp.status_code == 200
         data = resp.json()

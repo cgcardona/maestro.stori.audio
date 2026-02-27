@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from stori_tourdeforce.scenarios import (
+from tourdeforce.scenarios import (
     ALL_SCENARIOS,
     CHECKOUT_STRESS_SCENARIO,
     CONFLICT_ONLY_SCENARIO,
@@ -12,7 +12,7 @@ from stori_tourdeforce.scenarios import (
     build_edit_maestro_prompt,
     get_scenario,
 )
-from stori_tourdeforce.runner import Runner
+from tourdeforce.runner import Runner
 
 
 class TestScenarioDefinitions:

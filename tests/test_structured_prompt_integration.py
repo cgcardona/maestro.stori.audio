@@ -12,12 +12,12 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.core.intent import Intent, IntentResult, Slots, SSEState
-from app.core.intent.models import SlotsExtrasDict
-from app.core.intent_config import IdiomMatch, match_weighted_vibes
-from app.core.planner import ExecutionPlan, build_execution_plan
-from app.prompts import MaestroPrompt, TargetSpec, VibeWeight
-from app.core.prompts import structured_prompt_context
+from maestro.core.intent import Intent, IntentResult, Slots, SSEState
+from maestro.core.intent.models import SlotsExtrasDict
+from maestro.core.intent_config import IdiomMatch, match_weighted_vibes
+from maestro.core.planner import ExecutionPlan, build_execution_plan
+from maestro.prompts import MaestroPrompt, TargetSpec, VibeWeight
+from maestro.core.prompts import structured_prompt_context
 
 
 # ─── Deterministic plan building ────────────────────────────────────────────

@@ -15,19 +15,19 @@ Enforced by `scripts/check_boundaries.py` (8 rules). Run locally or in CI.
 | Maestro Composing (`maestro_composing/`) | Executor, VariationService, StateStore, Snapshots, Models |
 | Executor (`executor/`) | StateStore, Models, Services, Tracing, ToolName |
 | Muse Compute (`compute_variation_from_context`) | VariationService, Models — nothing else |
-| VariationService (`services/variation/`) | Models (`app.models.variation`) — nothing else |
-| MuseRepository (`services/muse_repository.py`) | DB models (`app.db.muse_models`), domain models (`app.models.variation`) — nothing else |
+| VariationService (`services/variation/`) | Models (`maestro.models.variation`) — nothing else |
+| MuseRepository (`services/muse_repository.py`) | DB models (`maestro.db.muse_models`), domain models (`maestro.models.variation`) — nothing else |
 | StateStore | EntityRegistry |
 
 ### Forbidden imports
 
 | Source | Must NOT import | Reason |
 |--------|----------------|--------|
-| `app/services/variation/**` | `app.core.state_store`, `app.core.entity_registry` | VariationService is a pure computation service |
+| `app/services/variation/**` | `maestro.core.state_store`, `maestro.core.entity_registry` | VariationService is a pure computation service |
 | `compute_variation_from_context` | `StateStore`, `EntityRegistry`, executor modules | Muse compute is a pure function of data |
 | `apply_variation_phrases` | `get_or_create_store` | Receives store as explicit param |
-| `maestro_handlers.py` | `app.models.variation`, `app.services.variation` | Must not import Muse models directly |
-| `muse_repository.py` | `app.core.state_store`, `app.core.executor` | Persistence adapter must not couple to execution layer |
+| `maestro_handlers.py` | `maestro.models.variation`, `maestro.services.variation` | Must not import Muse models directly |
+| `muse_repository.py` | `maestro.core.state_store`, `maestro.core.executor` | Persistence adapter must not couple to execution layer |
 | `VariationContext` | `StateStore` (as field) | Data-only container; store access via `VariationExecutionContext` |
 
 ---

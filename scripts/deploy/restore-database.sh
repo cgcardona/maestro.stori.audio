@@ -17,7 +17,7 @@ set -e
 # Run from project root (where docker-compose.yml lives)
 cd "$(cd "$(dirname "$0")/../.." && pwd)"
 
-BACKUP_DIR="/var/backups/maestro-stori"
+BACKUP_DIR="/var/backups/maestro"
 
 # Colors
 GREEN='\033[0;32m'

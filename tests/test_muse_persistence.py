@@ -16,18 +16,18 @@ import pytest
 from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.contracts.json_types import RegionMetadataWire
-from app.db.database import Base
-from app.db import muse_models  # noqa: F401 — register tables
-from app.models.variation import (
+from maestro.contracts.json_types import RegionMetadataWire
+from maestro.db.database import Base
+from maestro.db import muse_models  # noqa: F401 — register tables
+from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,
     Phrase,
     Variation,
 )
-from app.services import muse_repository, muse_replay
-from app.services.muse_repository import HistoryNode
-from app.services.muse_replay import ReplayPlan
+from maestro.services import muse_repository, muse_replay
+from maestro.services.muse_repository import HistoryNode
+from maestro.services.muse_replay import ReplayPlan
 
 
 @pytest.fixture
@@ -607,7 +607,7 @@ async def test_replay_preserves_phrase_ordering(async_session: AsyncSession) -> 
 def test_muse_repository_boundary() -> None:
     """muse_repository must not import StateStore or executor modules."""
     import importlib
-    spec = importlib.util.find_spec("app.services.muse_repository")
+    spec = importlib.util.find_spec("maestro.services.muse_repository")
     assert spec is not None and spec.origin is not None
 
     with open(spec.origin) as f:
@@ -640,7 +640,7 @@ def test_muse_repository_boundary() -> None:
 def test_muse_replay_boundary() -> None:
     """muse_replay must not import StateStore, executor, or LLM handlers."""
     import importlib
-    spec = importlib.util.find_spec("app.services.muse_replay")
+    spec = importlib.util.find_spec("maestro.services.muse_replay")
     assert spec is not None and spec.origin is not None
 
     with open(spec.origin) as f:

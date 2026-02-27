@@ -4,7 +4,7 @@ These static tests ensure that Maestro core does not bleed Stori-specific
 vocabulary into its internals.  They run without network or Docker.
 
 Three categories:
-  a) **Forbidden imports** — Maestro core must not import app.daw.stori
+  a) **Forbidden imports** — Maestro core must not import maestro.daw.stori
      except in DI/wiring bootstrap modules.
   b) **Naming** — no ``class Stori*`` or ``def stori_*`` in Maestro core
      (except the adapter package).
@@ -20,32 +20,32 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-APP = ROOT / "app"
+APP = ROOT / "maestro"
 CORE = APP / "core"
 SERVICES = APP / "services"
 API = APP / "api"
 PROTOCOL = APP / "protocol"
 MODELS = APP / "models"
 
-# Modules that are allowed to import from app.daw.stori (DI / wiring / bootstrap)
+# Modules that are allowed to import from maestro.daw.stori (DI / wiring / bootstrap)
 _ALLOWED_STORI_IMPORTERS: frozenset[str] = frozenset({
-    "app/main.py",
-    "app/mcp/server.py",
-    "app/mcp/stdio_server.py",
-    "app/mcp/__init__.py",
-    "app/mcp/tools/__init__.py",
-    "app/core/tools/__init__.py",
-    "app/core/executor/phases.py",
-    "app/daw/stori/adapter.py",
-    "app/daw/stori/tool_registry.py",
-    "app/daw/stori/tool_schemas.py",
-    "app/daw/stori/tool_names.py",
-    "app/daw/stori/phase_map.py",
-    "app/daw/stori/validation.py",
-    "app/daw/stori/tools/__init__.py",
-    "app/daw/stori/__init__.py",
-    "app/daw/__init__.py",
-    "app/daw/ports.py",
+    "maestro/main.py",
+    "maestro/mcp/server.py",
+    "maestro/mcp/stdio_server.py",
+    "maestro/mcp/__init__.py",
+    "maestro/mcp/tools/__init__.py",
+    "maestro/core/tools/__init__.py",
+    "maestro/core/executor/phases.py",
+    "maestro/daw/stori/adapter.py",
+    "maestro/daw/stori/tool_registry.py",
+    "maestro/daw/stori/tool_schemas.py",
+    "maestro/daw/stori/tool_names.py",
+    "maestro/daw/stori/phase_map.py",
+    "maestro/daw/stori/validation.py",
+    "maestro/daw/stori/tools/__init__.py",
+    "maestro/daw/stori/__init__.py",
+    "maestro/daw/__init__.py",
+    "maestro/daw/ports.py",
 })
 
 
@@ -63,7 +63,7 @@ def _relative(path: Path) -> str:
 
 
 # =========================================================================
-# a) Forbidden imports: Maestro core must not import app.daw.stori
+# a) Forbidden imports: Maestro core must not import maestro.daw.stori
 # =========================================================================
 
 
@@ -78,11 +78,11 @@ def _has_stori_import(path: Path) -> list[str]:
     violations: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
-            if "app.daw.stori" in node.module:
+            if "maestro.daw.stori" in node.module:
                 violations.append(f"from {node.module} import ...")
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if "app.daw.stori" in alias.name:
+                if "maestro.daw.stori" in alias.name:
                     violations.append(f"import {alias.name}")
     return violations
 
@@ -99,10 +99,10 @@ def _core_py_files() -> list[Path]:
 
 
 class TestForbiddenImports:
-    """Maestro core must not import app.daw.stori except in wiring."""
+    """Maestro core must not import maestro.daw.stori except in wiring."""
 
     def test_no_stori_imports_in_core(self) -> None:
-        """Core packages must not import from app.daw.stori."""
+        """Core packages must not import from maestro.daw.stori."""
         violations: list[str] = []
         for path in _core_py_files():
             hits = _has_stori_import(path)
@@ -125,7 +125,7 @@ _CLASS_RE = re.compile(r"^\s*class\s+Stori\w*", re.MULTILINE)
 _FUNC_RE = re.compile(r"^\s*(?:async\s+)?def\s+stori_\w*", re.MULTILINE)
 
 _NAMING_EXCLUDED_DIRS: frozenset[str] = frozenset({
-    "app/daw",
+    "maestro/daw",
 })
 
 
@@ -178,7 +178,7 @@ class TestWireCompatibility:
 
     def test_tool_list_unchanged(self) -> None:
         """All expected stori_* tool names are present in the registry."""
-        from app.daw.stori.tool_registry import MCP_TOOLS
+        from maestro.daw.stori.tool_registry import MCP_TOOLS
 
         tool_names = {t["name"] for t in MCP_TOOLS}
         expected_core_tools = {
@@ -203,7 +203,7 @@ class TestWireCompatibility:
 
     def test_all_tools_prefixed(self) -> None:
         """Every MCP tool name starts with stori_ (DAW vocabulary)."""
-        from app.daw.stori.tool_registry import MCP_TOOLS
+        from maestro.daw.stori.tool_registry import MCP_TOOLS
 
         for tool in MCP_TOOLS:
             assert tool["name"].startswith("stori_"), (
@@ -212,7 +212,7 @@ class TestWireCompatibility:
 
     def test_server_side_tools_subset(self) -> None:
         """SERVER_SIDE_TOOLS is a proper subset of all tool names."""
-        from app.daw.stori.tool_registry import MCP_TOOLS, SERVER_SIDE_TOOLS
+        from maestro.daw.stori.tool_registry import MCP_TOOLS, SERVER_SIDE_TOOLS
 
         all_names = {t["name"] for t in MCP_TOOLS}
         assert SERVER_SIDE_TOOLS <= all_names
@@ -220,7 +220,7 @@ class TestWireCompatibility:
 
     def test_event_registry_unchanged(self) -> None:
         """All expected SSE event types are registered."""
-        from app.protocol.registry import ALL_EVENT_TYPES
+        from maestro.protocol.registry import ALL_EVENT_TYPES
 
         expected = {
             "state", "reasoning", "reasoningEnd", "content",
@@ -237,10 +237,10 @@ class TestWireCompatibility:
         """The MCP server reports 'stori-daw' as its name (wire contract)."""
         from unittest.mock import MagicMock, patch
 
-        with patch("app.config.get_settings") as mock_settings:
-            from app.protocol.version import MAESTRO_VERSION
+        with patch("maestro.config.get_settings") as mock_settings:
+            from maestro.protocol.version import MAESTRO_VERSION
             mock_settings.return_value = MagicMock(app_version=MAESTRO_VERSION)
-            from app.mcp.server import MaestroMCPServer
+            from maestro.mcp.server import MaestroMCPServer
             server = MaestroMCPServer()
 
         info = server.get_server_info()
@@ -248,8 +248,8 @@ class TestWireCompatibility:
 
     def test_daw_adapter_protocol(self) -> None:
         """StoriDAWAdapter satisfies the DAWAdapter protocol."""
-        from app.daw.ports import DAWAdapter
-        from app.daw.stori.adapter import StoriDAWAdapter
+        from maestro.daw.ports import DAWAdapter
+        from maestro.daw.stori.adapter import StoriDAWAdapter
 
         assert isinstance(StoriDAWAdapter, type)
         adapter = StoriDAWAdapter()

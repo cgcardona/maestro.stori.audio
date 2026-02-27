@@ -8,13 +8,13 @@ Supplements test_executor.py with:
 """
 from __future__ import annotations
 
-from app.contracts.json_types import JSONValue
+from maestro.contracts.json_types import JSONValue
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import app.core.executor as executor_module
-from app.core.executor import (
+import maestro.core.executor as executor_module
+from maestro.core.executor import (
     execute_plan_variation,
     apply_variation_phrases,
     _extract_notes_from_project,
@@ -24,14 +24,14 @@ from app.core.executor import (
     VariationExecutionContext,
     VariationApplyResult,
 )
-from app.contracts.generation_types import GenerationContext
-from app.contracts.json_types import AftertouchDict, CCEventDict, JSONValue, NoteDict, PitchBendDict
-from app.contracts.project_types import ProjectContext
-from app.services.backends.base import GenerationResult
-from app.core.expansion import ToolCall
-from app.core.state_store import StateStore
-from app.core.tracing import TraceContext
-from app.models.variation import (
+from maestro.contracts.generation_types import GenerationContext
+from maestro.contracts.json_types import AftertouchDict, CCEventDict, JSONValue, NoteDict, PitchBendDict
+from maestro.contracts.project_types import ProjectContext
+from maestro.services.backends.base import GenerationResult
+from maestro.core.expansion import ToolCall
+from maestro.core.state_store import StateStore
+from maestro.core.tracing import TraceContext
+from maestro.models.variation import (
     Variation,
     Phrase,
     NoteChange,
@@ -477,7 +477,7 @@ class TestGeneratorTimeout:
         original_timeout = executor_module._GENERATOR_TIMEOUT
         try:
             executor_module._GENERATOR_TIMEOUT = 0.1
-            with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
+            with patch("maestro.core.executor.variation.get_music_generator", return_value=mock_mg):
                 await _process_call_for_variation(call, var_ctx, exec_ctx)
         finally:
             executor_module._GENERATOR_TIMEOUT = original_timeout
@@ -505,7 +505,7 @@ class TestGeneratorTimeout:
         mock_mg = MagicMock()
         mock_mg.generate = AsyncMock(side_effect=RuntimeError("Storpheus down"))
 
-        with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
+        with patch("maestro.core.executor.variation.get_music_generator", return_value=mock_mg):
             await _process_call_for_variation(call, var_ctx, exec_ctx)
 
         assert len(var_ctx.proposed.notes) == 0
@@ -544,7 +544,7 @@ class TestEmotionVectorIntegration:
             context: GenerationContext | None = None,
         ) -> GenerationResult:
             nonlocal captured_context
-            from app.services.backends.base import GenerationResult, GeneratorBackend
+            from maestro.services.backends.base import GenerationResult, GeneratorBackend
             captured_context = context
             return GenerationResult(
                 success=True,
@@ -563,8 +563,8 @@ class TestEmotionVectorIntegration:
         mock_mg = MagicMock()
         mock_mg.generate = mock_generate
 
-        with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
-            with patch("app.core.executor.variation.get_or_create_store") as mock_store_factory:
+        with patch("maestro.core.executor.variation.get_music_generator", return_value=mock_mg):
+            with patch("maestro.core.executor.variation.get_or_create_store") as mock_store_factory:
                 mock_store = MagicMock()
                 mock_store.registry = MagicMock()
                 mock_store.registry.resolve_track = MagicMock(return_value="t1")
@@ -574,8 +574,8 @@ class TestEmotionVectorIntegration:
                 mock_store.conversation_id = "test"
                 mock_store_factory.return_value = mock_store
 
-                with patch("app.core.executor.variation.get_variation_service") as mock_vs:
-                    from app.models.variation import Variation
+                with patch("maestro.core.executor.variation.get_variation_service") as mock_vs:
+                    from maestro.models.variation import Variation
                     mock_vs.return_value.compute_variation = MagicMock(
                         return_value=Variation(
                             variation_id="v1",
@@ -628,7 +628,7 @@ class TestEmotionVectorIntegration:
             context: GenerationContext | None = None,
         ) -> GenerationResult:
             nonlocal captured_context
-            from app.services.backends.base import GenerationResult, GeneratorBackend
+            from maestro.services.backends.base import GenerationResult, GeneratorBackend
             captured_context = context
             return GenerationResult(
                 success=True,
@@ -647,8 +647,8 @@ class TestEmotionVectorIntegration:
         mock_mg = MagicMock()
         mock_mg.generate = mock_generate
 
-        with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
-            with patch("app.core.executor.variation.get_or_create_store") as mock_store_factory:
+        with patch("maestro.core.executor.variation.get_music_generator", return_value=mock_mg):
+            with patch("maestro.core.executor.variation.get_or_create_store") as mock_store_factory:
                 mock_store = MagicMock()
                 mock_store.registry = MagicMock()
                 mock_store.registry.resolve_track = MagicMock(return_value="t1")
@@ -658,8 +658,8 @@ class TestEmotionVectorIntegration:
                 mock_store.conversation_id = "test"
                 mock_store_factory.return_value = mock_store
 
-                with patch("app.core.executor.variation.get_variation_service") as mock_vs:
-                    from app.models.variation import Variation
+                with patch("maestro.core.executor.variation.get_variation_service") as mock_vs:
+                    from maestro.models.variation import Variation
                     mock_vs.return_value.compute_variation = MagicMock(
                         return_value=Variation(
                             variation_id="v1",
@@ -708,7 +708,7 @@ class TestEmotionVectorIntegration:
             context: GenerationContext | None = None,
         ) -> GenerationResult:
             nonlocal captured_context
-            from app.services.backends.base import GenerationResult, GeneratorBackend
+            from maestro.services.backends.base import GenerationResult, GeneratorBackend
             captured_context = context
             return GenerationResult(
                 success=True,
@@ -727,8 +727,8 @@ class TestEmotionVectorIntegration:
         mock_mg = MagicMock()
         mock_mg.generate = mock_generate
 
-        with patch("app.core.executor.variation.get_music_generator", return_value=mock_mg):
-            with patch("app.core.executor.variation.get_or_create_store") as mock_store_factory:
+        with patch("maestro.core.executor.variation.get_music_generator", return_value=mock_mg):
+            with patch("maestro.core.executor.variation.get_or_create_store") as mock_store_factory:
                 mock_store = MagicMock()
                 mock_store.registry = MagicMock()
                 mock_store.registry.resolve_track = MagicMock(return_value="t1")
@@ -738,8 +738,8 @@ class TestEmotionVectorIntegration:
                 mock_store.conversation_id = "test"
                 mock_store_factory.return_value = mock_store
 
-                with patch("app.core.executor.variation.get_variation_service") as mock_vs:
-                    from app.models.variation import Variation
+                with patch("maestro.core.executor.variation.get_variation_service") as mock_vs:
+                    from maestro.models.variation import Variation
                     mock_vs.return_value.compute_variation = MagicMock(
                         return_value=Variation(
                             variation_id="v1",
@@ -793,7 +793,7 @@ class TestParallelGeneratorDispatch:
 
     def _make_variation(self) -> Variation:
 
-        from app.models.variation import Variation
+        from maestro.models.variation import Variation
         return Variation(
             variation_id="v1",
             intent="test",
@@ -847,9 +847,9 @@ class TestParallelGeneratorDispatch:
         ]
 
         with (
-            patch("app.core.executor.variation.get_music_generator", return_value=mock_mg),
-            patch("app.core.executor.variation.get_or_create_store") as mock_factory,
-            patch("app.core.executor.variation.get_variation_service") as mock_vs,
+            patch("maestro.core.executor.variation.get_music_generator", return_value=mock_mg),
+            patch("maestro.core.executor.variation.get_or_create_store") as mock_factory,
+            patch("maestro.core.executor.variation.get_variation_service") as mock_vs,
         ):
             mock_factory.return_value = self._make_store_mock()
             mock_vs.return_value.compute_variation = MagicMock(return_value=self._make_variation())
@@ -893,9 +893,9 @@ class TestParallelGeneratorDispatch:
         mock_mg._generation_context = None
 
         with (
-            patch("app.core.executor.variation.get_music_generator", return_value=mock_mg),
-            patch("app.core.executor.variation.get_or_create_store") as mock_factory,
-            patch("app.core.executor.variation.get_variation_service") as mock_vs,
+            patch("maestro.core.executor.variation.get_music_generator", return_value=mock_mg),
+            patch("maestro.core.executor.variation.get_or_create_store") as mock_factory,
+            patch("maestro.core.executor.variation.get_variation_service") as mock_vs,
         ):
             mock_factory.return_value = self._make_store_mock()
             mock_vs.return_value.compute_variation = MagicMock(return_value=self._make_variation())
@@ -925,8 +925,8 @@ class TestParallelGeneratorDispatch:
         )
 
         with (
-            patch("app.core.executor.variation.get_or_create_store") as mock_factory,
-            patch("app.core.executor.variation.get_variation_service") as mock_vs,
+            patch("maestro.core.executor.variation.get_or_create_store") as mock_factory,
+            patch("maestro.core.executor.variation.get_variation_service") as mock_vs,
         ):
             mock_factory.return_value = self._make_store_mock()
             mock_vs.return_value.compute_variation = MagicMock(return_value=self._make_variation())
@@ -952,7 +952,7 @@ class TestPhraseAbsoluteBeats:
     def test_phrases_offset_by_region_start_beat(self) -> None:
 
         """Variation service adds region_start_beat to phrase positions."""
-        from app.services.variation import VariationService
+        from maestro.services.variation import VariationService
 
         svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
         proposed: list[NoteDict] = [
@@ -977,7 +977,7 @@ class TestPhraseAbsoluteBeats:
     def test_bar_labels_reflect_absolute_position(self) -> None:
 
         """Bar labels should use absolute project bar numbers, not region-relative."""
-        from app.services.variation import VariationService
+        from maestro.services.variation import VariationService
 
         svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
         proposed: list[NoteDict] = [
@@ -998,7 +998,7 @@ class TestPhraseAbsoluteBeats:
     def test_note_start_beat_stays_region_relative(self) -> None:
 
         """Note startBeat inside noteChanges must remain region-relative (Bug 6)."""
-        from app.services.variation import VariationService
+        from maestro.services.variation import VariationService
 
         svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
         proposed: list[NoteDict] = [
@@ -1022,7 +1022,7 @@ class TestPhraseAbsoluteBeats:
     def test_multi_region_absolute_beats(self) -> None:
 
         """compute_multi_region_variation uses per-region offsets."""
-        from app.services.variation import VariationService
+        from maestro.services.variation import VariationService
 
         svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
         proposed_regions: dict[str, list[NoteDict]] = {
@@ -1044,7 +1044,7 @@ class TestPhraseAbsoluteBeats:
     def test_zero_offset_backwards_compatible(self) -> None:
 
         """With region_start_beat=0 (default), behaviour is unchanged."""
-        from app.services.variation import VariationService
+        from maestro.services.variation import VariationService
 
         svc = VariationService(bars_per_phrase=4, beats_per_bar=4)
         proposed: list[NoteDict] = [
@@ -1298,7 +1298,7 @@ class TestVariationServiceCC:
 
     def test_cc_events_appear_in_phrase_cc_events(self) -> None:
 
-        from app.services.variation import VariationService
+        from maestro.services.variation import VariationService
         svc = VariationService()
         base_notes: list[NoteDict] = []
         proposed_notes: list[NoteDict] = [
@@ -1322,7 +1322,7 @@ class TestVariationServiceCC:
 
     def test_pitch_bends_appear_in_phrase_pitch_bends(self) -> None:
 
-        from app.services.variation import VariationService
+        from maestro.services.variation import VariationService
         svc = VariationService()
         proposed_notes: list[NoteDict] = [
             {"pitch": 64, "start_beat": 0, "duration_beats": 2, "velocity": 90},
@@ -1343,7 +1343,7 @@ class TestVariationServiceCC:
 
     def test_multi_region_cc_per_region(self) -> None:
 
-        from app.services.variation import VariationService
+        from maestro.services.variation import VariationService
         svc = VariationService()
 
         base_regions: dict[str, list[NoteDict]] = {"r1": [], "r2": []}
@@ -1426,7 +1426,7 @@ class TestGenerationResultCC:
 
     def test_defaults_to_empty_lists(self) -> None:
 
-        from app.services.backends.base import GenerationResult, GeneratorBackend
+        from maestro.services.backends.base import GenerationResult, GeneratorBackend
         r = GenerationResult(
             success=True,
             notes=[{"pitch": 60}],
@@ -1438,7 +1438,7 @@ class TestGenerationResultCC:
 
     def test_explicit_cc_and_pitch_bends(self) -> None:
 
-        from app.services.backends.base import GenerationResult, GeneratorBackend
+        from maestro.services.backends.base import GenerationResult, GeneratorBackend
         r = GenerationResult(
             success=True,
             notes=[{"pitch": 60}],
@@ -1457,7 +1457,7 @@ class TestStorpheusBackendCC:
     @pytest.mark.anyio
     async def test_extract_cc_and_pitch_bend(self) -> None:
 
-        from app.services.backends.storpheus import StorpheusBackend
+        from maestro.services.backends.storpheus import StorpheusBackend
 
         mock_client = AsyncMock()
         mock_client.generate.return_value = {
@@ -1512,7 +1512,7 @@ class TestStorpheusBackendCC:
     async def test_no_cc_when_absent(self) -> None:
 
         """When Storpheus returns only addNotes, CC/PB should be empty."""
-        from app.services.backends.storpheus import StorpheusBackend
+        from maestro.services.backends.storpheus import StorpheusBackend
 
         mock_client = AsyncMock()
         mock_client.generate.return_value = {
@@ -1588,7 +1588,7 @@ class TestAftertouchPipeline:
 
     def test_variation_service_aftertouch_in_phrases(self) -> None:
 
-        from app.services.variation import VariationService
+        from maestro.services.variation import VariationService
         svc = VariationService()
         proposed: list[NoteDict] = [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}]
         at: list[AftertouchDict] = [{"beat": 0.5, "value": 80, "pitch": 60}]
@@ -1608,7 +1608,7 @@ class TestAftertouchPipeline:
 
     def test_generation_result_aftertouch_default(self) -> None:
 
-        from app.services.backends.base import GenerationResult, GeneratorBackend
+        from maestro.services.backends.base import GenerationResult, GeneratorBackend
         r = GenerationResult(
             success=True, notes=[], backend_used=GeneratorBackend.STORPHEUS, metadata={}
         )
@@ -1617,7 +1617,7 @@ class TestAftertouchPipeline:
     @pytest.mark.anyio
     async def test_storpheus_extracts_aftertouch(self) -> None:
 
-        from app.services.backends.storpheus import StorpheusBackend
+        from maestro.services.backends.storpheus import StorpheusBackend
         mock_client = AsyncMock()
         mock_client.generate.return_value = {
             "success": True,

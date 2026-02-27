@@ -7,7 +7,7 @@ Stori Maestro — AI music composition backend (FastAPI + MCP) for the Stori DAW
 - **Entry points:** `POST /api/v1/maestro/stream` (human in DAW) and MCP tools (Cursor/Claude). Same engine, same pipeline.
 - **Stack:** Python 3.11+, FastAPI, Pydantic v2, fully async. Storpheus required for generation (no fallback).
 - **Models:** Exactly two — `anthropic/claude-sonnet-4.6` and `anthropic/claude-opus-4.6` via OpenRouter. No others.
-- **Version:** Single source of truth in `pyproject.toml`. Everything else derives from `app/protocol/version.py`.
+- **Version:** Single source of truth in `pyproject.toml`. Everything else derives from `maestro/protocol/version.py`.
 
 ## Agent scope
 
@@ -18,17 +18,17 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 ## Architecture (do not weaken)
 
 - **Intent-first:** Classify → REASONING / EDITING / COMPOSING.
-- **Layers:** Routes (thin) → Core (`app/core/`) → Services (`app/services/`) → Models. Never collapse.
+- **Layers:** Routes (thin) → Core (`maestro/core/`) → Services (`maestro/services/`) → Models. Never collapse.
 - **Single engine:** Stream and MCP share pipeline, tools, DAW state.
 - **No deprecated APIs:** Frontend and backend ship in lockstep. No fallbacks. Remove dead code on sight.
 
 ## Execution
 
 - **Docker-first:** Never run Python on the host. `docker compose exec <service> <cmd>`.
-- **Dev bind mounts are active.** `docker-compose.override.yml` bind-mounts `app/`, `tests/`, `scripts/`, `storpheus/`, and `pyproject.toml` into the containers. Host file edits are **instantly visible** inside the container — no rebuild needed for code changes. Only rebuild (`docker compose build <service> && docker compose up -d`) when you change `requirements.txt`, `Dockerfile`, or `entrypoint.sh`.
-- **Two containers:** `maestro` (`app/`, `tests/`) and `storpheus` (`storpheus/`). Both have mypy and pytest.
+- **Dev bind mounts are active.** `docker-compose.override.yml` bind-mounts `maestro/`, `tests/`, `scripts/`, `storpheus/`, and `pyproject.toml` into the containers. Host file edits are **instantly visible** inside the container — no rebuild needed for code changes. Only rebuild (`docker compose build <service> && docker compose up -d`) when you change `requirements.txt`, `Dockerfile`, or `entrypoint.sh`.
+- **Two containers:** `maestro` (`maestro/`, `tests/`) and `storpheus` (`storpheus/`). Both have mypy and pytest.
 - **Verification order: mypy → tests → docs.** Always run mypy first. Fix type errors before running tests so you only need one test pass.
-- **Mypy (both):** `docker compose exec maestro mypy app/ tests/` AND `docker compose exec storpheus mypy .`. Both pass before committing.
+- **Mypy (both):** `docker compose exec maestro mypy maestro/ tests/` AND `docker compose exec storpheus mypy .`. Both pass before committing.
 - **Tests:** Run individual files yourself; user runs full suite. Regression test for every bug fix: `test_<what_broke>_<fixed_behavior>`.
 - **Show full output:** Never truncate, pipe through `head`/`tail`, or hide shell output.
 - **After tests pass:** Update affected docs, then commit — don't wait to be asked.
@@ -87,24 +87,24 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 
 | Service | Container | Port |
 |---------|-----------|------|
-| Maestro | `maestro-stori-app` | 10001 |
-| Storpheus | `maestro-stori-storpheus` | 10002 |
-| Postgres | `maestro-stori-postgres` | 5432 |
-| Qdrant | `maestro-stori-qdrant` | 6333/6334 |
-| Nginx | `maestro-stori-nginx` | 80/443 |
+| Maestro | `maestro-app` | 10001 |
+| Storpheus | `maestro-storpheus` | 10002 |
+| Postgres | `maestro-postgres` | 5432 |
+| Qdrant | `maestro-qdrant` | 6333/6334 |
+| Nginx | `maestro-nginx` | 80/443 |
 
 ## Quick reference
 
 | Area | Code | Tests |
 |------|------|-------|
-| Config | `app/config.py` | `tests/test_config.py` |
-| Intent | `app/core/intent*.py` | `tests/test_intent*.py` |
-| Pipeline | `app/core/pipeline.py` | `tests/test_pipeline.py` |
-| Maestro | `app/core/maestro_handlers.py` | `tests/test_maestro_handlers.py` |
-| Agent Teams | `app/core/maestro_agent_teams/` | `tests/test_section_agent.py` |
+| Config | `maestro/config.py` | `tests/test_config.py` |
+| Intent | `maestro/core/intent*.py` | `tests/test_intent*.py` |
+| Pipeline | `maestro/core/pipeline.py` | `tests/test_pipeline.py` |
+| Maestro | `maestro/core/maestro_handlers.py` | `tests/test_maestro_handlers.py` |
+| Agent Teams | `maestro/core/maestro_agent_teams/` | `tests/test_section_agent.py` |
 | Storpheus | `storpheus/music_service.py` | `storpheus/test_*.py` |
-| MCP | `app/mcp/` | `tests/test_mcp.py` |
-| DAW Adapter | `app/daw/` | `tests/test_daw_adapter.py` |
-| Muse VCS | `app/services/muse_*.py` | `tests/test_muse_*.py` |
-| Muse Routes | `app/api/routes/muse.py` | `tests/e2e/test_muse_e2e_harness.py` |
-| Muse Render | `app/services/muse_log_render.py` | `tests/e2e/test_muse_e2e_harness.py` |
+| MCP | `maestro/mcp/` | `tests/test_mcp.py` |
+| DAW Adapter | `maestro/daw/` | `tests/test_daw_adapter.py` |
+| Muse VCS | `maestro/services/muse_*.py` | `tests/test_muse_*.py` |
+| Muse Routes | `maestro/api/routes/muse.py` | `tests/e2e/test_muse_e2e_harness.py` |
+| Muse Render | `maestro/services/muse_log_render.py` | `tests/e2e/test_muse_e2e_harness.py` |

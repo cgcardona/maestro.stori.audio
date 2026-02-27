@@ -60,7 +60,7 @@ Once modules are clean, add per-module overrides:
 
 ```toml
 [[tool.mypy.overrides]]
-module = ["app.contracts.*", "app.protocol.*", "app.models.*"]
+module = ["maestro.contracts.*", "maestro.protocol.*", "maestro.models.*"]
 disallow_any_explicit = true
 ```
 

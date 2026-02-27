@@ -23,7 +23,7 @@ How the backend works: one engine, two entry points; request flow; intent; execu
 5. **EDITING:** LLM gets a tool allowlist; emits tool calls; server validates and resolves entity IDs. Emits a structured `plan` event (checklist of steps) before the first tool call, then `planStepUpdate` events bracketing each step, and `toolStart` + `toolCall` events for each tool.
 6. **COMPOSING:** Two sub-paths based on whether the prompt is a structured MAESTRO PROMPT with roles:
    - **Structured (Mode: compose + roles):** Agent Teams runs per-instrument agents with streaming reasoning, then captures all generated notes and computes a Variation for commit/discard review. The SSE stream emits both `reasoning`/`toolCall` events (real-time per-agent chain-of-thought) AND `meta`/`phrase`/`done` events (Variation for the review UI). Single-instrument compose also uses this path — the instrument count determines parallelism, not the execution path.
-   - **Freeform (no parsed prompt):** Planner produces a plan (JSON), typed as `PlanJsonDict` at the wire boundary (`app/core/plan_schemas/plan_json_types.py`), then validated by `validate_plan_json` → `build_plan_from_dict` → Pydantic `ExecutionPlanSchema`; executor simulates it without mutation; server streams Variation events (`meta`, `phrase*`, `done`). The planner is **project-context-aware**: it checks existing tracks by name and instrument type before proposing new ones, reuses existing track UUIDs in region and generator calls, and maps abstract roles (e.g. "melody") to matching existing instruments (e.g. an "Organ" track).
+   - **Freeform (no parsed prompt):** Planner produces a plan (JSON), typed as `PlanJsonDict` at the wire boundary (`maestro/core/plan_schemas/plan_json_types.py`), then validated by `validate_plan_json` → `build_plan_from_dict` → Pydantic `ExecutionPlanSchema`; executor simulates it without mutation; server streams Variation events (`meta`, `phrase*`, `done`). The planner is **project-context-aware**: it checks existing tracks by name and instrument type before proposing new ones, reuses existing track UUIDs in region and generator calls, and maps abstract roles (e.g. "melody") to matching existing instruments (e.g. an "Organ" track).
 7. **Stream:** Events include `state`, `reasoning`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `toolError`, `meta`, `phrase`, `done`, `budgetUpdate`, `complete`, `error`. Variable refs (`$0.trackId`) resolved server-side. `complete` is **always the final event**, even on errors (`success: false`).
 
 ---
@@ -48,10 +48,10 @@ See [api.md](api.md) for the full SSE event reference and wire format.
 
 ## Stori Protocol (wire contract)
 
-All SSE events across every streaming endpoint are validated through the Stori Protocol layer (`app/protocol/`). The protocol enforces:
+All SSE events across every streaming endpoint are validated through the Stori Protocol layer (`maestro/protocol/`). The protocol enforces:
 
-- **One registry:** Every event type is registered in `app/protocol/registry.py`. Unknown types cannot be emitted.
-- **One emitter:** `serialize_event()` in `app/protocol/emitter.py` is the single serialization path. It validates every dict against its Pydantic model before serialization. Raw `json.dumps` in streaming code is forbidden.
+- **One registry:** Every event type is registered in `maestro/protocol/registry.py`. Unknown types cannot be emitted.
+- **One emitter:** `serialize_event()` in `maestro/protocol/emitter.py` is the single serialization path. It validates every dict against its Pydantic model before serialization. Raw `json.dumps` in streaming code is forbidden.
 - **One guard:** `ProtocolGuard` is instantiated in every streaming route (maestro, conversations, MCP, variation). It checks event ordering invariants (first event = `state`, nothing after `complete`, etc.).
 - **Fail loudly:** If validation fails, the emitter raises `ProtocolSerializationError`. The stream emits `error` + `complete(success: false)` and terminates. There is no silent fallback.
 
@@ -109,7 +109,7 @@ User prompt arrives
 
 Parsed fields (Style, Key, Tempo, Roles, Constraints, Vibes, Target) are injected into the LLM system prompt as structured context, reducing inference overhead and increasing determinism.
 
-Implementation: `app/core/prompt_parser.py` (parser, including `_as_mode` for Literal type narrowing without cast), `app/core/intent/` (routing gate).
+Implementation: `maestro/core/prompt_parser.py` (parser, including `_as_mode` for Literal type narrowing without cast), `maestro/core/intent/` (routing gate).
 
 ---
 
@@ -136,7 +136,7 @@ When a structured prompt specifies `Style` and `Role`, the planner infers effect
 
 **Suppression:** `Constraints: no_effects: true` disables all effect inference.
 
-Implementation: `app/core/planner._infer_mix_steps`, wired into `plan_from_parsed_prompt` and `_schema_to_tool_calls`.
+Implementation: `maestro/core/planner._infer_mix_steps`, wired into `plan_from_parsed_prompt` and `_schema_to_tool_calls`.
 
 ### 2. MAESTRO PROMPT block translation
 
@@ -157,7 +157,7 @@ When a MAESTRO PROMPT includes `Effects:`, `MidiExpressiveness:`, or `Automation
 
 The plan tracker surfaces each expressive block as a visible plan step with canonical per-track labels (`"Add effects to Drums"`, `"Add MIDI CC to Bass"`, `"Add pitch bend to Guitar Lead"`, `"Write automation for Strings"`) so the frontend's `ExecutionTimelineView` can group them into the correct instrument sections.
 
-Implementation: `app/core/prompts.structured_prompt_context` (translation mandate injection), `app/core/prompts.editing_composition_prompt` (step-by-step guide), `app/core/maestro_handlers._PlanTracker.build_from_prompt` (plan steps).
+Implementation: `maestro/core/prompts.structured_prompt_context` (translation mandate injection), `maestro/core/prompts.editing_composition_prompt` (step-by-step guide), `maestro/core/maestro_handlers._PlanTracker.build_from_prompt` (plan steps).
 
 ---
 
@@ -412,7 +412,7 @@ Defense-in-depth against the failure modes that occur in nested, GPU-bound agent
 - Bass signal waits use `asyncio.wait_for(timeout=bass_signal_wait_timeout)` (default 240s). If drums fail silently, bass proceeds without the rhythm spine rather than deadlocking.
 
 **Track color pre-allocation:**
-- Before Phase 2 starts, the coordinator calls `allocate_colors(instrument_names)` (`app/core/track_styling.py`) to assign one distinct hex color per instrument from a fixed 12-entry perceptually-spaced palette (`COMPOSITION_PALETTE`). Colors are chosen in role order so adjacent tracks always contrast. Each instrument agent receives its pre-assigned color and is instructed to pass it verbatim in `stori_add_midi_track` — the agent cannot override it. This prevents the LLM from hallucinating repeated colors (the original bug was all tracks receiving amber/orange).
+- Before Phase 2 starts, the coordinator calls `allocate_colors(instrument_names)` (`maestro/core/track_styling.py`) to assign one distinct hex color per instrument from a fixed 12-entry perceptually-spaced palette (`COMPOSITION_PALETTE`). Colors are chosen in role order so adjacent tracks always contrast. Each instrument agent receives its pre-assigned color and is instructed to pass it verbatim in `stori_add_midi_track` — the agent cannot override it. This prevents the LLM from hallucinating repeated colors (the original bug was all tracks receiving amber/orange).
 
 **Storpheus pre-flight health check (hard gate):**
 - Before Phase 2 starts, the coordinator calls `StorpheusClient.health_check()`. When `STORPHEUS_REQUIRED=true` (default), an unhealthy probe aborts the composition immediately with `complete(success=false)` instead of wasting 45+ seconds of LLM reasoning that would inevitably fail at generation time. When `STORPHEUS_REQUIRED=false` (development/testing), it falls back to a soft warning and continues with retry logic active.
@@ -486,13 +486,13 @@ Keys follow `"Instrument: section_id"` format (e.g. `"Drums: 0:verse"`, `"Bass: 
 
 **Diagnostic value:** The coordinator can call `await section_state.snapshot()` after composition completes for orchestration diagnostics, quality scoring, and future mixing decisions.
 
-Implementation: `app/core/telemetry.py` (computation), `app/core/maestro_agent_teams/signals.py` (SectionState store).
+Implementation: `maestro/core/telemetry.py` (computation), `maestro/core/maestro_agent_teams/signals.py` (SectionState store).
 
 ### Agent-scoped entity registry
 
 `EntityRegistry` tracks all DAW entities (tracks, regions, buses) created during a composition. Each entity carries an optional `owner_agent_id` field set at creation time. The `agent_manifest(track_id=..., agent_id=...)` method returns a compact text manifest filtered to entities owned by the requesting agent — preventing cross-agent contamination (e.g. Strings region IDs leaking into the Bass agent's context).
 
-Implementation: `app/core/entity_registry.py`. Tests: `tests/test_entity_manifest.py`.
+Implementation: `maestro/core/entity_registry.py`. Tests: `tests/test_entity_manifest.py`.
 
 ### Routing, SSE, isolation, safety
 
@@ -508,7 +508,7 @@ Implementation: `app/core/entity_registry.py`. Tests: `tests/test_entity_manifes
 
 **Performance:** Wall-clock time for Phase 2 is `max(per-instrument time)` instead of `sum`. Within each instrument, sections run sequentially for musical continuity (each ~10-30s on GPU), so a 3-section instrument takes ~30-90s. For a 5-instrument, 3-section composition, all instruments' sequential pipelines run in parallel, so total Phase 2 time is still bounded by the slowest single instrument. Bass sections start ~1 section behind drums via signal-based pipelining.
 
-Implementation: `app/core/maestro_agent_teams/coordinator.py` (Level 1), `app/core/maestro_agent_teams/agent.py` (Level 2, server-owned retries + summary collapse), `app/core/maestro_agent_teams/section_agent.py` (Level 3), `app/core/maestro_agent_teams/summary.py` (batch result summarization), `app/core/maestro_agent_teams/contracts.py` (CompositionContract, SectionSpec, SectionContract, InstrumentContract, RuntimeContext, ExecutionServices, ProtocolViolationError), `app/core/maestro_agent_teams/signals.py` (SectionSignals, SectionSignalResult, SectionState — lineage-bound keying), `app/core/telemetry.py` (SectionTelemetry computation), `app/core/entity_registry.py` (EntityRegistry with agent-scoped manifests), `app/contracts/hash_utils.py` (`canonical_contract_dict`, `compute_contract_hash`, `hash_list_canonical`, `compute_execution_hash`, `seal_contract`, `verify_contract_hash`).
+Implementation: `maestro/core/maestro_agent_teams/coordinator.py` (Level 1), `maestro/core/maestro_agent_teams/agent.py` (Level 2, server-owned retries + summary collapse), `maestro/core/maestro_agent_teams/section_agent.py` (Level 3), `maestro/core/maestro_agent_teams/summary.py` (batch result summarization), `maestro/core/maestro_agent_teams/contracts.py` (CompositionContract, SectionSpec, SectionContract, InstrumentContract, RuntimeContext, ExecutionServices, ProtocolViolationError), `maestro/core/maestro_agent_teams/signals.py` (SectionSignals, SectionSignalResult, SectionState — lineage-bound keying), `maestro/core/telemetry.py` (SectionTelemetry computation), `maestro/core/entity_registry.py` (EntityRegistry with agent-scoped manifests), `app/contracts/hash_utils.py` (`canonical_contract_dict`, `compute_contract_hash`, `hash_list_canonical`, `compute_execution_hash`, `seal_contract`, `verify_contract_hash`).
 
 ---
 
@@ -529,9 +529,9 @@ Key invariants enforced:
 - `muse_repository` must not import `StateStore`, `executor`, or `VariationService` — it is a pure persistence adapter.
 - Variation service modules do not import `state_store` or `entity_registry`.
 
-**Persistent Muse Core:** Variations are durably stored in Postgres (`variations`, `phrases`, `note_changes` tables) via `app/services/muse_repository.py`. The commit path reads from Postgres first, falling back to in-memory `VariationStore` for pre-persistence variations. Persistence tests in `tests/test_muse_persistence.py` verify roundtrip fidelity, status lifecycle, and commit replay safety.
+**Persistent Muse Core:** Variations are durably stored in Postgres (`variations`, `phrases`, `note_changes` tables) via `maestro/services/muse_repository.py`. The commit path reads from Postgres first, falling back to in-memory `VariationStore` for pre-persistence variations. Persistence tests in `tests/test_muse_persistence.py` verify roundtrip fidelity, status lifecycle, and commit replay safety.
 
-**Muse VCS Engine (Git for Music):** Beyond persistence, Muse implements a full VCS stack with 10 modules in `app/services/`:
+**Muse VCS Engine (Git for Music):** Beyond persistence, Muse implements a full VCS stack with 10 modules in `maestro/services/`:
 
 | Module | Responsibility |
 |--------|---------------|
@@ -546,7 +546,7 @@ Key invariants enforced:
 | `muse_log_graph` | DAG serializer (Kahn's sort → camelCase JSON for Swift) |
 | `muse_log_render` | ASCII graph + JSON + summary table renderer |
 
-HTTP API: 5 production endpoints at `/api/v1/muse/` (routes in `app/api/routes/muse.py`). See [api.md](api.md#muse-vcs-api) for the full endpoint reference and [muse_vcs.md](../architecture/muse_vcs.md) for the architecture reference.
+HTTP API: 5 production endpoints at `/api/v1/muse/` (routes in `maestro/api/routes/muse.py`). See [api.md](api.md#muse-vcs-api) for the full endpoint reference and [muse_vcs.md](../architecture/muse_vcs.md) for the architecture reference.
 
 ---
 
@@ -619,7 +619,7 @@ The generation pipeline carries the **complete set** of musically relevant MIDI 
 | Program Change | track-level | PC (0xCn) | `stori_set_midi_program` |
 | Automation | track-level | n/a (DAW param curves) | `stori_add_automation` (volume, pan, FX) |
 
-**Data flow:** Storpheus generates notes + CC + pitch bend + aftertouch (camelCase wire format) → `_normalize_note` (`app/core/executor/note_utils.py`) converts each note to snake_case at the executor boundary → `GenerationResult` → executor records into `VariationContext` → variation service groups into `Phrase.controller_changes` → commit materialises into `updated_regions` (cc_events, pitch_bends, aftertouch arrays) → frontend replaces region data.
+**Data flow:** Storpheus generates notes + CC + pitch bend + aftertouch (camelCase wire format) → `_normalize_note` (`maestro/core/executor/note_utils.py`) converts each note to snake_case at the executor boundary → `GenerationResult` → executor records into `VariationContext` → variation service groups into `Phrase.controller_changes` → commit materialises into `updated_regions` (cc_events, pitch_bends, aftertouch arrays) → frontend replaces region data.
 
 **Note format contract:** Storpheus always emits camelCase (`startBeat`, `durationBeats`). The executor boundary (`note_utils._normalize_note`) is the single conversion point. Downstream code — `VariationContext`, `StateStore`, `Phrase` — always works in snake_case. On the way out to the DAW, `expressiveness._note_to_camel` restores camelCase. This is a strict one-in / one-out rule with no ad-hoc conversions permitted elsewhere.
 
@@ -643,7 +643,7 @@ Every Storpheus generation call is conditioned by a 5-axis **EmotionVector** der
 MAESTRO PROMPT
     │
     ▼
-emotion_vector_from_maestro_prompt()          ← app/core/emotion_vector.py
+emotion_vector_from_maestro_prompt()          ← maestro/core/emotion_vector.py
     │  parses: Vibe keywords, Energy level,
     │          Section preset, Style/genre
     │  blends contributions by weighted average
@@ -651,12 +651,12 @@ emotion_vector_from_maestro_prompt()          ← app/core/emotion_vector.py
 EmotionVector(energy, valence, tension, intimacy, motion)
     │
     ▼
-StorpheusBackend.generate()                   ← app/services/backends/storpheus.py
+StorpheusBackend.generate()                   ← maestro/services/backends/storpheus.py
     │  maps:  valence → tone_brightness
     │         energy → energy_intensity
     │         salient axes → musical_goals list
     ▼
-StorpheusClient.generate()                    ← app/services/storpheus.py
+StorpheusClient.generate()                    ← maestro/services/storpheus.py
     │  submit: POST /generate → {jobId, status}
     │  poll:   GET /jobs/{id}/wait?timeout=30
     ▼
@@ -672,7 +672,7 @@ For **natural language** prompts: the EmotionVector is not derived (no structure
 
 ### Storpheus async job queue
 
-`StorpheusClient` is a process-wide singleton (see `app/services/storpheus.get_storpheus_client()`). The `httpx.AsyncClient` is created once at startup with explicit connection limits and keepalive settings, and `warmup()` is called in the FastAPI lifespan to pre-establish the TCP connection before the first user request.
+`StorpheusClient` is a process-wide singleton (see `maestro/services/storpheus.get_storpheus_client()`). The `httpx.AsyncClient` is created once at startup with explicit connection limits and keepalive settings, and `warmup()` is called in the FastAPI lifespan to pre-establish the TCP connection before the first user request.
 
 **Submit + poll pattern:** `POST /generate` returns immediately with `{jobId, status}`. Cache hits arrive pre-completed (no queue slot used). Cache misses enqueue a job in a bounded `asyncio.Queue` (max depth 20, configurable via `STORPHEUS_MAX_QUEUE_DEPTH`). A fixed-size worker pool (`STORPHEUS_MAX_CONCURRENT`, default 2) pulls jobs from the queue and runs `_do_generate()` (the extracted GPU generation logic). Callers poll `GET /jobs/{jobId}/wait?timeout=30` until the job completes or fails. Jobs survive HTTP disconnects — if a poll times out, the GPU work continues and the result is retrievable on the next poll. Completed jobs are cleaned up after 5 minutes (`STORPHEUS_JOB_TTL`, default 300s).
 
@@ -689,7 +689,7 @@ For Claude / Anthropic models (via OpenRouter), Maestro applies **Anthropic's pr
 
 On a **cache hit**, input token cost drops to ~10% of the uncached price (Anthropic charges ~0.1× for cached reads). The cache TTL is 5 minutes, refreshed on each hit during an active session. Cache hits/misses are logged at `INFO` level with `🗃️ Prompt cache:` prefix, making them easy to spot in production logs.
 
-The implementation is in `app/core/llm_client._enable_prompt_caching()`. Non-Anthropic models receive the payload unchanged.
+The implementation is in `maestro/core/llm_client._enable_prompt_caching()`. Non-Anthropic models receive the payload unchanged.
 
 ---
 
@@ -842,7 +842,7 @@ Every named data shape in the music pipeline.  All are `TypedDict` subclasses �
 
 Some Pydantic `BaseModel` fields cannot hold `JSONValue` (recursive alias) directly.  These wire models solve the schema-generation problem by using `PydanticJson` instead.
 
-#### `ToolCallWire` (`app/protocol/events.py`)
+#### `ToolCallWire` (`maestro/protocol/events.py`)
 
 Used in `CompleteEvent.tool_calls` and `ToolCallEvent.params`.  The SSE serialization layer emits this shape to the frontend.
 
@@ -861,7 +861,7 @@ Pydantic mirrors of the `MCPPropertyDef`, `MCPInputSchema`, `MCPToolDef` TypedDi
 
 Conversion: `MCPToolDefWire.model_validate(tool_dict)` — Pydantic recursively converts the full nested dict.
 
-#### `GenerationStep.constraints` (`app/core/plan_schemas/models.py`)
+#### `GenerationStep.constraints` (`maestro/core/plan_schemas/models.py`)
 
 `GenerationStep` is a Pydantic `BaseModel`.  Its `constraints` field is `dict[str, PydanticJson] | None` — not `dict[str, JSONValue]` — for schema-generation safety.
 
@@ -896,4 +896,4 @@ External (DAW, LLM, Storpheus)
   Frontend / MCP client
 ```
 
-Implementation: `app/contracts/json_types.py` (TypedDicts + helpers), `app/contracts/pydantic_types.py` (PydanticJson + converters), `app/contracts/mcp_types.py` (MCP TypedDicts + wire models), `app/protocol/events.py` (ToolCallWire).
+Implementation: `app/contracts/json_types.py` (TypedDicts + helpers), `app/contracts/pydantic_types.py` (PydanticJson + converters), `app/contracts/mcp_types.py` (MCP TypedDicts + wire models), `maestro/protocol/events.py` (ToolCallWire).

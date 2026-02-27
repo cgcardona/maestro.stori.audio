@@ -12,15 +12,15 @@ from __future__ import annotations
 import pytest
 import uuid
 
-from app.contracts.json_types import NoteDict
+from maestro.contracts.json_types import NoteDict
 
-from app.models.variation import (
+from maestro.models.variation import (
     Variation,
     Phrase,
     NoteChange,
     MidiNoteSnapshot,
 )
-from app.services.variation import (
+from maestro.services.variation import (
     VariationService,
     match_notes,
     NoteMatch,
@@ -565,14 +565,14 @@ class TestVariationIntegration:
     async def test_apply_variation_phrases_imports(self) -> None:
 
         """Verify apply_variation_phrases can be imported."""
-        from app.core.executor import apply_variation_phrases
+        from maestro.core.executor import apply_variation_phrases
         assert callable(apply_variation_phrases)
     
     @pytest.mark.asyncio
     async def test_execute_plan_variation_imports(self) -> None:
 
         """Verify execute_plan_variation can be imported."""
-        from app.core.executor import execute_plan_variation
+        from maestro.core.executor import execute_plan_variation
         assert callable(execute_plan_variation)
     
     def test_singleton_variation_service(self) -> None:
@@ -689,7 +689,7 @@ class TestExecutionModeRemoved:
     def test_maestro_request_has_no_execution_mode(self) -> None:
 
         """MaestroRequest should not have an execution_mode field."""
-        from app.models.requests import MaestroRequest
+        from maestro.models.requests import MaestroRequest
         
         request = MaestroRequest(prompt="test")
         assert not hasattr(request, "execution_mode")

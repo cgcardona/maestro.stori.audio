@@ -9,12 +9,12 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 
-@patch("app.main.init_db", new_callable=AsyncMock)
-@patch("app.main.close_db", new_callable=AsyncMock)
+@patch("maestro.main.init_db", new_callable=AsyncMock)
+@patch("maestro.main.close_db", new_callable=AsyncMock)
 def test_security_headers_middleware_adds_headers(mock_close: AsyncMock, mock_init: AsyncMock) -> None:
 
     """SecurityHeadersMiddleware adds X-Frame-Options, X-Content-Type-Options, etc."""
-    from app.main import app
+    from maestro.main import app
     client = TestClient(app)
     response = client.get("/")
     assert response.status_code == 200
@@ -25,12 +25,12 @@ def test_security_headers_middleware_adds_headers(mock_close: AsyncMock, mock_in
     assert "Permissions-Policy" in response.headers
 
 
-@patch("app.main.init_db", new_callable=AsyncMock)
-@patch("app.main.close_db", new_callable=AsyncMock)
+@patch("maestro.main.init_db", new_callable=AsyncMock)
+@patch("maestro.main.close_db", new_callable=AsyncMock)
 def test_root_returns_service_info(mock_close: AsyncMock, mock_init: AsyncMock) -> None:
 
     """Root endpoint returns service, version, docs."""
-    from app.main import app
+    from maestro.main import app
     client = TestClient(app)
     response = client.get("/")
     assert response.status_code == 200
@@ -42,5 +42,5 @@ def test_root_returns_service_info(mock_close: AsyncMock, mock_init: AsyncMock) 
 
 def test_app_has_lifespan() -> None:
     """App has lifespan context manager (used for init_db/close_db)."""
-    from app.main import app
+    from maestro.main import app
     assert app.router.lifespan_context is not None

@@ -14,10 +14,10 @@ import jwt
 from datetime import datetime, timezone
 from httpx import AsyncClient, ASGITransport
 
-from app.main import app
-from app.config import settings
-from app.db.models import User, Conversation
-from app.auth.tokens import create_access_token
+from maestro.main import app
+from maestro.config import settings
+from maestro.db.models import User, Conversation
+from maestro.auth.tokens import create_access_token
 
 
 # =============================================================================
@@ -117,7 +117,7 @@ async def test_register_then_create_conversation(db_session: AsyncSession) -> No
     """
     import uuid
     from httpx import ASGITransport
-    from app.auth.tokens import create_access_token
+    from maestro.auth.tokens import create_access_token
     
     # Generate a new user ID
     user_id = str(uuid.uuid4())
@@ -539,7 +539,7 @@ async def test_missing_authorization_header() -> None:
 async def test_numeric_arguments_string_conversion(db_session: AsyncSession, test_user: User, auth_headers: dict[str, str]) -> None:
 
     """Test that ALL numeric arguments are converted to strings for Swift compatibility."""
-    from app.db.models import ConversationMessage
+    from maestro.db.models import ConversationMessage
     
     # Create conversation
     conversation = Conversation(

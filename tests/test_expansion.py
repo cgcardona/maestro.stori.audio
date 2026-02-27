@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from app.core.expansion import ToolCall, dedupe_tool_calls
+from maestro.core.expansion import ToolCall, dedupe_tool_calls
 
 
 # ===========================================================================

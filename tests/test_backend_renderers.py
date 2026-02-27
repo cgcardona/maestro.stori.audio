@@ -5,13 +5,13 @@ Tests the IR-based MIDI generation backends end-to-end with real rendering.
 from __future__ import annotations
 
 import pytest
-from app.services.backends.drum_ir import DrumSpecBackend
-from app.services.backends.bass_ir import BassSpecBackend
-from app.services.backends.harmonic_ir import HarmonicSpecBackend
-from app.services.backends.melody_ir import MelodySpecBackend
-from app.contracts.json_types import NoteDict
-from app.contracts.generation_types import GenerationContext
-from app.services.backends.base import GeneratorBackend, GenerationResult
+from maestro.services.backends.drum_ir import DrumSpecBackend
+from maestro.services.backends.bass_ir import BassSpecBackend
+from maestro.services.backends.harmonic_ir import HarmonicSpecBackend
+from maestro.services.backends.melody_ir import MelodySpecBackend
+from maestro.contracts.json_types import NoteDict
+from maestro.contracts.generation_types import GenerationContext
+from maestro.services.backends.base import GeneratorBackend, GenerationResult
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ class TestDrumSpecBackend:
     @pytest.mark.anyio
     async def test_generate_with_music_spec(self, backend: DrumSpecBackend) -> None:
 
-        from app.core.music_spec_ir import build_full_music_spec
+        from maestro.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="trap", tempo=120, bars=4)
         result = await backend.generate(
             instrument="drums", style="trap", tempo=120, bars=4,
@@ -139,7 +139,7 @@ class TestBassSpecBackend:
     @pytest.mark.anyio
     async def test_generate_with_music_spec(self, backend: BassSpecBackend) -> None:
 
-        from app.core.music_spec_ir import build_full_music_spec
+        from maestro.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="trap", tempo=120, bars=4, key="Cm")
         result = await backend.generate(
             instrument="bass", style="trap", tempo=120, bars=4, key="Cm",
@@ -189,7 +189,7 @@ class TestHarmonicSpecBackend:
     @pytest.mark.anyio
     async def test_generate_with_music_spec(self, backend: HarmonicSpecBackend) -> None:
 
-        from app.core.music_spec_ir import build_full_music_spec
+        from maestro.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="jazz", tempo=120, bars=8, key="Cm")
         result = await backend.generate(
             instrument="piano", style="jazz", tempo=120, bars=8, key="Cm",
@@ -239,7 +239,7 @@ class TestMelodySpecBackend:
     @pytest.mark.anyio
     async def test_generate_with_music_spec(self, backend: MelodySpecBackend) -> None:
 
-        from app.core.music_spec_ir import build_full_music_spec
+        from maestro.core.music_spec_ir import build_full_music_spec
         spec = build_full_music_spec(style="jazz", tempo=120, bars=8, key="Cm")
         result = await backend.generate(
             instrument="lead", style="jazz", tempo=120, bars=8, key="Cm",

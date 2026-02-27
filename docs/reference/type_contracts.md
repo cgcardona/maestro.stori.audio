@@ -16,32 +16,32 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [json_types.py](#json_typespy)
    - [project_types.py](#project_typespy)
    - [mcp_types.py](#mcp_typespy)
-3. [Auth (`app/auth/tokens.py`)](#auth)
+3. [Auth (`maestro/auth/tokens.py`)](#auth)
 4. [Services](#services)
-   - [Assets (`app/services/assets.py`)](#assets)
+   - [Assets (`maestro/services/assets.py`)](#assets)
    - [StorpheusRawResponse](#storpheusrawresponse)
    - [SampleChange](#samplechange)
    - [ExpressivenessResult](#expressivenessresult)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
    - [PhraseRecord](#phraserecord)
-6. [Planner (`app/core/planner/`)](#planner)
+6. [Planner (`maestro/core/planner/`)](#planner)
    - [_ExistingTrackInfo](#_existingtrackinfo)
    - [_AddMidiTrackParams](#_addmiditrackparams)
    - [_AddMidiRegionParams](#_addmidiregionparams)
    - [_GenerateParams](#_generateparams)
    - [Plan wire-format TypedDicts (plan_json_types.py)](#plan-wire-format-typeddicts-plan_json_typespy)
-7. [State Store (`app/core/state_store.py`)](#state-store)
+7. [State Store (`maestro/core/state_store.py`)](#state-store)
    - [_ProjectMetadataSnapshot](#_projectmetadatasnapshot)
 7. [Storpheus Types (`storpheus/storpheus_types.py`)](#storpheus-types)
    - [MIDI event types](#midi-event-types)
    - [Pipeline types](#pipeline-types)
    - [Scoring types](#scoring-types)
-8. [DAW Adapter Layer (`app/daw/`)](#daw-adapter-layer)
-   - [Ports (`app/daw/ports.py`)](#ports-appdawportspy)
-   - [Phase Mapping (`app/daw/stori/phase_map.py`)](#phase-mapping-appdawstoriphase_mappy)
-   - [Tool Registry (`app/daw/stori/tool_registry.py`)](#tool-registry-appdawstoritool_registrypy)
-9. [Structured Prompt DSL (`app/prompts/`)](#structured-prompt-dsl)
+8. [DAW Adapter Layer (`maestro/daw/`)](#daw-adapter-layer)
+   - [Ports (`maestro/daw/ports.py`)](#ports-appdawportspy)
+   - [Phase Mapping (`maestro/daw/stori/phase_map.py`)](#phase-mapping-appdawstoriphase_mappy)
+   - [Tool Registry (`maestro/daw/stori/tool_registry.py`)](#tool-registry-appdawstoritool_registrypy)
+9. [Structured Prompt DSL (`maestro/prompts/`)](#structured-prompt-dsl)
    - [Type Aliases](#prompt-type-aliases)
    - [TargetSpec](#targetspec)
    - [PositionSpec](#positionspec)
@@ -801,13 +801,13 @@ Named TypedDicts for every entity in the MCP protocol layer: tool schema shapes,
 | `DAWToolCallMessage` | `TypedDict` | Message sent from MCP server → DAW over WebSocket to trigger tool execution. Fields: `type: Literal["toolCall"]`, `requestId: str`, `tool: str`, `arguments: dict[str, object]`. |
 | `DAWToolResponse` | `TypedDict, total=False` | Response sent from DAW → MCP server after tool execution. `success: Required[bool]`; `content: list[MCPContentBlock]` and `isError: bool` are optional. |
 
-**Deserialization boundary:** Raw WebSocket / HTTP payloads are parsed into `DAWToolResponse` by `_parse_daw_response(raw: object) -> DAWToolResponse` in `app/api/routes/mcp.py`. This is the single point where untyped JSON becomes a typed shape. The `is True` comparison (not `bool()`) ensures only JSON `true` counts as success.
+**Deserialization boundary:** Raw WebSocket / HTTP payloads are parsed into `DAWToolResponse` by `_parse_daw_response(raw: object) -> DAWToolResponse` in `maestro/api/routes/mcp.py`. This is the single point where untyped JSON becomes a typed shape. The `is True` comparison (not `bool()`) ensures only JSON `true` counts as success.
 
 ---
 
 ## Auth
 
-### `app/auth/tokens.py`
+### `maestro/auth/tokens.py`
 
 #### `TokenClaims`
 
@@ -844,7 +844,7 @@ Named TypedDicts for every entity in the MCP protocol layer: tool schema shapes,
 
 ### Assets
 
-**Path:** `app/services/assets.py`
+**Path:** `maestro/services/assets.py`
 
 #### `DrumKitInfo`
 
@@ -896,7 +896,7 @@ These Protocols define the structural interface for the untyped `boto3` S3 clien
 
 ### `StorpheusRawResponse`
 
-**Path:** `app/services/storpheus.py`
+**Path:** `maestro/services/storpheus.py`
 
 `TypedDict, total=False` — The raw JSON response from the Storpheus `/generate` endpoint.
 
@@ -918,7 +918,7 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ### `SampleChange`
 
-**Path:** `app/services/muse_drift.py`
+**Path:** `maestro/services/muse_drift.py`
 
 `TypedDict, total=False` — A single note change captured as a human-readable diff sample within a `RegionDriftSummary`.
 
@@ -933,7 +933,7 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ### `ExpressivenessResult`
 
-**Path:** `app/services/expressiveness.py`
+**Path:** `maestro/services/expressiveness.py`
 
 `TypedDict` — Return shape of `apply_expressiveness`. The `notes` list is mutated in-place (velocity + timing humanization); `cc_events` and `pitch_bends` are freshly generated.
 
@@ -1041,7 +1041,7 @@ Consumers must narrow on `envelope.type` before accessing payload fields.
 
 ### `_ExistingTrackInfo`
 
-**Path:** `app/core/planner/conversion.py`
+**Path:** `maestro/core/planner/conversion.py`
 
 `TypedDict, total=False` — Cached info for a track already present in the DAW project. Used by `build_execution_plan` to avoid creating duplicate tracks.
 
@@ -1053,7 +1053,7 @@ Consumers must narrow on `envelope.type` before accessing payload fields.
 
 ### `_AddMidiTrackParams`
 
-**Path:** `app/core/planner/conversion.py`
+**Path:** `maestro/core/planner/conversion.py`
 
 `TypedDict, total=False` — Shape of `params` for a `stori_add_midi_track` tool call built by the planner. `name`, `color`, and `icon` are always present; `gmProgram` is omitted for drum tracks (which use `drumKitId` instead).
 
@@ -1066,7 +1066,7 @@ Consumers must narrow on `envelope.type` before accessing payload fields.
 
 ### `_AddMidiRegionParams`
 
-**Path:** `app/core/planner/conversion.py`
+**Path:** `maestro/core/planner/conversion.py`
 
 `TypedDict, total=False` — Shape of `params` for a `stori_add_midi_region` tool call.
 
@@ -1080,7 +1080,7 @@ Consumers must narrow on `envelope.type` before accessing payload fields.
 
 ### `_GenerateParams`
 
-**Path:** `app/core/planner/conversion.py`
+**Path:** `maestro/core/planner/conversion.py`
 
 `TypedDict, total=False` — Shape of `params` for a `stori_generate_midi` (or similar) tool call.
 
@@ -1099,7 +1099,7 @@ Consumers must narrow on `envelope.type` before accessing payload fields.
 
 ### Plan wire-format TypedDicts (`plan_json_types.py`)
 
-**Path:** `app/core/plan_schemas/plan_json_types.py`
+**Path:** `maestro/core/plan_schemas/plan_json_types.py`
 
 These TypedDicts model the **raw LLM output** — the JSON dict returned by the planner
 before Pydantic coerces it into domain models.  Using TypedDicts at this boundary
@@ -1166,7 +1166,7 @@ fixtures with static type-checking, without hiding intent behind `dict[str, Any]
 
 ### `_ProjectMetadataSnapshot`
 
-**Path:** `app/core/state_store.py`
+**Path:** `maestro/core/state_store.py`
 
 `TypedDict, total=False` — Internal snapshot shape stored inside `StateSnapshot.project_metadata`. Captures the musical and note state at a specific version.
 
@@ -1360,9 +1360,9 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 
 ## DAW Adapter Layer
 
-The `app/daw/` package isolates all DAW-specific vocabulary behind a protocol boundary. Maestro core depends only on `DAWAdapter` and `ToolRegistry` — never on concrete adapter internals.
+The `maestro/daw/` package isolates all DAW-specific vocabulary behind a protocol boundary. Maestro core depends only on `DAWAdapter` and `ToolRegistry` — never on concrete adapter internals.
 
-### Ports (`app/daw/ports.py`)
+### Ports (`maestro/daw/ports.py`)
 
 #### `ToolRegistry`
 
@@ -1389,7 +1389,7 @@ The `app/daw/` package isolates all DAW-specific vocabulary behind a protocol bo
 
 ---
 
-### Phase Mapping (`app/daw/stori/phase_map.py`)
+### Phase Mapping (`maestro/daw/stori/phase_map.py`)
 
 #### `InstrumentGroups`
 
@@ -1399,9 +1399,9 @@ The `app/daw/` package isolates all DAW-specific vocabulary behind a protocol bo
 
 | Module | Usage |
 |--------|-------|
-| `app/daw/stori/phase_map.py` | Return type component of `group_into_phases`; local variable in grouping logic |
-| `app/core/executor/phases.py` | Re-exported for executor access |
-| `app/core/executor/variation.py` | Destructured from `PhaseSplit` for parallel instrument dispatch |
+| `maestro/daw/stori/phase_map.py` | Return type component of `group_into_phases`; local variable in grouping logic |
+| `maestro/core/executor/phases.py` | Re-exported for executor access |
+| `maestro/core/executor/variation.py` | Destructured from `PhaseSplit` for parallel instrument dispatch |
 
 #### `PhaseSplit`
 
@@ -1420,25 +1420,25 @@ As a `NamedTuple`, `PhaseSplit` supports both named field access (`split.instrum
 
 | Module | Usage |
 |--------|-------|
-| `app/daw/stori/phase_map.py` | Return type of `group_into_phases()` |
-| `app/core/executor/variation.py` | Destructured in `execute_tools_for_variation()` for three-phase dispatch |
+| `maestro/daw/stori/phase_map.py` | Return type of `group_into_phases()` |
+| `maestro/core/executor/variation.py` | Destructured in `execute_tools_for_variation()` for three-phase dispatch |
 | `tests/test_maestro_handler_internals.py` | Destructured in `TestGroupIntoPhases` assertions |
 
 ---
 
-### Tool Registry (`app/daw/stori/tool_registry.py`)
+### Tool Registry (`maestro/daw/stori/tool_registry.py`)
 
 #### `ToolMetaRegistry`
 
-**Defined in:** `app/daw/ports.py`
+**Defined in:** `maestro/daw/ports.py`
 
 `TypeAlias = dict[str, ToolMeta]` — Tool name → `ToolMeta` mapping. This is the authoritative registry populated by `build_tool_registry()` and queried by `get_tool_meta()`, `tools_by_kind()`, etc.
 
 | Module | Usage |
 |--------|-------|
-| `app/daw/ports.py` | `ToolRegistry.tool_meta` field type (canonical definition) |
-| `app/daw/stori/tool_registry.py` | Module-level `_TOOL_META` store; return type of `build_tool_registry()` |
-| `app/daw/stori/adapter.py` | Passed to `ToolRegistry` constructor |
+| `maestro/daw/ports.py` | `ToolRegistry.tool_meta` field type (canonical definition) |
+| `maestro/daw/stori/tool_registry.py` | Module-level `_TOOL_META` store; return type of `build_tool_registry()` |
+| `maestro/daw/stori/adapter.py` | Passed to `ToolRegistry` constructor |
 
 #### `ToolCategoryEntry`
 
@@ -1448,7 +1448,7 @@ As a `NamedTuple`, `PhaseSplit` supports both named field access (`split.instrum
 
 ## Structured Prompt DSL
 
-**Path:** `app/prompts/`
+**Path:** `maestro/prompts/`
 
 The Maestro Structured Prompt DSL is a YAML-based language embedded inside a sentinel header (`MAESTRO PROMPT`). The parser produces a `MaestroPrompt` dataclass that downstream code consumes for intent routing, plan generation, context injection, and agent team orchestration.
 
@@ -1456,7 +1456,7 @@ All types are frozen-semantics dataclasses. Two named type aliases (`MaestroDime
 
 ### Prompt Type Aliases
 
-**Path:** `app/prompts/base.py`
+**Path:** `maestro/prompts/base.py`
 
 | Alias | Underlying type | Description |
 |-------|----------------|-------------|
@@ -1467,10 +1467,10 @@ All types are frozen-semantics dataclasses. Two named type aliases (`MaestroDime
 
 | Alias | File | Role |
 |-------|------|------|
-| `MaestroDimensions` | `app/prompts/base.py` | `StructuredPrompt.extensions` field type |
-| `MaestroDimensions` | `app/core/maestro_editing/continuation.py` | Local binding for expressive step detection |
-| `PromptConstraints` | `app/prompts/base.py` | `StructuredPrompt.constraints` field type |
-| `PromptConstraints` | `app/prompts/parser.py` | `_parse_constraints()` return type |
+| `MaestroDimensions` | `maestro/prompts/base.py` | `StructuredPrompt.extensions` field type |
+| `MaestroDimensions` | `maestro/core/maestro_editing/continuation.py` | Local binding for expressive step detection |
+| `PromptConstraints` | `maestro/prompts/base.py` | `StructuredPrompt.constraints` field type |
+| `PromptConstraints` | `maestro/prompts/parser.py` | `_parse_constraints()` return type |
 
 ---
 
@@ -1589,7 +1589,7 @@ All other fields are inherited from `StructuredPrompt`.
 
 ### Prompt Error Hierarchy
 
-**Path:** `app/prompts/errors.py`
+**Path:** `maestro/prompts/errors.py`
 
 Three exception classes form a hierarchy for structured error reporting. They are raised by the parser and caught by route handlers to produce structured 400 responses — they are *not* logged as server errors.
 
@@ -1603,7 +1603,7 @@ Three exception classes form a hierarchy for structured error reporting. They ar
 
 ### `parse_prompt()`
 
-**Path:** `app/prompts/parser.py`
+**Path:** `maestro/prompts/parser.py`
 
 `parse_prompt(text: str) -> MaestroPrompt | None` — The public entry point.
 
@@ -1638,16 +1638,16 @@ These type aliases replace the repeated pattern `dict[str, list[XxxDict]]` that 
 
 | Module | Usage |
 |--------|-------|
-| `app/core/state_store.py` | `StateStore._region_notes/cc/pitch_bends/aftertouch` fields |
-| `app/core/executor/models.py` | `VariationContext` snapshot fields |
-| `app/core/executor/apply.py` | Local accumulator variables in `apply_variation_phrases` |
-| `app/core/executor/variation.py` | `compute_variation_from_context` signature |
-| `app/services/muse_replay.py` | `HeadSnapshot` fields; `reconstruct_*` locals |
-| `app/services/muse_merge.py` | `three_way_merge` accumulators; `build_merge_checkout_plan` params |
-| `app/services/muse_drift.py` | `compute_drift_report` signature |
-| `app/services/muse_checkout.py` | `build_checkout_plan` signature |
-| `app/services/muse_history_controller.py` | `_capture_working_*` return types |
-| `app/services/variation/service.py` | `compute_multi_region_variation` signature |
+| `maestro/core/state_store.py` | `StateStore._region_notes/cc/pitch_bends/aftertouch` fields |
+| `maestro/core/executor/models.py` | `VariationContext` snapshot fields |
+| `maestro/core/executor/apply.py` | Local accumulator variables in `apply_variation_phrases` |
+| `maestro/core/executor/variation.py` | `compute_variation_from_context` signature |
+| `maestro/services/muse_replay.py` | `HeadSnapshot` fields; `reconstruct_*` locals |
+| `maestro/services/muse_merge.py` | `three_way_merge` accumulators; `build_merge_checkout_plan` params |
+| `maestro/services/muse_drift.py` | `compute_drift_report` signature |
+| `maestro/services/muse_checkout.py` | `build_checkout_plan` signature |
+| `maestro/services/muse_history_controller.py` | `_capture_working_*` return types |
+| `maestro/services/variation/service.py` | `compute_multi_region_variation` signature |
 
 **Note:** `list[NoteDict]` (without the dict wrapper) remains the correct type for single-region operations — e.g. `_build_region_note_calls(region_id, target_notes: list[NoteDict], ...)`. The alias applies only at the multi-region aggregation level.
 
@@ -1665,7 +1665,7 @@ All HTTP route handlers return **named Pydantic `BaseModel` entities**, never an
 
 ---
 
-### Protocol Introspection (`app/protocol/responses.py`)
+### Protocol Introspection (`maestro/protocol/responses.py`)
 
 #### `ProtocolInfoResponse`
 
@@ -1721,7 +1721,7 @@ Unified schema snapshot. Cacheable by `protocolHash`. The DAW frontend uses this
 
 ---
 
-### Muse VCS (`app/api/routes/muse.py`)
+### Muse VCS (`maestro/api/routes/muse.py`)
 
 #### `SaveVariationResponse`
 
@@ -1827,7 +1827,7 @@ Full commit DAG for a project, topologically sorted.
 
 ---
 
-### Maestro Core (`app/api/routes/maestro.py`)
+### Maestro Core (`maestro/api/routes/maestro.py`)
 
 All entities extend `CamelModel` (wire format is camelCase; routes use `response_model_by_alias=True`).
 
@@ -1876,7 +1876,7 @@ Top-level preview envelope. `preview` is populated only when `previewAvailable=t
 
 ---
 
-### MCP Endpoints (`app/api/routes/mcp.py`)
+### MCP Endpoints (`maestro/api/routes/mcp.py`)
 
 All entities extend `CamelModel`.
 
@@ -1958,7 +1958,7 @@ Full variation status and phrase payload for polling / reconnect clients.
 
 ---
 
-### Conversations (`app/api/routes/conversations/models.py`)
+### Conversations (`maestro/api/routes/conversations/models.py`)
 
 #### `ConversationUpdateResponse`
 
@@ -1982,7 +1982,7 @@ Minimal confirmation of a successful conversation metadata update. Contains only
 Beats per minute is a whole number by definition — there is no such thing as 120.5 BPM. The coercion from potentially-float JSON values happens at exactly one boundary:
 
 ```python
-# app/core/maestro_agent_teams/coordinator.py — the DAW→Maestro boundary
+# maestro/core/maestro_agent_teams/coordinator.py — the DAW→Maestro boundary
 tempo = int(round(float(parsed.tempo or project_context.get("tempo") or 120)))
 ```
 
@@ -2005,10 +2005,10 @@ After this point, `tempo` is `int` everywhere:
 | Location | Old pattern | Replacement |
 |----------|-------------|-------------|
 | `app/contracts/llm_types.py` | `OpenAIData = dict[str, Any]` + aliases | Full TypedDict hierarchy (see above) |
-| `app/db/muse_models.py` | `list[dict[str, Any]]` mapped columns | `list[CCEventDict]`, `list[PitchBendDict]`, etc. |
-| `app/services/expressiveness.py` | `dict[str, Any]` return type | `ExpressivenessResult(TypedDict)` |
-| `app/protocol/hash.py` | `cast(JSONValue, ...)` calls | `list[dict[str, object]]` return types |
-| `app/core/llm_client.py` | `or {}` default patterns | Explicit `None` narrowing with `if chunk is None: continue` |
+| `maestro/db/muse_models.py` | `list[dict[str, Any]]` mapped columns | `list[CCEventDict]`, `list[PitchBendDict]`, etc. |
+| `maestro/services/expressiveness.py` | `dict[str, Any]` return type | `ExpressivenessResult(TypedDict)` |
+| `maestro/protocol/hash.py` | `cast(JSONValue, ...)` calls | `list[dict[str, object]]` return types |
+| `maestro/core/llm_client.py` | `or {}` default patterns | Explicit `None` narrowing with `if chunk is None: continue` |
 
 ### Remaining `dict[str, object]` uses
 
@@ -2016,7 +2016,7 @@ After this point, `tempo` is `int` everywhere:
 
 ### External library boundary
 
-The only `cast()` that survives is in `app/services/assets.py`:
+The only `cast()` that survives is in `maestro/services/assets.py`:
 
 ```python
 return cast(_S3Client, boto3.client("s3", ...))
@@ -2112,7 +2112,7 @@ Maestro Service (app/)
 │       ├── BusDict                    — an audio bus
 │       └── ProjectContext             — full DAW project state (from frontend)
 │
-├── Prompt DSL (app/prompts/)
+├── Prompt DSL (maestro/prompts/)
 │   ├── base.py                        — type aliases + base dataclasses
 │   │   ├── MaestroDimensions          — dict[str, JSONValue] alias (open-vocabulary dimensions)
 │   │   ├── PromptConstraints          — dict[str, JSONValue] alias (generation constraints)
@@ -2133,7 +2133,7 @@ Maestro Service (app/)
 │   └── parser.py
 │       └── parse_prompt()            — text → MaestroPrompt | None
 │
-├── Auth (app/auth/)
+├── Auth (maestro/auth/)
 │   └── tokens.py
 │       ├── TokenClaims                — decoded JWT payload
 │       └── AccessCodeError            — validation failure exception
@@ -2142,41 +2142,41 @@ Maestro Service (app/)
 │   │  All route handlers return a named entity; no anonymous dicts.
 │   │  BaseModel = snake_case wire.  CamelModel = camelCase wire.
 │   │
-│   ├── app/protocol/responses.py
+│   ├── maestro/protocol/responses.py
 │   │   ├── ProtocolInfoResponse       — GET /protocol (version+hash+event list)
 │   │   ├── ProtocolEventsResponse     — GET /protocol/events.json (all schemas)
 │   │   ├── ProtocolToolsResponse      — GET /protocol/tools.json (all tools)
 │   │   └── ProtocolSchemaResponse     — GET /protocol/schema.json (unified snapshot)
 │   │
-│   ├── app/services/muse_log_graph.py
+│   ├── maestro/services/muse_log_graph.py
 │   │   ├── MuseLogNodeResponse        — one commit node in the DAG (camelCase fields)
 │   │   └── MuseLogGraphResponse       — full DAG for a project (camelCase fields)
 │   │
-│   ├── app/api/routes/muse.py
+│   ├── maestro/api/routes/muse.py
 │   │   ├── SaveVariationResponse      — POST /muse/variations confirmation
 │   │   ├── SetHeadResponse            — POST /muse/head confirmation
 │   │   ├── CheckoutExecutionStats     — shared sub-entity (checkout + merge)
 │   │   ├── CheckoutResponse           — POST /muse/checkout full summary
 │   │   └── MergeResponse              — POST /muse/merge full summary
 │   │
-│   ├── app/api/routes/maestro.py      — all CamelModel, response_model_by_alias=True
+│   ├── maestro/api/routes/maestro.py      — all CamelModel, response_model_by_alias=True
 │   │   ├── ValidateTokenResponse      — GET /validate-token
 │   │   ├── PlanPreviewResponse        — sub-entity embedded in PreviewMaestroResponse
 │   │   └── PreviewMaestroResponse     — POST /maestro/preview
 │   │
-│   ├── app/api/routes/mcp.py          — all CamelModel
+│   ├── maestro/api/routes/mcp.py          — all CamelModel
 │   │   ├── ConnectionCreatedResponse  — POST /mcp/connection
 │   │   └── ToolResponseReceivedResponse — POST /mcp/response/{id}
 │   │
-│   ├── app/api/routes/variation/
+│   ├── maestro/api/routes/variation/
 │   │   ├── DiscardVariationResponse   — POST /variation/discard (BaseModel)
 │   │   ├── VariationPhraseResponse    — sub-entity for GetVariationResponse (CamelModel)
 │   │   └── GetVariationResponse       — GET /variation/{id} (CamelModel)
 │   │
-│   └── app/api/routes/conversations/models.py
+│   └── maestro/api/routes/conversations/models.py
 │       └── ConversationUpdateResponse — PATCH /conversations/{id} (CamelModel)
 │
-├── Services (app/services/)
+├── Services (maestro/services/)
 │   ├── assets.py
 │   │   ├── DrumKitInfo                — drum kit manifest entry
 │   │   ├── SoundFontInfo              — soundfont manifest entry
@@ -2190,14 +2190,14 @@ Maestro Service (app/)
 │   └── muse_drift.py
 │       └── SampleChange               — a single note diff sample
 │
-├── Core (app/core/)
+├── Core (maestro/core/)
 │   ├── planner/conversion.py
 │   │   └── _ExistingTrackInfo         — cached DAW track info for deduplication
 │   │
 │   └── state_store.py
 │       └── _ProjectMetadataSnapshot   — versioned project state snapshot
 │
-└── Backends (app/services/backends/)
+└── Backends (maestro/services/backends/)
     └── base.py
         └── GenerationResult           — outcome of a backend generate() call
             ├── success: bool
@@ -3391,7 +3391,7 @@ classDiagram
 
 ### Diagram 18 — DAW Adapter & Phase Mapping
 
-The DAW adapter protocol (`app/daw/ports.py`) and its Stori implementation (`app/daw/stori/`). Maestro core depends only on `DAWAdapter` and `ToolRegistry` — never on concrete adapter internals. `PhaseSplit` replaces naked tuples in the phase-grouping pipeline.
+The DAW adapter protocol (`maestro/daw/ports.py`) and its Stori implementation (`maestro/daw/stori/`). Maestro core depends only on `DAWAdapter` and `ToolRegistry` — never on concrete adapter internals. `PhaseSplit` replaces naked tuples in the phase-grouping pipeline.
 
 ```mermaid
 classDiagram

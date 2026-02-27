@@ -18,8 +18,8 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.core.pipeline import run_pipeline, PipelineOutput
-from app.core.intent import SSEState, Intent
+from maestro.core.pipeline import run_pipeline, PipelineOutput
+from maestro.core.intent import SSEState, Intent
 
 
 # ---------------------------------------------------------------------------

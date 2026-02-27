@@ -15,8 +15,8 @@ import json
 import typing
 from collections.abc import AsyncGenerator
 
-from app.contracts.json_types import JSONObject
-from app.core.plan_schemas.plan_json_types import (
+from maestro.contracts.json_types import JSONObject
+from maestro.core.plan_schemas.plan_json_types import (
     EditStepDict,
     GenerationStepDict,
     PlanJsonDict,
@@ -24,8 +24,8 @@ from app.core.plan_schemas.plan_json_types import (
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.contracts.project_types import ProjectContext
-from app.core.planner import (
+from maestro.contracts.project_types import ProjectContext
+from maestro.core.planner import (
     ExecutionPlan,
     _try_deterministic_plan,
     _schema_to_tool_calls,
@@ -34,10 +34,10 @@ from app.core.planner import (
     build_execution_plan_stream,
     build_plan_from_dict,
 )
-from app.prompts import parse_prompt, MaestroPrompt, PositionSpec
-from app.core.intent import IntentResult, Intent, SSEState
-from app.core.expansion import ToolCall
-from app.core.plan_schemas import ExecutionPlanSchema
+from maestro.prompts import parse_prompt, MaestroPrompt, PositionSpec
+from maestro.core.intent import IntentResult, Intent, SSEState
+from maestro.core.expansion import ToolCall
+from maestro.core.plan_schemas import ExecutionPlanSchema
 
 
 # ---------------------------------------------------------------------------
@@ -46,7 +46,7 @@ from app.core.plan_schemas import ExecutionPlanSchema
 
 def _make_route(intent: Intent = Intent.GENERATE_MUSIC) -> IntentResult:
 
-    from app.core.intent import Slots
+    from maestro.core.intent import Slots
     return IntentResult(
         intent=intent,
         sse_state=SSEState.COMPOSING,
@@ -287,7 +287,7 @@ class TestSchemaToToolCalls:
 
     def _make_schema(self, bars: int = 8, tempo: int = 128) -> "ExecutionPlanSchema":
 
-        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep
+        from maestro.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep
         return ExecutionPlanSchema(
             generations=[
                 GenerationStep(role="drums", style="house", tempo=tempo, bars=bars),
@@ -378,7 +378,7 @@ class TestSchemaToToolCalls:
     def test_insert_effects_after_generator_per_track(self) -> None:
 
         """Insert effects come after the generator within the same track group."""
-        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
+        from maestro.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
         schema = ExecutionPlanSchema(
             generations=[GenerationStep(role="drums", style="house", tempo=128, bars=4)],
             edits=[
@@ -476,7 +476,7 @@ class TestSchemaToToolCalls:
     def test_melody_role_maps_to_existing_organ_track(self) -> None:
 
         """When project has an Organ track and plan generates 'melody', use Organ."""
-        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep
+        from maestro.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep
         schema = ExecutionPlanSchema(
             generations=[
                 GenerationStep(role="drums", style="house", tempo=128, bars=8),
@@ -783,7 +783,7 @@ class TestPositionToBeatRegressionFull:
         Parsing 'Position: after intro' and building a deterministic plan
         produces region tool calls with startBeat >= 64 (4 bars × 4 beats × 4 = 64 beats).
         """
-        from app.core.prompts import resolve_position
+        from maestro.core.prompts import resolve_position
 
         prompt = (
             "MAESTRO PROMPT\n"
@@ -920,7 +920,7 @@ class TestBuildExecutionPlanStream:
     async def test_usage_tracker_updated_on_stream(self) -> None:
 
         """usage_tracker is updated with prompt/completion tokens from the stream."""
-        from app.core.maestro_handlers import UsageTracker
+        from maestro.core.maestro_handlers import UsageTracker
 
         route = _make_route()
 
@@ -983,7 +983,7 @@ class TestInferMixSteps:
 
     def setup_method(self) -> None:
 
-        from app.core.planner import _infer_mix_steps
+        from maestro.core.planner import _infer_mix_steps
         self._infer = _infer_mix_steps
 
     def test_drums_always_get_compressor(self) -> None:
@@ -1129,7 +1129,7 @@ class TestSchemaToToolCallsBusOrdering:
     def test_ensure_bus_before_send(self) -> None:
 
         """When mix has add_send, stori_ensure_bus is inserted before the first send."""
-        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
+        from maestro.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
         schema = ExecutionPlanSchema(
             generations=[GenerationStep(role="pads", style="ambient", tempo=80, bars=8)],
             edits=[
@@ -1151,7 +1151,7 @@ class TestSchemaToToolCallsBusOrdering:
     def test_bus_ensured_only_once_for_multiple_sends(self) -> None:
 
         """Same bus name produces only one stori_ensure_bus even with multiple sends."""
-        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
+        from maestro.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
         schema = ExecutionPlanSchema(
             generations=[GenerationStep(role="pads", style="ambient", tempo=80, bars=8)],
             edits=[
@@ -1176,7 +1176,7 @@ class TestSchemaToToolCallsTrackContiguous:
     def test_track_calls_contiguous(self) -> None:
 
         """Each track's tool calls appear as a contiguous block."""
-        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
+        from maestro.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
         schema = ExecutionPlanSchema(
             generations=[
                 GenerationStep(role="drums", style="funk", tempo=100, bars=8),
@@ -1217,7 +1217,7 @@ class TestSchemaToToolCallsTrackContiguous:
     def test_track_group_internal_order(self) -> None:
 
         """Within a track group: create → styling → region → generate → effects."""
-        from app.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
+        from maestro.core.plan_schemas import ExecutionPlanSchema, GenerationStep, EditStep, MixStep
         schema = ExecutionPlanSchema(
             generations=[GenerationStep(role="drums", style="funk", tempo=100, bars=8)],
             edits=[

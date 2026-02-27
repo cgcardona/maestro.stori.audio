@@ -24,7 +24,7 @@ from unittest.mock import MagicMock, patch
 import jwt
 import pytest
 
-from app.auth.tokens import (
+from maestro.auth.tokens import (
     AccessCodeError,
     create_access_token,
     generate_access_code,
@@ -46,7 +46,7 @@ _ALGO = "HS256"
 def _patch_settings() -> AbstractContextManager[MagicMock]:
     """Patch the settings object so tokens can be generated in tests."""
     return patch(
-        "app.auth.tokens.settings",
+        "maestro.auth.tokens.settings",
         access_token_secret=_SECRET,
         access_token_algorithm=_ALGO,
     )
@@ -183,7 +183,7 @@ class TestGenerateAccessCode:
     def test_missing_secret_raises(self) -> None:
 
         with patch(
-            "app.auth.tokens.settings",
+            "maestro.auth.tokens.settings",
             access_token_secret=None,
             access_token_algorithm=_ALGO,
         ):
@@ -264,7 +264,7 @@ class TestValidateAccessCode:
 
         token = _make_token(duration_hours=1)
         with patch(
-            "app.auth.tokens.settings",
+            "maestro.auth.tokens.settings",
             access_token_secret="different-secret-not-the-real-one",
             access_token_algorithm=_ALGO,
         ):

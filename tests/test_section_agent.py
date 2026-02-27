@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Awaitable
 from typing import Callable, TypedDict
 
-from app.contracts.llm_types import StreamEvent
+from maestro.contracts.llm_types import StreamEvent
 
 import asyncio
 import json
@@ -17,28 +17,28 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.contracts.generation_types import CompositionContext
-from app.core.expansion import ToolCall
-from app.core.state_store import StateStore
-from app.core.tracing import TraceContext
-from app.contracts import seal_contract
-from app.core.maestro_agent_teams.contracts import (
+from maestro.contracts.generation_types import CompositionContext
+from maestro.core.expansion import ToolCall
+from maestro.core.state_store import StateStore
+from maestro.core.tracing import TraceContext
+from maestro.contracts import seal_contract
+from maestro.core.maestro_agent_teams.contracts import (
     ExecutionServices,
     InstrumentContract,
     RuntimeContext,
     SectionContract,
     SectionSpec,
 )
-from app.core.maestro_agent_teams.signals import SectionSignalResult, SectionSignals
-from app.core.maestro_agent_teams.section_agent import (
+from maestro.core.maestro_agent_teams.signals import SectionSignalResult, SectionSignals
+from maestro.core.maestro_agent_teams.section_agent import (
     SectionResult,
     _run_section_child,
 )
-from app.core.maestro_plan_tracker import _ToolCallOutcome
-from app.contracts.json_types import JSONValue, NoteDict, SectionDict, ToolCallDict, json_list
-from app.contracts.pydantic_types import wrap_dict
-from app.contracts.llm_types import ChatMessage
-from app.protocol.events import (
+from maestro.core.maestro_plan_tracker import _ToolCallOutcome
+from maestro.contracts.json_types import JSONValue, NoteDict, SectionDict, ToolCallDict, json_list
+from maestro.contracts.pydantic_types import wrap_dict
+from maestro.contracts.llm_types import ChatMessage
+from maestro.protocol.events import (
     GeneratorCompleteEvent,
     GeneratorStartEvent,
     MaestroEvent,
@@ -339,7 +339,7 @@ class TestRunSectionChild:
             return _ok_generate_outcome(tc_id)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
@@ -380,7 +380,7 @@ class TestRunSectionChild:
             return bad_region
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
@@ -412,7 +412,7 @@ class TestRunSectionChild:
             return _failed_generate_outcome(tc_id)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
@@ -446,7 +446,7 @@ class TestRunSectionChild:
             return _ok_generate_outcome(tc_id)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             await _run_section_child(
@@ -488,7 +488,7 @@ class TestSectionChildDrumSignaling:
             return _ok_generate_outcome(tc_id, notes_count=12)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
@@ -534,7 +534,7 @@ class TestSectionChildDrumSignaling:
             return bad_region
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
@@ -569,7 +569,7 @@ class TestSectionChildDrumSignaling:
             return _failed_generate_outcome(tc_id)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
@@ -619,7 +619,7 @@ class TestSectionChildBassWaiting:
             signals.signal_complete("0:verse", contract_hash=ch, success=True, drum_notes=[NoteDict(pitch=36)])
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             drum_task = asyncio.create_task(_signal_drum())
@@ -653,7 +653,7 @@ class TestSectionChildBassWaiting:
             return _ok_generate_outcome(tc_id)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
@@ -691,7 +691,7 @@ class TestSectionChildSSE:
             return _ok_generate_outcome(tc_id)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             await _run_section_child(
@@ -734,7 +734,7 @@ class TestSectionChildException:
             raise RuntimeError("unexpected crash")
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
@@ -766,7 +766,7 @@ class TestSectionChildException:
             raise RuntimeError("boom")
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(
@@ -798,7 +798,7 @@ class TestDispatchSectionChildren:
     async def test_groups_tool_calls_correctly(self) -> None:
 
         """Track creation, region+gen pairs, and effect calls are categorized."""
-        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+        from maestro.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-dispatch")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
@@ -859,10 +859,10 @@ class TestDispatchSectionChildren:
         mock_llm = MagicMock()
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ), patch(
-            "app.core.maestro_agent_teams.agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             msgs, st, se, rc, ro, gc = await _dispatch_section_children(
@@ -913,7 +913,7 @@ class TestDispatchSectionChildren:
     async def test_no_track_id_returns_error(self) -> None:
 
         """If no trackId is resolved, all remaining calls get error results."""
-        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+        from maestro.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-no-tid")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
@@ -968,7 +968,7 @@ class TestDispatchSectionChildren:
     async def test_reused_track_id_skips_creation(self) -> None:
 
         """When existing_track_id is set, track creation calls are absent."""
-        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+        from maestro.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-reuse")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
@@ -992,10 +992,10 @@ class TestDispatchSectionChildren:
         ic = _instrument_contract(sections, existing_track_id="existing-trk-99")
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ), patch(
-            "app.core.maestro_agent_teams.agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             msgs, st, se, rc, ro, gc = await _dispatch_section_children(
@@ -1045,7 +1045,7 @@ class TestDispatchSectionChildren:
         was never updated from the multi-section path, so the step stayed stuck
         in 'active' indefinitely on the macOS client.
         """
-        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+        from maestro.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-planstep-completed")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
@@ -1081,10 +1081,10 @@ class TestDispatchSectionChildren:
         ic = _instrument_contract(sections, existing_track_id="trk-99")
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ), patch(
-            "app.core.maestro_agent_teams.agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             await _dispatch_section_children(
@@ -1160,7 +1160,7 @@ class TestDispatchSectionChildren:
             return gen_outcome
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             await _run_section_child(
@@ -1322,7 +1322,7 @@ class TestContractHardError:
     async def test_dispatch_raises_without_instrument_contract(self) -> None:
 
         """_dispatch_section_children raises ValueError when contract is missing."""
-        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+        from maestro.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-hard-err")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
@@ -1377,7 +1377,7 @@ class TestOrphanedRegionHandling:
     async def test_orphaned_regions_increment_regions_completed(self) -> None:
 
         """Regions sent without generates are executed and counted."""
-        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+        from maestro.core.maestro_agent_teams.agent import _dispatch_section_children
 
         sections = [
             _section("intro", start_beat=0, length_beats=16),
@@ -1394,7 +1394,7 @@ class TestOrphanedRegionHandling:
         ]
 
         with patch(
-            "app.core.maestro_agent_teams.agent._apply_single_tool_call"
+            "maestro.core.maestro_agent_teams.agent._apply_single_tool_call"
         ) as mock_apply:
             mock_apply.return_value = _ok_region_outcome("r1", "reg-001")
 
@@ -1489,7 +1489,7 @@ class TestExtractExpressivenessBlocks:
     def test_extracts_midi_expressiveness(self) -> None:
 
         """Extracts MidiExpressiveness: block from raw prompt."""
-        from app.core.maestro_agent_teams.section_agent import (
+        from maestro.core.maestro_agent_teams.section_agent import (
             _extract_expressiveness_blocks,
         )
 
@@ -1509,7 +1509,7 @@ class TestExtractExpressivenessBlocks:
     def test_extracts_automation(self) -> None:
 
         """Extracts Automation: block from raw prompt."""
-        from app.core.maestro_agent_teams.section_agent import (
+        from maestro.core.maestro_agent_teams.section_agent import (
             _extract_expressiveness_blocks,
         )
 
@@ -1527,7 +1527,7 @@ class TestExtractExpressivenessBlocks:
     def test_extracts_both_blocks(self) -> None:
 
         """Extracts both MidiExpressiveness and Automation blocks."""
-        from app.core.maestro_agent_teams.section_agent import (
+        from maestro.core.maestro_agent_teams.section_agent import (
             _extract_expressiveness_blocks,
         )
 
@@ -1549,7 +1549,7 @@ class TestExtractExpressivenessBlocks:
     def test_no_blocks_returns_empty(self) -> None:
 
         """Returns empty string when no expressiveness blocks found."""
-        from app.core.maestro_agent_teams.section_agent import (
+        from maestro.core.maestro_agent_teams.section_agent import (
             _extract_expressiveness_blocks,
         )
 
@@ -1578,7 +1578,7 @@ class TestSectionChildStatusEvents:
             return _ok_generate_outcome(tc_id)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             await _run_section_child(
@@ -1621,7 +1621,7 @@ class TestSectionChildStatusEvents:
             return _ok_generate_outcome(tc_id, notes_count=42)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             await _run_section_child(
@@ -1658,7 +1658,7 @@ class TestExpressionRefinementStreaming:
     async def test_refinement_streams_reasoning_events(self) -> None:
 
         """Expression refinement streams reasoning SSE events with sectionName."""
-        from app.core.maestro_agent_teams.section_agent import (
+        from maestro.core.maestro_agent_teams.section_agent import (
             _maybe_refine_expression,
         )
 
@@ -1714,7 +1714,7 @@ class TestExpressionRefinementStreaming:
         result = SectionResult(success=True, section_name="verse", notes_generated=24)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             return_value=cc_outcome,
         ):
             await _maybe_refine_expression(
@@ -1758,7 +1758,7 @@ class TestExpressionRefinementStreaming:
     async def test_refinement_skipped_without_expressiveness(self) -> None:
 
         """No LLM call when the prompt lacks MidiExpressiveness/Automation."""
-        from app.core.maestro_agent_teams.section_agent import (
+        from maestro.core.maestro_agent_teams.section_agent import (
             _maybe_refine_expression,
         )
 
@@ -1794,7 +1794,7 @@ class TestExpressionRefinementStreaming:
     async def test_refinement_includes_expr_blocks_in_prompt(self) -> None:
 
         """Refinement LLM call includes extracted MidiExpressiveness content."""
-        from app.core.maestro_agent_teams.section_agent import (
+        from maestro.core.maestro_agent_teams.section_agent import (
             _maybe_refine_expression,
         )
 
@@ -1871,7 +1871,7 @@ class TestServerOwnedRetries:
     async def test_failed_section_retried_server_side(self) -> None:
 
         """A section that fails on first attempt is retried without LLM."""
-        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+        from maestro.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-server-retry")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
@@ -1938,13 +1938,13 @@ class TestServerOwnedRetries:
         mock_storpheus.circuit_breaker_open = False
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ), patch(
-            "app.core.maestro_agent_teams.agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ), patch(
-            "app.core.maestro_agent_teams.agent.get_storpheus_client",
+            "maestro.core.maestro_agent_teams.agent.get_storpheus_client",
             return_value=mock_storpheus,
         ), patch(
             "asyncio.sleep", new_callable=AsyncMock,
@@ -1992,7 +1992,7 @@ class TestServerOwnedRetries:
     async def test_circuit_breaker_skips_section_retries(self) -> None:
 
         """Server retries are skipped when Storpheus circuit breaker is open."""
-        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+        from maestro.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-cb-skip")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
@@ -2040,13 +2040,13 @@ class TestServerOwnedRetries:
         mock_storpheus.circuit_breaker_open = True
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ), patch(
-            "app.core.maestro_agent_teams.agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ), patch(
-            "app.core.maestro_agent_teams.agent.get_storpheus_client",
+            "maestro.core.maestro_agent_teams.agent.get_storpheus_client",
             return_value=mock_storpheus,
         ):
             msgs, st, se, rc, ro, gc = await _dispatch_section_children(
@@ -2090,7 +2090,7 @@ class TestServerOwnedRetries:
     async def test_summary_message_replaces_individual_tool_results(self) -> None:
 
         """Dispatch returns collapsed summary instead of N individual tool results."""
-        from app.core.maestro_agent_teams.agent import _dispatch_section_children
+        from maestro.core.maestro_agent_teams.agent import _dispatch_section_children
 
         store = StateStore(conversation_id="test-summary")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
@@ -2137,10 +2137,10 @@ class TestServerOwnedRetries:
         mock_plan.get_step = MagicMock(return_value=None)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ), patch(
-            "app.core.maestro_agent_teams.agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             msgs, st, se, rc, ro, gc = await _dispatch_section_children(
@@ -2222,9 +2222,9 @@ class TestPreEmitGeneratorEvents:
     async def test_pre_emit_callback_receives_generator_start_events(self) -> None:
 
         """pre_emit_callback fires with toolStart + generatorStart before generate."""
-        from app.core.maestro_editing.tool_execution import _execute_agent_generator
-        from app.core.tracing import TraceContext
-        from app.services.backends.base import GenerationResult, GeneratorBackend
+        from maestro.core.maestro_editing.tool_execution import _execute_agent_generator
+        from maestro.core.tracing import TraceContext
+        from maestro.services.backends.base import GenerationResult, GeneratorBackend
 
         store = StateStore()
         track_id = store.create_track("Drums")
@@ -2250,7 +2250,7 @@ class TestPreEmitGeneratorEvents:
             pre_emitted.extend(events)
 
         with patch(
-            "app.core.maestro_editing.tool_execution.get_music_generator",
+            "maestro.core.maestro_editing.tool_execution.get_music_generator",
             return_value=mock_mg,
         ):
             outcome = await _execute_agent_generator(
@@ -2292,9 +2292,9 @@ class TestPreEmitGeneratorEvents:
     async def test_no_callback_preserves_old_behavior(self) -> None:
 
         """Without pre_emit_callback, all events stay in sse_events (backward compat)."""
-        from app.core.maestro_editing.tool_execution import _execute_agent_generator
-        from app.core.tracing import TraceContext
-        from app.services.backends.base import GenerationResult, GeneratorBackend
+        from maestro.core.maestro_editing.tool_execution import _execute_agent_generator
+        from maestro.core.tracing import TraceContext
+        from maestro.services.backends.base import GenerationResult, GeneratorBackend
 
         store = StateStore()
         track_id = store.create_track("Bass")
@@ -2314,7 +2314,7 @@ class TestPreEmitGeneratorEvents:
         mock_mg.generate = AsyncMock(return_value=ok_result)
 
         with patch(
-            "app.core.maestro_editing.tool_execution.get_music_generator",
+            "maestro.core.maestro_editing.tool_execution.get_music_generator",
             return_value=mock_mg,
         ):
             outcome = await _execute_agent_generator(
@@ -2382,7 +2382,7 @@ class TestPreEmitGeneratorEvents:
             return _ok_generate_outcome(tc_id)
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             result = await _run_section_child(

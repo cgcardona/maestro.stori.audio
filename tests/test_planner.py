@@ -4,14 +4,14 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.core.planner import (
+from maestro.core.planner import (
     ExecutionPlan,
     build_execution_plan,
     build_plan_from_dict,
     preview_plan,
 )
-from app.core.expansion import ToolCall
-from app.core.intent import IntentResult, Intent, Slots, SSEState
+from maestro.core.expansion import ToolCall
+from maestro.core.intent import IntentResult, Intent, Slots, SSEState
 
 
 class TestExecutionPlan:

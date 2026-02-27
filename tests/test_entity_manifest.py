@@ -15,16 +15,16 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock
 
-from app.contracts.json_types import JSONValue
-from app.contracts.project_types import ProjectContext
+from maestro.contracts.json_types import JSONValue
+from maestro.contracts.project_types import ProjectContext
 
-from app.core.entity_registry import (
+from maestro.core.entity_registry import (
     EntityRegistry,
     EntityInfo,
     EntityType,
     create_registry_from_context,
 )
-from app.core.maestro_helpers import (
+from maestro.core.maestro_helpers import (
     _ENTITY_CREATING_TOOLS,
     _ENTITY_ID_ECHO,
 )
@@ -642,7 +642,7 @@ class TestCompactToolResult:
 
     def test_region_id_preserved(self) -> None:
 
-        from app.core.maestro_agent_teams.section_agent import _compact_tool_result
+        from maestro.core.maestro_agent_teams.section_agent import _compact_tool_result
         result: dict[str, JSONValue] = {
             "success": True,
             "regionId": "abc-123",
@@ -659,7 +659,7 @@ class TestCompactToolResult:
 
     def test_existing_region_id_preserved(self) -> None:
 
-        from app.core.maestro_agent_teams.section_agent import _compact_tool_result
+        from maestro.core.maestro_agent_teams.section_agent import _compact_tool_result
         result: dict[str, JSONValue] = {
             "success": True,
             "existingRegionId": "existing-rid",
@@ -673,7 +673,7 @@ class TestCompactToolResult:
 
     def test_error_field_preserved(self) -> None:
 
-        from app.core.maestro_agent_teams.section_agent import _compact_tool_result
+        from maestro.core.maestro_agent_teams.section_agent import _compact_tool_result
         result: dict[str, JSONValue] = {"success": False, "error": "Region overlap"}
         compact = _compact_tool_result(result)
         assert compact["error"] == "Region overlap"

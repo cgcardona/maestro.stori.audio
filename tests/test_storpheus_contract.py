@@ -13,9 +13,9 @@ import dataclasses
 
 import pytest
 
-from app.core.emotion_vector import EmotionVector, emotion_to_constraints
-from app.data.role_profiles import RoleProfile
-from app.services.backends.storpheus import _build_intent_hash
+from maestro.core.emotion_vector import EmotionVector, emotion_to_constraints
+from maestro.data.role_profiles import RoleProfile
+from maestro.services.backends.storpheus import _build_intent_hash
 
 
 # ---------------------------------------------------------------------------

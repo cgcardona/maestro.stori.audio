@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 from datetime import datetime, timezone
 
-from app.api.routes.conversations import build_conversation_history_for_llm
-from app.db.models import ConversationMessage
+from maestro.api.routes.conversations import build_conversation_history_for_llm
+from maestro.db.models import ConversationMessage
 
 
 def _make_message(

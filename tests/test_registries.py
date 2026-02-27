@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.registries import GOAL_SYNONYMS, MACRO_REGISTRY
+from maestro.core.registries import GOAL_SYNONYMS, MACRO_REGISTRY
 
 
 def test_goal_synonyms_has_expected_keys() -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from stori_tourdeforce.clients.muse import CheckoutResult, MergeResult
+from tourdeforce.clients.muse import CheckoutResult, MergeResult
 
 
 class TestCheckoutResult:

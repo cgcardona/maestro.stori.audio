@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.models.variation import (
+from maestro.models.variation import (
     Variation,
     Phrase,
     NoteChange,
@@ -32,7 +32,7 @@ class TestMuseComputeBoundary:
     def test_signature_has_no_store_param(self) -> None:
 
         """The function must not accept a StateStore parameter."""
-        from app.core.executor.variation import compute_variation_from_context
+        from maestro.core.executor.variation import compute_variation_from_context
 
         sig = inspect.signature(compute_variation_from_context)
         param_names = set(sig.parameters.keys())
@@ -40,9 +40,9 @@ class TestMuseComputeBoundary:
 
     def test_variation_service_has_no_state_store_import(self) -> None:
 
-        """app/services/variation/ must not import StateStore or EntityRegistry."""
-        variation_dir = ROOT / "app" / "services" / "variation"
-        forbidden = {"app.core.state_store", "app.core.entity_registry"}
+        """maestro/services/variation/ must not import StateStore or EntityRegistry."""
+        variation_dir = ROOT / "maestro" / "services" / "variation"
+        forbidden = {"maestro.core.state_store", "maestro.core.entity_registry"}
 
         violations: list[str] = []
         for py_file in variation_dir.rglob("*.py"):
@@ -58,7 +58,7 @@ class TestMuseComputeBoundary:
     def test_compute_function_body_has_no_store_imports(self) -> None:
 
         """The function body must not contain lazy imports of StateStore."""
-        filepath = ROOT / "app" / "core" / "executor" / "variation.py"
+        filepath = ROOT / "maestro" / "core" / "executor" / "variation.py"
         tree = ast.parse(filepath.read_text())
 
         for node in ast.walk(tree):
@@ -81,13 +81,13 @@ class TestVariationContextDataOnly:
 
     def test_variation_context_has_no_store_field(self) -> None:
 
-        from app.core.executor.models import VariationContext
+        from maestro.core.executor.models import VariationContext
         field_names = {f.name for f in VariationContext.__dataclass_fields__.values()}
         assert "store" not in field_names, "VariationContext must not have a 'store' field"
 
     def test_variation_context_uses_snapshot_bundle(self) -> None:
 
-        from app.core.executor.models import VariationContext, SnapshotBundle
+        from maestro.core.executor.models import VariationContext, SnapshotBundle
         ctx = VariationContext.__dataclass_fields__
         assert "base" in {f for f in ctx}, "VariationContext must have 'base' field"
         assert "proposed" in {f for f in ctx}, "VariationContext must have 'proposed' field"
@@ -106,7 +106,7 @@ class TestApplyVariationBoundary:
     async def test_apply_never_calls_get_or_create_store(self) -> None:
 
         """Monkeypatch get_or_create_store to raise; apply must still succeed."""
-        from app.core.executor import apply_variation_phrases
+        from maestro.core.executor import apply_variation_phrases
 
         store = MagicMock()
         store.begin_transaction.return_value = MagicMock()
@@ -146,7 +146,7 @@ class TestApplyVariationBoundary:
 
             raise AssertionError("apply_variation_phrases called get_or_create_store!")
 
-        with patch("app.core.state_store.get_or_create_store", side_effect=_boom):
+        with patch("maestro.core.state_store.get_or_create_store", side_effect=_boom):
             result = await apply_variation_phrases(
                 variation=variation,
                 accepted_phrase_ids=["p1"],
@@ -159,7 +159,7 @@ class TestApplyVariationBoundary:
     def test_apply_module_does_not_import_get_or_create_store(self) -> None:
 
         """The apply module must not import get_or_create_store at all."""
-        filepath = ROOT / "app" / "core" / "executor" / "apply.py"
+        filepath = ROOT / "maestro" / "core" / "executor" / "apply.py"
         source = filepath.read_text()
 
         for i, line in enumerate(source.splitlines(), 1):
@@ -172,7 +172,7 @@ class TestApplyVariationBoundary:
     def test_apply_does_not_access_store_registry(self) -> None:
 
         """apply.py must not contain store.registry references."""
-        filepath = ROOT / "app" / "core" / "executor" / "apply.py"
+        filepath = ROOT / "maestro" / "core" / "executor" / "apply.py"
         source = filepath.read_text()
 
         for i, line in enumerate(source.splitlines(), 1):
@@ -191,7 +191,7 @@ class TestMuseRepositoryBoundary:
 
     def test_no_state_store_import(self) -> None:
 
-        filepath = ROOT / "app" / "services" / "muse_repository.py"
+        filepath = ROOT / "maestro" / "services" / "muse_repository.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
@@ -200,7 +200,7 @@ class TestMuseRepositoryBoundary:
 
     def test_no_variation_service_import(self) -> None:
 
-        filepath = ROOT / "app" / "services" / "muse_repository.py"
+        filepath = ROOT / "maestro" / "services" / "muse_repository.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
@@ -213,7 +213,7 @@ class TestMuseReplayBoundary:
 
     def test_no_state_store_or_executor_import(self) -> None:
 
-        filepath = ROOT / "app" / "services" / "muse_replay.py"
+        filepath = ROOT / "maestro" / "services" / "muse_replay.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
         for node in ast.walk(tree):
@@ -225,7 +225,7 @@ class TestMuseReplayBoundary:
 
     def test_no_forbidden_names(self) -> None:
 
-        filepath = ROOT / "app" / "services" / "muse_replay.py"
+        filepath = ROOT / "maestro" / "services" / "muse_replay.py"
         tree = ast.parse(filepath.read_text())
         forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
         for node in ast.walk(tree):
@@ -241,7 +241,7 @@ class TestMuseDriftBoundary:
 
     def test_no_state_store_or_executor_import(self) -> None:
 
-        filepath = ROOT / "app" / "services" / "muse_drift.py"
+        filepath = ROOT / "maestro" / "services" / "muse_drift.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
         for node in ast.walk(tree):
@@ -253,7 +253,7 @@ class TestMuseDriftBoundary:
 
     def test_no_forbidden_names(self) -> None:
 
-        filepath = ROOT / "app" / "services" / "muse_drift.py"
+        filepath = ROOT / "maestro" / "services" / "muse_drift.py"
         tree = ast.parse(filepath.read_text())
         forbidden_names = {"StateStore", "get_or_create_store", "EntityRegistry"}
         for node in ast.walk(tree):
@@ -265,7 +265,7 @@ class TestMuseDriftBoundary:
 
     def test_no_get_or_create_store_call(self) -> None:
 
-        filepath = ROOT / "app" / "services" / "muse_drift.py"
+        filepath = ROOT / "maestro" / "services" / "muse_drift.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
@@ -295,7 +295,7 @@ class TestGoldenShapes:
             "start_beat", "duration_beats", "name",
         }
 
-        from app.models.variation import UpdatedRegionPayload
+        from maestro.models.variation import UpdatedRegionPayload
         model_fields = set(UpdatedRegionPayload.model_fields.keys())
         for key in required_keys:
             assert key in model_fields, f"UpdatedRegionPayload missing field: {key}"
@@ -303,7 +303,7 @@ class TestGoldenShapes:
     def test_tool_call_outcome_shape(self) -> None:
 
         """_ToolCallOutcome must have the expected fields."""
-        from app.core.maestro_plan_tracker.models import _ToolCallOutcome
+        from maestro.core.maestro_plan_tracker.models import _ToolCallOutcome
 
         expected = {
             "enriched_params", "tool_result", "sse_events",
@@ -315,7 +315,7 @@ class TestGoldenShapes:
     def test_snapshot_bundle_shape(self) -> None:
 
         """SnapshotBundle must expose the canonical attribute set."""
-        from app.core.executor.models import SnapshotBundle
+        from maestro.core.executor.models import SnapshotBundle
 
         bundle = SnapshotBundle()
         expected_attrs = {"notes", "cc", "pitch_bends", "aftertouch", "track_regions", "region_start_beats"}
@@ -327,9 +327,9 @@ class TestGoldenShapes:
     def test_snapshot_bundle_from_capture(self) -> None:
 
         """capture_base_snapshot must return a SnapshotBundle."""
-        from app.core.executor.snapshots import capture_base_snapshot
-        from app.core.executor.models import SnapshotBundle
-        from app.core.state_store import StateStore
+        from maestro.core.executor.snapshots import capture_base_snapshot
+        from maestro.core.executor.models import SnapshotBundle
+        from maestro.core.state_store import StateStore
 
         store = StateStore(conversation_id="shape-test")
         snapshot = capture_base_snapshot(store)

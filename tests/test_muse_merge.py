@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 
 import pytest
-from app.contracts.json_types import (
+from maestro.contracts.json_types import (
     AftertouchDict,
     CCEventDict,
     NoteDict,
@@ -24,24 +24,24 @@ from app.contracts.json_types import (
 from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.db.database import Base
-from app.db import muse_models  # noqa: F401
-from app.models.variation import (
+from maestro.db.database import Base
+from maestro.db import muse_models  # noqa: F401
+from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,
     Phrase,
     Variation,
 )
-from app.services import muse_repository
-from app.services.muse_merge import (
+from maestro.services import muse_repository
+from maestro.services.muse_merge import (
     MergeConflict,
     MergeResult,
     ThreeWaySnapshot,
     build_merge_result,
     build_merge_checkout_plan,
 )
-from app.services.muse_merge_base import find_merge_base
-from app.services.muse_replay import HeadSnapshot
+from maestro.services.muse_merge_base import find_merge_base
+from maestro.services.muse_replay import HeadSnapshot
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
@@ -405,7 +405,7 @@ class TestMergeCommitGraph:
         await async_session.commit()
 
         from sqlalchemy import select
-        from app.db import muse_models as db
+        from maestro.db import muse_models as db
         stmt = select(db.Variation).where(db.Variation.variation_id == merge_id)
         result = await async_session.execute(stmt)
         row = result.scalar_one()
@@ -421,7 +421,7 @@ class TestMergeCommitGraph:
         await async_session.commit()
 
         from sqlalchemy import select
-        from app.db import muse_models as db
+        from maestro.db import muse_models as db
         stmt = select(db.Variation).where(db.Variation.variation_id == vid)
         result = await async_session.execute(stmt)
         row = result.scalar_one()
@@ -438,7 +438,7 @@ class TestMergeBoundary:
 
     def test_merge_no_state_store_import(self) -> None:
 
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_merge.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "muse_merge.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"state_store", "executor", "maestro_handlers", "maestro_editing", "mcp"}
         for node in ast.walk(tree):
@@ -450,7 +450,7 @@ class TestMergeBoundary:
 
     def test_merge_base_no_state_store_import(self) -> None:
 
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_merge_base.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "muse_merge_base.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"state_store", "executor", "maestro_handlers", "mcp"}
         for node in ast.walk(tree):
@@ -462,7 +462,7 @@ class TestMergeBoundary:
 
     def test_merge_no_forbidden_names(self) -> None:
 
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_merge.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "muse_merge.py"
         tree = ast.parse(filepath.read_text())
         forbidden_names = {"StateStore", "get_or_create_store", "VariationService"}
         for node in ast.walk(tree):

@@ -65,8 +65,8 @@ server {
 EOF
 
 # Remove the full SSL config temporarily
-if [ -f deploy/nginx/conf.d/maestro-stori.conf ]; then
-    mv deploy/nginx/conf.d/maestro-stori.conf deploy/nginx/conf.d/maestro-stori.conf.bak
+if [ -f deploy/nginx/conf.d/maestro.conf ]; then
+    mv deploy/nginx/conf.d/maestro.conf deploy/nginx/conf.d/maestro.conf.bak
 fi
 
 # Start nginx and certbot containers
@@ -89,8 +89,8 @@ docker compose run --rm --entrypoint certbot certbot certonly \
 # Restore the full SSL config
 echo "Restoring SSL nginx config..."
 rm deploy/nginx/conf.d/temp-acme.conf
-if [ -f deploy/nginx/conf.d/maestro-stori.conf.bak ]; then
-    mv deploy/nginx/conf.d/maestro-stori.conf.bak deploy/nginx/conf.d/maestro-stori.conf
+if [ -f deploy/nginx/conf.d/maestro.conf.bak ]; then
+    mv deploy/nginx/conf.d/maestro.conf.bak deploy/nginx/conf.d/maestro.conf
 fi
 
 # Restart nginx with SSL config

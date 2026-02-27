@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import random
 import pytest
-from app.contracts.json_types import NoteDict
-from app.services.repair import apply_drum_repair, repair_drum_if_needed
-from app.core.music_spec_ir import DrumSpec, DrumConstraints, DensityTarget, DrumLayerSpec, default_drum_spec
+from maestro.contracts.json_types import NoteDict
+from maestro.services.repair import apply_drum_repair, repair_drum_if_needed
+from maestro.core.music_spec_ir import DrumSpec, DrumConstraints, DensityTarget, DrumLayerSpec, default_drum_spec
 
 
 def _make_drum_spec() -> DrumSpec:
