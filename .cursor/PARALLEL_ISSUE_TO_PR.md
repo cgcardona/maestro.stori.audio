@@ -18,7 +18,9 @@ Kickoff (coordinator)
 
 Agent (per worktree)
   └─ cat .agent-task                        ← knows exactly what to do
-  └─ git checkout -b fix/<description>      ← creates feature branch
+  └─ gh pr list --search "closes #<N>"     ← CHECK FIRST: existing PR or branch?
+     git ls-remote origin | grep issue-<N>   if found → stop + self-destruct
+  └─ git checkout -b fix/<description>      ← creates feature branch (only if new)
   └─ implement → mypy → tests → commit → push → gh pr create
   └─ WORKTREE=$(pwd)                        ← self-destructs when done
      cd "$REPO"
@@ -135,7 +137,32 @@ STEP 1 — DERIVE PATHS:
   # Your worktree is live in Docker at /worktrees/$WTNAME — NO file copying needed.
   # All docker compose commands: cd "$REPO" && docker compose exec maestro <cmd>
 
-STEP 2 — IMPLEMENT:
+STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
+  ⚠️  Query GitHub first. Do NOT create a branch, write a file, or run mypy until
+  you have confirmed no prior work exists. This is the idempotency gate.
+
+  # 1. Is there already an open or merged PR that closes this issue?
+  gh pr list --search "closes #<N>" --state all --json number,url,state,headRefName
+
+  # 2. Is there already a branch for this issue in the remote?
+  git ls-remote origin | grep -i "issue-<N>\|fix/.*<N>\|feat/.*<N>"
+
+  Decision matrix — act on the FIRST match:
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ Merged PR found       → STOP. Report the PR URL. Self-destruct.    │
+  │ Open PR found         → STOP. Report the PR URL. Self-destruct.    │
+  │ Remote branch exists, │                                             │
+  │   no PR yet           → Checkout that branch, skip to STEP 4.     │
+  │ Nothing found         → Continue to STEP 3 (full implementation).  │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  Self-destruct when stopping early:
+    WORKTREE=$(pwd)
+    cd "$REPO"
+    git worktree remove --force "$WORKTREE"
+    git worktree prune
+
+STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   Read and follow every step in .github/CREATE_PR_PROMPT.md exactly.
   Steps: issue analysis → branch (from dev) → implement → mypy → tests → commit → docs → PR.
 
@@ -147,15 +174,18 @@ STEP 2 — IMPLEMENT:
     cd "$REPO" && docker compose exec maestro sh -c \
       "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
 
-STEP 3 — SELF-DESTRUCT (always run this after the PR is open):
+STEP 4 — SELF-DESTRUCT (always run this after the PR is open or after an early stop):
   WORKTREE=$(pwd)
   cd "$REPO"
   git worktree remove --force "$WORKTREE"
   git worktree prune
 
 ⚠️  NEVER copy files to the main repo for testing.
+⚠️  NEVER start implementation without completing STEP 2. Skipping the check
+    causes duplicate branches, duplicate PRs, and wasted cycles.
 
-Report: issue number, PR URL, fix summary, tests added, any protocol changes requiring handoff.
+Report: issue number, PR URL (existing or newly created), fix summary, tests added,
+any protocol changes requiring handoff.
 ```
 
 ---
