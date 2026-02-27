@@ -96,8 +96,9 @@ maestro/muse_cli/
     ├── log.py            — muse log    ✅ fully implemented (issue #33)
     ├── snapshot.py       — walk_workdir, hash_file, build_snapshot_manifest, compute IDs,
     │                        diff_workdir_vs_snapshot (added/modified/deleted/untracked sets)
-    ├── models.py         — MuseCliCommit, MuseCliSnapshot, MuseCliObject (SQLAlchemy)
+    ├── models.py         — MuseCliCommit, MuseCliSnapshot, MuseCliObject, MuseCliTag (SQLAlchemy)
     ├── db.py             — open_session, upsert/get helpers, get_head_snapshot_manifest
+    ├── tag.py            — muse tag ✅ add/remove/list/search (issue #123)
     ├── merge_engine.py   — find_merge_base(), diff_snapshots(), detect_conflicts(),
     │                        apply_merge(), read/write_merge_state(), MergeState dataclass
     ├── checkout.py       — muse checkout (stub — issue #34)
@@ -114,6 +115,51 @@ maestro/muse_cli/
 resolves a user-supplied path-or-commit-ID to a concrete `pathlib.Path` (see below).
 
 The CLI delegates to existing `maestro/services/muse_*.py` service modules. Stub subcommands print "not yet implemented" and exit 0.
+
+---
+
+## `muse tag` — Music-Semantic Tagging
+
+`muse tag` attaches free-form music-semantic labels to commits, enabling expressive search across
+the composition history.
+
+### Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `muse tag add <tag> [<commit>]` | Attach a tag (defaults to HEAD) |
+| `muse tag remove <tag> [<commit>]` | Remove a tag (defaults to HEAD) |
+| `muse tag list [<commit>]` | List all tags on a commit (defaults to HEAD) |
+| `muse tag search <tag>` | Find commits carrying the tag; use trailing `:` for namespace prefix search |
+
+### Tag namespaces
+
+Tags are free-form strings. Conventional namespace prefixes aid search:
+
+| Namespace | Example | Meaning |
+|-----------|---------|---------|
+| `emotion:` | `emotion:melancholic` | Emotional character |
+| `stage:` | `stage:rough-mix` | Production stage |
+| `ref:` | `ref:beatles` | Reference track or source |
+| `key:` | `key:Am` | Musical key |
+| `tempo:` | `tempo:120bpm` | Tempo annotation |
+| *(free-form)* | `lo-fi` | Any other label |
+
+### Storage
+
+Tags are stored in the `muse_cli_tags` table (PostgreSQL):
+
+```
+muse_cli_tags
+  tag_id     UUID PK
+  repo_id    String(36)   — scoped per local repo
+  commit_id  String(64)   — FK → muse_cli_commits.commit_id (CASCADE DELETE)
+  tag        Text
+  created_at DateTime
+```
+
+Tags are scoped to a `repo_id` so independent local repositories use separate tag spaces.
+A commit can carry multiple tags. Adding the same tag twice is a no-op (idempotent).
 
 ---
 
