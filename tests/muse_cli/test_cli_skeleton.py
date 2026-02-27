@@ -85,7 +85,7 @@ def test_cli_no_repo_exits_2(cmd: str) -> None:
             assert result.exit_code == int(ExitCode.REPO_NOT_FOUND), (
                 f"{cmd} should exit {ExitCode.REPO_NOT_FOUND}, got {result.exit_code}: {result.output}"
             )
-            assert "Not a Muse repository" in result.output
+            assert "not a muse repository" in result.output.lower()
         finally:
             os.chdir(prev)
 
