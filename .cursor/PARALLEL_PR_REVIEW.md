@@ -42,9 +42,11 @@ cd "$REPO"
 
 # --- define PRs ---
 declare -a PRS=(
-  "58|feat: muse status — working tree diff, staged files, and in-progress merge display"
-  "59|feat: Muse Hub issues — create and list music project issues"
-  "60|feat: muse open / muse play — CLI artifact preview and local playback"
+  "61|feat: Muse Hub JWT auth integration — CLI token storage and Hub request authentication"
+  "62|feat: Muse Hub pull requests — create, list, and merge PRs between branches"
+  "63|feat: Maestro stress test → muse-work/ output contract with muse-batch.json manifest"
+  "64|feat: Muse Hub push/pull sync protocol — batch commit and object transfer"
+  "65|feat: muse merge — fast-forward and 3-way merge with path-level conflict detection"
 )
 
 # --- create worktrees + task files ---
