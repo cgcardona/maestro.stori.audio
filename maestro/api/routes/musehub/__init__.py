@@ -1,7 +1,8 @@
 """Muse Hub route package.
 
-Composes sub-routers for repos/branches/commits, issue tracking, and pull
-requests under the shared ``/musehub`` prefix. Registered in ``maestro.main`` as:
+Composes sub-routers for repos/branches/commits, issue tracking, pull
+requests, and the push/pull sync protocol under the shared ``/musehub``
+prefix. Registered in ``maestro.main`` as:
 
     app.include_router(musehub.router, prefix="/api/v1", tags=["musehub"])
 
@@ -16,7 +17,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from maestro.api.routes.musehub import issues, pull_requests, repos
+from maestro.api.routes.musehub import issues, pull_requests, repos, sync
 from maestro.auth.dependencies import require_valid_token
 
 router = APIRouter(
@@ -28,5 +29,6 @@ router = APIRouter(
 router.include_router(repos.router)
 router.include_router(issues.router)
 router.include_router(pull_requests.router)
+router.include_router(sync.router)
 
 __all__ = ["router"]

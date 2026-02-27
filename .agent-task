@@ -1,4 +1,4 @@
-WORKFLOW=pr-review
-PR_NUMBER=65
-PR_TITLE=feat: muse merge — fast-forward and 3-way merge with path-level conflict detection
-PR_URL=https://github.com/cgcardona/maestro/pull/65
+WORKFLOW=issue-to-pr
+ISSUE_NUMBER=40
+ISSUE_TITLE=feat: Muse Hub push/pull sync protocol — batch commit and object transfer
+ISSUE_URL=https://github.com/cgcardona/maestro/issues/40

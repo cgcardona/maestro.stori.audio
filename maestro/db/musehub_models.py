@@ -46,6 +46,9 @@ class MusehubRepo(Base):
     commits: Mapped[list[MusehubCommit]] = relationship(
         "MusehubCommit", back_populates="repo", cascade="all, delete-orphan"
     )
+    objects: Mapped[list[MusehubObject]] = relationship(
+        "MusehubObject", back_populates="repo", cascade="all, delete-orphan"
+    )
     issues: Mapped[list[MusehubIssue]] = relationship(
         "MusehubIssue", back_populates="repo", cascade="all, delete-orphan"
     )
@@ -103,6 +106,37 @@ class MusehubCommit(Base):
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="commits")
+
+
+class MusehubObject(Base):
+    """A binary artifact (MIDI, MP3, WebP piano roll) stored in Muse Hub.
+
+    Object content is written to disk at ``disk_path``; only metadata lives in
+    Postgres.  ``object_id`` is the canonical content-addressed identifier in
+    the form ``sha256:<hex>`` and doubles as the primary key — upserts are safe
+    by design because the same content always maps to the same ID.
+    """
+
+    __tablename__ = "musehub_objects"
+
+    # Content-addressed ID, e.g. "sha256:abc123..."
+    object_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Relative path hint from the client, e.g. "tracks/jazz_4b.mid"
+    path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Absolute path on the Hub server's filesystem where the bytes are stored
+    disk_path: Mapped[str] = mapped_column(String(2048), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="objects")
 
 
 class MusehubIssue(Base):

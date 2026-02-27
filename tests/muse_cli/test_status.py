@@ -204,7 +204,10 @@ async def test_status_during_merge_shows_conflicts(
     _init_muse_repo(tmp_path)
 
     merge_state = {
-        "conflicts": ["beat.mid", "lead.mp3"],
+        "base_commit": "abc123",
+        "ours_commit": "def456",
+        "theirs_commit": "789abc",
+        "conflict_paths": ["beat.mid", "lead.mp3"],
         "other_branch": "feature/variation-b",
     }
     (tmp_path / ".muse" / "MERGE_STATE.json").write_text(json.dumps(merge_state))

@@ -129,6 +129,10 @@ _ALLOWLIST_PATHS = {
     "maestro/prompts/parser.py",
     "maestro/api/routes/maestro.py",
     "tests/test_maestro_prompt_cutover.py",
+    # Changelog and historical docs legitimately reference the old STORI PROMPT
+    # name as context for the cutover — these are not production code paths.
+    "CHANGELOG.md",
+    "docs/reference/type_contracts.md",
 }
 
 _ALLOWLIST_DIRS = {
