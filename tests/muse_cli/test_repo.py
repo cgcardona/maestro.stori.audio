@@ -1,14 +1,16 @@
-"""Tests for ``maestro.muse_cli._repo`` — repository detection utilities.
+"""Tests for ``maestro.muse_cli._repo`` and public ``maestro.muse_cli.repo``.
 
-Covers every acceptance criterion from issue #46 and the detection rules
-specified in issue #31:
+Covers every acceptance criterion from issue #46:
 
 - Returns current dir if ``.muse/`` is present
 - Traverses up and finds a parent ``.muse/``
 - Returns ``None`` (never raises) when no ``.muse/`` ancestor exists
 - ``MUSE_REPO_ROOT`` env-var takes precedence over traversal
-- ``require_repo()`` exits 2 with the standard "Not a Muse repository" message
-  when root is not found
+- ``require_repo_root()`` exits 2 with the standardised git-style error
+  message when no repo is found
+- Public ``repo.py`` module re-exports ``find_repo_root`` and
+  ``require_repo_root`` identically to the private ``_repo`` module
+- ``MuseNotARepoError`` alias exists in ``errors.py``
 
 All tests use ``tmp_path`` and ``monkeypatch`` for isolation.
 """
@@ -20,9 +22,9 @@ import pathlib
 import pytest
 from typer.testing import CliRunner
 
-from maestro.muse_cli._repo import find_repo_root, require_repo
+from maestro.muse_cli._repo import find_repo_root, require_repo, require_repo_root
 from maestro.muse_cli.app import cli
-from maestro.muse_cli.errors import ExitCode
+from maestro.muse_cli.errors import ExitCode, MuseNotARepoError, RepoNotFoundError
 
 runner = CliRunner()
 
@@ -118,13 +120,13 @@ def test_require_repo_exits_2_when_no_muse(tmp_path: pathlib.Path) -> None:
         os.chdir(prev)
 
 
-def test_require_repo_error_message_contains_expected_text(tmp_path: pathlib.Path) -> None:
-    """The "not a Muse repo" error message contains instructive text."""
+def test_require_repo_error_message_matches_standard(tmp_path: pathlib.Path) -> None:
+    """The error message matches the git-style format specified in issue #46."""
     prev = os.getcwd()
     try:
         os.chdir(tmp_path)
         result = runner.invoke(cli, ["status"])
-        assert "Not a Muse repository" in result.output
+        assert "fatal: not a muse repository" in result.output
         assert "muse init" in result.output
     finally:
         os.chdir(prev)
@@ -135,3 +137,34 @@ def test_require_repo_returns_root_when_found(tmp_path: pathlib.Path) -> None:
     (tmp_path / ".muse").mkdir()
     root = require_repo(tmp_path)
     assert root == tmp_path
+
+
+# ---------------------------------------------------------------------------
+# Issue #46 additions — aliases and public module
+# ---------------------------------------------------------------------------
+
+
+def test_require_repo_root_alias_is_identical(tmp_path: pathlib.Path) -> None:
+    """``require_repo_root`` is the same callable as ``require_repo``."""
+    assert require_repo_root is require_repo
+
+
+def test_muse_not_a_repo_error_alias(tmp_path: pathlib.Path) -> None:
+    """``MuseNotARepoError`` is the canonical alias for ``RepoNotFoundError``."""
+    assert MuseNotARepoError is RepoNotFoundError
+
+
+def test_public_repo_module_exports_find_repo_root(tmp_path: pathlib.Path) -> None:
+    """Public ``maestro.muse_cli.repo`` re-exports ``find_repo_root``."""
+    from maestro.muse_cli.repo import find_repo_root as public_fn
+
+    (tmp_path / ".muse").mkdir()
+    assert public_fn(tmp_path) == tmp_path
+
+
+def test_public_repo_module_exports_require_repo_root(tmp_path: pathlib.Path) -> None:
+    """Public ``maestro.muse_cli.repo`` re-exports ``require_repo_root``."""
+    from maestro.muse_cli.repo import require_repo_root as public_fn
+    from maestro.muse_cli._repo import require_repo_root as private_fn
+
+    assert public_fn is private_fn
