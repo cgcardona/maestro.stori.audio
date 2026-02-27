@@ -30,18 +30,74 @@ maestro/muse_cli/
 ├── _repo.py             — Repository detection (.muse/ directory walker)
 └── commands/
     ├── __init__.py
-    ├── init.py           — muse init
-    ├── status.py         — muse status
-    ├── commit.py         — muse commit
-    ├── log.py            — muse log
-    ├── checkout.py       — muse checkout
-    ├── merge.py          — muse merge
-    ├── remote.py         — muse remote
-    ├── push.py           — muse push
-    └── pull.py           — muse pull
+    ├── init.py           — muse init  ✅ fully implemented
+    ├── status.py         — muse status  ✅ branch + commit state display
+    ├── commit.py         — muse commit  (stub — issue #32)
+    ├── log.py            — muse log     (stub — issue #33)
+    ├── checkout.py       — muse checkout (stub — issue #34)
+    ├── merge.py          — muse merge   (stub — issue #35)
+    ├── remote.py         — muse remote  (stub — issue #38)
+    ├── push.py           — muse push    (stub — issue #38)
+    └── pull.py           — muse pull    (stub — issue #38)
 ```
 
-The CLI delegates to existing `maestro/services/muse_*.py` service modules. Subcommands are currently stubs — each prints "not yet implemented" and exits 0.
+The CLI delegates to existing `maestro/services/muse_*.py` service modules. Stub subcommands print "not yet implemented" and exit 0.
+
+---
+
+## Local Repository Structure (`.muse/`)
+
+`muse init` creates the following layout in the current working directory:
+
+```
+.muse/
+  repo.json          Repo identity: repo_id (UUID), schema_version, created_at
+  HEAD               Current branch pointer, e.g. "refs/heads/main"
+  config.toml        [user], [auth], [remotes] configuration
+  refs/
+    heads/
+      main           Commit ID of branch HEAD (empty = no commits yet)
+      <branch>       One file per branch
+```
+
+### File semantics
+
+| File | Source of truth for | Notes |
+|------|-------------------|-------|
+| `repo.json` | Repo identity | `repo_id` persists across `--force` reinitialise |
+| `HEAD` | Current branch name | Always `refs/heads/<branch>` |
+| `refs/heads/<branch>` | Branch → commit pointer | Empty string = branch has no commits yet |
+| `config.toml` | User identity, auth token, remotes | Not overwritten on `--force` |
+
+### Repo-root detection
+
+Every CLI command locates the active repo by walking up the directory tree until `.muse/` is found:
+
+```python
+# maestro/muse_cli/_repo.py
+find_repo_root(start: Path | None = None) -> Path | None
+```
+
+- Returns the directory containing `.muse/`, or `None` if not found (never raises).
+- Set `MUSE_REPO_ROOT=/path/to/repo` to override traversal (useful in tests and scripts).
+- `require_repo()` wraps `find_repo_root()` for command callbacks: exits 2 with "Not a Muse repository. Run `muse init`." if root is `None`.
+
+### `config.toml` example
+
+```toml
+[user]
+name = "Gabriel"
+email = "g@example.com"
+
+[auth]
+token = "eyJ..."     # Muse Hub Bearer token — keep out of version control
+
+[remotes]
+[remotes.origin]
+url = "https://story.audio/musehub/repos/abcd1234"
+```
+
+> **Security note:** `.muse/config.toml` contains the Hub auth token. Add `.muse/config.toml` to `.gitignore` (or `.museignore`) to prevent accidental exposure.
 
 ### VCS Services
 
