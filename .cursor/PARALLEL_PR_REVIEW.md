@@ -165,10 +165,14 @@ STEP 4 — REVIEW:
   1. Context — read PR description, referenced issue, commits, files changed
   2. Deep review — work through all applicable checklist sections (3a–3j)
   3. Add/fix tests if weak or missing
-  4. Run mypy and tests (Docker-native, using $REPO and $WTNAME from STEP 1)
-  5. Grade the PR (A/B/C/D/F) — OUTPUT GRADE FIRST before any merge command
-  6. Merge ONLY if grade is A or B and you have written "Approved for merge"
-  7. After merge: close the referenced issue
+  4. Run mypy and tests (Docker-native, using $REPO and $WTNAME from STEP 1).
+     ⚠️  Never pipe mypy/pytest through grep/head/tail — full output, exit code is authoritative.
+  5. Red-flag scan — before claiming tests pass, scan the FULL output for:
+       ERROR, Traceback, toolError, circuit_breaker_open, FAILED, AssertionError
+     Any red-flag = the run is not clean, regardless of the final summary line.
+  6. Grade the PR (A/B/C/D/F) — OUTPUT GRADE FIRST before any merge command
+  7. Merge ONLY if grade is A or B and you have written "Approved for merge"
+  8. After merge: close the referenced issue
 
 STEP 5 — SELF-DESTRUCT (always run this, merge or not, early stop or not):
   WORKTREE=$(pwd)

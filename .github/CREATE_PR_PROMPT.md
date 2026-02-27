@@ -106,6 +106,12 @@ docker compose exec storpheus mypy .
 
 Fix **all** type errors before proceeding. Running tests with type errors wastes a test pass.
 
+**Type-system rules — fix correctly, not around:**
+- Fix the callee's return type first. Never cast at a call site to silence a type error.
+- No `dict[str, Any]` or `list[dict]` crossing internal layer boundaries — use typed Pydantic models or dataclasses.
+- `# type: ignore` is only permitted at explicit 3rd-party adapter boundaries (Gradio, SSE transport, serialization) and must include an inline explanation.
+- If the same mypy error persists after two fix attempts, stop and reconsider the type design. Do not loop with incremental tweaks — change strategy.
+
 ---
 
 ## STEP 5 — TESTS (NON-NEGOTIABLE)
@@ -154,6 +160,10 @@ docker compose exec storpheus pytest storpheus/test_<relevant_file>.py -v
 # Coverage check (run full suite if changes are broad)
 docker compose exec maestro sh -c "export COVERAGE_FILE=/tmp/.coverage && python -m coverage run -m pytest tests/ -v && python -m coverage report --fail-under=80 --show-missing"
 ```
+
+**Never pipe test output through `grep`, `head`, or `tail`.** The process exit code is the authoritative signal — filtering it causes false passes and false failures. Capture full output to a file if log size is a concern.
+
+**Cascading failure scan:** After your target tests pass, search for similar assertions or fixtures that may be affected by the same root change (shared constant, model field, contract shape). Fix all impacted tests in the same commit — do not leave sibling failures for a later round.
 
 ---
 
