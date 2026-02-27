@@ -51,6 +51,9 @@ class MusehubRepo(Base):
     issues: Mapped[list[MusehubIssue]] = relationship(
         "MusehubIssue", back_populates="repo", cascade="all, delete-orphan"
     )
+    pull_requests: Mapped[list[MusehubPullRequest]] = relationship(
+        "MusehubPullRequest", back_populates="repo", cascade="all, delete-orphan"
+    )
 
 
 class MusehubBranch(Base):
@@ -164,3 +167,33 @@ class MusehubIssue(Base):
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="issues")
+
+
+class MusehubPullRequest(Base):
+    """A pull request proposing to merge one branch into another.
+
+    ``state`` progresses: ``open`` → ``merged`` | ``closed``.
+    ``merge_commit_id`` is populated only when state becomes ``merged``.
+    """
+
+    __tablename__ = "musehub_pull_requests"
+
+    pr_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="open", index=True)
+    from_branch: Mapped[str] = mapped_column(String(255), nullable=False)
+    to_branch: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Populated when state transitions to 'merged'
+    merge_commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="pull_requests")
