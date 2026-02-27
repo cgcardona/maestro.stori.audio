@@ -32,3 +32,7 @@ class RepoNotFoundError(MuseCLIError):
 
     def __init__(self, message: str = "Not a Muse repository. Run `muse init`.") -> None:
         super().__init__(message, exit_code=ExitCode.REPO_NOT_FOUND)
+
+
+#: Canonical public alias matching the name specified in issue #46.
+MuseNotARepoError = RepoNotFoundError

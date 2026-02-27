@@ -27,7 +27,10 @@ maestro/muse_cli/
 ├── __init__.py          — Package marker
 ├── app.py               — Typer application root (console script: `muse`)
 ├── errors.py            — Exit-code enum (0 success / 1 user / 2 repo / 3 internal) + exceptions
+│                          MuseNotARepoError = RepoNotFoundError (public alias, issue #46)
 ├── _repo.py             — Repository detection (.muse/ directory walker)
+│                          find_repo_root(), require_repo(), require_repo_root alias
+├── repo.py              — Public re-export of _repo.py (canonical import surface, issue #46)
 └── commands/
     ├── __init__.py
     ├── init.py           — muse init  ✅ fully implemented
@@ -172,13 +175,26 @@ Given the same working tree state, message, and timestamp two machines produce i
 Every CLI command locates the active repo by walking up the directory tree until `.muse/` is found:
 
 ```python
-# maestro/muse_cli/_repo.py
-find_repo_root(start: Path | None = None) -> Path | None
+# Public API — maestro/muse_cli/repo.py (issue #46)
+from maestro.muse_cli.repo import find_repo_root, require_repo_root
+
+root: Path | None = find_repo_root()          # returns None if not found, never raises
+root: Path        = require_repo_root()        # exits 2 with git-style error if not found
 ```
 
-- Returns the directory containing `.muse/`, or `None` if not found (never raises).
-- Set `MUSE_REPO_ROOT=/path/to/repo` to override traversal (useful in tests and scripts).
-- `require_repo()` wraps `find_repo_root()` for command callbacks: exits 2 with "Not a Muse repository. Run `muse init`." if root is `None`.
+Detection rules (in priority order):
+
+1. If `MUSE_REPO_ROOT` env var is set, use it (useful in tests and scripts — no traversal).
+2. Walk from `start` (default `Path.cwd()`) upward until a directory containing `.muse/` is found.
+3. If the filesystem root is reached with no `.muse/`, return `None`.
+
+`require_repo_root()` exits 2 with:
+```
+fatal: not a muse repository (or any parent up to mount point /)
+Run "muse init" to initialize a new repository.
+```
+
+**Import path:** prefer the public `maestro.muse_cli.repo` module for new code; existing commands use `maestro.muse_cli._repo` which is kept for compatibility. Both expose the same functions. `MuseNotARepoError` in `errors.py` is the canonical alias for `RepoNotFoundError`.
 
 ### `config.toml` example
 

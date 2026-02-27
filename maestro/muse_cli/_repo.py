@@ -43,6 +43,12 @@ def find_repo_root(start: pathlib.Path | None = None) -> pathlib.Path | None:
         current = parent
 
 
+_NOT_A_REPO_MSG = (
+    'fatal: not a muse repository (or any parent up to mount point /)\n'
+    'Run "muse init" to initialize a new repository.'
+)
+
+
 def require_repo(start: pathlib.Path | None = None) -> pathlib.Path:
     """Return the repo root or exit 2 with a clear error message.
 
@@ -53,6 +59,10 @@ def require_repo(start: pathlib.Path | None = None) -> pathlib.Path:
     """
     root = find_repo_root(start)
     if root is None:
-        typer.echo("Not a Muse repository. Run `muse init`.")
+        typer.echo(_NOT_A_REPO_MSG)
         raise typer.Exit(code=ExitCode.REPO_NOT_FOUND)
     return root
+
+
+#: Public alias matching the function name specified in issue #46.
+require_repo_root = require_repo
