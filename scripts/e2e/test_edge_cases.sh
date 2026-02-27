@@ -6,8 +6,23 @@
 
 set -e
 
-API_BASE="http://18.216.132.182:10001/api/v1"
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzY5OTY3NTQzLCJleHAiOjE3NzAwNTM5NDMsInN1YiI6IjYzMDRmZjgwLTg0M2ItNDIwZi1iN2ViLWU3OGQxODhjMWFlMiJ9.yR1qRPP9ZhLmpQQuHQrI6nHO3xW_gYLONPK-6lUfHeU"
+# Load .env from project root (two dirs up from scripts/e2e/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_env_file="$SCRIPT_DIR/../../.env"
+if [ -f "$_env_file" ]; then
+  set -a
+  # shellcheck source=../../.env
+  source "$_env_file"
+  set +a
+fi
+
+if [ -z "${E2E_ACCESS_TOKEN:-}" ]; then
+  echo "❌ E2E_ACCESS_TOKEN is not set. Add it to .env (generate with: python scripts/generate_access_code.py --generate-user-id --hours 24 -q)"
+  exit 1
+fi
+
+API_BASE="${STORI_E2E_API_BASE:-http://localhost:10001/api/v1}"
+TOKEN="$E2E_ACCESS_TOKEN"
 CONV_ID="edge-test-$(uuidgen | tr '[:upper:]' '[:lower:]')"
 
 GREEN='\033[0;32m'

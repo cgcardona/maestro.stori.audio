@@ -5,16 +5,26 @@
 
 set -e
 
-# Configuration
-API_URL="https://stage.stori.audio/api/v1"
-TOKEN="${1:-}"
+# Load .env from project root (two dirs up from scripts/e2e/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_env_file="$SCRIPT_DIR/../../.env"
+if [ -f "$_env_file" ]; then
+  set -a
+  # shellcheck source=../../.env
+  source "$_env_file"
+  set +a
+fi
+
+# Token: arg takes precedence, else .env
+TOKEN="${1:-$E2E_ACCESS_TOKEN}"
+API_URL="${STORI_E2E_API_BASE:-https://stage.stori.audio/api/v1}"
 
 if [ -z "$TOKEN" ]; then
-    echo "❌ Usage: $0 <jwt-token>"
+    echo "❌ No JWT token. Either:"
+    echo "   1. Add E2E_ACCESS_TOKEN to .env, or"
+    echo "   2. Pass token as argument: $0 <jwt-token>"
     echo ""
-    echo "Generate a token locally, then pass it:"
-    echo "  python scripts/generate_access_code.py --user-id <uuid> --duration-hours 1"
-    echo "  $0 <your-jwt-token>"
+    echo "Generate: python scripts/generate_access_code.py --generate-user-id --hours 24 -q"
     exit 1
 fi
 

@@ -4,14 +4,29 @@
 
 set -e
 
+# Load .env from project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_env_file="$SCRIPT_DIR/../../.env"
+if [ -f "$_env_file" ]; then
+  set -a
+  # shellcheck source=../../.env
+  source "$_env_file"
+  set +a
+fi
+
+if [ -z "${E2E_ACCESS_TOKEN:-}" ]; then
+  echo "❌ E2E_ACCESS_TOKEN is not set. Add it to .env (generate with: python scripts/generate_access_code.py --generate-user-id --hours 24 -q)"
+  exit 1
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzY5OTkyMTUyLCJleHAiOjE3Njk5OTkzNTIsInN1YiI6ImIzNDc1MWI4LTZhMDktNDQ5Ni05OGE1LTZmOTc1NjQ2ZTRhYSJ9.TULKva1Wem_NzZnEp7ZkoK7ItFnHUTf-_GM22tBQSkc"
-MAESTRO_IP="172.18.0.8"
+TOKEN="$E2E_ACCESS_TOKEN"
+MAESTRO_IP="${MAESTRO_IP:-172.18.0.8}"
 BASE_URL="http://$MAESTRO_IP:10001/api/v1"
 
 success_count=0
