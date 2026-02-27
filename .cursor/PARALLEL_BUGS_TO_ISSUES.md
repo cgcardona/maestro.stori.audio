@@ -105,8 +105,11 @@ STEP 2 — CREATE ISSUES:
   Read and follow every step in .github/CREATE_ISSUES_PROMPT.md exactly.
   For each bug in your batch:
   1. Analyze the bug using the domain context in CREATE_ISSUES_PROMPT.md
-  2. Draft the full issue body (description, user journey, location, fix shape, tests, docs, labels)
-  3. Create the issue:
+  2. Check for an existing issue BEFORE creating a new one (idempotency gate):
+       gh issue list --search "Fix: <short description>" --state all --json number,title,url
+     If a matching open or closed issue already exists → skip creation, record the existing URL.
+  3. Draft the full issue body (description, user journey, location, fix shape, tests, docs, labels)
+  4. Create the issue (only if step 2 found nothing):
        gh issue create \
          --title "Fix: <short description>" \
          --body "$(cat <<'EOF'
@@ -114,7 +117,9 @@ STEP 2 — CREATE ISSUES:
 EOF
 )" \
          --label "bug,<other-labels>"
-  4. Record the created issue URL
+  5. Record the created issue URL.
+     ⚠️  If gh issue create fails twice for the same bug, skip it and report the failure —
+     do NOT loop endlessly. Change strategy or escalate.
 
 STEP 3 — SELF-DESTRUCT (always run this when done):
   REPO=$(git worktree list | head -1 | awk '{print $1}')
@@ -123,7 +128,8 @@ STEP 3 — SELF-DESTRUCT (always run this when done):
   git worktree remove --force "$WORKTREE"
   git worktree prune
 
-Report: batch number, list of created issue URLs with titles.
+Report: batch number, explicit list of created issue URLs with titles.
+⚠️  An empty URL list is a failure — "Done" is not an acceptable report without artifact proof.
 ```
 
 ---

@@ -237,6 +237,7 @@ Suggest labels from the set below. Add `blocks #N` or `related to #N` where appl
 - If a bug report is ambiguous, make reasonable assumptions and state them explicitly in the issue.
 - If the fix touches the SSE protocol or MCP tool schema, flag the frontend/MCP-client handoff requirement in the issue title with `[HANDOFF REQUIRED]`.
 - No `print()`, no hardcoded secrets, no `# type: ignore` without a stated reason — call these out if a fix would introduce them.
+- **Idempotency:** Before creating any issue, search for an existing one with a matching title (`gh issue list --search "..."  --state all`). Creating a duplicate issue is worse than skipping — duplicates fragment discussion and waste PR cycles.
 
 ---
 
