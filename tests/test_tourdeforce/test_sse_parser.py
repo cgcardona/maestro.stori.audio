@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from stori_tourdeforce.sse_parser import (
+from tourdeforce.sse_parser import (
     extract_complete,
     extract_generator_events,
     extract_state,
     extract_tool_calls,
     parse_sse_line,
 )
-from stori_tourdeforce.models import ParsedSSEEvent
+from tourdeforce.models import ParsedSSEEvent
 
 
 class TestParseSSELine:

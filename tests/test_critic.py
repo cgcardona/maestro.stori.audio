@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.contracts.json_types import NoteDict
-from app.services.critic import (
+from maestro.contracts.json_types import NoteDict
+from maestro.services.critic import (
     score_drum_notes,
     score_bass_notes,
     accept_drum,

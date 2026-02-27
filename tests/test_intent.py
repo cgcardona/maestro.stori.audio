@@ -6,7 +6,7 @@ Tests the intent classification, SSE state routing, and tool allowlisting.
 from __future__ import annotations
 
 import pytest
-from app.core.intent import (
+from maestro.core.intent import (
     get_intent_result,
     SSEState,
     Intent,
@@ -14,7 +14,7 @@ from app.core.intent import (
     Slots,
     normalize,
 )
-from app.core.intent_config import match_producer_idiom
+from maestro.core.intent_config import match_producer_idiom
 
 
 def looks_like_question(text: str) -> bool:

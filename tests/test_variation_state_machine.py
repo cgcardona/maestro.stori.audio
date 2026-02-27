@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.variation.core.state_machine import (
+from maestro.variation.core.state_machine import (
     VariationStatus,
     assert_transition,
     InvalidTransitionError,

@@ -7,7 +7,7 @@ per TOOL_CALL_VALIDATION_REFERENCE.md.
 from __future__ import annotations
 
 import pytest
-from app.core.tool_validation import validate_tool_call, NAME_LENGTH_LIMITS
+from maestro.core.tool_validation import validate_tool_call, NAME_LENGTH_LIMITS
 
 
 class TestNameLengthValidation:

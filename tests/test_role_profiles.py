@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.data.role_profiles import (
+from maestro.data.role_profiles import (
     ROLE_PROFILES,
     RoleProfile,
     get_role_profile,
@@ -194,31 +194,31 @@ class TestRoleAwareExpressiveness:
 
     def test_lead_gets_pitch_bend_enabled(self) -> None:
 
-        from app.services.expressiveness import get_profile
+        from maestro.services.expressiveness import get_profile
         prof = get_profile("jazz", "lead")
         assert prof.pitch_bend_enabled is True
 
     def test_bass_gets_late_bias(self) -> None:
 
-        from app.services.expressiveness import get_profile
+        from maestro.services.expressiveness import get_profile
         prof = get_profile("jazz", "bass")
         assert prof.timing_late_bias > 0
 
     def test_pads_get_expression_cc(self) -> None:
 
-        from app.services.expressiveness import get_profile
+        from maestro.services.expressiveness import get_profile
         prof = get_profile("ambient", "pads")
         assert prof.cc_expression_enabled is True
 
     def test_chords_get_sustain_cc(self) -> None:
 
-        from app.services.expressiveness import get_profile
+        from maestro.services.expressiveness import get_profile
         prof = get_profile("jazz", "chords")
         assert prof.cc_sustain_enabled is True
 
     def test_velocity_stdev_matches_heuristic(self) -> None:
 
-        from app.services.expressiveness import get_profile
+        from maestro.services.expressiveness import get_profile
         rp = get_role_profile("lead")
         assert rp is not None
         prof = get_profile("jazz", "lead")
@@ -226,6 +226,6 @@ class TestRoleAwareExpressiveness:
 
     def test_unknown_role_falls_back_to_base(self) -> None:
 
-        from app.services.expressiveness import get_profile
+        from maestro.services.expressiveness import get_profile
         prof = get_profile("jazz", "theremin")
         assert prof is not None

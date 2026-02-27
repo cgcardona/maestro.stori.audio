@@ -22,18 +22,17 @@ PROJECT_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 echo "Project root: $PROJECT_ROOT"
 echo ""
 
-SERVICE_FILE="$PROJECT_ROOT/deploy/systemd/maestro-stori.service"
+SERVICE_FILE="$PROJECT_ROOT/deploy/systemd/maestro.service"
 if [ ! -f "$SERVICE_FILE" ]; then
     echo "❌ Service file not found: $SERVICE_FILE"
     exit 1
 fi
 
-echo "📦 Installing maestro-stori (Docker Compose on boot)..."
-sed "s|/home/ubuntu/maestro.stori.audio|$PROJECT_ROOT|g" \
-    "$SERVICE_FILE" > "/etc/systemd/system/maestro-stori.service"
-    "$SERVICE_FILE" > "/etc/systemd/system/maestro-stori.service"
-chmod 644 "/etc/systemd/system/maestro-stori.service"
-echo "   ✓ maestro-stori.service installed"
+echo "📦 Installing (Docker Compose on boot)..."
+sed "s|/opt/maestro|$PROJECT_ROOT|g" \
+    "$SERVICE_FILE" > "/etc/systemd/system/maestro.service"
+chmod 644 "/etc/systemd/system/maestro.service"
+echo "   ✓ maestro.service installed"
 echo ""
 
 echo "🔄 Reloading systemd daemon..."
@@ -41,12 +40,12 @@ systemctl daemon-reload
 echo "   ✓ Daemon reloaded"
 echo ""
 
-read -p "Enable maestro-stori to start Docker Compose on boot? [Y/n]: " enable_choice
+read -p "Enable to start Docker Compose on boot? [Y/n]: " enable_choice
 enable_choice=${enable_choice:-Y}
 
 if [[ $enable_choice =~ ^[Yy]$ ]]; then
-    systemctl enable maestro-stori
-    echo "   ✓ maestro-stori enabled"
+    systemctl enable 
+    echo "   ✓ enabled"
     echo ""
 fi
 
@@ -54,7 +53,7 @@ read -p "Start the stack now (docker compose up -d)? [Y/n]: " start_choice
 start_choice=${start_choice:-Y}
 
 if [[ $start_choice =~ ^[Yy]$ ]]; then
-    systemctl start maestro-stori
+    systemctl start 
     echo "   ✓ Stack started"
     echo ""
 fi
@@ -63,8 +62,8 @@ echo "==================================="
 echo "Done!"
 echo "==================================="
 echo ""
-echo "  Status:   sudo systemctl status maestro-stori"
+echo "  Status:   sudo systemctl status "
 echo "  Logs:     docker compose logs -f    (from $PROJECT_ROOT)"
 echo "  Restart:  docker compose restart     (from $PROJECT_ROOT)"
-echo "  Stop:     sudo systemctl stop maestro-stori"
+echo "  Stop:     sudo systemctl stop "
 echo ""

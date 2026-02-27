@@ -1,0 +1,28 @@
+"""
+Conversation route package.
+
+Provides CRUD operations and message streaming for conversation threads.
+
+Public re-exports (used by existing tests and external code):
+    normalize_tool_arguments, build_conversation_history_for_llm
+"""
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+from maestro.api.routes.conversations import crud, messages
+from maestro.api.routes.conversations.helpers import (
+    normalize_tool_arguments,
+    build_conversation_history_for_llm,
+)
+
+router = APIRouter()
+# search must come before the {conversation_id} catch-all
+router.include_router(crud.router)
+router.include_router(messages.router)
+
+__all__ = [
+    "router",
+    "normalize_tool_arguments",
+    "build_conversation_history_for_llm",
+]

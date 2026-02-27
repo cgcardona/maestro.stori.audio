@@ -5,12 +5,12 @@ lookup, budget status derivation, auth requirements, and camelCase serialization
 """
 from __future__ import annotations
 
-from app.db.models import User
+from maestro.db.models import User
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 import pytest
 
-from app.data.maestro_ui import PLACEHOLDERS, PROMPT_BY_ID, PROMPT_POOL
+from maestro.data.maestro_ui import PLACEHOLDERS, PROMPT_BY_ID, PROMPT_POOL
 
 
 # ---------------------------------------------------------------------------
@@ -91,17 +91,17 @@ class TestPrompts:
     @pytest.mark.anyio
     async def test_full_prompt_starts_with_sentinel(self, client: AsyncClient, db_session: AsyncSession) -> None:
 
-        """Every fullPrompt must begin with STORI PROMPT."""
+        """Every fullPrompt must begin with MAESTRO PROMPT."""
         data = (await client.get("/api/v1/maestro/prompts")).json()
         for item in data["prompts"]:
-            assert item["fullPrompt"].startswith("STORI PROMPT"), (
-                f"Item '{item['id']}' fullPrompt doesn't start with 'STORI PROMPT'"
+            assert item["fullPrompt"].startswith("MAESTRO PROMPT"), (
+                f"Item '{item['id']}' fullPrompt doesn't start with 'MAESTRO PROMPT'"
             )
 
     @pytest.mark.anyio
     async def test_full_prompt_contains_required_fields(self, client: AsyncClient, db_session: AsyncSession) -> None:
 
-        """Every fullPrompt contains the mandatory STORI PROMPT spec fields."""
+        """Every fullPrompt contains the mandatory MAESTRO PROMPT spec fields."""
         required_fields = ["Mode:", "Style:", "Key:", "Tempo:", "Role:", "Vibe:", "Request:"]
         data = (await client.get("/api/v1/maestro/prompts")).json()
         for item in data["prompts"]:
@@ -295,7 +295,7 @@ class TestBudgetStatus:
     async def test_user_not_found(self, client: AsyncClient, db_session: AsyncSession) -> None:
 
         """Returns 404 if user doesn't exist."""
-        from app.auth.tokens import create_access_token
+        from maestro.auth.tokens import create_access_token
         token = create_access_token(
             user_id="00000000-0000-0000-0000-000000000099",
             expires_hours=1,
@@ -327,7 +327,7 @@ class TestBudgetStateDerivation:
     async def test_state_normal(self, client: AsyncClient, db_session: AsyncSession, test_user: User) -> None:
 
         """remaining >= 1.0 → normal."""
-        from app.auth.tokens import create_access_token
+        from maestro.auth.tokens import create_access_token
         test_user.budget_cents = 500
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
@@ -341,7 +341,7 @@ class TestBudgetStateDerivation:
     async def test_state_low(self, client: AsyncClient, db_session: AsyncSession, test_user: User) -> None:
 
         """0.25 <= remaining < 1.0 → low."""
-        from app.auth.tokens import create_access_token
+        from maestro.auth.tokens import create_access_token
         test_user.budget_cents = 50
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
@@ -355,7 +355,7 @@ class TestBudgetStateDerivation:
     async def test_state_critical(self, client: AsyncClient, db_session: AsyncSession, test_user: User) -> None:
 
         """0 < remaining < 0.25 → critical."""
-        from app.auth.tokens import create_access_token
+        from maestro.auth.tokens import create_access_token
         test_user.budget_cents = 10
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
@@ -369,7 +369,7 @@ class TestBudgetStateDerivation:
     async def test_state_exhausted_zero(self, client: AsyncClient, db_session: AsyncSession, test_user: User) -> None:
 
         """remaining == 0 → exhausted."""
-        from app.auth.tokens import create_access_token
+        from maestro.auth.tokens import create_access_token
         test_user.budget_cents = 0
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
@@ -383,7 +383,7 @@ class TestBudgetStateDerivation:
     async def test_state_exhausted_negative(self, client: AsyncClient, db_session: AsyncSession, test_user: User) -> None:
 
         """remaining < 0 → exhausted."""
-        from app.auth.tokens import create_access_token
+        from maestro.auth.tokens import create_access_token
         test_user.budget_cents = -10
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
@@ -397,7 +397,7 @@ class TestBudgetStateDerivation:
     async def test_state_boundary_exactly_025(self, client: AsyncClient, db_session: AsyncSession, test_user: User) -> None:
 
         """remaining == 0.25 → low (< 0.25 is critical, == 0.25 is low)."""
-        from app.auth.tokens import create_access_token
+        from maestro.auth.tokens import create_access_token
         test_user.budget_cents = 25
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
@@ -411,7 +411,7 @@ class TestBudgetStateDerivation:
     async def test_state_boundary_exactly_100(self, client: AsyncClient, db_session: AsyncSession, test_user: User) -> None:
 
         """remaining == 1.0 → normal (< 1.0 is low, == 1.0 is normal)."""
-        from app.auth.tokens import create_access_token
+        from maestro.auth.tokens import create_access_token
         test_user.budget_cents = 100
         await db_session.commit()
         token = create_access_token(user_id=test_user.id, expires_hours=1)
@@ -443,10 +443,10 @@ class TestDataIntegrity:
 
     def test_all_prompts_start_with_sentinel(self) -> None:
 
-        """Every fullPrompt in the pool starts with STORI PROMPT."""
+        """Every fullPrompt in the pool starts with MAESTRO PROMPT."""
         for p in PROMPT_POOL:
-            assert p.full_prompt.startswith("STORI PROMPT"), (
-                f"Pool item '{p.id}' doesn't start with STORI PROMPT"
+            assert p.full_prompt.startswith("MAESTRO PROMPT"), (
+                f"Pool item '{p.id}' doesn't start with MAESTRO PROMPT"
             )
 
     def test_all_prompts_have_required_routing_fields(self) -> None:
@@ -510,7 +510,7 @@ class TestDataIntegrity:
     def test_derive_budget_state_directly(self) -> None:
 
         """Unit-test the helper without hitting the API."""
-        from app.api.routes.maestro_ui import _derive_budget_state
+        from maestro.api.routes.maestro_ui import _derive_budget_state
 
         assert _derive_budget_state(5.0) == "normal"
         assert _derive_budget_state(1.0) == "normal"

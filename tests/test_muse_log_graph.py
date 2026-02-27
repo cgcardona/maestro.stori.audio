@@ -13,20 +13,20 @@ import json
 import uuid
 from pathlib import Path
 import pytest
-from app.contracts.json_types import NoteDict
+from maestro.contracts.json_types import NoteDict
 from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.db.database import Base
-from app.db import muse_models  # noqa: F401
-from app.models.variation import (
+from maestro.db.database import Base
+from maestro.db import muse_models  # noqa: F401
+from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,
     Phrase,
     Variation,
 )
-from app.services import muse_repository
-from app.services.muse_log_graph import (
+from maestro.services import muse_repository
+from maestro.services.muse_log_graph import (
     MuseLogGraph,
     MuseLogNode,
     build_muse_log_graph,
@@ -299,7 +299,7 @@ class TestLogGraphBoundary:
 
     def test_no_state_store_import(self) -> None:
 
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_log_graph.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "muse_log_graph.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {
             "state_store", "executor", "maestro_handlers", "maestro_editing",
@@ -314,7 +314,7 @@ class TestLogGraphBoundary:
 
     def test_no_forbidden_names(self) -> None:
 
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "muse_log_graph.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "muse_log_graph.py"
         tree = ast.parse(filepath.read_text())
         forbidden_names = {"StateStore", "get_or_create_store", "VariationService"}
         for node in ast.walk(tree):

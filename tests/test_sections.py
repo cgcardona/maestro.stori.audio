@@ -1,4 +1,4 @@
-"""Tests for the STORI PROMPT section parser.
+"""Tests for the MAESTRO PROMPT section parser.
 
 Regression suite for the multi-section MIDI generation feature: ensures
 parse_sections() correctly detects named sections, assigns beat ranges that
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.maestro_agent_teams.sections import (
+from maestro.core.maestro_agent_teams.sections import (
     parse_sections,
     _get_section_role_description,
     _parse_form_structure,
@@ -377,7 +377,7 @@ class TestFormStructureParsing:
     def test_parse_form_structure_two_sections(self) -> None:
 
         """Two-section structure is parsed correctly."""
-        prompt = "STORI PROMPT\nForm:\n  structure: intro-groove\n  development:"
+        prompt = "MAESTRO PROMPT\nForm:\n  structure: intro-groove\n  development:"
         result = _parse_form_structure(prompt)
         assert result == ["intro", "groove"]
 
@@ -406,7 +406,7 @@ class TestFormStructureParsing:
 
         """Form.structure takes priority — narrative 'chorus' is ignored."""
         prompt = """\
-STORI PROMPT
+MAESTRO PROMPT
 Section: intro
 Style: neo-soul
 Role: [drums, bass, keys]
@@ -449,7 +449,7 @@ Form:
         text (chorus in Effects, solo/bridge/verse/build in descriptions),
         making generation impossible within max_turns=3.
         """
-        from app.data.maestro_ui.prompts_global import PROMPTS_GLOBAL
+        from maestro.data.maestro_ui.prompts_global import PROMPTS_GLOBAL
 
         prompt = next(p for p in PROMPTS_GLOBAL if p.id == "e2e_pocket_groove")
         sections = parse_sections(

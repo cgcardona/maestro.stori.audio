@@ -6,7 +6,7 @@ API base URL, auth, Swift/DAW integration, and MCP (Cursor/Claude) in one place.
 
 ## API & auth
 
-- **Base URL:** e.g. `https://stage.stori.audio` or `https://maestro.stori.audio` (no trailing slash). Use for health, maestro, conversations, assets.
+- **Base URL:** e.g. `https://your-domain.com` (no trailing slash). Use for health, maestro, conversations, assets.
 - **Auth:** `Authorization: Bearer <access_token>` on every request **except** `GET /api/v1/health` and **except asset endpoints** (see below). 401 → token missing/invalid/expired; re-auth or refresh.
 - **Health:** `GET /api/v1/health` — no auth. Use before authenticated calls.
 
@@ -74,7 +74,7 @@ curl -X POST https://<your-api>/api/v1/users/register -H "Content-Type: applicat
 **Auth & identity parity:** The app should use the backend's single-identifier architecture (device UUID). Register, get JWT for maestro/MCP, use X-Device-ID only for assets.
 
 - **Assets:** Asset endpoints use **X-Device-ID only** (no JWT). Send header `X-Device-ID: <device-uuid>` (the app’s per-install UUID). List drum kits: `GET /api/v1/assets/drum-kits`. Download URL: `GET /api/v1/assets/drum-kits/{id}/download-url` → response has `url` (presigned S3, use within 30 min) and `expires_at`.
-- **CORS:** Backend allows origins in `CORS_ORIGINS` (e.g. `https://stage.stori.audio`, `stori://`). No wildcard in prod.
+- **CORS:** Backend allows origins in `CORS_ORIGINS` (e.g. `https://your-app-domain.com`, `stori://`). No wildcard in prod.
 - **Stage:** `/docs` and `/openapi.json` are off when `DEBUG=false`; use local or debug backend for interactive docs.
 
 ---
@@ -98,7 +98,7 @@ Stori Maestro is an MCP server. Cursor, Claude Desktop, or any MCP client can li
     "-e", "MAESTRO_MCP_URL=http://localhost:10001",
     "-e", "MCP_TOKEN=YOUR_JWT",
     "maestro",
-    "python", "-m", "app.mcp.stdio_server"
+    "python", "-m", "maestro.mcp.stdio_server"
   ],
   "cwd": "REPO_ROOT"
 }
@@ -114,7 +114,7 @@ Tool list and parameters: see [api.md](../reference/api.md#tools).
 
 ### MCP MVP: prove it works
 
-You already have: HTTP endpoints (list/call with Bearer), stdio server (`app.mcp.stdio_server`), WebSocket for DAW, and server-side generation tools (e.g. `stori_generate_drums`) that run without a connected DAW. To **prove the MCP idea** end-to-end:
+You already have: HTTP endpoints (list/call with Bearer), stdio server (`maestro.mcp.stdio_server`), WebSocket for DAW, and server-side generation tools (e.g. `stori_generate_drums`) that run without a connected DAW. To **prove the MCP idea** end-to-end:
 
 **1. Prove “list tools + call one tool” (no DAW)**  
 Use the **HTTP** API so you don’t depend on Cursor/Claude or Swift.
@@ -135,12 +135,12 @@ So an LLM client can list and call tools.
 **2a. Verify the stdio server starts** (from repo root):
 
 - **Option A – Docker** (recommended; uses container env and no local Python deps):  
-  `docker compose exec -T maestro python -m app.mcp.stdio_server`  
+  `docker compose exec -T maestro python -m maestro.mcp.stdio_server`  
   Pipe two JSON-RPC lines to confirm:  
-  `(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'; sleep 0.3) | docker compose exec -T maestro python -m app.mcp.stdio_server 2>/dev/null`  
+  `(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'; sleep 0.3) | docker compose exec -T maestro python -m maestro.mcp.stdio_server 2>/dev/null`  
   You should see two JSON lines on stdout (initialize result + tools list).
 - **Option B – Local Python**: from repo root with a venv that has the app and deps (`pip install -e .`):  
-  `python -m app.mcp.stdio_server`  
+  `python -m maestro.mcp.stdio_server`  
   You should see “Stori MCP Server starting…” on stderr.
 
 **2b. Add the MCP server in Cursor**
@@ -156,24 +156,24 @@ So an LLM client can list and call tools.
     "args": [
       "compose", "-f", "REPO_ROOT/docker-compose.yml",
       "exec", "-T", "maestro",
-      "python", "-m", "app.mcp.stdio_server"
+      "python", "-m", "maestro.mcp.stdio_server"
     ],
     "cwd": "REPO_ROOT"
   }
   ```
-  Replace `REPO_ROOT` with your repo path (e.g. `/Users/you/maestro.stori.audio`). Ensure Docker is running and the stack is up (`docker compose up -d`).
+  Replace `REPO_ROOT` with your repo path. Ensure Docker is running and the stack is up (`docker compose up -d`).
 
   **Local Python:**
   ```json
   "stori-daw": {
     "command": "python",
-    "args": ["-m", "app.mcp.stdio_server"],
+    "args": ["-m", "maestro.mcp.stdio_server"],
     "cwd": "REPO_ROOT"
   }
   ```
   Requires a venv (or env) with the app installed and deps (e.g. `pip install -e .`).
 
-- Restart Cursor (or **Developer: Reload Window**) so it starts the server. If you see **"Found 0 tools"** after changing config, do a full window reload (not just resaving `mcp.json`). To verify the server returns tools from the container: run `tools/list` via stdio (see [api.md](../reference/api.md)); from repo root you can pipe `initialize` + `tools/list` JSON lines into `docker compose exec -T maestro python -m app.mcp.stdio_server` and check the last line has `"result":{"tools":[...]}` with 41 tools.
+- Restart Cursor (or **Developer: Reload Window**) so it starts the server. If you see **"Found 0 tools"** after changing config, do a full window reload (not just resaving `mcp.json`). To verify the server returns tools from the container: run `tools/list` via stdio (see [api.md](../reference/api.md)); from repo root you can pipe `initialize` + `tools/list` JSON lines into `docker compose exec -T maestro python -m maestro.mcp.stdio_server` and check the last line has `"result":{"tools":[...]}` with 41 tools.
 
 **2c. Test in Cursor**
 

@@ -20,14 +20,14 @@ from typing import Literal
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
-from app.contracts.project_types import ProjectContext, ProjectRegion, ProjectTrack
-from app.core.prompt_parser import parse_prompt, ParsedPrompt, PositionSpec
-from app.core.prompts import (
+from maestro.contracts.project_types import ProjectContext, ProjectRegion, ProjectTrack
+from maestro.prompts import parse_prompt, MaestroPrompt, PositionSpec
+from maestro.core.prompts import (
     structured_prompt_context,
     sequential_context,
     resolve_position,
 )
-from app.core.sanitize import normalise_user_input
+from maestro.core.sanitize import normalise_user_input
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ from app.core.sanitize import normalise_user_input
 def _make_prompt(**kwargs: str) -> str:
 
     """Build a minimal valid structured prompt string from keyword fields."""
-    lines = ["STORI PROMPT", f"Mode: {kwargs.pop('mode', 'compose')}"]
+    lines = ["MAESTRO PROMPT", f"Mode: {kwargs.pop('mode', 'compose')}"]
     for k, v in kwargs.items():
         lines.append(f"{k.capitalize()}: {v}")
     if "Request" not in kwargs and "request" not in kwargs:
@@ -64,7 +64,7 @@ class TestSanitizerParserPipeline:
 
         """A well-formed structured prompt is unchanged by the sanitizer."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Style: lofi\n"
             "Tempo: 90\n"
@@ -81,7 +81,7 @@ class TestSanitizerParserPipeline:
 
         """Trailing whitespace on lines is stripped; YAML still parses."""
         prompt = (
-            "STORI PROMPT   \n"
+            "MAESTRO PROMPT   \n"
             "Mode: compose   \n"
             "Style: techno   \n"
             "Request: four on the floor   "
@@ -93,7 +93,7 @@ class TestSanitizerParserPipeline:
     def test_null_bytes_in_prompt_blocked_at_model_layer(self) -> None:
 
         """Null bytes are stripped by normalise_user_input before reaching parser."""
-        raw = "STORI PROMPT\nMode: compose\nRequest: make\x00 a beat"
+        raw = "MAESTRO PROMPT\nMode: compose\nRequest: make\x00 a beat"
         sanitized = normalise_user_input(raw)
         assert "\x00" not in sanitized
         result = parse_prompt(sanitized)
@@ -102,7 +102,7 @@ class TestSanitizerParserPipeline:
     def test_zero_width_spaces_stripped(self) -> None:
 
         """Zero-width characters are stripped; prompt still recognised."""
-        raw = "STORI\u200b PROMPT\nMode: compose\nRequest: go"
+        raw = "MAESTRO\u200b PROMPT\nMode: compose\nRequest: go"
         sanitized = normalise_user_input(raw)
         assert "\u200b" not in sanitized
         result = parse_prompt(sanitized)
@@ -111,7 +111,7 @@ class TestSanitizerParserPipeline:
     def test_crlf_normalised_to_lf(self) -> None:
 
         """Windows line endings are normalised; YAML still parses."""
-        prompt = "STORI PROMPT\r\nMode: compose\r\nRequest: steady groove\r\n"
+        prompt = "MAESTRO PROMPT\r\nMode: compose\r\nRequest: steady groove\r\n"
         result = parse_prompt(normalise_user_input(prompt))
         assert result is not None
         assert result.mode == "compose"
@@ -120,7 +120,7 @@ class TestSanitizerParserPipeline:
 
         """Multiple blank lines are collapsed but list structure is preserved."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "\n\n\n\n"
             "Role:\n"
@@ -136,7 +136,7 @@ class TestSanitizerParserPipeline:
 
         """NFC normalisation of accented chars doesn't break parser."""
         # é as e + combining accent (NFD) should be normalised to é (NFC)
-        prompt = "STORI PROMPT\nMode: compose\nStyle: bossa nova\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nStyle: bossa nova\nRequest: go"
         result = parse_prompt(normalise_user_input(prompt))
         assert result is not None
         assert result.style == "bossa nova"
@@ -153,7 +153,7 @@ class TestYAMLInjectionDefense:
 
         """!!python/object tags in values must not instantiate objects."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request: !!python/object:subprocess.Popen ['ls']"
         )
@@ -167,7 +167,7 @@ class TestYAMLInjectionDefense:
         """YAML anchors / aliases must not cause memory explosion (billion laughs)."""
         # A modest but structurally valid anchor test
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Vibe:\n"
             "  - &base darker\n"
@@ -184,7 +184,7 @@ class TestYAMLInjectionDefense:
 
         """Special YAML characters in values are escaped safely."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Style: lo-fi & jazz: [dark]\n"
             "Request: go"
@@ -197,7 +197,7 @@ class TestYAMLInjectionDefense:
     def test_null_value_in_field_does_not_crash(self) -> None:
 
         """A YAML null value in a field must not crash the parser."""
-        prompt = "STORI PROMPT\nMode: compose\nStyle: ~\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nStyle: ~\nRequest: go"
         result = parse_prompt(prompt)
         # style should be None or absent; must not raise
         if result is not None:
@@ -206,7 +206,7 @@ class TestYAMLInjectionDefense:
     def test_integer_in_style_field_coerced_safely(self) -> None:
 
         """An integer where a string is expected is coerced safely."""
-        prompt = "STORI PROMPT\nMode: compose\nStyle: 42\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nStyle: 42\nRequest: go"
         result = parse_prompt(prompt)
         if result is not None:
             assert result.style == "42" or result.style is None
@@ -230,7 +230,7 @@ class TestPromptInjectionDefense:
     def test_injection_in_request_parsed_as_plain_string(self, injection: str) -> None:
 
         """Injection strings in Request: are stored as-is, not interpreted."""
-        prompt = f"STORI PROMPT\nMode: compose\nRequest: {injection}"
+        prompt = f"MAESTRO PROMPT\nMode: compose\nRequest: {injection}"
         result = parse_prompt(prompt)
         # Injection prompts that are valid single-line YAML should parse fine
         if result is not None:
@@ -242,7 +242,7 @@ class TestPromptInjectionDefense:
 
         """Multiline injection via block scalar is stored as text."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request: |\n"
             "  Make a beat.\n"
@@ -268,7 +268,7 @@ class TestRequestNewlineRegression:
 
         """Request: value on same line is valid and parses correctly."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request: Build an intro groove that evolves every 4 bars."
         )
@@ -280,7 +280,7 @@ class TestRequestNewlineRegression:
 
         """Request: | with indented text is valid YAML and parses correctly."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request: |\n"
             "  Build an intro groove that evolves every 4 bars.\n"
@@ -293,7 +293,7 @@ class TestRequestNewlineRegression:
 
         """Request: followed by unindented text is invalid YAML → returns None."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request:\n"
             "Build an intro groove that evolves every 4 bars and opens into a club-ready loop.\n"
@@ -306,7 +306,7 @@ class TestRequestNewlineRegression:
 
         """A long inline Request: value with no colons parses fine."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Style: melodic techno\n"
             "Tempo: 126\n"
@@ -334,7 +334,7 @@ class TestSpecCompliance:
     ])
     def test_all_valid_modes(self, mode: str, expected: str) -> None:
 
-        prompt = f"STORI PROMPT\nMode: {mode}\nRequest: go"
+        prompt = f"MAESTRO PROMPT\nMode: {mode}\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.mode == expected
@@ -342,7 +342,7 @@ class TestSpecCompliance:
     @pytest.mark.parametrize("mode", ["invalid", "maestro", "generate", ""])
     def test_invalid_modes_return_none(self, mode: str) -> None:
 
-        prompt = f"STORI PROMPT\nMode: {mode}\nRequest: go"
+        prompt = f"MAESTRO PROMPT\nMode: {mode}\nRequest: go"
         result = parse_prompt(prompt)
         assert result is None
 
@@ -355,7 +355,7 @@ class TestSpecCompliance:
     ])
     def test_all_target_kinds(self, target_str: str, expected_kind: str, expected_name: str | None) -> None:
 
-        prompt = f"STORI PROMPT\nMode: compose\nTarget: {target_str}\nRequest: go"
+        prompt = f"MAESTRO PROMPT\nMode: compose\nTarget: {target_str}\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.target is not None
@@ -374,7 +374,7 @@ class TestSpecCompliance:
     ])
     def test_all_position_kinds_parsed(self, position_str: str, expected_kind: str) -> None:
 
-        prompt = f"STORI PROMPT\nMode: compose\nPosition: {position_str}\nRequest: go"
+        prompt = f"MAESTRO PROMPT\nMode: compose\nPosition: {position_str}\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.position is not None
@@ -383,7 +383,7 @@ class TestSpecCompliance:
     def test_after_alias_accepted(self) -> None:
 
         """After: field is a backwards-compatible alias for Position: after X."""
-        prompt = "STORI PROMPT\nMode: compose\nAfter: intro\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nAfter: intro\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.position is not None
@@ -398,7 +398,7 @@ class TestSpecCompliance:
 class TestStructuredPromptContextCompleteness:
     """structured_prompt_context must emit every parsed field."""
 
-    def _parse(self, prompt: str) -> ParsedPrompt:
+    def _parse(self, prompt: str) -> MaestroPrompt:
 
         result = parse_prompt(prompt)
         assert result is not None
@@ -406,50 +406,50 @@ class TestStructuredPromptContextCompleteness:
 
     def test_mode_always_present(self) -> None:
 
-        parsed = self._parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = self._parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Mode: compose" in ctx
 
     def test_section_emitted_when_set(self) -> None:
 
-        parsed = self._parse("STORI PROMPT\nMode: compose\nSection: verse\nRequest: go")
+        parsed = self._parse("MAESTRO PROMPT\nMode: compose\nSection: verse\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Section: verse" in ctx
 
     def test_style_emitted(self) -> None:
 
-        parsed = self._parse("STORI PROMPT\nMode: compose\nStyle: jazz\nRequest: go")
+        parsed = self._parse("MAESTRO PROMPT\nMode: compose\nStyle: jazz\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Style: jazz" in ctx
 
     def test_key_emitted(self) -> None:
 
-        parsed = self._parse("STORI PROMPT\nMode: compose\nKey: Am\nRequest: go")
+        parsed = self._parse("MAESTRO PROMPT\nMode: compose\nKey: Am\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Key: Am" in ctx
 
     def test_tempo_emitted(self) -> None:
 
-        parsed = self._parse("STORI PROMPT\nMode: compose\nTempo: 140\nRequest: go")
+        parsed = self._parse("MAESTRO PROMPT\nMode: compose\nTempo: 140\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Tempo: 140" in ctx
 
     def test_roles_emitted(self) -> None:
 
-        parsed = self._parse("STORI PROMPT\nMode: compose\nRole: kick, bass\nRequest: go")
+        parsed = self._parse("MAESTRO PROMPT\nMode: compose\nRole: kick, bass\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "kick" in ctx and "bass" in ctx
 
     def test_target_emitted(self) -> None:
 
-        parsed = self._parse("STORI PROMPT\nMode: compose\nTarget: track:Bass\nRequest: go")
+        parsed = self._parse("MAESTRO PROMPT\nMode: compose\nTarget: track:Bass\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "track" in ctx and "Bass" in ctx
 
     def test_maestro_dimensions_in_context(self) -> None:
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Harmony:\n"
             "  progression: ii-V-I\n"
@@ -464,14 +464,14 @@ class TestStructuredPromptContextCompleteness:
 
     def test_no_maestro_section_when_no_extensions(self) -> None:
 
-        parsed = self._parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = self._parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "MAESTRO DIMENSIONS" not in ctx
 
     def test_request_field_not_in_context(self) -> None:
 
         """Request text goes to the user message, not the system context block."""
-        parsed = self._parse("STORI PROMPT\nMode: compose\nRequest: lay down a groove")
+        parsed = self._parse("MAESTRO PROMPT\nMode: compose\nRequest: lay down a groove")
         ctx = structured_prompt_context(parsed)
         # The context block ends with the "Do not re-infer" instruction;
         # the request itself is passed separately as the user turn.
@@ -480,14 +480,14 @@ class TestStructuredPromptContextCompleteness:
 
     def test_do_not_reinfer_instruction_present(self) -> None:
 
-        parsed = self._parse("STORI PROMPT\nMode: compose\nRequest: go")
+        parsed = self._parse("MAESTRO PROMPT\nMode: compose\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "Do not re-infer" in ctx
 
     def test_weighted_vibes_show_weight(self) -> None:
 
         parsed = self._parse(
-            "STORI PROMPT\nMode: compose\nVibe:\n- darker:3\n- hypnotic:1\nRequest: go"
+            "MAESTRO PROMPT\nMode: compose\nVibe:\n- darker:3\n- hypnotic:1\nRequest: go"
         )
         ctx = structured_prompt_context(parsed)
         assert "darker" in ctx
@@ -495,7 +495,7 @@ class TestStructuredPromptContextCompleteness:
 
     def test_unweighted_vibe_no_weight_label(self) -> None:
 
-        parsed = self._parse("STORI PROMPT\nMode: compose\nVibe:\n- darker\nRequest: go")
+        parsed = self._parse("MAESTRO PROMPT\nMode: compose\nVibe:\n- darker\nRequest: go")
         ctx = structured_prompt_context(parsed)
         assert "darker" in ctx
         # weight 1 should not be shown redundantly
@@ -597,10 +597,10 @@ class TestPositionPlannerRegression:
     def test_position_after_section_resolves_to_section_end(self, project_with_intro: ProjectContext) -> None:
 
         """resolve_position(after intro) = 64 when intro is 64 beats long."""
-        from app.core.prompt_parser import parse_prompt
+        from maestro.prompts import parse_prompt
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Style: house\n"
             "Tempo: 128\n"
@@ -622,11 +622,11 @@ class TestPositionPlannerRegression:
     async def test_deterministic_plan_applies_position_offset(self, project_with_intro: ProjectContext) -> None:
 
         """_try_deterministic_plan applies start_beat so region startBeats are >= 64."""
-        from app.core.planner import _try_deterministic_plan
-        from app.core.prompt_parser import parse_prompt
+        from maestro.core.planner import _try_deterministic_plan
+        from maestro.prompts import parse_prompt
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Style: house\n"
             "Tempo: 128\n"
@@ -729,7 +729,7 @@ class TestMaestroExtensionPassThrough:
     def test_dimension_in_extensions(self, dim: str) -> None:
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             f"{dim}:\n"
             "  detail: some value\n"
@@ -746,7 +746,7 @@ class TestMaestroExtensionPassThrough:
 
         """Deep nesting inside a Maestro dimension is preserved."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Harmony:\n"
             "  progression: ii-V-I\n"
@@ -765,7 +765,7 @@ class TestMaestroExtensionPassThrough:
 
         """Core routing fields (Mode, Style, Key, etc.) don't leak into extensions."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Style: jazz\n"
             "Key: Dm\n"
@@ -783,7 +783,7 @@ class TestMaestroExtensionPassThrough:
 
         """Multiple Maestro dims in one prompt all appear in extensions."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Harmony:\n"
             "  progression: I-IV-V\n"
@@ -804,7 +804,7 @@ class TestMaestroExtensionPassThrough:
 
         """Maestro dimensions appear in the LLM context string as YAML."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Harmony:\n"
             "  progression: ii-V-I\n"
@@ -834,20 +834,20 @@ class TestSectionFieldHardening:
     ])
     def test_section_normalised_to_lowercase(self, section: str, expected: str) -> None:
 
-        prompt = f"STORI PROMPT\nMode: compose\nSection: {section}\nRequest: go"
+        prompt = f"MAESTRO PROMPT\nMode: compose\nSection: {section}\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.section == expected
 
     def test_section_absent_is_none(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: compose\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose\nRequest: go")
         assert result is not None
         assert result.section is None
 
     def test_section_in_llm_context(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: compose\nSection: chorus\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose\nSection: chorus\nRequest: go")
         assert result is not None
         ctx = structured_prompt_context(result)
         assert "chorus" in ctx
@@ -869,20 +869,20 @@ class TestEdgeCases:
 
     def test_tempo_at_min(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: compose\nTempo: 40\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose\nTempo: 40\nRequest: go")
         assert result is not None
         assert result.tempo == 40
 
     def test_tempo_at_max(self) -> None:
 
-        result = parse_prompt("STORI PROMPT\nMode: compose\nTempo: 240\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose\nTempo: 240\nRequest: go")
         assert result is not None
         assert result.tempo == 240
 
     def test_empty_roles_list(self) -> None:
 
         """An empty Role: list doesn't crash the parser."""
-        prompt = "STORI PROMPT\nMode: compose\nRole: []\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRole: []\nRequest: go"
         result = parse_prompt(prompt)
         # Either parses with empty roles or fails cleanly
         if result is not None:
@@ -891,7 +891,7 @@ class TestEdgeCases:
     def test_many_roles(self) -> None:
 
         roles = ", ".join([f"inst{i}" for i in range(20)])
-        prompt = f"STORI PROMPT\nMode: compose\nRole: {roles}\nRequest: go"
+        prompt = f"MAESTRO PROMPT\nMode: compose\nRole: {roles}\nRequest: go"
         result = parse_prompt(prompt)
         if result is not None:
             assert len(result.roles) == 20
@@ -899,7 +899,7 @@ class TestEdgeCases:
     def test_very_long_request(self) -> None:
 
         request = "make a beat " * 200  # ~2400 chars
-        prompt = f"STORI PROMPT\nMode: compose\nRequest: {request.strip()}"
+        prompt = f"MAESTRO PROMPT\nMode: compose\nRequest: {request.strip()}"
         result = parse_prompt(prompt)
         assert result is not None
         assert len(result.request) > 100
@@ -908,7 +908,7 @@ class TestEdgeCases:
 
         """Maximum-density prompt with all fields populated."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Section: verse\n"
             "Target: project\n"
@@ -948,7 +948,7 @@ class TestEdgeCases:
     def test_prompt_with_only_header_and_mode_missing_request_synthesises_default(self) -> None:
 
         """Mode: compose without Request synthesises a default request."""
-        result = parse_prompt("STORI PROMPT\nMode: compose")
+        result = parse_prompt("MAESTRO PROMPT\nMode: compose")
         assert result is not None
         assert result.mode == "compose"
         assert result.request  # synthesised default
@@ -957,7 +957,7 @@ class TestEdgeCases:
 
         """YAML comments are stripped; prompt still parses."""
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose  # core routing field\n"
             "Style: jazz    # keep it smoky\n"
             "Request: go    # do it\n"

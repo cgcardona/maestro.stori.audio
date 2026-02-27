@@ -10,11 +10,11 @@ from collections.abc import Generator
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from app.variation.core.state_machine import (
+from maestro.variation.core.state_machine import (
     VariationStatus,
     InvalidTransitionError,
 )
-from app.variation.storage.variation_store import (
+from maestro.variation.storage.variation_store import (
     VariationRecord,
     PhraseRecord,
     VariationStore,

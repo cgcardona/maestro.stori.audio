@@ -10,7 +10,7 @@ from collections.abc import Generator
 import asyncio
 import pytest
 
-from app.variation.core.event_envelope import (
+from maestro.variation.core.event_envelope import (
     AnyEnvelope,
     DonePayload,
     MetaPayload,
@@ -21,7 +21,7 @@ from app.variation.core.event_envelope import (
     build_phrase_envelope,
     EventEnvelope,
 )
-from app.variation.streaming.sse_broadcaster import (
+from maestro.variation.streaming.sse_broadcaster import (
     SSEBroadcaster,
     get_sse_broadcaster,
     reset_sse_broadcaster,

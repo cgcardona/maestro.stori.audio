@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.db.models import Conversation, ConversationMessage
-from app.services.conversations import (
+from maestro.db.models import Conversation, ConversationMessage
+from maestro.services.conversations import (
     create_conversation,
     get_conversation,
     add_message,
@@ -245,7 +245,7 @@ class TestSummarizeConversation:
     async def test_summarize_without_llm(self, db_session: AsyncSession) -> None:
 
         """Without LLM, falls back to extractive summary."""
-        from app.services.conversations import summarize_conversation_for_llm
+        from maestro.services.conversations import summarize_conversation_for_llm
         conv = await create_conversation(db_session, USER_ID, title="Summarize")
         await db_session.commit()
         await add_message(db_session, conv.id, "user", "Make drums")
@@ -261,7 +261,7 @@ class TestSummarizeConversation:
     async def test_summarize_with_llm(self, db_session: AsyncSession) -> None:
 
         """With LLM client, calls chat and returns content."""
-        from app.services.conversations import summarize_conversation_for_llm
+        from maestro.services.conversations import summarize_conversation_for_llm
         conv = await create_conversation(db_session, USER_ID, title="LLM Sum")
         await db_session.commit()
         await add_message(db_session, conv.id, "user", "Create a trap beat")
@@ -288,7 +288,7 @@ class TestSummarizeConversation:
     async def test_summarize_with_llm_failure(self, db_session: AsyncSession) -> None:
 
         """LLM failure falls back to extractive summary."""
-        from app.services.conversations import summarize_conversation_for_llm
+        from maestro.services.conversations import summarize_conversation_for_llm
         conv = await create_conversation(db_session, USER_ID, title="LLM Fail")
         await db_session.commit()
         await add_message(db_session, conv.id, "user", "Make a song")
@@ -340,7 +340,7 @@ class TestGetConversationPreview:
     @pytest.mark.anyio
     async def test_preview_with_messages(self, db_session: AsyncSession) -> None:
 
-        from app.services.conversations import get_conversation_preview
+        from maestro.services.conversations import get_conversation_preview
         conv = await create_conversation(db_session, USER_ID, title="Preview")
         await db_session.commit()
         await add_message(db_session, conv.id, "user", "Make a funky bass line at 90 BPM")
@@ -355,7 +355,7 @@ class TestGetConversationPreview:
     @pytest.mark.anyio
     async def test_preview_empty_conversation(self, db_session: AsyncSession) -> None:
 
-        from app.services.conversations import get_conversation_preview
+        from maestro.services.conversations import get_conversation_preview
         conv = await create_conversation(db_session, USER_ID, title="Empty")
         await db_session.commit()
         _loaded = await get_conversation(db_session, conv.id, USER_ID)

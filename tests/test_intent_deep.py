@@ -9,15 +9,15 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.contracts.llm_types import ChatMessage
-from app.core.intent import (
+from maestro.contracts.llm_types import ChatMessage
+from maestro.core.intent import (
     normalize,
     get_intent_result,
     get_intent_result_with_llm,
     Intent,
     IntentResult,
 )
-from app.core.intent_config import SSEState
+from maestro.core.intent_config import SSEState
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ class TestAffirmativeNegative:
 
     def test_yes_is_affirmative(self) -> None:
 
-        from app.core.intent import _is_affirmative
+        from maestro.core.intent import _is_affirmative
         assert _is_affirmative("yes") is True
         assert _is_affirmative("sure") is True
         assert _is_affirmative("yep") is True
@@ -157,14 +157,14 @@ class TestAffirmativeNegative:
 
     def test_no_is_negative(self) -> None:
 
-        from app.core.intent import _is_negative
+        from maestro.core.intent import _is_negative
         assert _is_negative("no") is True
         assert _is_negative("nope") is True
         assert _is_negative("cancel") is True
 
     def test_long_phrase_not_affirmative(self) -> None:
 
-        from app.core.intent import _is_affirmative
+        from maestro.core.intent import _is_affirmative
         # 4+ words should not match
         assert _is_affirmative("create a new project with drums") is False
 
@@ -263,27 +263,27 @@ class TestHelpers:
 
     def test_extract_quoted_double(self) -> None:
 
-        from app.core.intent import _extract_quoted
+        from maestro.core.intent import _extract_quoted
         assert _extract_quoted('set name to "My Track"') == "My Track"
 
     def test_extract_quoted_single(self) -> None:
 
-        from app.core.intent import _extract_quoted
+        from maestro.core.intent import _extract_quoted
         assert _extract_quoted("set name to 'Bass'") == "Bass"
 
     def test_extract_quoted_none(self) -> None:
 
-        from app.core.intent import _extract_quoted
+        from maestro.core.intent import _extract_quoted
         assert _extract_quoted("no quotes here") is None
 
     def test_num_valid(self) -> None:
 
-        from app.core.intent import _num
+        from maestro.core.intent import _num
         assert _num("42") == 42.0
         assert _num("3.14") == 3.14
 
     def test_num_invalid(self) -> None:
 
-        from app.core.intent import _num
+        from maestro.core.intent import _num
         assert _num("abc") is None
         assert _num("") is None

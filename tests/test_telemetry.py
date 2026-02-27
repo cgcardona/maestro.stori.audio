@@ -5,21 +5,21 @@ SectionState thread-safe store, and bass telemetry enrichment in section_agent.
 """
 from __future__ import annotations
 
-from app.core.maestro_plan_tracker import _ToolCallOutcome
+from maestro.core.maestro_plan_tracker import _ToolCallOutcome
 import asyncio
 
-from app.contracts.generation_types import CompositionContext
-from app.protocol.events import MaestroEvent, ToolCallEvent, GeneratorCompleteEvent
+from maestro.contracts.generation_types import CompositionContext
+from maestro.protocol.events import MaestroEvent, ToolCallEvent, GeneratorCompleteEvent
 
-from app.contracts.json_types import JSONValue, NoteDict
-from app.contracts.pydantic_types import wrap_dict
+from maestro.contracts.json_types import JSONValue, NoteDict
+from maestro.contracts.pydantic_types import wrap_dict
 import math
 from unittest.mock import patch
 
 import pytest
 
-from app.core.telemetry import SectionTelemetry, compute_section_telemetry
-from app.core.maestro_agent_teams.signals import SectionState, _state_key
+from maestro.core.telemetry import SectionTelemetry, compute_section_telemetry
+from maestro.core.maestro_agent_teams.signals import SectionState, _state_key
 
 
 # ── Helpers ──
@@ -340,14 +340,14 @@ class TestSectionAgentTelemetry:
     async def test_telemetry_stored_after_generate(self) -> None:
 
         """Successful generation writes telemetry to SectionState."""
-        from app.contracts import seal_contract
-        from app.core.maestro_agent_teams.contracts import ExecutionServices, RuntimeContext, SectionContract, SectionSpec
-        from app.core.maestro_agent_teams.section_agent import _run_section_child
-        from app.core.maestro_agent_teams.signals import SectionSignals
-        from app.core.expansion import ToolCall
-        from app.core.state_store import StateStore
-        from app.core.tracing import TraceContext
-        from app.core.maestro_plan_tracker import _ToolCallOutcome
+        from maestro.contracts import seal_contract
+        from maestro.core.maestro_agent_teams.contracts import ExecutionServices, RuntimeContext, SectionContract, SectionSpec
+        from maestro.core.maestro_agent_teams.section_agent import _run_section_child
+        from maestro.core.maestro_agent_teams.signals import SectionSignals
+        from maestro.core.expansion import ToolCall
+        from maestro.core.state_store import StateStore
+        from maestro.core.tracing import TraceContext
+        from maestro.core.maestro_plan_tracker import _ToolCallOutcome
 
         store = StateStore(conversation_id="test-telem")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
@@ -389,7 +389,7 @@ class TestSectionAgentTelemetry:
             return gen_outcome
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             spec = SectionSpec(
@@ -429,14 +429,14 @@ class TestSectionAgentTelemetry:
     async def test_bass_reads_drum_telemetry(self) -> None:
 
         """Bass section child reads drum telemetry and enriches RuntimeContext."""
-        from app.contracts import seal_contract
-        from app.core.maestro_agent_teams.contracts import ExecutionServices, RuntimeContext, SectionContract, SectionSpec
-        from app.core.maestro_agent_teams.section_agent import _run_section_child
-        from app.core.maestro_agent_teams.signals import SectionSignals
-        from app.core.expansion import ToolCall
-        from app.core.state_store import StateStore
-        from app.core.tracing import TraceContext
-        from app.core.maestro_plan_tracker import _ToolCallOutcome
+        from maestro.contracts import seal_contract
+        from maestro.core.maestro_agent_teams.contracts import ExecutionServices, RuntimeContext, SectionContract, SectionSpec
+        from maestro.core.maestro_agent_teams.section_agent import _run_section_child
+        from maestro.core.maestro_agent_teams.signals import SectionSignals
+        from maestro.core.expansion import ToolCall
+        from maestro.core.state_store import StateStore
+        from maestro.core.tracing import TraceContext
+        from maestro.core.maestro_plan_tracker import _ToolCallOutcome
 
         store = StateStore(conversation_id="test-bass-telem")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
@@ -500,7 +500,7 @@ class TestSectionAgentTelemetry:
             return gen_outcome
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             contract = SectionContract(
@@ -538,13 +538,13 @@ class TestSectionAgentTelemetry:
     async def test_no_telemetry_without_section_state(self) -> None:
 
         """When section_state is absent, telemetry is not computed (no crash)."""
-        from app.contracts import seal_contract
-        from app.core.maestro_agent_teams.contracts import RuntimeContext, SectionContract, SectionSpec
-        from app.core.maestro_agent_teams.section_agent import _run_section_child
-        from app.core.expansion import ToolCall
-        from app.core.state_store import StateStore
-        from app.core.tracing import TraceContext
-        from app.core.maestro_plan_tracker import _ToolCallOutcome
+        from maestro.contracts import seal_contract
+        from maestro.core.maestro_agent_teams.contracts import RuntimeContext, SectionContract, SectionSpec
+        from maestro.core.maestro_agent_teams.section_agent import _run_section_child
+        from maestro.core.expansion import ToolCall
+        from maestro.core.state_store import StateStore
+        from maestro.core.tracing import TraceContext
+        from maestro.core.maestro_plan_tracker import _ToolCallOutcome
 
         store = StateStore(conversation_id="test-no-state")
         queue: asyncio.Queue[MaestroEvent] = asyncio.Queue()
@@ -573,7 +573,7 @@ class TestSectionAgentTelemetry:
             return gen_outcome
 
         with patch(
-            "app.core.maestro_agent_teams.section_agent._apply_single_tool_call",
+            "maestro.core.maestro_agent_teams.section_agent._apply_single_tool_call",
             side_effect=_mock_apply,
         ):
             spec = SectionSpec(

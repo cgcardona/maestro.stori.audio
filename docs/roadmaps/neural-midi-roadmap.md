@@ -34,8 +34,8 @@
 
 ```python
 # Option 1: Text2MIDI via Gradio Spaces (RECOMMENDED - best quality)
-from app.services.neural import Text2MidiBackend
-from app.core.emotion_vector import EmotionVector
+from maestro.services.neural import Text2MidiBackend
+from maestro.core.emotion_vector import EmotionVector
 
 backend = Text2MidiBackend()
 result = await backend.generate(
@@ -53,7 +53,7 @@ result = await backend.generate(
 # → Returns parsed MIDI notes
 
 # Option 2: Mock backend for testing (no API needed)
-from app.services.neural import NeuralMelodyGenerator
+from maestro.services.neural import NeuralMelodyGenerator
 
 generator = NeuralMelodyGenerator()  # Uses MockNeuralMelodyBackend
 result = await generator.generate(

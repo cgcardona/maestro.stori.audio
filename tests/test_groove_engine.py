@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 import random
-from app.contracts.json_types import NoteDict
-from app.services.groove_engine import (
+from maestro.contracts.json_types import NoteDict
+from maestro.services.groove_engine import (
     GrooveProfile,
     BOOM_BAP,
     TRAP_STRAIGHT,

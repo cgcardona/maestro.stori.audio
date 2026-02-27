@@ -19,13 +19,13 @@ import pytest_asyncio
 from datetime import datetime, timezone
 from sqlalchemy import select
 
-from app.db.models import (
+from maestro.db.models import (
     Conversation,
     ConversationMessage,
     MessageAction,
     User,
 )
-from app.services import conversations as conv_service
+from maestro.services import conversations as conv_service
 
 
 # =============================================================================

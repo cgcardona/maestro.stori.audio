@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from app.contracts.json_types import CCEventDict, NoteDict
-from app.services.muse_drift import (
+from maestro.contracts.json_types import CCEventDict, NoteDict
+from maestro.services.muse_drift import (
     CommitConflictPayload,
     DriftReport,
     DriftSeverity,
@@ -188,7 +188,7 @@ class TestForceCommitAllowed:
 
     def test_force_field_exists_on_request_model(self) -> None:
 
-        from app.models.requests import CommitVariationRequest
+        from maestro.models.requests import CommitVariationRequest
         req = CommitVariationRequest(
             project_id="p1",
             base_state_id="s1",
@@ -200,7 +200,7 @@ class TestForceCommitAllowed:
 
     def test_force_default_is_false(self) -> None:
 
-        from app.models.requests import CommitVariationRequest
+        from maestro.models.requests import CommitVariationRequest
         req = CommitVariationRequest(
             project_id="p1",
             base_state_id="s1",
@@ -273,7 +273,7 @@ class TestCommitRouteBoundary:
     def test_no_drift_internal_imports(self) -> None:
 
         """Commit route may only import compute_drift_report and CommitConflictPayload from drift."""
-        filepath = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "variation" / "commit.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "api" / "routes" / "variation" / "commit.py"
         tree = ast.parse(filepath.read_text())
         forbidden_names = {"_fingerprint", "_combined_fingerprint", "RegionDriftSummary", "DriftSeverity"}
         for node in ast.walk(tree):
@@ -286,7 +286,7 @@ class TestCommitRouteBoundary:
     def test_commit_route_imports_only_public_drift_api(self) -> None:
 
         """Only compute_drift_report and CommitConflictPayload are used from muse_drift."""
-        filepath = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "variation" / "commit.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "api" / "routes" / "variation" / "commit.py"
         tree = ast.parse(filepath.read_text())
         drift_imports: list[str] = []
         for node in ast.walk(tree):
@@ -300,7 +300,7 @@ class TestCommitRouteBoundary:
     def test_commit_route_does_not_import_state_store_internals(self) -> None:
 
         """Commit route uses get_or_create_store (allowed) but not StateStore class directly."""
-        filepath = Path(__file__).resolve().parent.parent / "app" / "api" / "routes" / "variation" / "commit.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "api" / "routes" / "variation" / "commit.py"
         tree = ast.parse(filepath.read_text())
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):

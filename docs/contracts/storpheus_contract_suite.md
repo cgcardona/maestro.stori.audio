@@ -554,14 +554,14 @@ Storpheus uses **0-indexed GM program numbers** (0–127). The mapping system ha
 ```
 User text → Intent classification (pattern/LLM)
          → Slots extraction (action, target, amount, etc.)
-         → STORI PROMPT parsing → EmotionVector
+         → MAESTRO PROMPT parsing → EmotionVector
          → StorpheusBackend.generate() → maps to Storpheus fields
 ```
 
 The intent engine classifies **30+ intents** (PLAY, STOP, TRACK_ADD, GENERATE_MUSIC, etc.) but only `GENERATE_MUSIC` (and composing-mode intents) reach Storpheus. The engine does NOT produce a structured `IntentSpec` — instead, intent is decomposed into:
 
 1. **Tool selection** (which tools the agent can call)
-2. **EmotionVector** (derived from STORI PROMPT)
+2. **EmotionVector** (derived from MAESTRO PROMPT)
 3. **Free-form LLM reasoning** (the agent's system prompt includes role profiles and decides parameters)
 
 ### F.2 GenerationConstraints (Computed but NOT Sent to Storpheus)
@@ -1207,7 +1207,7 @@ Note field name asymmetry:
 | `intent_hash` | No (hash) | None |
 | `intent_goals` | No | None |
 | `emotion_vector` | No | None |
-| STORI PROMPT text | Potentially (user creative brief) | Do not log raw prompt text at INFO or lower. Redact in production telemetry. |
+| MAESTRO PROMPT text | Potentially (user creative brief) | Do not log raw prompt text at INFO or lower. Redact in production telemetry. |
 | HF Bearer token | Yes (API key) | Never log. Already handled by httpx. |
 
 ---

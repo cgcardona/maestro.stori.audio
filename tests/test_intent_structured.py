@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.intent import (
+from maestro.core.intent import (
     Intent,
     IntentResult,
     SSEState,
     get_intent_result,
 )
-from app.core.prompt_parser import ParsedPrompt
+from maestro.prompts import MaestroPrompt
 
 
 # ─── Mode: compose → COMPOSING ──────────────────────────────────────────────
@@ -23,26 +23,26 @@ from app.core.prompt_parser import ParsedPrompt
 class TestMaestroRouting:
     def test_compose_routes_to_composing(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nRequest: make a beat"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRequest: make a beat"
         result = get_intent_result(prompt)
         assert result.intent == Intent.GENERATE_MUSIC
         assert result.sse_state == SSEState.COMPOSING
 
     def test_compose_high_confidence(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nRequest: make a beat"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRequest: make a beat"
         result = get_intent_result(prompt)
         assert result.confidence == 0.99
 
     def test_compose_has_structured_prompt_reason(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nRequest: make a beat"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRequest: make a beat"
         result = get_intent_result(prompt)
         assert "structured_prompt" in result.reasons
 
     def test_compose_requires_planner(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nRequest: make a beat"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRequest: make a beat"
         result = get_intent_result(prompt)
         assert result.requires_planner is True
 
@@ -53,14 +53,14 @@ class TestMaestroRouting:
 class TestEditRouting:
     def test_edit_routes_to_editing(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: edit\nTarget: track:Bass\nRequest: tighten it"
+        prompt = "MAESTRO PROMPT\nMode: edit\nTarget: track:Bass\nRequest: tighten it"
         result = get_intent_result(prompt)
         assert result.sse_state == SSEState.EDITING
 
     def test_edit_with_vibe_matches_idiom(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: edit\nTarget: track:Bass\n"
+            "MAESTRO PROMPT\nMode: edit\nTarget: track:Bass\n"
             "Vibe:\n- punchier:3\n"
             "Request: make it hit harder"
         )
@@ -70,7 +70,7 @@ class TestEditRouting:
     def test_edit_with_darker_vibe(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: edit\n"
+            "MAESTRO PROMPT\nMode: edit\n"
             "Vibe:\n- darker:2\n"
             "Request: cut the highs"
         )
@@ -80,7 +80,7 @@ class TestEditRouting:
     def test_edit_with_wider_vibe(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: edit\n"
+            "MAESTRO PROMPT\nMode: edit\n"
             "Vibe:\n- wider:1\n"
             "Request: spread it out"
         )
@@ -90,7 +90,7 @@ class TestEditRouting:
     def test_edit_with_compressor_constraint(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: edit\nTarget: track:Drums\n"
+            "MAESTRO PROMPT\nMode: edit\nTarget: track:Drums\n"
             "Constraints:\n- compressor: analog\n"
             "Request: add compression"
         )
@@ -99,7 +99,7 @@ class TestEditRouting:
 
     def test_edit_default_intent_when_no_vibes(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: edit\nRequest: fix something"
+        prompt = "MAESTRO PROMPT\nMode: edit\nRequest: fix something"
         result = get_intent_result(prompt)
         assert result.sse_state == SSEState.EDITING
 
@@ -110,14 +110,14 @@ class TestEditRouting:
 class TestAskRouting:
     def test_ask_routes_to_reasoning(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: ask\nRequest: why does reverb cause latency?"
+        prompt = "MAESTRO PROMPT\nMode: ask\nRequest: why does reverb cause latency?"
         result = get_intent_result(prompt)
         assert result.intent == Intent.ASK_GENERAL
         assert result.sse_state == SSEState.REASONING
 
     def test_ask_no_tools(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: ask\nRequest: explain quantization"
+        prompt = "MAESTRO PROMPT\nMode: ask\nRequest: explain quantization"
         result = get_intent_result(prompt)
         assert len(result.allowed_tool_names) == 0
 
@@ -128,27 +128,27 @@ class TestAskRouting:
 class TestSlotsPopulation:
     def test_target_in_slots(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: edit\nTarget: track:Lead\nRequest: eq it"
+        prompt = "MAESTRO PROMPT\nMode: edit\nTarget: track:Lead\nRequest: eq it"
         result = get_intent_result(prompt)
         assert result.slots.target_type == "track"
         assert result.slots.target_name == "Lead"
 
     def test_request_in_value_str(self) -> None:
 
-        prompt = "STORI PROMPT\nMode: compose\nRequest: lay down some funk"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRequest: lay down some funk"
         result = get_intent_result(prompt)
         assert result.slots.value_str == "lay down some funk"
 
     def test_parsed_prompt_in_extras(self) -> None:
 
         prompt = (
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Style: jazz\nKey: Cm\nTempo: 90\n"
             "Request: smooth groove"
         )
         result = get_intent_result(prompt)
         parsed = result.slots.extras.get("parsed_prompt")
-        assert isinstance(parsed, ParsedPrompt)
+        assert isinstance(parsed, MaestroPrompt)
         assert parsed.style == "jazz"
         assert parsed.key == "Cm"
         assert parsed.tempo == 90
@@ -166,7 +166,7 @@ class TestModeOverridesPatterns:
         """'set tempo to 120' would match the tempo pattern rule,
         but Mode: compose must win."""
         prompt = (
-            "STORI PROMPT\nMode: compose\n"
+            "MAESTRO PROMPT\nMode: compose\n"
             "Request: set tempo to 120 and build a beat"
         )
         result = get_intent_result(prompt)
@@ -176,7 +176,7 @@ class TestModeOverridesPatterns:
     def test_ask_with_play_in_request(self) -> None:
 
         """'play' alone would match the transport rule."""
-        prompt = "STORI PROMPT\nMode: ask\nRequest: why does play feel laggy?"
+        prompt = "MAESTRO PROMPT\nMode: ask\nRequest: why does play feel laggy?"
         result = get_intent_result(prompt)
         assert result.intent == Intent.ASK_GENERAL
         assert result.sse_state == SSEState.REASONING
@@ -184,7 +184,7 @@ class TestModeOverridesPatterns:
     def test_edit_with_generation_phrase_in_request(self) -> None:
 
         """'make a beat' would match generation detection."""
-        prompt = "STORI PROMPT\nMode: edit\nRequest: make a beat sound punchier"
+        prompt = "MAESTRO PROMPT\nMode: edit\nRequest: make a beat sound punchier"
         result = get_intent_result(prompt)
         assert result.sse_state == SSEState.EDITING
 
@@ -227,12 +227,12 @@ class TestNonStructuredUnchanged:
 
 
 class TestSpecExamples:
-    """One test per full example from docs/protocol/stori_prompt_spec.md."""
+    """One test per full example from docs/protocol/maestro_prompt_spec.md."""
 
     def test_example_1_compose_advanced(self) -> None:
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Target: project\n"
             "Style: melodic techno\n"
@@ -263,7 +263,7 @@ class TestSpecExamples:
         assert result.confidence == 0.99
 
         parsed = result.slots.extras["parsed_prompt"]
-        assert isinstance(parsed, ParsedPrompt)
+        assert isinstance(parsed, MaestroPrompt)
         assert parsed.style == "melodic techno"
         assert parsed.key == "F#m"
         assert parsed.tempo == 126
@@ -272,7 +272,7 @@ class TestSpecExamples:
     def test_example_2_edit_track(self) -> None:
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: edit\n"
             "Target: track:Bass\n"
             "\n"
@@ -294,7 +294,7 @@ class TestSpecExamples:
     def test_example_3_ask_reasoning(self) -> None:
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: ask\n"
             "Target: project\n"
             "\n"

@@ -5,11 +5,11 @@ from collections.abc import Generator
 
 import pytest
 
-from app.contracts.project_types import ProjectContext
-from app.core.executor import ExecutionContext
-from app.core.state_store import StateStore, clear_all_stores
-from app.core.tracing import create_trace_context, clear_trace_context
-from app.core.tools import (
+from maestro.contracts.project_types import ProjectContext
+from maestro.core.executor import ExecutionContext
+from maestro.core.state_store import StateStore, clear_all_stores
+from maestro.core.tracing import create_trace_context, clear_trace_context
+from maestro.core.tools import (
     ALL_TOOLS,
     TIER1_TOOLS,
     TIER2_TOOLS,
@@ -171,8 +171,8 @@ class TestExecutionContext:
 async def test_apply_variation_phrases_empty_list(cleanup_stores: None) -> None:
 
     """Applying empty accepted_phrase_ids returns success with zero counts."""
-    from app.core.executor import apply_variation_phrases
-    from app.models.variation import Variation
+    from maestro.core.executor import apply_variation_phrases
+    from maestro.models.variation import Variation
 
     variation = Variation(
         variation_id="v-empty",
@@ -196,8 +196,8 @@ async def test_apply_variation_phrases_empty_list(cleanup_stores: None) -> None:
 async def test_apply_variation_phrases_invalid_phrase_ids_skipped(cleanup_stores: None) -> None:
 
     """Invalid phrase IDs are skipped; result still success with zero applied."""
-    from app.core.executor import apply_variation_phrases
-    from app.models.variation import Variation
+    from maestro.core.executor import apply_variation_phrases
+    from maestro.models.variation import Variation
 
     variation = Variation(
         variation_id="v-no-match",

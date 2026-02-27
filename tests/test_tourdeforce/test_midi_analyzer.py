@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from stori_tourdeforce.analyzers.midi import (
+from tourdeforce.analyzers.midi import (
     _compute_quality_score,
     _pitch_class_entropy,
     _polyphony_estimate,
@@ -12,7 +12,7 @@ from stori_tourdeforce.analyzers.midi import (
     _stdev,
     analyze_tool_call_notes,
 )
-from stori_tourdeforce.models import MidiMetrics
+from tourdeforce.models import MidiMetrics
 
 
 class TestStatHelpers:

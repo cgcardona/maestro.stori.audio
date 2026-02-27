@@ -4,7 +4,7 @@ Covers the chat_completion_stream method with mocked HTTP responses.
 """
 from __future__ import annotations
 
-from app.contracts.llm_types import OpenAIStreamChunk, ReasoningDetail, StreamDelta, ToolCallDelta, ToolCallFunctionDelta, UsageStats
+from maestro.contracts.llm_types import OpenAIStreamChunk, ReasoningDetail, StreamDelta, ToolCallDelta, ToolCallFunctionDelta, UsageStats
 
 from collections.abc import AsyncIterator
 import json
@@ -12,7 +12,7 @@ import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 from contextlib import asynccontextmanager
 
-from app.core.llm_client import LLMClient, LLMProvider
+from maestro.core.llm_client import LLMClient, LLMProvider
 
 
 class MockAsyncIterator:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.api.routes.conversations import normalize_tool_arguments
+from maestro.api.routes.conversations import normalize_tool_arguments
 
 
 def test_empty_dict_unchanged() -> None:

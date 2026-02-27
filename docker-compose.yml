@@ -17,20 +17,20 @@ services:
   # ==========================================================================
   postgres:
     image: postgres:16-alpine
-    container_name: maestro-stori-postgres
+    container_name: maestro-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: stori
-      POSTGRES_USER: stori
+      POSTGRES_DB: maestro
+      POSTGRES_USER: maestro
       # REQUIRED: Set DB_PASSWORD in .env (e.g. openssl rand -hex 16). No default for security.
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
-      - maestro-stori-net
+      - maestro-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U stori -d stori"]
+      test: ["CMD-SHELL", "pg_isready -U maestro -d maestro"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -56,7 +56,7 @@ services:
   # ==========================================================================
   qdrant:
     image: qdrant/qdrant:v1.7.4
-    container_name: maestro-stori-qdrant
+    container_name: maestro-qdrant
     restart: unless-stopped
     ports:
       - "127.0.0.1:6333:6333"  # REST API
@@ -64,7 +64,7 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
-      - maestro-stori-net
+      - maestro-net
     # Note: Qdrant image doesn't have curl/wget, so healthcheck is disabled
     # The service starts quickly and is reliable
     deploy:
@@ -82,7 +82,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: maestro-stori-app
+    container_name: maestro-app
     restart: unless-stopped
     ports:
       - "127.0.0.1:10001:10001"  # Stori macOS app (ApiBaseURL http://localhost:10001) and host curl
@@ -90,7 +90,7 @@ services:
       - .env
     environment:
       # REQUIRED: Set DB_PASSWORD in .env. Same value as postgres service.
-      DATABASE_URL: "postgresql+asyncpg://stori:${DB_PASSWORD}@postgres:5432/stori"
+      DATABASE_URL: "postgresql+asyncpg://maestro:${DB_PASSWORD}@postgres:5432/maestro"
       # Storpheus: from inside the container use service name (not localhost)
       STORPHEUS_BASE_URL: "http://storpheus:10002"
       # S3 asset delivery: set in .env (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_ASSET_BUCKET, AWS_REGION)
@@ -101,7 +101,7 @@ services:
     volumes:
       - maestro_data:/data
     networks:
-      - maestro-stori-net
+      - maestro-net
     depends_on:
       postgres:
         condition: service_healthy
@@ -140,7 +140,7 @@ services:
     build:
       context: ./storpheus
       dockerfile: Dockerfile
-    container_name: maestro-stori-storpheus
+    container_name: maestro-storpheus
     restart: unless-stopped
     env_file:
       - .env
@@ -152,7 +152,7 @@ services:
     volumes:
       - storpheus_cache:/data/cache
     networks:
-      - maestro-stori-net
+      - maestro-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:10002/health"]
       interval: 30s
@@ -180,7 +180,7 @@ services:
   # ==========================================================================
   nginx:
     image: nginx:alpine
-    container_name: maestro-stori-nginx
+    container_name: maestro-nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -193,7 +193,7 @@ services:
     depends_on:
       - maestro
     networks:
-      - maestro-stori-net
+      - maestro-net
     healthcheck:
       test: ["CMD", "nginx", "-t"]
       interval: 60s
@@ -207,7 +207,7 @@ services:
   # ==========================================================================
   certbot:
     image: certbot/certbot
-    container_name: maestro-stori-certbot
+    container_name: maestro-certbot
     security_opt:
       - no-new-privileges:true
     volumes:
@@ -215,28 +215,28 @@ services:
       - certbot_certs:/etc/letsencrypt
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
     networks:
-      - maestro-stori-net
+      - maestro-net
 
 volumes:
   postgres_data:
-    name: maestro-stori-postgres-data
+    name: maestro-postgres-data
     external: true
   qdrant_data:
-    name: maestro-stori-qdrant-data
+    name: maestro-qdrant-data
     external: true
   maestro_data:
-    name: maestro-stori-data
+    name: maestro-data
     external: true
   certbot_webroot:
-    name: maestro-stori-certbot-webroot
+    name: maestro-certbot-webroot
     external: true
   certbot_certs:
-    name: maestro-stori-certbot-certs
+    name: maestro-certbot-certs
     external: true
   storpheus_cache:
-    name: maestro-stori-storpheus-cache
+    name: maestro-storpheus-cache
 
 networks:
-  maestro-stori-net:
-    name: maestro-stori-network
+  maestro-net:
+    name: maestro-network
     external: true

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing_extensions import NotRequired, TypedDict
 
-from app.contracts.json_types import CCEventDict, NoteDict
+from maestro.contracts.json_types import CCEventDict, NoteDict
 
 # ── Fixed IDs ─────────────────────────────────────────────────────────────
 

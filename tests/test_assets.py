@@ -9,7 +9,7 @@ import pytest
 import uuid
 from httpx import AsyncClient, ASGITransport
 
-from app.main import app
+from maestro.main import app
 
 
 @pytest.fixture
@@ -106,7 +106,7 @@ async def test_asset_endpoint_returns_429_when_rate_limited(asset_client: AsyncC
         override_defaults=False,
     )
     with patch(
-        "app.services.assets.list_drum_kits",
+        "maestro.services.assets.list_drum_kits",
         side_effect=RateLimitExceeded(fake_limit),
     ):
         response = await asset_client.get(

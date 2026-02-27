@@ -1,15 +1,15 @@
 """Tests for entity context builder (LLM prompt injection)."""
 from __future__ import annotations
 
-from app.contracts.json_types import JSONValue
+from maestro.contracts.json_types import JSONValue
 from unittest.mock import MagicMock
 
-from app.contracts.project_types import ProjectContext
+from maestro.contracts.project_types import ProjectContext
 import pytest
 
-from app.core.entity_context import build_entity_context_for_llm, format_project_context, infer_track_role
-from app.core.entity_registry import EntityMetadata
-from app.core.tool_validation import ValidationResult
+from maestro.core.entity_context import build_entity_context_for_llm, format_project_context, infer_track_role
+from maestro.core.entity_registry import EntityMetadata
+from maestro.core.tool_validation import ValidationResult
 
 
 def _make_entity(
@@ -419,7 +419,7 @@ class TestAddNotesValidation:
     """stori_add_notes rejects fake shorthand params with a clear error."""
 
     def _validate(self, params: dict[str, JSONValue]) -> ValidationResult:
-        from app.core.tool_validation import validate_tool_call
+        from maestro.core.tool_validation import validate_tool_call
         return validate_tool_call("stori_add_notes", params, {"stori_add_notes"}, registry=None)
 
     def test_fake_note_count_param_rejected(self) -> None:

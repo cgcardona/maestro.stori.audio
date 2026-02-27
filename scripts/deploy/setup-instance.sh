@@ -9,7 +9,7 @@
 # - Nginx reverse proxy with Let's Encrypt SSL
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/cgcardona/maestro.stori.audio/main/scripts/deploy/setup-instance.sh | sudo bash -s -- [options]
+#   curl -sSL https://raw.githubusercontent.com/cgcardona/maestro/main/scripts/deploy/setup-instance.sh | sudo bash -s -- [options]
 #
 # Or after cloning:
 #   sudo ./deploy/setup-instance.sh [options]
@@ -31,7 +31,7 @@ EMAIL=""
 BRANCH="main"
 SKIP_SSL=false
 NO_CLONE=false
-REPO_URL="https://github.com/cgcardona/maestro.stori.audio.git"
+REPO_URL="https://github.com/cgcardona/maestro.git"
 INSTALL_DIR="/opt/stori"
 
 # Colors for output
@@ -246,7 +246,7 @@ if [ "$SKIP_SSL" = true ]; then
     log_info "Starting services (without SSL)..."
     
     # Create a simple HTTP-only nginx config
-    cat > deploy/nginx/conf.d/maestro-stori-http.conf << EOF
+    cat > deploy/nginx/conf.d/maestro-http.conf << EOF
 upstream maestro_api {
     server maestro:10001;
 }
@@ -273,14 +273,14 @@ server {
 EOF
     
     # Remove SSL config
-    rm -f deploy/nginx/conf.d/maestro-stori.conf deploy/nginx/conf.d/default.conf
+    rm -f deploy/nginx/conf.d/maestro.conf deploy/nginx/conf.d/default.conf
     
     docker compose up -d
 else
     # Start with SSL - ensure nginx config uses the requested domain before init-ssl
     log_info "Configuring nginx for domain: $DOMAIN..."
-    if [ -f deploy/nginx/conf.d/maestro-stori.conf ]; then
-        sed -i.bak "s/__DOMAIN__/$DOMAIN/g" deploy/nginx/conf.d/maestro-stori.conf
+    if [ -f deploy/nginx/conf.d/maestro.conf ]; then
+        sed -i.bak "s/__DOMAIN__/$DOMAIN/g" deploy/nginx/conf.d/maestro.conf
     fi
     log_info "Starting services with SSL..."
     chmod +x scripts/deploy/init-ssl.sh
@@ -312,17 +312,17 @@ fi
 # =============================================================================
 log_info "Creating systemd service..."
 
-SERVICE_FILE="$INSTALL_DIR/deploy/systemd/maestro-stori.service"
+SERVICE_FILE="$INSTALL_DIR/deploy/systemd/maestro.service"
 if [ -f "$SERVICE_FILE" ]; then
-    sed "s|/home/ubuntu/maestro.stori.audio|$INSTALL_DIR|g" "$SERVICE_FILE" > /etc/systemd/system/maestro-stori.service
-    chmod 644 /etc/systemd/system/maestro-stori.service
+    sed "s|/opt/maestro|$INSTALL_DIR|g" "$SERVICE_FILE" > /etc/systemd/system/maestro.service
+    chmod 644 /etc/systemd/system/maestro.service
 else
     log_error "Service file not found: $SERVICE_FILE"
     exit 1
 fi
 
 systemctl daemon-reload
-systemctl enable maestro-stori
+systemctl enable 
 
 # =============================================================================
 # Complete!

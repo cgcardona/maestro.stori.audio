@@ -6,10 +6,10 @@ from httpx import AsyncClient
 
 import pytest
 import pytest_asyncio
-from app.main import app
-from app.auth.dependencies import require_valid_token
-from app.mcp.server import StoriMCPServer, ToolCallResult
-from app.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, DAW_TOOLS, TOOL_CATEGORIES
+from maestro.main import app
+from maestro.auth.dependencies import require_valid_token
+from maestro.mcp.server import MaestroMCPServer, ToolCallResult
+from maestro.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, DAW_TOOLS, TOOL_CATEGORIES
 
 
 class TestMCPTools:
@@ -53,7 +53,7 @@ class TestMCPServer:
     def test_get_server_info(self) -> None:
 
         """Test server info response."""
-        server = StoriMCPServer()
+        server = MaestroMCPServer()
         info = server.get_server_info()
         
         assert info["name"] == "stori-daw"
@@ -64,7 +64,7 @@ class TestMCPServer:
     def test_list_tools(self) -> None:
 
         """Test listing tools."""
-        server = StoriMCPServer()
+        server = MaestroMCPServer()
         tools = server.list_tools()
         
         assert len(tools) > 0
@@ -74,7 +74,7 @@ class TestMCPServer:
     async def test_call_unknown_tool(self) -> None:
 
         """Test calling an unknown tool."""
-        server = StoriMCPServer()
+        server = MaestroMCPServer()
         result = await server.call_tool("unknown_tool", {})
         
         assert result.is_error
@@ -84,7 +84,7 @@ class TestMCPServer:
     async def test_call_daw_tool_without_connection(self) -> None:
 
         """Test calling DAW tool without connected DAW."""
-        server = StoriMCPServer()
+        server = MaestroMCPServer()
         result = await server.call_tool("stori_add_midi_track", {"name": "Test"})
         
         assert result.is_error

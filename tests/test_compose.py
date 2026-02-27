@@ -7,9 +7,9 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock
 
-from app.core.executor import ExecutionContext
-from app.core.state_store import StateStore, Transaction
-from app.core.tracing import TraceContext
+from maestro.core.executor import ExecutionContext
+from maestro.core.state_store import StateStore, Transaction
+from maestro.core.tracing import TraceContext
 
 
 class TestExecutionContext:

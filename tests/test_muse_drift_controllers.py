@@ -14,24 +14,24 @@ import ast
 import uuid
 from collections.abc import AsyncGenerator
 import pytest
-from app.contracts.json_types import AftertouchDict, CCEventDict, NoteDict, PitchBendDict
+from maestro.contracts.json_types import AftertouchDict, CCEventDict, NoteDict, PitchBendDict
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.db.database import Base
-from app.db import muse_models  # noqa: F401 — register tables
-from app.models.variation import (
+from maestro.db.database import Base
+from maestro.db import muse_models  # noqa: F401 — register tables
+from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,
     Phrase,
     Variation,
 )
-from app.services import muse_repository
-from app.services.muse_drift import (
+from maestro.services import muse_repository
+from maestro.services.muse_drift import (
     DriftSeverity,
     compute_drift_report,
 )
-from app.services.muse_replay import reconstruct_head_snapshot
-from app.services.variation.note_matching import (
+from maestro.services.muse_replay import reconstruct_head_snapshot
+from maestro.services.variation.note_matching import (
     EventMatch,
     match_cc_events,
     match_pitch_bends,
@@ -513,7 +513,7 @@ class TestControllerMatchingBoundary:
     def test_note_matching_no_forbidden_imports(self) -> None:
 
         from pathlib import Path
-        filepath = Path(__file__).resolve().parent.parent / "app" / "services" / "variation" / "note_matching.py"
+        filepath = Path(__file__).resolve().parent.parent / "maestro" / "services" / "variation" / "note_matching.py"
         tree = ast.parse(filepath.read_text())
         forbidden = {"state_store", "executor", "maestro_handlers", "maestro_editing", "maestro_composing"}
         for node in ast.walk(tree):

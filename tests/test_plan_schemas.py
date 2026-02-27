@@ -11,8 +11,8 @@ import json
 
 import pytest
 
-from app.contracts.json_types import JSONObject
-from app.core.plan_schemas import (
+from maestro.contracts.json_types import JSONObject
+from maestro.core.plan_schemas import (
     GenerationStep,
     EditStep,
     MixStep,

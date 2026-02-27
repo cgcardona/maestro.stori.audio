@@ -26,9 +26,9 @@ from copy import deepcopy
 
 import pytest
 
-from app.contracts.project_types import ProjectContext
+from maestro.contracts.project_types import ProjectContext
 
-from app.core.state_store import (
+from maestro.core.state_store import (
     StateStore,
     Transaction,
     EventType,
@@ -38,8 +38,8 @@ from app.core.state_store import (
     clear_store,
     clear_all_stores,
 )
-from app.contracts.json_types import InternalNoteDict, NoteDict
-from app.core.entity_registry import EntityType
+from maestro.contracts.json_types import InternalNoteDict, NoteDict
+from maestro.core.entity_registry import EntityType
 
 
 # ---------------------------------------------------------------------------

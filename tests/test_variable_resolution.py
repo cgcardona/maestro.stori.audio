@@ -20,8 +20,8 @@ from __future__ import annotations
 import pytest
 import re
 
-from app.contracts.json_types import JSONValue
-from app.core.maestro_helpers import _resolve_variable_refs, _VAR_REF_RE
+from maestro.contracts.json_types import JSONValue
+from maestro.core.maestro_helpers import _resolve_variable_refs, _VAR_REF_RE
 
 
 # ===========================================================================

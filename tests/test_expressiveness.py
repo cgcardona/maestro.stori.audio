@@ -17,9 +17,9 @@ import statistics
 
 import pytest
 
-from app.contracts.json_types import CCEventDict, NoteDict, PitchBendDict
-from app.services.backends.base import GenerationResult, GeneratorBackend
-from app.services.expressiveness import (
+from maestro.contracts.json_types import CCEventDict, NoteDict, PitchBendDict
+from maestro.services.backends.base import GenerationResult, GeneratorBackend
+from maestro.services.expressiveness import (
     PROFILES,
     ExpressivenessProfile,
     add_cc_automation,
@@ -706,7 +706,7 @@ class TestMusicGeneratorExpressiveness:
     def _enable_expressiveness(self, monkeypatch: pytest.MonkeyPatch) -> None:
 
         """Force expressiveness on for these integration tests."""
-        from app.config import settings
+        from maestro.config import settings
         monkeypatch.setattr(settings, "skip_expressiveness", False)
 
     def _result(
@@ -730,7 +730,7 @@ class TestMusicGeneratorExpressiveness:
 
         """_maybe_apply_expressiveness adds CC events to result."""
         result = self._result()
-        from app.services.music_generator import MusicGenerator
+        from maestro.services.music_generator import MusicGenerator
 
         enriched = MusicGenerator._maybe_apply_expressiveness(result, "melody", "jazz", 4)
         assert len(enriched.cc_events) > 0
@@ -741,7 +741,7 @@ class TestMusicGeneratorExpressiveness:
         """Existing CC events are preserved and new ones appended."""
         existing_cc: list[CCEventDict] = [CCEventDict(cc=7, beat=0.0, value=100)]
         result = self._result(cc_events=existing_cc.copy())
-        from app.services.music_generator import MusicGenerator
+        from maestro.services.music_generator import MusicGenerator
 
         enriched = MusicGenerator._maybe_apply_expressiveness(result, "melody", "classical", 4)
         assert any(e["cc"] == 7 for e in enriched.cc_events)
@@ -751,7 +751,7 @@ class TestMusicGeneratorExpressiveness:
 
         """Drum instrument role produces no additional CC/PB events."""
         result = self._result()
-        from app.services.music_generator import MusicGenerator
+        from maestro.services.music_generator import MusicGenerator
 
         enriched = MusicGenerator._maybe_apply_expressiveness(result, "drums", "jazz", 4)
         assert enriched.cc_events == []
@@ -760,8 +760,8 @@ class TestMusicGeneratorExpressiveness:
     def test_camel_case_notes_from_orpheus(self) -> None:
 
         """Regression: Orpheus notes (camelCase) don't crash _maybe_apply_expressiveness."""
-        from app.services.backends.base import GenerationResult, GeneratorBackend
-        from app.services.music_generator import MusicGenerator
+        from maestro.services.backends.base import GenerationResult, GeneratorBackend
+        from maestro.services.music_generator import MusicGenerator
 
         camel_notes: list[NoteDict] = [
             {"pitch": 60, "startBeat": float(i), "durationBeats": 0.5, "velocity": 80}
@@ -792,7 +792,7 @@ class TestBeatsPerBar:
     def test_default_is_four(self) -> None:
 
         """No project state → 4 beats per bar."""
-        from app.core.planner.conversion import _beats_per_bar
+        from maestro.core.planner.conversion import _beats_per_bar
 
         assert _beats_per_bar(None) == 4
         assert _beats_per_bar({}) == 4
@@ -800,36 +800,36 @@ class TestBeatsPerBar:
     def test_string_three_four(self) -> None:
 
         """"3/4" → 3 beats per bar."""
-        from app.core.planner.conversion import _beats_per_bar
+        from maestro.core.planner.conversion import _beats_per_bar
 
         assert _beats_per_bar({"timeSignature": "3/4"}) == 3
 
     def test_string_six_eight(self) -> None:
 
         """"6/8" → 6 beats per bar."""
-        from app.core.planner.conversion import _beats_per_bar
+        from maestro.core.planner.conversion import _beats_per_bar
 
         assert _beats_per_bar({"timeSignature": "6/8"}) == 6
 
     def test_string_seven_eight(self) -> None:
 
         """"7/8" → 7 beats per bar."""
-        from app.core.planner.conversion import _beats_per_bar
+        from maestro.core.planner.conversion import _beats_per_bar
 
         assert _beats_per_bar({"timeSignature": "7/8"}) == 7
 
     def test_dict_five_four(self) -> None:
 
         """TimeSignatureDict with numerator 5 → 5 beats per bar."""
-        from app.core.planner.conversion import _beats_per_bar
+        from maestro.core.planner.conversion import _beats_per_bar
 
         assert _beats_per_bar({"timeSignature": {"numerator": 5, "denominator": 4}}) == 5
 
     def test_dict_missing_numerator_defaults_to_four(self) -> None:
 
         """TimeSignatureDict with all fields present still returns numerator."""
-        from app.contracts.project_types import ProjectContext
-        from app.core.planner.conversion import _beats_per_bar
+        from maestro.contracts.project_types import ProjectContext
+        from maestro.core.planner.conversion import _beats_per_bar
 
         ctx: ProjectContext = {"timeSignature": {"numerator": 4, "denominator": 4}}
         assert _beats_per_bar(ctx) == 4
@@ -837,7 +837,7 @@ class TestBeatsPerBar:
     def test_no_time_signature_field_defaults_to_four(self) -> None:
 
         """Project state with other fields but no timeSignature → 4."""
-        from app.core.planner.conversion import _beats_per_bar
+        from maestro.core.planner.conversion import _beats_per_bar
 
         assert _beats_per_bar({"tempo": 120, "key": "C"}) == 4
 
@@ -846,15 +846,15 @@ class TestBeatsPerBar:
 
 
 class TestPromptParserEnergy:
-    """Tests that Energy field is parsed from STORI PROMPT."""
+    """Tests that Energy field is parsed from MAESTRO PROMPT."""
 
     def test_energy_parsed(self) -> None:
 
         """Energy field is extracted as typed attribute."""
-        from app.core.prompt_parser import parse_prompt
+        from maestro.prompts import parse_prompt
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Energy: high\n"
             "Request: some music\n"
@@ -866,10 +866,10 @@ class TestPromptParserEnergy:
     def test_energy_not_in_extensions(self) -> None:
 
         """Energy field is routing, not an extension."""
-        from app.core.prompt_parser import parse_prompt
+        from maestro.prompts import parse_prompt
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Energy: low\n"
             "Request: some music\n"
@@ -881,10 +881,10 @@ class TestPromptParserEnergy:
     def test_energy_optional(self) -> None:
 
         """Energy is optional — None when absent."""
-        from app.core.prompt_parser import parse_prompt
+        from maestro.prompts import parse_prompt
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request: some music\n"
         )
@@ -895,10 +895,10 @@ class TestPromptParserEnergy:
     def test_energy_case_insensitive(self) -> None:
 
         """Energy value is normalised to lowercase."""
-        from app.core.prompt_parser import parse_prompt
+        from maestro.prompts import parse_prompt
 
         prompt = (
-            "STORI PROMPT\n"
+            "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Energy: Very High\n"
             "Request: some music\n"

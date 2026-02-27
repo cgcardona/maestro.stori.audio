@@ -7,7 +7,7 @@ _default_chord_palette, QUALITY_PRESETS, GlobalSpec, SectionMapEntry.
 from __future__ import annotations
 
 import pytest
-from app.core.music_spec_ir import (
+from maestro.core.music_spec_ir import (
     DrumSpec,
     DrumLayerSpec,
     DensityTarget,

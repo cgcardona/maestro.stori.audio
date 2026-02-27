@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.macro_engine import MacroContext, expand_macro, MACROS, macro_make_darker
-from app.core.expansion import ToolCall
+from maestro.core.macro_engine import MacroContext, expand_macro, MACROS, macro_make_darker
+from maestro.core.expansion import ToolCall
 
 
 class TestExpandMacro:

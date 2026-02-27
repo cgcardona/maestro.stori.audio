@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.contracts.json_types import NoteDict
-from app.services.variation import (
+from maestro.contracts.json_types import NoteDict
+from maestro.services.variation import (
     TIMING_TOLERANCE_BEATS,
     NoteMatch,
     VariationService,
@@ -31,7 +31,7 @@ from app.services.variation import (
     get_variation_service,
     match_notes,
 )
-from app.models.variation import (
+from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,
     Phrase,

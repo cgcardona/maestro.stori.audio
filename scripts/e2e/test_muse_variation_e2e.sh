@@ -17,7 +17,7 @@ fi
 
 # Token: arg takes precedence, else .env
 TOKEN="${1:-$E2E_ACCESS_TOKEN}"
-API_URL="${STORI_E2E_API_BASE:-https://stage.stori.audio/api/v1}"
+API_URL="${STORI_E2E_API_BASE:-http://localhost:10001/api/v1}"
 
 if [ -z "$TOKEN" ]; then
     echo "❌ No JWT token. Either:"

@@ -12,7 +12,7 @@
 #   ./deploy/backup-database.sh
 #
 # Cron example (daily at 2 AM):
-#   0 2 * * * /path/to/backup-database.sh >> /var/log/maestro-stori-backup.log 2>&1
+#   0 2 * * * /path/to/backup-database.sh >> /var/log/maestro-backup.log 2>&1
 #
 # =============================================================================
 
@@ -22,7 +22,7 @@ set -e
 cd "$(cd "$(dirname "$0")/../.." && pwd)"
 
 # Configuration
-BACKUP_DIR="/var/backups/maestro-stori"
+BACKUP_DIR="/var/backups/maestro"
 RETENTION_DAYS=30
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="stori_backup_${TIMESTAMP}.sql.gz"
@@ -68,7 +68,7 @@ fi
 # =============================================================================
 log_info "Copying backup to Docker volume..."
 docker run --rm \
-    -v maestro-stori-postgres-data:/pgdata \
+    -v maestro-postgres-data:/pgdata \
     -v "$BACKUP_DIR":/backup \
     alpine \
     cp "/backup/$BACKUP_FILE" /pgdata/ 2>/dev/null || \

@@ -8,8 +8,8 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.core.pipeline import run_pipeline, PipelineOutput
-from app.core.intent import IntentResult, Intent, SSEState, Slots
+from maestro.core.pipeline import run_pipeline, PipelineOutput
+from maestro.core.intent import IntentResult, Intent, SSEState, Slots
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ async def test_run_pipeline_reasoning_returns_llm_response(mock_llm: MagicMock) 
         requires_planner=False,
         reasons=(),
     )
-    with patch("app.core.pipeline.get_intent_result", return_value=route):
+    with patch("maestro.core.pipeline.get_intent_result", return_value=route):
         out = await run_pipeline("What is reverb?", {}, mock_llm)
     assert isinstance(out, PipelineOutput)
     assert out.route is route
@@ -50,8 +50,8 @@ async def test_run_pipeline_reasoning_returns_llm_response(mock_llm: MagicMock) 
 async def test_run_pipeline_composing_returns_plan(mock_llm: MagicMock) -> None:
 
     """COMPOSING route returns PipelineOutput with plan."""
-    from app.core.planner import ExecutionPlan
-    from app.core.expansion import ToolCall
+    from maestro.core.planner import ExecutionPlan
+    from maestro.core.expansion import ToolCall
 
     route = IntentResult(
         intent=Intent.GENERATE_MUSIC,
@@ -69,8 +69,8 @@ async def test_run_pipeline_composing_returns_plan(mock_llm: MagicMock) -> None:
         tool_calls=[ToolCall(name="stori_generate_drums", params={})],
         llm_response_text="Generated plan",
     )
-    with patch("app.core.pipeline.get_intent_result", return_value=route), \
-         patch("app.core.pipeline.build_execution_plan", new_callable=AsyncMock, return_value=mock_plan):
+    with patch("maestro.core.pipeline.get_intent_result", return_value=route), \
+         patch("maestro.core.pipeline.build_execution_plan", new_callable=AsyncMock, return_value=mock_plan):
         out = await run_pipeline("Create a beat", {}, mock_llm)
     assert isinstance(out, PipelineOutput)
     assert out.route is route
@@ -95,7 +95,7 @@ async def test_run_pipeline_editing_returns_llm_response(mock_llm: MagicMock) ->
         requires_planner=False,
         reasons=(),
     )
-    with patch("app.core.pipeline.get_intent_result", return_value=route):
+    with patch("maestro.core.pipeline.get_intent_result", return_value=route):
         out = await run_pipeline("Make it louder", {}, mock_llm)
     assert isinstance(out, PipelineOutput)
     assert out.route is route

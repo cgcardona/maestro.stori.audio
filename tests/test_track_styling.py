@@ -4,7 +4,7 @@ Tests for track styling (color and icon assignment).
 from __future__ import annotations
 
 import pytest
-from app.core.track_styling import (
+from maestro.core.track_styling import (
     get_random_track_color,
     infer_track_icon,
     get_track_styling,
@@ -18,7 +18,7 @@ from app.core.track_styling import (
     COMPOSITION_PALETTE,
     DEFAULT_ICON,
 )
-from app.core.tool_validation.constants import VALID_SF_SYMBOL_ICONS
+from maestro.core.tool_validation.constants import VALID_SF_SYMBOL_ICONS
 
 
 # ── Color tests ──────────────────────────────────────────────────────
@@ -296,7 +296,7 @@ class TestTrackIcons:
     def test_all_inferred_icons_are_valid(self) -> None:
 
         """Every icon returned by infer_track_icon must be in the curated set."""
-        from app.core.track_styling import _ICON_KEYWORD_LIST
+        from maestro.core.track_styling import _ICON_KEYWORD_LIST
         all_icons = {icon for _, icon in _ICON_KEYWORD_LIST} | {DEFAULT_ICON}
         invalid = all_icons - VALID_SF_SYMBOL_ICONS
         assert invalid == set(), f"Inferred icons not in curated set: {invalid}"

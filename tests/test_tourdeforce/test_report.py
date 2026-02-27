@@ -5,8 +5,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from stori_tourdeforce.analyzers.run import RunAnalyzer
-from stori_tourdeforce.models import RunResult, RunStatus
+from tourdeforce.analyzers.run import RunAnalyzer
+from tourdeforce.models import RunResult, RunStatus
 
 
 class TestRunAnalyzerMuseKPIs:

@@ -57,7 +57,7 @@ class TestDeviceIDValidation:
 class TestListDrumKitsRoute:
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.settings")
     async def test_no_bucket_503(self, mock_settings: MagicMock, client: AsyncClient) -> None:
         mock_settings.aws_s3_asset_bucket = ""
         mock_settings.asset_rate_limit_per_ip = "100/minute"
@@ -66,8 +66,8 @@ class TestListDrumKitsRoute:
         assert resp.status_code == 503
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.asset_service.list_drum_kits")
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.asset_service.list_drum_kits")
+    @patch("maestro.api.routes.assets.settings")
     async def test_happy_path(
         self, mock_settings: MagicMock, mock_list: MagicMock, client: AsyncClient
     ) -> None:
@@ -88,7 +88,7 @@ class TestListDrumKitsRoute:
 class TestListSoundfontsRoute:
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.settings")
     async def test_no_bucket_503(self, mock_settings: MagicMock, client: AsyncClient) -> None:
 
         mock_settings.aws_s3_asset_bucket = ""
@@ -106,7 +106,7 @@ class TestListSoundfontsRoute:
 class TestDrumKitDownloadURL:
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.settings")
     async def test_no_bucket_503(self, mock_settings: MagicMock, client: AsyncClient) -> None:
 
         mock_settings.aws_s3_asset_bucket = ""
@@ -119,8 +119,8 @@ class TestDrumKitDownloadURL:
         assert resp.status_code == 503
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.asset_service.get_drum_kit_download_url")
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.asset_service.get_drum_kit_download_url")
+    @patch("maestro.api.routes.assets.settings")
     async def test_happy_path(self, mock_settings: MagicMock, mock_url: MagicMock, client: AsyncClient) -> None:
 
         mock_settings.aws_s3_asset_bucket = "bucket"
@@ -136,8 +136,8 @@ class TestDrumKitDownloadURL:
         assert "url" in resp.json()
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.asset_service.get_drum_kit_download_url")
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.asset_service.get_drum_kit_download_url")
+    @patch("maestro.api.routes.assets.settings")
     async def test_not_found(self, mock_settings: MagicMock, mock_url: MagicMock, client: AsyncClient) -> None:
 
         mock_settings.aws_s3_asset_bucket = "bucket"
@@ -152,11 +152,11 @@ class TestDrumKitDownloadURL:
         assert resp.status_code == 404
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.asset_service.get_drum_kit_download_url")
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.asset_service.get_drum_kit_download_url")
+    @patch("maestro.api.routes.assets.settings")
     async def test_s3_unavailable(self, mock_settings: MagicMock, mock_url: MagicMock, client: AsyncClient) -> None:
 
-        from app.services.assets import AssetServiceUnavailableError
+        from maestro.services.assets import AssetServiceUnavailableError
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -177,8 +177,8 @@ class TestDrumKitDownloadURL:
 class TestSoundfontDownloadURL:
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.asset_service.get_soundfont_download_url")
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.asset_service.get_soundfont_download_url")
+    @patch("maestro.api.routes.assets.settings")
     async def test_happy_path(self, mock_settings: MagicMock, mock_url: MagicMock, client: AsyncClient) -> None:
 
         mock_settings.aws_s3_asset_bucket = "bucket"
@@ -193,8 +193,8 @@ class TestSoundfontDownloadURL:
         assert resp.status_code == 200
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.asset_service.get_soundfont_download_url")
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.asset_service.get_soundfont_download_url")
+    @patch("maestro.api.routes.assets.settings")
     async def test_not_found(self, mock_settings: MagicMock, mock_url: MagicMock, client: AsyncClient) -> None:
 
         mock_settings.aws_s3_asset_bucket = "bucket"
@@ -209,11 +209,11 @@ class TestSoundfontDownloadURL:
         assert resp.status_code == 404
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.asset_service.get_soundfont_download_url")
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.asset_service.get_soundfont_download_url")
+    @patch("maestro.api.routes.assets.settings")
     async def test_s3_unavailable(self, mock_settings: MagicMock, mock_url: MagicMock, client: AsyncClient) -> None:
 
-        from app.services.assets import AssetServiceUnavailableError
+        from maestro.services.assets import AssetServiceUnavailableError
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"
@@ -234,8 +234,8 @@ class TestSoundfontDownloadURL:
 class TestBundleDownloadURL:
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.asset_service.get_bundle_download_url")
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.asset_service.get_bundle_download_url")
+    @patch("maestro.api.routes.assets.settings")
     async def test_happy_path(self, mock_settings: MagicMock, mock_url: MagicMock, client: AsyncClient) -> None:
 
         mock_settings.aws_s3_asset_bucket = "bucket"
@@ -250,8 +250,8 @@ class TestBundleDownloadURL:
         assert resp.status_code == 200
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.asset_service.get_bundle_download_url")
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.asset_service.get_bundle_download_url")
+    @patch("maestro.api.routes.assets.settings")
     async def test_not_found(self, mock_settings: MagicMock, mock_url: MagicMock, client: AsyncClient) -> None:
 
         mock_settings.aws_s3_asset_bucket = "bucket"
@@ -266,11 +266,11 @@ class TestBundleDownloadURL:
         assert resp.status_code == 404
 
     @pytest.mark.anyio
-    @patch("app.api.routes.assets.asset_service.get_bundle_download_url")
-    @patch("app.api.routes.assets.settings")
+    @patch("maestro.api.routes.assets.asset_service.get_bundle_download_url")
+    @patch("maestro.api.routes.assets.settings")
     async def test_s3_unavailable(self, mock_settings: MagicMock, mock_url: MagicMock, client: AsyncClient) -> None:
 
-        from app.services.assets import AssetServiceUnavailableError
+        from maestro.services.assets import AssetServiceUnavailableError
         mock_settings.aws_s3_asset_bucket = "bucket"
         mock_settings.asset_rate_limit_per_ip = "100/minute"
         mock_settings.asset_rate_limit_per_device = "100/minute"

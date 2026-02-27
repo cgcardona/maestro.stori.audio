@@ -4,9 +4,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.contracts.project_types import ProjectContext
-from app.models.requests import MaestroRequest, GenerateRequest
-from app.models.tools import MidiNote, AutomationPoint
+from maestro.contracts.project_types import ProjectContext
+from maestro.models.requests import MaestroRequest, GenerateRequest
+from maestro.models.tools import MidiNote, AutomationPoint
 
 
 class TestMaestroRequest:

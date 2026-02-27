@@ -346,8 +346,8 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     print("  MUSE LOG GRAPH — ASCII")
     print("═" * 60)
 
-    from app.services.muse_log_render import render_ascii_graph, render_json, render_summary_table
-    from app.services.muse_log_graph import MuseLogGraph, MuseLogNode
+    from maestro.services.muse_log_render import render_ascii_graph, render_json, render_summary_table
+    from maestro.services.muse_log_graph import MuseLogGraph, MuseLogNode
 
     # Reconstruct MuseLogGraph from the JSON for rendering
     import time

@@ -4,14 +4,14 @@ Covers register, revoke, check revoked, cleanup, and list active tokens.
 """
 from __future__ import annotations
 
-from app.db.models import AccessToken, User
+from maestro.db.models import AccessToken, User
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import pytest
 import pytest_asyncio
 from datetime import datetime, timezone, timedelta
 
-from app.services.token_service import (
+from maestro.services.token_service import (
     register_token,
     is_token_revoked,
     revoke_token,
@@ -19,7 +19,7 @@ from app.services.token_service import (
     cleanup_expired_tokens,
     get_user_active_tokens,
 )
-from app.auth.tokens import create_access_token
+from maestro.auth.tokens import create_access_token
 
 
 USER_ID = "550e8400-e29b-41d4-a716-446655440000"
@@ -109,8 +109,8 @@ class TestCleanupExpiredTokens:
     @pytest.mark.anyio
     async def test_cleanup_removes_expired(self, db_session: AsyncSession, test_user: User) -> None:
 
-        from app.db.models import AccessToken
-        from app.auth.tokens import hash_token
+        from maestro.db.models import AccessToken
+        from maestro.auth.tokens import hash_token
 
         token_str = "expired-token-abc"
         expired = AccessToken(

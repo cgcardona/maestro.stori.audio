@@ -5,7 +5,7 @@ import asyncio
 
 import pytest
 
-from app.core.composition_limiter import (
+from maestro.core.composition_limiter import (
     CompositionLimiter,
     CompositionLimitExceeded,
 )

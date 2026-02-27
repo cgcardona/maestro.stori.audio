@@ -3,7 +3,7 @@
 #
 # Layer invalidation guide (when to rebuild):
 #   requirements.txt changed  →  docker compose build maestro
-#   Python code changed       →  no rebuild (override.yml bind-mounts app/ tests/ etc.)
+#   Python code changed       →  no rebuild (override.yml bind-mounts maestro/ tests/ etc.)
 #   New tool/script added     →  docker compose build maestro (or add to override mounts)
 #
 # Pin base image for reproducible production builds:
@@ -29,7 +29,7 @@ FROM python:3.11-slim as runtime
 WORKDIR /app
 
 # Create non-root user for security
-RUN groupadd -r stori && useradd -r -g stori stori
+RUN groupadd -r maestro && useradd -r -g maestro maestro
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -44,27 +44,27 @@ RUN pip install --no-cache-dir /wheels/*
 RUN pip install --no-cache-dir pytest-cov
 
 # Copy application code
-COPY --chown=stori:stori app/ ./app/
-COPY --chown=stori:stori tests/ ./tests/
-COPY --chown=stori:stori scripts/ ./scripts/
-COPY --chown=stori:stori tools/ ./tools/
-COPY --chown=stori:stori alembic/ ./alembic/
-COPY --chown=stori:stori stori_tourdeforce/ ./stori_tourdeforce/
-COPY --chown=stori:stori reference_midi/ ./reference_midi/
-COPY --chown=stori:stori alembic.ini pyproject.toml mvp_happy_path.py ./
-COPY --chown=stori:stori entrypoint.sh ./
+COPY --chown=maestro:maestro maestro/ ./maestro/
+COPY --chown=maestro:maestro tests/ ./tests/
+COPY --chown=maestro:maestro scripts/ ./scripts/
+COPY --chown=maestro:maestro tools/ ./tools/
+COPY --chown=maestro:maestro alembic/ ./alembic/
+COPY --chown=maestro:maestro tourdeforce/ ./tourdeforce/
+COPY --chown=maestro:maestro alembic.ini pyproject.toml ./
+COPY --chown=maestro:maestro scripts/e2e/mvp_happy_path.py ./
+COPY --chown=maestro:maestro entrypoint.sh ./
 
 # Create data directory for SQLite with proper permissions
-RUN mkdir -p /data && chown -R stori:stori /data && chmod 755 /data
+RUN mkdir -p /data && chown -R maestro:maestro /data && chmod 755 /data
 
 # Switch to non-root user
-USER stori
+USER maestro
 
 # Ensure data directory is writable
 VOLUME ["/data"]
 
-# Infrastructure env vars (PYTHONPATH so alembic/scripts find app from any CWD).
-# Application defaults (DEBUG, HOST, PORT, DATABASE_URL, etc.) live in app/config.py
+# Infrastructure env vars (PYTHONPATH so alembic/scripts find maestro from any CWD).
+# Application defaults (DEBUG, HOST, PORT, DATABASE_URL, etc.) live in maestro/config.py
 # and are overridden via .env / docker-compose environment: blocks — not here.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -77,4 +77,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 10001
 
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "10001"]
+CMD ["python", "-m", "uvicorn", "maestro.main:app", "--host", "0.0.0.0", "--port", "10001"]

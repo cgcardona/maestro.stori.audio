@@ -8,22 +8,22 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 if TYPE_CHECKING:
-    from app.core.planner import ExecutionPlan
-    from app.core.prompt_parser import ParsedPrompt
-    from app.core.state_store import StateStore
+    from maestro.core.planner import ExecutionPlan
+    from maestro.prompts import MaestroPrompt
+    from maestro.core.state_store import StateStore
 
-from app.contracts.json_types import NoteDict, ToolCallDict
-from app.contracts.project_types import ProjectContext
-from app.core.maestro_handlers import UsageTracker, orchestrate
-from app.models.variation import Variation
-from app.core.maestro_editing import (
+from maestro.contracts.json_types import NoteDict, ToolCallDict
+from maestro.contracts.project_types import ProjectContext
+from maestro.core.maestro_handlers import UsageTracker, orchestrate
+from maestro.models.variation import Variation
+from maestro.core.maestro_editing import (
     _create_editing_composition_route,
     _get_incomplete_tracks,
     _project_needs_structure,
 )
-from app.core.maestro_composing import _create_editing_fallback_route
-from app.core.intent import IntentResult, Intent, Slots, SSEState
-from app.core.intent_config import (
+from maestro.core.maestro_composing import _create_editing_fallback_route
+from maestro.core.intent import IntentResult, Intent, Slots, SSEState
+from maestro.core.intent_config import (
     _PRIMITIVES_FX,
     _PRIMITIVES_MIXING,
     _PRIMITIVES_REGION,
@@ -95,14 +95,14 @@ class TestGetContextWindowTokens:
     def test_known_models_return_200k(self) -> None:
 
         """Both supported Claude models return 200 000."""
-        from app.config import get_context_window_tokens
+        from maestro.config import get_context_window_tokens
         assert get_context_window_tokens("anthropic/claude-sonnet-4.6") == 200_000
         assert get_context_window_tokens("anthropic/claude-opus-4.6") == 200_000
 
     def test_unknown_model_returns_zero(self) -> None:
 
         """Unknown models return 0 so the frontend keeps its previous ring value."""
-        from app.config import get_context_window_tokens
+        from maestro.config import get_context_window_tokens
         assert get_context_window_tokens("openai/gpt-4o") == 0
         assert get_context_window_tokens("unknown/model") == 0
         assert get_context_window_tokens("") == 0
@@ -184,7 +184,7 @@ class TestGetIncompleteTracks:
     """Test _get_incomplete_tracks helper."""
 
     def _make_store(self) -> StateStore:
-        from app.core.state_store import StateStore
+        from maestro.core.state_store import StateStore
         return StateStore(project_id="test")
 
     def test_track_without_region_is_incomplete(self) -> None:
@@ -358,9 +358,9 @@ class TestOrchestrateStream:
         fake_llm_response.finish_reason = "stop"
         fake_llm_response.tool_calls = []
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
             m_intent.return_value = fake_route
-            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+            with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                 mock_llm = MagicMock()
                 mock_llm.chat_completion = AsyncMock(return_value=fake_llm_response)
                 mock_llm.supports_reasoning = MagicMock(return_value=False)
@@ -412,8 +412,8 @@ class TestOrchestrateStream:
         fake_llm_response.finish_reason = "stop"
         fake_llm_response.tool_calls = []
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                 mock_llm = MagicMock()
                 mock_llm.chat_completion = AsyncMock(return_value=fake_llm_response)
                 mock_llm.supports_reasoning = MagicMock(return_value=False)
@@ -455,8 +455,8 @@ class TestOrchestrateStream:
         fake_llm_response.finish_reason = "stop"
         fake_llm_response.tool_calls = []
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                 mock_llm = MagicMock()
                 mock_llm.chat_completion = AsyncMock(return_value=fake_llm_response)
                 mock_llm.supports_reasoning = MagicMock(return_value=False)
@@ -478,7 +478,7 @@ class TestOrchestrateStream:
     async def test_yields_state_then_complete_for_composing_with_empty_plan(self) -> None:
 
         """When intent is COMPOSING on a non-empty project and pipeline returns empty plan, we get state then content then complete."""
-        from app.core.planner import ExecutionPlan
+        from maestro.core.planner import ExecutionPlan
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -494,9 +494,9 @@ class TestOrchestrateStream:
         )
         empty_plan = ExecutionPlan(tool_calls=[], safety_validated=False)
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
-                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
+                with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
@@ -517,9 +517,9 @@ class TestOrchestrateStream:
     async def test_orchestrate_yields_error_event_on_exception(self) -> None:
 
         """When orchestration raises, we yield error then complete(success=false)."""
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
             m_intent.side_effect = RuntimeError("intent service down")
-            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+            with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                 mock_llm = MagicMock()
                 mock_llm.close = AsyncMock()
                 m_llm_cls.return_value = mock_llm
@@ -544,7 +544,7 @@ class TestOrchestrateStream:
     async def test_reasoning_with_rag_ask_stori_docs(self) -> None:
 
         """When intent is ASK_STORI_DOCS and RAG exists, we stream RAG answer then complete."""
-        from app.core.intent import Intent
+        from maestro.core.intent import Intent
 
         fake_route = IntentResult(
             intent=Intent.ASK_STORI_DOCS,
@@ -565,9 +565,9 @@ class TestOrchestrateStream:
             yield "RAG chunk 2"
         mock_rag.answer = fake_answer
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.services.rag.get_rag_service", return_value=mock_rag):
-                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.services.rag.get_rag_service", return_value=mock_rag):
+                with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
@@ -613,8 +613,8 @@ class TestOrchestrateStream:
         ) -> AsyncGenerator[dict[str, object], None]:
             return stream_chunks(*args, **kwargs)
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                 mock_llm = MagicMock()
                 mock_llm.supports_reasoning = MagicMock(return_value=True)
                 mock_llm.chat_completion_stream = MagicMock(side_effect=make_stream)
@@ -637,8 +637,8 @@ class TestOrchestrateStream:
     async def test_composing_with_non_empty_plan_apply_mode(self) -> None:
 
         """When COMPOSING on a non-empty project and pipeline returns a plan with tool_calls, we stream plan then complete."""
-        from app.core.planner import ExecutionPlan
-        from app.core.expansion import ToolCall
+        from maestro.core.planner import ExecutionPlan
+        from maestro.core.expansion import ToolCall
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -657,9 +657,9 @@ class TestOrchestrateStream:
             safety_validated=True,
         )
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
-                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+                with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
@@ -680,9 +680,9 @@ class TestOrchestrateStream:
     async def test_composing_empty_plan_with_stori_in_response_fallback_to_editing(self) -> None:
 
         """When plan has no tool_calls but llm_response_text contains 'stori_', we retry as EDITING."""
-        from app.core.planner import ExecutionPlan
-        from app.core.expansion import ToolCall
-        from app.core.llm_client import LLMResponse
+        from maestro.core.planner import ExecutionPlan
+        from maestro.core.expansion import ToolCall
+        from maestro.core.llm_client import LLMResponse
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -702,9 +702,9 @@ class TestOrchestrateStream:
             llm_response_text="stori_add_midi_track(name='Drums')",
         )
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
-                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
+                with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.supports_reasoning = MagicMock(return_value=False)
                     mock_llm.chat_completion = AsyncMock(return_value=LLMResponse(
@@ -728,8 +728,8 @@ class TestOrchestrateStream:
     async def test_empty_project_overrides_composing_to_editing(self) -> None:
 
         """When COMPOSING intent hits an empty project, orchestrate overrides to EDITING with tool_call events."""
-        from app.core.expansion import ToolCall
-        from app.core.llm_client import LLMResponse
+        from maestro.core.expansion import ToolCall
+        from maestro.core.llm_client import LLMResponse
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -744,8 +744,8 @@ class TestOrchestrateStream:
             reasons=("generation_phrase",),
         )
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                 mock_llm = MagicMock()
                 mock_llm.supports_reasoning = MagicMock(return_value=False)
                 # LLM returns a tool call to add a track
@@ -791,7 +791,7 @@ class TestOrchestrateStream:
     async def test_non_empty_project_stays_on_composing(self) -> None:
 
         """When COMPOSING intent hits a project with tracks, it stays on COMPOSING path (variation review)."""
-        from app.core.planner import ExecutionPlan
+        from maestro.core.planner import ExecutionPlan
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -807,9 +807,9 @@ class TestOrchestrateStream:
         )
         empty_plan = ExecutionPlan(tool_calls=[], safety_validated=False)
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
-                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(empty_plan)):
+                with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
@@ -833,9 +833,9 @@ class TestOrchestrateStream:
     async def test_orchestrate_accepts_quality_preset_param(self) -> None:
 
         """quality_preset parameter is accepted by orchestrate without TypeError."""
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock) as m_intent:
             m_intent.side_effect = RuntimeError("abort early")
-            with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+            with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                 mock_llm = MagicMock()
                 mock_llm.close = AsyncMock()
                 m_llm_cls.return_value = mock_llm
@@ -859,10 +859,10 @@ class TestComposingUnifiedSSE:
     async def test_composing_emits_reasoning_events(self) -> None:
 
         """Phase 1: COMPOSING path emits reasoning events from the streaming planner."""
-        from app.core.planner import ExecutionPlan
-        from app.core.expansion import ToolCall
-        from app.protocol.emitter import emit
-        from app.protocol.events import ReasoningEvent
+        from maestro.core.planner import ExecutionPlan
+        from maestro.core.expansion import ToolCall
+        from maestro.protocol.emitter import emit
+        from maestro.protocol.events import ReasoningEvent
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -887,9 +887,9 @@ class TestComposingUnifiedSSE:
             yield emit(ReasoningEvent(content="Planning the beat..."))
             yield plan
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_stream_with_reasoning()):
-                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_composing.composing.build_execution_plan_stream", return_value=_stream_with_reasoning()):
+                with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
@@ -910,8 +910,8 @@ class TestComposingUnifiedSSE:
     async def test_composing_emits_plan_event(self) -> None:
 
         """COMPOSING path emits a 'plan' event with steps."""
-        from app.core.planner import ExecutionPlan
-        from app.core.expansion import ToolCall
+        from maestro.core.planner import ExecutionPlan
+        from maestro.core.expansion import ToolCall
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -934,9 +934,9 @@ class TestComposingUnifiedSSE:
             safety_validated=True,
         )
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
-                with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+                with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                     mock_llm = MagicMock()
                     mock_llm.close = AsyncMock()
                     m_llm_cls.return_value = mock_llm
@@ -959,8 +959,8 @@ class TestComposingUnifiedSSE:
     async def test_composing_emits_proposal_tool_calls(self) -> None:
 
         """COMPOSING path emits proposal toolCalls (phase 1), then real execution toolCalls (phase 2)."""
-        from app.core.planner import ExecutionPlan
-        from app.core.expansion import ToolCall
+        from maestro.core.planner import ExecutionPlan
+        from maestro.core.expansion import ToolCall
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -992,7 +992,7 @@ class TestComposingUnifiedSSE:
                 await post_tool_callback("stori_set_tempo", {"tempo": 120})
             if progress_callback:
                 await progress_callback(1, 1, "stori_set_tempo", {"tempo": 120})
-            from app.models.variation import Variation
+            from maestro.models.variation import Variation
             return Variation(
                 variation_id="var-1",
                 intent="test",
@@ -1002,10 +1002,10 @@ class TestComposingUnifiedSSE:
                 phrases=[],
             )
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
-                with patch("app.core.executor.execute_plan_variation", side_effect=_mock_execute):
-                    with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+                with patch("maestro.core.executor.execute_plan_variation", side_effect=_mock_execute):
+                    with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                         mock_llm = MagicMock()
                         mock_llm.close = AsyncMock()
                         m_llm_cls.return_value = mock_llm
@@ -1034,8 +1034,8 @@ class TestComposingUnifiedSSE:
     async def test_composing_plan_step_updates(self) -> None:
 
         """COMPOSING execution phase emits planStepUpdate active/complete events (not during proposal phase)."""
-        from app.core.planner import ExecutionPlan
-        from app.core.expansion import ToolCall
+        from maestro.core.planner import ExecutionPlan
+        from maestro.core.expansion import ToolCall
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -1075,7 +1075,7 @@ class TestComposingUnifiedSSE:
                     await post_tool_callback(tc.name, tc.params)
                 if progress_callback:
                     await progress_callback(call_idx, len(plan.tool_calls), tc.name, tc.params)
-            from app.models.variation import Variation
+            from maestro.models.variation import Variation
             return Variation(
                 variation_id="var-2",
                 intent="test",
@@ -1085,10 +1085,10 @@ class TestComposingUnifiedSSE:
                 phrases=[],
             )
 
-        with patch("app.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
-            with patch("app.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
-                with patch("app.core.executor.execute_plan_variation", side_effect=_mock_execute):
-                    with patch("app.core.maestro_handlers.LLMClient") as m_llm_cls:
+        with patch("maestro.core.maestro_handlers.get_intent_result_with_llm", new_callable=AsyncMock, return_value=fake_route):
+            with patch("maestro.core.maestro_composing.composing.build_execution_plan_stream", return_value=_fake_plan_stream(plan)):
+                with patch("maestro.core.executor.execute_plan_variation", side_effect=_mock_execute):
+                    with patch("maestro.core.maestro_handlers.LLMClient") as m_llm_cls:
                         mock_llm = MagicMock()
                         mock_llm.close = AsyncMock()
                         m_llm_cls.return_value = mock_llm
@@ -1119,10 +1119,10 @@ class TestComposingUnifiedSSE:
 class TestAgentTeamsVariationRouting:
     """Verify that Mode: compose routes through Agent Teams + Variation."""
 
-    def _make_parsed_prompt(self, roles: list[str]) -> ParsedPrompt:
-        from app.core.prompt_parser import ParsedPrompt
-        return ParsedPrompt(
-            raw="STORI PROMPT\nMode: compose",
+    def _make_parsed_prompt(self, roles: list[str]) -> MaestroPrompt:
+        from maestro.prompts import MaestroPrompt
+        return MaestroPrompt(
+            raw="MAESTRO PROMPT\nMode: compose",
             mode="compose",
             request="make a beat",
             style="house",
@@ -1131,7 +1131,7 @@ class TestAgentTeamsVariationRouting:
             roles=roles,
         )
 
-    def _make_composing_route(self, parsed: ParsedPrompt) -> IntentResult:
+    def _make_composing_route(self, parsed: MaestroPrompt) -> IntentResult:
 
         return IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -1163,15 +1163,15 @@ class TestAgentTeamsVariationRouting:
         mock_llm.close = AsyncMock()
 
         with (
-            patch("app.core.maestro_handlers.get_intent_result_with_llm",
+            patch("maestro.core.maestro_handlers.get_intent_result_with_llm",
                   new_callable=AsyncMock, return_value=fake_route),
-            patch("app.core.maestro_handlers.LLMClient", return_value=mock_llm),
-            patch("app.core.maestro_handlers._handle_composing_with_agent_teams",
+            patch("maestro.core.maestro_handlers.LLMClient", return_value=mock_llm),
+            patch("maestro.core.maestro_handlers._handle_composing_with_agent_teams",
                   side_effect=_fake_at_gen) as mock_at,
         ):
             events = []
             async for event in orchestrate(
-                "STORI PROMPT\nMode: compose",
+                "MAESTRO PROMPT\nMode: compose",
                 project_context=_NON_EMPTY_PROJECT,
             ):
                 events.append(event)
@@ -1196,15 +1196,15 @@ class TestAgentTeamsVariationRouting:
         mock_llm.close = AsyncMock()
 
         with (
-            patch("app.core.maestro_handlers.get_intent_result_with_llm",
+            patch("maestro.core.maestro_handlers.get_intent_result_with_llm",
                   new_callable=AsyncMock, return_value=fake_route),
-            patch("app.core.maestro_handlers.LLMClient", return_value=mock_llm),
-            patch("app.core.maestro_handlers._handle_composing_with_agent_teams",
+            patch("maestro.core.maestro_handlers.LLMClient", return_value=mock_llm),
+            patch("maestro.core.maestro_handlers._handle_composing_with_agent_teams",
                   side_effect=_fake_at_gen) as mock_at,
         ):
             events = []
             async for event in orchestrate(
-                "STORI PROMPT\nMode: compose",
+                "MAESTRO PROMPT\nMode: compose",
                 project_context=_NON_EMPTY_PROJECT,
             ):
                 events.append(event)
@@ -1215,7 +1215,7 @@ class TestAgentTeamsVariationRouting:
     async def test_compose_without_parsed_prompt_uses_standard_composing(self) -> None:
 
         """When no parsed prompt (freeform compose), standard _handle_composing is used."""
-        from app.core.planner import ExecutionPlan
+        from maestro.core.planner import ExecutionPlan
 
         fake_route = IntentResult(
             intent=Intent.GENERATE_MUSIC,
@@ -1235,12 +1235,12 @@ class TestAgentTeamsVariationRouting:
         mock_llm.close = AsyncMock()
 
         with (
-            patch("app.core.maestro_handlers.get_intent_result_with_llm",
+            patch("maestro.core.maestro_handlers.get_intent_result_with_llm",
                   new_callable=AsyncMock, return_value=fake_route),
-            patch("app.core.maestro_composing.composing.build_execution_plan_stream",
+            patch("maestro.core.maestro_composing.composing.build_execution_plan_stream",
                   return_value=_fake_plan_stream(empty_plan)),
-            patch("app.core.maestro_handlers.LLMClient", return_value=mock_llm),
-            patch("app.core.maestro_handlers._handle_composing_with_agent_teams") as mock_at,
+            patch("maestro.core.maestro_handlers.LLMClient", return_value=mock_llm),
+            patch("maestro.core.maestro_handlers._handle_composing_with_agent_teams") as mock_at,
         ):
             events = []
             async for event in orchestrate(
@@ -1256,13 +1256,12 @@ class TestAgentTeamsVariationRouting:
 
         """The wrapper intercepts Agent Teams complete and emits meta/phrase/done/complete."""
         import json
-        from app.core.maestro_composing.composing import (
+        from maestro.core.maestro_composing.composing import (
             _handle_composing_with_agent_teams,
         )
-        from app.core.prompt_parser import ParsedPrompt
-        from app.core.state_store import StateStore
-        from app.core.tracing import create_trace_context
-        from app.models.variation import Variation, Phrase, NoteChange, MidiNoteSnapshot
+        from maestro.core.state_store import StateStore
+        from maestro.core.tracing import create_trace_context
+        from maestro.models.variation import Variation, Phrase, NoteChange, MidiNoteSnapshot
 
         parsed = self._make_parsed_prompt(["drums", "bass"])
         fake_route = self._make_composing_route(parsed)
@@ -1331,13 +1330,13 @@ class TestAgentTeamsVariationRouting:
         mock_vs.compute_variation = MagicMock(return_value=_test_variation)
 
         with (
-            patch("app.core.maestro_agent_teams._handle_composition_agent_team",
+            patch("maestro.core.maestro_agent_teams._handle_composition_agent_team",
                   side_effect=_fake_agent_teams),
-            patch("app.core.maestro_editing._create_editing_composition_route",
+            patch("maestro.core.maestro_editing._create_editing_composition_route",
                   return_value=fake_route),
-            patch("app.services.variation.get_variation_service",
+            patch("maestro.services.variation.get_variation_service",
                   return_value=mock_vs),
-            patch("app.core.maestro_composing.storage._store_variation"),
+            patch("maestro.core.maestro_composing.storage._store_variation"),
         ):
             events = []
             async for event in _handle_composing_with_agent_teams(

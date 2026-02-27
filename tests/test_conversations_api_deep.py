@@ -6,9 +6,9 @@ and streaming within conversation context.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from app.contracts.json_types import JSONObject
+from maestro.contracts.json_types import JSONObject
 
-from app.db.models import User
+from maestro.db.models import User
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 import json
@@ -16,7 +16,7 @@ import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.db.models import Conversation, ConversationMessage
+from maestro.db.models import Conversation, ConversationMessage
 
 
 USER_ID = "550e8400-e29b-41d4-a716-446655440000"
@@ -172,12 +172,12 @@ class TestConversationCompose:
 
         async def fake_orchestrate(*args: object, **kwargs: object) -> AsyncGenerator[str, None]:
 
-            from app.protocol.emitter import emit
-            from app.protocol.events import CompleteEvent, StateEvent
+            from maestro.protocol.emitter import emit
+            from maestro.protocol.events import CompleteEvent, StateEvent
             yield emit(StateEvent(state="composing", intent="compose", confidence=0.9, trace_id="t-0"))
             yield emit(CompleteEvent(success=True, trace_id="t-0"))
 
-        with patch("app.api.routes.conversations.messages.orchestrate", side_effect=fake_orchestrate):
+        with patch("maestro.api.routes.conversations.messages.orchestrate", side_effect=fake_orchestrate):
             resp = await client.post(
                 f"/api/v1/conversations/{conv_id}/messages",
                 json={"prompt": "make a beat"},

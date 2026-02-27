@@ -11,10 +11,10 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 # Import your models' Base
-from app.db.database import Base
-from app.db import models  # noqa: F401 - Import to register models
-from app.db import muse_models  # noqa: F401 - Register Muse tables
-from app.config import settings
+from maestro.db.database import Base
+from maestro.db import models  # noqa: F401 - Import to register models
+from maestro.db import muse_models  # noqa: F401 - Register Muse tables
+from maestro.config import settings
 
 # Alembic Config object
 config = context.config

@@ -30,7 +30,7 @@ fi
 if grep -q "STORI_CORS_ORIGINS=\*" .env 2>/dev/null; then
     echo "⚠️  WARNING: CORS is set to wildcard (*) in .env"
     echo "   This is a SECURITY RISK in production!"
-    echo "   Set STORI_CORS_ORIGINS=https://stage.stori.audio,stori://"
+    echo "   Set STORI_CORS_ORIGINS=https://your-domain.com,stori://"
     read -p "   Continue anyway? (yes/no): " continue
     if [ "$continue" != "yes" ]; then
         exit 1
@@ -69,7 +69,7 @@ sleep 10
 
 # Check health
 for i in {1..30}; do
-    if docker exec maestro-stori-app curl -sf http://localhost:10001/api/v1/health > /dev/null 2>&1; then
+    if docker exec maestro-app curl -sf http://localhost:10001/api/v1/health > /dev/null 2>&1; then
         echo "✅ Maestro healthy"
         break
     fi
@@ -78,7 +78,7 @@ for i in {1..30}; do
 done
 
 for i in {1..30}; do
-    if docker exec maestro-stori-orpheus curl -sf http://localhost:10002/health > /dev/null 2>&1; then
+    if docker exec maestro-storpheus curl -sf http://localhost:10002/health > /dev/null 2>&1; then
         echo "✅ Orpheus healthy"
         break
     fi
@@ -88,7 +88,7 @@ done
 
 echo ""
 echo "7. Verifying external access..."
-if curl -sf https://stage.stori.audio/api/v1/health > /dev/null 2>&1; then
+if curl -sf https://your-domain.com/api/v1/health > /dev/null 2>&1; then
     echo "✅ External API accessible"
 else
     echo "⚠️  External API check failed - check nginx logs"
@@ -104,11 +104,11 @@ echo "✅ Deployment Complete!"
 echo "=========================================="
 echo ""
 echo "Monitor logs:"
-echo "  docker logs -f maestro-stori-app"
-echo "  docker logs -f maestro-stori-orpheus"
-echo "  docker logs -f maestro-stori-nginx"
+echo "  docker logs -f maestro-app"
+echo "  docker logs -f maestro-storpheus"
+echo "  docker logs -f maestro-nginx"
 echo ""
 echo "Check status:"
 echo "  docker ps"
-echo "  curl https://stage.stori.audio/api/v1/health"
+echo "  curl https://your-domain.com/api/v1/health"
 echo ""

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.gm_instruments import (
+from maestro.core.gm_instruments import (
     DRUM_ICON,
     GM_INSTRUMENTS,
     GMInstrument,

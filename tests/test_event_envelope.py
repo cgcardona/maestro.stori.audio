@@ -13,9 +13,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
-    from app.models.variation import Phrase
+    from maestro.models.variation import Phrase
 
-from app.variation.core.event_envelope import (
+from maestro.variation.core.event_envelope import (
     AnyEnvelope,
     DonePayload,
     ErrorPayload,
@@ -435,7 +435,7 @@ class TestSnapshotToNoteDict:
 
     def test_all_fields_mapped(self) -> None:
         """All MidiNoteSnapshot fields reach the output NoteChangeDict."""
-        from app.models.variation import MidiNoteSnapshot
+        from maestro.models.variation import MidiNoteSnapshot
         snap = MidiNoteSnapshot(pitch=64, start_beat=2.0, duration_beats=0.5, velocity=90, channel=3)
         result = _snapshot_to_note_dict(snap)
         assert result["pitch"] == 64
@@ -446,7 +446,7 @@ class TestSnapshotToNoteDict:
 
     def test_snake_case_mapped_to_camel_case(self) -> None:
         """start_beat → startBeat, duration_beats → durationBeats."""
-        from app.models.variation import MidiNoteSnapshot
+        from maestro.models.variation import MidiNoteSnapshot
         snap = MidiNoteSnapshot(pitch=60, start_beat=1.5, duration_beats=2.0)
         result = _snapshot_to_note_dict(snap)
         assert "startBeat" in result
@@ -460,7 +460,7 @@ class TestNoteChangeToWire:
 
     def test_added_change_type(self) -> None:
         """added: before=None, after is set."""
-        from app.models.variation import NoteChange, MidiNoteSnapshot
+        from maestro.models.variation import NoteChange, MidiNoteSnapshot
         nc = NoteChange(
             note_id="nc-1",
             change_type="added",
@@ -476,7 +476,7 @@ class TestNoteChangeToWire:
 
     def test_removed_change_type(self) -> None:
         """removed: before is set, after=None."""
-        from app.models.variation import NoteChange, MidiNoteSnapshot
+        from maestro.models.variation import NoteChange, MidiNoteSnapshot
         nc = NoteChange(
             note_id="nc-2",
             change_type="removed",
@@ -491,7 +491,7 @@ class TestNoteChangeToWire:
 
     def test_modified_change_type(self) -> None:
         """modified: both before and after are set."""
-        from app.models.variation import NoteChange, MidiNoteSnapshot
+        from maestro.models.variation import NoteChange, MidiNoteSnapshot
         nc = NoteChange(
             note_id="nc-3",
             change_type="modified",
@@ -508,7 +508,7 @@ class TestNoteChangeToWire:
 
     def test_required_keys_always_present(self) -> None:
         """noteId and changeType are Required in NoteChangeEntryDict."""
-        from app.models.variation import NoteChange, MidiNoteSnapshot
+        from maestro.models.variation import NoteChange, MidiNoteSnapshot
         nc = NoteChange(
             note_id="nc-x",
             change_type="added",
@@ -524,8 +524,8 @@ class TestBuildPhrasePayload:
     """build_phrase_payload produces a complete, typed PhrasePayload."""
 
     def _make_phrase(self) -> "Phrase":
-        from app.models.variation import Phrase, NoteChange, MidiNoteSnapshot
-        from app.contracts.json_types import CCEventDict, PitchBendDict, AftertouchDict
+        from maestro.models.variation import Phrase, NoteChange, MidiNoteSnapshot
+        from maestro.contracts.json_types import CCEventDict, PitchBendDict, AftertouchDict
         return Phrase(
             phrase_id="p-1",
             track_id="track-1",
@@ -550,7 +550,7 @@ class TestBuildPhrasePayload:
 
     def test_scalar_fields(self) -> None:
         """All scalar Phrase fields are present in the payload."""
-        from app.models.variation import Phrase
+        from maestro.models.variation import Phrase
         phrase = self._make_phrase()
         assert isinstance(phrase, Phrase)
         payload = build_phrase_payload(phrase)
@@ -565,7 +565,7 @@ class TestBuildPhrasePayload:
 
     def test_note_changes_serialised(self) -> None:
         """noteChanges contains typed NoteChangeEntryDict entries."""
-        from app.models.variation import Phrase
+        from maestro.models.variation import Phrase
         phrase = self._make_phrase()
         assert isinstance(phrase, Phrase)
         payload = build_phrase_payload(phrase)
@@ -580,7 +580,7 @@ class TestBuildPhrasePayload:
 
     def test_cc_pitch_aftertouch_passthrough(self) -> None:
         """CC, pitch-bend, and aftertouch lists are passed through unchanged."""
-        from app.models.variation import Phrase
+        from maestro.models.variation import Phrase
         phrase = self._make_phrase()
         assert isinstance(phrase, Phrase)
         payload = build_phrase_payload(phrase)
@@ -592,7 +592,7 @@ class TestBuildPhrasePayload:
 
     def test_round_trip_via_envelope(self) -> None:
         """build_phrase_payload output can be passed directly to build_phrase_envelope."""
-        from app.models.variation import Phrase
+        from maestro.models.variation import Phrase
         phrase = self._make_phrase()
         assert isinstance(phrase, Phrase)
         payload = build_phrase_payload(phrase)
@@ -609,7 +609,7 @@ class TestBuildPhrasePayload:
 
     def test_no_model_dump_any_leakage(self) -> None:
         """noteChanges entries have the exact NoteChangeEntryDict keys, not arbitrary model_dump keys."""
-        from app.models.variation import Phrase
+        from maestro.models.variation import Phrase
         phrase = self._make_phrase()
         assert isinstance(phrase, Phrase)
         payload = build_phrase_payload(phrase)

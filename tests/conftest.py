@@ -13,10 +13,10 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
-from app.db import database
-from app.db.database import Base, get_db
-from app.db.models import User
-from app.main import app
+from maestro.db import database
+from maestro.db.database import Base, get_db
+from maestro.db.models import User
+from maestro.main import app
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -35,7 +35,7 @@ def anyio_backend() -> str:
 @pytest.fixture(autouse=True)
 def _disable_storpheus_hard_gate() -> Generator[None, None, None]:
     """Tests don't have Storpheus running — disable the pre-flight hard gate."""
-    from app.config import settings
+    from maestro.config import settings
     original = settings.storpheus_required
     settings.storpheus_required = False
     yield
@@ -46,7 +46,7 @@ def _disable_storpheus_hard_gate() -> Generator[None, None, None]:
 def _reset_variation_store() -> Generator[None, None, None]:
     """Reset the singleton VariationStore between tests to prevent cross-test pollution."""
     yield
-    from app.variation.storage.variation_store import reset_variation_store
+    from maestro.variation.storage.variation_store import reset_variation_store
     reset_variation_store()
 
 
@@ -117,7 +117,7 @@ async def test_user(db_session: AsyncSession) -> User:
 def auth_token(test_user: User) -> str:
 
     """JWT for test_user (1 hour)."""
-    from app.auth.tokens import create_access_token
+    from maestro.auth.tokens import create_access_token
     return create_access_token(user_id=test_user.id, expires_hours=1)
 
 

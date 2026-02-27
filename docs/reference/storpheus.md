@@ -90,7 +90,7 @@ into Maestro-internal typed lists, and the process-wide singleton.
 class StorpheusRawResponse(TypedDict, total=False):
 ```
 
-**Import:** `from app.services.storpheus import StorpheusRawResponse`
+**Import:** `from maestro.services.storpheus import StorpheusRawResponse`
 
 Raw HTTP response shape returned by `StorpheusClient.generate()`. All fields
 are optional (`total=False`); presence depends on success vs. failure.
@@ -118,7 +118,7 @@ Two paths exist in successful responses:
 class StorpheusResultBucket(TypedDict):
 ```
 
-**Import:** `from app.contracts.json_types import StorpheusResultBucket`
+**Import:** `from maestro.contracts.json_types import StorpheusResultBucket`
 
 Output of `normalize_storpheus_tool_calls()`. All fields are always present
 (empty lists when the corresponding tool calls are absent).
@@ -183,7 +183,7 @@ HALF-OPEN → (failure) → OPEN (cooldown reset)
 class StorpheusClient:
 ```
 
-**Import:** `from app.services.storpheus import StorpheusClient`
+**Import:** `from maestro.services.storpheus import StorpheusClient`
 
 Async HTTP client for the Storpheus music generation service. Uses a
 long-lived `httpx.AsyncClient` with keepalive connection pooling so the
@@ -407,7 +407,7 @@ vector, role profiles, constraints, goals) into the flat payload that
 class StorpheusBackend(MusicGeneratorBackend):
 ```
 
-**Import:** `from app.services.backends.storpheus import StorpheusBackend`
+**Import:** `from maestro.services.backends.storpheus import StorpheusBackend`
 
 **Constructor:**
 

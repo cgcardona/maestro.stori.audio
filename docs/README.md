@@ -1,8 +1,8 @@
-# Maestro Stori Audio – Documentation
+# Maestro – Documentation
 
 **Stori — the infinite music machine.** Use these docs in order: read only what you need. Start with [guides/setup.md](guides/setup.md), then [guides/integrate.md](guides/integrate.md). Script paths are from **repo root**.
 
-**Environments:** local, **stage.stori.audio**, **maestro.stori.audio**.
+**Environments:** local, stage, production (use your own domains).
 
 ---
 
@@ -35,7 +35,7 @@ API base URL, auth (JWT), access codes, frontend (Swift, assets), MCP (Cursor/Cl
 
 ## 3. [reference/api.md](reference/api.md)
 
-API and MCP tools in one place: maestro stream (SSE), all event types (`state`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `toolError`, `reasoning`, `budgetUpdate`, `complete`, and composing events), request body fields (`humanizeProfile`, `qualityPreset`, `swing`), variable refs, models (OpenRouter), the **Maestro Default UI endpoints** (placeholders, prompt chips, prompt cards, template lookup, budget status), and the full MCP tool reference (all 41 tools with parameters and routing). Use with Stori app, Cursor/Claude, or HTTP MCP. Programmatic list: `GET /api/v1/mcp/tools` or `app/mcp/tools.py`.
+API and MCP tools in one place: maestro stream (SSE), all event types (`state`, `plan`, `planStepUpdate`, `toolStart`, `toolCall`, `toolError`, `reasoning`, `budgetUpdate`, `complete`, and composing events), request body fields (`humanizeProfile`, `qualityPreset`, `swing`), variable refs, models (OpenRouter), the **Maestro Default UI endpoints** (placeholders, prompt chips, prompt cards, template lookup, budget status), and the full MCP tool reference (all 35 tools with parameters and routing). Use with Stori app, Cursor/Claude, or HTTP MCP. Programmatic list: `GET /api/v1/mcp/tools` or `app/daw/stori/tools/`.
 
 ---
 
@@ -73,7 +73,7 @@ Frontend integration guide for project state serialization: how to build the `pr
 
 | Doc | Description |
 |-----|-------------|
-| [protocol/stori_prompt_spec.md](protocol/stori_prompt_spec.md) | **Stori Structured Prompt:** prompt format for expert-level control. |
+| [protocol/maestro_prompt_spec.md](protocol/maestro_prompt_spec.md) | **Maestro Structured Prompt:** prompt format for expert-level control. |
 | [protocol/muse_variation_spec.md](protocol/muse_variation_spec.md) | Muse / Variation: end-to-end UX + technical contract. |
 | [protocol/variation_api.md](protocol/variation_api.md) | **Variation API:** wire contract, endpoints, SSE events, error codes. |
 | [protocol/terminology.md](protocol/terminology.md) | Canonical vocabulary for Muse/Variations (normative). |

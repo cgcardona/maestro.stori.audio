@@ -14,7 +14,7 @@ import uuid
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.auth.dependencies import require_device_id, require_valid_token
+from maestro.auth.dependencies import require_device_id, require_valid_token
 
 
 # =============================================================================
@@ -90,7 +90,7 @@ async def test_require_valid_token_invalid_token() -> None:
 async def test_require_valid_token_expired_token() -> None:
     """Expired token raises 401."""
     import jwt
-    from app.config import settings
+    from maestro.config import settings
     with patch.object(settings, "access_token_secret", "test_secret_32chars_for_unit_tests!!"):
         secret = "test_secret_32chars_for_unit_tests!!"
         now = int(datetime.now(timezone.utc).timestamp())
@@ -106,12 +106,12 @@ async def test_require_valid_token_expired_token() -> None:
 @pytest.mark.asyncio
 async def test_require_valid_token_revoked_returns_401() -> None:
     """Revoked token raises 401 when revocation check returns True."""
-    from app.auth.tokens import generate_access_code
+    from maestro.auth.tokens import generate_access_code
 
     token = generate_access_code(duration_hours=1)
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
-    with patch("app.auth.dependencies._check_and_register_token", new_callable=AsyncMock) as mock_check:
+    with patch("maestro.auth.dependencies._check_and_register_token", new_callable=AsyncMock) as mock_check:
         mock_check.return_value = True  # Simulate revoked
         with pytest.raises(HTTPException) as exc_info:
             await require_valid_token(credentials=creds)

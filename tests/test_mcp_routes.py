@@ -59,13 +59,13 @@ class TestParseDawResponse:
 
     def test_success_true_returns_true(self) -> None:
         """JSON true → success=True."""
-        from app.api.routes.mcp import _parse_daw_response
+        from maestro.api.routes.mcp import _parse_daw_response
         result = _parse_daw_response({"success": True})
         assert result["success"] is True
 
     def test_success_false_returns_false(self) -> None:
         """JSON false → success=False."""
-        from app.api.routes.mcp import _parse_daw_response
+        from maestro.api.routes.mcp import _parse_daw_response
         result = _parse_daw_response({"success": False})
         assert result["success"] is False
 
@@ -74,20 +74,20 @@ class TestParseDawResponse:
 
         We use `is True` deliberately — only JSON true (Python True) counts.
         """
-        from app.api.routes.mcp import _parse_daw_response
+        from maestro.api.routes.mcp import _parse_daw_response
         assert _parse_daw_response({"success": 1})["success"] is False
         assert _parse_daw_response({"success": "yes"})["success"] is False
         assert _parse_daw_response({"success": []})["success"] is False
 
     def test_missing_success_key_defaults_false(self) -> None:
         """A dict without a 'success' key returns success=False."""
-        from app.api.routes.mcp import _parse_daw_response
+        from maestro.api.routes.mcp import _parse_daw_response
         result = _parse_daw_response({"status": "ok"})
         assert result["success"] is False
 
     def test_non_dict_input_returns_false(self) -> None:
         """Non-dict inputs (None, str, list) return success=False without raising."""
-        from app.api.routes.mcp import _parse_daw_response
+        from maestro.api.routes.mcp import _parse_daw_response
         assert _parse_daw_response(None)["success"] is False
         assert _parse_daw_response("ok")["success"] is False
         assert _parse_daw_response([True])["success"] is False
@@ -95,8 +95,8 @@ class TestParseDawResponse:
 
     def test_result_is_daw_tool_response_shape(self) -> None:
         """Return value satisfies the DAWToolResponse TypedDict contract."""
-        from app.api.routes.mcp import _parse_daw_response
-        from app.contracts.mcp_types import DAWToolResponse
+        from maestro.api.routes.mcp import _parse_daw_response
+        from maestro.contracts.mcp_types import DAWToolResponse
         result = _parse_daw_response({"success": True})
         # Runtime check: 'success' key present and is a bool
         assert isinstance(result.get("success"), bool)
