@@ -228,6 +228,13 @@ reference_midi/
 
 logs.txt
 
+# Storpheus runtime artifacts (generated during inference)
+storpheus/seed.mid
+storpheus/generated.mid
+
+# Stress test result dumps
+stress_results_*.json
+
 # Tour de Force artifacts and secrets
 artifacts/
 .env.tourdeforce

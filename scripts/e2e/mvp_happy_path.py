@@ -12,7 +12,7 @@ SSE events, downloads artifacts from Orpheus, and produces clean output:
     intro.mid / .webp  ← MIDI + piano-roll plot per section
 
 Usage:
-    docker compose exec -e JWT="..." maestro python /app/mvp_happy_path.py
+    docker compose exec -e JWT="..." maestro python scripts/e2e/mvp_happy_path.py
 """
 from __future__ import annotations
 
