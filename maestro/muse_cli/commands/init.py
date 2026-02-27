@@ -81,30 +81,48 @@ def init(
                 pass  # Corrupt file — generate a fresh ID.
 
     # --- Create directory structure ---
-    (muse_dir / "refs" / "heads").mkdir(parents=True, exist_ok=True)
+    # Wrap all filesystem writes in a single OSError handler so that
+    # PermissionError (e.g. CWD is not writable, common when running
+    # `docker compose exec maestro muse init` from /app/) produces a clean
+    # user-facing message instead of a raw Python traceback.
+    try:
+        (muse_dir / "refs" / "heads").mkdir(parents=True, exist_ok=True)
 
-    # repo.json — identity file
-    repo_id = existing_repo_id or str(uuid.uuid4())
-    repo_json: dict[str, str] = {
-        "repo_id": repo_id,
-        "schema_version": _SCHEMA_VERSION,
-        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    }
-    (muse_dir / "repo.json").write_text(json.dumps(repo_json, indent=2) + "\n")
+        # repo.json — identity file
+        repo_id = existing_repo_id or str(uuid.uuid4())
+        repo_json: dict[str, str] = {
+            "repo_id": repo_id,
+            "schema_version": _SCHEMA_VERSION,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        (muse_dir / "repo.json").write_text(json.dumps(repo_json, indent=2) + "\n")
 
-    # HEAD — current branch pointer
-    (muse_dir / "HEAD").write_text("refs/heads/main\n")
+        # HEAD — current branch pointer
+        (muse_dir / "HEAD").write_text("refs/heads/main\n")
 
-    # refs/heads/main — empty = no commits on this branch yet
-    ref_file = muse_dir / "refs" / "heads" / "main"
-    if not ref_file.exists() or force:
-        ref_file.write_text("")
+        # refs/heads/main — empty = no commits on this branch yet
+        ref_file = muse_dir / "refs" / "heads" / "main"
+        if not ref_file.exists() or force:
+            ref_file.write_text("")
 
-    # config.toml — only written on fresh init (not overwritten on --force)
-    # so existing remote/user config is preserved.
-    config_path = muse_dir / "config.toml"
-    if not config_path.exists():
-        config_path.write_text(_DEFAULT_CONFIG_TOML)
+        # config.toml — only written on fresh init (not overwritten on --force)
+        # so existing remote/user config is preserved.
+        config_path = muse_dir / "config.toml"
+        if not config_path.exists():
+            config_path.write_text(_DEFAULT_CONFIG_TOML)
+
+    except PermissionError:
+        typer.echo(
+            f"❌ Permission denied: cannot write to {cwd}.\n"
+            "Run `muse init` from a directory you have write access to.\n"
+            "Tip: if running inside Docker, use a writable path such as /tmp/my-project."
+        )
+        logger.error("❌ Permission denied creating .muse/ in %s", cwd)
+        raise typer.Exit(code=ExitCode.USER_ERROR)
+    except OSError as exc:
+        typer.echo(f"❌ Failed to initialise repository: {exc}")
+        logger.error("❌ OSError creating .muse/ in %s: %s", cwd, exc)
+        raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
 
     action = "Reinitialised" if (force and already_exists) else "Initialised"
     typer.echo(f"✅ {action} Muse repository in {muse_dir}")

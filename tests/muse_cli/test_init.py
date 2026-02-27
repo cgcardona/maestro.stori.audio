@@ -213,3 +213,50 @@ def test_status_shows_on_branch_main_no_commits(tmp_path: pathlib.Path) -> None:
     assert result.exit_code == 0, result.output
     assert "On branch main" in result.output
     assert "no commits yet" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Error handling — filesystem permission failures (regression for permission bug)
+# ---------------------------------------------------------------------------
+
+
+def test_init_permission_error_exits_1(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``muse init`` exits 1 with a clean message when the CWD is not writable.
+
+    Regression test: previously a raw ``PermissionError`` traceback was shown
+    (reproduced by running ``docker compose exec maestro muse init`` from
+    ``/app/``, which is owned by root and not writable by the container user).
+    """
+
+    def _raise_permission(*args: object, **kwargs: object) -> None:
+        raise PermissionError("[Errno 13] Permission denied: '/app/.muse'")
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", _raise_permission)
+
+    result = _run_init(tmp_path)
+
+    assert result.exit_code == int(ExitCode.USER_ERROR), result.output
+    assert "Permission denied" in result.output
+    assert "write access" in result.output
+    # Must NOT produce a raw Python traceback.
+    assert "Traceback" not in result.output
+    assert "PermissionError" not in result.output
+
+
+def test_init_oserror_exits_3(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``muse init`` exits 3 with a clean message on unexpected ``OSError``."""
+
+    def _raise_os(*args: object, **kwargs: object) -> None:
+        raise OSError("[Errno 28] No space left on device")
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", _raise_os)
+
+    result = _run_init(tmp_path)
+
+    assert result.exit_code == int(ExitCode.INTERNAL_ERROR), result.output
+    assert "Failed to initialise" in result.output
+    assert "Traceback" not in result.output
