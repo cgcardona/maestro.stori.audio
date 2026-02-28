@@ -598,6 +598,84 @@ The boundary philosophy: Muse VCS modules are **pure data** — they consume sna
 
 ---
 
+## `muse session` — Recording Session Metadata
+
+**Purpose:** Track who was in the room, where you recorded, and why — purely as local JSON files. Sessions are decoupled from VCS commits: they capture the human context around a recording block and can later reference commit IDs that were created during that time.
+
+Sessions live in `.muse/sessions/` as plain JSON files — no database tables, no Alembic migrations. This mirrors git's philosophy of storing metadata as plain files rather than in a relational store.
+
+### Subcommands
+
+| Subcommand | Flags | Purpose |
+|------------|-------|---------|
+| `muse session start` | `--participants`, `--location`, `--intent` | Open a new session; writes `current.json`. Only one active session at a time. |
+| `muse session end` | `--notes` | Finalise active session; moves `current.json` → `<uuid>.json`. |
+| `muse session log` | _(none)_ | List all completed sessions, newest first. |
+| `muse session show <id>` | _(prefix match supported)_ | Print full JSON for a specific completed session. |
+| `muse session credits` | _(none)_ | Aggregate participants across all completed sessions, sorted by count descending. |
+
+### Storage Layout
+
+```
+.muse/
+    sessions/
+        current.json           ← active session (exists only while recording)
+        <session-uuid>.json    ← one file per completed session
+```
+
+### Session JSON Schema (`MuseSessionRecord`)
+
+```json
+{
+    "session_id":      "<uuid4>",
+    "schema_version":  "1",
+    "started_at":      "2026-02-27T15:49:19+00:00",
+    "ended_at":        "2026-02-27T17:30:00+00:00",
+    "participants":    ["Alice", "Bob"],
+    "location":        "Studio A",
+    "intent":          "Record the bridge",
+    "commits":         ["abc123", "def456"],
+    "notes":           "Nailed the third take."
+}
+```
+
+The `commits` list is populated externally (e.g., by `muse commit` in a future integration); it starts empty.
+
+### Output Examples
+
+**`muse session log`**
+
+```
+3f2a1b0c  2026-02-27T15:49:19  →  2026-02-27T17:30:00  [Alice, Bob]
+a1b2c3d4  2026-02-26T10:00:00  →  2026-02-26T12:00:00  []
+```
+
+**`muse session credits`**
+
+```
+Session credits:
+  Alice                           2 sessions
+  Bob                             1 session
+  Carol                           1 session
+```
+
+### Result Type
+
+`MuseSessionRecord` — TypedDict defined in `maestro/muse_cli/commands/session.py`. See `docs/reference/type_contracts.md` for the full field table.
+
+### Atomicity
+
+`muse session end` writes a temp file (`.tmp-<uuid>.json`) in the same directory, then renames it to `<uuid>.json` before unlinking `current.json`. This guarantees that a crash between write and cleanup never leaves both `current.json` and `<uuid>.json` present simultaneously, which would block future `muse session start` calls.
+
+### Agent Use Case
+
+An AI composition agent can:
+- Call `muse session start --participants "Claude,Gabriel" --intent "Groove track"` before a generation run.
+- Call `muse session end --notes "Generated 4 variations"` after the run completes.
+- Query `muse session credits` to see which participants have contributed most across the project's history.
+
+---
+
 ## E2E Demo
 
 Run the full VCS lifecycle test:
@@ -828,5 +906,72 @@ muse commit --from-batch muse-batch.json
        ├── uses commit_message_suggestion
        └── creates versioned commit in Postgres
 ```
+
+---
+
+## `muse swing` — Swing Factor Analysis and Annotation
+
+**Purpose:** Measure or annotate the swing factor of a commit — the ratio that
+distinguishes a straight 8th-note grid from a shuffled jazz feel. Swing is one
+of the most musically critical dimensions and is completely invisible to Git.
+
+**Usage:**
+```bash
+muse swing [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | working tree | Commit SHA to analyze |
+| `--set FLOAT` | float | — | Annotate with an explicit swing factor (0.5–0.67) |
+| `--detect` | flag | on | Detect and display the swing factor (default) |
+| `--track TEXT` | string | all | Restrict to a named MIDI track (e.g. `--track bass`) |
+| `--compare COMMIT` | string | — | Compare HEAD swing against another commit |
+| `--history` | flag | off | Show swing history for the current branch |
+| `--json` | flag | off | Emit machine-readable JSON |
+
+**Swing factor scale:**
+
+| Range | Label | Feel |
+|-------|-------|------|
+| < 0.53 | Straight | Equal 8th notes — pop, EDM, quantized |
+| 0.53–0.58 | Light | Subtle shuffle — R&B, Neo-soul |
+| 0.58–0.63 | Medium | Noticeable swing — jazz, hip-hop |
+| ≥ 0.63 | Hard | Triplet feel — bebop, heavy jazz |
+
+**Output example (text):**
+```
+Swing factor: 0.55 (Light)
+Commit: a1b2c3d4  Branch: main
+Track: all
+(stub — full MIDI analysis pending)
+```
+
+**Output example (`--json`):**
+```json
+{"factor": 0.55, "label": "Light", "commit": "a1b2c3d4", "branch": "main", "track": "all", "source": "stub"}
+```
+
+**Result type:** `SwingDetectResult` (TypedDict) — fields: `factor` (float),
+`label` (str), `commit` (str), `branch` (str), `track` (str), `source` (str).
+`--compare` returns `SwingCompareResult` — fields: `head` (SwingDetectResult),
+`compare` (SwingDetectResult), `delta` (float). See
+`docs/reference/type_contracts.md § Muse CLI Types`.
+
+**Agent use case:** An AI generating a bass line runs `muse swing --json` to
+know whether to quantize straight or add shuffle. A Medium swing result means
+the bass should land slightly behind the grid to stay in pocket with the
+existing drum performance.
+
+**Implementation:** `maestro/muse_cli/commands/swing.py` — `swing_label()`,
+`_swing_detect_async()`, `_swing_history_async()`, `_swing_compare_async()`,
+`_format_detect()`, `_format_history()`, `_format_compare()`. Exit codes:
+0 success, 1 invalid `--set` value, 2 outside repo, 3 internal error.
+
+> **Stub note:** Returns a placeholder factor of 0.55. Full implementation
+> requires onset-to-onset ratio measurement from committed MIDI note events
+> (future: Storpheus MIDI parse route).
 
 ---

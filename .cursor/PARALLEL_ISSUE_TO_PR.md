@@ -221,11 +221,14 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
       "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
 
   ⚠️  TYPE-SYSTEM RULES — mypy must be fixed correctly, not worked around:
-    - Fix the callee return type — never cast at the call site to silence errors.
-    - No dict[str, Any] or list[dict] across internal layer boundaries — wrap in typed models.
-    - # type: ignore allowed ONLY at explicit 3rd-party adapter boundaries, and must include justification.
-    - If the same mypy error appears after two fix attempts, stop and rethink the type design.
-      Do NOT loop with incremental tweaks — change strategy.
+    - No cast() at call sites — fix the callee's return type, not the caller.
+    - No Any. Use TypeAlias, TypeVar, Protocol, Union, or typed wrappers at 3rd-party edges.
+    - No `object` as a type annotation — be specific.
+    - No naked collections at boundaries: dict[str, Any], list[dict], bare tuples = code smell.
+      Wrap in a named entity. Convention: <Domain><Concept>Result (DynamicsResult, SwingAnalysis).
+    - No # type: ignore without an inline comment citing the specific 3rd-party issue.
+    - Two failed fix attempts = stop and redesign — never loop with incremental tweaks.
+    - Every public function signature is a contract. Register new result types in docs/reference/type_contracts.md.
 
   pytest — TARGETED TESTS ONLY (never the full suite):
     cd "$REPO" && docker compose exec maestro sh -c \
@@ -233,6 +236,13 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
 
   The full suite takes several minutes and is the responsibility of developers/CI,
   not parallel agents. Run only the test files directly related to your changes.
+
+  DOCS — non-negotiable, same commit as code:
+    - Docstrings on every new module, class, and public function (why + contract, not what)
+    - For new `muse <cmd>`: add a section to docs/architecture/muse_vcs.md with:
+        purpose, flags table, output example, result type, agent use case
+    - Register new named result types in docs/reference/type_contracts.md
+    - Docs are written for AI agent consumers — explain the contract and when to call this
 
   After tests pass — cascading failure scan:
     Search for similar assertions or fixtures across other test files before declaring complete.
