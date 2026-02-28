@@ -2156,6 +2156,85 @@ keyword match · threshold 0.60 · limit 5
 
 ---
 
+### `muse rebase`
+
+**Purpose:** Rebase commits onto a new base, producing a linear history. Given a current branch that has diverged from `<upstream>`, `muse rebase <upstream>` collects all commits since the divergence point and replays them one-by-one on top of the upstream tip — each producing a new commit ID with the same snapshot delta. An AI agent uses this to linearise a sequence of late-night fixup commits before merging to main, making the musical narrative readable and bisectable.
+
+**Usage:**
+```bash
+muse rebase <upstream> [OPTIONS]
+muse rebase --continue
+muse rebase --abort
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `UPSTREAM` | positional | — | Branch name or commit ID to rebase onto. Omit with `--continue` / `--abort`. |
+| `--interactive` / `-i` | flag | off | Open `$EDITOR` with a rebase plan (pick/squash/drop per commit) before executing. |
+| `--autosquash` | flag | off | Automatically move `fixup! <msg>` commits immediately after their matching target commit. |
+| `--rebase-merges` | flag | off | Preserve merge commits during replay (experimental). |
+| `--continue` | flag | off | Resume a rebase that was paused by a conflict. |
+| `--abort` | flag | off | Cancel the in-progress rebase and restore the branch to its original HEAD. |
+
+**Output example (linear rebase):**
+```
+✅ Rebased 3 commit(s) onto 'dev' [main a1b2c3d4]
+```
+
+**Output example (conflict):**
+```
+❌ Conflict while replaying c2d3e4f5 ('Add strings'):
+    both modified: tracks/strings.mid
+Resolve conflicts, then run 'muse rebase --continue'.
+```
+
+**Output example (abort):**
+```
+✅ Rebase aborted. Branch 'main' restored to deadbeef.
+```
+
+**Interactive plan format:**
+```
+# Interactive rebase plan.
+# Actions: pick, squash (fold into previous), drop (skip), fixup (squash no msg), reword
+# Lines starting with '#' are ignored.
+
+pick a1b2c3d4 Add piano
+squash b2c3d4e5 Tweak piano velocity
+drop c3d4e5f6 Stale WIP commit
+pick d4e5f6a7 Add strings
+```
+
+**Result type:** `RebaseResult` (dataclass, frozen) — fields:
+- `branch` (str): The branch that was rebased.
+- `upstream` (str): The upstream branch or commit ref.
+- `upstream_commit_id` (str): Resolved commit ID of the upstream tip.
+- `base_commit_id` (str): LCA commit where the histories diverged.
+- `replayed` (tuple[RebaseCommitPair, ...]): Ordered list of (original, new) commit ID pairs.
+- `conflict_paths` (tuple[str, ...]): Conflicting paths (empty on clean completion).
+- `aborted` (bool): True when `--abort` cleared the in-progress rebase.
+- `noop` (bool): True when there were no commits to replay.
+- `autosquash_applied` (bool): True when `--autosquash` reordered commits.
+
+**State file:** `.muse/REBASE_STATE.json` — written on conflict; cleared on `--continue` completion or `--abort`. Contains: `upstream_commit`, `base_commit`, `original_branch`, `original_head`, `commits_to_replay`, `current_onto`, `completed_pairs`, `current_commit`, `conflict_paths`.
+
+**Agent use case:** An agent that maintains a feature branch can call `muse rebase dev` before opening a merge request. If conflicts are detected, the agent receives the conflict paths in `REBASE_STATE.json`, resolves them by picking the correct version of each affected file, then calls `muse rebase --continue`. The `--autosquash` flag is useful after a generation loop that emits intermediate `fixup!` commits — the agent can clean up history automatically before finalising.
+
+**Algorithm:**
+1. LCA of HEAD and upstream (via BFS over the commit graph).
+2. Collect commits on the current branch since the LCA (oldest first).
+3. For each commit, compute its snapshot delta relative to its own parent.
+4. Apply the delta onto the current onto-tip manifest; detect conflicts.
+5. On conflict: write `REBASE_STATE.json` and exit 1 (await `--continue`).
+6. On success: insert a new commit record; advance the onto pointer.
+7. After all commits: write the final commit ID to the branch ref.
+
+**Implementation:** `maestro/muse_cli/commands/rebase.py` (Typer CLI), `maestro/services/muse_rebase.py` (`_rebase_async`, `_rebase_continue_async`, `_rebase_abort_async`, `RebaseResult`, `RebaseState`, `InteractivePlan`, `compute_delta`, `apply_delta`, `apply_autosquash`).
+
+---
+
 ### `muse revert`
 
 **Purpose:** Create a new commit that undoes a prior commit without rewriting history. The safe undo: given commit C with parent P, `muse revert <commit>` creates a forward commit whose snapshot is P's state (the world before C was applied). An AI agent uses this after discovering a committed arrangement degraded the score — rather than resetting (which loses history), the revert preserves the full audit trail.
