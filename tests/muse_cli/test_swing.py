@@ -27,6 +27,8 @@ from maestro.muse_cli.commands.swing import (
     LIGHT_MAX,
     MEDIUM_MAX,
     STRAIGHT_MAX,
+    SwingCompareResult,
+    SwingDetectResult,
     _format_compare,
     _format_detect,
     _format_history,
@@ -141,7 +143,7 @@ async def test_swing_detect_factor_in_valid_range(
         commit=None,
         track=None,
     )
-    factor = float(result["factor"])  # type: ignore[arg-type]
+    factor = result["factor"]
     assert FACTOR_MIN <= factor <= FACTOR_MAX
 
 
@@ -158,7 +160,7 @@ async def test_swing_detect_label_matches_factor(
         commit=None,
         track=None,
     )
-    factor = float(result["factor"])  # type: ignore[arg-type]
+    factor = result["factor"]
     assert result["label"] == swing_label(factor)
 
 
@@ -290,32 +292,34 @@ async def test_swing_compare_delta_is_numeric(
 # ---------------------------------------------------------------------------
 
 
+def _make_detect_result(
+    factor: float = 0.55,
+    label: str = "Light",
+    commit: str = "abc1234",
+    branch: str = "main",
+    track: str = "all",
+    source: str = "stub",
+) -> SwingDetectResult:
+    return SwingDetectResult(
+        factor=factor,
+        label=label,
+        commit=commit,
+        branch=branch,
+        track=track,
+        source=source,
+    )
+
+
 def test_format_detect_text_contains_factor_and_label() -> None:
     """Text format for detect includes factor and label strings."""
-    result: dict[str, object] = {
-        "factor": 0.55,
-        "label": "Light",
-        "commit": "abc1234",
-        "branch": "main",
-        "track": "all",
-        "source": "stub",
-    }
-    output = _format_detect(result, as_json=False)
+    output = _format_detect(_make_detect_result(), as_json=False)
     assert "0.55" in output
     assert "Light" in output
 
 
 def test_format_detect_json_is_valid() -> None:
     """JSON format for detect parses cleanly."""
-    result: dict[str, object] = {
-        "factor": 0.55,
-        "label": "Light",
-        "commit": "abc1234",
-        "branch": "main",
-        "track": "all",
-        "source": "stub",
-    }
-    output = _format_detect(result, as_json=True)
+    output = _format_detect(_make_detect_result(), as_json=True)
     parsed = json.loads(output)
     assert parsed["factor"] == 0.55
     assert parsed["label"] == "Light"
@@ -323,9 +327,7 @@ def test_format_detect_json_is_valid() -> None:
 
 def test_format_history_text_contains_commit_and_label() -> None:
     """Text format for history includes commit SHA and label."""
-    entries: list[dict[str, object]] = [
-        {"factor": 0.55, "label": "Light", "commit": "deadbeef", "track": "all"}
-    ]
+    entries = [_make_detect_result(commit="deadbeef")]
     output = _format_history(entries, as_json=False)
     assert "deadbeef" in output
     assert "Light" in output
@@ -339,9 +341,7 @@ def test_format_history_empty_list_shows_placeholder() -> None:
 
 def test_format_history_json_is_valid() -> None:
     """JSON format for history parses cleanly."""
-    entries: list[dict[str, object]] = [
-        {"factor": 0.55, "label": "Light", "commit": "deadbeef", "track": "all"}
-    ]
+    entries = [_make_detect_result(commit="deadbeef")]
     output = _format_history(entries, as_json=True)
     parsed = json.loads(output)
     assert isinstance(parsed, list)
@@ -350,22 +350,22 @@ def test_format_history_json_is_valid() -> None:
 
 def test_format_compare_text_shows_delta_sign() -> None:
     """Positive delta is prefixed with '+' in text mode."""
-    result: dict[str, object] = {
-        "head": {"factor": 0.57, "label": "Light"},
-        "compare": {"factor": 0.55, "label": "Light"},
-        "delta": 0.02,
-    }
+    result = SwingCompareResult(
+        head=_make_detect_result(factor=0.57),
+        compare=_make_detect_result(factor=0.55),
+        delta=0.02,
+    )
     output = _format_compare(result, as_json=False)
     assert "+0.02" in output
 
 
 def test_format_compare_negative_delta_no_plus_sign() -> None:
     """Negative delta has no '+' prefix."""
-    result: dict[str, object] = {
-        "head": {"factor": 0.55, "label": "Light"},
-        "compare": {"factor": 0.57, "label": "Light"},
-        "delta": -0.02,
-    }
+    result = SwingCompareResult(
+        head=_make_detect_result(factor=0.55),
+        compare=_make_detect_result(factor=0.57),
+        delta=-0.02,
+    )
     output = _format_compare(result, as_json=False)
     assert "-0.02" in output
     assert "+-0.02" not in output
@@ -373,11 +373,11 @@ def test_format_compare_negative_delta_no_plus_sign() -> None:
 
 def test_format_compare_json_is_valid() -> None:
     """JSON format for compare parses cleanly."""
-    result: dict[str, object] = {
-        "head": {"factor": 0.57, "label": "Light"},
-        "compare": {"factor": 0.55, "label": "Light"},
-        "delta": 0.02,
-    }
+    result = SwingCompareResult(
+        head=_make_detect_result(factor=0.57),
+        compare=_make_detect_result(factor=0.55),
+        delta=0.02,
+    )
     output = _format_compare(result, as_json=True)
     parsed = json.loads(output)
     assert "delta" in parsed

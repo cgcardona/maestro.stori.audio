@@ -2,7 +2,7 @@
 
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (init, status, commit, log, checkout, merge, remote,
-push, pull, open, play) as Typer sub-applications.
+push, pull, open, play, swing) as Typer sub-applications.
 """
 from __future__ import annotations
 

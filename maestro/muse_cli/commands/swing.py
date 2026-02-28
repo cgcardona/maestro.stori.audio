@@ -47,11 +47,11 @@ import asyncio
 import json
 import logging
 import pathlib
-from typing import Optional, cast
+from typing import Optional
 
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing_extensions import Annotated
+from typing_extensions import Annotated, TypedDict
 
 from maestro.muse_cli._repo import require_repo
 from maestro.muse_cli.db import open_session
@@ -71,6 +71,30 @@ MEDIUM_MAX = 0.63
 
 FACTOR_MIN = 0.5
 FACTOR_MAX = 0.67
+
+
+# ---------------------------------------------------------------------------
+# Named result types (stable CLI contract)
+# ---------------------------------------------------------------------------
+
+
+class SwingDetectResult(TypedDict):
+    """Swing detection result for a single commit or working tree."""
+
+    factor: float
+    label: str
+    commit: str
+    branch: str
+    track: str
+    source: str
+
+
+class SwingCompareResult(TypedDict):
+    """Swing comparison between HEAD and a reference commit."""
+
+    head: SwingDetectResult
+    compare: SwingDetectResult
+    delta: float
 
 
 def swing_label(factor: float) -> str:
@@ -106,7 +130,7 @@ async def _swing_detect_async(
     session: AsyncSession,
     commit: Optional[str],
     track: Optional[str],
-) -> dict[str, object]:
+) -> SwingDetectResult:
     """Detect the swing factor for a commit (or the working tree).
 
     This is a stub that returns a realistic placeholder result in the
@@ -120,8 +144,8 @@ async def _swing_detect_async(
         track:   Restrict analysis to a named MIDI track, or ``None`` for all.
 
     Returns:
-        A dict with keys ``factor``, ``label``, ``commit``, ``track``, and
-        ``source`` that callers can format however they need.
+        A :class:`SwingDetectResult` with ``factor``, ``label``, ``commit``,
+        ``branch``, ``track``, and ``source``.
     """
     muse_dir = root / ".muse"
     head_path = muse_dir / "HEAD"
@@ -134,14 +158,14 @@ async def _swing_detect_async(
 
     # Stub: placeholder factor — full analysis pending Storpheus route.
     stub_factor = 0.55
-    return {
-        "factor": stub_factor,
-        "label": swing_label(stub_factor),
-        "commit": resolved_commit,
-        "branch": branch,
-        "track": track or "all",
-        "source": "stub",
-    }
+    return SwingDetectResult(
+        factor=stub_factor,
+        label=swing_label(stub_factor),
+        commit=resolved_commit,
+        branch=branch,
+        track=track or "all",
+        source="stub",
+    )
 
 
 async def _swing_history_async(
@@ -149,7 +173,7 @@ async def _swing_history_async(
     root: pathlib.Path,
     session: AsyncSession,
     track: Optional[str],
-) -> list[dict[str, object]]:
+) -> list[SwingDetectResult]:
     """Return the swing history for the current branch.
 
     Stub implementation returning a single placeholder entry.  Full
@@ -162,7 +186,7 @@ async def _swing_history_async(
         track:   Restrict to a named MIDI track, or ``None`` for all.
 
     Returns:
-        List of per-commit swing result dicts, newest first.
+        List of :class:`SwingDetectResult` entries, newest first.
     """
     entry = await _swing_detect_async(
         root=root, session=session, commit=None, track=track
@@ -176,7 +200,7 @@ async def _swing_compare_async(
     session: AsyncSession,
     compare_commit: str,
     track: Optional[str],
-) -> dict[str, object]:
+) -> SwingCompareResult:
     """Compare swing between HEAD and *compare_commit*.
 
     Stub implementation.  Full implementation will load the swing
@@ -190,7 +214,7 @@ async def _swing_compare_async(
         track:          Restrict to a named MIDI track, or ``None``.
 
     Returns:
-        Dict with ``head``, ``compare``, and ``delta`` sub-dicts.
+        A :class:`SwingCompareResult` with ``head``, ``compare``, and ``delta``.
     """
     head_result = await _swing_detect_async(
         root=root, session=session, commit=None, track=track
@@ -198,12 +222,12 @@ async def _swing_compare_async(
     compare_result = await _swing_detect_async(
         root=root, session=session, commit=compare_commit, track=track
     )
-    delta = cast(float, head_result["factor"]) - cast(float, compare_result["factor"])
-    return {
-        "head": head_result,
-        "compare": compare_result,
-        "delta": round(delta, 4),
-    }
+    delta = head_result["factor"] - compare_result["factor"]
+    return SwingCompareResult(
+        head=head_result,
+        compare=compare_result,
+        delta=round(delta, 4),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -211,10 +235,10 @@ async def _swing_compare_async(
 # ---------------------------------------------------------------------------
 
 
-def _format_detect(result: dict[str, object], *, as_json: bool) -> str:
+def _format_detect(result: SwingDetectResult, *, as_json: bool) -> str:
     """Render a detect result as human-readable text or JSON."""
     if as_json:
-        return json.dumps(result, indent=2)
+        return json.dumps(dict(result), indent=2)
     lines = [
         f"Swing factor: {result['factor']} ({result['label']})",
         f"Commit: {result['commit']}  Branch: {result['branch']}",
@@ -226,11 +250,11 @@ def _format_detect(result: dict[str, object], *, as_json: bool) -> str:
 
 
 def _format_history(
-    entries: list[dict[str, object]], *, as_json: bool
+    entries: list[SwingDetectResult], *, as_json: bool
 ) -> str:
     """Render a history list as human-readable text or JSON."""
     if as_json:
-        return json.dumps(entries, indent=2)
+        return json.dumps([dict(e) for e in entries], indent=2)
     lines: list[str] = []
     for entry in entries:
         lines.append(
@@ -240,13 +264,13 @@ def _format_history(
     return "\n".join(lines) if lines else "(no swing history found)"
 
 
-def _format_compare(result: dict[str, object], *, as_json: bool) -> str:
+def _format_compare(result: SwingCompareResult, *, as_json: bool) -> str:
     """Render a compare result as human-readable text or JSON."""
     if as_json:
-        return json.dumps(result, indent=2)
-    head = cast(dict[str, object], result["head"])
-    compare = cast(dict[str, object], result["compare"])
-    delta = cast(float, result["delta"])
+        return json.dumps(dict(result), indent=2)
+    head = result["head"]
+    compare = result["compare"]
+    delta = result["delta"]
     sign = "+" if delta >= 0 else ""
     return (
         f"HEAD    {head['factor']} ({head['label']})\n"
@@ -334,14 +358,16 @@ def swing(
         async with open_session() as session:
             if set_factor is not None:
                 label = swing_label(set_factor)
-                result: dict[str, object] = {
-                    "factor": set_factor,
-                    "label": label,
-                    "track": track or "all",
-                    "source": "annotation",
-                }
+                annotation: SwingDetectResult = SwingDetectResult(
+                    factor=set_factor,
+                    label=label,
+                    commit="",
+                    branch="",
+                    track=track or "all",
+                    source="annotation",
+                )
                 if as_json:
-                    typer.echo(json.dumps(result, indent=2))
+                    typer.echo(json.dumps(dict(annotation), indent=2))
                 else:
                     typer.echo(
                         f"✅ Swing annotated: {set_factor} ({label})"
