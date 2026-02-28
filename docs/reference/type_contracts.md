@@ -6131,6 +6131,25 @@ Defined in `maestro/models/musehub.py`.
 
 Full contributor roll for a Muse Hub repo.  Returned by `GET /api/v1/musehub/repos/{repo_id}/credits`.
 
+---
+
+### `RepoStatsResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Aggregated counts for the repo home page stats bar.  Returned by `GET /api/v1/musehub/repos/{repo_id}/stats` and embedded in the JSON content-negotiation response from `GET /musehub/ui/{owner}/{slug}` with `Accept: application/json`.  All counts are non-negative integers; they are `0` when the repo has no data yet.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_count` | `int` | Total number of commits across all branches |
+| `branch_count` | `int` | Number of branches (including default) |
+| `release_count` | `int` | Number of published releases / tags |
+
+**Producer:** `repos.get_repo_stats` route handler → `musehub_repository.list_commits`, `musehub_repository.list_branches`, `musehub_releases.list_releases`
+**Consumer:** Repo home page stats bar JS (`loadStats()`); AI agents querying repository activity overview
+
+---
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `repo_id` | `str` | Target repo ID |
