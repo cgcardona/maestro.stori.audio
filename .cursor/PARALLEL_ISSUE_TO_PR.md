@@ -250,6 +250,9 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
     - No naked collections at boundaries: dict[str, Any], list[dict], bare tuples = code smell.
       Wrap in a named entity. Convention: <Domain><Concept>Result (DynamicsResult, SwingAnalysis).
     - No # type: ignore without an inline comment citing the specific 3rd-party issue.
+    - No non-ASCII characters inside b"..." bytes literals — mypy rejects them with
+      "Bytes can only contain ASCII literal characters". Use only plain ASCII in byte
+      strings; encode Unicode values explicitly (e.g. "MIDI v2 \u2014 newer".encode()).
     - Two failed fix attempts = stop and redesign — never loop with incremental tweaks.
     - Every public function signature is a contract. Register new result types in docs/reference/type_contracts.md.
 

@@ -1351,6 +1351,74 @@ muse commit --from-batch muse-batch.json
 
 ---
 
+## Muse CLI — Plumbing Command Reference
+
+Plumbing commands expose the raw object model and allow scripted or programmatic
+construction of history without the side-effects of porcelain commands.  They
+mirror the design of `git commit-tree`, `git update-ref`, and `git hash-object`.
+
+AI agents use plumbing commands when they need to build commit graphs
+programmatically — for example when replaying a merge, synthesising history from
+an external source, or constructing commits without changing the working branch.
+
+---
+
+### `muse commit-tree`
+
+**Purpose:** Create a raw commit object directly from an existing `snapshot_id`
+and explicit metadata.  Does not walk the filesystem, does not update any branch
+ref, does not touch `.muse/HEAD`.  Use `muse update-ref` (planned) to associate
+the resulting commit with a branch.
+
+**Usage:**
+```bash
+muse commit-tree <snapshot_id> -m <message> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `snapshot_id` | positional | — | ID of an existing snapshot row in the database |
+| `-m / --message TEXT` | string | required | Commit message |
+| `-p / --parent TEXT` | string | — | Parent commit ID. Repeat for merge commits (max 2) |
+| `--author TEXT` | string | `[user] name` from `.muse/config.toml` or `""` | Author name |
+
+**Output example:**
+```
+a3f8c21d4e9b0712c5d6f7a8e3b2c1d0a4f5e6b7c8d9e0f1a2b3c4d5e6f7a8b9
+```
+
+The commit ID (64-char SHA-256 hex) is printed to stdout.  Pipe it to
+`muse update-ref` to advance a branch ref.
+
+**Result type:** `CommitTreeResult` — fields: `commit_id` (str, 64-char hex).
+
+**Idempotency contract:** The commit ID is derived deterministically from
+`(parent_ids, snapshot_id, message, author)` with **no timestamp** component.
+Repeating the same call returns the same `commit_id` without inserting a
+duplicate row.  This makes `muse commit-tree` safe to call in retry loops and
+idempotent scripts.
+
+**Agent use case:** An AI music generation agent that needs to construct a merge
+commit (e.g. combining the groove from branch A with the lead from branch B)
+without moving either branch pointer:
+
+```bash
+SNAP=$(muse write-tree)                            # planned plumbing command
+COMMIT=$(muse commit-tree "$SNAP" -m "Merge groove+lead" -p "$A_HEAD" -p "$B_HEAD")
+muse update-ref refs/heads/merge-candidate "$COMMIT"  # planned
+```
+
+**Error cases:**
+- `snapshot_id` not found → exits 1 with a clear message
+- More than 2 `-p` parents → exits 1 (DB model stores at most 2)
+- Not inside a Muse repo → exits 2
+
+**Implementation:** `maestro/muse_cli/commands/commit_tree.py`
+
+---
+
 ## Muse CLI — Music Analysis Command Reference
 
 These commands expose musical dimensions across the commit graph — the layer that
@@ -2772,9 +2840,6 @@ branch for chord voicings while preserving the guitar branch's groove patterns.
 
 ---
 
-
----
-
 ## `muse diff` — Music-Dimension Diff Between Commits
 
 **Purpose:** Compare two commits across five orthogonal musical dimensions —
@@ -2879,6 +2944,117 @@ Exit codes: 0 success, 2 outside repo (`REPO_NOT_FOUND`), 3 internal error.
 
 ---
 
+## `muse inspect` — Print Structured JSON of the Muse Commit Graph
+
+**Purpose:** Serialize the full commit graph reachable from a starting reference
+into machine-readable output.  This is the primary introspection tool for AI
+agents and tooling that need to programmatically traverse or audit commit history,
+branch state, and compositional metadata without parsing human-readable output.
+
+**Implementation:** `maestro/muse_cli/commands/inspect.py`\
+**Service:** `maestro/services/muse_inspect.py`\
+**Status:** ✅ implemented (issue #98)
+
+### Usage
+
+```bash
+muse inspect                          # JSON of HEAD branch history
+muse inspect abc1234                  # start from a specific commit
+muse inspect --depth 5                # limit to 5 commits
+muse inspect --branches               # include all branch heads
+muse inspect --format dot             # Graphviz DOT graph
+muse inspect --format mermaid         # Mermaid.js graph definition
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `[<ref>]` | positional | HEAD | Starting commit ID or branch name |
+| `--depth N` | int | unlimited | Limit graph traversal to N commits per branch |
+| `--branches` | flag | off | Include all branch heads and their reachable commits |
+| `--tags` | flag | off | Include tag refs in the output |
+| `--format` | enum | `json` | Output format: `json`, `dot`, `mermaid` |
+
+### Output example (JSON)
+
+```json
+{
+  "repo_id": "550e8400-e29b-41d4-a716-446655440000",
+  "current_branch": "main",
+  "branches": {
+    "main": "a1b2c3d4e5f6...",
+    "feature/guitar": "f9e8d7c6b5a4..."
+  },
+  "commits": [
+    {
+      "commit_id": "a1b2c3d4e5f6...",
+      "short_id": "a1b2c3d4",
+      "branch": "main",
+      "parent_commit_id": "f9e8d7c6b5a4...",
+      "parent2_commit_id": null,
+      "message": "boom bap demo take 2",
+      "author": "",
+      "committed_at": "2026-02-27T17:30:00+00:00",
+      "snapshot_id": "deadbeef...",
+      "metadata": {"tempo_bpm": 95.0},
+      "tags": ["emotion:melancholic", "stage:rough-mix"]
+    }
+  ]
+}
+```
+
+### Result types
+
+`MuseInspectCommit` (frozen dataclass) — one commit node in the graph.\
+`MuseInspectResult` (frozen dataclass) — full serialized graph with branch pointers.\
+`InspectFormat` (str Enum) — `json`, `dot`, `mermaid`.\
+See `docs/reference/type_contracts.md § Muse Inspect Types`.
+
+### Format: DOT
+
+Graphviz DOT directed graph.  Pipe to `dot -Tsvg` to render a visual DAG:
+
+```bash
+muse inspect --format dot | dot -Tsvg -o graph.svg
+```
+
+Each commit becomes an ellipse node labelled `<short_id>\n<message[:40]>`.
+Parent edges point child → parent (matching git convention).  Branch refs
+appear as bold rectangle nodes pointing to their HEAD commit.
+
+### Format: Mermaid
+
+Mermaid.js `graph LR` definition.  Embed in GitHub markdown:
+
+```
+muse inspect --format mermaid
+```
+
+```mermaid
+graph LR
+  a1b2c3d4["a1b2c3d4: boom bap demo take 2"]
+  f9e8d7c6["f9e8d7c6: boom bap demo take 1"]
+  a1b2c3d4 --> f9e8d7c6
+  main["main"]
+  main --> a1b2c3d4
+```
+
+### Agent use case
+
+An AI composition agent calls `muse inspect --format json` before generating
+new music to understand the full lineage of the project:
+
+1. **Branch discovery** — which creative threads exist (`branches` dict).
+2. **Graph traversal** — which commits are ancestors, which are on feature branches.
+3. **Metadata audit** — which commits have explicit tempo, meter, or emotion tags.
+4. **Divergence awareness** — combined with `muse divergence`, informs merge decisions.
+
+The JSON output is deterministic for a fixed graph state, making it safe to cache
+between agent invocations and diff to detect graph changes.
+
+---
+
 ## `muse tempo-scale` — Stretch or Compress the Timing of a Commit
 
 **Purpose:** Apply a deterministic time-scaling transformation to a commit,
@@ -2977,7 +3153,9 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 | `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
 | `muse export` | `commands/export.py` | ✅ implemented (PR #137) | #112 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
+| `muse groove-check` | `commands/groove_check.py` | ✅ stub (PR #143) | #95 |
 | `muse import` | `commands/import_cmd.py` | ✅ implemented (PR #142) | #118 |
+| `muse inspect` | `commands/inspect.py` | ✅ implemented (PR #TBD) | #98 |
 | `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
@@ -2987,6 +3165,83 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
+
+## `muse groove-check` — Rhythmic Drift Analysis
+
+**Purpose:** Detect which commit in a range introduced rhythmic inconsistency
+by measuring how much the average note-onset deviation from the quantization grid
+changed between adjacent commits.  The music-native equivalent of a style/lint gate.
+
+**Implementation:** `maestro/muse_cli/commands/groove_check.py` (CLI),
+`maestro/services/muse_groove_check.py` (pure service layer).
+**Status:** ✅ stub (issue #95)
+
+### Usage
+
+```bash
+muse groove-check [RANGE] [OPTIONS]
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `RANGE` | positional | last 10 commits | Commit range to analyze (e.g. `HEAD~5..HEAD`) |
+| `--track TEXT` | string | all | Scope analysis to a specific instrument track (e.g. `drums`) |
+| `--section TEXT` | string | all | Scope analysis to a specific musical section (e.g. `verse`) |
+| `--threshold FLOAT` | float | 0.1 | Drift threshold in beats; commits exceeding it are flagged WARN; >2× = FAIL |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+### Output example
+
+```
+Groove-check — range HEAD~6..HEAD  threshold 0.1 beats
+
+Commit    Groove Score  Drift Δ  Status
+--------  ------------  -------  ------
+a1b2c3d4        0.0400   0.0000  OK
+e5f6a7b8        0.0500   0.0100  OK
+c9d0e1f2        0.0600   0.0100  OK
+a3b4c5d6        0.0900   0.0300  OK
+e7f8a9b0        0.1500   0.0600  WARN
+c1d2e3f4        0.1300   0.0200  OK
+
+Flagged: 1 / 6 commits  (worst: e7f8a9b0)
+```
+
+### Result types
+
+`GrooveStatus` (Enum: OK/WARN/FAIL), `CommitGrooveMetrics` (frozen dataclass),
+`GrooveCheckResult` (frozen dataclass).
+See `docs/reference/type_contracts.md § GrooveCheckResult`.
+
+### Status classification
+
+| Status | Condition |
+|--------|-----------|
+| OK | `drift_delta ≤ threshold` |
+| WARN | `threshold < drift_delta ≤ 2 × threshold` |
+| FAIL | `drift_delta > 2 × threshold` |
+
+### Agent use case
+
+An AI agent runs `muse groove-check HEAD~20..HEAD --json` after a session to
+identify which commit degraded rhythmic tightness.  The `worst_commit` field
+pinpoints the exact SHA to inspect.  Feeding that into `muse describe` gives
+a natural-language explanation of what changed.  If `--threshold 0.05` returns
+multiple FAIL commits, the session's quantization workflow needs review before
+new layers are added.
+
+### Implementation stub note
+
+`groove_score` and `drift_delta` are computed from deterministic placeholder data.
+Full implementation will walk the `MuseCliCommit` chain, load MIDI snapshots via
+`MidiParser`, compute per-note onset deviation from the nearest quantization grid
+position (resolved from the commit's time-signature + tempo metadata), and
+aggregate by track / section.  Storpheus will expose a `/groove` route once
+the rhythmic-analysis pipeline is productionized.
+
+---
 
 ## `muse contour` — Melodic Contour and Phrase Shape Analysis
 
@@ -3090,4 +3345,3 @@ the computed values will change when the full implementation is wired in.
 `_format_history()`.  Exit codes: 0 success, 2 outside repo
 (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
 
----

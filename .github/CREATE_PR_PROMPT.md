@@ -129,6 +129,7 @@ machine-readable. Naked collections and `Any` break that contract silently.
 - **No `object` as a type annotation.** Be specific about what the value actually is.
 - **No naked collections at boundaries.** `dict[str, Any]`, `list[dict]`, bare `list` crossing module boundaries are code smells. Wrap in a named entity: dataclass, Pydantic model, or TypedDict. Naming: `<Domain><Concept>Result` (e.g. `DynamicsResult`, `SwingAnalysis`, `RecallMatch`).
 - **No `# type: ignore` without an inline comment** naming the specific 3rd-party issue.
+- **No non-ASCII characters in `b"..."` bytes literals.** mypy raises `Bytes can only contain ASCII literal characters [syntax]`. Use only plain ASCII inside byte strings; encode Unicode explicitly (e.g. `"MIDI v2 \u2014 newer".encode()` instead of `b"MIDI v2 — newer"`).
 - **Fix callee, not caller.** Two failed fix attempts = stop and redesign.
 - **Every public function signature is a contract.** If it returns structured data, define a named entity. Future agents and the type checker both depend on this.
 
