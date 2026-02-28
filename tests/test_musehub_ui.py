@@ -240,6 +240,104 @@ async def test_ui_pr_list_page_returns_200(
 
 
 @pytest.mark.anyio
+async def test_ui_pr_list_has_state_tabs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page includes Open, Merged, Closed, and All tab buttons with counts."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    # All four tab IDs must be present
+    assert "tab-open" in body
+    assert "tab-merged" in body
+    assert "tab-closed" in body
+    assert "tab-all" in body
+    # Tab count placeholder class must be present
+    assert "tab-count" in body
+    # Tab labels must be present
+    assert "Open" in body
+    assert "Merged" in body
+    assert "Closed" in body
+    assert "All" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_body_preview_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page HTML includes bodyPreview JS function for subtitle truncation."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    assert "bodyPreview" in body
+    assert "issue-preview" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_branch_pills(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page HTML includes branch-pill CSS class for from/to branch indicators."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    assert "branch-pill" in body
+    assert "fromBranch" in body
+    assert "toBranch" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_sort_controls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page HTML includes Newest and Oldest sort buttons."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    assert "Newest" in body
+    assert "Oldest" in body
+    assert "changeSort" in body
+    assert "sort-btn" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_merged_badge_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page JS renders a Merged badge with merge commit short-SHA link for merged PRs."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    # JS logic for merged state and merge commit rendering
+    assert "badge-merged" in body
+    assert "mergeCommitId" in body
+    assert "slice(0, 8)" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_closed_badge_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page JS renders a Closed badge for closed PRs."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    assert "badge-closed" in body
+
+
+@pytest.mark.anyio
 async def test_ui_issue_list_page_returns_200(
     client: AsyncClient,
     db_session: AsyncSession,
