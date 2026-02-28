@@ -310,9 +310,42 @@ STEP 4 — PRE-PUSH SYNC (critical — always run before pushing):
   │          >>>>>>> origin/dev                                               │
   │        Resolution: keep both lines, remove markers.                      │
   │                                                                           │
-  │    • docs/architecture/muse_vcs.md                                        │
-  │        Each agent appends a new command section. Both sections belong.   │
-  │        Rule: keep BOTH sections, place them in alphabetical command order.│
+  │    • docs/architecture/muse_vcs.md  (most common conflict in Muse PRs)  │
+  │        Diagnosis: run                                                     │
+  │          grep -n "<<<<<<\|=======\|>>>>>>>" docs/architecture/muse_vcs.md│
+  │        and inspect the <<<< / ==== / >>>> blocks.                        │
+  │                                                                           │
+  │        THREE patterns — all mechanically resolvable:                     │
+  │                                                                           │
+  │        A) Both sides add a NEW section (two non-empty blocks):           │
+  │             <<<<<<< HEAD                                                  │
+  │             ## muse foo — description                                    │
+  │             ...content...                                                 │
+  │             =======                                                       │
+  │             ## muse bar — description                                    │
+  │             ...content...                                                 │
+  │             >>>>>>> origin/dev                                            │
+  │           Resolution: keep BOTH sections, sort alphabetically by         │
+  │           command name, remove markers.                                   │
+  │                                                                           │
+  │        B) One side is empty/placeholder, other has full content          │
+  │           (most common — one PR didn't touch this section at all):       │
+  │             <<<<<<< HEAD                                                  │
+  │             (empty, or just a blank line / stub heading)                 │
+  │             =======                                                       │
+  │             ## muse bar — description                                    │
+  │             ...full content...                                            │
+  │             >>>>>>> origin/dev                                            │
+  │           Resolution: keep the non-empty side entirely. Discard the      │
+  │           empty side. Remove markers. Do NOT try to merge empty + full.  │
+  │                                                                           │
+  │        C) Both sides edited the SAME section (true conflict):            │
+  │           Resolution: read both carefully. Keep the more complete /      │
+  │           accurate version. Escalate to JUDGMENT CONFLICTS if unclear.   │
+  │                                                                           │
+  │        After resolving ALL markers in this file:                         │
+  │          grep -n "<<<<<<\|=======\|>>>>>>>" docs/architecture/muse_vcs.md│
+  │        Must return empty before staging.                                 │
   │                                                                           │
   │    • docs/reference/type_contracts.md                                     │
   │        Each agent registers new named types. Both registrations belong.  │
