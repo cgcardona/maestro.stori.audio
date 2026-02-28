@@ -66,13 +66,45 @@ class PushObjectPayload(TypedDict):
     size_bytes: int
 
 
-class PushRequest(TypedDict):
-    """Payload sent to ``POST /musehub/repos/{repo_id}/push``."""
+class PushTagPayload(TypedDict):
+    """A VCS-style tag ref sent during a push with ``--tags``.
+
+    Represents a lightweight ref stored in ``.muse/refs/tags/<tag_name>``
+    that points to a commit ID.
+    """
+
+    tag_name: str
+    commit_id: str
+
+
+class _PushRequestRequired(TypedDict):
+    """Required fields for every push request."""
 
     branch: str
     head_commit_id: str
     commits: list[PushCommitPayload]
     objects: list[PushObjectPayload]
+
+
+class PushRequest(_PushRequestRequired, total=False):
+    """Payload sent to ``POST /musehub/repos/{repo_id}/push``.
+
+    Optional flags control override behaviour and extra data:
+
+    - ``force``: overwrite remote branch even on non-fast-forward.
+    - ``force_with_lease``: overwrite only if remote HEAD matches
+      ``expected_remote_head``; the Hub must reject if the remote has
+      advanced since we last fetched.
+    - ``expected_remote_head``: the commit ID we believe the remote HEAD to
+      be (required when ``force_with_lease`` is ``True``).
+    - ``tags``: VCS-style tag refs from ``.muse/refs/tags/`` to push alongside
+      the branch commits.
+    """
+
+    force: bool
+    force_with_lease: bool
+    expected_remote_head: str | None
+    tags: list[PushTagPayload]
 
 
 class PushResponse(TypedDict):
@@ -82,12 +114,28 @@ class PushResponse(TypedDict):
     message: str
 
 
-class PullRequest(TypedDict):
-    """Payload sent to ``POST /musehub/repos/{repo_id}/pull``."""
+class _PullRequestRequired(TypedDict):
+    """Required fields for every pull request."""
 
     branch: str
     have_commits: list[str]
     have_objects: list[str]
+
+
+class PullRequest(_PullRequestRequired, total=False):
+    """Payload sent to ``POST /musehub/repos/{repo_id}/pull``.
+
+    Optional flags are informational hints for the Hub (and drive local
+    post-fetch behaviour):
+
+    - ``rebase``: caller intends to rebase local commits onto the fetched
+      remote HEAD rather than merge.
+    - ``ff_only``: caller will refuse to integrate if the result would not be
+      a fast-forward; the Hub may use this to gate the response.
+    """
+
+    rebase: bool
+    ff_only: bool
 
 
 class PullCommitPayload(TypedDict):
@@ -323,6 +371,7 @@ __all__ = [
     "MuseHubClient",
     "PushCommitPayload",
     "PushObjectPayload",
+    "PushTagPayload",
     "PushRequest",
     "PushResponse",
     "PullRequest",

@@ -305,3 +305,74 @@ def set_remote_head(
     pointer.parent.mkdir(parents=True, exist_ok=True)
     pointer.write_text(commit_id, encoding="utf-8")
     logger.debug("✅ Remote head %s/%s → %s", remote_name, branch, commit_id[:8])
+
+
+# ---------------------------------------------------------------------------
+# Upstream tracking helpers
+# ---------------------------------------------------------------------------
+
+
+def set_upstream(
+    branch: str,
+    remote_name: str,
+    repo_root: pathlib.Path | None = None,
+) -> None:
+    """Record *remote_name* as the upstream remote for *branch*.
+
+    Writes ``branch = "<branch>"`` under ``[remotes.<remote_name>]`` in
+    ``.muse/config.toml``.  This mirrors the git ``--set-upstream`` behaviour:
+    the local branch knows which remote branch to track for future push/pull.
+
+    Args:
+        branch: Local (and remote) branch name (e.g. ``"main"``).
+        remote_name: Remote name (e.g. ``"origin"``).
+        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+    """
+    config_path = _config_path(repo_root)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = _load_config(config_path)
+
+    if "remotes" not in data or not isinstance(data["remotes"], dict):
+        data["remotes"] = {}
+    remotes: dict[str, object] = data["remotes"]  # type: ignore[assignment]
+    if remote_name not in remotes or not isinstance(remotes[remote_name], dict):
+        remotes[remote_name] = {}
+    remote_entry: dict[str, object] = remotes[remote_name]  # type: ignore[assignment]
+    remote_entry["branch"] = branch
+
+    config_path.write_text(_dump_toml(data), encoding="utf-8")
+    logger.info("✅ Upstream for branch %r set to %s/%r", branch, remote_name, branch)
+
+
+def get_upstream(
+    branch: str,
+    repo_root: pathlib.Path | None = None,
+) -> str | None:
+    """Return the configured upstream remote name for *branch*, or ``None``.
+
+    Reads ``branch`` under every ``[remotes.*]`` section and returns the first
+    remote whose ``branch`` value matches *branch*.
+
+    Args:
+        branch: Local branch name (e.g. ``"main"``).
+        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+
+    Returns:
+        Remote name string (e.g. ``"origin"``), or ``None`` when no upstream
+        is configured for *branch*.
+    """
+    config_path = _config_path(repo_root)
+    data = _load_config(config_path)
+    remotes_section = data.get("remotes", {})
+    if not isinstance(remotes_section, dict):
+        return None
+
+    for rname, remote_cfg in remotes_section.items():
+        if not isinstance(remote_cfg, dict):
+            continue
+        tracked_branch: object = remote_cfg.get("branch", "")
+        if isinstance(tracked_branch, str) and tracked_branch.strip() == branch:
+            return str(rname)
+
+    return None

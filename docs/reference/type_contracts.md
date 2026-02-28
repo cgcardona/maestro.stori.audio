@@ -30,6 +30,8 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [GrooveStatus](#groovestatuss)
    - [CommitGrooveMetrics](#commitgroovemetrics)
    - [GrooveCheckResult](#groovecheckresult)
+   - [ReleaseArtifact](#releaseartifact)
+   - [ReleaseResult](#releaseresult)
    - [RenderPreviewResult](#renderpreviewresult)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
@@ -1097,6 +1099,47 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+### `ReleaseArtifact`
+
+**Path:** `maestro/services/muse_release.py`
+
+`dataclass(frozen=True)` — A single file produced during a `muse release` operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `pathlib.Path` | Absolute path of the written file |
+| `sha256` | `str` | SHA-256 hex digest of the file contents (64 chars) |
+| `size_bytes` | `int` | File size in bytes |
+| `role` | `str` | Human-readable role: `"audio"`, `"midi-bundle"`, `"stem"`, `"manifest"` |
+
+---
+
+### `ReleaseResult`
+
+**Path:** `maestro/services/muse_release.py`
+
+`dataclass` — Result of a complete `muse release` operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tag` | `str` | The release tag string (e.g. `"v1.0"`) |
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID of the released snapshot |
+| `output_dir` | `pathlib.Path` | Root directory where all artifacts were written |
+| `manifest_path` | `pathlib.Path` | Path to the `release-manifest.json` file |
+| `artifacts` | `list[ReleaseArtifact]` | All files produced (audio, MIDI bundle, stems, manifest) |
+| `audio_format` | `ReleaseAudioFormat` | Audio format used for rendered files |
+| `stubbed` | `bool` | `True` when Storpheus `/render` is not yet deployed and MIDI was copied as placeholder |
+
+**Companion types:**
+
+- `ReleaseAudioFormat(str, Enum)` — `WAV = "wav"`, `MP3 = "mp3"`, `FLAC = "flac"`.
+- `StorpheusReleaseUnavailableError` — raised when Storpheus health check fails and audio rendering is requested.
+
+**Producer:** `build_release()` in `maestro/services/muse_release.py`
+**Consumer:** `muse release` CLI command (`maestro/muse_cli/commands/release.py`)
+
+---
+
 ### `RenderPreviewResult`
 
 **Path:** `maestro/services/muse_render_preview.py`
@@ -1115,6 +1158,27 @@ On failure: `success=False` plus `error` (and optionally `message`).
 **Companion enum:**
 
 `PreviewFormat(str, Enum)` — `WAV = "wav"`, `MP3 = "mp3"`, `FLAC = "flac"`.
+
+---
+
+### `TransposeResult`
+
+**Path:** `maestro/services/muse_transpose.py`
+
+`dataclass(frozen=True)` — Named result type for a `muse transpose <interval> [<commit>]` operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_commit_id` | `str` | Full 64-char SHA-256 commit that was the source of transposition |
+| `semitones` | `int` | Signed semitone offset applied (positive = up, negative = down) |
+| `files_modified` | `list[str]` | POSIX-relative paths of MIDI files that had notes transposed |
+| `files_skipped` | `list[str]` | POSIX-relative paths of non-MIDI or excluded files |
+| `new_commit_id` | `str \| None` | New commit ID created for the transposed snapshot; `None` in dry-run mode |
+| `original_key` | `str \| None` | Key metadata before transposition (from `metadata.key`), or `None` |
+| `new_key` | `str \| None` | Updated key metadata after transposition, or `None` if original was absent |
+| `dry_run` | `bool` | `True` when `--dry-run` was passed (no files written, no commit created) |
+
+**Agent use case:** After transposition, agents inspect `new_commit_id` to verify the commit exists, `new_key` to update their harmonic context, and `files_modified` to decide which tracks to re-render.
 
 ---
 
@@ -3116,6 +3180,25 @@ commit that scored at or above the `--threshold` keyword-overlap cutoff.
 
 ---
 
+### `HashObjectResult`
+
+**Module:** `maestro/muse_cli/commands/hash_object.py`
+
+Structured result from `muse hash-object`.  Records the computed SHA-256
+digest and whether the object was persisted, so callers (including tests)
+can assert storage behaviour without re-reading the DB.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | 64-character lowercase hex SHA-256 digest of the content |
+| `stored` | `bool` | `True` when `-w` was given and the object was persisted |
+| `already_existed` | `bool` | `True` when `-w` was given but the object already existed in the store (idempotent write) |
+
+**Producer:** `_hash_object_async()`
+**Consumer:** `hash_object()` Typer command callback
+
+---
+
 ### `CatObjectResult`
 
 **Module:** `maestro/muse_cli/commands/cat_object.py`
@@ -3138,6 +3221,49 @@ dict whose shape varies by `object_type`:
 
 **Producer:** `_lookup_object()` (internal) → `_cat_object_async()`
 **Consumer:** `_render_metadata()`, JSON output path in `_cat_object_async()`
+
+---
+
+### `RebaseCommitPair`
+
+**Module:** `maestro/services/muse_rebase.py`
+
+Maps an original commit to its replayed replacement produced during a `muse rebase` operation. Agents can use these pairs to update any cached commit references after a rebase (e.g., updating a bookmark or annotation that pointed at the old SHA).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `original_commit_id` | `str` | SHA of the commit that existed before the rebase. |
+| `new_commit_id` | `str` | SHA of the freshly-replayed commit with the new parent. |
+
+**Producer:** `_replay_one_commit()`, `_rebase_async()`
+**Consumer:** `RebaseResult.replayed`, tests in `tests/test_muse_rebase.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
+
+---
+
+### `RebaseResult`
+
+**Module:** `maestro/services/muse_rebase.py`
+
+Outcome of a `muse rebase` operation. Captures the full mapping from original to replayed commits so callers (agents, tests, and `--continue` resumption) can verify the rebase succeeded.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch` | `str` | The branch that was rebased. |
+| `upstream` | `str` | The upstream branch name or commit ref used as the new base. |
+| `upstream_commit_id` | `str` | Resolved commit ID of the upstream tip. |
+| `base_commit_id` | `str` | LCA (lowest common ancestor) commit where the two histories diverged. |
+| `replayed` | `tuple[RebaseCommitPair, ...]` | Ordered list of (original, new) commit ID pairs in replay order. |
+| `conflict_paths` | `tuple[str, ...]` | Conflicting paths (empty on clean completion). |
+| `aborted` | `bool` | `True` when `--abort` cleared the in-progress rebase. |
+| `noop` | `bool` | `True` when there were no commits to replay (already up-to-date). |
+| `autosquash_applied` | `bool` | `True` when `--autosquash` reordered `fixup!` commits. |
+
+**Producer:** `_rebase_async()`, `_rebase_continue_async()`, `_rebase_abort_async()`
+**Consumer:** `rebase()` Typer command callback, tests in `tests/test_muse_rebase.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
 
 ---
 
@@ -3164,6 +3290,50 @@ was (or was not) changed so callers can verify the revert succeeded.
 
 **Producer:** `_revert_async()`
 **Consumer:** `revert()` Typer command callback, tests in `tests/muse_cli/test_revert.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
+
+---
+
+### `CherryPickResult`
+
+**Module:** `maestro/services/muse_cherry_pick.py`
+
+Outcome of a `muse cherry-pick` operation. Captures whether the cherry-pick applied cleanly, produced a conflict, or was staged without committing, so callers can verify the result and decide on next steps.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | New commit ID created by the cherry-pick. Empty string when `--no-commit` or conflict. |
+| `cherry_commit_id` | `str` | Source commit that was cherry-picked. |
+| `head_commit_id` | `str` | HEAD commit at cherry-pick initiation time. |
+| `new_snapshot_id` | `str` | Snapshot ID of the resulting state (even when not committed). |
+| `message` | `str` | Commit message with attribution suffix: `"(cherry picked from commit <short-id>)"`. |
+| `no_commit` | `bool` | `True` when changes were staged to muse-work/ without creating a commit. |
+| `conflict` | `bool` | `True` when conflicts were detected and `.muse/CHERRY_PICK_STATE.json` was written. |
+| `conflict_paths` | `tuple[str, ...]` | Conflicting relative POSIX paths. Non-empty iff `conflict=True`. |
+| `branch` | `str` | Branch on which the new commit was (or would have been) created. |
+
+**Producer:** `_cherry_pick_async()`, `_cherry_pick_continue_async()`
+**Consumer:** `cherry_pick()` Typer command callback, tests in `tests/muse_cli/test_cherry_pick.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
+
+---
+
+### `CherryPickState`
+
+**Module:** `maestro/services/muse_cherry_pick.py`
+
+In-memory representation of `.muse/CHERRY_PICK_STATE.json`. Describes the paused cherry-pick so `--continue` and `--abort` can resume or cancel correctly.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cherry_commit` | `str` | Commit ID that was being cherry-picked when paused. |
+| `head_commit` | `str` | HEAD commit at cherry-pick initiation — restored by `--abort`. |
+| `conflict_paths` | `list[str]` | Paths with unresolved conflicts. Empty list = all resolved (safe to `--continue`). |
+
+**Producer:** `write_cherry_pick_state()`, `read_cherry_pick_state()`
+**Consumer:** `_cherry_pick_continue_async()`, `_cherry_pick_abort_async()`
 
 **Frozen dataclass** — all fields are immutable after construction.
 
@@ -5151,22 +5321,45 @@ A single configured remote — name and Hub URL pair as read from `.muse/config.
 
 ---
 
+### `PushTagPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+A VCS-style tag ref sent alongside branch commits when `muse push --tags` is used.
+Each file under `.muse/refs/tags/<tag_name>` is serialised as one payload entry.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tag_name` | `str` | Tag name (filename from `.muse/refs/tags/`) |
+| `commit_id` | `str` | Commit ID the tag points to |
+
+**Producer:** `_collect_tag_refs()` in `push.py`
+**Consumer:** Hub `/push` endpoint; included in `PushRequest["tags"]`
+
+---
+
 ### `PushRequest`
 
 **Module:** `maestro/muse_cli/hub_client.py`
 
 Payload sent to `POST <remote>/push`. Carries the local branch tip and all
-commits/objects the remote does not yet have.
+commits/objects the remote does not yet have. Optional fields drive force-push
+and tag-sync behaviour.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `branch` | `str` | Branch name being pushed |
-| `head_commit_id` | `str` | Local branch HEAD commit ID |
-| `commits` | `list[PushCommitPayload]` | Delta commits (chronological, oldest first) |
-| `objects` | `list[PushObjectPayload]` | Object descriptors for all known objects |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `branch` | `str` | ✓ | Branch name being pushed |
+| `head_commit_id` | `str` | ✓ | Local branch HEAD commit ID |
+| `commits` | `list[PushCommitPayload]` | ✓ | Delta commits (chronological, oldest first) |
+| `objects` | `list[PushObjectPayload]` | ✓ | Object descriptors for all known objects |
+| `force` | `bool` | optional | Overwrite remote branch on non-fast-forward |
+| `force_with_lease` | `bool` | optional | Overwrite remote only if `expected_remote_head` matches Hub's current HEAD |
+| `expected_remote_head` | `str \| None` | optional | Commit ID we believe the remote HEAD to be (used with `force_with_lease`) |
+| `tags` | `list[PushTagPayload]` | optional | VCS tag refs from `.muse/refs/tags/` |
 
 **Producer:** `_build_push_request()`
 **Consumer:** Hub `/push` endpoint via `MuseHubClient.post()`
+**Note:** Extends `_PushRequestRequired` + `total=False` optional fields.
 
 ---
 
@@ -5220,14 +5413,18 @@ Response from the Hub's `/push` endpoint.
 **Module:** `maestro/muse_cli/hub_client.py`
 
 Payload sent to `POST <remote>/pull`. Tells the Hub which commits and objects
-the client already has so the Hub can compute the minimal delta.
+the client already has so the Hub can compute the minimal delta. Optional flags
+hint at the client's intended post-fetch integration strategy.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `branch` | `str` | Branch to pull |
-| `have_commits` | `list[str]` | Commit IDs already in local DB |
-| `have_objects` | `list[str]` | Object IDs already in local DB |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `branch` | `str` | ✓ | Branch to pull |
+| `have_commits` | `list[str]` | ✓ | Commit IDs already in local DB |
+| `have_objects` | `list[str]` | ✓ | Object IDs already in local DB |
+| `rebase` | `bool` | optional | Client intends to rebase after fetching |
+| `ff_only` | `bool` | optional | Client will refuse to merge; only fast-forward |
 
+**Note:** Extends `_PullRequestRequired` + `total=False` optional fields.
 **Producer:** `_pull_async()`
 **Consumer:** Hub `/pull` endpoint via `MuseHubClient.post()`
 
@@ -5402,7 +5599,9 @@ Response from the Hub's `POST /fetch` endpoint.
 
 Full commit metadata plus snapshot manifest returned by `muse show`. Designed
 for direct JSON serialisation so AI agents can consume commit state without a
-second round-trip to the database.
+second round-trip to the database.  Music-domain fields (`section`, `track`,
+`emotion`) are surfaced at the top level — sourced from `commit_metadata` — so
+agents do not need to parse a nested blob.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -5410,11 +5609,14 @@ second round-trip to the database.
 | `branch` | `str` | Branch this commit belongs to |
 | `parent_commit_id` | `Optional[str]` | Full SHA of the primary parent, `None` for root commits |
 | `parent2_commit_id` | `Optional[str]` | Full SHA of the merge parent (set by `muse merge`), else `None` |
-| `message` | `str` | Commit message |
+| `message` | `str` | Commit message (may include Co-authored-by trailers) |
 | `author` | `str` | Author string (empty string when not set) |
 | `committed_at` | `str` | ISO-style timestamp `"YYYY-MM-DD HH:MM:SS"` (UTC) |
 | `snapshot_id` | `str` | SHA-256 of the snapshot manifest |
 | `snapshot_manifest` | `dict[str, str]` | `{relative_path: object_id}` for every file in the snapshot |
+| `section` | `Optional[str]` | Musical section tag (e.g. `"chorus"`), `None` if not set |
+| `track` | `Optional[str]` | Instrument track tag (e.g. `"drums"`), `None` if not set |
+| `emotion` | `Optional[str]` | Emotion vector label (e.g. `"melancholic"`), `None` if not set |
 
 **Producer:** `_show_async()`
 **Consumer:** `_render_show()`, `_render_midi()`, `_render_audio_preview()`, `--json` serialiser
@@ -5439,6 +5641,100 @@ For root commits (no parent) all snapshot paths appear in `added`.
 
 **Producer:** `_diff_vs_parent_async()`
 **Consumer:** `_render_diff()`
+
+---
+
+## Muse Stash Types (`maestro/services/muse_stash.py`)
+
+Result types for `muse stash` operations.  All are frozen dataclasses —
+immutable after construction and safe to return from async contexts.
+
+### `StashEntry`
+
+A single stash entry as read from `.muse/stash/<stash_id>.json`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stash_id` | `str` | Unique filesystem stem (e.g. `stash-20260227T120000Z-abc12345`) |
+| `index` | `int` | Position in the stack (0 = most recent) |
+| `branch` | `str` | Branch name at the time of push |
+| `message` | `str` | Human label (default: `"On <branch>: stash"`) |
+| `created_at` | `str` | ISO-8601 timestamp of when the stash was created |
+| `manifest` | `dict[str, str]` | `{rel_path: sha256_object_id}` of stashed files |
+| `track` | `str \| None` | Track scope used during push, or `None` (full push) |
+| `section` | `str \| None` | Section scope used during push, or `None` (full push) |
+
+**Producer:** `list_stash()`, internal `_read_entry()`
+**Consumer:** `stash_list`, `stash_drop`, `apply_stash`
+
+---
+
+### `StashPushResult`
+
+Outcome of `muse stash push`.  Frozen dataclass.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stash_ref` | `str` | Human label (`"stash@{0}"`); empty string when nothing was stashed |
+| `message` | `str` | Label stored in the entry |
+| `branch` | `str` | Branch at the time of push |
+| `files_stashed` | `int` | Number of files copied into the stash |
+| `head_restored` | `bool` | Whether HEAD snapshot was restored to muse-work/ |
+| `missing_head` | `tuple[str, ...]` | Paths that could not be restored from the object store after push |
+
+**Producer:** `push_stash()`
+**Consumer:** `stash_default`, `stash_push` Typer callbacks
+
+---
+
+### `StashApplyResult`
+
+Outcome of `muse stash apply` or `muse stash pop`.  Frozen dataclass.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stash_ref` | `str` | Human label of the entry that was applied (e.g. `"stash@{0}"`) |
+| `message` | `str` | The entry's label |
+| `files_applied` | `int` | Number of files written to muse-work/ |
+| `missing` | `tuple[str, ...]` | Paths whose object bytes were absent from the store |
+| `dropped` | `bool` | True when the entry was removed (pop); False for apply |
+
+**Producer:** `apply_stash()`
+**Consumer:** `stash_pop`, `stash_apply` Typer callbacks
+---
+
+### `RestoreResult`
+
+**Module:** `maestro/services/muse_restore.py`
+
+Outcome of a completed `muse restore` operation.  Frozen dataclass — immutable
+after construction.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_commit_id` | `str` | Full 64-char SHA of the commit files were extracted from |
+| `paths_restored` | `list[str]` | Relative paths (within `muse-work/`) that were written to disk |
+| `staged` | `bool` | Whether `--staged` mode was active |
+
+**Producer:** `perform_restore()`
+**Consumer:** `restore()` Typer callback (CLI display)
+
+---
+
+### `PathNotInSnapshotError`
+
+**Module:** `maestro/services/muse_restore.py`
+
+Raised when a requested path is absent from the source commit's snapshot.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `rel_path` | `str` | The path that was not found in the snapshot |
+| `source_commit_id` | `str` | The commit that was searched |
+
+**Producer:** `perform_restore()`
+**Consumer:** `restore()` Typer callback (exit code 1)
+
 
 ---
 
@@ -5549,3 +5845,41 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
+
+---
+
+## Muse CLI — Conflict Resolution Types (`maestro/muse_cli/merge_engine.py`)
+
+### `MergeState`
+
+Frozen dataclass representing an in-progress merge with unresolved conflicts.
+Returned by `read_merge_state(root)` when `.muse/MERGE_STATE.json` is present.
+`None` return indicates no merge is in progress.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `conflict_paths` | `list[str]` | Relative POSIX paths of files with unresolved conflicts |
+| `base_commit` | `str \| None` | Commit ID of the common ancestor (merge base) |
+| `ours_commit` | `str \| None` | Commit ID of HEAD when the merge was initiated |
+| `theirs_commit` | `str \| None` | Commit ID of the branch being merged in |
+| `other_branch` | `str \| None` | Human-readable name of the branch being merged in |
+
+**Lifecycle:** Created by `write_merge_state()` (called from `_merge_async` on conflict),
+updated by `resolve_conflict_async()` (removes resolved paths from `conflict_paths`),
+cleared by `clear_merge_state()` (called by `_merge_continue_async` and `_merge_abort_async`).
+
+**Agent contract:** When `conflict_paths` is non-empty, the merge is blocked.
+When `conflict_paths == []`, all conflicts are resolved and `muse merge --continue` will succeed.
+Call `is_conflict_resolved(state, path)` to test whether a specific path still needs resolution.
+
+```python
+state = read_merge_state(root)
+if state is not None and state.conflict_paths:
+    for path in state.conflict_paths:
+        # agent inspects each conflict before choosing --ours or --theirs
+        await resolve_conflict_async(file_path=path, ours=True, root=root, session=session)
+```
+
+**Related helpers:**
+- `apply_resolution(root, rel_path, object_id)` — copies an object from the local store to `muse-work/`; used by `--theirs` resolution and `--abort`.
+- `is_conflict_resolved(merge_state, rel_path)` — returns `True` if `rel_path` is not in `conflict_paths`.

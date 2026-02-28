@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from maestro.muse_cli.commands.commit import (
+    _append_co_author,
+    _apply_commit_music_metadata,
     _commit_async,
     build_snapshot_manifest_from_batch,
     load_muse_batch,
@@ -531,3 +533,376 @@ def test_build_snapshot_manifest_from_batch_skips_missing_files(
     manifest = build_snapshot_manifest_from_batch(batch_data, tmp_path)
     assert "tracks/jazz_4b.mid" in manifest
     assert "tracks/missing.mid" not in manifest
+
+
+# ---------------------------------------------------------------------------
+# --section / --track / --emotion music-domain metadata
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_commit_section_stored_in_metadata(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--section value is stored in commit_metadata['section']."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    commit_id = await _commit_async(
+        message="chorus bass take",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        section="chorus",
+    )
+
+    row = await muse_cli_db_session.get(MuseCliCommit, commit_id)
+    assert row is not None
+    assert row.commit_metadata is not None
+    assert row.commit_metadata.get("section") == "chorus"
+
+
+@pytest.mark.anyio
+async def test_commit_track_stored_in_metadata(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--track value is stored in commit_metadata['track']."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    commit_id = await _commit_async(
+        message="bass groove",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        track="bass",
+    )
+
+    row = await muse_cli_db_session.get(MuseCliCommit, commit_id)
+    assert row is not None
+    assert row.commit_metadata is not None
+    assert row.commit_metadata.get("track") == "bass"
+
+
+@pytest.mark.anyio
+async def test_commit_emotion_stored_in_metadata(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--emotion value is stored in commit_metadata['emotion']."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    commit_id = await _commit_async(
+        message="sad piano take",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        emotion="melancholic",
+    )
+
+    row = await muse_cli_db_session.get(MuseCliCommit, commit_id)
+    assert row is not None
+    assert row.commit_metadata is not None
+    assert row.commit_metadata.get("emotion") == "melancholic"
+
+
+@pytest.mark.anyio
+async def test_commit_all_music_metadata_flags_together(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--section + --track + --emotion all land in commit_metadata simultaneously."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    commit_id = await _commit_async(
+        message="full take",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        section="verse",
+        track="keys",
+        emotion="joyful",
+    )
+
+    row = await muse_cli_db_session.get(MuseCliCommit, commit_id)
+    assert row is not None
+    meta = row.commit_metadata
+    assert meta is not None
+    assert meta.get("section") == "verse"
+    assert meta.get("track") == "keys"
+    assert meta.get("emotion") == "joyful"
+
+
+@pytest.mark.anyio
+async def test_commit_no_music_flags_metadata_is_none(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """When no music flags are provided, commit_metadata is None (not an empty dict)."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    commit_id = await _commit_async(
+        message="plain commit",
+        root=tmp_path,
+        session=muse_cli_db_session,
+    )
+
+    row = await muse_cli_db_session.get(MuseCliCommit, commit_id)
+    assert row is not None
+    assert row.commit_metadata is None
+
+
+# ---------------------------------------------------------------------------
+# --co-author trailer
+# ---------------------------------------------------------------------------
+
+
+def test_append_co_author_adds_trailer() -> None:
+    """_append_co_author appends a Co-authored-by trailer separated by a blank line."""
+    result = _append_co_author("Initial commit", "Alice <alice@stori.app>")
+    assert result == "Initial commit\n\nCo-authored-by: Alice <alice@stori.app>"
+
+
+def test_append_co_author_empty_message() -> None:
+    """_append_co_author with an empty base message produces just the trailer."""
+    result = _append_co_author("", "Bob <bob@stori.app>")
+    assert result == "Co-authored-by: Bob <bob@stori.app>"
+
+
+@pytest.mark.anyio
+async def test_commit_co_author_appended_to_message(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--co-author appends a Co-authored-by trailer to the stored commit message."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    commit_id = await _commit_async(
+        message="collab jam session",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        co_author="Alice <alice@stori.app>",
+    )
+
+    row = await muse_cli_db_session.get(MuseCliCommit, commit_id)
+    assert row is not None
+    assert "Co-authored-by: Alice <alice@stori.app>" in row.message
+    assert row.message.startswith("collab jam session")
+
+
+# ---------------------------------------------------------------------------
+# --allow-empty
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_commit_allow_empty_bypasses_clean_tree_guard(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--allow-empty allows committing the same snapshot twice."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    await _commit_async(
+        message="first commit",
+        root=tmp_path,
+        session=muse_cli_db_session,
+    )
+
+    # Second commit with identical tree — would normally exit with "Nothing to commit"
+    commit_id2 = await _commit_async(
+        message="milestone marker",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        allow_empty=True,
+    )
+
+    row = await muse_cli_db_session.get(MuseCliCommit, commit_id2)
+    assert row is not None
+    assert row.message == "milestone marker"
+
+
+@pytest.mark.anyio
+async def test_commit_allow_empty_with_emotion_metadata(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--allow-empty + --emotion enables metadata-only milestone commits."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    await _commit_async(
+        message="initial session",
+        root=tmp_path,
+        session=muse_cli_db_session,
+    )
+
+    commit_id = await _commit_async(
+        message="emotional annotation",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        allow_empty=True,
+        emotion="tense",
+    )
+
+    row = await muse_cli_db_session.get(MuseCliCommit, commit_id)
+    assert row is not None
+    assert row.commit_metadata is not None
+    assert row.commit_metadata.get("emotion") == "tense"
+
+
+@pytest.mark.anyio
+async def test_commit_without_allow_empty_still_exits_on_clean_tree(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+) -> None:
+    """Without --allow-empty the nothing-to-commit guard still fires."""
+    import typer
+
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    await _commit_async(
+        message="initial", root=tmp_path, session=muse_cli_db_session
+    )
+
+    with pytest.raises(typer.Exit) as exc_info:
+        await _commit_async(
+            message="duplicate",
+            root=tmp_path,
+            session=muse_cli_db_session,
+            allow_empty=False,
+        )
+    assert exc_info.value.exit_code == ExitCode.SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# _apply_commit_music_metadata helper
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_apply_commit_music_metadata_updates_existing_commit(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """_apply_commit_music_metadata merges keys without overwriting unrelated ones."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    commit_id = await _commit_async(
+        message="base commit",
+        root=tmp_path,
+        session=muse_cli_db_session,
+    )
+
+    # Simulate tempo already set by muse tempo --set
+    row = await muse_cli_db_session.get(MuseCliCommit, commit_id)
+    assert row is not None
+    from sqlalchemy.orm.attributes import flag_modified
+
+    row.commit_metadata = {"tempo_bpm": 120.0}
+    flag_modified(row, "commit_metadata")
+    muse_cli_db_session.add(row)
+    await muse_cli_db_session.flush()
+
+    await _apply_commit_music_metadata(
+        session=muse_cli_db_session,
+        commit_id=commit_id,
+        section="bridge",
+        track=None,
+        emotion="melancholic",
+    )
+    await muse_cli_db_session.flush()
+
+    updated = await muse_cli_db_session.get(MuseCliCommit, commit_id)
+    assert updated is not None
+    meta = updated.commit_metadata
+    assert meta is not None
+    assert meta.get("tempo_bpm") == 120.0      # preserved
+    assert meta.get("section") == "bridge"     # added
+    assert meta.get("emotion") == "melancholic"  # added
+    assert "track" not in meta                 # not supplied → absent
+
+
+@pytest.mark.anyio
+async def test_apply_commit_music_metadata_noop_when_no_keys(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """_apply_commit_music_metadata is a no-op when all args are None."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    commit_id = await _commit_async(
+        message="plain commit",
+        root=tmp_path,
+        session=muse_cli_db_session,
+    )
+
+    await _apply_commit_music_metadata(
+        session=muse_cli_db_session,
+        commit_id=commit_id,
+        section=None,
+        track=None,
+        emotion=None,
+    )
+
+    row = await muse_cli_db_session.get(MuseCliCommit, commit_id)
+    assert row is not None
+    assert row.commit_metadata is None  # untouched
+
+
+# ---------------------------------------------------------------------------
+# muse show reflects music metadata
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_show_reflects_music_metadata(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """ShowCommitResult exposes section/track/emotion from commit_metadata."""
+    from maestro.muse_cli.commands.show import _show_async
+
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    await _commit_async(
+        message="rich take",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        section="chorus",
+        track="drums",
+        emotion="joyful",
+    )
+
+    result = await _show_async(
+        session=muse_cli_db_session,
+        muse_dir=tmp_path / ".muse",
+        ref="HEAD",
+    )
+
+    assert result["section"] == "chorus"
+    assert result["track"] == "drums"
+    assert result["emotion"] == "joyful"
+
+
+@pytest.mark.anyio
+async def test_show_music_metadata_absent_when_not_set(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """ShowCommitResult returns None for music fields when commit has no metadata."""
+    from maestro.muse_cli.commands.show import _show_async
+
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path)
+
+    await _commit_async(
+        message="plain commit",
+        root=tmp_path,
+        session=muse_cli_db_session,
+    )
+
+    result = await _show_async(
+        session=muse_cli_db_session,
+        muse_dir=tmp_path / ".muse",
+        ref="HEAD",
+    )
+
+    assert result["section"] is None
+    assert result["track"] is None
+    assert result["emotion"] is None

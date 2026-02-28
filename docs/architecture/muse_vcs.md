@@ -90,7 +90,7 @@ maestro/muse_cli/
 ├── repo.py              — Public re-export of _repo.py (canonical import surface, issue #46)
 └── commands/
     ├── __init__.py
-    ├── init.py           — muse init  ✅ fully implemented
+    ├── init.py           — muse init  ✅ fully implemented (--bare, --template, --default-branch added in issue #85)
     ├── status.py         — muse status  ✅ fully implemented (issue #44)
     ├── commit.py         — muse commit  ✅ fully implemented (issue #32)
     ├── log.py            — muse log    ✅ fully implemented (issue #33)
@@ -176,18 +176,34 @@ A commit can carry multiple tags. Adding the same tag twice is a no-op (idempote
 
 `muse merge <branch>` integrates another branch into the current branch.
 
+**Usage:**
+```bash
+muse merge <branch> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--no-ff` | flag | off | Force a merge commit even when fast-forward is possible. Preserves branch topology in the history graph. |
+| `--squash` | flag | off | Collapse all commits from `<branch>` into one new commit on the current branch. The result has a single parent and no `parent2_commit_id` — not a merge commit in the DAG. |
+| `--strategy TEXT` | string | none | Resolution shortcut: `ours` keeps all files from the current branch; `theirs` takes all files from the target branch. Both skip conflict detection. |
+| `--continue` | flag | off | Finalize a paused merge after resolving all conflicts with `muse resolve`. |
+
 ### Algorithm
 
 1. **Guard** — If `.muse/MERGE_STATE.json` exists, a merge is already in progress. Exit 1 with: *"Merge in progress. Resolve conflicts and run `muse merge --continue`."*
 2. **Resolve commits** — Read HEAD commit ID for the current branch and the target branch from their `.muse/refs/heads/<branch>` ref files.
 3. **Find merge base** — BFS over the commit graph to find the LCA (Lowest Common Ancestor) of the two HEAD commits. Both `parent_commit_id` and `parent2_commit_id` are traversed (supporting existing merge commits).
-4. **Fast-forward** — If `base == ours`, the target is strictly ahead of current HEAD. Move the current branch pointer to `theirs` without creating a new commit.
+4. **Fast-forward** — If `base == ours` *and* `--no-ff` is not set *and* `--squash` is not set, the target is strictly ahead of current HEAD. Move the current branch pointer to `theirs` without creating a new commit.
 5. **Already up-to-date** — If `base == theirs`, current branch is already ahead. Exit 0.
-6. **3-way merge** — When branches have diverged:
+6. **Strategy shortcut** — If `--strategy ours` or `--strategy theirs` is set, apply the resolution immediately before conflict detection and proceed to create a merge commit. No conflict state is written.
+7. **3-way merge** — When branches have diverged and no strategy is set:
    - Compute `diff(base → ours)` and `diff(base → theirs)` at file-path granularity.
    - Detect conflicts: paths changed on *both* sides since the base.
    - If **no conflicts**: auto-merge (take the changed side for each path), create a merge commit with two parent IDs, advance the branch pointer.
    - If **conflicts**: write `.muse/MERGE_STATE.json` and exit 1 with a conflict summary.
+8. **Squash** — If `--squash` is set, create a single commit with a combined tree but only `parent_commit_id` = current HEAD. `parent2_commit_id` is `None`.
 
 ### `MERGE_STATE.json` Schema
 
@@ -207,15 +223,33 @@ All fields except `other_branch` are required. `conflict_paths` is sorted alphab
 
 ### Merge Commit
 
-A successful 3-way merge creates a commit with:
+A successful 3-way merge (or `--no-ff` or `--strategy`) creates a commit with:
 - `parent_commit_id` = `ours_commit_id` (current branch HEAD at merge time)
 - `parent2_commit_id` = `theirs_commit_id` (target branch HEAD)
 - `snapshot_id` = merged manifest (non-conflicting changes from both sides)
-- `message` = `"Merge branch '<branch>' into <current_branch>"`
+- `message` = `"Merge branch '<branch>' into <current_branch>"` (strategy appended if set)
+
+### Squash Commit
+
+`--squash` creates a commit with:
+- `parent_commit_id` = `ours_commit_id` (current branch HEAD)
+- `parent2_commit_id` = `None` — not a merge commit in the graph
+- `snapshot_id` = same merged manifest as a regular merge would produce
+- `message` = `"Squash merge branch '<branch>' into <current_branch>"`
+
+Use squash when you want to land a feature branch as one clean commit without
+polluting `muse log` with intermediate work-in-progress commits.
 
 ### Path-Level Granularity (MVP)
 
 This merge implementation operates at **file-path level**. Two commits that modify the same file path (even if the changes are disjoint within the file) are treated as a conflict. Note-level merging (music-aware diffs inside MIDI files) is a future enhancement reserved for the existing `maestro/services/muse_merge.py` engine.
+
+### Agent Use Case
+
+- **`--no-ff`**: Use when building a structured session history is important (e.g., preserving that a feature branch existed). The branch topology is visible in `muse log --graph`.
+- **`--squash`**: Use after iterative experimentation on a feature branch to produce one atomic commit for review. Equivalent to "clean up before sharing."
+- **`--strategy ours`**: Use to quickly resolve a conflict situation where the current branch's version is definitively correct (e.g., a hotfix already applied to main).
+- **`--strategy theirs`**: Use to accept all incoming changes wholesale (e.g., adopting a new arrangement from a collaborator).
 
 ---
 
@@ -755,10 +789,22 @@ Two identical working trees always produce the same `snapshot_id`.
 | `branch` | `String(255)` | Branch name at commit time |
 | `parent_commit_id` | `String(64)` nullable | Previous HEAD commit on branch |
 | `snapshot_id` | `String(64)` FK | Points to the snapshot row |
-| `message` | `Text` | User-supplied commit message |
+| `message` | `Text` | User-supplied commit message (may include Co-authored-by trailers) |
 | `author` | `String(255)` | Reserved (empty for MVP) |
 | `committed_at` | `DateTime(tz=True)` | Timestamp used in hash derivation |
 | `created_at` | `DateTime(tz=True)` | Wall-clock DB insert time |
+| `metadata` | `JSON` nullable | Extensible music-domain annotations (see below) |
+
+**`metadata` JSON blob — current keys:**
+
+| Key | Type | Set by |
+|-----|------|--------|
+| `section` | `string` | `muse commit --section` |
+| `track` | `string` | `muse commit --track` |
+| `emotion` | `string` | `muse commit --emotion` |
+| `tempo_bpm` | `float` | `muse tempo --set` |
+
+All keys are optional and co-exist in the same blob.  Absent keys are simply not present (not `null`).  Future music-domain annotations extend this blob without schema migrations.
 
 ### ID Derivation (deterministic)
 
@@ -783,25 +829,60 @@ Given the same working tree state, message, and timestamp two machines produce i
 
 ```
 .muse/
-  repo.json          Repo identity: repo_id (UUID), schema_version, created_at
+  repo.json          Repo identity: repo_id (UUID), schema_version, created_at[, bare]
   HEAD               Current branch pointer, e.g. "refs/heads/main"
-  config.toml        [user], [auth], [remotes] configuration
+  config.toml        [core] (bare repos only), [user], [auth], [remotes] configuration
   objects/           Local content-addressed object store (written by muse commit)
     <object_id>      One file per unique object (sha256 of file bytes)
   refs/
     heads/
       main           Commit ID of branch HEAD (empty = no commits yet)
       <branch>       One file per branch
+muse-work/           Working-tree root (absent for --bare repos)
+```
+
+### `muse init` flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--bare` | flag | off | Initialise as a bare repository — no `muse-work/` checkout. Writes `bare = true` into `repo.json` and `[core] bare = true` into `config.toml`. Used for Muse Hub remote/server-side repos. |
+| `--template PATH` | path | — | Copy the contents of *PATH* into `muse-work/` after initialisation. Lets studios pre-populate a standard folder structure (e.g. `drums/`, `bass/`, `keys/`, `vocals/`) for every new project. Ignored when `--bare` is set. |
+| `--default-branch BRANCH` | text | `main` | Name of the initial branch. Sets `HEAD → refs/heads/<BRANCH>` and creates the matching ref file. |
+| `--force` | flag | off | Re-initialise even if `.muse/` already exists. Preserves the existing `repo_id` so remote-tracking metadata stays coherent. Does not overwrite `config.toml`. |
+
+**Bare repository layout** (`--bare`):
+
+```
+.muse/
+  repo.json          … bare = true …
+  HEAD               refs/heads/<branch>
+  refs/heads/<branch>
+  config.toml        [core] bare = true  + [user] [auth] [remotes] stubs
+```
+
+Bare repos are used as Muse Hub remotes — objects and refs only, no live working copy.
+
+**Usage examples:**
+
+```bash
+muse init                                     # standard repo, branch = main
+muse init --default-branch develop            # standard repo, branch = develop
+muse init --bare                              # bare repo (Hub remote)
+muse init --bare --default-branch trunk       # bare repo, branch = trunk
+muse init --template /path/to/studio-tmpl     # copy template into muse-work/
+muse init --template /studio --default-branch release  # template + custom branch
+muse init --force                             # reinitialise, preserve repo_id
 ```
 
 ### File semantics
 
 | File | Source of truth for | Notes |
 |------|-------------------|-------|
-| `repo.json` | Repo identity | `repo_id` persists across `--force` reinitialise |
-| `HEAD` | Current branch name | Always `refs/heads/<branch>` |
+| `repo.json` | Repo identity | `repo_id` persists across `--force` reinitialise; `bare = true` written for bare repos |
+| `HEAD` | Current branch name | Always `refs/heads/<branch>`; branch name set by `--default-branch` |
 | `refs/heads/<branch>` | Branch → commit pointer | Empty string = branch has no commits yet |
-| `config.toml` | User identity, auth token, remotes | Not overwritten on `--force` |
+| `config.toml` | User identity, auth token, remotes | Not overwritten on `--force`; bare repos include `[core] bare = true` |
+| `muse-work/` | Working-tree root | Created by non-bare init; populated from `--template` if provided |
 
 ### Repo-root detection
 
@@ -1409,6 +1490,57 @@ muse-batch.json   (written next to muse-work/, i.e. in the repo root)
 - Failed generations are **omitted** from `files[]`; only successful results appear
 - Cache hits **are included** in `files[]` with `"cached": true`
 
+### `muse commit` — Full Flag Reference
+
+**Usage:**
+```bash
+muse commit -m <message> [OPTIONS]
+muse commit --from-batch muse-batch.json [OPTIONS]
+```
+
+**Core flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-m / --message TEXT` | string | — | Commit message. Required unless `--from-batch` is used |
+| `--from-batch PATH` | path | — | Use `commit_message_suggestion` from `muse-batch.json`; snapshot is restricted to listed files |
+| `--amend` | flag | off | Fold working-tree changes into the most recent commit (equivalent to `muse amend`) |
+| `--no-verify` | flag | off | Bypass pre-commit hooks (no-op until hook system is implemented) |
+| `--allow-empty` | flag | off | Allow committing even when the working tree has not changed since HEAD |
+
+**Music-domain flags (Muse-native metadata):**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--section TEXT` | string | — | Tag commit as belonging to a musical section (e.g. `verse`, `chorus`, `bridge`) |
+| `--track TEXT` | string | — | Tag commit as affecting a specific instrument track (e.g. `drums`, `bass`, `keys`) |
+| `--emotion TEXT` | string | — | Attach an emotion vector label (e.g. `joyful`, `melancholic`, `tense`) |
+| `--co-author TEXT` | string | — | Append `Co-authored-by: Name <email>` trailer to the commit message |
+
+Music-domain flags are stored in the `commit_metadata` JSON column on `muse_cli_commits`.  They are surfaced at the top level in `muse show <commit> --json` output and form the foundation for future queries like `muse log --emotion melancholic` or `muse diff --section chorus`.
+
+**Examples:**
+
+```bash
+# Standard commit with message
+muse commit -m "feat: add Rhodes piano to chorus"
+
+# Tag with music-domain metadata
+muse commit -m "groove take 3" --section verse --track drums --emotion joyful
+
+# Collaborative session — attribute a co-author
+muse commit -m "keys arrangement" --co-author "Alice <alice@stori.app>"
+
+# Amend the last commit with new emotion tag
+muse commit --amend --emotion melancholic
+
+# Milestone commit with no file changes
+muse commit --allow-empty -m "session handoff" --section bridge
+
+# Fast path from stress test
+muse commit --from-batch muse-batch.json --emotion tense
+```
+
 ### Fast-Path Commit: `muse commit --from-batch`
 
 ```bash
@@ -1427,7 +1559,8 @@ muse commit --from-batch muse-batch.json
 4. Proceeds with the standard commit pipeline (snapshot → DB → HEAD pointer update)
 
 The `-m` flag is optional when `--from-batch` is present.  If both are supplied,
-`--from-batch`'s suggestion wins.
+`--from-batch`'s suggestion wins.  All music-domain flags (`--section`, `--track`,
+`--emotion`, `--co-author`) can be combined with `--from-batch`.
 
 ### Workflow Summary
 
@@ -1515,6 +1648,47 @@ muse update-ref refs/heads/merge-candidate "$COMMIT"  # planned
 
 ---
 
+### `muse hash-object`
+
+**Purpose:** Compute the SHA-256 content-address of a file (or stdin) and
+optionally write it into the Muse object store.  The hash produced is
+identical to what `muse commit` would assign to the same file, ensuring
+cross-command content-addressability.  Use this for scripting, pre-upload
+deduplication checks, and debugging the object store.
+
+**Usage:**
+```bash
+muse hash-object <file> [OPTIONS]
+muse hash-object --stdin [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<file>` | positional | — | Path to the file to hash.  Omit when using `--stdin`. |
+| `-w / --write` | flag | off | Write the object to `.muse/objects/` and the `muse_cli_objects` table in addition to printing the hash. |
+| `--stdin` | flag | off | Read content from stdin instead of a file. |
+
+**Output example:**
+
+```
+a3f2e1b0d4c5...  (64-character SHA-256 hex digest)
+```
+
+**Result type:** `HashObjectResult` — fields: `object_id` (str, 64-char hex), `stored` (bool), `already_existed` (bool).
+
+**Agent use case:** An AI agent can call `muse hash-object <file>` to derive the
+object ID before committing, enabling optimistic checks ("is this drum loop
+already in the store?") without running a full `muse commit`.  Piping output
+to `muse cat-object` verifies whether the stored content matches expectations.
+
+**Implementation:** `maestro/muse_cli/commands/hash_object.py` — registered as
+`muse hash-object`.  `HashObjectResult` (class), `hash_bytes()` (pure helper),
+`_hash_object_async()` (fully injectable for tests).
+
+---
+
 ## Muse CLI — Remote Sync Command Reference
 
 These commands connect the local Muse repo to the remote Muse Hub, enabling
@@ -1568,12 +1742,17 @@ setup time; subsequent push/pull commands run without further config.
 
 **Purpose:** Upload local commits that the remote Hub does not yet have.
 Enables collaborative workflows where one musician pushes and others pull.
+Supports force-push, lease-guarded override, tag syncing, and upstream tracking.
 
 **Usage:**
 ```bash
 muse push
 muse push --branch feature/groove-v2
 muse push --remote staging
+muse push --force-with-lease
+muse push --force -f
+muse push --tags
+muse push --set-upstream -u
 ```
 
 **Flags:**
@@ -1581,6 +1760,10 @@ muse push --remote staging
 |------|------|---------|-------------|
 | `--branch` / `-b` | str | current branch | Branch to push |
 | `--remote` | str | `origin` | Named remote to push to |
+| `--force` / `-f` | flag | off | Overwrite remote branch even on non-fast-forward. Use with caution — this discards remote history. |
+| `--force-with-lease` | flag | off | Overwrite remote only if its current HEAD matches our last-known tracking pointer. Safer than `--force`; the Hub must return HTTP 409 if the remote has advanced. |
+| `--tags` | flag | off | Push all VCS-style tag refs from `.muse/refs/tags/` alongside the branch commits. |
+| `--set-upstream` / `-u` | flag | off | After a successful push, record the remote as the upstream for the current branch in `.muse/config.toml`. |
 
 **Push algorithm:**
 1. Read `repo_id` from `.muse/repo.json` and branch from `.muse/HEAD`.
@@ -1588,33 +1771,50 @@ muse push --remote staging
 3. Resolve remote URL from `[remotes.<name>] url` in `.muse/config.toml`.
 4. Read last-known remote HEAD from `.muse/remotes/<name>/<branch>` (absent on first push).
 5. Compute delta: commits from local HEAD down to (but not including) remote HEAD.
-6. POST `{ branch, head_commit_id, commits[], objects[] }` to `<remote>/push`.
-7. On HTTP 200, update `.muse/remotes/<name>/<branch>` to the new HEAD.
+6. If `--tags`, enumerate `.muse/refs/tags/` and include as `PushTagPayload` list.
+7. POST `{ branch, head_commit_id, commits[], objects[], [force], [force_with_lease], [expected_remote_head], [tags] }` to `<remote>/push`.
+8. On HTTP 200, update `.muse/remotes/<name>/<branch>` to the new HEAD; if `--set-upstream`, write `branch = <branch>` under `[remotes.<name>]` in `.muse/config.toml`.
+9. On HTTP 409 with `--force-with-lease`, exit 1 with instructive message.
+
+**Force-with-lease contract:** `expected_remote_head` is the commit ID in our local
+tracking pointer before the push. The Hub must compare it against its current HEAD and
+reject (HTTP 409) if they differ — this prevents clobbering commits pushed by others
+since our last fetch.
 
 **Output example:**
 ```
-⬆️  Pushing 3 commit(s) to origin/main …
+⬆️  Pushing 3 commit(s) to origin/main [--force-with-lease] …
+✅ Branch 'main' set to track 'origin/main'
 ✅ Pushed 3 commit(s) → origin/main [aabbccdd]
+
+# When force-with-lease rejected:
+❌ Push rejected: remote origin/main has advanced since last fetch.
+   Run `muse pull` then retry, or use `--force` to override.
 ```
 
-**Exit codes:** 0 — success; 1 — no remote or no commits; 3 — network/server error.
+**Exit codes:** 0 — success; 1 — no remote, no commits, or force-with-lease mismatch; 3 — network/server error.
 
 **Result type:** `PushRequest` / `PushResponse` — see `maestro/muse_cli/hub_client.py`.
+New TypedDicts: `PushTagPayload` (tag_name, commit_id).
 
 **Agent use case:** After `muse commit`, an agent runs `muse push` to publish
-the committed variation to the shared Hub for other team members to review.
+the committed variation to the shared Hub. For CI workflows, `--force-with-lease`
+prevents clobbering concurrent pushes from other agents.
 
 ---
 
 ### `muse pull`
 
-**Purpose:** Download commits from the remote Hub that are missing locally.
+**Purpose:** Download commits from the remote Hub that are missing locally,
+then integrate them into the local branch via fast-forward, merge, or rebase.
 After pull, the AI agent has the full commit history of remote collaborators
 available for `muse context`, `muse diff`, `muse ask`, etc.
 
 **Usage:**
 ```bash
 muse pull
+muse pull --rebase
+muse pull --ff-only
 muse pull --branch feature/groove-v2
 muse pull --remote staging
 ```
@@ -1624,34 +1824,52 @@ muse pull --remote staging
 |------|------|---------|-------------|
 | `--branch` / `-b` | str | current branch | Branch to pull |
 | `--remote` | str | `origin` | Named remote to pull from |
+| `--rebase` | flag | off | After fetching, rebase local commits onto remote HEAD rather than merge. Fast-forwards when remote is simply ahead; replays local commits (linear rebase) when diverged. |
+| `--ff-only` | flag | off | Only integrate if the result would be a fast-forward. Fails with exit 1 and leaves local branch unchanged if branches have diverged. |
 
 **Pull algorithm:**
 1. Resolve remote URL from `[remotes.<name>] url` in `.muse/config.toml`.
 2. Collect `have_commits` (all local commit IDs) and `have_objects` (all local object IDs).
-3. POST `{ branch, have_commits[], have_objects[] }` to `<remote>/pull`.
+3. POST `{ branch, have_commits[], have_objects[], [rebase], [ff_only] }` to `<remote>/pull`.
 4. Store returned commits and object descriptors in local Postgres.
 5. Update `.muse/remotes/<name>/<branch>` tracking pointer.
-6. If branches have diverged, print a warning and suggest `muse merge origin/<branch>`.
+6. Apply post-fetch integration strategy:
+   - **Default:** If diverged, print warning and suggest `muse merge`.
+   - **`--ff-only`:** If `local_head` is ancestor of `remote_head`, advance branch ref (fast-forward). Otherwise exit 1.
+   - **`--rebase`:** If `local_head` is ancestor of `remote_head`, fast-forward. If diverged, find merge base and replay local commits above base onto `remote_head` using `compute_commit_tree_id` (deterministic IDs).
 
-**Divergence detection:** The pull succeeds (exit 0) even when diverged.
-The divergence warning is informational — it does not block further commands.
+**Rebase contract:** Linear rebase only — no path-level conflict detection.
+For complex divergence with conflicting file changes, use `muse merge`.
+The rebased commit IDs are deterministic (via `compute_commit_tree_id`), so
+re-running the same rebase is idempotent.
+
+**Divergence detection:** Pull succeeds (exit 0) even when diverged in default
+mode. The divergence warning is informational.
 
 **Output example:**
 ```
-⬇️  Pulling origin/main …
+⬇️  Pulling origin/main (--rebase) …
+✅ Fast-forwarded main → aabbccdd
 ✅ Pulled 2 new commit(s), 5 new object(s) from origin/main
 
-# When diverged:
-⚠️  Local branch has diverged from origin/main.
-   Run `muse merge origin/main` to integrate remote changes.
+# Diverged + --rebase:
+⟳  Rebasing 2 local commit(s) onto aabbccdd …
+✅ Rebase complete — main → eeff1122
+✅ Pulled 3 new commit(s), 0 new object(s) from origin/main
+
+# Diverged + --ff-only:
+❌ Cannot fast-forward: main has diverged from origin/main.
+   Run `muse merge origin/main` or use `muse pull --rebase` to integrate.
 ```
 
-**Exit codes:** 0 — success (including divergence); 1 — no remote configured; 3 — network/server error.
+**Exit codes:** 0 — success; 1 — no remote, or `--ff-only` on diverged branch; 3 — network/server error.
 
 **Result type:** `PullRequest` / `PullResponse` — see `maestro/muse_cli/hub_client.py`.
 
-**Agent use case:** Before generating a new arrangement, an agent pulls to ensure
-it is working from the latest shared composition state.
+**Agent use case:** Before generating a new arrangement, an agent runs
+`muse pull --rebase` to ensure it works from the latest shared composition
+state with a clean linear history. `--ff-only` is useful in strict CI pipelines
+where merges are not permitted.
 
 ---
 
@@ -2070,6 +2288,86 @@ Track: all
 
 ---
 
+### `muse transpose`
+
+**Purpose:** Apply MIDI pitch transposition to all files in `muse-work/` and record the result as a new Muse commit. Transposition is the most fundamental musical transformation — this makes it a first-class versioned operation rather than a silent destructive edit. Drum channels (MIDI channel 9) are always excluded because drums are unpitched.
+
+**Usage:**
+```bash
+muse transpose <interval> [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<interval>` | positional | required | Signed integer (`+3`, `-5`) or named interval (`up-minor3rd`, `down-perfect5th`) |
+| `[<commit>]` | positional | HEAD | Source commit to transpose from |
+| `--track TEXT` | string | all tracks | Transpose only the MIDI track whose name contains TEXT (case-insensitive substring) |
+| `--section TEXT` | string | — | Transpose only a named section (stub — full implementation pending) |
+| `--message TEXT` | string | `"Transpose +N semitones"` | Custom commit message |
+| `--dry-run` | flag | off | Show what would change without writing files or creating a commit |
+| `--json` | flag | off | Emit machine-readable JSON output |
+
+**Interval syntax:**
+
+| Form | Example | Semitones |
+|------|---------|-----------|
+| Signed integer | `+3` | +3 |
+| Signed integer | `-5` | -5 |
+| Named up | `up-minor3rd` | +3 |
+| Named down | `down-perfect5th` | -7 |
+| Named down | `down-octave` | -12 |
+
+**Named interval identifiers:**
+`unison`, `minor2nd`, `major2nd`, `minor3rd`, `major3rd`, `perfect4th`,
+`perfect5th`, `minor6th`, `major6th`, `minor7th`, `major7th`, `octave`
+(prefix with `up-` or `down-`)
+
+**Output example (text):**
+```
+✅ [a1b2c3d4] Transpose +3 semitones
+   Key: Eb major  →  F# major
+   Modified: 2 file(s)
+     ✅ tracks/melody.mid
+     ✅ tracks/bass.mid
+   Skipped:  1 file(s) (non-MIDI or no pitched notes)
+```
+
+**Output example (`--json`):**
+```json
+{
+  "source_commit_id": "a1b2c3d4...",
+  "semitones": 3,
+  "files_modified": ["tracks/melody.mid", "tracks/bass.mid"],
+  "files_skipped": ["notes.json"],
+  "new_commit_id": "b2c3d4e5...",
+  "original_key": "Eb major",
+  "new_key": "F# major",
+  "dry_run": false
+}
+```
+
+**Result type:** `TransposeResult` — fields: `source_commit_id`, `semitones`, `files_modified`, `files_skipped`, `new_commit_id` (None in dry-run), `original_key`, `new_key`, `dry_run`.
+
+**Key metadata update:** If the source commit has a `key` field in its `metadata` JSON blob (e.g. `"Eb major"`), the new commit's `metadata.key` is automatically updated to reflect the transposition (e.g. `"F# major"` after `+3`). The service uses flat note names for accidentals (Db, Eb, Ab, Bb) — G# is stored as Ab, etc.
+
+**MIDI transposition rules:**
+- Scans `muse-work/` recursively for `.mid` and `.midi` files.
+- Parses MTrk chunks and modifies Note-On (0x9n) and Note-Off (0x8n) events.
+- **Channel 9 (drums) is never transposed** — drums are unpitched and shifting their note numbers would change the GM drum map mapping.
+- Notes are clamped to [0, 127] to stay within MIDI range.
+- All other events (meta, sysex, CC, program change, pitch bend) are preserved byte-for-byte.
+- Track length headers remain unchanged — only note byte values differ.
+
+**Agent use case:** A producer experimenting with key runs `muse transpose +3` and immediately has a versioned, reversible pitch shift on the full arrangement. The agent can then run `muse context --json` to confirm the new key before generating new parts that fit the updated harmonic center. The `--dry-run` flag lets agents preview impact before committing, and the `--track` flag lets them scope transposition to a single instrument (e.g. `--track melody`) without shifting the bass or chords.
+
+**Implementation:** `maestro/services/muse_transpose.py` — `parse_interval`, `update_key_metadata`, `transpose_midi_bytes`, `apply_transpose_to_workdir`, `TransposeResult`. CLI: `maestro/muse_cli/commands/transpose.py` — `_transpose_async` (injectable async core), `_print_result` (renderer). Exit codes: 0 success, 1 user error (bad interval, empty workdir), 2 outside repo, 3 internal error.
+
+> **Section filter note:** `--section TEXT` is accepted by the CLI and logged as a warning but not yet applied. Full section-scoped transposition requires section boundary markers embedded in committed MIDI metadata — tracked as a follow-up enhancement.
+
+---
+
 ### `muse recall`
 
 **Purpose:** Search the full commit history using natural language. Returns ranked
@@ -2111,6 +2409,172 @@ keyword match · threshold 0.60 · limit 5
 **Implementation:** `maestro/muse_cli/commands/recall.py` — `RecallResult` (TypedDict), `_tokenize()`, `_score()`, `_recall_async()`. Exit codes: 0 success, 1 bad date format, 2 outside repo.
 
 > **Stub note:** Uses keyword overlap. Full implementation: vector embeddings stored in Qdrant, cosine similarity retrieval. The CLI interface will not change when vector search is added.
+
+---
+
+### `muse rebase`
+
+**Purpose:** Rebase commits onto a new base, producing a linear history. Given a current branch that has diverged from `<upstream>`, `muse rebase <upstream>` collects all commits since the divergence point and replays them one-by-one on top of the upstream tip — each producing a new commit ID with the same snapshot delta. An AI agent uses this to linearise a sequence of late-night fixup commits before merging to main, making the musical narrative readable and bisectable.
+
+**Usage:**
+```bash
+muse rebase <upstream> [OPTIONS]
+muse rebase --continue
+muse rebase --abort
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `UPSTREAM` | positional | — | Branch name or commit ID to rebase onto. Omit with `--continue` / `--abort`. |
+| `--interactive` / `-i` | flag | off | Open `$EDITOR` with a rebase plan (pick/squash/drop per commit) before executing. |
+| `--autosquash` | flag | off | Automatically move `fixup! <msg>` commits immediately after their matching target commit. |
+| `--rebase-merges` | flag | off | Preserve merge commits during replay (experimental). |
+| `--continue` | flag | off | Resume a rebase that was paused by a conflict. |
+| `--abort` | flag | off | Cancel the in-progress rebase and restore the branch to its original HEAD. |
+
+**Output example (linear rebase):**
+```
+✅ Rebased 3 commit(s) onto 'dev' [main a1b2c3d4]
+```
+
+**Output example (conflict):**
+```
+❌ Conflict while replaying c2d3e4f5 ('Add strings'):
+    both modified: tracks/strings.mid
+Resolve conflicts, then run 'muse rebase --continue'.
+```
+
+**Output example (abort):**
+```
+✅ Rebase aborted. Branch 'main' restored to deadbeef.
+```
+
+**Interactive plan format:**
+```
+# Interactive rebase plan.
+# Actions: pick, squash (fold into previous), drop (skip), fixup (squash no msg), reword
+# Lines starting with '#' are ignored.
+
+pick a1b2c3d4 Add piano
+squash b2c3d4e5 Tweak piano velocity
+drop c3d4e5f6 Stale WIP commit
+pick d4e5f6a7 Add strings
+```
+
+**Result type:** `RebaseResult` (dataclass, frozen) — fields:
+- `branch` (str): The branch that was rebased.
+- `upstream` (str): The upstream branch or commit ref.
+- `upstream_commit_id` (str): Resolved commit ID of the upstream tip.
+- `base_commit_id` (str): LCA commit where the histories diverged.
+- `replayed` (tuple[RebaseCommitPair, ...]): Ordered list of (original, new) commit ID pairs.
+- `conflict_paths` (tuple[str, ...]): Conflicting paths (empty on clean completion).
+- `aborted` (bool): True when `--abort` cleared the in-progress rebase.
+- `noop` (bool): True when there were no commits to replay.
+- `autosquash_applied` (bool): True when `--autosquash` reordered commits.
+
+**State file:** `.muse/REBASE_STATE.json` — written on conflict; cleared on `--continue` completion or `--abort`. Contains: `upstream_commit`, `base_commit`, `original_branch`, `original_head`, `commits_to_replay`, `current_onto`, `completed_pairs`, `current_commit`, `conflict_paths`.
+
+**Agent use case:** An agent that maintains a feature branch can call `muse rebase dev` before opening a merge request. If conflicts are detected, the agent receives the conflict paths in `REBASE_STATE.json`, resolves them by picking the correct version of each affected file, then calls `muse rebase --continue`. The `--autosquash` flag is useful after a generation loop that emits intermediate `fixup!` commits — the agent can clean up history automatically before finalising.
+
+**Algorithm:**
+1. LCA of HEAD and upstream (via BFS over the commit graph).
+2. Collect commits on the current branch since the LCA (oldest first).
+3. For each commit, compute its snapshot delta relative to its own parent.
+4. Apply the delta onto the current onto-tip manifest; detect conflicts.
+5. On conflict: write `REBASE_STATE.json` and exit 1 (await `--continue`).
+6. On success: insert a new commit record; advance the onto pointer.
+7. After all commits: write the final commit ID to the branch ref.
+
+**Implementation:** `maestro/muse_cli/commands/rebase.py` (Typer CLI), `maestro/services/muse_rebase.py` (`_rebase_async`, `_rebase_continue_async`, `_rebase_abort_async`, `RebaseResult`, `RebaseState`, `InteractivePlan`, `compute_delta`, `apply_delta`, `apply_autosquash`).
+
+---
+
+### `muse stash`
+
+**Purpose:** Temporarily shelve uncommitted muse-work/ changes so the producer can switch context without losing work-in-progress. Push saves the current working state into a filesystem stack (`.muse/stash/`) and restores HEAD; pop brings it back. An AI agent uses this when it needs to checkpoint partial generation state, switch to a different branch task, then resume exactly where it left off.
+
+**Usage:**
+```bash
+muse stash [push] [OPTIONS]      # save + restore HEAD (default subcommand)
+muse stash push [OPTIONS]        # explicit push
+muse stash pop [stash@{N}]       # apply + drop most recent entry
+muse stash apply [stash@{N}]     # apply without dropping
+muse stash list                  # list all entries
+muse stash drop [stash@{N}]      # remove a specific entry
+muse stash clear [--yes]         # remove all entries
+```
+
+**Flags (push):**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--message / -m TEXT` | string | `"On <branch>: stash"` | Label for this stash entry |
+| `--track TEXT` | string | — | Scope to `tracks/<track>/` paths only |
+| `--section TEXT` | string | — | Scope to `sections/<section>/` paths only |
+
+**Flags (clear):**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--yes / -y` | flag | off | Skip confirmation prompt |
+
+**Output example (push):**
+```
+Saved working directory and index state stash@{0}
+On main: half-finished chorus rearrangement
+```
+
+**Output example (pop):**
+```
+✅ Applied stash@{0}: On main: half-finished chorus rearrangement
+   3 file(s) restored.
+Dropped stash@{0}
+```
+
+**Output example (list):**
+```
+stash@{0}: On main: WIP chorus changes
+stash@{1}: On main: drums experiment
+```
+
+**Result types:**
+
+`StashPushResult` (dataclass, frozen) — fields:
+- `stash_ref` (str): Human label (e.g. `"stash@{0}"`); empty string when nothing was stashed.
+- `message` (str): Label stored in the entry.
+- `branch` (str): Branch name at the time of push.
+- `files_stashed` (int): Number of files saved into the stash.
+- `head_restored` (bool): Whether HEAD snapshot was restored to muse-work/.
+- `missing_head` (tuple[str, ...]): Paths that could not be restored from the object store after push.
+
+`StashApplyResult` (dataclass, frozen) — fields:
+- `stash_ref` (str): Human label of the entry that was applied.
+- `message` (str): The entry's label.
+- `files_applied` (int): Number of files written to muse-work/.
+- `missing` (tuple[str, ...]): Paths whose object bytes were absent from the store.
+- `dropped` (bool): True when the entry was removed (pop); False for apply.
+
+`StashEntry` (dataclass, frozen) — fields:
+- `stash_id` (str): Unique filesystem stem.
+- `index` (int): Position in the stack (0 = most recent).
+- `branch` (str): Branch at the time of stash.
+- `message` (str): Human label.
+- `created_at` (str): ISO-8601 timestamp.
+- `manifest` (dict[str, str]): `{rel_path: sha256_object_id}` of stashed files.
+- `track` (str | None): Track scope used during push (or None).
+- `section` (str | None): Section scope used during push (or None).
+
+**Storage:** Filesystem-only. Each entry is a JSON file in `.muse/stash/stash-<timestamp>-<uuid8>.json`. File content is preserved in the existing `.muse/objects/<oid[:2]>/<oid[2:]>` content-addressed blob store (same layout as `muse commit` and `muse reset --hard`). No Postgres rows are written.
+
+**Agent use case:** An AI composition agent mid-generation on the chorus wants to quickly address a client request on the intro. It calls `muse stash` to save the in-progress chorus state (files + object blobs), then `muse checkout intro-branch` to switch context, makes the intro fix, then returns and calls `muse stash pop` to restore the chorus work exactly as it was. For scoped saves, `--track drums` limits the stash to drum files only, leaving other tracks untouched in muse-work/.
+
+**Conflict strategy on apply:** Last-write-wins. Files in muse-work/ not in the stash manifest are left untouched. Files whose objects are missing from the store are reported in `missing` but do not abort the operation.
+
+**Stack ordering:** `stash@{0}` is always the most recently pushed entry. `stash@{N}` refers to the Nth entry in reverse chronological order. Multiple `push` calls build a stack; `pop` always takes from the top.
+
+**Implementation:** `maestro/muse_cli/commands/stash.py` (Typer CLI with subcommands), `maestro/services/muse_stash.py` (`push_stash`, `apply_stash`, `list_stash`, `drop_stash`, `clear_stash`, result types).
 
 ---
 
@@ -2168,6 +2632,76 @@ muse revert <commit> [OPTIONS]
 **Object store limitation:** The Muse CLI stores file manifests (path→sha256) in Postgres but does not retain raw file bytes. For `--no-commit`, files that should be restored but whose bytes are no longer in `muse-work/` are listed as warnings in `paths_missing`. The commit-only path (default) is unaffected — it references an existing snapshot ID directly with no file restoration needed.
 
 **Implementation:** `maestro/muse_cli/commands/revert.py` (Typer CLI), `maestro/services/muse_revert.py` (`_revert_async`, `compute_revert_manifest`, `apply_revert_to_workdir`, `RevertResult`).
+
+---
+
+### `muse cherry-pick`
+
+**Purpose:** Apply the changes introduced by a single commit from any branch onto the current branch, without merging the entire source branch. An AI agent uses this to transplant a winning take (the perfect guitar solo, the ideal bass groove) from an experimental branch into main without importing 20 unrelated commits.
+
+**Usage:**
+```bash
+muse cherry-pick <commit> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | required | Commit ID to cherry-pick (full or abbreviated SHA) |
+| `--no-commit` | flag | off | Apply changes to muse-work/ without creating a new commit |
+| `--continue` | flag | off | Resume after resolving conflicts from a paused cherry-pick |
+| `--abort` | flag | off | Abort an in-progress cherry-pick and restore the pre-cherry-pick HEAD |
+
+**Output example (clean apply):**
+```
+✅ [main a1b2c3d4] add guitar solo
+   (cherry picked from commit f3e2d1c0)
+```
+
+**Output example (conflict):**
+```
+❌ Cherry-pick conflict in 1 file(s):
+        both modified:   tracks/guitar/solo.mid
+Fix conflicts and run 'muse cherry-pick --continue' to create the commit.
+```
+
+**Output example (--abort):**
+```
+✅ Cherry-pick aborted. HEAD restored to a1b2c3d4.
+```
+
+**Algorithm:** 3-way merge model — base=P (cherry commit's parent), ours=HEAD, theirs=C (cherry commit). For each path C changed vs P: if HEAD also changed that path differently → conflict; otherwise apply C's version on top of HEAD. Commit message is prefixed with `(cherry picked from commit <short-id>)` for auditability.
+
+**State file:** `.muse/CHERRY_PICK_STATE.json` — written when conflicts are detected, consumed by `--continue` and `--abort`.
+
+```json
+{
+  "cherry_commit":  "f3e2d1c0...",
+  "head_commit":    "a1b2c3d4...",
+  "conflict_paths": ["tracks/guitar/solo.mid"]
+}
+```
+
+**Result type:** `CherryPickResult` (dataclass, frozen) — fields:
+- `commit_id` (str): New commit ID (empty when `--no-commit` or conflict).
+- `cherry_commit_id` (str): Source commit that was cherry-picked.
+- `head_commit_id` (str): HEAD commit at cherry-pick time.
+- `new_snapshot_id` (str): Snapshot ID of the resulting state.
+- `message` (str): Commit message with cherry-pick attribution suffix.
+- `no_commit` (bool): Whether changes were staged but not committed.
+- `conflict` (bool): True when conflicts were detected and state file was written.
+- `conflict_paths` (tuple[str, ...]): Conflicting paths (non-empty iff `conflict=True`).
+- `branch` (str): Branch on which the new commit was created.
+
+**Agent use case:** An AI music agent runs `muse log --json` across branches to score each commit, identifies the highest-scoring take on `experiment/guitar-solo`, then calls `muse cherry-pick <commit>` to transplant just that take into main. After cherry-pick, the agent can immediately continue composing on the enriched HEAD without merging the entire experimental branch.
+
+**Blocking behaviour:**
+- Blocked when a merge is in progress with unresolved conflicts (exits 1).
+- Blocked when a previous cherry-pick is in progress (exits 1 — use `--continue` or `--abort`).
+- Cherry-picking HEAD itself exits 0 (noop).
+
+**Implementation:** `maestro/muse_cli/commands/cherry_pick.py` (Typer CLI), `maestro/services/muse_cherry_pick.py` (`_cherry_pick_async`, `_cherry_pick_continue_async`, `_cherry_pick_abort_async`, `compute_cherry_manifest`, `CherryPickResult`, `CherryPickState`).
 
 ---
 
@@ -4553,6 +5087,7 @@ commit is needed.
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
 | `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
+| `muse transpose` | `commands/transpose.py` | ✅ implemented | #102 |
 | `muse update-ref` | `commands/update_ref.py` | ✅ implemented (PR #143) | #91 |
 | `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
 | `muse write-tree` | `commands/write_tree.py` | ✅ implemented | #89 |
@@ -5066,16 +5601,73 @@ No DB interaction at checkout time — the DAG remains intact.
 
 ---
 
+### `muse restore`
+
+**Purpose:** Restore specific files from a commit or index into `muse-work/` without
+touching the branch pointer.  Surgical alternative to `muse reset --hard` — bring
+back "the bass from take 3" while keeping everything else at HEAD.
+
+**Usage:**
+```bash
+muse restore <paths>...                          # restore from HEAD (default)
+muse restore --staged <paths>...                 # restore index entry from HEAD
+muse restore --source <commit> <paths>...        # restore from a specific commit
+muse restore --worktree --source <commit> <paths>...  # explicit worktree restore
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<paths>...` | positional | — | One or more relative paths within `muse-work/` to restore. Accepts paths with or without the `muse-work/` prefix. |
+| `--staged` | flag | off | Restore the index (snapshot manifest) entry from the source commit. In the current Muse model (no separate staging area) this is equivalent to `--worktree`. |
+| `--worktree` | flag | off | Restore `muse-work/` files from the source snapshot. Default when no mode flag is specified. |
+| `--source / -s` | str | HEAD | Commit reference to restore from: `HEAD`, `HEAD~N`, full SHA, or any unambiguous SHA prefix. |
+
+**Output example:**
+```
+✅ Restored 'bass/bassline.mid' from commit ab12cd34
+```
+
+Multiple files:
+```
+✅ Restored 2 files from commit ab12cd34:
+   • bass/bassline.mid
+   • drums/kick.mid
+```
+
+**Result type:** `RestoreResult` — fields: `source_commit_id` (str), `paths_restored` (list[str]), `staged` (bool).
+
+**Error cases:**
+- `PathNotInSnapshotError` — the requested path does not exist in the source commit's snapshot. Exit code 1.
+- `MissingObjectError` — the required blob is absent from `.muse/objects/`. Exit code 3.
+- Unknown `--source` ref — exits with code 1 and a clear error message.
+
+**Agent use case:** An AI composition agent can selectively restore individual
+instrument tracks from historical commits.  For example, after generating several
+takes, the agent can restore the best bass line from take 3 while keeping drums
+and keys from take 7 — without modifying the branch history.  Use `muse log` to
+identify commit SHAs, then `muse show <commit>` to inspect the snapshot manifest
+before running `muse restore`.
+
+**Implementation:** `maestro/muse_cli/commands/restore.py` (CLI) and
+`maestro/services/muse_restore.py` (service).  Uses the same object store helpers
+as `muse reset --hard`.  Branch pointer is never modified.
+
+---
+
 ### `muse resolve`
 
 **Purpose:** Mark a conflicted file as resolved during a paused `muse merge`.
 Called after `muse merge` exits with a conflict to accept one side's version
-before running `muse merge --continue`.
+before running `muse merge --continue`.  For `--theirs`, the command
+automatically fetches the incoming branch's object from the local store and
+writes it to `muse-work/<path>` — no manual file editing required.
 
 **Usage:**
 ```bash
-muse resolve <file-path> --ours    # Keep current branch's working-tree version
-muse resolve <file-path> --theirs  # Accept incoming branch (edit file first, then mark)
+muse resolve <file-path> --ours    # Keep current branch's working-tree version (no file change)
+muse resolve <file-path> --theirs  # Copy incoming branch's object to muse-work/ automatically
 ```
 
 **Flags:**
@@ -5083,25 +5675,34 @@ muse resolve <file-path> --theirs  # Accept incoming branch (edit file first, th
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--ours` | flag | off | Accept the current branch's version (no file change needed) |
-| `--theirs` | flag | off | Accept the incoming branch (caller edits file manually, then runs this) |
+| `--theirs` | flag | off | Fetch the incoming branch's object from local store and write to muse-work/ |
 
 **Output example:**
 ```
-✅ Resolved 'meta/section-1.json' — keeping ours
+✅ Resolved 'meta/section-1.json' — keeping theirs
+   1 conflict(s) remaining. Resolve all, then run 'muse merge --continue'.
+✅ Resolved 'beat.mid' — keeping ours
 ✅ All conflicts resolved. Run 'muse merge --continue' to create the merge commit.
 ```
 
-**Workflow:**
-1. `muse merge <branch>` exits with conflict, writes `.muse/MERGE_STATE.json`
-2. `muse resolve <path> --ours` for each conflicted file
-3. `muse merge --continue` creates the merge commit
+**Full conflict resolution workflow:**
+```bash
+muse merge experiment          # → conflict on beat.mid
+muse status                    # → shows "You have unmerged paths"
+muse resolve beat.mid --theirs # → copies theirs version into muse-work/
+muse merge --continue          # → creates merge commit, clears MERGE_STATE.json
+```
 
 **Note:** After all conflicts are resolved, `.muse/MERGE_STATE.json` persists
 with `conflict_paths=[]` so `--continue` can read the stored commit IDs.
 `muse merge --continue` is the command that clears MERGE_STATE.json.
+If the theirs object is not in the local store (e.g. branch was never
+committed locally), run `muse pull` first to fetch remote objects.
 
-**Implementation:** `maestro/muse_cli/commands/resolve.py` — `resolve_conflict(file_path, ours, root)`.
-Reads and rewrites `.muse/MERGE_STATE.json`.  No DB interaction.
+**Implementation:** `maestro/muse_cli/commands/resolve.py` — `resolve_conflict_async(file_path, ours, root, session)`.
+Reads and rewrites `.muse/MERGE_STATE.json`.  For `--theirs`, queries DB for
+the theirs commit's snapshot manifest and calls `apply_resolution()` from
+`merge_engine.py` to restore the file from the local object store.
 
 ---
 
@@ -5135,5 +5736,125 @@ muse merge --continue
 run `--continue` to record the merged arrangement as an immutable commit.
 
 **Implementation:** `maestro/muse_cli/commands/merge.py` — `_merge_continue_async(root, session)`.
+
+---
+
+### `muse merge --abort`
+
+**Purpose:** Cancel an in-progress merge and restore the pre-merge state of all
+conflicted files.  Use when a conflict is too complex to resolve and you want to
+return the working tree to the clean state it was in before `muse merge` ran.
+
+**Usage:**
+```bash
+muse merge --abort
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--abort` | flag | off | Cancel the in-progress merge and restore pre-merge files |
+
+**Output example:**
+```
+✅ Merge abort. Restored 2 conflicted file(s).
+```
+
+**Contract:**
+- Reads `.muse/MERGE_STATE.json` for `ours_commit` and `conflict_paths`.
+- Fetches the ours commit's snapshot manifest from DB.
+- For each conflicted path: restores the ours version from the local object
+  store to `muse-work/`.  Paths that existed only on the theirs branch (not
+  in ours manifest) are deleted from `muse-work/`.
+- Clears `.muse/MERGE_STATE.json` on success.
+- Exits 1 if no merge is in progress.
+
+**Agent use case:** When an AI agent detects an irresolvable semantic conflict
+(e.g. two structural arrangements that cannot be combined), it should call
+`muse merge --abort` to restore a clean baseline before proposing an
+alternative strategy to the user.
+
+**Implementation:** `maestro/muse_cli/commands/merge.py` — `_merge_abort_async(root, session)`.
+Queries DB for the ours commit's manifest, then calls `apply_resolution()` from
+`merge_engine.py` for each conflicted path.
+
+---
+
+### `muse release`
+
+**Purpose:** Export a tagged commit as distribution-ready release artifacts — the
+music-native publish step.  Bridges the Muse VCS world and the audio production
+world: a producer says "version 1.0 is done" and `muse release v1.0` produces
+WAV/MIDI/stem files with SHA-256 checksums for distribution.
+
+**Usage:**
+```bash
+muse release <tag> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<tag>` | positional | required | Tag string (created via `muse tag add`) or short commit SHA prefix |
+| `--render-audio` | flag | off | Render all MIDI to a single audio file via Storpheus |
+| `--render-midi` | flag | off | Bundle all .mid files into a zip archive |
+| `--export-stems` | flag | off | Export each instrument track as a separate audio file |
+| `--format wav\|mp3\|flac` | option | `wav` | Audio output format |
+| `--output-dir PATH` | option | `./releases/<tag>/` | Destination directory for all artifacts |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output layout:**
+```
+<output-dir>/
+    release-manifest.json        # always written; SHA-256 checksums
+    audio/<commit8>.<format>     # --render-audio
+    midi/midi-bundle.zip         # --render-midi
+    stems/<stem>.<format>        # --export-stems
+```
+
+**Output example:**
+```
+✅ Release artifacts for tag 'v1.0' (commit a1b2c3d4):
+   [audio] ./releases/v1.0/audio/a1b2c3d4.wav
+   [midi-bundle] ./releases/v1.0/midi/midi-bundle.zip
+   [manifest] ./releases/v1.0/release-manifest.json
+⚠️  Audio files are MIDI stubs (Storpheus /render endpoint not yet deployed).
+```
+
+**Result type:** `ReleaseResult` — fields: `tag`, `commit_id`, `output_dir`,
+`manifest_path`, `artifacts` (list of `ReleaseArtifact`), `audio_format`, `stubbed`.
+
+**`release-manifest.json` shape:**
+```json
+{
+  "tag": "v1.0",
+  "commit_id": "<full sha256>",
+  "commit_short": "<8-char>",
+  "released_at": "<ISO-8601 UTC>",
+  "audio_format": "wav",
+  "stubbed": true,
+  "files": [
+    {"path": "audio/a1b2c3d4.wav", "sha256": "...", "size_bytes": 4096, "role": "audio"},
+    {"path": "midi/midi-bundle.zip", "sha256": "...", "size_bytes": 1024, "role": "midi-bundle"},
+    {"path": "release-manifest.json", "sha256": "...", "size_bytes": 512, "role": "manifest"}
+  ]
+}
+```
+
+**Agent use case:** An AI music generation agent calls `muse release v1.0 --render-midi --json`
+after tagging a completed composition.  It reads `stubbed` from the JSON output to
+determine whether the audio files are real renders or MIDI placeholders, and inspects
+`files[*].sha256` to verify integrity before uploading to a distribution platform.
+
+**Implementation stub note:** The Storpheus `POST /render` endpoint (MIDI-in → audio-out)
+is not yet deployed.  Until it ships, `--render-audio` and `--export-stems` copy the
+source MIDI file as a placeholder and set `stubbed=true` in the manifest.  The
+`_render_midi_to_audio` function in `maestro/services/muse_release.py` is the only
+site to update when the endpoint becomes available.
+
+**Implementation:** `maestro/muse_cli/commands/release.py` — `_release_async(...)`.
+Service layer: `maestro/services/muse_release.py` — `build_release(...)`.
 
 ---

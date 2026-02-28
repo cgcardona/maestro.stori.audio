@@ -120,7 +120,7 @@ def checkout(
     branch: str = typer.Argument(..., help="Branch name to switch to (or create with -b)."),
     create: bool = typer.Option(
         False,
-        "-b",
+        "-b/-B",
         help="Create the branch from the current HEAD and switch to it.",
     ),
 ) -> None:
