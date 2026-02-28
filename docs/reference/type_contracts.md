@@ -4119,6 +4119,66 @@ classDiagram
 
 ---
 
+## Muse Inspect Types (`maestro/services/muse_inspect.py`)
+
+### `InspectFormat`
+
+`StrEnum` of supported output formats for `muse inspect`.
+
+| Value | Description |
+|-------|-------------|
+| `json` | Structured JSON commit graph (default; for agent consumption). |
+| `dot` | Graphviz DOT directed graph (for visual rendering pipelines). |
+| `mermaid` | Mermaid.js `graph LR` definition (for GitHub markdown embedding). |
+
+### `MuseInspectCommit`
+
+Frozen dataclass representing one commit node in the inspected graph.
+Returned inside `MuseInspectResult.commits`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA-256 hash. |
+| `short_id` | `str` | First 8 characters of `commit_id`. |
+| `branch` | `str` | Branch this commit was recorded on. |
+| `parent_commit_id` | `str \| None` | First parent commit hash (None for root). |
+| `parent2_commit_id` | `str \| None` | Second parent hash (reserved for merge commits, issue #35). |
+| `message` | `str` | Human-readable commit message. |
+| `author` | `str` | Committer identity string. |
+| `committed_at` | `str` | ISO-8601 UTC timestamp string. |
+| `snapshot_id` | `str` | Content-addressed snapshot hash. |
+| `metadata` | `dict[str, object]` | Extensible annotation dict (tempo_bpm, etc.). |
+| `tags` | `list[str]` | Music-semantic tag strings attached to this commit. |
+
+**`to_dict() -> dict[str, object]`** — Returns a JSON-serializable dict matching the
+issue #98 output spec.
+
+### `MuseInspectResult`
+
+Frozen dataclass representing the full serialized commit graph for a repository.
+Returned by `build_inspect_result()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | UUID identifying the local repository. |
+| `current_branch` | `str` | Branch HEAD currently points to. |
+| `branches` | `dict[str, str]` | Mapping of branch names → HEAD commit ID. |
+| `commits` | `list[MuseInspectCommit]` | All graph nodes reachable from traversed heads, newest-first. |
+
+**`to_dict() -> dict[str, object]`** — Returns a JSON-serializable dict of the
+full graph, suitable for direct `json.dumps()`.
+
+### Service functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `build_inspect_result` | `(session, root, *, ref, depth, include_branches) -> MuseInspectResult` | Walk the commit graph and return the typed result. |
+| `render_json` | `(result, indent) -> str` | Serialize to JSON string. |
+| `render_dot` | `(result) -> str` | Serialize to Graphviz DOT source. |
+| `render_mermaid` | `(result) -> str` | Serialize to Mermaid.js `graph LR` source. |
+
+---
+
 ## Muse CLI — Export Types (`maestro/muse_cli/export_engine.py`)
 
 ### `ExportFormat`
