@@ -647,6 +647,49 @@ class DivergenceResponse(CamelModel):
     common_ancestor: str | None
     dimensions: list[DivergenceDimensionResponse]
     overall_score: float
+
+
+# ── Commit diff summary models ─────────────────────────────────────────────────
+
+
+class CommitDiffDimensionScore(CamelModel):
+    """Per-dimension change score between a commit and its parent.
+
+    Scores are heuristic estimates derived from the commit message and metadata.
+    They indicate *how much* each musical dimension changed in this commit.
+    """
+
+    dimension: str = Field(
+        ...,
+        description="Musical dimension: harmonic | rhythmic | melodic | structural | dynamic",
+        examples=["harmonic"],
+    )
+    score: float = Field(..., ge=0.0, le=1.0, description="Change magnitude [0.0, 1.0]")
+    label: str = Field(..., description="Human-readable level: none | low | medium | high")
+    color: str = Field(
+        ...,
+        description="CSS class hint for badge colour: dim-none | dim-low | dim-medium | dim-high",
+    )
+
+
+class CommitDiffSummaryResponse(CamelModel):
+    """Multi-dimensional diff summary between a commit and its parent.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/commits/{commit_id}/diff-summary``.
+    Consumed by the commit detail page to render dimension-change badges that help
+    musicians understand *what* changed musically between two pushes.
+    """
+
+    commit_id: str = Field(..., description="The commit being inspected")
+    parent_id: str | None = Field(None, description="Parent commit ID; None for root commits")
+    dimensions: list[CommitDiffDimensionScore] = Field(
+        ..., description="Per-dimension change scores (always five entries)"
+    )
+    overall_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Mean across all five dimension scores"
+    )
+
+
 # ── Explore / Discover models ──────────────────────────────────────────────────
 
 
