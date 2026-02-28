@@ -1,31 +1,35 @@
-"""MuseHub semantic search route handler.
+"""MuseHub search route handlers.
 
-Endpoint:
+Endpoints:
   GET /musehub/search/similar?commit={sha}&limit=10
-    — Returns the N most musically similar public commits to the given SHA.
+    — Cross-repo vector similarity search. Returns the N most musically
+      similar public commits to the given SHA using Qdrant cosine distance.
 
-The route resolves the query commit from Postgres, fetches its stored
-embedding from Qdrant, and returns ranked results with similarity scores.
-If the commit is not yet embedded (e.g. pushed before this feature shipped)
-a 404 is returned with a clear message — no silent empty-result fallback.
+  GET /musehub/repos/{repo_id}/search?q={q}&mode={mode}
+    — In-repo commit search with four modes:
+        property  — filter by musical properties (harmony, rhythm, etc.)
+        ask       — natural-language query (keyword extraction + overlap scoring)
+        keyword   — keyword/phrase overlap scored search
+        pattern   — substring pattern match against message and branch name
 
-No business logic lives here — all vector operations are delegated to
-maestro.services.musehub_qdrant and maestro.services.musehub_embeddings.
+Authentication: JWT Bearer token required (inherited from musehub router).
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.auth.dependencies import require_valid_token
+from maestro.auth.dependencies import TokenClaims, require_valid_token
 from maestro.config import settings
 from maestro.db import get_db
 from maestro.db import musehub_models as db
-from maestro.models.musehub import SimilarCommitResponse, SimilarSearchResponse
+from maestro.models.musehub import SearchResponse, SimilarCommitResponse, SimilarSearchResponse
+from maestro.services import musehub_repository, musehub_search
 from maestro.services.musehub_embeddings import compute_embedding
 from maestro.services.musehub_qdrant import MusehubQdrantClient
 
@@ -35,6 +39,8 @@ router = APIRouter()
 
 # Module-level singleton — one client per process, collection ensured on first use.
 _qdrant_client: MusehubQdrantClient | None = None
+
+_VALID_MODES = frozenset({"property", "ask", "keyword", "pattern"})
 
 
 def _get_qdrant_client() -> MusehubQdrantClient:
@@ -71,7 +77,6 @@ async def search_similar(
         404: If the commit SHA is not found in the Muse Hub.
         503: If Qdrant is unavailable.
     """
-    # --- Resolve commit from Postgres ---
     stmt = select(db.MusehubCommit).where(db.MusehubCommit.commit_id == commit)
     row = (await db_session.execute(stmt)).scalar_one_or_none()
     if row is None:
@@ -80,10 +85,8 @@ async def search_similar(
             detail=f"Commit '{commit}' not found in Muse Hub.",
         )
 
-    # --- Compute query vector from commit message ---
     query_vector = compute_embedding(row.message)
 
-    # --- Query Qdrant (sync client — run in thread pool) ---
     try:
         client = _get_qdrant_client()
         raw_results = await asyncio.to_thread(
@@ -117,3 +120,100 @@ async def search_similar(
         len(results),
     )
     return SimilarSearchResponse(query_commit=commit, results=results)
+
+
+@router.get(
+    "/repos/{repo_id}/search",
+    response_model=SearchResponse,
+    summary="Search Muse repo commits",
+)
+async def search_repo(
+    repo_id: str,
+    q: str = Query("", description="Search query — interpreted by the selected mode"),
+    mode: str = Query("keyword", description="Search mode: property | ask | keyword | pattern"),
+    harmony: str | None = Query(None, description="[property mode] Harmony filter"),
+    rhythm: str | None = Query(None, description="[property mode] Rhythm filter"),
+    melody: str | None = Query(None, description="[property mode] Melody filter"),
+    structure: str | None = Query(None, description="[property mode] Structure filter"),
+    dynamic: str | None = Query(None, description="[property mode] Dynamics filter"),
+    emotion: str | None = Query(None, description="[property mode] Emotion filter"),
+    since: datetime | None = Query(None, description="Only include commits on or after this ISO datetime"),
+    until: datetime | None = Query(None, description="Only include commits on or before this ISO datetime"),
+    limit: int = Query(20, ge=1, le=200, description="Maximum results to return"),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> SearchResponse:
+    """Search commit history using one of four musical search modes.
+
+    The ``mode`` parameter selects the search algorithm:
+
+    - **property** — filter commits by musical properties using AND logic.
+      Supply any of ``harmony``, ``rhythm``, ``melody``, ``structure``,
+      ``dynamic``, ``emotion`` query params.  Accepts ``key=low-high`` range
+      syntax (e.g. ``rhythm=tempo=120-130``).
+
+    - **ask** — treat ``q`` as a natural-language question.  Stop-words are
+      stripped; remaining keywords are scored by overlap coefficient.
+
+    - **keyword** — score commits by keyword overlap against ``q``.
+      Useful for exact term search (e.g. ``q=Fmin_jazz_bassline``).
+
+    - **pattern** — case-insensitive substring match of ``q`` against commit
+      messages and branch names.  No scoring; matched rows returned newest-first.
+
+    Returns 404 if the repo does not exist.  Returns an empty ``matches`` list
+    when no commits satisfy the criteria (not a 404).
+    """
+    if mode not in _VALID_MODES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Invalid mode '{mode}'. Must be one of: {sorted(_VALID_MODES)}",
+        )
+
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    if mode == "property":
+        return await musehub_search.search_by_property(
+            db,
+            repo_id=repo_id,
+            harmony=harmony,
+            rhythm=rhythm,
+            melody=melody,
+            structure=structure,
+            dynamic=dynamic,
+            emotion=emotion,
+            since=since,
+            until=until,
+            limit=limit,
+        )
+
+    if mode == "ask":
+        return await musehub_search.search_by_ask(
+            db,
+            repo_id=repo_id,
+            question=q,
+            since=since,
+            until=until,
+            limit=limit,
+        )
+
+    if mode == "keyword":
+        return await musehub_search.search_by_keyword(
+            db,
+            repo_id=repo_id,
+            keyword=q,
+            since=since,
+            until=until,
+            limit=limit,
+        )
+
+    return await musehub_search.search_by_pattern(
+        db,
+        repo_id=repo_id,
+        pattern=q,
+        since=since,
+        until=until,
+        limit=limit,
+    )
