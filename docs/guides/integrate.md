@@ -417,6 +417,69 @@ Start with (1); then (2) if you want to demo inside Cursor; then (3) when the ap
 
 ---
 
+## Muse Hub Webhooks
+
+Webhooks enable event-driven workflows — instead of polling for changes, your agent
+or external service receives an HTTP POST the moment an event fires on a repo.
+
+### Registering a webhook
+
+```bash
+curl -X POST https://<host>/api/v1/musehub/repos/<repo_id>/webhooks \
+  -H "Authorization: Bearer <jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-server.example.com/hook",
+    "events": ["push", "pull_request", "issue"],
+    "secret": "your-signing-secret"
+  }'
+```
+
+**Valid event types:** `push`, `pull_request`, `issue`, `release`, `branch`, `tag`, `session`, `analysis`.
+
+### Verifying the signature
+
+When a `secret` is set, every delivery includes an `X-MuseHub-Signature: sha256=<hex>` header.
+Verify it on your server to ensure the payload came from MuseHub:
+
+```python
+import hashlib, hmac
+
+def verify_signature(secret: str, body: bytes, signature_header: str) -> bool:
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature_header)
+```
+
+### Delivery payload structure
+
+Each event is a JSON object with at minimum a `repoId` field and event-specific fields.
+Example `push` payload:
+
+```json
+{
+  "repoId": "repo-uuid",
+  "branch": "main",
+  "headCommitId": "abc123",
+  "pushedBy": "user-uuid",
+  "commitCount": 3
+}
+```
+
+### Retry policy
+
+Failed deliveries (non-2xx or network error) are retried up to 3 times with
+exponential back-off (1 s, 2 s, 4 s).  Each attempt is logged to
+`GET /api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries`.
+
+### Agent use case
+
+AI agent orchestrators can register a webhook on a composer's repo so that
+when a new commit is pushed, the agent automatically analyzes the changes and
+posts review comments — enabling a real-time human-agent collaboration loop
+without polling.
+
+---
+
 ## Agent Context — Starting a Composition Session
 
 The agent context endpoint is the canonical first call an AI agent makes when starting

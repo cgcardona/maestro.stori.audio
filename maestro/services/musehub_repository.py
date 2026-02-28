@@ -12,6 +12,7 @@ Boundary rules:
 from __future__ import annotations
 
 import logging
+from collections import deque
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,9 @@ from maestro.db import musehub_models as db
 from maestro.models.musehub import (
     BranchResponse,
     CommitResponse,
+    DagEdge,
+    DagGraphResponse,
+    DagNode,
     MuseHubContextCommitInfo,
     MuseHubContextHistoryEntry,
     MuseHubContextMusicalState,
@@ -230,6 +234,118 @@ async def list_commits(
     rows_stmt = base.order_by(desc(db.MusehubCommit.timestamp)).limit(limit)
     rows = (await session.execute(rows_stmt)).scalars().all()
     return [_to_commit_response(r) for r in rows], total
+
+
+async def list_commits_dag(
+    session: AsyncSession,
+    repo_id: str,
+) -> DagGraphResponse:
+    """Return the full commit graph for a repo as a topologically sorted DAG.
+
+    Fetches every commit for the repo (no limit — required for correct DAG
+    traversal). Applies Kahn's algorithm to produce a topological ordering
+    from oldest ancestor to newest commit, which graph renderers can consume
+    directly without additional sorting.
+
+    Edges flow child → parent (source = child, target = parent) following the
+    standard directed graph convention where arrows point toward ancestors.
+
+    Branch head commits are identified by querying the branches table. The
+    highest-timestamp commit across all branches is designated as HEAD for
+    display purposes when no explicit HEAD ref exists.
+
+    Agent use case: call this to reason about the project's branching topology,
+    find common ancestors, or identify which branches contain a given commit.
+    """
+    # Fetch all commits for this repo
+    stmt = select(db.MusehubCommit).where(db.MusehubCommit.repo_id == repo_id)
+    all_rows = (await session.execute(stmt)).scalars().all()
+
+    if not all_rows:
+        return DagGraphResponse(nodes=[], edges=[], head_commit_id=None)
+
+    # Build lookup map
+    row_map: dict[str, db.MusehubCommit] = {r.commit_id: r for r in all_rows}
+
+    # Fetch all branches to identify HEAD candidates and branch labels
+    branch_stmt = select(db.MusehubBranch).where(db.MusehubBranch.repo_id == repo_id)
+    branch_rows = (await session.execute(branch_stmt)).scalars().all()
+
+    # Map commit_id → branch names pointing at it
+    branch_label_map: dict[str, list[str]] = {}
+    for br in branch_rows:
+        if br.head_commit_id and br.head_commit_id in row_map:
+            branch_label_map.setdefault(br.head_commit_id, []).append(br.name)
+
+    # Identify HEAD: the branch head with the most recent timestamp, or the
+    # most recent commit overall when no branches exist
+    head_commit_id: str | None = None
+    if branch_rows:
+        latest_ts = None
+        for br in branch_rows:
+            if br.head_commit_id and br.head_commit_id in row_map:
+                ts = row_map[br.head_commit_id].timestamp
+                if latest_ts is None or ts > latest_ts:
+                    latest_ts = ts
+                    head_commit_id = br.head_commit_id
+    if head_commit_id is None:
+        head_commit_id = max(all_rows, key=lambda r: r.timestamp).commit_id
+
+    # Kahn's topological sort (oldest → newest).
+    # in_degree[c] = number of c's parents that are present in this repo's commit set.
+    # Commits with in_degree == 0 are roots (no parents) — they enter the queue first,
+    # producing a parent-before-child ordering (oldest ancestor → newest commit).
+    in_degree: dict[str, int] = {r.commit_id: 0 for r in all_rows}
+    # children_map[parent_id] = list of commit IDs whose parent_ids contains parent_id
+    children_map: dict[str, list[str]] = {r.commit_id: [] for r in all_rows}
+
+    edges: list[DagEdge] = []
+    for row in all_rows:
+        for parent_id in (row.parent_ids or []):
+            if parent_id in row_map:
+                edges.append(DagEdge(source=row.commit_id, target=parent_id))
+                children_map.setdefault(parent_id, []).append(row.commit_id)
+                in_degree[row.commit_id] += 1
+
+    # Kahn's algorithm: start from commits with no parents (roots)
+    queue: deque[str] = deque(
+        cid for cid, deg in in_degree.items() if deg == 0
+    )
+    topo_order: list[str] = []
+
+    while queue:
+        cid = queue.popleft()
+        topo_order.append(cid)
+        for child_id in children_map.get(cid, []):
+            in_degree[child_id] -= 1
+            if in_degree[child_id] == 0:
+                queue.append(child_id)
+
+    # Handle cycles or disconnected commits (append remaining in timestamp order)
+    remaining = set(row_map.keys()) - set(topo_order)
+    if remaining:
+        sorted_remaining = sorted(remaining, key=lambda c: row_map[c].timestamp)
+        topo_order.extend(sorted_remaining)
+
+    nodes: list[DagNode] = []
+    for cid in topo_order:
+        row = row_map[cid]
+        nodes.append(
+            DagNode(
+                commit_id=row.commit_id,
+                message=row.message,
+                author=row.author,
+                timestamp=row.timestamp,
+                branch=row.branch,
+                parent_ids=list(row.parent_ids or []),
+                is_head=(row.commit_id == head_commit_id),
+                branch_labels=branch_label_map.get(row.commit_id, []),
+                tag_labels=[],
+            )
+        )
+
+    logger.debug("✅ Built DAG for repo %s: %d nodes, %d edges", repo_id, len(nodes), len(edges))
+    return DagGraphResponse(nodes=nodes, edges=edges, head_commit_id=head_commit_id)
 
 
 # ---------------------------------------------------------------------------
