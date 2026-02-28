@@ -291,7 +291,6 @@ async def get_context_for_commit(
     if commit is None:
         return None
 
-    objects = await list_objects(session, repo_id)
     raw_objects_stmt = select(db.MusehubObject).where(
         db.MusehubObject.repo_id == repo_id
     )
