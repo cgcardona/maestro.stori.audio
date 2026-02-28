@@ -6,11 +6,17 @@ Algorithm
 2. Resolve ``ours_commit_id`` from ``.muse/refs/heads/<current_branch>``.
 3. Resolve ``theirs_commit_id`` from ``.muse/refs/heads/<target_branch>``.
 4. Find merge base: LCA of the two commits via BFS over the commit graph.
-5. **Fast-forward** — if ``base == ours``, target is strictly ahead: move the
-   current branch pointer to ``theirs`` (no new commit).
+5. **Fast-forward** — if ``base == ours`` *and* ``--no-ff`` is not set, target
+   is strictly ahead: move the current branch pointer to ``theirs`` (no new commit).
+   With ``--no-ff``, a merge commit is forced even when fast-forward is possible.
 6. **Already up-to-date** — if ``base == theirs``, current branch is already
    ahead of target: exit 0.
-7. **3-way merge** — branches have diverged:
+7. **--squash** — collapse all commits from target into a single new commit on
+   current branch; only one parent (ours_commit_id); no ``parent2_commit_id``.
+8. **--strategy ours|theirs** — shortcut resolution before conflict detection:
+   ``ours`` keeps every file from the current branch; ``theirs`` takes every file
+   from the target branch.  No conflict detection runs when a strategy is set.
+9. **3-way merge** — branches have diverged:
    a. Compute ``diff(base → ours)`` and ``diff(base → theirs)``.
    b. Detect conflicts (paths changed on both sides).
    c. If conflicts exist: write ``.muse/MERGE_STATE.json`` and exit 1.
@@ -75,6 +81,9 @@ async def _merge_async(
     branch: str,
     root: pathlib.Path,
     session: AsyncSession,
+    no_ff: bool = False,
+    squash: bool = False,
+    strategy: str | None = None,
 ) -> None:
     """Run the merge pipeline.
 
@@ -87,9 +96,19 @@ async def _merge_async(
     callback surfaces a clean message.
 
     Args:
-        branch:  Name of the branch to merge into the current branch.
-        root:    Repository root (directory containing ``.muse/``).
-        session: Open async DB session.
+        branch:   Name of the branch to merge into the current branch.
+        root:     Repository root (directory containing ``.muse/``).
+        session:  Open async DB session.
+        no_ff:    Force a merge commit even when fast-forward is possible.
+                  Preserves branch topology in the history graph.
+        squash:   Squash all commits from *branch* into one new commit on the
+                  current branch.  The resulting commit has a single parent
+                  (HEAD) and no ``parent2_commit_id`` — it does not form a
+                  merge commit in the DAG.
+        strategy: Resolution shortcut applied before conflict detection.
+                  ``"ours"`` keeps every file from the current branch.
+                  ``"theirs"`` takes every file from the target branch.
+                  ``None`` (default) uses the standard 3-way merge.
     """
     muse_dir = root / ".muse"
 
@@ -131,8 +150,16 @@ async def _merge_async(
     # ── Find merge base (LCA) ────────────────────────────────────────────
     base_commit_id = await find_merge_base(session, ours_commit_id, theirs_commit_id)
 
+    # ── Validate strategy ────────────────────────────────────────────────
+    _VALID_STRATEGIES = {"ours", "theirs"}
+    if strategy is not None and strategy not in _VALID_STRATEGIES:
+        typer.echo(
+            f"❌ Unknown strategy '{strategy}'. Valid options: ours, theirs."
+        )
+        raise typer.Exit(code=ExitCode.USER_ERROR)
+
     # ── Fast-forward: ours IS the base → theirs is ahead ─────────────────
-    if base_commit_id == ours_commit_id:
+    if base_commit_id == ours_commit_id and not no_ff and not squash:
         our_ref_path.write_text(theirs_commit_id)
         typer.echo(
             f"✅ Fast-forward: {current_branch} → {theirs_commit_id[:8]}"
@@ -147,8 +174,7 @@ async def _merge_async(
         typer.echo("Already up-to-date.")
         raise typer.Exit(code=ExitCode.SUCCESS)
 
-    # ── 3-way merge ──────────────────────────────────────────────────────
-    # Load snapshot manifests for base, ours, and theirs.
+    # ── Load manifests ────────────────────────────────────────────────────
     base_manifest: dict[str, str] = {}
     if base_commit_id is not None:
         loaded_base = await get_commit_snapshot_manifest(session, base_commit_id)
@@ -159,42 +185,91 @@ async def _merge_async(
         await get_commit_snapshot_manifest(session, theirs_commit_id) or {}
     )
 
-    ours_changed = diff_snapshots(base_manifest, ours_manifest)
-    theirs_changed = diff_snapshots(base_manifest, theirs_manifest)
-    conflict_paths = detect_conflicts(ours_changed, theirs_changed)
+    # ── Strategy shortcut (bypasses conflict detection) ───────────────────
+    if strategy == "ours":
+        merged_manifest = dict(ours_manifest)
+    elif strategy == "theirs":
+        merged_manifest = dict(theirs_manifest)
+    else:
+        # ── 3-way merge ──────────────────────────────────────────────────
+        ours_changed = diff_snapshots(base_manifest, ours_manifest)
+        theirs_changed = diff_snapshots(base_manifest, theirs_manifest)
+        conflict_paths = detect_conflicts(ours_changed, theirs_changed)
 
-    if conflict_paths:
-        write_merge_state(
-            root,
-            base_commit=base_commit_id or "",
-            ours_commit=ours_commit_id,
-            theirs_commit=theirs_commit_id,
-            conflict_paths=sorted(conflict_paths),
-            other_branch=branch,
+        if conflict_paths:
+            write_merge_state(
+                root,
+                base_commit=base_commit_id or "",
+                ours_commit=ours_commit_id,
+                theirs_commit=theirs_commit_id,
+                conflict_paths=sorted(conflict_paths),
+                other_branch=branch,
+            )
+            typer.echo(f"❌ Merge conflict in {len(conflict_paths)} file(s):")
+            for path in sorted(conflict_paths):
+                typer.echo(f"\tboth modified:   {path}")
+            typer.echo('Fix conflicts and run "muse commit" to conclude the merge.')
+            raise typer.Exit(code=ExitCode.USER_ERROR)
+
+        merged_manifest = apply_merge(
+            base_manifest,
+            ours_manifest,
+            theirs_manifest,
+            ours_changed,
+            theirs_changed,
+            conflict_paths,
         )
-        typer.echo(f"❌ Merge conflict in {len(conflict_paths)} file(s):")
-        for path in sorted(conflict_paths):
-            typer.echo(f"\tboth modified:   {path}")
-        typer.echo('Fix conflicts and run "muse commit" to conclude the merge.')
-        raise typer.Exit(code=ExitCode.USER_ERROR)
 
-    # ── Build merged snapshot ─────────────────────────────────────────────
-    merged_manifest = apply_merge(
-        base_manifest,
-        ours_manifest,
-        theirs_manifest,
-        ours_changed,
-        theirs_changed,
-        conflict_paths,
-    )
-
+    # ── Persist merged snapshot ───────────────────────────────────────────
     merged_snapshot_id = compute_snapshot_id(merged_manifest)
     await upsert_snapshot(session, manifest=merged_manifest, snapshot_id=merged_snapshot_id)
     await session.flush()
 
-    # ── Build merge commit ────────────────────────────────────────────────
+    # ── Build commit ──────────────────────────────────────────────────────
     committed_at = datetime.datetime.now(datetime.timezone.utc)
-    merge_message = f"Merge branch '{branch}' into {current_branch}"
+
+    if squash:
+        # Squash: single parent (HEAD), no parent2 — collapses target history.
+        squash_message = f"Squash merge branch '{branch}' into {current_branch}"
+        squash_commit_id = compute_commit_id(
+            parent_ids=[ours_commit_id],
+            snapshot_id=merged_snapshot_id,
+            message=squash_message,
+            committed_at_iso=committed_at.isoformat(),
+        )
+        squash_commit = MuseCliCommit(
+            commit_id=squash_commit_id,
+            repo_id=repo_id,
+            branch=current_branch,
+            parent_commit_id=ours_commit_id,
+            parent2_commit_id=None,
+            snapshot_id=merged_snapshot_id,
+            message=squash_message,
+            author="",
+            committed_at=committed_at,
+        )
+        await insert_commit(session, squash_commit)
+        our_ref_path.write_text(squash_commit_id)
+        typer.echo(
+            f"✅ Squash commit [{current_branch} {squash_commit_id[:8]}] "
+            f"— squashed '{branch}' into '{current_branch}'"
+        )
+        logger.info(
+            "✅ muse merge --squash commit %s on %r (parent: %s)",
+            squash_commit_id[:8],
+            current_branch,
+            ours_commit_id[:8],
+        )
+        return
+
+    # Merge commit (standard or --no-ff): two parents.
+    if strategy is not None:
+        merge_message = (
+            f"Merge branch '{branch}' into {current_branch} (strategy={strategy})"
+        )
+    else:
+        merge_message = f"Merge branch '{branch}' into {current_branch}"
+
     parent_ids = sorted([ours_commit_id, theirs_commit_id])
     merge_commit_id = compute_commit_id(
         parent_ids=parent_ids,
@@ -219,8 +294,11 @@ async def _merge_async(
     # ── Advance branch pointer ────────────────────────────────────────────
     our_ref_path.write_text(merge_commit_id)
 
+    flag_note = " (--no-ff)" if no_ff else ""
+    if strategy is not None:
+        flag_note += f" (--strategy={strategy})"
     typer.echo(
-        f"✅ Merge commit [{current_branch} {merge_commit_id[:8]}] "
+        f"✅ Merge commit [{current_branch} {merge_commit_id[:8]}]{flag_note} "
         f"— merged '{branch}' into '{current_branch}'"
     )
     logger.info(
@@ -369,10 +447,39 @@ def merge(
         is_flag=True,
         help="Finalize a paused merge after resolving all conflicts.",
     ),
+    no_ff: bool = typer.Option(
+        False,
+        "--no-ff",
+        is_flag=True,
+        help="Force a merge commit even when fast-forward is possible.",
+    ),
+    squash: bool = typer.Option(
+        False,
+        "--squash",
+        is_flag=True,
+        help=(
+            "Squash all commits from the target branch into one new commit on "
+            "the current branch. The result has a single parent and no merge "
+            "commit in the history graph."
+        ),
+    ),
+    strategy: Optional[str] = typer.Option(
+        None,
+        "--strategy",
+        help=(
+            "Merge strategy shortcut. 'ours' keeps all files from the current "
+            "branch; 'theirs' takes all files from the target branch. Both skip "
+            "conflict detection."
+        ),
+    ),
 ) -> None:
     """Merge a branch into the current branch (fast-forward or 3-way).
 
-    Use ``--continue`` after resolving conflicts to create the merge commit.
+    Flags:
+        --no-ff       Force a merge commit even when fast-forward is possible.
+        --squash      Collapse target branch history into one commit (no parent2).
+        --strategy    Resolution shortcut: 'ours' or 'theirs'.
+        --continue    Finalize a paused merge after resolving all conflicts.
     """
     root = require_repo()
 
@@ -397,7 +504,14 @@ def merge(
 
     async def _run() -> None:
         async with open_session() as session:
-            await _merge_async(branch=branch, root=root, session=session)
+            await _merge_async(
+                branch=branch,
+                root=root,
+                session=session,
+                no_ff=no_ff,
+                squash=squash,
+                strategy=strategy,
+            )
 
     try:
         asyncio.run(_run())

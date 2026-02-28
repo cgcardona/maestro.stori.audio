@@ -174,18 +174,34 @@ A commit can carry multiple tags. Adding the same tag twice is a no-op (idempote
 
 `muse merge <branch>` integrates another branch into the current branch.
 
+**Usage:**
+```bash
+muse merge <branch> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--no-ff` | flag | off | Force a merge commit even when fast-forward is possible. Preserves branch topology in the history graph. |
+| `--squash` | flag | off | Collapse all commits from `<branch>` into one new commit on the current branch. The result has a single parent and no `parent2_commit_id` — not a merge commit in the DAG. |
+| `--strategy TEXT` | string | none | Resolution shortcut: `ours` keeps all files from the current branch; `theirs` takes all files from the target branch. Both skip conflict detection. |
+| `--continue` | flag | off | Finalize a paused merge after resolving all conflicts with `muse resolve`. |
+
 ### Algorithm
 
 1. **Guard** — If `.muse/MERGE_STATE.json` exists, a merge is already in progress. Exit 1 with: *"Merge in progress. Resolve conflicts and run `muse merge --continue`."*
 2. **Resolve commits** — Read HEAD commit ID for the current branch and the target branch from their `.muse/refs/heads/<branch>` ref files.
 3. **Find merge base** — BFS over the commit graph to find the LCA (Lowest Common Ancestor) of the two HEAD commits. Both `parent_commit_id` and `parent2_commit_id` are traversed (supporting existing merge commits).
-4. **Fast-forward** — If `base == ours`, the target is strictly ahead of current HEAD. Move the current branch pointer to `theirs` without creating a new commit.
+4. **Fast-forward** — If `base == ours` *and* `--no-ff` is not set *and* `--squash` is not set, the target is strictly ahead of current HEAD. Move the current branch pointer to `theirs` without creating a new commit.
 5. **Already up-to-date** — If `base == theirs`, current branch is already ahead. Exit 0.
-6. **3-way merge** — When branches have diverged:
+6. **Strategy shortcut** — If `--strategy ours` or `--strategy theirs` is set, apply the resolution immediately before conflict detection and proceed to create a merge commit. No conflict state is written.
+7. **3-way merge** — When branches have diverged and no strategy is set:
    - Compute `diff(base → ours)` and `diff(base → theirs)` at file-path granularity.
    - Detect conflicts: paths changed on *both* sides since the base.
    - If **no conflicts**: auto-merge (take the changed side for each path), create a merge commit with two parent IDs, advance the branch pointer.
    - If **conflicts**: write `.muse/MERGE_STATE.json` and exit 1 with a conflict summary.
+8. **Squash** — If `--squash` is set, create a single commit with a combined tree but only `parent_commit_id` = current HEAD. `parent2_commit_id` is `None`.
 
 ### `MERGE_STATE.json` Schema
 
@@ -205,15 +221,33 @@ All fields except `other_branch` are required. `conflict_paths` is sorted alphab
 
 ### Merge Commit
 
-A successful 3-way merge creates a commit with:
+A successful 3-way merge (or `--no-ff` or `--strategy`) creates a commit with:
 - `parent_commit_id` = `ours_commit_id` (current branch HEAD at merge time)
 - `parent2_commit_id` = `theirs_commit_id` (target branch HEAD)
 - `snapshot_id` = merged manifest (non-conflicting changes from both sides)
-- `message` = `"Merge branch '<branch>' into <current_branch>"`
+- `message` = `"Merge branch '<branch>' into <current_branch>"` (strategy appended if set)
+
+### Squash Commit
+
+`--squash` creates a commit with:
+- `parent_commit_id` = `ours_commit_id` (current branch HEAD)
+- `parent2_commit_id` = `None` — not a merge commit in the graph
+- `snapshot_id` = same merged manifest as a regular merge would produce
+- `message` = `"Squash merge branch '<branch>' into <current_branch>"`
+
+Use squash when you want to land a feature branch as one clean commit without
+polluting `muse log` with intermediate work-in-progress commits.
 
 ### Path-Level Granularity (MVP)
 
 This merge implementation operates at **file-path level**. Two commits that modify the same file path (even if the changes are disjoint within the file) are treated as a conflict. Note-level merging (music-aware diffs inside MIDI files) is a future enhancement reserved for the existing `maestro/services/muse_merge.py` engine.
+
+### Agent Use Case
+
+- **`--no-ff`**: Use when building a structured session history is important (e.g., preserving that a feature branch existed). The branch topology is visible in `muse log --graph`.
+- **`--squash`**: Use after iterative experimentation on a feature branch to produce one atomic commit for review. Equivalent to "clean up before sharing."
+- **`--strategy ours`**: Use to quickly resolve a conflict situation where the current branch's version is definitively correct (e.g., a hotfix already applied to main).
+- **`--strategy theirs`**: Use to accept all incoming changes wholesale (e.g., adopting a new arrangement from a collaborator).
 
 ---
 
