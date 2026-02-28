@@ -2,10 +2,11 @@
 
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (amend, arrange, ask, checkout, chord-map, commit, commit-tree,
-context, contour, describe, diff, divergence, dynamics, export, find, form,
-grep, groove-check, humanize, import, init, inspect, key, log, merge, meter,
-open, play, pull, push, recall, remote, render-preview, reset, resolve, revert,
-session, show, similarity, status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline, update-ref,
+context, contour, describe, diff, divergence, dynamics, emotion-diff, export,
+find, form, grep, groove-check, humanize, import, init, inspect, key, log,
+merge, meter, open, play, pull, push, recall, remote, render-preview, reset, resolve,
+revert, session, show, similarity, status, swing, symbolic-ref, tag, tempo,
+tempo-scale, timeline, update-ref,
 validate) as Typer sub-applications.
 """
 from __future__ import annotations
@@ -26,6 +27,7 @@ from maestro.muse_cli.commands import (
     diff,
     divergence,
     dynamics,
+    emotion_diff,
     export,
     find,
     form,
@@ -109,6 +111,7 @@ cli.add_typer(key.app, name="key", help="Read or annotate the musical key of a c
 cli.add_typer(humanize.app, name="humanize", help="Apply micro-timing and velocity humanization to quantized MIDI.")
 cli.add_typer(context.app, name="context", help="Output structured musical context for AI agent consumption.")
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
+cli.add_typer(emotion_diff.app, name="emotion-diff", help="Compare emotion vectors between two commits.")
 cli.add_typer(symbolic_ref.app, name="symbolic-ref", help="Read or write a symbolic ref (e.g. HEAD).")
 cli.add_typer(show.app, name="show", help="Inspect a commit: metadata, snapshot, diff, MIDI files, and audio preview.")
 cli.add_typer(render_preview.app, name="render-preview", help="Generate an audio preview of a commit's snapshot.")
