@@ -1063,6 +1063,48 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+#### `MuseHubDimensionDivergence`
+
+**Path:** `maestro/services/musehub_divergence.py`
+
+`dataclass(frozen=True)` — Divergence score for a single musical dimension in a Muse Hub repo comparison.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | Dimension name: `"melodic"`, `"harmonic"`, `"rhythmic"`, `"structural"`, or `"dynamic"` |
+| `level` | `MuseHubDivergenceLevel` | Qualitative label: `NONE` / `LOW` / `MED` / `HIGH` |
+| `score` | `float` | Normalised Jaccard divergence in [0.0, 1.0] |
+| `description` | `str` | Human-readable divergence summary |
+| `branch_a_commits` | `int` | Number of commits touching this dimension on branch A |
+| `branch_b_commits` | `int` | Number of commits touching this dimension on branch B |
+
+#### `MuseHubDivergenceResult`
+
+**Path:** `maestro/services/musehub_divergence.py`
+
+`dataclass(frozen=True)` — Full musical divergence report between two Muse Hub branches.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Muse Hub repository ID |
+| `branch_a` | `str` | Name of the first branch |
+| `branch_b` | `str` | Name of the second branch |
+| `common_ancestor` | `str \| None` | Merge-base commit ID; `None` if histories are disjoint |
+| `dimensions` | `tuple[MuseHubDimensionDivergence, ...]` | Five per-dimension results |
+| `overall_score` | `float` | Mean of all per-dimension scores in [0.0, 1.0] |
+
+**Where used:**
+
+| Module | Usage |
+|--------|-------|
+| `maestro/services/musehub_divergence.py` | `compute_hub_divergence` return type |
+| `maestro/api/routes/musehub/repos.py` | `get_divergence` endpoint — serialized to `DivergenceResponse` |
+| `tests/test_musehub_repos.py` | Divergence endpoint tests |
+
+**Wire format:** Serialized as `DivergenceResponse` (camelCase) via `maestro/models/musehub.py`.
+
+---
+
 ### `ExpressivenessResult`
 
 **Path:** `maestro/services/expressiveness.py`
