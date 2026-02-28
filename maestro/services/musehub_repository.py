@@ -13,13 +13,17 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from maestro.db import musehub_models as db
 from maestro.models.musehub import (
     BranchResponse,
     CommitResponse,
+    GlobalSearchCommitMatch,
+    GlobalSearchRepoGroup,
+    GlobalSearchResult,
     ObjectMetaResponse,
     RepoResponse,
 )
@@ -179,3 +183,171 @@ async def list_commits(
     rows_stmt = base.order_by(desc(db.MusehubCommit.timestamp)).limit(limit)
     rows = (await session.execute(rows_stmt)).scalars().all()
     return [_to_commit_response(r) for r in rows], total
+
+
+async def global_search(
+    session: AsyncSession,
+    *,
+    query: str,
+    mode: str = "keyword",
+    page: int = 1,
+    page_size: int = 10,
+) -> GlobalSearchResult:
+    """Search commit messages across all public Muse Hub repos.
+
+    Only ``visibility='public'`` repos are searched — private repos are never
+    exposed regardless of caller identity.  This enforces the public-only
+    contract at the persistence layer so no route handler can accidentally
+    bypass it.
+
+    ``mode`` controls matching strategy:
+    - ``keyword``: OR-match of whitespace-split query terms against message and
+      repo name using LIKE (case-insensitive via lower()).
+    - ``pattern``: raw SQL LIKE pattern applied to commit message only.
+
+    Results are grouped by repo and paginated by repo-group (``page_size``
+    controls how many repo-groups per page).  Within each group, up to 20
+    matching commits are returned newest-first.
+
+    An audio preview object ID is attached when the repo contains any .mp3
+    or .ogg artifact — the first one found by path ordering is used.
+
+    Args:
+        session:   Active async DB session.
+        query:     Raw search string from the user or agent.
+        mode:      "keyword" or "pattern".  Defaults to "keyword".
+        page:      1-based page number for repo-group pagination.
+        page_size: Number of repo-groups per page (1–50).
+
+    Returns:
+        GlobalSearchResult with groups, pagination metadata, and counts.
+    """
+    # ── 1. Collect all public repos ─────────────────────────────────────────
+    public_repos_stmt = (
+        select(db.MusehubRepo)
+        .where(db.MusehubRepo.visibility == "public")
+        .order_by(db.MusehubRepo.created_at)
+    )
+    public_repo_rows = (await session.execute(public_repos_stmt)).scalars().all()
+    total_repos_searched = len(public_repo_rows)
+
+    if not public_repo_rows or not query.strip():
+        return GlobalSearchResult(
+            query=query,
+            mode=mode,
+            groups=[],
+            total_repos_searched=total_repos_searched,
+            page=page,
+            page_size=page_size,
+        )
+
+    repo_ids = [r.repo_id for r in public_repo_rows]
+    repo_map: dict[str, db.MusehubRepo] = {r.repo_id: r for r in public_repo_rows}
+
+    # ── 2. Build commit filter predicate ────────────────────────────────────
+    predicate: ColumnElement[bool]
+    if mode == "pattern":
+        predicate = db.MusehubCommit.message.like(query)
+    else:
+        # keyword: OR-match each whitespace-split term against message (lower)
+        terms = [t for t in query.lower().split() if t]
+        if not terms:
+            return GlobalSearchResult(
+                query=query,
+                mode=mode,
+                groups=[],
+                total_repos_searched=total_repos_searched,
+                page=page,
+                page_size=page_size,
+            )
+        term_predicates = [
+            or_(
+                func.lower(db.MusehubCommit.message).contains(term),
+                func.lower(db.MusehubRepo.name).contains(term),
+            )
+            for term in terms
+        ]
+        predicate = or_(*term_predicates)
+
+    # ── 3. Query matching commits joined to their repo ───────────────────────
+    commits_stmt = (
+        select(db.MusehubCommit, db.MusehubRepo)
+        .join(db.MusehubRepo, db.MusehubCommit.repo_id == db.MusehubRepo.repo_id)
+        .where(
+            db.MusehubCommit.repo_id.in_(repo_ids),
+            predicate,
+        )
+        .order_by(desc(db.MusehubCommit.timestamp))
+    )
+    commit_pairs = (await session.execute(commits_stmt)).all()
+
+    # ── 4. Group commits by repo ─────────────────────────────────────────────
+    groups_map: dict[str, list[db.MusehubCommit]] = {}
+    for commit_row, _repo_row in commit_pairs:
+        groups_map.setdefault(commit_row.repo_id, []).append(commit_row)
+
+    # ── 5. Resolve audio preview objects (one per repo, first .mp3/.ogg) ────
+    audio_map: dict[str, str] = {}
+    for rid in groups_map:
+        audio_stmt = (
+            select(db.MusehubObject.object_id)
+            .where(
+                db.MusehubObject.repo_id == rid,
+                or_(
+                    db.MusehubObject.path.like("%.mp3"),
+                    db.MusehubObject.path.like("%.ogg"),
+                    db.MusehubObject.path.like("%.wav"),
+                ),
+            )
+            .order_by(db.MusehubObject.path)
+            .limit(1)
+        )
+        audio_row = (await session.execute(audio_stmt)).scalar_one_or_none()
+        if audio_row is not None:
+            audio_map[rid] = audio_row
+
+    # ── 6. Paginate repo-groups ──────────────────────────────────────────────
+    sorted_repo_ids = list(groups_map.keys())
+    offset = (page - 1) * page_size
+    page_repo_ids = sorted_repo_ids[offset : offset + page_size]
+
+    groups: list[GlobalSearchRepoGroup] = []
+    for rid in page_repo_ids:
+        repo_row = repo_map[rid]
+        all_matches = groups_map[rid]
+        audio_oid = audio_map.get(rid)
+
+        commit_matches = [
+            GlobalSearchCommitMatch(
+                commit_id=c.commit_id,
+                message=c.message,
+                author=c.author,
+                branch=c.branch,
+                timestamp=c.timestamp,
+                repo_id=rid,
+                repo_name=repo_row.name,
+                repo_owner=repo_row.owner_user_id,
+                repo_visibility=repo_row.visibility,
+                audio_object_id=audio_oid,
+            )
+            for c in all_matches[:20]
+        ]
+        groups.append(
+            GlobalSearchRepoGroup(
+                repo_id=rid,
+                repo_name=repo_row.name,
+                repo_owner=repo_row.owner_user_id,
+                repo_visibility=repo_row.visibility,
+                matches=commit_matches,
+                total_matches=len(all_matches),
+            )
+        )
+
+    return GlobalSearchResult(
+        query=query,
+        mode=mode,
+        groups=groups,
+        total_repos_searched=total_repos_searched,
+        page=page,
+        page_size=page_size,
+    )

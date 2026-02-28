@@ -5958,3 +5958,54 @@ if state is not None and state.conflict_paths:
 **Related helpers:**
 - `apply_resolution(root, rel_path, object_id)` — copies an object from the local store to `muse-work/`; used by `--theirs` resolution and `--abort`.
 - `is_conflict_resolved(merge_state, rel_path)` — returns `True` if `rel_path` is not in `conflict_paths`.
+
+
+---
+
+## Muse Hub — Cross-Repo Search Types (`maestro/models/musehub.py`)
+
+### `GlobalSearchCommitMatch`
+
+Pydantic model (`CamelModel`) representing a single commit that matched a
+cross-repo search query.  Returned inside `GlobalSearchRepoGroup.matches`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Commit SHA |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author identifier |
+| `branch` | `str` | Branch the commit lives on |
+| `timestamp` | `datetime` | Commit timestamp (UTC) |
+| `repo_id` | `str` | Owning repo UUID |
+| `repo_name` | `str` | Human-readable repo name |
+| `repo_owner` | `str` | Owner user ID |
+| `repo_visibility` | `str` | Always `"public"` (private repos are excluded) |
+| `audio_object_id` | `str \| None` | First `.mp3`/`.ogg`/`.wav` object ID in the repo, if any |
+
+### `GlobalSearchRepoGroup`
+
+Pydantic model grouping all matching commits for a single public repo.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repo UUID |
+| `repo_name` | `str` | Human-readable repo name |
+| `repo_owner` | `str` | Owner user ID |
+| `repo_visibility` | `str` | Always `"public"` |
+| `matches` | `list[GlobalSearchCommitMatch]` | Up to 20 matching commits, newest-first |
+| `total_matches` | `int` | Actual match count before the 20-commit cap |
+
+### `GlobalSearchResult`
+
+Top-level response model for `GET /api/v1/musehub/search`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `query` | `str` | Original query string |
+| `mode` | `str` | `"keyword"` or `"pattern"` |
+| `groups` | `list[GlobalSearchRepoGroup]` | One entry per matching public repo (paginated) |
+| `total_repos_searched` | `int` | Count of public repos scanned (not just repos with matches) |
+| `page` | `int` | Current page number (1-based) |
+| `page_size` | `int` | Repo-groups per page |
+
+**Service function:** `musehub_repository.global_search(session, *, query, mode, page, page_size)`
