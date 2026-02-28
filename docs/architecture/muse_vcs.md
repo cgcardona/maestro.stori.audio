@@ -1436,7 +1436,14 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}` | Get repo metadata |
 | GET | `/api/v1/musehub/repos/{id}/branches` | List branches |
 | GET | `/api/v1/musehub/repos/{id}/commits` | List commits (newest first) |
+| GET | `/api/v1/musehub/repos/{id}/dag` | Full commit DAG (topologically sorted nodes + edges) |
 | GET | `/api/v1/musehub/repos/{id}/context/{ref}` | Musical context document for a commit (JSON) |
+
+#### DAG Graph Page (UI)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/musehub/ui/{id}/graph` | Interactive SVG commit graph (no auth required — HTML shell) |
 
 #### Context Viewer
 
@@ -1551,6 +1558,45 @@ See [api.md](../reference/api.md#get-apiv1musehub-reposrepo_idrawrefpath) for th
 full MIME type table and error reference.
 
 All other endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
+
+### DAG Graph — Interactive Commit Graph
+
+**Purpose:** Visualise the full commit history of a Muse Hub repo as an interactive directed acyclic graph, equivalent to `muse inspect --format mermaid` but explorable in the browser.
+
+**Routes:**
+
+| Route | Auth | Description |
+|-------|------|-------------|
+| `GET /api/v1/musehub/repos/{id}/dag` | JWT required | Returns `DagGraphResponse` JSON |
+| `GET /musehub/ui/{id}/graph` | None (HTML shell) | Interactive SVG graph page |
+
+**DAG data endpoint:** `GET /api/v1/musehub/repos/{id}/dag`
+
+Returns a `DagGraphResponse` with:
+- `nodes` — `DagNode[]` in topological order (oldest ancestor first, Kahn's algorithm)
+- `edges` — `DagEdge[]` where `source` = child commit, `target` = parent commit
+- `headCommitId` — SHA of the current HEAD (highest-timestamp branch head)
+
+Each `DagNode` carries: `commitId`, `message`, `author`, `timestamp`, `branch`, `parentIds`, `isHead`, `branchLabels`, `tagLabels`.
+
+**Client-side renderer features:**
+- Branch colour-coding: each unique branch name maps to a stable colour via a deterministic hash → palette index. Supports up to 10 distinct colours before wrapping.
+- Merge commits: nodes with `parentIds.length > 1` are rendered as rotated diamonds rather than circles.
+- HEAD node: an outer ring (orange `#f0883e`) marks the current HEAD commit.
+- Zoom: mouse-wheel scales the SVG transform around the cursor position (range 0.2× – 4×).
+- Pan: click-drag translates the SVG viewport.
+- Hover popover: shows full SHA, commit message, author, timestamp, and branch for any node.
+- Branch labels: `branchLabels` for each node are drawn as coloured badge overlays on the graph.
+- Click to navigate: clicking any node or its label navigates to the commit detail page.
+- Virtualised rendering: the SVG is positioned absolutely inside a fixed-height viewport; only the visible portion is painted by the browser.
+
+**Legend:** The top bar of the graph page shows each distinct branch name with its colour swatch, plus shape-key reminders for merge commits (♦) and HEAD (○).
+
+**Performance:** The `/dag` endpoint fetches all commits without a limit to build a complete graph. For repos with 100+ commits the response is typically < 50 KB (well within browser tolerance). The SVG renderer does not re-layout on scroll — panning is a pure CSS transform.
+
+**Result type:** `DagGraphResponse` — fields: `nodes: DagNode[]`, `edges: DagEdge[]`, `headCommitId: str | None`.
+
+**Agent use case:** An AI music generation agent can call `GET /dag` to reason about branching topology, find common ancestors between branches, determine which commits are reachable from HEAD, and identify merge points without scanning the linear commit list.
 
 ### Issue Workflow
 
