@@ -1400,6 +1400,67 @@ others → `application/octet-stream`).
 
 ---
 
+
+---
+
+## Muse Hub Semantic Search
+
+### GET /api/v1/musehub/search/similar
+
+Find public commits that are musically similar to a given commit SHA using
+vector-based cosine similarity (Qdrant).  Only public repos appear in results.
+
+**Authentication:** `Authorization: Bearer <token>` required.
+
+**Query parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `commit`  | string | ✅ | — | Commit SHA to use as the similarity query |
+| `limit`   | int | ❌ | 10 | Maximum results to return (1–50) |
+
+
+**Response (200):**
+
+```json
+{
+
+  "queryCommit": "abc123",
+  "results": [
+    {
+      "commitId": "def456",
+      "repoId": "repo-uuid",
+      "score": 0.94,
+      "branch": "main",
+      "author": "composer@stori"
+
+    }
+  ]
+}
+```
+
+
+**Result type:** `SimilarSearchResponse` — see `type_contracts.md`.
+
+**Errors:**
+- **401** — missing or invalid token
+- **404** — commit SHA not found in Muse Hub
+- **503** — Qdrant temporarily unavailable
+
+**How similarity works:** The commit message is parsed for musical metadata
+(key, tempo, mode, chord complexity) and encoded as a 128-dim L2-normalised
+feature vector. Qdrant returns the nearest vectors by cosine distance. Results
+are ranked highest-to-lowest by score (1.0 = identical, 0.0 = unrelated).
+
+**Agent use case:** After composing a jazz ballad in Db major at 72 BPM, an
+agent calls this endpoint to surface reference compositions with similar harmonic
+and tempo profiles for style study or mix-in inspiration.
+
+---
+
+
+---
+
 ## Muse Hub — Webhook Subscriptions
 
 Webhooks deliver real-time event notifications via HTTP POST to a registered
@@ -1460,10 +1521,12 @@ Register a new webhook subscription.
 
 List all registered webhooks for a repo, ordered by creation time.
 
+
 **Response (200):**
 
 ```json
 {
+
   "webhooks": [
     {
       "webhookId": "uuid",
@@ -1472,10 +1535,12 @@ List all registered webhooks for a repo, ordered by creation time.
       "events": ["push", "issue"],
       "active": true,
       "createdAt": "2026-02-27T00:00:00Z"
+
     }
   ]
 }
 ```
+
 
 **Errors:** **404** — repo not found.
 
@@ -1495,6 +1560,7 @@ Remove a webhook subscription and all its delivery history.
 ### GET /api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries
 
 List delivery attempts for a webhook, newest first.
+
 
 ### GET /api/v1/musehub/repos/{repo_id}/export/{ref}
 
@@ -1741,6 +1807,147 @@ Returns structured JSON for one musical dimension.
 
 See `maestro/models/musehub_analysis.py` for full Pydantic model definitions and OpenAPI schema.
 
+
+---
+## Muse Hub Releases API
+
+Releases publish a specific version of a composition with human-readable notes
+and structured download package URLs. Tags are unique per repo (e.g. `v1.0`).
+
+All endpoints require `Authorization: Bearer <token>`.
+
+### POST `/api/v1/musehub/repos/{repo_id}/releases`
+
+Create a new release tied to an optional commit snapshot.
+
+**Request body:**
+```json
+{
+  "tag": "v1.0",
+  "title": "First Release",
+  "body": "# Release Notes\n\nInitial jazz arrangement.",
+  "commitId": "abc123..."
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tag` | string | Yes | Version tag — unique per repo (e.g. `v1.0`) |
+| `title` | string | Yes | Human-readable release title |
+| `body` | string | No | Markdown release notes |
+| `commitId` | string | No | Commit SHA to pin this release to |
+
+**Response (201):** `ReleaseResponse` — see below.
+
+**Errors:**
+- **404** — repo not found
+- **409** — a release with this tag already exists in the repo
+
+### GET `/api/v1/musehub/repos/{repo_id}/releases`
+
+List all releases for the repo, ordered newest first.
+
+**Response (200):**
+```json
+{
+  "releases": [<ReleaseResponse>, ...]
+}
+```
+
+**Errors:**
+- **404** — repo not found
+
+### GET `/api/v1/musehub/repos/{repo_id}/releases/{tag}`
+
+Get a single release by its version tag.
+
+**Response (200):** `ReleaseResponse`
+
+**Errors:**
+- **404** — repo not found, or tag not found in this repo
+
+### `ReleaseResponse`
+
+```json
+{
+  "releaseId": "uuid",
+  "tag": "v1.0",
+  "title": "First Release",
+  "body": "# Release Notes...",
+  "commitId": "abc123...",
+  "downloadUrls": {
+    "midiBundle": "/api/v1/musehub/repos/{id}/releases/{release_id}/packages/midi",
+    "stems": "/api/v1/musehub/repos/{id}/releases/{release_id}/packages/stems",
+    "mp3": "/api/v1/musehub/repos/{id}/releases/{release_id}/packages/mp3",
+    "musicxml": "/api/v1/musehub/repos/{id}/releases/{release_id}/packages/musicxml",
+    "metadata": "/api/v1/musehub/repos/{id}/releases/{release_id}/packages/metadata"
+  },
+  "createdAt": "2026-02-27T00:00:00Z"
+}
+```
+
+`downloadUrls` fields are `null` when the corresponding package is not available
+(e.g. no commit pinned, or no stored objects for that commit).
+
+---
+
+### GET /api/v1/musehub/repos/{repo_id}/raw/{ref}/{path}
+
+Direct file download by human-readable path and ref (branch/tag), analogous to
+GitHub's `raw.githubusercontent.com` URLs. Designed for `curl`, `wget`, and
+scripted pipelines.
+
+**Auth:** No token required for **public** repos. Private repos require
+`Authorization: Bearer <token>` and return 401 otherwise.
+
+**Path parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `repo_id` | UUID of the target Muse Hub repo |
+| `ref` | Branch or tag name (e.g. `main`). Accepted for URL semantics; current implementation serves the most-recently-pushed object at `path`. |
+| `path` | Relative file path inside the repo (e.g. `tracks/bass.mid`). Supports nested paths. |
+
+**Response headers:**
+
+| Header | Value |
+|--------|-------|
+| `Content-Type` | MIME type derived from file extension (see table below) |
+| `Content-Disposition` | `attachment; filename="<basename>"` |
+| `Accept-Ranges` | `bytes` — range requests are supported |
+
+**MIME type resolution:**
+
+| Extension | Content-Type |
+|-----------|-------------|
+| `.mid`, `.midi` | `audio/midi` |
+| `.mp3` | `audio/mpeg` |
+| `.wav` | `audio/wav` |
+| `.json` | `application/json` |
+| `.webp` | `image/webp` |
+| `.xml` | `application/xml` |
+| `.abc` | `text/vnd.abc` |
+| Others | `application/octet-stream` |
+
+**Range request example:**
+
+```bash
+curl -H "Range: bytes=0-1023" \
+  https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/tracks/bass.mid
+# → 206 Partial Content with first 1 KB
+```
+
+**Full download example:**
+
+```bash
+curl https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/tracks/bass.mid \
+  -o bass.mid
+```
+
+**Errors:**
+- **401** — private repo accessed without a valid Bearer token
+- **404** — repo not found, or no object exists at the given path
+- **410** — object metadata exists in DB but the file was removed from disk
 
 ---
 

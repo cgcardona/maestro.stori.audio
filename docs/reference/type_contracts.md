@@ -6053,6 +6053,61 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
 
+### `SessionCreate`
+
+Defined in `maestro/models/musehub.py`.
+
+Request body for `POST /api/v1/musehub/repos/{repo_id}/sessions`. Accepts a session record pushed from `muse session end`. Push is idempotent — same `session_id` updates the existing record.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `str` | UUIDv4 from the local `.muse/sessions/<id>.json` |
+| `schema_version` | `str` | JSON schema version (currently `"1"`) |
+| `started_at` | `datetime` | ISO-8601 UTC session start |
+| `ended_at` | `datetime \| None` | ISO-8601 UTC session end; `None` while active |
+| `participants` | `list[str]` | Ordered participant names |
+| `location` | `str` | Recording location or studio name |
+| `intent` | `str` | Creative intent declared at session start |
+| `commits` | `list[str]` | Muse commit IDs made during this session |
+| `notes` | `str` | Closing notes from `muse session end --notes` |
+
+**Producer:** CLI `muse session end` (future push command)
+**Consumer:** `repos.push_session` route handler → `musehub_sessions.upsert_session`
+
+### `SessionResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Returned by `GET /api/v1/musehub/repos/{repo_id}/sessions/{session_id}` and as items in `SessionListResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `str` | UUIDv4 session identifier |
+| `repo_id` | `str` | Hub repo this session belongs to |
+| `schema_version` | `str` | JSON schema version string |
+| `started_at` | `datetime` | Session start timestamp |
+| `ended_at` | `datetime \| None` | Session end timestamp |
+| `participants` | `list[str]` | Ordered participant name list |
+| `location` | `str` | Recording location |
+| `intent` | `str` | Creative intent |
+| `commits` | `list[str]` | Muse commit IDs associated with this session |
+| `notes` | `str` | Closing notes |
+| `created_at` | `datetime` | When the record was pushed to the Hub |
+
+**Producer:** `musehub_sessions.upsert_session`, `musehub_sessions.get_session`, `musehub_sessions.list_sessions`
+**Consumer:** Muse Hub session detail UI page; any agent reasoning about session creative context
+
+### `SessionListResponse`
+
+Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessions` | `list[SessionResponse]` | Sessions ordered newest-first by `started_at` |
+| `total` | `int` | Total session count for the repo (pre-limit) |
+
+**Producer:** `repos.list_sessions` route handler
+**Consumer:** Muse Hub session list UI page; agents computing per-participant session counts
 ### `ContributorCredits`
 
 Defined in `maestro/models/musehub.py`.
@@ -6178,6 +6233,40 @@ Defined in `maestro/models/musehub.py`.
 **Producer:** `search.search_repo` route handler
 **Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
 
+<<<<<<< HEAD
+### `SessionResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Wire representation of a single recording session entry.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `str` | UUID for this session |
+| `started_at` | `datetime` | When the session started (UTC) |
+| `ended_at` | `datetime \| None` | When the session ended; `null` if still active |
+| `duration_seconds` | `float \| None` | Derived duration; `null` for active sessions |
+| `participants` | `list[str]` | Participant identifiers or display names |
+| `intent` | `str` | Free-text creative goal for this session |
+| `location` | `str` | Studio or location label |
+| `is_active` | `bool` | True while session is open (no stop event received) |
+| `created_at` | `datetime` | When the Hub record was created (UTC) |
+
+**Producer:** `musehub_repository.create_session()` / `list_sessions()` / `get_session()` → `repos.create_session` / `list_sessions` / `get_session` route handlers
+**Consumer:** Muse Hub sessions page UI; CLI `muse session log`; AI agents reviewing creative history
+
+### `SessionListResponse`
+
+Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessions` | `list[SessionResponse]` | Sessions ordered: active first, then newest-by-started_at |
+| `total` | `int` | Total session count for the repo (ignores `limit`) |
+
+**Producer:** `repos.list_sessions` route handler
+**Consumer:** Muse Hub sessions page UI; AI agents auditing studio activity across time
+=======
 ### `DagNode`
 
 A single commit node in the repo's directed acyclic graph. Defined in `maestro/models/musehub.py`.
@@ -6225,6 +6314,91 @@ Returned by `GET /api/v1/musehub/repos/{repo_id}/dag`.
 
 **Producer:** `repos.get_commit_dag` route handler
 **Consumer:** Interactive DAG graph UI page; AI agents inspecting project history topology
+>>>>>>> origin/dev
+
+---
+
+## Muse Hub Timeline Types
+
+Defined in `maestro/models/musehub.py`. Returned by `GET /api/v1/musehub/repos/{repo_id}/timeline`.
+
+### `TimelineCommitEvent`
+
+One commit plotted as a point on the timeline.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"commit"` — discriminator for client-side layer routing |
+| `commit_id` | `str` | Full commit SHA |
+| `branch` | `str` | Branch the commit belongs to |
+| `message` | `str` | Full commit message |
+| `author` | `str` | Author identifier |
+| `timestamp` | `datetime` | UTC timestamp of the commit |
+| `parent_ids` | `list[str]` | Parent commit SHAs (two for merge commits) |
+
+**Producer:** `musehub_repository.get_timeline_events()`
+**Consumer:** Muse Hub timeline UI; AI agents reasoning about project history
+
+### `TimelineEmotionEvent`
+
+Deterministic emotion vector derived from the commit SHA.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"emotion"` |
+| `commit_id` | `str` | Commit this vector is derived from |
+| `timestamp` | `datetime` | Same timestamp as the parent commit |
+| `valence` | `float` | Pleasantness [0.0, 1.0] — derived from SHA bytes 0–3 |
+| `energy` | `float` | Intensity [0.0, 1.0] — derived from SHA bytes 4–7 |
+| `tension` | `float` | Dissonance [0.0, 1.0] — derived from SHA bytes 8–11 |
+
+**Producer:** `musehub_repository._derive_emotion()`
+**Consumer:** Timeline UI line chart overlay; agents tracking emotional arc of a composition
+
+### `TimelineSectionEvent`
+
+A section-change marker extracted from a commit message via keyword heuristics.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"section"` |
+| `commit_id` | `str` | Commit whose message triggered this event |
+| `timestamp` | `datetime` | Same as parent commit |
+| `section_name` | `str` | Detected section keyword (e.g. `"chorus"`, `"verse"`, `"bridge"`) |
+| `action` | `str` | `"added"` or `"removed"` — inferred from verb in commit message |
+
+**Producer:** `musehub_repository._extract_section_events()`
+**Consumer:** Timeline UI section layer; agents understanding song structure evolution
+
+### `TimelineTrackEvent`
+
+A track add/remove marker extracted from a commit message via keyword heuristics.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"track"` |
+| `commit_id` | `str` | Commit whose message triggered this event |
+| `timestamp` | `datetime` | Same as parent commit |
+| `track_name` | `str` | Detected track keyword (e.g. `"bass"`, `"drums"`, `"keys"`) |
+| `action` | `str` | `"added"` or `"removed"` — inferred from verb in commit message |
+
+**Producer:** `musehub_repository._extract_track_events()`
+**Consumer:** Timeline UI track layer; agents tracking instrumentation changes over time
+
+### `TimelineResponse`
+
+Top-level response for `GET /api/v1/musehub/repos/{repo_id}/timeline`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commits` | `list[TimelineCommitEvent]` | All visible commits, oldest-first |
+| `emotion` | `list[TimelineEmotionEvent]` | One emotion entry per commit |
+| `sections` | `list[TimelineSectionEvent]` | Section-change events across all commits |
+| `tracks` | `list[TimelineTrackEvent]` | Track add/remove events across all commits |
+| `total_commits` | `int` | Total commit count for the repo (may exceed `len(commits)` if `limit` was applied) |
+
+**Producer:** `musehub_repository.get_timeline_events()`
+**Consumer:** `GET /musehub/ui/{repo_id}/timeline` SVG renderer; AI agents reasoning about project creative arc
 
 ---
 
@@ -6444,6 +6618,82 @@ if state is not None and state.conflict_paths:
 - `is_conflict_resolved(merge_state, rel_path)` — returns `True` if `rel_path` is not in `conflict_paths`.
 
 
+
+---
+
+## MuseHub Semantic Search (`maestro/services/musehub_embeddings.py`, `maestro/services/musehub_qdrant.py`)
+
+### MusicalFeatures
+
+Structured musical features extracted from a commit message. Typed intermediate
+representation between raw commit metadata and the Qdrant embedding vector.
+
+```python
+@dataclass
+class MusicalFeatures:
+    key_index: int          # Chromatic index: 0=C, 1=Db, ..., 11=B; -1=unknown
+    mode_score: float       # 0.0=minor, 1.0=major, 0.5=neutral/modal
+    tempo_norm: float       # (bpm - 20) / 280, range [0, 1]
+    note_density: float     # Notes per beat, normalised [0, 1]
+    velocity_mean: float    # Mean MIDI velocity [0, 1]
+    valence: float          # Emotional valence [0, 1]
+    arousal: float          # Emotional arousal/energy [0, 1]
+    chord_complexity: float # 0=triads only, 1=extended voicings
+    chroma: list[float]     # 12-element chromatic pitch class histogram
+    text_fingerprint: list[float]  # 16-element SHA-256 message fingerprint
+```
+
+**Source:** `maestro/services/musehub_embeddings.py`
+
+**Used by:** `features_to_vector()` → `compute_embedding()` → `embed_push_commits()`
+
+---
+
+### SimilarCommitResult
+
+A single result entry from a MuseHub similarity search query. Produced by
+`MusehubQdrantClient.search_similar()`.
+
+```python
+@dataclass
+class SimilarCommitResult:
+    commit_id: str   # Muse Hub commit SHA
+    repo_id: str     # UUID of the owning repository
+    score: float     # Cosine similarity in [0.0, 1.0]; 1.0 = identical
+    branch: str      # Branch the commit lives on
+    author: str      # Commit author identifier
+```
+
+**Source:** `maestro/services/musehub_qdrant.py`
+
+**Used by:** `GET /api/v1/musehub/search/similar` route → serialised as `SimilarCommitResponse`
+
+---
+
+### SimilarSearchResponse / SimilarCommitResponse (Pydantic)
+
+Wire-format models for the semantic search endpoint.
+
+```python
+class SimilarCommitResponse(CamelModel):
+    commit_id: str        # camelCase: commitId
+    repo_id: str          # camelCase: repoId
+    score: float          # [0.0, 1.0]
+    branch: str
+    author: str
+
+class SimilarSearchResponse(CamelModel):
+    query_commit: str                      # camelCase: queryCommit
+    results: list[SimilarCommitResponse]   # Sorted descending by score
+```
+
+**Source:** `maestro/models/musehub.py`
+
+**Agent contract:** Results are always sorted highest-to-lowest score. Only
+public repos appear in results. An empty `results` list means no similar
+public compositions were found — not an error condition.
+
+
 ---
 
 ## ProfileResponse
@@ -6525,6 +6775,64 @@ cross-repo search query.  Returned inside `GlobalSearchRepoGroup.matches`.
 
 Pydantic model grouping all matching commits for a single public repo.---
 
+## `ReleaseCreate`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `POST /api/v1/musehub/repos/{repo_id}/releases` request body.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tag` | `str` | Yes | Version tag unique per repo (e.g. `v1.0`) |
+| `title` | `str` | Yes | Human-readable release title |
+| `body` | `str` | No | Markdown release notes |
+| `commit_id` | `str \| None` | No | Commit SHA to pin this release to |
+
+---
+
+## `ReleaseDownloadUrls`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `ReleaseResponse.download_urls`.
+
+Structured map of download package URLs for a release. Each field is `None`
+when the corresponding package is unavailable.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `midi_bundle` | `str \| None` | Full MIDI export (all tracks as a single .mid) |
+| `stems` | `str \| None` | Per-track MIDI stems (zip of .mid files) |
+| `mp3` | `str \| None` | Full mix audio render |
+| `musicxml` | `str \| None` | MusicXML notation export |
+| `metadata` | `str \| None` | JSON manifest with tempo, key, arrangement info |
+
+---
+
+## `ReleaseResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `POST`, `GET /releases`, `GET /releases/{tag}` responses.
+**Result type name:** `ReleaseResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `release_id` | `str` | UUID of the release row |
+| `tag` | `str` | Version tag (e.g. `v1.0`) |
+| `title` | `str` | Release title |
+| `body` | `str` | Markdown release notes |
+| `commit_id` | `str \| None` | Pinned commit SHA, or `None` |
+| `download_urls` | `ReleaseDownloadUrls` | Structured download package URL map |
+| `created_at` | `datetime` | UTC timestamp of release creation |
+
+---
+
+## `ReleaseListResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /api/v1/musehub/repos/{repo_id}/releases`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `releases` | `list[ReleaseResponse]` | All releases, newest first |
 ## ExploreRepoResult
 
 **Module:** `maestro.models.musehub`

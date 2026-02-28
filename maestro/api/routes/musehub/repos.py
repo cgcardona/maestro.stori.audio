@@ -5,6 +5,7 @@ Endpoint summary:
   GET  /musehub/repos/{repo_id}                   — get repo metadata
   GET  /musehub/repos/{repo_id}/branches          — list all branches
   GET  /musehub/repos/{repo_id}/commits           — list commits (newest first)
+  GET  /musehub/repos/{repo_id}/timeline          — chronological timeline with emotion/section/track layers
   GET  /musehub/repos/{repo_id}/context           — agent context briefing
 
 All endpoints require a valid JWT Bearer token.
@@ -15,7 +16,7 @@ from __future__ import annotations
 
 import logging
 
-import yaml
+import yaml  # PyYAML ships no py.typed marker
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,10 +28,15 @@ from maestro.models.musehub import (
     CreateRepoRequest,
     DivergenceDimensionResponse,
     DivergenceResponse,
+    TimelineResponse,
     DagGraphResponse,
     MuseHubContextResponse,
     RepoResponse,
     CreditsResponse,
+    SessionCreate,
+    SessionListResponse,
+    SessionResponse,
+    SessionStop,
 )
 from maestro.models.musehub_context import (
     ContextDepth,
@@ -128,6 +134,37 @@ async def list_commits(
     )
     return CommitListResponse(commits=commits, total=total)
 
+
+
+@router.get(
+    "/repos/{repo_id}/timeline",
+    response_model=TimelineResponse,
+    summary="Chronological timeline of musical evolution",
+)
+async def get_timeline(
+    repo_id: str,
+    limit: int = Query(200, ge=1, le=500, description="Max commits to include in the timeline"),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> TimelineResponse:
+    """Return a chronological timeline of musical evolution for a repo.
+
+    The response contains four parallel event streams, each independently
+    toggleable by the client:
+    - ``commits``: every pushed commit as a timeline marker (oldest-first)
+    - ``emotion``: deterministic emotion vectors (valence/energy/tension) per commit
+    - ``sections``: section-change events parsed from commit messages
+    - ``tracks``: track add/remove events parsed from commit messages
+
+    Content negotiation: the UI page at ``GET /musehub/ui/{repo_id}/timeline``
+    fetches this endpoint for its layered visualisation. AI agents call this
+    endpoint directly to understand the creative arc of a project.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    return await musehub_repository.get_timeline_events(db, repo_id, limit=limit)
 
 @router.get(
     "/repos/{repo_id}/divergence",
@@ -350,3 +387,113 @@ async def get_commit_dag(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
     return await musehub_repository.list_commits_dag(db, repo_id)
+
+
+@router.post(
+    "/repos/{repo_id}/sessions",
+    response_model=SessionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a recording session entry",
+)
+async def create_session(
+    repo_id: str,
+    body: SessionCreate,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> SessionResponse:
+    """Register a new recording session on the Hub.
+
+    Called by the CLI on ``muse session start``. Returns the persisted session
+    including its server-assigned ``session_id``.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    session_resp = await musehub_repository.create_session(
+        db,
+        repo_id,
+        started_at=body.started_at,
+        participants=body.participants,
+        intent=body.intent,
+        location=body.location,
+    )
+    await db.commit()
+    return session_resp
+
+
+@router.get(
+    "/repos/{repo_id}/sessions",
+    response_model=SessionListResponse,
+    summary="List recording sessions for a repo (newest first)",
+)
+async def list_sessions(
+    repo_id: str,
+    limit: int = Query(50, ge=1, le=200, description="Max sessions to return"),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> SessionListResponse:
+    """Return sessions for a repo, sorted newest-first by started_at.
+
+    Returns 404 if the repo does not exist.  Use ``limit`` to paginate large
+    session histories (default 50, max 200).
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    sessions, total = await musehub_repository.list_sessions(db, repo_id, limit=limit)
+    return SessionListResponse(sessions=sessions, total=total)
+
+
+@router.get(
+    "/repos/{repo_id}/sessions/{session_id}",
+    response_model=SessionResponse,
+    summary="Get a single recording session by ID",
+)
+async def get_session(
+    repo_id: str,
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> SessionResponse:
+    """Return a single session record.
+
+    Returns 404 if the repo or session does not exist.  The ``session_id``
+    must be an exact match — the hub does not support prefix lookups.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    session = await musehub_repository.get_session(db, repo_id, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    return session
+
+@router.post(
+    "/repos/{repo_id}/sessions/{session_id}/stop",
+    response_model=SessionResponse,
+    summary="Mark a recording session as ended",
+)
+async def stop_session(
+    repo_id: str,
+    session_id: str,
+    body: SessionStop,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> SessionResponse:
+    """Close an active session and record its end time.
+
+    Called by the CLI on ``muse session stop``. Idempotent — calling stop on
+    an already-stopped session updates ``ended_at`` and returns the session.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    sess = await musehub_repository.stop_session(db, repo_id, session_id, body.ended_at)
+    if sess is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await db.commit()
+    return sess

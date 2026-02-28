@@ -229,6 +229,58 @@ class PRMergeResponse(CamelModel):
     merge_commit_id: str
 
 
+# ── Release models ────────────────────────────────────────────────────────────
+
+
+class ReleaseCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/releases.
+
+    ``tag`` must be unique per repo (e.g. "v1.0", "v2.3.1").
+    ``commit_id`` pins the release to a specific commit snapshot.
+    """
+
+    tag: str = Field(..., min_length=1, max_length=100, description="Version tag, e.g. 'v1.0'")
+    title: str = Field(..., min_length=1, max_length=500, description="Release title")
+    body: str = Field("", description="Release notes (Markdown)")
+    commit_id: str | None = Field(None, description="Commit to pin this release to")
+
+
+class ReleaseDownloadUrls(CamelModel):
+    """Structured download package URLs for a release.
+
+    Each field is either a URL string or None if the package is not available.
+    ``midi_bundle`` is the full MIDI export (all tracks as a single .mid).
+    ``stems`` is a zip of per-track MIDI stems.
+    ``mp3`` is the full mix audio render.
+    ``musicxml`` is the notation export in MusicXML format.
+    ``metadata`` is a JSON file with tempo, key, and arrangement info.
+    """
+
+    midi_bundle: str | None = None
+    stems: str | None = None
+    mp3: str | None = None
+    musicxml: str | None = None
+    metadata: str | None = None
+
+
+class ReleaseResponse(CamelModel):
+    """Wire representation of a Muse Hub release."""
+
+    release_id: str
+    tag: str
+    title: str
+    body: str
+    commit_id: str | None = None
+    download_urls: ReleaseDownloadUrls
+    created_at: datetime
+
+
+class ReleaseListResponse(CamelModel):
+    """List of releases for a repo (newest first)."""
+
+    releases: list[ReleaseResponse]
+
+
 # ── Credits models ────────────────────────────────────────────────────────────
 
 
@@ -763,3 +815,86 @@ class DagGraphResponse(CamelModel):
     nodes: list[DagNode]
     edges: list[DagEdge]
     head_commit_id: str | None = None
+
+
+# ── Session models ─────────────────────────────────────────────────────────────
+
+
+class SessionCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/sessions.
+
+    Sent by the CLI on ``muse session start`` to register a new session.
+    ``started_at`` defaults to the server's current time when absent.
+    """
+
+    started_at: datetime | None = None
+    participants: list[str] = Field(
+        default_factory=list, description="Participant identifiers or display names"
+    )
+    intent: str = Field("", description="Free-text creative goal for this session")
+    location: str = Field("", max_length=255, description="Studio or location label")
+    is_active: bool = Field(True, description="True if the session is currently live")
+
+
+class SessionStop(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/sessions/{session_id}/stop.
+
+    Sent by the CLI on ``muse session stop`` to mark a session as ended.
+    """
+
+    ended_at: datetime | None = None
+
+
+class SessionResponse(CamelModel):
+    """Wire representation of a single recording session.
+
+    ``duration_seconds`` is derived from ``started_at`` and ``ended_at``;
+    None when the session is still active (``ended_at`` is null).
+    ``is_active`` is True while the session is open -- used by the Hub UI to
+    render a live indicator.
+    """
+
+    session_id: str
+    started_at: datetime
+    ended_at: datetime | None = None
+    duration_seconds: float | None = None
+    participants: list[str]
+    intent: str
+    location: str
+    is_active: bool
+    created_at: datetime
+
+
+class SessionListResponse(CamelModel):
+    """Paginated list of sessions for a repo (newest first)."""
+
+    sessions: list[SessionResponse]
+    total: int
+
+
+class SimilarCommitResponse(CamelModel):
+    """A single result from a MuseHub semantic similarity search.
+
+    The score is cosine similarity in [0.0, 1.0] -- higher is more similar.
+    Results are pre-sorted descending by score.
+    """
+
+    commit_id: str = Field(..., description="Commit SHA of the matching commit")
+    repo_id: str = Field(..., description="UUID of the repo containing this commit")
+    score: float = Field(..., ge=0.0, le=1.0, description="Cosine similarity score")
+    branch: str = Field(..., description="Branch the commit lives on")
+    author: str = Field(..., description="Commit author identifier")
+
+
+class SimilarSearchResponse(CamelModel):
+    """Response for GET /musehub/search/similar.
+
+    Contains the query commit SHA and a ranked list of musically similar commits.
+    Only public repos appear in results -- enforced server-side by Qdrant filter.
+    """
+
+    query_commit: str = Field(..., description="The commit SHA used as the search query")
+    results: list[SimilarCommitResponse] = Field(
+        default_factory=list,
+        description="Ranked results, most similar first",
+    )
