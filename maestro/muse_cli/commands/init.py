@@ -1,16 +1,41 @@
 """muse init — initialise a new Muse repository.
 
 Creates the ``.muse/`` directory tree in the current working directory and
-writes all identity/configuration files that subsequent commands depend on:
+writes all identity/configuration files that subsequent commands depend on.
+
+Normal (non-bare) layout::
 
     .muse/
-        repo.json        repo_id (UUID), schema_version, created_at
-        HEAD             text pointer → refs/heads/main
-        refs/heads/main  empty (no commits yet)
+        repo.json        repo_id (UUID), schema_version, created_at, bare flag
+        HEAD             text pointer → refs/heads/<branch>
+        refs/heads/<branch>  empty (no commits yet)
         config.toml      [user] [auth] [remotes] stubs
+    muse-work/           working-tree root (absent for --bare repos)
 
-``--force`` reinitialises an existing repo while preserving the existing
-``repo_id`` so that remote-tracking metadata stays coherent.
+Bare layout (``--bare``)::
+
+    .muse/
+        repo.json        … bare = true …
+        HEAD             refs/heads/<branch>
+        refs/heads/<branch>
+
+Bare repositories have no ``muse-work/`` directory.  They are used as
+Muse Hub remotes — objects and refs only, no live working copy.
+
+Flags
+-----
+``--bare``
+    Initialise as a bare repository (no ``muse-work/`` checkout).
+    Writes ``bare = true`` into ``.muse/config.toml``.
+``--template <path>``
+    Copy the contents of *path* into ``muse-work/`` after creating the
+    directory structure.  Useful for studio project templates.
+``--default-branch TEXT``
+    Name of the initial branch (default: ``main``).
+``--force``
+    Re-initialise even if a ``.muse/`` directory already exists.
+    Preserves the existing ``repo_id`` so remote-tracking metadata stays
+    coherent.
 """
 from __future__ import annotations
 
@@ -18,6 +43,7 @@ import datetime
 import json
 import logging
 import pathlib
+import shutil
 import uuid
 
 import typer
@@ -43,6 +69,20 @@ token = ""
 [remotes]
 """
 
+_BARE_CONFIG_TOML = """\
+[core]
+bare = true
+
+[user]
+name = ""
+email = ""
+
+[auth]
+token = ""
+
+[remotes]
+"""
+
 
 @app.callback(invoke_without_command=True)
 def init(
@@ -52,10 +92,45 @@ def init(
         "--force",
         help="Re-initialise even if this is already a Muse repository.",
     ),
+    bare: bool = typer.Option(
+        False,
+        "--bare",
+        help=(
+            "Initialise as a bare repository (no muse-work/ checkout). "
+            "Used for remote/server-side repos that store objects and refs "
+            "but no working copy."
+        ),
+    ),
+    template: str | None = typer.Option(
+        None,
+        "--template",
+        metavar="PATH",
+        help=(
+            "Copy the contents of PATH into muse-work/ after initialisation. "
+            "Lets studios pre-populate a standard folder structure "
+            "(e.g. drums/, bass/, keys/, vocals/) for every new project."
+        ),
+    ),
+    default_branch: str = typer.Option(
+        "main",
+        "--default-branch",
+        metavar="BRANCH",
+        help="Name of the initial branch (default: main).",
+    ),
 ) -> None:
     """Initialise a new Muse repository in the current directory."""
     cwd = pathlib.Path.cwd()
     muse_dir = cwd / ".muse"
+
+    # Validate template path early before doing any filesystem work.
+    template_path: pathlib.Path | None = None
+    if template is not None:
+        template_path = pathlib.Path(template)
+        if not template_path.is_dir():
+            typer.echo(
+                f"❌ Template path does not exist or is not a directory: {template_path}"
+            )
+            raise typer.Exit(code=ExitCode.USER_ERROR)
 
     # Check if a .muse/ already exists anywhere in cwd (not parents).
     # We deliberately only check the *immediate* cwd, not parents, so that
@@ -90,18 +165,20 @@ def init(
 
         # repo.json — identity file
         repo_id = existing_repo_id or str(uuid.uuid4())
-        repo_json: dict[str, str] = {
+        repo_json: dict[str, str | bool] = {
             "repo_id": repo_id,
             "schema_version": _SCHEMA_VERSION,
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
+        if bare:
+            repo_json["bare"] = True
         (muse_dir / "repo.json").write_text(json.dumps(repo_json, indent=2) + "\n")
 
-        # HEAD — current branch pointer
-        (muse_dir / "HEAD").write_text("refs/heads/main\n")
+        # HEAD — current branch pointer (uses --default-branch name)
+        (muse_dir / "HEAD").write_text(f"refs/heads/{default_branch}\n")
 
-        # refs/heads/main — empty = no commits on this branch yet
-        ref_file = muse_dir / "refs" / "heads" / "main"
+        # refs/heads/<branch> — empty = no commits on this branch yet
+        ref_file = muse_dir / "refs" / "heads" / default_branch
         if not ref_file.exists() or force:
             ref_file.write_text("")
 
@@ -109,7 +186,21 @@ def init(
         # so existing remote/user config is preserved.
         config_path = muse_dir / "config.toml"
         if not config_path.exists():
-            config_path.write_text(_DEFAULT_CONFIG_TOML)
+            config_path.write_text(_BARE_CONFIG_TOML if bare else _DEFAULT_CONFIG_TOML)
+
+        # muse-work/ — working-tree root (skipped for bare repos)
+        if not bare:
+            work_dir = cwd / "muse-work"
+            work_dir.mkdir(exist_ok=True)
+
+            # --template: copy template contents into muse-work/
+            if template_path is not None:
+                for item in template_path.iterdir():
+                    dest = work_dir / item.name
+                    if item.is_dir():
+                        shutil.copytree(item, dest, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(item, dest)
 
     except PermissionError:
         typer.echo(
@@ -127,5 +218,13 @@ def init(
         raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
 
     action = "Reinitialised" if (force and already_exists) else "Initialised"
-    typer.echo(f"✅ {action} Muse repository in {muse_dir}")
-    logger.info("✅ %s Muse repository in %s (repo_id=%s)", action, muse_dir, repo_id)
+    kind = "bare " if bare else ""
+    typer.echo(f"✅ {action} {kind}Muse repository in {muse_dir}")
+    logger.info(
+        "✅ %s %sMuse repository in %s (repo_id=%s, branch=%s)",
+        action,
+        kind,
+        muse_dir,
+        repo_id,
+        default_branch,
+    )
