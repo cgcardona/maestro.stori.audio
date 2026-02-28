@@ -348,17 +348,6 @@ async function toggleReaction(targetType, targetId, emoji, containerId) {
 // ── General discussion helpers ────────────────────────────────────────────────
 
 /**
- * Parse the `sub` claim from a JWT without verifying the signature.
- * Used only for UI display decisions (delete button visibility).
- */
-function _parseTokenSub(token) {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.sub || null;
-  } catch(_) { return null; }
-}
-
-/**
  * Soft-delete a general discussion comment by ID and reload the thread.
  */
 async function deleteComment(commentId) {
