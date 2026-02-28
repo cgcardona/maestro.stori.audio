@@ -732,3 +732,228 @@ async def test_graph_json_response_has_required_fields(
     node = body["nodes"][0]
     for field in ("commitId", "message", "author", "timestamp", "branch", "parentIds", "isHead"):
         assert field in node, f"Missing field '{field}' in DAG node"
+
+# ---------------------------------------------------------------------------
+# GET /musehub/repos/{repo_id}/credits
+# ---------------------------------------------------------------------------
+
+
+async def _seed_credits_repo(db_session: AsyncSession) -> str:
+    """Create a repo with commits from two distinct authors and return repo_id."""
+    from datetime import datetime, timezone, timedelta
+
+    repo = MusehubRepo(name="liner-notes", visibility="public", owner_user_id="producer-1")
+    db_session.add(repo)
+    await db_session.flush()
+    repo_id = str(repo.repo_id)
+
+    now = datetime.now(tz=timezone.utc)
+    # Alice: 2 commits (most prolific), most recent 1 day ago
+    db_session.add(
+        MusehubCommit(
+            commit_id="alice-001",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="compose the main melody",
+            author="Alice",
+            timestamp=now - timedelta(days=3),
+        )
+    )
+    db_session.add(
+        MusehubCommit(
+            commit_id="alice-002",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=["alice-001"],
+            message="mix the final arrangement",
+            author="Alice",
+            timestamp=now - timedelta(days=1),
+        )
+    )
+    # Bob: 1 commit, last active 5 days ago
+    db_session.add(
+        MusehubCommit(
+            commit_id="bob-001",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="arrange the bridge section",
+            author="Bob",
+            timestamp=now - timedelta(days=5),
+        )
+    )
+    await db_session.commit()
+    return repo_id
+
+
+@pytest.mark.anyio
+async def test_credits_aggregation(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/credits aggregates contributors from commits."""
+    repo_id = await _seed_credits_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["totalContributors"] == 2
+    authors = {c["author"] for c in body["contributors"]}
+    assert "Alice" in authors
+    assert "Bob" in authors
+
+
+@pytest.mark.anyio
+async def test_credits_sorted_by_count(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Default sort (count) puts the most prolific contributor first."""
+    repo_id = await _seed_credits_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits?sort=count",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    contributors = response.json()["contributors"]
+    assert contributors[0]["author"] == "Alice"
+    assert contributors[0]["sessionCount"] == 2
+
+
+@pytest.mark.anyio
+async def test_credits_sorted_by_recency(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """sort=recency puts the most recently active contributor first."""
+    repo_id = await _seed_credits_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits?sort=recency",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    contributors = response.json()["contributors"]
+    # Alice has a commit 1 day ago; Bob's last was 5 days ago
+    assert contributors[0]["author"] == "Alice"
+
+
+@pytest.mark.anyio
+async def test_credits_sorted_by_alpha(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """sort=alpha returns contributors in alphabetical order."""
+    repo_id = await _seed_credits_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits?sort=alpha",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    contributors = response.json()["contributors"]
+    authors = [c["author"] for c in contributors]
+    assert authors == sorted(authors, key=str.lower)
+
+
+@pytest.mark.anyio
+async def test_credits_contribution_types_inferred(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Contribution types are inferred from commit messages."""
+    repo_id = await _seed_credits_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    contributors = response.json()["contributors"]
+    alice = next(c for c in contributors if c["author"] == "Alice")
+    # Alice's commits mention "compose" and "mix"
+    types = set(alice["contributionTypes"])
+    assert len(types) > 0
+
+
+@pytest.mark.anyio
+async def test_credits_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{unknown}/credits returns 404."""
+    response = await client.get(
+        "/api/v1/musehub/repos/does-not-exist/credits",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_credits_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/credits returns 401 without JWT."""
+    repo = MusehubRepo(name="auth-test-repo", visibility="private", owner_user_id="u1")
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    response = await client.get(f"/api/v1/musehub/repos/{repo.repo_id}/credits")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_credits_invalid_sort_param(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/credits with invalid sort returns 422."""
+    repo = MusehubRepo(name="sort-test", visibility="private", owner_user_id="u1")
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/credits?sort=invalid",
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_credits_aggregation_service_direct(db_session: AsyncSession) -> None:
+    """musehub_credits.aggregate_credits() returns correct data without HTTP layer."""
+    from datetime import datetime, timezone
+
+    from maestro.services import musehub_credits
+
+    repo = MusehubRepo(name="direct-test", visibility="private", owner_user_id="u1")
+    db_session.add(repo)
+    await db_session.flush()
+    repo_id = str(repo.repo_id)
+
+    now = datetime.now(tz=timezone.utc)
+    db_session.add(
+        MusehubCommit(
+            commit_id="svc-001",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="produce and mix the drop",
+            author="Charlie",
+            timestamp=now,
+        )
+    )
+    await db_session.commit()
+
+    result = await musehub_credits.aggregate_credits(db_session, repo_id, sort="count")
+    assert result.total_contributors == 1
+    assert result.contributors[0].author == "Charlie"
+    assert result.contributors[0].session_count == 1
+
