@@ -66,11 +66,11 @@ Covers acceptance criteria from issue #244 (embed player):
 - test_embed_page_x_frame_options      — Response sets X-Frame-Options: ALLOWALL
 - test_embed_page_contains_player_ui   — Player elements present in embed HTML
 
-Covers issue #227 (emotion map page):
-- test_emotion_page_renders            — GET /musehub/ui/{repo_id}/analysis/{ref}/emotion returns 200
-- test_emotion_page_no_auth_required   — emotion map UI page accessible without JWT
-- test_emotion_page_includes_charts    — page embeds SVG chart and axis identifiers
-- test_emotion_page_includes_filters   — page includes track/section filter inputs
+Covers issue #227 (emotion map page), migrated to owner/slug routing in #348:
+- test_emotion_page_renders            — GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/emotion returns 200
+- test_emotion_page_no_auth_required   — emotion UI page accessible without JWT
+- test_emotion_page_includes_charts    — page embeds valence-arousal plot and axis labels
+- test_emotion_page_includes_filters   — page includes primary emotion and confidence display
 - test_emotion_json_response           — JSON endpoint returns emotion map with required fields
 - test_emotion_trajectory              — cross-commit trajectory data is present and ordered
 - test_emotion_drift_distances         — drift list has one entry per consecutive commit pair
@@ -3104,7 +3104,7 @@ async def test_form_structure_json_requires_auth(
 
 
 # ---------------------------------------------------------------------------
-# Emotion map page tests (issue #227)
+# Emotion map page tests (issue #227, migrated to owner/slug routing in #348)
 # ---------------------------------------------------------------------------
 
 _EMOTION_REF = "deadbeef12345678"
@@ -3115,15 +3115,14 @@ async def test_emotion_page_renders(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /musehub/ui/{repo_id}/analysis/{ref}/emotion returns 200 HTML without auth."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    """GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/emotion returns 200 HTML without auth."""
+    await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{_EMOTION_REF}/emotion")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
     assert "Muse Hub" in body
-    assert "Emotion Map" in body
-    assert repo_id[:8] in body
+    assert "Emotion" in body
 
 
 @pytest.mark.anyio
@@ -3131,9 +3130,9 @@ async def test_emotion_page_no_auth_required(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Emotion map UI page must be accessible without an Authorization header (HTML shell)."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    """Emotion UI page must be accessible without an Authorization header (HTML shell)."""
+    await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{_EMOTION_REF}/emotion")
     assert response.status_code != 401
     assert response.status_code == 200
 
@@ -3143,14 +3142,15 @@ async def test_emotion_page_includes_charts(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Emotion map page embeds SVG chart builder and four-axis colour references."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    """Emotion page embeds valence-arousal plot helper and axis labels."""
+    await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{_EMOTION_REF}/emotion")
     assert response.status_code == 200
     body = response.text
-    assert "buildLineChart" in body
-    for axis in ("energy", "valence", "tension", "darkness"):
-        assert axis in body
+    assert "valenceArousalPlot" in body
+    assert "Valence" in body
+    assert "Arousal" in body
+    assert "Tension" in body
 
 
 @pytest.mark.anyio
@@ -3158,13 +3158,13 @@ async def test_emotion_page_includes_filters(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Emotion map page includes track and section filter inputs."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    """Emotion page embeds the primary emotion label and confidence display."""
+    await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{_EMOTION_REF}/emotion")
     assert response.status_code == 200
     body = response.text
-    assert "filter-track" in body
-    assert "filter-section" in body
+    assert "primaryEmotion" in body
+    assert "confidence" in body
 
 
 @pytest.mark.anyio
