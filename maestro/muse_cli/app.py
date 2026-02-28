@@ -1,13 +1,14 @@
 """Muse CLI — Typer application root.
 
 Entry point for the ``muse`` console script. Registers all MVP
-subcommands (amend, arrange, ask, cat-object, checkout, chord-map, commit,
-commit-tree, context, contour, describe, diff, divergence, dynamics, emotion-diff,
-export, find, form, grep, groove-check, harmony, humanize, import, init, inspect,
-key, log, merge, meter, motif, open, play, pull, push, read-tree, recall, remote,
-render-preview, reset, resolve, rev-parse, revert, session, show, similarity,
-status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline, update-ref,
-validate, write-tree) as Typer sub-applications.
+subcommands (amend, arrange, ask, cat-object, checkout, chord-map, clone,
+commit, commit-tree, context, contour, describe, diff, divergence, dynamics,
+emotion-diff, export, find, form, grep, groove-check, harmony, humanize,
+import, init, inspect, key, log, merge, meter, motif, open, play, pull, push,
+read-tree, recall, remote, render-preview, reset, resolve, rev-parse, revert,
+session, show, similarity, status, swing, symbolic-ref, tag, tempo,
+tempo-scale, timeline, update-ref, validate, write-tree) as Typer
+sub-applications.
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ from maestro.muse_cli.commands import (
     cat_object,
     checkout,
     chord_map,
+    clone,
     commit,
     commit_tree,
     context,
@@ -79,6 +81,7 @@ cli = typer.Typer(
 
 cli.add_typer(amend.app, name="amend", help="Fold working-tree changes into the most recent commit.")
 cli.add_typer(cat_object.app, name="cat-object", help="Read and display a stored object by its SHA-256 hash.")
+cli.add_typer(clone.app, name="clone", help="Clone a Muse Hub repository into a new local directory.")
 cli.add_typer(chord_map.app, name="chord-map", help="Visualize the chord progression embedded in a commit.")
 cli.add_typer(contour.app, name="contour", help="Analyze the melodic contour and phrase shape of a commit.")
 cli.add_typer(init.app, name="init", help="Initialise a new Muse repository.")
