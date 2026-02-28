@@ -2061,6 +2061,23 @@ Swing comparison between HEAD and a reference commit.
 **Producer:** `_swing_compare_async()`
 **Consumer:** `_format_compare()`
 
+### `AnswerResult`
+
+**Module:** `maestro/muse_cli/commands/ask.py`
+
+Structured result from a `muse ask` query. Carries the matched commits and
+rendering context; rendering is deferred to `to_plain()` / `to_json()` so the
+core logic is testable without touching I/O.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `question` | `str` | Original natural-language question as typed by the user |
+| `total_searched` | `int` | Total number of commits examined (after branch / date filters) |
+| `matches` | `list[MuseCliCommit]` | Commits whose messages contain at least one extracted keyword |
+| `cite` | `bool` | When `True`, full 64-char commit IDs are used; otherwise 8-char prefixes |
+
+**Producer:** `_ask_async()`
+**Consumer:** `ask()` Typer command via `to_plain()` / `to_json()`
 ### `GrepMatch`
 
 **Module:** `maestro/muse_cli/commands/grep_cmd.py`
@@ -2092,13 +2109,13 @@ plain class (not `TypedDict`) to support methods (`.file_count()`, `.to_dict()`)
 | `commit_id` | `str` | Full 64-char SHA of the target commit |
 | `message` | `str` | Commit message |
 | `depth` | `DescribeDepth` | Output verbosity level (`brief`, `standard`, `verbose`) |
-| `parent_id` | `str \| None` | Parent commit SHA; `None` for root commits |
-| `compare_commit_id` | `str \| None` | Explicitly compared commit (`--compare A B`); `None` in single-commit mode |
+| `parent_id` | `str | None` | Parent commit SHA; `None` for root commits |
+| `compare_commit_id` | `str | None` | Explicitly compared commit (`--compare A B`); `None` in single-commit mode |
 | `changed_files` | `list[str]` | Relative paths with differing `object_id` between parent and target |
 | `added_files` | `list[str]` | Paths present in target but not parent |
 | `removed_files` | `list[str]` | Paths present in parent but not target |
 | `dimensions` | `list[str]` | Inferred or user-supplied musical dimension labels |
-| `auto_tag` | `str \| None` | Heuristic tag (`no-change`, `single-file-edit`, `minor-revision`, `major-revision`); `None` when `--auto-tag` not set |
+| `auto_tag` | `str | None` | Heuristic tag (`no-change`, `single-file-edit`, `minor-revision`, `major-revision`); `None` when `--auto-tag` not set |
 
 **Methods:** `.file_count() → int` (sum of all three file lists), `.to_dict() → dict[str, object]` (JSON-safe serialisation for `--json` output).
 
