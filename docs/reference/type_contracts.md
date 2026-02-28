@@ -7023,6 +7023,85 @@ Top-level response model for `GET /api/v1/musehub/search`.
 **Produced by:** `maestro.services.musehub_context.build_agent_context()`
 **Consumed by:** AI composition agents at session start; MCP context tool (planned)
 
+### EmotionVector
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+Four-axis emotion vector, all dimensions normalised to [0, 1].
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `energy` | `float` | 0=passive, 1=driving |
+| `valence` | `float` | 0=dark/negative, 1=bright/positive |
+| `tension` | `float` | 0=relaxed, 1=tense/dissonant |
+| `darkness` | `float` | 0=luminous, 1=brooding/ominous |
+
+### EmotionMapPoint
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+A single beat-position sample in the intra-ref emotion evolution chart.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `beat` | `float` | Beat position from the start of the ref |
+| `vector` | `EmotionVector` | Emotion vector at this beat |
+
+### CommitEmotionSnapshot
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+Summary emotion vector for a single commit in the cross-commit trajectory view.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Commit identifier (may be partial) |
+| `message` | `str` | Commit message |
+| `timestamp` | `str` | ISO-8601 UTC timestamp |
+| `vector` | `EmotionVector` | Aggregated emotion vector for this commit |
+| `primary_emotion` | `str` | Dominant emotion label, e.g. `'serene'`, `'tense'` |
+
+### EmotionDrift
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+Emotion drift distance between two consecutive commits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `from_commit` | `str` | Source commit ID |
+| `to_commit` | `str` | Target commit ID |
+| `drift` | `float` | Euclidean distance in emotion space (0–√4≈1.41) |
+| `dominant_change` | `str` | Axis with the largest change: `energy`, `valence`, `tension`, or `darkness` |
+
+### EmotionMapResponse
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-map`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repo UUID |
+| `ref` | `str` | The queried ref |
+| `computed_at` | `datetime` | When the analysis was computed |
+| `filters_applied` | `AnalysisFilters` | Active track/section filters |
+| `evolution` | `list[EmotionMapPoint]` | Per-beat emotion samples within this ref |
+| `summary_vector` | `EmotionVector` | Mean emotion vector across all evolution points |
+| `trajectory` | `list[CommitEmotionSnapshot]` | Emotion snapshot per commit (oldest first, head last) |
+| `drift` | `list[EmotionDrift]` | Drift between consecutive trajectory commits (len = len(trajectory) - 1) |
+| `narrative` | `str` | Auto-generated textual description of the emotional journey |
+| `source` | `str` | Attribution: `'explicit'` (tags), `'inferred'` (model), or `'mixed'` |
+
+**Service function:** `maestro.services.musehub_analysis.compute_emotion_map()`
+**Produced by:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/emotion-map`
+**Consumed by:** MuseHub emotion map page (`GET /musehub/ui/{repo_id}/analysis/{ref}/emotion`); AI agents needing emotional trajectory data
+
 ---
 
 ## Muse Hub — Groove Check API Types (`maestro/models/musehub.py`)
