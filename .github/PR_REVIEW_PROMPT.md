@@ -40,41 +40,73 @@ You have full authority to:
 ## STEP 2 — CHECKOUT & SYNC
 
 ```bash
+# COMMIT GUARD — always run first. An uncommitted working tree causes
+# git merge to abort with "local changes would be overwritten."
+git add -A
+git diff --cached --quiet || git commit -m "chore: stage worktree before dev sync"
+
 gh pr checkout <pr-number>
 git fetch origin
+```
+
+**Pre-check — these three files conflict on virtually every parallel Muse batch.**
+Know the rule before you merge; resolve mechanically, not by guessing.
+
+| File | Rule |
+|------|------|
+| `maestro/muse_cli/app.py` | Keep ALL `app.add_typer()` lines from both sides. |
+| `docs/architecture/muse_vcs.md` | Keep ALL `##` sections from both sides, sort alphabetically. |
+| `docs/reference/type_contracts.md` | Keep ALL entries from both sides. |
+
+```bash
 git merge origin/dev
 ```
 
-### Conflict resolution (if merge reports conflicts)
+### Conflict Playbook (apply immediately when git reports conflicts)
 
-You have full command-line authority. Work through this in order:
-
-**1. Understand the conflict landscape:**
+**STEP A — Count and identify what conflicted:**
 ```bash
-git status                          # which files are conflicted
-git diff                            # view conflict markers
-git log --oneline origin/dev...HEAD # commits this PR adds on top of dev
-git diff origin/dev...HEAD          # full delta this PR introduces
+git status | grep "^UU"                     # list conflicted files
+grep -c "^<<<<<" <file>                     # count blocks in a specific file
 ```
 
-**2. Resolution philosophy:**
-- Conflicts in **new files this PR introduces** → keep this PR's version entirely.
-- Conflicts in files **also changed on dev** → read both sides carefully:
-  - Preserve the dev change PLUS the PR's additions. Both likely need to survive.
-  - If they are semantically incompatible, explain the incompatibility before choosing.
-- If the conflict reveals that **dev already contains this PR's fix** (another agent landed the same work) → downgrade grade and explain; do not double-apply.
-- If resolution requires judgment calls you are not confident about → stop, leave the PR open, and report the ambiguity to the user.
+**STEP B — Apply the rule for each file:**
 
-**3. Resolve, stage, commit:**
+`maestro/muse_cli/app.py`
+- Each parallel agent adds one `app.add_typer()` line.
+- Rule: **KEEP BOTH LINES. Remove markers. Never drop a line.**
+- Verify: `grep -c "add_typer" maestro/muse_cli/app.py` — must equal total registered sub-apps.
+
+`docs/architecture/muse_vcs.md`
+- Pattern A (both sides have a real `##` section) → **keep both, sort alphabetically by command name.**
+- Pattern B (one side is empty/stub) → **keep the non-empty side entirely.**
+- Pattern C (same section edited differently) → **keep the more complete version.**
+- Final check: `grep -n "<<<<<<\|=======\|>>>>>>>" docs/architecture/muse_vcs.md` must return empty.
+
+`docs/reference/type_contracts.md`
+- Rule: **keep ALL entries from BOTH sides.**
+- Final check: `grep -n "<<<<<<\|=======\|>>>>>>>" docs/reference/type_contracts.md` must return empty.
+
+Any other file (judgment conflicts):
+- Preserve dev's version PLUS this PR's additions.
+- If dev already contains this PR's feature → downgrade grade and explain; do not double-apply.
+- If semantically incompatible → stop, leave PR open, report ambiguity to user.
+
+**STEP C — Stage and commit after resolving all files:**
 ```bash
-# After editing each conflicted file to remove markers:
-git add <resolved-file>
+git add <resolved-files>
 git commit -m "chore: resolve merge conflicts with origin/dev"
 ```
 
-**4. After resolving, always re-run mypy + tests** — incorrect conflict resolution surfaces as type errors or test failures.
+**STEP D — Verify no markers remain anywhere:**
+```bash
+git diff --check    # must return nothing
+```
 
-**5. Advanced tools available:**
+**STEP E — Re-run mypy only if Python files were in conflict.**
+Markdown-only conflicts (muse_vcs.md, type_contracts.md) → skip mypy. Re-run targeted tests only if logic files changed.
+
+**Advanced tools:**
 ```bash
 git bisect start/bad/good/log/reset    # regression hunting
 git log --oneline --graph --all        # full branch graph
@@ -88,6 +120,10 @@ Other agents may merge PRs while you are reviewing. Immediately before running
 `gh pr merge`, re-sync one final time:
 
 ```bash
+# COMMIT GUARD — commit everything before touching origin.
+git add -A
+git diff --cached --quiet || git commit -m "chore: stage review edits before final dev sync"
+
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 git fetch origin
 git merge origin/dev
@@ -98,9 +134,9 @@ git push origin "$BRANCH"
 sleep 5
 ```
 
-If new conflicts appear after the final sync, resolve them, re-run tests, then
-push and sleep before merging. If the conflicts are non-trivial and introduce
-risk, note them in the grade reasoning and file a follow-up issue.
+If new conflicts appear after the final sync, use the Conflict Playbook above — same rules apply.
+For markdown-only conflicts, skip mypy. For Python conflicts, re-run mypy before pushing.
+If the conflicts are non-trivial and introduce risk, note them in the grade reasoning and file a follow-up issue.
 
 ### Regression check
 
