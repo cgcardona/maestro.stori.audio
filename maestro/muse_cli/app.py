@@ -2,7 +2,7 @@
 
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (amend, arrange, ask, checkout, chord-map, commit, commit-tree,
-context, contour, describe, diff, divergence, dynamics, export, find, form,
+context, contour, describe, diff, divergence, dynamics, emotion-diff, export, find, form,
 grep, groove-check, humanize, import, init, inspect, key, log, merge, meter,
 open, play, pull, push, recall, remote, render-preview, resolve, rev-parse, revert,
 session, show, similarity, status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline, update-ref,
@@ -26,6 +26,7 @@ from maestro.muse_cli.commands import (
     diff,
     divergence,
     dynamics,
+    emotion_diff,
     export,
     find,
     form,
