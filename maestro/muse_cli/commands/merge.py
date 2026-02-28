@@ -443,20 +443,17 @@ def merge(
     ),
     cont: bool = typer.Option(
         False,
-        "--continue",
-        is_flag=True,
+        "--continue/--no-continue",
         help="Finalize a paused merge after resolving all conflicts.",
     ),
     no_ff: bool = typer.Option(
         False,
-        "--no-ff",
-        is_flag=True,
+        "--no-ff/--ff",
         help="Force a merge commit even when fast-forward is possible.",
     ),
     squash: bool = typer.Option(
         False,
-        "--squash",
-        is_flag=True,
+        "--squash/--no-squash",
         help=(
             "Squash all commits from the target branch into one new commit on "
             "the current branch. The result has a single parent and no merge "
