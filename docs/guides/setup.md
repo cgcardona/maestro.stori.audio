@@ -18,6 +18,12 @@ docker compose build maestro && docker compose up -d
 docker compose exec maestro pytest tests/ -v
 ```
 
+**Validate the Muse MVP workflow end-to-end:**
+```bash
+make demo-local
+```
+This runs the golden-path demo script inside Docker — `muse init → commit → branch → merge (conflict) → resolve → merge --continue → log --graph` — and exits 0 if every step succeeds. Run it after setup to confirm Muse CLI + Postgres are working correctly.
+
 ---
 
 ## Local (macOS)
