@@ -2397,6 +2397,122 @@ Named result types for Muse CLI commands. All types are `TypedDict` subclasses
 defined in their respective command modules and returned from the injectable
 async core functions (the testable layer that Typer commands wrap).
 
+### `FormSection`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+A single structural unit within a detected or annotated musical form.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `label` | `str` | Display label for this section (e.g. `"intro"`, `"A"`, `"chorus"`) |
+| `role` | `str` | Semantic role; one of the ROLE_LABELS vocabulary or the label itself for letter-only sections |
+| `index` | `int` | Zero-based position in the section sequence |
+
+**Producer:** `_stub_form_sections()`, `_form_set_async()`
+**Consumer:** `FormAnalysisResult.sections`, `_render_form_text()`, `_render_map_text()`
+
+### `FormAnalysisResult`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+Full form analysis for one commit. The stable schema returned by all form
+detection and annotation functions.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Resolved commit SHA (8-char) or empty string for working-tree annotations |
+| `branch` | `str` | Current branch name |
+| `form_string` | `str` | Pipe-separated sequence of section labels, e.g. `"intro \| A \| B \| A \| outro"` |
+| `sections` | `list[FormSection]` | Ordered list of section entries |
+| `source` | `str` | `"stub"` (placeholder analysis) or `"annotation"` (explicit `--set`) |
+
+**Producer:** `_form_detect_async()`, `_form_set_async()`
+**Consumer:** `form()` Typer command, `_render_form_text()`, `_render_map_text()`, `FormHistoryEntry.result`
+
+### `FormHistoryEntry`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+A form analysis result paired with its position in the commit history.
+Used by `_form_history_async()` to return a ranked list of structural changes.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `position` | `int` | 1-based rank in the history list (1 = newest) |
+| `result` | `FormAnalysisResult` | Full form analysis for this commit |
+
+**Producer:** `_form_history_async()`
+**Consumer:** `form()` Typer command via `--history`, `_render_history_text()`
+
+---
+
+### `KeyDetectResult`
+
+**Module:** `maestro/muse_cli/commands/key.py`
+
+Key detection (or annotation) result for a single commit or working tree.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | `str` | Full key string, e.g. `"F# minor"` |
+| `tonic` | `str` | Root note, e.g. `"F#"` |
+| `mode` | `str` | `"major"` or `"minor"` |
+| `relative` | `str` | Relative key string (e.g. `"A major"`), empty when `--relative` not given |
+| `commit` | `str` | Resolved commit SHA (8-char) or empty string for annotations |
+| `branch` | `str` | Current branch name |
+| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
+| `source` | `str` | `"stub"` (MIDI analysis pending), `"annotation"` (explicit `--set`), or `"detected"` |
+
+**Producer:** `_key_detect_async()`
+**Consumer:** `_format_detect()`, `key()` Typer command
+
+### `KeyHistoryEntry`
+
+**Module:** `maestro/muse_cli/commands/key.py`
+
+One entry in a `muse key --history` listing, representing the key at a given commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Resolved commit SHA (8-char) |
+| `key` | `str` | Full key string, e.g. `"F# minor"` |
+| `tonic` | `str` | Root note |
+| `mode` | `str` | `"major"` or `"minor"` |
+| `source` | `str` | `"stub"`, `"annotation"`, or `"detected"` |
+
+**Producer:** `_key_history_async()`
+**Consumer:** `_format_history()`, `key()` Typer command via `--history`
+
+---
+
+### `TempoScaleResult`
+
+**Module:** `maestro/muse_cli/commands/tempo_scale.py`
+
+Result of a `muse tempo-scale` operation.  Agents should treat `new_commit`
+as the SHA that replaces the source commit in the timeline.  The result is
+deterministic: same `source_commit` + `factor` + `track` + `preserve_expressions`
+always produces the same `new_commit`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_commit` | `str` | Short SHA of the input commit |
+| `new_commit` | `str` | Short SHA of the newly created tempo-scaled commit |
+| `factor` | `float` | Scaling factor applied: `< 1` = slower, `> 1` = faster |
+| `source_bpm` | `float` | Tempo of the source commit in BPM (stub: 120.0) |
+| `new_bpm` | `float` | Resulting tempo after scaling (`source_bpm × factor`) |
+| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
+| `preserve_expressions` | `bool` | Whether CC/expression events were scaled proportionally |
+| `message` | `str` | Commit message for the new scaled commit |
+
+**Producer:** `_tempo_scale_async()`
+**Consumer:** `_format_result()`, `tempo_scale()` Typer command
+
+**Pure helpers:**
+- `compute_factor_from_bpm(source_bpm, target_bpm) -> float` — compute factor = target / source
+- `apply_factor(bpm, factor) -> float` — compute new BPM = bpm × factor
+
 ### `SwingDetectResult`
 
 **Module:** `maestro/muse_cli/commands/swing.py`
@@ -2429,6 +2545,65 @@ Swing comparison between HEAD and a reference commit.
 
 **Producer:** `_swing_compare_async()`
 **Consumer:** `_format_compare()`
+
+### `ChordEvent`
+
+**Module:** `maestro/muse_cli/commands/chord_map.py`
+
+A single chord occurrence in the arrangement timeline.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `bar` | `int` | Musical bar number (1-indexed). |
+| `beat` | `int` | Beat within the bar (1-indexed). |
+| `chord` | `str` | Chord symbol, e.g. `"Cmaj9"`, `"Am11"`, `"G7"`. |
+| `duration` | `float` | Duration in bars (fractional for sub-bar chords). |
+| `track` | `str` | Track/instrument the chord belongs to, or `"all"`. |
+
+**Producer:** `_stub_chord_events()`, future: Storpheus MIDI analysis route.
+**Consumer:** `ChordMapResult.chords`, renderers.
+
+---
+
+### `VoiceLeadingStep`
+
+**Module:** `maestro/muse_cli/commands/chord_map.py`
+
+Voice-leading movement from one chord to the next.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `from_chord` | `str` | Source chord symbol. |
+| `to_chord` | `str` | Target chord symbol. |
+| `from_bar` | `int` | Bar where the source chord begins. |
+| `to_bar` | `int` | Bar where the target chord begins. |
+| `movements` | `list[str]` | Per-voice motion strings, e.g. `["E->E", "G->G", "B->A"]`. |
+
+**Producer:** `_stub_voice_leading_steps()`, future: Storpheus MIDI analysis.
+**Consumer:** `ChordMapResult.voice_leading`, `_render_text()`.
+
+---
+
+### `ChordMapResult`
+
+**Module:** `maestro/muse_cli/commands/chord_map.py`
+
+Full chord-map result for a commit.  Returned by `_chord_map_async()` and
+passed to one of the three renderers.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Short commit ref (8 chars or user-supplied). |
+| `branch` | `str` | Branch name at HEAD. |
+| `track` | `str` | Track filter applied (`"all"` if none). |
+| `section` | `str` | Section filter applied (empty string if none). |
+| `chords` | `list[ChordEvent]` | Time-ordered chord events. |
+| `voice_leading` | `list[VoiceLeadingStep]` | Voice-leading steps between consecutive chords (empty unless `--voice-leading`). |
+
+**Producer:** `_chord_map_async()`
+**Consumer:** `_render_text()`, `_render_json()`, `_render_mermaid()`
+
+---
 
 ### `AnswerResult`
 
@@ -2466,6 +2641,106 @@ directly for JSON serialisation without any additional mapping step.
 **Producer:** `_match_commit()`, `_grep_async()`
 **Consumer:** `_render_matches()`, callers using `--json` output
 
+### Muse Diff Types
+
+**Module:** `maestro/muse_cli/commands/diff.py`
+
+Six TypedDicts covering the five music dimensions and the combined report.
+All types carry a `changed: bool` field so callers never need to diff
+individual fields to determine whether anything changed.
+
+#### `HarmonicDiffResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a` | `str` | Earlier commit ref |
+| `commit_b` | `str` | Later commit ref |
+| `key_a` | `str` | Tonal center of commit A (e.g. `"Eb major"`) |
+| `key_b` | `str` | Tonal center of commit B |
+| `mode_a` | `str` | Mode of commit A (`"Major"`, `"Minor"`, etc.) |
+| `mode_b` | `str` | Mode of commit B |
+| `chord_prog_a` | `str` | Roman-numeral chord progression of commit A |
+| `chord_prog_b` | `str` | Roman-numeral chord progression of commit B |
+| `tension_a` | `float` | Normalized tension score ∈ [0, 1] for commit A |
+| `tension_b` | `float` | Normalized tension score for commit B |
+| `tension_label_a` | `str` | Human label: `"Low"`, `"Medium"`, `"Medium-High"`, `"High"` |
+| `tension_label_b` | `str` | Human label for commit B |
+| `summary` | `str` | One-sentence natural-language summary of the harmonic change |
+| `changed` | `bool` | `True` if any harmonic dimension differs between commits |
+
+#### `RhythmicDiffResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a/b` | `str` | Commit refs |
+| `tempo_a/b` | `float` | Tempo in BPM |
+| `meter_a/b` | `str` | Time signature (e.g. `"4/4"`) |
+| `swing_a/b` | `float` | Swing factor ∈ [0.5, 0.67] |
+| `swing_label_a/b` | `str` | `"Straight"`, `"Light swing"`, `"Medium swing"`, `"Hard swing"` |
+| `groove_drift_ms_a/b` | `float` | Average note timing drift in milliseconds |
+| `summary` | `str` | One-sentence summary |
+| `changed` | `bool` | `True` if any rhythmic dimension changed |
+
+#### `MelodicDiffResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a/b` | `str` | Commit refs |
+| `motifs_introduced` | `list[str]` | Named motifs newly present in commit B |
+| `motifs_removed` | `list[str]` | Named motifs absent from commit B that were in commit A |
+| `contour_a/b` | `str` | Melodic shape label (e.g. `"ascending-arch"`, `"descending-step"`) |
+| `range_low_a/b` | `int` | Lowest MIDI pitch (0–127) |
+| `range_high_a/b` | `int` | Highest MIDI pitch (0–127) |
+| `summary` | `str` | One-sentence summary |
+| `changed` | `bool` | `True` if melodic content changed |
+
+#### `StructuralDiffResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a/b` | `str` | Commit refs |
+| `sections_added` | `list[str]` | Section names present in B but not A (e.g. `["bridge"]`) |
+| `sections_removed` | `list[str]` | Section names present in A but not B |
+| `instruments_added` | `list[str]` | Instruments added in commit B |
+| `instruments_removed` | `list[str]` | Instruments removed in commit B |
+| `form_a/b` | `str` | Arrangement form string (e.g. `"Intro-Verse-Chorus-Outro"`) |
+| `summary` | `str` | One-sentence summary |
+| `changed` | `bool` | `True` if arrangement changed |
+
+#### `DynamicDiffResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a/b` | `str` | Commit refs |
+| `avg_velocity_a/b` | `int` | Average MIDI velocity (0–127) |
+| `arc_a/b` | `str` | Dynamic arc label (see `muse dynamics` arc vocabulary) |
+| `tracks_louder` | `list[str]` | Track names that got louder in commit B |
+| `tracks_softer` | `list[str]` | Track names that got softer in commit B |
+| `tracks_silent` | `list[str]` | Track names that went completely silent in commit B |
+| `summary` | `str` | One-sentence summary |
+| `changed` | `bool` | `True` if dynamic profile changed |
+
+#### `MusicDiffReport`
+
+Produced by `--all`. Aggregates all five dimension results.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a/b` | `str` | Commit refs |
+| `harmonic` | `HarmonicDiffResult \| None` | Harmonic diff; `None` if not computed |
+| `rhythmic` | `RhythmicDiffResult \| None` | Rhythmic diff |
+| `melodic` | `MelodicDiffResult \| None` | Melodic diff |
+| `structural` | `StructuralDiffResult \| None` | Structural diff |
+| `dynamic` | `DynamicDiffResult \| None` | Dynamic diff |
+| `changed_dimensions` | `list[str]` | Names of dimensions where `changed=True` |
+| `unchanged_dimensions` | `list[str]` | Names of dimensions where `changed=False` |
+| `summary` | `str` | Concatenated per-dimension summaries |
+
+**Producer:** `_diff_all_async()`
+**Consumer:** `_render_report()`, callers using `--all --json`
+
+---
+
 ### `RecallResult`
 
 **Module:** `maestro/muse_cli/commands/recall.py`
@@ -2484,6 +2759,56 @@ commit that scored at or above the `--threshold` keyword-overlap cutoff.
 
 **Producer:** `_recall_async()`
 **Consumer:** `_render_results()`, callers using `--json` output
+
+---
+
+### `TrackHumanizeResult`
+
+**Module:** `maestro/muse_cli/commands/humanize.py`
+
+Per-track outcome of a `muse humanize` pass. Captures what was applied to each
+track so downstream agents can verify the humanization took effect (e.g. by
+comparing timing variance with `muse groove-check`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track` | `str` | Track name (e.g. `"bass"`, `"drums"`) |
+| `timing_range_ms` | `int` | Applied timing variation range in ms (0 if `--velocity-only` or drum track) |
+| `velocity_range` | `int` | Applied velocity variation range in MIDI units (0 if `--timing-only`) |
+| `notes_affected` | `int` | Number of MIDI notes modified (stub: randomized placeholder) |
+| `drum_channel_excluded` | `bool` | `True` when the drum track was excluded from timing variation |
+
+**Producer:** `_apply_humanization()`
+**Consumer:** `HumanizeResult.tracks`, `_render_table()`, `_render_json()`
+
+---
+
+### `HumanizeResult`
+
+**Module:** `maestro/muse_cli/commands/humanize.py`
+
+Full result emitted by `muse humanize`. Contains provenance (source commit,
+preset, factor, seed) and a per-track breakdown of what was applied. Agents
+use this to confirm the operation succeeded and to audit the magnitude of
+humanization before committing downstream.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Resolved source commit ref (8-char SHA or `"HEAD"`) |
+| `branch` | `str` | Current branch name |
+| `source_commit` | `str` | Same as `commit`; explicit alias for clarity in JSON payloads |
+| `preset` | `str` | One of `"tight"`, `"natural"`, `"loose"`, `"custom"` |
+| `factor` | `float` | Normalized humanization factor ∈ [0.0, 1.0] |
+| `seed` | `int \| None` | Random seed used; `None` = stochastic run |
+| `timing_only` | `bool` | Whether velocity humanization was skipped |
+| `velocity_only` | `bool` | Whether timing humanization was skipped |
+| `track_filter` | `str \| None` | `--track` value if provided; `None` = all tracks |
+| `section_filter` | `str \| None` | `--section` value if provided; `None` = all sections |
+| `tracks` | `list[TrackHumanizeResult]` | Per-track humanization outcomes |
+| `new_commit_id` | `str` | SHA of the newly created Muse commit |
+
+**Producer:** `_humanize_async()`
+**Consumer:** `_render_table()`, `_render_json()`, agentic `--json` pipelines
 
 ---
 
@@ -4166,3 +4491,51 @@ error message via `typer.echo` before calling `typer.Exit(INTERNAL_ERROR)`.
 ```python
 class StorpheusUnavailableError(Exception): ...
 ```
+
+---
+
+### `ContourResult`
+
+**Module:** `maestro/muse_cli/commands/contour.py`
+
+Melodic contour analysis for a single commit or working tree.  Captures the
+overall pitch trajectory shape, effective range, average interval size, and
+phrase statistics.  Used by AI agents to understand a melody's expressive
+character before generating countermelodies or variations.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `shape` | `str` | Overall shape label: `ascending`, `descending`, `arch`, `inverted-arch`, `wave`, or `static` |
+| `tessitura` | `int` | Effective pitch range in semitones (e.g. 24 = 2 octaves) |
+| `avg_interval` | `float` | Mean absolute note-to-note interval in semitones; higher = more angular |
+| `phrase_count` | `int` | Number of detected melodic phrases |
+| `avg_phrase_bars` | `float` | Mean phrase length in bars |
+| `commit` | `str` | 8-char commit SHA analysed |
+| `branch` | `str` | Current branch name |
+| `track` | `str` | Track name analysed, or `"all"` |
+| `section` | `str` | Section name scoped, or `"all"` |
+| `source` | `str` | `"stub"` until full MIDI analysis is wired; `"midi"` when live |
+
+**Producer:** `_contour_detect_async()`
+**Consumer:** `_format_detect()`, `_format_history()`, `ContourCompareResult.commit_a/.commit_b`
+
+---
+
+### `ContourCompareResult`
+
+**Module:** `maestro/muse_cli/commands/contour.py`
+
+Comparison of melodic contour between two commits.  Exposes delta metrics
+that let an agent detect whether a melody became more angular (fragmented)
+or smoother (stepwise) between two points in history.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a` | `ContourResult` | Contour result for the first commit (or HEAD) |
+| `commit_b` | `ContourResult` | Contour result for the reference commit |
+| `shape_changed` | `bool` | `True` when the overall shape label differs between commits |
+| `angularity_delta` | `float` | Change in `avg_interval` (positive = more angular at A) |
+| `tessitura_delta` | `int` | Change in tessitura semitones (positive = wider range at A) |
+
+**Producer:** `_contour_compare_async()`
+**Consumer:** `_format_compare()`

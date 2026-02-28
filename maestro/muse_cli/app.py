@@ -1,10 +1,10 @@
 """Muse CLI — Typer application root.
 
 Entry point for the ``muse`` console script. Registers all MVP
-subcommands (arrange, ask, checkout, commit, context, describe, divergence,
-dynamics, export, find, grep, import, init, log, merge, meter, open, play,
-pull, push, recall, remote, session, status, swing, tag, tempo) as Typer
-sub-applications.
+subcommands (arrange, ask, checkout, chord-map, commit, context, contour,
+describe, diff, divergence, dynamics, export, find, grep, humanize, import,
+init, key, log, merge, meter, open, play, pull, push, recall, remote, session,
+status, swing, tag, tempo, tempo-scale) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -14,16 +14,21 @@ from maestro.muse_cli.commands import (
     arrange,
     ask,
     checkout,
+    chord_map,
     commit,
     context,
+    contour,
     describe,
+    diff,
     divergence,
     dynamics,
     export,
     find,
     grep_cmd,
+    humanize,
     import_cmd,
     init,
+    key,
     log,
     merge,
     meter,
@@ -38,6 +43,7 @@ from maestro.muse_cli.commands import (
     swing,
     tag,
     tempo,
+    tempo_scale,
 )
 
 cli = typer.Typer(
@@ -46,6 +52,8 @@ cli = typer.Typer(
     no_args_is_help=True,
 )
 
+cli.add_typer(chord_map.app, name="chord-map", help="Visualize the chord progression embedded in a commit.")
+cli.add_typer(contour.app, name="contour", help="Analyze the melodic contour and phrase shape of a commit.")
 cli.add_typer(init.app, name="init", help="Initialise a new Muse repository.")
 cli.add_typer(status.app, name="status", help="Show working-tree drift against HEAD.")
 cli.add_typer(dynamics.app, name="dynamics", help="Analyse the dynamic (velocity) profile of a commit.")
@@ -59,6 +67,7 @@ cli.add_typer(remote.app, name="remote", help="Manage remote server connections.
 cli.add_typer(push.app, name="push", help="Upload local variations to a remote.")
 cli.add_typer(pull.app, name="pull", help="Download remote variations locally.")
 cli.add_typer(describe.app, name="describe", help="Describe what changed musically in a commit.")
+cli.add_typer(diff.app, name="diff", help="Compare two commits across musical dimensions (harmonic, rhythmic, melodic, structural, dynamic).")
 cli.add_typer(open_cmd.app, name="open", help="Open an artifact in the system default app (macOS).")
 cli.add_typer(play.app, name="play", help="Play an audio artifact via afplay (macOS).")
 cli.add_typer(arrange.app, name="arrange", help="Display arrangement map (instrument activity over sections).")
@@ -71,8 +80,11 @@ cli.add_typer(tag.app, name="tag", help="Attach and query music-semantic tags on
 cli.add_typer(import_cmd.app, name="import", help="Import a MIDI or MusicXML file as a new Muse commit.")
 cli.add_typer(tempo.app, name="tempo", help="Read or set the tempo (BPM) of a commit.")
 cli.add_typer(recall.app, name="recall", help="Search commit history by natural-language description.")
+cli.add_typer(key.app, name="key", help="Read or annotate the musical key of a commit.")
+cli.add_typer(humanize.app, name="humanize", help="Apply micro-timing and velocity humanization to quantized MIDI.")
 cli.add_typer(context.app, name="context", help="Output structured musical context for AI agent consumption.")
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
+cli.add_typer(tempo_scale.app, name="tempo-scale", help="Stretch or compress the timing of a commit.")
 
 
 if __name__ == "__main__":
