@@ -301,26 +301,7 @@ async def profile_page(username: str) -> HTMLResponse:
     script = f"""
       const username = {repr(username)};
       const API_PROFILE = '/api/v1/musehub/users/' + username;
-@router.get("/search", response_class=HTMLResponse, summary="Muse Hub global search page")
-async def global_search_page(
-    q: str = "",
-    mode: str = "keyword",
-) -> HTMLResponse:
-    """Render the global cross-repo search page.
 
-    The page is a static HTML shell; JavaScript fetches results from
-    ``GET /api/v1/musehub/search`` using the stored localStorage JWT.
-
-    Query parameters are pre-filled into the search form so that a browser
-    navigation or a URL share lands with the last query already populated.
-    These parameters are sanitised client-side before being rendered into the
-    DOM — ``escHtml`` prevents XSS from adversarial query strings.
-    """
-    safe_q = q.replace("'", "\\'").replace('"', '\\"').replace("\n", "").replace("\r", "")
-    safe_mode = mode if mode in ("keyword", "pattern") else "keyword"
-    script = f"""
-      const INITIAL_Q    = {repr(safe_q)};
-      const INITIAL_MODE = {repr(safe_mode)};
       function escHtml(s) {{
         if (!s) return '';
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -335,7 +316,6 @@ async def global_search_page(
       }}
 
       function buildContribGraph(graph) {{
-        // Group days into weeks (7 days per column)
         const weeks = [];
         let week = [];
         graph.forEach((d, i) => {{
@@ -442,6 +422,35 @@ async def global_search_page(
         breadcrumb=f'<a href="/musehub/ui/users/{username}">@{username}</a>',
         body_script=script,
         extra_css=_PROFILE_CSS,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get("/search", response_class=HTMLResponse, summary="Muse Hub global search page")
+async def global_search_page(
+    q: str = "",
+    mode: str = "keyword",
+) -> HTMLResponse:
+    """Render the global cross-repo search page.
+
+    The page is a static HTML shell; JavaScript fetches results from
+    ``GET /api/v1/musehub/search`` using the stored localStorage JWT.
+
+    Query parameters are pre-filled into the search form so that a browser
+    navigation or a URL share lands with the last query already populated.
+    These parameters are sanitised client-side before being rendered into the
+    DOM -- ``escHtml`` prevents XSS from adversarial query strings.
+    """
+    safe_q = q.replace("'", "\\'").replace('"', '\\"').replace("\n", "").replace("\r", "")
+    safe_mode = mode if mode in ("keyword", "pattern") else "keyword"
+    script = f"""
+      const INITIAL_Q    = {repr(safe_q)};
+      const INITIAL_MODE = {repr(safe_mode)};
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
       function audioHtml(groupId, audioOid) {{
         if (!audioOid) return '';
         const url = '/api/v1/musehub/repos/' + encodeURIComponent(groupId) + '/objects/' + encodeURIComponent(audioOid) + '/content';
@@ -561,7 +570,8 @@ async def global_search_page(
     html = _page(
         title="Global Search",
         breadcrumb='<a href="/musehub/ui/search">Global Search</a>',
-        body_script=full_script,    )
+        body_script=full_script,
+    )
     return HTMLResponse(content=html)
 
 
@@ -2225,5 +2235,425 @@ async def search_page(repo_id: str) -> HTMLResponse:
         title="Search",
         breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / search',
         body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+# ---------------------------------------------------------------------------
+# Motif browser CSS
+# ---------------------------------------------------------------------------
+
+_MOTIF_CSS = """
+.motif-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 16px; margin-bottom: 16px; transition: border-color 0.15s;
+}
+.motif-card:hover { border-color: #58a6ff; }
+.motif-header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.motif-id {
+  font-family: monospace; font-size: 16px; font-weight: 700;
+  color: #58a6ff; background: #0d1117;
+  padding: 2px 8px; border-radius: 4px; border: 1px solid #30363d;
+}
+.motif-meta {
+  display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.motif-meta-item {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.badge-contour {
+  background: #1a3a5c; border: 1px solid #1f6feb; color: #79c0ff;
+}
+.badge-transform {
+  background: #1f3a1f; border: 1px solid #238636; color: #56d364;
+}
+.badge-track {
+  background: #2d1a4a; border: 1px solid #6e40c9; color: #d2a8ff;
+}
+.piano-roll {
+  display: flex; gap: 3px; align-items: flex-end; height: 60px;
+  padding: 4px; background: #0d1117; border: 1px solid #30363d;
+  border-radius: 4px; overflow: hidden;
+}
+.piano-note {
+  width: 18px; border-radius: 3px 3px 0 0;
+  background: linear-gradient(to top, #1f6feb, #58a6ff);
+  border: 1px solid #388bfd; transition: opacity 0.15s;
+  cursor: default;
+}
+.piano-note:hover { opacity: 0.8; }
+.recurrence-grid {
+  overflow-x: auto; margin-top: 8px;
+}
+.recurrence-table {
+  border-collapse: collapse; font-size: 12px; min-width: 100%;
+}
+.recurrence-table th {
+  background: #21262d; color: #8b949e; font-weight: 600;
+  padding: 6px 10px; border: 1px solid #30363d;
+  text-align: center; white-space: nowrap;
+}
+.recurrence-table td {
+  padding: 6px 10px; border: 1px solid #30363d;
+  text-align: center; min-width: 80px;
+}
+.recurrence-table td.track-label {
+  background: #21262d; color: #c9d1d9; font-weight: 600;
+  text-align: left; white-space: nowrap;
+}
+.cell-present { background: #1a3a5c; }
+.cell-inversion { background: #1f3a1f; }
+.cell-transposition { background: #2d1a4a; }
+.cell-absent { background: #0d1117; }
+.transform-section {
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid #21262d;
+}
+.transform-row {
+  display: flex; align-items: flex-start; gap: 12px; padding: 8px 0;
+  border-bottom: 1px solid #21262d;
+}
+.transform-row:last-child { border-bottom: none; }
+.filter-bar {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;
+  margin-bottom: 16px;
+}
+.filter-bar label { font-size: 12px; color: #8b949e; }
+.filter-bar select {
+  display: block; margin-top: 4px;
+}
+.interval-label {
+  font-family: monospace; font-size: 11px; color: #8b949e;
+  margin-top: 4px; text-align: center;
+}
+"""
+
+
+@router.get(
+    "/{repo_id}/analysis/{ref}/motifs",
+    response_class=HTMLResponse,
+    summary="Muse Hub motif browser page",
+)
+async def motifs_page(repo_id: str, ref: str) -> HTMLResponse:
+    """Render the motif browser for a given commit ref.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/motifs``
+    and renders:
+    - All detected motifs with interval pattern and occurrence count
+    - Mini piano roll visualising the note pattern for each motif
+    - Contour label (arch, valley, oscillating, etc.)
+    - Transformation badges (inversion, retrograde, transposition)
+    - Motif recurrence grid (tracks x sections heatmap)
+    - Cross-track sharing indicators
+    - Track and section filters
+
+    Content negotiation: append ``?format=json`` to get raw JSON from the
+    API instead of the HTML page.
+
+    Auth is handled client-side via localStorage JWT, matching all other UI
+    pages.  No JWT is required to render the HTML shell.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const ref    = {repr(ref)};
+      const base   = '/musehub/ui/' + repoId;
+      const apiBase = '/api/v1/musehub/repos/' + repoId;
+
+      function escHtml(s) {{
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── State ──────────────────────────────────────────────────────────────
+      let allMotifs = [];
+      let activeTrack   = '';
+      let activeSection = '';
+
+      // ── Piano roll renderer ────────────────────────────────────────────────
+      // Converts a semitone interval sequence into a mini piano roll.
+      // Heights are proportional to cumulative pitch offset from MIDI 60.
+      function pianoRollHtml(intervals, motifId) {{
+        const MAX_H = 48;
+        const MIN_H = 6;
+        let pitch = 60;
+        const pitches = [pitch];
+        intervals.forEach(iv => {{ pitch += iv; pitches.push(pitch); }});
+        const lo = Math.min(...pitches);
+        const hi = Math.max(...pitches);
+        const span = hi - lo || 1;
+        const notes = pitches.map((p, idx) => {{
+          const h = Math.round(MIN_H + ((p - lo) / span) * (MAX_H - MIN_H));
+          const semitone = p % 12;
+          const isBlack  = [1,3,6,8,10].includes(semitone);
+          const noteName = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'][semitone];
+          const bg = isBlack
+            ? 'linear-gradient(to top,#0d419d,#388bfd)'
+            : 'linear-gradient(to top,#1f6feb,#58a6ff)';
+          return `<div class="piano-note" style="height:${{h}}px;background:${{bg}}"
+            title="${{noteName}} (MIDI ${{p}})"></div>`;
+        }}).join('');
+        return `<div class="piano-roll" id="roll-${{escHtml(motifId)}}">${{notes}}</div>
+          <div class="interval-label">
+            ${{intervals.length > 0
+              ? intervals.map(iv => (iv > 0 ? '+' : '') + iv).join(' ')
+              : '(single note)'}}
+          </div>`;
+      }}
+
+      // ── Recurrence grid ────────────────────────────────────────────────────
+      function recurrenceGridHtml(data, grid, sections, tracks) {{
+        const sectionCols = sections.map(s =>
+          `<th>${{escHtml(s)}}</th>`).join('');
+
+        const rows = tracks.map(track => {{
+          const cells = sections.map(sec => {{
+            const cell = (grid || []).find(c => c.track === track && c.section === sec);
+            if (!cell || !cell.present) {{
+              return `<td class="cell-absent" title="Not present">—</td>`;
+            }}
+            const types = cell.transformationTypes || [];
+            let cls = 'cell-present';
+            let icon = '&#9679;'; // filled circle = original
+            if (types.includes('inversion')) {{ cls = 'cell-inversion'; icon = '&#9651;'; }}
+            else if (types.includes('transposition')) {{ cls = 'cell-transposition'; icon = '&#9632;'; }}
+            const cnt  = cell.occurrenceCount > 1 ? ` &times;${{cell.occurrenceCount}}` : '';
+            const tip  = types.join(', ') + (cnt ? ', count: ' + cell.occurrenceCount : '');
+            return `<td class="${{cls}}" title="${{escHtml(tip)}}">${{icon}}${{cnt}}</td>`;
+          }}).join('');
+          return `<tr><td class="track-label">&#127932; ${{escHtml(track)}}</td>${{cells}}</tr>`;
+        }}).join('');
+
+        return `
+          <div class="recurrence-grid">
+            <table class="recurrence-table">
+              <thead>
+                <tr><th>Track \\ Section</th>${{sectionCols}}</tr>
+              </thead>
+              <tbody>${{rows}}</tbody>
+            </table>
+            <p style="font-size:11px;color:#8b949e;margin-top:6px">
+              &#9679; original &nbsp; &#9651; inversion &nbsp; &#9632; transposition
+            </p>
+          </div>`;
+      }}
+
+      // ── Transformation list ────────────────────────────────────────────────
+      function transformationsHtml(transformations) {{
+        if (!transformations || transformations.length === 0) {{
+          return '<p style="font-size:13px;color:#8b949e">No transformations detected.</p>';
+        }}
+        const rows = transformations.map(t => {{
+          const badge = `<span class="badge badge-transform"
+            style="text-transform:uppercase;font-size:11px">${{escHtml(t.transformationType)}}</span>`;
+          const transposeNote = t.transpositionSemitones !== 0
+            ? `<span class="badge badge-track" style="font-size:11px">
+                ${{t.transpositionSemitones > 0 ? '+' : ''}}${{t.transpositionSemitones}} st
+               </span>`
+            : '';
+          const occ = (t.occurrences || []).length;
+          return `
+            <div class="transform-row">
+              <div style="min-width:160px;display:flex;flex-direction:column;gap:6px">
+                ${{badge}} ${{transposeNote}}
+                <span style="font-size:12px;color:#8b949e">
+                  track: ${{escHtml(t.track)}} &bull; ${{occ}} occurrence${{occ !== 1 ? 's' : ''}}
+                </span>
+              </div>
+              <div style="flex:1">
+                ${{pianoRollHtml(t.intervals || [], t.transformationType + '-' + t.track)}}
+              </div>
+            </div>`;
+        }}).join('');
+        return `<div class="transform-section">${{rows}}</div>`;
+      }}
+
+      // ── Single motif card ──────────────────────────────────────────────────
+      function motifCardHtml(m, sections, tracks) {{
+        const trackBadges = (m.tracks || []).map(t =>
+          `<span class="badge badge-track" style="font-size:11px">&#127932; ${{escHtml(t)}}</span>`
+        ).join(' ');
+        const contourBadge = `<span class="badge badge-contour" style="font-size:11px">
+          &#128200; ${{escHtml(m.contourLabel)}}
+        </span>`;
+        const occBadge = `<span class="badge badge-open" style="font-size:11px">
+          ${{m.occurrenceCount}} occurrence${{m.occurrenceCount !== 1 ? 's' : ''}}
+        </span>`;
+        const lenBadge = `<span class="badge" style="background:#21262d;border:1px solid #30363d;font-size:11px">
+          ${{m.lengthBeats}} beat${{m.lengthBeats !== 1 ? 's' : ''}}
+        </span>`;
+
+        return `
+          <div class="motif-card" id="motif-${{escHtml(m.motifId)}}">
+            <div class="motif-header">
+              <span class="motif-id">${{escHtml(m.motifId)}}</span>
+              ${{contourBadge}}
+              ${{occBadge}}
+              ${{lenBadge}}
+            </div>
+
+            <div class="motif-meta">
+              <div class="motif-meta-item">
+                <span class="meta-label">Primary Track</span>
+                <span class="meta-value">&#127932; ${{escHtml(m.track)}}</span>
+              </div>
+              <div class="motif-meta-item">
+                <span class="meta-label">Cross-Track Sharing</span>
+                <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+                  ${{trackBadges || '<span style="color:#8b949e;font-size:13px">Only in primary track</span>'}}
+                </div>
+              </div>
+            </div>
+
+            <!-- Mini piano roll -->
+            <div style="margin-bottom:12px">
+              <span class="meta-label" style="display:block;margin-bottom:4px">Pattern</span>
+              ${{pianoRollHtml(m.intervals || [], m.motifId)}}
+            </div>
+
+            <!-- Recurrence grid (collapsible) -->
+            <details style="margin-bottom:8px">
+              <summary style="cursor:pointer;font-size:13px;color:#8b949e;
+                              list-style:none;display:flex;align-items:center;gap:6px">
+                <span>&#9660;</span>
+                <strong style="color:#c9d1d9">Recurrence Grid</strong>
+                <span style="font-size:11px;color:#8b949e">
+                  (tracks &times; sections)
+                </span>
+              </summary>
+              ${{recurrenceGridHtml(m, m.recurrenceGrid || [], sections, tracks)}}
+            </details>
+
+            <!-- Transformations (collapsible) -->
+            <details>
+              <summary style="cursor:pointer;font-size:13px;color:#8b949e;
+                              list-style:none;display:flex;align-items:center;gap:6px">
+                <span>&#9660;</span>
+                <strong style="color:#c9d1d9">Transformations</strong>
+                <span class="badge" style="background:#1f3a1f;border:1px solid #238636;
+                                           color:#56d364;font-size:11px">
+                  ${{(m.transformations || []).length}}
+                </span>
+              </summary>
+              ${{transformationsHtml(m.transformations || [])}}
+            </details>
+          </div>`;
+      }}
+
+      // ── Filter helpers ─────────────────────────────────────────────────────
+      function applyFilters() {{
+        const filtered = allMotifs.filter(m => {{
+          if (activeTrack && m.track !== activeTrack &&
+              !(m.tracks || []).includes(activeTrack)) return false;
+          if (activeSection) {{
+            const hasSection = (m.recurrenceGrid || [])
+              .some(c => c.section === activeSection && c.present);
+            if (!hasSection) return false;
+          }}
+          return true;
+        }});
+        renderMotifList(filtered);
+      }}
+
+      function renderMotifList(motifs) {{
+        if (motifs.length === 0) {{
+          document.getElementById('motif-list').innerHTML =
+            '<p class="loading">No motifs match the selected filters.</p>';
+          return;
+        }}
+        const data = window._motifsData || {{}};
+        const sections = data.sections || [];
+        const tracks   = data.allTracks || [];
+        document.getElementById('motif-list').innerHTML =
+          motifs.map(m => motifCardHtml(m, sections, tracks)).join('');
+      }}
+
+      // ── Main load ──────────────────────────────────────────────────────────
+      async function load() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/analysis/' + ref + '/motifs');
+          window._motifsData = data;
+          allMotifs = data.data.motifs || [];
+          const sections = data.data.sections || [];
+          const tracks   = data.data.allTracks || [];
+          const total    = data.data.totalMotifs || 0;
+
+          // Populate filters
+          const trackOpts = ['<option value="">All tracks</option>',
+            ...tracks.map(t => `<option value="${{escHtml(t)}}">${{escHtml(t)}}</option>`)
+          ].join('');
+          const sectionOpts = ['<option value="">All sections</option>',
+            ...sections.map(s => `<option value="${{escHtml(s)}}">${{escHtml(s)}}</option>`)
+          ].join('');
+          document.getElementById('track-filter').innerHTML   = trackOpts;
+          document.getElementById('section-filter').innerHTML = sectionOpts;
+
+          document.getElementById('summary').innerHTML =
+            `<span style="color:#8b949e;font-size:14px">
+              ${{total}} motif${{total !== 1 ? 's' : ''}} detected &nbsp;&bull;&nbsp;
+              ${{sections.length}} section${{sections.length !== 1 ? 's' : ''}} &nbsp;&bull;&nbsp;
+              ${{tracks.length}} track${{tracks.length !== 1 ? 's' : ''}}
+            </span>`;
+
+          renderMotifList(allMotifs);
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      // Bootstrap: inject toolbar HTML then load data
+      document.getElementById('content').innerHTML = `
+        <div style="margin-bottom:12px">
+          <a href="${{base}}">&larr; Back to repo</a>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+            <h1 style="margin:0">&#127926; Motif Browser</h1>
+            <code style="font-size:12px;background:#0d1117;padding:2px 8px;
+                         border-radius:4px;border:1px solid #30363d">
+              ref: ${{ref.substring(0, 8)}}
+            </code>
+            <a href="${{base}}/analysis/${{ref}}"
+               class="btn btn-secondary" style="font-size:12px">
+              All Dimensions
+            </a>
+          </div>
+
+          <div id="summary" class="loading">Loading&#8230;</div>
+
+          <!-- Filter bar -->
+          <div class="filter-bar" style="margin-top:12px">
+            <div>
+              <label for="track-filter">Track</label>
+              <select id="track-filter" onchange="activeTrack=this.value;applyFilters()">
+                <option value="">All tracks</option>
+              </select>
+            </div>
+            <div>
+              <label for="section-filter">Section</label>
+              <select id="section-filter" onchange="activeSection=this.value;applyFilters()">
+                <option value="">All sections</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div id="motif-list"><p class="loading">Loading&#8230;</p></div>
+      `;
+
+      load();
+    """
+    html = _page(
+        title=f"Motifs {ref[:8]}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f"analysis / {ref[:8]} / motifs"
+        ),
+        body_script=script,
+        extra_css=_MOTIF_CSS,
     )
     return HTMLResponse(content=html)

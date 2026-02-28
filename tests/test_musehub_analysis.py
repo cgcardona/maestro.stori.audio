@@ -31,6 +31,7 @@ from maestro.models.musehub_analysis import (
     HarmonyData,
     KeyData,
     MeterData,
+    MotifEntry,
     MotifsData,
     SimilarityData,
     TempoData,
@@ -88,6 +89,85 @@ def test_compute_dimension_motifs_returns_motifs_data() -> None:
     assert result.total_motifs == len(result.motifs)
     for motif in result.motifs:
         assert motif.occurrence_count == len(motif.occurrences)
+
+
+def test_motifs_data_has_extended_fields() -> None:
+    """MotifsData now carries sections, all_tracks for grid rendering."""
+    result = compute_dimension("motifs", "main")
+    assert isinstance(result, MotifsData)
+    assert isinstance(result.sections, list)
+    assert len(result.sections) > 0
+    assert isinstance(result.all_tracks, list)
+    assert len(result.all_tracks) > 0
+
+
+def test_motif_entry_has_contour_label() -> None:
+    """Every MotifEntry must carry a melodic contour label."""
+    result = compute_dimension("motifs", "main")
+    assert isinstance(result, MotifsData)
+    valid_labels = {
+        "ascending-step",
+        "descending-step",
+        "arch",
+        "valley",
+        "oscillating",
+        "static",
+    }
+    for motif in result.motifs:
+        assert isinstance(motif, MotifEntry)
+        assert motif.contour_label in valid_labels, (
+            f"Unknown contour label: {motif.contour_label!r}"
+        )
+
+
+def test_motif_entry_has_transformations() -> None:
+    """Each MotifEntry must include at least one transformation."""
+    result = compute_dimension("motifs", "main")
+    assert isinstance(result, MotifsData)
+    for motif in result.motifs:
+        assert isinstance(motif, MotifEntry)
+        assert len(motif.transformations) > 0
+        for xform in motif.transformations:
+            assert xform.transformation_type in {
+                "inversion",
+                "retrograde",
+                "retrograde-inversion",
+                "transposition",
+            }
+            assert isinstance(xform.intervals, list)
+            assert isinstance(xform.occurrences, list)
+
+
+def test_motif_entry_has_recurrence_grid() -> None:
+    """recurrence_grid is a flat list of cells covering every track x section pair."""
+    result = compute_dimension("motifs", "main")
+    assert isinstance(result, MotifsData)
+    expected_cells = len(result.all_tracks) * len(result.sections)
+    for motif in result.motifs:
+        assert isinstance(motif, MotifEntry)
+        assert len(motif.recurrence_grid) == expected_cells, (
+            f"Expected {expected_cells} cells, got {len(motif.recurrence_grid)} "
+            f"for motif {motif.motif_id!r}"
+        )
+        for cell in motif.recurrence_grid:
+            assert cell.track in result.all_tracks
+            assert cell.section in result.sections
+            assert isinstance(cell.present, bool)
+            assert cell.occurrence_count >= 0
+
+
+def test_motif_entry_tracks_cross_track() -> None:
+    """MotifEntry.tracks lists all tracks where the motif or its transforms appear."""
+    result = compute_dimension("motifs", "main")
+    assert isinstance(result, MotifsData)
+    for motif in result.motifs:
+        assert isinstance(motif, MotifEntry)
+        assert len(motif.tracks) > 0
+        # Every track in the list must appear in the global all_tracks roster
+        for track in motif.tracks:
+            assert track in result.all_tracks, (
+                f"motif.tracks references unknown track {track!r}"
+            )
 
 
 def test_compute_dimension_form_returns_form_data() -> None:

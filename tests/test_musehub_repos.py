@@ -334,11 +334,53 @@ async def test_list_branches_returns_empty_for_new_repo(db_session: AsyncSession
 
 
 async def _seed_credits_repo(db_session: AsyncSession) -> str:
-    """Create a repo with commits from two distinct authors and return repo_id."""
+    """Create a repo with commits from two distinct authors and return repo_id.
+
+    Alice contributes 2 commits (compose + mix keywords) and Bob contributes 1,
+    so default count-sort places Alice first with sessionCount==2.
+    """
+    from datetime import datetime, timezone, timedelta
+
     repo = MusehubRepo(name="liner-notes", visibility="public", owner_user_id="producer-1")
     db_session.add(repo)
     await db_session.flush()
     repo_id = str(repo.repo_id)
+    now = datetime.now(tz=timezone.utc)
+    commits = [
+        MusehubCommit(
+            commit_id="alice-001",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="compose intro melody and theme",
+            author="Alice",
+            timestamp=now - timedelta(days=10),
+        ),
+        MusehubCommit(
+            commit_id="alice-002",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=["alice-001"],
+            message="mix and master final session",
+            author="Alice",
+            timestamp=now - timedelta(days=1),
+        ),
+        MusehubCommit(
+            commit_id="bob-001",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=["alice-001"],
+            message="arrange strings for verse",
+            author="Bob",
+            timestamp=now - timedelta(days=5),
+        ),
+    ]
+    db_session.add_all(commits)
+    await db_session.commit()
+    return repo_id
+
+
+# ---------------------------------------------------------------------------
 # GET /musehub/repos/{repo_id}/dag  (issue #229)
 # ---------------------------------------------------------------------------
 
@@ -438,31 +480,6 @@ async def test_graph_dag_endpoint_topological_order(
     now = datetime.now(tz=timezone.utc)
     commits = [
         MusehubCommit(
-            commit_id="c001",
-            repo_id=repo_id,
-            branch="main",
-            parent_ids=[],
-            message="compose intro melody and theme",
-            author="Alice",
-            timestamp=now - timedelta(days=10),
-        ),
-        MusehubCommit(
-            commit_id="c002",
-            repo_id=repo_id,
-            branch="main",
-            parent_ids=["c001"],
-            message="arrang strings for verse",
-            author="Bob",
-            timestamp=now - timedelta(days=5),
-        ),
-        MusehubCommit(
-            commit_id="c003",
-            repo_id=repo_id,
-            branch="main",
-            parent_ids=["c002"],
-            message="mix and master final session",
-            author="Alice",
-            timestamp=now - timedelta(days=1),
             commit_id="topo-a",
             repo_id=repo_id,
             branch="main",
@@ -492,7 +509,16 @@ async def test_graph_dag_endpoint_topological_order(
     ]
     db_session.add_all(commits)
     await db_session.commit()
-    return repo_id
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/dag",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    node_ids = [n["commitId"] for n in response.json()["nodes"]]
+    # Root must appear before children in topological order
+    assert node_ids.index("topo-a") < node_ids.index("topo-b")
+    assert node_ids.index("topo-b") < node_ids.index("topo-c")
 
 
 @pytest.mark.anyio
@@ -600,16 +626,9 @@ async def test_credits_404_for_unknown_repo(
     """GET /api/v1/musehub/repos/{unknown}/credits returns 404."""
     response = await client.get(
         "/api/v1/musehub/repos/does-not-exist/credits",
-
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/dag",
         headers=auth_headers,
     )
-    assert response.status_code == 200
-    node_ids = [n["commitId"] for n in response.json()["nodes"]]
-    # Root must appear before children in topological order
-    assert node_ids.index("topo-a") < node_ids.index("topo-b")
-    assert node_ids.index("topo-b") < node_ids.index("topo-c")
+    assert response.status_code == 404
 
 
 @pytest.mark.anyio
@@ -682,6 +701,18 @@ async def test_credits_aggregation_service_direct(db_session: AsyncSession) -> N
             message="produce and mix the drop",
             author="Charlie",
             timestamp=now,
+        )
+    )
+    await db_session.commit()
+
+    result = await musehub_credits.aggregate_credits(db_session, repo_id)
+    assert result.total_contributors == 1
+    assert result.contributors[0].author == "Charlie"
+    assert result.contributors[0].session_count == 1
+    assert len(result.contributors[0].contribution_types) >= 1
+
+
+@pytest.mark.anyio
 async def test_graph_json_response_has_required_fields(
     client: AsyncClient,
     auth_headers: dict[str, str],
@@ -710,11 +741,6 @@ async def test_graph_json_response_has_required_fields(
     )
     await db_session.commit()
 
-    result = await musehub_credits.aggregate_credits(db_session, repo_id)
-    assert result.total_contributors == 1
-    assert result.contributors[0].author == "Charlie"
-    assert result.contributors[0].session_count == 1
-    assert len(result.contributors[0].contribution_types) >= 1
     response = await client.get(
         f"/api/v1/musehub/repos/{repo_id}/dag",
         headers=auth_headers,

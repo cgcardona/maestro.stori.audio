@@ -555,8 +555,9 @@ async def test_context_page_renders(
     assert "text/html" in response.headers["content-type"]
     body = response.text
     assert "Muse Hub" in body
-    assert "Credits" in body
     assert repo_id[:8] in body
+    assert "What the Agent Sees" in body
+    assert commit_id[:8] in body
 
 
 @pytest.mark.anyio
@@ -616,8 +617,21 @@ async def test_credits_no_auth_required(
 
 @pytest.mark.anyio
 async def test_credits_json_response(
-    assert "What the Agent Sees" in body
-    assert commit_id[:8] in body
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/credits returns valid JSON with contributor data."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "totalContributors" in body
+    assert "contributors" in body
+    assert isinstance(body["contributors"], list)
 
 
 @pytest.mark.anyio
@@ -684,10 +698,6 @@ async def test_context_json_response(
     db_session: AsyncSession,
     auth_headers: dict[str, str],
 ) -> None:
-    """GET /api/v1/musehub/repos/{repo_id}/credits returns JSON with required fields."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/credits",
     """GET /api/v1/musehub/repos/{repo_id}/context/{ref} returns MuseHubContextResponse."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(
@@ -697,17 +707,8 @@ async def test_context_json_response(
     assert response.status_code == 200
     body = response.json()
     assert "repoId" in body
-    assert "contributors" in body
-    assert "sort" in body
-    assert "totalContributors" in body
     assert body["repoId"] == repo_id
-    assert isinstance(body["contributors"], list)
-    assert body["sort"] == "count"
-
-
-@pytest.mark.anyio
-async def test_credits_empty_state_json(
-    assert body["repoId"] == repo_id
+    assert "currentBranch" in body
     assert body["currentBranch"] == "main"
     assert "headCommit" in body
     assert body["headCommit"]["commitId"] == commit_id
@@ -719,10 +720,10 @@ async def test_credits_empty_state_json(
 
 
 @pytest.mark.anyio
-async def test_context_includes_musical_state(
+async def test_credits_empty_state_json(
     client: AsyncClient,
-    db_session: AsyncSession,
     auth_headers: dict[str, str],
+    db_session: AsyncSession,
 ) -> None:
     """Repo with no commits returns empty contributors list and totalContributors=0."""
     repo_id = await _make_repo(db_session)
@@ -734,6 +735,14 @@ async def test_context_includes_musical_state(
     body = response.json()
     assert body["contributors"] == []
     assert body["totalContributors"] == 0
+
+
+@pytest.mark.anyio
+async def test_context_includes_musical_state(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
     """Context response includes musicalState with an activeTracks field."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(
@@ -875,3 +884,90 @@ async def test_embed_page_contains_player_ui(
     assert "View on Muse Hub" in body
     assert "audio" in body
     assert repo_id in body
+
+
+# ---------------------------------------------------------------------------
+# Motifs browser page — issue #224
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_motifs_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/analysis/{ref}/motifs returns 200 HTML."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/main/motifs")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert repo_id[:8] in body
+
+
+@pytest.mark.anyio
+async def test_motifs_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Motifs UI page must be accessible without an Authorization header."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/main/motifs")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_motifs_page_contains_filter_ui(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Motifs page embeds client-side track and section filter controls."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/main/motifs")
+    assert response.status_code == 200
+    body = response.text
+    assert "track-filter" in body
+    assert "section-filter" in body
+
+
+@pytest.mark.anyio
+async def test_motifs_page_contains_piano_roll_renderer(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Motifs page embeds the piano roll renderer JavaScript function."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/main/motifs")
+    assert response.status_code == 200
+    body = response.text
+    assert "pianoRollHtml" in body
+
+
+@pytest.mark.anyio
+async def test_motifs_page_contains_recurrence_grid(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Motifs page embeds the recurrence grid (heatmap) renderer."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/main/motifs")
+    assert response.status_code == 200
+    body = response.text
+    assert "recurrenceGridHtml" in body
+
+
+@pytest.mark.anyio
+async def test_motifs_page_shows_transformation_badges(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Motifs page includes transformation badge renderer for inversion/retrograde labels."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/main/motifs")
+    assert response.status_code == 200
+    body = response.text
+    assert "transformationsHtml" in body
+    # Badge labels from the transformation types
+    assert "inversion" in body
