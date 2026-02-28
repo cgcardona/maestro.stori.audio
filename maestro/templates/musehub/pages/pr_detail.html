@@ -488,8 +488,8 @@ async function load() {
       </div>
 
       <!-- ── Reactions ────────────────────────────────────────────────── -->
-      <div class="card" style="padding:var(--space-3);margin-bottom:24px">
-        <div id="pr-reactions" class="reaction-bar"></div>
+      <div class="card" style="padding:var(--space-3) var(--space-4);margin-bottom:24px">
+        <div id="pr-reactions" class="reaction-bar"><p class="text-muted text-sm">Loading reactions…</p></div>
       </div>
 
       <!-- ── Musical diff radar + badges ───────────────────────────────── -->
@@ -595,7 +595,6 @@ async function load() {
         </details>
       </div>`;
 
-    // Load reactions and review comments in parallel (non-fatal).
     loadReactions('pull_request', prId, 'pr-reactions');
     await loadComments();
   } catch(e) {

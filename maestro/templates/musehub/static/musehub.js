@@ -338,6 +338,83 @@ function commitScopeBadge(scope) {
   return `<span class="badge" style="background:var(--bg-overlay);color:var(--color-purple);border:1px solid var(--color-purple-bg)">${escHtml(scope)}</span>`;
 }
 
+// ── Reaction bar ─────────────────────────────────────────────────────────────
+
+/**
+ * Ordered emoji set shown in the reaction bar on every detail page.
+ * Backed by POST /repos/{repo_id}/reactions which validates against _ALLOWED_EMOJIS.
+ */
+const REACTION_BAR_EMOJIS = ['🔥', '❤️', '👏', '✨', '🎵', '🎸', '🎹', '🥁'];
+
+/**
+ * Load reaction counts for a target and render an interactive bar into containerId.
+ *
+ * Calls GET /repos/{repoId}/reactions?target_type=&target_id= (repoId is the
+ * page-level global set in each template's {% block page_data %}).
+ * Clicking a button calls toggleReaction() which POSTs and re-renders.
+ *
+ * @param {string} targetType - "commit" | "pull_request" | "issue" | "release" | "session"
+ * @param {string} targetId   - The entity's primary ID string
+ * @param {string} containerId - DOM element id to render into
+ */
+async function loadReactions(targetType, targetId, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  let reactions = [];
+  try {
+    reactions = await apiFetch(
+      '/repos/' + repoId + '/reactions?target_type=' + encodeURIComponent(targetType) +
+      '&target_id=' + encodeURIComponent(targetId)
+    );
+  } catch (_) {
+    reactions = [];
+  }
+
+  const countMap = {};
+  const reactedMap = {};
+  (Array.isArray(reactions) ? reactions : []).forEach(function(r) {
+    countMap[r.emoji] = r.count;
+    reactedMap[r.emoji] = r.reacted_by_me;
+  });
+
+  const safeTT = targetType.replace(/'/g, '');
+  const safeTI = String(targetId).replace(/'/g, '');
+  const safeCID = containerId.replace(/'/g, '');
+
+  container.innerHTML = '<div class="reaction-bar">' +
+    REACTION_BAR_EMOJIS.map(function(emoji) {
+      const count = countMap[emoji] || 0;
+      const active = reactedMap[emoji] ? ' reaction-btn--active' : '';
+      const countHtml = count > 0 ? '<span class="reaction-count">' + count + '</span>' : '';
+      return '<button class="reaction-btn' + active + '" ' +
+        'onclick="toggleReaction(\'' + safeTT + '\',\'' + safeTI + '\',\'' + emoji + '\',\'' + safeCID + '\')" ' +
+        'title="' + emoji + '">' +
+        emoji + countHtml +
+        '</button>';
+    }).join('') +
+  '</div>';
+}
+
+/**
+ * Toggle a single emoji reaction on a target. Re-renders the bar when done.
+ * Requires a stored JWT — shows the token form if unauthenticated.
+ */
+async function toggleReaction(targetType, targetId, emoji, containerId) {
+  if (!getToken()) {
+    showTokenForm('Sign in to react');
+    return;
+  }
+  try {
+    await apiFetch('/repos/' + repoId + '/reactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_type: targetType, target_id: String(targetId), emoji: emoji }),
+    });
+    await loadReactions(targetType, targetId, containerId);
+  } catch (_) { /* silent: reaction toggle is non-critical */ }
+}
+
 /**
  * Parse "section:X track:Y" key-value pairs from a commit message.
  * Returns { section, track, ...rest }

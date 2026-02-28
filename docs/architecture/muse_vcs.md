@@ -7572,7 +7572,7 @@ maestro/templates/musehub/
     ├── pr_list.html
     ├── pr_detail.html
     ├── issue_list.html
-    ├── issue_detail.html
+    ├── issue_detail.html  — issue body + threaded comment section (renderComments/submitComment/deleteComment/toggleReplyForm)
     ├── context.html
     ├── credits.html
     ├── embed.html        — iframe-safe audio player (standalone, no base)

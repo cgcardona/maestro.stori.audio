@@ -37,6 +37,16 @@ Covers the minimum acceptance criteria from issue #43 and issue #232:
 - test_ui_issue_list_has_sort_controls         — Sort buttons (newest/oldest/most-commented) present (#299)
 - test_ui_issue_list_has_label_filter_js       — Client-side label filter JS present (#299)
 - test_ui_issue_list_has_body_preview_js       — Body preview helper and CSS class present (#299)
+- test_ui_issue_detail_has_comment_section     — Comment thread section below issue body (#289)
+- test_ui_issue_detail_has_render_comments_js  — buildCommentThread() renders the comment thread (#289)
+- test_ui_issue_detail_has_submit_comment_js   — submitComment() posts new comments (#289)
+- test_ui_issue_detail_has_delete_comment_js   — deleteComment() removes own comments (#289)
+- test_ui_issue_detail_has_reply_support_js    — startReply() enables threaded replies (#289)
+- test_ui_issue_detail_comment_section_below_body — comment section follows issue body card (#289)
+- test_ui_pr_list_has_comment_badge_js         — PR list has comment count badge JS (#298)
+- test_ui_pr_list_has_reaction_pills_js        — PR list has reaction pills JS (#298)
+- test_ui_issue_list_has_reaction_pills_js     — Issue list has reaction pills JS (#298)
+- test_ui_issue_list_eager_social_signals      — Issue list eagerly pre-fetches social signals (#298)
 - test_context_page_renders            — context viewer page returns 200 HTML
 - test_context_json_response           — JSON returns MuseHubContextResponse structure
 - test_context_includes_musical_state  — response includes active_tracks field
@@ -65,8 +75,23 @@ Covers issue #227 (emotion map page):
 - test_emotion_trajectory              — cross-commit trajectory data is present and ordered
 - test_emotion_drift_distances         — drift list has one entry per consecutive commit pair
 
+Covers issue #292 (rich event cards in activity feed):
+- test_feed_page_returns_200                 — GET /musehub/ui/feed returns 200 HTML
+- test_feed_page_no_raw_json_payload         — page does not render raw JSON.stringify of payload
+- test_feed_page_has_event_meta_for_all_types — EVENT_META covers all 8 event types
+- test_feed_page_has_data_notif_id_attribute  — cards carry data-notif-id for mark-as-read hook
+- test_feed_page_has_unread_indicator        — unread highlight border logic present
+- test_feed_page_has_actor_avatar_logic      — actorAvatar / actorHsl helper present
+- test_feed_page_has_relative_timestamp      — fmtRelative called in card rendering
+
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
+
+Covers issue #290 (release detail comment threads):
+- test_ui_release_detail_has_comment_section        — Discussion section present in HTML
+- test_ui_release_detail_has_render_comments_js     — renderComments/submitComment/deleteComment JS present
+- test_ui_release_detail_comment_uses_release_target_type — target_type='release' used in JS
+- test_ui_release_detail_has_reply_thread_js        — toggleReplyForm/submitReply for thread support
 
 Covers issue #286 (commit comment threads):
 - test_commit_page_has_comment_section_html     — comments-section container present in HTML
@@ -249,6 +274,104 @@ async def test_ui_pr_list_page_returns_200(
 
 
 @pytest.mark.anyio
+async def test_ui_pr_list_has_state_tabs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page includes Open, Merged, Closed, and All tab buttons with counts."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    # All four tab IDs must be present
+    assert "tab-open" in body
+    assert "tab-merged" in body
+    assert "tab-closed" in body
+    assert "tab-all" in body
+    # Tab count placeholder class must be present
+    assert "tab-count" in body
+    # Tab labels must be present
+    assert "Open" in body
+    assert "Merged" in body
+    assert "Closed" in body
+    assert "All" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_body_preview_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page HTML includes bodyPreview JS function for subtitle truncation."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    assert "bodyPreview" in body
+    assert "issue-preview" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_branch_pills(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page HTML includes branch-pill CSS class for from/to branch indicators."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    assert "branch-pill" in body
+    assert "fromBranch" in body
+    assert "toBranch" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_sort_controls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page HTML includes Newest and Oldest sort buttons."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    assert "Newest" in body
+    assert "Oldest" in body
+    assert "changeSort" in body
+    assert "sort-btn" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_merged_badge_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page JS renders a Merged badge with merge commit short-SHA link for merged PRs."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    # JS logic for merged state and merge commit rendering
+    assert "badge-merged" in body
+    assert "mergeCommitId" in body
+    assert "slice(0, 8)" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_closed_badge_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page JS renders a Closed badge for closed PRs."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    assert "badge-closed" in body
+
+
+@pytest.mark.anyio
 async def test_ui_issue_list_page_returns_200(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -326,6 +449,75 @@ async def test_ui_issue_list_has_body_preview_js(
     body = response.text
     assert "bodyPreview" in body
     assert "issue-preview" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_comment_badge_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page HTML includes JS for fetching and rendering comment count badges (#298)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    # Comment count badge rendered via loadSocialSignals
+    assert "loadSocialSignals" in body
+    assert "prCommentCounts" in body
+    assert "&#128172;" in body  # 💬 comment icon HTML entity
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_reaction_pills_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page HTML includes JS for fetching and rendering reaction pills (#298)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    # Reaction pills rendered via reactionPills helper
+    assert "reactionPills" in body
+    assert "prReactions" in body
+    # Reactions fetched from the reactions API endpoint
+    assert "reactions?target_type=pull_request" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_reaction_pills_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes JS for fetching and rendering reaction pills (#298)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    # Reaction summary state and loader
+    assert "issueReactions" in body
+    assert "loadReactionSummaries" in body
+    # Reactions fetched from the reactions API endpoint
+    assert "reactions?target_type=issue" in body
+    # Reaction pills rendered inline in issue rows
+    assert "rxnPills" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_eager_social_signals(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page eagerly pre-fetches comment counts and reactions on load (#298)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    # Eager pre-fetch block calls both loaders before rendering rows
+    assert "needCounts" in body
+    assert "needRxns" in body
+    assert "loadCommentCounts" in body
+    assert "loadReactionSummaries" in body
 
 
 @pytest.mark.anyio
@@ -508,6 +700,93 @@ async def test_ui_issue_detail_page_returns_200(
 
 
 @pytest.mark.anyio
+async def test_ui_issue_detail_has_comment_section(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page includes a comment thread section below the issue body (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "comments-container" in body
+    assert "Discussion" in body
+    assert "comment-input" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_detail_has_render_comments_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page embeds buildCommentThread() for rendering the comment thread (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "buildCommentThread" in body
+    assert "/comments" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_detail_has_submit_comment_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page embeds submitComment() for posting new comments (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "submitComment" in body
+    assert "comment-form" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_detail_has_delete_comment_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page embeds deleteComment() for removing own comments (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "deleteComment" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_detail_has_reply_support_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page embeds startReply() for threaded replies via reply indicator (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "startReply" in body
+    assert "parentId" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_detail_comment_section_below_body(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Comment section appears after the issue body card in document order (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    close_pos = body.find("closeIssue")
+    comments_pos = body.find("comments-container")
+    assert close_pos != -1, "closeIssue not found"
+    assert comments_pos != -1, "comments-container not found"
+    assert comments_pos > close_pos, "comment section must appear after the issue body"
+
+
+@pytest.mark.anyio
 async def test_ui_repo_page_no_auth_required(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -654,6 +933,62 @@ async def test_ui_release_detail_page_returns_200(
     assert "Muse Hub" in body
     assert "Download" in body
     assert "v1.0" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_detail_has_comment_section(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release detail page HTML includes the Discussion comment section (issue #290)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
+    assert response.status_code == 200
+    body = response.text
+    assert "comments-section" in body
+    assert "Discussion" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_detail_has_render_comments_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release detail page includes renderComments() JavaScript function (issue #290)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderComments" in body
+    assert "submitComment" in body
+    assert "deleteComment" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_detail_comment_uses_release_target_type(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release detail page posts comments with target_type='release' (issue #290)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
+    assert response.status_code == 200
+    body = response.text
+    assert "target_type: 'release'" in body or "target_type':'release'" in body or "target_type: \"release\"" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_detail_has_reply_thread_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release detail page includes toggleReplyForm and submitReply for threaded comments (issue #290)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
+    assert response.status_code == 200
+    body = response.text
+    assert "toggleReplyForm" in body
+    assert "submitReply" in body
 
 
 @pytest.mark.anyio
@@ -5562,6 +5897,322 @@ async def test_ui_commit_page_artifact_auth_uses_blob_proxy(
     # hydrateImages and _fetchBlobUrl must be present for the blob proxy pattern
     assert "hydrateImages" in body
     assert "_fetchBlobUrl" in body
+
+
+# ---------------------------------------------------------------------------
+# Reaction bars — issue #296
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_js_in_musehub_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """musehub.js must define loadReactions and toggleReaction for all detail pages."""
+    response = await client.get("/musehub/static/musehub.js")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "toggleReaction" in body
+    assert "REACTION_BAR_EMOJIS" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_emojis_in_musehub_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """musehub.js reaction bar must include all 8 required emojis."""
+    response = await client.get("/musehub/static/musehub.js")
+    assert response.status_code == 200
+    body = response.text
+    for emoji in ["🔥", "❤️", "👏", "✨", "🎵", "🎸", "🎹", "🥁"]:
+        assert emoji in body, f"Emoji {emoji!r} missing from musehub.js"
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_commit_page_has_load_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page must call loadReactions for target_type 'commit'."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "commit-reactions" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_pr_detail_has_load_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR detail page must call loadReactions for target_type 'pull_request'."""
+    await _make_repo(db_session)
+    pr_id = "some-pr-uuid-1234"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/pulls/{pr_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "pr-reactions" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_issue_detail_has_load_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page must call loadReactions for target_type 'issue'."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "issue-reactions" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_release_detail_has_load_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release detail page must call loadReactions for target_type 'release'."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "release-reactions" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_session_detail_has_load_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must call loadReactions for target_type 'session'."""
+    await _make_repo(db_session)
+    session_id = "some-session-uuid-1234"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "session-reactions" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_api_allows_new_emojis(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """POST /reactions with 👏 and 🎹 (new emojis) must be accepted (not 400)."""
+    from maestro.db.musehub_models import MusehubRepo
+    repo = MusehubRepo(
+        name="reaction-test",
+        owner="testuser",
+        slug="reaction-test",
+        visibility="public",
+        owner_user_id="reaction-owner",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    token_headers = {"Authorization": "Bearer test-token"}
+
+    for emoji in ["👏", "🎹"]:
+        response = await client.post(
+            f"/api/v1/musehub/repos/{repo_id}/reactions",
+            json={"target_type": "commit", "target_id": "abc123", "emoji": emoji},
+            headers=token_headers,
+        )
+        assert response.status_code not in (400, 422), (
+            f"Emoji {emoji!r} rejected by API: {response.status_code} {response.text}"
+        )
+
+
+@pytest.mark.anyio
+async def test_reaction_api_allows_release_and_session_target_types(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """POST /reactions must accept 'release' and 'session' as target_type values.
+
+    These target types were added in issue #296 to support reaction bars on
+    release_detail and session_detail pages.
+    """
+    from maestro.db.musehub_models import MusehubRepo
+    repo = MusehubRepo(
+        name="target-type-test",
+        owner="testuser",
+        slug="target-type-test",
+        visibility="public",
+        owner_user_id="target-type-owner",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    token_headers = {"Authorization": "Bearer test-token"}
+
+    for target_type in ["release", "session"]:
+        response = await client.post(
+            f"/api/v1/musehub/repos/{repo_id}/reactions",
+            json={"target_type": target_type, "target_id": "some-id", "emoji": "🔥"},
+            headers=token_headers,
+        )
+        assert response.status_code not in (400, 422), (
+            f"target_type {target_type!r} rejected: {response.status_code} {response.text}"
+        )
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_css_loaded_on_detail_pages(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Detail pages must load components.css which contains .reaction-bar styles."""
+    await _make_repo(db_session)
+    pages = [
+        "/musehub/ui/testuser/test-beats/pulls/pr-uuid-abc",
+        "/musehub/ui/testuser/test-beats/issues/1",
+        "/musehub/ui/testuser/test-beats/releases/v1.0",
+        "/musehub/ui/testuser/test-beats/sessions/session-uuid-abc",
+    ]
+    for page in pages:
+        response = await client.get(page)
+        assert response.status_code == 200
+        assert "components.css" in response.text, f"components.css missing from {page}"
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_components_css_has_styles(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """components.css must define .reaction-bar and .reaction-btn CSS classes."""
+    response = await client.get("/musehub/static/components.css")
+    assert response.status_code == 200
+    body = response.text
+    assert ".reaction-bar" in body
+    assert ".reaction-btn" in body
+    assert ".reaction-btn--active" in body
+    assert ".reaction-count" in body
+
+
+# ---------------------------------------------------------------------------
+# Feed page tests — issue #292 (rich event cards)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_feed_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/feed returns 200 HTML without requiring a JWT."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Activity Feed" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_no_raw_json_payload(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must not render raw JSON.stringify of notification payload.
+
+    Regression guard for issue #292: the old implementation called
+    JSON.stringify(item.payload) directly into the DOM, exposing raw JSON
+    to users. The new rich card templates must not do this.
+    """
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    assert "JSON.stringify(item.payload" not in body
+    assert "JSON.stringify(item" not in body
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_event_meta_for_all_types(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must define EVENT_META entries for all 8 notification event types."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    for event_type in (
+        "comment",
+        "mention",
+        "pr_opened",
+        "pr_merged",
+        "issue_opened",
+        "issue_closed",
+        "new_commit",
+        "new_follower",
+    ):
+        assert event_type in body, f"EVENT_META missing entry for '{event_type}'"
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_data_notif_id_attribute(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Each event card must carry a data-notif-id attribute.
+
+    This attribute is the hook that issue #293 (mark-as-read UX) will use to
+    attach action buttons to each card without restructuring the DOM.
+    """
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "data-notif-id" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_unread_indicator(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must include logic to highlight unread cards with a left border."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    assert "is_read" in body
+    assert "color-accent" in body
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_actor_avatar_logic(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must render actor avatars using the actorHsl / actorAvatar helpers."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    assert "actorHsl" in body
+    assert "actorAvatar" in body
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_relative_timestamp(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must call fmtRelative to render timestamps in a human-readable form."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "fmtRelative" in response.text
 
 
 # ---------------------------------------------------------------------------

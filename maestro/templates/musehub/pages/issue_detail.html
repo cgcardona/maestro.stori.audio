@@ -43,6 +43,16 @@ function linkifyBody(text) {
   return escaped;
 }
 
+// ── Current user from JWT ──────────────────────────────────────────────────
+function getCurrentUser() {
+  try {
+    const token = localStorage.getItem('musehub_token');
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.sub || null;
+  } catch(_) { return null; }
+}
+
 // ── Comment thread builder ─────────────────────────────────────────────────
 function buildCommentThread(comments) {
   const topLevel = comments.filter(c => !c.parentId);
@@ -53,21 +63,25 @@ function buildCommentThread(comments) {
     }
   }
 
+  const me = getCurrentUser();
+
   function renderComment(c, isReply = false) {
     const replies = byParent[c.commentId] || [];
     const replyClass = isReply ? ' comment-reply' : '';
+    const deleteBtn = me && me === c.author
+      ? `<button class="btn-link" style="color:var(--color-danger,#f87171);margin-left:8px" onclick="deleteComment('${escHtml(c.commentId)}')">✕ Delete</button>`
+      : '';
     return `
       <div class="comment${replyClass}" id="comment-${escHtml(c.commentId)}">
         <div class="comment-header">
           <span class="comment-avatar">${escHtml((c.author || '?').charAt(0).toUpperCase())}</span>
           <span class="comment-author">${escHtml(c.author || 'unknown')}</span>
           <span class="comment-date">${fmtDate(c.createdAt)}</span>
+          <button class="btn-link" onclick="startReply('${escHtml(c.commentId)}', '${escHtml(c.author || '')}')">↩ Reply</button>
+          ${deleteBtn}
         </div>
         <div class="comment-body">${linkifyBody(c.body)}</div>
         ${renderMusicalRefs(c.musicalRefs)}
-        <div class="comment-actions">
-          <button class="btn-link" onclick="startReply('${escHtml(c.commentId)}', '${escHtml(c.author || '')}')">↩ Reply</button>
-        </div>
         ${replies.length > 0 ? '<div class="comment-replies">' + replies.map(r => renderComment(r, true)).join('') + '</div>' : ''}
       </div>`;
   }
@@ -85,6 +99,7 @@ async function load() {
     ]);
     currentIssue = issue;
     renderIssue(issue, commentData.comments || []);
+    loadReactions('issue', String(issue.number), 'issue-reactions');
   } catch(e) {
     if (e.message !== 'auth')
       document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
@@ -156,6 +171,10 @@ function renderIssue(issue, comments) {
       ${issue.body ? '<div class="issue-body">' + linkifyBody(issue.body) + '</div>' : ''}
     </div>
 
+    <div class="card" style="padding:var(--space-3) var(--space-4)">
+      <div id="issue-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
+    </div>
+
     <div class="section-header" style="margin-top:24px;margin-bottom:12px">
       <h2 style="margin:0;font-size:1rem">&#128172; Discussion (${commentCount})</h2>
     </div>
@@ -217,6 +236,23 @@ async function submitComment() {
     if (e.message !== 'auth') alert('Comment failed: ' + e.message);
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function deleteComment(commentId) {
+  if (!confirm('Delete this comment?')) return;
+  try {
+    await apiFetch('/repos/' + repoId + '/comments/' + commentId, { method: 'DELETE' });
+    const [issue, commentData] = await Promise.all([
+      Promise.resolve(currentIssue),
+      apiFetch('/repos/' + repoId + '/issues/' + number + '/comments').catch(() => ({ comments: [] })),
+    ]);
+    document.getElementById('comments-container').innerHTML =
+      commentData.comments && commentData.comments.length > 0
+        ? buildCommentThread(commentData.comments)
+        : '<p class="muted" style="margin:0 0 16px">No comments yet.</p>';
+  } catch(e) {
+    if (e.message !== 'auth') alert('Failed to delete comment: ' + e.message);
   }
 }
 
@@ -296,7 +332,6 @@ load();
   line-height: 1.6;
   margin-bottom: 6px;
 }
-.comment-actions { margin-top: 6px; }
 .comment-replies { margin-top: 12px; }
 .musical-refs { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
 .musical-ref {
