@@ -1437,6 +1437,59 @@ composing a chord progression) or the aggregate endpoint for a full musical pict
 **Stub note:** Current implementation returns deterministic stub data keyed on `ref`. Full MIDI
 content analysis will be wired in once Storpheus exposes per-dimension introspection routes.
 
+### `FormStructureResponse` (issue #225)
+
+**Path:** `maestro/models/musehub_analysis.py`
+**Endpoint:** `GET /api/v1/musehub/repos/{repo_id}/form-structure/{ref}`
+**UI Page:** `GET /musehub/ui/{repo_id}/form-structure/{ref}`
+
+Combined form and structure analysis optimised for the form-structure UI page.  Aggregates
+three structural views in a single request: section timeline, repetition groups, and
+pairwise section similarity.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Muse Hub repo UUID |
+| `ref` | `str` | Muse commit ref |
+| `form_label` | `str` | Detected macro form, e.g. `'AABA'`, `'verse-chorus'` |
+| `time_signature` | `str` | Primary time signature, e.g. `'4/4'` |
+| `beats_per_bar` | `int` | Beats per bar derived from time signature |
+| `total_bars` | `int` | Total bar count for the ref |
+| `section_map` | `list[SectionMapEntry]` | Ordered sections with bar ranges and colour hints |
+| `repetition_structure` | `list[RepetitionEntry]` | Repeated section groups |
+| `section_comparison` | `SectionSimilarityHeatmap` | Pairwise similarity matrix |
+
+#### `SectionMapEntry`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `label` | `str` | Section label, e.g. `'intro'`, `'verse_1'`, `'chorus'` |
+| `function` | `str` | Formal function, e.g. `'exposition'`, `'climax'` |
+| `start_bar` | `int` | First bar of section (1-indexed) |
+| `end_bar` | `int` | Last bar of section (1-indexed, inclusive) |
+| `bar_count` | `int` | Number of bars in this section |
+| `color_hint` | `str` | CSS colour string for section type (stable across calls) |
+
+#### `RepetitionEntry`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pattern_label` | `str` | Canonical name for this repeated pattern, e.g. `'chorus'` |
+| `occurrences` | `list[int]` | 1-indexed start bars of each occurrence |
+| `occurrence_count` | `int` | Number of times this pattern appears |
+| `similarity_score` | `float` | Mean pairwise similarity across occurrences (1.0 = exact repeat) |
+
+#### `SectionSimilarityHeatmap`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `labels` | `list[str]` | Section labels ordered to match matrix rows and columns |
+| `matrix` | `list[list[float]]` | Square symmetric similarity matrix; `matrix[i][j]` ∈ [0, 1] |
+
+**Agent use case:** Before generating a new section, agents query this endpoint to understand
+where they are in the form, which sections have already repeated, and which sections are most
+harmonically similar to the target position — enabling structurally coherent continuation.
+
 **Type alias:** `DimensionData = HarmonyData | DynamicsData | ... | DivergenceData` (union of all 13 model types).
 
 ---

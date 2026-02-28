@@ -4,17 +4,18 @@ Serves browser-readable HTML pages for navigating a Muse Hub repo —
 analogous to GitHub's repository browser but for music projects.
 
 Endpoint summary:
-  GET /musehub/ui/search                           — global cross-repo search page
-  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
-  GET /musehub/ui/{repo_id}/commits/{commit_id}    — commit detail page (metadata + artifacts)
-  GET /musehub/ui/{repo_id}/graph                  — interactive DAG commit graph
-  GET /musehub/ui/{repo_id}/pulls                  — pull request list page
-  GET /musehub/ui/{repo_id}/pulls/{pr_id}          — PR detail page (with merge button)
-  GET /musehub/ui/{repo_id}/issues                 — issue list page
-  GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
-  GET /musehub/ui/{repo_id}/credits                — dynamic credits page (album liner notes)
-  GET /musehub/ui/{repo_id}/embed/{ref}            — embeddable player widget (no auth, iframe-safe)
-  GET /musehub/ui/{repo_id}/search                 — in-repo search page (four modes)
+  GET /musehub/ui/search                                — global cross-repo search page
+  GET /musehub/ui/{repo_id}                             — repo page (branch selector + commit log)
+  GET /musehub/ui/{repo_id}/commits/{commit_id}         — commit detail page (metadata + artifacts)
+  GET /musehub/ui/{repo_id}/graph                       — interactive DAG commit graph
+  GET /musehub/ui/{repo_id}/pulls                       — pull request list page
+  GET /musehub/ui/{repo_id}/pulls/{pr_id}               — PR detail page (with merge button)
+  GET /musehub/ui/{repo_id}/issues                      — issue list page
+  GET /musehub/ui/{repo_id}/issues/{number}             — issue detail page (with close button)
+  GET /musehub/ui/{repo_id}/credits                     — dynamic credits page (album liner notes)
+  GET /musehub/ui/{repo_id}/embed/{ref}                 — embeddable player widget (no auth, iframe-safe)
+  GET /musehub/ui/{repo_id}/search                      — in-repo search page (four modes)
+  GET /musehub/ui/{repo_id}/form-structure/{ref}        — form and structure page (section map, repetition, heatmap)
 
 These routes require NO JWT auth — they return static HTML shells whose
 embedded JavaScript fetches data from the authed JSON API
@@ -2045,6 +2046,248 @@ async def search_page(repo_id: str) -> HTMLResponse:
     html = _page(
         title="Search",
         breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / search',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/form-structure/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub form and structure page",
+)
+async def form_structure_page(repo_id: str, ref: str) -> HTMLResponse:
+    """Render the form and structure analysis page for a commit ref.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/form-structure/{ref}`` and
+    renders three structural analysis panels:
+
+    - **Section map**: SVG timeline of intro/verse/chorus/bridge/outro bars,
+      colour-coded by section type, with bar numbers and length labels.
+    - **Repetition structure**: which sections repeat, how many times, and
+      their mean pairwise similarity score.
+    - **Section comparison**: similarity heatmap rendered as an SVG grid
+      where cell colour intensity encodes the 0–1 cosine similarity between
+      every pair of formal sections.
+
+    Auth is handled client-side via localStorage JWT, matching all other UI
+    pages.  No JWT is required to load the HTML shell.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const ref    = {repr(ref)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── Section map SVG ─────────────────────────────────────────────────────
+      function renderSectionMap(data) {{
+        const sections = data.sectionMap || [];
+        const totalBars = data.totalBars || 1;
+        if (sections.length === 0) return '<p class="loading">No sections detected.</p>';
+
+        const W = 720, H = 64, PAD = 8;
+        const usable = W - PAD * 2;
+
+        const rects = sections.map(s => {{
+          const x = PAD + ((s.startBar - 1) / totalBars) * usable;
+          const w = Math.max(2, (s.barCount / totalBars) * usable);
+          const label = s.barCount > 3 ? escHtml(s.label) : '';
+          const barRange = s.startBar === s.endBar ? 'b' + s.startBar : 'b' + s.startBar + '-' + s.endBar;
+          return `
+            <rect x="${{x.toFixed(1)}}" y="8" width="${{w.toFixed(1)}}" height="36"
+                  rx="4" fill="${{escHtml(s.colorHint)}}" opacity="0.85">
+              <title>${{escHtml(s.label)}} (${{escHtml(s.function)}}) | ${{escHtml(barRange)}} | ${{s.barCount}} bars</title>
+            </rect>
+            ${{label ? `<text x="${{(x + w/2).toFixed(1)}}" y="31" font-size="11" fill="#fff"
+                text-anchor="middle" font-family="-apple-system,sans-serif"
+                style="pointer-events:none">${{label}}</text>` : ''}}
+            <text x="${{(x + w/2).toFixed(1)}}" y="57" font-size="9" fill="#8b949e"
+                text-anchor="middle" font-family="monospace"
+                style="pointer-events:none">${{escHtml(barRange)}}</text>`;
+        }}).join('');
+
+        // Bar ruler ticks
+        const tickStep = Math.ceil(totalBars / 16);
+        let ticks = '';
+        for (let b = 1; b <= totalBars; b += tickStep) {{
+          const x = PAD + ((b - 1) / totalBars) * usable;
+          ticks += `<line x1="${{x.toFixed(1)}}" y1="44" x2="${{x.toFixed(1)}}" y2="48"
+                         stroke="#30363d" stroke-width="1"/>`;
+        }}
+
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${{W}}" height="${{H}}"
+                     style="width:100%;height:auto;display:block">
+          <rect x="0" y="0" width="${{W}}" height="${{H}}" fill="transparent"/>
+          ${{rects}}
+          ${{ticks}}
+        </svg>`;
+      }}
+
+      // ── Section comparison heatmap ───────────────────────────────────────────
+      function renderHeatmap(data) {{
+        const heatmap = data.sectionComparison || {{}};
+        const labels = heatmap.labels || [];
+        const matrix = heatmap.matrix || [];
+        const n = labels.length;
+        if (n === 0) return '<p class="loading">No sections to compare.</p>';
+
+        const cellSize = Math.min(60, Math.floor(480 / n));
+        const labelW   = 72;
+        const svgW = labelW + n * cellSize + 8;
+        const svgH = labelW + n * cellSize + 8;
+
+        function heatColor(v) {{
+          // 0 → dark blue, 1 → bright green
+          const r = Math.round(13  + v * (63  - 13));
+          const g = Math.round(17  + v * (185 - 17));
+          const b = Math.round(23  + v * (80  - 23));
+          return `rgb(${{r}},${{g}},${{b}})`;
+        }}
+
+        let cells = '';
+        for (let i = 0; i < n; i++) {{
+          for (let j = 0; j < n; j++) {{
+            const v = (matrix[i] || [])[j] || 0;
+            const x = labelW + j * cellSize;
+            const y = labelW + i * cellSize;
+            cells += `<rect x="${{x}}" y="${{y}}" width="${{cellSize}}" height="${{cellSize}}"
+                            fill="${{heatColor(v)}}">
+                        <title>${{escHtml(labels[i])}} vs ${{escHtml(labels[j])}}: ${{v.toFixed(3)}}</title>
+                      </rect>
+                      <text x="${{(x + cellSize/2).toFixed(1)}}" y="${{(y + cellSize/2 + 4).toFixed(1)}}"
+                            font-size="9" fill="rgba(255,255,255,0.7)"
+                            text-anchor="middle" font-family="monospace"
+                            style="pointer-events:none">${{v === 1.0 ? '1' : v.toFixed(2)}}</text>`;
+          }}
+          // Row label
+          const ry = labelW + i * cellSize + cellSize / 2;
+          cells += `<text x="${{labelW - 4}}" y="${{(ry + 4).toFixed(1)}}"
+                          font-size="10" fill="#c9d1d9" text-anchor="end"
+                          font-family="-apple-system,sans-serif">${{escHtml(labels[i])}}</text>`;
+          // Column label (rotated)
+          const cx = labelW + i * cellSize + cellSize / 2;
+          cells += `<text x="${{cx.toFixed(1)}}" y="${{(labelW - 6).toFixed(1)}}"
+                          font-size="10" fill="#c9d1d9" text-anchor="end"
+                          font-family="-apple-system,sans-serif"
+                          transform="rotate(-45 ${{cx.toFixed(1)}} ${{(labelW - 6).toFixed(1)}})">${{escHtml(labels[i])}}</text>`;
+        }}
+
+        // Colour-scale legend
+        const legendW = Math.min(200, n * cellSize);
+        const stops = [0, 0.25, 0.5, 0.75, 1.0].map(v =>
+          `<stop offset="${{(v * 100).toFixed(0)}}%" stop-color="${{heatColor(v)}}"/>`
+        ).join('');
+        const legend = `
+          <defs><linearGradient id="hg" x1="0" x2="1" y1="0" y2="0">${{stops}}</linearGradient></defs>
+          <rect x="${{labelW}}" y="${{svgH - 14}}" width="${{legendW}}" height="8"
+                fill="url(#hg)" rx="2"/>
+          <text x="${{labelW}}" y="${{svgH}}" font-size="9" fill="#8b949e">0</text>
+          <text x="${{labelW + legendW}}" y="${{svgH}}" font-size="9" fill="#8b949e"
+                text-anchor="end">1.0</text>`;
+
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${{svgW}}" height="${{svgH + 20}}"
+                     style="width:100%;height:auto;display:block;max-width:${{svgW}}px">
+          ${{cells}}
+          ${{legend}}
+        </svg>`;
+      }}
+
+      // ── Repetition panel ─────────────────────────────────────────────────────
+      function renderRepetition(data) {{
+        const reps = data.repetitionStructure || [];
+        if (reps.length === 0) return '<p class="loading">No repeated sections detected.</p>';
+
+        return reps.map(r => {{
+          const occStr = r.occurrences.map(b => 'b' + b).join(', ');
+          const simPct = Math.round(r.similarityScore * 100);
+          return `
+            <div class="commit-row" style="align-items:flex-start;flex-direction:column;gap:4px">
+              <div style="display:flex;align-items:center;gap:10px;width:100%">
+                <span style="font-size:14px;font-weight:600;color:#e6edf3;min-width:90px">
+                  ${{escHtml(r.patternLabel)}}
+                </span>
+                <span class="badge badge-open" style="font-size:12px;background:#1a3a5c">
+                  ${{r.occurrenceCount}}x
+                </span>
+                <span style="font-size:12px;color:#8b949e;margin-left:auto">
+                  sim ${{simPct}}%
+                </span>
+              </div>
+              <div style="font-size:12px;color:#8b949e">Starts at: ${{escHtml(occStr)}}</div>
+            </div>`;
+        }}).join('');
+      }}
+
+      async function load() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/form-structure/' + ref);
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap">
+                <h1 style="margin:0">&#127926; Form &amp; Structure</h1>
+                <span class="badge badge-open">${{escHtml(data.formLabel)}}</span>
+                <span style="font-size:13px;color:#8b949e">
+                  ${{escHtml(data.timeSignature)}} &bull; ${{data.totalBars}} bars &bull;
+                  ref: <code style="font-size:11px;background:#0d1117;padding:2px 6px;border-radius:4px">${{shortSha(ref)}}</code>
+                </span>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2 style="margin-bottom:12px">&#128204; Section Map</h2>
+              <div style="overflow-x:auto">
+                ${{renderSectionMap(data)}}
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+                ${{(data.sectionMap || []).map(s =>
+                  '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px">'
+                  + '<svg width="12" height="12"><rect width="12" height="12" rx="2" fill="' + escHtml(s.colorHint) + '"/></svg>'
+                  + escHtml(s.label) + ' (' + s.barCount + 'b)'
+                  + '</span>'
+                ).join('')}}
+              </div>
+            </div>
+
+            <div class="card">
+              <h2 style="margin-bottom:12px">&#128260; Repetition Structure</h2>
+              ${{renderRepetition(data)}}
+            </div>
+
+            <div class="card">
+              <h2 style="margin-bottom:12px">&#127897;&#65039; Section Comparison</h2>
+              <p style="font-size:12px;color:#8b949e;margin-bottom:12px">
+                Cell colour intensity = pairwise similarity (0=unrelated, 1=identical).
+                Hover a cell for the exact score.
+              </p>
+              <div style="overflow-x:auto">
+                ${{renderHeatmap(data)}}
+              </div>
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    html = _page(
+        title=f"Form & Structure {short_ref}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f"form-structure / {short_ref}"
+        ),
         body_script=script,
     )
     return HTMLResponse(content=html)

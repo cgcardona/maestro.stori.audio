@@ -51,6 +51,7 @@ from maestro.models.musehub_analysis import (
     DynamicsData,
     EmotionData,
     FormData,
+    FormStructureResponse,
     GrooveData,
     HarmonyData,
     IrregularSection,
@@ -59,7 +60,10 @@ from maestro.models.musehub_analysis import (
     ModulationPoint,
     MotifEntry,
     MotifsData,
+    RepetitionEntry,
     SectionEntry,
+    SectionMapEntry,
+    SectionSimilarityHeatmap,
     SimilarCommit,
     SimilarityData,
     TempoChange,
@@ -444,6 +448,125 @@ def compute_analysis_response(
     )
     logger.info("✅ analysis/%s repo=%s ref=%s", dimension, repo_id[:8], ref)
     return response
+
+
+def compute_form_structure(*, repo_id: str, ref: str) -> FormStructureResponse:
+    """Build a combined form and structure response for the UI visualisation.
+
+    Derives three complementary structural views from the ``form`` and ``meter``
+    stubs so the form-structure page can render a section map, a repetition
+    panel, and a section-comparison heatmap in a single API call.
+
+    Stub implementation: values are deterministic for a given ``ref`` and
+    musically consistent with the results of the ``form`` and ``meter``
+    analysis dimensions.
+
+    Args:
+        repo_id: Muse Hub repo UUID (used for logging only).
+        ref:     Muse commit ref.
+
+    Returns:
+        :class:`FormStructureResponse` with section_map, repetition_structure,
+        and section_comparison fields populated.
+    """
+    seed = _ref_hash(ref)
+    form_data = _build_form(ref, None, None)
+    meter_data = _build_meter(ref, None, None)
+
+    time_sig = meter_data.time_signature
+    beats_per_bar = 3 if time_sig == "3/4" else (6 if time_sig == "6/8" else 4)
+
+    # Colour palette for section types — stable mapping
+    _SECTION_COLORS: dict[str, str] = {
+        "intro": "#1f6feb",
+        "verse": "#3fb950",
+        "chorus": "#f0883e",
+        "bridge": "#bc8cff",
+        "outro": "#8b949e",
+        "pre-chorus": "#ff7b72",
+        "breakdown": "#56d364",
+    }
+
+    def _section_color(label: str) -> str:
+        for key, color in _SECTION_COLORS.items():
+            if key in label.lower():
+                return color
+        return "#58a6ff"
+
+    # Build section map (convert beats → bars, 1-indexed)
+    section_map: list[SectionMapEntry] = []
+    for sec in form_data.sections:
+        start_bar = max(1, int(sec.start_beat / beats_per_bar) + 1)
+        end_bar = max(start_bar, int((sec.end_beat - 1) / beats_per_bar) + 1)
+        bar_count = end_bar - start_bar + 1
+        section_map.append(
+            SectionMapEntry(
+                label=sec.label,
+                function=sec.function,
+                start_bar=start_bar,
+                end_bar=end_bar,
+                bar_count=bar_count,
+                color_hint=_section_color(sec.label),
+            )
+        )
+
+    total_bars = max(1, int(form_data.total_beats / beats_per_bar))
+
+    # Build repetition structure — group sections by base label (strip _N suffix)
+    def _base_label(label: str) -> str:
+        """Strip numeric suffix from section label, e.g. 'verse_1' → 'verse'."""
+        parts = label.rsplit("_", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            return parts[0]
+        return label
+
+    from collections import defaultdict
+
+    groups: dict[str, list[int]] = defaultdict(list)
+    for entry in section_map:
+        groups[_base_label(entry.label)].append(entry.start_bar)
+
+    repetition_structure = [
+        RepetitionEntry(
+            pattern_label=pattern,
+            occurrences=bars,
+            occurrence_count=len(bars),
+            similarity_score=round(0.85 + (seed % 15) / 100, 4) if len(bars) > 1 else 1.0,
+        )
+        for pattern, bars in groups.items()
+        if len(bars) >= 1
+    ]
+
+    # Build section-comparison heatmap — symmetric cosine-similarity stub
+    labels = [s.label for s in section_map]
+    n = len(labels)
+    matrix: list[list[float]] = []
+    for i in range(n):
+        row: list[float] = []
+        for j in range(n):
+            if i == j:
+                row.append(1.0)
+            else:
+                # Sections with the same base label score higher
+                same_base = _base_label(labels[i]) == _base_label(labels[j])
+                base_sim = 0.75 if same_base else round(0.1 + (seed >> (i + j)) % 50 / 100, 4)
+                row.append(min(1.0, base_sim))
+        matrix.append(row)
+
+    section_comparison = SectionSimilarityHeatmap(labels=labels, matrix=matrix)
+
+    logger.info("✅ form-structure repo=%s ref=%s sections=%d", repo_id[:8], ref, len(section_map))
+    return FormStructureResponse(
+        repo_id=repo_id,
+        ref=ref,
+        form_label=form_data.form_label,
+        time_signature=time_sig,
+        beats_per_bar=beats_per_bar,
+        total_bars=total_bars,
+        section_map=section_map,
+        repetition_structure=repetition_structure,
+        section_comparison=section_comparison,
+    )
 
 
 def compute_aggregate_analysis(
