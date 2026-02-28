@@ -76,16 +76,12 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define PRs ---
-# Batch: #144–#151 (muse CLI commands — chord-map, form, tempo-scale, similarity, contour, diff, key, humanize)
+# Batch: #162–#165 (test run of 4 — groove-check, commit-tree, validate, inspect)
 declare -a PRS=(
-  "144|feat: muse chord-map <commit> — visualize the chord progression embedded in a commit"
-  "145|feat: muse form [<commit>] — analyze and display the musical form of a commit"
-  "146|feat: muse tempo-scale <factor> [<commit>] — stretch or compress timing across a commit"
-  "147|feat: muse similarity <commit-a> <commit-b> — compute musical similarity score between two commits"
-  "148|feat: muse contour — analyze melodic contour and phrase shape"
-  "149|feat: muse diff — add music-dimension diff flags (--harmonic, --rhythmic, --melodic, --structural, --dynamic)"
-  "150|feat: muse key [<commit>] [--set <key>] — read or annotate the musical key of a commit"
-  "151|feat: muse humanize — apply humanization to quantized MIDI"
+  "162|feat: muse groove-check — analyze rhythmic drift across commits"
+  "163|feat: muse commit-tree <snapshot-id> — create a raw commit object"
+  "164|feat: muse validate — check musical integrity of the working tree"
+  "165|feat: muse inspect — print structured JSON of the Muse commit graph"
 )
 
 # --- create worktrees + task files ---
