@@ -54,7 +54,6 @@ import json
 import logging
 import pathlib
 import re
-from typing import Optional
 
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -397,7 +396,11 @@ def _render_read(result: MuseMeterReadResult) -> None:
     typer.echo(f"meter  {sig}")
 
 
-_UNSET: object = object()  # sentinel for "not yet seen" in history rendering
+class _UnsetType:
+    """Sentinel type for 'not yet seen' in history rendering."""
+
+
+_UNSET = _UnsetType()
 
 
 def _render_history(entries: list[MuseMeterHistoryEntry]) -> None:
@@ -405,7 +408,7 @@ def _render_history(entries: list[MuseMeterHistoryEntry]) -> None:
     if not entries:
         typer.echo("No commits on this branch yet.")
         return
-    prev_sig: object = _UNSET
+    prev_sig: str | _UnsetType = _UNSET
     for entry in entries:
         sig = entry.time_signature or "(not set)"
         changed = sig != prev_sig
@@ -438,12 +441,12 @@ def _render_polyrhythm(result: MusePolyrhythmResult) -> None:
 @app.callback(invoke_without_command=True)
 def meter(
     ctx: typer.Context,
-    commit: Optional[str] = typer.Argument(
+    commit: str | None = typer.Argument(
         None,
         help="Target commit (full or abbreviated SHA, or 'HEAD'). Defaults to HEAD.",
         metavar="COMMIT",
     ),
-    set_sig: Optional[str] = typer.Option(
+    set_sig: str | None = typer.Option(
         None,
         "--set",
         help="Set the time signature, e.g. '4/4' or '7/8'.",

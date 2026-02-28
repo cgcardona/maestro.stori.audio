@@ -225,6 +225,7 @@ def upgrade() -> None:
         sa.Column("author", sa.String(255), nullable=False),
         sa.Column("committed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("extra_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.ForeignKeyConstraint(["snapshot_id"], ["muse_cli_snapshots.snapshot_id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("commit_id"),
     )
