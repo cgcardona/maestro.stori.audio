@@ -518,12 +518,12 @@ async function loadAnalytics() {
       apiFetch('/social/repos/' + repoId + '/analytics'),
       apiFetch('/social/repos/' + repoId + '/analytics/views?days=7').catch(() => []),
       apiFetch('/repos/' + repoId + '/issues?state=open').catch(() => ({ issues: [] })),
-      apiFetch('/repos/' + repoId + '/pull-requests?state=open').catch(() => ({ pull_requests: [] })),
+      apiFetch('/repos/' + repoId + '/pull-requests?state=open').catch(() => ({ pullRequests: [] })),
     ]);
 
     const viewCount  = summary.view_count  || 0;
     const openIssues = (issuesData.issues  || []).length;
-    const openPRs    = (prsData.pull_requests || []).length;
+    const openPRs    = (prsData.pullRequests || []).length;
 
     /* Build 7-day sparkline SVG */
     const days = Array.isArray(viewDays) ? viewDays : [];
