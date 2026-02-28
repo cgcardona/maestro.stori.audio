@@ -13,51 +13,174 @@ const base   = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
+// ── State ──────────────────────────────────────────────────────────────────
+let allIssues   = [];     // full list from API (state-filtered only)
+let activeLabel = null;   // label string currently filtering, or null
+let activeSort  = 'newest'; // 'newest' | 'oldest' | 'most-commented'
+let commentCounts = {};   // { issue_id: count } — populated on demand
+let cachedOpen   = null;  // cached open issues array after first fetch
+let cachedClosed = null;  // cached closed issues array after first fetch
+
+// ── Body preview ───────────────────────────────────────────────────────────
+function bodyPreview(body) {
+  if (!body) return '';
+  const first = body.split('\n')[0].trim();
+  return first.length > 100 ? first.slice(0, 97) + '…' : first;
+}
+
+// ── Sorting ────────────────────────────────────────────────────────────────
+function sortedIssues(issues) {
+  const copy = [...issues];
+  if (activeSort === 'oldest') {
+    copy.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  } else if (activeSort === 'most-commented') {
+    copy.sort((a, b) => (commentCounts[b.issueId] || 0) - (commentCounts[a.issueId] || 0));
+  } else {
+    // newest (default)
+    copy.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }
+  return copy;
+}
+
+// ── Label filter ───────────────────────────────────────────────────────────
+function setLabelFilter(label) {
+  activeLabel = (activeLabel === label) ? null : label;
+  renderRows();
+}
+
+// ── Render rows ────────────────────────────────────────────────────────────
+function renderRows() {
+  let issues = allIssues;
+  if (activeLabel) {
+    issues = issues.filter(i => (i.labels || []).includes(activeLabel));
+  }
+  issues = sortedIssues(issues);
+
+  const container = document.getElementById('issue-rows');
+  if (!container) return;
+
+  if (issues.length === 0) {
+    container.innerHTML = activeLabel
+      ? `<p class="loading">No issues with label "<strong>${escHtml(activeLabel)}</strong>". <a href="#" onclick="setLabelFilter(null);return false;">Clear filter</a></p>`
+      : '<p class="loading">No issues found.</p>';
+    return;
+  }
+
+  container.innerHTML = issues.map(i => {
+    const preview = bodyPreview(i.body);
+    const labels  = (i.labels || []);
+    const commentCount = commentCounts[i.issueId];
+    const commentBadge = commentCount != null
+      ? `<span style="font-size:11px;color:#8b949e;margin-left:auto">&#128172; ${commentCount}</span>`
+      : '';
+    return `
+      <div class="issue-row" data-issue-id="${i.issueId}">
+        <span class="badge badge-${i.state}">#${i.number}</span>
+        <div style="flex:1;min-width:0">
+          <a href="${base}/issues/${i.number}">${escHtml(i.title)}</a>
+          ${preview ? `<div class="issue-preview">${escHtml(preview)}</div>` : ''}
+          <div style="display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin-top:4px">
+            ${labels.map(l => `<span class="label label-pill${activeLabel === l ? ' label-active' : ''}" onclick="setLabelFilter(${JSON.stringify(l)})" style="cursor:pointer" title="Filter by ${escHtml(l)}">${escHtml(l)}</span>`).join('')}
+            <span style="font-size:11px;color:#8b949e">Opened ${fmtDate(i.createdAt)}</span>
+            ${commentBadge}
+          </div>
+        </div>
+        <span class="badge badge-${i.state}">${i.state}</span>
+      </div>`;
+  }).join('');
+}
+
+// ── Load comment counts (called when sort=most-commented) ──────────────────
+async function loadCommentCounts(issues) {
+  await Promise.all(issues.map(async i => {
+    try {
+      const rows = await apiFetch('/repos/' + repoId + '/comments?target_type=issue&target_id=' + encodeURIComponent(i.issueId));
+      commentCounts[i.issueId] = Array.isArray(rows) ? rows.length : 0;
+    } catch (_) {
+      commentCounts[i.issueId] = 0;
+    }
+  }));
+}
+
+// ── Sort control handler ───────────────────────────────────────────────────
+async function changeSort(value) {
+  activeSort = value;
+  if (activeSort === 'most-commented' && allIssues.length > 0) {
+    // fetch counts only on first request — cache in commentCounts
+    const uncounted = allIssues.filter(i => commentCounts[i.issueId] == null);
+    if (uncounted.length > 0) {
+      document.getElementById('sort-loading').style.display = '';
+      await loadCommentCounts(uncounted);
+      document.getElementById('sort-loading').style.display = 'none';
+    }
+  }
+  renderRows();
+}
+
+// ── Main load ──────────────────────────────────────────────────────────────
 async function load(state) {
   initRepoNav(repoId);
   try {
-    const data   = await apiFetch('/repos/' + repoId + '/issues?state=' + state);
-    const issues = data.issues || [];
+    // Fetch only what is not yet cached — both needed on first load for tab counts.
+    const [openData, closedData] = await Promise.all([
+      cachedOpen   !== null ? Promise.resolve({ issues: cachedOpen })   : apiFetch('/repos/' + repoId + '/issues?state=open'),
+      cachedClosed !== null ? Promise.resolve({ issues: cachedClosed }) : apiFetch('/repos/' + repoId + '/issues?state=closed'),
+    ]);
 
-    const rows = issues.length === 0
-      ? '<p class="loading">No issues found.</p>'
-      : issues.map(i => `
-        <div class="issue-row">
-          <span class="badge badge-${i.state}">#${i.number}</span>
-          <div style="flex:1">
-            <a href="${base}/issues/${i.number}">${escHtml(i.title)}</a>
-            <div style="margin-top:4px">
-              ${(i.labels||[]).map(l => '<span class="label">' + escHtml(l) + '</span>').join('')}
-            </div>
-            <div style="font-size:12px;color:#8b949e;margin-top:2px">
-              Opened ${fmtDate(i.createdAt)}
-            </div>
-          </div>
-          <span class="badge badge-${i.state}">${i.state}</span>
-        </div>`).join('');
+    cachedOpen   = openData.issues   || [];
+    cachedClosed = closedData.issues || [];
+
+    const openCount   = cachedOpen.length;
+    const closedCount = cachedClosed.length;
+
+    allIssues   = state === 'closed' ? cachedClosed : cachedOpen;
+    activeLabel = null;
 
     document.getElementById('content').innerHTML = `
       <div class="card">
-        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4);flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3);flex-wrap:wrap">
           <h1 style="margin:0">Issues</h1>
-          <select class="form-select" style="width:auto" onchange="load(this.value)">
-            <option value="open"   ${state==='open'  ?'selected':''}>Open</option>
-            <option value="closed" ${state==='closed'?'selected':''}>Closed</option>
-            <option value="all"    ${state==='all'   ?'selected':''}>All</option>
-          </select>
           <div style="margin-left:auto;display:flex;gap:var(--space-2)">
             <button class="btn btn-secondary btn-sm" onclick="showCreateIssue()">
               + New Issue
             </button>
           </div>
         </div>
-        ${rows.length > 0 || issues.length > 0 ? rows : `
+
+        <!-- Open / Closed tabs -->
+        <div style="display:flex;gap:0;border-bottom:1px solid var(--color-border);margin-bottom:var(--space-3)">
+          <button id="tab-open" class="tab-btn${state !== 'closed' ? ' tab-active' : ''}"
+                  onclick="load('open')">
+            &#9711; Open <span class="tab-count">${openCount}</span>
+          </button>
+          <button id="tab-closed" class="tab-btn${state === 'closed' ? ' tab-active' : ''}"
+                  onclick="load('closed')">
+            &#10003; Closed <span class="tab-count">${closedCount}</span>
+          </button>
+        </div>
+
+        <!-- Sort + label-clear bar -->
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3);flex-wrap:wrap">
+          <span style="font-size:13px;color:#8b949e">Sort by:</span>
+          <div style="display:flex;gap:var(--space-1)">
+            <button class="btn btn-ghost btn-sm sort-btn${activeSort==='newest'?' sort-active':''}" data-sort="newest" onclick="changeSort('newest')">Newest</button>
+            <button class="btn btn-ghost btn-sm sort-btn${activeSort==='oldest'?' sort-active':''}" data-sort="oldest" onclick="changeSort('oldest')">Oldest</button>
+            <button class="btn btn-ghost btn-sm sort-btn${activeSort==='most-commented'?' sort-active':''}" data-sort="most-commented" onclick="changeSort('most-commented')">Most commented</button>
+          </div>
+          <span id="sort-loading" style="display:none;font-size:12px;color:#8b949e">Loading…</span>
+          <div id="label-filter-bar"></div>
+        </div>
+
+        <!-- Issue rows -->
+        <div id="issue-rows"></div>
+
+        ${openCount === 0 && closedCount === 0 ? `
           <div class="empty-state">
             <div class="empty-icon">&#128203;</div>
             <p class="empty-title">No issues yet</p>
             <p class="empty-desc">Found a musical problem or want to track something? Open an issue.</p>
             <button class="btn btn-primary" onclick="showCreateIssue()">Open first issue</button>
-          </div>`}
+          </div>` : ''}
       </div>
       <div id="create-issue-panel" style="display:none">
         <div class="card" style="border-color:var(--color-accent)">
@@ -82,10 +205,22 @@ async function load(state) {
           </div>
         </div>
       </div>`;
+
+    // Initial render
+    renderRows();
+    updateSortButtons();
   } catch(e) {
     if (e.message !== 'auth')
       document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
   }
+}
+
+// ── Keep sort button active styles in sync ─────────────────────────────────
+// Buttons carry data-sort attributes matching the activeSort values.
+function updateSortButtons() {
+  document.querySelectorAll('.sort-btn[data-sort]').forEach(btn => {
+    btn.classList.toggle('sort-active', btn.dataset.sort === activeSort);
+  });
 }
 
 function showCreateIssue() {
