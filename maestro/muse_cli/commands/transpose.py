@@ -42,7 +42,6 @@ import datetime
 import json
 import logging
 import pathlib
-from typing import Optional
 
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -334,24 +333,24 @@ def transpose(
             "Signed integer (+3, -5) or named interval (up-minor3rd, down-perfect5th)."
         ),
     ),
-    commit_ref: Optional[str] = typer.Argument(
+    commit_ref: str | None = typer.Argument(
         None,
         metavar="[<commit>]",
         help="Source commit SHA or 'HEAD' (default: HEAD).",
     ),
-    track: Optional[str] = typer.Option(
+    track: str | None = typer.Option(
         None,
         "--track",
         metavar="TEXT",
         help="Transpose only the MIDI track whose name contains TEXT (case-insensitive).",
     ),
-    section: Optional[str] = typer.Option(
+    section: str | None = typer.Option(
         None,
         "--section",
         metavar="TEXT",
         help="Transpose only the named section (stub — full implementation pending).",
     ),
-    message: Optional[str] = typer.Option(
+    message: str | None = typer.Option(
         None,
         "--message",
         "-m",
