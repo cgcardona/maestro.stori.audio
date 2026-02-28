@@ -484,57 +484,6 @@ def upgrade() -> None:
     op.create_index("ix_musehub_releases_tag", "musehub_releases", ["tag"])
 
 
-        # ── Muse Hub — webhook subscriptions ─────────────────────────────────
-    op.create_table(
-        "musehub_webhooks",
-        sa.Column("webhook_id", sa.String(36), nullable=False),
-        sa.Column("repo_id", sa.String(36), nullable=False),
-        sa.Column("url", sa.String(2048), nullable=False),
-        sa.Column("events", sa.JSON(), nullable=False, server_default="[]"),
-        sa.Column("secret", sa.Text(), nullable=False, server_default=""),
-        sa.Column("active", sa.Boolean(), nullable=False, server_default="true"),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP"),
-        ),
-        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("webhook_id"),
-    )
-    op.create_index("ix_musehub_webhooks_repo_id", "musehub_webhooks", ["repo_id"])
-
-    op.create_table(
-        "musehub_webhook_deliveries",
-        sa.Column("delivery_id", sa.String(36), nullable=False),
-        sa.Column("webhook_id", sa.String(36), nullable=False),
-        sa.Column("event_type", sa.String(64), nullable=False),
-        sa.Column("attempt", sa.Integer(), nullable=False, server_default="1"),
-        sa.Column("success", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("response_status", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("response_body", sa.Text(), nullable=False, server_default=""),
-        sa.Column(
-            "delivered_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["webhook_id"], ["musehub_webhooks.webhook_id"], ondelete="CASCADE"
-        ),
-        sa.PrimaryKeyConstraint("delivery_id"),
-    )
-    op.create_index(
-        "ix_musehub_webhook_deliveries_webhook_id",
-        "musehub_webhook_deliveries",
-        ["webhook_id"],
-    )
-    op.create_index(
-        "ix_musehub_webhook_deliveries_event_type",
-        "musehub_webhook_deliveries",
-        ["event_type"],
-    )
-
 def downgrade() -> None:
     # Muse Hub — webhook deliveries
     op.drop_index(
