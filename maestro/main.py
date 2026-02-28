@@ -23,6 +23,8 @@ from maestro.config import settings
 from maestro.api.routes import maestro, maestro_ui, health, users, conversations, assets, variation, muse, musehub
 from maestro.api.routes.musehub import ui as musehub_ui_routes
 from maestro.api.routes.musehub import users as musehub_user_routes
+from maestro.api.routes.musehub import oembed as musehub_oembed_routes
+from maestro.api.routes.musehub import raw as musehub_raw_routes
 from maestro.api.routes import mcp as mcp_routes
 from maestro.db import init_db, close_db
 from maestro.services.storpheus import get_storpheus_client, close_storpheus_client
@@ -36,8 +38,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         response = await call_next(request)
         
-        # Prevent clickjacking
-        response.headers["X-Frame-Options"] = "DENY"
+        # Prevent clickjacking. Embed routes set ALLOWALL explicitly;
+        # only apply the DENY default when no value has been set by the handler.
+        if "X-Frame-Options" not in response.headers:
+            response.headers["X-Frame-Options"] = "DENY"
         
         # Prevent MIME type sniffing
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -163,6 +167,8 @@ app.include_router(muse.router, prefix="/api/v1", tags=["muse"])
 app.include_router(musehub.router, prefix="/api/v1", tags=["musehub"])
 app.include_router(musehub_user_routes.router, prefix="/api/v1/musehub", tags=["musehub-users"])
 app.include_router(musehub_ui_routes.router, tags=["musehub-ui"])
+app.include_router(musehub_oembed_routes.router, tags=["musehub-oembed"])
+app.include_router(musehub_raw_routes.router, prefix="/api/v1", tags=["musehub-raw"])
 app.include_router(mcp_routes.router, prefix="/api/v1/mcp", tags=["mcp"])
 
 from maestro.protocol.endpoints import router as protocol_router

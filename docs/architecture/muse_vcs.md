@@ -1408,17 +1408,22 @@ The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro Fa
 ```
 maestro/
 ├── db/musehub_models.py                  — SQLAlchemy ORM models
-├── models/musehub.py                     — Pydantic v2 request/response models
+├── models/musehub.py                     — Pydantic v2 request/response models (incl. SearchCommitMatch, SearchResponse)
 ├── services/musehub_repository.py        — Async DB queries for repos/branches/commits
 ├── services/musehub_issues.py            — Async DB queries for issues (single point of DB access)
 ├── services/musehub_pull_requests.py     — Async DB queries for PRs (single point of DB access)
+├── services/musehub_search.py            — In-repo search service (property / ask / keyword / pattern)
 ├── services/musehub_sync.py              — Push/pull sync protocol (ingest_push, compute_pull_delta)
 └── api/routes/musehub/
     ├── __init__.py                       — Composes sub-routers under /musehub prefix
     ├── repos.py                          — Repo/branch/commit route handlers
     ├── issues.py                         — Issue tracking route handlers
     ├── pull_requests.py                  — Pull request route handlers
-    └── sync.py                           — Push/pull sync route handlers
+    ├── search.py                         — In-repo search route handler
+    ├── sync.py                           — Push/pull sync route handlers
+    ├── objects.py                        — Artifact list + content-by-object-id endpoints (auth required)
+    ├── raw.py                            — Raw file download by path (public repos: no auth)
+    └── ui.py                             — HTML UI pages (incl. /search page with mode tabs)
 ```
 
 ### Endpoints
@@ -1431,6 +1436,29 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}` | Get repo metadata |
 | GET | `/api/v1/musehub/repos/{id}/branches` | List branches |
 | GET | `/api/v1/musehub/repos/{id}/commits` | List commits (newest first) |
+| GET | `/api/v1/musehub/repos/{id}/context/{ref}` | Musical context document for a commit (JSON) |
+
+#### Context Viewer
+
+The context viewer exposes what the AI agent sees when generating music for a given commit.
+
+**API endpoint:** `GET /api/v1/musehub/repos/{repo_id}/context/{ref}` — requires JWT auth.
+Returns a `MuseHubContextResponse` document with:
+- `musical_state` — active tracks derived from stored artifact paths; musical dimensions (key, tempo, etc.) are `null` until Storpheus MIDI analysis is integrated.
+- `history` — up to 5 ancestor commits (newest-first), built by walking `parent_ids`.
+- `missing_elements` — list of dimensions the agent cannot determine from stored data.
+- `suggestions` — composer-facing hints about what to work on next.
+
+**UI page:** `GET /musehub/ui/{repo_id}/context/{ref}` — no auth required (JS shell handles auth).
+Renders the context document in structured HTML with:
+- "What the Agent Sees" explainer at the top
+- Collapsible sections for Musical State, History, Missing Elements, and Suggestions
+- Raw JSON panel with a Copy-to-Clipboard button for pasting context into agent prompts
+- Breadcrumb navigation back to the repo page
+
+**Service:** `maestro/services/musehub_repository.py::get_context_for_commit()` — read-only, deterministic.
+
+**Agent use case:** A musician debugging why the AI generated something unexpected can load the context page for that commit and see exactly what musical knowledge the agent had. The copy button lets them paste the raw JSON into a new agent conversation for direct inspection or override.
 
 #### Issues
 
@@ -1450,6 +1478,44 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}` | Get a single PR by ID |
 | POST | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}/merge` | Merge an open PR |
 
+#### In-Repo Search
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/musehub/repos/{id}/search` | Search commits by mode (property / ask / keyword / pattern) |
+| GET | `/musehub/ui/{id}/search` | HTML search page with four mode tabs (no auth required) |
+
+**Search query parameters:**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `mode` | string | `property` \| `ask` \| `keyword` \| `pattern` (default: `keyword`) |
+| `q` | string | Query string — interpreted differently per mode |
+| `harmony` | string | [property mode] Harmony filter (e.g. `key=Eb` or `key=C-Eb` range) |
+| `rhythm` | string | [property mode] Rhythm filter (e.g. `tempo=120-130`) |
+| `melody` | string | [property mode] Melody filter |
+| `structure` | string | [property mode] Structure filter |
+| `dynamic` | string | [property mode] Dynamics filter |
+| `emotion` | string | [property mode] Emotion filter |
+| `since` | ISO datetime | Only include commits on or after this datetime |
+| `until` | ISO datetime | Only include commits on or before this datetime |
+| `limit` | int | Max results (1–200, default 20) |
+
+**Result type:** `SearchResponse` — fields: `mode`, `query`, `matches`, `totalScanned`, `limit`.
+Each match is a `SearchCommitMatch` with: `commitId`, `branch`, `message`, `author`, `timestamp`, `score`, `matchSource`.
+
+**Search modes explained:**
+
+- **`property`** — delegates to `muse_find.search_commits()`. All non-empty property filters are ANDed. Accepts `key=low-high` range syntax for numeric properties. Score is always 1.0 (exact filter match). `matchSource = "property"`.
+
+- **`ask`** — natural-language query. Stop-words are stripped from `q`; remaining tokens are scored against each commit message using the overlap coefficient (`|Q ∩ M| / |Q|`). Commits with zero overlap are excluded. This is a keyword-matching stub; LLM-powered answer generation is a planned enhancement.
+
+- **`keyword`** — raw keyword overlap scoring. Tokenises `q` and each commit message; scores by `|Q ∩ M| / |Q|`. Commits with zero overlap excluded. Useful for precise term search.
+
+- **`pattern`** — case-insensitive substring match of `q` against commit messages (primary) and branch names (secondary). Score is always 1.0. `matchSource` is `"message"` or `"branch"`.
+
+**Agent use case:** AI music composition agents can call the search endpoint to locate commits by musical property (e.g. find all commits with `harmony=Fm`) before applying `muse checkout`, `muse diff`, or `muse replay` to reconstruct or compare those versions.
+
 #### Sync Protocol
 
 | Method | Path | Description |
@@ -1457,7 +1523,34 @@ maestro/
 | POST | `/api/v1/musehub/repos/{id}/push` | Upload commits and objects (fast-forward enforced) |
 | POST | `/api/v1/musehub/repos/{id}/pull` | Fetch missing commits and objects |
 
-All endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
+#### Raw File Download
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/musehub/repos/{id}/raw/{ref}/{path}` | Download file by path with correct MIME type |
+
+The raw endpoint is designed for `curl`, `wget`, and scripted pipelines. It
+serves files with `Accept-Ranges: bytes` so audio clients can perform range
+requests for partial playback.
+
+**Auth:** No token required for **public** repos. Private repos return 401
+without a valid Bearer token.
+
+```bash
+# Public repo — no auth needed
+curl https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/tracks/bass.mid \
+  -o bass.mid
+
+# Private repo — Bearer token required
+curl -H "Authorization: Bearer <token>" \
+  https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/mix/final.mp3 \
+  -o final.mp3
+```
+
+See [api.md](../reference/api.md#get-apiv1musehub-reposrepo_idrawrefpath) for the
+full MIME type table and error reference.
+
+All other endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
 
 ### Issue Workflow
 
