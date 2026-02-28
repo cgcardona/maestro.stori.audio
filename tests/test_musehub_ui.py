@@ -515,6 +515,89 @@ async def test_ui_release_list_page_returns_200(
 
 
 @pytest.mark.anyio
+async def test_ui_release_list_page_has_download_buttons(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release list page template includes inline download icon buttons for all package types."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases")
+    assert response.status_code == 200
+    body = response.text
+    # All four download package types must appear in the JS template source.
+    assert "MIDI" in body
+    assert "Stems" in body
+    assert "MP3" in body
+    assert "MusicXML" in body
+    # The helper function that builds download buttons must be present.
+    assert "downloadButtons" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_list_page_has_body_preview(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release list page template includes body preview logic (stripMarkdown / bodyPreview)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases")
+    assert response.status_code == 200
+    body = response.text
+    assert "stripMarkdown" in body
+    assert "bodyPreview" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_list_page_has_download_count_badge(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release list page fetches the analytics endpoint to show a download count badge."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases")
+    assert response.status_code == 200
+    body = response.text
+    # The page must fetch analytics to populate the download count.
+    assert "/analytics" in body
+    assert "downloadCount" in body
+    assert "download-badge" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_list_page_has_commit_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release list page links each release's commit_id to the commit detail page."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases")
+    assert response.status_code == 200
+    body = response.text
+    # Commit link renders first 8 chars of commit_id via substring(0, 8).
+    assert "commitId" in body
+    assert "substring(0, 8)" in body or "substring(0,8)" in body
+    # Commit detail URL pattern must be embedded in the JS template.
+    assert "/commits/" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_list_page_has_tag_colour_coding(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release list page colour-codes tags: v1.x = green (stable), v0.x = yellow (pre-release)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases")
+    assert response.status_code == 200
+    body = response.text
+    # CSS classes for stable and pre-release tags must be present.
+    assert "tag-stable" in body
+    assert "tag-prerelease" in body
+    # The JS function that assigns these classes must be present.
+    assert "tagBadgeClass" in body
+
+
+@pytest.mark.anyio
 async def test_ui_release_detail_page_returns_200(
     client: AsyncClient,
     db_session: AsyncSession,
