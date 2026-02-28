@@ -42,6 +42,12 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/contour    -- melodic contour analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo      -- tempo analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics   -- dynamics analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/key        -- key detection analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/meter      -- metric analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/chord-map  -- chord map analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/groove     -- rhythmic groove analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/emotion    -- emotion analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/form       -- formal structure analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/motifs     -- motif browser (recurring patterns, transformations)
   GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}              -- full-mix and per-track audio playback with track listing
   GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path}       -- single-stem playback page
@@ -1760,6 +1766,204 @@ async def dynamics_analysis_page(
     return templates.TemplateResponse(
         request,
         "musehub/pages/dynamics.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "current_page": "analysis",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/analysis/{ref}/key",
+    response_class=HTMLResponse,
+    summary="Muse Hub key detection analysis page",
+)
+async def key_analysis_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the key detection analysis page for a Muse commit ref.
+
+    Displays the detected tonic, mode, relative key, confidence bar, and a
+    ranked list of alternate key candidates.  Agents use this to confirm the
+    tonal centre before generating harmonically compatible material.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/key.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "current_page": "analysis",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/analysis/{ref}/meter",
+    response_class=HTMLResponse,
+    summary="Muse Hub meter analysis page",
+)
+async def meter_analysis_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the metric analysis page for a Muse commit ref.
+
+    Shows the primary time signature, compound/simple classification, a
+    beat-strength profile bar chart, and any irregular-meter sections.
+    Agents use this to generate rhythmically coherent material.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/meter.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "current_page": "analysis",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/analysis/{ref}/chord-map",
+    response_class=HTMLResponse,
+    summary="Muse Hub chord map analysis page",
+)
+async def chord_map_analysis_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the chord map analysis page for a Muse commit ref.
+
+    Lists the full chord progression with beat positions, Roman-numeral
+    harmonic functions, tension scores, and a tension-curve SVG graph.
+    Agents use this to generate harmonically idiomatic accompaniment.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/chord_map.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "current_page": "analysis",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/analysis/{ref}/groove",
+    response_class=HTMLResponse,
+    summary="Muse Hub groove analysis page",
+)
+async def groove_analysis_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the rhythmic groove analysis page for a Muse commit ref.
+
+    Displays groove style, BPM, grid resolution, onset deviation, groove
+    score gauge, and a swing-factor bar.  Agents use this to match rhythmic
+    feel when generating continuation material.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/groove.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "current_page": "analysis",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/analysis/{ref}/emotion",
+    response_class=HTMLResponse,
+    summary="Muse Hub emotion analysis page",
+)
+async def emotion_analysis_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the emotion analysis page for a Muse commit ref.
+
+    Displays primary emotion label, valence-arousal plot, tension bar, and
+    confidence score.  Agents use this to maintain emotional continuity or
+    introduce deliberate contrast in the next section.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/emotion.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "current_page": "analysis",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/analysis/{ref}/form",
+    response_class=HTMLResponse,
+    summary="Muse Hub form analysis page",
+)
+async def form_analysis_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the formal structure analysis page for a Muse commit ref.
+
+    Shows the detected macro form label (e.g. AABA, verse-chorus), a colour-coded
+    section timeline, and a per-section table with beat ranges and function labels.
+    Agents use this to understand where they are in the compositional arc.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/form.html",
         {
             "owner": owner,
             "repo_slug": repo_slug,
