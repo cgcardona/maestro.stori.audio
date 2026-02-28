@@ -2147,6 +2147,129 @@ After this point, `tempo` is `int` everywhere:
 
 ---
 
+## Muse CLI Types
+
+Named result types for Muse CLI commands. All types are `TypedDict` subclasses
+defined in their respective command modules and returned from the injectable
+async core functions (the testable layer that Typer commands wrap).
+
+### `SwingDetectResult`
+
+**Module:** `maestro/muse_cli/commands/swing.py`
+
+Swing detection result for a single commit or working tree.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `factor` | `float` | Normalized swing factor in [0.5, 0.67] |
+| `label` | `str` | Human-readable label: `Straight`, `Light`, `Medium`, or `Hard` |
+| `commit` | `str` | Resolved commit SHA (8-char) or empty string for annotations |
+| `branch` | `str` | Current branch name |
+| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
+| `source` | `str` | `"stub"` (MIDI analysis pending) or `"annotation"` (explicit `--set`) |
+
+**Producer:** `_swing_detect_async()`, `_swing_history_async()`
+**Consumer:** `_format_detect()`, `_format_history()`, `SwingCompareResult.head/.compare`
+
+### `SwingCompareResult`
+
+**Module:** `maestro/muse_cli/commands/swing.py`
+
+Swing comparison between HEAD and a reference commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `head` | `SwingDetectResult` | Swing result for HEAD |
+| `compare` | `SwingDetectResult` | Swing result for the reference commit |
+| `delta` | `float` | `head.factor − compare.factor`, rounded to 4 decimal places |
+
+**Producer:** `_swing_compare_async()`
+**Consumer:** `_format_compare()`
+
+### `AnswerResult`
+
+**Module:** `maestro/muse_cli/commands/ask.py`
+
+Structured result from a `muse ask` query. Carries the matched commits and
+rendering context; rendering is deferred to `to_plain()` / `to_json()` so the
+core logic is testable without touching I/O.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `question` | `str` | Original natural-language question as typed by the user |
+| `total_searched` | `int` | Total number of commits examined (after branch / date filters) |
+| `matches` | `list[MuseCliCommit]` | Commits whose messages contain at least one extracted keyword |
+| `cite` | `bool` | When `True`, full 64-char commit IDs are used; otherwise 8-char prefixes |
+
+**Producer:** `_ask_async()`
+**Consumer:** `ask()` Typer command via `to_plain()` / `to_json()`
+### `GrepMatch`
+
+**Module:** `maestro/muse_cli/commands/grep_cmd.py`
+
+A single commit that matched the `muse grep` search pattern.  Implemented as a
+plain `dataclass` (not `TypedDict`) so that `dataclasses.asdict()` can be used
+directly for JSON serialisation without any additional mapping step.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit SHA |
+| `branch` | `str` | Branch name at the time of the commit |
+| `message` | `str` | Full commit message |
+| `committed_at` | `str` | ISO-8601 UTC timestamp string |
+| `match_source` | `str` | Where the pattern was found: `"message"`, `"branch"`, or `"midi_content"` (future) |
+
+**Producer:** `_match_commit()`, `_grep_async()`
+**Consumer:** `_render_matches()`, callers using `--json` output
+
+### `RecallResult`
+
+**Module:** `maestro/muse_cli/commands/recall.py`
+
+Ranked result entry returned by `muse recall`. Each entry represents one
+commit that scored at or above the `--threshold` keyword-overlap cutoff.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `rank` | `int` | 1-based rank within the result set (1 = highest score) |
+| `score` | `float` | Keyword overlap coefficient ∈ [0, 1], rounded to 4 decimal places |
+| `commit_id` | `str` | Full 64-char SHA of the matching commit |
+| `date` | `str` | Commit timestamp formatted as `"YYYY-MM-DD HH:MM:SS"` |
+| `branch` | `str` | Branch the commit belongs to |
+| `message` | `str` | Full commit message |
+
+**Producer:** `_recall_async()`
+**Consumer:** `_render_results()`, callers using `--json` output
+
+---
+
+### `DescribeResult`
+
+**Module:** `maestro/muse_cli/commands/describe.py`
+
+Structured description of what changed between two commits. Implemented as a
+plain class (not `TypedDict`) to support methods (`.file_count()`, `.to_dict()`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA of the target commit |
+| `message` | `str` | Commit message |
+| `depth` | `DescribeDepth` | Output verbosity level (`brief`, `standard`, `verbose`) |
+| `parent_id` | `str | None` | Parent commit SHA; `None` for root commits |
+| `compare_commit_id` | `str | None` | Explicitly compared commit (`--compare A B`); `None` in single-commit mode |
+| `changed_files` | `list[str]` | Relative paths with differing `object_id` between parent and target |
+| `added_files` | `list[str]` | Paths present in target but not parent |
+| `removed_files` | `list[str]` | Paths present in parent but not target |
+| `dimensions` | `list[str]` | Inferred or user-supplied musical dimension labels |
+| `auto_tag` | `str | None` | Heuristic tag (`no-change`, `single-file-edit`, `minor-revision`, `major-revision`); `None` when `--auto-tag` not set |
+
+**Methods:** `.file_count() → int` (sum of all three file lists), `.to_dict() → dict[str, object]` (JSON-safe serialisation for `--json` output).
+
+**Producer:** `_describe_async()`
+**Consumer:** `_render_brief()`, `_render_standard()`, `_render_verbose()`, `_render_result()`
+
+---
+
 ## `Any` Status
 
 `Any` does not appear in any production app file. The table below summarises how every historical use was eliminated:
