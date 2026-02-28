@@ -460,6 +460,25 @@ async function load() {
           <div id="ai-summary-body"><p class="loading text-sm">Analyzing…</p></div>
         </div>
 
+        <!-- Comment threads -->
+        <div class="card" id="comments-section">
+          <h2 style="margin:0 0 var(--space-3) 0">💬 Discussion</h2>
+          <div id="comments-list"><p class="loading text-sm">Loading comments…</p></div>
+          <div id="new-comment-form" style="display:none;margin-top:var(--space-4)">
+            <div class="comment-row" style="align-items:flex-start">
+              <span class="comment-avatar" id="new-comment-avatar" style="background:var(--bg-overlay);color:var(--text-muted)">?</span>
+              <div style="flex:1">
+                <textarea id="new-comment-body" class="form-input comment-textarea" rows="3"
+                          placeholder="Leave a comment…" style="resize:vertical"></textarea>
+                <div class="comment-form-actions" style="margin-top:var(--space-2)">
+                  <button id="comment-submit-btn" class="btn btn-primary btn-sm"
+                          onclick="submitComment(null)">Comment</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Navigation -->
         <div style="display:flex;gap:var(--space-3);margin-top:var(--space-2);flex-wrap:wrap">
           ${commit.parentIds && commit.parentIds.length > 0
@@ -601,8 +620,172 @@ async function sendCompose() {
   }
 }
 
+// ── Comment threads ──────────────────────────────────────────────────────────
+
+/** Extract username from the stored JWT without a library (reads the payload claim). */
+function currentUsername() {
+  const tok = getToken();
+  if (!tok) return null;
+  try {
+    const payload = JSON.parse(atob(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return payload.sub || null;
+  } catch { return null; }
+}
+
+/** Deterministic HSL avatar colour from a username string. */
+function avatarColor(username) {
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) hash = username.charCodeAt(i) + ((hash << 5) - hash);
+  return `hsl(${Math.abs(hash) % 360},55%,45%)`;
+}
+
+function avatarHtml(username) {
+  const initial = escHtml((username || '?').charAt(0).toUpperCase());
+  const color   = avatarColor(username || '');
+  return `<span class="comment-avatar" style="background:${color}">${initial}</span>`;
+}
+
+/**
+ * Render a flat list of CommentResponse objects into a threaded tree.
+ * Top-level (parent_id=null) first; replies indented beneath their parent.
+ */
+function renderComments(comments, me) {
+  const topLevel = comments.filter(c => !c.parent_id);
+  const replies  = comments.filter(c =>  c.parent_id);
+
+  if (topLevel.length === 0 && !me) {
+    return '<p class="text-sm text-muted" style="margin:0">No comments yet.</p>';
+  }
+  if (topLevel.length === 0) {
+    return '<p class="text-sm text-muted" style="margin:0">Be the first to comment.</p>';
+  }
+
+  return topLevel.map(c => commentHtml(c, replies, me)).join('');
+}
+
+function commentHtml(c, allReplies, me) {
+  const isOwn      = me && c.author === me;
+  const threadReplies = allReplies.filter(r => r.parent_id === c.comment_id);
+
+  return `
+<div class="comment-thread" id="comment-${escHtml(c.comment_id)}">
+  <div class="comment-row">
+    ${avatarHtml(c.author)}
+    <div class="comment-body-col">
+      <div class="comment-meta">
+        <a href="/musehub/ui/users/${encodeURIComponent(c.author)}" class="comment-author">${escHtml(c.author)}</a>
+        <span class="comment-ts" title="${escHtml(c.created_at)}">${fmtRelative(c.created_at)}</span>
+      </div>
+      <div class="comment-text">${escHtml(c.body)}</div>
+      <div class="comment-actions">
+        ${me ? `<button class="btn btn-ghost btn-xs" onclick="showReplyForm('${escHtml(c.comment_id)}')">↩ Reply</button>` : ''}
+        ${isOwn ? `<button class="btn btn-ghost btn-xs comment-delete-btn" onclick="deleteComment('${escHtml(c.comment_id)}')">🗑</button>` : ''}
+      </div>
+      <div class="reply-form-slot" id="reply-slot-${escHtml(c.comment_id)}"></div>
+      ${threadReplies.length > 0 ? `<div class="comment-replies">${threadReplies.map(r => replyHtml(r, me)).join('')}</div>` : ''}
+    </div>
+  </div>
+</div>`;
+}
+
+function replyHtml(c, me) {
+  const isOwn = me && c.author === me;
+  return `
+<div class="comment-row comment-reply-row" id="comment-${escHtml(c.comment_id)}">
+  ${avatarHtml(c.author)}
+  <div class="comment-body-col">
+    <div class="comment-meta">
+      <a href="/musehub/ui/users/${encodeURIComponent(c.author)}" class="comment-author">${escHtml(c.author)}</a>
+      <span class="comment-ts" title="${escHtml(c.created_at)}">${fmtRelative(c.created_at)}</span>
+    </div>
+    <div class="comment-text">${escHtml(c.body)}</div>
+    ${isOwn ? `<div class="comment-actions"><button class="btn btn-ghost btn-xs comment-delete-btn" onclick="deleteComment('${escHtml(c.comment_id)}')">🗑</button></div>` : ''}
+  </div>
+</div>`;
+}
+
+async function loadComments() {
+  const el = document.getElementById('comments-section');
+  if (!el) return;
+  try {
+    const comments = await apiFetch(`/repos/${repoId}/comments?target_type=commit&target_id=${encodeURIComponent(commitId)}`);
+    const me = currentUsername();
+    document.getElementById('comments-list').innerHTML = renderComments(comments, me);
+    if (me) {
+      const form   = document.getElementById('new-comment-form');
+      const avatar = document.getElementById('new-comment-avatar');
+      form.style.display = '';
+      if (avatar) {
+        avatar.textContent = me.charAt(0).toUpperCase();
+        avatar.style.background = avatarColor(me);
+        avatar.style.color = '#fff';
+      }
+    }
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('comments-list').innerHTML = `<p class="error text-sm">✕ ${escHtml(e.message)}</p>`;
+  }
+}
+
+async function submitComment(parentId) {
+  const textareaId = parentId ? `reply-body-${parentId}` : 'new-comment-body';
+  const textarea   = document.getElementById(textareaId);
+  if (!textarea) return;
+  const body = textarea.value.trim();
+  if (!body) return;
+
+  const btn = parentId
+    ? document.querySelector(`#reply-slot-${parentId} .comment-submit-btn`)
+    : document.getElementById('comment-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Posting…'; }
+
+  try {
+    await apiFetch(`/repos/${repoId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ target_type: 'commit', target_id: commitId, body, parent_id: parentId || null }),
+    });
+    textarea.value = '';
+    if (parentId) {
+      document.getElementById(`reply-slot-${parentId}`).innerHTML = '';
+    }
+    await loadComments();
+  } catch(e) {
+    if (e.message !== 'auth') alert('Failed to post comment: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Comment'; }
+  }
+}
+
+async function deleteComment(commentId) {
+  if (!confirm('Delete this comment?')) return;
+  try {
+    await apiFetch(`/repos/${repoId}/comments/${commentId}`, { method: 'DELETE' });
+    await loadComments();
+  } catch(e) {
+    if (e.message !== 'auth') alert('Failed to delete: ' + e.message);
+  }
+}
+
+function showReplyForm(parentId) {
+  const slot = document.getElementById(`reply-slot-${parentId}`);
+  if (!slot) return;
+  if (slot.innerHTML.trim()) { slot.innerHTML = ''; return; }
+  slot.innerHTML = `
+<div class="reply-form">
+  <textarea id="reply-body-${escHtml(parentId)}" class="form-input comment-textarea" rows="2"
+            placeholder="Write a reply…" style="resize:vertical"></textarea>
+  <div class="comment-form-actions">
+    <button class="btn btn-primary btn-sm comment-submit-btn" onclick="submitComment('${escHtml(parentId)}')">Comment</button>
+    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('reply-slot-${escHtml(parentId)}').innerHTML=''">Cancel</button>
+  </div>
+</div>`;
+  const ta = document.getElementById(`reply-body-${parentId}`);
+  if (ta) ta.focus();
+}
+
 load();
 loadAiSummary();
+loadComments();
 {% endraw %}
 {% endblock %}
 
@@ -809,6 +992,75 @@ loadAiSummary();
   min-width: 100px;
   flex-shrink: 0;
   font-family: var(--font-mono);
+}
+/* ── Comment threads ──────────────────────────────────────────────────────── */
+.comment-thread { margin-bottom: var(--space-4); }
+.comment-thread:last-child { margin-bottom: 0; }
+.comment-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+.comment-reply-row { margin-top: var(--space-3); }
+.comment-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  color: #fff;
+  flex-shrink: 0;
+}
+.comment-body-col { flex: 1; min-width: 0; }
+.comment-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+.comment-author {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+.comment-ts {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+.comment-text {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+}
+.comment-actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+.comment-delete-btn { color: var(--color-danger, #f87171); }
+.comment-replies {
+  margin-top: var(--space-3);
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.reply-form { margin-top: var(--space-2); }
+.comment-textarea {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+}
+.comment-form-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
 }
 </style>
 {% endblock %}
