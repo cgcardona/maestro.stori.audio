@@ -30,6 +30,8 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [GrooveStatus](#groovestatuss)
    - [CommitGrooveMetrics](#commitgroovemetrics)
    - [GrooveCheckResult](#groovecheckresult)
+   - [ReleaseArtifact](#releaseartifact)
+   - [ReleaseResult](#releaseresult)
    - [RenderPreviewResult](#renderpreviewresult)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
@@ -1094,6 +1096,47 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | Property | Returns | Description |
 |----------|---------|-------------|
 | `effective_bpm` | `float \| None` | `tempo_bpm` if set; else `detected_bpm` |
+
+---
+
+### `ReleaseArtifact`
+
+**Path:** `maestro/services/muse_release.py`
+
+`dataclass(frozen=True)` — A single file produced during a `muse release` operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `pathlib.Path` | Absolute path of the written file |
+| `sha256` | `str` | SHA-256 hex digest of the file contents (64 chars) |
+| `size_bytes` | `int` | File size in bytes |
+| `role` | `str` | Human-readable role: `"audio"`, `"midi-bundle"`, `"stem"`, `"manifest"` |
+
+---
+
+### `ReleaseResult`
+
+**Path:** `maestro/services/muse_release.py`
+
+`dataclass` — Result of a complete `muse release` operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tag` | `str` | The release tag string (e.g. `"v1.0"`) |
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID of the released snapshot |
+| `output_dir` | `pathlib.Path` | Root directory where all artifacts were written |
+| `manifest_path` | `pathlib.Path` | Path to the `release-manifest.json` file |
+| `artifacts` | `list[ReleaseArtifact]` | All files produced (audio, MIDI bundle, stems, manifest) |
+| `audio_format` | `ReleaseAudioFormat` | Audio format used for rendered files |
+| `stubbed` | `bool` | `True` when Storpheus `/render` is not yet deployed and MIDI was copied as placeholder |
+
+**Companion types:**
+
+- `ReleaseAudioFormat(str, Enum)` — `WAV = "wav"`, `MP3 = "mp3"`, `FLAC = "flac"`.
+- `StorpheusReleaseUnavailableError` — raised when Storpheus health check fails and audio rendering is requested.
+
+**Producer:** `build_release()` in `maestro/services/muse_release.py`
+**Consumer:** `muse release` CLI command (`maestro/muse_cli/commands/release.py`)
 
 ---
 

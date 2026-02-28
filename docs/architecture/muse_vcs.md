@@ -5135,3 +5135,81 @@ run `--continue` to record the merged arrangement as an immutable commit.
 **Implementation:** `maestro/muse_cli/commands/merge.py` — `_merge_continue_async(root, session)`.
 
 ---
+
+### `muse release`
+
+**Purpose:** Export a tagged commit as distribution-ready release artifacts — the
+music-native publish step.  Bridges the Muse VCS world and the audio production
+world: a producer says "version 1.0 is done" and `muse release v1.0` produces
+WAV/MIDI/stem files with SHA-256 checksums for distribution.
+
+**Usage:**
+```bash
+muse release <tag> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<tag>` | positional | required | Tag string (created via `muse tag add`) or short commit SHA prefix |
+| `--render-audio` | flag | off | Render all MIDI to a single audio file via Storpheus |
+| `--render-midi` | flag | off | Bundle all .mid files into a zip archive |
+| `--export-stems` | flag | off | Export each instrument track as a separate audio file |
+| `--format wav\|mp3\|flac` | option | `wav` | Audio output format |
+| `--output-dir PATH` | option | `./releases/<tag>/` | Destination directory for all artifacts |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output layout:**
+```
+<output-dir>/
+    release-manifest.json        # always written; SHA-256 checksums
+    audio/<commit8>.<format>     # --render-audio
+    midi/midi-bundle.zip         # --render-midi
+    stems/<stem>.<format>        # --export-stems
+```
+
+**Output example:**
+```
+✅ Release artifacts for tag 'v1.0' (commit a1b2c3d4):
+   [audio] ./releases/v1.0/audio/a1b2c3d4.wav
+   [midi-bundle] ./releases/v1.0/midi/midi-bundle.zip
+   [manifest] ./releases/v1.0/release-manifest.json
+⚠️  Audio files are MIDI stubs (Storpheus /render endpoint not yet deployed).
+```
+
+**Result type:** `ReleaseResult` — fields: `tag`, `commit_id`, `output_dir`,
+`manifest_path`, `artifacts` (list of `ReleaseArtifact`), `audio_format`, `stubbed`.
+
+**`release-manifest.json` shape:**
+```json
+{
+  "tag": "v1.0",
+  "commit_id": "<full sha256>",
+  "commit_short": "<8-char>",
+  "released_at": "<ISO-8601 UTC>",
+  "audio_format": "wav",
+  "stubbed": true,
+  "files": [
+    {"path": "audio/a1b2c3d4.wav", "sha256": "...", "size_bytes": 4096, "role": "audio"},
+    {"path": "midi/midi-bundle.zip", "sha256": "...", "size_bytes": 1024, "role": "midi-bundle"},
+    {"path": "release-manifest.json", "sha256": "...", "size_bytes": 512, "role": "manifest"}
+  ]
+}
+```
+
+**Agent use case:** An AI music generation agent calls `muse release v1.0 --render-midi --json`
+after tagging a completed composition.  It reads `stubbed` from the JSON output to
+determine whether the audio files are real renders or MIDI placeholders, and inspects
+`files[*].sha256` to verify integrity before uploading to a distribution platform.
+
+**Implementation stub note:** The Storpheus `POST /render` endpoint (MIDI-in → audio-out)
+is not yet deployed.  Until it ships, `--render-audio` and `--export-stems` copy the
+source MIDI file as a placeholder and set `stubbed=true` in the manifest.  The
+`_render_midi_to_audio` function in `maestro/services/muse_release.py` is the only
+site to update when the endpoint becomes available.
+
+**Implementation:** `maestro/muse_cli/commands/release.py` — `_release_async(...)`.
+Service layer: `maestro/services/muse_release.py` — `build_release(...)`.
+
+---
