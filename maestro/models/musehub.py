@@ -242,6 +242,79 @@ class ObjectMetaListResponse(CamelModel):
     objects: list[ObjectMetaResponse]
 
 
+# ── Context models ────────────────────────────────────────────────────────────
+
+
+class MuseHubContextCommitInfo(CamelModel):
+    """Minimal commit metadata included in a MuseHub context document."""
+
+    commit_id: str
+    message: str
+    author: str
+    branch: str
+    timestamp: datetime
+
+
+class MuseHubContextHistoryEntry(CamelModel):
+    """A single ancestor commit in the evolutionary history of the composition.
+
+    History is built by walking parent_ids from the target commit.
+    Entries are returned newest-first and limited to the last 5 ancestors.
+    """
+
+    commit_id: str
+    message: str
+    author: str
+    timestamp: datetime
+    active_tracks: list[str]
+
+
+class MuseHubContextMusicalState(CamelModel):
+    """Musical state at the target commit, derived from stored artifact paths.
+
+    ``active_tracks`` is populated from object paths in the repo.
+    All analytical fields (key, tempo, etc.) are None until Storpheus MIDI
+    analysis is integrated — agents should treat None as "unknown."
+    """
+
+    active_tracks: list[str]
+    key: str | None = None
+    mode: str | None = None
+    tempo_bpm: int | None = None
+    time_signature: str | None = None
+    form: str | None = None
+    emotion: str | None = None
+
+
+class MuseHubContextResponse(CamelModel):
+    """Human-readable and agent-consumable musical context document for a commit.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/context/{ref}``.
+
+    This is the MuseHub equivalent of ``MuseContextResult`` — built from
+    the remote repo's commit graph and stored objects rather than the local
+    ``.muse`` filesystem.  The structure deliberately mirrors ``MuseContextResult``
+    so that agents consuming either source see the same schema.
+
+    Fields:
+        repo_id:        The hub repo identifier.
+        current_branch: Branch name for the target commit.
+        head_commit:    Metadata for the resolved commit (ref).
+        musical_state:  Active tracks and any available musical dimensions.
+        history:        Up to 5 ancestor commits, newest-first.
+        missing_elements: Dimensions that could not be determined from stored data.
+        suggestions:    Composer-facing hints about what to work on next.
+    """
+
+    repo_id: str
+    current_branch: str
+    head_commit: MuseHubContextCommitInfo
+    musical_state: MuseHubContextMusicalState
+    history: list[MuseHubContextHistoryEntry]
+    missing_elements: list[str]
+    suggestions: dict[str, str]
+
+
 # ── In-repo search models ─────────────────────────────────────────────────────
 
 

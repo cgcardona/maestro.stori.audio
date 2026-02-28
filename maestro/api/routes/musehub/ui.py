@@ -976,6 +976,220 @@ async def issue_list_page(repo_id: str) -> HTMLResponse:
 
 
 @router.get(
+    "/{repo_id}/context/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub context viewer page",
+)
+async def context_page(repo_id: str, ref: str) -> HTMLResponse:
+    """Render the AI context viewer for a given commit ref.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/context/{ref}`` and renders
+    the MuseHubContextResponse as a structured human-readable document.
+
+    Sections:
+    - "What the agent sees" explainer
+    - Musical State (active tracks + available musical dimensions)
+    - History Summary (recent ancestor commits)
+    - Missing Elements (dimensions not yet available)
+    - Suggestions (what to compose next)
+    - Raw JSON toggle for debugging
+    - Copy-to-clipboard button for sharing with agents
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const ref    = {repr(ref)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (s === null || s === undefined) return '—';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function copyJson() {{
+        const text = document.getElementById('raw-json').textContent;
+        navigator.clipboard.writeText(text).then(() => {{
+          const btn = document.getElementById('copy-btn');
+          btn.textContent = 'Copied!';
+          setTimeout(() => {{ btn.textContent = 'Copy JSON'; }}, 2000);
+        }});
+      }}
+
+      function toggleSection(id) {{
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.style.display = el.style.display === 'none' ? '' : 'none';
+        const btn = document.querySelector('[data-target="' + id + '"]');
+        if (btn) btn.textContent = el.style.display === 'none' ? '▶ Show' : '▼ Hide';
+      }}
+
+      async function load() {{
+        try {{
+          const ctx = await apiFetch('/repos/' + repoId + '/context/' + ref);
+
+          const tracks = (ctx.musicalState.activeTracks || []);
+          const trackList = tracks.length > 0
+            ? tracks.map(t => '<span class="label">' + escHtml(t) + '</span>').join(' ')
+            : '<em style="color:#8b949e">No music files found in repo yet.</em>';
+
+          function dimRow(label, val) {{
+            return val !== null && val !== undefined
+              ? '<div class="meta-item"><span class="meta-label">' + label + '</span>'
+                + '<span class="meta-value">' + escHtml(val) + '</span></div>'
+              : '';
+          }}
+
+          const musicalDims = [
+            dimRow('Key', ctx.musicalState.key),
+            dimRow('Mode', ctx.musicalState.mode),
+            dimRow('Tempo (BPM)', ctx.musicalState.tempoBpm),
+            dimRow('Time Signature', ctx.musicalState.timeSignature),
+            dimRow('Form', ctx.musicalState.form),
+            dimRow('Emotion', ctx.musicalState.emotion),
+          ].filter(Boolean).join('');
+
+          const histEntries = (ctx.history || []);
+          const histRows = histEntries.length > 0
+            ? histEntries.map(h => `
+                <div class="commit-row">
+                  <a class="commit-sha" href="${{base}}/commits/${{h.commitId}}">${{shortSha(h.commitId)}}</a>
+                  <span class="commit-msg">${{escHtml(h.message)}}</span>
+                  <span class="commit-meta">${{escHtml(h.author)}} &bull; ${{fmtDate(h.timestamp)}}</span>
+                </div>`).join('')
+            : '<p class="loading">No ancestor commits.</p>';
+
+          const missing = (ctx.missingElements || []);
+          const missingList = missing.length > 0
+            ? '<ul style="padding-left:20px;font-size:14px">' + missing.map(m => '<li>' + escHtml(m) + '</li>').join('') + '</ul>'
+            : '<p style="color:#3fb950;font-size:14px">All musical dimensions are available.</p>';
+
+          const suggestions = ctx.suggestions || {{}};
+          const suggKeys = Object.keys(suggestions);
+          const suggList = suggKeys.length > 0
+            ? suggKeys.map(k => '<div style="margin-bottom:8px"><strong style="color:#e6edf3">' + escHtml(k) + ':</strong> ' + escHtml(suggestions[k]) + '</div>').join('')
+            : '<p class="loading">No suggestions available.</p>';
+
+          const rawJson = JSON.stringify(ctx, null, 2);
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+
+            <div class="card" style="border-color:#1f6feb">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                <span style="font-size:20px">&#127925;</span>
+                <h1 style="margin:0;font-size:18px">What the Agent Sees</h1>
+              </div>
+              <p style="font-size:14px;color:#8b949e;margin-bottom:0">
+                This is the musical context document that the AI agent receives
+                when generating music for this repo at commit
+                <code style="font-size:12px;background:#0d1117;padding:2px 6px;border-radius:4px">${{shortSha(ref)}}</code>.
+                Every composition decision — key, tempo, arrangement, what to add next —
+                is guided by this document.
+              </p>
+            </div>
+
+            <div class="card">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h2 style="margin:0">&#127925; Musical State</h2>
+                <button class="btn btn-secondary" style="font-size:12px"
+                        data-target="musical-state-body" onclick="toggleSection('musical-state-body')">&#9660; Hide</button>
+              </div>
+              <div id="musical-state-body">
+                <div style="margin-bottom:10px">
+                  <span class="meta-label">Active Tracks</span>
+                  <div style="margin-top:4px">${{trackList}}</div>
+                </div>
+                ${{musicalDims ? '<div class="meta-row" style="margin-top:12px">' + musicalDims + '</div>' : '<p style="font-size:13px;color:#8b949e">Musical dimensions (key, tempo, etc.) require MIDI analysis — not yet available.</p>'}}
+              </div>
+            </div>
+
+            <div class="card">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h2 style="margin:0">&#128337; History Summary</h2>
+                <button class="btn btn-secondary" style="font-size:12px"
+                        data-target="history-body" onclick="toggleSection('history-body')">&#9660; Hide</button>
+              </div>
+              <div id="history-body">
+                <div class="meta-row" style="margin-bottom:12px">
+                  <div class="meta-item">
+                    <span class="meta-label">Commit</span>
+                    <span class="meta-value" style="font-family:monospace">${{shortSha(ctx.headCommit.commitId)}}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Branch</span>
+                    <span class="meta-value">${{escHtml(ctx.currentBranch)}}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Author</span>
+                    <span class="meta-value">${{escHtml(ctx.headCommit.author)}}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Date</span>
+                    <span class="meta-value">${{fmtDate(ctx.headCommit.timestamp)}}</span>
+                  </div>
+                </div>
+                <pre style="margin-bottom:12px">${{escHtml(ctx.headCommit.message)}}</pre>
+                <h2 style="font-size:14px;margin-bottom:8px">Ancestors (${{histEntries.length}})</h2>
+                ${{histRows}}
+              </div>
+            </div>
+
+            <div class="card">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h2 style="margin:0">&#9888;&#65039; Missing Elements</h2>
+                <button class="btn btn-secondary" style="font-size:12px"
+                        data-target="missing-body" onclick="toggleSection('missing-body')">&#9660; Hide</button>
+              </div>
+              <div id="missing-body">
+                ${{missingList}}
+              </div>
+            </div>
+
+            <div class="card" style="border-color:#238636">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h2 style="margin:0">&#127775; Suggestions</h2>
+                <button class="btn btn-secondary" style="font-size:12px"
+                        data-target="suggestions-body" onclick="toggleSection('suggestions-body')">&#9660; Hide</button>
+              </div>
+              <div id="suggestions-body">
+                ${{suggList}}
+              </div>
+            </div>
+
+            <div class="card">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h2 style="margin:0">&#128196; Raw JSON</h2>
+                <div style="display:flex;gap:8px">
+                  <button id="copy-btn" class="btn btn-secondary" style="font-size:12px" onclick="copyJson()">Copy JSON</button>
+                  <button class="btn btn-secondary" style="font-size:12px"
+                          data-target="raw-json-body" onclick="toggleSection('raw-json-body')">&#9660; Hide</button>
+                </div>
+              </div>
+              <div id="raw-json-body">
+                <pre id="raw-json">${{escHtml(rawJson)}}</pre>
+              </div>
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title=f"Context {ref[:8]}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f"context / {ref[:8]}"
+        ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
     "/{repo_id}/issues/{number}",
     response_class=HTMLResponse,
     summary="Muse Hub issue detail page",
