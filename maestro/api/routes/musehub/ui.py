@@ -11,6 +11,7 @@ Endpoint summary:
   GET /musehub/ui/{repo_id}/issues                 — issue list page
   GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
   GET /musehub/ui/{repo_id}/embed/{ref}            — embeddable player widget (no auth, iframe-safe)
+  GET /musehub/ui/{repo_id}/search                 — in-repo search page (four modes)
 
 These routes require NO JWT auth — they return static HTML shells whose
 embedded JavaScript fetches data from the authed JSON API
@@ -277,6 +278,7 @@ async def repo_page(repo_id: str) -> HTMLResponse:
               <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
                 <a href="${{base}}/pulls" class="btn btn-secondary">Pull Requests</a>
                 <a href="${{base}}/issues" class="btn btn-secondary">Issues</a>
+                <a href="${{base}}/search" class="btn btn-secondary">&#128269; Search</a>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
                 <select id="branch-sel" onchange="load(this.value)">
@@ -1019,3 +1021,240 @@ async def embed_page(repo_id: str, ref: str) -> Response:
         media_type="text/html",
         headers={"X-Frame-Options": "ALLOWALL"},
     )
+
+
+@router.get(
+    "/{repo_id}/search",
+    response_class=HTMLResponse,
+    summary="Muse Hub in-repo search page",
+)
+async def search_page(repo_id: str) -> HTMLResponse:
+    """Render the in-repo search page with four mode tabs.
+
+    Modes map to the JSON API at ``GET /api/v1/musehub/repos/{repo_id}/search``:
+    - Musical Properties (``mode=property``) — filter by harmony/rhythm/melody/etc.
+    - Natural Language (``mode=ask``) — free-text question over commit history.
+    - Keyword (``mode=keyword``) — keyword overlap scored search.
+    - Pattern (``mode=pattern``) — substring match against messages and branches.
+
+    Results render as commit rows with SHA, message, author, timestamp, and an
+    audio preview link for any ``mp3``/``wav``/``ogg`` artifact on that commit.
+    Authentication is handled client-side via localStorage JWT.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+      const apiBase = '/api/v1/musehub/repos/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── State ──────────────────────────────────────────────────────────────
+      let currentMode = 'keyword';
+
+      function setMode(mode) {{
+        currentMode = mode;
+        document.querySelectorAll('.tab-btn').forEach(b => {{
+          b.classList.toggle('tab-active', b.dataset.mode === mode);
+        }});
+        document.querySelectorAll('.mode-panel').forEach(p => {{
+          p.style.display = p.dataset.mode === mode ? 'block' : 'none';
+        }});
+      }}
+
+      // ── Result rendering ───────────────────────────────────────────────────
+      function renderResults(data) {{
+        const matches = data.matches || [];
+        const header = `<p style="color:#8b949e;font-size:13px;margin-bottom:12px">
+          Mode: <strong>${{escHtml(data.mode)}}</strong> &bull;
+          Query: <em>${{escHtml(data.query || '(all)')}}</em> &bull;
+          ${{matches.length}} result(s) &bull; ${{data.totalScanned}} commits scanned
+        </p>`;
+
+        if (matches.length === 0) {{
+          document.getElementById('results').innerHTML = header +
+            '<p class="loading">No matching commits found.</p>';
+          return;
+        }}
+
+        const rows = matches.map(m => `
+          <div class="commit-row">
+            <a class="commit-sha" href="${{base}}/commits/${{m.commitId}}">${{shortSha(m.commitId)}}</a>
+            <div class="commit-msg" style="flex:1">
+              <a href="${{base}}/commits/${{m.commitId}}">${{escHtml(m.message)}}</a>
+              <div style="font-size:12px;color:#8b949e;margin-top:2px">
+                ${{escHtml(m.author)}} &bull; ${{fmtDate(m.timestamp)}}
+                &bull; branch: ${{escHtml(m.branch)}}
+                ${{m.score < 1.0 ? '&bull; score: ' + m.score.toFixed(3) : ''}}
+                <a href="${{base}}/commits/${{m.commitId}}"
+                   class="btn btn-secondary"
+                   style="font-size:11px;padding:2px 8px;margin-left:8px">
+                  &#9654; Preview
+                </a>
+              </div>
+            </div>
+          </div>`).join('');
+
+        document.getElementById('results').innerHTML = header +
+          '<div class="card">' + rows + '</div>';
+      }}
+
+      // ── Search dispatch ────────────────────────────────────────────────────
+      async function runSearch() {{
+        document.getElementById('results').innerHTML = '<p class="loading">Searching&#8230;</p>';
+        try {{
+          let url = apiBase + '/search?mode=' + encodeURIComponent(currentMode);
+          const limit = document.getElementById('inp-limit').value || 20;
+          const since = document.getElementById('inp-since').value;
+          const until = document.getElementById('inp-until').value;
+          url += '&limit=' + encodeURIComponent(limit);
+          if (since) url += '&since=' + encodeURIComponent(since + 'T00:00:00Z');
+          if (until) url += '&until=' + encodeURIComponent(until + 'T23:59:59Z');
+
+          if (currentMode === 'property') {{
+            const fields = ['harmony','rhythm','melody','structure','dynamic','emotion'];
+            fields.forEach(f => {{
+              const v = document.getElementById('prop-' + f).value.trim();
+              if (v) url += '&' + f + '=' + encodeURIComponent(v);
+            }});
+          }} else {{
+            const q = document.getElementById('inp-q-' + currentMode).value.trim();
+            if (q) url += '&q=' + encodeURIComponent(q);
+          }}
+
+          const data = await apiFetch(url.replace(apiBase, ''));
+          renderResults(data);
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('results').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      // ── Page bootstrap ─────────────────────────────────────────────────────
+      document.getElementById('content').innerHTML = `
+        <div style="margin-bottom:12px">
+          <a href="${{base}}">&larr; Back to repo</a>
+        </div>
+        <div class="card">
+          <h1 style="margin-bottom:16px">&#128269; Search Commits</h1>
+
+          <!-- Mode tabs -->
+          <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+            <button class="btn tab-btn tab-active" data-mode="keyword"
+                    onclick="setMode('keyword')">Keyword</button>
+            <button class="btn tab-btn" data-mode="ask"
+                    onclick="setMode('ask')">Natural Language</button>
+            <button class="btn tab-btn" data-mode="pattern"
+                    onclick="setMode('pattern')">Pattern</button>
+            <button class="btn tab-btn" data-mode="property"
+                    onclick="setMode('property')">Musical Properties</button>
+          </div>
+
+          <!-- Shared date range + limit -->
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end">
+            <div class="meta-item">
+              <span class="meta-label">Since</span>
+              <input id="inp-since" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Until</span>
+              <input id="inp-until" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Limit</span>
+              <input id="inp-limit" type="number" value="20" min="1" max="200"
+                     style="width:80px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+            </div>
+          </div>
+
+          <!-- Keyword panel -->
+          <div class="mode-panel" data-mode="keyword">
+            <div style="display:flex;gap:8px">
+              <input id="inp-q-keyword" type="text" placeholder="e.g. dark jazz bassline"
+                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+                     onkeydown="if(event.key==='Enter')runSearch()" />
+              <button class="btn btn-primary" onclick="runSearch()">Search</button>
+            </div>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              Scores commits by keyword overlap. Higher score = better match.
+            </p>
+          </div>
+
+          <!-- Natural Language panel -->
+          <div class="mode-panel" data-mode="ask" style="display:none">
+            <div style="display:flex;gap:8px">
+              <input id="inp-q-ask" type="text" placeholder="e.g. when did I change to F# minor?"
+                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+                     onkeydown="if(event.key==='Enter')runSearch()" />
+              <button class="btn btn-primary" onclick="runSearch()">Ask</button>
+            </div>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              Keyword extraction from your question. Full LLM-powered search is a planned enhancement.
+            </p>
+          </div>
+
+          <!-- Pattern panel -->
+          <div class="mode-panel" data-mode="pattern" style="display:none">
+            <div style="display:flex;gap:8px">
+              <input id="inp-q-pattern" type="text" placeholder="e.g. Cm7 or feature/hip-hop"
+                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+                     onkeydown="if(event.key==='Enter')runSearch()" />
+              <button class="btn btn-primary" onclick="runSearch()">Search</button>
+            </div>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              Case-insensitive substring match against commit messages and branch names.
+            </p>
+          </div>
+
+          <!-- Musical Properties panel -->
+          <div class="mode-panel" data-mode="property" style="display:none">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:12px">
+              ${{['harmony','rhythm','melody','structure','dynamic','emotion'].map(f => `
+                <div class="meta-item">
+                  <span class="meta-label">${{f}}</span>
+                  <input id="prop-${{f}}" type="text" placeholder="e.g. ${{f==='harmony'?'key=Eb':f==='rhythm'?'tempo=120-130':f}}"
+                         style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:13px;width:100%" />
+                </div>`).join('')}}
+            </div>
+            <button class="btn btn-primary" onclick="runSearch()">Filter</button>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              All non-empty fields are combined with AND logic.
+              Range syntax: <code>tempo=120-130</code>.
+            </p>
+          </div>
+        </div>
+
+        <!-- Results area -->
+        <div id="results"><p class="loading" style="display:none"></p></div>
+      `;
+
+      // Apply tab styles after DOM is written.
+      document.querySelectorAll('.tab-btn').forEach(b => {{
+        b.style.background = '#21262d';
+        b.style.color = '#c9d1d9';
+        b.style.border = '1px solid #30363d';
+      }});
+
+      function applyTabActive() {{
+        document.querySelectorAll('.tab-btn').forEach(b => {{
+          const active = b.dataset.mode === currentMode;
+          b.style.background = active ? '#1f6feb' : '#21262d';
+          b.style.color = active ? '#fff' : '#c9d1d9';
+        }});
+      }}
+
+      document.querySelectorAll('.tab-btn').forEach(b => {{
+        b.addEventListener('click', applyTabActive);
+      }});
+
+      applyTabActive();
+    """
+    html = _page(
+        title="Search",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / search',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
