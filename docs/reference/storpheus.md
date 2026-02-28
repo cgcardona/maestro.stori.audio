@@ -1762,3 +1762,48 @@ Export to ONNX and compile with TensorRT for static-shape inference.  Depends on
 ### Measurement plan
 
 After each optimization is enabled, compare `metadata.timing.total_elapsed_s` before/after with A/B tests via the `/quality/ab-test` endpoint.  Log aggregate latency to the diagnostics endpoint under `inference_optimization`.
+
+
+---
+
+## MuseHub Render Integration — `POST /render` (Planned)
+
+The MuseHub render pipeline (`maestro/services/musehub_render_pipeline.py`)
+integrates with Storpheus to convert MIDI files to audio on every commit push.
+
+### Current State (Stub)
+
+The Storpheus `POST /render` endpoint (MIDI-in → audio-out) is **not yet
+deployed**. Until it ships, the render pipeline copies the MIDI file verbatim
+to `renders/<commit_short>_<stem>.mp3` and sets `stubbed=True` in the render
+job record.
+
+### Planned Contract
+
+When `POST /render` is available, the render pipeline will call:
+
+```
+POST {storpheus_url}/render
+Content-Type: multipart/form-data
+Body:
+  midi: <raw MIDI bytes>
+  format: mp3 | wav | flac
+→ Response body: raw audio bytes in the requested format
+```
+
+**Implementation stub:** see `_make_stub_mp3()` in
+`maestro/services/musehub_render_pipeline.py`. Replace with an `httpx` async
+POST call when the endpoint ships.
+
+### Render Job Status
+
+Render status is tracked per-commit in `musehub_render_jobs`:
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Job created, pipeline not yet started |
+| `rendering` | Pipeline is actively generating artifacts |
+| `complete` | All MIDI files rendered; artifacts stored |
+| `failed` | Pipeline error; `error_message` contains details |
+
+Query: `GET /api/v1/musehub/repos/{repo_id}/commits/{sha}/render-status`

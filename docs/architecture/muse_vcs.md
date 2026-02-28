@@ -7640,3 +7640,114 @@ structure is derived by splitting object `path` fields on `/`.
 | Tests | `tests/test_musehub_ui.py` — `test_tree_*` (6 tests) |
 
 ---
+
+## MuseHub Render Pipeline — Auto-Generated Artifacts on Push
+
+### Overview
+
+Every successful push to MuseHub triggers a background render pipeline that
+automatically generates two artifact types for each MIDI file in the commit:
+
+1. **Piano-roll PNG** — a server-side pixel-art rendering of the MIDI timeline,
+   colour-coded by MIDI channel (bass = green, keys = blue, lead = orange, …).
+2. **MP3 stub** — a copy of the MIDI file until the Storpheus `POST /render`
+   endpoint ships; labelled `stubbed=True` in the render job record.
+
+Both artifact types are stored as `musehub_objects` rows linked to the repo,
+and their object IDs are recorded in the `musehub_render_jobs` row for the
+commit.
+
+### Render Job Lifecycle
+
+```
+push received → ingest_push() → DB commit → BackgroundTasks
+                                                   ↓
+                                    trigger_render_background()
+                                           ↓
+                              status: pending → rendering
+                                           ↓
+                               discover MIDI objects in push
+                                           ↓
+                             for each MIDI:
+                               - render_piano_roll() → PNG
+                               - _make_stub_mp3() → MIDI copy
+                               - store as musehub_objects rows
+                                           ↓
+                               status: complete | failed
+```
+
+**Idempotency:** if a render job already exists for `(repo_id, commit_id)`,
+the pipeline exits immediately without creating a duplicate.
+
+**Failure isolation:** render errors are caught, logged, and stored in
+`job.error_message`; they never propagate to the push response.
+
+### Render Status API
+
+```
+GET /api/v1/musehub/repos/{repo_id}/commits/{sha}/render-status
+```
+
+Returns a `RenderStatusResponse`:
+
+```json
+{
+  "commitId": "abc123...",
+  "status": "complete",
+  "midiCount": 2,
+  "mp3ObjectIds": ["sha256:...", "sha256:..."],
+  "imageObjectIds": ["sha256:...", "sha256:..."],
+  "errorMessage": null
+}
+```
+
+Status values: `pending` | `rendering` | `complete` | `failed` | `not_found`.
+
+`not_found` is returned (not 404) when no render job exists for the given
+commit — this lets callers distinguish "never pushed" from "not yet rendered"
+without branching on HTTP status codes.
+
+### Piano Roll Renderer
+
+**Module:** `maestro/services/musehub_piano_roll_renderer.py`
+
+Pure-Python MIDI-to-PNG renderer — zero external image library dependency.
+Uses `mido` (already a project dependency) to parse MIDI and stdlib `zlib`
++ `struct` to encode a minimal PNG.
+
+Image layout:
+- Width: up to 1920 px (proportional to MIDI duration).
+- Height: 256 px (128 MIDI pitches × 2 px per row).
+- Background: dark charcoal.
+- Octave boundaries: lighter horizontal rules at every C note.
+- Notes: coloured rectangles, colour-coded by MIDI channel.
+
+Graceful degradation: invalid or empty MIDI produces a blank canvas PNG
+with `stubbed=True` — callers always receive a valid file.
+
+**Note:** WebP output requires Pillow (not yet a project dependency). The
+renderer currently emits PNG with a `.png` extension. WebP conversion is
+a planned follow-up.
+
+### MP3 Rendering (Stub)
+
+Storpheus `POST /render` (MIDI-in → audio-out) is not yet deployed. Until
+it ships, the MIDI file is copied verbatim to `renders/<commit_short>_<stem>.mp3`.
+The render job records this as `mp3_object_ids` entries regardless. When the
+endpoint is available, replace `_make_stub_mp3` in
+`maestro/services/musehub_render_pipeline.py` with a real HTTP call.
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| DB model | `maestro/db/musehub_models.py` — `MusehubRenderJob` |
+| Piano roll | `maestro/services/musehub_piano_roll_renderer.py` |
+| Pipeline | `maestro/services/musehub_render_pipeline.py` |
+| Trigger | `maestro/api/routes/musehub/sync.py` — `push()` adds background task |
+| Status API | `maestro/api/routes/musehub/repos.py` — `get_commit_render_status()` |
+| Response model | `maestro/models/musehub.py` — `RenderStatusResponse` |
+| Migration | `alembic/versions/0001_consolidated_schema.py` — `musehub_render_jobs` |
+| Tests | `tests/test_musehub_render.py` — 17 tests |
+
+---
