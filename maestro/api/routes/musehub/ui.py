@@ -1382,7 +1382,6 @@ async def groove_check_page(
             "current_page": "groove-check",
         },
     )
-    return HTMLResponse(content=html)
 
 
 @router.get(
@@ -1779,12 +1778,42 @@ async def harmony_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
       load();
     """
     short_ref = ref[:8] if len(ref) >= 8 else ref
-    html = _page(
-        title=f"Harmony Analysis {short_ref}",
-        breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
-            f"analysis / {short_ref} / harmony"
-        ),
-        body_script=script,
-    )
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/musehub/static/tokens.css">
+  <link rel="stylesheet" href="/musehub/static/components.css">
+  <link rel="stylesheet" href="/musehub/static/layout.css">
+  <link rel="stylesheet" href="/musehub/static/icons.css">
+  <link rel="stylesheet" href="/musehub/static/music.css">
+  <title>Harmony Analysis {short_ref} — Muse Hub</title>
+</head>
+<body>
+  <header>
+    <span class="logo">&#127925; Muse Hub</span>
+    <span class="breadcrumb">
+      <a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> /
+      analysis / {short_ref} / harmony
+    </span>
+  </header>
+  <div class="container">
+    <div class="token-form" id="token-form" style="display:none">
+      <p id="token-msg">Enter your Maestro JWT to browse this repo.</p>
+      <input type="password" id="token-input" placeholder="eyJ..." />
+      <button class="btn btn-primary" onclick="saveToken()">Save &amp; Load</button>
+      &nbsp;
+      <button class="btn btn-secondary" onclick="clearToken();location.reload()">Clear</button>
+    </div>
+    <div id="content"><p class="loading">Loading&#8230;</p></div>
+  </div>
+  <script src="/musehub/static/musehub.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function() {{
+      {script}
+    }});
+  </script>
+</body>
+</html>"""
     return HTMLResponse(content=html)

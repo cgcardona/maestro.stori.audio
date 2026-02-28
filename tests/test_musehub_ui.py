@@ -2749,14 +2749,18 @@ async def test_harmony_page_has_token_form(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Harmony page must include the JWT token form so unauthenticated visitors can sign in."""
+    """Harmony page must include the JWT token form so unauthenticated visitors can sign in.
+
+    Auth state (localStorage / musehub_token) is managed by musehub.js; the
+    HTML shell must include the token-form element and the musehub.js script tag.
+    """
     repo_id = await _make_repo(db_session)
     ref = "2222222222222222cafe"
     response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
     assert response.status_code == 200
     body = response.text
-    assert "localStorage" in body
-    assert "musehub_token" in body
+    assert 'id="token-form"' in body
+    assert "musehub.js" in body
 
 
 @pytest.mark.anyio
