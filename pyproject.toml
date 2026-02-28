@@ -36,10 +36,10 @@ testpaths = ["tests"]
 cache_dir = "/tmp/pytest_cache"
 addopts = "-v --tb=short"
 filterwarnings = [
-    # Typer internally uses Click's is_flag/flag_value which it now considers
-    # deprecated in its own API. This is a library-level warning we cannot fix
-    # in user code; suppress until Typer resolves it upstream.
-    "ignore::DeprecationWarning:typer",
+    # typer uses click's is_flag/flag_value params internally; suppress the
+    # click deprecation warning that originates from typer's own params.py
+    # rather than from project code.  Track: https://github.com/tiangolo/typer/issues/783
+    "ignore:The 'is_flag' and 'flag_value' parameters are not supported by Typer:DeprecationWarning",
 ]
 
 [tool.coverage.run]
