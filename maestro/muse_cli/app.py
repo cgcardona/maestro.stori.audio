@@ -3,9 +3,9 @@
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (arrange, ask, checkout, chord-map, commit, commit-tree, context,
 contour, describe, diff, divergence, dynamics, export, find, form, grep,
-groove-check, humanize, import, init, key, log, merge, meter, open, play,
-pull, push, recall, remote, render-preview, session, similarity, status,
-swing, tag, tempo, tempo-scale) as Typer sub-applications.
+groove-check, humanize, import, init, inspect, key, log, merge, meter, open,
+play, pull, push, recall, remote, render-preview, session, similarity, status,
+swing, tag, tempo, tempo-scale, validate) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ from maestro.muse_cli.commands import (
     humanize,
     import_cmd,
     init,
+    inspect,
     key,
     log,
     merge,
@@ -50,6 +51,7 @@ from maestro.muse_cli.commands import (
     tag,
     tempo,
     tempo_scale,
+    validate,
 )
 
 cli = typer.Typer(
@@ -72,6 +74,7 @@ cli.add_typer(
 cli.add_typer(grep_cmd.app, name="grep", help="Search for a musical pattern across all commits.")
 cli.add_typer(log.app, name="log", help="Display the variation history graph.")
 cli.add_typer(find.app, name="find", help="Search commit history by musical properties.")
+cli.add_typer(inspect.app, name="inspect", help="Print structured JSON of the Muse commit graph.")
 cli.add_typer(checkout.app, name="checkout", help="Checkout a historical variation.")
 cli.add_typer(merge.app, name="merge", help="Three-way merge two variation branches.")
 cli.add_typer(remote.app, name="remote", help="Manage remote server connections.")
@@ -100,6 +103,7 @@ cli.add_typer(groove_check.app, name="groove-check", help="Analyze rhythmic drif
 cli.add_typer(form.app, name="form", help="Analyze or annotate the formal structure (sections) of a commit.")
 cli.add_typer(similarity.app, name="similarity", help="Compare two commits by musical similarity score.")
 cli.add_typer(tempo_scale.app, name="tempo-scale", help="Stretch or compress the timing of a commit.")
+cli.add_typer(validate.app, name="validate", help="Check musical integrity of the working tree.")
 
 
 if __name__ == "__main__":
