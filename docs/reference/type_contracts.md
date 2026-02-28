@@ -29,6 +29,7 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [GrooveStatus](#groovestatuss)
    - [CommitGrooveMetrics](#commitgroovemetrics)
    - [GrooveCheckResult](#groovecheckresult)
+   - [RenderPreviewResult](#renderpreviewresult)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
    - [PhraseRecord](#phraserecord)
@@ -1092,6 +1093,27 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | Property | Returns | Description |
 |----------|---------|-------------|
 | `effective_bpm` | `float \| None` | `tempo_bpm` if set; else `detected_bpm` |
+
+---
+
+### `RenderPreviewResult`
+
+**Path:** `maestro/services/muse_render_preview.py`
+
+`dataclass(frozen=True)` — Named result type for a `muse render-preview [<commit>]` operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `output_path` | `pathlib.Path` | Absolute path of the rendered (or stub) audio file |
+| `format` | `PreviewFormat` | Audio format enum: `wav` / `mp3` / `flac` |
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID whose snapshot was rendered |
+| `midi_files_used` | `int` | Number of MIDI files from the snapshot passed to the renderer |
+| `skipped_count` | `int` | Manifest entries skipped (non-MIDI, filtered out, or missing on disk) |
+| `stubbed` | `bool` | `True` when Storpheus `/render` is not yet deployed and a MIDI file was copied in its place |
+
+**Companion enum:**
+
+`PreviewFormat(str, Enum)` — `WAV = "wav"`, `MP3 = "mp3"`, `FLAC = "flac"`.
 
 ---
 
