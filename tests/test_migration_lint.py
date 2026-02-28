@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 
-from lint_migration import lint_migration  # type: ignore[import-not-found]  # noqa: E402
+from lint_migration import lint_migration  # noqa: E402
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
