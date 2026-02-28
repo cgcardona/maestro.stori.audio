@@ -2239,6 +2239,48 @@ muse context [<commit>] [OPTIONS]
 
 ---
 
+## `muse divergence` — Musical Divergence Between Two Branches
+
+**Purpose:** Show how two branches have diverged *musically* — useful when two
+producers are working on different arrangements of the same project and you need
+to understand the creative distance before deciding which to merge.
+
+**Implementation:** `maestro/muse_cli/commands/divergence.py`\
+**Service:** `maestro/services/muse_divergence.py`\
+**Status:** ✅ implemented (issue #119)
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `BRANCH_A` | positional | required | First branch name |
+| `BRANCH_B` | positional | required | Second branch name |
+| `--since COMMIT` | string | auto | Common ancestor commit ID (auto-detected via merge-base BFS if omitted) |
+| `--dimensions TEXT` | string (repeatable) | all five | Musical dimension(s) to analyse |
+| `--json` | flag | off | Machine-readable JSON output |
+
+### What It Computes
+
+1. **Finds the merge base** — BFS over `MuseCliCommit.parent_commit_id` / `parent2_commit_id`, equivalent to `git merge-base`.
+2. **Collects changed paths** — diff from merge-base snapshot to branch-tip (added + deleted + modified paths).
+3. **Classifies paths by dimension** — keyword matching on lowercase filename.
+4. **Scores each dimension** — `score = |sym_diff(A, B)| / |union(A, B)|`.  0.0 = identical; 1.0 = completely diverged.
+5. **Classifies level** — `NONE` (<0.15), `LOW` (0.15–0.40), `MED` (0.40–0.70), `HIGH` (≥0.70).
+6. **Computes overall score** — mean of per-dimension scores.
+
+### Result types
+
+`DivergenceLevel` (Enum), `DimensionDivergence` (frozen dataclass), `MuseDivergenceResult` (frozen dataclass).
+See `docs/reference/type_contracts.md § Muse Divergence Types`.
+
+### Agent use case
+
+An AI deciding which branch to merge calls `muse divergence feature/guitar feature/piano --json`
+before generation.  HIGH harmonic divergence + LOW rhythmic divergence means lean on the piano
+branch for chord voicings while preserving the guitar branch's groove patterns.
+
+---
+
 ## Command Registration Summary
 
 | Command | File | Status | Issue |
@@ -2246,6 +2288,7 @@ muse context [<commit>] [OPTIONS]
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
 | `muse context` | `commands/context.py` | ✅ implemented (PR #138) | #113 |
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
+| `muse divergence` | `commands/divergence.py` | ✅ implemented (PR #140) | #119 |
 | `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
 | `muse export` | `commands/export.py` | ✅ implemented (PR #137) | #112 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
