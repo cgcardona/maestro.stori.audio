@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.db import musehub_models as db
-from maestro.models.musehub import PRResponse
+from maestro.models.musehub import PRCommentListResponse, PRCommentResponse, PRResponse
 
 logger = logging.getLogger(__name__)
 
@@ -218,3 +218,116 @@ async def merge_pr(
         merge_commit_id,
     )
     return _to_pr_response(pr)
+
+
+# ---------------------------------------------------------------------------
+# PR review comments
+# ---------------------------------------------------------------------------
+
+
+def _to_comment_response(row: db.MusehubPRComment) -> PRCommentResponse:
+    return PRCommentResponse(
+        comment_id=row.comment_id,
+        pr_id=row.pr_id,
+        author=row.author,
+        body=row.body,
+        target_type=row.target_type,
+        target_track=row.target_track,
+        target_beat_start=row.target_beat_start,
+        target_beat_end=row.target_beat_end,
+        target_note_pitch=row.target_note_pitch,
+        parent_comment_id=row.parent_comment_id,
+        created_at=row.created_at,
+    )
+
+
+async def create_pr_comment(
+    session: AsyncSession,
+    *,
+    pr_id: str,
+    repo_id: str,
+    author: str,
+    body: str,
+    target_type: str = "general",
+    target_track: str | None = None,
+    target_beat_start: float | None = None,
+    target_beat_end: float | None = None,
+    target_note_pitch: int | None = None,
+    parent_comment_id: str | None = None,
+) -> PRCommentResponse:
+    """Persist a new review comment on a PR and return its wire representation.
+
+    ``author`` is the JWT ``sub`` claim of the reviewer.
+    ``parent_comment_id`` must be an existing top-level comment on the same PR
+    when creating a threaded reply; the caller validates this constraint before
+    calling here.
+
+    Raises ``ValueError`` if the PR does not exist in the given repo.
+    """
+    stmt = select(db.MusehubPullRequest).where(
+        db.MusehubPullRequest.pr_id == pr_id,
+        db.MusehubPullRequest.repo_id == repo_id,
+    )
+    pr = (await session.execute(stmt)).scalar_one_or_none()
+    if pr is None:
+        raise ValueError(f"Pull request {pr_id} not found in repo {repo_id}")
+
+    comment = db.MusehubPRComment(
+        pr_id=pr_id,
+        repo_id=repo_id,
+        author=author,
+        body=body,
+        target_type=target_type,
+        target_track=target_track,
+        target_beat_start=target_beat_start,
+        target_beat_end=target_beat_end,
+        target_note_pitch=target_note_pitch,
+        parent_comment_id=parent_comment_id,
+    )
+    session.add(comment)
+    await session.flush()
+    await session.refresh(comment)
+    logger.info("✅ Created PR comment %s on PR %s by %s", comment.comment_id, pr_id, author)
+    return _to_comment_response(comment)
+
+
+async def list_pr_comments(
+    session: AsyncSession,
+    pr_id: str,
+    repo_id: str,
+) -> PRCommentListResponse:
+    """Return all review comments for a PR, assembled into a two-level thread tree.
+
+    Top-level comments (``parent_comment_id`` is None) form the root list.
+    Each carries a ``replies`` list with direct children sorted by
+    ``created_at`` ascending.  Grandchildren are not supported — the caller
+    should reply to the original top-level comment.
+
+    Returns ``PRCommentListResponse`` with ``total`` covering all levels.
+    """
+    stmt = (
+        select(db.MusehubPRComment)
+        .where(
+            db.MusehubPRComment.pr_id == pr_id,
+            db.MusehubPRComment.repo_id == repo_id,
+        )
+        .order_by(db.MusehubPRComment.created_at)
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+
+    # Build id → response map first; attach replies in a second pass.
+    top_level: list[PRCommentResponse] = []
+    by_id: dict[str, PRCommentResponse] = {}
+    for row in rows:
+        resp = _to_comment_response(row)
+        by_id[row.comment_id] = resp
+        if row.parent_comment_id is None:
+            top_level.append(resp)
+
+    for row in rows:
+        if row.parent_comment_id is not None:
+            parent = by_id.get(row.parent_comment_id)
+            if parent is not None:
+                parent.replies.append(by_id[row.comment_id])
+
+    return PRCommentListResponse(comments=top_level, total=len(rows))
