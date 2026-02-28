@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import logging
 import pathlib
-from typing import Optional
 
 import typer
 
@@ -176,7 +175,7 @@ def symbolic_ref(
         metavar="<name>",
         help="Symbolic ref name, e.g. HEAD or refs/heads/main.",
     ),
-    new_target: Optional[str] = typer.Argument(
+    new_target: str | None = typer.Argument(
         None,
         metavar="<ref>",
         help=(
