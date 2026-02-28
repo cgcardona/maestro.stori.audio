@@ -3,7 +3,7 @@
 Provides:
 - ``open_session()`` — async context manager that opens and commits a
   standalone AsyncSession (for use in the CLI, outside FastAPI DI).
-- CRUD helpers called by ``commands/commit.py``.
+- CRUD helpers called by ``commands/commit.py`` and ``commands/meter.py``.
 
 The session factory created by ``open_session()`` reads DATABASE_URL
 from ``maestro.config.settings`` — the same env var used by the main
@@ -127,6 +127,82 @@ async def get_commit_snapshot_manifest(
     return dict(snapshot.manifest)
 
 
+async def resolve_commit_ref(
+    session: AsyncSession,
+    repo_id: str,
+    branch: str,
+    ref: str | None,
+) -> MuseCliCommit | None:
+    """Resolve a commit reference to a ``MuseCliCommit`` row.
+
+    *ref* may be:
+
+    - ``None`` / ``"HEAD"`` — returns the most recent commit on *branch*.
+    - A full or abbreviated commit SHA — looks up by exact or prefix match.
+
+    Returns ``None`` when no matching commit is found.
+    """
+    if ref is None or ref.upper() == "HEAD":
+        result = await session.execute(
+            select(MuseCliCommit)
+            .where(MuseCliCommit.repo_id == repo_id, MuseCliCommit.branch == branch)
+            .order_by(MuseCliCommit.committed_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    # Try exact match first
+    commit = await session.get(MuseCliCommit, ref)
+    if commit is not None:
+        return commit
+
+    # Abbreviated SHA prefix match (scan required — acceptable for CLI use)
+    result = await session.execute(
+        select(MuseCliCommit).where(
+            MuseCliCommit.repo_id == repo_id,
+            MuseCliCommit.commit_id.startswith(ref),
+        )
+    )
+    return result.scalars().first()
+
+
+async def set_commit_tempo_bpm(
+    session: AsyncSession,
+    commit_id: str,
+    bpm: float,
+) -> MuseCliCommit | None:
+    """Annotate *commit_id* with an explicit BPM in its ``metadata`` JSON blob.
+
+    Merges into the existing metadata dict so other annotations are preserved.
+    Returns the updated ``MuseCliCommit`` row, or ``None`` when not found.
+    """
+    commit = await session.get(MuseCliCommit, commit_id)
+    if commit is None:
+        return None
+    existing: dict[str, object] = dict(commit.commit_metadata or {})
+    existing["tempo_bpm"] = bpm
+    commit.commit_metadata = existing
+    session.add(commit)
+    logger.debug("✅ Set tempo %.2f BPM on commit %s", bpm, commit_id[:8])
+    return commit
+
+
+async def find_commits_by_prefix(
+    session: AsyncSession,
+    prefix: str,
+) -> list[MuseCliCommit]:
+    """Return all commits whose ``commit_id`` starts with *prefix*.
+
+    Used by commands that accept a short commit ID (e.g. ``muse export``,
+    ``muse open``, ``muse play``) to resolve a user-supplied prefix to a
+    full commit record before DB lookups.
+    """
+    result = await session.execute(
+        select(MuseCliCommit).where(MuseCliCommit.commit_id.startswith(prefix))
+    )
+    return list(result.scalars().all())
+
+
 async def get_head_snapshot_manifest(
     session: AsyncSession, repo_id: str, branch: str
 ) -> dict[str, str] | None:
@@ -145,3 +221,45 @@ async def get_head_snapshot_manifest(
         logger.warning("⚠️ Snapshot %s referenced by HEAD not found in DB", snapshot_id[:8])
         return None
     return dict(snapshot.manifest)
+
+
+async def get_commit_extra_metadata(
+    session: AsyncSession, commit_id: str
+) -> dict[str, object] | None:
+    """Return the ``commit_metadata`` JSON blob for *commit_id*, or None.
+
+    Returns ``None`` when the commit does not exist or when no metadata has
+    been stored yet (the column is nullable).
+    """
+    commit = await session.get(MuseCliCommit, commit_id)
+    if commit is None:
+        return None
+    return dict(commit.commit_metadata) if commit.commit_metadata else None
+
+
+async def set_commit_extra_metadata_key(
+    session: AsyncSession,
+    commit_id: str,
+    key: str,
+    value: object,
+) -> bool:
+    """Set a single key in the ``commit_metadata`` blob for *commit_id*.
+
+    Merges *key* into the existing metadata dict (creating it if absent).
+    Returns ``True`` on success, ``False`` when *commit_id* is not found.
+
+    The session must be committed by the caller (``open_session()`` commits
+    on clean exit).
+    """
+    commit = await session.get(MuseCliCommit, commit_id)
+    if commit is None:
+        logger.warning("⚠️ Commit %s not found — cannot set metadata", commit_id[:8])
+        return False
+    existing: dict[str, object] = dict(commit.commit_metadata) if commit.commit_metadata else {}
+    existing[key] = value
+    commit.commit_metadata = existing
+    # Mark the column as modified so SQLAlchemy flushes the JSON change.
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(commit, "commit_metadata")
+    logger.debug("✅ Set %s=%r on commit %s", key, value, commit_id[:8])
+    return True
