@@ -96,18 +96,14 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define issues (confirmed independent — zero file overlap) ---
-# Batch: #88–#95 (new muse CLI commands)
+# Batch: #66–#69 (Muse core history commands)
 # Known shared file: maestro/muse_cli/app.py (each agent adds one app.add_typer line)
 # Resolution: pre-push sync in STEP 4 handles app.py conflicts — keep both sides.
 declare -a ISSUES=(
-  "95|feat: muse groove-check — analyze rhythmic drift across commits"
-  "94|feat: muse commit-tree <snapshot-id> — create a raw commit object"
-  "93|feat: muse symbolic-ref <name> [<ref>] — read or write a symbolic ref"
-  "92|feat: muse rev-parse <revision> — resolve a revision expression to a commit ID"
-  "91|feat: muse update-ref <ref> <new-value> — update a ref (branch or tag pointer)"
-  "90|feat: muse read-tree <snapshot-id> — read a snapshot into the muse-work/ directory"
-  "89|feat: muse write-tree — write the current muse-work/ state as a snapshot (tree) object"
-  "88|feat: muse cat-object <object-id> — read and display a stored object"
+  "69|feat: muse reset <commit> — reset branch pointer to a prior commit"
+  "68|feat: muse revert <commit> — create a new commit that undoes a prior commit"
+  "67|feat: muse amend — amend the most recent commit"
+  "66|feat: muse show <commit> — music-aware commit inspection"
 )
 
 # --- create worktrees + task files ---
@@ -254,6 +250,9 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
     - No naked collections at boundaries: dict[str, Any], list[dict], bare tuples = code smell.
       Wrap in a named entity. Convention: <Domain><Concept>Result (DynamicsResult, SwingAnalysis).
     - No # type: ignore without an inline comment citing the specific 3rd-party issue.
+    - No non-ASCII characters inside b"..." bytes literals — mypy rejects them with
+      "Bytes can only contain ASCII literal characters". Use only plain ASCII in byte
+      strings; encode Unicode values explicitly (e.g. "MIDI v2 \u2014 newer".encode()).
     - Two failed fix attempts = stop and redesign — never loop with incremental tweaks.
     - Every public function signature is a contract. Register new result types in docs/reference/type_contracts.md.
 
@@ -285,6 +284,15 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
 STEP 4 — PRE-PUSH SYNC (critical — always run before pushing):
   ⚠️  Other agents may have merged PRs while you were implementing. Sync with dev
   NOW to catch conflicts locally rather than at merge time.
+
+  ⚠️  COMMIT GUARD — run this first, every time, no exceptions:
+  Git will abort the merge if any locally modified file is also changed on origin/dev.
+  The three most commonly shared files (app.py, muse_vcs.md, type_contracts.md) are
+  almost always modified by parallel agents. An uncommitted working tree WILL abort.
+
+  # Commit everything that is staged or unstaged before touching the remote:
+  git add -A
+  git diff --cached --quiet || git commit -m "chore: commit remaining changes before dev sync"
 
   git fetch origin
   git merge origin/dev
