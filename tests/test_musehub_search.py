@@ -834,7 +834,6 @@ async def test_global_search_audio_preview_populated_for_multiple_repos(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict[str, str],
-    tmp_path: pytest.TempPathFactory,
 ) -> None:
     """Audio preview object IDs are resolved via a single batched query for all repos.
 
