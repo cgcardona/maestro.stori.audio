@@ -1694,6 +1694,33 @@ forked, newest first.
 | `forks` | `list[UserForkedRepoEntry]` | Repos forked by this user |
 | `total` | `int` | Total number of forked repos |
 
+#### `UserStarredRepoEntry`
+
+**Path:** `maestro/models/musehub.py`
+**Endpoint:** `GET /api/v1/musehub/users/{username}/starred`
+
+A single starred-repo entry shown on a user's profile Starred tab. Combines
+the starred repo's full metadata with the star timestamp.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `star_id` | `str` | Internal UUID of the star relationship record |
+| `repo` | `RepoResponse` | Full metadata of the starred repo |
+| `starred_at` | `datetime` | ISO-8601 UTC timestamp when the user starred the repo |
+
+#### `UserStarredResponse`
+
+**Path:** `maestro/models/musehub.py`
+**Endpoint:** `GET /api/v1/musehub/users/{username}/starred`
+
+Returned by the public starred endpoint. Lists all repos that a given user has
+starred, newest first.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `starred` | `list[UserStarredRepoEntry]` | Repos starred by this user |
+| `total` | `int` | Total number of starred repos |
+
 #### `FollowResponse`
 
 **Path:** `maestro/api/routes/musehub/social.py`
