@@ -710,6 +710,84 @@ The boundary philosophy: Muse VCS modules are **pure data** — they consume sna
 
 ---
 
+## `muse session` — Recording Session Metadata
+
+**Purpose:** Track who was in the room, where you recorded, and why — purely as local JSON files. Sessions are decoupled from VCS commits: they capture the human context around a recording block and can later reference commit IDs that were created during that time.
+
+Sessions live in `.muse/sessions/` as plain JSON files — no database tables, no Alembic migrations. This mirrors git's philosophy of storing metadata as plain files rather than in a relational store.
+
+### Subcommands
+
+| Subcommand | Flags | Purpose |
+|------------|-------|---------|
+| `muse session start` | `--participants`, `--location`, `--intent` | Open a new session; writes `current.json`. Only one active session at a time. |
+| `muse session end` | `--notes` | Finalise active session; moves `current.json` → `<uuid>.json`. |
+| `muse session log` | _(none)_ | List all completed sessions, newest first. |
+| `muse session show <id>` | _(prefix match supported)_ | Print full JSON for a specific completed session. |
+| `muse session credits` | _(none)_ | Aggregate participants across all completed sessions, sorted by count descending. |
+
+### Storage Layout
+
+```
+.muse/
+    sessions/
+        current.json           ← active session (exists only while recording)
+        <session-uuid>.json    ← one file per completed session
+```
+
+### Session JSON Schema (`MuseSessionRecord`)
+
+```json
+{
+    "session_id":      "<uuid4>",
+    "schema_version":  "1",
+    "started_at":      "2026-02-27T15:49:19+00:00",
+    "ended_at":        "2026-02-27T17:30:00+00:00",
+    "participants":    ["Alice", "Bob"],
+    "location":        "Studio A",
+    "intent":          "Record the bridge",
+    "commits":         ["abc123", "def456"],
+    "notes":           "Nailed the third take."
+}
+```
+
+The `commits` list is populated externally (e.g., by `muse commit` in a future integration); it starts empty.
+
+### Output Examples
+
+**`muse session log`**
+
+```
+3f2a1b0c  2026-02-27T15:49:19  →  2026-02-27T17:30:00  [Alice, Bob]
+a1b2c3d4  2026-02-26T10:00:00  →  2026-02-26T12:00:00  []
+```
+
+**`muse session credits`**
+
+```
+Session credits:
+  Alice                           2 sessions
+  Bob                             1 session
+  Carol                           1 session
+```
+
+### Result Type
+
+`MuseSessionRecord` — TypedDict defined in `maestro/muse_cli/commands/session.py`. See `docs/reference/type_contracts.md` for the full field table.
+
+### Atomicity
+
+`muse session end` writes a temp file (`.tmp-<uuid>.json`) in the same directory, then renames it to `<uuid>.json` before unlinking `current.json`. This guarantees that a crash between write and cleanup never leaves both `current.json` and `<uuid>.json` present simultaneously, which would block future `muse session start` calls.
+
+### Agent Use Case
+
+An AI composition agent can:
+- Call `muse session start --participants "Claude,Gabriel" --intent "Groove track"` before a generation run.
+- Call `muse session end --notes "Generated 4 variations"` after the run completes.
+- Query `muse session credits` to see which participants have contributed most across the project's history.
+
+---
+
 ## E2E Demo
 
 Run the full VCS lifecycle test:
