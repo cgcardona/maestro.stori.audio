@@ -36,7 +36,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +48,7 @@ from maestro.db.musehub_models import (
     MusehubFollow,
     MusehubFork,
     MusehubNotification,
+    MusehubProfile,
     MusehubReaction,
     MusehubStar,
     MusehubViewEvent,
@@ -410,9 +411,6 @@ async def get_followers(
     claims: TokenClaims | None = Depends(optional_token),
 ) -> FollowResponse:
     """Return follower count, following count, and whether the calling user follows this user."""
-    from sqlalchemy import or_
-    from maestro.db.musehub_models import MusehubProfile
-
     # Resolve user_id so we can match both username-keyed and user_id-keyed rows.
     profile_row = (await db.execute(
         select(MusehubProfile).where(MusehubProfile.username == username)
