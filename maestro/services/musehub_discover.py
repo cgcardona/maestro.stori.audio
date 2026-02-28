@@ -143,6 +143,8 @@ async def list_public_repos(
         ExploreRepoResult(
             repo_id=row.MusehubRepo.repo_id,
             name=row.MusehubRepo.name,
+            owner=row.MusehubRepo.owner,
+            slug=row.MusehubRepo.slug,
             owner_user_id=row.MusehubRepo.owner_user_id,
             description=row.MusehubRepo.description,
             tags=list(row.MusehubRepo.tags or []),

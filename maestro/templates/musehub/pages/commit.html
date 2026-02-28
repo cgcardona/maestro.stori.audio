@@ -1,0 +1,494 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}{{ commit_id[:8] }} · {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  <a href="{{ base_url }}">commits</a> /
+  {{ commit_id[:8] }}
+{% endblock %}
+
+{% block repo_nav %}
+{% include "musehub/partials/repo_nav.html" %}
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const commitId = {{ commit_id | tojson }};
+const base     = {{ base_url | tojson }};
+const apiBase  = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+const AUDIO_EXTS = new Set(['mp3','ogg','wav','flac','m4a']);
+const IMAGE_EXTS = new Set(['webp','png','jpg','jpeg','gif']);
+const MIDI_EXTS  = new Set(['mid','midi']);
+const SCORE_EXTS = new Set(['abc','musicxml','xml','mxl']);
+
+function artifactHtml(obj, repoName) {
+  const ext = obj.path.split('.').pop().toLowerCase();
+  const url = apiBase + '/objects/' + obj.objectId + '/content';
+  const name = obj.path.split('/').pop();
+
+  if (IMAGE_EXTS.has(ext)) {
+    return `<div class="artifact-card">
+      <img src="${url}" alt="${escHtml(obj.path)}" loading="lazy"
+           onerror="this.src='';this.alt='Preview unavailable'" />
+      <span class="path">${escHtml(name)}</span>
+    </div>`;
+  }
+
+  if (AUDIO_EXTS.has(ext)) {
+    return `<div class="artifact-card">
+      <button class="btn btn-primary btn-sm" style="width:100%;justify-content:center"
+              onclick="queueAudio('${url}', '${escHtml(name)}', '${escHtml(repoName)}')">
+        &#9654; Play
+      </button>
+      <a class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
+         href="${url}" download="${escHtml(name)}">
+        &#11015; Download
+      </a>
+      <span class="path icon-mp3">${escHtml(name)}</span>
+    </div>`;
+  }
+
+  if (MIDI_EXTS.has(ext)) {
+    return `<div class="artifact-card">
+      <div class="midi-preview" id="midi-${escHtml(obj.objectId)}" data-url="${url}">
+        <div class="midi-roll-placeholder">&#127929; MIDI — ${escHtml(name)}</div>
+      </div>
+      <a class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
+         href="${url}" download="${escHtml(name)}">
+        &#11015; Download MIDI
+      </a>
+      <span class="path icon-mid">${escHtml(name)}</span>
+    </div>`;
+  }
+
+  if (SCORE_EXTS.has(ext)) {
+    return `<div class="artifact-card">
+      <div class="score-preview" id="score-${escHtml(obj.objectId)}" data-url="${url}" data-ext="${ext}">
+        <p class="text-muted text-sm" style="padding:var(--space-2)">&#127926; ${escHtml(ext.toUpperCase())} Score — loading…</p>
+      </div>
+      <a class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
+         href="${url}" download="${escHtml(name)}">
+        &#11015; Download Score
+      </a>
+      <span class="path">${escHtml(name)}</span>
+    </div>`;
+  }
+
+  return `<div class="artifact-card">
+    <a class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
+       href="${url}" download="${escHtml(name)}">
+      &#11015; Download
+    </a>
+    <span class="path">${escHtml(name)}</span>
+  </div>`;
+}
+
+function parseInstruments(message) {
+  // Extract track/instrument mentions: feat(bass): ..., track:keys, etc.
+  const tracks = [];
+  const trackRe = /\b(bass|keys|drums?|strings?|horn|trumpet|sax(?:ophone)?|guitar|piano|synth|pad|lead|percussion|vox|vocals?)\b/gi;
+  let m;
+  while ((m = trackRe.exec(message)) !== null) {
+    const t = m[1].toLowerCase();
+    if (!tracks.includes(t)) tracks.push(t);
+  }
+  return tracks;
+}
+
+async function load() {
+  initRepoNav(repoId);
+  try {
+    // Fetch commit list and objects in parallel; get single commit by ID
+    const [commitsData, objectsData] = await Promise.all([
+      apiFetch('/repos/' + repoId + '/commits?limit=200'),
+      apiFetch('/repos/' + repoId + '/objects'),
+    ]);
+
+    const commit = (commitsData.commits || []).find(c => c.commitId === commitId);
+    const objects = objectsData.objects || [];
+    const repoName = repoId;
+
+    if (!commit) {
+      document.getElementById('content').innerHTML =
+        '<div class="card"><p class="error">Commit ' + escHtml(commitId) + ' not found in recent history.</p></div>';
+      return;
+    }
+
+    const parsed  = parseCommitMessage(commit.message);
+    const meta    = parseCommitMeta(commit.message);
+    const instruments = parseInstruments(commit.message);
+
+    // Commit type + scope badges
+    const typeBadge  = commitTypeBadge(parsed.type);
+    const scopeBadge = commitScopeBadge(parsed.scope);
+
+    // Parent links
+    const parentLinks = (commit.parentIds || []).length > 0
+      ? commit.parentIds.map(p =>
+          `<a href="${base}/commits/${p}" class="text-mono text-sm" title="View parent commit">${p.substring(0,8)}</a>`
+        ).join(' ')
+      : '<span class="text-muted text-sm">none (root commit)</span>';
+
+    // Instrument tags
+    const instTags = instruments.length > 0
+      ? instruments.map(i => `<span class="nav-meta-tag">&#127929; ${escHtml(i)}</span>`).join('')
+      : '';
+
+    // Artifact grid
+    const audioFiles = objects.filter(o => AUDIO_EXTS.has(o.path.split('.').pop().toLowerCase()));
+    const artifactSection = objects.length === 0
+      ? `<div class="empty-state" style="padding:var(--space-6)">
+           <div class="empty-icon">&#128190;</div>
+           <p class="empty-title">No artifacts</p>
+           <p class="empty-desc">Push audio files and MIDI via <code>muse push</code> to see them here.</p>
+         </div>`
+      : '<div class="artifact-grid">' + objects.map(o => artifactHtml(o, repoName)).join('') + '</div>';
+
+    document.getElementById('content').innerHTML = `
+      <div class="commit-liner-notes">
+
+        <!-- Commit identity row -->
+        <div class="commit-header-row">
+          <div class="commit-header-left">
+            ${typeBadge}${scopeBadge}
+            ${instTags}
+          </div>
+          <div class="commit-header-right">
+            <a href="${base}/commits/${commitId}/diff" class="btn btn-secondary btn-sm">
+              ⊕ Musical Diff
+            </a>
+            <a href="${base}/context/${commitId}" class="btn btn-secondary btn-sm">
+              &#129504; AI Context
+            </a>
+            <button class="btn btn-primary btn-sm" onclick="openCompose()">
+              &#127925; Compose Variation
+            </button>
+          </div>
+        </div>
+
+        <!-- Commit message as liner notes headline -->
+        <div class="card commit-message-card">
+          <h1 class="commit-subject">${escHtml(parsed.subject || commit.message)}</h1>
+          ${parsed.type || parsed.scope ? `
+          <div style="margin-top:var(--space-2);font-size:var(--font-size-sm);color:var(--text-muted)">
+            ${parsed.type ? `<strong>${escHtml(parsed.type)}</strong>` : ''}
+            ${parsed.scope ? ` in <strong>${escHtml(parsed.scope)}</strong>` : ''}
+          </div>` : ''}
+        </div>
+
+        <!-- Commit metadata grid -->
+        <div class="card">
+          <div class="meta-row" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
+            <div class="meta-item">
+              <span class="meta-label">Author</span>
+              <span class="meta-value">
+                <a href="/musehub/ui/users/${escHtml(commit.author)}" class="text-sm">${escHtml(commit.author)}</a>
+              </span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Date</span>
+              <span class="meta-value text-sm">${fmtDate(commit.timestamp)}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Branch</span>
+              <span class="meta-value text-mono text-sm">${escHtml(commit.branch || '—')}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">SHA</span>
+              <span class="meta-value text-mono text-sm" title="${escHtml(commitId)}">${shortSha(commitId)}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Parents</span>
+              <span class="meta-value">${parentLinks}</span>
+            </div>
+            ${meta.section ? `<div class="meta-item"><span class="meta-label">Section</span><span class="meta-value badge badge-dim-structural">${escHtml(meta.section)}</span></div>` : ''}
+            ${meta.key ? `<div class="meta-item"><span class="meta-label">Key</span><span class="meta-value text-sm">&#9837; ${escHtml(meta.key)}</span></div>` : ''}
+            ${meta.tempo || meta.bpm ? `<div class="meta-item"><span class="meta-label">BPM</span><span class="meta-value text-sm">&#9201; ${escHtml(meta.tempo || meta.bpm)}</span></div>` : ''}
+          </div>
+        </div>
+
+        <!-- Stem Browser (audio files grouped by instrument) -->
+        ${audioFiles.length > 1 ? `
+        <div class="card">
+          <h2 style="margin-bottom:var(--space-3)">&#127909; Stem Browser</h2>
+          <p class="text-sm text-muted" style="margin-bottom:var(--space-3)">
+            Solo or mute individual instrument stems. Click ▶ to preview.
+          </p>
+          <div class="stem-browser" id="stem-browser">
+            ${audioFiles.map((obj, i) => {
+              const name = obj.path.split('/').pop().replace(/\.[^.]+$/, '');
+              const url  = '/api/v1/musehub/repos/' + repoId + '/objects/' + obj.objectId + '/content';
+              return `
+                <div class="stem-row" id="stem-row-${i}">
+                  <button class="player-btn" onclick="queueAudio('${url}','${escHtml(name)}','')" title="Play stem">▶</button>
+                  <span class="stem-label">${escHtml(name)}</span>
+                  <div class="waveform-bar" style="flex:1;height:32px;cursor:pointer" onclick="queueAudio('${url}','${escHtml(name)}','')">
+                    ${Array.from({length: 48}, (_, j) => {
+                      const seed = (name.charCodeAt(j % name.length) + j) * 1103515245;
+                      const h = 20 + (Math.abs(seed) % 70);
+                      return '<div class="wave-col" style="height:' + h + '%"></div>';
+                    }).join('')}
+                  </div>
+                </div>`;
+            }).join('')}
+          </div>
+        </div>` : ''}
+
+        <!-- Artifacts / Play -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+            <h2 style="margin:0">Artifacts (${objects.length})</h2>
+            ${audioFiles.length > 0 ? `
+            <button class="btn btn-primary btn-sm"
+                    onclick="queueAudio('${'/api/v1/musehub/repos/' + repoId + '/objects/' + audioFiles[0].objectId + '/content'}',
+                    '${escHtml(audioFiles[0].path.split('/').pop())}', '${escHtml(repoId)}')">
+              &#9654; Play Latest
+            </button>` : ''}
+          </div>
+          ${artifactSection}
+        </div>
+
+        <!-- AI summary panel (populated by loadAiSummary) -->
+        <div class="card" id="ai-summary-panel" style="display:none;border-color:var(--color-accent)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+            <h2 style="margin:0">&#129504; What changed musically?</h2>
+            <button class="btn btn-secondary btn-sm" onclick="openCompose()">
+              &#127925; Compose Variation
+            </button>
+          </div>
+          <div id="ai-summary-body"><p class="loading text-sm">Analyzing…</p></div>
+        </div>
+
+        <!-- Navigation -->
+        <div style="display:flex;gap:var(--space-3);margin-top:var(--space-2)">
+          ${commit.parentIds && commit.parentIds.length > 0
+            ? `<a href="${base}/commits/${commit.parentIds[0]}" class="btn btn-secondary btn-sm">&larr; Parent</a>`
+            : ''}
+          <a href="${base}" class="btn btn-ghost btn-sm">&larr; Back to commits</a>
+        </div>
+      </div>`;
+
+    // Load ABC score previews if abcjs is available
+    renderScorePreviews();
+
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function renderScorePreviews() {
+  document.querySelectorAll('.score-preview[data-ext="abc"]').forEach(async el => {
+    try {
+      const url = el.dataset.url;
+      const text = await fetch(url, { headers: authHeaders() }).then(r => r.text());
+      if (window.ABCJS) {
+        el.innerHTML = '';
+        window.ABCJS.renderAbc(el, text, { responsive: 'resize', staffwidth: el.offsetWidth || 400 });
+      } else {
+        el.innerHTML = '<pre style="font-size:11px;overflow-x:auto">' + escHtml(text.substring(0, 400)) + '</pre>';
+      }
+    } catch(e) { /* non-fatal */ }
+  });
+}
+
+// ── AI commit summary ────────────────────────────────────────────────────
+async function loadAiSummary() {
+  const panel = document.getElementById('ai-summary-panel');
+  const body  = document.getElementById('ai-summary-body');
+  if (!panel || !body) return;
+  try {
+    const ctx = await apiFetch('/repos/' + repoId + '/context/' + commitId);
+    const missing  = (ctx.missingElements || []);
+    const suggests = ctx.suggestions || {};
+    const suggKeys = Object.keys(suggests);
+    let html = '';
+    if (missing.length > 0) {
+      html += '<p class="text-sm text-muted" style="margin-bottom:var(--space-2)">Missing elements:</p>';
+      html += '<ul style="padding-left:var(--space-4);font-size:var(--font-size-sm);color:var(--color-warning)">';
+      html += missing.map(m => '<li>' + escHtml(m) + '</li>').join('');
+      html += '</ul>';
+    }
+    if (suggKeys.length > 0) {
+      html += '<p class="text-sm text-muted" style="margin-top:var(--space-3);margin-bottom:var(--space-2)">Suggestions:</p>';
+      html += suggKeys.map(k =>
+        '<div style="margin-bottom:var(--space-2);font-size:var(--font-size-sm)">'
+        + '<strong>' + escHtml(k) + '</strong>: ' + escHtml(suggests[k])
+        + '</div>'
+      ).join('');
+    }
+    if (!html) html = '<p class="text-sm text-muted">All musical dimensions look complete.</p>';
+    body.innerHTML = html;
+    panel.style.display = '';
+  } catch(e) { /* non-critical: AI summary fails silently */ }
+}
+
+// ── Compose Variation modal ──────────────────────────────────────────────
+function openCompose() {
+  const modal = document.getElementById('compose-modal');
+  if (modal) {
+    modal.style.display = 'flex';
+    document.getElementById('compose-output').style.display = 'none';
+    document.getElementById('compose-stream').textContent = '';
+  }
+}
+
+function closeCompose() {
+  const modal = document.getElementById('compose-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function sendCompose() {
+  const prompt = document.getElementById('compose-prompt').value.trim();
+  if (!prompt) return;
+  const btn    = document.getElementById('compose-send-btn');
+  const output = document.getElementById('compose-output');
+  const stream = document.getElementById('compose-stream');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating…';
+  output.style.display = '';
+  stream.textContent = '';
+
+  try {
+    const res = await fetch('/api/v1/maestro/stream', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: prompt,
+        mode: 'compose',
+        repo_id: repoId,
+        commit_id: commitId,
+      }),
+    });
+    if (!res.ok) {
+      stream.textContent = '❌ ' + res.status + ': ' + await res.text();
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // Parse SSE chunks
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') break;
+          try {
+            const obj = JSON.parse(data);
+            if (obj.content) stream.textContent += obj.content;
+            else if (obj.text)    stream.textContent += obj.text;
+            else if (typeof obj === 'string') stream.textContent += obj;
+          } catch { stream.textContent += data; }
+          stream.scrollTop = stream.scrollHeight;
+        }
+      }
+    }
+  } catch(e) {
+    stream.textContent += '\n\n❌ ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '♪ Re-generate';
+  }
+}
+
+load();
+loadAiSummary();
+{% endraw %}
+{% endblock %}
+
+{% block body_extra %}
+<!-- Compose Variation Modal -->
+<div id="compose-modal" class="modal" style="display:none" onclick="if(event.target===this)closeCompose()">
+  <div class="modal-panel" style="max-width:640px;width:100%">
+    <div class="modal-header">
+      <h2 style="margin:0">&#129504; Compose Variation</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeCompose()">&#10005;</button>
+    </div>
+    <div style="padding:var(--space-4)">
+      <p class="text-sm text-muted" style="margin-bottom:var(--space-3)">
+        Describe what you want Maestro to compose, using this commit as musical context.
+        The AI will reason about the current key, tempo, and tracks.
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="compose-prompt">Prompt</label>
+        <textarea id="compose-prompt" class="form-input" rows="4"
+                  placeholder="Add a walking bass line in F minor. Keep it under 90 BPM…"
+                  style="resize:vertical;width:100%;font-family:var(--font-sans)"></textarea>
+      </div>
+      <div style="display:flex;gap:var(--space-2);margin-top:var(--space-3)">
+        <button class="btn btn-primary" id="compose-send-btn" onclick="sendCompose()">
+          &#127925; Generate
+        </button>
+        <button class="btn btn-secondary" onclick="closeCompose()">Cancel</button>
+      </div>
+      <div id="compose-output" style="margin-top:var(--space-4);display:none">
+        <div class="section-title">Agent Response</div>
+        <pre id="compose-stream" style="background:var(--bg-base);border:1px solid var(--border-subtle);border-radius:var(--radius-base);padding:var(--space-3);font-size:12px;max-height:300px;overflow-y:auto;white-space:pre-wrap"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.4.4/dist/abcjs-basic-min.js"></script>
+<style>
+.commit-liner-notes { max-width: 800px; margin: 0 auto; }
+.commit-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) 0;
+}
+.commit-header-left { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+.commit-header-right { display: flex; gap: var(--space-2); }
+.commit-message-card { border-left: 3px solid var(--color-accent); }
+.commit-subject {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0;
+  line-height: var(--line-height-tight);
+}
+.midi-preview {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  min-height: 60px;
+}
+.midi-roll-placeholder {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.stem-browser { display: flex; flex-direction: column; gap: var(--space-2); }
+.stem-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-overlay);
+}
+.stem-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  min-width: 100px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+</style>
+{% endblock %}

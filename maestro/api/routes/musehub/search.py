@@ -1,35 +1,51 @@
-"""Muse Hub search route handlers.
 
-Endpoint summary (cross-repo global search):
-  GET /musehub/search?q={query}&mode={mode}&page={page}&page_size={page_size}
-    — search commit messages across all public repos, results grouped by repo.
+"""MuseHub search route handlers.
 
-Endpoint summary (in-repo search):
-  GET /api/v1/musehub/repos/{repo_id}/search — search commits by mode
+Endpoints:
+  GET /musehub/search/similar?commit={sha}&limit=10
+    — Cross-repo vector similarity search. Returns the N most musically
+      similar public commits to the given SHA using Qdrant cosine distance.
 
-The global search endpoint requires a valid JWT Bearer token so unauthenticated
-callers cannot enumerate commit messages from public repos without identity.
+  GET /musehub/repos/{repo_id}/search?q={q}&mode={mode}
+    — In-repo commit search with four modes:
+        property  — filter by musical properties (harmony, rhythm, etc.)
+        ask       — natural-language query (keyword extraction + overlap scoring)
+        keyword   — keyword/phrase overlap scored search
+        pattern   — substring pattern match against message and branch name
 
-Content negotiation:
-  Accept: application/json  (default) — returns JSON.
-  The UI page at GET /musehub/ui/search serves the browser-readable shell.
+Authentication: JWT Bearer token required (inherited from musehub router).
+
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.auth.dependencies import TokenClaims, require_valid_token
+from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
+from maestro.config import settings
 from maestro.db import get_db
-from maestro.models.musehub import GlobalSearchResult, SearchResponse
+
+from maestro.db import musehub_models as db
+from maestro.models.musehub import GlobalSearchResult, SearchResponse, SimilarCommitResponse, SimilarSearchResponse
+
 from maestro.services import musehub_repository, musehub_search
+from maestro.services.musehub_embeddings import compute_embedding
+from maestro.services.musehub_qdrant import MusehubQdrantClient
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# Module-level singleton — one client per process, collection ensured on first use.
+_qdrant_client: MusehubQdrantClient | None = None
+
+_VALID_MODES = frozenset({"property", "ask", "keyword", "pattern"})
 
 _GLOBAL_VALID_MODES = frozenset({"keyword", "pattern"})
 _REPO_VALID_MODES = frozenset({"property", "ask", "keyword", "pattern"})
@@ -46,7 +62,7 @@ async def global_search(
     page: int = Query(1, ge=1, description="1-based page number for repo-group pagination"),
     page_size: int = Query(10, ge=1, le=50, description="Number of repo groups per page"),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    _: TokenClaims | None = Depends(optional_token),
 ) -> GlobalSearchResult:
     """Search commit messages across all public Muse Hub repos.
 
@@ -89,6 +105,86 @@ async def global_search(
     return result
 
 
+
+def _get_qdrant_client() -> MusehubQdrantClient:
+    """Return the process-level Qdrant client, creating it on first call."""
+    global _qdrant_client
+    if _qdrant_client is None:
+        _qdrant_client = MusehubQdrantClient(
+            host=settings.qdrant_host,
+            port=settings.qdrant_port,
+        )
+        _qdrant_client.ensure_collection()
+    return _qdrant_client
+
+
+@router.get(
+    "/search/similar",
+    response_model=SimilarSearchResponse,
+    summary="Find musically similar commits across public repos",
+)
+async def search_similar(
+    commit: str = Query(..., description="Commit SHA to use as the similarity query"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of results"),
+    db_session: AsyncSession = Depends(get_db),
+    _: TokenClaims | None = Depends(optional_token),
+) -> SimilarSearchResponse:
+    """Return the N most musically similar public commits to the given commit SHA.
+
+    Resolves the query commit from Postgres to obtain its message (which encodes
+    musical metadata), computes its embedding, then queries Qdrant for the closest
+    vectors. Only commits from public repos appear in results — visibility is
+    enforced server-side by Qdrant payload filtering.
+
+    Raises:
+        404: If the commit SHA is not found in the Muse Hub.
+        503: If Qdrant is unavailable.
+    """
+    stmt = select(db.MusehubCommit).where(db.MusehubCommit.commit_id == commit)
+    row = (await db_session.execute(stmt)).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Commit '{commit}' not found in Muse Hub.",
+        )
+
+    query_vector = compute_embedding(row.message)
+
+    try:
+        client = _get_qdrant_client()
+        raw_results = await asyncio.to_thread(
+            client.search_similar,
+            query_vector=query_vector,
+            limit=limit,
+            public_only=True,
+            exclude_commit_id=commit,
+        )
+    except Exception as exc:
+        logger.error("❌ Qdrant search failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Similarity search is temporarily unavailable.",
+        ) from exc
+
+    results = [
+        SimilarCommitResponse(
+            commit_id=r.commit_id,
+            repo_id=r.repo_id,
+            score=r.score,
+            branch=r.branch,
+            author=r.author,
+        )
+        for r in raw_results
+    ]
+
+    logger.info(
+        "✅ Similarity search for commit=%s returned %d results",
+        commit,
+        len(results),
+    )
+    return SimilarSearchResponse(query_commit=commit, results=results)
+
+
 @router.get(
     "/repos/{repo_id}/search",
     response_model=SearchResponse,
@@ -108,7 +204,7 @@ async def search_repo(
     until: datetime | None = Query(None, description="Only include commits on or before this ISO datetime"),
     limit: int = Query(20, ge=1, le=200, description="Maximum results to return"),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> SearchResponse:
     """Search commit history using one of four musical search modes.
 
@@ -140,6 +236,12 @@ async def search_repo(
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     if mode == "property":
         return await musehub_search.search_by_property(

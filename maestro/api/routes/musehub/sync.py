@@ -6,6 +6,10 @@ Endpoint summary:
 
 Both endpoints require a valid JWT Bearer token.  No business logic lives
 here — all persistence is delegated to maestro.services.musehub_sync.
+
+After a successful push, embeddings are computed for the new commits and
+upserted to Qdrant as a BackgroundTask — the response is returned
+immediately without waiting for embedding completion.
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.auth.dependencies import TokenClaims, require_valid_token
 from maestro.db import get_db
 from maestro.models.musehub import (
+    CommitInput,
     PullRequest,
     PullResponse,
     PushEventPayload,
@@ -24,6 +29,7 @@ from maestro.models.musehub import (
     PushResponse,
 )
 from maestro.services import musehub_repository, musehub_sync
+from maestro.services.musehub_sync import embed_push_commits
 from maestro.services.musehub_webhook_dispatcher import dispatch_event_background
 
 logger = logging.getLogger(__name__)
@@ -52,12 +58,18 @@ async def push(
     Objects are base64-encoded in ``content_b64``.  For MVP, objects up to
     ~1 MB are fine; larger files will require pre-signed URL upload in a
     future release.
+
+    After the DB commit, musical feature vectors are computed for the pushed
+    commits and upserted to Qdrant as a background task so the push response
+    is not delayed by embedding computation.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
     author: str = claims.get("sub") or "unknown"
+    is_public = (repo.visibility == "public")
+
     try:
         result = await musehub_sync.ingest_push(
             db,
@@ -79,6 +91,16 @@ async def push(
 
     await db.commit()
 
+    # Schedule embedding as background task — does not block the push response.
+    background_tasks.add_task(
+        embed_push_commits,
+        commits=body.commits,
+        repo_id=repo_id,
+        branch=body.branch,
+        author=author,
+        is_public=is_public,
+    )
+
     push_payload: PushEventPayload = {
         "repoId": repo_id,
         "branch": body.branch,
@@ -92,6 +114,7 @@ async def push(
         "push",
         push_payload,
     )
+
     return result
 
 

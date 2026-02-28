@@ -917,31 +917,40 @@ Remote collaboration backend for Muse VCS — the server-side equivalent of a Gi
 
 ### POST /api/v1/musehub/repos
 
-Create a new remote Muse repository.
+Create a new remote Muse repository. The `slug` is auto-generated from `name` (lowercase, hyphens). Returns `409` if the `(owner, name)` combination already exists.
 
 **Request body:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | yes | Repository name (1–255 chars) |
+| `owner` | string | yes | URL-safe owner username (lowercase alphanumeric + hyphens, 1–64 chars) — forms the `/{owner}/{slug}` path |
 | `visibility` | string | no | `"public"` or `"private"` (default `"private"`) |
 
 **Response (201):**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `repoId` | string (UUID) | Unique repo identifier |
+| `repoId` | string (UUID) | Internal unique identifier (not exposed in URLs) |
 | `name` | string | Repo name |
+| `owner` | string | URL-visible owner username |
+| `slug` | string | URL-safe slug auto-generated from `name` |
 | `visibility` | string | `"public"` or `"private"` |
 | `ownerUserId` | string (UUID) | Authenticated user's ID |
-| `cloneUrl` | string | CLI-usable clone path |
+| `cloneUrl` | string | CLI-usable clone path (`/{owner}/{slug}`) |
 | `createdAt` | ISO 8601 | Creation timestamp |
+
+---
+
+### GET /api/v1/musehub/{owner}/{repo_slug}
+
+Get metadata for a repo by its canonical owner/slug path. Returns `404` if not found. Declared last in the router so fixed-path subroutes (`/repos/...`, `/search/...`, etc.) take precedence.
 
 ---
 
 ### GET /api/v1/musehub/repos/{repo_id}
 
-Get metadata for an existing repo. Returns `404` if not found.
+Get metadata for an existing repo by internal UUID. Returns `404` if not found.
 
 ---
 
@@ -1400,6 +1409,67 @@ others → `application/octet-stream`).
 
 ---
 
+
+---
+
+## Muse Hub Semantic Search
+
+### GET /api/v1/musehub/search/similar
+
+Find public commits that are musically similar to a given commit SHA using
+vector-based cosine similarity (Qdrant).  Only public repos appear in results.
+
+**Authentication:** `Authorization: Bearer <token>` required.
+
+**Query parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `commit`  | string | ✅ | — | Commit SHA to use as the similarity query |
+| `limit`   | int | ❌ | 10 | Maximum results to return (1–50) |
+
+
+**Response (200):**
+
+```json
+{
+
+  "queryCommit": "abc123",
+  "results": [
+    {
+      "commitId": "def456",
+      "repoId": "repo-uuid",
+      "score": 0.94,
+      "branch": "main",
+      "author": "composer@stori"
+
+    }
+  ]
+}
+```
+
+
+**Result type:** `SimilarSearchResponse` — see `type_contracts.md`.
+
+**Errors:**
+- **401** — missing or invalid token
+- **404** — commit SHA not found in Muse Hub
+- **503** — Qdrant temporarily unavailable
+
+**How similarity works:** The commit message is parsed for musical metadata
+(key, tempo, mode, chord complexity) and encoded as a 128-dim L2-normalised
+feature vector. Qdrant returns the nearest vectors by cosine distance. Results
+are ranked highest-to-lowest by score (1.0 = identical, 0.0 = unrelated).
+
+**Agent use case:** After composing a jazz ballad in Db major at 72 BPM, an
+agent calls this endpoint to surface reference compositions with similar harmonic
+and tempo profiles for style study or mix-in inspiration.
+
+---
+
+
+---
+
 ## Muse Hub — Webhook Subscriptions
 
 Webhooks deliver real-time event notifications via HTTP POST to a registered
@@ -1460,10 +1530,12 @@ Register a new webhook subscription.
 
 List all registered webhooks for a repo, ordered by creation time.
 
+
 **Response (200):**
 
 ```json
 {
+
   "webhooks": [
     {
       "webhookId": "uuid",
@@ -1472,10 +1544,12 @@ List all registered webhooks for a repo, ordered by creation time.
       "events": ["push", "issue"],
       "active": true,
       "createdAt": "2026-02-27T00:00:00Z"
+
     }
   ]
 }
 ```
+
 
 **Errors:** **404** — repo not found.
 
@@ -1495,6 +1569,7 @@ Remove a webhook subscription and all its delivery history.
 ### GET /api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries
 
 List delivery attempts for a webhook, newest first.
+
 
 ### GET /api/v1/musehub/repos/{repo_id}/export/{ref}
 
@@ -1891,15 +1966,33 @@ The following routes serve HTML pages for browser-based repo navigation. They
 do **not** require an `Authorization` header — auth is handled client-side via
 `localStorage` and JavaScript `fetch()` calls to the JSON API above.
 
+All UI routes use the canonical `/{owner}/{repo_slug}` path scheme. The server resolves the slug to the internal `repo_id` before rendering, so the JS keeps using `repo_id` for API calls internally.
+
 | Route | Description |
 |-------|-------------|
-| `GET /musehub/ui/{repo_id}` | Repo overview: branch selector + newest 20 commits |
-| `GET /musehub/ui/{repo_id}/commits/{commit_id}` | Commit detail: metadata + artifact browser |
-| `GET /musehub/ui/{repo_id}/pulls` | PR list with open/all filter |
-| `GET /musehub/ui/{repo_id}/pulls/{pr_id}` | PR detail with Merge button |
-| `GET /musehub/ui/{repo_id}/issues` | Issue list with open/closed/all filter |
-| `GET /musehub/ui/{repo_id}/issues/{number}` | Issue detail with Close button |
-| `GET /musehub/ui/{repo_id}/embed/{ref}` | Embeddable player widget (no auth, iframe-safe) |
+| `GET /musehub/ui/{owner}/{repo_slug}` | Repo overview: branch selector + newest 20 commits |
+| `GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}` | Commit detail: metadata + artifact browser |
+| `GET /musehub/ui/{owner}/{repo_slug}/pulls` | PR list with open/all filter |
+| `GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}` | PR detail with Merge button |
+| `GET /musehub/ui/{owner}/{repo_slug}/issues` | Issue list with open/closed/all filter |
+| `GET /musehub/ui/{owner}/{repo_slug}/issues/{number}` | Issue detail with Close button |
+| `GET /musehub/ui/{owner}/{repo_slug}/embed/{ref}` | Embeddable player widget (no auth, iframe-safe) |
+| `GET /musehub/ui/{owner}/{repo_slug}/releases` | Release list |
+| `GET /musehub/ui/{owner}/{repo_slug}/releases/{tag}` | Release detail with download section |
+| `GET /musehub/ui/{owner}/{repo_slug}/graph` | Interactive DAG commit graph |
+| `GET /musehub/ui/{owner}/{repo_slug}/timeline` | Timeline visualization |
+| `GET /musehub/ui/{owner}/{repo_slug}/sessions` | Recording session list |
+| `GET /musehub/ui/{owner}/{repo_slug}/sessions/{session_id}` | Session detail |
+| `GET /musehub/ui/{owner}/{repo_slug}/context/{ref}` | Context viewer (what the agent sees) |
+| `GET /musehub/ui/{owner}/{repo_slug}/search` | In-repo search (keyword / NL / pattern / musical) |
+| `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/divergence` | Divergence radar chart |
+| `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/contour` | Melodic contour |
+| `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo` | Tempo analysis |
+| `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics` | Dynamics analysis |
+| `GET /musehub/ui/users/{username}` | Public user profile page |
+| `GET /musehub/ui/explore` | Explore public repos |
+| `GET /musehub/ui/trending` | Trending repos |
+| `GET /musehub/ui/search` | Global cross-repo search |
 
 **Response:** `200 text/html` for all routes. No JSON is returned.
 

@@ -20,7 +20,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.auth.dependencies import TokenClaims, require_valid_token
+from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.models.musehub import ReleaseCreate, ReleaseListResponse, ReleaseResponse
 from maestro.services import musehub_releases
@@ -76,7 +76,7 @@ async def create_release(
 async def list_releases(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> ReleaseListResponse:
     """Return all releases for the repo ordered newest first.
 
@@ -85,7 +85,12 @@ async def list_releases(
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return await musehub_releases.get_release_list_response(db, repo_id)
 
 
@@ -98,7 +103,7 @@ async def get_release(
     repo_id: str,
     tag: str,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> ReleaseResponse:
     """Return the release identified by ``tag`` for the given repo.
 
@@ -107,7 +112,12 @@ async def get_release(
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     release = await musehub_releases.get_release_by_tag(db, repo_id, tag)
     if release is None:
         raise HTTPException(

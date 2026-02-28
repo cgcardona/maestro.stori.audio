@@ -52,7 +52,7 @@ async def _create_repo(client: AsyncClient, auth_headers: dict[str, str]) -> str
     """Create a test repo and return its repo_id."""
     resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "analysis-test-repo", "visibility": "private"},
+        json={"name": "analysis-test-repo", "owner": "testuser", "visibility": "private"},
         headers=auth_headers,
     )
     assert resp.status_code == 201
@@ -505,11 +505,16 @@ async def test_analysis_aggregate_cache_headers(
 @pytest.mark.anyio
 async def test_analysis_requires_auth(
     client: AsyncClient,
-    db_session: AsyncSession,
+    auth_headers: dict[str, str],
 ) -> None:
-    """Analysis endpoint returns 401 without a Bearer token."""
+    """Analysis endpoint returns 401 without a Bearer token for private repos.
+
+    Pre-existing fix: the route must check auth AFTER confirming the repo exists,
+    so the test creates a real private repo first to reach the auth gate.
+    """
+    repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
-        "/api/v1/musehub/repos/some-id/analysis/main/harmony",
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
     )
     assert resp.status_code == 401
 
@@ -517,11 +522,16 @@ async def test_analysis_requires_auth(
 @pytest.mark.anyio
 async def test_analysis_aggregate_requires_auth(
     client: AsyncClient,
-    db_session: AsyncSession,
+    auth_headers: dict[str, str],
 ) -> None:
-    """Aggregate analysis endpoint returns 401 without a Bearer token."""
+    """Aggregate analysis endpoint returns 401 without a Bearer token for private repos.
+
+    Pre-existing fix: the route must check auth AFTER confirming the repo exists,
+    so the test creates a real private repo first to reach the auth gate.
+    """
+    repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
-        "/api/v1/musehub/repos/some-id/analysis/main",
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main",
     )
     assert resp.status_code == 401
 
@@ -542,3 +552,87 @@ async def test_analysis_all_13_dimensions_individually(
         assert resp.status_code == 200, f"Dimension {dim!r} returned {resp.status_code}"
         body = resp.json()
         assert body["dimension"] == dim, f"Expected dimension={dim!r}, got {body['dimension']!r}"
+
+
+@pytest.mark.anyio
+async def test_contour_track_filter(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Track filter is applied and reflected in filtersApplied for the contour dimension.
+
+    Verifies issue #228 acceptance criterion: contour analysis respects the
+    ``?track=`` query parameter so melodists can view per-instrument contour.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/contour?track=lead",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dimension"] == "contour"
+    assert body["filtersApplied"]["track"] == "lead"
+    data = body["data"]
+    assert "shape" in data
+    assert "pitchCurve" in data
+    assert len(data["pitchCurve"]) > 0
+
+
+@pytest.mark.anyio
+async def test_tempo_section_filter(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Section filter is applied and reflected in filtersApplied for the tempo dimension.
+
+    Verifies that tempo analysis scoped to a named section returns valid TempoData
+    and records the section filter in the response envelope.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/tempo?section=chorus",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dimension"] == "tempo"
+    assert body["filtersApplied"]["section"] == "chorus"
+    data = body["data"]
+    assert data["bpm"] > 0
+    assert 0.0 <= data["stability"] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_analysis_aggregate_endpoint_returns_all_dimensions(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref} returns all 13 dimensions.
+
+    Regression test for issue #221: the aggregate endpoint must return all 13
+    musical dimensions so the analysis dashboard can render summary cards for each
+    in a single round-trip — agents must not have to query dimensions individually.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ref"] == "main"
+    assert body["repoId"] == repo_id
+    assert "dimensions" in body
+    assert len(body["dimensions"]) == 13
+    returned_dims = {d["dimension"] for d in body["dimensions"]}
+    assert returned_dims == set(ALL_DIMENSIONS)
+    for dim_entry in body["dimensions"]:
+        assert "dimension" in dim_entry
+        assert "ref" in dim_entry
+        assert "computedAt" in dim_entry
+        assert "data" in dim_entry
+        assert "filtersApplied" in dim_entry

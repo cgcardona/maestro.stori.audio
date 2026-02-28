@@ -1,0 +1,89 @@
+{#
+  Repo navigation partial — persistent header card + tab strip.
+
+  Required Jinja2 variables (passed from ui.py → page template):
+    owner       str  — repo owner username
+    repo_slug   str  — repo slug
+    base_url    str  — canonical UI base URL (/musehub/ui/{owner}/{repo_slug})
+    current_page str — active tab key:
+                       commits | graph | pulls | issues | releases |
+                       sessions | timeline | analysis | credits | search | insights
+
+  The repo_id is set as a JS global by each page's {% block page_data %}.
+  Nav count badges (open PRs, open issues) are loaded client-side via
+  loadNavCounts() defined in musehub.js so the HTML route handlers stay
+  unauthenticated.
+#}
+
+<div class="repo-header" id="repo-header">
+  <div class="repo-header-inner">
+    <div class="repo-header-identity">
+      <a href="/musehub/ui/{{ owner }}" class="repo-header-owner">{{ owner }}</a>
+      <span class="repo-header-sep">/</span>
+      <a href="{{ base_url }}" class="repo-header-name">{{ repo_slug }}</a>
+      <span class="badge repo-visibility-badge" id="nav-visibility-badge">…</span>
+    </div>
+    <div class="repo-header-meta" id="nav-meta">
+      <span class="nav-meta-pill" id="nav-key" style="display:none"></span>
+      <span class="nav-meta-pill" id="nav-bpm" style="display:none"></span>
+      <span class="nav-meta-tags" id="nav-tags"></span>
+    </div>
+    <div class="repo-header-actions">
+      <button class="btn btn-secondary btn-sm" id="nav-star-btn"
+              onclick="toggleStar()" style="display:none">
+        <span id="nav-star-icon">☆</span>
+        <span id="nav-star-count">0</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<nav class="repo-tabs" id="repo-tabs" aria-label="Repository navigation">
+  <a href="{{ base_url }}"
+     class="repo-tab{% if current_page == 'commits' %} active{% endif %}"
+     aria-current="{% if current_page == 'commits' %}page{% else %}false{% endif %}">
+    Commits
+  </a>
+  <a href="{{ base_url }}/graph"
+     class="repo-tab{% if current_page == 'graph' %} active{% endif %}">
+    Graph
+  </a>
+  <a href="{{ base_url }}/pulls"
+     class="repo-tab{% if current_page == 'pulls' %} active{% endif %}">
+    Pull Requests
+    <span class="tab-count" id="nav-pr-count" style="display:none"></span>
+  </a>
+  <a href="{{ base_url }}/issues"
+     class="repo-tab{% if current_page == 'issues' %} active{% endif %}">
+    Issues
+    <span class="tab-count" id="nav-issue-count" style="display:none"></span>
+  </a>
+  <a href="{{ base_url }}/releases"
+     class="repo-tab{% if current_page == 'releases' %} active{% endif %}">
+    Releases
+  </a>
+  <a href="{{ base_url }}/sessions"
+     class="repo-tab{% if current_page == 'sessions' %} active{% endif %}">
+    Sessions
+  </a>
+  <a href="{{ base_url }}/timeline"
+     class="repo-tab{% if current_page == 'timeline' %} active{% endif %}">
+    Timeline
+  </a>
+  <a href="{{ base_url }}/divergence"
+     class="repo-tab{% if current_page == 'analysis' %} active{% endif %}">
+    Analysis
+  </a>
+  <a href="{{ base_url }}/credits"
+     class="repo-tab{% if current_page == 'credits' %} active{% endif %}">
+    Credits
+  </a>
+  <a href="{{ base_url }}/insights"
+     class="repo-tab{% if current_page == 'insights' %} active{% endif %}">
+    Insights
+  </a>
+  <a href="{{ base_url }}/search"
+     class="repo-tab{% if current_page == 'search' %} active{% endif %}">
+    &#128269; Search
+  </a>
+</nav>
