@@ -60,7 +60,7 @@ import asyncio
 import json
 import logging
 import pathlib
-from typing import Optional
+from typing import Optional, TypedDict
 
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,6 +77,27 @@ from maestro.services.muse_divergence import (
 logger = logging.getLogger(__name__)
 
 app = typer.Typer()
+
+
+class _DimJsonEntry(TypedDict):
+    """JSON-serialisable representation of a single dimension divergence entry."""
+
+    dimension: str
+    level: str
+    score: float
+    description: str
+    branch_a_summary: str
+    branch_b_summary: str
+
+
+class _DivergenceJson(TypedDict):
+    """JSON-serialisable representation of a full divergence result."""
+
+    branch_a: str
+    branch_b: str
+    common_ancestor: str | None
+    overall_score: float
+    dimensions: list[_DimJsonEntry]
 
 _LEVEL_LABELS: dict[DivergenceLevel, str] = {
     DivergenceLevel.NONE: "NONE",
@@ -118,7 +139,7 @@ def render_json(result: MuseDivergenceResult) -> None:
     Args:
         result: The divergence result to render.
     """
-    data: dict[str, object] = {
+    data: _DivergenceJson = {
         "branch_a": result.branch_a,
         "branch_b": result.branch_b,
         "common_ancestor": result.common_ancestor,
