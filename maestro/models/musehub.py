@@ -6,6 +6,7 @@ snake_case throughout; only serialisation to JSON uses camelCase.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import NotRequired, TypedDict
 
 from pydantic import Field
 
@@ -240,6 +241,129 @@ class ObjectMetaListResponse(CamelModel):
     """List of artifact metadata for a repo."""
 
     objects: list[ObjectMetaResponse]
+
+
+# ── Webhook models ────────────────────────────────────────────────────────────
+
+# Valid event types a subscriber may register for.
+WEBHOOK_EVENT_TYPES: frozenset[str] = frozenset(
+    [
+        "push",
+        "pull_request",
+        "issue",
+        "release",
+        "branch",
+        "tag",
+        "session",
+        "analysis",
+    ]
+)
+
+
+class WebhookCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/webhooks.
+
+    ``events`` must be a non-empty subset of the valid event-type strings
+    (push, pull_request, issue, release, branch, tag, session, analysis).
+    ``secret`` is optional; when provided it is used to sign every delivery
+    with HMAC-SHA256 in the ``X-MuseHub-Signature`` header.
+    """
+
+    url: str = Field(..., min_length=1, max_length=2048, description="HTTPS endpoint to deliver events to")
+    events: list[str] = Field(..., min_length=1, description="Event types to subscribe to")
+    secret: str = Field("", description="Optional HMAC-SHA256 signing secret")
+
+
+class WebhookResponse(CamelModel):
+    """Wire representation of a registered webhook subscription."""
+
+    webhook_id: str
+    repo_id: str
+    url: str
+    events: list[str]
+    active: bool
+    created_at: datetime
+
+
+class WebhookListResponse(CamelModel):
+    """List of webhook subscriptions for a repo."""
+
+    webhooks: list[WebhookResponse]
+
+
+class WebhookDeliveryResponse(CamelModel):
+    """Wire representation of a single webhook delivery attempt."""
+
+    delivery_id: str
+    webhook_id: str
+    event_type: str
+    attempt: int
+    success: bool
+    response_status: int
+    response_body: str
+    delivered_at: datetime
+
+
+class WebhookDeliveryListResponse(CamelModel):
+    """Paginated list of delivery attempts for a webhook."""
+
+    deliveries: list[WebhookDeliveryResponse]
+
+
+# ── Webhook event payload TypedDicts ─────────────────────────────────────────
+# These typed dicts are used as the payload argument to dispatch_event /
+# dispatch_event_background, replacing dict[str, Any] at the service boundary.
+
+
+class PushEventPayload(TypedDict):
+    """Payload emitted when commits are pushed to a MuseHub repo.
+
+    Used with event_type="push".
+    """
+
+    repoId: str
+    branch: str
+    headCommitId: str
+    pushedBy: str
+    commitCount: int
+
+
+class IssueEventPayload(TypedDict):
+    """Payload emitted when an issue is opened or closed.
+
+    ``action`` is either ``"opened"`` or ``"closed"``.
+    Used with event_type="issue".
+    """
+
+    repoId: str
+    action: str
+    issueId: str
+    number: int
+    title: str
+    state: str
+
+
+class PullRequestEventPayload(TypedDict):
+    """Payload emitted when a PR is opened or merged.
+
+    ``action`` is either ``"opened"`` or ``"merged"``.
+    ``mergeCommitId`` is only present on the "merged" action.
+    Used with event_type="pull_request".
+    """
+
+    repoId: str
+    action: str
+    prId: str
+    title: str
+    fromBranch: str
+    toBranch: str
+    state: str
+    mergeCommitId: NotRequired[str]
+
+
+# Union of all typed webhook event payloads.  The dispatcher accepts any of
+# these; callers pass the specific TypedDict for their event type.
+WebhookEventPayload = PushEventPayload | IssueEventPayload | PullRequestEventPayload
 
 
 # ── Context models ────────────────────────────────────────────────────────────
