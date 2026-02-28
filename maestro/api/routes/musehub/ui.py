@@ -21,7 +21,7 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}/diff  -- musical diff view
   GET /musehub/ui/{owner}/{repo_slug}/graph                     -- interactive DAG commit graph
   GET /musehub/ui/{owner}/{repo_slug}/pulls                     -- pull request list
-  GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}             -- PR detail + merge button
+  GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}             -- PR detail with musical diff (radar, piano roll, audio A/B)
   GET /musehub/ui/{owner}/{repo_slug}/issues                    -- issue list
   GET /musehub/ui/{owner}/{repo_slug}/issues/{number}           -- issue detail + close button
   GET /musehub/ui/{owner}/{repo_slug}/context/{ref}             -- AI context viewer
@@ -76,11 +76,13 @@ from maestro.models.musehub import (
     BranchDetailListResponse,
     CommitListResponse,
     CommitResponse,
+    PRDiffDimensionScore,
+    PRDiffResponse,
     RepoResponse,
     TagListResponse,
     TagResponse,
 )
-from maestro.services import musehub_releases
+from maestro.services import musehub_divergence, musehub_pull_requests, musehub_releases
 from maestro.services import musehub_repository
 
 logger = logging.getLogger(__name__)
@@ -498,33 +500,106 @@ async def pr_list_page(
 @router.get(
     "/{owner}/{repo_slug}/pulls/{pr_id}",
     response_class=HTMLResponse,
-    summary="Muse Hub PR detail page",
+    summary="Muse Hub PR detail page with musical diff",
 )
 async def pr_detail_page(
     request: Request,
     owner: str,
     repo_slug: str,
     pr_id: str,
+    format: str | None = Query(None, pattern="^json$", description="Set to 'json' to receive structured data"),
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
-    """Render the PR detail page with merge button.
+) -> Response:
+    """Render the PR detail page with before/after piano roll, audio A/B, and radar chart.
 
-    The merge button calls
+    HTML response includes the full musical diff UI: five-axis radar chart showing
+    harmonic/rhythmic/melodic/structural/dynamic deltas, side-by-side piano roll
+    comparison, audio A/B toggle, diff summary badges, merge strategy selector, and
+    PR timeline.
+
+    JSON response (``?format=json`` or ``Accept: application/json``) returns the
+    PR metadata merged with per-dimension diff scores — suitable for AI agent
+    consumption to reason about musical impact before approving a merge.
+
+    The merge action calls
     ``POST /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/merge``
-    and reloads the page on success.
+    with the selected ``mergeStrategy`` and reloads the page on success.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
-        request,
-        "musehub/pages/pr_detail.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "pr_id": pr_id,
-            "base_url": base_url,
-            "current_page": "pulls",
-        },
+
+    context: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "pr_id": pr_id,
+        "base_url": base_url,
+        "current_page": "pulls",
+    }
+
+    # For JSON responses, eagerly compute the diff so agents get full data.
+    json_data: PRDiffResponse | None = None
+    if format == "json":
+        pr = await musehub_pull_requests.get_pr(db, repo_id, pr_id)
+        if pr is not None:
+            try:
+                result = await musehub_divergence.compute_hub_divergence(
+                    db,
+                    repo_id=repo_id,
+                    branch_a=pr.to_branch,
+                    branch_b=pr.from_branch,
+                )
+                dimensions = [
+                    PRDiffDimensionScore(
+                        dimension=d.dimension,
+                        score=d.score,
+                        level=d.level.value,
+                        delta_label="unchanged" if d.score == 0.0 else f"+{round(d.score * 100, 1)}",
+                        description=d.description,
+                        from_branch_commits=d.branch_b_commits,
+                        to_branch_commits=d.branch_a_commits,
+                    )
+                    for d in result.dimensions
+                ]
+                json_data = PRDiffResponse(
+                    pr_id=pr_id,
+                    repo_id=repo_id,
+                    from_branch=pr.from_branch,
+                    to_branch=pr.to_branch,
+                    dimensions=dimensions,
+                    overall_score=result.overall_score,
+                    common_ancestor=result.common_ancestor,
+                    affected_sections=[],
+                )
+            except ValueError:
+                json_data = PRDiffResponse(
+                    pr_id=pr_id,
+                    repo_id=repo_id,
+                    from_branch=pr.from_branch,
+                    to_branch=pr.to_branch,
+                    dimensions=[
+                        PRDiffDimensionScore(
+                            dimension=dim,
+                            score=0.0,
+                            level="NONE",
+                            delta_label="unchanged",
+                            description="No commits on one or both branches yet.",
+                            from_branch_commits=0,
+                            to_branch_commits=0,
+                        )
+                        for dim in musehub_divergence.ALL_DIMENSIONS
+                    ],
+                    overall_score=0.0,
+                    common_ancestor=None,
+                    affected_sections=[],
+                )
+
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/pr_detail.html",
+        context=context,
+        templates=templates,
+        json_data=json_data,
+        format_param=format,
     )
 
 
