@@ -236,3 +236,83 @@ async def test_get_object_content_404_for_unknown_object(
         headers=auth_headers,
     )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Timeline UI page tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_timeline_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/timeline returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/timeline")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "timeline" in body.lower()
+    assert repo_id[:8] in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline UI route must be accessible without an Authorization header."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/timeline")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_timeline_page_contains_layer_controls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page embeds toggleable layer controls for all four layers."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/timeline")
+    assert response.status_code == 200
+    body = response.text
+    # All four layer names must appear as toggle labels
+    assert "Commits" in body
+    assert "Emotion" in body
+    assert "Sections" in body
+    assert "Tracks" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_contains_zoom_controls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page embeds day/week/month/all zoom buttons."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/timeline")
+    assert response.status_code == 200
+    body = response.text
+    assert "Day" in body
+    assert "Week" in body
+    assert "Month" in body
+    assert "All" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_includes_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page includes the JWT token input form."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/timeline")
+    assert response.status_code == 200
+    body = response.text
+    assert "localStorage" in body
+    assert "musehub_token" in body

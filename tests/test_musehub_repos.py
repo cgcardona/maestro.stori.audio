@@ -315,3 +315,239 @@ async def test_list_branches_returns_empty_for_new_repo(db_session: AsyncSession
     await db_session.commit()
     branches = await musehub_repository.list_branches(db_session, repo.repo_id)
     assert branches == []
+
+
+# ---------------------------------------------------------------------------
+# GET /musehub/repos/{repo_id}/timeline
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_timeline_data_endpoint_empty_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /musehub/repos/{repo_id}/timeline returns empty event streams for new repo."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "empty-timeline"},
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+    repo_id = create.json()["repoId"]
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["commits"] == []
+    assert body["emotion"] == []
+    assert body["sections"] == []
+    assert body["tracks"] == []
+    assert body["totalCommits"] == 0
+
+
+@pytest.mark.anyio
+async def test_timeline_data_includes_commits_with_timestamps(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/repos/{repo_id}/timeline includes commits with timestamps."""
+    from datetime import datetime, timezone, timedelta
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "timeline-commits"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    now = datetime.now(tz=timezone.utc)
+    for i in range(3):
+        db_session.add(
+            MusehubCommit(
+                commit_id=f"abc{i:04d}ef1234567890abcdef1234",
+                repo_id=repo_id,
+                branch="main",
+                parent_ids=[],
+                message=f"commit {i}",
+                author="musician",
+                timestamp=now + timedelta(hours=i),
+            )
+        )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["commits"]) == 3
+    assert body["totalCommits"] == 3
+    # Commits are returned oldest-first for temporal rendering
+    commits = body["commits"]
+    timestamps = [c["timestamp"] for c in commits]
+    assert timestamps == sorted(timestamps)
+
+
+@pytest.mark.anyio
+async def test_timeline_json_response_structure(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Timeline JSON response includes all four event stream keys."""
+    from datetime import datetime, timezone
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "timeline-structure"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    db_session.add(
+        MusehubCommit(
+            commit_id="deadbeef12345678abcdef1234567890abcdef12",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="added chorus",
+            author="musician",
+            timestamp=datetime.now(tz=timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    # All four event stream keys present
+    assert "commits" in body
+    assert "emotion" in body
+    assert "sections" in body
+    assert "tracks" in body
+    assert "totalCommits" in body
+
+    # One commit, one emotion entry
+    assert len(body["commits"]) == 1
+    assert len(body["emotion"]) == 1
+
+    # Emotion values are in [0, 1]
+    emo = body["emotion"][0]
+    assert 0.0 <= emo["valence"] <= 1.0
+    assert 0.0 <= emo["energy"] <= 1.0
+    assert 0.0 <= emo["tension"] <= 1.0
+
+    # "added chorus" in commit message → section event with action "added"
+    assert len(body["sections"]) >= 1
+    section = next(s for s in body["sections"] if s["sectionName"] == "chorus")
+    assert section["action"] == "added"
+
+
+@pytest.mark.anyio
+async def test_timeline_section_removed_action(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Commit message 'removed verse' yields section event with action='removed'."""
+    from datetime import datetime, timezone
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "section-removed"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    db_session.add(
+        MusehubCommit(
+            commit_id="cafe1234567890abcdef1234567890abcdef1234",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="removed verse completely",
+            author="musician",
+            timestamp=datetime.now(tz=timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    sections = response.json()["sections"]
+    verse_events = [s for s in sections if s["sectionName"] == "verse"]
+    assert len(verse_events) >= 1
+    assert verse_events[0]["action"] == "removed"
+
+
+@pytest.mark.anyio
+async def test_timeline_track_events(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Commit message 'added bass' yields a track event with track_name='bass'."""
+    from datetime import datetime, timezone
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "track-events"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    db_session.add(
+        MusehubCommit(
+            commit_id="babe5678901234abcdef1234567890abcdef1234",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="added bass line",
+            author="musician",
+            timestamp=datetime.now(tz=timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    tracks = response.json()["tracks"]
+    bass_events = [t for t in tracks if t["trackName"] == "bass"]
+    assert len(bass_events) >= 1
+    assert bass_events[0]["action"] == "added"
+
+
+@pytest.mark.anyio
+async def test_timeline_requires_auth(client: AsyncClient) -> None:
+    """GET /musehub/repos/{repo_id}/timeline returns 401 without auth."""
+    response = await client.get("/api/v1/musehub/repos/any-id/timeline")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_timeline_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /musehub/repos/{unknown}/timeline returns 404."""
+    response = await client.get(
+        "/api/v1/musehub/repos/does-not-exist/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404

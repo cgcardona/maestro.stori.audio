@@ -5848,6 +5848,90 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 
 ---
 
+## Muse Hub Timeline Types
+
+Defined in `maestro/models/musehub.py`. Returned by `GET /api/v1/musehub/repos/{repo_id}/timeline`.
+
+### `TimelineCommitEvent`
+
+One commit plotted as a point on the timeline.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"commit"` — discriminator for client-side layer routing |
+| `commit_id` | `str` | Full commit SHA |
+| `branch` | `str` | Branch the commit belongs to |
+| `message` | `str` | Full commit message |
+| `author` | `str` | Author identifier |
+| `timestamp` | `datetime` | UTC timestamp of the commit |
+| `parent_ids` | `list[str]` | Parent commit SHAs (two for merge commits) |
+
+**Producer:** `musehub_repository.get_timeline_events()`
+**Consumer:** Muse Hub timeline UI; AI agents reasoning about project history
+
+### `TimelineEmotionEvent`
+
+Deterministic emotion vector derived from the commit SHA.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"emotion"` |
+| `commit_id` | `str` | Commit this vector is derived from |
+| `timestamp` | `datetime` | Same timestamp as the parent commit |
+| `valence` | `float` | Pleasantness [0.0, 1.0] — derived from SHA bytes 0–3 |
+| `energy` | `float` | Intensity [0.0, 1.0] — derived from SHA bytes 4–7 |
+| `tension` | `float` | Dissonance [0.0, 1.0] — derived from SHA bytes 8–11 |
+
+**Producer:** `musehub_repository._derive_emotion()`
+**Consumer:** Timeline UI line chart overlay; agents tracking emotional arc of a composition
+
+### `TimelineSectionEvent`
+
+A section-change marker extracted from a commit message via keyword heuristics.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"section"` |
+| `commit_id` | `str` | Commit whose message triggered this event |
+| `timestamp` | `datetime` | Same as parent commit |
+| `section_name` | `str` | Detected section keyword (e.g. `"chorus"`, `"verse"`, `"bridge"`) |
+| `action` | `str` | `"added"` or `"removed"` — inferred from verb in commit message |
+
+**Producer:** `musehub_repository._extract_section_events()`
+**Consumer:** Timeline UI section layer; agents understanding song structure evolution
+
+### `TimelineTrackEvent`
+
+A track add/remove marker extracted from a commit message via keyword heuristics.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"track"` |
+| `commit_id` | `str` | Commit whose message triggered this event |
+| `timestamp` | `datetime` | Same as parent commit |
+| `track_name` | `str` | Detected track keyword (e.g. `"bass"`, `"drums"`, `"keys"`) |
+| `action` | `str` | `"added"` or `"removed"` — inferred from verb in commit message |
+
+**Producer:** `musehub_repository._extract_track_events()`
+**Consumer:** Timeline UI track layer; agents tracking instrumentation changes over time
+
+### `TimelineResponse`
+
+Top-level response for `GET /api/v1/musehub/repos/{repo_id}/timeline`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commits` | `list[TimelineCommitEvent]` | All visible commits, oldest-first |
+| `emotion` | `list[TimelineEmotionEvent]` | One emotion entry per commit |
+| `sections` | `list[TimelineSectionEvent]` | Section-change events across all commits |
+| `tracks` | `list[TimelineTrackEvent]` | Track add/remove events across all commits |
+| `total_commits` | `int` | Total commit count for the repo (may exceed `len(commits)` if `limit` was applied) |
+
+**Producer:** `musehub_repository.get_timeline_events()`
+**Consumer:** `GET /musehub/ui/{repo_id}/timeline` SVG renderer; AI agents reasoning about project creative arc
+
+---
+
 ## Muse Bisect Types
 
 Defined in `maestro/services/muse_bisect.py`.

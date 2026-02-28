@@ -5,6 +5,7 @@ Endpoint summary:
   GET  /musehub/repos/{repo_id}              — get repo metadata
   GET  /musehub/repos/{repo_id}/branches     — list all branches
   GET  /musehub/repos/{repo_id}/commits      — list commits (newest first)
+  GET  /musehub/repos/{repo_id}/timeline     — chronological timeline with emotion/section/track layers
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
@@ -24,6 +25,7 @@ from maestro.models.musehub import (
     CommitListResponse,
     CreateRepoRequest,
     RepoResponse,
+    TimelineResponse,
 )
 from maestro.services import musehub_repository
 
@@ -112,3 +114,34 @@ async def list_commits(
         db, repo_id, branch=branch, limit=limit
     )
     return CommitListResponse(commits=commits, total=total)
+
+
+@router.get(
+    "/repos/{repo_id}/timeline",
+    response_model=TimelineResponse,
+    summary="Chronological timeline of musical evolution",
+)
+async def get_timeline(
+    repo_id: str,
+    limit: int = Query(200, ge=1, le=500, description="Max commits to include in the timeline"),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> TimelineResponse:
+    """Return a chronological timeline of musical evolution for a repo.
+
+    The response contains four parallel event streams, each independently
+    toggleable by the client:
+    - ``commits``: every pushed commit as a timeline marker (oldest-first)
+    - ``emotion``: deterministic emotion vectors (valence/energy/tension) per commit
+    - ``sections``: section-change events parsed from commit messages
+    - ``tracks``: track add/remove events parsed from commit messages
+
+    Content negotiation: the UI page at ``GET /musehub/ui/{repo_id}/timeline``
+    fetches this endpoint for its layered visualisation. AI agents call this
+    endpoint directly to understand the creative arc of a project.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    return await musehub_repository.get_timeline_events(db, repo_id, limit=limit)

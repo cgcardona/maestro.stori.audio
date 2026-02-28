@@ -10,6 +10,7 @@ Endpoint summary:
   GET /musehub/ui/{repo_id}/pulls/{pr_id}          — PR detail page (with merge button)
   GET /musehub/ui/{repo_id}/issues                 — issue list page
   GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
+  GET /musehub/ui/{repo_id}/timeline               — timeline page (chronological evolution)
 
 These routes require NO JWT auth — they return static HTML shells whose
 embedded JavaScript fetches data from the authed JSON API
@@ -748,4 +749,441 @@ async def issue_detail_page(repo_id: str, number: int) -> HTMLResponse:
         ),
         body_script=script,
     )
+    return HTMLResponse(content=html)
+
+
+_TIMELINE_CSS = """
+.timeline-toolbar {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin-bottom: 16px; padding: 12px 16px;
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+}
+.layer-toggle {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: 13px; color: #c9d1d9; user-select: none;
+}
+.layer-toggle input[type=checkbox] { cursor: pointer; accent-color: #58a6ff; }
+.zoom-select { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+#timeline-svg-container {
+  overflow-x: auto; background: #0d1117;
+  border: 1px solid #30363d; border-radius: 6px; padding: 0;
+}
+#timeline-svg { display: block; }
+.scrubber-bar {
+  height: 4px; background: #30363d; border-radius: 2px; margin: 12px 16px;
+  cursor: pointer; position: relative;
+}
+.scrubber-thumb {
+  width: 14px; height: 14px; background: #58a6ff; border-radius: 50%;
+  position: absolute; top: -5px; transform: translateX(-50%);
+  cursor: grab; box-shadow: 0 0 0 2px #0d1117;
+}
+.tooltip {
+  position: fixed; background: #21262d; border: 1px solid #30363d;
+  border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #c9d1d9;
+  pointer-events: none; z-index: 1000; max-width: 260px;
+  display: none;
+}
+.audio-modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center; z-index: 2000;
+}
+.audio-modal-box {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 24px; min-width: 300px; max-width: 480px;
+}
+.audio-modal-box h3 { margin-bottom: 12px; color: #e6edf3; font-size: 15px; }
+.audio-modal-box audio { width: 100%; margin-bottom: 12px; }
+"""
+
+
+@router.get(
+    "/{repo_id}/timeline",
+    response_class=HTMLResponse,
+    summary="Muse Hub timeline page — chronological evolution",
+)
+async def timeline_page(repo_id: str) -> HTMLResponse:
+    """Render the timeline page: layered chronological visualisation of a repo.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/timeline`` and renders four
+    independently toggleable layers onto an SVG canvas:
+    - Commits: markers with message on hover; click to preview audio
+    - Emotion: valence/energy/tension line chart overlaid on the timeline
+    - Sections: coloured section-change markers
+    - Tracks: track add/remove markers
+
+    A time scrubber at the bottom allows scrubbing through history.
+    Zoom controls (day/week/month/all-time) adjust the visible window.
+    Auth is handled client-side via localStorage JWT.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+      const API_TL = '/api/v1/musehub/repos/' + repoId + '/timeline';
+
+      // ── State ───────────────────────────────────────────────────────────────
+      let tlData = null;       // raw TimelineResponse from API
+      let zoom   = 'all';      // day | week | month | all
+      let layers = {{ commits: true, emotion: true, sections: true, tracks: true }};
+      let scrubPct = 1.0;      // 0.0 = oldest, 1.0 = newest
+
+      // SVG dimensions
+      const SVG_H      = 320;
+      const PAD_L      = 48;
+      const PAD_R      = 24;
+      const PAD_TOP    = 40;
+      const PAD_BOT    = 40;
+      const CHART_H    = SVG_H - PAD_TOP - PAD_BOT;  // usable vertical span
+      const COMMIT_Y   = PAD_TOP + CHART_H * 0.5;    // baseline for commit markers
+      const EMOTION_Y0 = PAD_TOP + CHART_H * 0.1;    // top of emotion area
+      const EMOTION_YH = CHART_H * 0.35;             // height of emotion chart
+      const MARKER_Y   = PAD_TOP + CHART_H * 0.72;   // section/track markers row
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── Zoom filtering ───────────────────────────────────────────────────────
+      function msForZoom(z) {{
+        switch(z) {{
+          case 'day':   return 24 * 3600 * 1000;
+          case 'week':  return 7  * 24 * 3600 * 1000;
+          case 'month': return 30 * 24 * 3600 * 1000;
+          default:      return Infinity;
+        }}
+      }}
+
+      function visibleCommits() {{
+        if (!tlData || !tlData.commits || tlData.commits.length === 0) return [];
+        const all = tlData.commits;
+        const span = msForZoom(zoom);
+        if (span === Infinity) return all;
+        const newest = new Date(all[all.length - 1].timestamp).getTime();
+        return all.filter(c => newest - new Date(c.timestamp).getTime() <= span);
+      }}
+
+      // ── SVG rendering ────────────────────────────────────────────────────────
+      function tsToX(ts, tMin, tMax, svgW) {{
+        if (tMax === tMin) return PAD_L + (svgW - PAD_L - PAD_R) / 2;
+        return PAD_L + ((ts - tMin) / (tMax - tMin)) * (svgW - PAD_L - PAD_R);
+      }}
+
+      function renderTimeline() {{
+        const container = document.getElementById('timeline-svg-container');
+        if (!tlData) {{ container.innerHTML = '<p class="loading" style="padding:16px">Loading&#8230;</p>'; return; }}
+
+        const vcs = visibleCommits();
+        if (vcs.length === 0) {{
+          container.innerHTML = '<p class="loading" style="padding:16px">No commits in this zoom window.</p>';
+          return;
+        }}
+
+        const svgW = Math.max(container.clientWidth || 800, PAD_L + PAD_R + vcs.length * 28);
+        const timestamps = vcs.map(c => new Date(c.timestamp).getTime());
+        const tMin = Math.min(...timestamps);
+        const tMax = Math.max(...timestamps);
+
+        // Build a fast lookup from commit_id → visible set
+        const visibleIds = new Set(vcs.map(c => c.commitId));
+
+        let paths = '';
+        let markers = '';
+        let axisLabels = '';
+
+        // ── Axis labels ──────────────────────────────────────────────────────
+        const labelCount = Math.min(6, vcs.length);
+        for (let i = 0; i < labelCount; i++) {{
+          const idx = Math.round(i * (vcs.length - 1) / Math.max(1, labelCount - 1));
+          const c = vcs[idx];
+          const x = tsToX(new Date(c.timestamp).getTime(), tMin, tMax, svgW);
+          const d = new Date(c.timestamp);
+          const label = d.toLocaleDateString(undefined, {{ month:'short', day:'numeric' }});
+          axisLabels += `<text x="${{x}}" y="${{SVG_H - 8}}" text-anchor="middle"
+            font-size="10" fill="#8b949e">${{escHtml(label)}}</text>`;
+        }}
+
+        // ── Emotion line chart ───────────────────────────────────────────────
+        if (layers.emotion && tlData.emotion) {{
+          const visEmo = tlData.emotion.filter(e => visibleIds.has(e.commitId));
+          const lineFor = (field, colour) => {{
+            if (visEmo.length < 2) return '';
+            const pts = visEmo.map(e => {{
+              const x = tsToX(new Date(e.timestamp).getTime(), tMin, tMax, svgW);
+              const y = EMOTION_Y0 + EMOTION_YH * (1 - e[field]);
+              return x + ',' + y;
+            }}).join(' ');
+            return `<polyline points="${{pts}}" fill="none" stroke="${{colour}}"
+              stroke-width="1.5" opacity="0.8" />`;
+          }};
+          paths += lineFor('valence', '#58a6ff');
+          paths += lineFor('energy',  '#3fb950');
+          paths += lineFor('tension', '#f78166');
+          // Legend
+          paths += `<text x="${{PAD_L}}" y="${{EMOTION_Y0 - 6}}" font-size="10" fill="#8b949e">Emotion</text>
+            <circle cx="${{PAD_L + 52}}" cy="${{EMOTION_Y0 - 8}}" r="3" fill="#58a6ff"/>
+            <text x="${{PAD_L + 58}}" y="${{EMOTION_Y0 - 5}}" font-size="9" fill="#58a6ff">valence</text>
+            <circle cx="${{PAD_L + 102}}" cy="${{EMOTION_Y0 - 8}}" r="3" fill="#3fb950"/>
+            <text x="${{PAD_L + 108}}" y="${{EMOTION_Y0 - 5}}" font-size="9" fill="#3fb950">energy</text>
+            <circle cx="${{PAD_L + 148}}" cy="${{EMOTION_Y0 - 8}}" r="3" fill="#f78166"/>
+            <text x="${{PAD_L + 154}}" y="${{EMOTION_Y0 - 5}}" font-size="9" fill="#f78166">tension</text>`;
+        }}
+
+        // ── Commit markers ───────────────────────────────────────────────────
+        if (layers.commits) {{
+          vcs.forEach(c => {{
+            const x = tsToX(new Date(c.timestamp).getTime(), tMin, tMax, svgW);
+            const sha = c.commitId.substring(0, 8);
+            const msg = escHtml((c.message || '').substring(0, 60));
+            const author = escHtml(c.author || '');
+            const ts = new Date(c.timestamp).toLocaleString();
+            markers += `
+              <g class="commit-marker" data-id="${{c.commitId}}"
+                 onclick="openAudioModal('${{c.commitId}}', '${{sha}}')"
+                 style="cursor:pointer"
+                 onmouseenter="showTip(event, '${{sha}}<br>${{msg}}<br>${{author}} &bull; ${{ts}}')"
+                 onmouseleave="hideTip()">
+                <line x1="${{x}}" y1="${{COMMIT_Y - 12}}" x2="${{x}}" y2="${{COMMIT_Y + 12}}"
+                  stroke="#30363d" stroke-width="1" />
+                <circle cx="${{x}}" cy="${{COMMIT_Y}}" r="6" fill="#58a6ff"
+                  stroke="#0d1117" stroke-width="2" />
+              </g>`;
+          }});
+          // Spine
+          if (vcs.length > 1) {{
+            const x0 = tsToX(tMin, tMin, tMax, svgW);
+            const x1 = tsToX(tMax, tMin, tMax, svgW);
+            paths = `<line x1="${{x0}}" y1="${{COMMIT_Y}}" x2="${{x1}}" y2="${{COMMIT_Y}}"
+              stroke="#30363d" stroke-width="1.5" />` + paths;
+          }}
+        }}
+
+        // ── Section markers ──────────────────────────────────────────────────
+        if (layers.sections && tlData.sections) {{
+          const visSec = tlData.sections.filter(s => visibleIds.has(s.commitId));
+          visSec.forEach(s => {{
+            const x = tsToX(new Date(s.timestamp).getTime(), tMin, tMax, svgW);
+            const label = escHtml(s.sectionName);
+            const action = s.action === 'removed' ? '−' : '+';
+            const colour = s.action === 'removed' ? '#f78166' : '#3fb950';
+            markers += `
+              <g onmouseenter="showTip(event, '${{action}} ${{label}} section')" onmouseleave="hideTip()">
+                <rect x="${{x - 5}}" y="${{MARKER_Y - 10}}" width="10" height="10"
+                  fill="${{colour}}" rx="2" opacity="0.9"/>
+                <text x="${{x}}" y="${{MARKER_Y + 16}}" text-anchor="middle"
+                  font-size="9" fill="${{colour}}">${{label}}</text>
+              </g>`;
+          }});
+        }}
+
+        // ── Track markers ────────────────────────────────────────────────────
+        if (layers.tracks && tlData.tracks) {{
+          const visTrk = tlData.tracks.filter(t => visibleIds.has(t.commitId));
+          visTrk.forEach((t, i) => {{
+            const x = tsToX(new Date(t.timestamp).getTime(), tMin, tMax, svgW);
+            const label = escHtml(t.trackName);
+            const action = t.action === 'removed' ? '−' : '+';
+            const colour = t.action === 'removed' ? '#e3b341' : '#a371f7';
+            const yOff = MARKER_Y + 32 + (i % 2) * 14;
+            markers += `
+              <g onmouseenter="showTip(event, '${{action}} ${{label}} track')" onmouseleave="hideTip()">
+                <circle cx="${{x}}" cy="${{yOff}}" r="4" fill="${{colour}}" opacity="0.85"/>
+                <text x="${{x + 6}}" y="${{yOff + 4}}" font-size="9" fill="${{colour}}">${{label}}</text>
+              </g>`;
+          }});
+        }}
+
+        container.innerHTML = `
+          <svg id="timeline-svg" width="${{svgW}}" height="${{SVG_H}}"
+               xmlns="http://www.w3.org/2000/svg">
+            <rect width="${{svgW}}" height="${{SVG_H}}" fill="#0d1117"/>
+            ${{paths}}
+            ${{markers}}
+            ${{axisLabels}}
+          </svg>`;
+
+        // Update scrubber thumb
+        const thumb = document.getElementById('scrubber-thumb');
+        if (thumb) thumb.style.left = (scrubPct * 100) + '%';
+      }}
+
+      // ── Tooltip ──────────────────────────────────────────────────────────────
+      const tip = document.getElementById('tooltip');
+      function showTip(evt, html) {{
+        tip.innerHTML = html;
+        tip.style.display = 'block';
+        tip.style.left = (evt.clientX + 12) + 'px';
+        tip.style.top  = (evt.clientY - 8) + 'px';
+      }}
+      function hideTip() {{ tip.style.display = 'none'; }}
+
+      // ── Audio modal ──────────────────────────────────────────────────────────
+      function openAudioModal(commitId, sha) {{
+        const existing = document.getElementById('audio-modal');
+        if (existing) existing.remove();
+        const modal = document.createElement('div');
+        modal.id = 'audio-modal';
+        modal.className = 'audio-modal';
+        modal.innerHTML = `
+          <div class="audio-modal-box">
+            <h3>&#9654; Preview at commit ${{sha}}</h3>
+            <p style="font-size:12px;color:#8b949e;margin-bottom:12px">
+              Audio artifacts from this commit state.
+              Audio playback requires MP3 artifacts to be stored for this repo.
+            </p>
+            <audio controls>
+              <source src="/api/v1/musehub/repos/${{repoId}}/commits/${{commitId}}/audio" type="audio/mpeg">
+              No audio available for this commit.
+            </audio>
+            <div style="text-align:right;margin-top:8px">
+              <a href="${{base}}/commits/${{commitId}}" class="btn btn-secondary" style="font-size:12px">
+                View commit
+              </a>
+              &nbsp;
+              <button class="btn btn-secondary" onclick="document.getElementById('audio-modal').remove()"
+                style="font-size:12px">Close</button>
+            </div>
+          </div>`;
+        modal.addEventListener('click', e => {{ if (e.target === modal) modal.remove(); }});
+        document.body.appendChild(modal);
+      }}
+
+      // ── Scrubber ─────────────────────────────────────────────────────────────
+      function initScrubber() {{
+        const bar = document.getElementById('scrubber-bar');
+        if (!bar) return;
+        let dragging = false;
+        function updateFromEvent(e) {{
+          const rect = bar.getBoundingClientRect();
+          const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+          scrubPct = pct;
+          const thumb = document.getElementById('scrubber-thumb');
+          if (thumb) thumb.style.left = (pct * 100) + '%';
+        }}
+        bar.addEventListener('mousedown', e => {{ dragging = true; updateFromEvent(e); }});
+        document.addEventListener('mousemove', e => {{ if (dragging) updateFromEvent(e); }});
+        document.addEventListener('mouseup', () => {{ dragging = false; }});
+      }}
+
+      // ── Layer toggles ─────────────────────────────────────────────────────────
+      function toggleLayer(name, checked) {{
+        layers[name] = checked;
+        renderTimeline();
+      }}
+
+      // ── Zoom ─────────────────────────────────────────────────────────────────
+      function setZoom(z) {{
+        zoom = z;
+        document.querySelectorAll('.zoom-btn').forEach(b => {{
+          b.style.background = b.dataset.zoom === z ? '#1f6feb' : '#21262d';
+        }});
+        renderTimeline();
+      }}
+
+      // ── Load ─────────────────────────────────────────────────────────────────
+      async function load() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/timeline?limit=200');
+          tlData = data;
+
+          const total = data.totalCommits || 0;
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+              <span style="color:#8b949e;font-size:13px">${{total}} commit${{total !== 1 ? 's' : ''}}</span>
+            </div>
+
+            <div class="timeline-toolbar">
+              <label class="layer-toggle">
+                <input type="checkbox" checked onchange="toggleLayer('commits', this.checked)"> Commits
+              </label>
+              <label class="layer-toggle">
+                <input type="checkbox" checked onchange="toggleLayer('emotion', this.checked)"> Emotion
+              </label>
+              <label class="layer-toggle">
+                <input type="checkbox" checked onchange="toggleLayer('sections', this.checked)"> Sections
+              </label>
+              <label class="layer-toggle">
+                <input type="checkbox" checked onchange="toggleLayer('tracks', this.checked)"> Tracks
+              </label>
+              <div class="zoom-select">
+                <span style="font-size:12px;color:#8b949e">Zoom:</span>
+                <button class="btn zoom-btn" data-zoom="day" onclick="setZoom('day')"
+                  style="font-size:11px;padding:3px 10px;background:#21262d">Day</button>
+                <button class="btn zoom-btn" data-zoom="week" onclick="setZoom('week')"
+                  style="font-size:11px;padding:3px 10px;background:#21262d">Week</button>
+                <button class="btn zoom-btn" data-zoom="month" onclick="setZoom('month')"
+                  style="font-size:11px;padding:3px 10px;background:#21262d">Month</button>
+                <button class="btn zoom-btn" data-zoom="all" onclick="setZoom('all')"
+                  style="font-size:11px;padding:3px 10px;background:#1f6feb">All</button>
+              </div>
+            </div>
+
+            <div id="timeline-svg-container"></div>
+
+            <div class="scrubber-bar" id="scrubber-bar">
+              <div class="scrubber-thumb" id="scrubber-thumb" style="left:100%"></div>
+            </div>
+
+            <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:#8b949e">
+              <span>&#9679; <span style="color:#58a6ff">blue</span> = commit marker (click to preview audio)</span>
+              <span>&#9632; <span style="color:#3fb950">green</span> = section added</span>
+              <span>&#9632; <span style="color:#f78166">red</span> = section removed</span>
+              <span>&#9679; <span style="color:#a371f7">purple</span> = track added</span>
+              <span>&#9679; <span style="color:#e3b341">yellow</span> = track removed</span>
+            </div>`;
+
+          initScrubber();
+          renderTimeline();
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    # Merge timeline CSS into the shared CSS before building the page
+    css_with_timeline = _CSS + _TIMELINE_CSS
+    # Build page HTML manually so we can inject the extra CSS
+    title = f"Timeline — {repo_id[:8]}"
+    breadcrumb = (
+        f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / timeline'
+    )
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} — Muse Hub</title>
+  <style>{css_with_timeline}</style>
+</head>
+<body>
+  <header>
+    <span class="logo">&#127925; Muse Hub</span>
+    <span class="breadcrumb">{breadcrumb}</span>
+    <span style="flex:1"></span>
+    <button class="btn btn-secondary" style="font-size:12px"
+            onclick="clearToken();location.reload()">Sign out</button>
+  </header>
+  <div class="container">
+    <div class="token-form" id="token-form" style="display:none">
+      <p id="token-msg">Enter your Maestro JWT to browse this repo.</p>
+      <input type="password" id="token-input" placeholder="eyJ..." />
+      <button class="btn btn-primary" onclick="saveToken()">Save &amp; Load</button>
+      &nbsp;
+      <button class="btn btn-secondary" onclick="clearToken();location.reload()">Clear</button>
+    </div>
+    <div id="content"><p class="loading">Loading&#8230;</p></div>
+  </div>
+  <div class="tooltip" id="tooltip"></div>
+  <script>
+    {_TOKEN_SCRIPT}
+    window.addEventListener('DOMContentLoaded', function() {{
+      if (!getToken()) {{ showTokenForm(); return; }}
+      {script}
+    }});
+  </script>
+</body>
+</html>"""
     return HTMLResponse(content=html)
