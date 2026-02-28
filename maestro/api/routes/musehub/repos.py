@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-import yaml  # type: ignore[import-untyped]  # PyYAML ships no py.typed marker
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +30,6 @@ from maestro.models.musehub import (
     RepoResponse,
 )
 from maestro.models.musehub_context import (
-    AgentContextResponse,
     ContextDepth,
     ContextFormat,
 )
