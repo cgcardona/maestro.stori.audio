@@ -425,7 +425,18 @@ Only after you have output the grade and **"Approved for merge"**, do the follow
    gh issue close <issue-number> --comment "Fixed by PR #<pr-number>."
    ```
 
-   Note: In a parallel agent worktree the `git checkout dev / git pull / git branch -d` local cleanup is unnecessary — the worktree is removed by the self-destruct step in the kickoff prompt.
+6. **Return to dev and delete the local feature branch:**
+   ```bash
+   git fetch --prune
+   git checkout dev
+   git pull origin dev
+   git branch -d "$BRANCH"
+   ```
+   This leaves the working tree on a clean, up-to-date `dev` — ready for the next task.
+   If `git branch -d` refuses (branch not fully merged from git's perspective after a squash), use `-D`:
+   ```bash
+   git branch -D "$BRANCH"
+   ```
 
 ---
 
