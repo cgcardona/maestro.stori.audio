@@ -16,6 +16,16 @@ Algorithm
    c. If conflicts exist: write ``.muse/MERGE_STATE.json`` and exit 1.
    d. Otherwise: build merged manifest, persist snapshot, insert merge commit
       with two parent IDs, advance branch pointer.
+
+``--continue``
+--------------
+After resolving all conflicts via ``muse resolve``, run::
+
+    muse merge --continue
+
+This reads the persisted ``MERGE_STATE.json``, verifies all conflicts are
+cleared, builds a merge commit from the current ``muse-work/`` contents, and
+advances the branch pointer.
 """
 from __future__ import annotations
 
@@ -24,6 +34,7 @@ import datetime
 import json
 import logging
 import pathlib
+from typing import Optional
 
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,11 +44,13 @@ from maestro.muse_cli.db import (
     get_commit_snapshot_manifest,
     insert_commit,
     open_session,
+    upsert_object,
     upsert_snapshot,
 )
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.merge_engine import (
     apply_merge,
+    clear_merge_state,
     detect_conflicts,
     diff_snapshots,
     find_merge_base,
@@ -45,7 +58,7 @@ from maestro.muse_cli.merge_engine import (
     write_merge_state,
 )
 from maestro.muse_cli.models import MuseCliCommit
-from maestro.muse_cli.snapshot import compute_commit_id, compute_snapshot_id
+from maestro.muse_cli.snapshot import build_snapshot_manifest, compute_commit_id, compute_snapshot_id
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +233,125 @@ async def _merge_async(
 
 
 # ---------------------------------------------------------------------------
+# --continue: complete a conflicted merge after all paths are resolved
+# ---------------------------------------------------------------------------
+
+
+async def _merge_continue_async(
+    *,
+    root: pathlib.Path,
+    session: AsyncSession,
+) -> None:
+    """Finalize a merge that was paused due to conflicts.
+
+    Reads ``MERGE_STATE.json``, verifies all conflicts are cleared, builds a
+    snapshot from the current ``muse-work/`` contents, inserts a merge commit
+    with two parent IDs, advances the branch pointer, and clears
+    ``MERGE_STATE.json``.
+
+    Args:
+        root:    Repository root.
+        session: Open async DB session.
+
+    Raises:
+        :class:`typer.Exit`: If no merge is in progress, if unresolved
+            conflicts remain, or if ``muse-work/`` is empty.
+    """
+    merge_state = read_merge_state(root)
+    if merge_state is None:
+        typer.echo("❌ No merge in progress. Nothing to continue.")
+        raise typer.Exit(code=ExitCode.USER_ERROR)
+
+    if merge_state.conflict_paths:
+        typer.echo(
+            f"❌ {len(merge_state.conflict_paths)} conflict(s) not yet resolved:\n"
+            + "\n".join(f"\tboth modified:   {p}" for p in merge_state.conflict_paths)
+            + "\nRun 'muse resolve <path> --ours/--theirs' for each file."
+        )
+        raise typer.Exit(code=ExitCode.USER_ERROR)
+
+    muse_dir = root / ".muse"
+    repo_data: dict[str, str] = json.loads((muse_dir / "repo.json").read_text())
+    repo_id = repo_data["repo_id"]
+
+    head_ref = (muse_dir / "HEAD").read_text().strip()
+    current_branch = head_ref.rsplit("/", 1)[-1]
+    our_ref_path = muse_dir / pathlib.Path(head_ref)
+
+    ours_commit_id = merge_state.ours_commit or ""
+    theirs_commit_id = merge_state.theirs_commit or ""
+    other_branch = merge_state.other_branch or "unknown"
+
+    if not ours_commit_id or not theirs_commit_id:
+        typer.echo("❌ MERGE_STATE.json is missing commit references. Cannot continue.")
+        raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
+
+    # Build snapshot from current muse-work/ contents (conflicts already resolved).
+    workdir = root / "muse-work"
+    if not workdir.exists():
+        typer.echo("⚠️  muse-work/ is missing. Cannot create merge snapshot.")
+        raise typer.Exit(code=ExitCode.USER_ERROR)
+
+    manifest = build_snapshot_manifest(workdir)
+    if not manifest:
+        typer.echo("⚠️  muse-work/ is empty. Nothing to commit for the merge.")
+        raise typer.Exit(code=ExitCode.USER_ERROR)
+
+    snapshot_id = compute_snapshot_id(manifest)
+
+    # Persist objects and snapshot.
+    for rel_path, object_id in manifest.items():
+        file_path = workdir / rel_path
+        size = file_path.stat().st_size
+        await upsert_object(session, object_id=object_id, size_bytes=size)
+
+    await upsert_snapshot(session, manifest=manifest, snapshot_id=snapshot_id)
+    await session.flush()
+
+    # Build merge commit.
+    committed_at = datetime.datetime.now(datetime.timezone.utc)
+    merge_message = f"Merge branch '{other_branch}' into {current_branch}"
+    parent_ids = sorted([ours_commit_id, theirs_commit_id])
+    merge_commit_id = compute_commit_id(
+        parent_ids=parent_ids,
+        snapshot_id=snapshot_id,
+        message=merge_message,
+        committed_at_iso=committed_at.isoformat(),
+    )
+
+    merge_commit = MuseCliCommit(
+        commit_id=merge_commit_id,
+        repo_id=repo_id,
+        branch=current_branch,
+        parent_commit_id=ours_commit_id,
+        parent2_commit_id=theirs_commit_id,
+        snapshot_id=snapshot_id,
+        message=merge_message,
+        author="",
+        committed_at=committed_at,
+    )
+    await insert_commit(session, merge_commit)
+
+    # Advance branch pointer.
+    our_ref_path.write_text(merge_commit_id)
+
+    # Clear merge state.
+    clear_merge_state(root)
+
+    typer.echo(
+        f"✅ Merge commit [{current_branch} {merge_commit_id[:8]}] "
+        f"— merged '{other_branch}' into '{current_branch}'"
+    )
+    logger.info(
+        "✅ muse merge --continue: commit %s on %r (parents: %s, %s)",
+        merge_commit_id[:8],
+        current_branch,
+        ours_commit_id[:8],
+        theirs_commit_id[:8],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Typer command
 # ---------------------------------------------------------------------------
 
@@ -227,10 +359,41 @@ async def _merge_async(
 @app.callback(invoke_without_command=True)
 def merge(
     ctx: typer.Context,
-    branch: str = typer.Argument(..., help="Name of the branch to merge into HEAD."),
+    branch: Optional[str] = typer.Argument(
+        None,
+        help="Name of the branch to merge into HEAD. Omit when using --continue.",
+    ),
+    cont: bool = typer.Option(
+        False,
+        "--continue",
+        is_flag=True,
+        help="Finalize a paused merge after resolving all conflicts.",
+    ),
 ) -> None:
-    """Merge a branch into the current branch (fast-forward or 3-way)."""
+    """Merge a branch into the current branch (fast-forward or 3-way).
+
+    Use ``--continue`` after resolving conflicts to create the merge commit.
+    """
     root = require_repo()
+
+    if cont:
+        async def _run_continue() -> None:
+            async with open_session() as session:
+                await _merge_continue_async(root=root, session=session)
+
+        try:
+            asyncio.run(_run_continue())
+        except typer.Exit:
+            raise
+        except Exception as exc:
+            typer.echo(f"❌ muse merge --continue failed: {exc}")
+            logger.error("❌ muse merge --continue error: %s", exc, exc_info=True)
+            raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
+        return
+
+    if not branch:
+        typer.echo("❌ Branch name required (or use --continue to finalize a paused merge).")
+        raise typer.Exit(code=ExitCode.USER_ERROR)
 
     async def _run() -> None:
         async with open_session() as session:
