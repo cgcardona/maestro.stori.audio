@@ -20,6 +20,7 @@ from maestro.db import musehub_models as db
 from maestro.models.musehub import (
     BranchResponse,
     CommitResponse,
+    ObjectMetaResponse,
     RepoResponse,
 )
 
@@ -99,6 +100,62 @@ async def list_branches(session: AsyncSession, repo_id: str) -> list[BranchRespo
     )
     rows = (await session.execute(stmt)).scalars().all()
     return [_to_branch_response(r) for r in rows]
+
+
+def _to_object_meta_response(row: db.MusehubObject) -> ObjectMetaResponse:
+    return ObjectMetaResponse(
+        object_id=row.object_id,
+        path=row.path,
+        size_bytes=row.size_bytes,
+        created_at=row.created_at,
+    )
+
+
+async def get_commit(
+    session: AsyncSession, repo_id: str, commit_id: str
+) -> CommitResponse | None:
+    """Return a single commit by ID, or None if not found in this repo."""
+    stmt = (
+        select(db.MusehubCommit)
+        .where(
+            db.MusehubCommit.repo_id == repo_id,
+            db.MusehubCommit.commit_id == commit_id,
+        )
+    )
+    row = (await session.execute(stmt)).scalars().first()
+    if row is None:
+        return None
+    return _to_commit_response(row)
+
+
+async def list_objects(
+    session: AsyncSession, repo_id: str
+) -> list[ObjectMetaResponse]:
+    """Return all object metadata for a repo (no binary content), ordered by path."""
+    stmt = (
+        select(db.MusehubObject)
+        .where(db.MusehubObject.repo_id == repo_id)
+        .order_by(db.MusehubObject.path)
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    return [_to_object_meta_response(r) for r in rows]
+
+
+async def get_object_row(
+    session: AsyncSession, repo_id: str, object_id: str
+) -> db.MusehubObject | None:
+    """Return the raw ORM object row for content delivery, or None if not found.
+
+    Route handlers use this to stream the file from ``disk_path``.
+    """
+    stmt = (
+        select(db.MusehubObject)
+        .where(
+            db.MusehubObject.repo_id == repo_id,
+            db.MusehubObject.object_id == object_id,
+        )
+    )
+    return (await session.execute(stmt)).scalars().first()
 
 
 async def list_commits(

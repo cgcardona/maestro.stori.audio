@@ -1273,3 +1273,65 @@ Creates a merge commit on `to_branch` with parent IDs `[to_branch head, from_bra
 **Errors:**
 - **404** — PR or repo not found
 - **409** — PR is already merged or closed
+
+## Muse Hub Objects API
+
+Binary artifact storage — served by the same `maestro` container. Objects are
+content-addressed (`sha256:<hex>`) and written to disk during push; only metadata
+lives in Postgres. All JSON endpoints require `Authorization: Bearer <token>`.
+
+### GET /api/v1/musehub/repos/{repo_id}/objects
+
+List metadata for all artifacts stored in the repo. Does **not** return binary
+content — use the `/content` sub-resource for downloads.
+
+**Response (200):**
+
+```json
+{
+  "objects": [
+    {
+      "objectId": "sha256:abc123...",
+      "path": "tracks/jazz_4b.mid",
+      "sizeBytes": 12345,
+      "createdAt": "2026-01-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+**Errors:** **404** — repo not found.
+
+### GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/content
+
+Stream the raw bytes of a stored artifact. Content-Type is inferred from the
+path extension (`.webp` → `image/webp`, `.mid` → `audio/midi`, `.mp3` → `audio/mpeg`,
+others → `application/octet-stream`).
+
+**Response (200):** Raw binary with appropriate Content-Type.
+
+**Errors:**
+- **404** — repo or object not found
+- **410** — object record exists in DB but file was removed from disk
+
+---
+
+## Muse Hub Web UI
+
+The following routes serve HTML pages for browser-based repo navigation. They
+do **not** require an `Authorization` header — auth is handled client-side via
+`localStorage` and JavaScript `fetch()` calls to the JSON API above.
+
+| Route | Description |
+|-------|-------------|
+| `GET /musehub/ui/{repo_id}` | Repo overview: branch selector + newest 20 commits |
+| `GET /musehub/ui/{repo_id}/commits/{commit_id}` | Commit detail: metadata + artifact browser |
+| `GET /musehub/ui/{repo_id}/pulls` | PR list with open/all filter |
+| `GET /musehub/ui/{repo_id}/pulls/{pr_id}` | PR detail with Merge button |
+| `GET /musehub/ui/{repo_id}/issues` | Issue list with open/closed/all filter |
+| `GET /musehub/ui/{repo_id}/issues/{number}` | Issue detail with Close button |
+
+**Response:** `200 text/html` for all routes. No JSON is returned.
+
+See [integrate.md — Muse Hub web UI](../guides/integrate.md#muse-hub-web-ui) for
+usage and authentication instructions.
