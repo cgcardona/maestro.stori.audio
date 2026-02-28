@@ -1438,6 +1438,29 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}` | Get repo metadata |
 | GET | `/api/v1/musehub/repos/{id}/branches` | List branches |
 | GET | `/api/v1/musehub/repos/{id}/commits` | List commits (newest first) |
+| GET | `/api/v1/musehub/repos/{id}/context/{ref}` | Musical context document for a commit (JSON) |
+
+#### Context Viewer
+
+The context viewer exposes what the AI agent sees when generating music for a given commit.
+
+**API endpoint:** `GET /api/v1/musehub/repos/{repo_id}/context/{ref}` — requires JWT auth.
+Returns a `MuseHubContextResponse` document with:
+- `musical_state` — active tracks derived from stored artifact paths; musical dimensions (key, tempo, etc.) are `null` until Storpheus MIDI analysis is integrated.
+- `history` — up to 5 ancestor commits (newest-first), built by walking `parent_ids`.
+- `missing_elements` — list of dimensions the agent cannot determine from stored data.
+- `suggestions` — composer-facing hints about what to work on next.
+
+**UI page:** `GET /musehub/ui/{repo_id}/context/{ref}` — no auth required (JS shell handles auth).
+Renders the context document in structured HTML with:
+- "What the Agent Sees" explainer at the top
+- Collapsible sections for Musical State, History, Missing Elements, and Suggestions
+- Raw JSON panel with a Copy-to-Clipboard button for pasting context into agent prompts
+- Breadcrumb navigation back to the repo page
+
+**Service:** `maestro/services/musehub_repository.py::get_context_for_commit()` — read-only, deterministic.
+
+**Agent use case:** A musician debugging why the AI generated something unexpected can load the context page for that commit and see exactly what musical knowledge the agent had. The copy button lets them paste the raw JSON into a new agent conversation for direct inspection or override.
 
 #### Issues
 
