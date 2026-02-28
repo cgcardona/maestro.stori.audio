@@ -5,16 +5,18 @@
 > If you are an AI agent reading this document, your role is **coordinator only**.
 >
 > **Your job — the full list, nothing more:**
-> 1. Pull `dev` to confirm it is up to date.
-> 2. Run the Setup script below to create one worktree per issue.
-> 3. Launch one sub-agent per worktree by pasting the Kickoff Prompt (found at the bottom of this document) into a separate Cursor composer window rooted in that worktree.
-> 4. Report back once all sub-agents have been launched.
+> 1. Query GitHub for the current phase label to get your canonical batch — **never use a hardcoded list**.
+> 2. Pull `dev` to confirm it is up to date.
+> 3. Run the Setup script below to create one worktree per issue.
+> 4. Launch one sub-agent per worktree by pasting the Kickoff Prompt (found at the bottom of this document) into a separate Cursor composer window rooted in that worktree.
+> 5. Report back once all sub-agents have been launched.
 >
 > **You do NOT:**
 > - Check out branches or implement any feature yourself.
 > - Run mypy or pytest yourself.
 > - Create PRs yourself.
 > - Read issue bodies or study code yourself.
+> - Hardcode issue numbers — **the GitHub label is the single source of truth**.
 >
 > The **Kickoff Prompt** at the bottom of this document is for the sub-agents, not for you.
 > Copy it verbatim into each sub-agent's window. Do not follow it yourself.
@@ -56,11 +58,41 @@ cleanup, run `git worktree prune` from the main repo.
 
 ---
 
-## Issue independence — read before launching
+## Issue selection — read before choosing
 
-**Parallel agents can introduce regressions when issues overlap.**
+Picking the wrong four issues is the primary source of merge conflicts and wasted
+agent cycles. Apply **both** criteria below before finalising your batch.
 
-Before assigning issues to agents, confirm each issue is fully independent:
+### Criterion 1 — Foundational first (load-bearing order)
+
+Choose issues whose solutions **unlock or de-risk subsequent work**. A foundational
+issue is one where:
+
+- Its output (a new model, endpoint, test fixture, shared utility, or data contract)
+  is a dependency that later issues will build on.
+- Completing it first means later agents can rely on it rather than reinventing it.
+- Deferring it forces future agents to make assumptions that may need to be undone.
+
+**How to identify load-bearing issues:**
+
+1. Look for issues that introduce **shared infrastructure**: new DB models, new API
+   routes, new typed result types, new test fixtures, or new config values.
+2. Look for issues that **other open issues reference** in their body (`Depends on`,
+   `Blocked by`, `Requires`, `See also`).
+3. Look for issues whose labels suggest broad impact: `enhancement`, `ai-pipeline`,
+   `muse`, `maestro-integration` — these tend to be more foundational than
+   `documentation` or `good first issue`.
+4. Within a batch of UI issues, prefer the one that establishes the **shared
+   component or API pattern** that the others will follow.
+
+Always note the load-bearing order in the Setup script comment so the next
+coordinator can read the rationale (e.g., `# Load-bearing order: #A (API contract) → #B (tests) → #C/#D (UI polish)`).
+
+### Criterion 2 — Fully decoupled (zero file overlap)
+
+**Parallel agents can introduce regressions when issues share files.**
+
+Before finalising your four, confirm each pair is independent:
 
 - **Zero file overlap** — two agents must not modify the same file. If they do,
   the second agent's pre-push sync will produce conflicts and risk overwriting
@@ -69,6 +101,17 @@ Before assigning issues to agents, confirm each issue is fully independent:
   issues both require a migration, do them in order, not in parallel.
 - **No shared config or constant changes** — changes to `maestro/config.py`,
   `maestro/protocol/events.py`, or `_GM_ALIASES` must be serialized.
+- **No shared template sections** — two agents editing the same HTML template
+  (even different sections) will conflict at merge time. Assign one template per agent.
+
+**How to verify decoupling:**
+
+```bash
+# For each candidate issue, list the files it is expected to touch:
+gh issue view <N> --json body   # check "Files / modules" section
+
+# Confirm no pair shares a file before assigning the batch.
+```
 
 If issues are **dependent** (B cannot ship without A):
 1. State it in the issue body: `**Depends on #A** — implement after #A is merged.`
@@ -96,27 +139,65 @@ PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
 mkdir -p "$PRTREES"
 cd "$REPO"
 
-# Snapshot dev tip — all worktrees start here; agents branch from here in STEP 3
-DEV_SHA=$(git rev-parse dev)
+# GitHub repo slug — hardcoded. NEVER derive from local path.
+GH_REPO=cgcardona/maestro
 
-# --- define issues (confirmed independent — zero file overlap) ---
-# Batch: #320, #312, #311, #310 (MuseHub — Social tests + UI enrichments)
-# File ownership (no overlap):
-#   #320 → tests/test_musehub_social.py          (new file — social API test suite)
-#   #312 → maestro/templates/musehub/pages/context.html   (context viewer visual state + AI modal)
-#   #311 → maestro/templates/musehub/pages/repo.html      (repo sidebar analytics sparkline)
-#   #310 → maestro/templates/musehub/pages/insights.html  (insights branch activity + issue/PR health)
-# All four use existing APIs via client-side JS — no new Python route changes required.
-# Load-bearing order: #320 (social API validated) → #312 (compose modal pattern) → #311/#310 (UI polish).
-declare -a ISSUES=(
-  "320|test: add test coverage for social layer endpoints in social.py"
-  "312|feat: context viewer — visual musical state and Implement suggestion button"
-  "311|feat: repo sidebar — view count sparkline and open PR/issue counts"
-  "310|feat: insights dashboard — branch activity and open PR/issue counts"
+# ── PHASE LABEL ─────────────────────────────────────────────────────────────
+# Change this to the current phase label. This is the ONLY value you update.
+PHASE_LABEL="phase-1"
+
+# ── DERIVE BATCH FROM GITHUB — never hardcode issue numbers ─────────────────
+# The label on GitHub is the single source of truth. If an issue is labeled
+# phase-1 but not in this list, it WILL be skipped and the phase will appear
+# complete when it isn't. Always derive from the label.
+echo "📋 Querying GitHub for open '$PHASE_LABEL' issues..."
+mapfile -t RAW_ISSUES < <(
+  gh issue list \
+    --repo "$GH_REPO" \
+    --label "$PHASE_LABEL" \
+    --state open \
+    --json number,title \
+    --jq '.[] | "\(.number)|\(.title)"'
 )
 
-# --- create worktrees + task files ---
-for entry in "${ISSUES[@]}"; do
+if [ ${#RAW_ISSUES[@]} -eq 0 ]; then
+  echo "✅ No open issues with label '$PHASE_LABEL'. Phase is complete."
+  exit 0
+fi
+
+echo "Found ${#RAW_ISSUES[@]} open issue(s):"
+for entry in "${RAW_ISSUES[@]}"; do
+  echo "  #${entry%%|*}: ${entry##*|}"
+done
+
+# ── ISSUE SELECTION (coordinator applies both criteria before proceeding) ────
+# From RAW_ISSUES, select up to 4 that satisfy:
+#   Criterion 1 — Foundational first (see Issue selection section above)
+#   Criterion 2 — Zero file overlap between any two selected issues
+#
+# Document your selection and rationale in the comments below, then populate
+# SELECTED_ISSUES. Do NOT skip this review — blindly passing all RAW_ISSUES
+# to agents causes merge conflicts when issues share files.
+#
+# Example (replace with your actual selection):
+#   #NNN → files: maestro/foo.py, tests/test_foo.py
+#   #MMM → files: maestro/bar.py, tests/test_bar.py
+#   Load-bearing order: #NNN (shared fixture) → #MMM (consumer)
+declare -a SELECTED_ISSUES=(
+  # Paste selected entries from RAW_ISSUES here, one per line:
+  # "NNN|title of issue NNN"
+)
+
+if [ ${#SELECTED_ISSUES[@]} -eq 0 ]; then
+  echo "⚠️  SELECTED_ISSUES is empty. Populate it from RAW_ISSUES before running."
+  exit 1
+fi
+
+# ── SNAPSHOT DEV TIP — all worktrees start here ──────────────────────────────
+DEV_SHA=$(git rev-parse dev)
+
+# ── CREATE WORKTREES + TASK FILES ────────────────────────────────────────────
+for entry in "${SELECTED_ISSUES[@]}"; do
   NUM="${entry%%|*}"
   TITLE="${entry##*|}"
   WT="$PRTREES/issue-$NUM"
@@ -125,8 +206,8 @@ for entry in "${ISSUES[@]}"; do
     continue
   fi
   git worktree add --detach "$WT" "$DEV_SHA"
-  printf "WORKFLOW=issue-to-pr\nISSUE_NUMBER=%s\nISSUE_TITLE=%s\nISSUE_URL=https://github.com/cgcardona/maestro/issues/%s\n" \
-    "$NUM" "$TITLE" "$NUM" > "$WT/.agent-task"
+  printf "WORKFLOW=issue-to-pr\nISSUE_NUMBER=%s\nISSUE_TITLE=%s\nISSUE_URL=https://github.com/%s/issues/%s\nPHASE_LABEL=%s\n" \
+    "$NUM" "$TITLE" "$GH_REPO" "$NUM" "$PHASE_LABEL" > "$WT/.agent-task"
   echo "✅ worktree issue-$NUM ready"
 done
 
@@ -421,6 +502,24 @@ STEP 5 — PUSH & CREATE PR:
   EOF
   )"
 
+  ⚠️  VERIFY AUTO-CLOSE LINKAGE — run immediately after gh pr create:
+  # GitHub auto-closes issue #<N> when the PR is merged ONLY if "Closes #<N>"
+  # appears verbatim in the PR body. Verify now so you don't leave a ghost issue.
+
+  PR_BODY=$(gh pr list \
+    --repo cgcardona/maestro \
+    --head feat/<short-description> \
+    --json body \
+    --jq '.[0].body')
+
+  echo "$PR_BODY" | grep -i "closes #<N>"
+  # Expected output: a line containing "Closes #<N>"
+  # If grep returns nothing → the PR body is missing the close keyword.
+  # Fix immediately:
+  #   gh pr edit feat/<short-description> --body "$(echo "$PR_BODY")
+  #
+  # Closes #<N>"
+
 STEP 6 — SELF-DESTRUCT (always run this after the PR is open or after an early stop):
   WORKTREE=$(pwd)
   cd "$REPO"
@@ -442,39 +541,128 @@ any protocol changes requiring handoff.
 
 ## Before launching
 
-1. **Confirm issues are open and independent** (zero file overlap between them):
-   ```bash
-   gh issue list --state open
-   # For each pair, verify no shared files:
-   gh issue view <N> --json body   # check "Files / modules" section
-   ```
-2. **Confirm `dev` is up to date:**
-   ```bash
-   git -C "$(git rev-parse --show-toplevel)" pull origin dev
-   ```
-3. Run the Setup script above — confirm worktrees appear: `git worktree list`
-4. Confirm Docker is running and the worktrees mount is live:
-   ```bash
-   REPO=$(git rev-parse --show-toplevel)
-   docker compose -f "$REPO/docker-compose.yml" ps
-   docker compose exec maestro ls /worktrees/
-   ```
+### Step A — Label audit (do this first, every time)
+
+The GitHub label is the **single source of truth** for what belongs in a phase.
+Run this before touching the Setup script:
+
+```bash
+# List every open issue for the current phase — this IS your candidate pool.
+gh issue list \
+  --repo cgcardona/maestro \
+  --label "phase-1" \
+  --state open \
+  --json number,title,url \
+  --jq '.[] | "#\(.number)  \(.title)\n  \(.url)"'
+```
+
+- If the list is **empty** → phase is complete. Do not launch.
+- If the list has issues **not yet assigned to a batch** → they must be included
+  in the current or next batch before you can call the phase done.
+- If an issue has an **open PR** already → the agent will find it in STEP 2 and
+  self-destruct. Still include it so the batch reflects reality.
+
+### Step B — Select your batch (up to 4 issues)
+
+From the label audit output, choose issues that satisfy **both** criteria in
+**Issue selection** above (foundational first + zero file overlap). Read each
+candidate's body to identify affected files:
+
+```bash
+gh issue view <N> --repo cgcardona/maestro --json body,title
+```
+
+Confirm no two selected issues share a file. Document your selection in the
+`SELECTED_ISSUES` array inside the Setup script.
+
+### Step C — Confirm `dev` is up to date
+
+```bash
+git -C "$(git rev-parse --show-toplevel)" pull origin dev
+```
+
+### Step D — Run the Setup script, then verify
+
+After running the Setup script:
+
+```bash
+git worktree list   # one entry per selected issue + main repo
+```
+
+### Step E — Confirm Docker is running and worktrees are mounted
+
+```bash
+REPO=$(git rev-parse --show-toplevel)
+docker compose -f "$REPO/docker-compose.yml" ps
+docker compose exec maestro ls /worktrees/
+```
 
 ---
 
 ## After agents complete
 
-- Review opened PRs on GitHub: `gh pr list --state open`
-- Verify no stale worktrees remain: `git worktree list` — should show only the main repo.
-  If any linger (agent crashed before cleanup):
-  ```bash
-  git -C "$(git rev-parse --show-toplevel)" worktree prune
-  ```
-- Verify main repo is clean: `git -C "$(git rev-parse --show-toplevel)" status`
-  Must show **nothing to commit, working tree clean**. If not, clean up:
-  ```bash
-  REPO=$(git rev-parse --show-toplevel)
-  git -C "$REPO" restore --staged .
-  git -C "$REPO" restore .
-  ```
-- PRs are immediately available for the **PARALLEL_PR_REVIEW.md** workflow.
+### 1 — Closure audit (required before declaring a phase done)
+
+Run this after all PRs in the batch are **merged** (not just opened):
+
+```bash
+PHASE_LABEL="phase-1"   # match the label used in Setup
+
+REMAINING=$(gh issue list \
+  --repo cgcardona/maestro \
+  --label "$PHASE_LABEL" \
+  --state open \
+  --json number \
+  --jq 'length')
+
+if [ "$REMAINING" -gt 0 ]; then
+  echo "⚠️  $REMAINING open issue(s) still labeled '$PHASE_LABEL':"
+  gh issue list \
+    --repo cgcardona/maestro \
+    --label "$PHASE_LABEL" \
+    --state open \
+    --json number,title,url \
+    --jq '.[] | "#\(.number)  \(.title)\n  \(.url)"'
+  echo ""
+  echo "→ These need implementation, review, or explicit closure before moving to the next phase."
+  echo "→ Common causes:"
+  echo "   • Issue was labeled phase-X but not included in any batch (add to next batch)"
+  echo "   • PR was merged without 'Closes #N' in the body (close the issue manually)"
+  echo "   • Issue describes work that was done in a different PR (close with a comment citing that PR)"
+else
+  echo "✅ All '$PHASE_LABEL' issues are closed. Phase is complete — safe to advance."
+fi
+```
+
+**Do not advance to the next phase until this script prints the ✅ line.**
+
+### 2 — PR audit
+
+```bash
+gh pr list --repo cgcardona/maestro --state open
+```
+
+All PRs from this batch should be open (awaiting review) or merged. None should be closed/rejected without a corresponding issue closure.
+
+### 3 — Worktree cleanup
+
+```bash
+git worktree list   # should show only the main repo
+# If stale worktrees linger (agent crashed before self-destructing):
+git -C "$(git rev-parse --show-toplevel)" worktree prune
+```
+
+### 4 — Main repo cleanliness
+
+```bash
+git -C "$(git rev-parse --show-toplevel)" status
+# Must show: nothing to commit, working tree clean
+# If not:
+REPO=$(git rev-parse --show-toplevel)
+git -C "$REPO" restore --staged .
+git -C "$REPO" restore .
+```
+
+### 5 — Hand off to PR review
+
+PRs from this batch are immediately available for the **PARALLEL_PR_REVIEW.md** workflow. Run that now — issues only close automatically when PRs are **merged**, not just opened.
