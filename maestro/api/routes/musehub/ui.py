@@ -41,6 +41,8 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo      -- tempo analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics   -- dynamics analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/motifs     -- motif browser (recurring patterns, transformations)
+  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}          -- interactive piano roll (all tracks)
+  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}/{path}   -- interactive piano roll (single MIDI file)
 
 These routes require NO JWT auth -- they return HTML shells whose embedded
 JavaScript fetches data from the authed JSON API (``/api/v1/musehub/...``)
@@ -1948,3 +1950,94 @@ async def harmony_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
 </body>
 </html>"""
     return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{owner}/{repo_slug}/piano-roll/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub piano roll — all MIDI tracks",
+)
+async def piano_roll_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the Canvas-based interactive piano roll for all MIDI tracks at ``ref``.
+
+    The page shell fetches a list of MIDI artifacts at the given ref from the
+    ``GET /api/v1/musehub/repos/{repo_id}/objects`` endpoint, then calls
+    ``GET /api/v1/musehub/repos/{repo_id}/objects/{id}/parse-midi`` for each
+    selected file.  The parsed note data is rendered into a Canvas element via
+    ``piano-roll.js``.
+
+    Features:
+    - Pitch on Y-axis with a piano keyboard strip
+    - Beat grid on X-axis with measure markers
+    - Per-track colour coding (design system palette)
+    - Velocity mapped to rectangle opacity
+    - Zoom controls (horizontal and vertical sliders)
+    - Pan via click-drag
+    - Hover tooltip: pitch name, velocity, beat position, duration
+
+    No JWT required — HTML shell; JS fetches authed data via localStorage token.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/piano_roll.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "short_ref": short_ref,
+            "path": None,
+            "base_url": base_url,
+            "current_page": "piano-roll",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/piano-roll/{ref}/{path:path}",
+    response_class=HTMLResponse,
+    summary="Muse Hub piano roll — single MIDI track",
+)
+async def piano_roll_track_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    path: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the Canvas-based piano roll scoped to a single MIDI file ``path``.
+
+    Identical to :func:`piano_roll_page` but restricts the view to one specific
+    MIDI artifact identified by its repo-relative path
+    (e.g. ``tracks/bass.mid``).  The ``path`` segment is forwarded to the
+    template as a JavaScript string; the client-side code resolves the
+    matching object ID via the objects list API.
+
+    Useful for per-track deep-dive links from the tree browser or commit
+    detail page.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/piano_roll.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "short_ref": short_ref,
+            "path": path,
+            "base_url": base_url,
+            "current_page": "piano-roll",
+        },
+    )

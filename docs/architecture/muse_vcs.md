@@ -7640,3 +7640,83 @@ structure is derived by splitting object `path` fields on `/`.
 | Tests | `tests/test_musehub_ui.py` — `test_tree_*` (6 tests) |
 
 ---
+
+---
+
+## Piano Roll Renderer
+
+### Overview
+
+The MuseHub piano roll provides an interactive Canvas-based MIDI visualisation
+accessible from any MIDI artifact stored in a Muse Hub repo.  It is split into
+a server-side parser and a client-side renderer.
+
+### Architecture
+
+```
+Browser                            Maestro API
+  │                                     │
+  │  GET /musehub/ui/{owner}/{slug}/    │
+  │      piano-roll/{ref}               │
+  │ ──────────────────────────────────► │  piano_roll_page()
+  │ ◄──────────────────────────────────  piano_roll.html shell
+  │                                     │
+  │  [JS] apiFetch /objects?limit=500   │
+  │ ──────────────────────────────────► │  list_objects()
+  │ ◄──────────────────────────────────  ObjectMetaListResponse
+  │                                     │
+  │  [JS] apiFetch /objects/{id}/       │
+  │             parse-midi              │
+  │ ──────────────────────────────────► │  parse_midi_object()
+  │                                     │    → parse_midi_bytes()
+  │ ◄──────────────────────────────────  MidiParseResult (JSON)
+  │                                     │
+  │  [JS] PianoRoll.render(midi, el)    │
+  │  Canvas draw loop                   │
+```
+
+### Server-Side Parser (`musehub_midi_parser.py`)
+
+`parse_midi_bytes(data: bytes) → MidiParseResult`
+
+- Uses the `mido` library to read Standard MIDI Files (types 0, 1, 2).
+- Converts all tick offsets to quarter-note beats using `ticks_per_beat`.
+- Handles note-on / note-off pairing (including velocity-0 note-off shorthand).
+- Closes dangling note-ons at end-of-track with minimum duration.
+- Extracts `set_tempo`, `time_signature`, and `track_name` meta messages.
+- Returns `MidiParseResult` — a `TypedDict` registered in `type_contracts.md`.
+
+### Client-Side Renderer (`piano-roll.js`)
+
+`PianoRoll.render(midiParseResult, containerElement, options)`
+
+Renders a `<canvas>` element with:
+
+| Feature | Implementation |
+|---------|---------------|
+| Pitch axis | Piano keyboard strip (left margin, white/black key shading) |
+| Time axis | Beat grid with measure markers, auto-density by zoom level |
+| Note rectangles | Per-track colour from design palette; opacity = velocity / 127 |
+| Zoom | Horizontal (`px/beat`) and vertical (`px/pitch row`) range sliders |
+| Pan | Click-drag on canvas; `panX` in beats, `panY` in pitch rows |
+| Tooltip | Hover shows pitch name, MIDI pitch, velocity, beat, duration |
+| Track filter | `<select>` — all tracks or single track |
+| Device pixel ratio | Renders at native DPR for crisp display on HiDPI screens |
+
+### Routes
+
+| Method | Path | Handler | Description |
+|--------|------|---------|-------------|
+| `GET` | `/musehub/ui/{owner}/{slug}/piano-roll/{ref}` | `piano_roll_page` | All MIDI tracks at ref |
+| `GET` | `/musehub/ui/{owner}/{slug}/piano-roll/{ref}/{path}` | `piano_roll_track_page` | Single MIDI file |
+| `GET` | `/api/v1/musehub/repos/{repo_id}/objects/{id}/parse-midi` | `parse_midi_object` | MIDI-to-JSON endpoint |
+
+### Static Asset
+
+`/musehub/static/piano-roll.js` — served by the existing `StaticFiles` mount
+at `maestro/main.py`. No rebuild required.
+
+### Navigation Context
+
+Add `current_page: "piano-roll"` to the template context when linking from
+other pages (tree browser, commit detail, blob viewer).
