@@ -5009,6 +5009,61 @@ No DB interaction at checkout time — the DAG remains intact.
 
 ---
 
+### `muse restore`
+
+**Purpose:** Restore specific files from a commit or index into `muse-work/` without
+touching the branch pointer.  Surgical alternative to `muse reset --hard` — bring
+back "the bass from take 3" while keeping everything else at HEAD.
+
+**Usage:**
+```bash
+muse restore <paths>...                          # restore from HEAD (default)
+muse restore --staged <paths>...                 # restore index entry from HEAD
+muse restore --source <commit> <paths>...        # restore from a specific commit
+muse restore --worktree --source <commit> <paths>...  # explicit worktree restore
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<paths>...` | positional | — | One or more relative paths within `muse-work/` to restore. Accepts paths with or without the `muse-work/` prefix. |
+| `--staged` | flag | off | Restore the index (snapshot manifest) entry from the source commit. In the current Muse model (no separate staging area) this is equivalent to `--worktree`. |
+| `--worktree` | flag | off | Restore `muse-work/` files from the source snapshot. Default when no mode flag is specified. |
+| `--source / -s` | str | HEAD | Commit reference to restore from: `HEAD`, `HEAD~N`, full SHA, or any unambiguous SHA prefix. |
+
+**Output example:**
+```
+✅ Restored 'bass/bassline.mid' from commit ab12cd34
+```
+
+Multiple files:
+```
+✅ Restored 2 files from commit ab12cd34:
+   • bass/bassline.mid
+   • drums/kick.mid
+```
+
+**Result type:** `RestoreResult` — fields: `source_commit_id` (str), `paths_restored` (list[str]), `staged` (bool).
+
+**Error cases:**
+- `PathNotInSnapshotError` — the requested path does not exist in the source commit's snapshot. Exit code 1.
+- `MissingObjectError` — the required blob is absent from `.muse/objects/`. Exit code 3.
+- Unknown `--source` ref — exits with code 1 and a clear error message.
+
+**Agent use case:** An AI composition agent can selectively restore individual
+instrument tracks from historical commits.  For example, after generating several
+takes, the agent can restore the best bass line from take 3 while keeping drums
+and keys from take 7 — without modifying the branch history.  Use `muse log` to
+identify commit SHAs, then `muse show <commit>` to inspect the snapshot manifest
+before running `muse restore`.
+
+**Implementation:** `maestro/muse_cli/commands/restore.py` (CLI) and
+`maestro/services/muse_restore.py` (service).  Uses the same object store helpers
+as `muse reset --hard`.  Branch pointer is never modified.
+
+---
+
 ### `muse resolve`
 
 **Purpose:** Mark a conflicted file as resolved during a paused `muse merge`.
