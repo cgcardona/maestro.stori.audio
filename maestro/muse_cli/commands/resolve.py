@@ -151,13 +151,11 @@ def resolve(
     ours: bool = typer.Option(
         False,
         "--ours",
-        is_flag=True,
         help="Keep the current branch's version (no file change required).",
     ),
     theirs: bool = typer.Option(
         False,
         "--theirs",
-        is_flag=True,
         help="Accept the incoming branch's version (edit the file first, then mark resolved).",
     ),
 ) -> None:

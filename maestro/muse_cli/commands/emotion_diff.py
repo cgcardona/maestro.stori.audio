@@ -347,7 +347,6 @@ def emotion_diff(
     as_json: bool = typer.Option(
         False,
         "--json",
-        is_flag=True,
         help="Emit structured JSON for agent or tool consumption.",
     ),
 ) -> None:
