@@ -47,7 +47,7 @@ async def create_pull_request(
     body: PRCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    token: TokenClaims = Depends(require_valid_token),
 ) -> PRResponse:
     """Open a new pull request proposing to merge from_branch into to_branch.
 
@@ -72,6 +72,7 @@ async def create_pull_request(
             from_branch=body.from_branch,
             to_branch=body.to_branch,
             body=body.body,
+            author=token.get("sub", ""),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))

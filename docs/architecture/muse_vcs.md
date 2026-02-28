@@ -7325,3 +7325,142 @@ files required.
 | Tests | `tests/test_musehub_ui.py` | `test_design_tokens_css_served`, `test_components_css_served`, `test_repo_page_uses_design_system`, `test_responsive_meta_tag_present_*` |
 
 ---
+
+## Emotion Map Page (issue #227)
+
+The emotion map page visualises four emotional dimensions — **energy**, **valence**, **tension**, and **darkness** — across time within a composition and across its commit history.
+
+### Motivation
+
+A film scorer needs to verify that the emotional arc of their composition matches the scene's emotional beats across the full commit history.  Running `muse emotion-diff` between individual commit pairs is manual and error-prone.  The emotion map provides a single-glance visual overview.
+
+### Route
+
+```
+GET /musehub/ui/{repo_id}/analysis/{ref}/emotion
+```
+
+Returns a static HTML shell (no JWT required).  JavaScript fetches the JSON emotion map from the authed API and renders:
+
+- **Evolution chart** — SVG line chart of all four dimensions sampled beat-by-beat within `ref`.
+- **Trajectory chart** — Per-commit summary vectors across the 5 most recent ancestor commits plus HEAD.
+- **Drift list** — Euclidean distance in emotion space between consecutive commits, with the dominant-change axis identified.
+- **Narrative** — Auto-generated text describing the emotional journey.
+- **Track / section filters** — Reload the data with instrument or section scope.
+
+### JSON Endpoint
+
+```
+GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/emotion-map
+```
+
+Requires JWT Bearer auth.  Returns `EmotionMapResponse` (see type contracts).  Query params: `?track=` and `?section=`.
+
+### Emotion Axes (all 0.0–1.0)
+
+| Axis | Description |
+|------|-------------|
+| `energy` | Compositional drive / activity level |
+| `valence` | Brightness / positivity (0=dark, 1=bright) |
+| `tension` | Harmonic and rhythmic tension |
+| `darkness` | Brooding / ominous quality (inversely correlated with valence) |
+
+Note: `valence` here is re-normalised to [0, 1] relative to the `EmotionData` model (which uses –1…+1) so all four axes share the same visual scale in charts.
+
+### Implementation
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Pydantic models | `maestro/models/musehub_analysis.py` | `EmotionVector`, `EmotionMapPoint`, `CommitEmotionSnapshot`, `EmotionDrift`, `EmotionMapResponse` |
+| Service | `maestro/services/musehub_analysis.py` | `compute_emotion_map()` — builds evolution, trajectory, drift, and narrative |
+| Route (JSON) | `maestro/api/routes/musehub/analysis.py` | `GET .../emotion-map` — registered before `/{dimension}` to avoid parameter capture |
+| Route (UI) | `maestro/api/routes/musehub/ui.py` | `emotion_map_page()` — static HTML shell at `.../analysis/{ref}/emotion` |
+| Tests | `tests/test_musehub_ui.py` | Page renders, no-auth, chart JS, filters, JSON fields, trajectory, drift |
+| Tests | `tests/test_musehub_analysis.py` | Service unit tests + HTTP endpoint tests |
+
+### Muse VCS Considerations
+
+- **Affected operations:** Maps conceptually to `muse emotion-diff` — the page shows what `emotion-diff` would show for all pairs in recent history.
+- **Reproducibility impact:** Stub data is deterministic for a given `ref` (seeded by MD5 of the ref string).  Full MIDI-analysis-based inference will be model-dependent once Storpheus exposes an emotion introspection route.
+
+---
+
+## Muse Hub — Tree Browser (issue #204)
+
+**Purpose:** GitHub-style directory tree browser for navigating the muse-work
+file structure stored in a Muse Hub repo.  Musicians use it to find specific
+MIDI tracks, rendered MP3s, metadata files, and preview images without using
+the CLI.
+
+### URL Pattern
+
+| Route | Description |
+|-------|-------------|
+| `GET /musehub/ui/{owner}/{repo_slug}/tree/{ref}` | Root directory listing |
+| `GET /musehub/ui/{owner}/{repo_slug}/tree/{ref}/{path}` | Subdirectory listing |
+| `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}?owner=&repo_slug=` | JSON root listing |
+| `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}/{path}?owner=&repo_slug=` | JSON subdirectory listing |
+
+**Auth:** No JWT required for HTML shell (public repos). JSON API enforces auth
+for private repos.
+
+### Ref Resolution
+
+`{ref}` can be:
+- A **branch name** (e.g. `main`, `feature/groove`) — resolved via `musehub_branches`.
+- A **full commit ID** — resolved via `musehub_commits`.
+
+An unknown ref returns HTTP 404. This check is performed by
+`musehub_repository.resolve_ref_for_tree()`.
+
+### Tree Reconstruction
+
+The tree is reconstructed at request time from all `musehub_objects` stored
+under the repo. No snapshot manifest table is required — the directory
+structure is derived by splitting object `path` fields on `/`.
+
+`musehub_repository.list_tree()` algorithm:
+1. Fetch all objects for the repo ordered by path.
+2. Strip the `dir_path` prefix from each object's path.
+3. If the remainder has no `/` → file entry at this level.
+4. If the remainder has a `/` → directory entry (first segment only, deduplicated).
+5. Return dirs first (alphabetical), then files (alphabetical).
+
+### Response Shape (`TreeListResponse`)
+
+```json
+{
+  "owner": "gabriel",
+  "repoSlug": "summer-groove",
+  "ref": "main",
+  "dirPath": "",
+  "entries": [
+    { "type": "dir",  "name": "tracks",       "path": "tracks",          "sizeBytes": null },
+    { "type": "file", "name": "cover.webp",   "path": "cover.webp",      "sizeBytes": 4096 },
+    { "type": "file", "name": "metadata.json","path": "metadata.json",   "sizeBytes": 512  }
+  ]
+}
+```
+
+### File-Type Icons
+
+| Extension | Icon | Symbol code |
+|-----------|------|-------------|
+| `.mid` / `.midi` | Piano | `&#127929;` |
+| `.mp3` / `.wav` / `.ogg` | Waveform | `&#127925;` |
+| `.json` | Braces | `&#123;&#125;` |
+| `.webp` / `.png` / `.jpg` | Photo | `&#128444;` |
+| Other | Generic file | `&#128196;` |
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| Models | `maestro/models/musehub.py` — `TreeEntryResponse`, `TreeListResponse` |
+| Repository | `maestro/services/musehub_repository.py` — `resolve_ref_for_tree()`, `list_tree()` |
+| JSON API | `maestro/api/routes/musehub/objects.py` — `list_tree_root()`, `list_tree_subdir()` |
+| HTML routes | `maestro/api/routes/musehub/ui.py` — `tree_page()`, `tree_subdir_page()` |
+| Template | `maestro/templates/musehub/pages/tree.html` |
+| Tests | `tests/test_musehub_ui.py` — `test_tree_*` (6 tests) |
+
+---

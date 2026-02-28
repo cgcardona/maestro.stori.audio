@@ -42,7 +42,7 @@ async def create_issue(
     body: IssueCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    token: TokenClaims = Depends(require_valid_token),
 ) -> IssueResponse:
     """Create a new issue in ``open`` state with an auto-incremented per-repo number."""
     repo = await musehub_repository.get_repo(db, repo_id)
@@ -55,6 +55,7 @@ async def create_issue(
         title=body.title,
         body=body.body,
         labels=body.labels,
+        author=token.get("sub", ""),
     )
     await db.commit()
 

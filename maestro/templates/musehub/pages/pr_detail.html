@@ -49,6 +49,14 @@ async function load() {
           <span class="badge badge-${pr.state}">${pr.state}</span>
         </div>
         <div class="meta-row">
+          ${pr.author ? `
+          <div class="meta-item">
+            <span class="meta-label">Author</span>
+            <span class="meta-value" style="display:flex;align-items:center;gap:6px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent,#58a6ff);color:#0d1117;font-size:11px;font-weight:700;flex-shrink:0">${escHtml(pr.author.charAt(0).toUpperCase())}</span>
+              <a href="${base.replace(/\/[^/]+\/[^/]+$/, '')}/users/${encodeURIComponent(escHtml(pr.author))}">${escHtml(pr.author)}</a>
+            </span>
+          </div>` : ''}
           <div class="meta-item">
             <span class="meta-label">From</span>
             <span class="meta-value" style="font-family:monospace">${escHtml(pr.fromBranch)}</span>

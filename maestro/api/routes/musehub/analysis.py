@@ -1,8 +1,9 @@
 """Muse Hub Analysis API — agent-friendly structured JSON for all musical dimensions.
 
 Endpoint summary:
-  GET /musehub/repos/{repo_id}/analysis/{ref}            — all 13 dimensions
-  GET /musehub/repos/{repo_id}/analysis/{ref}/{dimension} — one dimension
+  GET /musehub/repos/{repo_id}/analysis/{ref}                  — all 13 dimensions
+  GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-map      — emotion map (issue #227)
+  GET /musehub/repos/{repo_id}/analysis/{ref}/{dimension}      — one dimension
 
 Supported dimensions (13):
   harmony, dynamics, motifs, form, groove, emotion, chord-map, contour,
@@ -36,6 +37,7 @@ from maestro.models.musehub_analysis import (
     AggregateAnalysisResponse,
     AnalysisResponse,
     DynamicsPageData,
+    EmotionMapResponse,
 )
 from maestro.services import musehub_analysis, musehub_repository
 
@@ -97,6 +99,63 @@ async def get_aggregate_analysis(
     )
 
     etag = _etag(repo_id, ref, "aggregate")
+    response.headers["ETag"] = etag
+    response.headers["Last-Modified"] = _LAST_MODIFIED
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return result
+
+
+@router.get(
+    "/repos/{repo_id}/analysis/{ref}/emotion-map",
+    response_model=EmotionMapResponse,
+    summary="Emotion map — energy/valence/tension/darkness across time and commits",
+    description=(
+        "Returns a full emotion map for a Muse repo ref, combining:\n"
+        "- **Per-beat evolution**: how energy, valence, tension, and darkness "
+        "change beat-by-beat within this ref.\n"
+        "- **Cross-commit trajectory**: aggregated emotion vectors for the 5 most "
+        "recent ancestor commits plus HEAD, enabling cross-version comparison.\n"
+        "- **Drift distances**: Euclidean distance in emotion space between "
+        "consecutive commits, with the dominant-change axis identified.\n"
+        "- **Narrative**: auto-generated text describing the emotional journey.\n"
+        "- **Source**: whether emotion data is explicit (tags), inferred, or mixed.\n\n"
+        "Use ``?track=`` and ``?section=`` to restrict analysis to a specific "
+        "instrument or musical section."
+    ),
+)
+async def get_emotion_map(
+    repo_id: str,
+    ref: str,
+    response: Response,
+    track: str | None = Query(None, description="Instrument track filter, e.g. 'bass', 'keys'"),
+    section: str | None = Query(None, description="Section filter, e.g. 'chorus', 'verse_1'"),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> EmotionMapResponse:
+    """Return the full emotion map for a Muse repo ref.
+
+    The response combines intra-ref per-beat evolution, cross-commit trajectory,
+    drift distances, narrative text, and source attribution — everything the
+    MuseHub emotion map page needs in a single authenticated request.
+
+    Emotion vectors use four normalised axes (all 0.0–1.0):
+    - ``energy``   — compositional drive/activity level
+    - ``valence``  — brightness/positivity (0=dark, 1=bright)
+    - ``tension``  — harmonic and rhythmic tension
+    - ``darkness`` — brooding/ominous quality (inversely correlated with valence)
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    result = musehub_analysis.compute_emotion_map(
+        repo_id=repo_id,
+        ref=ref,
+        track=track,
+        section=section,
+    )
+
+    etag = _etag(repo_id, ref, "emotion-map")
     response.headers["ETag"] = etag
     response.headers["Last-Modified"] = _LAST_MODIFIED
     response.headers["Cache-Control"] = "private, max-age=60"
