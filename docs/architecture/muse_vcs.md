@@ -2135,9 +2135,31 @@ Renders an interactive page featuring:
 Pull requests let musicians propose merging one branch variation into another, enabling async review before incorporating changes into the canonical arrangement.
 
 - **States:** `open` (on creation) → `merged` (via merge endpoint) | `closed` (future: manual close).
-- **Merge strategy:** Only `merge_commit` at MVP. Creates a real merge commit on `to_branch` with two parent IDs (`[to_branch head, from_branch head]`), then advances the `to_branch` head pointer.
+- **Merge strategies:** `merge_commit` (default), `squash`, and `rebase` are accepted by the API. All three currently use merge-commit semantics — distinct strategy behavior is tracked as a follow-up.
 - **Validation:** `from_branch == to_branch` → 422. Missing `from_branch` → 404. Already merged/closed → 409 on merge attempt.
 - **Filtering:** `GET /pull-requests?state=open` returns only open PRs. Default (`state=all`) returns all states.
+
+#### PR Detail Page — Musical Diff (issue #215)
+
+The PR detail page (`GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}`) now shows a full musical diff UI on top of the existing metadata and merge button:
+
+| Component | Description |
+|-----------|-------------|
+| **Five-axis radar chart** | Visual divergence across harmonic, rhythmic, melodic, structural, dynamic dimensions — each axis shows delta magnitude in [0.0, 1.0] |
+| **Diff summary badges** | Per-dimension delta labels (e.g. `+23.5%`, `unchanged`) computed from the Jaccard divergence score |
+| **Before/after piano roll** | Deterministic note-grid comparison seeded from branch names — green = added, red = removed, grey = unchanged |
+| **Audio A/B toggle** | Switch between base (`to_branch`) and head (`from_branch`) audio renders; gracefully degrades if renders not available |
+| **Merge strategy selector** | Choose `merge_commit`, `squash`, or `rebase` before clicking merge |
+| **PR timeline** | Open → (review) → merge/close state progression with timestamps |
+| **Affected sections** | Commit-message-derived list of structural sections touched by the PR (bridge, chorus, verse, etc.) |
+
+**Musical diff endpoint:** `GET /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/diff`
+
+Returns `PRDiffResponse` — a `PRDiffDimensionScore` for each of the five musical dimensions plus `overall_score`, `common_ancestor`, and `affected_sections`.
+
+**Content negotiation:** `GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}?format=json` returns the full `PRDiffResponse` for AI agent consumption. Agents use this to reason about musical impact before approving a merge — e.g. a large harmonic delta with unchanged rhythm signals a chord progression update that preserves the groove.
+
+**Graceful degradation:** When one or both branches have no commits (divergence engine raises `ValueError`), the endpoint returns five zero-score placeholder dimensions so the page always renders cleanly.
 
 ### Sync Protocol Design
 
@@ -7324,6 +7346,181 @@ session.
 
 ---
 
+## Muse Hub — Per-Dimension Analysis Detail Pages (issue #332)
+
+**Purpose:** Each of the 10 analysis dashboard cards links to a dedicated
+per-dimension page at `/{owner}/{repo_slug}/analysis/{ref}/{dim_id}`.  This
+section documents the 6 pages added in issue #332 to complete the set (key,
+meter, chord-map, groove, emotion, form).
+
+### Key Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/key`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Tonic + mode display** — large coloured badge showing detected key (e.g. `G dorian`).
+- **Relative key** — companion key alongside the primary (e.g. `Bb major`).
+- **Confidence bar** — colour-coded progress bar (green >= 80%, orange >= 60%, red < 60%).
+- **Alternate key candidates** — ranked list of secondary hypotheses with individual confidence bars.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/key`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tonic` | `str` | Detected tonic pitch class, e.g. `C`, `F#` |
+| `mode` | `str` | Detected mode, e.g. `major`, `dorian`, `mixolydian` |
+| `confidence` | `float` | Detection confidence, 0-1 |
+| `relative_key` | `str` | Relative major/minor key |
+| `alternate_keys` | `list[AlternateKey]` | Secondary candidates ranked by confidence |
+
+**Agent use case:** Before generating harmonic material, an agent fetches the key page
+to confirm the tonal centre. When `confidence < 0.7`, the agent inspects `alternate_keys`
+to handle tonally ambiguous pieces.
+
+### Meter Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/meter`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Time signature** — large display of the primary time signature (e.g. `6/8`).
+- **Compound/simple badge** — classifies the meter type.
+- **Beat strength profile SVG** — bar chart of relative beat strengths across one bar.
+- **Irregular sections table** — lists any sections where the meter deviates from the primary.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/meter`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `time_signature` | `str` | Primary time signature, e.g. `4/4`, `6/8` |
+| `is_compound` | `bool` | True for compound meters like 6/8, 12/8 |
+| `beat_strength_profile` | `list[float]` | Relative beat strengths across one bar |
+| `irregular_sections` | `list[IrregularSection]` | Sections with non-primary meter |
+
+**Agent use case:** An agent generating rhythmic material checks this page to avoid
+placing accents on weak beats and adjusts triplet groupings for compound meters.
+
+### Chord Map Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/chord-map`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Summary counts** — total chords and total beats.
+- **Chord progression table** — beat-position, chord, Roman numeral function, and tension
+  score with per-row tension bars colour-coded green/orange/red.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/chord-map`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `progression` | `list[ChordEvent]` | Time-ordered chord events |
+| `total_chords` | `int` | Total number of distinct chord events |
+| `total_beats` | `int` | Duration of the ref in beats |
+
+`ChordEvent` fields: `beat: float`, `chord: str`, `function: str`, `tension: float (0-1)`.
+
+**Agent use case:** An agent generating accompaniment inspects the chord map to produce
+harmonically idiomatic voicings. High `tension` chords (> 0.7) signal dissonance points
+where resolution material is appropriate.
+
+### Groove Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/groove`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Style badge** — detected groove style (`straight`, `swing`, `shuffled`, `latin`, `funk`).
+- **BPM + grid resolution** — primary tempo and quantization grid (e.g. `1/16`).
+- **Onset deviation** — mean absolute deviation of note onsets from the grid in beats.
+- **Groove score gauge** — colour-coded percentage bar (green >= 80%, orange >= 60%, red < 60%).
+- **Swing factor bar** — 0.5 = perfectly straight, 0.67 = hard triplet swing.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/groove`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `style` | `str` | Detected groove style |
+| `bpm` | `float` | Primary BPM |
+| `grid_resolution` | `str` | Quantization grid, e.g. `1/16`, `1/8T` |
+| `onset_deviation` | `float` | Mean absolute note onset deviation from grid (beats) |
+| `groove_score` | `float` | Aggregate rhythmic tightness (1 = very tight) |
+| `swing_factor` | `float` | 0.5 = straight, ~0.67 = triplet swing |
+
+**Agent use case:** When generating continuation material, an agent matches the groove
+style and swing factor so generated notes feel rhythmically consistent with the existing
+recording rather than mechanically quantized.
+
+### Emotion Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/emotion`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Primary emotion badge** — dominant emotion label (e.g. `joyful`, `melancholic`).
+- **Valence-arousal plot** — 2D scatter dot on the valence (x) x arousal (y) plane.
+- **Axis bars** — individual bars for valence (re-normalised to 0-1), arousal, and tension.
+- **Confidence score** — detection confidence percentage.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/emotion`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `valence` | `float` | -1 (sad/dark) to +1 (happy/bright) |
+| `arousal` | `float` | 0 (calm) to 1 (energetic) |
+| `tension` | `float` | 0 (relaxed) to 1 (tense/dissonant) |
+| `primary_emotion` | `str` | Dominant emotion label |
+| `confidence` | `float` | Detection confidence, 0-1 |
+
+**Agent use case:** An agent generating a bridge section checks the emotion page to decide
+whether to maintain or contrast the current emotional character. Low confidence (< 0.6)
+signals an emotionally ambiguous piece.
+
+### Form Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/form`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Form label** — detected macro form (e.g. `AABA`, `verse-chorus`, `through-composed`).
+- **Section counts** — total beats and number of formal sections.
+- **Form timeline** — colour-coded horizontal bar with proportional-width segments per section.
+- **Sections table** — per-section label, function, and beat range.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/form`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `form_label` | `str` | Detected macro form, e.g. `AABA`, `verse-chorus` |
+| `total_beats` | `int` | Total duration in beats |
+| `sections` | `list[SectionEntry]` | Formal sections in order |
+
+`SectionEntry` fields: `label`, `function`, `start_beat`, `end_beat`, `length_beats`.
+
+**Agent use case:** Before generating a new section, an agent reads the form page to
+understand where it is in the compositional arc (e.g. after two verses, a chorus is
+expected). The colour-coded timeline shows how much of the form is already complete.
+
+### Implementation (all 10 dimension pages)
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Pydantic models | `maestro/models/musehub_analysis.py` | `ContourData`, `TempoData`, `KeyData`, `MeterData`, `ChordMapData`, `GrooveData`, `EmotionData`, `FormData` |
+| Service | `maestro/services/musehub_analysis.py` | `compute_dimension(dim, ...)` -- handles all 10 dimensions |
+| Analysis route | `maestro/api/routes/musehub/analysis.py` | `GET /repos/{id}/analysis/{ref}/{dim}` for each dimension |
+| UI route | `maestro/api/routes/musehub/ui.py` | `key_analysis_page()`, `meter_analysis_page()`, `chord_map_analysis_page()`, `groove_analysis_page()`, `emotion_analysis_page()`, `form_analysis_page()` |
+| Templates | `maestro/templates/musehub/pages/` | `key.html`, `meter.html`, `chord_map.html`, `groove.html`, `emotion.html`, `form.html` |
+| Tests | `tests/test_musehub_ui.py` | `test_*_page_renders`, `test_*_page_no_auth_required`, `test_*_page_contains_*_data_labels` for each dimension |
+
+---
+
 ## MuseHub Design System
 
 MuseHub pages share a structured CSS framework served as static assets from
@@ -8317,3 +8514,66 @@ something meaningful.
 | Tests (UI) | `tests/test_musehub_ui.py` — `test_score_*` (9 tests) |
 
 ---
+
+## Issue Tracker Enhancements (Phase 9 — Issue #218)
+
+### Overview
+
+The Muse Hub issue tracker supports full collaborative workflows beyond the initial title/body/close MVP. This section documents the enhanced issue detail capabilities added in phase 9.
+
+### Features
+
+**Threaded Discussion**
+
+Issues support threaded comments via `POST /issues/{number}/comments`. Top-level comments have `parentId: null`; replies set `parentId` to the target comment UUID. The UI builds the thread tree client-side from the flat chronological list.
+
+**Musical Context Linking**
+
+Comment bodies are scanned at write time for musical context references using the pattern `type:value`:
+
+| Syntax | Type | Example |
+|--------|------|---------|
+| `track:bass` | track | References the bass track |
+| `section:chorus` | section | References the chorus section |
+| `beats:16-24` | beats | References a beat range |
+
+Parsed refs are stored in `musehub_issue_comments.musical_refs` (JSON array) and returned in `IssueCommentResponse.musicalRefs`. The issue detail UI renders them as coloured badges.
+
+**Assignees**
+
+A single collaborator can be assigned per issue via `POST /issues/{number}/assign`. The `assignee` field is a free-form display name. Pass `"assignee": null` to unassign.
+
+**Milestones**
+
+Milestones group issues into named goals (e.g. "Album v1.0"). Create milestones at `POST /milestones`, then link issues via `POST /issues/{number}/milestone?milestone_id=<uuid>`. Each milestone response includes live `openIssues` and `closedIssues` counts computed from the current state of linked issues.
+
+**State Transitions**
+
+Issues may be reopened after closing: `POST /issues/{number}/reopen`. Both close and reopen fire webhook events with `action: "opened"/"closed"`.
+
+**Edit Capability**
+
+`PATCH /issues/{number}` allows partial updates to title, body, and labels.
+
+### Database Schema
+
+| Table | Purpose |
+|-------|---------|
+| `musehub_milestones` | Per-repo milestone definitions |
+| `musehub_issues` | Extended with `assignee`, `milestone_id`, `updated_at` |
+| `musehub_issue_comments` | Threaded comments with `parent_id` and `musical_refs` |
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| DB models | `maestro/db/musehub_models.py` — `MusehubMilestone`, `MusehubIssueComment`, extended `MusehubIssue` |
+| Pydantic models | `maestro/models/musehub.py` — `MilestoneCreate/Response`, `IssueCommentCreate/Response`, `IssueUpdate`, `IssueAssignRequest`, `MusicalRef` |
+| Service | `maestro/services/musehub_issues.py` — comment CRUD, milestone CRUD, assign, reopen, update |
+| Routes | `maestro/api/routes/musehub/issues.py` — 12 endpoints |
+| UI template | `maestro/templates/musehub/pages/issue_detail.html` — threaded UI |
+| Migration | `alembic/versions/0001_consolidated_schema.py` — new tables and columns |
+| Tests | `tests/test_musehub_issues.py` — 12 new tests covering all acceptance criteria |
+
+---
+

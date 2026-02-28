@@ -1140,6 +1140,51 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+#### `PRDiffDimensionScore`
+
+**Path:** `maestro/models/musehub.py`
+
+**Pydantic model** — Per-dimension musical change score between the `from_branch` and `to_branch` of a pull request.  Scores are Jaccard divergence in [0.0, 1.0]: 0 = identical, 1 = completely different.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | Musical dimension: `harmonic` \| `rhythmic` \| `melodic` \| `structural` \| `dynamic` |
+| `score` | `float` | Divergence magnitude in [0.0, 1.0] |
+| `level` | `str` | Qualitative label: `NONE` \| `LOW` \| `MED` \| `HIGH` |
+| `delta_label` | `str` | Human-readable badge: `"unchanged"` or `"+N.N"` (percent) |
+| `description` | `str` | Prose summary of what changed in this dimension |
+| `from_branch_commits` | `int` | Commits in from_branch touching this dimension |
+| `to_branch_commits` | `int` | Commits in to_branch touching this dimension |
+
+**Wire name:** `PRDiffDimensionScore` → camelCase via `CamelModel`.
+
+---
+
+#### `PRDiffResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+**Pydantic model** — Musical diff between the `from_branch` and `to_branch` of a pull request.  Consumed by the PR detail page to render the radar chart, piano roll diff, audio A/B toggle, and dimension badges.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pr_id` | `str` | The pull request being inspected |
+| `repo_id` | `str` | The repository containing the PR |
+| `from_branch` | `str` | Source branch name |
+| `to_branch` | `str` | Target branch name |
+| `dimensions` | `list[PRDiffDimensionScore]` | Per-dimension divergence scores (always five entries) |
+| `overall_score` | `float` | Mean of all five dimension scores in [0.0, 1.0] |
+| `common_ancestor` | `str \| None` | Merge-base commit ID; `None` if no common ancestor |
+| `affected_sections` | `list[str]` | Section/track names that changed (derived from commit messages) |
+
+**Endpoint:** `GET /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/diff`
+
+**UI Page:** `GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}?format=json`
+
+**Agent use case:** AI review agents call this endpoint before approving a merge to understand which musical dimensions changed and by how much.  A large harmonic delta with small rhythmic change signals a key or chord progression update; a large structural delta indicates section reorganization.
+
+---
+
 ### `ExpressivenessResult`
 
 **Path:** `maestro/services/expressiveness.py`
@@ -7814,3 +7859,69 @@ as JSON by `GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/parse-midi`.
 
 **Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
 **Consumed by:** `maestro.api.routes.musehub.objects.parse_midi_object()`; MuseHub piano roll JavaScript renderer (`piano-roll.js`)
+
+
+---
+
+### `IssueCommentResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+Pydantic `CamelModel` — Wire representation of a single threaded comment on a Muse Hub issue.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `comment_id` | `str` | Internal UUID for this comment |
+| `issue_id` | `str` | UUID of the parent issue |
+| `author` | `str` | Display name of the comment author |
+| `body` | `str` | Markdown comment body |
+| `parent_id` | `str \| None` | Parent comment UUID; null for top-level comments |
+| `musical_refs` | `list[MusicalRef]` | Parsed musical context references |
+| `is_deleted` | `bool` | True when soft-deleted |
+| `created_at` | `datetime` | Comment creation timestamp |
+| `updated_at` | `datetime` | Last edit timestamp |
+
+**Produced by:** `maestro.services.musehub_issues.create_comment()`, `list_comments()`
+**Consumed by:** `POST /issues/{number}/comments`, `GET /issues/{number}/comments`
+
+---
+
+### `MusicalRef`
+
+**Path:** `maestro/models/musehub.py`
+
+Pydantic `CamelModel` — A parsed musical context reference extracted from a comment body.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `str` | Reference type: `"track"` \| `"section"` \| `"beats"` |
+| `value` | `str` | The referenced value, e.g. `"bass"`, `"chorus"`, `"16-24"` |
+| `raw` | `str` | Original raw token from the comment body, e.g. `"track:bass"` |
+
+**Produced by:** `maestro.services.musehub_issues._parse_musical_refs()`
+**Consumed by:** `IssueCommentResponse.musical_refs`; issue detail UI rendering
+
+---
+
+### `MilestoneResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+Pydantic `CamelModel` — Wire representation of a Muse Hub milestone.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `milestone_id` | `str` | Internal UUID |
+| `number` | `int` | Per-repo sequential milestone number |
+| `title` | `str` | Milestone title |
+| `description` | `str` | Markdown description |
+| `state` | `str` | `"open"` or `"closed"` |
+| `author` | `str` | Creator display name |
+| `due_on` | `datetime \| None` | Optional due date |
+| `open_issues` | `int` | Number of open issues linked to this milestone |
+| `closed_issues` | `int` | Number of closed issues linked to this milestone |
+| `created_at` | `datetime` | Creation timestamp |
+
+**Produced by:** `maestro.services.musehub_issues.create_milestone()`, `list_milestones()`, `get_milestone()`
+**Consumed by:** `POST /milestones`, `GET /milestones`, `GET /milestones/{number}`
+
