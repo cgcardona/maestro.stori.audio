@@ -3,11 +3,11 @@
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (amend, arrange, ask, checkout, chord-map, commit, commit-tree,
 context, contour, describe, diff, divergence, dynamics, emotion-diff, export,
-find, form, grep, groove-check, humanize, import, init, inspect, key, log,
-merge, meter, open, play, pull, push, recall, remote, render-preview, reset, resolve,
-revert, session, show, similarity, status, swing, symbolic-ref, tag, tempo,
-tempo-scale, timeline, update-ref,
-validate, write-tree) as Typer sub-applications.
+find, form, grep, groove-check, harmony, humanize, import, init, inspect,
+key, log, merge, meter, open, play, pull, push, recall, remote, render-preview,
+reset, resolve, revert, session, show, similarity, status, swing, symbolic-ref,
+tag, tempo, tempo-scale, timeline, update-ref, validate,
+write-tree) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ from maestro.muse_cli.commands import (
     form,
     grep_cmd,
     groove_check,
+    harmony,
     humanize,
     import_cmd,
     init,
@@ -87,6 +88,7 @@ cli.add_typer(
 cli.add_typer(grep_cmd.app, name="grep", help="Search for a musical pattern across all commits.")
 cli.add_typer(log.app, name="log", help="Display the variation history graph.")
 cli.add_typer(find.app, name="find", help="Search commit history by musical properties.")
+cli.add_typer(harmony.app, name="harmony", help="Analyze harmonic content (key, mode, chords, tension) of a commit.")
 cli.add_typer(inspect.app, name="inspect", help="Print structured JSON of the Muse commit graph.")
 cli.add_typer(checkout.app, name="checkout", help="Checkout a historical variation.")
 cli.add_typer(merge.app, name="merge", help="Three-way merge two variation branches.")
