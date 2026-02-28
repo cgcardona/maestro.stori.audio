@@ -3521,6 +3521,74 @@ An AI music generation agent uses `muse render-preview HEAD~10 --json` to obtain
 
 ---
 
+## `muse symbolic-ref` — Read or Write a Symbolic Ref
+
+**Purpose:** Read or write a symbolic ref (e.g. `HEAD`), answering "which branch
+is currently checked out?" — the primitive that all checkout, branch, and HEAD
+management operations depend on.
+
+**Implementation:** `maestro/muse_cli/commands/symbolic_ref.py`\
+**Status:** ✅ implemented (issue #93)
+
+### Usage
+
+```bash
+muse symbolic-ref HEAD                         # read: prints refs/heads/main
+muse symbolic-ref --short HEAD                 # read short form: prints main
+muse symbolic-ref HEAD refs/heads/feature/x   # write: update .muse/HEAD
+muse symbolic-ref --delete HEAD               # delete the symbolic ref file
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<name>` | positional | required | Ref name, e.g. `HEAD` or `refs/heads/main` |
+| `<ref>` | positional | none | When supplied, write this target into the ref (must start with `refs/`) |
+| `--short` | flag | off | Print just the branch name (`main`) instead of the full ref path |
+| `--delete / -d` | flag | off | Delete the symbolic ref file entirely |
+| `--quiet / -q` | flag | off | Suppress error output when the ref is not symbolic |
+
+### Output example
+
+```
+# Read
+refs/heads/main
+
+# Read --short
+main
+
+# Write
+✅ HEAD → refs/heads/feature/guitar
+
+# Delete
+✅ Deleted symbolic ref 'HEAD'
+```
+
+### Result type
+
+`SymbolicRefResult` — fields: `name` (str), `ref` (str), `short` (str).
+
+### Agent use case
+
+An AI agent inspecting the current branch before generating new variations calls
+`muse symbolic-ref --short HEAD` to confirm it is operating on the expected branch.
+Before creating a new branch it calls `muse symbolic-ref HEAD refs/heads/feature/guitar`
+to update the HEAD pointer atomically. These are pure filesystem operations — no DB
+round-trip, sub-millisecond latency.
+
+### Error handling
+
+| Scenario | Exit code | Message |
+|----------|-----------|---------|
+| Ref file does not exist | 1 (USER_ERROR) | `❌ HEAD is not a symbolic ref or does not exist` |
+| Ref content is a bare SHA (detached HEAD) | 1 (USER_ERROR) | same |
+| `<ref>` does not start with `refs/` | 1 (USER_ERROR) | `❌ Invalid symbolic-ref target '…': must start with 'refs/'` |
+| `--delete` on absent file | 1 (USER_ERROR) | `❌ HEAD: not found — nothing to delete` |
+| Not in a repo | 2 (REPO_NOT_FOUND) | Standard `require_repo()` message |
+
+---
+
 ## `muse tempo-scale` — Stretch or Compress the Timing of a Commit
 
 **Purpose:** Apply a deterministic time-scaling transformation to a commit,
@@ -3607,6 +3675,72 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 
 ---
 
+## `muse update-ref` — Write or Delete a Ref (Branch or Tag Pointer)
+
+**Purpose:** Directly update a branch or tag pointer (`refs/heads/*` or `refs/tags/*`)
+in the `.muse/` object store.  This is the plumbing primitive scripting agents use when
+they need to advance a branch tip, retarget a tag, or remove a stale ref — without going
+through a higher-level command like `checkout` or `merge`.
+
+**Implementation:** `maestro/muse_cli/commands/update_ref.py`\
+**Status:** ✅ implemented (PR #143) — issue #91
+
+### Usage
+
+```bash
+muse update-ref <ref> <new-value> [OPTIONS]
+muse update-ref <ref> -d
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<ref>` | positional | required | Fully-qualified ref (e.g. `refs/heads/main`, `refs/tags/v1.0`) |
+| `<new-value>` | positional | required (unless `-d`) | Commit ID to write to the ref |
+| `--old-value <commit_id>` | string | off | CAS guard — only update if the current ref value matches this commit ID |
+| `-d / --delete` | flag | off | Delete the ref file instead of writing it |
+
+### Output example
+
+```
+# Standard write
+✅ refs/heads/main → 3f9ab2c1
+
+# CAS failure
+❌ CAS failure: expected '3f9ab2c1' but found 'a1b2c3d4'. Ref not updated.
+
+# Delete
+✅ Deleted ref 'refs/heads/feature'.
+
+# Commit not in DB
+❌ Commit 3f9ab2c1 not found in database.
+```
+
+### Validation
+
+- **Ref format:** Must start with `refs/heads/` or `refs/tags/`.  Any other prefix exits with `USER_ERROR`.
+- **Commit existence:** Before writing, the commit_id is looked up in `muse_cli_commits`.  If absent, exits `USER_ERROR`.
+- **CAS (`--old-value`):** Reads the current file contents and compares to the provided value.  Mismatch → `USER_ERROR`, ref unchanged.  Absent ref + any `--old-value` → `USER_ERROR`.
+- **Delete (`-d`):** Exits `USER_ERROR` when the ref file does not exist.
+
+### Result type
+
+`None` — this is a write command; output is emitted via `typer.echo`.
+
+### Agent use case
+
+An AI orchestration agent that manages multiple arrangement branches can call
+`muse update-ref refs/heads/feature/guitar <commit_id> --old-value <prev_id>`
+to atomically advance the branch tip after generating a new variation.  The CAS
+guard prevents a race condition when two generation passes complete concurrently —
+only the first one wins; the second will receive `USER_ERROR` and retry or backoff.
+
+Use `muse update-ref refs/tags/v1.0 <commit_id>` to mark a production-ready
+snapshot with a stable tag pointer that other agents can reference by name.
+
+---
+
 ## Command Registration Summary
 
 | Command | File | Status | Issue |
@@ -3627,10 +3761,12 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 | `muse render-preview` | `commands/render_preview.py` | ✅ implemented (issue #96) | #96 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
+| `muse symbolic-ref` | `commands/symbolic_ref.py` | ✅ implemented (issue #93) | #93 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
 | `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
 | `muse transpose` | `commands/transpose.py` | ✅ implemented | #102 |
+| `muse update-ref` | `commands/update_ref.py` | ✅ implemented (PR #143) | #91 |
 | `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
