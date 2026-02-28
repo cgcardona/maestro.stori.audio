@@ -1,0 +1,115 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Key {{ ref[:8] }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  analysis / {{ ref[:8] }} / key
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const ref     = {{ ref | tojson }};
+const base    = {{ base_url | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+const MODE_COLORS = {
+  major:      '#3fb950',
+  minor:      '#58a6ff',
+  dorian:     '#bc8cff',
+  phrygian:   '#f85149',
+  lydian:     '#ffa657',
+  mixolydian: '#f0883e',
+  locrian:    '#8b949e',
+};
+
+function modeColor(mode) {
+  return MODE_COLORS[mode] || '#58a6ff';
+}
+
+function confidenceBar(confidence) {
+  const pct = Math.round(confidence * 100);
+  const color = confidence >= 0.8 ? '#3fb950' : confidence >= 0.6 ? '#f0883e' : '#f85149';
+  return `
+    <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+      <div style="flex:1;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width 0.4s ease"></div>
+      </div>
+      <span style="font-size:13px;color:#8b949e;min-width:36px">${pct}%</span>
+    </div>`;
+}
+
+function alternateKeyRow(alt) {
+  const color = modeColor(alt.mode);
+  const pct = Math.round(alt.confidence * 100);
+  return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid #21262d">
+    <span style="min-width:80px;font-weight:600;color:#e6edf3;font-family:monospace">${escHtml(alt.tonic)} ${escHtml(alt.mode)}</span>
+    <div style="flex:1;height:6px;background:#21262d;border-radius:4px;overflow:hidden">
+      <div style="height:100%;width:${pct}%;background:${color}88;border-radius:4px"></div>
+    </div>
+    <span style="font-size:12px;color:#8b949e;min-width:32px">${pct}%</span>
+  </div>`;
+}
+
+async function load() {
+  initRepoNav(repoId);
+  try {
+    const url = '/repos/' + repoId + '/analysis/' + encodeURIComponent(ref) + '/key';
+    const data = await apiFetch(url);
+    const d = data.data;
+    const col = modeColor(d.mode);
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${escHtml(base)}">&larr; Back to repo</a>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+          <h1 style="margin:0">&#127925; Key Detection</h1>
+          <code style="font-size:13px;background:#0d1117;padding:2px 8px;border-radius:4px;color:#8b949e">
+            ref: ${escHtml(ref.substring(0, 8))}
+          </code>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:20px;margin-bottom:20px;flex-wrap:wrap">
+          <div style="background:#0d1117;border:2px solid ${col}44;border-radius:12px;padding:20px 32px;text-align:center">
+            <div style="font-size:36px;font-weight:700;color:${col};font-family:monospace;letter-spacing:2px">
+              ${escHtml(d.tonic)}
+            </div>
+            <div style="font-size:15px;color:#8b949e;margin-top:4px;text-transform:capitalize">
+              ${escHtml(d.mode)}
+            </div>
+          </div>
+          <div>
+            <div class="meta-row" style="gap:16px">
+              <div class="meta-item">
+                <span class="meta-label">Relative Key</span>
+                <span class="meta-value" style="font-family:monospace">${escHtml(d.relativeKey)}</span>
+              </div>
+              <div class="meta-item" style="min-width:160px">
+                <span class="meta-label">Detection Confidence</span>
+                ${confidenceBar(d.confidence)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        ${d.alternateKeys && d.alternateKeys.length > 0 ? `
+        <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px;margin-top:8px">
+          <span class="meta-label" style="display:block;margin-bottom:8px">Alternate Key Candidates</span>
+          ${d.alternateKeys.map(alternateKeyRow).join('')}
+        </div>` : ''}
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
