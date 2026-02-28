@@ -7925,3 +7925,42 @@ Pydantic `CamelModel` — Wire representation of a Muse Hub milestone.
 **Produced by:** `maestro.services.musehub_issues.create_milestone()`, `list_milestones()`, `get_milestone()`
 **Consumed by:** `POST /milestones`, `GET /milestones`, `GET /milestones/{number}`
 
+---
+
+### `SocialTrendsDayResult`
+
+**Path:** `maestro/api/routes/musehub/social.py`
+
+Pydantic `BaseModel` — One calendar day of aggregated social engagement counts for a repo. Missing
+days (no activity) are filled with zeros so the chart always spans the full requested window.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `date` | `str` | ISO 8601 calendar date (`YYYY-MM-DD`) |
+| `stars` | `int` | New stars received on this day |
+| `forks` | `int` | New forks created on this day |
+| `watches` | `int` | New watches added on this day |
+
+**Produced by:** `maestro.api.routes.musehub.social.get_social_analytics()`
+**Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/analytics/social` — nested inside `SocialTrendsResult.trend`; insights dashboard SVG multi-line chart
+
+---
+
+### `SocialTrendsResult`
+
+**Path:** `maestro/api/routes/musehub/social.py`
+
+Pydantic `BaseModel` — Top-level response for the social trends analytics endpoint. Bundles
+aggregate totals, a full per-day trend list, and fork-detail records for the insights dashboard.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `star_count` | `int` | Total stars across all time |
+| `fork_count` | `int` | Total forks across all time |
+| `watch_count` | `int` | Total watches across all time |
+| `trend` | `list[SocialTrendsDayResult]` | One entry per calendar day over the requested window (zero-filled) |
+| `forks_detail` | `list[ForkResponse]` | Per-fork records ordered by `created_at` descending, for the "Who forked this" panel |
+
+**Produced by:** `maestro.api.routes.musehub.social.get_social_analytics()`
+**Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/analytics/social` (default window: 90 days, max: 365); insights dashboard Social Trends card and "Who forked this" panel
+
