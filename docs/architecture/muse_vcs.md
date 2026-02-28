@@ -1573,6 +1573,101 @@ CLI contract; stub implementations are clearly marked.
 
 ---
 
+### `muse harmony`
+
+**Purpose:** Analyze the harmonic content (key center, mode, chord progression, harmonic
+rhythm, and tension profile) of a commit. The primary tool for understanding what a
+composition is doing harmonically — information that is completely invisible to Git.
+An AI agent calling `muse harmony --json` knows whether the current arrangement is in
+Eb major with a II-V-I progression and moderate tension, and can use this to make
+musically coherent generation decisions.
+
+**Usage:**
+```bash
+muse harmony [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | HEAD | Commit ref to analyze |
+| `--track TEXT` | string | all tracks | Restrict to a named MIDI track (e.g. `--track keys`) |
+| `--section TEXT` | string | — | Restrict to a named musical section/region (planned) |
+| `--compare COMMIT` | string | — | Compare harmonic content against another commit |
+| `--range FROM..TO` | string | — | Analyze across a commit range (planned) |
+| `--progression` | flag | off | Show only the chord progression sequence |
+| `--key` | flag | off | Show only the detected key center |
+| `--mode` | flag | off | Show only the detected mode |
+| `--tension` | flag | off | Show only the harmonic tension profile |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example (text):**
+```
+Commit abc1234 — Harmonic Analysis
+(stub — full MIDI analysis pending)
+
+Key: Eb (confidence: 0.92)
+Mode: major
+Chord progression: Ebmaj7 | Fm7 | Bb7sus4 | Bb7 | Ebmaj7 | Abmaj7 | Gm7 | Cm7
+Harmonic rhythm: 2.1 chords/bar avg
+Tension profile: Low → Medium → High → Resolution (textbook tension-release arc)  [0.2 → 0.4 → 0.8 → 0.3]
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit_id": "abc1234",
+  "branch": "main",
+  "key": "Eb",
+  "mode": "major",
+  "confidence": 0.92,
+  "chord_progression": ["Ebmaj7", "Fm7", "Bb7sus4", "Bb7", "Ebmaj7", "Abmaj7", "Gm7", "Cm7"],
+  "harmonic_rhythm_avg": 2.1,
+  "tension_profile": [0.2, 0.4, 0.8, 0.3],
+  "track": "all",
+  "source": "stub"
+}
+```
+
+**Output example (`--compare <commit> --json`):**
+```json
+{
+  "head": { "commit_id": "abc1234", "key": "Eb", "mode": "major", ... },
+  "compare": { "commit_id": "def5678", "key": "Eb", "mode": "major", ... },
+  "key_changed": false,
+  "mode_changed": false,
+  "chord_progression_delta": []
+}
+```
+
+**Result type:** `HarmonyResult` — fields: `commit_id`, `branch`, `key`, `mode`,
+`confidence`, `chord_progression`, `harmonic_rhythm_avg`, `tension_profile`, `track`, `source`.
+Compare path returns `HarmonyCompareResult` — fields: `head`, `compare`, `key_changed`,
+`mode_changed`, `chord_progression_delta`.
+
+**Agent use case:** Before generating a new instrument layer, an agent calls
+`muse harmony --json` to discover the harmonic context. If the arrangement is in
+Eb major with a II-V-I progression, the agent ensures its generated voicings stay
+diatonic to Eb. If the tension profile shows a build toward the chorus, the agent
+adds chromatic tension at the right moment rather than resolving early.
+`muse harmony --compare HEAD~5 --json` reveals whether the composition has
+modulated, shifted mode, or changed its harmonic rhythm — all decisions an AI
+needs to make coherent musical choices across versions.
+
+**Implementation:** `maestro/muse_cli/commands/harmony.py` — `_harmony_analyze_async`
+(injectable async core), `HarmonyResult` / `HarmonyCompareResult` (TypedDict result
+entities), `_stub_harmony` (placeholder data), `_tension_label` (arc classifier),
+`_render_result_human` / `_render_result_json` / `_render_compare_human` /
+`_render_compare_json` (renderers). Exit codes: 0 success, 2 outside repo, 3 internal.
+
+> **Stub note:** Chord detection, key inference, and tension computation are placeholder
+> values derived from a static Eb major II-V-I template. Full implementation requires
+> MIDI note extraction from committed snapshot objects (future: Storpheus chord detection
+> route). The CLI contract, result types, and flag set are stable.
+
+---
+
 ### `muse dynamics`
 
 **Purpose:** Analyze the velocity (loudness) profile of a commit across all instrument
@@ -3531,6 +3626,69 @@ An AI music generation agent uses `muse render-preview HEAD~10 --json` to obtain
 
 ---
 
+## `muse rev-parse` — Resolve a Revision Expression to a Commit ID
+
+**Purpose:** Translate a symbolic revision expression into a concrete 64-character
+commit ID.  Mirrors `git rev-parse` semantics and is the plumbing primitive used
+internally by other Muse commands that accept revision arguments.
+
+```
+muse rev-parse <revision> [OPTIONS]
+
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `REVISION` | positional | required | Revision expression to resolve |
+| `--short` | flag | off | Print only the first 8 characters of the commit ID |
+| `--verify` | flag | off | Exit 1 if the expression does not resolve (default: print nothing) |
+| `--abbrev-ref` | flag | off | Print the branch name instead of the commit ID |
+
+### Supported Revision Expressions
+
+| Expression | Resolves to |
+|------------|-------------|
+| `HEAD` | Tip of the current branch |
+| `<branch>` | Tip of the named branch |
+| `<commit_id>` | Exact or prefix-matched commit |
+| `HEAD~N` | N parents back from HEAD |
+| `<branch>~N` | N parents back from the branch tip |
+
+### Output Example
+
+```
+$ muse rev-parse HEAD
+a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+
+$ muse rev-parse --short HEAD
+a1b2c3d4
+
+$ muse rev-parse --abbrev-ref HEAD
+main
+
+$ muse rev-parse HEAD~2
+f9e8d7c6b5a4f9e8d7c6b5a4f9e8d7c6b5a4f9e8d7c6b5a4f9e8d7c6b5a4f9e8
+
+$ muse rev-parse --verify nonexistent
+fatal: Not a valid revision: 'nonexistent'
+# exit code 1
+```
+
+### Result Type
+
+`RevParseResult` — see `docs/reference/type_contracts.md § Muse rev-parse Types`.
+
+### Agent Use Case
+
+An AI agent resolves `HEAD~1` before generating a new variation to obtain the
+parent commit ID, which it passes as a `base_commit` argument to downstream
+commands.  Use `--verify` in automation scripts to fail fast rather than
+silently producing empty output.
+
+---
+
 ## `muse symbolic-ref` — Read or Write a Symbolic Ref
 
 **Purpose:** Read or write a symbolic ref (e.g. `HEAD`), answering "which branch
@@ -3547,6 +3705,7 @@ muse symbolic-ref HEAD                         # read: prints refs/heads/main
 muse symbolic-ref --short HEAD                 # read short form: prints main
 muse symbolic-ref HEAD refs/heads/feature/x   # write: update .muse/HEAD
 muse symbolic-ref --delete HEAD               # delete the symbolic ref file
+
 ```
 
 ### Flags
@@ -3881,6 +4040,7 @@ commit is needed.
 | `muse read-tree` | `commands/read_tree.py` | ✅ implemented (PR #157) | #90 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse render-preview` | `commands/render_preview.py` | ✅ implemented (issue #96) | #96 |
+| `muse rev-parse` | `commands/rev_parse.py` | ✅ implemented (PR #143) | #92 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse symbolic-ref` | `commands/symbolic_ref.py` | ✅ implemented (issue #93) | #93 |
