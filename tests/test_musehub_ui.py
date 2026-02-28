@@ -14,7 +14,7 @@ The HTML content tests assert structural markers present in every rendered page.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
@@ -309,8 +309,6 @@ async def _make_session(
 ) -> str:
     """Seed a MusehubSession and return its session_id."""
     start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    from datetime import timedelta
-
     started_at = start + timedelta(seconds=started_offset_seconds)
     ended_at = None if is_active else started_at + timedelta(hours=1)
     row = MusehubSession(
@@ -498,3 +496,25 @@ async def test_active_session_has_null_duration(
     sess = response.json()["sessions"][0]
     assert sess["isActive"] is True
     assert sess["durationSeconds"] is None
+
+
+@pytest.mark.anyio
+async def test_stop_session_is_idempotent(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Calling stop twice on the same session must succeed both times (idempotent)."""
+    repo_id = await _make_repo(db_session)
+    session_id = await _make_session(db_session, repo_id, is_active=True)
+
+    stop_url = f"/api/v1/musehub/repos/{repo_id}/sessions/{session_id}/stop"
+    first = await client.post(stop_url, json={}, headers=auth_headers)
+    assert first.status_code == 200
+    first_ended_at = first.json()["endedAt"]
+
+    second = await client.post(stop_url, json={}, headers=auth_headers)
+    assert second.status_code == 200
+    assert second.json()["isActive"] is False
+    assert second.json()["endedAt"] is not None
+    assert first_ended_at != second.json()["endedAt"]
