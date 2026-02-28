@@ -96,16 +96,14 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define issues (confirmed independent — zero file overlap) ---
-# Batch: #82–#87 (new muse CLI commands)
+# Batch: #66–#69 (Muse core history commands)
 # Known shared file: maestro/muse_cli/app.py (each agent adds one app.add_typer line)
 # Resolution: pre-push sync in STEP 4 handles app.py conflicts — keep both sides.
 declare -a ISSUES=(
-  "87|feat: muse hash-object <file> — compute and optionally store an object"
-  "86|feat: muse status — add --short, --branch, --porcelain, --sections, --tracks flags"
-  "85|feat: muse init — add --bare, --template, and --default-branch flags"
-  "84|feat: muse commit — add missing music-domain flags"
-  "83|feat: muse worktree — manage local Muse worktrees from the CLI"
-  "82|feat: muse release <tag> — export and render a tagged commit as a release artifact"
+  "69|feat: muse reset <commit> — reset branch pointer to a prior commit"
+  "68|feat: muse revert <commit> — create a new commit that undoes a prior commit"
+  "67|feat: muse amend — amend the most recent commit"
+  "66|feat: muse show <commit> — music-aware commit inspection"
 )
 
 # --- create worktrees + task files ---
