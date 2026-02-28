@@ -1373,8 +1373,65 @@ target_key → detect seed key (Krumhansl-Schmuckler)
 | `STORPHEUS_TORCH_COMPILE` | `false` | env / `music_service.py` (no-op until self-hosted) |
 | `STORPHEUS_FLASH_ATTENTION` | `false` | env / `music_service.py` (no-op until self-hosted) |
 | `STORPHEUS_KV_CACHE` | `false` | env / `music_service.py` (no-op until self-hosted) |
+| `STORPHEUS_CHUNKED_THRESHOLD_BARS` | `16` | env / `music_service.py` — bars above which chunked mode activates |
+| `STORPHEUS_CHUNK_BARS` | `8` | env / `music_service.py` — bars per chunk (must satisfy bars × 128 ≤ 1024) |
+| `STORPHEUS_CHUNK_FADE_BEATS` | `4.0` | env / `music_service.py` — velocity cross-fade width at chunk boundaries |
 | `_MAX_RETRIES` | `4` | `app/services/storpheus.py` |
 | `_RETRY_DELAYS` | `[2, 5, 10, 20]` s | `app/services/storpheus.py` |
+
+---
+
+## 20. Chunked Generation (Issue #25)
+
+### Problem
+
+The HF Space (Orpheus Music Transformer) has a hard cap of **1024 generation tokens**
+(`_MAX_GEN_TOKENS`).  With `_TOKENS_PER_BAR = 128`, this caps a single generation call
+at approximately **8 bars** of output.  Long-form compositions (32+ bars) were silently
+truncated: the model generated ~8 bars and the excess beat range returned zero notes.
+
+### Solution — Sliding Window Chunked Generation
+
+`_do_generate` transparently routes requests with `bars > STORPHEUS_CHUNKED_THRESHOLD_BARS`
+to `_generate_chunked`, which implements a sliding context window:
+
+```
+request.bars = 32
+  ├─ Chunk 0:  bars=8, seed=original_seed      → notes beats 0–31
+  ├─ Chunk 1:  bars=8, seed=chunk_0_midi       → notes beats 32–63
+  ├─ Chunk 2:  bars=8, seed=chunk_1_midi       → notes beats 64–95
+  └─ Chunk 3:  bars=8, seed=chunk_2_midi       → notes beats 96–127
+```
+
+Each chunk's output MIDI is stored in `CompositionState.accumulated_midi_path` and
+automatically picked up as the seed for the next chunk.  The model conditions on the
+previous chunk, maintaining rhythmic and harmonic continuity without extra interpolation.
+
+**Velocity cross-fade** (`STORPHEUS_CHUNK_FADE_BEATS = 4.0` beats) is applied at each
+boundary to avoid amplitude jumps: the last `fade_beats` of every non-final chunk fade out
+linearly; the first `fade_beats` of every non-first chunk fade in linearly.
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Chunk size = `_CHUNK_BARS = 8` | Exactly fills the 1024 gen-token budget at 128 tok/bar |
+| Isolated `composition_id` (`chunked-…`) | Prevents chunked state bleeding into the caller's multi-section session |
+| `add_outro=True` only on last chunk | Outro token signals musical closure; mid-composition chunks must not close early |
+| Partial-failure surfacing | If chunk N fails, notes from chunks 0..N-1 are returned for debugging |
+
+### Environment Variables
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `STORPHEUS_CHUNKED_THRESHOLD_BARS` | `16` | Requests above this trigger chunked mode |
+| `STORPHEUS_CHUNK_BARS` | `8` | Bars generated per chunk |
+| `STORPHEUS_CHUNK_FADE_BEATS` | `4.0` | Velocity fade width at boundaries (beats) |
+
+### New Types (`storpheus_types.py`)
+
+- **`ChunkMetadata`** — per-chunk metadata: index, bar count, note count, beat offset, rejection score
+- **`ChunkedGenerationResult`** — aggregated result exposing notes, chunk count, per-chunk metadata
 
 ---
 
