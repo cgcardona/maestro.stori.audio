@@ -1014,3 +1014,55 @@ class SimilarSearchResponse(CamelModel):
         default_factory=list,
         description="Ranked results, most similar first",
     )
+
+
+# ── Groove Check models ───────────────────────────────────────────────────────
+
+
+class GrooveCommitEntry(CamelModel):
+    """Per-commit groove metrics within a groove-check analysis window.
+
+    groove_score  — average note-onset deviation from the quantization grid,
+                    measured in beats (lower = tighter to the grid).
+    drift_delta   — absolute change in groove_score relative to the prior
+                    commit.  The oldest commit in the window always has 0.0.
+    status        — OK / WARN / FAIL classification against the threshold.
+    """
+
+    commit: str = Field(..., description="Short commit reference (8 hex chars)")
+    groove_score: float = Field(
+        ..., description="Average onset deviation from quantization grid, in beats"
+    )
+    drift_delta: float = Field(
+        ..., description="Absolute change in groove_score vs prior commit"
+    )
+    status: str = Field(..., description="OK / WARN / FAIL classification")
+    track: str = Field(..., description="Track scope analysed, or 'all'")
+    section: str = Field(..., description="Section scope analysed, or 'all'")
+    midi_files: int = Field(..., description="Number of MIDI snapshots analysed")
+
+
+class GrooveCheckResponse(CamelModel):
+    """Rhythmic consistency dashboard data for a commit range in a Muse Hub repo.
+
+    Aggregates timing deviation, swing ratio, and quantization tightness
+    metrics derived from MIDI snapshots across a window of commits.  The
+    ``entries`` list is ordered oldest-first so consumers can plot groove
+    evolution over time.
+    """
+
+    commit_range: str = Field(..., description="Commit range string that was analysed")
+    threshold: float = Field(
+        ..., description="Drift threshold in beats used for WARN/FAIL classification"
+    )
+    total_commits: int = Field(..., description="Total commits in the analysis window")
+    flagged_commits: int = Field(
+        ..., description="Number of commits with WARN or FAIL status"
+    )
+    worst_commit: str = Field(
+        ..., description="Commit ref with the highest drift_delta, or empty string"
+    )
+    entries: list[GrooveCommitEntry] = Field(
+        default_factory=list,
+        description="Per-commit metrics, oldest-first",
+    )

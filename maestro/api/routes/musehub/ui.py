@@ -986,3 +986,41 @@ async def dynamics_analysis_page(
             "current_page": "analysis",
         },
     )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/groove-check",
+    response_class=HTMLResponse,
+    summary="Muse Hub groove check page",
+)
+async def groove_check_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the rhythmic consistency dashboard for a repo.
+
+    Displays a summary of groove metrics, an SVG bar chart of groove scores
+    over the commit window, and a per-commit table with status badges.
+
+    The chart encodes status as bar colour: green = OK, orange = WARN,
+    red = FAIL.  Threshold and limit can be adjusted via controls that
+    re-fetch the underlying ``GET /api/v1/musehub/repos/{repo_id}/groove-check``
+    endpoint client-side.
+
+    Auth is handled client-side via localStorage JWT, consistent with all other
+    Muse Hub UI pages.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/groove_check.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "base_url": base_url,
+            "current_page": "groove-check",
+        },
+    )
