@@ -375,11 +375,23 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   - If conflicts are non-trivial and introduce risk → downgrade grade to B
     and file a follow-up issue. Still merge if the overall work is solid.
 
-  After clean sync: output "Approved for merge" and then:
-    gh pr merge <N> --squash --delete-branch
+  After clean sync: output "Approved for merge" and then run these in order:
 
-  After merge: close the referenced issue
-    gh issue close <issue-number> --comment "Fixed by PR #<N>."
+  1. Capture the branch name while still inside the worktree:
+       BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+  2. Merge WITHOUT --delete-branch (avoids "dev already used by worktree" error):
+       gh pr merge <N> --squash
+
+  3. Delete the remote branch manually (now safe — merge is done):
+       git push origin --delete "$BRANCH"
+
+  4. Close the referenced issue:
+       gh issue close <issue-number> --comment "Fixed by PR #<N>."
+
+  ⚠️  Never use --delete-branch with gh pr merge in a multi-worktree setup.
+      gh attempts to checkout dev locally to delete the feature branch, but dev
+      is already checked out in the main worktree and git will refuse.
 
 STEP 7 — SELF-DESTRUCT (always run this, merge or not, early stop or not):
   WORKTREE=$(pwd)
