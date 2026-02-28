@@ -377,6 +377,36 @@ async def test_ui_repo_page_shows_releases_button(
 
 
 # ---------------------------------------------------------------------------
+# Global search UI page tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_global_search_ui_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/search returns 200 HTML (no auth required — HTML shell)."""
+    response = await client.get("/musehub/ui/search")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Global Search" in body
+    assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_global_search_ui_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/search must not return 401 — it is a static HTML shell."""
+    response = await client.get("/musehub/ui/search")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
 # Object listing endpoint tests (JSON, authed)
 # ---------------------------------------------------------------------------
 
@@ -672,6 +702,25 @@ async def test_context_page_no_auth_required(
 
 
 # ---------------------------------------------------------------------------
+# Context page additional tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_context_page_contains_agent_explainer(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Context viewer page includes the 'What the Agent Sees' explainer card."""
+    repo_id, commit_id = await _make_repo_with_commit(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/context/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "What the Agent Sees" in body
+    assert commit_id[:8] in body
+
+
+# ---------------------------------------------------------------------------
 # Embed player route tests (issue #244)
 # ---------------------------------------------------------------------------
 
@@ -862,7 +911,6 @@ async def test_groove_check_page_no_auth_required(
     response = await client.get("/musehub/ui/testuser/test-beats/groove-check")
     assert response.status_code != 401
     assert response.status_code == 200
-
 
 
 # ---------------------------------------------------------------------------
@@ -2007,8 +2055,211 @@ async def test_tempo_json_response(
 
 
 # ---------------------------------------------------------------------------
-# owner/slug navigation link correctness (regression for PR #282)
+# Form and structure page tests (issue #225)
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_form_structure_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/form-structure/{ref} returns 200 HTML without auth."""
+    repo_id = await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/{repo_id}/form-structure/{ref}")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Form" in body
+
+
+@pytest.mark.anyio
+async def test_form_structure_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Form-structure UI page must be accessible without an Authorization header."""
+    repo_id = await _make_repo(db_session)
+    ref = "deadbeef1234"
+    response = await client.get(f"/musehub/ui/{repo_id}/form-structure/{ref}")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_form_structure_page_contains_section_map(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Form-structure page embeds section map SVG rendering logic."""
+    repo_id = await _make_repo(db_session)
+    ref = "cafebabe1234"
+    response = await client.get(f"/musehub/ui/{repo_id}/form-structure/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    assert "Section Map" in body
+    assert "renderSectionMap" in body
+    assert "sectionMap" in body
+
+
+@pytest.mark.anyio
+async def test_form_structure_page_contains_repetition_panel(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Form-structure page embeds repetition structure panel."""
+    repo_id = await _make_repo(db_session)
+    ref = "feedface0123"
+    response = await client.get(f"/musehub/ui/{repo_id}/form-structure/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    assert "Repetition" in body
+    assert "renderRepetition" in body
+
+
+@pytest.mark.anyio
+async def test_form_structure_page_contains_heatmap(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Form-structure page embeds section comparison heatmap renderer."""
+    repo_id = await _make_repo(db_session)
+    ref = "deadcafe5678"
+    response = await client.get(f"/musehub/ui/{repo_id}/form-structure/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    assert "Section Comparison" in body
+    assert "renderHeatmap" in body
+    assert "sectionComparison" in body
+
+
+@pytest.mark.anyio
+async def test_form_structure_page_includes_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Form-structure page includes the JWT token form and musehub.js auth infrastructure."""
+    repo_id = await _make_repo(db_session)
+    ref = "babe1234abcd"
+    response = await client.get(f"/musehub/ui/{repo_id}/form-structure/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    assert "musehub.js" in body
+    assert "token-form" in body
+
+
+@pytest.mark.anyio
+async def test_form_structure_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/form-structure/{ref} returns JSON with required fields."""
+    repo_id = await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/form-structure/{ref}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "repoId" in body
+    assert "ref" in body
+    assert "formLabel" in body
+    assert "timeSignature" in body
+    assert "beatsPerBar" in body
+    assert "totalBars" in body
+    assert "sectionMap" in body
+    assert "repetitionStructure" in body
+    assert "sectionComparison" in body
+    assert body["repoId"] == repo_id
+    assert body["ref"] == ref
+
+
+@pytest.mark.anyio
+async def test_form_structure_json_section_map_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Each sectionMap entry has label, startBar, endBar, barCount, and colorHint."""
+    repo_id = await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/form-structure/{ref}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    sections = body["sectionMap"]
+    assert len(sections) > 0
+    for sec in sections:
+        assert "label" in sec
+        assert "function" in sec
+        assert "startBar" in sec
+        assert "endBar" in sec
+        assert "barCount" in sec
+        assert "colorHint" in sec
+        assert sec["startBar"] >= 1
+        assert sec["endBar"] >= sec["startBar"]
+        assert sec["barCount"] >= 1
+
+
+@pytest.mark.anyio
+async def test_form_structure_json_heatmap_is_symmetric(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Section comparison heatmap matrix must be square and symmetric with diagonal 1.0."""
+    repo_id = await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/form-structure/{ref}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    heatmap = body["sectionComparison"]
+    labels = heatmap["labels"]
+    matrix = heatmap["matrix"]
+    n = len(labels)
+    assert len(matrix) == n
+    for i in range(n):
+        assert len(matrix[i]) == n
+        assert matrix[i][i] == 1.0
+    for i in range(n):
+        for j in range(n):
+            assert 0.0 <= matrix[i][j] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_form_structure_json_404_unknown_repo(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{unknown}/form-structure/{ref} returns 404."""
+    response = await client.get(
+        "/api/v1/musehub/repos/does-not-exist/form-structure/abc123",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_form_structure_json_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/form-structure/{ref} returns 401 without auth."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/form-structure/abc123",
+    )
+    assert response.status_code == 401
 
 
 # ---------------------------------------------------------------------------
