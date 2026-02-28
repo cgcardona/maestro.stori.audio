@@ -1400,6 +1400,66 @@ others → `application/octet-stream`).
 
 ---
 
+### GET /api/v1/musehub/repos/{repo_id}/raw/{ref}/{path}
+
+Direct file download by human-readable path and ref (branch/tag), analogous to
+GitHub's `raw.githubusercontent.com` URLs. Designed for `curl`, `wget`, and
+scripted pipelines.
+
+**Auth:** No token required for **public** repos. Private repos require
+`Authorization: Bearer <token>` and return 401 otherwise.
+
+**Path parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `repo_id` | UUID of the target Muse Hub repo |
+| `ref` | Branch or tag name (e.g. `main`). Accepted for URL semantics; current implementation serves the most-recently-pushed object at `path`. |
+| `path` | Relative file path inside the repo (e.g. `tracks/bass.mid`). Supports nested paths. |
+
+**Response headers:**
+
+| Header | Value |
+|--------|-------|
+| `Content-Type` | MIME type derived from file extension (see table below) |
+| `Content-Disposition` | `attachment; filename="<basename>"` |
+| `Accept-Ranges` | `bytes` — range requests are supported |
+
+**MIME type resolution:**
+
+| Extension | Content-Type |
+|-----------|-------------|
+| `.mid`, `.midi` | `audio/midi` |
+| `.mp3` | `audio/mpeg` |
+| `.wav` | `audio/wav` |
+| `.json` | `application/json` |
+| `.webp` | `image/webp` |
+| `.xml` | `application/xml` |
+| `.abc` | `text/vnd.abc` |
+| Others | `application/octet-stream` |
+
+**Range request example:**
+
+```bash
+curl -H "Range: bytes=0-1023" \
+  https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/tracks/bass.mid
+# → 206 Partial Content with first 1 KB
+```
+
+**Full download example:**
+
+```bash
+curl https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/tracks/bass.mid \
+  -o bass.mid
+```
+
+**Errors:**
+- **401** — private repo accessed without a valid Bearer token
+- **404** — repo not found, or no object exists at the given path
+- **410** — object metadata exists in DB but the file was removed from disk
+
+---
+
 ## Muse Hub Web UI
 
 The following routes serve HTML pages for browser-based repo navigation. They
