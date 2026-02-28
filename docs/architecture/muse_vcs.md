@@ -2380,6 +2380,76 @@ commit for deeper inspection.
 
 ---
 
+### `muse blame`
+
+**Purpose:** Annotate each tracked file with the commit that last changed it.
+Answers the producer's question "whose idea was this bass line?" or "which take
+introduced this change?" Output is per-file (not per-line) because MIDI and
+audio files are binary — the meaningful unit of change is the whole file.
+
+**Usage:**
+```bash
+muse blame [PATH] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `PATH` | positional string | — | Relative path within `muse-work/` to annotate. Omit to blame all tracked files |
+| `--track TEXT` | string | — | Filter to files whose basename matches this fnmatch glob (e.g. `bass*` or `*.mid`) |
+| `--section TEXT` | string | — | Filter to files inside this section directory (first directory component) |
+| `--line-range N,M` | string | — | Annotate sub-range (informational only — MIDI/audio are binary, not line-based) |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example (text):**
+```
+a1b2c3d4  producer             2026-02-27 14:30:00  (  modified)  muse-work/bass/bassline.mid
+    update bass groove
+f9e8d7c6  producer             2026-02-26 10:00:00  (     added)  muse-work/keys/melody.mid
+    initial take
+```
+
+**Output example (`--json`):**
+```json
+{
+  "path_filter": null,
+  "track_filter": null,
+  "section_filter": null,
+  "line_range": null,
+  "entries": [
+    {
+      "path": "muse-work/bass/bassline.mid",
+      "commit_id": "a1b2c3d4e5f6...",
+      "commit_short": "a1b2c3d4",
+      "author": "producer",
+      "committed_at": "2026-02-27 14:30:00",
+      "message": "update bass groove",
+      "change_type": "modified"
+    }
+  ]
+}
+```
+
+**Result type:** `BlameEntry` (TypedDict) — fields: `path` (str), `commit_id` (str),
+`commit_short` (str, 8-char), `author` (str), `committed_at` (str, `YYYY-MM-DD HH:MM:SS`),
+`message` (str), `change_type` (str: `"added"` | `"modified"` | `"unchanged"`).
+Wrapped in `BlameResult` (TypedDict) — fields: `path_filter`, `track_filter`,
+`section_filter`, `line_range` (all `str | None`), `entries` (list of `BlameEntry`).
+See `docs/reference/type_contracts.md § Muse CLI Types`.
+
+**Agent use case:** An AI composing a new bass arrangement asks `muse blame --track 'bass*' --json`
+to find the commit that last changed every bass file. It then calls `muse show <commit_id>` on
+those commits to understand what musical choices were made, before deciding whether to build on
+or diverge from the existing groove.
+
+**Implementation:** `maestro/muse_cli/commands/blame.py` —
+`BlameEntry` (TypedDict), `BlameResult` (TypedDict), `_load_commit_chain()`,
+`_load_snapshot_manifest()`, `_matches_filters()`, `_blame_async()`, `_render_blame()`.
+Exit codes: 0 success, 2 outside repo, 3 internal error.
+
+---
+
 ## `muse tempo` — Read or Set the Tempo of a Commit
 
 `muse tempo [<commit>] [--set <bpm>] [--history] [--json]` reads or annotates
