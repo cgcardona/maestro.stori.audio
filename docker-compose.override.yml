@@ -42,3 +42,6 @@ services:
     volumes:
       - storpheus_cache:/data/cache
       - ./storpheus:/app
+      # Cursor worktrees — parallel review agents need this to run mypy/pytest
+      # against their worktree storpheus files via "cd /worktrees/<id> && mypy ."
+      - /Users/gabriel/.cursor/worktrees/maestro:/worktrees
