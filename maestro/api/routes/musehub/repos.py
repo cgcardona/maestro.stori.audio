@@ -49,6 +49,8 @@ from maestro.models.musehub import (
     DivergenceDimensionResponse,
     DivergenceResponse,
     EmotionDiffResponse,
+    StargazerEntry,
+    StargazerListResponse,
     TimelineResponse,
     DagGraphResponse,
     GrooveCheckResponse,
@@ -1264,6 +1266,41 @@ async def get_arrangement_matrix(
     return result
 
 
+# ── Stargazers endpoint — complements discover.py star/unstar ─────────────────
+
+
+@router.get(
+    "/repos/{repo_id}/stargazers",
+    response_model=StargazerListResponse,
+    operation_id="listRepoStargazers",
+    summary="List users who starred a repo",
+    tags=["Stars"],
+)
+async def list_stargazers(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> StargazerListResponse:
+    """Return the list of users who have starred this repo.
+
+    Public repos return this list unauthenticated.  Private repos require a
+    valid JWT.  Returns an empty list when no one has starred the repo yet.
+
+    Raises 404 if the repo does not exist.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+
+    stmt = (
+        select(db_models.MusehubStar)
+        .where(db_models.MusehubStar.repo_id == repo_id)
+        .order_by(db_models.MusehubStar.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    stargazers = [
+        StargazerEntry(user_id=row.user_id, starred_at=row.created_at) for row in rows
+    ]
+    return StargazerListResponse(stargazers=stargazers, total=len(stargazers))
 # ── Activity feed ─────────────────────────────────────────────────────────────
 
 

@@ -1897,6 +1897,73 @@ class CompareResponse(CamelModel):
 
 
 
+# ── Star / Fork models ─────────────────────────────────────────────────────
+
+
+class StargazerEntry(CamelModel):
+    """A single user who has starred a repo.
+
+    Returned as items in ``StargazerListResponse``.  ``user_id`` is the JWT
+    ``sub`` of the starring user; ``starred_at`` is when the star was created.
+    """
+
+    user_id: str = Field(..., description="User ID (JWT sub) of the starring user")
+    starred_at: datetime = Field(..., description="Timestamp when the star was created (ISO-8601 UTC)")
+
+
+class StargazerListResponse(CamelModel):
+    """Paginated list of users who have starred a repo.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/stargazers``.
+    ``total`` is the full count, not just the current page, so clients can
+    display "N stargazers" without a second query.
+    """
+
+    stargazers: list[StargazerEntry] = Field(..., description="Users who starred this repo")
+    total: int = Field(..., description="Total number of stargazers")
+
+
+class ForkEntry(CamelModel):
+    """A single fork of a repo.
+
+    Carries both the fork's repo metadata and the lineage link back to the
+    source repo.  Returned as items in ``ForkListResponse``.
+    """
+
+    fork_id: str = Field(..., description="Internal UUID of the fork relationship record")
+    fork_repo_id: str = Field(..., description="Repo ID of the forked repo")
+    source_repo_id: str = Field(..., description="Repo ID of the source (original) repo")
+    forked_by: str = Field(..., description="User ID who created the fork")
+    fork_owner: str = Field(..., description="Owner username of the fork repo")
+    fork_slug: str = Field(..., description="Slug of the fork repo")
+    created_at: datetime = Field(..., description="Timestamp when the fork was created (ISO-8601 UTC)")
+
+
+class ForkListResponse(CamelModel):
+    """Paginated list of forks of a repo.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/forks``.
+    """
+
+    forks: list[ForkEntry] = Field(..., description="Forks of this repo")
+    total: int = Field(..., description="Total number of forks")
+
+
+class ForkCreateResponse(CamelModel):
+    """Confirmation that a fork was created.
+
+    Returned by ``POST /api/v1/musehub/repos/{repo_id}/fork``.
+    ``fork_repo`` is the newly created repo under the authenticated user's
+    namespace.  ``source_repo_id`` is the original repo's ID for lineage
+    display on the fork's home page.
+    """
+
+    fork_repo: RepoResponse = Field(..., description="Newly created fork repo metadata")
+    source_repo_id: str = Field(..., description="ID of the original source repo")
+    source_owner: str = Field(..., description="Owner username of the source repo")
+    source_slug: str = Field(..., description="Slug of the source repo")
+
+
 # ── Render pipeline ────────────────────────────────────────────────────────
 
 

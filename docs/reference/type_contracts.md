@@ -1623,6 +1623,60 @@ composing a chord progression) or the aggregate endpoint for a full musical pict
 **Stub note:** Current implementation returns deterministic stub data keyed on `ref`. Full MIDI
 content analysis will be wired in once Storpheus exposes per-dimension introspection routes.
 
+### Star / Fork Social Types (issue #220)
+
+**Path:** `maestro/models/musehub.py`
+
+#### `StargazerEntry`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `user_id` | `str` | JWT sub of the user who starred the repo |
+| `starred_at` | `datetime` | ISO-8601 UTC timestamp of when the star was created |
+
+#### `StargazerListResponse`
+
+Returned by `GET /api/v1/musehub/repos/{id}/stargazers`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stargazers` | `list[StargazerEntry]` | Users who starred the repo, newest first |
+| `total` | `int` | Total stargazer count |
+
+#### `ForkEntry`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fork_id` | `str` | UUID of the `musehub_forks` lineage record |
+| `fork_repo_id` | `str` | Repo ID of the forked repository |
+| `source_repo_id` | `str` | Repo ID of the source repository |
+| `forked_by` | `str` | User ID who created the fork |
+| `fork_owner` | `str` | Owner username of the fork repo |
+| `fork_slug` | `str` | Slug of the fork repo |
+| `created_at` | `datetime` | ISO-8601 UTC timestamp of when the fork was created |
+
+#### `ForkListResponse`
+
+Returned by `GET /api/v1/musehub/repos/{id}/forks`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `forks` | `list[ForkEntry]` | Forks of this repo, newest first |
+| `total` | `int` | Total fork count |
+
+#### `ForkCreateResponse`
+
+Returned by `POST /api/v1/musehub/repos/{id}/fork`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fork_repo` | `RepoResponse` | Metadata of the newly created fork repository |
+| `source_repo_id` | `str` | ID of the original source repo |
+| `source_owner` | `str` | Owner username of the source repo |
+| `source_slug` | `str` | Slug of the source repo |
+
+---
+
 ### `FormStructureResponse` (issue #225)
 
 **Path:** `maestro/models/musehub_analysis.py`

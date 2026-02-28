@@ -1717,8 +1717,11 @@ Each match is a `SearchCommitMatch` with: `commitId`, `branch`, `message`, `auth
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/musehub/discover/repos` | List public repos with optional filters and sort |
-| POST | `/api/v1/musehub/repos/{id}/star` | Star a public repo (auth required) |
-| DELETE | `/api/v1/musehub/repos/{id}/star` | Unstar a repo (auth required) |
+| POST | `/api/v1/musehub/repos/{id}/star` | Star a public repo (idempotent add, auth required) |
+| DELETE | `/api/v1/musehub/repos/{id}/star` | Unstar a repo (idempotent remove, auth required) |
+| GET | `/api/v1/musehub/repos/{id}/stargazers` | List users who starred the repo (public repos unauthenticated) |
+| POST | `/api/v1/musehub/repos/{id}/fork` | Fork a public repo under the caller's account (auth required) |
+| GET | `/api/v1/musehub/repos/{id}/forks` | List all forks of this repo |
 
 **Filter parameters for `GET /discover/repos`:**
 

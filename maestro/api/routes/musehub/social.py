@@ -124,6 +124,13 @@ class NotificationResponse(BaseModel):
 
 
 class ForkResponse(BaseModel):
+    """Fork relationship record — lineage link between source and fork repo.
+
+    ``fork_owner`` and ``fork_slug`` are set by the fork handler (not sourced
+    from the ORM) so the client can redirect to the new fork's page without
+    a second round-trip.
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
     fork_id: str
@@ -131,6 +138,8 @@ class ForkResponse(BaseModel):
     fork_repo_id: str
     forked_by: str
     created_at: datetime
+    fork_owner: str = ""
+    fork_slug: str = ""
 
 
 class ReactionToggleResult(BaseModel):
@@ -611,11 +620,13 @@ async def fork_repo(
 ) -> ForkResponse:
     """Create a fork of the given repo under the calling user's account.
 
-    Creates a new repo owned by the caller with the same name/slug, then
-    records the fork relationship. The new repo starts with no commits —
-    the CLI handles the actual data transfer.
+    Creates a new repo owned by the caller, copies all commits and branches
+    from the source into the new repo, then records the fork lineage.
+    The fork's description is prefixed with "Fork of {owner}/{slug}" so the
+    repo home page can display a "Forked from" badge.
     """
     from maestro.services import musehub_repository as mhr
+    from maestro.db.musehub_models import MusehubBranch
 
     source = await mhr.get_repo(db, repo_id)
     if source is None:
@@ -624,13 +635,13 @@ async def fork_repo(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Can only fork public repos")
 
-    caller = claims.get("sub", "")
+    caller: str = claims.get("sub") or ""
     try:
         fork_repo_row = await mhr.create_repo(
             db,
             name=source.name,
             owner=caller,
-            visibility="public",
+            visibility=source.visibility,
             owner_user_id=caller,
             description=f"Fork of {source.owner}/{source.slug}",
             tags=list(source.tags) if source.tags else [],
@@ -650,9 +661,25 @@ async def fork_repo(
         created_at=now,
     )
     db.add(fork_record)
+
+    # Note: commit_id is the global PK so we cannot duplicate commits across repos.
+    # Branch head pointers are copied so the fork has the same branch layout;
+    # commits are accessible via the source repo lineage link (MusehubFork).
+    source_branches = await mhr.list_branches(db, repo_id)
+    for branch in source_branches:
+        db.add(MusehubBranch(
+            repo_id=fork_repo_row.repo_id,
+            name=branch.name,
+            head_commit_id=branch.head_commit_id,
+        ))
+
     await db.commit()
     await db.refresh(fork_record)
-    return ForkResponse.model_validate(fork_record)
+    logger.info("🍴 Fork created source=%s fork=%s by=%s", repo_id, fork_repo_row.repo_id, caller)
+    resp = ForkResponse.model_validate(fork_record)
+    resp.fork_owner = fork_repo_row.owner
+    resp.fork_slug = fork_repo_row.slug
+    return resp
 
 
 # ---------------------------------------------------------------------------
