@@ -200,6 +200,13 @@ class Settings(BaseSettings):
     # Mount this path on a persistent volume in production.
     musehub_objects_dir: str = "/data/musehub/objects"
 
+    # Webhook secret encryption key — AES-256 (Fernet) key for encrypting webhook signing
+    # secrets at rest in musehub_webhooks.secret. Generate with:
+    #   python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Must be set in production. Defaults to None; when unset, secrets are stored as-is
+    # (acceptable for local dev with no real webhook consumers).
+    webhook_secret_key: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
