@@ -639,6 +639,33 @@ async def get_analytics(
     return {"repo_id": repo_id, "view_count": view_count, "download_count": dl_count}
 
 
+@router.get("/repos/{repo_id}/analytics/views", summary="Daily view counts")
+async def get_view_analytics(
+    repo_id: str,
+    days: int = Query(default=30, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> list[dict[str, object]]:
+    """Return daily view counts for the last N days.
+
+    Aggregates MusehubViewEvent rows by event_date so the insights page can
+    render a 30-day traffic sparkline without sending raw event rows over the
+    wire.
+    """
+    from datetime import date, timedelta
+
+    cutoff = date.today() - timedelta(days=days)
+    rows = await db.execute(
+        select(MusehubViewEvent.event_date, func.count().label("count"))
+        .where(MusehubViewEvent.repo_id == repo_id)
+        .where(MusehubViewEvent.event_date >= cutoff.isoformat())
+        .group_by(MusehubViewEvent.event_date)
+        .order_by(MusehubViewEvent.event_date)
+    )
+    results = rows.all()
+    return [{"date": r.event_date, "count": r.count} for r in results]
+
+
 # ---------------------------------------------------------------------------
 # Activity feed
 # ---------------------------------------------------------------------------
