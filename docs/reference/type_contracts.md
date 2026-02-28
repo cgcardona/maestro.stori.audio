@@ -6819,6 +6819,7 @@ when the corresponding package is unavailable.
 | `body` | `str` | Markdown release notes |
 | `commit_id` | `str \| None` | Pinned commit SHA, or `None` |
 | `download_urls` | `ReleaseDownloadUrls` | Structured download package URL map |
+| `author` | `str` | JWT `sub` of the user who created this release; empty string for seed data |
 | `created_at` | `datetime` | UTC timestamp of release creation |
 
 ---
@@ -7144,3 +7145,38 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 **Produced by:** `maestro.api.routes.musehub.repos.get_groove_check()`
 **Consumed by:** MuseHub groove-check UI page (`/musehub/ui/{owner}/{repo_slug}/groove-check`); AI agents comparing rhythmic consistency across branches
+
+## Muse Hub — Tree Browser API Types (`maestro/models/musehub.py`)
+
+### `TreeEntryResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — A single entry (file or directory) in the Muse tree browser. Returned as elements of `TreeListResponse.entries`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `str` | `"file"` or `"dir"` |
+| `name` | `str` | Entry filename or directory name (final path segment) |
+| `path` | `str` | Full relative path from repo root (e.g. `"tracks/bass.mid"`) |
+| `size_bytes` | `int \| None` | File size in bytes; `None` for directories |
+
+**Produced by:** `maestro.services.musehub_repository.list_tree()`
+**Consumed by:** `TreeListResponse.entries`; tree browser template via `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}`
+
+### `TreeListResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Directory listing for the Muse tree browser. Directories are listed before files; both groups sorted alphabetically.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `owner` | `str` | Repo owner username (for breadcrumb rendering) |
+| `repo_slug` | `str` | Repo slug (for breadcrumb rendering) |
+| `ref` | `str` | Branch name or commit SHA used to resolve the tree |
+| `dir_path` | `str` | Current directory path being listed; empty string for repo root |
+| `entries` | `list[TreeEntryResponse]` | Entries sorted dirs-first, then files, both alphabetically |
+
+**Produced by:** `maestro.services.musehub_repository.list_tree()`
+**Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}` and `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}/{path}`; tree browser template (`tree.html`) fetches this JSON and renders it client-side
