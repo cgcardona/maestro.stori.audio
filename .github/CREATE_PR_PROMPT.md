@@ -386,6 +386,23 @@ EOF
 
 ---
 
+## STEP 11 — RETURN TO DEV
+
+After the PR is open, switch back to `dev` and pull the latest so the local
+repo is clean and ready for the next task.
+
+**If running standalone** (not inside a worktree):
+```bash
+git checkout dev
+git pull origin dev
+```
+
+**If running inside a parallel agent worktree** (the working directory contains
+`.agent-task`): do nothing — worktrees are disposable and the main repo's
+`dev` branch is managed separately. Skip this step.
+
+---
+
 ## FINAL OUTPUT
 
 Respond with:
