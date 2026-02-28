@@ -6,16 +6,16 @@ Tables:
 - musehub_commits: Remote commit records pushed from CLI clients
 - musehub_issues: Issue tracker entries per repo
 - musehub_pull_requests: Pull requests proposing branch merges
+- musehub_profiles: Public user profiles (bio, avatar, pinned repos)
 - musehub_webhooks: Registered webhook subscriptions per repo
-- musehub_webhook_deliveries: Delivery log for each webhook dispatch attempt
-"""
+- musehub_webhook_deliveries: Delivery log for each webhook dispatch attempt"""
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Textfrom sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from maestro.db.database import Base
@@ -205,6 +205,34 @@ class MusehubPullRequest(Base):
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="pull_requests")
 
 
+class MusehubProfile(Base):
+    """Public user profile for Muse Hub — a musical portfolio page.
+
+    One profile per user, keyed by ``user_id`` (the JWT ``sub`` claim).
+    ``username`` is a unique, URL-friendly display handle chosen by the user.
+    When no profile exists for a user, their repos are still accessible by
+    ``owner_user_id`` but they have no public profile page.
+
+    ``pinned_repo_ids`` is a JSON list of up to 6 repo_ids the user has
+    chosen to highlight on their profile. Order is preserved.
+    """
+
+    __tablename__ = "musehub_profiles"
+    __table_args__ = (UniqueConstraint("username", name="uq_musehub_profiles_username"),)
+
+    # PK is the JWT sub — same value used in musehub_repos.owner_user_id
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    # URL-friendly handle, e.g. "gabriel" → /musehub/ui/users/gabriel
+    username: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    # JSON list of repo_ids (up to 6) pinned by the user
+    pinned_repo_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
 class MusehubWebhook(Base):
     """A registered webhook subscription for a Muse Hub repo.
 
@@ -274,5 +302,4 @@ class MusehubWebhookDelivery(Base):
     )
 
     webhook: Mapped[MusehubWebhook] = relationship(
-        "MusehubWebhook", back_populates="deliveries"
-    )
+        "MusehubWebhook", back_populates="deliveries"    )

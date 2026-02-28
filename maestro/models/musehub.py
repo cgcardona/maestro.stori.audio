@@ -275,6 +275,69 @@ class ObjectMetaListResponse(CamelModel):
     objects: list[ObjectMetaResponse]
 
 
+# ── Profile models ────────────────────────────────────────────────────────────
+
+
+class ProfileUpdateRequest(CamelModel):
+    """Body for PUT /api/v1/musehub/users/{username}.
+
+    All fields are optional — send only the ones to change.
+    """
+
+    bio: str | None = Field(None, max_length=500, description="Short bio (Markdown supported)")
+    avatar_url: str | None = Field(None, max_length=2048, description="Avatar image URL")
+    pinned_repo_ids: list[str] | None = Field(
+        None, max_length=6, description="Up to 6 repo_ids to pin on the profile page"
+    )
+
+
+class ProfileRepoSummary(CamelModel):
+    """Compact repo summary shown on a user's profile page.
+
+    Includes the last-activity timestamp derived from the most recent commit
+    and a stub star_count (always 0 at MVP — no star mechanism yet).
+    """
+
+    repo_id: str
+    name: str
+    visibility: str
+    star_count: int = 0
+    last_activity_at: datetime | None = None
+    created_at: datetime
+
+
+class ContributionDay(CamelModel):
+    """A single day in the contribution heatmap.
+
+    ``date`` is ISO-8601 (YYYY-MM-DD). ``count`` is the number of commits
+    authored on that day across all of the user's repos.
+    """
+
+    date: str
+    count: int
+
+
+class ProfileResponse(CamelModel):
+    """Full wire representation of a Muse Hub user profile.
+
+    Returned by GET /api/v1/musehub/users/{username}.
+    ``repos`` contains only public repos when the caller is not the owner.
+    ``contribution_graph`` is the last 52 weeks of daily commit activity.
+    ``session_credits`` is the total number of commits across all repos
+    (a proxy for creative session activity).
+    """
+
+    user_id: str
+    username: str
+    bio: str | None = None
+    avatar_url: str | None = None
+    pinned_repo_ids: list[str]
+    repos: list[ProfileRepoSummary]
+    contribution_graph: list[ContributionDay]
+    session_credits: int
+    created_at: datetime
+    updated_at: datetime
+
 # ── Cross-repo search models ───────────────────────────────────────────────────
 
 
@@ -418,7 +481,6 @@ class PullRequestEventPayload(TypedDict):
 # Union of all typed webhook event payloads.  The dispatcher accepts any of
 # these; callers pass the specific TypedDict for their event type.
 WebhookEventPayload = PushEventPayload | IssueEventPayload | PullRequestEventPayload
-
 
 # ── Context models ────────────────────────────────────────────────────────────
 

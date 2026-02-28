@@ -4,8 +4,8 @@ Serves browser-readable HTML pages for navigating a Muse Hub repo —
 analogous to GitHub's repository browser but for music projects.
 
 Endpoint summary:
-  GET /musehub/ui/search                           — global cross-repo search page
-  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
+  GET /musehub/ui/users/{username}                 — user profile page (public repos, contribution graph, credits)
+  GET /musehub/ui/search                           — global cross-repo search page  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
   GET /musehub/ui/{repo_id}/commits/{commit_id}    — commit detail page (metadata + artifacts)
   GET /musehub/ui/{repo_id}/graph                  — interactive DAG commit graph
   GET /musehub/ui/{repo_id}/pulls                  — pull request list page
@@ -40,6 +40,51 @@ router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
 # ---------------------------------------------------------------------------
 # Shared HTML scaffolding
 # ---------------------------------------------------------------------------
+
+_PROFILE_CSS = """
+.profile-header {
+  display: flex; align-items: flex-start; gap: 24px; margin-bottom: 24px;
+}
+.avatar {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: #21262d; border: 2px solid #30363d;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px; flex-shrink: 0;
+}
+.avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.profile-meta { flex: 1; }
+.profile-meta h1 { font-size: 22px; color: #e6edf3; margin-bottom: 4px; }
+.bio { font-size: 14px; color: #8b949e; margin-bottom: 12px; }
+.contrib-graph {
+  display: flex; gap: 2px; flex-wrap: wrap; overflow-x: auto;
+}
+.contrib-week { display: flex; flex-direction: column; gap: 2px; }
+.contrib-day {
+  width: 10px; height: 10px; border-radius: 2px; background: #161b22;
+  border: 1px solid #30363d;
+}
+.contrib-day[data-count="0"] { background: #161b22; }
+.contrib-day[data-count="1"] { background: #0e4429; border-color: #0e4429; }
+.contrib-day[data-count="2"] { background: #006d32; border-color: #006d32; }
+.contrib-day[data-count="3"] { background: #26a641; border-color: #26a641; }
+.contrib-day[data-count="4"] { background: #39d353; border-color: #39d353; }
+.repo-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.repo-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 14px; display: flex; flex-direction: column; gap: 6px;
+}
+.repo-card h3 { font-size: 15px; margin: 0; }
+.repo-card .repo-meta { font-size: 12px; color: #8b949e; }
+.credits-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #1f6feb22; border: 1px solid #1f6feb; border-radius: 6px;
+  padding: 8px 14px; font-size: 14px;
+}
+.credits-badge .num { font-size: 22px; font-weight: 700; color: #58a6ff; }
+"""
 
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -192,7 +237,7 @@ function shortSha(sha) { return sha ? sha.substring(0, 8) : '—'; }
 """
 
 
-def _page(title: str, breadcrumb: str, body_script: str) -> str:
+def _page(title: str, breadcrumb: str, body_script: str, extra_css: str = "") -> str:
     """Assemble a complete Muse Hub HTML page with shared chrome."""
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -200,7 +245,7 @@ def _page(title: str, breadcrumb: str, body_script: str) -> str:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title} — Muse Hub</title>
-  <style>{_CSS}</style>
+  <style>{_CSS}{extra_css}</style>
 </head>
 <body>
   <header>
@@ -236,6 +281,26 @@ def _page(title: str, breadcrumb: str, body_script: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+@router.get(
+    "/users/{username}",
+    response_class=HTMLResponse,
+    summary="Muse Hub user profile page",
+)
+async def profile_page(username: str) -> HTMLResponse:
+    """Render the public user profile page.
+
+    Displays: bio, avatar, pinned repos, all public repos with last-activity,
+    a GitHub-style contribution heatmap (52 weeks of daily commit counts), and
+    aggregated session credits.  Auth is handled client-side — the profile
+    itself is public; editing controls appear only when the visitor's JWT
+    matches the profile owner.
+
+    Returns 200 with an HTML shell even when the API returns 404 — the JS
+    renders the 404 message inline so the browser gets a proper HTML response.
+    """
+    script = f"""
+      const username = {repr(username)};
+      const API_PROFILE = '/api/v1/musehub/users/' + username;
 @router.get("/search", response_class=HTMLResponse, summary="Muse Hub global search page")
 async def global_search_page(
     q: str = "",
@@ -256,12 +321,127 @@ async def global_search_page(
     script = f"""
       const INITIAL_Q    = {repr(safe_q)};
       const INITIAL_MODE = {repr(safe_mode)};
-
       function escHtml(s) {{
         if (!s) return '';
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       }}
 
+      function bucketCount(n) {{
+        if (n === 0) return 0;
+        if (n <= 2)  return 1;
+        if (n <= 5)  return 2;
+        if (n <= 9)  return 3;
+        return 4;
+      }}
+
+      function buildContribGraph(graph) {{
+        // Group days into weeks (7 days per column)
+        const weeks = [];
+        let week = [];
+        graph.forEach((d, i) => {{
+          week.push(d);
+          if (week.length === 7) {{ weeks.push(week); week = []; }}
+        }});
+        if (week.length) weeks.push(week);
+
+        const weeksHtml = weeks.map(w => {{
+          const days = w.map(d => {{
+            const b = bucketCount(d.count);
+            return `<div class="contrib-day" data-count="${{b}}" title="${{d.date}}: ${{d.count}} commit${{d.count !== 1 ? 's' : ''}}"></div>`;
+          }}).join('');
+          return `<div class="contrib-week">${{days}}</div>`;
+        }}).join('');
+
+        return `<div class="contrib-graph">${{weeksHtml}}</div>`;
+      }}
+
+      function repoCardHtml(r) {{
+        const lastAct = r.lastActivityAt ? fmtDate(r.lastActivityAt) : 'No commits yet';
+        return `<div class="repo-card">
+          <h3><a href="/musehub/ui/${{r.repoId}}">${{escHtml(r.name)}}</a></h3>
+          <div class="repo-meta">
+            <span class="badge badge-${{r.visibility}}">${{r.visibility}}</span>
+            &bull; Last activity: ${{lastAct}}
+          </div>
+        </div>`;
+      }}
+
+      async function load() {{
+        let profile;
+        try {{
+          profile = await fetch(API_PROFILE).then(r => {{
+            if (r.status === 404) throw new Error('404');
+            if (!r.ok) throw new Error(r.status);
+            return r.json();
+          }});
+        }} catch(e) {{
+          if (e.message === '404') {{
+            document.getElementById('content').innerHTML =
+              '<div class="card"><p class="error">&#10005; No profile found for <strong>' + escHtml(username) + '</strong>.</p></div>';
+          }} else {{
+            document.getElementById('content').innerHTML =
+              '<p class="error">Failed to load profile: ' + escHtml(e.message) + '</p>';
+          }}
+          return;
+        }}
+
+        const avatarHtml = profile.avatarUrl
+          ? `<img src="${{escHtml(profile.avatarUrl)}}" alt="avatar" />`
+          : '&#127925;';
+
+        const pinnedRepos = (profile.repos || []).filter(r => (profile.pinnedRepoIds || []).includes(r.repoId));
+        const publicRepos = profile.repos || [];
+
+        const pinnedSection = pinnedRepos.length > 0 ? `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#128204; Pinned</h2>
+            <div class="repo-grid">${{pinnedRepos.map(repoCardHtml).join('')}}</div>
+          </div>` : '';
+
+        const reposSection = publicRepos.length > 0 ? `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#127963; Public Repositories (${{publicRepos.length}})</h2>
+            <div class="repo-grid">${{publicRepos.map(repoCardHtml).join('')}}</div>
+          </div>` : '<div class="card"><p class="loading">No public repositories yet.</p></div>';
+
+        const graphSection = `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#128200; Contribution Activity (last 52 weeks)</h2>
+            ${{buildContribGraph(profile.contributionGraph || [])}}
+            <p style="font-size:12px;color:#8b949e;margin-top:8px">
+              Less &nbsp;
+              <span style="display:inline-flex;gap:2px;vertical-align:middle">
+                ${{[0,1,2,3,4].map(n => '<span class="contrib-day" data-count="' + n + '" style="display:inline-block"></span>').join('')}}
+              </span>
+              &nbsp; More
+            </p>
+          </div>`;
+
+        document.getElementById('content').innerHTML = `
+          <div class="card profile-header">
+            <div class="avatar">${{avatarHtml}}</div>
+            <div class="profile-meta">
+              <h1>${{escHtml(profile.username)}}</h1>
+              ${{profile.bio ? '<p class="bio">' + escHtml(profile.bio) + '</p>' : ''}}
+              <div class="credits-badge">
+                <span class="num">${{profile.sessionCredits || 0}}</span>
+                <span>session credits</span>
+              </div>
+            </div>
+          </div>
+          ${{pinnedSection}}
+          ${{graphSection}}
+          ${{reposSection}}
+        `;
+      }}
+
+      load();
+    """
+    html = _page(
+        title=f"@{username}",
+        breadcrumb=f'<a href="/musehub/ui/users/{username}">@{username}</a>',
+        body_script=script,
+        extra_css=_PROFILE_CSS,
       function audioHtml(groupId, audioOid) {{
         if (!audioOid) return '';
         const url = '/api/v1/musehub/repos/' + encodeURIComponent(groupId) + '/objects/' + encodeURIComponent(audioOid) + '/content';
@@ -381,8 +561,7 @@ async def global_search_page(
     html = _page(
         title="Global Search",
         breadcrumb='<a href="/musehub/ui/search">Global Search</a>',
-        body_script=full_script,
-    )
+        body_script=full_script,    )
     return HTMLResponse(content=html)
 
 
