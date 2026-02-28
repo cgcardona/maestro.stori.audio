@@ -2780,6 +2780,79 @@ An AI deciding which branch to merge calls `muse divergence feature/guitar featu
 before generation.  HIGH harmonic divergence + LOW rhythmic divergence means lean on the piano
 branch for chord voicings while preserving the guitar branch's groove patterns.
 
+### `muse timeline`
+
+**Purpose:** Render a commit-by-commit chronological view of a composition's
+creative arc — emotion transitions, section progress, and per-track activity.
+This is the "album liner notes" view that no Git command provides.  Agents
+use it to understand how a project's emotional and structural character
+evolved before making generation decisions.
+
+**Usage:**
+```bash
+muse timeline [RANGE] [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `RANGE` | positional string | full history | Commit range (reserved — full history shown for now) |
+| `--emotion` | flag | off | Add emotion column (from `emotion:*` tags) |
+| `--sections` | flag | off | Group commits under section headers (from `section:*` tags) |
+| `--tracks` | flag | off | Show per-track activity column (from `track:*` tags) |
+| `--json` | flag | off | Emit structured JSON for UI rendering or agent consumption |
+| `--limit N` | int | 1000 | Maximum commits to walk |
+
+**Output example (text):**
+```
+Timeline — branch: main  (3 commit(s))
+
+  ── verse ──
+2026-02-01  abc1234  Initial drum arrangement    [drums]        [melancholic]  ████
+2026-02-02  def5678  Add bass line               [bass]         [melancholic]  ██████
+  ── chorus ──
+2026-02-03  ghi9012  Chorus melody               [keys,vocals]  [joyful]       █████████
+
+Emotion arc: melancholic → joyful
+Sections:    verse → chorus
+```
+
+**Output example (JSON):**
+```json
+{
+  "branch": "main",
+  "total_commits": 3,
+  "emotion_arc": ["melancholic", "joyful"],
+  "section_order": ["verse", "chorus"],
+  "entries": [
+    {
+      "commit_id": "abc1234...",
+      "short_id": "abc1234",
+      "committed_at": "2026-02-01T00:00:00+00:00",
+      "message": "Initial drum arrangement",
+      "emotion": "melancholic",
+      "sections": ["verse"],
+      "tracks": ["drums"],
+      "activity": 1
+    }
+  ]
+}
+```
+
+**Result types:** `MuseTimelineEntry`, `MuseTimelineResult` — see `docs/reference/type_contracts.md § Muse Timeline Types`.
+
+**Agent use case:** An AI agent calls `muse timeline --json` before composing a new
+section to understand the emotional arc to date (e.g. `melancholic → joyful → tense`).
+It uses `section_order` to determine what structural elements have been established
+and `emotion_arc` to decide whether to maintain or contrast the current emotional
+character.  `activity` per commit helps identify which sections were most actively
+developed.
+
+**Implementation note:** Emotion, section, and track data are derived entirely from
+tags attached via `muse tag add`.  Commits with no tags show `—` in filtered columns.
+The commit range argument (`RANGE`) is accepted but reserved for a future iteration
+that supports `HEAD~10..HEAD` syntax.
+
 ---
 
 ### `muse validate`
@@ -3195,6 +3268,7 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
+| `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
 | `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
 
