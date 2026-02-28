@@ -5958,3 +5958,78 @@ if state is not None and state.conflict_paths:
 **Related helpers:**
 - `apply_resolution(root, rel_path, object_id)` — copies an object from the local store to `muse-work/`; used by `--theirs` resolution and `--abort`.
 - `is_conflict_resolved(merge_state, rel_path)` — returns `True` if `rel_path` is not in `conflict_paths`.
+
+
+---
+
+## MuseHub Semantic Search (`maestro/services/musehub_embeddings.py`, `maestro/services/musehub_qdrant.py`)
+
+### MusicalFeatures
+
+Structured musical features extracted from a commit message. Typed intermediate
+representation between raw commit metadata and the Qdrant embedding vector.
+
+```python
+@dataclass
+class MusicalFeatures:
+    key_index: int          # Chromatic index: 0=C, 1=Db, ..., 11=B; -1=unknown
+    mode_score: float       # 0.0=minor, 1.0=major, 0.5=neutral/modal
+    tempo_norm: float       # (bpm - 20) / 280, range [0, 1]
+    note_density: float     # Notes per beat, normalised [0, 1]
+    velocity_mean: float    # Mean MIDI velocity [0, 1]
+    valence: float          # Emotional valence [0, 1]
+    arousal: float          # Emotional arousal/energy [0, 1]
+    chord_complexity: float # 0=triads only, 1=extended voicings
+    chroma: list[float]     # 12-element chromatic pitch class histogram
+    text_fingerprint: list[float]  # 16-element SHA-256 message fingerprint
+```
+
+**Source:** `maestro/services/musehub_embeddings.py`
+
+**Used by:** `features_to_vector()` → `compute_embedding()` → `embed_push_commits()`
+
+---
+
+### SimilarCommitResult
+
+A single result entry from a MuseHub similarity search query. Produced by
+`MusehubQdrantClient.search_similar()`.
+
+```python
+@dataclass
+class SimilarCommitResult:
+    commit_id: str   # Muse Hub commit SHA
+    repo_id: str     # UUID of the owning repository
+    score: float     # Cosine similarity in [0.0, 1.0]; 1.0 = identical
+    branch: str      # Branch the commit lives on
+    author: str      # Commit author identifier
+```
+
+**Source:** `maestro/services/musehub_qdrant.py`
+
+**Used by:** `GET /api/v1/musehub/search/similar` route → serialised as `SimilarCommitResponse`
+
+---
+
+### SimilarSearchResponse / SimilarCommitResponse (Pydantic)
+
+Wire-format models for the semantic search endpoint.
+
+```python
+class SimilarCommitResponse(CamelModel):
+    commit_id: str        # camelCase: commitId
+    repo_id: str          # camelCase: repoId
+    score: float          # [0.0, 1.0]
+    branch: str
+    author: str
+
+class SimilarSearchResponse(CamelModel):
+    query_commit: str                      # camelCase: queryCommit
+    results: list[SimilarCommitResponse]   # Sorted descending by score
+```
+
+**Source:** `maestro/models/musehub.py`
+
+**Agent contract:** Results are always sorted highest-to-lowest score. Only
+public repos appear in results. An empty `results` list means no similar
+public compositions were found — not an error condition.
