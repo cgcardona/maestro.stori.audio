@@ -1928,93 +1928,6 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 | `flat_notes` | `list[StorpheusNoteDict]` | Flattened note list across all channels |
 | `batch_idx` | `int` | Index in the generation batch (for logging) |
 
-#### `GenreParameterPrior`
-
-`@dataclass` — Explicit per-genre parameter priors for the Orpheus model, tuned from listening tests and A/B experiments. Resolved by `get_genre_prior(genre)` in `generation_policy.py`.
-
-**Source:** `storpheus/storpheus_types.py`
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `temperature` | `float` | *(required)* | Orpheus model temperature override (0.7–1.0) |
-| `top_p` | `float` | *(required)* | Orpheus model top_p override (0.90–0.98) |
-| `density_offset` | `float` | `0.0` | Additive offset on `GenerationControlVector.density` (−0.3–0.3) |
-| `prime_ratio` | `float` | `1.0` | Fraction of max prime tokens to supply (0.5–1.0) |
-
-**Where used:**
-
-| Module | Usage |
-|--------|-------|
-| `storpheus/generation_policy.py` | Stored in `_GENRE_PRIORS`; returned by `get_genre_prior()` |
-| `storpheus/music_service.py` | Passed to `apply_controls_to_params()` in `_do_generate` |
-
-#### `GenerationTelemetryRecord`
-
-`TypedDict` — One structured telemetry record emitted per completed generation. Logged at `INFO` level as JSON under the prefix `📊 TELEMETRY`.
-
-**Source:** `storpheus/storpheus_types.py`
-
-**Required fields:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `genre` | `str` | Musical style string |
-| `tempo` | `int` | BPM |
-| `bars` | `int` | Number of bars generated |
-
-**Optional output fields (present on success):**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `instruments` | `list[str]` | Requested instrument roles |
-| `quality_preset` | `str` | `"fast"` / `"balanced"` / `"quality"` |
-| `temperature` | `float` | Actual Orpheus temperature used |
-| `top_p` | `float` | Actual Orpheus top_p used |
-| `num_prime_tokens` | `int` | Prime context tokens supplied |
-| `num_gen_tokens` | `int` | Generation tokens requested |
-| `genre_prior_applied` | `bool` | Whether a genre prior overrode control-vector defaults |
-| `note_count` | `int` | Notes in the selected candidate |
-| `pitch_range` | `int` | Max MIDI pitch − min MIDI pitch |
-| `velocity_variation` | `float` | Coefficient of variation of note velocities |
-| `quality_score` | `float` | Composite quality score 0–1 |
-| `rejection_score` | `float` | Rejection-sampling score of selected candidate |
-| `candidate_count` | `int` | Number of candidates evaluated |
-| `generation_ok` | `bool` | True = at least one candidate accepted |
-
-#### `ParameterSweepResult`
-
-`TypedDict` — Quality metrics plus the parameter set used to produce them. One entry per (temperature, top_p) point in a parameter sweep.
-
-**Source:** `storpheus/storpheus_types.py`
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `temperature` | `float` | Temperature value for this point |
-| `top_p` | `float` | top_p value for this point |
-| `quality_score` | `float` | Composite quality score 0–1 |
-| `note_count` | `int` | Total notes generated |
-| `pitch_range` | `int` | Pitch range in MIDI semitones |
-| `velocity_variation` | `float` | Coefficient of variation of velocities |
-| `rejection_score` | `float` | Rejection-sampling score |
-
-#### `SweepABTestResult`
-
-`TypedDict` — Statistical summary returned by `POST /quality/parameter-sweep`.
-
-**Source:** `storpheus/storpheus_types.py`
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `genre` | `str` | Genre from the base request |
-| `tempo` | `int` | Tempo from the base request |
-| `bars` | `int` | Bar count from the base request |
-| `sweep_results` | `list[ParameterSweepResult]` | All sweep points, sorted best-first |
-| `best_temperature` | `float` | Temperature of the highest-scoring point |
-| `best_top_p` | `float` | top_p of the highest-scoring point |
-| `best_quality_score` | `float` | Quality score of the best point |
-| `score_range` | `float` | max − min quality score across all sweep points |
-| `significant` | `bool` | `True` when `score_range ≥ 0.05` |
-
 ---
 
 ## DAW Adapter Layer
@@ -6320,7 +6233,6 @@ Defined in `maestro/models/musehub.py`.
 **Producer:** `search.search_repo` route handler
 **Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
 
-<<<<<<< HEAD
 ### `SessionResponse`
 
 Defined in `maestro/models/musehub.py`.
@@ -6353,7 +6265,7 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
 
 **Producer:** `repos.list_sessions` route handler
 **Consumer:** Muse Hub sessions page UI; AI agents auditing studio activity across time
-=======
+
 ### `DagNode`
 
 A single commit node in the repo's directed acyclic graph. Defined in `maestro/models/musehub.py`.
@@ -6401,7 +6313,6 @@ Returned by `GET /api/v1/musehub/repos/{repo_id}/dag`.
 
 **Producer:** `repos.get_commit_dag` route handler
 **Consumer:** Interactive DAG graph UI page; AI agents inspecting project history topology
->>>>>>> origin/dev
 
 ---
 
@@ -6908,7 +6819,6 @@ when the corresponding package is unavailable.
 | `body` | `str` | Markdown release notes |
 | `commit_id` | `str \| None` | Pinned commit SHA, or `None` |
 | `download_urls` | `ReleaseDownloadUrls` | Structured download package URL map |
-| `author` | `str` | JWT `sub` of the user who created this release; empty string for seed data |
 | `created_at` | `datetime` | UTC timestamp of release creation |
 
 ---
@@ -7156,37 +7066,27 @@ Top-level response model for `GET /api/v1/musehub/search`.
 **Produced by:** `maestro.api.routes.musehub.repos.get_groove_check()`
 **Consumed by:** MuseHub groove-check UI page (`/musehub/ui/{owner}/{repo_slug}/groove-check`); AI agents comparing rhythmic consistency across branches
 
-## Muse Hub — Tree Browser API Types (`maestro/models/musehub.py`)
+---
 
-### `TreeEntryResponse`
+## Storpheus — Inference Optimization Types (`storpheus/music_service.py`)
 
-**Path:** `maestro/models/musehub.py`
+### `GenerationTiming`
 
-`CamelModel` — A single entry (file or directory) in the Muse tree browser. Returned as elements of `TreeListResponse.entries`.
+**Path:** `storpheus/music_service.py`
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | `str` | `"file"` or `"dir"` |
-| `name` | `str` | Entry filename or directory name (final path segment) |
-| `path` | `str` | Full relative path from repo root (e.g. `"tracks/bass.mid"`) |
-| `size_bytes` | `int \| None` | File size in bytes; `None` for directories |
-
-**Produced by:** `maestro.services.musehub_repository.list_tree()`
-**Consumed by:** `TreeListResponse.entries`; tree browser template via `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}`
-
-### `TreeListResponse`
-
-**Path:** `maestro/models/musehub.py`
-
-`CamelModel` — Directory listing for the Muse tree browser. Directories are listed before files; both groups sorted alphabetically.
+`@dataclass` — Per-phase wall-clock latency breakdown for a single `_do_generate` call. Attached to every `GenerateResponse` under `metadata["timing"]` as the output of `GenerationTiming.to_dict()`.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `owner` | `str` | Repo owner username (for breadcrumb rendering) |
-| `repo_slug` | `str` | Repo slug (for breadcrumb rendering) |
-| `ref` | `str` | Branch name or commit SHA used to resolve the tree |
-| `dir_path` | `str` | Current directory path being listed; empty string for repo root |
-| `entries` | `list[TreeEntryResponse]` | Entries sorted dirs-first, then files, both alphabetically |
+| `request_start` | `float` | `time()` at dataclass construction — beginning of the generation request |
+| `seed_elapsed_s` | `float` | Wall time for seed library lookup and key transposition |
+| `generate_elapsed_s` | `float` | Cumulative wall time for all `/generate_music_and_state` Gradio calls |
+| `add_batch_elapsed_s` | `float` | Cumulative wall time for all `/add_batch` Gradio calls |
+| `post_process_elapsed_s` | `float` | Wall time for the post-processing pipeline |
+| `total_elapsed_s` | `float` | Full request wall time (set just before response is returned) |
+| `regen_count` | `int` | Number of full re-generate calls triggered (above the first) |
+| `multi_batch_tries` | `int` | Total `/add_batch` calls made across all generate rounds |
+| `candidates_evaluated` | `int` | Total candidate batches scored by the rejection-sampling critic |
 
-**Produced by:** `maestro.services.musehub_repository.list_tree()`
-**Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}` and `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}/{path}`; tree browser template (`tree.html`) fetches this JSON and renders it client-side
+**Produced by:** `storpheus.music_service._do_generate()`
+**Consumed by:** Callers of `GenerateResponse.metadata["timing"]`; latency dashboards; A/B test comparisons via `/quality/ab-test`

@@ -1368,6 +1368,11 @@ target_key → detect seed key (Krumhansl-Schmuckler)
 | `_KEEPALIVE_INTERVAL` | `600` s | `music_service.py` |
 | `_FUZZY_EPSILON` | `0.35` | `music_service.py` |
 | `STORPHEUS_ACCUMULATE_BATCHES` | `1` | env / `music_service.py` |
+| `STORPHEUS_MULTI_BATCH_TRIES` | `3` | env / `music_service.py` |
+| `STORPHEUS_REGEN_THRESHOLD` | `0.5` | env / `music_service.py` |
+| `STORPHEUS_TORCH_COMPILE` | `false` | env / `music_service.py` (no-op until self-hosted) |
+| `STORPHEUS_FLASH_ATTENTION` | `false` | env / `music_service.py` (no-op until self-hosted) |
+| `STORPHEUS_KV_CACHE` | `false` | env / `music_service.py` (no-op until self-hosted) |
 | `_MAX_RETRIES` | `4` | `app/services/storpheus.py` |
 | `_RETRY_DELAYS` | `[2, 5, 10, 20]` s | `app/services/storpheus.py` |
 
@@ -1571,3 +1576,83 @@ docker compose exec storpheus mypy .
 ```bash
 docker compose exec storpheus pytest test_midi_pipeline.py test_quality_metrics.py test_expressiveness.py test_gm_resolution.py -v
 ```
+
+---
+
+## 21. Inference Optimization Strategy (#26)
+
+### Current baseline
+
+Music generation via the HuggingFace Gradio Space takes **25–65 s** per request with no visibility into where time is spent.  The quality preset generates multiple candidates, each requiring a full round-trip.
+
+### What's implemented now (client-side, no self-hosting required)
+
+#### Latency instrumentation — `GenerationTiming`
+
+`_do_generate` now populates a `GenerationTiming` dataclass with per-phase wall-clock measurements and attaches them to every response under `metadata.timing`:
+
+| Field | Measures |
+|-------|---------|
+| `total_elapsed_s` | Full request wall time |
+| `seed_elapsed_s` | Seed library lookup + key transposition |
+| `generate_elapsed_s` | All `/generate_music_and_state` calls combined |
+| `add_batch_elapsed_s` | All `/add_batch` calls combined |
+| `post_process_elapsed_s` | Post-processing pipeline |
+| `regen_count` | Full re-generate calls triggered |
+| `multi_batch_tries` | `/add_batch` calls made across all generate rounds |
+| `candidates_evaluated` | Total candidate batches scored |
+
+Use the timing data to identify the dominant latency source (network round-trips, cold-start GPU spin-up, MIDI parsing) and prioritise optimisation effort.
+
+#### Multi-batch candidate optimization
+
+**Problem:** The old code made one full `/generate_music_and_state` call per candidate (25–65 s each).  A "quality" preset (4 candidates) took up to 4 × 65 s = 4.3 min.
+
+**Solution:** The HF Space generates 10 stochastic batches per `/generate_music_and_state` call.  We now:
+1. Call `/generate_music_and_state` **once** → all 10 batches are available.
+2. Try up to `STORPHEUS_MULTI_BATCH_TRIES` (default 3) different `/add_batch` indices.  Each is **~2 s**.
+3. Accept early if any candidate scores ≥ `1 - STORPHEUS_REJECTION_THRESHOLD`.
+4. Only trigger a full re-generate if the best multi-batch score is still < `STORPHEUS_REGEN_THRESHOLD` (default 0.5) **and** the candidate budget isn't exhausted.
+
+**Expected latency improvement (quality preset, 4 candidates):**
+
+| Scenario | Old | New |
+|----------|-----|-----|
+| First candidate scores well | 1 × 65 s + 1 × 2 s = 67 s | Same |
+| Need 3 candidates | 3 × 65 s = 195 s | 1 × 65 s + 2 × 2 s = 69 s |
+| Need 4 candidates | 4 × 65 s = 260 s | 1 × 65 s + 3 × 2 s = 71 s |
+
+In the best case (first multi-batch attempt already scores well), the quality preset completes in roughly the same time as a single generate call.
+
+#### Config flags
+
+| Env var | Default | Effect |
+|---------|---------|--------|
+| `STORPHEUS_MULTI_BATCH_TRIES` | `3` | Batch indices tried per generate call before re-generate |
+| `STORPHEUS_REGEN_THRESHOLD` | `0.5` | Score below which a full re-generate is triggered |
+
+### Future optimizations (blocked on self-hosted deployment — #18, #20)
+
+The following flags are already wired into `music_service.py` but are **no-ops** until Orpheus runs locally:
+
+| Env var | Purpose | Blocked on |
+|---------|---------|-----------|
+| `STORPHEUS_TORCH_COMPILE` | `torch.compile(mode="reduce-overhead")` — 1.5–3× GPU speedup | Self-hosted inference (#18) |
+| `STORPHEUS_FLASH_ATTENTION` | FlashAttention-2 — reduces attention memory and compute | Self-hosted inference (#20) |
+| `STORPHEUS_KV_CACHE` | KV-cache reuse across candidates sharing the same prefix | Self-hosted inference (#20) |
+
+#### Why torch.compile matters
+
+On a modern A100/H100, `torch.compile(mode="reduce-overhead")` fuses kernels and reduces dispatcher overhead.  Expected: 1.5–3× generation speedup after a one-time compilation warm-up (~60 s on first call).
+
+#### Why KV-cache matters most for multi-candidate generation
+
+All candidates in a quality preset share the **same seed/prime prefix**.  With KV-cache reuse, the transformer only processes the shared prefix once; candidates 2–N only compute the divergent suffix tokens.  Expected: 2–3× speedup for multi-candidate presets, compounding with torch.compile.
+
+#### ONNX / TensorRT (longer term)
+
+Export to ONNX and compile with TensorRT for static-shape inference.  Depends on the model architecture supporting static shapes (variable-length music generation may require padding).  Worth benchmarking after torch.compile is validated.
+
+### Measurement plan
+
+After each optimization is enabled, compare `metadata.timing.total_elapsed_s` before/after with A/B tests via the `/quality/ab-test` endpoint.  Log aggregate latency to the diagnostics endpoint under `inference_optimization`.
