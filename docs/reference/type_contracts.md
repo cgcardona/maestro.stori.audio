@@ -5401,3 +5401,21 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
+
+## Muse Log — Navigation Types (`maestro/muse_cli/commands/log.py`)
+
+### `CommitDiff`
+
+Represents the file-level diff between a commit and its parent snapshot.
+Computed by `_compute_diff()` and used by `--stat` and `--patch` renderers.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `added` | `list[str]` | Paths present in this commit but absent in parent |
+| `removed` | `list[str]` | Paths present in parent but absent in this commit |
+| `changed` | `list[str]` | Paths present in both with different object IDs |
+| `total_files` | `int` (property) | Sum of added + removed + changed |
+
+**Producer:** `_compute_diff(session, commit)` in `muse_cli/commands/log.py`
+**Consumer:** `_render_stat`, `_render_patch` renderers; tests in `tests/muse_cli/test_log_flags.py`
+**Agent use case:** Inspect per-commit file change scope before deciding whether to revert or cherry-pick.
