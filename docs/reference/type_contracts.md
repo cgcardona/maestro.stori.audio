@@ -5480,6 +5480,75 @@ Response from the Hub's `/pull` endpoint.
 
 ---
 
+### `CloneRequest`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Payload sent to `POST <url>/clone` by `muse clone`. Controls which subset of
+the commit history and object store the Hub includes in its response.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch` | `str \| None` | Branch to clone from; `None` means Hub default branch |
+| `depth` | `int \| None` | Shallow-clone depth (last N commits); `None` means full history |
+| `single_track` | `str \| None` | Instrument track filter — Hub only returns files whose first path component matches |
+
+**Consumer:** `_clone_async()` in `maestro/muse_cli/commands/clone.py`
+
+---
+
+### `CloneCommitPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+A single commit record received from the Hub during a clone. Identical shape to
+`PullCommitPayload` — stored via `store_pulled_commit()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full SHA-256 commit ID |
+| `parent_commit_id` | `str \| None` | Parent commit ID, `None` for root commit |
+| `snapshot_id` | `str` | SHA-256 of the associated snapshot manifest |
+| `branch` | `str` | Branch this commit belongs to |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author identifier |
+| `committed_at` | `str` | ISO-8601 UTC timestamp |
+| `metadata` | `dict[str, object] \| None` | Music-domain annotations (tempo, key, meter) |
+
+---
+
+### `CloneObjectPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+A content-addressed object descriptor received during a clone.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | SHA-256 content hash of the object |
+| `size_bytes` | `int` | Size in bytes |
+
+---
+
+### `CloneResponse`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Response from the Hub's `/clone` endpoint. Seeds the local database with the
+commit DAG and object descriptors for a fresh checkout.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Canonical Hub repo identifier — written to `.muse/repo.json` |
+| `default_branch` | `str` | Branch the clone was performed from |
+| `remote_head` | `str \| None` | HEAD commit ID on the cloned branch |
+| `commits` | `list[CloneCommitPayload]` | Commits to seed local DB |
+| `objects` | `list[CloneObjectPayload]` | Object descriptors to seed local DB |
+
+**Consumer:** `_clone_async()` — writes `repo_id` to `repo.json`, stores commits/objects in DB, updates branch ref and remote-tracking pointer.
+
+---
+
 ### `FetchRequest`
 
 **Module:** `maestro/muse_cli/hub_client.py`

@@ -107,6 +107,7 @@ maestro/muse_cli/
     ├── fetch.py          — muse fetch
     ├── push.py           — muse push
     ├── pull.py           — muse pull
+    ├── clone.py          — muse clone
     ├── open_cmd.py       — muse open    ✅ macOS artifact preview (issue #45)
     ├── play.py           — muse play    ✅ macOS audio playback via afplay (issue #45)
     ├── export.py         — muse export  ✅ snapshot export to MIDI/JSON/MusicXML/ABC/WAV (issue #112)
@@ -1888,6 +1889,62 @@ mode. The divergence warning is informational.
 `muse pull --rebase` to ensure it works from the latest shared composition
 state with a clean linear history. `--ff-only` is useful in strict CI pipelines
 where merges are not permitted.
+
+---
+
+### `muse clone`
+
+**Purpose:** Clone a remote Muse Hub repository into a new local directory — the
+entry point for collaboration.  A session musician or AI agent calls `muse clone`
+once to obtain a local copy of a producer's project.  Subsequent `muse pull` and
+`muse push` operations use the "origin" remote written by `muse clone`.
+
+**Usage:**
+```bash
+muse clone <url> [directory] [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<url>` | positional | — | Muse Hub repository URL (e.g. `https://hub.stori.app/repos/<repo_id>`) |
+| `[directory]` | positional | repo name from URL | Local directory to clone into |
+| `--depth N` | int | None | Shallow clone: fetch only the last N commits |
+| `--branch TEXT` | str | Hub default | Clone and check out a specific branch |
+| `--single-track TEXT` | str | None | Restrict downloaded files to one instrument track |
+| `--no-checkout` | flag | off | Set up `.muse/` and fetch objects but leave `muse-work/` empty |
+
+**Output example:**
+```
+Cloning into 'producer-beats' …
+✅ Cloned: 12 commit(s), 48 object(s) → 'producer-beats'
+
+# Shallow clone (last commit only)
+Cloning into 'producer-beats' …
+✅ Cloned (depth 1): 1 commit(s), 4 object(s) → 'producer-beats'
+
+# Keys-only track clone
+Cloning into 'producer-beats' …
+✅ Cloned, track='keys': 12 commit(s), 8 object(s) → 'producer-beats'
+```
+
+**Result type:** `CloneRequest` / `CloneResponse` — see `maestro/muse_cli/hub_client.py`.
+
+Fields of `CloneResponse`:
+- `repo_id: str` — canonical Hub identifier, written to `.muse/repo.json`
+- `default_branch: str` — branch HEAD was cloned from
+- `remote_head: str | None` — HEAD commit ID on the remote branch
+- `commits: list[CloneCommitPayload]` — commit DAG to seed local DB
+- `objects: list[CloneObjectPayload]` — content-addressed object descriptors
+
+**Exit codes:** 0 — success; 1 — target directory already exists or bad args; 3 — network/server error.
+
+**Agent use case:** An AI agent clones the producer's project to inspect the
+commit history (`muse log`), understand the musical state (`muse context`), and
+add new variations before pushing back.  `--single-track keys` lets the keys
+agent download only keyboard files, avoiding multi-gigabyte drum/bass downloads.
+`--no-checkout` is useful when an agent only needs the commit graph metadata, not
+the working-tree snapshot.
 
 ---
 

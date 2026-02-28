@@ -315,6 +315,58 @@ class MuseHubClient:
         return await self._require_client().delete(path, **kwargs)  # type: ignore[arg-type]  # httpx stubs use Any for kwargs
 
 
+class CloneRequest(TypedDict):
+    """Payload sent to ``POST /musehub/repos/{repo_id}/clone``.
+
+    ``branch`` selects which branch HEAD to seed the clone from.  When
+    ``depth`` is set the Hub returns only the last *N* commits (shallow
+    clone).  ``single_track`` restricts returned file paths to those
+    whose first path component matches the given instrument track name
+    (e.g. ``"drums"``).
+    """
+
+    branch: str | None
+    depth: int | None
+    single_track: str | None
+
+
+class CloneCommitPayload(TypedDict):
+    """A single commit record received from the Hub during a clone."""
+
+    commit_id: str
+    parent_commit_id: str | None
+    snapshot_id: str
+    branch: str
+    message: str
+    author: str
+    committed_at: str
+    metadata: dict[str, object] | None
+
+
+class CloneObjectPayload(TypedDict):
+    """A content-addressed object descriptor received during a clone."""
+
+    object_id: str
+    size_bytes: int
+
+
+class CloneResponse(TypedDict):
+    """Response from the Hub clone endpoint.
+
+    ``repo_id`` is the canonical Hub identifier for the cloned repository —
+    stored in ``<target>/.muse/repo.json`` so subsequent push/pull calls can
+    address the correct Hub repo.  ``default_branch`` is the branch that
+    ``remote_head`` belongs to.  ``commits`` and ``objects`` carry the
+    payload to seed the local database.
+    """
+
+    repo_id: str
+    default_branch: str
+    remote_head: str | None
+    commits: list[CloneCommitPayload]
+    objects: list[CloneObjectPayload]
+
+
 __all__ = [
     "MuseHubClient",
     "PushCommitPayload",
@@ -326,6 +378,10 @@ __all__ = [
     "PullCommitPayload",
     "PullObjectPayload",
     "PullResponse",
+    "CloneRequest",
+    "CloneCommitPayload",
+    "CloneObjectPayload",
+    "CloneResponse",
     "FetchRequest",
     "FetchBranchInfo",
     "FetchResponse",
