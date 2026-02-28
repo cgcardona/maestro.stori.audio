@@ -1400,6 +1400,63 @@ others → `application/octet-stream`).
 
 ---
 
+### GET /api/v1/musehub/repos/{repo_id}/export/{ref}
+
+Download a packaged export of stored artifacts at a given commit ref. The ref
+can be a full commit ID or a branch name (resolves to branch head). Artifacts
+are filtered by format and optional section names, then returned as a raw file
+(single artifact) or a ZIP archive (multi-artifact or `splitTracks=true`).
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `format` | string | `midi` | Export format: `midi`, `json`, `musicxml`, `abc`, `wav`, `mp3` |
+| `splitTracks` | bool | `false` | Bundle all matching artifacts into a ZIP archive, one file per track |
+| `sections` | string | — | Comma-separated section names; only artifacts whose path contains a listed name are included (e.g. `verse,chorus`) |
+
+**Response (200):**
+
+- Single artifact: raw file bytes with format-appropriate Content-Type and
+  `Content-Disposition: attachment; filename="<basename>"`.
+- Multiple artifacts or `splitTracks=true`: `application/zip` archive with
+  `Content-Disposition: attachment; filename="<repo_id>_<ref8>_<format>.zip"`.
+
+**Format → MIME type mapping:**
+
+| Format | MIME type |
+|--------|-----------|
+| `midi` | `audio/midi` |
+| `json` | `application/json` |
+| `musicxml` | `application/vnd.recordare.musicxml+xml` |
+| `abc` | `text/plain; charset=utf-8` |
+| `wav` | `audio/wav` |
+| `mp3` | `audio/mpeg` |
+
+**`format=json` response schema:**
+
+```json
+{
+  "repo_id": "string",
+  "ref": "string",
+  "commit_id": "string",
+  "objects": [
+    {"object_id": "string", "path": "string", "size_bytes": 0}
+  ]
+}
+```
+
+**Errors:**
+- **404** — repo not found, ref not found, or no artifacts match the requested format
+- **422** — unrecognised `format` value
+
+**Agent use case:** An AI music agent calls this endpoint after a `muse commit`
+to export the session's MIDI tracks for import into another DAW or for
+post-processing by downstream tools. The deterministic URL (repo + ref + format)
+makes it safe to cache and replay.
+
+---
+
 ### GET /api/v1/musehub/repos/{repo_id}/raw/{ref}/{path}
 
 Direct file download by human-readable path and ref (branch/tag), analogous to
@@ -1453,14 +1510,12 @@ curl https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/tracks/ba
   -o bass.mid
 ```
 
+**Cache headers:** `ETag`, `Last-Modified`, `Cache-Control: private, max-age=60`
+
 **Errors:**
 - **401** — private repo accessed without a valid Bearer token
 - **404** — repo not found, or no object exists at the given path
 - **410** — object metadata exists in DB but the file was removed from disk
-
----
-
-## Muse Hub Web UI
 
 ---
 
@@ -1584,8 +1639,45 @@ do **not** require an `Authorization` header — auth is handled client-side via
 | `GET /musehub/ui/{repo_id}/pulls/{pr_id}` | PR detail with Merge button |
 | `GET /musehub/ui/{repo_id}/issues` | Issue list with open/closed/all filter |
 | `GET /musehub/ui/{repo_id}/issues/{number}` | Issue detail with Close button |
+| `GET /musehub/ui/{repo_id}/embed/{ref}` | Embeddable player widget (no auth, iframe-safe) |
 
 **Response:** `200 text/html` for all routes. No JSON is returned.
 
-See [integrate.md — Muse Hub web UI](../guides/integrate.md#muse-hub-web-ui) for
-usage and authentication instructions.
+The embed route additionally sets `X-Frame-Options: ALLOWALL` — required for
+cross-origin `<iframe>` embedding on external sites.
+
+See [integrate.md — Embedding MuseHub Compositions](../guides/integrate.md#embedding-musehub-compositions-on-external-sites) for
+usage and iframe code examples.
+
+### GET /oembed
+
+oEmbed discovery endpoint. Returns JSON metadata (including an `<iframe>` HTML
+snippet) for any MuseHub embed URL. No auth required.
+
+**Query parameters:**
+
+| Name        | Type   | Required | Description                                    |
+|-------------|--------|----------|------------------------------------------------|
+| `url`       | string | yes      | MuseHub embed URL to resolve                   |
+| `maxwidth`  | int    | no       | Maximum iframe width in pixels (default 560)   |
+| `maxheight` | int    | no       | Maximum iframe height in pixels (default 152)  |
+| `format`    | string | no       | Response format; only `json` supported         |
+
+**Response `200`:**
+
+```json
+{
+  "version": "1.0",
+  "type": "rich",
+  "title": "MuseHub Composition abc12345",
+  "provider_name": "Muse Hub",
+  "provider_url": "https://musehub.stori.app",
+  "width": 560,
+  "height": 152,
+  "html": "<iframe ...></iframe>"
+}
+```
+
+**Error responses:**
+- `404` — URL does not match an embed URL pattern.
+- `501` — `format` is not `json`.
