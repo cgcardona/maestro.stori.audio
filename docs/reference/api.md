@@ -2033,12 +2033,49 @@ The following routes serve HTML pages for browser-based repo navigation. They
 do **not** require an `Authorization` header — auth is handled client-side via
 `localStorage` and JavaScript `fetch()` calls to the JSON API above.
 
-All UI routes use the canonical `/{owner}/{repo_slug}` path scheme. The server resolves the slug to the internal `repo_id` before rendering, so the JS keeps using `repo_id` for API calls internally.
+All UI routes use the canonical `/{owner}/{repo_slug}` path scheme. The server resolves the slug to the internal `repo_id` before rendering.
+
+### Content Negotiation
+
+Key MuseHub UI routes support **dual-format responses** from the same URL.
+The response format is selected in priority order:
+
+1. `?format=json` query param — explicit override (works in any browser `<a>` link)
+2. `Accept: application/json` header — standard HTTP content negotiation
+3. Default (no header / any other value) — returns `text/html`
+
+JSON responses use **camelCase keys** (via Pydantic `by_alias=True`), matching
+the existing `/api/v1/musehub/...` convention so agents have a uniform contract.
+
+**Example — AI agent fetching structured repo data:**
+
+```
+GET /musehub/ui/alice/my-song
+Accept: application/json
+```
+
+Returns `RepoResponse` JSON (same shape as `/api/v1/musehub/{owner}/{repo_slug}`).
+
+**Example — Fallback via query param:**
+
+```
+GET /musehub/ui/alice/my-song/commits?format=json
+```
+
+Returns `CommitListResponse` JSON.
+
+Dual-format endpoints:
+
+| Route | HTML | JSON |
+|-------|------|------|
+| `GET /musehub/ui/{owner}/{repo_slug}` | Repo overview page | `RepoResponse` |
+| `GET /musehub/ui/{owner}/{repo_slug}/commits` | Commits list page | `CommitListResponse` |
+| `GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}` | Commit detail + artifacts | `CommitResponse` (if synced) |
+
+HTML-only routes (no JSON path implemented):
 
 | Route | Description |
 |-------|-------------|
-| `GET /musehub/ui/{owner}/{repo_slug}` | Repo overview: branch selector + newest 20 commits |
-| `GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}` | Commit detail: metadata + artifact browser |
 | `GET /musehub/ui/{owner}/{repo_slug}/pulls` | PR list with open/all filter |
 | `GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}` | PR detail with Merge button |
 | `GET /musehub/ui/{owner}/{repo_slug}/issues` | Issue list with open/closed/all filter |
@@ -2061,8 +2098,6 @@ All UI routes use the canonical `/{owner}/{repo_slug}` path scheme. The server r
 | `GET /musehub/ui/explore` | Explore public repos |
 | `GET /musehub/ui/trending` | Trending repos |
 | `GET /musehub/ui/search` | Global cross-repo search |
-
-**Response:** `200 text/html` for all routes. No JSON is returned.
 
 The embed route additionally sets `X-Frame-Options: ALLOWALL` — required for
 cross-origin `<iframe>` embedding on external sites.
