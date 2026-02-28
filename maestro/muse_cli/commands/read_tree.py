@@ -41,7 +41,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import pathlib
-from typing import Optional
 
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession

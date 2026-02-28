@@ -3463,7 +3463,7 @@ is safer than `muse checkout` because it leaves all branch metadata intact.
 | `muse import` | `commands/import_cmd.py` | ✅ implemented (PR #142) | #118 |
 | `muse inspect` | `commands/inspect.py` | ✅ implemented (PR #TBD) | #98 |
 | `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
-| `muse read-tree` | `commands/read_tree.py` | ✅ implemented (PR #143) | #90 |
+| `muse read-tree` | `commands/read_tree.py` | ✅ implemented (PR #157) | #90 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse render-preview` | `commands/render_preview.py` | ✅ implemented (issue #96) | #96 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
