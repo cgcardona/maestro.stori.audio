@@ -35,6 +35,12 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 cache_dir = "/tmp/pytest_cache"
 addopts = "-v --tb=short"
+filterwarnings = [
+    # Typer 0.24.x internally passes is_flag/flag_value through its Click
+    # compatibility layer for boolean options — this is a Typer library issue,
+    # not from project code.
+    "ignore::DeprecationWarning:typer",
+]
 
 [tool.coverage.run]
 source = ["maestro"]
