@@ -4811,6 +4811,201 @@ or smoother (stepwise) between two points in history.
 **Producer:** `_contour_compare_async()`
 **Consumer:** `_format_compare()`
 
+
+---
+
+### `RemoteConfig`
+
+**Module:** `maestro/muse_cli/config.py`
+
+A single configured remote — name and Hub URL pair as read from `.muse/config.toml`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Remote name (e.g. `"origin"`) |
+| `url` | `str` | Hub URL (e.g. `"https://story.audio/musehub/repos/<id>"`) |
+
+**Producer:** `list_remotes()`
+**Consumer:** `muse remote -v`, `_push_async()`, `_pull_async()`
+
+---
+
+### `PushRequest`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Payload sent to `POST <remote>/push`. Carries the local branch tip and all
+commits/objects the remote does not yet have.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch` | `str` | Branch name being pushed |
+| `head_commit_id` | `str` | Local branch HEAD commit ID |
+| `commits` | `list[PushCommitPayload]` | Delta commits (chronological, oldest first) |
+| `objects` | `list[PushObjectPayload]` | Object descriptors for all known objects |
+
+**Producer:** `_build_push_request()`
+**Consumer:** Hub `/push` endpoint via `MuseHubClient.post()`
+
+---
+
+### `PushCommitPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+One commit record inside a `PushRequest`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | 64-char sha256 commit ID |
+| `parent_commit_id` | `str \| None` | Parent commit ID, or `None` for root commits |
+| `snapshot_id` | `str` | 64-char sha256 snapshot ID |
+| `branch` | `str` | Branch this commit belongs to |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author identifier |
+| `committed_at` | `str` | ISO-8601 UTC timestamp |
+| `metadata` | `dict[str, object] \| None` | Music annotations (tempo_bpm, key, meter, etc.) |
+
+---
+
+### `PushObjectPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Content-addressed object descriptor inside a `PushRequest`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | 64-char sha256 object ID |
+| `size_bytes` | `int` | Object size in bytes |
+
+---
+
+### `PushResponse`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Response from the Hub's `/push` endpoint.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `accepted` | `bool` | `True` when the push was accepted |
+| `message` | `str` | Human-readable status message |
+
+---
+
+### `PullRequest`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Payload sent to `POST <remote>/pull`. Tells the Hub which commits and objects
+the client already has so the Hub can compute the minimal delta.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch` | `str` | Branch to pull |
+| `have_commits` | `list[str]` | Commit IDs already in local DB |
+| `have_objects` | `list[str]` | Object IDs already in local DB |
+
+**Producer:** `_pull_async()`
+**Consumer:** Hub `/pull` endpoint via `MuseHubClient.post()`
+
+---
+
+### `PullCommitPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+One commit record received from the Hub during a pull.  Same fields as
+`PushCommitPayload` — the schema is symmetric.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | 64-char sha256 commit ID |
+| `parent_commit_id` | `str \| None` | Parent commit ID, or `None` for root |
+| `snapshot_id` | `str` | 64-char sha256 snapshot ID |
+| `branch` | `str` | Branch this commit belongs to |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author identifier |
+| `committed_at` | `str` | ISO-8601 UTC timestamp |
+| `metadata` | `dict[str, object] \| None` | Music annotations |
+
+---
+
+### `PullObjectPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Object descriptor received from the Hub during a pull.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | 64-char sha256 object ID |
+| `size_bytes` | `int` | Object size in bytes |
+
+---
+
+### `PullResponse`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Response from the Hub's `/pull` endpoint.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commits` | `list[PullCommitPayload]` | Commits the client did not have |
+| `objects` | `list[PullObjectPayload]` | Objects the client did not have |
+| `remote_head` | `str \| None` | Current remote branch HEAD commit ID |
+| `diverged` | `bool` | `True` when remote HEAD is not an ancestor of local HEAD |
+
+**Consumer:** `_pull_async()` — stores commits/objects in DB, updates tracking pointer, prints divergence warning when `diverged=True`.
+
+---
+
+### `ShowCommitResult`
+
+**Module:** `maestro/muse_cli/commands/show.py`
+
+Full commit metadata plus snapshot manifest returned by `muse show`. Designed
+for direct JSON serialisation so AI agents can consume commit state without a
+second round-trip to the database.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID |
+| `branch` | `str` | Branch this commit belongs to |
+| `parent_commit_id` | `Optional[str]` | Full SHA of the primary parent, `None` for root commits |
+| `parent2_commit_id` | `Optional[str]` | Full SHA of the merge parent (set by `muse merge`), else `None` |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author string (empty string when not set) |
+| `committed_at` | `str` | ISO-style timestamp `"YYYY-MM-DD HH:MM:SS"` (UTC) |
+| `snapshot_id` | `str` | SHA-256 of the snapshot manifest |
+| `snapshot_manifest` | `dict[str, str]` | `{relative_path: object_id}` for every file in the snapshot |
+
+**Producer:** `_show_async()`
+**Consumer:** `_render_show()`, `_render_midi()`, `_render_audio_preview()`, `--json` serialiser
+
+---
+
+### `ShowDiffResult`
+
+**Module:** `maestro/muse_cli/commands/show.py`
+
+Path-level diff of a commit vs its parent, produced by `muse show --diff`.
+For root commits (no parent) all snapshot paths appear in `added`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full SHA of the commit being inspected |
+| `parent_commit_id` | `Optional[str]` | Full SHA of the parent, or `None` for root commits |
+| `added` | `list[str]` | Paths present in this snapshot but not the parent's |
+| `modified` | `list[str]` | Paths present in both snapshots with different object IDs |
+| `removed` | `list[str]` | Paths present in the parent's snapshot but not this one |
+| `total_changed` | `int` | `len(added) + len(modified) + len(removed)` |
+
+**Producer:** `_diff_vs_parent_async()`
+**Consumer:** `_render_diff()`
+
 ---
 
 ## Muse Timeline Types
