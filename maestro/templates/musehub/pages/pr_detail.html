@@ -291,6 +291,83 @@ function timelineRow(icon, label, ts) {
   </div>`;
 }
 
+// ── Reactions ────────────────────────────────────────────────────────────────
+
+const REACTION_EMOJIS = ['👍', '👎', '❤️', '🎵', '🔥', '✨', '🎸', '🥁'];
+
+/**
+ * Load and render emoji reaction counts for a target into a container element.
+ * Shows pill buttons for each emoji with counts; authenticated users can toggle.
+ */
+async function loadReactions(targetType, targetId, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  try {
+    const reactions = await apiFetch(
+      '/repos/' + repoId + '/reactions?target_type=' + encodeURIComponent(targetType) +
+      '&target_id=' + encodeURIComponent(targetId)
+    );
+
+    const countMap = {};
+    const mySet = new Set();
+    for (const r of reactions) {
+      countMap[r.emoji] = r.count;
+      if (r.reacted_by_me) mySet.add(r.emoji);
+    }
+
+    const authed = !!getToken();
+    container.innerHTML = REACTION_EMOJIS.map(emoji => {
+      const count = countMap[emoji] || 0;
+      const active = mySet.has(emoji);
+      const cls = 'reaction-btn' + (active ? ' reaction-btn--active' : '');
+      const onclick = authed
+        ? `toggleReaction('${targetType}','${targetId}','${emoji}','${containerId}')`
+        : '';
+      return `<button class="${cls}" ${onclick ? 'onclick="' + onclick + '"' : 'disabled title="Sign in to react"'}>${emoji}${count > 0 ? ' <span class="reaction-count">' + count + '</span>' : ''}</button>`;
+    }).join('');
+  } catch(e) {
+    if (e.message !== 'auth') container.innerHTML = '';
+  }
+}
+
+/**
+ * Toggle an emoji reaction on a target and refresh the reaction bar.
+ */
+async function toggleReaction(targetType, targetId, emoji, containerId) {
+  try {
+    await apiFetch('/repos/' + repoId + '/reactions', {
+      method: 'POST',
+      body: JSON.stringify({ target_type: targetType, target_id: targetId, emoji }),
+    });
+    loadReactions(targetType, targetId, containerId);
+  } catch(e) {
+    if (e.message !== 'auth') console.error('Reaction error:', e.message);
+  }
+}
+
+// ── General discussion helpers ────────────────────────────────────────────────
+
+/**
+ * Soft-delete a general discussion comment by ID and reload the thread.
+ */
+async function deleteComment(commentId) {
+  if (!confirm('Delete this comment?')) return;
+  try {
+    await apiFetch('/repos/' + repoId + '/comments/' + commentId, { method: 'DELETE' });
+    await refreshComments();
+  } catch(e) {
+    if (e.message !== 'auth') alert('Delete failed: ' + e.message);
+  }
+}
+
+/**
+ * Fetch general discussion comments and re-render via loadComments alias.
+ * Satisfies the refreshComments API used by the discussion section.
+ */
+async function refreshComments() {
+  await loadComments();
+}
+
 // ── Main loader ──────────────────────────────────────────────────────────────
 async function load() {
   initRepoNav(repoId);
@@ -410,8 +487,9 @@ async function load() {
         ${mergeSection}
       </div>
 
-      <div class="card" style="padding:var(--space-3) var(--space-4)">
-        <div id="pr-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
+      <!-- ── Reactions ────────────────────────────────────────────────── -->
+      <div class="card" style="padding:var(--space-3) var(--space-4);margin-bottom:24px">
+        <div id="pr-reactions" class="reaction-bar"><p class="text-muted text-sm">Loading reactions…</p></div>
       </div>
 
       <!-- ── Musical diff radar + badges ───────────────────────────────── -->
@@ -472,7 +550,7 @@ async function load() {
       ${timelineHtml}
 
       <!-- Review comments section -->
-      <div id="comments-section" class="card" style="margin-top:16px">
+      <div id="comment-section" class="card" style="margin-top:16px">
         <h2 style="margin:0 0 12px">Review comments (<span id="comment-count">0</span>)</h2>
         <div id="comment-list"></div>
 
@@ -528,4 +606,117 @@ async function load() {
 
 load();
 {% endraw %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Reaction bar ───────────────────────────────────────────────────────────── */
+.reaction-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-height: 32px;
+}
+
+.reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-overlay);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.reaction-btn:hover:not(:disabled) {
+  border-color: var(--accent, #58a6ff);
+  background: var(--bg-inset);
+}
+
+.reaction-btn--active {
+  border-color: var(--accent, #58a6ff);
+  background: #1d3557;
+  color: var(--accent, #58a6ff);
+}
+
+.reaction-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.reaction-count {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── Comment threads ────────────────────────────────────────────────────────── */
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.comment-thread {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-base);
+  background: var(--bg-overlay);
+  overflow: hidden;
+}
+
+.comment-reply {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: var(--bg-inset);
+  margin-left: var(--space-4);
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+}
+
+.comment-body {
+  padding: var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.comment-actions {
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+}
+
+.reply-form {
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+}
+
+.reply-textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-sans);
+}
+
+.replies-container {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.new-comment-form {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+</style>
 {% endblock %}

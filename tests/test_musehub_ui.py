@@ -537,6 +537,40 @@ async def test_ui_pr_detail_page_returns_200(
 
 
 @pytest.mark.anyio
+async def test_ui_pr_detail_page_has_comment_section(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR detail page includes threaded comment UI and reaction bar."""
+    await _make_repo(db_session)
+    pr_id = "some-pr-uuid-comment-test"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/pulls/{pr_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "comment-section" in body
+    assert "comment-list" in body
+    assert "refreshComments" in body
+    assert "submitComment" in body
+    assert "deleteComment" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_detail_page_has_reaction_bar(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR detail page includes a reaction bar that calls loadReactions."""
+    await _make_repo(db_session)
+    pr_id = "some-pr-uuid-reaction-test"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/pulls/{pr_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "pr-reactions" in body
+    assert "loadReactions" in body
+    assert "reaction-bar" in body
+
+
+@pytest.mark.anyio
 async def test_pr_detail_shows_diff_radar(
     client: AsyncClient,
     db_session: AsyncSession,
