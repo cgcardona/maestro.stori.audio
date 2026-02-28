@@ -25,6 +25,7 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [ExpressivenessResult](#expressivenessresult)
    - [MuseTempoResult](#musetemporesult)
    - [MuseTempoHistoryEntry](#musetemopohistoryentry)
+   - [Muse Motif Types](#muse-motif-types-maestroservicesmuse_motifpy)
    - [Muse Validate Types](#muse-validate-types)
    - [GrooveStatus](#groovestatuss)
    - [CommitGrooveMetrics](#commitgroovemetrics)
@@ -1978,6 +1979,42 @@ These type aliases replace the repeated pattern `dict[str, list[XxxDict]]` that 
 
 > Added: 2026-02-27 | Types used by the `muse` CLI commands — purely local, never serialised over HTTP.
 
+### `HarmonyResult` (`maestro/muse_cli/commands/harmony.py`)
+
+`TypedDict` — harmonic analysis for a single commit returned by `muse harmony`.
+Primary result type for AI agent consumption via `muse harmony --json`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Short or full commit SHA that was analyzed |
+| `branch` | `str` | Current branch name |
+| `key` | `str \| None` | Detected key center (e.g. `"Eb"`); `None` for drum-only snapshots |
+| `mode` | `str \| None` | Detected mode (e.g. `"major"`, `"dorian"`); `None` for drum-only |
+| `confidence` | `float` | Key/mode detection confidence in [0.0, 1.0] |
+| `chord_progression` | `list[str]` | Ordered chord symbol strings (e.g. `["Ebmaj7", "Fm7"]`) |
+| `harmonic_rhythm_avg` | `float` | Average chord changes per bar |
+| `tension_profile` | `list[float]` | Per-section tension scores in [0.0, 1.0]; 0.0 = consonant, 1.0 = dissonant |
+| `track` | `str` | Instrument track scope (`"all"` unless `--track` specified) |
+| `source` | `str` | `"stub"` until backed by real MIDI analysis |
+
+**Used by:** `_harmony_analyze_async`, `_render_result_human`, `_render_result_json`.
+
+### `HarmonyCompareResult` (`maestro/muse_cli/commands/harmony.py`)
+
+`TypedDict` — comparison between two commits returned by `muse harmony --compare`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `head` | `HarmonyResult` | Harmonic analysis for the HEAD (or specified) commit |
+| `compare` | `HarmonyResult` | Harmonic analysis for the reference commit |
+| `key_changed` | `bool` | `True` if the key center differs between commits |
+| `mode_changed` | `bool` | `True` if the mode differs between commits |
+| `chord_progression_delta` | `list[str]` | Chords present in HEAD but absent in compare |
+
+**Used by:** `_render_compare_human`, `_render_compare_json`.
+
+---
+
 ### `MuseSessionRecord` (`maestro/muse_cli/commands/session.py`)
 
 `TypedDict(total=False)` — wire-format for a single recording session stored as JSON in `.muse/sessions/`.
@@ -2156,6 +2193,27 @@ Read-only search across `muse_cli_commits`.  Returns `MuseFindResults`.
 | `commit_id` | `str` | Commit that was inspected (HEAD by default). |
 | `signatures_by_file` | `dict[str, str]` | Maps relative MIDI file path to detected time signature. `"?"` when no meta event found. |
 | `is_polyrhythmic` | `bool` | `True` when two or more distinct known time signatures are present simultaneously. |
+
+---
+
+### Muse CLI — `muse read-tree` (`maestro/muse_cli/commands/read_tree.py`)
+
+#### `ReadTreeResult`
+
+Plain class — returned by `_read_tree_async()` and the `read_tree` Typer callback.
+Carries the outcome of a snapshot hydration so tests can assert on result fields
+without inspecting the filesystem.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `snapshot_id` | `str` | Full 64-char sha256 snapshot identifier that was resolved. |
+| `files_written` | `list[str]` | Relative paths (POSIX, relative to `muse-work/`) of files written. Empty on error. |
+| `dry_run` | `bool` | `True` when `--dry-run` was requested; no files were written. |
+| `reset` | `bool` | `True` when `--reset` cleared `muse-work/` before population. |
+
+**Agent contract:** When `dry_run=False`, all paths in `files_written` are guaranteed
+to exist in `muse-work/` with their correct content. When `dry_run=True`, the list
+reflects what *would* be written — the files may or may not exist on disk.
 
 ---
 
@@ -2706,6 +2764,128 @@ Swing comparison between HEAD and a reference commit.
 **Producer:** `_swing_compare_async()`
 **Consumer:** `_format_compare()`
 
+### Muse Motif Types (`maestro/services/muse_motif.py`)
+
+All motif types are frozen `dataclass` instances (not TypedDicts) so they carry
+semantic labels and are safe to store in tuples.
+
+#### `MotifOccurrence`
+
+A single occurrence of a motif within a commit or pattern search.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Short (8-char) commit SHA where the motif was found |
+| `track` | `str` | Track name (e.g. `"melody"`, `"bass"`) |
+| `section` | `str \| None` | Named section the occurrence falls in, or `None` |
+| `start_position` | `int` | Index of the first note of the motif |
+| `transformation` | `MotifTransformation` | Relationship to the query motif |
+| `pitch_sequence` | `tuple[int, ...]` | Literal MIDI pitch values at this occurrence |
+| `interval_fingerprint` | `IntervalSequence` | Normalised interval sequence used for matching |
+
+#### `MotifGroup`
+
+A single recurring motif and all its occurrences in a scanned commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fingerprint` | `IntervalSequence` | Normalised interval sequence (the motif's identity) |
+| `count` | `int` | Number of times the motif appears |
+| `occurrences` | `tuple[MotifOccurrence, ...]` | All detected occurrences |
+| `label` | `str` | Contour label: `ascending-step`, `ascending-leap`, `descending-step`, `descending-leap`, `arch`, `valley`, `oscillating`, `static` |
+
+#### `MotifFindResult`
+
+Results from `muse motif find` — recurring patterns in a single commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Short commit SHA analysed |
+| `branch` | `str` | Branch name |
+| `min_length` | `int` | Minimum motif length requested |
+| `motifs` | `tuple[MotifGroup, ...]` | Detected motif groups, sorted by count desc |
+| `total_found` | `int` | Total number of distinct recurring motifs |
+| `source` | `str` | `"stub"` or `"live"` |
+
+**Producer:** `find_motifs()`
+**Consumer:** `_format_find()` in `motif.py`
+
+#### `MotifTrackResult`
+
+Results from `muse motif track` — appearances of a pattern across history.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pattern` | `str` | The original query pattern string |
+| `fingerprint` | `IntervalSequence` | Derived transposition-invariant fingerprint |
+| `occurrences` | `tuple[MotifOccurrence, ...]` | All occurrences found across commits |
+| `total_commits_scanned` | `int` | Number of commits searched |
+| `source` | `str` | `"stub"` or `"live"` |
+
+**Producer:** `track_motif()`
+**Consumer:** `_format_track()` in `motif.py`
+
+#### `MotifDiffEntry`
+
+One side of a `muse motif diff` comparison.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Short commit SHA |
+| `fingerprint` | `IntervalSequence` | Interval sequence at this commit |
+| `label` | `str` | Contour label |
+| `pitch_sequence` | `tuple[int, ...]` | Literal pitches (if available) |
+
+#### `MotifDiffResult`
+
+Results from `muse motif diff` — how a motif transformed between two commits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a` | `MotifDiffEntry` | Analysis of the motif at the first commit |
+| `commit_b` | `MotifDiffEntry` | Analysis of the motif at the second commit |
+| `transformation` | `MotifTransformation` | Detected transformation relationship |
+| `description` | `str` | Human-readable description |
+| `source` | `str` | `"stub"` or `"live"` |
+
+**Producer:** `diff_motifs()`
+**Consumer:** `_format_diff()` in `motif.py`
+
+#### `SavedMotif`
+
+A named motif stored in `.muse/motifs/`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | User-assigned motif name (e.g. `"main-theme"`) |
+| `fingerprint` | `IntervalSequence` | Stored interval fingerprint |
+| `created_at` | `str` | ISO-8601 UTC timestamp |
+| `description` | `str \| None` | Optional free-text annotation |
+
+#### `MotifListResult`
+
+Results from `muse motif list` — all named motifs in the repository.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `motifs` | `tuple[SavedMotif, ...]` | All saved named motifs |
+| `source` | `str` | `"stub"` or `"live"` |
+
+**Producer:** `list_motifs()`
+**Consumer:** `_format_list()` in `motif.py`
+
+#### `MotifTransformation` (Enum)
+
+| Value | Meaning |
+|-------|---------|
+| `EXACT` | Identical interval sequence (possibly transposed) |
+| `INVERSION` | Each interval negated (melodic mirror) |
+| `RETROGRADE` | Interval sequence reversed |
+| `RETRO_INV` | Retrograde + inversion combined |
+| `AUGMENTED` | Same intervals; note durations scaled up |
+| `DIMINISHED` | Same intervals; note durations compressed |
+| `APPROXIMATE` | Similar contour but no exact variant match |
+
 ### `ChordEvent`
 
 **Module:** `maestro/muse_cli/commands/chord_map.py`
@@ -2919,6 +3099,31 @@ commit that scored at or above the `--threshold` keyword-overlap cutoff.
 
 **Producer:** `_recall_async()`
 **Consumer:** `_render_results()`, callers using `--json` output
+
+---
+
+### `CatObjectResult`
+
+**Module:** `maestro/muse_cli/commands/cat_object.py`
+
+Wraps the result of a single object lookup across the three Muse object tables
+(blob → snapshot → commit). Records both the detected type and the ORM row so
+renderers never need to `isinstance`-check independently.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_type` | `str` | One of `"object"`, `"snapshot"`, or `"commit"` |
+| `row` | `MuseCliObject \| MuseCliSnapshot \| MuseCliCommit` | The matched ORM row |
+
+**Methods:** `.to_dict() → dict[str, object]` — produces a JSON-serialisable
+dict whose shape varies by `object_type`:
+
+- `object` → `{type, object_id, size_bytes, created_at}`
+- `snapshot` → `{type, snapshot_id, manifest, created_at}`
+- `commit` → `{type, commit_id, repo_id, branch, parent_commit_id, parent2_commit_id, snapshot_id, message, author, committed_at, created_at, metadata}`
+
+**Producer:** `_lookup_object()` (internal) → `_cat_object_async()`
+**Consumer:** `_render_metadata()`, JSON output path in `_cat_object_async()`
 
 ---
 
@@ -4629,6 +4834,34 @@ classDiagram
     parse_musicxml_file ..> MuseImportData : produces
     apply_track_map ..> NoteEvent : returns remapped copies
 ```
+
+---
+
+## Muse rev-parse Types (`maestro/muse_cli/commands/rev_parse.py`)
+
+### `RevParseResult`
+
+Immutable value object returned by `resolve_revision()` when a revision expression
+resolves successfully.  Consumers should always check for `None` before accessing
+fields — `resolve_revision` returns `None` on any resolution failure.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-character hex commit ID of the resolved commit. |
+| `branch` | `str` | Branch that the resolved commit lives on. |
+| `revision_expr` | `str` | The original expression that was resolved (useful for error messages). |
+
+```python
+class RevParseResult:
+    commit_id: str
+    branch: str
+    revision_expr: str
+```
+
+**When to call `resolve_revision`:** any command that accepts a user-supplied
+revision argument (e.g. `muse describe <rev>`, `muse export --from <rev>`)
+should delegate resolution to this function rather than reimplementing tilde
+parsing and branch lookup.
 
 ---
 

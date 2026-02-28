@@ -692,6 +692,8 @@ Given the same working tree state, message, and timestamp two machines produce i
   repo.json          Repo identity: repo_id (UUID), schema_version, created_at
   HEAD               Current branch pointer, e.g. "refs/heads/main"
   config.toml        [user], [auth], [remotes] configuration
+  objects/           Local content-addressed object store (written by muse commit)
+    <object_id>      One file per unique object (sha256 of file bytes)
   refs/
     heads/
       main           Commit ID of branch HEAD (empty = no commits yet)
@@ -1568,6 +1570,166 @@ CLI contract; stub implementations are clearly marked.
 
 **Agent pattern:** Run with `--json` to get machine-readable output. Pipe into
 `muse context` for a unified musical state document.
+
+---
+
+### `muse cat-object`
+
+**Purpose:** Read and display a raw Muse object by its SHA-256 hash. The
+plumbing equivalent of `git cat-file` — lets an AI agent inspect any stored
+blob, snapshot manifest, or commit record without running the full `muse log`
+pipeline.
+
+**Usage:**
+```bash
+muse cat-object [OPTIONS] <object-id>
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<object-id>` | positional | required | Full 64-char SHA-256 hash to look up |
+| `-t / --type` | flag | off | Print only the object type (`object`, `snapshot`, or `commit`) |
+| `-p / --pretty` | flag | off | Pretty-print the object content as indented JSON |
+
+`-t` and `-p` are mutually exclusive.
+
+**Output example (default):**
+```
+type:       commit
+commit_id:  a1b2c3d4...
+branch:     main
+snapshot:   f9e8d7c6...
+message:    boom bap demo take 1
+parent:     00112233...
+committed_at: 2026-02-27T17:30:00+00:00
+```
+
+**Output example (`-t`):**
+```
+commit
+```
+
+**Output example (`-p <snapshot_id>`):**
+```json
+{
+  "type": "snapshot",
+  "snapshot_id": "f9e8d7c6...",
+  "manifest": {
+    "beat.mid": "a1b2c3d4...",
+    "keys.mid": "11223344..."
+  },
+  "created_at": "2026-02-27T17:20:00+00:00"
+}
+```
+
+**Result type:** `CatObjectResult` — fields: `object_type` (str), `row`
+(MuseCliObject | MuseCliSnapshot | MuseCliCommit). Call `.to_dict()` for a
+JSON-serialisable representation.
+
+**Agent use case:** Use `muse cat-object -t <hash>` to determine the type of
+an unknown ID before deciding how to process it. Use `-p` to extract the
+snapshot manifest (file → object_id map) or commit metadata for downstream
+generation context. Combine with `muse log` short IDs: copy the full commit_id
+from `muse log`, then `muse cat-object -p <id>` to inspect its snapshot.
+
+**Error behaviour:** Exits with code 1 (`USER_ERROR`) when the ID is not found
+in any object table; prints `❌ Object not found: <id>`.
+
+---
+
+### `muse harmony`
+
+**Purpose:** Analyze the harmonic content (key center, mode, chord progression, harmonic
+rhythm, and tension profile) of a commit. The primary tool for understanding what a
+composition is doing harmonically — information that is completely invisible to Git.
+An AI agent calling `muse harmony --json` knows whether the current arrangement is in
+Eb major with a II-V-I progression and moderate tension, and can use this to make
+musically coherent generation decisions.
+
+**Usage:**
+```bash
+muse harmony [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--track TEXT` | string | all tracks | Restrict to a named MIDI track (e.g. `--track keys`) |
+| `--section TEXT` | string | — | Restrict to a named musical section/region (planned) |
+| `--compare COMMIT` | string | — | Compare harmonic content against another commit |
+| `--range FROM..TO` | string | — | Analyze across a commit range (planned) |
+| `--progression` | flag | off | Show only the chord progression sequence |
+| `--key` | flag | off | Show only the detected key center |
+| `--mode` | flag | off | Show only the detected mode |
+| `--tension` | flag | off | Show only the harmonic tension profile |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example (text):**
+```
+Commit abc1234 — Harmonic Analysis
+(stub — full MIDI analysis pending)
+
+Key: Eb (confidence: 0.92)
+Mode: major
+Chord progression: Ebmaj7 | Fm7 | Bb7sus4 | Bb7 | Ebmaj7 | Abmaj7 | Gm7 | Cm7
+Harmonic rhythm: 2.1 chords/bar avg
+Tension profile: Low → Medium → High → Resolution (textbook tension-release arc)  [0.2 → 0.4 → 0.8 → 0.3]
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit_id": "abc1234",
+  "branch": "main",
+  "key": "Eb",
+  "mode": "major",
+  "confidence": 0.92,
+  "chord_progression": ["Ebmaj7", "Fm7", "Bb7sus4", "Bb7", "Ebmaj7", "Abmaj7", "Gm7", "Cm7"],
+  "harmonic_rhythm_avg": 2.1,
+  "tension_profile": [0.2, 0.4, 0.8, 0.3],
+  "track": "all",
+  "source": "stub"
+}
+```
+
+**Output example (`--compare <commit> --json`):**
+```json
+{
+  "head": { "commit_id": "abc1234", "key": "Eb", "mode": "major", ... },
+  "compare": { "commit_id": "def5678", "key": "Eb", "mode": "major", ... },
+  "key_changed": false,
+  "mode_changed": false,
+  "chord_progression_delta": []
+}
+```
+
+**Result type:** `HarmonyResult` — fields: `commit_id`, `branch`, `key`, `mode`,
+`confidence`, `chord_progression`, `harmonic_rhythm_avg`, `tension_profile`, `track`, `source`.
+Compare path returns `HarmonyCompareResult` — fields: `head`, `compare`, `key_changed`,
+`mode_changed`, `chord_progression_delta`.
+
+**Agent use case:** Before generating a new instrument layer, an agent calls
+`muse harmony --json` to discover the harmonic context. If the arrangement is in
+Eb major with a II-V-I progression, the agent ensures its generated voicings stay
+diatonic to Eb. If the tension profile shows a build toward the chorus, the agent
+adds chromatic tension at the right moment rather than resolving early.
+`muse harmony --compare HEAD~5 --json` reveals whether the composition has
+modulated, shifted mode, or changed its harmonic rhythm — all decisions an AI
+needs to make coherent musical choices across versions.
+
+**Implementation:** `maestro/muse_cli/commands/harmony.py` — `_harmony_analyze_async`
+(injectable async core), `HarmonyResult` / `HarmonyCompareResult` (TypedDict result
+entities), `_stub_harmony` (placeholder data), `_tension_label` (arc classifier),
+`_render_result_human` / `_render_result_json` / `_render_compare_human` /
+`_render_compare_json` (renderers). Exit codes: 0 success, 2 outside repo, 3 internal.
+
+> **Stub note:** Chord detection, key inference, and tension computation are placeholder
+> values derived from a static Eb major II-V-I template. Full implementation requires
+> MIDI note extraction from committed snapshot objects (future: Storpheus chord detection
+> route). The CLI contract, result types, and flag set are stable.
 
 ---
 
@@ -3609,6 +3771,69 @@ An AI music generation agent uses `muse render-preview HEAD~10 --json` to obtain
 
 ---
 
+## `muse rev-parse` — Resolve a Revision Expression to a Commit ID
+
+**Purpose:** Translate a symbolic revision expression into a concrete 64-character
+commit ID.  Mirrors `git rev-parse` semantics and is the plumbing primitive used
+internally by other Muse commands that accept revision arguments.
+
+```
+muse rev-parse <revision> [OPTIONS]
+
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `REVISION` | positional | required | Revision expression to resolve |
+| `--short` | flag | off | Print only the first 8 characters of the commit ID |
+| `--verify` | flag | off | Exit 1 if the expression does not resolve (default: print nothing) |
+| `--abbrev-ref` | flag | off | Print the branch name instead of the commit ID |
+
+### Supported Revision Expressions
+
+| Expression | Resolves to |
+|------------|-------------|
+| `HEAD` | Tip of the current branch |
+| `<branch>` | Tip of the named branch |
+| `<commit_id>` | Exact or prefix-matched commit |
+| `HEAD~N` | N parents back from HEAD |
+| `<branch>~N` | N parents back from the branch tip |
+
+### Output Example
+
+```
+$ muse rev-parse HEAD
+a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+
+$ muse rev-parse --short HEAD
+a1b2c3d4
+
+$ muse rev-parse --abbrev-ref HEAD
+main
+
+$ muse rev-parse HEAD~2
+f9e8d7c6b5a4f9e8d7c6b5a4f9e8d7c6b5a4f9e8d7c6b5a4f9e8d7c6b5a4f9e8
+
+$ muse rev-parse --verify nonexistent
+fatal: Not a valid revision: 'nonexistent'
+# exit code 1
+```
+
+### Result Type
+
+`RevParseResult` — see `docs/reference/type_contracts.md § Muse rev-parse Types`.
+
+### Agent Use Case
+
+An AI agent resolves `HEAD~1` before generating a new variation to obtain the
+parent commit ID, which it passes as a `base_commit` argument to downstream
+commands.  Use `--verify` in automation scripts to fail fast rather than
+silently producing empty output.
+
+---
+
 ## `muse symbolic-ref` — Read or Write a Symbolic Ref
 
 **Purpose:** Read or write a symbolic ref (e.g. `HEAD`), answering "which branch
@@ -3625,6 +3850,7 @@ muse symbolic-ref HEAD                         # read: prints refs/heads/main
 muse symbolic-ref --short HEAD                 # read short form: prints main
 muse symbolic-ref HEAD refs/heads/feature/x   # write: update .muse/HEAD
 muse symbolic-ref --delete HEAD               # delete the symbolic ref file
+
 ```
 
 ### Flags
@@ -3763,6 +3989,222 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 
 ---
 
+## `muse motif` — Recurring Melodic Motif Analysis
+
+### `muse motif find`
+
+**Purpose:** Detect recurring melodic and rhythmic patterns in a single commit.
+An AI agent uses this before generating a new variation to identify the established
+motific language of the composition, ensuring new material is thematically coherent.
+
+**Usage:**
+```bash
+muse motif find [<commit>] [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--min-length N` | int | 3 | Minimum motif length in notes |
+| `--track TEXT` | str | — | Restrict to a named MIDI track |
+| `--section TEXT` | str | — | Restrict to a named section/region |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example:**
+```
+Recurring motifs — commit a1b2c3d4  (HEAD -> main)
+── stub mode: full MIDI analysis pending ──
+
+#  Fingerprint            Contour             Count
+-  ----------------------  ------------------  -----
+1  [+2, +2, -1, +2]       ascending-step          3
+2  [-2, -2, +1, -2]       descending-step         2
+3  [+4, -2, +3]           arch                    2
+
+3 motif(s) found (min-length 3)
+```
+
+**Result type:** `MotifFindResult` — fields: `commit_id`, `branch`, `min_length`, `motifs` (list of `MotifGroup`), `total_found`, `source`.
+
+**Agent use case:** Call `muse motif find --json HEAD` before composing a new section.
+Parse `motifs[0].fingerprint` to retrieve the primary interval sequence, then instruct
+the generation model to build on that pattern rather than introducing unrelated material.
+
+**Implementation note:** Stub — returns realistic placeholder motifs. Full
+implementation requires MIDI note data queryable from the commit snapshot store.
+
+---
+
+### `muse motif track`
+
+**Purpose:** Search all commits in branch history for appearances of a specific motif.
+Detects not only exact transpositions but also melodic inversion, retrograde, and
+retrograde-inversion — the four canonical classical transformations.
+
+**Usage:**
+```bash
+muse motif track "<pattern>" [OPTIONS]
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `pattern` | Space-separated note names (`"C D E G"`) or MIDI numbers (`"60 62 64 67"`) |
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | off | Emit structured JSON |
+
+**Output example:**
+```
+Tracking motif: 'C D E G'
+Fingerprint: [+2, +2, +3]
+Commits scanned: 12
+
+Commit      Track         Transform       Position
+----------  ------------  --------------  --------
+a1b2c3d4    melody        exact                  0
+f4e3d2c1    melody        inversion              4
+b2c3d4e5    bass          retrograde             2
+
+3 occurrence(s) found.
+```
+
+**Result type:** `MotifTrackResult` — fields: `pattern`, `fingerprint`, `occurrences` (list of `MotifOccurrence`), `total_commits_scanned`, `source`.
+
+**Agent use case:** When the agent needs to understand how a theme has evolved,
+call `muse motif track "C D E G" --json` and inspect the `transformation` field
+on each occurrence to chart the motif's journey through the composition's history.
+
+---
+
+### `muse motif diff`
+
+**Purpose:** Show how the dominant motif transformed between two commits.
+Classifies the change as one of: exact (transposition), inversion, retrograde,
+retrograde-inversion, augmentation, diminution, or approximate.
+
+**Usage:**
+```bash
+muse motif diff <commit-a> <commit-b> [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | off | Emit structured JSON |
+
+**Output example:**
+```
+Motif diff: a1b2c3d4 → f4e3d2c1
+
+  A (a1b2c3d4): [+2, +2, -1, +2]  [ascending-step]
+  B (f4e3d2c1): [-2, -2, +1, -2]  [descending-step]
+
+Transformation: INVERSION
+The motif was inverted — ascending intervals became descending.
+```
+
+**Result type:** `MotifDiffResult` — fields: `commit_a` (`MotifDiffEntry`), `commit_b` (`MotifDiffEntry`), `transformation` (`MotifTransformation`), `description`, `source`.
+
+**Agent use case:** Use after detecting a structural change to understand whether
+the composer inverted or retrogressed the theme — crucial context for deciding
+how to develop material in the next variation.
+
+---
+
+### `muse motif list`
+
+**Purpose:** List all named motifs saved in `.muse/motifs/`. Named motifs are
+user-annotated melodic ideas that the composer has labelled for future recall.
+
+**Usage:**
+```bash
+muse motif list [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | off | Emit structured JSON |
+
+**Output example:**
+```
+Named motifs:
+
+Name                  Fingerprint             Created                   Description
+--------------------  ----------------------  ------------------------  ------------------------------
+main-theme            [+2, +2, -1, +2]        2026-01-15T10:30:00Z      The central ascending motif…
+bass-riff             [-2, -3, +2]            2026-01-20T14:15:00Z      Chromatic bass figure…
+```
+
+**Result type:** `MotifListResult` — fields: `motifs` (list of `SavedMotif`), `source`.
+
+**Agent use case:** Load the named motif library at session start. Cross-reference
+`fingerprint` values against `muse motif find` output to check whether detected
+patterns match known named motifs before introducing new thematic material.
+---
+
+---
+
+## `muse read-tree` — Read a Snapshot into muse-work/
+
+**Purpose:** Hydrate `muse-work/` from any historical snapshot without modifying
+HEAD or branch refs. The plumbing analog of `git read-tree`. AI agents use this to
+inspect or restore a specific composition state before making decisions.
+
+**Usage:**
+```bash
+muse read-tree <snapshot_id> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<snapshot_id>` | positional | — | Full 64-char snapshot SHA or abbreviated prefix (≥ 4 chars) |
+| `--dry-run` | flag | off | Print the file list without writing anything |
+| `--reset` | flag | off | Clear all files from muse-work/ before populating |
+
+**Output example (default):**
+```
+✅ muse-work/ populated from snapshot a3f7b891 (3 file(s)).
+```
+
+**Output example (`--dry-run`):**
+```
+Snapshot a3f7b891 — 3 file(s):
+  tracks/bass/groove.mid  (1a2b3c4d)
+  tracks/keys/voicing.mid (9e8f7a6b)
+  mix/final.json          (c4d5e6f7)
+```
+
+**Output example (`--reset`):**
+```
+✅ muse-work/ reset and populated from snapshot a3f7b891 (3 file(s)).
+```
+
+**Result type:** `ReadTreeResult` — fields: `snapshot_id` (str), `files_written` (list[str]),
+`dry_run` (bool), `reset` (bool).
+
+**How objects are stored:** `muse commit` writes each committed file's raw bytes
+into `.muse/objects/<sha256>` (the local content-addressed object store). `muse
+read-tree` reads from that store to reconstruct `muse-work/`. If an object is
+missing (e.g. the snapshot was pulled from a remote without a local commit), the
+command exits with a clear error listing the missing paths.
+
+**Does NOT modify:**
+- `.muse/HEAD`
+- `.muse/refs/heads/<branch>` (any branch ref)
+- The database (read-only command)
+
+**Agent use case:** After `muse pull`, an agent calls `muse read-tree <snapshot_id>`
+to materialize a specific checkpoint into `muse-work/` for further analysis (e.g.
+running `muse dynamics` or `muse swing`) without advancing the branch pointer. This
+is safer than `muse checkout` because it leaves all branch metadata intact.
+
+---
 ## `muse update-ref` — Write or Delete a Ref (Branch or Tag Pointer)
 
 **Purpose:** Directly update a branch or tag pointer (`refs/heads/*` or `refs/tags/*`)
@@ -3826,6 +4268,58 @@ only the first one wins; the second will receive `USER_ERROR` and retry or backo
 
 Use `muse update-ref refs/tags/v1.0 <commit_id>` to mark a production-ready
 snapshot with a stable tag pointer that other agents can reference by name.
+---
+
+## `muse write-tree` — Write Current Working-Tree as a Snapshot Object
+
+### `muse write-tree`
+
+**Purpose:** Hash all files in `muse-work/`, persist the object and snapshot
+rows in the database, and print the `snapshot_id`.  This is the plumbing
+primitive that underlies `muse commit` — it writes the tree object without
+recording any history (no commit row, no branch-pointer update).  AI agents
+use it to obtain a stable, content-addressed handle to the current working-tree
+state before deciding whether to commit.
+
+**Status:** ✅ Fully implemented (issue #89)
+
+**Usage:**
+```bash
+muse write-tree [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--prefix PATH` | string | *(none)* | Only include files whose path (relative to `muse-work/`) starts with *PATH*. Example: `--prefix drums/` snapshots only the drums sub-directory. |
+| `--missing-ok` | flag | off | Do not fail when `muse-work/` is absent or empty, or when `--prefix` matches no files. Still prints a valid (empty) `snapshot_id`. |
+
+**Output example:**
+```
+a3f92c1e8b4d5f67890abcdef1234567890abcdef1234567890abcdef12345678
+```
+(64-character sha256 hex digest of the sorted `path:object_id` pairs.)
+
+**Idempotency:** Same file content → same `snapshot_id`.  Running `muse write-tree`
+twice without changing any file makes exactly zero new DB writes (all upserts are
+no-ops).
+
+**Result type:** `snapshot_id` is a raw 64-char hex string printed to stdout.
+No named result type — the caller decides what to do with the ID (compare,
+commit, discard).
+
+**Agent use case:** An AI agent that just generated a batch of MIDI files calls
+`muse write-tree` to get the `snapshot_id` for the current working tree.  It
+then compares that ID against the last committed `snapshot_id` (via `muse log
+--json | head -1`) to decide whether the new generation is novel enough to
+commit.  If the IDs match, the files are identical to the last commit and no
+commit is needed.
+
+**Implementation:** `maestro/muse_cli/commands/write_tree.py`.  Reuses
+`build_snapshot_manifest`, `compute_snapshot_id`, `upsert_object`, and
+`upsert_snapshot` from the commit pipeline.  No new DB schema — the same
+`muse_cli_objects` and `muse_cli_snapshots` tables.
 
 ---
 
@@ -3845,10 +4339,13 @@ snapshot with a stable tag pointer that other agents can reference by name.
 | `muse import` | `commands/import_cmd.py` | ✅ implemented (PR #142) | #118 |
 | `muse inspect` | `commands/inspect.py` | ✅ implemented (PR #TBD) | #98 |
 | `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
+| `muse read-tree` | `commands/read_tree.py` | ✅ implemented (PR #157) | #90 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse render-preview` | `commands/render_preview.py` | ✅ implemented (issue #96) | #96 |
+| `muse rev-parse` | `commands/rev_parse.py` | ✅ implemented (PR #143) | #92 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
+| `muse motif` | `commands/motif.py` | ✅ stub (PR —) | #101 |
 | `muse symbolic-ref` | `commands/symbolic_ref.py` | ✅ implemented (issue #93) | #93 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
@@ -3856,6 +4353,7 @@ snapshot with a stable tag pointer that other agents can reference by name.
 | `muse transpose` | `commands/transpose.py` | ✅ implemented | #102 |
 | `muse update-ref` | `commands/update_ref.py` | ✅ implemented (PR #143) | #91 |
 | `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
+| `muse write-tree` | `commands/write_tree.py` | ✅ implemented | #89 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
