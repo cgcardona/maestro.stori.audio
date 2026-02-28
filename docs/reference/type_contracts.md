@@ -5376,7 +5376,9 @@ Response from the Hub's `POST /fetch` endpoint.
 
 Full commit metadata plus snapshot manifest returned by `muse show`. Designed
 for direct JSON serialisation so AI agents can consume commit state without a
-second round-trip to the database.
+second round-trip to the database.  Music-domain fields (`section`, `track`,
+`emotion`) are surfaced at the top level — sourced from `commit_metadata` — so
+agents do not need to parse a nested blob.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -5384,11 +5386,14 @@ second round-trip to the database.
 | `branch` | `str` | Branch this commit belongs to |
 | `parent_commit_id` | `Optional[str]` | Full SHA of the primary parent, `None` for root commits |
 | `parent2_commit_id` | `Optional[str]` | Full SHA of the merge parent (set by `muse merge`), else `None` |
-| `message` | `str` | Commit message |
+| `message` | `str` | Commit message (may include Co-authored-by trailers) |
 | `author` | `str` | Author string (empty string when not set) |
 | `committed_at` | `str` | ISO-style timestamp `"YYYY-MM-DD HH:MM:SS"` (UTC) |
 | `snapshot_id` | `str` | SHA-256 of the snapshot manifest |
 | `snapshot_manifest` | `dict[str, str]` | `{relative_path: object_id}` for every file in the snapshot |
+| `section` | `Optional[str]` | Musical section tag (e.g. `"chorus"`), `None` if not set |
+| `track` | `Optional[str]` | Instrument track tag (e.g. `"drums"`), `None` if not set |
+| `emotion` | `Optional[str]` | Emotion vector label (e.g. `"melancholic"`), `None` if not set |
 
 **Producer:** `_show_async()`
 **Consumer:** `_render_show()`, `_render_midi()`, `_render_audio_preview()`, `--json` serialiser

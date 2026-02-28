@@ -35,6 +35,12 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 cache_dir = "/tmp/pytest_cache"
 addopts = "-v --tb=short"
+filterwarnings = [
+    # typer uses click's is_flag/flag_value params internally; suppress the
+    # click deprecation warning that originates from typer's own params.py
+    # rather than from project code.  Track: https://github.com/tiangolo/typer/issues/783
+    "ignore:The 'is_flag' and 'flag_value' parameters are not supported by Typer:DeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["maestro"]

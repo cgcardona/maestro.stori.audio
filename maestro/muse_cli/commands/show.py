@@ -71,6 +71,10 @@ class ShowCommitResult(TypedDict):
     renderer and the JSON serialiser. Includes the snapshot manifest so
     callers can list files, MIDI files, and compute diffs without a second
     DB round-trip.
+
+    Music-domain fields are surfaced at the top level for easy agent
+    consumption (sourced from ``commit_metadata`` in the DB).  All are
+    ``None`` when the commit was created without the corresponding flag.
     """
 
     commit_id: str
@@ -82,6 +86,10 @@ class ShowCommitResult(TypedDict):
     committed_at: str
     snapshot_id: str
     snapshot_manifest: dict[str, str]
+    # Music-domain metadata (from commit_metadata JSON blob)
+    section: Optional[str]
+    track: Optional[str]
+    emotion: Optional[str]
 
 
 class ShowDiffResult(TypedDict):
@@ -207,6 +215,9 @@ async def _show_async(
     commit = await _resolve_commit(session, muse_dir, ref)
     manifest = await _load_snapshot(session, commit)
 
+    # Extract music-domain metadata from the extensible JSON blob.
+    raw_metadata: dict[str, object] = dict(commit.commit_metadata or {})
+
     return ShowCommitResult(
         commit_id=commit.commit_id,
         branch=commit.branch,
@@ -217,6 +228,9 @@ async def _show_async(
         committed_at=commit.committed_at.strftime("%Y-%m-%d %H:%M:%S"),
         snapshot_id=commit.snapshot_id,
         snapshot_manifest=manifest,
+        section=str(raw_metadata["section"]) if "section" in raw_metadata else None,
+        track=str(raw_metadata["track"]) if "track" in raw_metadata else None,
+        emotion=str(raw_metadata["emotion"]) if "emotion" in raw_metadata else None,
     )
 
 
@@ -292,6 +306,13 @@ def _render_show(result: ShowCommitResult) -> None:
         typer.echo(f"Parent:  {result['parent_commit_id'][:8]}")
     if result["parent2_commit_id"]:
         typer.echo(f"Parent2: {result['parent2_commit_id'][:8]}")
+    # Music-domain metadata (only shown when present)
+    if result["section"]:
+        typer.echo(f"Section: {result['section']}")
+    if result["track"]:
+        typer.echo(f"Track:   {result['track']}")
+    if result["emotion"]:
+        typer.echo(f"Emotion: {result['emotion']}")
     typer.echo("")
     typer.echo(f"    {result['message']}")
     typer.echo("")
