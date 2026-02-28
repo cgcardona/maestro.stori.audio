@@ -33,12 +33,15 @@ from maestro.models.musehub import (
     MuseHubContextResponse,
     RepoResponse,
     CreditsResponse,
+    SessionCreate,
+    SessionListResponse,
+    SessionResponse,
 )
 from maestro.models.musehub_context import (
     ContextDepth,
     ContextFormat,
 )
-from maestro.services import musehub_context, musehub_credits, musehub_divergence, musehub_repository
+from maestro.services import musehub_context, musehub_credits, musehub_divergence, musehub_repository, musehub_sessions
 
 logger = logging.getLogger(__name__)
 
@@ -383,3 +386,81 @@ async def get_commit_dag(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
     return await musehub_repository.list_commits_dag(db, repo_id)
+
+
+@router.post(
+    "/repos/{repo_id}/sessions",
+    response_model=SessionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Push a recording session record to the hub",
+)
+async def push_session(
+    repo_id: str,
+    body: SessionCreate,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> SessionResponse:
+    """Upsert a session record for the given repo.
+
+    Accepts a ``MuseSessionRecord`` JSON payload pushed by ``muse session end``.
+    If a session with the same ``session_id`` already exists, it is updated —
+    re-push is idempotent.  Returns 404 if the repo does not exist.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    session = await musehub_sessions.upsert_session(db, repo_id, body)
+    await db.commit()
+    logger.info("✅ Session %s pushed to repo %s", body.session_id, repo_id)
+    return session
+
+
+@router.get(
+    "/repos/{repo_id}/sessions",
+    response_model=SessionListResponse,
+    summary="List recording sessions for a repo (newest first)",
+)
+async def list_sessions(
+    repo_id: str,
+    limit: int = Query(50, ge=1, le=200, description="Max sessions to return"),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> SessionListResponse:
+    """Return sessions for a repo, sorted newest-first by started_at.
+
+    Returns 404 if the repo does not exist.  Use ``limit`` to paginate large
+    session histories (default 50, max 200).
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    sessions, total = await musehub_sessions.list_sessions(db, repo_id, limit=limit)
+    return SessionListResponse(sessions=sessions, total=total)
+
+
+@router.get(
+    "/repos/{repo_id}/sessions/{session_id}",
+    response_model=SessionResponse,
+    summary="Get a single recording session by ID",
+)
+async def get_session(
+    repo_id: str,
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> SessionResponse:
+    """Return a single session record.
+
+    Returns 404 if the repo or session does not exist.  The ``session_id``
+    must be an exact match — the hub does not support prefix lookups.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    session = await musehub_sessions.get_session(db, repo_id, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    return session
