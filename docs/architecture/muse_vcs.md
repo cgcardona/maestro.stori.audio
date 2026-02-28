@@ -7324,6 +7324,181 @@ session.
 
 ---
 
+## Muse Hub — Per-Dimension Analysis Detail Pages (issue #332)
+
+**Purpose:** Each of the 10 analysis dashboard cards links to a dedicated
+per-dimension page at `/{owner}/{repo_slug}/analysis/{ref}/{dim_id}`.  This
+section documents the 6 pages added in issue #332 to complete the set (key,
+meter, chord-map, groove, emotion, form).
+
+### Key Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/key`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Tonic + mode display** — large coloured badge showing detected key (e.g. `G dorian`).
+- **Relative key** — companion key alongside the primary (e.g. `Bb major`).
+- **Confidence bar** — colour-coded progress bar (green >= 80%, orange >= 60%, red < 60%).
+- **Alternate key candidates** — ranked list of secondary hypotheses with individual confidence bars.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/key`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tonic` | `str` | Detected tonic pitch class, e.g. `C`, `F#` |
+| `mode` | `str` | Detected mode, e.g. `major`, `dorian`, `mixolydian` |
+| `confidence` | `float` | Detection confidence, 0-1 |
+| `relative_key` | `str` | Relative major/minor key |
+| `alternate_keys` | `list[AlternateKey]` | Secondary candidates ranked by confidence |
+
+**Agent use case:** Before generating harmonic material, an agent fetches the key page
+to confirm the tonal centre. When `confidence < 0.7`, the agent inspects `alternate_keys`
+to handle tonally ambiguous pieces.
+
+### Meter Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/meter`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Time signature** — large display of the primary time signature (e.g. `6/8`).
+- **Compound/simple badge** — classifies the meter type.
+- **Beat strength profile SVG** — bar chart of relative beat strengths across one bar.
+- **Irregular sections table** — lists any sections where the meter deviates from the primary.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/meter`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `time_signature` | `str` | Primary time signature, e.g. `4/4`, `6/8` |
+| `is_compound` | `bool` | True for compound meters like 6/8, 12/8 |
+| `beat_strength_profile` | `list[float]` | Relative beat strengths across one bar |
+| `irregular_sections` | `list[IrregularSection]` | Sections with non-primary meter |
+
+**Agent use case:** An agent generating rhythmic material checks this page to avoid
+placing accents on weak beats and adjusts triplet groupings for compound meters.
+
+### Chord Map Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/chord-map`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Summary counts** — total chords and total beats.
+- **Chord progression table** — beat-position, chord, Roman numeral function, and tension
+  score with per-row tension bars colour-coded green/orange/red.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/chord-map`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `progression` | `list[ChordEvent]` | Time-ordered chord events |
+| `total_chords` | `int` | Total number of distinct chord events |
+| `total_beats` | `int` | Duration of the ref in beats |
+
+`ChordEvent` fields: `beat: float`, `chord: str`, `function: str`, `tension: float (0-1)`.
+
+**Agent use case:** An agent generating accompaniment inspects the chord map to produce
+harmonically idiomatic voicings. High `tension` chords (> 0.7) signal dissonance points
+where resolution material is appropriate.
+
+### Groove Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/groove`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Style badge** — detected groove style (`straight`, `swing`, `shuffled`, `latin`, `funk`).
+- **BPM + grid resolution** — primary tempo and quantization grid (e.g. `1/16`).
+- **Onset deviation** — mean absolute deviation of note onsets from the grid in beats.
+- **Groove score gauge** — colour-coded percentage bar (green >= 80%, orange >= 60%, red < 60%).
+- **Swing factor bar** — 0.5 = perfectly straight, 0.67 = hard triplet swing.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/groove`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `style` | `str` | Detected groove style |
+| `bpm` | `float` | Primary BPM |
+| `grid_resolution` | `str` | Quantization grid, e.g. `1/16`, `1/8T` |
+| `onset_deviation` | `float` | Mean absolute note onset deviation from grid (beats) |
+| `groove_score` | `float` | Aggregate rhythmic tightness (1 = very tight) |
+| `swing_factor` | `float` | 0.5 = straight, ~0.67 = triplet swing |
+
+**Agent use case:** When generating continuation material, an agent matches the groove
+style and swing factor so generated notes feel rhythmically consistent with the existing
+recording rather than mechanically quantized.
+
+### Emotion Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/emotion`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Primary emotion badge** — dominant emotion label (e.g. `joyful`, `melancholic`).
+- **Valence-arousal plot** — 2D scatter dot on the valence (x) x arousal (y) plane.
+- **Axis bars** — individual bars for valence (re-normalised to 0-1), arousal, and tension.
+- **Confidence score** — detection confidence percentage.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/emotion`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `valence` | `float` | -1 (sad/dark) to +1 (happy/bright) |
+| `arousal` | `float` | 0 (calm) to 1 (energetic) |
+| `tension` | `float` | 0 (relaxed) to 1 (tense/dissonant) |
+| `primary_emotion` | `str` | Dominant emotion label |
+| `confidence` | `float` | Detection confidence, 0-1 |
+
+**Agent use case:** An agent generating a bridge section checks the emotion page to decide
+whether to maintain or contrast the current emotional character. Low confidence (< 0.6)
+signals an emotionally ambiguous piece.
+
+### Form Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/form`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Form label** — detected macro form (e.g. `AABA`, `verse-chorus`, `through-composed`).
+- **Section counts** — total beats and number of formal sections.
+- **Form timeline** — colour-coded horizontal bar with proportional-width segments per section.
+- **Sections table** — per-section label, function, and beat range.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/form`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `form_label` | `str` | Detected macro form, e.g. `AABA`, `verse-chorus` |
+| `total_beats` | `int` | Total duration in beats |
+| `sections` | `list[SectionEntry]` | Formal sections in order |
+
+`SectionEntry` fields: `label`, `function`, `start_beat`, `end_beat`, `length_beats`.
+
+**Agent use case:** Before generating a new section, an agent reads the form page to
+understand where it is in the compositional arc (e.g. after two verses, a chorus is
+expected). The colour-coded timeline shows how much of the form is already complete.
+
+### Implementation (all 10 dimension pages)
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Pydantic models | `maestro/models/musehub_analysis.py` | `ContourData`, `TempoData`, `KeyData`, `MeterData`, `ChordMapData`, `GrooveData`, `EmotionData`, `FormData` |
+| Service | `maestro/services/musehub_analysis.py` | `compute_dimension(dim, ...)` -- handles all 10 dimensions |
+| Analysis route | `maestro/api/routes/musehub/analysis.py` | `GET /repos/{id}/analysis/{ref}/{dim}` for each dimension |
+| UI route | `maestro/api/routes/musehub/ui.py` | `key_analysis_page()`, `meter_analysis_page()`, `chord_map_analysis_page()`, `groove_analysis_page()`, `emotion_analysis_page()`, `form_analysis_page()` |
+| Templates | `maestro/templates/musehub/pages/` | `key.html`, `meter.html`, `chord_map.html`, `groove.html`, `emotion.html`, `form.html` |
+| Tests | `tests/test_musehub_ui.py` | `test_*_page_renders`, `test_*_page_no_auth_required`, `test_*_page_contains_*_data_labels` for each dimension |
+
+---
+
 ## MuseHub Design System
 
 MuseHub pages share a structured CSS framework served as static assets from

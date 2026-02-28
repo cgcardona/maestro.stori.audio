@@ -1,0 +1,128 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Form {{ ref[:8] }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  analysis / {{ ref[:8] }} / form
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const ref     = {{ ref | tojson }};
+const base    = {{ base_url | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+const SECTION_COLORS = {
+  intro:  '#58a6ff',
+  verse:  '#3fb950',
+  chorus: '#ffa657',
+  bridge: '#bc8cff',
+  outro:  '#8b949e',
+  break:  '#f0883e',
+};
+
+function sectionColor(label) {
+  const key = (label || '').split('_')[0].toLowerCase();
+  return SECTION_COLORS[key] || '#8b949e';
+}
+
+function sectionBar(section, totalBeats) {
+  const col = sectionColor(section.label);
+  const startPct = totalBeats > 0 ? (section.startBeat / totalBeats) * 100 : 0;
+  const widthPct = totalBeats > 0 ? (section.lengthBeats / totalBeats) * 100 : 10;
+  return `<div style="position:absolute;left:${startPct.toFixed(2)}%;width:${Math.max(widthPct, 2).toFixed(2)}%;
+            height:100%;background:${col};border-radius:3px;overflow:hidden"
+            title="${escHtml(section.label)} (${section.lengthBeats.toFixed(0)} beats)">
+    <span style="font-size:10px;color:#fff;padding:2px 4px;white-space:nowrap;
+      overflow:hidden;display:inline-block;max-width:100%">
+      ${escHtml(section.label)}
+    </span>
+  </div>`;
+}
+
+function sectionRow(section) {
+  const col = sectionColor(section.label);
+  return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;
+            border-top:1px solid #21262d;font-size:13px">
+    <span style="display:inline-block;width:12px;height:12px;border-radius:3px;
+      background:${col};flex-shrink:0"></span>
+    <span style="min-width:80px;font-weight:600;color:#e6edf3">${escHtml(section.label)}</span>
+    <span style="color:#8b949e;min-width:80px">${escHtml(section.function)}</span>
+    <span style="color:#8b949e;font-family:monospace;font-size:12px">
+      b${section.startBeat.toFixed(0)} &ndash; ${section.endBeat.toFixed(0)}
+      (${section.lengthBeats.toFixed(0)} beats)
+    </span>
+  </div>`;
+}
+
+async function load() {
+  initRepoNav(repoId);
+  try {
+    const url = '/repos/' + repoId + '/analysis/' + encodeURIComponent(ref) + '/form';
+    const data = await apiFetch(url);
+    const d = data.data;
+
+    const totalBeats = d.totalBeats || 1;
+    const timeline = d.sections && d.sections.length > 0
+      ? d.sections.map(s => sectionBar(s, totalBeats)).join('')
+      : '';
+    const sectionList = d.sections && d.sections.length > 0
+      ? d.sections.map(sectionRow).join('')
+      : '<p class="loading">No section data available.</p>';
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${escHtml(base)}">&larr; Back to repo</a>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+          <h1 style="margin:0">&#128203; Form Analysis</h1>
+          <code style="font-size:13px;background:#0d1117;padding:2px 8px;border-radius:4px;color:#8b949e">
+            ref: ${escHtml(ref.substring(0, 8))}
+          </code>
+        </div>
+
+        <div class="meta-row" style="margin-bottom:20px">
+          <div class="meta-item">
+            <span class="meta-label">Form</span>
+            <span class="meta-value" style="font-size:20px;font-weight:700;font-family:monospace;color:#58a6ff">
+              ${escHtml(d.formLabel)}
+            </span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Total Beats</span>
+            <span class="meta-value">${d.totalBeats}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Sections</span>
+            <span class="meta-value">${d.sections ? d.sections.length : 0}</span>
+          </div>
+        </div>
+
+        ${timeline ? `
+        <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px;margin-bottom:16px">
+          <span class="meta-label" style="display:block;margin-bottom:10px">Form Timeline</span>
+          <div style="position:relative;height:32px;background:#161b22;border-radius:4px;overflow:hidden">
+            ${timeline}
+          </div>
+        </div>` : ''}
+
+        <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px">
+          <span class="meta-label" style="display:block;margin-bottom:4px">Sections</span>
+          ${sectionList}
+        </div>
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
