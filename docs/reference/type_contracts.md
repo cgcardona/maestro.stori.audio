@@ -25,6 +25,10 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [ExpressivenessResult](#expressivenessresult)
    - [MuseTempoResult](#musetemporesult)
    - [MuseTempoHistoryEntry](#musetemopohistoryentry)
+   - [Muse Validate Types](#muse-validate-types)
+   - [GrooveStatus](#groovestatuss)
+   - [CommitGrooveMetrics](#commitgroovemetrics)
+   - [GrooveCheckResult](#groovecheckresult)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
    - [PhraseRecord](#phraserecord)
@@ -1103,6 +1107,119 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | `message` | `str` | Commit message |
 | `effective_bpm` | `float \| None` | Annotated BPM for this commit, or `None` |
 | `delta_bpm` | `float \| None` | Signed BPM change vs. the previous (older) commit; `None` for the oldest commit |
+
+---
+
+### Muse Validate Types
+
+**Path:** `maestro/services/muse_validate.py`
+
+#### `ValidationSeverity`
+
+`str, Enum` — Severity level for a single validation finding.
+
+| Value | Meaning |
+|-------|---------|
+| `"error"` | Blocking issue — must be resolved before `muse commit`. |
+| `"warn"` | Advisory issue — becomes blocking under `--strict`. |
+| `"info"` | Informational only — never blocks commit. |
+
+#### `ValidationIssue`
+
+`dataclass` — A single finding produced by one validation check.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `severity` | `ValidationSeverity` | How serious the finding is. |
+| `check` | `str` | Name of the check that produced this issue (e.g. `"midi_integrity"`). |
+| `path` | `str` | Relative path to the file or directory involved. |
+| `message` | `str` | Human-readable description of the problem. |
+
+`.to_dict()` → `dict[str, str]` — JSON-serialisable representation.
+
+#### `ValidationCheckResult`
+
+`dataclass` — Outcome of one named check category.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Check identifier (e.g. `"midi_integrity"`). |
+| `passed` | `bool` | `True` iff `issues` is empty for this check. |
+| `issues` | `list[ValidationIssue]` | All findings from this check. |
+
+`.to_dict()` → `dict[str, object]` — JSON-serialisable representation.
+
+#### `MuseValidateResult`
+
+`dataclass` — Aggregated result of all validation checks.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `clean` | `bool` | `True` iff no issues of any severity were found. |
+| `has_errors` | `bool` | `True` iff at least one ERROR issue was found. |
+| `has_warnings` | `bool` | `True` iff at least one WARN issue was found. |
+| `checks` | `list[ValidationCheckResult]` | One result per check category, in run order. |
+| `fixes_applied` | `list[str]` | Human-readable descriptions of auto-fixes applied. |
+
+`.to_dict()` → `dict[str, object]` — Full JSON-serialisable tree (nested).
+
+**Agent contract:** Call `run_validate(root, ...)` to get a `MuseValidateResult`.
+Inspect `has_errors` before calling `muse commit`. Use `--json` in the CLI for
+structured output that can be parsed by downstream agents.
+
+---
+
+### `GrooveStatus`
+
+**Path:** `maestro/services/muse_groove_check.py`
+
+`str Enum` — Per-commit groove assessment relative to the configured drift threshold.
+
+| Member | Value | Condition |
+|--------|-------|-----------|
+| `OK` | `"OK"` | `drift_delta ≤ threshold` |
+| `WARN` | `"WARN"` | `threshold < drift_delta ≤ 2 × threshold` |
+| `FAIL` | `"FAIL"` | `drift_delta > 2 × threshold` |
+
+---
+
+### `CommitGrooveMetrics`
+
+**Path:** `maestro/services/muse_groove_check.py`
+
+`dataclass(frozen=True)` — Rhythmic groove metrics for a single commit in a
+`muse groove-check` range.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Short commit ref (8 hex chars or resolved ID) |
+| `groove_score` | `float` | Average note-onset deviation from the quantization grid in beats; lower = tighter |
+| `drift_delta` | `float` | Absolute change in `groove_score` vs. the prior commit; 0.0 for the oldest commit |
+| `status` | `GrooveStatus` | OK / WARN / FAIL classification against the threshold |
+| `track` | `str` | Track scope used for analysis, or `"all"` |
+| `section` | `str` | Section scope used for analysis, or `"all"` |
+| `midi_files` | `int` | Number of MIDI snapshots analysed for this commit |
+
+---
+
+### `GrooveCheckResult`
+
+**Path:** `maestro/services/muse_groove_check.py`
+
+`dataclass(frozen=True)` — Aggregate result for a `muse groove-check` run.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_range` | `str` | The range string that was analysed (e.g. `"HEAD~5..HEAD"`) |
+| `threshold` | `float` | Drift threshold used for WARN/FAIL classification, in beats |
+| `total_commits` | `int` | Total commits in the analysis window |
+| `flagged_commits` | `int` | Number of commits with status WARN or FAIL |
+| `worst_commit` | `str` | Commit ref with the highest `drift_delta`, or empty string if no drift |
+| `entries` | `tuple[CommitGrooveMetrics, ...]` | Per-commit metrics, oldest-first |
+
+**Agent use case:** An AI agent reads `worst_commit` to identify the exact commit
+that degraded rhythmic consistency, then passes it to `muse describe` for a
+natural-language explanation of the change.
 
 ---
 
@@ -4444,6 +4561,66 @@ classDiagram
 
 ---
 
+## Muse Inspect Types (`maestro/services/muse_inspect.py`)
+
+### `InspectFormat`
+
+`StrEnum` of supported output formats for `muse inspect`.
+
+| Value | Description |
+|-------|-------------|
+| `json` | Structured JSON commit graph (default; for agent consumption). |
+| `dot` | Graphviz DOT directed graph (for visual rendering pipelines). |
+| `mermaid` | Mermaid.js `graph LR` definition (for GitHub markdown embedding). |
+
+### `MuseInspectCommit`
+
+Frozen dataclass representing one commit node in the inspected graph.
+Returned inside `MuseInspectResult.commits`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA-256 hash. |
+| `short_id` | `str` | First 8 characters of `commit_id`. |
+| `branch` | `str` | Branch this commit was recorded on. |
+| `parent_commit_id` | `str \| None` | First parent commit hash (None for root). |
+| `parent2_commit_id` | `str \| None` | Second parent hash (reserved for merge commits, issue #35). |
+| `message` | `str` | Human-readable commit message. |
+| `author` | `str` | Committer identity string. |
+| `committed_at` | `str` | ISO-8601 UTC timestamp string. |
+| `snapshot_id` | `str` | Content-addressed snapshot hash. |
+| `metadata` | `dict[str, object]` | Extensible annotation dict (tempo_bpm, etc.). |
+| `tags` | `list[str]` | Music-semantic tag strings attached to this commit. |
+
+**`to_dict() -> dict[str, object]`** — Returns a JSON-serializable dict matching the
+issue #98 output spec.
+
+### `MuseInspectResult`
+
+Frozen dataclass representing the full serialized commit graph for a repository.
+Returned by `build_inspect_result()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | UUID identifying the local repository. |
+| `current_branch` | `str` | Branch HEAD currently points to. |
+| `branches` | `dict[str, str]` | Mapping of branch names → HEAD commit ID. |
+| `commits` | `list[MuseInspectCommit]` | All graph nodes reachable from traversed heads, newest-first. |
+
+**`to_dict() -> dict[str, object]`** — Returns a JSON-serializable dict of the
+full graph, suitable for direct `json.dumps()`.
+
+### Service functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `build_inspect_result` | `(session, root, *, ref, depth, include_branches) -> MuseInspectResult` | Walk the commit graph and return the typed result. |
+| `render_json` | `(result, indent) -> str` | Serialize to JSON string. |
+| `render_dot` | `(result) -> str` | Serialize to Graphviz DOT source. |
+| `render_mermaid` | `(result) -> str` | Serialize to Mermaid.js `graph LR` source. |
+
+---
+
 ## Muse CLI — Export Types (`maestro/muse_cli/export_engine.py`)
 
 ### `ExportFormat`
@@ -4491,6 +4668,25 @@ error message via `typer.echo` before calling `typer.Exit(INTERNAL_ERROR)`.
 ```python
 class StorpheusUnavailableError(Exception): ...
 ```
+
+
+---
+
+### `CommitTreeResult`
+
+Conceptual result type for `muse commit-tree` (returned as a plain `str` from
+`_commit_tree_async`; documented here so agents understand the output contract).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` (64-char hex) | Deterministic SHA-256 commit ID created from `(parent_ids, snapshot_id, message, author)`. Identical inputs always produce the same ID. |
+
+**Source:** `maestro/muse_cli/commands/commit_tree.py` — `_commit_tree_async`
+
+**Idempotency:** The same `(parent_ids, snapshot_id, message, author)` tuple
+always hashes to the same `commit_id`.  Agents can call `muse commit-tree`
+repeatedly with the same arguments and always get the same result without
+side-effects on subsequent calls (second call is a no-op).
 
 ---
 
