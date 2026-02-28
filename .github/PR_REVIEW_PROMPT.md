@@ -88,13 +88,19 @@ Other agents may merge PRs while you are reviewing. Immediately before running
 `gh pr merge`, re-sync one final time:
 
 ```bash
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
 git fetch origin
 git merge origin/dev
+# Push the resolved branch so GitHub evaluates the REMOTE tip, not just your local state.
+# Skipping this push causes gh pr merge to fail with "resolve conflicts locally"
+# even when your local tree is clean.
+git push origin "$BRANCH"
+sleep 5
 ```
 
-If new conflicts appear after the final sync, resolve them and re-run tests
-before merging. If the conflicts are non-trivial and introduce risk, note them
-in the grade reasoning and file a follow-up issue.
+If new conflicts appear after the final sync, resolve them, re-run tests, then
+push and sleep before merging. If the conflicts are non-trivial and introduce
+risk, note them in the grade reasoning and file a follow-up issue.
 
 ### Regression check
 
@@ -339,24 +345,44 @@ Output the grade and approval decision **first** in your response. Merge may fol
 Only after you have output the grade and **"Approved for merge"**, do the following **in order**:
 
 1. **Commit** any review fixes on the feature branch.
-2. **Push** the feature branch:
+
+2. **Capture branch name and push to remote:**
    ```bash
-   git push origin fix/<short-description>
+   BRANCH=$(git rev-parse --abbrev-ref HEAD)
+   git push origin "$BRANCH"
    ```
-3. **Merge the PR on GitHub and delete the remote branch:**
+
+3. **Wait, then squash merge:**
    ```bash
-   gh pr merge --merge --delete-branch
+   sleep 5
+   gh pr merge <pr-number> --squash
    ```
-4. **Close the referenced issue:**
+   **Strategy rules — non-negotiable:**
+   - `--squash` ONLY. Never `--merge` (creates merge commits on dev) or `--auto` (requires branch protection rules that don't exist here).
+   - Never `--delete-branch` — in a multi-worktree setup `gh` tries to checkout `dev` locally to delete the branch, but `dev` is already checked out in the main worktree and git will refuse.
+
+   **If `gh pr merge` reports conflicts after the push:** another PR landed in the gap. Re-sync and retry (max two cycles before escalating to user):
    ```bash
+   git fetch origin && git merge origin/dev
+   git push origin "$BRANCH"
+   sleep 5
+   gh pr merge <pr-number> --squash
+   ```
+
+4. **Delete the remote branch** (only after merge succeeds):
+   ```bash
+   git push origin --delete "$BRANCH"
+   ```
+
+5. **Close the referenced issue** (find the issue number in the PR description — look for the line `Closes #N`):
+   ```bash
+   # Extract issue number from PR body:
+   gh pr view <pr-number> --json body --jq '.body' | grep -o '#[0-9]*' | head -1
+   # Then close it:
    gh issue close <issue-number> --comment "Fixed by PR #<pr-number>."
    ```
-5. **Clean up locally:**
-   ```bash
-   git checkout dev
-   git pull origin dev
-   git branch -d fix/<short-description>
-   ```
+
+   Note: In a parallel agent worktree the `git checkout dev / git pull / git branch -d` local cleanup is unnecessary — the worktree is removed by the self-destruct step in the kickoff prompt.
 
 ---
 
