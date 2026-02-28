@@ -51,12 +51,16 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define PRs ---
+# Batch: #128–#135 (muse CLI commands — grep, session, dynamics, swing, ask, tag, describe, recall)
 declare -a PRS=(
-  "61|feat: Muse Hub JWT auth integration — CLI token storage and Hub request authentication"
-  "62|feat: Muse Hub pull requests — create, list, and merge PRs between branches"
-  "63|feat: Maestro stress test → muse-work/ output contract with muse-batch.json manifest"
-  "64|feat: Muse Hub push/pull sync protocol — batch commit and object transfer"
-  "65|feat: muse merge — fast-forward and 3-way merge with path-level conflict detection"
+  "128|feat: muse grep — search for a musical pattern across all commits"
+  "129|feat: muse session — record and query recording session metadata"
+  "130|feat: muse dynamics — analyze the dynamic profile of a commit"
+  "131|feat: muse swing — analyze or annotate the swing factor"
+  "132|feat: muse ask — natural language query over Muse musical history"
+  "133|feat: muse tag — add music-semantic tags to commits and query by tag"
+  "134|feat: muse describe — generate a natural language description of what changed musically"
+  "135|feat: muse recall — keyword search over musical commit history"
 )
 
 # --- create worktrees + task files ---
