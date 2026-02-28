@@ -32,7 +32,6 @@ import dataclasses
 import logging
 import pathlib
 import re
-from typing import Optional
 
 import typer
 
