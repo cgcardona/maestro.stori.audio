@@ -305,10 +305,18 @@ STEP 1 — DERIVE PATHS:
   # Your worktree is live in Docker at /worktrees/$WTNAME — NO file copying needed.
   # All docker compose commands: cd "$REPO" && docker compose exec maestro <cmd>
 
-  # GitHub repo slug — ALWAYS hardcoded. NEVER derive from directory name or local path.
-  # The local path contains "tellurstori" but the GitHub org is "cgcardona".
+  # GitHub repo slug — HARDCODED. NEVER derive from directory name, basename, or local path.
+  # The local path is /Users/gabriel/dev/tellurstori/maestro.
+  # "tellurstori" is the LOCAL directory — it is NOT the GitHub org.
+  # The GitHub org is "cgcardona". Using the wrong slug → "Forbidden" or "Repository not found".
   export GH_REPO=cgcardona/maestro
-  # All gh commands pick this up automatically. You may also pass --repo "$GH_REPO" explicitly.
+
+  # ⚠️  VALIDATION — run this immediately to catch slug errors early:
+  gh repo view "$GH_REPO" --json name --jq '.name'
+  # Expected output: maestro
+  # If you see an error → GH_REPO is wrong. Stop and fix it before continuing.
+
+  # All gh commands inherit $GH_REPO automatically. You may also pass --repo "$GH_REPO" explicitly.
 
 STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
   ⚠️  Query GitHub first. Do NOT create a branch, write a file, or run mypy until
@@ -650,8 +658,15 @@ same parallel batch.
 ### Step C — Confirm `dev` is up to date
 
 ```bash
-git -C "$(git rev-parse --show-toplevel)" pull origin dev
+REPO=$(git rev-parse --show-toplevel)
+git -C "$REPO" fetch origin
+git -C "$REPO" merge origin/dev
 ```
+
+> **Why `fetch + merge` and not `git pull`?** `git pull --rebase` fails when there are
+> uncommitted changes in the main worktree. `git pull` (merge mode) can also be blocked by
+> sandbox restrictions that prevent git from writing to `.git/config`. `fetch + merge` is
+> always safe and never needs sandbox elevation.
 
 ### Step D — Run the Setup script, then verify
 
