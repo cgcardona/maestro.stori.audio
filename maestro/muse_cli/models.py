@@ -18,8 +18,6 @@ annotations.  Current keys:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
-
 import uuid
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
@@ -107,7 +105,7 @@ class MuseCliCommit(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
-    commit_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+    commit_metadata: Mapped[dict[str, object] | None] = mapped_column(
         "metadata", JSON, nullable=True, default=None
     )
 
