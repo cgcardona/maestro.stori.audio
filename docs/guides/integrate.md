@@ -274,6 +274,36 @@ Tool list and parameters: see [api.md](../reference/api.md#tools).
 
 ---
 
+### MuseHub browsing tools (`musehub_*`)
+
+Seven server-side MCP tools let AI agents browse MuseHub repositories, inspect commit history, read artifact metadata, and query musical context — all without a connected DAW. They are always executed server-side and never forwarded to the Stori app.
+
+| Tool | Purpose | Required args |
+|------|---------|---------------|
+| `musehub_browse_repo` | Overview: metadata, branches, 10 most-recent commits | `repo_id` |
+| `musehub_list_branches` | All branches with head commit IDs | `repo_id` |
+| `musehub_list_commits` | Paginated commits, newest first | `repo_id` (opt: `branch`, `limit`) |
+| `musehub_read_file` | Artifact metadata (path, size, MIME type) | `repo_id`, `object_id` |
+| `musehub_get_analysis` | Structured analysis — `overview`, `commits`, or `objects` dimension | `repo_id` (opt: `dimension`) |
+| `musehub_search` | Substring search by file path or commit message | `repo_id`, `query` (opt: `mode`) |
+| `musehub_get_context` | Full AI context document — the primary agent entry point | `repo_id` |
+
+**Recommended agent workflow:**
+
+```
+1. musehub_get_context(repo_id=...)   → orient the agent; get the full picture
+2. musehub_list_commits(...)          → inspect recent commit history
+3. musehub_search(query="bass", ...)  → find specific artifacts
+4. musehub_read_file(object_id=...)   → read artifact metadata
+5. musehub_get_analysis(dimension="objects")  → artifact inventory by type
+```
+
+**Error codes:** All tools return structured errors with `error_code` values: `not_found` (repo or object missing), `invalid_dimension` (bad analysis dimension), `invalid_mode` (bad search mode). The MCP server surfaces these as `is_error=True` responses; `invalid_dimension` and `invalid_mode` additionally set `bad_request=True`.
+
+**Musical analysis note:** The `musical_analysis` fields (key, tempo, time_signature) in `musehub_get_analysis` and `musehub_get_context` are `null` until Storpheus MIDI analysis integration is complete. Agents should handle `null` gracefully.
+
+---
+
 ### MCP MVP: prove it works
 
 You already have: HTTP endpoints (list/call with Bearer), stdio server (`maestro.mcp.stdio_server`), WebSocket for DAW, and server-side generation tools (e.g. `stori_generate_drums`) that run without a connected DAW. To **prove the MCP idea** end-to-end:

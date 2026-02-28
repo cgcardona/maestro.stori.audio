@@ -25,9 +25,12 @@ class TestMCPTools:
 
     def test_tool_names_are_prefixed(self) -> None:
 
-        """All MCP tools should be prefixed with 'stori_'."""
+        """All MCP tools should be prefixed with 'stori_' (DAW tools) or 'musehub_' (browsing tools)."""
+        valid_prefixes = ("stori_", "musehub_")
         for tool in MCP_TOOLS:
-            assert tool["name"].startswith("stori_"), f"Tool {tool['name']} should start with 'stori_'"
+            assert tool["name"].startswith(valid_prefixes), (
+                f"Tool {tool['name']} should start with one of {valid_prefixes}"
+            )
 
     def test_tool_categories_complete(self) -> None:
 
@@ -45,6 +48,13 @@ class TestMCPTools:
 
         """Generation tools should be marked as server-side."""
         assert "stori_generate_midi" in SERVER_SIDE_TOOLS
+
+    def test_musehub_tools_are_server_side(self) -> None:
+
+        """MuseHub browsing tools should all be in SERVER_SIDE_TOOLS."""
+        from maestro.mcp.tools import MUSEHUB_TOOL_NAMES
+        for name in MUSEHUB_TOOL_NAMES:
+            assert name in SERVER_SIDE_TOOLS, f"MuseHub tool '{name}' not in SERVER_SIDE_TOOLS"
 
 
 class TestMCPServer:
