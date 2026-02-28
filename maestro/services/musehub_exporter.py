@@ -30,7 +30,7 @@ import os
 import zipfile
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
+from typing import Literal, TypedDict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,6 +61,17 @@ class ExportFormat(str, Enum):
     abc = "abc"
     wav = "wav"
     mp3 = "mp3"
+
+
+class ObjectIndexEntry(TypedDict):
+    """One entry in the JSON export object index.
+
+    Matches the schema documented in ``_build_json_export``.
+    """
+
+    object_id: str
+    path: str
+    size_bytes: int
 
 
 @dataclass(frozen=True)
@@ -166,11 +177,18 @@ def _build_zip(
     return buf.getvalue()
 
 
+class _JsonExportPayload(TypedDict):
+    repo_id: str
+    ref: str
+    commit_id: str
+    objects: list[ObjectIndexEntry]
+
+
 def _build_json_export(
     repo_id: str,
     ref: str,
     commit_id: str,
-    objects: list[dict[str, object]],
+    objects: list[ObjectIndexEntry],
 ) -> bytes:
     """Serialise a commit's metadata and object index to compact JSON bytes.
 
@@ -182,7 +200,7 @@ def _build_json_export(
           "objects": [{"object_id": str, "path": str, "size_bytes": int}]
         }
     """
-    payload: dict[str, object] = {
+    payload: _JsonExportPayload = {
         "repo_id": repo_id,
         "ref": ref,
         "commit_id": commit_id,
@@ -234,7 +252,7 @@ async def export_repo_at_ref(
 
     if format is ExportFormat.json:
         filtered = [o for o in repo_objects if _matches_sections(o.path, sections)]
-        obj_list: list[dict[str, object]] = [
+        obj_list: list[ObjectIndexEntry] = [
             {"object_id": o.object_id, "path": o.path, "size_bytes": o.size_bytes}
             for o in filtered
         ]
