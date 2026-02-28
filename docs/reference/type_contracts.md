@@ -924,6 +924,37 @@ Full diff of two arrangement matrices.  Built by `build_arrangement_diff()`.
 
 ## Services
 
+### MuseHub MCP Executor
+
+**Path:** `maestro/services/musehub_mcp_executor.py`
+
+#### `MusehubToolResult`
+
+`dataclass(frozen=True)` — Result of executing a single `musehub_*` MCP tool. This is the
+contract between the executor functions and the MCP server's routing layer.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ok` | `bool` | yes | `True` on success, `False` on failure |
+| `data` | `dict[str, JSONValue]` | no | JSON-serialisable payload on success; empty dict on failure |
+| `error_code` | `MusehubErrorCode \| None` | no | Error kind on failure; `None` on success |
+| `error_message` | `str \| None` | no | Human-readable error message; `None` on success |
+
+**`MusehubErrorCode`** — `Literal["not_found", "invalid_dimension", "invalid_mode", "db_unavailable"]`
+
+| Code | When |
+|------|------|
+| `not_found` | Repo or object does not exist |
+| `invalid_dimension` | Unrecognised analysis dimension (valid: `overview`, `commits`, `objects`) |
+| `invalid_mode` | Unrecognised search mode (valid: `path`, `commit`) |
+| `db_unavailable` | DB session factory not initialised (startup race) |
+
+**Agent use case:** The MCP server calls executor functions and pattern-matches on `result.ok`
+and `result.error_code` to build the `MCPContentBlock` response. On success, `result.data`
+is JSON-serialised directly into the content block text.
+
+---
+
 ### Assets
 
 **Path:** `maestro/services/assets.py`
@@ -1182,6 +1213,40 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+### `ExportResult`
+
+**Path:** `maestro/services/musehub_exporter.py`
+
+`dataclass(frozen=True)` — Fully packaged export artifact returned by `export_repo_at_ref()`.
+Ready for direct streaming to the HTTP client via `Response(content=result.content, ...)`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `content` | `bytes` | Raw bytes of the artifact or ZIP archive |
+| `content_type` | `str` | MIME type for the HTTP `Content-Type` header |
+| `filename` | `str` | Suggested filename for `Content-Disposition: attachment` |
+
+**Companion enum:**
+
+`ExportFormat(str, Enum)` — `midi`, `json`, `musicxml`, `abc`, `wav`, `mp3`.
+
+**Companion TypedDict:**
+
+`ObjectIndexEntry(TypedDict)` — One entry in the JSON export object index (used in `format=json` responses).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | Muse Hub object ID |
+| `path` | `str` | Artifact path within the repo |
+| `size_bytes` | `int` | Stored artifact size in bytes |
+
+**Sentinel returns:** `export_repo_at_ref()` returns the string literal `"ref_not_found"` when
+the ref cannot be resolved to any known commit or branch, and `"no_matching_objects"` when
+no stored artifacts match the requested format + section filter. Route handlers convert
+these to HTTP 404.
+
+---
+
 ### `RenderPreviewResult`
 
 **Path:** `maestro/services/muse_render_preview.py`
@@ -1349,6 +1414,72 @@ structured output that can be parsed by downstream agents.
 **Agent use case:** An AI agent reads `worst_commit` to identify the exact commit
 that degraded rhythmic consistency, then passes it to `muse describe` for a
 natural-language explanation of the change.
+
+---
+
+## Muse Hub Analysis Types
+
+**Path:** `maestro/models/musehub_analysis.py`, `maestro/services/musehub_analysis.py`
+
+These Pydantic v2 models back the 13-dimension Analysis API (issue #248).  All models
+inherit `CamelModel` (camelCase wire format, snake_case internally).
+
+### `AnalysisFilters`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track` | `str \| None` | Instrument track filter applied, or `None` for full-spectrum |
+| `section` | `str \| None` | Musical section filter applied, or `None` |
+
+### `AnalysisResponse`
+
+Envelope returned by every single-dimension endpoint.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | One of the 13 dimension names |
+| `ref` | `str` | Muse commit ref that was analysed |
+| `computed_at` | `datetime` | UTC timestamp of analysis computation |
+| `data` | `DimensionData` | Dimension-specific typed model (see below) |
+| `filters_applied` | `AnalysisFilters` | Filters active during computation |
+
+### `AggregateAnalysisResponse`
+
+Returned by the aggregate endpoint (`GET .../analysis/{ref}`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ref` | `str` | Muse commit ref |
+| `repo_id` | `str` | Muse Hub repo UUID |
+| `computed_at` | `datetime` | UTC timestamp |
+| `dimensions` | `list[AnalysisResponse]` | All 13 dimension results |
+| `filters_applied` | `AnalysisFilters` | Filters active during computation |
+
+### Per-dimension data models
+
+| Model | Dimension | Key fields |
+|-------|-----------|-----------|
+| `HarmonyData` | `harmony` | `tonic`, `mode`, `key_confidence`, `chord_progression`, `tension_curve`, `modulation_points`, `total_beats` |
+| `DynamicsData` | `dynamics` | `peak_velocity`, `mean_velocity`, `min_velocity`, `dynamic_range`, `velocity_curve`, `dynamic_events` |
+| `MotifsData` | `motifs` | `total_motifs`, `motifs: list[MotifEntry]` |
+| `FormData` | `form` | `form_label`, `total_beats`, `sections: list[SectionEntry]` |
+| `GrooveData` | `groove` | `swing_factor`, `grid_resolution`, `onset_deviation`, `groove_score`, `style`, `bpm` |
+| `EmotionData` | `emotion` | `valence` (−1..1), `arousal` (0..1), `tension`, `primary_emotion`, `confidence` |
+| `ChordMapData` | `chord-map` | `progression: list[ChordEvent]`, `total_chords`, `total_beats` |
+| `ContourData` | `contour` | `shape`, `direction_changes`, `peak_beat`, `valley_beat`, `overall_direction`, `pitch_curve` |
+| `KeyData` | `key` | `tonic`, `mode`, `confidence`, `relative_key`, `alternate_keys: list[AlternateKey]` |
+| `TempoData` | `tempo` | `bpm`, `stability`, `time_feel`, `tempo_changes: list[TempoChange]` |
+| `MeterData` | `meter` | `time_signature`, `irregular_sections`, `beat_strength_profile`, `is_compound` |
+| `SimilarityData` | `similarity` | `similar_commits: list[SimilarCommit]`, `embedding_dimensions` |
+| `DivergenceData` | `divergence` | `divergence_score`, `base_ref`, `changed_dimensions: list[ChangedDimension]` |
+
+**Agent use case:** Agents fetch a single dimension for targeted decisions (e.g. `harmony` before
+composing a chord progression) or the aggregate endpoint for a full musical picture of a commit.
+
+**Stub note:** Current implementation returns deterministic stub data keyed on `ref`. Full MIDI
+content analysis will be wired in once Storpheus exposes per-dimension introspection routes.
+
+**Type alias:** `DimensionData = HarmonyData | DynamicsData | ... | DivergenceData` (union of all 13 model types).
 
 ---
 
@@ -5887,6 +6018,42 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
+
+### `SearchCommitMatch`
+
+A single commit returned by any of the four in-repo search modes.
+
+Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commitId` | `str` | Full commit SHA |
+| `branch` | `str` | Branch the commit belongs to |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author |
+| `timestamp` | `datetime` | When the commit was created |
+| `score` | `float` | Match score 0–1; always 1.0 for property/pattern modes |
+| `matchSource` | `str` | Where the match was found: `"message"`, `"branch"`, or `"property"` |
+
+**Producer:** `musehub_search.search_by_*` → `search.search_repo` route handler
+**Consumer:** Muse Hub search page UI; AI agents using search to locate commits before checkout/diff
+
+### `SearchResponse`
+
+Envelope returned by `GET /api/v1/musehub/repos/{repo_id}/search`.
+
+Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mode` | `str` | Echoed search mode: `property` \| `ask` \| `keyword` \| `pattern` |
+| `query` | `str` | Echoed query string (property mode uses filter summary) |
+| `matches` | `list[SearchCommitMatch]` | Ordered matches (score desc, then recency desc) |
+| `totalScanned` | `int` | Total commits examined before limit was applied |
+| `limit` | `int` | The limit cap that was applied |
+
+**Producer:** `search.search_repo` route handler
+**Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
 
 ---
 
