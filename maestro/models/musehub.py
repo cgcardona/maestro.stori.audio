@@ -971,6 +971,8 @@ class SessionResponse(CamelModel):
     None when the session is still active (``ended_at`` is null).
     ``is_active`` is True while the session is open -- used by the Hub UI to
     render a live indicator.
+    ``commits`` is the ordered list of Muse commit IDs made during the session,
+    used by the graph page to apply session markers on commit nodes.
     """
 
     session_id: str
@@ -982,6 +984,7 @@ class SessionResponse(CamelModel):
     location: str
     is_active: bool
     created_at: datetime
+    commits: list[str] = Field(default_factory=list, description="Commit IDs associated with this session")
 
 
 class SessionListResponse(CamelModel):

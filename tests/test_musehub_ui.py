@@ -1209,6 +1209,84 @@ async def test_timeline_page_includes_token_form(
     assert "token-form" in body
 
 
+@pytest.mark.anyio
+async def test_timeline_page_contains_overlay_toggles(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page must include Sessions, PRs, and Releases layer toggle checkboxes.
+
+    Regression test for issue #307 — before this fix the timeline had no
+    overlay markers for repo lifecycle events (sessions, PR merges, releases).
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    # All three new overlay toggle labels must be present.
+    assert "Sessions" in body
+    assert "PRs" in body
+    assert "Releases" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_overlay_js_variables(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page script must initialise sessions, mergedPRs, and releases arrays.
+
+    Verifies that the overlay data arrays and the layer toggle state are wired
+    up in the page's inline script so the renderer can draw markers.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    # State variables for overlay data must be declared.
+    assert "let sessions" in body
+    assert "let mergedPRs" in body
+    assert "let releases" in body
+    # Layer toggle state must include the three new keys.
+    assert "sessions: true" in body
+    assert "prs: true" in body
+    assert "releases: true" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_overlay_fetch_calls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page must issue API calls for sessions, merged PRs, and releases.
+
+    Checks that the inline script calls the correct API paths so the browser
+    will fetch overlay data when the page loads.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    assert "/sessions" in body
+    assert "state=merged" in body
+    assert "/releases" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_overlay_legend(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page legend must describe the three new overlay marker types."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    # Colour labels in the legend.
+    assert "teal" in body.lower()
+    assert "gold" in body.lower()
+
+
 # ---------------------------------------------------------------------------
 # Embed player route tests (issue #244)
 # ---------------------------------------------------------------------------
@@ -1230,6 +1308,28 @@ async def test_graph_page_contains_dag_js(
     assert "renderGraph" in body
     assert "dag-viewport" in body
     assert "dag-svg" in body
+
+
+@pytest.mark.anyio
+async def test_graph_page_contains_session_ring_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page embeds session-marker and reaction-count JavaScript.
+
+    Regression guard for issue #313: ensures the template contains the three
+    new client-side components added by this feature — SESSION_RING_COLOR (the
+    teal ring constant), buildSessionMap (commit→session index builder), and
+    fetchReactions (batch reaction fetcher).  A missing symbol means the graph
+    will silently render with no session markers or reaction counts.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "SESSION_RING_COLOR" in body, "Teal session ring constant missing from graph page"
+    assert "buildSessionMap" in body, "buildSessionMap function missing from graph page"
+    assert "fetchReactions" in body, "fetchReactions function missing from graph page"
 
 
 @pytest.mark.anyio
@@ -1512,6 +1612,48 @@ async def test_active_session_has_null_duration(
     sess = response.json()["sessions"][0]
     assert sess["isActive"] is True
     assert sess["durationSeconds"] is None
+
+
+@pytest.mark.anyio
+async def test_session_response_commits_field_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Sessions API response includes the 'commits' field for each session.
+
+    Regression guard for issue #313: the graph page uses the session commits
+    list to build the session→commit index (buildSessionMap).  If this field
+    is absent or empty when commits exist, no session rings will appear on
+    the DAG graph.
+    """
+    repo_id = await _make_repo(db_session)
+    commit_ids = ["abc123def456abc123def456abc123de", "feedbeeffeedbeefdead000000000001"]
+    row = MusehubSession(
+        repo_id=repo_id,
+        started_at=datetime(2025, 3, 1, 10, 0, 0, tzinfo=timezone.utc),
+        ended_at=datetime(2025, 3, 1, 11, 0, 0, tzinfo=timezone.utc),
+        participants=["artist-a"],
+        intent="session with commits",
+        location="Studio B",
+        is_active=False,
+        commits=commit_ids,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    await db_session.refresh(row)
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    sessions = response.json()["sessions"]
+    assert len(sessions) == 1
+    sess = sessions[0]
+    assert "commits" in sess, "'commits' field missing from SessionResponse"
+    assert sess["commits"] == commit_ids, "commits field does not match seeded commit IDs"
+
 
 async def test_contour_page_renders(
     client: AsyncClient,

@@ -6233,6 +6233,39 @@ Defined in `maestro/models/musehub.py`.
 **Producer:** `search.search_repo` route handler
 **Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
 
+### `SessionResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Wire representation of a single recording session entry.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `str` | UUID for this session |
+| `started_at` | `datetime` | When the session started (UTC) |
+| `ended_at` | `datetime \| None` | When the session ended; `null` if still active |
+| `duration_seconds` | `float \| None` | Derived duration; `null` for active sessions |
+| `participants` | `list[str]` | Participant identifiers or display names |
+| `intent` | `str` | Free-text creative goal for this session |
+| `location` | `str` | Studio or location label |
+| `is_active` | `bool` | True while session is open (no stop event received) |
+| `created_at` | `datetime` | When the Hub record was created (UTC) |
+
+**Producer:** `musehub_repository.create_session()` / `list_sessions()` / `get_session()` → `repos.create_session` / `list_sessions` / `get_session` route handlers
+**Consumer:** Muse Hub sessions page UI; CLI `muse session log`; AI agents reviewing creative history
+
+### `SessionListResponse`
+
+Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessions` | `list[SessionResponse]` | Sessions ordered: active first, then newest-by-started_at |
+| `total` | `int` | Total session count for the repo (ignores `limit`) |
+
+**Producer:** `repos.list_sessions` route handler
+**Consumer:** Muse Hub sessions page UI; AI agents auditing studio activity across time
+
 ### `DagNode`
 
 A single commit node in the repo's directed acyclic graph. Defined in `maestro/models/musehub.py`.
@@ -6280,39 +6313,6 @@ Returned by `GET /api/v1/musehub/repos/{repo_id}/dag`.
 
 **Producer:** `repos.get_commit_dag` route handler
 **Consumer:** Interactive DAG graph UI page; AI agents inspecting project history topology
-
-### `SessionResponse`
-
-Defined in `maestro/models/musehub.py`.
-
-Wire representation of a single recording session entry.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `session_id` | `str` | UUID for this session |
-| `started_at` | `datetime` | When the session started (UTC) |
-| `ended_at` | `datetime \| None` | When the session ended; `null` if still active |
-| `duration_seconds` | `float \| None` | Derived duration; `null` for active sessions |
-| `participants` | `list[str]` | Participant identifiers or display names |
-| `intent` | `str` | Free-text creative goal for this session |
-| `location` | `str` | Studio or location label |
-| `is_active` | `bool` | True while session is open (no stop event received) |
-| `created_at` | `datetime` | When the Hub record was created (UTC) |
-
-**Producer:** `musehub_repository.create_session()` / `list_sessions()` / `get_session()` → `repos.create_session` / `list_sessions` / `get_session` route handlers
-**Consumer:** Muse Hub sessions page UI; CLI `muse session log`; AI agents reviewing creative history
-
-### `SessionListResponse`
-
-Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `sessions` | `list[SessionResponse]` | Sessions ordered: active first, then newest-by-started_at |
-| `total` | `int` | Total session count for the repo (ignores `limit`) |
-
-**Producer:** `repos.list_sessions` route handler
-**Consumer:** Muse Hub sessions page UI; AI agents auditing studio activity across time
 
 ---
 
@@ -6819,7 +6819,6 @@ when the corresponding package is unavailable.
 | `body` | `str` | Markdown release notes |
 | `commit_id` | `str \| None` | Pinned commit SHA, or `None` |
 | `download_urls` | `ReleaseDownloadUrls` | Structured download package URL map |
-| `author` | `str` | JWT `sub` of the user who created this release; empty string for seed data |
 | `created_at` | `datetime` | UTC timestamp of release creation |
 
 ---
@@ -7146,37 +7145,27 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 **Produced by:** `maestro.api.routes.musehub.repos.get_groove_check()`
 **Consumed by:** MuseHub groove-check UI page (`/musehub/ui/{owner}/{repo_slug}/groove-check`); AI agents comparing rhythmic consistency across branches
 
-## Muse Hub — Tree Browser API Types (`maestro/models/musehub.py`)
+---
 
-### `TreeEntryResponse`
+## Storpheus — Inference Optimization Types (`storpheus/music_service.py`)
 
-**Path:** `maestro/models/musehub.py`
+### `GenerationTiming`
 
-`CamelModel` — A single entry (file or directory) in the Muse tree browser. Returned as elements of `TreeListResponse.entries`.
+**Path:** `storpheus/music_service.py`
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | `str` | `"file"` or `"dir"` |
-| `name` | `str` | Entry filename or directory name (final path segment) |
-| `path` | `str` | Full relative path from repo root (e.g. `"tracks/bass.mid"`) |
-| `size_bytes` | `int \| None` | File size in bytes; `None` for directories |
-
-**Produced by:** `maestro.services.musehub_repository.list_tree()`
-**Consumed by:** `TreeListResponse.entries`; tree browser template via `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}`
-
-### `TreeListResponse`
-
-**Path:** `maestro/models/musehub.py`
-
-`CamelModel` — Directory listing for the Muse tree browser. Directories are listed before files; both groups sorted alphabetically.
+`@dataclass` — Per-phase wall-clock latency breakdown for a single `_do_generate` call. Attached to every `GenerateResponse` under `metadata["timing"]` as the output of `GenerationTiming.to_dict()`.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `owner` | `str` | Repo owner username (for breadcrumb rendering) |
-| `repo_slug` | `str` | Repo slug (for breadcrumb rendering) |
-| `ref` | `str` | Branch name or commit SHA used to resolve the tree |
-| `dir_path` | `str` | Current directory path being listed; empty string for repo root |
-| `entries` | `list[TreeEntryResponse]` | Entries sorted dirs-first, then files, both alphabetically |
+| `request_start` | `float` | `time()` at dataclass construction — beginning of the generation request |
+| `seed_elapsed_s` | `float` | Wall time for seed library lookup and key transposition |
+| `generate_elapsed_s` | `float` | Cumulative wall time for all `/generate_music_and_state` Gradio calls |
+| `add_batch_elapsed_s` | `float` | Cumulative wall time for all `/add_batch` Gradio calls |
+| `post_process_elapsed_s` | `float` | Wall time for the post-processing pipeline |
+| `total_elapsed_s` | `float` | Full request wall time (set just before response is returned) |
+| `regen_count` | `int` | Number of full re-generate calls triggered (above the first) |
+| `multi_batch_tries` | `int` | Total `/add_batch` calls made across all generate rounds |
+| `candidates_evaluated` | `int` | Total candidate batches scored by the rejection-sampling critic |
 
-**Produced by:** `maestro.services.musehub_repository.list_tree()`
-**Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}` and `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}/{path}`; tree browser template (`tree.html`) fetches this JSON and renders it client-side
+**Produced by:** `storpheus.music_service._do_generate()`
+**Consumed by:** Callers of `GenerateResponse.metadata["timing"]`; latency dashboards; A/B test comparisons via `/quality/ab-test`
