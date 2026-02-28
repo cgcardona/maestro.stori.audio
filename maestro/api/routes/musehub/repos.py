@@ -35,6 +35,7 @@ from maestro.models.musehub import (
     DagGraphResponse,
     MuseHubContextResponse,
     RepoResponse,
+    RepoStatsResponse,
     CreditsResponse,
     SessionCreate,
     SessionListResponse,
@@ -45,7 +46,7 @@ from maestro.models.musehub_context import (
     ContextDepth,
     ContextFormat,
 )
-from maestro.services import musehub_context, musehub_credits, musehub_divergence, musehub_repository
+from maestro.services import musehub_context, musehub_credits, musehub_divergence, musehub_releases, musehub_repository
 
 logger = logging.getLogger(__name__)
 
@@ -537,6 +538,39 @@ async def stop_session(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     await db.commit()
     return sess
+
+
+@router.get(
+    "/repos/{repo_id}/stats",
+    response_model=RepoStatsResponse,
+    summary="Aggregated counts for the repo home page stats bar",
+)
+async def get_repo_stats(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> RepoStatsResponse:
+    """Return aggregated statistics for a repo: commit count, branch count, release count.
+
+    This lightweight endpoint powers the stats bar on the repo home page and
+    the JSON content-negotiation response from ``GET /musehub/ui/{owner}/{slug}``.
+    All counts are 0 when the repo has no data yet.
+
+    Returns 404 if the repo does not exist.
+    Returns 401 if the repo is private and the caller is unauthenticated.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+
+    branches = await musehub_repository.list_branches(db, repo_id)
+    _, commit_total = await musehub_repository.list_commits(db, repo_id, limit=1)
+    releases = await musehub_releases.list_releases(db, repo_id)
+
+    return RepoStatsResponse(
+        commit_count=commit_total,
+        branch_count=len(branches),
+        release_count=len(releases),
+    )
 
 
 # ── Owner/slug resolver — declared LAST to avoid shadowing /repos/... routes ──

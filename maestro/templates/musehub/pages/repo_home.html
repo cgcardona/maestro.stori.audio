@@ -1,0 +1,467 @@
+{% extends "musehub/base.html" %}
+{% block title %}{{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}<a href="/musehub/ui/{{ owner }}">{{ owner }}</a> / <a href="{{ base_url }}">{{ repo_slug }}</a>{% endblock %}
+
+{% block repo_nav %}
+{% include "musehub/partials/repo_nav.html" %}
+{% endblock %}
+
+{% block container_extra_class %}-wide{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const owner    = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+const base     = {{ base_url | tojson }};
+const apiBase  = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+
+/* ═══════════════════════════════════════════════════════
+ * Helpers
+ * ═══════════════════════════════════════════════════════ */
+
+function visibilityBadge(v) {
+  const label = v === 'public' ? '&#127758; Public' : '&#128274; Private';
+  const cls   = v === 'public' ? 'badge-active' : 'badge-inactive';
+  return `<span class="badge ${cls}" style="font-size:11px">${label}</span>`;
+}
+
+/* ═══════════════════════════════════════════════════════
+ * Hero section — name, owner, visibility, description
+ * ═══════════════════════════════════════════════════════ */
+async function loadHero() {
+  try {
+    const repo = await apiFetch('/repos/' + repoId);
+    const el   = document.getElementById('repo-hero');
+    if (!el) return;
+
+    const keyPill = repo.keySignature
+      ? `<span class="nav-meta-pill">&#9837; ${escHtml(repo.keySignature)}</span>` : '';
+    const bpmPill = repo.tempoBpm
+      ? `<span class="nav-meta-pill">&#9834; ${repo.tempoBpm} BPM</span>` : '';
+    const tagHtml = (repo.tags || [])
+      .map(t => `<span class="nav-meta-tag">${escHtml(t)}</span>`).join('');
+
+    const descHtml = repo.description
+      ? `<p class="hero-description">${escHtml(repo.description)}</p>`
+      : `<p class="hero-description text-muted" style="font-style:italic">No description yet.</p>`;
+
+    el.innerHTML = `
+      <div class="hero-header">
+        <div>
+          <h1 class="hero-title">
+            <a href="/musehub/ui/${escHtml(repo.owner)}" class="text-muted" style="font-weight:400">${escHtml(repo.owner)}</a>
+            <span style="color:var(--color-text-muted)"> / </span>
+            ${escHtml(repo.name)}
+            ${visibilityBadge(repo.visibility)}
+          </h1>
+          ${descHtml}
+          <div style="display:flex;flex-wrap:wrap;gap:var(--space-1);margin-top:var(--space-2)">
+            ${keyPill}${bpmPill}${tagHtml}
+          </div>
+        </div>
+        <div class="hero-actions">
+          <a href="${base}/sessions" class="btn btn-secondary btn-sm">&#128308; Sessions</a>
+          <a href="${base}/insights" class="btn btn-secondary btn-sm">&#128200; Insights</a>
+        </div>
+      </div>
+    `;
+  } catch(e) { /* non-critical */ }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * Stats bar — commit count, branch count, release count
+ * ═══════════════════════════════════════════════════════ */
+async function loadStats() {
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/stats');
+    const el   = document.getElementById('stats-bar');
+    if (!el) return;
+
+    el.innerHTML = `
+      <div class="stats-bar">
+        <a href="${base}/commits" class="stats-pill">
+          <span class="stats-icon">&#128260;</span>
+          <strong id="stat-commits">${data.commitCount ?? 0}</strong>
+          <span class="text-muted">commit${data.commitCount !== 1 ? 's' : ''}</span>
+        </a>
+        <a href="${base}/graph" class="stats-pill">
+          <span class="stats-icon">&#127760;</span>
+          <strong id="stat-branches">${data.branchCount ?? 0}</strong>
+          <span class="text-muted">branch${data.branchCount !== 1 ? 'es' : ''}</span>
+        </a>
+        <a href="${base}/releases" class="stats-pill">
+          <span class="stats-icon">&#127991;</span>
+          <strong id="stat-releases">${data.releaseCount ?? 0}</strong>
+          <span class="text-muted">release${data.releaseCount !== 1 ? 's' : ''}</span>
+        </a>
+      </div>
+    `;
+  } catch(e) {
+    const el = document.getElementById('stats-bar');
+    if (el) el.innerHTML = '';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * Audio player — latest render from the most recent commit
+ * ═══════════════════════════════════════════════════════ */
+async function loadAudioPlayer() {
+  try {
+    const commitData = await apiFetch('/repos/' + repoId + '/commits?limit=1');
+    const commits    = commitData.commits || [];
+    if (!commits.length) return;
+
+    const latest  = commits[0];
+    const objData = await apiFetch(
+      '/repos/' + repoId + '/objects?ref=' + encodeURIComponent(latest.commitId)
+    );
+    const objects = objData.objects || [];
+    const audio   = objects.find(o => {
+      const p = (o.path || '').toLowerCase();
+      return p.endsWith('.mp3') || p.endsWith('.ogg') || p.endsWith('.wav');
+    });
+
+    const el = document.getElementById('audio-player-section');
+    if (!el) return;
+
+    if (!audio) {
+      el.innerHTML = `
+        <div class="card" style="padding:var(--space-4);text-align:center;color:var(--color-text-muted)">
+          &#127925; No audio render found in the latest commit.
+          <a href="${base}/sessions" style="margin-left:var(--space-2)">Start a session &rarr;</a>
+        </div>`;
+      return;
+    }
+
+    const audioUrl = '/api/v1/musehub/repos/' + repoId + '/objects/' + encodeURIComponent(audio.objectId);
+    const shortRef = (latest.commitId || '').substring(0, 8);
+
+    el.innerHTML = `
+      <div class="card" id="audio-player-card">
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3)">
+          <span style="font-size:24px">&#127911;</span>
+          <div>
+            <div class="text-sm text-muted">Latest render</div>
+            <div style="font-weight:600">${escHtml(owner)}/${escHtml(repoSlug)}</div>
+            <div class="text-xs text-muted">
+              commit <a href="${base}/commits/${latest.commitId}" class="text-mono">${shortRef}</a>
+              &middot; ${fmtRelative(latest.timestamp)}
+            </div>
+          </div>
+        </div>
+        <audio controls style="width:100%;border-radius:var(--radius-base)" preload="metadata">
+          <source src="${audioUrl}" type="audio/mpeg">
+          Your browser does not support the audio element.
+        </audio>
+      </div>
+    `;
+  } catch(e) { /* non-critical — audio player is optional */ }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * Arrangement matrix — grid of tracks × sections
+ * ═══════════════════════════════════════════════════════ */
+async function loadArrangementMatrix() {
+  const el = document.getElementById('arrangement-matrix');
+  if (!el) return;
+
+  try {
+    const commitData = await apiFetch('/repos/' + repoId + '/commits?limit=1');
+    const commits    = commitData.commits || [];
+    if (!commits.length) {
+      el.innerHTML = `<div class="matrix-placeholder">&#9781; No commits yet — push a session to see the arrangement.</div>`;
+      return;
+    }
+
+    const latest  = commits[0];
+    const objData = await apiFetch(
+      '/repos/' + repoId + '/objects?ref=' + encodeURIComponent(latest.commitId)
+    );
+    const objects = objData.objects || [];
+
+    /* Group by role (track) — each object is a section within a track */
+    const trackMap = {};
+    objects.forEach(o => {
+      const role = o.role || o.track || 'other';
+      if (!trackMap[role]) trackMap[role] = [];
+      trackMap[role].push(o);
+    });
+
+    const tracks  = Object.keys(trackMap).sort();
+    if (!tracks.length) {
+      el.innerHTML = `<div class="matrix-placeholder">&#9781; Arrangement data will appear here after your first commit.</div>`;
+      return;
+    }
+
+    const PALETTE = ['#f778ba','#a97bff','#e8d44d','#58a6ff','#3fb950','#f0883e','#ff7b72','#79c0ff'];
+    const colorFor = (name, i) => PALETTE[i % PALETTE.length];
+
+    const headerCells = tracks.map((t, i) => {
+      const color = colorFor(t, i);
+      return `<th class="matrix-th" style="color:${color}" title="${escHtml(t)}">${escHtml(t.substring(0, 8))}</th>`;
+    }).join('');
+
+    const row = '<tr>' + tracks.map((t, i) => {
+      const count = trackMap[t].length;
+      const color = colorFor(t, i);
+      const cells = Array.from({ length: count }, () =>
+        `<td class="matrix-cell" style="background:${color}22;border-color:${color}44" title="${escHtml(t)}"></td>`
+      ).join('');
+      return cells;
+    }).join('') + '</tr>';
+
+    el.innerHTML = `
+      <div class="card" style="overflow-x:auto">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+          <h3 style="margin:0">&#9781; Arrangement</h3>
+          <a href="${base}/analysis/HEAD" class="text-xs text-muted">Full analysis &rarr;</a>
+        </div>
+        <table class="matrix-table">
+          <thead><tr>${headerCells}</tr></thead>
+          <tbody>${row}</tbody>
+        </table>
+        <div class="text-xs text-muted" style="margin-top:var(--space-2)">
+          ${tracks.length} track${tracks.length !== 1 ? 's' : ''} &middot;
+          commit <a href="${base}/commits/${latest.commitId}" class="text-mono">${(latest.commitId || '').substring(0, 8)}</a>
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    el.innerHTML = `<div class="matrix-placeholder">&#9781; Arrangement data will appear here after your first commit.</div>`;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * Recent commits — last 5
+ * ═══════════════════════════════════════════════════════ */
+async function loadRecentCommits() {
+  try {
+    const data    = await apiFetch('/repos/' + repoId + '/commits?limit=5');
+    const commits = data.commits || [];
+    const el      = document.getElementById('recent-commits');
+    if (!el) return;
+
+    if (!commits.length) {
+      el.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">&#127925;</div>
+          <p class="empty-title">No commits yet</p>
+          <p class="empty-desc">Push your first session to get started.</p>
+        </div>`;
+      return;
+    }
+
+    const rows = commits.map(c => {
+      const parsed = parseCommitMessage(c.message);
+      const typeBadge  = commitTypeBadge(parsed.type);
+      const scopeBadge = commitScopeBadge(parsed.scope);
+      const shortSha_  = (c.commitId || '').substring(0, 7);
+      const hue = [...(c.author || '')].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0);
+      const color = `hsl(${hue}, 50%, 38%)`;
+      const initials = (c.author || '?').slice(0, 2).toUpperCase();
+      return `
+        <div class="commit-row">
+          <a class="commit-sha text-mono" href="${base}/commits/${c.commitId}">${shortSha_}</a>
+          <span class="commit-msg">
+            <a href="${base}/commits/${c.commitId}">
+              ${typeBadge}${scopeBadge}${escHtml(parsed.subject || c.message)}
+            </a>
+          </span>
+          <span class="commit-meta">
+            <span class="commit-avatar" style="background:${color};width:16px;height:16px;font-size:8px">${escHtml(initials)}</span>
+            ${escHtml(c.author)} &middot; ${fmtRelative(c.timestamp)}
+          </span>
+        </div>`;
+    }).join('');
+
+    const total = data.total || commits.length;
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+          <h3 style="margin:0">&#128260; Recent Commits</h3>
+          <a href="${base}/commits" class="text-xs text-muted">All ${total} commits &rarr;</a>
+        </div>
+        <div class="commit-list">${rows}</div>
+      </div>`;
+  } catch(e) {
+    const el = document.getElementById('recent-commits');
+    if (el && e.message !== 'auth')
+      el.innerHTML = `<p class="error">&#10005; ${escHtml(e.message)}</p>`;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * README — fetch and render if present in HEAD
+ * ═══════════════════════════════════════════════════════ */
+async function loadReadme() {
+  const el = document.getElementById('readme-section');
+  if (!el) return;
+
+  try {
+    const objData = await apiFetch('/repos/' + repoId + '/objects?path=README.md');
+    const objects = objData.objects || [];
+    const readme  = objects.find(o => (o.path || '').toLowerCase().includes('readme'));
+    if (!readme) { el.style.display = 'none'; return; }
+
+    const bytes   = atob(readme.contentB64 || '');
+    const rawText = bytes;
+
+    el.innerHTML = `
+      <div class="card">
+        <h3 style="margin-top:0">&#128220; README</h3>
+        <pre style="white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.6;color:var(--color-text)">${escHtml(rawText)}</pre>
+      </div>`;
+  } catch(e) { el.style.display = 'none'; }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * Quick-link tab strip
+ * ═══════════════════════════════════════════════════════ */
+function renderQuickLinks() {
+  const el = document.getElementById('quick-links');
+  if (!el) return;
+  const links = [
+    { label: '&#128196; Code',    href: base },
+    { label: '&#128260; Commits', href: base + '/commits/HEAD' },
+    { label: '&#128260; Graph',   href: base + '/graph' },
+    { label: '&#8635; PRs',       href: base + '/pulls' },
+    { label: '&#128027; Issues',  href: base + '/issues' },
+    { label: '&#128202; Analysis',href: base + '/analysis/HEAD' },
+    { label: '&#128308; Sessions',href: base + '/sessions' },
+  ];
+  el.innerHTML = links.map(l =>
+    `<a href="${l.href}" class="btn btn-secondary btn-sm">${l.label}</a>`
+  ).join('');
+}
+
+/* ═══════════════════════════════════════════════════════
+ * Build page shell and bootstrap all loaders
+ * ═══════════════════════════════════════════════════════ */
+function load() {
+  initRepoNav(repoId);
+
+  document.getElementById('content').innerHTML = `
+    <div id="repo-hero" class="card" style="margin-bottom:var(--space-4)">
+      <p class="loading">Loading&hellip;</p>
+    </div>
+
+    <div id="stats-bar" style="margin-bottom:var(--space-4)"></div>
+
+    <div id="quick-links" style="display:flex;gap:var(--space-2);flex-wrap:wrap;margin-bottom:var(--space-4)"></div>
+
+    <div class="repo-layout">
+      <!-- Main column -->
+      <main class="repo-main">
+        <div id="audio-player-section" style="margin-bottom:var(--space-4)">
+          <p class="loading">Loading audio&hellip;</p>
+        </div>
+        <div id="arrangement-matrix" style="margin-bottom:var(--space-4)">
+          <p class="loading">Loading arrangement&hellip;</p>
+        </div>
+        <div id="recent-commits" style="margin-bottom:var(--space-4)">
+          <p class="loading">Loading commits&hellip;</p>
+        </div>
+        <div id="readme-section"></div>
+      </main>
+
+      <!-- Sidebar placeholder — inherited from repo.html pattern -->
+    </div>
+  `;
+
+  renderQuickLinks();
+  loadHero();
+  loadStats();
+  loadAudioPlayer();
+  loadArrangementMatrix();
+  loadRecentCommits();
+  loadReadme();
+}
+
+load();
+{% endraw %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── Hero ── */
+  .hero-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+  }
+  .hero-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 var(--space-2);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+  .hero-description { margin: 0 0 var(--space-2); }
+  .hero-actions {
+    display: flex;
+    gap: var(--space-2);
+    flex-shrink: 0;
+  }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+  .stats-pill {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-subtle, rgba(255,255,255,0.04));
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+    border-radius: var(--radius-base);
+    text-decoration: none;
+    color: inherit;
+    font-size: 14px;
+    transition: background 0.15s;
+  }
+  .stats-pill:hover { background: rgba(255,255,255,0.08); }
+  .stats-icon { font-size: 16px; }
+
+  /* ── Arrangement matrix ── */
+  .matrix-table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  .matrix-th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 80px;
+  }
+  .matrix-cell {
+    width: 24px;
+    height: 24px;
+    border: 1px solid;
+    border-radius: 3px;
+  }
+  .matrix-placeholder {
+    padding: var(--space-6);
+    text-align: center;
+    color: var(--color-text-muted);
+    background: var(--bg-subtle, rgba(255,255,255,0.02));
+    border: 1px dashed var(--border-subtle, rgba(255,255,255,0.1));
+    border-radius: var(--radius-base);
+    font-size: 14px;
+  }
+</style>
+{% endblock %}

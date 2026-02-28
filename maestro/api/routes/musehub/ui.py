@@ -51,14 +51,14 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi import status as http_status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.db import get_db
-from maestro.services import musehub_repository
+from maestro.services import musehub_releases, musehub_repository
 
 logger = logging.getLogger(__name__)
 
@@ -214,30 +214,59 @@ async def profile_page(request: Request, username: str) -> HTMLResponse:
 
 @router.get(
     "/{owner}/{repo_slug}",
-    response_class=HTMLResponse,
-    summary="Muse Hub repo landing page",
+    summary="Muse Hub repo home page",
 )
 async def repo_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    accept: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
-    """Render the repo landing page: branch selector + newest 20 commits.
+) -> Response:
+    """Render the repo home page with arrangement matrix, audio player, stats, and recent commits.
 
-    Resolves owner+slug to repo_id server-side; the JS then uses the
-    internal repo_id for API calls.
+    Content negotiation:
+    - ``Accept: application/json`` → returns stats + recent commits as JSON.
+    - Everything else → HTML home page via ``repo_home.html`` template.
+
+    Why the rich home page replaces the plain commit list: musicians visiting
+    a repo need an "album cover" view — hearing the latest mix, seeing the
+    arrangement structure, and understanding activity at a glance.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    if accept and "application/json" in accept:
+        branches = await musehub_repository.list_branches(db, repo_id)
+        commits, commit_total = await musehub_repository.list_commits(db, repo_id, limit=5)
+        releases = await musehub_releases.list_releases(db, repo_id)
+        payload = {
+            "stats": {
+                "commit_count": commit_total,
+                "branch_count": len(branches),
+                "release_count": len(releases),
+            },
+            "recent_commits": [
+                {
+                    "commit_id": c.commit_id,
+                    "branch": c.branch,
+                    "message": c.message,
+                    "author": c.author,
+                    "timestamp": c.timestamp.isoformat(),
+                }
+                for c in commits
+            ],
+        }
+        return JSONResponse(content=payload)
+
     return templates.TemplateResponse(
         request,
-        "musehub/pages/repo.html",
+        "musehub/pages/repo_home.html",
         {
             "owner": owner,
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
-            "current_page": "commits",
+            "current_page": "home",
         },
     )
 

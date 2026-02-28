@@ -169,6 +169,18 @@ class CommitListResponse(CamelModel):
     total: int
 
 
+class RepoStatsResponse(CamelModel):
+    """Aggregated counts for the repo home page stats bar.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/stats``.
+    All counts are non-negative integers; 0 when the repo has no data yet.
+    """
+
+    commit_count: int = Field(0, ge=0, description="Total number of commits across all branches")
+    branch_count: int = Field(0, ge=0, description="Number of branches (including default)")
+    release_count: int = Field(0, ge=0, description="Number of published releases / tags")
+
+
 # ── Issue models ───────────────────────────────────────────────────────────────
 
 
