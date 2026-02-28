@@ -2388,7 +2388,6 @@ drift out of sync.
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
-| `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
@@ -2856,6 +2855,98 @@ that supports `HEAD~10..HEAD` syntax.
 
 ---
 
+### `muse validate`
+
+**Purpose:** Run integrity checks against the working tree before `muse commit`.
+Detects corrupted MIDI files, manifest mismatches, duplicate instrument roles,
+non-conformant section names, and unknown emotion tags — giving agents and
+producers an actionable quality gate before bad state enters history.
+
+**Status:** ✅ Fully implemented (issue #99)
+
+**Usage:**
+```bash
+muse validate [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--strict` | flag | off | Exit 2 on warnings as well as errors. |
+| `--track TEXT` | string | — | Restrict checks to files/paths containing TEXT (case-insensitive). |
+| `--section TEXT` | string | — | Restrict section-naming check to directories containing TEXT. |
+| `--fix` | flag | off | Auto-fix correctable issues (conservative; no data-loss risk). |
+| `--json` | flag | off | Emit full structured JSON for agent consumption. |
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| 0 | All checks passed — working tree is clean. |
+| 1 | One or more ERROR issues found (corrupted MIDI, orphaned files). |
+| 2 | WARN issues found AND `--strict` was passed. |
+| 3 | Internal error (unexpected exception). |
+
+**Checks performed:**
+
+| Check | Severity | Description |
+|-------|----------|-------------|
+| `midi_integrity` | ERROR | Verifies each `.mid`/`.midi` has a valid SMF `MThd` header. |
+| `manifest_consistency` | ERROR/WARN | Compares committed snapshot manifest vs actual working tree. |
+| `no_duplicate_tracks` | WARN | Detects multiple MIDI files sharing the same instrument role. |
+| `section_naming` | WARN | Verifies section dirs match `[a-z][a-z0-9_-]*`. |
+| `emotion_tags` | WARN | Checks emotion tags (`.muse/tags.json`) against the allowed vocabulary. |
+
+**Output example (human-readable):**
+```
+Validating working tree …
+
+  ✅ midi_integrity              PASS
+  ❌ manifest_consistency        FAIL
+       ❌ ERROR   beat.mid  File in committed manifest is missing from working tree.
+  ✅ no_duplicate_tracks         PASS
+  ⚠️  section_naming             WARN
+       ⚠️  WARN   Verse  Section directory 'Verse' does not follow naming convention.
+  ✅ emotion_tags                PASS
+
+⚠️  1 error, 1 warning — working tree has integrity issues.
+```
+
+**Output example (`--json`):**
+```json
+{
+  "clean": false,
+  "has_errors": true,
+  "has_warnings": true,
+  "checks": [
+    { "name": "midi_integrity", "passed": true, "issues": [] },
+    {
+      "name": "manifest_consistency",
+      "passed": false,
+      "issues": [
+        {
+          "severity": "error",
+          "check": "manifest_consistency",
+          "path": "beat.mid",
+          "message": "File in committed manifest is missing from working tree (orphaned)."
+        }
+      ]
+    }
+  ],
+  "fixes_applied": []
+}
+```
+
+**Result types:** `MuseValidateResult`, `ValidationCheckResult`, `ValidationIssue`, `ValidationSeverity`
+— all defined in `maestro/services/muse_validate.py` and registered in `docs/reference/type_contracts.md`.
+
+**Agent use case:** An AI composition agent calls `muse validate --json` before every
+`muse commit` to confirm the working tree is consistent. If `has_errors` is true the agent
+must investigate the failing check before committing — a corrupted MIDI would silently
+corrupt the composition history. With `--strict`, agents can enforce zero-warning quality gates.
+
+---
 ## `muse diff` — Music-Dimension Diff Between Commits
 
 **Purpose:** Compare two commits across five orthogonal musical dimensions —
@@ -3179,6 +3270,7 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
+| `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
