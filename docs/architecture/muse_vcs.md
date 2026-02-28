@@ -1906,6 +1906,118 @@ detection).
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
 
+## `muse form` — Analyze and Display the Musical Form of a Commit
+
+**Purpose:** Extract and display the large-scale structural blueprint of a
+composition — the ordering and labelling of sections (intro, verse, chorus,
+bridge, breakdown, outro) that define how the piece unfolds.  Producers can use
+`muse form --history` to see every structural iteration of a song: "we tried
+verse-chorus-verse-chorus-bridge, then cut the second verse, then added a
+breakdown."  Git shows file changes; Muse shows structural decisions.
+
+**Usage:**
+```bash
+muse form [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `[<commit>]` | positional | HEAD | Target commit ref |
+| `--set TEXT` | string | — | Annotate with an explicit form string (e.g. `"AABA"`, `"verse-chorus-bridge"`) |
+| `--detect` | flag | on | Auto-detect form from section repetition patterns |
+| `--map` | flag | off | Show the section arrangement as a visual timeline |
+| `--history` | flag | off | Show how the form changed across commits |
+| `--json` | flag | off | Emit machine-readable JSON output |
+
+**Section vocabulary:** `intro`, `verse`, `pre-chorus`, `chorus`, `bridge`,
+`breakdown`, `outro` (named roles); `A`, `B`, `C`, … (structural letter labels
+when named roles cannot be inferred from MIDI metadata).
+
+**Detection heuristic:** Sections with identical content fingerprints are
+assigned the same letter label (A, B, C…).  Named roles are inferred from
+MIDI metadata in `.muse/sections/` when available.
+
+**Output example (default text):**
+```
+Musical form -- commit a1b2c3d4  (HEAD -> main)
+
+  intro | A | B | A | B | C | B | outro
+
+Sections:
+   1. intro        [intro]
+   2. A            [verse]
+   3. B            [chorus]
+   4. A            [verse]
+   5. B            [chorus]
+   6. C            [bridge]
+   7. B            [chorus]
+   8. outro        [outro]
+```
+
+**Output example (`--map`):**
+```
+Form map -- commit a1b2c3d4  (HEAD -> main)
+
++----------+----------+----------+----------+----------+----------+----------+----------+
+|  intro   |    A     |    B     |    A     |    B     |    C     |    B     |  outro   |
++----------+----------+----------+----------+----------+----------+----------+----------+
+     1          2          3          4          5          6          7          8
+```
+
+**Output example (`--history`):**
+```
+Form history (newest first):
+
+  #1  a1b2c3d4  intro | A | B | A | B | C | B | outro
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "form_string": "intro | A | B | A | B | C | B | outro",
+  "sections": [
+    {"label": "intro", "role": "intro", "index": 0},
+    {"label": "A", "role": "verse", "index": 1}
+  ],
+  "source": "stub"
+}
+```
+
+**Result types:**
+
+- `FormSection` (TypedDict) — fields: `label` (str), `role` (str), `index` (int).
+- `FormAnalysisResult` (TypedDict) — fields: `commit` (str), `branch` (str),
+  `form_string` (str), `sections` (list[FormSection]), `source` (str:
+  `"stub"` | `"annotation"`).
+- `FormHistoryEntry` (TypedDict) — fields: `position` (int), `result`
+  (FormAnalysisResult).
+
+See `docs/reference/type_contracts.md § FormAnalysisResult`.
+
+**Agent use case:** An AI agent queries `muse form --json` to read the current
+structural blueprint before deciding where to insert a new section.  It uses
+`muse form --history --json` to surface previous structural experiments so it
+can avoid repeating failed arrangements.  `muse form --set "AABA"` lets the
+agent annotate a commit with the standard jazz form after generating a piece
+in that structure.
+
+**Implementation:** `maestro/muse_cli/commands/form.py` — `FormSection`,
+`FormAnalysisResult`, `FormHistoryEntry` (TypedDict); `_stub_form_sections()`,
+`_sections_to_form_string()`, `_form_detect_async()`, `_form_set_async()`,
+`_form_history_async()`, `_render_form_text()`, `_render_map_text()`,
+`_render_history_text()`.  Exit codes: 0 success, 2 outside repo
+(`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+> **Stub note:** The current implementation returns a placeholder
+> verse-chorus-bridge structure.  Full MIDI section fingerprinting
+> (content hash comparison, `.muse/sections/` metadata) is reserved for a
+> future iteration.  All flags are accepted now to keep the CLI contract stable.
+
+
 ## `muse recall` — Keyword Search over Musical Commit History
 
 **Purpose:** Walk the commit history on the current (or specified) branch and
