@@ -20,6 +20,7 @@ from maestro.muse_cli.commands import (
     pull,
     push,
     remote,
+    session,
     status,
 )
 
@@ -41,6 +42,7 @@ cli.add_typer(push.app, name="push", help="Upload local variations to a remote."
 cli.add_typer(pull.app, name="pull", help="Download remote variations locally.")
 cli.add_typer(open_cmd.app, name="open", help="Open an artifact in the system default app (macOS).")
 cli.add_typer(play.app, name="play", help="Play an audio artifact via afplay (macOS).")
+cli.add_typer(session.app, name="session", help="Record and query recording session metadata.")
 
 
 if __name__ == "__main__":
