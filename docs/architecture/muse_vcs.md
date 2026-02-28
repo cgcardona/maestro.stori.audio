@@ -103,9 +103,9 @@ maestro/muse_cli/
     │                        apply_merge(), read/write_merge_state(), MergeState dataclass
     ├── checkout.py       — muse checkout (stub — issue #34)
     ├── merge.py          — muse merge   ✅ fast-forward + 3-way merge (issue #35)
-    ├── remote.py         — muse remote  (stub — issue #38)
-    ├── push.py           — muse push    (stub — issue #38)
-    ├── pull.py           — muse pull    (stub — issue #38)
+    ├── remote.py         — muse remote (add, -v)
+    ├── push.py           — muse push
+    ├── pull.py           — muse pull
     ├── open_cmd.py       — muse open    ✅ macOS artifact preview (issue #45)
     ├── play.py           — muse play    ✅ macOS audio playback via afplay (issue #45)
     ├── export.py         — muse export  ✅ snapshot export to MIDI/JSON/MusicXML/ABC/WAV (issue #112)
@@ -1416,6 +1416,146 @@ muse update-ref refs/heads/merge-candidate "$COMMIT"  # planned
 - Not inside a Muse repo → exits 2
 
 **Implementation:** `maestro/muse_cli/commands/commit_tree.py`
+
+---
+
+## Muse CLI — Remote Sync Command Reference
+
+These commands connect the local Muse repo to the remote Muse Hub, enabling
+collaboration between musicians (push from one machine, pull on another) and
+serving as the CLI-side counterpart to the Hub's sync API.
+
+---
+
+### `muse remote`
+
+**Purpose:** Manage named remote Hub URLs in `.muse/config.toml`.  Every push
+and pull needs a remote configured — `muse remote add` is the prerequisite.
+
+**Usage:**
+```bash
+muse remote add <name> <url>   # register a remote
+muse remote -v                  # list all remotes
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-v` / `--verbose` | flag | off | Print all configured remotes with their URLs |
+
+**Subcommands:**
+
+| Subcommand | Description |
+|-----------|-------------|
+| `add <name> <url>` | Write `[remotes.<name>] url = "<url>"` to `.muse/config.toml` |
+
+**Output example:**
+```
+# muse remote add origin https://story.audio/musehub/repos/my-repo-id
+✅ Remote 'origin' set to https://story.audio/musehub/repos/my-repo-id
+
+# muse remote -v
+origin  https://story.audio/musehub/repos/my-repo-id
+staging https://staging.example.com/musehub/repos/my-repo-id
+```
+
+**Security:** Token values in `[auth]` are never shown by `muse remote -v`.
+
+**Exit codes:** 0 — success; 1 — bad URL or empty name; 2 — not a repo.
+
+**Agent use case:** An orchestration agent registers the Hub URL once at repo
+setup time; subsequent push/pull commands run without further config.
+
+---
+
+### `muse push`
+
+**Purpose:** Upload local commits that the remote Hub does not yet have.
+Enables collaborative workflows where one musician pushes and others pull.
+
+**Usage:**
+```bash
+muse push
+muse push --branch feature/groove-v2
+muse push --remote staging
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--branch` / `-b` | str | current branch | Branch to push |
+| `--remote` | str | `origin` | Named remote to push to |
+
+**Push algorithm:**
+1. Read `repo_id` from `.muse/repo.json` and branch from `.muse/HEAD`.
+2. Read local HEAD commit from `.muse/refs/heads/<branch>`.
+3. Resolve remote URL from `[remotes.<name>] url` in `.muse/config.toml`.
+4. Read last-known remote HEAD from `.muse/remotes/<name>/<branch>` (absent on first push).
+5. Compute delta: commits from local HEAD down to (but not including) remote HEAD.
+6. POST `{ branch, head_commit_id, commits[], objects[] }` to `<remote>/push`.
+7. On HTTP 200, update `.muse/remotes/<name>/<branch>` to the new HEAD.
+
+**Output example:**
+```
+⬆️  Pushing 3 commit(s) to origin/main …
+✅ Pushed 3 commit(s) → origin/main [aabbccdd]
+```
+
+**Exit codes:** 0 — success; 1 — no remote or no commits; 3 — network/server error.
+
+**Result type:** `PushRequest` / `PushResponse` — see `maestro/muse_cli/hub_client.py`.
+
+**Agent use case:** After `muse commit`, an agent runs `muse push` to publish
+the committed variation to the shared Hub for other team members to review.
+
+---
+
+### `muse pull`
+
+**Purpose:** Download commits from the remote Hub that are missing locally.
+After pull, the AI agent has the full commit history of remote collaborators
+available for `muse context`, `muse diff`, `muse ask`, etc.
+
+**Usage:**
+```bash
+muse pull
+muse pull --branch feature/groove-v2
+muse pull --remote staging
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--branch` / `-b` | str | current branch | Branch to pull |
+| `--remote` | str | `origin` | Named remote to pull from |
+
+**Pull algorithm:**
+1. Resolve remote URL from `[remotes.<name>] url` in `.muse/config.toml`.
+2. Collect `have_commits` (all local commit IDs) and `have_objects` (all local object IDs).
+3. POST `{ branch, have_commits[], have_objects[] }` to `<remote>/pull`.
+4. Store returned commits and object descriptors in local Postgres.
+5. Update `.muse/remotes/<name>/<branch>` tracking pointer.
+6. If branches have diverged, print a warning and suggest `muse merge origin/<branch>`.
+
+**Divergence detection:** The pull succeeds (exit 0) even when diverged.
+The divergence warning is informational — it does not block further commands.
+
+**Output example:**
+```
+⬇️  Pulling origin/main …
+✅ Pulled 2 new commit(s), 5 new object(s) from origin/main
+
+# When diverged:
+⚠️  Local branch has diverged from origin/main.
+   Run `muse merge origin/main` to integrate remote changes.
+```
+
+**Exit codes:** 0 — success (including divergence); 1 — no remote configured; 3 — network/server error.
+
+**Result type:** `PullRequest` / `PullResponse` — see `maestro/muse_cli/hub_client.py`.
+
+**Agent use case:** Before generating a new arrangement, an agent pulls to ensure
+it is working from the latest shared composition state.
 
 ---
 
@@ -3647,6 +3787,112 @@ the computed values will change when the full implementation is wired in.
 `_contour_history_async()`, `_format_detect()`, `_format_compare()`,
 `_format_history()`.  Exit codes: 0 success, 2 outside repo
 (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+---
+
+### `muse show`
+
+**Purpose:** Inspect any historical commit — its metadata, snapshot manifest,
+path-level diff vs parent, MIDI file list, and optionally an audio preview.
+The musician's equivalent of `git show`: lets an AI agent or producer examine
+exactly what a past creative decision looked like, at any level of detail.
+
+**Usage:**
+```bash
+muse show [COMMIT] [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `COMMIT` | Commit ID (full or 4–64 char hex prefix), branch name, or `HEAD` (default). |
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | off | Output complete commit metadata + snapshot manifest as JSON for agent consumption. |
+| `--diff` | flag | off | Show path-level diff vs parent commit with A/M/D status markers. |
+| `--midi` | flag | off | List MIDI files (`.mid`, `.midi`, `.smf`) contained in the commit snapshot. |
+| `--audio-preview` | flag | off | Open cached audio preview WAV for this snapshot (macOS). Run `muse export <commit> --wav` first. |
+
+Multiple flags can be combined: `muse show abc1234 --diff --midi`.
+
+**Output example (default):**
+```
+commit a1b2c3d4e5f6...
+Branch:  main
+Author:  producer@stori.app
+Date:    2026-02-27 17:30:00
+Parent:  f9e8d7c6
+
+    Add bridge section with Rhodes keys
+
+Snapshot: 3 files
+  bass.mid
+  beat.mid
+  keys.mid
+```
+
+**Output example (`--diff`):**
+```
+diff f9e8d7c6..a1b2c3d4
+
+A  bass.mid
+M  beat.mid
+D  strings.mid
+
+2 path(s) changed
+```
+
+**Output example (`--midi`):**
+```
+MIDI files in snapshot a1b2c3d4 (3):
+  bass.mid  (obj_hash)
+  beat.mid  (obj_hash)
+  keys.mid  (obj_hash)
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit_id": "a1b2c3d4e5f6...",
+  "branch": "main",
+  "parent_commit_id": "f9e8d7c6...",
+  "parent2_commit_id": null,
+  "message": "Add bridge section with Rhodes keys",
+  "author": "producer@stori.app",
+  "committed_at": "2026-02-27 17:30:00",
+  "snapshot_id": "snap_sha256...",
+  "snapshot_manifest": {
+    "bass.mid": "obj_sha256_a",
+    "beat.mid": "obj_sha256_b",
+    "keys.mid": "obj_sha256_c"
+  }
+}
+```
+
+**Result types:**
+- `ShowCommitResult` (TypedDict) — full commit metadata + snapshot manifest returned by `_show_async()`.
+- `ShowDiffResult` (TypedDict) — path-level diff (added/modified/removed lists + total_changed) returned by `_diff_vs_parent_async()`.
+
+**Commit resolution order:**
+1. `HEAD` (case-insensitive) → follows the `HEAD` ref file to the current branch tip.
+2. 4–64 character hex string → exact commit ID match first, then prefix scan.
+3. Anything else → treated as a branch name; reads `.muse/refs/heads/<name>`.
+
+**Agent use case:** An AI music generation agent calls `muse show HEAD` to inspect the
+latest committed snapshot before generating the next variation — confirming which
+instruments are present, what files changed in the last commit, and whether there are
+MIDI files it can use as seeds for generation. Use `--json` for structured consumption
+in agent pipelines. Use `--diff` to understand what changed in the last session.
+Use `--midi` to enumerate MIDI seeds for the Storpheus generation pipeline.
+
+**`--audio-preview` note:** The full render-preview pipeline (Storpheus → WAV) is
+invoked via `muse export <commit> --wav`. The `--audio-preview` flag then plays the
+cached WAV via `afplay` (macOS). If no cached file exists, a clear help message is
+printed instead.
 
 ---
 
