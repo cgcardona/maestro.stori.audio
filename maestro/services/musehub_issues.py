@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -503,12 +504,10 @@ async def create_milestone(
     title: str,
     description: str = "",
     author: str = "",
-    due_on: object = None,
+    due_on: datetime | None = None,
 ) -> MilestoneResponse:
     """Create a new milestone for the given repo in ``open`` state."""
-    from datetime import datetime as _datetime
-
-    due: _datetime | None = due_on if isinstance(due_on, _datetime) else None
+    due: datetime | None = due_on
     number = await _next_milestone_number(session, repo_id)
     milestone = db.MusehubMilestone(
         repo_id=repo_id,
