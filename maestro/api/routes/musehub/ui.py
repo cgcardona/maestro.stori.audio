@@ -2258,3 +2258,134 @@ async def piano_roll_track_page(
             "current_page": "piano-roll",
         },
     )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/blob/{ref}/{path:path}",
+    response_class=HTMLResponse,
+    summary="Muse Hub file blob viewer — music-aware file rendering",
+)
+async def blob_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    path: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the music-aware blob viewer for a single file at a given ref.
+
+    Dispatches to the appropriate rendering mode based on file extension:
+    - .mid/.midi → piano roll preview with "View in Piano Roll" quick link
+    - .mp3/.wav/.flac → <audio> player with "Listen" quick link
+    - .json → syntax-highlighted, formatted JSON with collapsible sections
+    - .webp/.png/.jpg → inline <img> display
+    - .xml → syntax-highlighted XML (MusicXML support)
+    - Other → hex dump preview with raw download link
+
+    Metadata shown: filename, size, SHA, commit date.
+    Raw download button links to /{owner}/{repo_slug}/raw/{ref}/{path}.
+
+    Auth: no JWT required for public repos.  Private-repo auth is
+    handled client-side via localStorage JWT (consistent with other
+    MuseHub UI pages).
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    filename = path.split("/")[-1] if path else ""
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/blob.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "file_path": path,
+            "filename": filename,
+            "base_url": base_url,
+            "current_page": "tree",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/score/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub score renderer — full score, all tracks",
+)
+async def score_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the sheet music score page for a given commit ref (all tracks).
+
+    Displays all instrument parts as standard music notation rendered via a
+    lightweight SVG renderer.  The page fetches quantized notation JSON from
+    ``GET /api/v1/musehub/repos/{repo_id}/notation/{ref}`` and draws:
+
+    - Staff lines (treble and bass clefs as appropriate)
+    - Key signature and time signature
+    - Note heads, stems, flags, ledger lines
+    - Accidental markers (sharps and flats)
+    - Track/part selector dropdown
+
+    No JWT is required to render the HTML shell.  Auth is handled client-side
+    via localStorage JWT, matching all other UI pages.
+
+    For a single-part view use the ``score/{ref}/{path}`` variant which filters
+    to one instrument track.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/score.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "path": "",
+            "current_page": "score",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/score/{ref}/{path:path}",
+    response_class=HTMLResponse,
+    summary="Muse Hub score renderer — single-track part view",
+)
+async def score_part_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    path: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the sheet music score page filtered to a single instrument part.
+
+    Identical to ``score/{ref}`` but the ``path`` segment identifies a specific
+    instrument track (e.g. ``piano``, ``bass``, ``guitar``).  The client-side
+    renderer pre-selects that track in the part selector on load.
+
+    No JWT is required to render the HTML shell.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/score.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "path": path,
+            "current_page": "score",
+        },
+    )

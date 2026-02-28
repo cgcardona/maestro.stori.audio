@@ -1275,6 +1275,34 @@ class ArrangementMatrixResponse(CamelModel):
     total_beats: float = Field(..., description="Total beat length of the arrangement")
 
 
+class BlobMetaResponse(CamelModel):
+    """Wire representation of a single file (blob) in the Muse tree browser.
+
+    Returned by GET /musehub/repos/{repo_id}/blob/{ref}/{path}.
+    Consumers use ``file_type`` to choose the appropriate rendering mode
+    (piano roll for MIDI, audio player for MP3/WAV, inline img for images,
+    syntax-highlighted text for JSON/XML, hex dump for unknown binaries).
+    ``content_text`` is populated only for text files up to 256 KB; binary
+    files should use ``raw_url`` to stream content.
+    """
+
+    object_id: str = Field(..., description="Content-addressed ID, e.g. 'sha256:abc123...'")
+    path: str = Field(..., description="Relative path from repo root, e.g. 'tracks/bass.mid'")
+    filename: str = Field(..., description="Basename of the file, e.g. 'bass.mid'")
+    size_bytes: int = Field(..., description="File size in bytes")
+    sha: str = Field(..., description="Content-addressed SHA identifier")
+    created_at: datetime = Field(..., description="Timestamp when this object was pushed")
+    raw_url: str = Field(..., description="URL to download the raw file bytes")
+    file_type: str = Field(
+        ...,
+        description="Rendering hint: 'midi' | 'audio' | 'json' | 'image' | 'xml' | 'other'",
+    )
+    content_text: str | None = Field(
+        None,
+        description="UTF-8 content for JSON/XML files up to 256 KB; None for binary or oversized files",
+    )
+
+
 class GrooveCheckResponse(CamelModel):
     """Rhythmic consistency dashboard data for a commit range in a Muse Hub repo.
 

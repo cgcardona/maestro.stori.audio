@@ -3,6 +3,7 @@
 Endpoint summary:
   GET /musehub/repos/{repo_id}/objects                             — list artifact metadata
   GET /musehub/repos/{repo_id}/objects/{object_id}/content         — serve raw artifact bytes
+  GET /musehub/repos/{repo_id}/blob/{ref}/{path}                   — blob metadata + text content for UI
   GET /musehub/repos/{repo_id}/objects/{object_id}/parse-midi      — MIDI-to-JSON parsing endpoint
   GET /musehub/repos/{repo_id}/export/{ref}?format=midi&...        — download export package
 
@@ -35,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.db.musehub_models import MusehubDownloadEvent
-from maestro.models.musehub import ObjectMetaListResponse, TreeListResponse
+from maestro.models.musehub import BlobMetaResponse, ObjectMetaListResponse, TreeListResponse
 from maestro.services import musehub_repository
 from maestro.services.musehub_exporter import ExportFormat, export_repo_at_ref
 from maestro.services.musehub_midi_parser import parse_midi_bytes
@@ -60,6 +61,105 @@ def _content_type(path: str) -> str:
         return _EXTRA_MIME[ext]
     guessed, _ = mimetypes.guess_type(path)
     return guessed or "application/octet-stream"
+
+
+# Maximum text file size to embed in BlobMetaResponse.content_text (256 KB).
+_MAX_TEXT_EMBED_BYTES = 256 * 1024
+
+_FILE_TYPE_MAP: dict[str, str] = {
+    ".mid": "midi",
+    ".midi": "midi",
+    ".mp3": "audio",
+    ".wav": "audio",
+    ".flac": "audio",
+    ".ogg": "audio",
+    ".webp": "image",
+    ".png": "image",
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".json": "json",
+    ".xml": "xml",
+}
+
+
+def _detect_file_type(path: str) -> str:
+    """Return a rendering hint based on file extension.
+
+    Values: 'midi' | 'audio' | 'json' | 'image' | 'xml' | 'other'
+    """
+    ext = os.path.splitext(path)[1].lower()
+    return _FILE_TYPE_MAP.get(ext, "other")
+
+
+@router.get(
+    "/repos/{repo_id}/blob/{ref}/{path:path}",
+    response_model=BlobMetaResponse,
+    operation_id="getBlobMeta",
+    summary="Get blob metadata and optional text content for the file viewer",
+)
+async def get_blob_meta(
+    repo_id: str,
+    ref: str,
+    path: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> BlobMetaResponse:
+    """Return metadata for a single file in the blob viewer.
+
+    The response includes the file's size, SHA, creation timestamp, and
+    rendering hint (``file_type``).  For text-based files (JSON, XML) up to
+    256 KB, ``content_text`` is populated so the viewer can render them
+    inline without a second request.  Binary and oversized files omit
+    ``content_text``; consumers should stream bytes from ``raw_url`` instead.
+
+    The ``ref`` parameter accepts branch names or commit SHAs and is used
+    for URL construction (raw_url).  Object resolution always returns the
+    most-recently-pushed object at ``path``, consistent with the raw and
+    tree endpoints at MVP scope.
+
+    Returns 404 if the repo is not found or no object exists at that path.
+    Returns 401 if the repo is private and no valid token is supplied.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    obj = await musehub_repository.get_object_by_path(db, repo_id, path)
+    if obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No object at path '{path}' in ref '{ref}'",
+        )
+
+    file_type = _detect_file_type(obj.path)
+    raw_url = f"/musehub/repos/{repo_id}/raw/{ref}/{path}"
+
+    content_text: str | None = None
+    if file_type in ("json", "xml") and obj.size_bytes <= _MAX_TEXT_EMBED_BYTES:
+        if os.path.exists(obj.disk_path):
+            try:
+                with open(obj.disk_path, encoding="utf-8", errors="replace") as fh:
+                    content_text = fh.read()
+            except OSError:
+                logger.warning("⚠️ Could not read text content for blob %s", obj.object_id)
+
+    return BlobMetaResponse(
+        object_id=obj.object_id,
+        path=obj.path,
+        filename=os.path.basename(obj.path),
+        size_bytes=obj.size_bytes,
+        sha=obj.object_id,
+        created_at=obj.created_at,
+        raw_url=raw_url,
+        file_type=file_type,
+        content_text=content_text,
+    )
 
 
 @router.get(

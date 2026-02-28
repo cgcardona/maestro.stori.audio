@@ -4244,3 +4244,324 @@ async def test_piano_roll_js_contains_renderer(client: AsyncClient) -> None:
     body = response.text
     assert "PianoRoll" in body
     assert "render" in body
+
+
+
+async def _seed_blob_fixtures(db_session: AsyncSession) -> str:
+    """Seed a public repo with a branch and typed objects for blob viewer tests.
+
+    Creates:
+    - repo: testuser/blob-test (public)
+    - branch: main
+    - objects: tracks/bass.mid, tracks/keys.mp3, metadata.json, cover.webp
+
+    Returns repo_id.
+    """
+    repo = MusehubRepo(
+        name="blob-test",
+        owner="testuser",
+        slug="blob-test",
+        visibility="public",
+        owner_user_id="test-owner",
+    )
+    db_session.add(repo)
+    await db_session.flush()
+
+    commit = MusehubCommit(
+        commit_id="blobdeadbeef12",
+        repo_id=str(repo.repo_id),
+        message="add blob fixtures",
+        branch="main",
+        author="testuser",
+        timestamp=datetime.now(tz=UTC),
+    )
+    db_session.add(commit)
+
+    branch = MusehubBranch(
+        repo_id=str(repo.repo_id),
+        name="main",
+        head_commit_id="blobdeadbeef12",
+    )
+    db_session.add(branch)
+
+    for path, size in [
+        ("tracks/bass.mid", 2048),
+        ("tracks/keys.mp3", 8192),
+        ("metadata.json", 512),
+        ("cover.webp", 4096),
+    ]:
+        obj = MusehubObject(
+            object_id=f"sha256:blob_{path.replace('/', '_')}",
+            repo_id=str(repo.repo_id),
+            path=path,
+            size_bytes=size,
+            disk_path=f"/tmp/blob_{path.replace('/', '_')}",
+        )
+        db_session.add(obj)
+
+    await db_session.commit()
+    return str(repo.repo_id)
+
+
+
+@pytest.mark.anyio
+async def test_blob_404_unknown_path(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/blob/{ref}/{path} returns 404 for unknown path."""
+    repo_id = await _seed_blob_fixtures(db_session)
+    response = await client.get(f"/api/v1/musehub/repos/{repo_id}/blob/main/does/not/exist.mid")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_blob_image_shows_inline(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Blob page for .webp file includes <img> rendering logic in the template JS."""
+    await _seed_blob_fixtures(db_session)
+    response = await client.get("/musehub/ui/testuser/blob-test/blob/main/cover.webp")
+    assert response.status_code == 200
+    body = response.text
+    # JS template emits <img> for image file type
+    assert "<img" in body or "blob-img" in body
+    assert "cover.webp" in body
+
+
+@pytest.mark.anyio
+async def test_blob_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/blob/{ref}/{path} returns BlobMetaResponse JSON."""
+    repo_id = await _seed_blob_fixtures(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/blob/main/tracks/bass.mid"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["path"] == "tracks/bass.mid"
+    assert data["filename"] == "bass.mid"
+    assert data["sizeBytes"] == 2048
+    assert data["fileType"] == "midi"
+    assert data["sha"].startswith("sha256:")
+    assert "/raw/" in data["rawUrl"]
+    # MIDI is binary — no content_text
+    assert data["contentText"] is None
+@pytest.mark.anyio
+async def test_blob_json_syntax_highlighted(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Blob page for .json file includes syntax-highlighting logic in the template JS."""
+    await _seed_blob_fixtures(db_session)
+    response = await client.get("/musehub/ui/testuser/blob-test/blob/main/metadata.json")
+    assert response.status_code == 200
+    body = response.text
+    # highlightJson function must be present in the template script
+    assert "highlightJson" in body or "json-key" in body
+    assert "metadata.json" in body
+
+
+@pytest.mark.anyio
+async def test_blob_midi_shows_piano_roll_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo}/blob/{ref}/{path} returns 200 HTML for a .mid file.
+
+    The template's client-side JS must reference the piano roll URL pattern so that
+    clicking the page in a browser navigates to the piano roll viewer.
+    """
+    await _seed_blob_fixtures(db_session)
+    response = await client.get("/musehub/ui/testuser/blob-test/blob/main/tracks/bass.mid")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    # JS in the template constructs piano-roll URLs for MIDI files
+    assert "piano-roll" in body or "Piano Roll" in body
+    # Filename is embedded in the page context
+    assert "bass.mid" in body
+
+
+@pytest.mark.anyio
+async def test_blob_mp3_shows_audio_player(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Blob page for .mp3 file includes <audio> rendering logic in the template JS."""
+    await _seed_blob_fixtures(db_session)
+    response = await client.get("/musehub/ui/testuser/blob-test/blob/main/tracks/keys.mp3")
+    assert response.status_code == 200
+    body = response.text
+    # JS template emits <audio> element for audio file type
+    assert "<audio" in body or "blob-audio" in body
+    assert "keys.mp3" in body
+
+
+@pytest.mark.anyio
+async def test_blob_raw_button(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Blob page JS constructs a Raw download link via the /raw/ endpoint."""
+    await _seed_blob_fixtures(db_session)
+    response = await client.get("/musehub/ui/testuser/blob-test/blob/main/tracks/bass.mid")
+    assert response.status_code == 200
+    body = response.text
+    # JS constructs raw URL — the string '/raw/' must appear in the template script
+    assert "/raw/" in body
+
+
+@pytest.mark.anyio
+async def test_score_page_contains_legend(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Score page includes a legend for note symbols."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "legend" in body or "Note" in body
+
+
+@pytest.mark.anyio
+async def test_score_page_contains_score_meta(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Score page embeds a score metadata panel (key/tempo/time signature)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "score-meta" in body
+
+
+@pytest.mark.anyio
+async def test_score_page_contains_staff_container(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Score page embeds the SVG staff container markup."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "staff-container" in body or "staves" in body
+
+
+@pytest.mark.anyio
+async def test_score_page_contains_track_selector(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Score page embeds a track selector element."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "track-selector" in body
+
+
+@pytest.mark.anyio
+async def test_score_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Score UI page must be accessible without an Authorization header."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_score_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/score/{ref} returns 200 HTML."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_score_part_page_includes_path(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Single-part score page injects the path segment into page data."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main/piano")
+    assert response.status_code == 200
+    body = response.text
+    # scorePath JS variable should be set to the path segment
+    assert "piano" in body
+
+
+@pytest.mark.anyio
+async def test_score_part_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/score/{ref}/{path} returns 200 HTML."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main/piano")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_score_unknown_repo_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{unknown}/{slug}/score/{ref} returns 404."""
+    response = await client.get("/musehub/ui/nobody/no-beats/score/main")
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Arrangement matrix page — issue #212
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Piano roll page tests — issue #209
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_ui_commit_page_artifact_auth_uses_blob_proxy(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit page must use blob URL proxy for artifact auth, not bare content URLs in src/href.
+
+    Images use data-content-url + hydrateImages(); audio/download use downloadArtifact().
+    This prevents 401s caused by the browser sending unauthenticated direct requests.
+    """
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    # Images must carry data-content-url (hydrated asynchronously with auth)
+    assert "data-content-url" in body
+    # No bare /content URL should appear as img src= (would cause 401)
+    assert 'src="/api/v1/musehub' not in body
+    # Downloads must go through downloadArtifact() JS helper, not bare href
+    assert "downloadArtifact" in body
+    # hydrateImages and _fetchBlobUrl must be present for the blob proxy pattern
+    assert "hydrateImages" in body
+    assert "_fetchBlobUrl" in body
