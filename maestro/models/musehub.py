@@ -595,6 +595,105 @@ class PRMergeResponse(CamelModel):
     merge_commit_id: str = Field(..., description="The new merge commit ID", examples=["c9d8e7f6a5b4"])
 
 
+# ── PR review comment models ───────────────────────────────────────────────────
+
+
+class PRCommentCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments.
+
+    ``target_type`` selects the granularity of the musical annotation:
+      - ``general``  — whole PR, no positional context
+      - ``track``    — a named instrument track (supply ``target_track``)
+      - ``region``   — beat range within a track (supply track + beat_start/end)
+      - ``note``     — single note event (supply track + beat_start + note_pitch)
+
+    ``body`` supports Markdown so reviewers can format code-fence chord charts,
+    lists of suggested edits, etc.
+    """
+
+    body: str = Field(
+        ...,
+        min_length=1,
+        description="Review comment body (Markdown)",
+        examples=["The bass line in beats 16-24 feels rhythmically stiff — try adding some swing."],
+    )
+    target_type: str = Field(
+        "general",
+        pattern="^(general|track|region|note)$",
+        description="Comment target granularity",
+        examples=["region"],
+    )
+    target_track: str | None = Field(
+        None,
+        max_length=255,
+        description="Instrument track name for track/region/note targets",
+        examples=["bass"],
+    )
+    target_beat_start: float | None = Field(
+        None,
+        ge=0,
+        description="First beat of the targeted region (inclusive)",
+        examples=[16.0],
+    )
+    target_beat_end: float | None = Field(
+        None,
+        ge=0,
+        description="Last beat of the targeted region (exclusive)",
+        examples=[24.0],
+    )
+    target_note_pitch: int | None = Field(
+        None,
+        ge=0,
+        le=127,
+        description="MIDI pitch (0-127) for note-level targets",
+        examples=[46],
+    )
+    parent_comment_id: str | None = Field(
+        None,
+        description="ID of the parent comment when creating a threaded reply",
+        examples=["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+    )
+
+
+class PRCommentResponse(CamelModel):
+    """Wire representation of a single PR review comment."""
+
+    comment_id: str = Field(..., description="Internal UUID for this comment")
+    pr_id: str = Field(..., description="Pull request this comment belongs to")
+    author: str = Field(..., description="Display name / JWT sub of the comment author")
+    body: str = Field(..., description="Review body (Markdown)")
+    target_type: str = Field(..., description="'general', 'track', 'region', or 'note'")
+    target_track: str | None = Field(None, description="Instrument track name when targeted")
+    target_beat_start: float | None = Field(None, description="Region start beat (inclusive)")
+    target_beat_end: float | None = Field(None, description="Region end beat (exclusive)")
+    target_note_pitch: int | None = Field(None, description="MIDI pitch for note-level targets")
+    parent_comment_id: str | None = Field(None, description="Parent comment ID for threaded replies")
+    created_at: datetime = Field(..., description="Comment creation timestamp (ISO-8601 UTC)")
+    replies: list[PRCommentResponse] = Field(
+        default_factory=list,
+        description="Nested replies to this comment (only populated on top-level comments)",
+    )
+
+
+class PRCommentListResponse(CamelModel):
+    """Threaded list of review comments for a PR.
+
+    ``comments`` contains only top-level comments; each carries a ``replies``
+    list with its direct children, sorted chronologically.  This two-level
+    structure covers all current threading requirements without recursive fetches.
+    """
+
+    comments: list[PRCommentResponse] = Field(
+        default_factory=list,
+        description="Top-level review comments with nested replies",
+    )
+    total: int = Field(0, ge=0, description="Total number of comments (all levels)")
+
+
+# Rebuild the model to resolve the forward reference in PRCommentResponse.replies
+PRCommentResponse.model_rebuild()
+
+
 # ── Release models ────────────────────────────────────────────────────────────
 
 
@@ -1406,6 +1505,42 @@ class SessionListResponse(CamelModel):
 
     sessions: list[SessionResponse]
     total: int
+
+
+class ActivityEventResponse(CamelModel):
+    """Wire representation of a single repo-level activity event.
+
+    ``event_type`` is one of:
+      "commit_pushed" | "pr_opened" | "pr_merged" | "pr_closed" |
+      "issue_opened" | "issue_closed" | "branch_created" | "branch_deleted" |
+      "tag_pushed" | "session_started" | "session_ended"
+
+    ``metadata`` carries event-specific structured data for deep-link rendering
+    (e.g. ``{"sha": "abc123", "message": "Add groove baseline"}`` for commit_pushed).
+    """
+
+    event_id: str
+    repo_id: str
+    event_type: str
+    actor: str
+    description: str
+    metadata: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class ActivityFeedResponse(CamelModel):
+    """Paginated activity event feed for a repo (newest-first).
+
+    ``page`` and ``page_size`` echo the request parameters.
+    ``total`` is the total number of events matching the filter (ignoring pagination).
+    ``event_type_filter`` is the active filter value, or None when showing all types.
+    """
+
+    events: list[ActivityEventResponse]
+    total: int
+    page: int
+    page_size: int
+    event_type_filter: str | None = None
 
 
 class SimilarCommitResponse(CamelModel):

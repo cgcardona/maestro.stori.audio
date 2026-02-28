@@ -1185,6 +1185,66 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+#### `PRCommentCreate`
+
+**Path:** `maestro/models/musehub.py`
+
+**Pydantic model** — Request body for `POST /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/comments`. Supports four targeting granularities so reviewers can pinpoint the exact location in the musical diff they are commenting on.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `body` | `str` | Review comment body (Markdown, min_length=1) |
+| `target_type` | `str` | Granularity: `"general"` \| `"track"` \| `"region"` \| `"note"` |
+| `target_track` | `str \| None` | Instrument track name for track/region/note targets |
+| `target_beat_start` | `float \| None` | Region start beat (inclusive, ≥ 0) |
+| `target_beat_end` | `float \| None` | Region end beat (exclusive, ≥ 0) |
+| `target_note_pitch` | `int \| None` | MIDI pitch 0–127 for note-level targets |
+| `parent_comment_id` | `str \| None` | Parent comment UUID when creating a threaded reply |
+
+---
+
+#### `PRCommentResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+**Pydantic model** — Wire representation of a single PR review comment.  Self-referential: `replies` holds direct child comments (top-level only; grandchildren are attached to their own parent).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `comment_id` | `str` | Internal UUID for this comment |
+| `pr_id` | `str` | Pull request this comment belongs to |
+| `author` | `str` | JWT `sub` / display name of the commenter |
+| `body` | `str` | Review body (Markdown) |
+| `target_type` | `str` | `"general"`, `"track"`, `"region"`, or `"note"` |
+| `target_track` | `str \| None` | Instrument track name when targeted |
+| `target_beat_start` | `float \| None` | Region start beat (inclusive) |
+| `target_beat_end` | `float \| None` | Region end beat (exclusive) |
+| `target_note_pitch` | `int \| None` | MIDI pitch for note-level targets |
+| `parent_comment_id` | `str \| None` | Parent comment UUID for threaded replies; `None` = top-level |
+| `created_at` | `datetime` | Comment creation timestamp (ISO-8601 UTC) |
+| `replies` | `list[PRCommentResponse]` | Nested replies (populated on top-level comments only) |
+
+**Note:** Forward reference resolved via `PRCommentResponse.model_rebuild()` after class definition.
+
+---
+
+#### `PRCommentListResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+**Pydantic model** — Threaded list of review comments returned by both `POST` (after insert) and `GET` on the comments endpoint.  Two-level structure: `comments` contains top-level entries, each with a `replies` list.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `comments` | `list[PRCommentResponse]` | Top-level review comments with nested replies |
+| `total` | `int` | Total comment count across all levels (top-level + all replies), ≥ 0 |
+
+**Endpoints:** `POST /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/comments`, `GET /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/comments`
+
+**Agent use case:** AI agents can inspect `comments` to read peer review feedback before deciding whether a PR is safe to merge.  `total > 0` with unresolved general comments is a soft block signal.
+
+---
+
 ### `ExpressivenessResult`
 
 **Path:** `maestro/services/expressiveness.py`
@@ -7914,6 +7974,45 @@ as JSON by `GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/parse-midi`.
 **Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
 **Consumed by:** `maestro.api.routes.musehub.objects.parse_midi_object()`; MuseHub piano roll JavaScript renderer (`piano-roll.js`)
 
+---
+
+### `ActivityEventResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — A single repo-level activity event returned by the activity feed API.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `event_id` | `str` | UUID of the event row |
+| `repo_id` | `str` | UUID of the owning repo |
+| `event_type` | `str` | One of: `commit_pushed`, `pr_opened`, `pr_merged`, `pr_closed`, `issue_opened`, `issue_closed`, `branch_created`, `branch_deleted`, `tag_pushed`, `session_started`, `session_ended` |
+| `actor` | `str` | JWT `sub` or display name of the user who triggered the event |
+| `description` | `str` | One-line human-readable summary rendered in the feed UI |
+| `metadata` | `dict[str, object]` | Event-specific payload (e.g. `{"sha": "…"}` for `commit_pushed`, `{"number": 3}` for `issue_opened`) |
+| `created_at` | `datetime` | UTC timestamp of the event |
+
+**Produced by:** `musehub_events.record_event()` / `list_events()` → `repos.get_repo_activity` route handler
+**Consumed by:** MuseHub activity feed UI (`/musehub/ui/{owner}/{slug}/activity`); AI agents auditing repo activity
+
+---
+
+### `ActivityFeedResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Paginated activity event feed returned by `GET /api/v1/musehub/repos/{repo_id}/activity`.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `events` | `list[ActivityEventResponse]` | Events newest-first, sliced by `page` / `page_size` |
+| `total` | `int` | Total events matching the filter (ignoring pagination) |
+| `page` | `int` | 1-indexed current page number |
+| `page_size` | `int` | Events per page (1–100, default 30) |
+| `event_type_filter` | `str \| None` | Active `event_type` filter, or `None` when showing all types |
+
+**Produced by:** `musehub_events.list_events()` → `repos.get_repo_activity` route handler
+**Consumed by:** MuseHub activity feed UI; API clients filtering by event type
 
 ---
 
@@ -7978,4 +8077,43 @@ Pydantic `CamelModel` — Wire representation of a Muse Hub milestone.
 
 **Produced by:** `maestro.services.musehub_issues.create_milestone()`, `list_milestones()`, `get_milestone()`
 **Consumed by:** `POST /milestones`, `GET /milestones`, `GET /milestones/{number}`
+
+---
+
+### `SocialTrendsDayResult`
+
+**Path:** `maestro/api/routes/musehub/social.py`
+
+Pydantic `BaseModel` — One calendar day of aggregated social engagement counts for a repo. Missing
+days (no activity) are filled with zeros so the chart always spans the full requested window.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `date` | `str` | ISO 8601 calendar date (`YYYY-MM-DD`) |
+| `stars` | `int` | New stars received on this day |
+| `forks` | `int` | New forks created on this day |
+| `watches` | `int` | New watches added on this day |
+
+**Produced by:** `maestro.api.routes.musehub.social.get_social_analytics()`
+**Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/analytics/social` — nested inside `SocialTrendsResult.trend`; insights dashboard SVG multi-line chart
+
+---
+
+### `SocialTrendsResult`
+
+**Path:** `maestro/api/routes/musehub/social.py`
+
+Pydantic `BaseModel` — Top-level response for the social trends analytics endpoint. Bundles
+aggregate totals, a full per-day trend list, and fork-detail records for the insights dashboard.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `star_count` | `int` | Total stars across all time |
+| `fork_count` | `int` | Total forks across all time |
+| `watch_count` | `int` | Total watches across all time |
+| `trend` | `list[SocialTrendsDayResult]` | One entry per calendar day over the requested window (zero-filled) |
+| `forks_detail` | `list[ForkResponse]` | Per-fork records ordered by `created_at` descending, for the "Who forked this" panel |
+
+**Produced by:** `maestro.api.routes.musehub.social.get_social_analytics()`
+**Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/analytics/social` (default window: 90 days, max: 365); insights dashboard Social Trends card and "Who forked this" panel
 
