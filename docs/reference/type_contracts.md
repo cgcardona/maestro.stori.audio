@@ -2028,6 +2028,35 @@ Named result types for Muse CLI commands. All types are `TypedDict` subclasses
 defined in their respective command modules and returned from the injectable
 async core functions (the testable layer that Typer commands wrap).
 
+### `TempoScaleResult`
+
+**Module:** `maestro/muse_cli/commands/tempo_scale.py`
+
+Result of a `muse tempo-scale` operation.  Agents should treat `new_commit`
+as the SHA that replaces the source commit in the timeline.  The result is
+deterministic: same `source_commit` + `factor` + `track` + `preserve_expressions`
+always produces the same `new_commit`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_commit` | `str` | Short SHA of the input commit |
+| `new_commit` | `str` | Short SHA of the newly created tempo-scaled commit |
+| `factor` | `float` | Scaling factor applied: `< 1` = slower, `> 1` = faster |
+| `source_bpm` | `float` | Tempo of the source commit in BPM (stub: 120.0) |
+| `new_bpm` | `float` | Resulting tempo after scaling (`source_bpm × factor`) |
+| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
+| `preserve_expressions` | `bool` | Whether CC/expression events were scaled proportionally |
+| `message` | `str` | Commit message for the new scaled commit |
+
+**Producer:** `_tempo_scale_async()`
+**Consumer:** `_format_result()`, `tempo_scale()` Typer command
+
+**Pure helpers:**
+- `compute_factor_from_bpm(source_bpm, target_bpm) -> float` — compute factor = target / source
+- `apply_factor(bpm, factor) -> float` — compute new BPM = bpm × factor
+
+---
+
 ### `SwingDetectResult`
 
 **Module:** `maestro/muse_cli/commands/swing.py`

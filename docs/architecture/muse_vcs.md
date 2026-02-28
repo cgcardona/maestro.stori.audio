@@ -1309,3 +1309,89 @@ texture — letting the agent reuse, invert, or contrast those ideas.  The
 > scoring function will be replaced with no change to the CLI interface.
 
 ---
+
+## `muse tempo-scale` — Stretch or Compress the Timing of a Commit
+
+**Purpose:** Apply a deterministic time-scaling transformation to a commit,
+stretching or compressing all MIDI note onset/offset times by a factor while
+preserving pitch.  Records the result as a new commit, leaving the source
+commit intact.  Agents use this to explore half-time grooves, double-time
+feels, or to normalise a session to a target BPM before merge.
+
+**Usage:**
+```bash
+muse tempo-scale [<factor>] [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<factor>` | float | — | Scaling factor: `0.5` = half-time, `2.0` = double-time |
+| `<commit>` | string | HEAD | Source commit SHA to scale |
+| `--bpm N` | float | — | Scale to reach exactly N BPM (`factor = N / source_bpm`). Mutually exclusive with `<factor>` |
+| `--track TEXT` | string | all | Scale only a specific MIDI track |
+| `--preserve-expressions` | flag | off | Scale CC/expression event timing proportionally |
+| `--message TEXT` | string | auto | Commit message for the new scaled commit |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+> **Note on argument order:** Because `muse tempo-scale` is a Typer group
+> command, place all `--options` before the positional `<factor>` argument to
+> ensure correct parsing (e.g. `muse tempo-scale --json 2.0`, not
+> `muse tempo-scale 2.0 --json`).
+
+**Output example (text):**
+```
+Tempo scaled: abc12345 -> d9f3a1b2
+  Factor:  0.5000  (/2.0000)
+  Tempo:   120.0 BPM -> 60.0 BPM
+  Track:   all
+  Message: tempo-scale 0.5000x (stub)
+  (stub -- full MIDI note manipulation pending)
+```
+
+**Output example (JSON, `--json`):**
+```json
+{
+  "source_commit": "abc12345",
+  "new_commit": "d9f3a1b2",
+  "factor": 0.5,
+  "source_bpm": 120.0,
+  "new_bpm": 60.0,
+  "track": "all",
+  "preserve_expressions": false,
+  "message": "tempo-scale 0.5000x (stub)"
+}
+```
+
+**Result type:** `TempoScaleResult` (TypedDict) — fields: `source_commit`,
+`new_commit`, `factor`, `source_bpm`, `new_bpm`, `track`,
+`preserve_expressions`, `message`.
+
+**Factor computation from BPM:**  `factor = target_bpm / source_bpm`.
+Example: to go from 120 BPM to 128 BPM, `factor = 128 / 120 ≈ 1.0667`.
+Both operations are exposed as pure functions (`compute_factor_from_bpm`,
+`apply_factor`) that agents may call directly without spawning the CLI.
+
+**Determinism:** Same `source_commit` + `factor` + `track` + `preserve_expressions`
+always produces the same `new_commit` SHA.  This makes tempo-scale operations
+safe to cache and replay in agentic pipelines.
+
+**Agent use case:** An AI generating a groove variation queries `muse tempo-scale
+--bpm 128 --json` to normalise a 120 BPM sketch to the session BPM before
+committing.  A post-generation agent can scan `muse timeline` to verify the
+tempo evolution, then use `muse tempo-scale 0.5` to create a half-time B-section
+for contrast.
+
+**Implementation:** `maestro/muse_cli/commands/tempo_scale.py` —
+`TempoScaleResult` (TypedDict), `compute_factor_from_bpm()`, `apply_factor()`,
+`_tempo_scale_async()`, `_format_result()`.  Exit codes: 0 success, 1 bad
+arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
+(`INTERNAL_ERROR`).
+
+> **Stub note:** The current implementation computes the correct schema and
+> factor but uses a placeholder 120 BPM as the source tempo and generates a
+> deterministic stub commit SHA.  Full MIDI note-event manipulation will be
+> wired in when the Storpheus note-event query route is available.
+
+---
