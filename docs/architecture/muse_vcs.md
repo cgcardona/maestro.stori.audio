@@ -2217,6 +2217,72 @@ texture — letting the agent reuse, invert, or contrast those ideas.  The
 > scoring function will be replaced with no change to the CLI interface.
 
 ---
+## `muse context` — Structured Musical Context for AI Agents
+
+**Purpose:** Output a structured, self-contained musical context document for AI agent consumption. This is the **primary interface between Muse VCS and AI music generation agents** — agents run `muse context` before any generation task to understand the current key, tempo, active tracks, form, harmonic profile, and evolutionary history of the composition.
+
+**Usage:**
+```bash
+muse context [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<commit>` | positional | HEAD | Target commit ID to inspect |
+| `--depth N` | int | 5 | Number of ancestor commits to include in `history` |
+| `--sections` | flag | off | Expand section-level detail in `musical_state.sections` |
+| `--tracks` | flag | off | Add per-track harmonic and dynamic breakdowns |
+| `--include-history` | flag | off | Annotate history entries with dimensional deltas (future Storpheus integration) |
+| `--format json\|yaml` | string | json | Output format |
+
+**Output example (`--format json`):**
+```json
+{
+  "repo_id": "a1b2c3d4-...",
+  "current_branch": "main",
+  "head_commit": {
+    "commit_id": "abc1234...",
+    "message": "Add piano melody to verse",
+    "author": "Gabriel",
+    "committed_at": "2026-02-27T22:00:00+00:00"
+  },
+  "musical_state": {
+    "active_tracks": ["bass", "drums", "piano"],
+    "key": null,
+    "tempo_bpm": null,
+    "sections": null,
+    "tracks": null
+  },
+  "history": [
+    {
+      "commit_id": "...",
+      "message": "Add bass line",
+      "active_tracks": ["bass", "drums"],
+      "key": null,
+      "tempo_bpm": null
+    }
+  ],
+  "missing_elements": [],
+  "suggestions": {}
+}
+```
+
+**Result type:** `MuseContextResult` — fields: `repo_id`, `current_branch`, `head_commit` (`MuseHeadCommitInfo`), `musical_state` (`MuseMusicalState`), `history` (`list[MuseHistoryEntry]`), `missing_elements`, `suggestions`. See `docs/reference/type_contracts.md`.
+
+**Agent use case:** When Maestro receives a "generate a new section" request, it runs `muse context --format json` to obtain the current musical state, passes the result to the LLM, and the LLM generates music that is harmonically, rhythmically, and structurally coherent with the existing composition. Without this command, generation decisions are musically incoherent.
+
+**Implementation notes:**
+- `active_tracks` is populated from MIDI/audio file names in the snapshot manifest (real data).
+- Musical dimensions (`key`, `tempo_bpm`, `form`, `emotion`, harmonic/dynamic/melodic profiles) are `null` until Storpheus MIDI analysis is integrated. The full schema is defined and stable.
+- `sections` and `tracks` are populated when the respective flags are passed; sections currently use a single "main" stub section containing all active tracks until MIDI region metadata is available.
+- Output is **deterministic**: for the same `commit_id` and flags, the output is always identical.
+
+**Implementation:** `maestro/services/muse_context.py` (service layer), `maestro/muse_cli/commands/context.py` (CLI command). Exit codes: 0 success, 1 user error (bad commit, no commits), 2 outside repo, 3 internal.
+
+---
+
 ## `muse dynamics` — Dynamic (Velocity) Profile Analysis
 
 **Purpose:** Analyze the velocity (loudness) profile of a commit across all instrument
@@ -2285,69 +2351,143 @@ lead            79   105     38  swell
 
 ---
 
-## `muse context` — Structured Musical Context for AI Agents
+## `muse import` — Import a MIDI or MusicXML File as a New Muse Commit
 
-**Purpose:** Output a structured, self-contained musical context document for AI agent consumption. This is the **primary interface between Muse VCS and AI music generation agents** — agents run `muse context` before any generation task to understand the current key, tempo, active tracks, form, harmonic profile, and evolutionary history of the composition.
+### Overview
 
-**Usage:**
-```bash
-muse context [<commit>] [OPTIONS]
+`muse import <file>` ingests an external music file into a Muse-tracked project
+by copying it into `muse-work/imports/` and creating a Muse commit.  It is the
+primary on-ramp for bringing existing DAW sessions, MIDI exports, or orchestral
+scores under Muse version control.
+
+### Supported Formats
+
+| Extension | Format | Parser |
+|-----------|--------|--------|
+| `.mid`, `.midi` | Standard MIDI File | `mido` library |
+| `.xml`, `.musicxml` | MusicXML (score-partwise) | `xml.etree.ElementTree` |
+
+### Command Signature
+
+```
+muse import <file> [OPTIONS]
+
+Arguments:
+  file          Path to the MIDI or MusicXML file to import.
+
+Options:
+  --message, -m TEXT   Commit message (default: "Import <filename>").
+  --track-map TEXT     Map MIDI channels to track names.
+                       Format: "ch0=bass,ch1=piano,ch9=drums"
+  --section TEXT       Tag the imported content as a specific section.
+  --analyze            Run multi-dimensional analysis and display results.
+  --dry-run            Validate only — do not write files or commit.
 ```
 
-**Flags:**
+### What It Does
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `<commit>` | positional | HEAD | Target commit ID to inspect |
-| `--depth N` | int | 5 | Number of ancestor commits to include in `history` |
-| `--sections` | flag | off | Expand section-level detail in `musical_state.sections` |
-| `--tracks` | flag | off | Add per-track harmonic and dynamic breakdowns |
-| `--include-history` | flag | off | Annotate history entries with dimensional deltas (future Storpheus integration) |
-| `--format json\|yaml` | string | json | Output format |
+1. **Validate** — Checks that the file extension is supported.  Clear error on unsupported types.
+2. **Parse** — Extracts `NoteEvent` objects (pitch, velocity, timing, channel) using format-specific parsers.
+3. **Apply track map** — Renames `channel_name` fields for any channels listed in `--track-map`.
+4. **Copy** — Copies the source file to `muse-work/imports/<filename>`.
+5. **Write metadata** — Creates `muse-work/imports/<filename>.meta.json` with note count, tracks, tempo, and track-map.
+6. **Commit** — Calls `_commit_async` to create a Muse commit with the imported content.
+7. **Analyse (optional)** — Prints a three-dimensional analysis: harmonic (pitch range, top pitches), rhythmic (note count, density, beats), dynamic (velocity distribution).
 
-**Output example (`--format json`):**
+### Track Map Syntax
+
+The `--track-map` option accepts a comma-separated list of `KEY=VALUE` pairs where
+KEY is either `ch<N>` (e.g. `ch0`) or a bare channel number (e.g. `0`):
+
+```
+muse import song.mid --track-map "ch0=bass,ch1=piano,ch9=drums"
+```
+
+Unmapped channels retain their default label `ch<N>`.  The mapping is persisted
+in `muse-work/imports/<filename>.meta.json` so downstream tooling can reconstruct
+track assignments from a commit.
+
+### Metadata JSON Format
+
+Every import writes a sidecar JSON file alongside the imported file:
+
 ```json
 {
-  "repo_id": "a1b2c3d4-...",
-  "current_branch": "main",
-  "head_commit": {
-    "commit_id": "abc1234...",
-    "message": "Add piano melody to verse",
-    "author": "Gabriel",
-    "committed_at": "2026-02-27T22:00:00+00:00"
-  },
-  "musical_state": {
-    "active_tracks": ["bass", "drums", "piano"],
-    "key": null,
-    "tempo_bpm": null,
-    "sections": null,
-    "tracks": null
-  },
-  "history": [
-    {
-      "commit_id": "...",
-      "message": "Add bass line",
-      "active_tracks": ["bass", "drums"],
-      "key": null,
-      "tempo_bpm": null
-    }
-  ],
-  "missing_elements": [],
-  "suggestions": {}
+  "source": "/absolute/path/to/source.mid",
+  "format": "midi",
+  "ticks_per_beat": 480,
+  "tempo_bpm": 120.0,
+  "note_count": 64,
+  "tracks": ["bass", "piano", "drums"],
+  "track_map": {"ch0": "bass", "ch1": "piano", "ch9": "drums"},
+  "section": "verse",
+  "raw_meta": {"num_tracks": 3}
 }
 ```
 
-**Result type:** `MuseContextResult` — fields: `repo_id`, `current_branch`, `head_commit` (`MuseHeadCommitInfo`), `musical_state` (`MuseMusicalState`), `history` (`list[MuseHistoryEntry]`), `missing_elements`, `suggestions`. See `docs/reference/type_contracts.md`.
+### Dry Run
 
-**Agent use case:** When Maestro receives a "generate a new section" request, it runs `muse context --format json` to obtain the current musical state, passes the result to the LLM, and the LLM generates music that is harmonically, rhythmically, and structurally coherent with the existing composition. Without this command, generation decisions are musically incoherent.
+`--dry-run` validates the file and shows what would be committed without creating
+any files or DB rows:
 
-**Implementation notes:**
-- `active_tracks` is populated from MIDI/audio file names in the snapshot manifest (real data).
-- Musical dimensions (`key`, `tempo_bpm`, `form`, `emotion`, harmonic/dynamic/melodic profiles) are `null` until Storpheus MIDI analysis is integrated. The full schema is defined and stable.
-- `sections` and `tracks` are populated when the respective flags are passed; sections currently use a single "main" stub section containing all active tracks until MIDI region metadata is available.
-- Output is **deterministic**: for the same `commit_id` and flags, the output is always identical.
+```
+$ muse import song.mid --dry-run
+✅ Dry run: 'song.mid' is valid (midi)
+   Notes: 128, Tracks: 3, Tempo: 120.0 BPM
+   Would commit: "Import song.mid"
+```
 
-**Implementation:** `maestro/services/muse_context.py` (service layer), `maestro/muse_cli/commands/context.py` (CLI command). Exit codes: 0 success, 1 user error (bad commit, no commits), 2 outside repo, 3 internal.
+### Analysis Output
+
+`--analyze` appends a three-section report after the import:
+
+```
+Analysis:
+  Format:      midi
+  Tempo:       120.0 BPM
+  Tracks:      bass, piano, drums
+
+  ── Harmonic ──────────────────────────────────
+  Pitch range: C2–G5
+  Top pitches: E4(12x), C4(10x), G4(8x), D4(6x), A4(5x)
+
+  ── Rhythmic ──────────────────────────────────
+  Notes:       128
+  Span:        32.0 beats
+  Density:     4.0 notes/beat
+
+  ── Dynamic ───────────────────────────────────
+  Velocity:    avg=82, min=64, max=110
+  Character:   f (loud)
+```
+
+### Implementation
+
+| File | Role |
+|------|------|
+| `maestro/muse_cli/midi_parser.py` | Parsing, track-map, analysis — all pure functions, no DB or I/O |
+| `maestro/muse_cli/commands/import_cmd.py` | Typer command and `_import_async` core |
+| `tests/muse_cli/test_import.py` | 23 unit + integration tests |
+
+### Muse VCS Considerations
+
+- **Affected operation:** `commit` — creates a new commit row.
+- **Postgres state:** One new `muse_cli_commits` row, one `muse_cli_snapshots` row, and two `muse_cli_objects` rows (the MIDI/XML file + the `.meta.json`).
+- **No schema migration required** — uses existing tables.
+- **Reproducibility:** Deterministic — same file + same flags → identical commit content (same `snapshot_id`).
+- **`muse-work/imports/`** — the canonical import landing zone, parallel to `muse-work/tracks/`, `muse-work/renders/`, etc.
+
+### Error Handling
+
+| Scenario | Exit code | Message |
+|----------|-----------|---------|
+| File not found | 1 (USER_ERROR) | `❌ File not found: <path>` |
+| Unsupported extension | 1 (USER_ERROR) | `❌ Unsupported file extension '.<ext>'. Supported: …` |
+| Malformed MIDI | 1 (USER_ERROR) | `❌ Cannot parse MIDI file '<path>': <reason>` |
+| Malformed MusicXML | 1 (USER_ERROR) | `❌ Cannot parse MusicXML file '<path>': <reason>` |
+| Invalid `--track-map` | 1 (USER_ERROR) | `❌ --track-map: Invalid track-map entry …` |
+| Not in a repo | 2 (REPO_NOT_FOUND) | Standard `require_repo()` message |
+| Unexpected failure | 3 (INTERNAL_ERROR) | `❌ muse import failed: <exc>` |
 
 ---
 
@@ -2404,6 +2544,7 @@ branch for chord voicings while preserving the guitar branch's groove patterns.
 | `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
 | `muse export` | `commands/export.py` | ✅ implemented (PR #137) | #112 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
+| `muse import` | `commands/import_cmd.py` | ✅ implemented (PR #142) | #118 |
 | `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
