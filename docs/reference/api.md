@@ -1316,6 +1316,63 @@ others → `application/octet-stream`).
 
 ---
 
+### GET /api/v1/musehub/repos/{repo_id}/export/{ref}
+
+Download a packaged export of stored artifacts at a given commit ref. The ref
+can be a full commit ID or a branch name (resolves to branch head). Artifacts
+are filtered by format and optional section names, then returned as a raw file
+(single artifact) or a ZIP archive (multi-artifact or `splitTracks=true`).
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `format` | string | `midi` | Export format: `midi`, `json`, `musicxml`, `abc`, `wav`, `mp3` |
+| `splitTracks` | bool | `false` | Bundle all matching artifacts into a ZIP archive, one file per track |
+| `sections` | string | — | Comma-separated section names; only artifacts whose path contains a listed name are included (e.g. `verse,chorus`) |
+
+**Response (200):**
+
+- Single artifact: raw file bytes with format-appropriate Content-Type and
+  `Content-Disposition: attachment; filename="<basename>"`.
+- Multiple artifacts or `splitTracks=true`: `application/zip` archive with
+  `Content-Disposition: attachment; filename="<repo_id>_<ref8>_<format>.zip"`.
+
+**Format → MIME type mapping:**
+
+| Format | MIME type |
+|--------|-----------|
+| `midi` | `audio/midi` |
+| `json` | `application/json` |
+| `musicxml` | `application/vnd.recordare.musicxml+xml` |
+| `abc` | `text/plain; charset=utf-8` |
+| `wav` | `audio/wav` |
+| `mp3` | `audio/mpeg` |
+
+**`format=json` response schema:**
+
+```json
+{
+  "repo_id": "string",
+  "ref": "string",
+  "commit_id": "string",
+  "objects": [
+    {"object_id": "string", "path": "string", "size_bytes": 0}
+  ]
+}
+```
+
+**Errors:**
+- **404** — repo not found, ref not found, or no artifacts match the requested format
+- **422** — unrecognised `format` value
+
+**Agent use case:** An AI music agent calls this endpoint after a `muse commit`
+to export the session's MIDI tracks for import into another DAW or for
+post-processing by downstream tools. The deterministic URL (repo + ref + format)
+makes it safe to cache and replay.
+
+---
+
 ## Muse Hub Web UI
 
 The following routes serve HTML pages for browser-based repo navigation. They
