@@ -5237,22 +5237,45 @@ A single configured remote — name and Hub URL pair as read from `.muse/config.
 
 ---
 
+### `PushTagPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+A VCS-style tag ref sent alongside branch commits when `muse push --tags` is used.
+Each file under `.muse/refs/tags/<tag_name>` is serialised as one payload entry.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tag_name` | `str` | Tag name (filename from `.muse/refs/tags/`) |
+| `commit_id` | `str` | Commit ID the tag points to |
+
+**Producer:** `_collect_tag_refs()` in `push.py`
+**Consumer:** Hub `/push` endpoint; included in `PushRequest["tags"]`
+
+---
+
 ### `PushRequest`
 
 **Module:** `maestro/muse_cli/hub_client.py`
 
 Payload sent to `POST <remote>/push`. Carries the local branch tip and all
-commits/objects the remote does not yet have.
+commits/objects the remote does not yet have. Optional fields drive force-push
+and tag-sync behaviour.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `branch` | `str` | Branch name being pushed |
-| `head_commit_id` | `str` | Local branch HEAD commit ID |
-| `commits` | `list[PushCommitPayload]` | Delta commits (chronological, oldest first) |
-| `objects` | `list[PushObjectPayload]` | Object descriptors for all known objects |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `branch` | `str` | ✓ | Branch name being pushed |
+| `head_commit_id` | `str` | ✓ | Local branch HEAD commit ID |
+| `commits` | `list[PushCommitPayload]` | ✓ | Delta commits (chronological, oldest first) |
+| `objects` | `list[PushObjectPayload]` | ✓ | Object descriptors for all known objects |
+| `force` | `bool` | optional | Overwrite remote branch on non-fast-forward |
+| `force_with_lease` | `bool` | optional | Overwrite remote only if `expected_remote_head` matches Hub's current HEAD |
+| `expected_remote_head` | `str \| None` | optional | Commit ID we believe the remote HEAD to be (used with `force_with_lease`) |
+| `tags` | `list[PushTagPayload]` | optional | VCS tag refs from `.muse/refs/tags/` |
 
 **Producer:** `_build_push_request()`
 **Consumer:** Hub `/push` endpoint via `MuseHubClient.post()`
+**Note:** Extends `_PushRequestRequired` + `total=False` optional fields.
 
 ---
 
@@ -5306,14 +5329,18 @@ Response from the Hub's `/push` endpoint.
 **Module:** `maestro/muse_cli/hub_client.py`
 
 Payload sent to `POST <remote>/pull`. Tells the Hub which commits and objects
-the client already has so the Hub can compute the minimal delta.
+the client already has so the Hub can compute the minimal delta. Optional flags
+hint at the client's intended post-fetch integration strategy.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `branch` | `str` | Branch to pull |
-| `have_commits` | `list[str]` | Commit IDs already in local DB |
-| `have_objects` | `list[str]` | Object IDs already in local DB |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `branch` | `str` | ✓ | Branch to pull |
+| `have_commits` | `list[str]` | ✓ | Commit IDs already in local DB |
+| `have_objects` | `list[str]` | ✓ | Object IDs already in local DB |
+| `rebase` | `bool` | optional | Client intends to rebase after fetching |
+| `ff_only` | `bool` | optional | Client will refuse to merge; only fast-forward |
 
+**Note:** Extends `_PullRequestRequired` + `total=False` optional fields.
 **Producer:** `_pull_async()`
 **Consumer:** Hub `/pull` endpoint via `MuseHubClient.post()`
 
