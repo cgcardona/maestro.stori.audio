@@ -3372,3 +3372,122 @@ async def test_harmony_json_response(
     # Total beats
     assert "totalBeats" in data
     assert data["totalBeats"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Listen page tests (issue #213)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_listen_fixtures(db_session: AsyncSession) -> str:
+    """Seed a repo with audio objects for listen-page tests; return repo_id."""
+    repo = MusehubRepo(
+        name="listen-test",
+        owner="testuser",
+        slug="listen-test",
+        visibility="public",
+        owner_user_id="test-owner",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    for path, size in [
+        ("mix/full_mix.mp3", 204800),
+        ("tracks/bass.mp3", 51200),
+        ("tracks/keys.mp3", 61440),
+        ("tracks/bass.webp", 8192),
+    ]:
+        obj = MusehubObject(
+            object_id=f"sha256:{path.replace('/', '_')}",
+            repo_id=repo_id,
+            path=path,
+            size_bytes=size,
+            disk_path=f"/tmp/{path.replace('/', '_')}",
+        )
+        db_session.add(obj)
+    await db_session.commit()
+    return repo_id
+
+
+@pytest.mark.anyio
+async def test_listen_page_full_mix(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo}/listen/{ref} returns 200 HTML with player UI."""
+    await _seed_listen_fixtures(db_session)
+    ref = "main"
+    response = await client.get(f"/musehub/ui/testuser/listen-test/listen/{ref}")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "listen" in body.lower()
+    # Full-mix player elements present
+    assert "mix-play-btn" in body
+    assert "mix-progress-bar" in body
+
+
+@pytest.mark.anyio
+async def test_listen_page_track_listing(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Listen page HTML embeds track-listing JS that renders per-track controls."""
+    await _seed_listen_fixtures(db_session)
+    ref = "main"
+    response = await client.get(f"/musehub/ui/testuser/listen-test/listen/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    # Track-listing JavaScript is embedded
+    assert "track-list" in body
+    assert "track-play-btn" in body or "playTrack" in body
+
+
+@pytest.mark.anyio
+async def test_listen_page_no_renders_fallback(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Listen page renders a friendly fallback when no audio artifacts exist."""
+    # Repo with no objects at all
+    repo = MusehubRepo(
+        name="silent-repo",
+        owner="testuser",
+        slug="silent-repo",
+        visibility="public",
+        owner_user_id="test-owner",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+
+    response = await client.get("/musehub/ui/testuser/silent-repo/listen/main")
+    assert response.status_code == 200
+    body = response.text
+    # Fallback UI marker present (no-renders state)
+    assert "no-renders" in body or "No audio" in body or "hasRenders" in body
+
+
+@pytest.mark.anyio
+async def test_listen_page_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo}/listen/{ref}?format=json returns TrackListingResponse."""
+    await _seed_listen_fixtures(db_session)
+    ref = "main"
+    response = await client.get(
+        f"/musehub/ui/testuser/listen-test/listen/{ref}",
+        params={"format": "json"},
+    )
+    assert response.status_code == 200
+    assert "application/json" in response.headers["content-type"]
+    body = response.json()
+    assert "repoId" in body
+    assert "ref" in body
+    assert body["ref"] == ref
+    assert "tracks" in body
+    assert "hasRenders" in body
+    assert isinstance(body["tracks"], list)

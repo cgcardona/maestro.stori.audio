@@ -1,0 +1,437 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Listen {{ ref[:8] }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  listen / {{ ref[:8] }}
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+.listen-player-card {
+  background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+  border: 1px solid #1f6feb;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.listen-player-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #e6edf3;
+  margin-bottom: 4px;
+}
+.listen-player-sub {
+  font-size: 13px;
+  color: #8b949e;
+  margin-bottom: 16px;
+}
+.listen-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.listen-play-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #1f6feb;
+  border: none;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, transform 0.1s;
+}
+.listen-play-btn:hover { background: #388bfd; transform: scale(1.05); }
+.listen-play-btn:disabled { background: #21262d; color: #8b949e; cursor: not-allowed; transform: none; }
+.listen-progress-wrap { flex: 1; }
+.listen-progress-bar {
+  height: 6px;
+  background: #21262d;
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  margin-bottom: 6px;
+}
+.listen-progress-fill {
+  height: 100%;
+  background: #1f6feb;
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.1s linear;
+}
+.listen-time-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #8b949e;
+  font-variant-numeric: tabular-nums;
+}
+.listen-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.track-list { display: flex; flex-direction: column; gap: 12px; }
+.track-row {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: border-color 0.15s;
+}
+.track-row:hover { border-color: #58a6ff; }
+.track-row.is-playing { border-color: #1f6feb; background: #0d1117; }
+.track-play-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.track-play-btn:hover { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+.track-play-btn.is-playing { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+.track-info { flex: 1; min-width: 0; }
+.track-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e6edf3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.track-path {
+  font-size: 11px;
+  color: #8b949e;
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.track-waveform {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 28px;
+  width: 80px;
+  flex-shrink: 0;
+}
+.track-waveform-bar {
+  width: 4px;
+  background: #30363d;
+  border-radius: 2px 2px 0 0;
+  transition: background 0.15s;
+}
+.track-row.is-playing .track-waveform-bar { background: #1f6feb; }
+.track-meta {
+  font-size: 11px;
+  color: #8b949e;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.track-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.no-renders-card {
+  text-align: center;
+  padding: 48px 24px;
+  background: #161b22;
+  border: 1px dashed #30363d;
+  border-radius: 12px;
+}
+.no-renders-icon { font-size: 48px; margin-bottom: 16px; }
+.no-renders-title { font-size: 18px; font-weight: 600; color: #e6edf3; margin-bottom: 8px; }
+.no-renders-sub { font-size: 14px; color: #8b949e; }
+</style>
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const ref      = {{ ref | tojson }};
+const owner    = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+const base     = {{ base_url | tojson }};
+const trackPath = {{ (track_path if track_path is defined else '') | tojson }};
+const apiBase  = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── Audio state ────────────────────────────────────────────────────────────
+let mixAudio    = null;
+let trackAudios = {};   // path → <audio> element
+let currentPath = null;
+
+function fmtTime(s) {
+  if (!isFinite(s) || s < 0) return '0:00';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m + ':' + (sec < 10 ? '0' : '') + sec;
+}
+
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+
+// ── Mini waveform (deterministic from object_id) ──────────────────────────
+function miniWaveform(objectId, isPlaying) {
+  const seed = objectId ? objectId.charCodeAt(objectId.length - 1) : 0;
+  const heights = [];
+  for (let i = 0; i < 16; i++) {
+    const h = 20 + Math.abs(Math.sin((seed + i * 7) * 0.8)) * 45;
+    heights.push(Math.round(h));
+  }
+  return heights
+    .map(h => '<div class="track-waveform-bar" style="height:' + h + '%"></div>')
+    .join('');
+}
+
+// ── Full-mix player ────────────────────────────────────────────────────────
+function initMixPlayer(url, title) {
+  mixAudio = new Audio();
+  mixAudio.preload = 'metadata';
+  const playBtn  = document.getElementById('mix-play-btn');
+  const fill     = document.getElementById('mix-progress-fill');
+  const bar      = document.getElementById('mix-progress-bar');
+  const timeCur  = document.getElementById('mix-time-cur');
+  const timeDur  = document.getElementById('mix-time-dur');
+
+  mixAudio.addEventListener('canplay', () => { playBtn.disabled = false; });
+  mixAudio.addEventListener('timeupdate', () => {
+    const pct = mixAudio.duration ? (mixAudio.currentTime / mixAudio.duration) * 100 : 0;
+    fill.style.width = pct + '%';
+    timeCur.textContent = fmtTime(mixAudio.currentTime);
+  });
+  mixAudio.addEventListener('durationchange', () => {
+    timeDur.textContent = fmtTime(mixAudio.duration);
+  });
+  mixAudio.addEventListener('ended', () => {
+    playBtn.innerHTML = '&#9654;';
+    fill.style.width = '0%';
+    mixAudio.currentTime = 0;
+  });
+  mixAudio.addEventListener('error', () => {
+    playBtn.disabled = true;
+    playBtn.title = 'Audio unavailable';
+  });
+
+  playBtn.addEventListener('click', () => {
+    pauseAllTracks();
+    if (mixAudio.paused) {
+      mixAudio.src = url;
+      mixAudio.play();
+      playBtn.innerHTML = '&#9646;&#9646;';
+      currentPath = '__mix__';
+    } else {
+      mixAudio.pause();
+      playBtn.innerHTML = '&#9654;';
+      currentPath = null;
+    }
+  });
+
+  bar.addEventListener('click', (e) => {
+    if (!mixAudio.duration) return;
+    const rect = bar.getBoundingClientRect();
+    mixAudio.currentTime = ((e.clientX - rect.left) / rect.width) * mixAudio.duration;
+  });
+}
+
+// ── Per-track players ──────────────────────────────────────────────────────
+function playTrack(path, url, playBtnId, rowId) {
+  if (mixAudio && !mixAudio.paused) {
+    mixAudio.pause();
+    const btn = document.getElementById('mix-play-btn');
+    if (btn) btn.innerHTML = '&#9654;';
+  }
+
+  // Pause any other track
+  Object.keys(trackAudios).forEach(p => {
+    if (p !== path && !trackAudios[p].paused) {
+      trackAudios[p].pause();
+      const oldRow = document.getElementById('track-row-' + CSS.escape(p));
+      if (oldRow) oldRow.classList.remove('is-playing');
+      const oldBtn = document.getElementById('track-btn-' + CSS.escape(p));
+      if (oldBtn) { oldBtn.innerHTML = '&#9654;'; oldBtn.classList.remove('is-playing'); }
+    }
+  });
+
+  if (!trackAudios[path]) {
+    trackAudios[path] = new Audio();
+    trackAudios[path].preload = 'metadata';
+  }
+  const audio = trackAudios[path];
+  const btn   = document.getElementById(playBtnId);
+  const row   = document.getElementById(rowId);
+
+  if (audio.paused) {
+    audio.src = url;
+    audio.play();
+    if (btn) { btn.innerHTML = '&#9646;&#9646;'; btn.classList.add('is-playing'); }
+    if (row) row.classList.add('is-playing');
+    currentPath = path;
+    audio.addEventListener('ended', () => {
+      if (btn) { btn.innerHTML = '&#9654;'; btn.classList.remove('is-playing'); }
+      if (row) row.classList.remove('is-playing');
+      currentPath = null;
+    }, { once: true });
+  } else {
+    audio.pause();
+    if (btn) { btn.innerHTML = '&#9654;'; btn.classList.remove('is-playing'); }
+    if (row) row.classList.remove('is-playing');
+    currentPath = null;
+  }
+}
+
+function pauseAllTracks() {
+  Object.values(trackAudios).forEach(a => { if (!a.paused) a.pause(); });
+  document.querySelectorAll('.track-play-btn').forEach(b => {
+    b.innerHTML = '&#9654;';
+    b.classList.remove('is-playing');
+  });
+  document.querySelectorAll('.track-row').forEach(r => r.classList.remove('is-playing'));
+}
+
+// ── Main loader ────────────────────────────────────────────────────────────
+async function load() {
+  initRepoNav(repoId);
+
+  const content = document.getElementById('content');
+  content.innerHTML = '<p class="loading">Loading audio tracks&#8230;</p>';
+
+  try {
+    const apiToken = apiBase + '/listen/' + encodeURIComponent(ref) + '/tracks';
+    let listing;
+    try {
+      listing = await apiFetch('/repos/' + repoId + '/listen/' + encodeURIComponent(ref) + '/tracks');
+    } catch (e) {
+      // Unauthenticated visitors may not have access; render fallback shell
+      listing = { hasRenders: false, tracks: [], fullMixUrl: null, ref: ref, repoId: repoId };
+    }
+
+    const tracks  = listing.tracks  || [];
+    const hasMix  = !!listing.fullMixUrl;
+    const hasAny  = listing.hasRenders;
+
+    // ── Back link + heading ────────────────────────────────────────────────
+    let html = '<div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+      + '<a href="' + escHtml(base) + '">&larr; Back to repo</a>'
+      + '<h1 style="margin:0;font-size:20px">&#127925; Listen</h1>'
+      + '<code class="ref-badge">' + escHtml(ref.length > 16 ? ref.substring(0, 16) + '\u2026' : ref) + '</code>'
+      + '</div>';
+
+    if (!hasAny) {
+      // ── No renders fallback ────────────────────────────────────────────
+      html += '<div class="no-renders-card">'
+        + '<div class="no-renders-icon">&#127897;</div>'
+        + '<div class="no-renders-title">No audio renders yet</div>'
+        + '<div class="no-renders-sub">Push audio artifacts (.mp3, .wav, .ogg) to this repo to enable playback.</div>'
+        + '<div style="margin-top:20px"><a class="btn btn-primary" href="' + escHtml(base) + '/tree/' + encodeURIComponent(ref) + '">Browse files</a></div>'
+        + '</div>';
+      content.innerHTML = html;
+      return;
+    }
+
+    // ── Full-mix player ────────────────────────────────────────────────────
+    const mixTitle = tracks.length > 0 ? tracks[0].name : 'Full Mix';
+    html += '<div class="listen-player-card">'
+      + '<div class="listen-player-title">&#127908; Full Mix</div>'
+      + '<div class="listen-player-sub">ref: ' + escHtml(ref.substring(0, 16)) + ' &bull; ' + tracks.length + ' track' + (tracks.length !== 1 ? 's' : '') + '</div>'
+      + '<div class="listen-controls">'
+      + '<button class="listen-play-btn" id="mix-play-btn" disabled title="Play / Pause">&#9654;</button>'
+      + '<div class="listen-progress-wrap">'
+      + '<div class="listen-progress-bar" id="mix-progress-bar">'
+      + '<div class="listen-progress-fill" id="mix-progress-fill"></div>'
+      + '</div>'
+      + '<div class="listen-time-row">'
+      + '<span id="mix-time-cur">0:00</span>'
+      + '<span id="mix-time-dur">0:00</span>'
+      + '</div></div></div>';
+
+    if (hasMix) {
+      html += '<div class="listen-actions">'
+        + '<a class="btn btn-secondary" href="' + escHtml(listing.fullMixUrl) + '" download>&#11015; Download mix</a>'
+        + '<a class="btn btn-secondary" href="' + escHtml(base) + '/embed/' + encodeURIComponent(ref) + '">&#128279; Embed</a>'
+        + '</div>';
+    }
+    html += '</div>';
+
+    // ── Track listing ──────────────────────────────────────────────────────
+    if (tracks.length > 0) {
+      html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'
+        + '<h2 style="margin:0;font-size:16px">&#127897; Tracks</h2>'
+        + '<span style="font-size:12px;color:#8b949e">' + tracks.length + ' artifact' + (tracks.length !== 1 ? 's' : '') + '</span>'
+        + '</div>';
+
+      html += '<div class="track-list">';
+      tracks.forEach((track, i) => {
+        const escapedPath = escHtml(track.path);
+        const safePath    = 'track-' + i;
+        html += '<div class="track-row" id="track-row-' + escHtml(track.objectId) + '">'
+          + '<button class="track-play-btn" id="track-btn-' + escHtml(track.objectId) + '"'
+          + ' onclick="playTrack(' + JSON.stringify(track.path) + ',' + JSON.stringify(track.audioUrl) + ','
+          + JSON.stringify('track-btn-' + track.objectId) + ',' + JSON.stringify('track-row-' + track.objectId) + ')"'
+          + ' title="Play ' + escHtml(track.name) + '">&#9654;</button>'
+          + '<div class="track-info">'
+          + '<div class="track-name">' + escHtml(track.name) + '</div>'
+          + '<div class="track-path">' + escHtml(track.path) + '</div>'
+          + '</div>'
+          + '<div class="track-waveform" aria-hidden="true">' + miniWaveform(track.objectId, false) + '</div>'
+          + '<div class="track-meta">' + escHtml(fmtBytes(track.sizeBytes || 0)) + '</div>'
+          + '<div class="track-row-actions">';
+
+        if (track.pianoRollUrl) {
+          html += '<a class="btn btn-secondary" style="font-size:11px;padding:4px 8px"'
+            + ' href="' + escHtml(base) + '/listen/' + encodeURIComponent(ref) + '/' + escapedPath + '"'
+            + ' title="View piano roll">&#127929;</a>';
+        }
+        html += '<a class="btn btn-secondary" style="font-size:11px;padding:4px 8px"'
+          + ' href="' + escHtml(track.audioUrl) + '" download title="Download">&#11015;</a>';
+
+        html += '</div></div>';
+      });
+      html += '</div>';
+    }
+
+    content.innerHTML = html;
+
+    // Init full-mix player after DOM is ready
+    if (hasMix) {
+      initMixPlayer(listing.fullMixUrl, mixTitle);
+      // Trigger preload so duration shows quickly
+      const mixAudioEl = new Audio();
+      mixAudioEl.preload = 'metadata';
+      mixAudioEl.src = listing.fullMixUrl;
+    }
+
+  } catch (e) {
+    if (e.message !== 'auth') {
+      document.getElementById('content').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+    }
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
