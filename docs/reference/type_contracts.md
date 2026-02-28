@@ -2028,6 +2028,43 @@ Named result types for Muse CLI commands. All types are `TypedDict` subclasses
 defined in their respective command modules and returned from the injectable
 async core functions (the testable layer that Typer commands wrap).
 
+### `KeyDetectResult`
+
+**Module:** `maestro/muse_cli/commands/key.py`
+
+Key detection (or annotation) result for a single commit or working tree.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | `str` | Full key string, e.g. `"F# minor"` |
+| `tonic` | `str` | Root note, e.g. `"F#"` |
+| `mode` | `str` | `"major"` or `"minor"` |
+| `relative` | `str` | Relative key string (e.g. `"A major"`), empty when `--relative` not given |
+| `commit` | `str` | Resolved commit SHA (8-char) or empty string for annotations |
+| `branch` | `str` | Current branch name |
+| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
+| `source` | `str` | `"stub"` (MIDI analysis pending), `"annotation"` (explicit `--set`), or `"detected"` |
+
+**Producer:** `_key_detect_async()`
+**Consumer:** `_format_detect()`, `key()` Typer command
+
+### `KeyHistoryEntry`
+
+**Module:** `maestro/muse_cli/commands/key.py`
+
+One entry in a `muse key --history` listing, representing the key at a given commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Resolved commit SHA (8-char) |
+| `key` | `str` | Full key string, e.g. `"F# minor"` |
+| `tonic` | `str` | Root note |
+| `mode` | `str` | `"major"` or `"minor"` |
+| `source` | `str` | `"stub"`, `"annotation"`, or `"detected"` |
+
+**Producer:** `_key_history_async()`
+**Consumer:** `_format_history()`, `key()` Typer command via `--history`
+
 ### `SwingDetectResult`
 
 **Module:** `maestro/muse_cli/commands/swing.py`

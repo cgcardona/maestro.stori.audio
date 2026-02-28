@@ -1074,6 +1074,96 @@ existing drum performance.
 
 ---
 
+## `muse key` — Read or Annotate the Musical Key of a Commit
+
+`muse key` reads or annotates the tonal center (key) of a Muse commit.
+Key is the most fundamental property of a piece of music — knowing the key is a
+prerequisite for harmonic generation, chord-scale selection, and tonal arc
+analysis. An AI agent calls `muse key --json` before generating new material to
+stay in the correct tonal center.
+
+**Usage:**
+```bash
+muse key [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<commit>` | arg | HEAD | Commit SHA to analyse |
+| `--set KEY` | str | — | Annotate with an explicit key (e.g. `"F# minor"`) |
+| `--detect` | flag | on | Detect and display the key (default behaviour) |
+| `--track TEXT` | str | — | Restrict key detection to a specific instrument track |
+| `--relative` | flag | off | Show the relative key (e.g. `"Eb major / C minor"`) |
+| `--history` | flag | off | Show how the key changed across all commits |
+| `--json` | flag | off | Emit machine-readable JSON for agent consumption |
+
+**Key format:** `<tonic> <mode>` — e.g. `"F# minor"`, `"Eb major"`. Valid tonics
+include all 12 chromatic pitches with `#` and `b` enharmonics. Valid modes are
+`major` and `minor`.
+
+**Output example (text):**
+```
+Key: C major
+Commit: a1b2c3d4  Branch: main
+Track: all
+(stub — full MIDI key detection pending)
+```
+
+**Output example (`--relative`):**
+```
+Key: A minor
+Commit: a1b2c3d4  Branch: main
+Track: all
+Relative: C major
+(stub — full MIDI key detection pending)
+```
+
+**Output example (`--json`):**
+```json
+{
+  "key": "C major",
+  "tonic": "C",
+  "mode": "major",
+  "relative": "",
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "track": "all",
+  "source": "stub"
+}
+```
+
+**Output example (`--history --json`):**
+```json
+[
+  {"commit": "a1b2c3d4", "key": "C major", "tonic": "C", "mode": "major", "source": "stub"}
+]
+```
+
+**Result types:** `KeyDetectResult` (TypedDict) — fields: `key` (str), `tonic` (str),
+`mode` (str), `relative` (str), `commit` (str), `branch` (str), `track` (str),
+`source` (str). History mode returns `list[KeyHistoryEntry]`. See
+`docs/reference/type_contracts.md § Muse CLI Types`.
+
+**Agent use case:** Before generating a chord progression or melody, an agent runs
+`muse key --json` to discover the tonal center of the most recent commit.
+`muse key --history --json` reveals modulations across an album — if the key
+changed from D major to F major at commit `abc123`, the agent knows a modulation
+occurred and can generate transitional material accordingly.
+
+**Implementation:** `maestro/muse_cli/commands/key.py` — `parse_key()`,
+`relative_key()`, `_key_detect_async()`, `_key_history_async()`,
+`_format_detect()`, `_format_history()`. Exit codes: 0 success, 1 invalid
+`--set` value, 2 outside repo, 3 internal error.
+
+> **Stub note:** Returns a placeholder key of `C major`. Full implementation
+> requires chromatic pitch-class distribution analysis from committed MIDI note
+> events (Krumhansl-Schmuckler or similar key-finding algorithm, future:
+> Storpheus MIDI parse route).
+
+---
+
 ## `muse ask` — Natural Language Query over Musical History
 
 `muse ask "<question>"` searches Muse commit messages for keywords derived
