@@ -48,9 +48,6 @@ from maestro.models.musehub import (
     DivergenceDimensionResponse,
     DivergenceResponse,
     EmotionDiffResponse,
-    ForkCreateResponse,
-    ForkEntry,
-    ForkListResponse,
     StargazerEntry,
     StargazerListResponse,
     TimelineResponse,
@@ -73,7 +70,7 @@ from maestro.models.musehub_context import (
     ContextDepth,
     ContextFormat,
 )
-from maestro.services import musehub_analysis, musehub_context, musehub_credits, musehub_discover, musehub_divergence, musehub_releases, musehub_repository, musehub_sessions
+from maestro.services import musehub_analysis, musehub_context, musehub_credits, musehub_divergence, musehub_releases, musehub_repository, musehub_sessions
 from maestro.services.muse_groove_check import (
     DEFAULT_THRESHOLD,
     compute_groove_check,
@@ -1303,76 +1300,6 @@ async def list_stargazers(
         StargazerEntry(user_id=row.user_id, starred_at=row.created_at) for row in rows
     ]
     return StargazerListResponse(stargazers=stargazers, total=len(stargazers))
-
-
-# ── Fork endpoints ───────────────────────────────────────────────────────────
-
-
-@router.post(
-    "/repos/{repo_id}/fork",
-    response_model=ForkCreateResponse,
-    status_code=status.HTTP_201_CREATED,
-    operation_id="forkRepo",
-    summary="Fork a repo into the authenticated user's namespace",
-    tags=["Forks"],
-)
-async def fork_repo(
-    repo_id: str,
-    db: AsyncSession = Depends(get_db),
-    claims: TokenClaims = Depends(require_valid_token),
-) -> ForkCreateResponse:
-    """Create a fork of a repo under the authenticated user's namespace.
-
-    Copies all commits from the source repo into the new fork, records the
-    lineage in ``musehub_forks``, and redirects the user to the fork's home
-    page on the client side.
-
-    Raises 404 if the source repo does not exist.
-    Raises 409 if the user already owns a repo with the same slug.
-    """
-    user_id: str = claims.get("sub") or ""
-    try:
-        result = await musehub_discover.create_fork(
-            db,
-            source_repo_id=repo_id,
-            user_id=user_id,
-            owner=user_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except Exception as exc:
-        if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="You already have a fork of this repo.",
-            ) from exc
-        raise
-    await db.commit()
-    return result
-
-
-@router.get(
-    "/repos/{repo_id}/forks",
-    response_model=ForkListResponse,
-    operation_id="listRepoForks",
-    summary="List all forks of a repo",
-    tags=["Forks"],
-)
-async def list_forks(
-    repo_id: str,
-    db: AsyncSession = Depends(get_db),
-    claims: TokenClaims | None = Depends(optional_token),
-) -> ForkListResponse:
-    """Return all forks of this repo with lineage metadata.
-
-    Public repos return the fork list unauthenticated.  Private repos require
-    a valid JWT.  Returns an empty list when no forks exist.
-
-    Raises 404 if the repo does not exist.
-    """
-    repo = await musehub_repository.get_repo(db, repo_id)
-    _guard_visibility(repo, claims)
-    return await musehub_discover.list_forks(db, source_repo_id=repo_id)
 
 
 # ── Owner/slug resolver — declared LAST to avoid shadowing /repos/... routes ──

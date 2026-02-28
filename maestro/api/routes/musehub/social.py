@@ -123,7 +123,12 @@ class NotificationResponse(BaseModel):
 
 
 class ForkResponse(BaseModel):
-    """Fork relationship record — lineage link between source and fork repo."""
+    """Fork relationship record — lineage link between source and fork repo.
+
+    ``fork_owner`` and ``fork_slug`` are set by the fork handler (not sourced
+    from the ORM) so the client can redirect to the new fork's page without
+    a second round-trip.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -132,6 +137,8 @@ class ForkResponse(BaseModel):
     fork_repo_id: str
     forked_by: str
     created_at: datetime
+    fork_owner: str = ""
+    fork_slug: str = ""
 
 
 class ReactionToggleResult(BaseModel):
@@ -641,7 +648,10 @@ async def fork_repo(
     await db.commit()
     await db.refresh(fork_record)
     logger.info("🍴 Fork created source=%s fork=%s by=%s", repo_id, fork_repo_row.repo_id, caller)
-    return ForkResponse.model_validate(fork_record)
+    resp = ForkResponse.model_validate(fork_record)
+    resp.fork_owner = fork_repo_row.owner
+    resp.fork_slug = fork_repo_row.slug
+    return resp
 
 
 # ---------------------------------------------------------------------------

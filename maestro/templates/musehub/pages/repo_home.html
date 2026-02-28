@@ -81,10 +81,10 @@ async function loadStarFork() {
   try {
     const [gazers, forks] = await Promise.all([
       apiFetch('/repos/' + repoId + '/stargazers').catch(() => ({ total: 0 })),
-      apiFetch('/repos/' + repoId + '/forks').catch(() => ({ total: 0 })),
+      apiFetch('/repos/' + repoId + '/forks').catch(() => []),
     ]);
     const starCount = gazers.total ?? 0;
-    const forkCount = forks.total ?? 0;
+    const forkCount = Array.isArray(forks) ? forks.length : (forks.total ?? 0);
 
     el.innerHTML = `
       <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
@@ -113,27 +113,11 @@ async function handleFork() {
   if (!confirm('Fork this repo into your namespace?')) return;
   try {
     const data = await apiFetch('/repos/' + repoId + '/fork', { method: 'POST' });
-    const newUrl = `/musehub/ui/${encodeURIComponent(data.forkRepo.owner)}/${encodeURIComponent(data.forkRepo.slug)}`;
+    const newUrl = `/musehub/ui/${encodeURIComponent(data.fork_owner)}/${encodeURIComponent(data.fork_slug)}`;
     window.location.href = newUrl;
   } catch(e) { alert('Failed to fork: ' + (e.message || 'unknown error')); }
 }
 
-async function loadForkedFromBadge() {
-  /* Check whether this repo is itself a fork — if so, show the lineage badge. */
-  const el = document.getElementById('forked-from-badge');
-  if (!el) return;
-  try {
-    /* The fork relationship is stored on the *source* repo, not the fork.
-       We query the API for forks that list this repo as the fork_repo_id.
-       As a lightweight heuristic we check if the repo description was set
-       by the fork endpoint — the definitive check uses the forks API on the
-       source, but that requires knowing the source.  We store the lineage in
-       the fork's description comment during fork creation only if we can
-       detect it from the API.  For now we surface the badge only when the
-       repo's own /forks endpoint has no entries (it's a leaf fork). */
-    el.style.display = 'none';
-  } catch(e) { el.style.display = 'none'; }
-}
 
 /* ═══════════════════════════════════════════════════════
  * Stats bar — commit count, branch count, release count
