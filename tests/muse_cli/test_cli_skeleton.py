@@ -91,3 +91,23 @@ def test_exit_code_enum_values() -> None:
     assert int(ExitCode.USER_ERROR) == 1
     assert int(ExitCode.REPO_NOT_FOUND) == 2
     assert int(ExitCode.INTERNAL_ERROR) == 3
+
+
+def test_checkout_no_repo_exits_2() -> None:
+    """``muse checkout <branch>`` outside a repo exits 2 with a clear message.
+
+    Separate from the parametrized ``test_cli_no_repo_exits_2`` because
+    checkout requires a positional BRANCH argument — without it, typer fails
+    before the repo check runs.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        prev = os.getcwd()
+        try:
+            os.chdir(d)
+            result = runner.invoke(cli, ["checkout", "main"])
+            assert result.exit_code == int(ExitCode.REPO_NOT_FOUND), (
+                f"checkout should exit {ExitCode.REPO_NOT_FOUND}, got {result.exit_code}: {result.output}"
+            )
+            assert "not a muse repository" in result.output.lower()
+        finally:
+            os.chdir(prev)

@@ -1161,6 +1161,27 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+### `TransposeResult`
+
+**Path:** `maestro/services/muse_transpose.py`
+
+`dataclass(frozen=True)` — Named result type for a `muse transpose <interval> [<commit>]` operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_commit_id` | `str` | Full 64-char SHA-256 commit that was the source of transposition |
+| `semitones` | `int` | Signed semitone offset applied (positive = up, negative = down) |
+| `files_modified` | `list[str]` | POSIX-relative paths of MIDI files that had notes transposed |
+| `files_skipped` | `list[str]` | POSIX-relative paths of non-MIDI or excluded files |
+| `new_commit_id` | `str \| None` | New commit ID created for the transposed snapshot; `None` in dry-run mode |
+| `original_key` | `str \| None` | Key metadata before transposition (from `metadata.key`), or `None` |
+| `new_key` | `str \| None` | Updated key metadata after transposition, or `None` if original was absent |
+| `dry_run` | `bool` | `True` when `--dry-run` was passed (no files written, no commit created) |
+
+**Agent use case:** After transposition, agents inspect `new_commit_id` to verify the commit exists, `new_key` to update their harmonic context, and `files_modified` to decide which tracks to re-render.
+
+---
+
 ### `MuseTempoHistoryEntry`
 
 **Path:** `maestro/services/muse_tempo.py`
@@ -3269,6 +3290,50 @@ was (or was not) changed so callers can verify the revert succeeded.
 
 **Producer:** `_revert_async()`
 **Consumer:** `revert()` Typer command callback, tests in `tests/muse_cli/test_revert.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
+
+---
+
+### `CherryPickResult`
+
+**Module:** `maestro/services/muse_cherry_pick.py`
+
+Outcome of a `muse cherry-pick` operation. Captures whether the cherry-pick applied cleanly, produced a conflict, or was staged without committing, so callers can verify the result and decide on next steps.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | New commit ID created by the cherry-pick. Empty string when `--no-commit` or conflict. |
+| `cherry_commit_id` | `str` | Source commit that was cherry-picked. |
+| `head_commit_id` | `str` | HEAD commit at cherry-pick initiation time. |
+| `new_snapshot_id` | `str` | Snapshot ID of the resulting state (even when not committed). |
+| `message` | `str` | Commit message with attribution suffix: `"(cherry picked from commit <short-id>)"`. |
+| `no_commit` | `bool` | `True` when changes were staged to muse-work/ without creating a commit. |
+| `conflict` | `bool` | `True` when conflicts were detected and `.muse/CHERRY_PICK_STATE.json` was written. |
+| `conflict_paths` | `tuple[str, ...]` | Conflicting relative POSIX paths. Non-empty iff `conflict=True`. |
+| `branch` | `str` | Branch on which the new commit was (or would have been) created. |
+
+**Producer:** `_cherry_pick_async()`, `_cherry_pick_continue_async()`
+**Consumer:** `cherry_pick()` Typer command callback, tests in `tests/muse_cli/test_cherry_pick.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
+
+---
+
+### `CherryPickState`
+
+**Module:** `maestro/services/muse_cherry_pick.py`
+
+In-memory representation of `.muse/CHERRY_PICK_STATE.json`. Describes the paused cherry-pick so `--continue` and `--abort` can resume or cancel correctly.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cherry_commit` | `str` | Commit ID that was being cherry-picked when paused. |
+| `head_commit` | `str` | HEAD commit at cherry-pick initiation — restored by `--abort`. |
+| `conflict_paths` | `list[str]` | Paths with unresolved conflicts. Empty list = all resolved (safe to `--continue`). |
+
+**Producer:** `write_cherry_pick_state()`, `read_cherry_pick_state()`
+**Consumer:** `_cherry_pick_continue_async()`, `_cherry_pick_abort_async()`
 
 **Frozen dataclass** — all fields are immutable after construction.
 
@@ -5730,3 +5795,43 @@ Describes a single worktree entry returned by `list_worktrees()` and `add_worktr
 
 **Producer:** `list_worktrees(root)`, `add_worktree(root, link_path, branch)`
 **Consumer:** `muse worktree list`, `muse worktree add`, agent code inspecting active arrangement contexts
+
+---
+
+---
+
+## Muse CLI — Conflict Resolution Types (`maestro/muse_cli/merge_engine.py`)
+
+### `MergeState`
+
+Frozen dataclass representing an in-progress merge with unresolved conflicts.
+Returned by `read_merge_state(root)` when `.muse/MERGE_STATE.json` is present.
+`None` return indicates no merge is in progress.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `conflict_paths` | `list[str]` | Relative POSIX paths of files with unresolved conflicts |
+| `base_commit` | `str \| None` | Commit ID of the common ancestor (merge base) |
+| `ours_commit` | `str \| None` | Commit ID of HEAD when the merge was initiated |
+| `theirs_commit` | `str \| None` | Commit ID of the branch being merged in |
+| `other_branch` | `str \| None` | Human-readable name of the branch being merged in |
+
+**Lifecycle:** Created by `write_merge_state()` (called from `_merge_async` on conflict),
+updated by `resolve_conflict_async()` (removes resolved paths from `conflict_paths`),
+cleared by `clear_merge_state()` (called by `_merge_continue_async` and `_merge_abort_async`).
+
+**Agent contract:** When `conflict_paths` is non-empty, the merge is blocked.
+When `conflict_paths == []`, all conflicts are resolved and `muse merge --continue` will succeed.
+Call `is_conflict_resolved(state, path)` to test whether a specific path still needs resolution.
+
+```python
+state = read_merge_state(root)
+if state is not None and state.conflict_paths:
+    for path in state.conflict_paths:
+        # agent inspects each conflict before choosing --ours or --theirs
+        await resolve_conflict_async(file_path=path, ours=True, root=root, session=session)
+```
+
+**Related helpers:**
+- `apply_resolution(root, rel_path, object_id)` — copies an object from the local store to `muse-work/`; used by `--theirs` resolution and `--abort`.
+- `is_conflict_resolved(merge_state, rel_path)` — returns `True` if `rel_path` is not in `conflict_paths`.
