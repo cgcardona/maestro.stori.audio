@@ -1,0 +1,132 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Issues{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / issues
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+async function load(state) {
+  initRepoNav(repoId);
+  try {
+    const data   = await apiFetch('/repos/' + repoId + '/issues?state=' + state);
+    const issues = data.issues || [];
+
+    const rows = issues.length === 0
+      ? '<p class="loading">No issues found.</p>'
+      : issues.map(i => `
+        <div class="issue-row">
+          <span class="badge badge-${i.state}">#${i.number}</span>
+          <div style="flex:1">
+            <a href="${base}/issues/${i.number}">${escHtml(i.title)}</a>
+            <div style="margin-top:4px">
+              ${(i.labels||[]).map(l => '<span class="label">' + escHtml(l) + '</span>').join('')}
+            </div>
+            <div style="font-size:12px;color:#8b949e;margin-top:2px">
+              Opened ${fmtDate(i.createdAt)}
+            </div>
+          </div>
+          <span class="badge badge-${i.state}">${i.state}</span>
+        </div>`).join('');
+
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4);flex-wrap:wrap">
+          <h1 style="margin:0">Issues</h1>
+          <select class="form-select" style="width:auto" onchange="load(this.value)">
+            <option value="open"   ${state==='open'  ?'selected':''}>Open</option>
+            <option value="closed" ${state==='closed'?'selected':''}>Closed</option>
+            <option value="all"    ${state==='all'   ?'selected':''}>All</option>
+          </select>
+          <div style="margin-left:auto;display:flex;gap:var(--space-2)">
+            <button class="btn btn-secondary btn-sm" onclick="showCreateIssue()">
+              + New Issue
+            </button>
+          </div>
+        </div>
+        ${rows.length > 0 || issues.length > 0 ? rows : `
+          <div class="empty-state">
+            <div class="empty-icon">&#128203;</div>
+            <p class="empty-title">No issues yet</p>
+            <p class="empty-desc">Found a musical problem or want to track something? Open an issue.</p>
+            <button class="btn btn-primary" onclick="showCreateIssue()">Open first issue</button>
+          </div>`}
+      </div>
+      <div id="create-issue-panel" style="display:none">
+        <div class="card" style="border-color:var(--color-accent)">
+          <h2 style="margin-bottom:var(--space-3)">New Issue</h2>
+          <div class="form-group" style="margin-bottom:var(--space-3)">
+            <label class="form-label" for="issue-title">Title</label>
+            <input id="issue-title" class="form-input" type="text" placeholder="Brief description of the issue…"/>
+          </div>
+          <div class="form-group" style="margin-bottom:var(--space-3)">
+            <label class="form-label" for="issue-body">Description</label>
+            <textarea id="issue-body" class="form-input" rows="5"
+                      placeholder="Describe the musical problem or request…"
+                      style="resize:vertical;width:100%"></textarea>
+            <button class="btn btn-ghost btn-sm" style="margin-top:var(--space-2)"
+                    onclick="suggestIssueBody()">
+              &#129504; Suggest musical improvements
+            </button>
+          </div>
+          <div style="display:flex;gap:var(--space-2)">
+            <button class="btn btn-primary" onclick="createIssue()">Submit Issue</button>
+            <button class="btn btn-secondary" onclick="document.getElementById('create-issue-panel').style.display='none'">Cancel</button>
+          </div>
+        </div>
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function showCreateIssue() {
+  document.getElementById('create-issue-panel').style.display = '';
+  document.getElementById('issue-title').focus();
+}
+
+async function createIssue() {
+  const title = document.getElementById('issue-title').value.trim();
+  const body  = document.getElementById('issue-body').value.trim();
+  if (!title) { alert('Please enter a title'); return; }
+  try {
+    await apiFetch('/repos/' + repoId + '/issues', {
+      method: 'POST',
+      body: JSON.stringify({ title, body }),
+    });
+    location.reload();
+  } catch(e) {
+    if (e.message !== 'auth') alert('Failed to create issue: ' + e.message);
+  }
+}
+
+async function suggestIssueBody() {
+  const bodyEl = document.getElementById('issue-body');
+  const title  = document.getElementById('issue-title').value.trim();
+  bodyEl.value = '⏳ Asking Maestro for suggestions…';
+  try {
+    const ctx = await apiFetch('/repos/' + repoId + '/context/HEAD');
+    const suggests = ctx.suggestions || {};
+    const missing  = ctx.missingElements || [];
+    let suggestion = '';
+    if (title && suggests[title]) suggestion = suggests[title];
+    else if (missing.length > 0) suggestion = 'Missing musical elements: ' + missing.join(', ') + '.';
+    else suggestion = Object.values(suggests).slice(0, 2).join('\n') || 'No AI suggestions available — add more commits to get context.';
+    bodyEl.value = suggestion;
+  } catch(e) {
+    bodyEl.value = '';
+    if (e.message !== 'auth') alert('Could not load AI context: ' + e.message);
+  }
+}
+
+load('open');
+{% endraw %}
+{% endblock %}

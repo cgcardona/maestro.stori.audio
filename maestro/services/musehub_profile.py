@@ -172,6 +172,8 @@ async def get_public_repos(
         ProfileRepoSummary(
             repo_id=r.repo_id,
             name=r.name,
+            owner=r.owner,
+            slug=r.slug,
             visibility=r.visibility,
             star_count=0,
             last_activity_at=last_activity.get(r.repo_id),

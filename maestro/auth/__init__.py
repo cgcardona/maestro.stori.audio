@@ -12,7 +12,7 @@ from maestro.auth.tokens import (
     hash_token,
     AccessCodeError,
 )
-from maestro.auth.dependencies import require_valid_token, require_device_id
+from maestro.auth.dependencies import optional_token, require_valid_token, require_device_id
 
 __all__ = [
     "generate_access_code",
@@ -20,6 +20,7 @@ __all__ = [
     "get_user_id_from_token",
     "hash_token",
     "AccessCodeError",
+    "optional_token",
     "require_valid_token",
     "require_device_id",
 ]

@@ -86,6 +86,10 @@ Run from anywhere inside the main repo. Paths are derived automatically.
 > `dev` directly. This prevents the "dev is already used by worktree" error when
 > the main repo has `dev` checked out.
 
+> **GitHub repo slug:** Always `cgcardona/maestro`. The local path
+> (`/Users/gabriel/dev/tellurstori/maestro`) is misleading — `tellurstori` is
+> NOT the GitHub org. Never derive the slug from `basename` or `pwd`.
+
 ```bash
 REPO=$(git rev-parse --show-toplevel)
 PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
@@ -96,19 +100,19 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define issues (confirmed independent — zero file overlap) ---
-# Batch: #232, #231, #230, #229 (MuseHub Phase 4 — Visualization)
-# Known shared files:
-#   maestro/api/routes/musehub/ui.py
-#     (#230 adds timeline_page(), #231 adds divergence_page(), #232 adds context_page())
-#   maestro/api/routes/musehub/repos.py
-#     (#230 adds timeline endpoint, #231 adds divergence endpoint, #232 adds context endpoint)
-# #229 adds DAG graph (new dag.py + D3.js frontend — independent new files only)
-# Resolution: pre-push sync in STEP 4 handles ui.py and repos.py — keep ALL handler/endpoint functions from all sides.
+# Batch: #320, #312, #311, #310 (MuseHub — Social tests + UI enrichments)
+# File ownership (no overlap):
+#   #320 → tests/test_musehub_social.py          (new file — social API test suite)
+#   #312 → maestro/templates/musehub/pages/context.html   (context viewer visual state + AI modal)
+#   #311 → maestro/templates/musehub/pages/repo.html      (repo sidebar analytics sparkline)
+#   #310 → maestro/templates/musehub/pages/insights.html  (insights branch activity + issue/PR health)
+# All four use existing APIs via client-side JS — no new Python route changes required.
+# Load-bearing order: #320 (social API validated) → #312 (compose modal pattern) → #311/#310 (UI polish).
 declare -a ISSUES=(
-  "232|feat: context viewer — human-readable view of the AI musical context document"
-  "231|feat: divergence visualization — radar chart and side-by-side comparison between branches"
-  "230|feat: timeline view — chronological evolution with emotion, section, and track layers"
-  "229|feat: interactive DAG graph — D3.js-based commit graph with branch coloring and zoom/pan"
+  "320|test: add test coverage for social layer endpoints in social.py"
+  "312|feat: context viewer — visual musical state and Implement suggestion button"
+  "311|feat: repo sidebar — view count sparkline and open PR/issue counts"
+  "310|feat: insights dashboard — branch activity and open PR/issue counts"
 )
 
 # --- create worktrees + task files ---
@@ -140,15 +144,20 @@ in its `issue-<N>` directory, and paste the Kickoff Prompt below.
 
 ```bash
 # Derive paths — run these at the start of your session
-REPO=$(git worktree list | head -1 | awk '{print $1}')   # main repo
+REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path to main repo
 WTNAME=$(basename "$(pwd)")                               # this worktree's name
 # Docker path to your worktree: /worktrees/$WTNAME
+
+# GitHub repo slug — HARDCODED. NEVER derive from local path or directory name.
+# The local path is /Users/gabriel/dev/tellurstori/maestro — "tellurstori" is NOT the GitHub org.
+export GH_REPO=cgcardona/maestro
 ```
 
 | Item | Value |
 |------|-------|
 | Your worktree root | current directory (contains `.agent-task`) |
-| Main repo | first entry of `git worktree list` |
+| Main repo (local path) | first entry of `git worktree list` |
+| GitHub repo slug | `cgcardona/maestro` — always hardcoded, never derived |
 | Docker compose location | main repo |
 | Your worktree inside Docker | `/worktrees/$WTNAME` |
 
@@ -205,10 +214,15 @@ STEP 0 — READ YOUR TASK:
   issue number wherever you see <N> below.
 
 STEP 1 — DERIVE PATHS:
-  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path only
   WTNAME=$(basename "$(pwd)")
   # Your worktree is live in Docker at /worktrees/$WTNAME — NO file copying needed.
   # All docker compose commands: cd "$REPO" && docker compose exec maestro <cmd>
+
+  # GitHub repo slug — ALWAYS hardcoded. NEVER derive from directory name or local path.
+  # The local path contains "tellurstori" but the GitHub org is "cgcardona".
+  export GH_REPO=cgcardona/maestro
+  # All gh commands pick this up automatically. You may also pass --repo "$GH_REPO" explicitly.
 
 STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
   ⚠️  Query GitHub first. Do NOT create a branch, write a file, or run mypy until

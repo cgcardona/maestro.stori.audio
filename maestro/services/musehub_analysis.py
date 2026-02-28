@@ -48,7 +48,9 @@ from maestro.models.musehub_analysis import (
     ContourData,
     DimensionData,
     DivergenceData,
+    DynamicArc,
     DynamicsData,
+    DynamicsPageData,
     EmotionData,
     FormData,
     GrooveData,
@@ -64,6 +66,7 @@ from maestro.models.musehub_analysis import (
     SimilarityData,
     TempoChange,
     TempoData,
+    TrackDynamicsProfile,
     VelocityEvent,
 )
 
@@ -78,6 +81,10 @@ _EMOTIONS = ["joyful", "melancholic", "tense", "serene", "energetic", "brooding"
 _FORMS = ["AABA", "verse-chorus", "through-composed", "rondo", "binary", "ternary"]
 _GROOVES = ["straight", "swing", "shuffled", "half-time", "double-time"]
 _TONICS = ["C", "F", "G", "D", "Bb", "Eb"]
+_DYNAMIC_ARCS: list[DynamicArc] = [
+    "flat", "terraced", "crescendo", "decrescendo", "swell", "hairpin",
+]
+_DEFAULT_TRACKS = ["bass", "keys", "drums", "melody", "pads"]
 
 
 def _ref_hash(ref: str) -> int:
@@ -444,6 +451,85 @@ def compute_analysis_response(
     )
     logger.info("✅ analysis/%s repo=%s ref=%s", dimension, repo_id[:8], ref)
     return response
+
+
+def _build_track_dynamics_profile(
+    ref: str,
+    track: str,
+    track_index: int,
+) -> TrackDynamicsProfile:
+    """Build a deterministic per-track dynamic profile for the dynamics page.
+
+    Seed is derived from ``ref`` XOR ``track_index`` so each track gets a
+    distinct but reproducible curve for the same ref.
+    """
+    seed = _ref_hash(ref) ^ (track_index * 0x9E3779B9)
+    base_vel = 50 + (seed % 50)
+    peak = min(127, base_vel + 20 + (seed % 30))
+    low = max(10, base_vel - 20 - (seed % 20))
+    mean = round(float((peak + low) / 2), 2)
+
+    curve = [
+        VelocityEvent(
+            beat=float(i * 2),
+            velocity=min(127, max(10, base_vel + (seed >> (i % 16)) % 25 - 12)),
+        )
+        for i in range(16)
+    ]
+
+    arc: DynamicArc = _DYNAMIC_ARCS[(seed + track_index) % len(_DYNAMIC_ARCS)]
+
+    return TrackDynamicsProfile(
+        track=track,
+        peak_velocity=peak,
+        min_velocity=low,
+        mean_velocity=mean,
+        velocity_range=peak - low,
+        arc=arc,
+        velocity_curve=curve,
+    )
+
+
+def compute_dynamics_page_data(
+    *,
+    repo_id: str,
+    ref: str,
+    track: Optional[str] = None,
+    section: Optional[str] = None,
+) -> DynamicsPageData:
+    """Build per-track dynamics data for the Dynamics Analysis page.
+
+    Returns one :class:`TrackDynamicsProfile` per active track, or a single
+    entry when ``track`` filter is applied.  Each profile includes a velocity
+    curve suitable for rendering a profile graph, an arc classification badge,
+    and peak/range metrics for the loudness comparison bar chart.
+
+    Args:
+        repo_id:  Muse Hub repo UUID.
+        ref:      Muse commit ref (branch name, commit ID, or tag).
+        track:    Optional track filter — if set, only that track is returned.
+        section:  Optional section filter (recorded in ``filters_applied``).
+
+    Returns:
+        :class:`DynamicsPageData` with per-track profiles.
+    """
+    tracks_to_include = [track] if track else _DEFAULT_TRACKS
+    profiles = [
+        _build_track_dynamics_profile(ref, t, i)
+        for i, t in enumerate(tracks_to_include)
+    ]
+    now = _utc_now()
+    logger.info(
+        "✅ dynamics/page repo=%s ref=%s tracks=%d",
+        repo_id[:8], ref, len(profiles),
+    )
+    return DynamicsPageData(
+        ref=ref,
+        repo_id=repo_id,
+        computed_at=now,
+        tracks=profiles,
+        filters_applied=AnalysisFilters(track=track, section=section),
+    )
 
 
 def compute_aggregate_analysis(

@@ -1,0 +1,186 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Search{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / search
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const base    = {{ base_url | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+initRepoNav(repoId);
+
+let currentMode = 'keyword';
+
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.toggle('tab-active', b.dataset.mode === mode);
+  });
+  document.querySelectorAll('.mode-panel').forEach(p => {
+    p.style.display = p.dataset.mode === mode ? 'block' : 'none';
+  });
+  applyTabActive();
+}
+
+function renderResults(data) {
+  const matches = data.matches || [];
+  const header = `<p style="color:#8b949e;font-size:13px;margin-bottom:12px">
+    Mode: <strong>${escHtml(data.mode)}</strong> &bull;
+    Query: <em>${escHtml(data.query || '(all)')}</em> &bull;
+    ${matches.length} result(s) &bull; ${data.totalScanned} commits scanned
+  </p>`;
+
+  if (matches.length === 0) {
+    document.getElementById('results').innerHTML = header +
+      '<p class="loading">No matching commits found.</p>';
+    return;
+  }
+
+  const rows = matches.map(m => `
+    <div class="commit-row">
+      <a class="commit-sha" href="${base}/commits/${m.commitId}">${shortSha(m.commitId)}</a>
+      <div class="commit-msg" style="flex:1">
+        <a href="${base}/commits/${m.commitId}">${escHtml(m.message)}</a>
+        <div style="font-size:12px;color:#8b949e;margin-top:2px">
+          ${escHtml(m.author)} &bull; ${fmtDate(m.timestamp)}
+          &bull; branch: ${escHtml(m.branch)}
+          ${m.score < 1.0 ? '&bull; score: ' + m.score.toFixed(3) : ''}
+        </div>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('results').innerHTML = header +
+    '<div class="card">' + rows + '</div>';
+}
+
+async function runSearch() {
+  document.getElementById('results').innerHTML = '<p class="loading">Searching&#8230;</p>';
+  try {
+    let url = apiBase + '/search?mode=' + encodeURIComponent(currentMode);
+    const limit = document.getElementById('inp-limit').value || 20;
+    const since = document.getElementById('inp-since').value;
+    const until = document.getElementById('inp-until').value;
+    url += '&limit=' + encodeURIComponent(limit);
+    if (since) url += '&since=' + encodeURIComponent(since + 'T00:00:00Z');
+    if (until) url += '&until=' + encodeURIComponent(until + 'T23:59:59Z');
+
+    if (currentMode === 'property') {
+      const fields = ['harmony','rhythm','melody','structure','dynamic','emotion'];
+      fields.forEach(f => {
+        const v = document.getElementById('prop-' + f).value.trim();
+        if (v) url += '&' + f + '=' + encodeURIComponent(v);
+      });
+    } else {
+      const q = document.getElementById('inp-q-' + currentMode).value.trim();
+      if (q) url += '&q=' + encodeURIComponent(q);
+    }
+
+    const data = await apiFetch(url.replace(apiBase, ''));
+    renderResults(data);
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('results').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+document.getElementById('content').innerHTML = `
+  <div style="margin-bottom:12px">
+    <a href="${base}">&larr; Back to repo</a>
+  </div>
+  <div class="card">
+    <h1 style="margin-bottom:16px">&#128269; Search Commits</h1>
+
+    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+      <button class="btn tab-btn tab-active" data-mode="keyword" onclick="setMode('keyword')">Keyword</button>
+      <button class="btn tab-btn" data-mode="ask" onclick="setMode('ask')">Natural Language</button>
+      <button class="btn tab-btn" data-mode="pattern" onclick="setMode('pattern')">Pattern</button>
+      <button class="btn tab-btn" data-mode="property" onclick="setMode('property')">Musical Properties</button>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end">
+      <div class="meta-item">
+        <span class="meta-label">Since</span>
+        <input id="inp-since" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Until</span>
+        <input id="inp-until" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Limit</span>
+        <input id="inp-limit" type="number" value="20" min="1" max="200"
+               style="width:80px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+      </div>
+    </div>
+
+    <div class="mode-panel" data-mode="keyword">
+      <div style="display:flex;gap:8px">
+        <input id="inp-q-keyword" type="text" placeholder="e.g. dark jazz bassline"
+               style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+               onkeydown="if(event.key==='Enter')runSearch()" />
+        <button class="btn btn-primary" onclick="runSearch()">Search</button>
+      </div>
+      <p style="font-size:12px;color:#8b949e;margin-top:6px">Scores commits by keyword overlap.</p>
+    </div>
+
+    <div class="mode-panel" data-mode="ask" style="display:none">
+      <div style="display:flex;gap:8px">
+        <input id="inp-q-ask" type="text" placeholder="e.g. when did I change to F# minor?"
+               style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+               onkeydown="if(event.key==='Enter')runSearch()" />
+        <button class="btn btn-primary" onclick="runSearch()">Ask</button>
+      </div>
+      <p style="font-size:12px;color:#8b949e;margin-top:6px">Keyword extraction from your question.</p>
+    </div>
+
+    <div class="mode-panel" data-mode="pattern" style="display:none">
+      <div style="display:flex;gap:8px">
+        <input id="inp-q-pattern" type="text" placeholder="e.g. Cm7 or feature/hip-hop"
+               style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+               onkeydown="if(event.key==='Enter')runSearch()" />
+        <button class="btn btn-primary" onclick="runSearch()">Search</button>
+      </div>
+      <p style="font-size:12px;color:#8b949e;margin-top:6px">Case-insensitive substring match.</p>
+    </div>
+
+    <div class="mode-panel" data-mode="property" style="display:none">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:12px">
+        ${['harmony','rhythm','melody','structure','dynamic','emotion'].map(f => `
+          <div class="meta-item">
+            <span class="meta-label">${f}</span>
+            <input id="prop-${f}" type="text" placeholder="e.g. ${f==='harmony'?'key=Eb':f==='rhythm'?'tempo=120-130':f}"
+                   style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:13px;width:100%" />
+          </div>`).join('')}
+      </div>
+      <button class="btn btn-primary" onclick="runSearch()">Filter</button>
+      <p style="font-size:12px;color:#8b949e;margin-top:6px">All non-empty fields combined with AND logic.</p>
+    </div>
+  </div>
+
+  <div id="results"><p class="loading" style="display:none"></p></div>
+`;
+
+function applyTabActive() {
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    const active = b.dataset.mode === currentMode;
+    b.style.background = active ? '#1f6feb' : '#21262d';
+    b.style.color = active ? '#fff' : '#c9d1d9';
+    b.style.border = '1px solid #30363d';
+  });
+}
+
+document.querySelectorAll('.tab-btn').forEach(b => {
+  b.addEventListener('click', applyTabActive);
+});
+
+applyTabActive();
+{% endraw %}
+{% endblock %}

@@ -1,4 +1,4 @@
-"""Pydantic v2 models for the Muse Hub Analysis API.
+"""Pydantic v2 models for the Muse Hub Analysis API and Dynamics Page.
 
 Each musical dimension has a dedicated typed data model.  All models are
 consumed by AI agents and must be fully described so agents can reason
@@ -28,6 +28,16 @@ from typing import Literal
 from pydantic import Field
 
 from maestro.models.base import CamelModel
+
+# Arc classification labels for dynamic contour per track.
+# Each label describes the overall shape of the velocity curve:
+#   flat       — velocity is nearly constant throughout
+#   terraced   — abrupt step changes between dynamic levels
+#   crescendo  — steady or gradual increase in velocity
+#   decrescendo — steady or gradual decrease in velocity
+#   swell      — rises then falls (arch shape)
+#   hairpin    — falls then rises (valley shape)
+DynamicArc = Literal["flat", "terraced", "crescendo", "decrescendo", "swell", "hairpin"]
 
 # ---------------------------------------------------------------------------
 # Filter envelope (shared across all dimension responses)
@@ -371,6 +381,61 @@ class DivergenceData(CamelModel):
     )
     base_ref: str = Field(..., description="The ref this divergence was computed against")
     changed_dimensions: list[ChangedDimension]
+
+
+# ---------------------------------------------------------------------------
+# Per-track dynamics models (used by the Dynamics Analysis Page)
+# ---------------------------------------------------------------------------
+
+
+class TrackDynamicsProfile(CamelModel):
+    """Dynamic analysis for a single instrument track.
+
+    Used exclusively by the dynamics page endpoint so that per-track data
+    can be visualised independently. Agents that need the aggregate
+    (cross-track average) should use :class:`DynamicsData` instead.
+
+    ``arc`` classifies the overall shape of the velocity curve:
+    - ``flat``       — velocity nearly constant
+    - ``terraced``   — abrupt step changes between levels
+    - ``crescendo``  — gradual increase
+    - ``decrescendo`` — gradual decrease
+    - ``swell``      — rises then falls (arch)
+    - ``hairpin``    — falls then rises (valley)
+
+    ``velocity_curve`` samples the track at 2-beat intervals so a
+    velocity profile graph can be drawn without requiring MIDI file access.
+    """
+
+    track: str = Field(..., description="Instrument track name, e.g. 'bass', 'keys', 'drums'")
+    peak_velocity: int = Field(..., ge=0, le=127)
+    min_velocity: int = Field(..., ge=0, le=127)
+    mean_velocity: float = Field(..., ge=0.0, le=127.0)
+    velocity_range: int = Field(..., ge=0, le=127, description="peak_velocity - min_velocity")
+    arc: DynamicArc = Field(..., description="Dynamic arc classification for this track")
+    velocity_curve: list[VelocityEvent] = Field(
+        ..., description="Velocity sampled at 2-beat intervals for graphing"
+    )
+
+
+class DynamicsPageData(CamelModel):
+    """Enriched per-track dynamics data for the Dynamics Analysis page.
+
+    Returned by ``GET /musehub/repos/{repo_id}/analysis/{ref}/dynamics/page``.
+    Contains one :class:`TrackDynamicsProfile` per active instrument track,
+    plus the cross-track loudness comparison list (peak velocities sorted
+    descending) so the bar chart can be drawn directly from ``tracks``.
+
+    Agent use case: when orchestrating a mix, an agent inspects this to
+    identify dynamic imbalances — e.g. bass consistently louder than keys —
+    and adjusts generation accordingly.
+    """
+
+    ref: str
+    repo_id: str
+    computed_at: datetime
+    tracks: list[TrackDynamicsProfile]
+    filters_applied: AnalysisFilters
 
 
 # ---------------------------------------------------------------------------

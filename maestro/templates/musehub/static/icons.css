@@ -1,0 +1,187 @@
+/*
+ * Muse Hub Icon System
+ *
+ * CSS-only icon classes for file types and musical concepts.
+ * Icons are implemented as CSS-generated pseudo-elements using Unicode
+ * characters (no external assets, no SVG files, no icon font CDN).
+ *
+ * File-type icons: .icon-mid, .icon-mp3, .icon-wav, .icon-json,
+ *                  .icon-webp, .icon-xml, .icon-abc
+ *
+ * Musical concept icons: .icon-key, .icon-tempo, .icon-dynamics,
+ *                         .icon-motif, .icon-emotion, .icon-groove,
+ *                         .icon-harmony, .icon-rhythm, .icon-melody,
+ *                         .icon-structure
+ *
+ * Usage:
+ *   <span class="file-icon icon-mid"></span>
+ *   <span class="music-icon icon-key"></span>
+ *
+ * The .file-icon and .music-icon base classes set shared sizing and alignment.
+ * The variant class sets the glyph (::before) and color.
+ */
+
+/* -------------------------------------------------------------------------
+ * Base icon classes
+ * ------------------------------------------------------------------------- */
+.file-icon,
+.music-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  line-height: 1;
+}
+
+.file-icon {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  font-family: var(--font-mono);
+  min-width: 32px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid currentColor;
+}
+
+.music-icon {
+  font-size: 18px;
+}
+
+/* -------------------------------------------------------------------------
+ * File-type icons
+ * Each file type has a distinct background + color combination, and a short
+ * label rendered as text (via ::before) so the icon is screen-reader friendly
+ * when combined with a visible filename.
+ * ------------------------------------------------------------------------- */
+
+/* MIDI — orange / coral (the native music format) */
+.icon-mid::before   { content: "MID"; }
+.icon-mid {
+  color: var(--color-orange);
+  border-color: var(--color-orange);
+  background: rgba(240, 136, 62, 0.1);
+}
+
+/* MP3 — green (playable audio) */
+.icon-mp3::before   { content: "MP3"; }
+.icon-mp3 {
+  color: var(--color-success);
+  border-color: var(--color-success);
+  background: rgba(63, 185, 80, 0.1);
+}
+
+/* WAV — teal (lossless audio) */
+.icon-wav::before   { content: "WAV"; }
+.icon-wav {
+  color: #39d353;
+  border-color: #39d353;
+  background: rgba(57, 211, 83, 0.1);
+}
+
+/* JSON — blue (data / metadata) */
+.icon-json::before  { content: "JSON"; }
+.icon-json {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: rgba(88, 166, 255, 0.1);
+  font-size: 10px;
+}
+
+/* WebP — purple (image / visualisation) */
+.icon-webp::before  { content: "IMG"; }
+.icon-webp {
+  color: var(--color-purple);
+  border-color: var(--color-purple);
+  background: rgba(188, 140, 255, 0.1);
+}
+
+/* XML — warm grey (markup / export format) */
+.icon-xml::before   { content: "XML"; }
+.icon-xml {
+  color: var(--text-muted);
+  border-color: var(--text-muted);
+  background: rgba(139, 148, 158, 0.1);
+}
+
+/* ABC notation — yellow (text-based music notation) */
+.icon-abc::before   { content: "ABC"; }
+.icon-abc {
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+  background: rgba(210, 153, 34, 0.1);
+}
+
+/* -------------------------------------------------------------------------
+ * Musical concept icons (emoji-based for broad Unicode support)
+ * ------------------------------------------------------------------------- */
+
+/* Key signature */
+.icon-key::before       { content: "\266F"; } /* ♯ */
+.icon-key { color: var(--dim-harmonic); }
+
+/* Tempo / BPM */
+.icon-tempo::before     { content: "\1F3B5"; } /* 🎵 */
+.icon-tempo { color: var(--dim-rhythmic); }
+
+/* Dynamics / velocity */
+.icon-dynamics::before  { content: "\1F4A5"; } /* 💥 */
+.icon-dynamics { color: var(--dim-dynamic); }
+
+/* Motif / theme */
+.icon-motif::before     { content: "\1F300"; } /* 🌀 */
+.icon-motif { color: var(--dim-melodic); }
+
+/* Emotion / mood */
+.icon-emotion::before   { content: "\1F3AD"; } /* 🎭 */
+.icon-emotion { color: var(--color-purple); }
+
+/* Groove / feel */
+.icon-groove::before    { content: "\1F941"; } /* 🥁 */
+.icon-groove { color: var(--dim-rhythmic); }
+
+/* Harmony */
+.icon-harmony::before   { content: "\1F3B9"; } /* 🎹 */
+.icon-harmony { color: var(--dim-harmonic); }
+
+/* Rhythm */
+.icon-rhythm::before    { content: "\23F1"; }  /* ⏱ */
+.icon-rhythm { color: var(--dim-rhythmic); }
+
+/* Melody */
+.icon-melody::before    { content: "\1F3B6"; } /* 🎶 */
+.icon-melody { color: var(--dim-melodic); }
+
+/* Structure / form */
+.icon-structure::before { content: "\1F3DB"; } /* 🏛 */
+.icon-structure { color: var(--dim-structural); }
+
+/* -------------------------------------------------------------------------
+ * Dimension color swatches
+ * Used in legends, radar chart keys, and commit diff summaries.
+ * ------------------------------------------------------------------------- */
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: var(--space-1);
+}
+
+.swatch-harmonic  { background: var(--dim-harmonic); }
+.swatch-rhythmic  { background: var(--dim-rhythmic); }
+.swatch-melodic   { background: var(--dim-melodic); }
+.swatch-structural{ background: var(--dim-structural); }
+.swatch-dynamic   { background: var(--dim-dynamic); }
+
+/* -------------------------------------------------------------------------
+ * Track color swatches (8-track palette)
+ * ------------------------------------------------------------------------- */
+.swatch-track-0 { background: var(--track-0); }
+.swatch-track-1 { background: var(--track-1); }
+.swatch-track-2 { background: var(--track-2); }
+.swatch-track-3 { background: var(--track-3); }
+.swatch-track-4 { background: var(--track-4); }
+.swatch-track-5 { background: var(--track-5); }
+.swatch-track-6 { background: var(--track-6); }
+.swatch-track-7 { background: var(--track-7); }

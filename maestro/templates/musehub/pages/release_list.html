@@ -1,0 +1,52 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Releases{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / releases
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+async function load() {
+  initRepoNav(repoId);
+  try {
+    const data     = await apiFetch('/repos/' + repoId + '/releases');
+    const releases = data.releases || [];
+
+    const rows = releases.length === 0
+      ? '<p class="loading">No releases published yet.</p>'
+      : releases.map(r => `
+        <div class="release-row">
+          <span class="badge badge-release">${escHtml(r.tag)}</span>
+          <div style="flex:1">
+            <a href="${base}/releases/${encodeURIComponent(r.tag)}">${escHtml(r.title)}</a>
+            <div style="font-size:12px;color:#8b949e;margin-top:2px">
+              Released ${fmtDate(r.createdAt)}
+              ${r.commitId ? ' &bull; commit <span style="font-family:monospace">' + r.commitId.substring(0,8) + '</span>' : ''}
+            </div>
+          </div>
+        </div>`).join('');
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${base}">&larr; Back to repo</a>
+      </div>
+      <div class="card">
+        <h1 style="margin-bottom:16px">Releases</h1>
+        ${rows}
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}

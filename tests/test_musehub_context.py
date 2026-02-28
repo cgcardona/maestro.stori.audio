@@ -20,7 +20,7 @@ All tests use fixtures from conftest.py.
 from __future__ import annotations
 
 import pytest
-import yaml  # type: ignore[import-untyped]  # PyYAML ships no py.typed marker
+import yaml  # PyYAML ships no py.typed marker
 from datetime import datetime, timezone
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,7 +43,7 @@ async def _create_repo(client: AsyncClient, auth_headers: dict[str, str], name: 
     """Create a repo via the API and return its repo_id."""
     response = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": name},
+        json={"name": name, "owner": "testuser"},
         headers=auth_headers,
     )
     assert response.status_code == 201
@@ -431,15 +431,19 @@ async def test_context_ref_not_found_404(
 
 
 @pytest.mark.anyio
-async def test_context_requires_auth(
+async def test_context_nonexistent_repo_returns_404_without_auth(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /musehub/repos/{repo_id}/context returns 401 without a Bearer token."""
+    """GET /musehub/repos/{repo_id}/context returns 404 for a non-existent repo without auth.
+
+    Context endpoint uses optional_token — auth check is visibility-based,
+    so a missing repo returns 404 before the auth check fires.
+    """
     response = await client.get(
-        "/api/v1/musehub/repos/any-repo-id/context",
+        "/api/v1/musehub/repos/non-existent-repo-id/context",
     )
-    assert response.status_code == 401
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
